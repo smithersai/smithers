@@ -4,6 +4,11 @@
 
 ### Added
 
+- `Agent.Options.environment`, `AgentSession.Options.environment` and
+  `AgentAction.Host.environment`: what the host measured or declares about
+  the checkout and container, rendered into the run's teaching. No host
+  passed `CellTurn.Environment` before, so its facts were never stated.
+
 - `ModelStep.run` calls a model as one durable, sealed step of the running
   flow. Its key digests the credential-free prepared request (route, protocol,
   URL, public headers and canonical body bytes) with the encoded request, so a
@@ -17,6 +22,17 @@
   events on a replay, and a call cut off mid-flight is made again on resume and
   counted by `agent_model_step_redispatches`. The guide is
   `docs/guides/durable-model-call.md`.
+- Markdown children: `ctx.call("<markdown flow>", { args })` runs that flow as
+  a nested run of the caller's own agent loop when `Agent.Options.children` is
+  set, which `AgentSession.Options.markdownChildren` and
+  `AgentAction.Host.markdownChildren` turn on. The child runs inside the
+  caller's durable call, so a replay is served its recorded answer; on the
+  flow's `model:` and `effort:`, or the caller's; with the host's flows and no
+  `wait`, `ask` or markdown flow; and on the caller's budget, never parking it.
+  Its answer is the call's value, and a child that fails or runs out of frames
+  resolves `flow_failed`. A run is never offered itself. `AgentSession.childTracer`
+  journals each child event as `control.child.*` with
+  `child: { callId, flow, scope }`. The guide is `docs/guides/subagents.md`.
 
 ### Changed
 

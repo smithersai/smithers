@@ -81,7 +81,8 @@ import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { Agent, type Options as AgentOptions } from "./Agent.ts"
+import { Agent, type Children, type Options as AgentOptions } from "./Agent.ts"
+import { childTracer } from "./AgentSession.ts"
 import * as Budget from "./Budget.ts"
 import { EventSink } from "./EventSink.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
@@ -121,10 +122,30 @@ export interface Host {
   readonly implementations?: ReadonlyMap<string, CellCalls.Implementation> | undefined
   /** Runs rendered markdown children; the host closes over their runtime dependencies. */
   readonly promptRunner?: CellCalls.PromptRunner | undefined
+  /**
+   * Runs each markdown flow a step's cell calls as a nested run of the same
+   * agent loop, through `Agent.Options.children`. Off by default;
+   * `promptRunner` wins when both are set.
+   *
+   * A child is offered {@link flows}, resolves its declared `model:` through
+   * the step's `SeatResolver` and otherwise runs on the step's seat, and its
+   * events are journaled on the lossy channel under `control.child.*` (see
+   * `AgentSession.childTracer`) when the composition has a journal.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly markdownChildren?: boolean | undefined
   readonly plugins?: PluginInput<FlowsHooks> | undefined
   readonly config?: FlowsConfig | undefined
   /** Stable system teaching placed ahead of every action's own. */
   readonly system?: ReadonlyArray<string> | undefined
+  /**
+   * What the host measured or declares about the checkout and container every
+   * action works in. Forwarded to `Agent.Options.environment`.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly environment?: AgentOptions["environment"]
   readonly capabilityEnvelope?: ReadonlyArray<Capability.CapabilityPattern> | undefined
   readonly maxFrames?: number | undefined
   /**
@@ -519,6 +540,40 @@ const record = (
   })
 
 /**
+ * The producer a step's markdown children are journaled under. Their
+ * sequences are derived identities, so they stay apart from
+ * {@link recordSource}, whose sequences the journal allocates.
+ */
+const childSource = JournalEvent.SourceId.make("/agent/action/child")
+
+/**
+ * Journals the events of one execution's markdown children on the lossy
+ * channel, as {@link record} journals the step's own evidence: a composition
+ * with no journal journals nothing.
+ */
+const childObserver = (
+  journal: Option.Option<Journal.Service>,
+  runId: string
+): Children["observe"] => {
+  const project = childTracer()
+  return (child, event) =>
+    Effect.gen(function*() {
+      const row = project(child, event)
+      if (row === undefined || Option.isNone(journal)) return
+      yield* journal.value.emitLossy(
+        new JournalEvent.Input({
+          runId: JournalEvent.RunId.make(runId),
+          sourceId: childSource,
+          sourceSeq: row.sourceSeq,
+          dedupe: "identity",
+          eventType: row.eventType,
+          payload: { ...row.payload, at: yield* Clock.currentTimeMillis }
+        })
+      ).pipe(Effect.ignore)
+    })
+}
+
+/**
  * A declared model-backed action, plus the layer that implements it.
  *
  * The declaration half is an ordinary `Action.Declared`: `.call()` records the
@@ -719,6 +774,13 @@ export const implement = <
       // they happen or it does not, and the absence is the buffered behavior
       // this action has always had rather than a failure.
       const sink = yield* Effect.serviceOption(EventSink)
+      // Resolved with the sink, and as optional: every ask of this execution
+      // journals its markdown children through the same projection.
+      const children: Children | undefined = host.markdownChildren !== true ? undefined : {
+        flows: host.flows ?? [],
+        seats,
+        observe: childObserver(yield* Effect.serviceOption(Journal.Journal), instance.executionId)
+      }
       const invocation = yield* Action.CurrentInvocationKey
       const dispatchAttempt = yield* Action.CurrentAttempt
       const stepId = invocation === undefined ? undefined : Digest.digest(invocation)
@@ -942,11 +1004,13 @@ export const implement = <
                   prompt,
                   system: teaching,
                   profile: options.profile,
+                  environment: host.environment,
                   memory,
                   registry: host.registry,
                   flows: host.flows,
                   implementations: host.implementations,
                   promptRunner: host.promptRunner,
+                  children,
                   plugins: host.plugins,
                   config: host.config,
                   modelParams: options.modelParams,

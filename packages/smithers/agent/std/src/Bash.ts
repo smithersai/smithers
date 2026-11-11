@@ -435,55 +435,29 @@ const routed = (
  * the profile, then `exec` replaces it with the interpreter, so the script
  * still arrives on the inherited standard input and no argument is ever
  * re-parsed as shell text.
+ *
+ * That login shell runs under `TreeFingerprint.around`, which measures the
+ * working directory before and after it in the same transport call. The
+ * host's workspace walk cannot see a container's filesystem, so the tree is
+ * measured where it is; every way that can fail is read as "unmeasured" and
+ * reported as an absent `mutated`, never as a tree that held still.
  */
 const request = (plan: Plan, input: Input, container: string): Container.Request => ({
   container,
-  file: "bash",
-  args: plan.args === undefined
-    ? ["-lc", plan.file]
-    : ["-lc", `exec "$@"`, "bash", plan.file, ...plan.args],
+  file: "sh",
+  args: [
+    "-c",
+    TreeFingerprint.around(),
+    "sh",
+    "bash",
+    ...(plan.args === undefined
+      ? ["-lc", plan.file]
+      : ["-lc", `exec "$@"`, "bash", plan.file, ...plan.args])
+  ],
   ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
   ...(input.env === undefined ? {} : { env: input.env }),
   stdin: plan.stdin !== undefined
 })
-
-/** How long one fingerprint of the container's working directory may take. */
-const FINGERPRINT_TIMEOUT_MS = 60_000
-
-/**
- * Measures the tree a containerised command is about to run in, or just ran in.
- *
- * The host's workspace walk cannot see a container's filesystem, so the
- * measurement is taken where the tree is: `TreeFingerprint.script` runs
- * through the same transport as the command, in the same working directory,
- * and answers with one checksum. Every way this can fail — no transport, a
- * container without `find` or `stat`, a timeout, a bounded listing — is read
- * as "unmeasured" and reported as an absent `mutated`, never as a tree that
- * held still. The time it costs is bounded by the command's own timeout so a
- * stalled container cannot spend more waiting to be measured than it may
- * spend running.
- */
-const fingerprint = (
-  input: Input,
-  transport: Option.Option<Container.Container>
-): Effect.Effect<TreeFingerprint.Measurement | undefined, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    if (input.container === undefined || Option.isNone(transport)) return undefined
-    const routing = yield* transport.value.exec({
-      container: input.container,
-      file: "sh",
-      args: ["-c", TreeFingerprint.script()],
-      ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
-      stdin: false
-    })
-    const result = yield* Exec.exec(routing.file, {
-      ...(routing.env === undefined ? {} : { env: routing.env }),
-      timeoutMs: Math.min(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, FINGERPRINT_TIMEOUT_MS),
-      maxCaptureBytes: MAX_SHELL_OUTPUT_BYTES,
-      args: routing.args
-    })
-    return result.exitCode === 0 ? TreeFingerprint.parse(result.stdout) : undefined
-  }).pipe(Effect.orElseSucceed(() => undefined))
 
 /**
  * Executes a shell command through the permission-aware kernel service.
@@ -505,9 +479,6 @@ export const run = Effect.fn("Bash.run")(function*(
   const transport = yield* Effect.serviceOption(Container.Container)
   const spawned = yield* routed(intent, input, transport)
 
-  // The tree the command runs in, before it runs. Measured in the container
-  // because nothing on this host can see it; see `TreeFingerprint`.
-  const before = yield* fingerprint(input, transport)
   const result = yield* Exec.exec(spawned.file, {
     ...(input.cwd === undefined || contained ? {} : { cwd: input.cwd }),
     ...(spawned.env === undefined ? {} : { env: spawned.env }),
@@ -517,7 +488,10 @@ export const run = Effect.fn("Bash.run")(function*(
     ...(spawned.args === undefined ? {} : { args: spawned.args }),
     ...(spawned.stdin === undefined ? {} : { stdin: spawned.stdin })
   }).pipe(Effect.mapError((error) => Exec.toStdError(spawned.quoted, error)))
-  const mutated = TreeFingerprint.moved(before, yield* fingerprint(input, transport))
+  // A containerised command ran between two measurements of its tree and
+  // ended its standard error with them; see `TreeFingerprint.around`.
+  const tree = contained ? TreeFingerprint.split(result.stderr) : undefined
+  const mutated = tree === undefined ? undefined : TreeFingerprint.moved(tree.before, tree.after)
   // A command on this host may have changed files a language server holds
   // open; a container's files are not the ones it was sent.
   if (!contained) yield* Diagnostics.refresh
@@ -526,7 +500,7 @@ export const run = Effect.fn("Bash.run")(function*(
   return {
     exitCode: result.exitCode,
     stdout: result.stdout,
-    stderr: result.stderr,
+    stderr: tree === undefined ? result.stderr : tree.stderr,
     stdoutTruncated: result.stdoutDroppedBytes > 0,
     stderrTruncated: result.stderrDroppedBytes > 0,
     stdoutDroppedBytes: result.stdoutDroppedBytes,
@@ -587,17 +561,16 @@ export const inTerminal = <R>(
   })
 
 /**
- * The refusal a sealed host answers a call outside its container with.
+ * The refusal a sealed host answers a call that names another container with.
  *
  * @category errors
  * @since 1.0.0-rc.1
  */
-export const outsideContainer = (sealedTo: string, requested: string | undefined): StdError.StdError =>
+export const outsideContainer = (sealedTo: string, requested: string): StdError.StdError =>
   new StdError.StdError({
     code: "outside_container",
-    message: requested === undefined
-      ? `This host runs commands only inside container "${sealedTo}". Name it: { mode: "unhermetic", container: "${sealedTo}", command: "..." }.`
-      : `This host runs commands only inside container "${sealedTo}", not "${requested}".`
+    message:
+      `This host runs commands only inside container "${sealedTo}", not "${requested}". Omit container: every command already runs there.`
   })
 
 /**
@@ -605,15 +578,27 @@ export const outsideContainer = (sealedTo: string, requested: string | undefined
  *
  * A host that must not be reachable from the cell (a benchmark host holding
  * other tasks' tests and reference solutions, say) binds this instead of
- * {@link run}: a call naming `sealedTo` runs as usual, and every other call,
- * including one with no container that would run on the host, fails with
- * `outside_container` before anything is spawned.
+ * {@link run}. Every call runs in `sealedTo`: a call that names no container
+ * is routed there, so nothing can run on the host by omission and a cell need
+ * not repeat the name on every command. A call naming any other container,
+ * the empty string included, fails with `outside_container` before anything
+ * is spawned.
+ *
+ * `options.cwd` is the directory a call that names none runs in: the
+ * container's name for the task's tree. Without it such a call runs where the
+ * transport starts it, the image's working directory.
  *
  * @category handlers
  * @since 1.0.0-rc.1
  */
-export const sealed = (sealedTo: string) =>
+export const sealed = (sealedTo: string, options?: { readonly cwd?: string | undefined }) =>
 (
   input: Input
 ): Effect.Effect<Output, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
-  input.container === sealedTo ? run(input) : Effect.fail(outsideContainer(sealedTo, input.container))
+  input.container !== undefined && input.container !== sealedTo
+    ? Effect.fail(outsideContainer(sealedTo, input.container))
+    : run({
+      ...input,
+      container: sealedTo,
+      ...(input.cwd === undefined && options?.cwd !== undefined ? { cwd: options.cwd } : {})
+    })

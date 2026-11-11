@@ -4,6 +4,12 @@
 
 ### Added
 
+- `Read.Batched` is a wire contract for a filesystem whose every call is a
+  network round trip. Over one, `read` and `ls` take one call, and `edit`,
+  `write`, and `apply_patch` take two (a snapshot, then a commit that refuses
+  the whole batch with `no_match` when any file changed since the snapshot),
+  where the cooperative lock protocol took up to ten. Ordinary and versioned
+  hosts make the same calls as before.
 - `RemoteSearch` answers `grep` and `glob` for a tree on another machine in two
   round trips: the machine's `find` lists the root and `tar` returns its
   `.gitignore` files, then `tar` returns the files the search reads, and

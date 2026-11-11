@@ -30,8 +30,9 @@ import type * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder"
 import * as MemorySource from "@smthrs/memory/Source"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
+import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
-import type * as ModelRequest from "@smthrs/model/ModelRequest"
+import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
@@ -45,8 +46,10 @@ import type * as AgentAction from "../src/AgentAction.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import { callId } from "../src/internal/CallIdentity.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
+import * as SeatResolver from "../src/SeatResolver.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -442,7 +445,7 @@ describe("the contract profile", () => {
     ContextWindow.render(CellTurn.teach(ContextWindow.empty("test-model"), [], undefined, undefined, profile))
       .system[0]!.text
 
-  const run = (declared: Pick<RunOptions, "profile" | "repeatCap" | "narrowingCap">) => {
+  const run = (declared: Pick<RunOptions, "profile" | "repeatCap" | "narrowingCap" | "environment">) => {
     const requests: Array<ModelRequest.ModelRequest> = []
     return drive(
       collect({
@@ -482,6 +485,20 @@ describe("the contract profile", () => {
         expect(system).toContain(Checkpointed.unpinnedFact)
         expect(system.join("\n")).toContain("- History:")
       }
+    }
+  })
+
+  it("states what the host declares about the checkout every frame, and nothing it did not", async () => {
+    const silent = await run({})
+    for (const system of silent.systems) {
+      expect(system.join("\n")).not.toContain("holds a later fix")
+      expect(system.join("\n")).not.toContain("- Locale:")
+    }
+    const declared = await run({ environment: { noLaterCommits: true, locale: "C.UTF-8" } })
+    expect(declared.systems).toHaveLength(2)
+    for (const system of declared.systems) {
+      expect(system.join("\n")).toContain("no branch, tag, stash or reflog here holds a later fix")
+      expect(system.join("\n")).toContain("- Locale: C.UTF-8")
     }
   })
 
@@ -784,6 +801,233 @@ ctx.done(String(answer))`
     expect(JSON.stringify(requests)).toContain("docs/summarise")
     expect(rendered).toEqual(["Summarise it."])
     expect(refusals(settled)).toEqual([])
+  })
+})
+
+describe("markdown children run as nested runs of the same loop", () => {
+  const worker = descriptor("worker", { markdown: true })
+  /** The worker's rendered body: the one text that tells a child's request from its caller's. */
+  const childTask = "CHILD-TASK: count the files."
+  const call = `const answer = await ctx.call("worker", { args: "count" })
+ctx.done(typeof answer === "string" ? "child said " + answer : JSON.stringify(answer))`
+
+  interface Observed {
+    readonly child: Agent.Child
+    readonly event: AgentEvent.AgentEvent
+  }
+
+  const isChild = (request: ModelRequest.ModelRequest): boolean =>
+    systemTexts(request).some((text) => text.includes(childTask))
+
+  /** A seat for each declared child model, each recording what it was asked. */
+  const childSeats = (asked: Array<{ readonly seat: string; readonly request: ModelRequest.ModelRequest }>) =>
+    SeatResolver.make({
+      resolve: (id) =>
+        Effect.succeed(Seat.make({
+          id,
+          modelId: id.split(":")[1]!,
+          model: Model.make({
+            stream: (request) => {
+              asked.push({ seat: id, request })
+              return scripted([`ctx.done("from ${id}")`], []).stream(request)
+            }
+          }),
+          route,
+          contextWindowTokens: 0
+        }))
+    })
+
+  /**
+   * Runs one caller whose cell calls `worker`, routing every request the child
+   * makes to `child` and every other to the caller's script.
+   */
+  const nested = async (declared: {
+    readonly child: ReadonlyArray<string> | Model.Model
+    readonly entries?: ReadonlyArray<Descriptor.FlowDescriptor> | undefined
+    readonly parent?: ReadonlyArray<string> | undefined
+    readonly maxFrames?: number | undefined
+    readonly modelParams?: ModelRequest.GenerationParams | undefined
+    readonly self?: string | undefined
+    readonly seats?: SeatResolver.Service | undefined
+    readonly envelope?: ReadonlyArray<Capability.CapabilityPattern> | undefined
+  }) => {
+    const requests = { parent: [] as Array<ModelRequest.ModelRequest>, child: [] as Array<ModelRequest.ModelRequest> }
+    const observed: Array<Observed> = []
+    const caller = scripted(declared.parent ?? [call], requests.parent)
+    const child = Array.isArray(declared.child)
+      ? scripted(declared.child, requests.child)
+      : declared.child as Model.Model
+    const outcome = await drive(
+      collect({
+        registry: registryOf(declared.entries ?? [worker], { worker: childTask }),
+        model: Model.make({ stream: (request) => (isChild(request) ? child : caller).stream(request) }),
+        capabilityEnvelope: declared.envelope ?? [],
+        maxFrames: declared.maxFrames ?? 1,
+        modelParams: declared.modelParams,
+        children: {
+          flows: [],
+          seats: declared.seats ?? SeatResolver.makeNoop(),
+          self: declared.self,
+          observe: (child, event) => Effect.sync(() => void observed.push({ child, event }))
+        }
+      })
+    )
+    return { settled: events(outcome), requests, observed }
+  }
+
+  it("answers the call with the child's ctx.done text, from a child that sees no markdown flow", async () => {
+    const { observed, requests, settled } = await nested({ child: ["ctx.done(\"forty-two\")"] })
+
+    expect(completedOutput(settled)).toBe("child said forty-two")
+    // The caller is shown the worker; the child, one level down, is not.
+    expect(JSON.stringify(requests.parent[0])).toContain("The worker flow.")
+    expect(requests.child).toHaveLength(1)
+    expect(JSON.stringify(requests.child[0])).not.toContain("The worker flow.")
+    // The child's frames are its own: the caller's stream opened one turn.
+    expect(settled.filter((event) => event._tag === "turn-opened")).toHaveLength(1)
+    // Every child event names the call that started it.
+    const started = settled.find((event) => event._tag === "cell-call-started")
+    expect(started?._tag).toBe("cell-call-started")
+    const id = started?._tag === "cell-call-started" ? callId(started.call.identity) : ""
+    expect(observed.length).toBeGreaterThan(0)
+    for (const { child } of observed) {
+      expect(child).toEqual({ callId: id, flow: "worker", session: `session-1/child/${id}` })
+    }
+    expect(observed.map(({ event }) => event._tag)).toContain("model-settled")
+    expect(observed.map(({ event }) => event._tag)).toContain("transition-applied")
+  })
+
+  it("runs a child on the caller's seat and effort when the flow declares neither", async () => {
+    const { requests, settled } = await nested({
+      child: ["ctx.done(\"forty-two\")"],
+      // A call may name its own time beside `args`, as a long child needs.
+      parent: [`const answer = await ctx.call("worker", { args: "count", timeoutSeconds: 60 })
+ctx.done(typeof answer === "string" ? "child said " + answer : JSON.stringify(answer))`],
+      modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: "medium" })
+    })
+
+    expect(completedOutput(settled)).toBe("child said forty-two")
+    expect(requests.child.map((request) => [request.modelId, request.params.reasoningEffort])).toEqual([
+      ["test-model", "medium"]
+    ])
+  })
+
+  it("runs a child on the model and effort its own frontmatter declares", async () => {
+    const asked: Array<{ readonly seat: string; readonly request: ModelRequest.ModelRequest }> = []
+    const declaredWorker = new Descriptor.FlowDescriptor({
+      ...worker,
+      model: Option.some(["anthropic:child-model", "anthropic:child-backup"]),
+      frontmatter: { effort: "low" }
+    })
+    const { requests, settled } = await nested({
+      child: ["ctx.done(\"never asked\")"],
+      entries: [declaredWorker],
+      modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: "medium" }),
+      seats: childSeats(asked)
+    })
+
+    expect(completedOutput(settled)).toBe("child said from anthropic:child-model")
+    // The caller's model answered only the caller.
+    expect(requests.child).toEqual([])
+    expect(asked.map(({ request, seat }) => [seat, request.modelId, request.params.reasoningEffort])).toEqual([
+      ["anthropic:child-model", "child-model", "low"]
+    ])
+  })
+
+  it.each(
+    [
+      ["ends its frames without an answer", { child: [keepGoing] }, "without calling ctx.done"],
+      [
+        "fails its model call",
+        {
+          child: Model.make({
+            stream: () => Stream.fail(new ModelError.ModelError({ code: "authentication", message: "no credential" }))
+          })
+        },
+        "no credential"
+      ],
+      [
+        "declares a model the host cannot resolve",
+        {
+          child: ["ctx.done(\"never asked\")"],
+          entries: [new Descriptor.FlowDescriptor({ ...worker, model: Option.some("anthropic:missing") })],
+          seats: SeatResolver.make({
+            resolve: (id) =>
+              Effect.fail(new Seat.SeatUnresolved({ seat: id, message: `No seat is configured for ${id}` }))
+          })
+        },
+        "No seat is configured for anthropic:missing"
+      ]
+    ] as const
+  )("resolves { ok: false } for a child that %s, and the caller goes on", async (_, declared, reason) => {
+    const { settled } = await nested(declared)
+
+    const output = completedOutput(settled)
+    expect(output).toBeDefined()
+    const answer = JSON.parse(output!) as { ok: boolean; error: { code: string; message: string; hint: string } }
+    expect(answer).toMatchObject({ ok: false, error: { code: "flow_failed" } })
+    expect(answer.error.message).toContain("The child run of worker failed")
+    expect(answer.error.message).toContain(reason)
+    expect(answer.error.hint).toBe(Cell.callFailureHint.flow_failed)
+  })
+
+  it.each(
+    [
+      // What discovery gives a markdown flow whose frontmatter names no `capabilities:`.
+      ["admits", "*", "*", "**", "child said forty-two"],
+      ["refuses", "*", "fs:read", "**", "needs *, which is outside this run's capability envelope"],
+      // Neither one capability nor a pattern: nothing can cover it.
+      ["refuses", "bogus", "*", "**", "needs bogus, which is outside this run's capability envelope"]
+    ] as const
+  )(
+    "%s a child that declares %s under a %s:%s envelope",
+    async (verdict, declared, action, resource, expected) => {
+      const { requests, settled } = await nested({
+        child: ["ctx.done(\"forty-two\")"],
+        entries: [new Descriptor.FlowDescriptor({ ...worker, capabilities: [declared] })],
+        envelope: [Schema.decodeUnknownSync(Capability.CapabilityPattern)({ action, resource })]
+      })
+
+      expect(completedOutput(settled)).toContain(expected)
+      expect(requests.child).toHaveLength(verdict === "admits" ? 1 : 0)
+    }
+  )
+
+  it("hides only the run's own markdown flow: a module flow of the same name is still offered", async () => {
+    const { requests } = await nested({
+      child: [complete],
+      entries: [descriptor("root")],
+      parent: [complete],
+      self: "root"
+    })
+
+    expect(JSON.stringify(requests.parent[0])).toContain("The root flow.")
+  })
+
+  it("never offers a run itself: its catalog is unchanged when it is the only markdown flow", async () => {
+    const root = descriptor("root", { markdown: true })
+    const plain: Array<ModelRequest.ModelRequest> = []
+    events(
+      await drive(collect({
+        registry: registryOf([root], { root: "Do the root task." }),
+        model: scripted([complete], plain),
+        capabilityEnvelope: [],
+        maxFrames: 1
+      }))
+    )
+    const { requests, settled } = await nested({
+      child: [complete],
+      entries: [root],
+      parent: [`const self = await ctx.call("root", { args: "" })
+ctx.done(JSON.stringify(self))`],
+      self: "root"
+    })
+
+    // Byte for byte the request a host with no children sends.
+    expect(JSON.stringify(requests.parent[0])).toEqual(JSON.stringify(plain[0]))
+    // A call to itself is refused as a flow it was never shown.
+    expect(JSON.parse(completedOutput(settled)!)).toMatchObject({ ok: false, error: { code: "unknown_flow" } })
+    expect(requests.child).toEqual([])
   })
 })
 

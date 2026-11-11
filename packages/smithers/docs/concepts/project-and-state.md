@@ -79,6 +79,14 @@ discovery reports one `retired_root` warning, which `smthrs flow list` prints:
 unreadable root or a malformed entry, is a startup failure rather than a
 silently empty catalog.
 
+A run the CLI starts can call every other markdown flow in `.smithers/flows/`
+as a child agent: `ctx.call("worker", { args: "..." })` runs that flow on the
+same agent loop, on the caller's seat unless the flow names a `model:`, with
+the caller's flows and container seal, and answers with the child's
+`ctx.done` text. A run is never offered its own flow. The child's frames and
+tokens are journaled in the run's control journal under `control.child.*`. See
+[Delegate to child agents](../../agent/docs/guides/subagents.md).
+
 ## Smithers 0.x state beside a project
 
 rc.0 never loads a 0.x run database. It detects one so it can say so once
@@ -124,8 +132,9 @@ Anything outside it is not read, including the 0.x `SMITHERS_HOME`,
 | `SMITHERS_SEATS` | A JSON object pinning each role seat a flow declares, such as `coding/review`, to a seat alias or an explicit `provider:model`: `{"coding/review":"sol","coding/implement":"opus"}`. The journaled seat keeps the role id. A role seat with no pin fails with `SeatUnresolved` naming this variable, and a malformed value refuses every seat. |
 | `SMITHERS_TEST_COMMAND`, `SMITHERS_TEST_CONTAINER`, `SMITHERS_TEST_CWD`, `SMITHERS_TEST_TIMEOUT_MS` | What the `test` flow runs, where, and for how long. `SMITHERS_TEST_CWD` is the repository's absolute path inside the container: checkpoints pin there, and a sealed host's file flows resolve relative paths there. |
 | `SMITHERS_SANDBOX_IMAGE` | The image a flow's `sandbox: {provider: container}` runs in, through `docker`. Unset refuses such flows. |
-| `SMITHERS_BASH_CONTAINER` | The one container `bash` and `test` may reach, through the `docker` CLI and the host's `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`. Any other `bash` call fails with `outside_container`. The file flows (`read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`) act on the container's files through the same transport, under `SMITHERS_TEST_CWD`; without it the host offers no file flow. No flow reads or writes the host's files. Unset, the CLI reaches no container. |
+| `SMITHERS_BASH_CONTAINER` | The one container `bash` and `test` may reach, through the `docker` CLI and the host's `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`. A `bash` call that names no container runs there, in `SMITHERS_TEST_CWD` when it names no `cwd`; one that names another container fails with `outside_container`. The file flows (`read`, `write`, `edit`, `apply_patch`, `ls`, `glob`, `grep`) act on the container's files through the same transport, under `SMITHERS_TEST_CWD`; without it the host offers no file flow. No flow reads or writes the host's files. Unset, the CLI reaches no container. |
 | `SMITHERS_ASKS` | `park` or `refuse`, what an in-run `ask` does. Unset is `park`: the run waits for `smthrs approvals approve`. `refuse` is for a host nobody answers, such as a benchmark or CI lane: the ask fails at once with `ApprovalUnavailable` and the run continues. Any other value refuses to start. |
+| `SMITHERS_CHECKOUT_NO_LATER_COMMITS` | `1` when you built the checkout at one commit and nothing in it is later: no branch, tag, stash or reflog entry holds a later commit. A run is then told that searching history for a later fix finds nothing. A benchmark rig that checks out a base commit sets it. Leave it unset for any other repository, where a later commit may be exactly what the task needs. Any other value refuses to start. |
 | `SMITHERS_MEMORY_DB` | Path of a separate SQLite file for the memory store. Runs that name the same file share one memory bank, and only then does the supervisor write accepted sentences to it. Without it, the bank is named after the workspace and the supervisor writes nothing. |
 | `SMITHERS_SUPERVISOR_STANCE` | `careful` or `paranoid`, the stance a judged run is taught. Unset is `careful`; any other value refuses to start. |
 | `SMITHERS_BUG_ENDPOINT` | Where `smthrs bug` posts its report. |

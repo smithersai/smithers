@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
+import * as FileMutation from "./internal/FileMutation.ts"
 import * as FsFailure from "./internal/FsFailure.ts"
 import { DEFAULT_READ_LIMIT, MAX_ENTRIES, notice } from "./internal/Text.ts"
 import * as StdError from "./StdError.ts"
@@ -158,62 +159,78 @@ export const run = Effect.fn("Ls.run")(function*(
 ): Effect.fn.Return<typeof Output.Type, StdError.StdError, FileSystem.FileSystem | Path.Path> {
   const fileSystem = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const info = yield* fileSystem.stat(input.path).pipe(
-    Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
-  )
-  if (info.type !== "Directory") {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "not_a_directory",
-        message: `Cannot list a file: ${input.path}`,
-        path: input.path
-      })
-    )
-  }
-  const names = yield* fileSystem.readDirectory(input.path).pipe(
-    Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
-  )
-  const sortedNames = [...names].sort(byText)
+  const notADirectory = new StdError.StdError({
+    code: "not_a_directory",
+    message: `Cannot list a file: ${input.path}`,
+    path: input.path
+  })
   const offset = input.offset ?? 1
   // An empty directory is not an out-of-range listing: the caller asked for
   // the first page and there is nothing on it. This matches `read`, which
   // answers an empty page for an empty file and refuses only a real overshoot.
-  if (offset > Math.max(sortedNames.length, 1)) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "offset_out_of_range",
-        message: `Entry offset ${offset} is outside ${input.path}, which has ${sortedNames.length} entries`,
-        path: input.path
-      })
+  const outOfRange = (entries: number) =>
+    offset > Math.max(entries, 1)
+      ? Effect.fail(
+        new StdError.StdError({
+          code: "offset_out_of_range",
+          message: `Entry offset ${offset} is outside ${input.path}, which has ${entries} entries`,
+          path: input.path
+        })
+      )
+      : Effect.void
+  const describe = (entry: string, directory: boolean) => ({
+    name: directory ? `${entry}/` : entry,
+    kind: directory ? "directory" as const : "file" as const
+  })
+  // A batched host lists the directory and each entry's kind in one round
+  // trip, and refuses a path that is not a directory itself.
+  const files = FileMutation.batched(fileSystem)
+  let described: ReadonlyArray<ReturnType<typeof describe>>
+  if (files !== undefined) {
+    const entries = yield* files.list(input.path).pipe(
+      Effect.mapError((error) =>
+        error.reason._tag === "BadResource"
+          ? notADirectory
+          : FsFailure.reading(input.path, `Directory not found: ${input.path}`)(error)
+      )
+    )
+    yield* outOfRange(entries.length)
+    described = entries.map((entry) => describe(entry.name, entry.directory))
+  } else {
+    const info = yield* fileSystem.stat(input.path).pipe(
+      Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
+    )
+    if (info.type !== "Directory") return yield* Effect.fail(notADirectory)
+    const names = yield* fileSystem.readDirectory(input.path).pipe(
+      Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
+    )
+    const sortedNames = [...names].sort(byText)
+    yield* outOfRange(sortedNames.length)
+    // Every entry is described before the page is cut, because the order the
+    // description promises is directories first and a kind is a stat away.
+    // Statting only the page and ordering inside it made the order local to the
+    // page: a directory `zdir/` beside a file `a.txt` came back as
+    // `[zdir/, a.txt]` unpaged and as `[a.txt]` then `[zdir/]` at `limit: 1`, so
+    // `offset` addressed a different listing at every page size and an agent
+    // paging a large directory could see one entry twice and another never.
+    //
+    // A per-entry stat can fail on a name the directory legitimately
+    // contains — a dangling symlink, or a file the guarded filesystem refuses
+    // to describe. The name is still real (readDirectory returned it), so the
+    // listing reports it as a plain entry instead of dying: one broken link in
+    // a repository root used to fail the whole `ls` and cost the agent a frame
+    // per attempt.
+    described = yield* Effect.forEach(
+      sortedNames,
+      (entry) =>
+        fileSystem.stat(path.join(input.path, entry)).pipe(
+          Effect.map((entryInfo) => describe(entry, entryInfo.type === "Directory")),
+          Effect.catch(() => Effect.succeed(describe(entry, false)))
+        ),
+      { concurrency: 16 }
     )
   }
   const limit = Math.min(input.limit ?? DEFAULT_READ_LIMIT, MAX_ENTRIES)
-  // Every entry is described before the page is cut, because the order the
-  // description promises is directories first and a kind is a stat away.
-  // Statting only the page and ordering inside it made the order local to the
-  // page: a directory `zdir/` beside a file `a.txt` came back as
-  // `[zdir/, a.txt]` unpaged and as `[a.txt]` then `[zdir/]` at `limit: 1`, so
-  // `offset` addressed a different listing at every page size and an agent
-  // paging a large directory could see one entry twice and another never.
-  //
-  // A per-entry stat can fail on a name the directory legitimately
-  // contains — a dangling symlink, or a file the guarded filesystem refuses
-  // to describe. The name is still real (readDirectory returned it), so the
-  // listing reports it as a plain entry instead of dying: one broken link in
-  // a repository root used to fail the whole `ls` and cost the agent a frame
-  // per attempt.
-  const described = yield* Effect.forEach(
-    sortedNames,
-    (entry) =>
-      fileSystem.stat(path.join(input.path, entry)).pipe(
-        Effect.map((entryInfo) => ({
-          name: entryInfo.type === "Directory" ? `${entry}/` : entry,
-          kind: entryInfo.type === "Directory" ? "directory" as const : "file" as const
-        })),
-        Effect.catch(() => Effect.succeed({ name: entry, kind: "file" as const }))
-      ),
-    { concurrency: 16 }
-  )
   const ordered = [...described].sort((left, right) =>
     left.kind === right.kind ? byText(left.name, right.name) : left.kind === "directory" ? -1 : 1
   )

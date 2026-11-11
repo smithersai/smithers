@@ -9,8 +9,17 @@
   build's module compiled once and shared by every QuickJS realm. The
   presentation realm in `@smthrs/views` compiles through it.
   `QuickJSSandbox` re-exports the same tag and helpers.
+- `CellCalls.Prompt.descriptor`: a prompt runner receives the markdown flow's
+  declaration beside the call and the rendered text, so it can read the flow's
+  `model` and frontmatter.
 
 ### Fixed
+
+- A flow that declares the whole-authority `*`, which is what discovery gives
+  a markdown flow whose frontmatter names no `capabilities:`, is callable from a
+  cell when one pattern of the run's envelope covers it, such as `*:**`. The
+  call boundary parsed every declaration as one exact capability, so such a
+  flow was refused `capability_refused` under every envelope.
 
 - A cell that recurses deeply no longer takes down the host. The QuickJS realm
   bounds its interpreter stack at 128 KiB, so the recursion raises a catchable
@@ -27,6 +36,14 @@
 
 ### Changed
 
+- A run is told that its checkout holds no later fix only where the host
+  declares it. The `workspace` contract stated "no branch, tag, stash or
+  reflog here holds a later fix" to every run, which is true of a benchmark
+  checkout built at one commit and false of a person's repository, where
+  recovering a commit from the reflog can be the task. The claim is now
+  `CellTurn.Environment.noLaterCommits`, which a host that built the checkout
+  sets; without it the History line states only what the harness itself
+  leaves in a checkout and the backwards-history advice.
 - Only the check a run declared can hold its completion. A call the cell makes
   with rule 7's `verification = { flow, input }`, that flow and that very
   input object, reaches the host as `Sandbox.Invocation.declared` and lands in

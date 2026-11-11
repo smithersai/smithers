@@ -34,13 +34,15 @@ interface Spawned {
  * script-carrying call is observed here at the spawner boundary, which is
  * exactly where the payload stops being text and becomes data.
  */
-/** Whether one spawn is the container's tree fingerprint rather than the command it brackets. */
-const isFingerprint = (spawn: Spawned | ReadonlyArray<string>): boolean =>
-  (Array.isArray(spawn) ? spawn : (spawn as Spawned).args.map(plainWord)).includes(TreeFingerprint.script())
+/** The argv with the tree-measuring wrapper (`sh -c <around> sh`) taken off: the command as it runs inside it. */
+const unwrapped = (args: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const at = args.indexOf(TreeFingerprint.around())
+  return at === -1 ? args : [...args.slice(0, at - 2), ...args.slice(at + 2)]
+}
 
-/** The spawns that ran the caller's command, with the fingerprints either side of it left out. */
+/** Every spawn as the caller's own command, with the measurement that brackets a containerised one left out. */
 const commands = (spawns: ReadonlyArray<Spawned>): ReadonlyArray<Spawned> =>
-  spawns.filter((spawn) => !isFingerprint(spawn))
+  spawns.map((spawn) => ({ ...spawn, args: [...unwrapped(spawn.args)] }))
 
 const recorder = (spawns: Array<Spawned>) =>
   Layer.mergeAll(
@@ -78,18 +80,65 @@ const recorder = (spawns: Array<Spawned>) =>
   )
 
 describe("Bash", () => {
-  it.each([undefined, "other-task"])("refuses a sealed command targeting %s before spawning", async (container) => {
+  it.each(["other-task", ""])("refuses a sealed command naming container %j before spawning", async (container) => {
     const spawns: Array<Spawned> = []
     const exit = await execute(Effect.provide(
       Effect.exit(Bash.sealed("task-1")({ mode: "unhermetic", container, command: "true" })),
-      recorder(spawns)
+      Layer.merge(recorder(spawns), Layer.succeed(Container.Container)(Container.makeCommand()))
     ))
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
       const failure = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
       expect(failure?.code).toBe("outside_container")
       expect(failure?.message).toContain("only inside container \"task-1\"")
-      expect(failure?.message).toContain(container === undefined ? "container: \"task-1\"" : "not \"other-task\"")
+      expect(failure?.message).toContain(`not "${container}"`)
+    }
+    expect(spawns).toEqual([])
+  })
+
+  it("routes a sealed command that names no container into the sealed one, never the host", async () => {
+    const spawns: Array<Spawned> = []
+    const output = await execute(Effect.provide(
+      Bash.sealed("task-1", { cwd: "/app" })({ mode: "unhermetic", command: "printf done" }),
+      Layer.merge(recorder(spawns), Layer.succeed(Container.Container)(Container.makeCommand()))
+    ))
+    expect(output.exitCode).toBe(0)
+    // Every process the call started is the transport, aimed at the container.
+    expect(spawns.length).toBeGreaterThan(0)
+    expect(spawns.every((spawn) => spawn.file === "docker" && spawn.args.map(plainWord).includes("task-1"))).toBe(true)
+    expect(commands(spawns)).toContainEqual({
+      file: "docker",
+      args: ["exec", "-w", "/app", "--", "task-1", "bash", "-lc", "printf done"],
+      stdin: undefined,
+      shell: false,
+      cwd: undefined
+    })
+  })
+
+  it("keeps the directory a sealed command names over the sealed default", async () => {
+    const spawns: Array<Spawned> = []
+    await execute(Effect.provide(
+      Bash.sealed("task-1", { cwd: "/app" })({ mode: "unhermetic", command: "true", cwd: "/srv" }),
+      Layer.merge(recorder(spawns), Layer.succeed(Container.Container)(Container.makeCommand()))
+    ))
+    expect(commands(spawns)).toContainEqual({
+      file: "docker",
+      args: ["exec", "-w", "/srv", "--", "task-1", "bash", "-lc", "true"],
+      stdin: undefined,
+      shell: false,
+      cwd: undefined
+    })
+  })
+
+  it("refuses a sealed command with no transport instead of running it on the host", async () => {
+    const spawns: Array<Spawned> = []
+    const exit = await execute(Effect.provide(
+      Effect.exit(Bash.sealed("task-1")({ mode: "unhermetic", command: "true" })),
+      recorder(spawns)
+    ))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Option.getOrUndefined(Cause.findErrorOption(exit.cause))?.code).toBe("provider_unavailable")
     }
     expect(spawns).toEqual([])
   })
@@ -1006,12 +1055,13 @@ describe("Bash", () => {
       expect(failure?.message).toBe("Command timed out: pytest")
       expect(Cause.pretty(exit.cause)).not.toContain("s3cret-value")
     }
-    expect(spawns.find((spawn) => !isFingerprint(spawn))).toContain("SMITHERS_CONTAINER_ENV_DATABASE_PASSWORD")
-    expect(spawns.find((spawn) => !isFingerprint(spawn))?.join(" ")).not.toContain("s3cret-value")
+    expect(spawns).toHaveLength(1)
+    expect(spawns[0]).toContain("SMITHERS_CONTAINER_ENV_DATABASE_PASSWORD")
+    expect(spawns[0]?.join(" ")).not.toContain("s3cret-value")
     // The value still has to reach the container, so it rides on the
     // environment of the transport process the host spawns, under a prefixed
     // name the transport itself never reads.
-    const transport = environments[spawns.findIndex((spawn) => !isFingerprint(spawn))]
+    const transport = environments[0]
     expect(transport?.["SMITHERS_CONTAINER_ENV_DATABASE_PASSWORD"]).toBe("s3cret-value")
     expect(transport?.["DATABASE_PASSWORD"]).toBeUndefined()
   })
@@ -1033,12 +1083,12 @@ describe("Bash", () => {
   })
 
   /**
-   * A spawner that answers every fingerprint from a queue and every command
-   * with exit 0, so a case states what the container's tree looked like
-   * before and after the command and nothing else.
+   * A spawner whose one process ends its standard error the way
+   * `TreeFingerprint.around` does, so a case states what the container's tree
+   * looked like before and after the command and nothing else.
    */
-  const fingerprinting = (
-    answers: Array<{ readonly exitCode?: number; readonly stdout: string }>,
+  const measuring = (
+    answer: { readonly stderr: string; readonly exitCode?: number },
     spawns: Array<Spawned>
   ) =>
     Layer.mergeAll(
@@ -1046,23 +1096,21 @@ describe("Bash", () => {
         spawn: (command) =>
           Effect.sync(() => {
             const standard = command as ChildProcess.StandardCommand
-            const spawn: Spawned = {
+            spawns.push({
               file: standard.command,
               args: [...standard.args.map(plainWord)],
               stdin: undefined,
               shell: standard.options.shell === true,
               cwd: standard.options.cwd
-            }
-            spawns.push(spawn)
-            const answer = isFingerprint(spawn) ? answers.shift() ?? { exitCode: 1, stdout: "" } : { stdout: "" }
+            })
             return makeHandle({
               pid: ProcessId(1),
               exitCode: Effect.succeed(ExitCode(answer.exitCode ?? 0)),
               isRunning: Effect.succeed(false),
               kill: () => Effect.void,
               stdin: Sink.drain,
-              stdout: Stream.make(new TextEncoder().encode(answer.stdout)),
-              stderr: Stream.empty,
+              stdout: Stream.empty,
+              stderr: Stream.make(new TextEncoder().encode(answer.stderr)),
               all: Stream.empty,
               getInputFd: () => Sink.drain,
               getOutputFd: () => Stream.empty,
@@ -1074,51 +1122,84 @@ describe("Bash", () => {
       Path.layer
     )
 
+  /** The line `around` writes for two measurements, either of which may be empty. */
+  const trailer = (before: string, after: string) => `\n${TreeFingerprint.marker} ${before}| ${after}\n`
+
   const contained = { mode: "unhermetic", container: "task-1", cwd: "/app", command: "python3 fix.py" } as const
 
-  it("measures the container's working directory either side of the command and reports a move", async () => {
+  it("measures the container's working directory either side of the command in one transport call", async () => {
     // The blindness this closes, measured 2026-09-22 on Terminal-Bench 4.0:
     // every write an agent made through `docker exec` read as an idle frame,
     // because the host's workspace walk cannot see a container's filesystem.
     const spawns: Array<Spawned> = []
     const output = await execute(Effect.provide(
       Bash.run(contained),
-      fingerprinting([{ stdout: "11 20\n2\n" }, { stdout: "99 24\n3\n" }], spawns)
+      measuring({ stderr: `warning: slow\n${trailer("11 20 2 ", "99 24 3 ")}`, exitCode: 3 }, spawns)
     ))
     expect(output.mutated).toBe(true)
-    // Both fingerprints run where the command runs: same container, same
-    // working directory, through the same transport, as a plain `sh` script.
-    const fingerprints = spawns.filter(isFingerprint)
-    expect(fingerprints).toHaveLength(2)
-    expect(fingerprints[0]?.args.map(plainWord).slice(0, 5)).toEqual(["exec", "-w", "/app", "--", "task-1"])
-    expect(fingerprints[0]?.args.map(plainWord).slice(5, 7)).toEqual(["sh", "-c"])
-    expect(spawns.map(isFingerprint)).toEqual([true, false, true])
+    // The measurement's line is the harness's, not the command's.
+    expect(output.stderr).toBe("warning: slow\n")
+    expect(output.exitCode).toBe(3)
+    // One round trip: the command runs under the measuring script, in the
+    // same container and working directory. Measured 2026-11-11 against a
+    // remote sandbox: three transport calls took 9.5 s for one `ls`.
+    expect(spawns).toHaveLength(1)
+    expect(spawns[0]?.args).toEqual([
+      "exec",
+      "-w",
+      "/app",
+      "--",
+      "task-1",
+      "sh",
+      "-c",
+      TreeFingerprint.around(),
+      "sh",
+      "bash",
+      "-lc",
+      "python3 fix.py"
+    ])
   })
 
   it("reports a tree that held still as unmoved, so a read-only container call still counts as one", async () => {
     const spawns: Array<Spawned> = []
     const output = await execute(Effect.provide(
       Bash.run(contained),
-      fingerprinting([{ stdout: "11 20\n2\n" }, { stdout: "11 20\n2\n" }], spawns)
+      measuring({ stderr: trailer("11 20 2 ", "11 20 2 ") }, spawns)
     ))
     expect(output.mutated).toBe(false)
+    expect(output.stderr).toBe("")
   })
 
   it("reports nothing when the tree could not be measured, never an unchanged tree", async () => {
-    const unmeasured = async (answers: Array<{ readonly exitCode?: number; readonly stdout: string }>) => {
+    const unmeasured = async (stderr: string) => {
       const spawns: Array<Spawned> = []
-      const output = await execute(Effect.provide(Bash.run(contained), fingerprinting(answers, spawns)))
+      const output = await execute(Effect.provide(Bash.run(contained), measuring({ stderr }, spawns)))
       expect(output.exitCode).toBe(0)
-      return output.mutated
+      return output
     }
-    // A container without `find` or `stat -c`, or a shell that fails.
-    expect(await unmeasured([{ exitCode: 127, stdout: "" }, { stdout: "11 20\n2\n" }])).toBeUndefined()
-    expect(await unmeasured([{ stdout: "11 20\n2\n" }, { exitCode: 1, stdout: "" }])).toBeUndefined()
+    // A container without `timeout`, `find` or `stat -c`: that side is empty.
+    expect((await unmeasured(trailer("", "11 20 2 "))).mutated).toBeUndefined()
+    expect((await unmeasured(trailer("11 20 2 ", ""))).mutated).toBeUndefined()
     // A listing that reached the bound covers a prefix, and a prefix cannot
     // say that the tree held still.
-    expect(await unmeasured([{ stdout: `11 20\n${TreeFingerprint.maxPaths + 1}\n` }, { stdout: "11 20\n3\n" }]))
-      .toBeUndefined()
-    expect(await unmeasured([{ stdout: "garbage" }, { stdout: "11 20\n2\n" }])).toBeUndefined()
+    expect((await unmeasured(trailer(`11 20 ${TreeFingerprint.maxPaths + 1} `, "11 20 3 "))).mutated).toBeUndefined()
+    expect((await unmeasured(trailer("garbage ", "11 20 2 "))).mutated).toBeUndefined()
+    // A command that was killed, or whose shell never ran the script, ends
+    // its standard error with no line at all; what it wrote is kept whole.
+    const killed = await unmeasured("Killed\n")
+    expect(killed.mutated).toBeUndefined()
+    expect(killed.stderr).toBe("Killed\n")
+  })
+
+  it("reads only the last line as the measurement, so a command cannot print its own", async () => {
+    const spawns: Array<Spawned> = []
+    const forged = `${TreeFingerprint.marker} 1 1 1 | 1 1 1 \n`
+    const output = await execute(Effect.provide(
+      Bash.run(contained),
+      measuring({ stderr: `${forged}${trailer("11 20 2 ", "99 24 3 ")}` }, spawns)
+    ))
+    expect(output.mutated).toBe(true)
+    expect(output.stderr).toBe(forged)
   })
 
   it("measures nothing for a command that runs on the host", async () => {
@@ -1127,10 +1208,12 @@ describe("Bash", () => {
     const spawns: Array<Spawned> = []
     const output = await execute(Effect.provide(
       Bash.run({ mode: "unhermetic", command: "true" }),
-      fingerprinting([{ stdout: "11 20\n2\n" }, { stdout: "99 24\n3\n" }], spawns)
+      measuring({ stderr: trailer("11 20 2 ", "99 24 3 ") }, spawns)
     ))
     expect(output.mutated).toBeUndefined()
-    expect(spawns.filter(isFingerprint)).toHaveLength(0)
+    // A host command runs as itself, and what it writes is its own.
+    expect(spawns.some((spawn) => spawn.args.includes(TreeFingerprint.around()))).toBe(false)
+    expect(output.stderr).toBe(trailer("11 20 2 ", "99 24 3 "))
   })
 
   it("refuses a container when the host binds no transport", async () => {
@@ -1240,7 +1323,7 @@ describe("Bash", () => {
 })
 
 describe("Bash in a registered terminal (T-TRM-05)", () => {
-  it("forwards a container transport's own environment to its tree fingerprints", async () => {
+  it("forwards a container transport's own environment to the one process that runs and measures the command", async () => {
     const environments: Array<Record<string, string | undefined> | undefined> = []
     const spawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.makeNoop({
       spawn: (command) =>
@@ -1273,8 +1356,10 @@ describe("Bash in a registered terminal (T-TRM-05)", () => {
       Bash.run({ mode: "unhermetic", container: "task-1", command: "true" }),
       Layer.mergeAll(spawner, transport, Path.layer)
     ))
-    expect(environments).toHaveLength(3)
-    for (const env of environments) expect(env).toMatchObject({ DOCKER_HOST: "unix:///run/docker.sock" })
+    // The measurements ride in the command's own transport call, so there
+    // is no second process that could miss the transport's environment.
+    expect(environments).toHaveLength(1)
+    expect(environments[0]).toMatchObject({ DOCKER_HOST: "unix:///run/docker.sock" })
   })
 
   const ok: Bash.Output = {

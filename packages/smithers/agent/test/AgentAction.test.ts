@@ -18,6 +18,8 @@ import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import { Journal, JournalEvent } from "@smthrs/journal"
+import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import * as Jj from "@smthrs/kernel/Jj"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
@@ -370,6 +372,83 @@ describe("AgentAction.make", () => {
     expect(rendered).toEqual(["Review diff"])
     expect(result).toEqual({ approved: true, issues: [] })
   })
+
+  it.each([true, false])(
+    "runs a discovered markdown child as a nested run of the step's loop, journaled under control.child.* when a journal is bound: %s",
+    async (journaled) => {
+      const childTask = "CHILD-REVIEW: list what the diff breaks."
+      const descriptor = new Descriptor.FlowDescriptor({
+        name: "review",
+        description: "Review a diff.",
+        body: new Descriptor.BodyRefMarkdown({ path: "/flows/review/flow.md", baseDirectory: "/flows/review" }),
+        input: new Descriptor.SchemaRefNone(),
+        output: new Descriptor.SchemaRefNone(),
+        model: Option.none(),
+        flows: [],
+        capabilities: [],
+        effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+        placement: Option.none(),
+        modelInvocable: true,
+        path: "/flows/review",
+        frontmatter: {},
+        provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
+      })
+      const step: Array<string> = []
+      const child: Array<string> = []
+      const caller = scripted(
+        [`const answer = await ctx.call("review", { args: "diff" }); ctx.done(String(answer))`],
+        step
+      )
+      const reviewer = scripted([answering(JSON.stringify({ approved: false, issues: ["from the child"] }))], child)
+      const outcome = await Effect.runPromise(
+        Effect.gen(function*() {
+          const answer = yield* ReviewFlow.execute({ diff: "diff" }, { executionId: "nested-child" })
+          const journal = yield* Effect.serviceOption(Journal.Journal)
+          if (Option.isNone(journal)) return { answer, entries: [] }
+          yield* journal.value.flush
+          const page = yield* journal.value.entries({ runId: JournalEvent.RunId.make("nested-child"), limit: 1_000 })
+          return { answer, entries: page.entries }
+        }).pipe(
+          Effect.provide(stack(
+            Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)),
+            {
+              ...host,
+              // A host's own flows reach the child; this one has none to offer.
+              ...(journaled ? {} : { flows: [] }),
+              registry: Registry.makeNoop({
+                visible: () => Effect.succeed([descriptor]),
+                getOption: () => Effect.succeed(Option.some(descriptor)),
+                runPrompt: (_name, input) => Effect.succeed(`${childTask} ${input.args}`)
+              }),
+              markdownChildren: true
+            },
+            Model.make({
+              stream: (request) =>
+                (request.system.some((part) => part.text.includes(childTask)) ? reviewer : caller).stream(request)
+            })
+          )),
+          (effect) => journaled ? Effect.provide(effect, TestJournal.layer()) : effect
+        )
+      )
+
+      expect(outcome.answer).toEqual({ approved: false, issues: ["from the child"] })
+      expect(step).toHaveLength(1)
+      expect(child).toHaveLength(1)
+      expect(child[0]).toContain(`${childTask} diff`)
+      const records = outcome.entries.filter((entry) => entry.eventType.startsWith("control.child."))
+      // With no journal bound the child runs all the same and journals nothing.
+      if (!journaled) {
+        expect(records).toEqual([])
+        return
+      }
+      expect(records.map((entry) => entry.eventType)).toContain("control.child.model-settled")
+      for (const entry of records) {
+        expect(entry.payload).toMatchObject({
+          child: { flow: "review", callId: expect.stringMatching(/^cell-call-v1:/) }
+        })
+      }
+    }
+  )
 
   it("runs the cell loop as one step and yields the schema-typed answer", async () => {
     const requests: Array<string> = []

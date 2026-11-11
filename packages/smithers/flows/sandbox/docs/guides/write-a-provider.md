@@ -162,6 +162,15 @@ An override is installed through the workdir resolver rather than beside it, so
 your operation receives the already rooted path and does not re-implement the
 rule.
 
+Each override is still one call to your machine, and the standard file flows
+make several per edit. When each call is a network round trip, also implement
+`@smthrs/std`'s `Read.Batched` contract under that symbol in `Session.files`:
+`snapshot`, `commit`, and `list`, each one call. The flows then take one or
+two calls each. The Linux sessions in this package implement it as three shell
+scripts; read `src/internal/linuxBatch.ts` before writing your own. The
+contract's paths are not rooted for you, so root them with the session's
+workdir.
+
 ## Declare capabilities when you project the session
 
 `Sandbox.commandProvider` projects a lifecycle provider down to the narrow

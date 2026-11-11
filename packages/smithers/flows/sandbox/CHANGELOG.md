@@ -35,6 +35,10 @@
 
 ### Added
 
+- The Linux sessions (`ContainerSandbox`, `ContainerSandbox.existing`, `MicrosandboxSandbox`, and `CommandSandbox` on
+  Linux) implement `@smthrs/std`'s `Read.Batched` calls as three shell scripts, so the standard file flows take one
+  transport call for `read` and `ls` and two for `edit`, `write`, and `apply_patch` (measured before: two, three, and
+  eight to ten). `Sandbox.fileSystem` attaches a symbol-keyed member of `Session.files` non-enumerably.
 - `ContainerSandbox.existing` serves the session contract over a container something else runs, through a transport
   of `@smthrs/std/Container`'s shape, so `Sandbox.hostContext` gives that container's files the same `FileSystem` a
   provisioned machine's have. It prepares nothing, declares no `kill`, and brings file bytes back as base64.

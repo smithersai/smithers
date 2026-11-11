@@ -21,6 +21,7 @@
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
+import type * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as FileMutation from "./internal/FileMutation.ts"
@@ -28,7 +29,13 @@ import * as FsFailure from "./internal/FsFailure.ts"
 import { DEFAULT_READ_LIMIT, MAX_LINE_CHARS, MAX_OUTPUT_BYTES, notice, slice, truncateBytes } from "./internal/Text.ts"
 import * as StdError from "./StdError.ts"
 
-export { Preconditions, ReadSession, type VersionedFileSystem } from "./internal/FileMutation.ts"
+export {
+  Batched,
+  type BatchedFileSystem,
+  Preconditions,
+  ReadSession,
+  type VersionedFileSystem
+} from "./internal/FileMutation.ts"
 
 /**
  * Registry name for the read flow.
@@ -261,15 +268,19 @@ export const run = Effect.fn("Read.run")(function*(
   input: typeof Input.Type
 ): Effect.fn.Return<typeof Output.Type, StdError.StdError, FileSystem.FileSystem> {
   const fileSystem = yield* FileSystem.FileSystem
-  const info = yield* fileSystem.stat(input.path).pipe(
-    Effect.catchTag(
-      "PlatformError",
-      (error) =>
-        error.reason._tag === "NotFound"
-          ? missingFile(fileSystem, input.path)
-          : Effect.fail(fileError(input.path)(error))
-    )
-  )
+  const statFailure = (error: PlatformError.PlatformError) =>
+    error.reason._tag === "NotFound"
+      ? missingFile(fileSystem, input.path)
+      : Effect.fail(fileError(input.path)(error))
+  // A batched host describes and reads the file in one round trip.
+  const files = FileMutation.batched(fileSystem)
+  const seen = files === undefined ? undefined : yield* files.snapshot([input.path], {
+    read: [input.path],
+    maxBytes: MAX_READ_FILE_BYTES
+  }).pipe(Effect.map((snapshots) => snapshots[0]!), Effect.catch(statFailure))
+  const info = seen === undefined
+    ? yield* fileSystem.stat(input.path).pipe(Effect.catch(statFailure))
+    : yield* Effect.fromResult(seen.info).pipe(Effect.catch(statFailure))
   if (info.type === "Directory") {
     return yield* Effect.fail(
       new StdError.StdError({
@@ -299,7 +310,10 @@ export const run = Effect.fn("Read.run")(function*(
       })
     )
   }
-  const bytes = yield* fileSystem.readFile(input.path).pipe(Effect.mapError(fileError(input.path)))
+  // The snapshot read every regular file within the limit.
+  const bytes = yield* (seen === undefined ? fileSystem.readFile(input.path) : Effect.fromResult(seen.content!)).pipe(
+    Effect.mapError(fileError(input.path))
+  )
   if (bytes.includes(0)) {
     return yield* Effect.fail(
       new StdError.StdError({

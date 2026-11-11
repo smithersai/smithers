@@ -108,10 +108,11 @@ import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
-import { Agent, type Options as AgentOptions } from "./Agent.ts"
+import { Agent, type Child, type Options as AgentOptions } from "./Agent.ts"
 import * as Budget from "./Budget.ts"
 import { agentOutcome } from "./internal/AgentOutcome.ts"
 import { callId } from "./internal/CallIdentity.ts"
+import { declaredEffort } from "./internal/Effort.ts"
 import { failureJson } from "./internal/FailureJson.ts"
 import { failureSummary } from "./internal/FailureSummary.ts"
 import { latestPendingApproval } from "./internal/PendingApproval.ts"
@@ -260,6 +261,20 @@ export interface Options {
   readonly flows?: ReadonlyArray<FlowBinding.Source> | undefined
   /** Runs rendered markdown children; the host closes over their runtime dependencies. */
   readonly promptRunner?: CellCalls.PromptRunner | undefined
+  /**
+   * Runs each markdown flow a cell calls as a nested run of the same agent
+   * loop, through `Agent.Options.children`. Off by default; `promptRunner`
+   * wins when both are set.
+   *
+   * A child is offered the run's own host flows (`flows`, or the sandbox
+   * machine's) without `wait` and `ask`, resolves its declared `model:`
+   * through `SeatResolver` and otherwise runs on the run's seat, and is
+   * journaled into the run's trail under `control.child.*` (see
+   * {@link childTracer}). A markdown run is never offered itself.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly markdownChildren?: boolean | undefined
   /** The explicit sandbox budget every cell runs under. Never unlimited. */
   readonly limits: Sandbox.Limits
   /** Required quota park/retry policy for every model call in the run. */
@@ -270,6 +285,13 @@ export interface Options {
   readonly budget: (envelope: Envelope) => Layer.Layer<Budget.Budget, Budget.ConfigurationError>
   /** Stable system teaching placed ahead of the cell contract. */
   readonly system?: ReadonlyArray<string> | undefined
+  /**
+   * What the host measured or declares about the checkout and container every
+   * run of this session works in. Forwarded to `Agent.Options.environment`.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly environment?: AgentOptions["environment"]
   readonly maxFrames?: number | undefined
   /**
    * Consecutive read-only frames a task run may spend before the controller
@@ -1709,6 +1731,90 @@ export const tracer = (): (event: AgentEvent.AgentEvent) => ReturnType<typeof tr
 }
 
 /**
+ * The prefix a markdown child's records are journaled under, in place of
+ * `control.agent.`.
+ *
+ * A child's events are the events of a whole agent run, so they cannot share
+ * the caller's prefix: every reader of `control.agent.*` folds `turn-opened`
+ * into the caller's frames, and a resumed run validates every record under
+ * it. `control.child.model-settled` is the child's own
+ * `control.agent.model-settled`, with the same payload plus `child`.
+ *
+ * @category projections
+ * @since 1.0.0-rc.17
+ */
+export const childEventPrefix = "control.child."
+
+/**
+ * One journal record of a markdown child's event; see {@link childTracer}.
+ *
+ * @category projections
+ * @since 1.0.0-rc.17
+ */
+export interface ChildRecord {
+  readonly sourceSeq: JournalEvent.SourceSeq
+  readonly eventType: string
+  readonly payload: Record<string, unknown>
+}
+
+/**
+ * Projects the events of a run's markdown children into records of their own.
+ *
+ * Each child is projected as {@link tracer} projects a run, under its own frame
+ * clock, and its record type takes {@link childEventPrefix}. Every payload
+ * gains `child: { callId, flow, scope }`. `callId` is the caller's cell call,
+ * the value that call's `control.agent.cell-call-started` and
+ * `control.agent.cell-call-settled` records carry, so a reader files a
+ * child's frames and their `usage` under the call that started them. `scope`
+ * is the child's session, under the name the model records give it: the
+ * journal redacts a field named `session` as a credential.
+ *
+ * The identity is {@link traceIdentity} over the child's own coordinates with
+ * `child` in its material. A child that runs again after a crash regenerates
+ * its records and the unique index refuses them, and no child record takes an
+ * ordinal of the caller's.
+ *
+ * @category projections
+ * @since 1.0.0-rc.17
+ */
+export const childTracer = (): (child: Child, event: AgentEvent.AgentEvent) => ChildRecord | undefined => {
+  const positions = new Map<
+    string,
+    { frame: number; ordinal: number; cell: string; readonly project: ReturnType<typeof tracer> }
+  >()
+  return (child, event) => {
+    let position = positions.get(child.callId)
+    if (position === undefined) {
+      position = { frame: -1, ordinal: 0, cell: "", project: tracer() }
+      positions.set(child.callId, position)
+    }
+    if (event._tag === "turn-opened") {
+      position.frame += 1
+      position.ordinal = 0
+      position.cell = ""
+    }
+    if (event._tag === "cell-produced") position.cell = event.cell.digest
+    const projected = position.project(event)
+    if (projected === undefined) return undefined
+    const payload: Record<string, unknown> = {
+      ...JSON.parse(JSON.stringify(projected.payload)) as Record<string, unknown>,
+      child: { callId: child.callId, flow: child.flow, scope: child.session }
+    }
+    const eventType = `${childEventPrefix}${projected.eventType.slice(Transcript.controlEventPrefix.length)}`
+    const positioned = !unordered.has(projected.eventType)
+    const sourceSeq = traceIdentity(
+      position.frame,
+      positioned ? position.ordinal : 0,
+      position.cell,
+      eventType,
+      payload
+    )
+    if (positioned) position.ordinal += 1
+    return { sourceSeq, eventType, payload }
+  }
+}
+
+/**
  * Resolves the reasoning effort one run's model calls request.
  *
  * The flow's `effort:` frontmatter wins, then the host's configured default,
@@ -1719,13 +1825,7 @@ export const tracer = (): (event: AgentEvent.AgentEvent) => ReturnType<typeof tr
 const effortFor = (
   descriptor: { readonly frontmatter: Readonly<Record<string, unknown>> },
   host: ModelRequest.ReasoningEffort | undefined
-): ModelRequest.ReasoningEffort => {
-  const declared = descriptor.frontmatter["effort"]
-  if (typeof declared === "string" && Schema.is(ModelRequest.ReasoningEffort)(declared)) {
-    return declared
-  }
-  return host ?? "high"
-}
+): ModelRequest.ReasoningEffort => declaredEffort(descriptor) ?? host ?? "high"
 
 /** The envelope an in-run ask approval binds to: the ask flow, nothing else. */
 const askEnvelope: Envelope = { capabilities: [], flows: ["ask"], budget: {} }
@@ -4100,6 +4200,28 @@ export const make = (
           })
         })
         const system = freshContext ? [] : [...(options.system ?? []), ...instructions, ...(routing?.variant ?? [])]
+        const hostFlows = sandboxed?.flows ?? options.flows ?? []
+        // A child is offered the run's host flows and not `wait` or `ask`:
+        // either would park this run on the child's behalf. Its records join
+        // this run's trail through the same buffer and pump.
+        const childRecord = childTracer()
+        const children = options.markdownChildren !== true ? undefined : {
+          flows: hostFlows,
+          seats,
+          self: descriptor.name,
+          observe: (child: Child, event: AgentEvent.AgentEvent) =>
+            Effect.flatMap(Clock.currentTimeMillis, (at) =>
+              Effect.sync(() => {
+                const row = childRecord(child, event)
+                if (row !== undefined) {
+                  pending.push({
+                    sourceSeq: row.sourceSeq,
+                    eventType: row.eventType,
+                    payload: { ...row.payload, at, journalVersion: Transcript.journalVersion }
+                  })
+                }
+              }))
+        }
         const outcome = yield* agent.run({
           memory,
           instructions: freshContext ? [] : options.workspaceInstructions,
@@ -4116,10 +4238,12 @@ export const make = (
           // The host's own system text stays first; a routed run's variant
           // follows it.
           system,
+          environment: options.environment,
           registry,
           promptRunner: options.promptRunner,
+          children,
           flows: [
-            ...(sandboxed?.flows ?? options.flows ?? []),
+            ...hostFlows,
             StandardFlows.clock(engineServices),
             StandardFlows.approval(options.asks === "refuse" ? StandardFlows.askerNoop() : asker(payload.runId))
           ],

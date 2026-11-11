@@ -109,8 +109,16 @@ Container images must provide Linux GNU or BusyBox utilities, including
 and ownership, and supports exclusive `wx` writes through a completed sibling
 file and an atomic hard link. Existing files, symlinks, directories, and FIFOs
 are never overwritten by an exclusive write. Ordinary writes support `w`
-without an explicit mode; other flags are refused. Standard write and edit
-tools use these operations to replace files while preserving their metadata.
+without an explicit mode; other flags are refused.
+
+The Linux sessions (`ContainerSandbox`, `ContainerSandbox.existing`,
+`MicrosandboxSandbox`, and `CommandSandbox` on a Linux machine) also carry
+`@smthrs/std`'s batched file calls, so the standard file flows cost one round
+trip for `read` and `ls` and two for `edit`, `write`, and `apply_patch`. A
+commit compares each file's version, a checksum among them, with the one its
+snapshot saw and refuses the batch if any changed. It then renames each staged
+file into place with the mode and owner of the file it replaces. The guest also
+needs `readlink -f`, `head -c`, `cksum`, `base64`, `mv -T`, and `find -L`.
 
 `Sandbox.run` holds one machine for one unit of work and returns the body's
 result with the `Work` its checkout gained, a git diff from a base the host can

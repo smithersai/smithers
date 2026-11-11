@@ -220,9 +220,10 @@ const securityReview = Smithers.SecurityReview({
       id: "container-seal",
       title: "A host sealed to one container runs nothing on the host itself",
       threat:
-        "An agent confined to a benchmark or tenant container runs a command on the host by omitting or spoofing the container name.",
+        "An agent confined to a benchmark or tenant container runs a command on the host, or in another container, by omitting or spoofing the container name.",
       lookFor: [
-        "Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.",
+        "Bash.sealed running a call anywhere but its one container: a call that names no container must be routed into the sealed container, never spawned on the host, and an empty or different name must be refused.",
+        "TestRun admitting a call whose container is undefined, empty, or a different name.",
         "Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout."
       ],
       paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.ts", "src/Container.ts"]

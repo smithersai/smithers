@@ -38,6 +38,12 @@ the layer changes. When the files live on another machine, such as a container
 or a sandbox machine, `RemoteSearch.make` over that machine's spawner and `Path`
 answers in two round trips where the portable peer would ask once per file.
 
+The other file flows count round trips too. A filesystem whose every call
+crosses a network can offer `Read.Batched` calls, and then `read` and `ls` take
+one round trip, and `edit`, `write`, and `apply_patch` take two whatever the
+number of files. `@smthrs/sandbox`'s Linux sessions offer them. See
+[Concurrent changes](./read-and-edit-a-file.md#concurrent-changes).
+
 A host that cannot serve a service binds its refusal layer instead of leaving it
 out, so the failure names the missing service rather than a missing context:
 

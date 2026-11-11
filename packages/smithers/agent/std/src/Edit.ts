@@ -22,6 +22,7 @@
 
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
+import type * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as Diagnostics from "./internal/Diagnostics.ts"
@@ -258,12 +259,7 @@ export const run = Effect.fn("Edit.run")(function*(
   }
   const edited = yield* Effect.scoped(Effect.gen(function*() {
     const mutation = yield* FileMutation.acquire(fileSystem, [input.path])
-    const bytes = yield* mutation.read(
-      input.path,
-      fileSystem.readFile(input.path).pipe(
-        Effect.mapError(FsFailure.reading(input.path, `File not found: ${input.path}`))
-      )
-    )
+    const bytes = yield* mutation.read(input.path, FsFailure.reading(input.path, `File not found: ${input.path}`))
     if (bytes.includes(0)) {
       return yield* Effect.fail(
         new StdError.StdError({
@@ -323,29 +319,28 @@ export const run = Effect.fn("Edit.run")(function*(
     }
     replaced += content.slice(cursor)
     const written = byteOrderMark(bytes) + replaced
+    const writeFailure = (error: PlatformError.PlatformError): StdError.StdError =>
+      error.reason.method === "chmod"
+        ? new StdError.StdError({
+          code: "command_failed",
+          message: `Could not preserve the mode of ${input.path} before replacement by chmod`,
+          path: input.path
+        })
+        : FsFailure.denied(input.path, () =>
+          new StdError.StdError({
+            code: "command_failed",
+            message: `Could not write ${input.path}`,
+            path: input.path
+          }))(
+            error
+          )
     yield* mutation.commit(
       [{
         path: input.path,
         content: new TextEncoder().encode(written)
       }],
-      Preserve.writeFileString(fileSystem, input.path, written).pipe(
-        Effect.mapError((error) =>
-          error.reason.method === "chmod"
-            ? new StdError.StdError({
-              code: "command_failed",
-              message: `Could not preserve the mode of ${input.path} before replacement by chmod`,
-              path: input.path
-            })
-            : FsFailure.denied(input.path, () =>
-              new StdError.StdError({
-                code: "command_failed",
-                message: `Could not write ${input.path}`,
-                path: input.path
-              }))(
-                error
-              )
-        )
-      )
+      Preserve.writeFileString(fileSystem, input.path, written).pipe(Effect.mapError(writeFailure)),
+      writeFailure
     )
     // Synced under the file lock, so a later edit's text never reaches the
     // server before this one's.

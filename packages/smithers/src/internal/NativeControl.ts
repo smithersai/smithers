@@ -132,6 +132,7 @@ import { ModuleOwner } from "./ModuleOwner.ts"
 import {
   askPolicy,
   cellLimits,
+  checkoutFacts,
   checkpointStore,
   layerSeatCatalog,
   layerSeatEvaluator,
@@ -1784,6 +1785,8 @@ export const make = (
           ...(native.shellTerminal === "agent" && terminalPort === undefined ? [] : [
             StandardFlows.shell(HostLanguageServers.bind(transportShell, languageServer), container, {
               sealedTo,
+              // The same directory the sealed file flows resolve under.
+              sealedCwd: sealedTo === undefined ? undefined : checkpointStore(environment, root).cwd,
               terminal: native.shellTerminal,
               terminalPort,
               callLimitMillis: native.toolCallLimitMs
@@ -1844,8 +1847,13 @@ export const make = (
             : { ...cellLimits, callMs: native.agentLimits.toolMs, totalMs: native.agentLimits.taskMs },
           modelCallMs: native.agentLimits?.modelCallMs,
           flows: sources,
+          // A cell's `ctx.call("<markdown flow>", { args })` runs that flow as
+          // a nested run of this loop, on these same sources: a sealed
+          // host's child reaches the one container and nothing of this host.
+          markdownChildren: true,
           instructions,
           system: native.agentSystem?.(offered),
+          environment: checkoutFacts(environment),
           pinnedSources: ["wait", "ask"],
           // Subscription judgments fail closed on missing seats or invalid answers.
           judged: true,
@@ -2199,8 +2207,12 @@ export const make = (
           canExecute,
           authorizeReleasedChildren: releasedChildResume.authorize,
           flows: sources,
+          // As on the action host above: markdown children run on the run's
+          // own sources, or on its sandbox machine's.
+          markdownChildren: true,
           freshContext: (descriptor) => descriptor.name === "review/change",
           workspaceInstructions: instructions,
+          environment: checkoutFacts(environment),
           pinnedSources: ["wait", "ask"],
           limits: native.agentLimits === undefined
             ? cellLimits

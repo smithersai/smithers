@@ -7,29 +7,120 @@ sidebar:
 
 A cell delegates by finding a flow in `ctx.flows` and calling it.
 
-## Attached markdown children need a host runner
+## Attached markdown children
 
-A discovered markdown flow is callable through `ctx.call("review", { args })`
-when the host supplies `promptRunner`. Set it on `AgentSession.Options` or
-`AgentAction.Host`; both forward it to `Agent.Options.promptRunner`.
+A cell runs a discovered markdown flow as a child agent with one call:
 
-The registry renders the markdown body against `{ args: string }`. The runner
-receives `{ call, text }` and returns an
-`Effect<Cell.CallResult, HarnessError>` with no unmet service requirements.
-Close over or provide the child's seat resolver, model, registry, sandbox,
-budget and quota policy, and durable runtime when constructing the runner.
-A runner built from `Agent.run` also needs `Steering.Source` and must execute
-inside a running flow with `FlowRuntime` and `FlowInstance` in context.
-The adapters do not choose the child's seat or install these dependencies for
-it. Use the call identity for durable child execution identity and preserve the
-parent's capability restrictions.
+```ts
+const answer = await ctx.call("worker", { args: "List the files under src/ that import the parser." })
+if (typeof answer !== "string") console.log(answer.error.code, answer.error.message)
+```
 
-The engine port records the attached call inside its durable cell boundary.
-The runner supplies the child execution and returns its answer as a successful
-`Cell.CallResult`, or propagates a `HarnessError` when the child must fail or
-park the run. Without a runner, markdown calls return the catchable
-`unimplemented` refusal. Module-backed flows use executable bindings or host
-implementations instead.
+The value is the child's `ctx.done` text. The native CLI host (`smthrs plan`,
+`approve`, and `run`) runs markdown children for every run it starts. Any
+other host opts in, as the next section shows.
+
+### Write the child flow
+
+A child is a markdown flow in `.smithers/flows/<name>/flow.mdx`, beside the
+flow that calls it:
+
+```md
+---
+description: Does one sub-task it is handed and answers with ctx.done.
+---
+
+Do the sub-task in the arguments, then call ctx.done with what you found.
+```
+
+- `description` is required; the caller reads it in `ctx.flows`.
+- Leave out `model:` to run on the caller's seat, the same model and route.
+  Name a seat to run on that one instead.
+- Leave out `effort:` to run at the caller's reasoning effort.
+- Leave out `capabilities:` to give the child the caller's whole authority.
+  A flow that names none claims every capability, and only a caller that
+  holds every capability may call it. A flow that names a list runs with that
+  list, and the call is refused with `capability_refused` unless the caller
+  holds all of it.
+
+The child's prompt is the flow's body followed by `args`.
+
+### What a child gets
+
+A child is the same agent loop as its caller, run inside the caller's call:
+
+- The caller's host flows: file flows, `bash`, `jev`, and the rest. On a host
+  sealed to a container (`SMITHERS_BASH_CONTAINER`), the child's flows reach
+  that one container and nothing on the host.
+- No `wait` and no `ask`, and no approval channel. A quota or budget refusal
+  fails the child rather than parking. A child never parks its caller.
+- No markdown flow. Children nest one level deep.
+- No opening memory, no memory writes, and no steering. Operator messages
+  reach the caller at its next frame.
+- The caller's budget and time. The child spends the run's budget, and it
+  runs inside the caller's call, so it cannot outlive the caller's frame. A
+  long child needs a call that names its time:
+  `ctx.call("worker", { args, timeoutSeconds: 900 })`, held to what the frame
+  has left (`Sandbox.callLimit`).
+- The caller's frame budget (`maxFrames`) and sandbox limits.
+
+A run is never offered itself as a child. A project whose only markdown flow
+is the run's own flow shows the same `ctx.flows`, and sends the same model
+request bytes, as a host that runs no children.
+
+### Failures
+
+A child that fails, runs out of frames without `ctx.done`, or names a seat the
+host cannot resolve resolves the call as a failure the cell reads:
+
+```ts
+{ ok: false, error: { code: "flow_failed", message: "The child run of worker failed: ...", hint: "..." } }
+```
+
+The caller's run goes on.
+
+### Durability
+
+The child runs inside the caller's durable call boundary, keyed like any other
+call. A replay of the caller is served the call's recorded answer and runs no
+model call for the child. A child cut off by a crash runs again from its own
+sealed model steps, which are keyed under the child's session,
+`<caller session>/child/<callId>`.
+
+### Read a child's trail
+
+Each child event is journaled in the run's control journal (`.flows/control.db`)
+under `control.child.*` in place of `control.agent.*`.
+`control.child.model-settled` carries the child's `usage`, as
+`control.agent.model-settled` does for the caller. Every child record carries
+`child: { callId, flow, scope }`:
+
+- `callId` is the caller's call, the value its `control.agent.cell-call-started`
+  and `control.agent.cell-call-settled` records carry. File the child's frames
+  under that call.
+- `scope` is the child's session. The child's `model-requested` and
+  `model-settled` records carry the same value as their own `scope`.
+
+Readers of `control.agent.*`, such as the caller's frame count and resume
+validation, never see a child's records.
+
+### Run children on another host
+
+`AgentSession.Options.markdownChildren` and `AgentAction.Host.markdownChildren`
+turn markdown children on for a host. Each forwards to
+`Agent.Options.children`, which takes the child's flow sources, the
+`SeatResolver` for a declared `model:`, the run's own flow name, and an
+`observe` callback for every child event. `AgentSession` journals child events
+into the run's trail; `AgentAction` journals them on the lossy channel when
+its composition has a journal.
+
+A host can instead supply its own `promptRunner` on either adapter, which wins
+over `markdownChildren`. The registry renders the markdown body against
+`{ args: string }`, and the runner receives `{ call, descriptor, text }` and
+returns an `Effect<Cell.CallResult, HarnessError>` with no unmet service
+requirements. Without `promptRunner` or `markdownChildren`, a host shows no
+markdown flow and a call to one is refused with `unimplemented`. Module-backed
+flows use executable bindings or host implementations instead.
 
 ## Detached children need the lifecycle flows
 

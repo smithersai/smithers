@@ -39,6 +39,12 @@ describe("TreeFingerprint.script", () => {
     expect(script).toContain("cksum")
   })
 
+  it.skipIf(hostCanMeasure)("exits non-zero on a host whose stat cannot list, never an empty measurement", () => {
+    const result = spawnSync("sh", ["-c", TreeFingerprint.script()], { cwd: tmpdir(), encoding: "utf8" })
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe("")
+  })
+
   it("names the prune list under a custom set, single-quoted", () => {
     expect(TreeFingerprint.script({ prune: ["it's"], ignoreSuffixes: [] })).toContain(`-name 'it'\\''s'`)
   })
@@ -46,9 +52,13 @@ describe("TreeFingerprint.script", () => {
   it.skipIf(!hostCanMeasure)("moves for a write, holds still for a re-read, and ignores derived output", () => {
     const root = mkdtempSync(join(tmpdir(), "tree-fingerprint-"))
     try {
+      // A tree with no file in it is measured, so its first write is a move.
+      const empty = measure(root)
+      expect(empty).toMatchObject({ paths: 0, complete: true })
       write(root, "src/a.py", "one", 1_700_000_000)
       const first = measure(root)
       expect(first).toMatchObject({ paths: 1, complete: true })
+      expect(TreeFingerprint.moved(empty, first)).toBe(true)
       expect(measure(root)).toEqual(first)
 
       write(root, "__pycache__/a.cpython-39.pyc", "bytecode")
@@ -64,6 +74,109 @@ describe("TreeFingerprint.script", () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+/** Whether this host's shell can bound a measurement, which `around` needs before it takes one. */
+const hostCanBound = spawnSync("sh", ["-c", "command -v timeout >/dev/null 2>&1"]).status === 0
+
+/** Runs `program` under `around` in `cwd`, the way `bash` runs a containerised command. */
+const bracketed = (cwd: string, program: ReadonlyArray<string>, input?: string) => {
+  const result = spawnSync("sh", ["-c", TreeFingerprint.around(), "sh", ...program], { cwd, encoding: "utf8", input })
+  return { status: result.status, stdout: result.stdout, ...TreeFingerprint.split(result.stderr) }
+}
+
+describe("TreeFingerprint.around", () => {
+  it("runs the command as given: its arguments, standard input, both streams and exit status", () => {
+    // True on every host, measured or not: the script never changes what the
+    // command it brackets reads, writes or exits with.
+    const root = mkdtempSync(join(tmpdir(), "tree-around-"))
+    try {
+      const ran = bracketed(
+        root,
+        ["sh", "-c", `cat; printf '%s|' "$@"; echo problem >&2; exit 3`, "sh", "a b", "$HOME", "it's"],
+        "from stdin\n"
+      )
+      expect(ran.status).toBe(3)
+      expect(ran.stdout).toBe("from stdin\na b|$HOME|it's|")
+      expect(ran.stderr).toBe("problem\n")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps its own names out of the command's environment", () => {
+    const root = mkdtempSync(join(tmpdir(), "tree-around-"))
+    try {
+      expect(bracketed(root, ["sh", "-c", "env | grep -c __smithers; true"]).stdout).toBe("0\n")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(!hostCanMeasure || !hostCanBound)("measures a write as a move and a read as none", () => {
+    const root = mkdtempSync(join(tmpdir(), "tree-around-"))
+    try {
+      write(root, "src/a.py", "one", 1_700_000_000)
+      const wrote = bracketed(root, ["sh", "-c", "echo two > src/b.py"])
+      expect(TreeFingerprint.moved(wrote.before, wrote.after)).toBe(true)
+      expect(wrote.before).toMatchObject({ paths: 1, complete: true })
+      expect(wrote.after).toMatchObject({ paths: 2, complete: true })
+      const read = bracketed(root, ["sh", "-c", "cat src/a.py"])
+      expect(read.stdout).toBe("one")
+      expect(TreeFingerprint.moved(read.before, read.after)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(hostCanMeasure && hostCanBound)("reports an unmeasured tree on a host that lacks the tools", () => {
+    const root = mkdtempSync(join(tmpdir(), "tree-around-"))
+    try {
+      const ran = bracketed(root, ["sh", "-c", "echo two > b.py"])
+      expect(ran.status).toBe(0)
+      expect(TreeFingerprint.moved(ran.before, ran.after)).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("TreeFingerprint.split", () => {
+  const line = (before: string, after: string) => `\n${TreeFingerprint.marker} ${before}| ${after}\n`
+
+  it("takes the measurements off the end and returns what the command wrote", () => {
+    expect(TreeFingerprint.split(`warning\n${line("11 20 2 ", "99 24 3 ")}`)).toEqual({
+      stderr: "warning\n",
+      before: { digest: "11:20", paths: 2, complete: true },
+      after: { digest: "99:24", paths: 3, complete: true }
+    })
+    // A command that ended its last line without a newline keeps it that way.
+    expect(TreeFingerprint.split(`partial${line("11 20 2 ", "11 20 2 ")}`).stderr).toBe("partial")
+  })
+
+  it("reads an empty or malformed side as unmeasured", () => {
+    expect(TreeFingerprint.split(line("", "11 20 2 "))).toEqual({
+      stderr: "",
+      before: undefined,
+      after: { digest: "11:20", paths: 2, complete: true }
+    })
+    expect(TreeFingerprint.split(line("garbage ", "")).before).toBeUndefined()
+  })
+
+  it("returns standard error whole when it does not end with the line", () => {
+    for (
+      const text of ["", "Killed\n", `${TreeFingerprint.marker} 1 1 1 | 1 1 1 \n`, `${line("1 1 1 ", "1 1 1 ")}after`]
+    ) {
+      expect(TreeFingerprint.split(text)).toEqual({ stderr: text, before: undefined, after: undefined })
+    }
+  })
+
+  it("reads the last line only, so an earlier copy stays the command's own output", () => {
+    const forged = line("1 1 1 ", "1 1 1 ")
+    const read = TreeFingerprint.split(`${forged}${line("11 20 2 ", "99 24 3 ")}`)
+    expect(read.stderr).toBe(forged)
+    expect(read.after?.digest).toBe("99:24")
   })
 })
 

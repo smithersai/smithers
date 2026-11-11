@@ -4,6 +4,16 @@
 
 ### Added
 
+- `SMITHERS_CHECKOUT_NO_LATER_COMMITS=1` declares that the operator built the
+  checkout at one commit and nothing in it is later. Runs were told this
+  unconditionally; they are now told only where it is declared.
+
+- A run the native host starts can call another markdown flow in
+  `.smithers/flows/` as a child agent with `ctx.call("<name>", { args })`. The
+  child runs on the same agent loop and the caller's seat unless it names a
+  `model:`, with the caller's flows and container seal (`SMITHERS_BASH_CONTAINER`),
+  and its frames and tokens are journaled in `.flows/control.db` under
+  `control.child.*`. A run is never offered its own flow.
 - `smthrs --mcp` serves `memory_list`, `memory_get`, `memory_set`, and
   `memory_recall`, so agent CLIs registered with `smthrs mcp add` save and
   recall shared facts. A memory tool call that names `root` is refused (#4582).

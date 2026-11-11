@@ -73,6 +73,7 @@ import { Option } from "effect"
 import type * as AgentEvent from "../AgentEvent.ts"
 import type * as Cell from "../Cell.ts"
 import * as Monitor from "../Monitor.ts"
+import * as SchemaSignature from "./schemaSignature.ts"
 import { untrustedData } from "./untrustedData.ts"
 
 /**
@@ -108,13 +109,29 @@ export interface Environment {
   readonly locale?: string
   /** Tools a run will reach for that this image does not install. */
   readonly absentTools?: ReadonlyArray<string>
+  /**
+   * The host built this checkout at one commit and nothing in it is later: no
+   * branch, tag, stash or reflog entry holds a later commit.
+   *
+   * Only a host that made the checkout can know this, which is why it is a
+   * declared fact and not the default: a benchmark rig that checks out a base
+   * commit states it, and a run then stops mining history for a fix that
+   * cannot be there. A person's repository has other branches and a reflog,
+   * and a task may be to recover a commit from one of them, so a host that
+   * did not build the checkout leaves this unset.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly noLaterCommits?: boolean
 }
 
 /**
  * Which contract a run is taught.
  *
  * `workspace`, the default, teaches a run that changes a checkout: the REPL,
- * nine rules, a worked bug fix and the checkout's history facts.
+ * nine rules, a worked bug fix and the history facts: what the harness itself
+ * leaves in a checkout, and, where the host declares
+ * {@link Environment.noLaterCommits}, that the checkout holds nothing later.
  * `conversation` teaches a run that answers a person through the flows its
  * catalog lists: the same REPL and rules 1 to 6, with no example, no rules 7
  * to 9 and no history fact. Neither changes the stance, `jev` or catalog
@@ -335,15 +352,32 @@ console.log(found.ok === false ? found.error.message : judged.ok === false ? jud
 const stanceText = (stance: typeof AgentEvent.Stance.Type): string =>
   stance === "paranoid" ? Monitor.paranoidText : Monitor.carefulText
 
-const historyFact =
-  `the checkout ends at the commit you were given; no branch, tag, stash or reflog here holds a later fix, so \`git log --all\` or \`-S\` hunting costs a frame and returns nothing. The harness keeps its own attempt and durability snapshots in a repository of its own. A dangling commit is this harness pinning your own tree for a checkpoint: \`git fsck\` reports your edit and never a fix. Backwards history pays: \`git blame\` or \`git log -S\` on a line says what an assertion was written for; given a last-known-good release, \`git log <tag>..HEAD -- <paths>\`.`
+/**
+ * What only a host that built the checkout can say: it holds nothing later
+ * than the commit the run was given. See {@link Environment.noLaterCommits}.
+ */
+const noLaterCommitsFact =
+  `the checkout ends at the commit you were given; no branch, tag, stash or reflog here holds a later fix, so \`git log --all\` or \`-S\` hunting costs a frame and returns nothing. The harness keeps its own attempt and durability snapshots in a repository of its own. A dangling commit is this harness pinning your own tree for a checkpoint: \`git fsck\` reports your edit and never a fix.`
+
+/**
+ * What the harness leaves in any checkout it works in, with no claim about
+ * what else the checkout holds: a task may be to recover a commit that is
+ * itself dangling, so this names the harness's commits by what is in them.
+ */
+const harnessCommitsFact =
+  `the harness keeps its own attempt and durability snapshots in a repository of its own. A dangling commit that holds your own edit is this harness pinning your tree for a checkpoint, not another author's work.`
+
+const backwardsFact =
+  `Backwards history pays: \`git blame\` or \`git log -S\` on a line says what an assertion was written for; given a last-known-good release, \`git log <tag>..HEAD -- <paths>\`.`
 
 /**
  * The environment section, or nothing when the profile states no fact and the
  * host measured none: a `conversation` run has no checkout to describe.
  */
 const environmentText = (environment: Environment, profile: Profile): string | undefined => {
-  const lines = profile === "workspace" ? [`- History: ${historyFact}`] : []
+  const lines = profile === "workspace"
+    ? [`- History: ${environment.noLaterCommits === true ? noLaterCommitsFact : harnessCommitsFact} ${backwardsFact}`]
+    : []
   if (environment.locale !== undefined) {
     lines.push(
       `- Locale: ${environment.locale}; output and files decode as that.`
@@ -383,10 +417,13 @@ const catalogText = (flows: Readonly<Record<string, CatalogProjection>>): string
     // The input schema is the difference between choosing a call and guessing
     // one. A rejected input costs a whole frame, so a catalog that names a
     // flow without saying what it takes spends the run's frame budget on
-    // trial and error.
+    // trial and error. It is printed as the type a call is written against,
+    // and as the document itself when that rendering would lose anything.
     return Option.isNone(projection.input)
       ? heading
-      : `${heading}\n  input: ${JSON.stringify(projection.input.value)}`
+      : `${heading}\n  input: ${
+        SchemaSignature.render(projection.input.value, 1) ?? JSON.stringify(projection.input.value)
+      }`
   })
   return `Flows callable with ctx.call in this frame:\n${
     untrustedData(lines.join("\n"), "flow catalog (descriptor provenance follows)")
@@ -406,13 +443,14 @@ const catalogText = (flows: Readonly<Record<string, CatalogProjection>>): string
  * the environment. It is constant for the run, so the cached prefix holds;
  * with no stance nothing is rendered and the prompt is unchanged.
  *
- * `environment` carries what the host measured about the container. It is
- * optional because the epoch fact — a checkout has no future in it — holds
- * everywhere and is stated with or without a host that measures anything else.
+ * `environment` carries what the host measured or declared about the checkout
+ * and container. It is optional: a `workspace` run is always told what the
+ * harness itself leaves in a checkout, and is told that the checkout holds
+ * nothing later only where the host declares it.
  *
  * `profile` picks the contract; see {@link Profile}. A `conversation` run is
- * taught no epoch fact, so its environment section is rendered only for facts
- * the host measured.
+ * taught no history fact, so its environment section is rendered only for
+ * facts the host measured.
  *
  * @category constructors
  * @since 0.1.0

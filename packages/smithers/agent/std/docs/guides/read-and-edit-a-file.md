@@ -180,6 +180,37 @@ filesystem writes. Missing providers fail with `provider_unavailable`. Diagnosti
 are updated only after the complete batch succeeds. The production coding host
 currently refuses mutations until its guest provider qualifies.
 
+### Batched hosts
+
+On a filesystem where each call is a network round trip, such as a container
+reached through `docker exec`, the lock protocol above costs ten calls for one
+edit. Such a filesystem can carry `Read.Batched` calls instead, and the handlers
+then make one or two:
+
+| Flow                           | Calls                                     |
+| ------------------------------ | ----------------------------------------- |
+| `read`                         | one `snapshot`, which also reads the file |
+| `ls`                           | one `list`                                |
+| `edit`, `write`, `apply_patch` | one `snapshot`, then one `commit`         |
+
+`snapshot` answers, for every path the call names, its resolved path, its
+`stat`, a version, and the bytes the handler will read. The handler computes
+its changes from those bytes and submits them in one `commit` with the
+versions. The provider compares every version with the file as it is now and
+refuses the whole batch if any differs: the handler fails with `no_match`,
+names the file, and nothing is written. It then stages each write in a
+temporary file beside its destination, creating missing parents and copying the
+mode and owner of the file it replaces (a moved file takes its source's), and
+renames each one into place. Failures while staging write nothing. A failure
+while renaming or removing leaves the earlier changes in place, and
+`apply_patch` lists them, as it does on an ordinary host.
+
+Batched hosts take no lock, so two handlers racing on one file both read it and
+the second commit is refused. A versioned host's provider always takes
+precedence over batched calls. The provider attaches the calls
+non-enumerably, so a wrapper that copies the filesystem to guard its
+operations does not inherit calls that would bypass the guards.
+
 ## Write a whole file
 
 `write` replaces a file, creating parent directories:

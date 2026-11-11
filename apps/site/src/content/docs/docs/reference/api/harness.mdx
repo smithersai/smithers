@@ -948,7 +948,9 @@ re-derived declaration digest must equal the call's
 (`declaration_changed`). An executable binding then answers first, after an
 identity check against the disclosed declaration; a markdown flow renders
 against `{ args: string }` and runs through the supplied `PromptRunner`, or
-settles `unimplemented`; anything else dispatches to the host's
+settles `unimplemented`. The runner receives `Prompt`: the `call`, the
+rendered `text`, and the flow's `descriptor` (since 1.0.0-rc.17), whose
+`model` and frontmatter choose the child's seat and effort. Anything else dispatches to the host's
 `Implementation` for the name, or settles `unimplemented`. The resolver's
 shape is exactly the call runner a durable host wires behind
 `EngineLike.call`, so this browser-safe package never depends on the engine

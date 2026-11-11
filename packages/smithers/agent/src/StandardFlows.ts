@@ -296,9 +296,10 @@ export const filesystem = (
  * neither fails the spawn with the shell's own "not found" — which is honest —
  * while a host with docker gets the transport it plainly has.
  *
- * `sealedTo` names the one container `bash` may reach; every other call,
- * including one with no container that would run on this host, is refused
- * with `outside_container` (`Bash.sealed`).
+ * `sealedTo` names the one container `bash` reaches (`Bash.sealed`): a call
+ * that names no container runs there, in `sealedCwd` when it names no
+ * directory either, and a call naming another container is refused with
+ * `outside_container`. Nothing runs on this host.
  *
  * `terminal: "agent"` selects the T-TRM-05 binding: every command runs in the
  * coding agent's own terminal on its machine (`terminalPort`), which members
@@ -314,6 +315,13 @@ export const shell = (
   container: Container.Container = Container.makeCommand(),
   options?: {
     readonly sealedTo?: string | undefined
+    /**
+     * The sealed container's name for the task's tree: where a sealed command
+     * that names no `cwd` runs.
+     *
+     * @since 1.0.0
+     */
+    readonly sealedCwd?: string | undefined
     /**
      * T-TRM-05: run `bash` in the agent's registered terminal; refuses
      * without `terminalPort`.
@@ -355,7 +363,7 @@ export const shell = (
               : inAgentTerminal(options.terminalPort)
             : options?.sealedTo === undefined
             ? Bash.run
-            : Bash.sealed(options.sealedTo)
+            : Bash.sealed(options.sealedTo, { cwd: options.sealedCwd })
         ),
         publicError: publicExecutionError,
         failureKinds: { codes: StandardError.Code.literals },

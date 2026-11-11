@@ -251,10 +251,12 @@ the schemas. Fails with `invalid_input`, `outside_declared_reads`,
 `outside_declared_writes`, `provider_unavailable` (a container with no
 transport), `outside_container`, `timeout`, or `command_failed`.
 
-`Bash.sealed(container)` is `Bash.run` sealed to one container: a call naming
-any other container, or none, fails with `outside_container` before anything
-is spawned. A host that must stay out of the cell's reach binds it
-(`StandardFlows.shell(services, transport, { sealedTo })`).
+`Bash.sealed(container, { cwd })` is `Bash.run` sealed to one container. A
+call that names no container runs in `container`, in `cwd` when it names no
+directory, so nothing runs on the host by omission. A call naming any other
+container, the empty string included, fails with `outside_container` before
+anything is spawned. A host that must stay out of the cell's reach binds it
+(`StandardFlows.shell(services, transport, { sealedTo, sealedCwd })`).
 
 ## test
 

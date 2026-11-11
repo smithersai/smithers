@@ -352,6 +352,8 @@ interface StackOptions {
   /** Omit the host flow sources entirely, exercising the executor's default. */
   readonly maxFrames?: number | undefined
   readonly promptRunner?: CellCalls.PromptRunner | undefined
+  /** Whether the run's markdown calls run as nested children. */
+  readonly markdownChildren?: boolean | undefined
   readonly registry?: Registry.Registry | undefined
   readonly bare?: boolean | undefined
   /** The host's reasoning-effort default, beneath a flow's own `effort:`. */
@@ -426,6 +428,7 @@ const stack = (options: StackOptions) => {
     limits: { memoryBytes: 64 * 1024 * 1024, steps: 5_000_000 },
     maxFrames: options.maxFrames ?? 4,
     promptRunner: options.promptRunner,
+    markdownChildren: options.markdownChildren,
     reasoningEffort: options.reasoningEffort,
     judged: options.judged,
     system: options.system,
@@ -3425,6 +3428,133 @@ describe("AgentSession on a host nobody answers", () => {
 
     expect(parked).toBe(true)
     expect(run.trail.some((entry) => entry.eventType.includes("approval.requested"))).toBe(true)
+  })
+})
+
+describe("AgentSession markdown children", () => {
+  const worker = new Descriptor.FlowDescriptor({
+    ...agentDescriptor,
+    name: "worker",
+    description: "Counts what it is asked to count.",
+    model: Option.none(),
+    modelInvocable: true,
+    path: "/flows/worker"
+  })
+  /** The worker's rendered body: the one text that tells a child's request from its caller's. */
+  const childTask = "CHILD-TASK: count the notes."
+  const registry = Registry.makeNoop({
+    ...registryService,
+    visible: () => Effect.succeed([worker]),
+    getOption: (name) => name === worker.name ? Effect.succeed(Option.some(worker)) : registryService.getOption(name),
+    runPrompt: (_name, input) => Effect.succeed(`${childTask} ${input.args}`)
+  })
+  const usage = { inputTokens: 37, outputTokens: 5 }
+
+  /** One model for a run and its child, each answered from its own script and each reporting `usage`. */
+  const twoRuns = (
+    scripts: { readonly parent: ReadonlyArray<string>; readonly child: ReadonlyArray<string> },
+    asked: { readonly parent: Array<ModelRequest.ModelRequest>; readonly child: Array<ModelRequest.ModelRequest> }
+  ): Model.Model =>
+    Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          const child = request.system.some((part) => part.text.includes(childTask))
+          const requests = child ? asked.child : asked.parent
+          const script = child ? scripts.child : scripts.parent
+          const events = cellEvents(
+            script[requests.length] ?? script.at(-1)!,
+            `${child ? "child" : "run"}-${requests.length}`
+          )
+          requests.push(request)
+          return Stream.fromIterable([...events.slice(0, -1), ModelEvent.ModelEvent.Usage(usage), events.at(-1)!])
+        })
+    })
+
+  it("journals the child under control.child.*, filed under the call, and replays it from its record after a park", {
+    timeout: 60_000
+  }, async () => {
+    const asked = { parent: [] as Array<ModelRequest.ModelRequest>, child: [] as Array<ModelRequest.ModelRequest> }
+    const scripts = {
+      parent: [
+        `const answer = await ctx.call("worker", { args: "in the log" })
+console.log("child said " + answer)`,
+        `const decision = await ctx.call("ask", { question: "publish the count?" })
+ctx.done("approved=" + decision.approved)`
+      ],
+      child: ["ctx.done(\"seven notes\")"]
+    }
+    const trail = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/notes", input: {} })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:children"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected an accepted run")
+          }
+          // The ask parks the run after the child settled; the resumed
+          // attempt replays the frame that called it.
+          yield* approvePark(control, runtime, receipt.runId, 1)
+          yield* awaitStatus(runtime, receipt.runId, "completed")
+          yield* journal.flush
+          return (yield* journal.entries({ runId: JournalEvent.RunId.make(receipt.runId), limit: 10_000 })).entries
+        }).pipe(Effect.provide(stack({
+          resolve: seat(twoRuns(scripts, asked)),
+          notes: [],
+          gate,
+          bare: true,
+          registry,
+          markdownChildren: true
+        })))
+      }).pipe(Effect.scoped)
+    )
+
+    // The child ran once: the resumed attempt was served the call's record.
+    expect(asked.child).toHaveLength(1)
+    expect(asked.parent).toHaveLength(2)
+    expect(asked.child[0]!.system.map((part) => part.text).join("\n")).toContain(`${childTask} in the log`)
+    const typed = (eventType: string) => trail.filter((entry) => entry.eventType === eventType)
+    const resolved = typed("control.agent.resolved")
+    expect(resolved).toHaveLength(1)
+    expect(JSON.stringify(resolved[0]!.payload)).toContain("approved=true")
+    const printed = typed("control.agent.cell-printed").map((entry) => JSON.stringify(entry.payload))
+    expect(printed.join("\n")).toContain("child said seven notes")
+
+    // The call the child answers, as the caller's own trail records it.
+    const started = typed("control.agent.cell-call-started").filter((entry) =>
+      (entry.payload as { readonly flowName: string }).flowName === "worker"
+    )
+    expect(started).toHaveLength(1)
+    const { callId } = started[0]!.payload as { readonly callId: string }
+    const children = trail.filter((entry) => entry.eventType.startsWith(AgentSession.childEventPrefix))
+    expect(children.length).toBeGreaterThan(0)
+    for (const entry of children) {
+      expect((entry.payload as { readonly child: unknown }).child).toEqual({
+        callId,
+        flow: "worker",
+        scope: `${started[0]!.runId}/child/${callId}`
+      })
+    }
+    // Its one model call, journaled once across the park, with its tokens.
+    const childModel = typed("control.child.model-settled")
+    expect(childModel).toHaveLength(1)
+    expect(childModel[0]!.payload).toMatchObject({ usage })
+    expect(typed("control.child.turn-opened")).toHaveLength(1)
+    expect(typed("control.child.resolved")).toHaveLength(1)
+    // The caller's frames are its own: two turns, two model calls.
+    expect(typed("control.agent.turn-opened").length).toBeGreaterThanOrEqual(2)
+    expect(typed("control.agent.model-settled")).toHaveLength(2)
+    expect(new Set(trail.map((entry) => `${entry.sourceId}/${entry.sourceSeq}`)).size).toBe(trail.length)
   })
 })
 

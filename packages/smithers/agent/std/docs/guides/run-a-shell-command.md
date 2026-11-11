@@ -90,8 +90,10 @@ tracked in [#1790](https://github.com/smithersai/smithers/issues/1790).
 
 A host sealed to one container is the exception. `SMITHERS_BASH_CONTAINER` names
 the container, and `bash` and `test` then run in it through the `docker` CLI.
-Every other container, and a call that names none, fails with
-`outside_container`. The file flows (`read`, `edit`, `apply_patch`, `grep` and
+A call that names no container runs in that container too, in
+`SMITHERS_TEST_CWD` when it names no `cwd`, so a cell writes
+`ctx.call("bash", { command })` and nothing can run on the host by omission.
+A call that names any other container fails with `outside_container`. The file flows (`read`, `edit`, `apply_patch`, `grep` and
 the rest) act on the container's files through the same transport, resolving a
 relative path under `SMITHERS_TEST_CWD`, and `grep` and `glob` answer through
 `RemoteSearch`. The transport process runs outside the OS sandbox, which

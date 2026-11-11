@@ -31,6 +31,7 @@
  * @since 0.1.0
  */
 
+import type * as Descriptor from "@smthrs/registry/Descriptor"
 import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
 import type * as Registry from "@smthrs/registry/Registry"
 import { Effect, Option, Schema } from "effect"
@@ -64,6 +65,14 @@ export type Implementation = (
  */
 export interface Prompt {
   readonly call: Cell.Call
+  /**
+   * The markdown flow's declaration, as the call resolved it: its `model`
+   * and frontmatter are what a runner reads to choose the child's seat and
+   * effort.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly descriptor: Descriptor.FlowDescriptor
   readonly text: string
 }
 
@@ -183,7 +192,7 @@ export const make = (options: Options): Resolver => ({
             })
           )
         )
-        return yield* prompt({ call, text })
+        return yield* prompt({ call, descriptor, text })
       }
 
       const implementation = options.implementations?.get(call.flowName)

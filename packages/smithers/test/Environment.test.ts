@@ -34,6 +34,7 @@ describe("the environment contract", () => {
       "SMITHERS_SANDBOX_IMAGE",
       "SMITHERS_BASH_CONTAINER",
       "SMITHERS_ASKS",
+      "SMITHERS_CHECKOUT_NO_LATER_COMMITS",
       "SMITHERS_BACKEND",
       "SMITHERS_MEMORY_DB",
       "SMITHERS_SUPERVISOR_STANCE",

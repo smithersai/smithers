@@ -85,6 +85,40 @@ describe("cellPrompt", () => {
     )
   })
 
+  it("prints a schema document as the type a call is written against, and anything else as it stands", () => {
+    // The catalog is read on every frame. A flow's input as its JSON Schema
+    // document was 17,521 of the native host's 27,595 system-prompt
+    // characters; as a type it says the same in about half.
+    const schema = {
+      dialect: "draft-2020-12",
+      schema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path of the text file to read" },
+          limit: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }], description: "Maximum lines" }
+        },
+        required: ["path"],
+        additionalProperties: false
+      },
+      definitions: {}
+    }
+    const unread = { ...schema, schema: { ...schema.schema, patternProperties: {} } }
+    const catalog = catalogOf({
+      read: projection("read", Option.some(schema)),
+      strange: projection("strange", Option.some(unread))
+    })
+    expect(catalog).toContain(
+      "- read (sealed): Call read.\n" +
+        "  provenance: {\"source\":\"unknown\"}\n" +
+        "  input: {\n" +
+        "    path: string // Path of the text file to read\n" +
+        "    limit?: integer // min 1; Maximum lines\n" +
+        "  }\n"
+    )
+    // A document with a keyword the rendering does not read loses nothing.
+    expect(catalog).toContain(`  input: ${JSON.stringify(unread)}`)
+  })
+
   it("tells a cell with no callable flows to complete or park", () => {
     expect(catalogOf({})).toBe(
       "No flows are callable in this run. Complete or park; ctx.call has nothing to reach."
@@ -277,38 +311,50 @@ describe("cellPrompt", () => {
     expect(contract).toContain("a write of bytes a call returned truncated is refused")
   })
 
-  it("states the epoch fact with no environment supplied at all", () => {
+  it("claims nothing about what the checkout holds unless the host declares it", () => {
+    // fix-git asks a run to recover a commit that only the reflog still holds.
+    // The contract told that run, and every run in a person's repository, that
+    // no reflog here holds a later fix: true of a checkout a rig built at one
+    // commit, false anywhere else.
+    for (const environment of [sectionOf("cell-environment"), sectionOf("cell-environment", {}, {})]) {
+      expect(environment).toContain("Harness-computed facts about the checkout and container, not the task.")
+      expect(environment).not.toContain("the checkout ends at the commit you were given")
+      expect(environment).not.toContain("holds a later fix")
+      expect(environment).not.toContain("never a fix")
+    }
+  })
+
+  it("states that the checkout holds nothing later where the host built it so", () => {
     // django-13346 applied its own harness snapshots as an upstream fix and
-    // 13821 cited one as evidence. The fact that closes that class is true of
-    // every checkout, so it is stated whether or not a host measured anything.
-    const environment = sectionOf("cell-environment")
-    expect(environment).toContain("Harness-computed facts about the checkout and container, not the task.")
+    // 13821 cited one as evidence. A rig that checks out a base commit knows
+    // no ref holds a later fix, and says so.
+    const environment = sectionOf("cell-environment", {}, { noLaterCommits: true })
     expect(environment).toContain("the checkout ends at the commit you were given")
     expect(environment).toContain("no branch, tag, stash or reflog here holds a later fix")
     expect(environment).toContain("costs a frame and returns nothing")
-    // The harness's attempt and durability snapshots live in a repository of
-    // their own, so a history search cannot surface them at all — which is what
-    // makes "returns nothing" literally true rather than nearly true.
     expect(environment).toContain("keeps its own attempt and durability snapshots in a repository of its own")
-  })
-
-  it("names the one thing a history search now does find, and says whose it is", () => {
-    // A checkpoint is recorded as an unreferenced commit, so `git fsck` reports
-    // it as dangling and `git show` prints the agent's own working tree back at
-    // it. Left unsaid, that is django-13346 again one wave later: a commit
-    // holding the fix, found by mining, applied as if somebody else had written
-    // it. The claim about `git fsck` therefore came out of the list and the
-    // truth went in its place.
-    const environment = sectionOf("cell-environment")
+    // A checkpoint is recorded as an unreferenced commit, so `git fsck`
+    // reports it as dangling and `git show` prints the run's own tree back.
     expect(environment).not.toContain("or `git fsck` for one costs a frame")
     expect(environment).toContain("A dangling commit is this harness pinning your own tree for a checkpoint")
     expect(environment).toContain("`git fsck` reports your edit and never a fix")
   })
 
-  it("teaches the archaeology that does pay, reading history backwards", () => {
+  it("names the harness's own dangling commits by what is in them, in any checkout", () => {
+    // Without the host's declaration a dangling commit may be the very work a
+    // task asks for, so the harness's are told apart by their content.
     const environment = sectionOf("cell-environment")
-    expect(environment).toContain("says what an assertion was written for")
-    expect(environment).toContain("git log <tag>..HEAD -- <paths>")
+    expect(environment).toContain("keeps its own attempt and durability snapshots in a repository of its own")
+    expect(environment).toContain(
+      "A dangling commit that holds your own edit is this harness pinning your tree for a checkpoint, not another author's work."
+    )
+  })
+
+  it("teaches the archaeology that does pay, reading history backwards, either way", () => {
+    for (const environment of [sectionOf("cell-environment"), sectionOf("cell-environment", {}, { noLaterCommits: true })]) {
+      expect(environment).toContain("says what an assertion was written for")
+      expect(environment).toContain("git log <tag>..HEAD -- <paths>")
+    }
   })
 
   it("states a measured locale and omits the line when the host measured none", () => {
@@ -339,8 +385,9 @@ describe("cellPrompt", () => {
     // teaching outright, so the guard is structural: there is no field a
     // caller could put a task answer in. This test fails the moment one is
     // added, which is the point at which somebody has to justify it.
-    const keys: ReadonlyArray<keyof CellPrompt.Environment> = ["locale", "absentTools"]
-    const populated: CellPrompt.Environment = { locale: "C.UTF-8", absentTools: ["rg"] }
+    // `noLaterCommits` is a boolean the host that built the checkout declares.
+    const keys: ReadonlyArray<keyof CellPrompt.Environment> = ["locale", "absentTools", "noLaterCommits"]
+    const populated: CellPrompt.Environment = { locale: "C.UTF-8", absentTools: ["rg"], noLaterCommits: true }
     expect(Object.keys(populated).every((key) => keys.includes(key as keyof CellPrompt.Environment))).toBe(true)
   })
 
@@ -400,8 +447,15 @@ describe("cellPrompt", () => {
     // Failure and missing-hit guards add 82 estimated tokens. Executed in
     // CellPromptExample.test.ts; this is a correctness fix, not a live-model eval.
     expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(1_547)
-    expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
-      .toBeLessThanOrEqual(200)
+    expect(
+      Tokens.estimate(
+        sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"], noLaterCommits: true })
+      )
+    ).toBeLessThanOrEqual(200)
+    // A checkout the host declared nothing about is told less, never more.
+    expect(Tokens.estimate(sectionOf("cell-environment"))).toBeLessThan(
+      Tokens.estimate(sectionOf("cell-environment", {}, { noLaterCommits: true }))
+    )
   })
 })
 

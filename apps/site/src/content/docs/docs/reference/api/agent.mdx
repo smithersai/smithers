@@ -93,6 +93,7 @@ itself; every default on the optional half is the conservative one.
 | `flows`              | `ReadonlyArray<FlowBinding.Source>`                                                                                                  | Ordered executable-flow sources composed into the run's catalog.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>`                                                                                      | Host implementations for module-backed flows, keyed by flow name.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `promptRunner`       | `CellCalls.PromptRunner`                                                                                                             | Runs a rendered markdown flow. A host with none refuses them catchably.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `children`           | `Agent.Children`                                                                                                                     | Runs each markdown flow a cell calls as a nested run of this same loop: `{ flows, seats, self?, observe }`. `promptRunner` wins when both are set. See [Delegate to child agents](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/guides/subagents.md).                                                                                                                                                                                                                                                                                                         |
 | `authorize`          | `(call: Cell.Call) => Effect<void, HarnessError>`                                                                                    | Decides whether a call may proceed, before its durable boundary opens.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `plugins`            | `PluginInput<FlowsHooks>`                                                                                                            | Shared-kernel plugins resolved for the harness target.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `config`             | `FlowsConfig`                                                                                                                        | Raw config threaded through the plugin kernel's config waterfall.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -263,24 +264,25 @@ for an answer. Its failure prevents entry.
 delegation must stand before adoption. The default is
 `Ownership.heartbeatStaleAfter` (30 seconds); adoption starts at the cutoff.
 
-| Field             | Type                                                                      | What it decides                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `limits`          | `Sandbox.Limits`                                                          | The explicit sandbox budget every cell runs under. Required; never unlimited.                                                                       |
-| `quotaPolicy`     | `Layer<QuotaPolicy.QuotaClassifier>`                                      | The required quota park/retry policy every model call in the run is decided under.                                                                  |
-| `budget`          | `(envelope: Envelope) => Layer<Budget.Budget, Budget.ConfigurationError>` | Builds the run-local spending policy from the plan that was approved. Provided inside each body invocation.                                         |
-| `flows`           | `ReadonlyArray<FlowBinding.Source>`                                       | Host executable-flow sources composed into every run's catalog. The durable wait and the control-wired approval are composed by the session itself. |
-| `sandbox`         | `(selection) => Effect<SandboxOpener, SandboxRefused> \| undefined`       | Opens the machine for a flow's `sandbox:` selection; `undefined` when no provider of that name is configured. Absent, every selection is refused.   |
-| `system`          | `ReadonlyArray<string>`                                                   | Stable system teaching placed ahead of the cell contract.                                                                                           |
-| `maxFrames`       | `number`                                                                  | The cell-loop bound.                                                                                                                                |
-| `readOnlyCap`     | `number`                                                                  | Consecutive read-only frames a task run may spend. Defaults to `CellTurn.defaultReadOnlyFrames`.                                                    |
-| `modelCallMs`     | `number`                                                                  | Wall-clock milliseconds one model call may spend. Defaults to `CellTurn.modelCallMsFor(effort)`; zero disarms it.                                   |
-| `repeatCap`       | `number`                                                                  | Consecutive repeat-observation frames. Defaults to `CellTurn.defaultRepeatFrames`; zero disarms it.                                                 |
-| `narrowingCap`    | `number`                                                                  | Completions bounced for narrowed evidence. Defaults to `CellTurn.defaultNarrowingDemands`; zero disarms it.                                         |
-| `unmovedCap`      | `number`                                                                  | Completions bounced for an unmoved tree. Defaults to `CellTurn.defaultUnmovedDemands`; zero disarms it.                                             |
-| `unresolvedCap`   | `number`                                                                  | Completions bounced for a failing check the run replaced. Defaults to `CellTurn.defaultUnresolvedDemands`; zero disarms it.                         |
-| `approvalChannel` | `boolean`                                                                 | Whether a human answers this executor's runs. Defaults to false; a run that claims false has its `park` transitions refused and answered in-frame.  |
-| `judged`          | `boolean`                                                                 | Whether the host's `Evaluator` is a real judge; forwarded to `Agent.Options.judged`.                                                                |
-| `reasoningEffort` | `ModelRequest.ReasoningEffort`                                            | The reasoning effort agent seats run at when their flow declares none. The flow's own `effort:` frontmatter wins; the built-in default is `high`.   |
+| Field              | Type                                                                      | What it decides                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limits`           | `Sandbox.Limits`                                                          | The explicit sandbox budget every cell runs under. Required; never unlimited.                                                                       |
+| `quotaPolicy`      | `Layer<QuotaPolicy.QuotaClassifier>`                                      | The required quota park/retry policy every model call in the run is decided under.                                                                  |
+| `budget`           | `(envelope: Envelope) => Layer<Budget.Budget, Budget.ConfigurationError>` | Builds the run-local spending policy from the plan that was approved. Provided inside each body invocation.                                         |
+| `flows`            | `ReadonlyArray<FlowBinding.Source>`                                       | Host executable-flow sources composed into every run's catalog. The durable wait and the control-wired approval are composed by the session itself. |
+| `markdownChildren` | `boolean`                                                                 | Runs each markdown flow a cell calls as a nested run through `Agent.Options.children`, journaled under `control.child.*`. Defaults to false.        |
+| `sandbox`          | `(selection) => Effect<SandboxOpener, SandboxRefused> \| undefined`       | Opens the machine for a flow's `sandbox:` selection; `undefined` when no provider of that name is configured. Absent, every selection is refused.   |
+| `system`           | `ReadonlyArray<string>`                                                   | Stable system teaching placed ahead of the cell contract.                                                                                           |
+| `maxFrames`        | `number`                                                                  | The cell-loop bound.                                                                                                                                |
+| `readOnlyCap`      | `number`                                                                  | Consecutive read-only frames a task run may spend. Defaults to `CellTurn.defaultReadOnlyFrames`.                                                    |
+| `modelCallMs`      | `number`                                                                  | Wall-clock milliseconds one model call may spend. Defaults to `CellTurn.modelCallMsFor(effort)`; zero disarms it.                                   |
+| `repeatCap`        | `number`                                                                  | Consecutive repeat-observation frames. Defaults to `CellTurn.defaultRepeatFrames`; zero disarms it.                                                 |
+| `narrowingCap`     | `number`                                                                  | Completions bounced for narrowed evidence. Defaults to `CellTurn.defaultNarrowingDemands`; zero disarms it.                                         |
+| `unmovedCap`       | `number`                                                                  | Completions bounced for an unmoved tree. Defaults to `CellTurn.defaultUnmovedDemands`; zero disarms it.                                             |
+| `unresolvedCap`    | `number`                                                                  | Completions bounced for a failing check the run replaced. Defaults to `CellTurn.defaultUnresolvedDemands`; zero disarms it.                         |
+| `approvalChannel`  | `boolean`                                                                 | Whether a human answers this executor's runs. Defaults to false; a run that claims false has its `park` transitions refused and answered in-frame.  |
+| `judged`           | `boolean`                                                                 | Whether the host's `Evaluator` is a real judge; forwarded to `Agent.Options.judged`.                                                                |
+| `reasoningEffort`  | `ModelRequest.ReasoningEffort`                                            | The reasoning effort agent seats run at when their flow declares none. The flow's own `effort:` frontmatter wins; the built-in default is `high`.   |
 
 ### AgentSession.make
 
@@ -419,6 +421,38 @@ empty regenerates the payloads, and so the identities, the first attempt wrote.
 
 `trace(event, previous?)` takes the same `RequestTrail` as an argument and
 stays pure. Without one it writes the request whole.
+
+### AgentSession.childTracer
+
+```ts
+const childEventPrefix: "control.child."
+
+interface ChildRecord {
+  readonly sourceSeq: JournalEvent.SourceSeq
+  readonly eventType: string
+  readonly payload: Record<string, unknown>
+}
+
+const childTracer: () => (child: Agent.Child, event: AgentEvent.AgentEvent) => ChildRecord | undefined
+```
+
+The journal projection of a run's markdown children (since 1.0.0-rc.17). Each
+child is projected as `tracer` projects a run, under its own frame clock, and
+its record type replaces `control.agent.` with `control.child.`:
+`control.child.model-settled` is the child's own `control.agent.model-settled`.
+Every payload gains `child: { callId, flow, scope }`. `callId` is the caller's
+call, the same value its `control.agent.cell-call-started` and
+`control.agent.cell-call-settled` records carry; `scope` is the child's
+session, `<run>/child/<callId>`. The identity is `traceIdentity` over the
+child's own coordinates with `child` in its material, so a child that runs
+again after a crash journals each record once and moves no row of its caller's.
+
+A separate prefix keeps every reader of `control.agent.*` folding only the
+caller's frames, and keeps a child's records out of resume validation.
+`AgentSession` writes these records into the run's trail when
+`Options.markdownChildren` is set; `AgentAction` writes them on the lossy
+channel under producer `/agent/action/child` when its host sets
+`markdownChildren` and the composition has a journal.
 
 ### AgentSession.traceIdentity
 
@@ -658,6 +692,7 @@ through `layerHost`:
 | `limits`             | `Sandbox.Limits`                                | The explicit sandbox budget every cell runs under. Required; never unlimited.                                                                                           |
 | `flows`              | `ReadonlyArray<FlowBinding.Source>`             | Host executable-flow sources composed into every run's catalog.                                                                                                         |
 | `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>` | Host implementations for module-backed flows, keyed by flow name.                                                                                                       |
+| `markdownChildren`   | `boolean`                                       | Runs each markdown flow a step's cell calls as a nested run through `Agent.Options.children`. Defaults to false.                                                        |
 | `plugins`            | `PluginInput<FlowsHooks>`                       | Plugins composed into every run.                                                                                                                                        |
 | `config`             | `FlowsConfig`                                   | Configuration composed into every run.                                                                                                                                  |
 | `system`             | `ReadonlyArray<string>`                         | Stable system teaching placed ahead of every action's own.                                                                                                              |
@@ -1828,6 +1863,7 @@ const shell: (
   container?: Container.Container,
   options?: {
     readonly sealedTo?: string | undefined
+    readonly sealedCwd?: string | undefined
     readonly terminal?: "agent" | undefined
     readonly callLimitMillis?: number | undefined
   }
@@ -1839,7 +1875,10 @@ to `Container.makeCommand()`, the docker or podman CLI; a composition that
 supplies none refuses a containerised call. A command that names no `stdin`
 reads `/dev/null`, so a command that waits on input ends at once.
 
-`options.sealedTo` restricts execution to one container. `options.terminal`
+`options.sealedTo` restricts execution to one container: a call that names no
+container runs there, in `options.sealedCwd` when it names no `cwd`, and a
+call that names another container fails with `outside_container`.
+`options.terminal`
 (since 1.0.0) accepts `"agent"` and fails with `provider_unavailable` until
 registered PTY execution and card evidence are available. It never falls back
 to container execution.

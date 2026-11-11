@@ -352,6 +352,9 @@ else
       export SMITHERS_TEST_CWD="/testbed"
     fi
     export SMITHERS_OPENAI_AUTH="$OPENAI_AUTH"
+    # This rig checks every instance out at its base commit and nothing else:
+    # the run is told that no ref in the checkout holds a later fix.
+    export SMITHERS_CHECKOUT_NO_LATER_COMMITS=1
     # Conditional, and on a line of its own so fixtures/check-env-names.mjs
     # sees the name and holds it against the CLI's list.
     if [ "$MEMORY" = "repo" ]; then

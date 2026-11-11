@@ -56,6 +56,10 @@ export const names: ReadonlyArray<Name> = [
   entry("SANDBOX_IMAGE", "The image a flow's `sandbox: {provider: container}` runs in; unset refuses such flows"),
   entry("BASH_CONTAINER", "The one container `bash` and the file flows may reach; host commands are refused"),
   entry("ASKS", "`park` (the default) or `refuse`: whether an in-run `ask` waits for an operator or fails at once"),
+  entry(
+    "CHECKOUT_NO_LATER_COMMITS",
+    "`1` when the operator built the checkout at one commit and no branch, tag, stash or reflog entry in it is later"
+  ),
   entry("BACKEND", "Database backend: `sqlite` or `postgres`"),
   entry("MEMORY_DB", "Path of a separate SQLite file for the memory store, shared across runs that name it"),
   entry("SUPERVISOR_STANCE", "`careful` (the default) or `paranoid`, the static stance a judged run is taught"),

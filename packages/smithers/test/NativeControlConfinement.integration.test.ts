@@ -276,17 +276,15 @@ it("runs a sealed host's bash and test in its one container through the docker C
       )
       expect(result.outcome, JSON.stringify(result)).toBe("success")
       expect(result.value).toMatchObject({ exitCode: 0, stdout: "1 passed in 0.1s\n" })
-      // The measurement of /app before and after the command travels the same route.
-      expect(dockerCalls().map((entry) => entry.argv.slice(0, 6))).toEqual([
-        ["exec", "-w", "/app", "--", "benchmark-cell", "sh"],
-        ["exec", "-w", "/app", "--", "benchmark-cell", "bash"],
-        ["exec", "-w", "/app", "--", "benchmark-cell", "sh"]
+      // One exec: the login shell runs between two measurements of /app, inside the same call.
+      expect(dockerCalls().map((entry) => entry.argv.slice(0, 7))).toEqual([
+        ["exec", "-w", "/app", "--", "benchmark-cell", "sh", "-c"]
       ])
-      expect(dockerCalls()[1]!.argv).toEqual(["exec", "-w", "/app", "--", "benchmark-cell", "bash", "-lc", "ls -la"])
+      expect(dockerCalls()[0]!.argv.slice(-4)).toEqual(["sh", "bash", "-lc", "ls -la"])
       const tested = yield* flow("test")!.run(call({ against: "workspace" }, "test"))
       expect(tested.outcome, JSON.stringify(tested)).toBe("success")
       expect(tested.value).toMatchObject({ exitCode: 0, passed: 1 })
-      expect(dockerCalls()[3]!.argv).toEqual(
+      expect(dockerCalls()[1]!.argv).toEqual(
         ["exec", "-w", "/app", "--", "benchmark-cell", "bash", "-c", "pytest -q \"$@\"", "pytest -q"]
       )
       // A rootless daemon is found only through these; every transport process carries them.
@@ -445,7 +443,7 @@ it("keeps a sealed host out of every other container and off its own filesystem 
       const before = spawnCount(workspace)
       const refusals = [
         yield* flow("bash")!.run(call({ mode: "unhermetic", container: "other-task", command: "true" })),
-        yield* flow("bash")!.run(call({ mode: "unhermetic", command: "true", cwd: workspace })),
+        yield* flow("bash")!.run(call({ mode: "unhermetic", container: "", command: "true" })),
         // The runner shares the transport, which answers for one container only.
         yield* flow("test")!.run(call({ against: "workspace" }, "test"))
       ]
@@ -455,6 +453,16 @@ it("keeps a sealed host out of every other container and off its own filesystem 
       }
       expect(spawnCount(workspace)).toBe(before)
       expect(dockerCalls()).toEqual([])
+      // A call that names no container cannot run here by omission: it goes to the sealed one.
+      const escape = join(base, "sealed-escape")
+      const omitted = yield* flow("bash")!.run(
+        call({ mode: "unhermetic", command: `printf escaped > ${escape}`, cwd: workspace })
+      )
+      expect(omitted.outcome, JSON.stringify(omitted)).toBe("success")
+      expect(existsSync(escape)).toBe(false)
+      expect(dockerCalls().map((entry) => entry.argv.slice(0, 6))).toEqual([
+        ["exec", "-w", workspace, "--", "benchmark-cell", "sh"]
+      ])
     }).pipe(
       Effect.provide(build(workspace, {
         modules,

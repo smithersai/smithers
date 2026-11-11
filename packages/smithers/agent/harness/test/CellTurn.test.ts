@@ -517,6 +517,38 @@ console.log(kept)`
     expect(output?.type === "text" ? output.text : "").toContain("outside this run's capability envelope")
   })
 
+  it("admits a flow that declares whole authority only under an envelope that covers all of it", async () => {
+    // A markdown flow whose frontmatter names no `capabilities:` declares the
+    // bare `*`. It is a pattern, not one capability, so no single grant such
+    // as `fs:read:**` covers it; only whole authority does.
+    const whole = new Capability.CapabilityPattern({ action: "*", resource: "**" })
+    const call = async (envelope: Capability.CapabilityPattern, declared: string) => {
+      const { engine, events } = await run({
+        script: [
+          emits(
+            `const answer = await ctx.call("worker", {})
+             ctx.done(answer?.ok === false ? answer.error.message : "ran")`
+          )
+        ],
+        flows: [descriptor("worker", { capabilities: [declared] })],
+        state: { ...state(), capabilityEnvelope: [envelope] }
+      })
+      const output = of(events, "resolved")[0]?.message.content[0]
+      return { reached: engine.recorder.calls.length, text: output?.type === "text" ? output.text : "" }
+    }
+
+    expect(await call(whole, "*")).toEqual({ reached: 1, text: "ran" })
+    expect(await call(pattern("fs:read:**"), "*")).toEqual({
+      reached: 0,
+      text: "Flow worker needs *, which is outside this run's capability envelope."
+    })
+    // Neither one capability nor a pattern: nothing can cover it.
+    expect(await call(whole, "bogus")).toEqual({
+      reached: 0,
+      text: "Flow worker needs bogus, which is outside this run's capability envelope."
+    })
+  })
+
   it("parks durably when a call needs a permission the run does not hold", async () => {
     const request = Permission.PermissionRequired.new({
       requestId: "perm-1",

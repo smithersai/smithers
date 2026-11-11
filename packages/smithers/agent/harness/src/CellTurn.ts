@@ -2387,7 +2387,15 @@ const callHandler = (
     const envelope = CapabilitySet.fromPatterns(state.capabilityEnvelope)
     const refused = descriptor.capabilities.filter((declared) =>
       Option.match(Capability.parse(declared), {
-        onNone: () => true,
+        // A declaration that is not one capability may still be a pattern:
+        // the bare `*` a markdown flow declares when its frontmatter names no
+        // `capabilities:` is whole authority. It is admitted only where one
+        // pattern of the envelope covers all of it.
+        onNone: () =>
+          Option.match(Capability.parsePattern(declared), {
+            onNone: () => true,
+            onSome: (pattern) => !state.capabilityEnvelope.some((granted) => Capability.subsumes(granted, pattern))
+          }),
         onSome: (capability) => !CapabilitySet.allows(envelope, capability)
       })
     )

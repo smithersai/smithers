@@ -231,85 +231,94 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
   // chunks inside one section, which is the shape the parser already accepts.
   // Resolve against the injected workspace, then follow existing filesystem
   // aliases. For a new file, resolve its parent (which may be a symlink).
-  const identity = (value: string) => {
-    const resolved = path.resolve(value)
-    return fileSystem.realPath(resolved).pipe(
+  const resolveFailure = (value: string) =>
+    FsFailure.denied(value, () =>
+      new StdError.StdError({
+        code: "command_failed",
+        message: `Failed to resolve patch path ${value}`,
+        path: value
+      }))
+  const resolved = (value: string) => {
+    const absolute = path.resolve(value)
+    return fileSystem.realPath(absolute).pipe(
       Effect.catch((error) =>
         error.reason._tag === "NotFound"
-          ? fileSystem.realPath(path.dirname(resolved)).pipe(
-            Effect.map((parent) => path.resolve(parent, path.basename(resolved))),
+          ? fileSystem.realPath(path.dirname(absolute)).pipe(
+            Effect.map((parent) => path.resolve(parent, path.basename(absolute))),
             Effect.catch((parentError) =>
               parentError.reason._tag === "NotFound"
-                ? Effect.succeed(resolved)
+                ? Effect.succeed(absolute)
                 : Effect.fail(parentError)
             )
           )
           : Effect.fail(error)
       ),
-      Effect.mapError(FsFailure.denied(value, () =>
-        new StdError.StdError({
-          code: "command_failed",
-          message: `Failed to resolve patch path ${value}`,
-          path: value
-        })))
+      Effect.mapError(resolveFailure(value))
     )
   }
-  const touched = new Set<string>()
-  for (const hunk of parsed.hunks) {
-    const source = yield* identity(hunk.path)
-    const destination = hunk.kind === "update" && hunk.movePath !== undefined
-      ? yield* identity(hunk.movePath)
-      : undefined
-    const claims: Array<[string, string]> = [[hunk.path, source]]
-    if (hunk.kind === "update" && hunk.movePath !== undefined && destination !== source) {
-      claims.push([hunk.movePath, destination!])
-    }
-    for (const [claimed, key] of claims) {
-      if (touched.has(key)) {
-        return yield* Effect.fail(
-          new StdError.StdError({
-            code: "invalid_input",
-            message: `The patch names ${claimed} in more than one section; give one section per path`,
-            path: claimed
-          })
-        )
+  const claim = (identity: (value: string) => Effect.Effect<string, StdError.StdError>) =>
+    Effect.gen(function*() {
+      const touched = new Set<string>()
+      for (const hunk of parsed.hunks) {
+        const source = yield* identity(hunk.path)
+        const destination = hunk.kind === "update" && hunk.movePath !== undefined
+          ? yield* identity(hunk.movePath)
+          : undefined
+        const claims: Array<[string, string]> = [[hunk.path, source]]
+        if (hunk.kind === "update" && hunk.movePath !== undefined && destination !== source) {
+          claims.push([hunk.movePath, destination!])
+        }
+        for (const [claimed, key] of claims) {
+          if (touched.has(key)) {
+            return yield* Effect.fail(
+              new StdError.StdError({
+                code: "invalid_input",
+                message: `The patch names ${claimed} in more than one section; give one section per path`,
+                path: claimed
+              })
+            )
+          }
+          touched.add(key)
+        }
       }
-      touched.add(key)
-    }
-  }
-
-  yield* FileMutation.validate(
-    fileSystem,
-    parsed.hunks.flatMap((hunk) =>
-      hunk.kind === "update" && hunk.movePath !== undefined ? [hunk.path, hunk.movePath] : [hunk.path]
-    )
+    })
+  const named = parsed.hunks.flatMap((hunk) =>
+    hunk.kind === "update" && hunk.movePath !== undefined ? [hunk.path, hunk.movePath] : [hunk.path]
   )
+  // A batched host resolves every alias and reads every update in one
+  // snapshot, so its claims are checked against that snapshot below.
+  const batched = FileMutation.batched(fileSystem) !== undefined
+  if (!batched) yield* claim(resolved)
+
+  yield* FileMutation.validate(fileSystem, named)
 
   // Create only parents the patch already intends to create, before taking
   // stable sibling locks for new destinations as well as existing sources.
+  // Versioned and batched hosts create them inside their commit.
+  const parentFailure = (destination: string) =>
+    FsFailure.denied(destination, () =>
+      new StdError.StdError({
+        code: "command_failed",
+        message: `Failed to create parent directories for ${destination}`,
+        path: destination
+      }))
   for (const hunk of parsed.hunks) {
     const destination = hunk.kind === "add" ? hunk.path : hunk.kind === "update" ? hunk.movePath : undefined
-    if (destination !== undefined && !FileMutation.isVersioned(fileSystem)) {
+    if (destination !== undefined && !FileMutation.isVersioned(fileSystem) && !batched) {
       yield* fileSystem.makeDirectory(path.dirname(destination), { recursive: true }).pipe(
-        Effect.mapError(
-          FsFailure.denied(destination, () =>
-            new StdError.StdError({
-              code: "command_failed",
-              message: `Failed to create parent directories for ${destination}`,
-              path: destination
-            }))
-        )
+        Effect.mapError(parentFailure(destination))
       )
     }
   }
   return yield* Effect.scoped(Effect.gen(function*() {
-    const mutation = yield* FileMutation.acquire(
-      fileSystem,
-      parsed.hunks.flatMap((hunk) =>
-        hunk.kind === "update" && hunk.movePath !== undefined ? [hunk.path, hunk.movePath] : [hunk.path]
-      ),
-      path
-    )
+    const mutation = yield* FileMutation.acquire(fileSystem, named, path, {
+      read: parsed.hunks.flatMap((hunk) => hunk.kind === "update" ? [hunk.path] : []),
+      failure: (error) => resolveFailure(named[0]!)(error)
+    })
+    const identity = batched
+      ? (value: string) => Effect.succeed(mutation.seen!(value).canonical ?? path.resolve(value))
+      : resolved
+    if (batched) yield* claim(identity)
     const added: Array<string> = []
     const modified: Array<string> = []
     const deleted: Array<string> = []
@@ -319,9 +328,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
       if (hunk.kind !== "update") continue
       const bytes = yield* mutation.read(
         hunk.path,
-        fileSystem.readFile(hunk.path).pipe(
-          Effect.mapError(FsFailure.reading(hunk.path, `Failed to read file to update ${hunk.path}`))
-        )
+        FsFailure.reading(hunk.path, `Failed to read file to update ${hunk.path}`)
       )
       if (bytes.includes(0)) {
         return yield* Effect.fail(
@@ -357,21 +364,31 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
 
     // Prepare one complete provider request before touching any file. A move
     // carries both its destination write and source removal in the same commit.
+    // `roles` says what each change is for, so a batched failure is reported
+    // as the portable body reports it.
     const changes: Array<FileMutation.Change> = []
+    const roles: Array<"add" | "delete" | "update" | "original"> = []
     const moves = new Set<ApplyPatchText.Hunk>()
     for (const hunk of parsed.hunks) {
       if (hunk.kind === "delete") {
         changes.push({ path: hunk.path, content: null })
+        roles.push("delete")
       } else if (hunk.kind === "add") {
         changes.push({ path: hunk.path, content: encoder.encode(hunk.contents) })
+        roles.push("add")
       } else {
+        const moved = hunk.movePath !== undefined &&
+          (yield* identity(hunk.movePath)) !== (yield* identity(hunk.path))
         changes.push({
           path: hunk.movePath ?? hunk.path,
-          content: encoder.encode(prepared.get(hunk))
+          content: encoder.encode(prepared.get(hunk)),
+          ...(moved ? { metadataFrom: hunk.path } : {})
         })
-        if (hunk.movePath !== undefined && (yield* identity(hunk.movePath)) !== (yield* identity(hunk.path))) {
+        roles.push("update")
+        if (moved) {
           moves.add(hunk)
           changes.push({ path: hunk.path, content: null })
+          roles.push("original")
         }
       }
     }
@@ -391,6 +408,26 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
         }, deleted=${JSON.stringify(deleted)}`,
         path: offendingPath
       })
+    const failureOf =
+      (role: (typeof roles)[number], offendingPath: string) =>
+      (error: PlatformError.PlatformError): StdError.StdError => {
+        switch (role) {
+          case "add":
+            return mutationFailure("command_failed", `Failed to write file ${offendingPath}`, offendingPath)(error)
+          case "delete":
+            return mutationFailure("not_found", `Failed to delete file ${offendingPath}`, offendingPath)(error)
+          case "update":
+            return error.reason.method === "chmod"
+              ? mutationError(
+                "command_failed",
+                `Could not preserve the mode of ${offendingPath} before replacement by chmod`,
+                offendingPath
+              )
+              : mutationFailure("command_failed", `Failed to write file ${offendingPath}`, offendingPath)(error)
+          case "original":
+            return mutationFailure("command_failed", `Failed to remove original ${offendingPath}`, offendingPath)(error)
+        }
+      }
 
     yield* mutation.commit(
       changes,
@@ -399,15 +436,13 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
           switch (hunk.kind) {
             case "add": {
               yield* fileSystem.writeFile(hunk.path, encoder.encode(hunk.contents)).pipe(
-                Effect.mapError(mutationFailure("command_failed", `Failed to write file ${hunk.path}`, hunk.path))
+                Effect.mapError(failureOf("add", hunk.path))
               )
               added.push(hunk.path)
               break
             }
             case "delete": {
-              yield* fileSystem.remove(hunk.path).pipe(
-                Effect.mapError(mutationFailure("not_found", `Failed to delete file ${hunk.path}`, hunk.path))
-              )
+              yield* fileSystem.remove(hunk.path).pipe(Effect.mapError(failureOf("delete", hunk.path)))
               deleted.push(hunk.path)
               break
             }
@@ -419,30 +454,28 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
                 destination,
                 encoder.encode(contents),
                 moves.has(hunk) ? { metadataFrom: hunk.path } : undefined
-              ).pipe(
-                Effect.mapError((error) =>
-                  error.reason.method === "chmod"
-                    ? mutationError(
-                      "command_failed",
-                      `Could not preserve the mode of ${destination} before replacement by chmod`,
-                      destination
-                    )
-                    : mutationFailure("command_failed", `Failed to write file ${destination}`, destination)(error)
-                )
-              )
+              ).pipe(Effect.mapError(failureOf("update", destination)))
               modified.push(destination)
               if (moves.has(hunk)) {
-                yield* fileSystem.remove(hunk.path).pipe(
-                  Effect.mapError(
-                    mutationFailure("command_failed", `Failed to remove original ${hunk.path}`, hunk.path)
-                  )
-                )
+                yield* fileSystem.remove(hunk.path).pipe(Effect.mapError(failureOf("original", hunk.path)))
               }
               break
             }
           }
         }
-      })
+      }),
+      // A batched commit applied the changes before `index`, in order; it
+      // creates the parents the portable body made before taking its locks.
+      (error, index, applied) => {
+        const { path: offendingPath } = changes[index]!
+        if (error.reason.method === "makeDirectory") return parentFailure(offendingPath)(error)
+        for (const [at, role] of roles.slice(0, applied).entries()) {
+          if (role === "add") added.push(changes[at]!.path)
+          else if (role === "delete") deleted.push(changes[at]!.path)
+          else if (role === "update") modified.push(changes[at]!.path)
+        }
+        return failureOf(roles[index]!, offendingPath)(error)
+      }
     )
 
     // Publish diagnostics only after the whole provider operation succeeds.

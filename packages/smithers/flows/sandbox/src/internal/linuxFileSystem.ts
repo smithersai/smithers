@@ -11,9 +11,8 @@ import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
-import * as Stream from "effect/Stream"
 import type { Session } from "../Sandbox/Session.ts"
-import { refusalReason } from "./platformReason.ts"
+import { Batched, type BatchedFiles, batchedFiles, fileType, gather, refusal } from "./linuxBatch.ts"
 
 const encoder = new TextEncoder()
 const validMode = (mode: number): boolean => Number.isInteger(mode) && mode >= 0 && mode <= 0o7777
@@ -26,34 +25,24 @@ const validOwner = (id: number): boolean => Number.isInteger(id) && id >= -1 && 
  * The sibling lives in a private directory on the destination filesystem.
  * `guest` names the machine kind in refusals, such as `container`.
  *
+ * It also carries `@smthrs/std`'s batched file calls under `Batched`, so
+ * each standard file flow costs one or two round trips to the guest rather
+ * than one per filesystem call.
+ *
  * @category constructors
  * @since 0.1.0
  */
-export const linuxFileSystem = (session: Session, guest: string): Partial<FileSystem.FileSystem> => {
+export const linuxFileSystem = (
+  session: Session,
+  guest: string
+): Partial<FileSystem.FileSystem> & { readonly [Batched]: BatchedFiles } => {
   const badArgument = (method: string, description: string) =>
     PlatformError.badArgument({ module: "FileSystem", method, description })
-  const failed = (method: string, path: string, description: string, code = 1) =>
-    PlatformError.systemError({
-      _tag: code === 9 ? "NotFound" : code === 10 ? "AlreadyExists" : refusalReason(description),
-      module: "FileSystem",
-      method,
-      pathOrDescriptor: path,
-      description
-    })
   const run = (method: string, path: string, script: string, stdin?: Uint8Array) =>
-    Effect.scoped(Effect.gen(function*() {
-      const process = yield* session.spawn(script, { stdin })
-      const [stdout, stderr, code] = yield* Effect.all([
-        Stream.mkString(Stream.decodeText(process.stdout)),
-        Stream.mkString(Stream.decodeText(process.stderr)),
-        process.exitCode
-      ], { concurrency: "unbounded" })
-      if (code !== 0) return yield* Effect.fail(failed(method, path, stderr, code))
-      return stdout
-    })).pipe(
-      Effect.mapError((error) =>
-        error instanceof PlatformError.PlatformError ? error : failed(method, path, error.message)
-      )
+    Effect.flatMap(
+      gather(session, method, path, script, stdin),
+      ({ code, stderr, stdout }) =>
+        code === 0 ? Effect.succeed(stdout) : Effect.fail(refusal(method, path, stderr, code))
     )
   const stat: FileSystem.FileSystem["stat"] = (path) =>
     Effect.gen(function*() {
@@ -70,7 +59,7 @@ export const linuxFileSystem = (session: Session, guest: string): Partial<FileSy
         fields.length !== 8 || !/^[0-9a-f]+$/i.test(fields[0]!) || !Number.isSafeInteger(mode) ||
         values.some((value) => !Number.isSafeInteger(value)) || values.slice(0, 6).some((value) => value < 0)
       ) {
-        return yield* Effect.fail(failed("stat", path, `${guest} stat returned invalid metadata`))
+        return yield* Effect.fail(refusal("stat", path, `${guest} stat returned invalid metadata`))
       }
       const [size, uid, gid, dev, ino, nlink, mtime] = values as [
         number,
@@ -81,17 +70,8 @@ export const linuxFileSystem = (session: Session, guest: string): Partial<FileSy
         number,
         number
       ]
-      const types: Record<number, FileSystem.File.Info["type"]> = {
-        0o100000: "File",
-        0o040000: "Directory",
-        0o120000: "SymbolicLink",
-        0o010000: "FIFO",
-        0o020000: "CharacterDevice",
-        0o060000: "BlockDevice",
-        0o140000: "Socket"
-      }
       return {
-        type: types[mode & 0o170000] ?? "Unknown",
+        type: fileType(mode),
         size: ByteSize.fromInputUnsafe(size),
         mode,
         uid: Option.some(uid),
@@ -110,7 +90,9 @@ export const linuxFileSystem = (session: Session, guest: string): Partial<FileSy
   const writeFile: FileSystem.FileSystem["writeFile"] = (path, content, options) => {
     const flag = options?.flag ?? "w"
     if (flag === "w" && options?.mode === undefined) {
-      return session.writeFile(path, content).pipe(Effect.mapError((error) => failed("writeFile", path, error.message)))
+      return session.writeFile(path, content).pipe(
+        Effect.mapError((error) => refusal("writeFile", path, error.message))
+      )
     }
     if (flag !== "wx" || (options?.mode !== undefined && !validMode(options.mode))) {
       return Effect.fail(badArgument("writeFile", `${guest} writes support w without a mode, or wx with a valid mode`))
@@ -134,6 +116,7 @@ exit 1`
     return Effect.asVoid(run("writeFile", path, script, content))
   }
   return {
+    [Batched]: batchedFiles(session, guest),
     stat,
     writeFile,
     writeFileString: (path, content, options) => writeFile(path, encoder.encode(content), options),

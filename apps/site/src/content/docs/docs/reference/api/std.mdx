@@ -297,10 +297,14 @@ image. Custom transports return any host process environment overrides in
 
 The identity of one directory tree, measured where the tree is. The host's
 workspace walk cannot see a container's filesystem, so `bash` runs this
-script through the container transport before and after a containerised
-command and reports whether the two answers differ under the reserved
-`mutated` key. The harness reads `true` as a measured write, the way it reads
-`invalidProbe` as a measured refusal.
+script before and after a containerised command and reports whether the two
+answers differ under the reserved `mutated` key. The harness reads `true` as
+a measured write, the way it reads `invalidProbe` as a measured refusal.
+
+Both measurements ride in the transport call that runs the command: `bash`
+spawns `sh -c <around> sh bash -lc <command>`, so a containerised command is
+one round trip. `around` writes the measurements as the last line of standard
+error and `split` takes them off before the result is returned.
 
 | Export                  | Type                                                | Meaning                                                                                                                                        |
 | ----------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -312,11 +316,16 @@ command and reports whether the two answers differ under the reserved
 | `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.                                                                     |
 | `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.                                                                      |
 | `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less.                                                                 |
+| `marker`                | `"__smithers_tree__"`                               | The word `around` starts its line of standard error with.                                                                                      |
+| `measureSeconds`        | `60`                                                | How long one measurement inside `around` may take; a longer one is unmeasured.                                                                 |
+| `around`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script that measures, runs `"$@"` with its own stdin and streams, measures again and exits with the command's status.          |
+| `split`                 | `(stderr: string) => { stderr, before?, after? }`   | Separates `around`'s last line from the command's standard error; standard error without it is returned whole, unmeasured.                     |
 
 Identity, not content: size and mtime per file, so a rewrite that restores
 both is invisible, exactly as it is to the host walk. Every tool the script
-needs is POSIX or busybox; a container without one exits non-zero and `bash`
-reports no `mutated` at all.
+needs is POSIX or busybox; a container without `find`, `stat -c` or `timeout`
+is unmeasured and `bash` reports no `mutated` at all. A tree with no file in
+it is a measurement, so the first write into an empty directory is a move.
 
 ## TestRunner
 

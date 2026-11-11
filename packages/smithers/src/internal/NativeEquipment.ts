@@ -1027,6 +1027,30 @@ export const testRunner = (
 }
 
 /**
+ * What the operator declares about the checkout a run works in.
+ *
+ * `SMITHERS_CHECKOUT_NO_LATER_COMMITS=1` says the operator built the checkout
+ * at one commit and nothing in it is later: no branch, tag, stash or reflog
+ * entry holds a later commit. A run is then taught not to mine history for a
+ * later fix. Only the party that made the checkout can know this, so it is
+ * never assumed: a benchmark rig that checks out a base commit sets it, and a
+ * person's repository leaves it unset.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.17
+ */
+export const checkoutFacts = (
+  environment: Readonly<Record<string, string | undefined>>
+): { readonly noLaterCommits?: true } => {
+  const value = Environment_.read(environment, "SMITHERS_CHECKOUT_NO_LATER_COMMITS")?.trim() ?? ""
+  if (value === "") return {}
+  if (value === "1") return { noLaterCommits: true }
+  throw new CliError.UsageError({
+    message: `SMITHERS_CHECKOUT_NO_LATER_COMMITS must be 1 or unset, not ${JSON.stringify(value)}`
+  })
+}
+
+/**
  * The one container this host's `bash` may reach, when the host is sealed.
  *
  * `SMITHERS_BASH_CONTAINER` names it. A sealed host refuses every `bash` call

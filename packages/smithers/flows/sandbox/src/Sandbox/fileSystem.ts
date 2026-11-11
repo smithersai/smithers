@@ -259,6 +259,11 @@ const unsupportedExit = 13
  * beside it, so an adapter's native operation gets the rooted path without
  * having to re-implement the rule.
  *
+ * A symbol-keyed member of `files` is a wire contract another package reads,
+ * such as `@smthrs/std`'s batched file calls. It reaches the result as the
+ * adapter wrote it, so it roots its own paths, and non-enumerable, so a
+ * wrapper that spreads the result does not inherit it.
+ *
  * Honest limits of the probe dialect: `stat` reports no mode, no times, and no
  * owner (the portable shell cannot name them; its `size` is exact, from the
  * machine's `stat` where it has one and a byte count otherwise, and a size the
@@ -270,6 +275,18 @@ const unsupportedExit = 13
  * @since 0.1.0
  */
 export const fileSystem = (session: Session): FileSystem.FileSystem => {
+  const derived = derive(session)
+  // A provider's symbol-keyed wire contracts, such as `@smthrs/std`'s batched
+  // file calls, stay with the filesystem it built: non-enumerable, so a
+  // wrapper that spreads this filesystem to guard its operations does not
+  // inherit calls that would route around the guards.
+  for (const key of Object.getOwnPropertySymbols(session.files ?? {})) {
+    Object.defineProperty(derived, key, { enumerable: false })
+  }
+  return derived
+}
+
+const derive = (session: Session): FileSystem.FileSystem => {
   const quote = CommandLine.quote
   const resolve = rootedAt(session.workdir)
   const statOf = Effect.fn("Sandbox.fileSystem.stat")(function*(raw: string) {

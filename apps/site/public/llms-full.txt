@@ -5466,6 +5466,7 @@ itself; every default on the optional half is the conservative one.
 | `flows`              | `ReadonlyArray<FlowBinding.Source>`                                                                                                  | Ordered executable-flow sources composed into the run's catalog.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>`                                                                                      | Host implementations for module-backed flows, keyed by flow name.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `promptRunner`       | `CellCalls.PromptRunner`                                                                                                             | Runs a rendered markdown flow. A host with none refuses them catchably.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `children`           | `Agent.Children`                                                                                                                     | Runs each markdown flow a cell calls as a nested run of this same loop: `{ flows, seats, self?, observe }`. `promptRunner` wins when both are set. See [Delegate to child agents](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/guides/subagents.md).                                                                                                                                                                                                                                                                                                         |
 | `authorize`          | `(call: Cell.Call) => Effect<void, HarnessError>`                                                                                    | Decides whether a call may proceed, before its durable boundary opens.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `plugins`            | `PluginInput<FlowsHooks>`                                                                                                            | Shared-kernel plugins resolved for the harness target.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `config`             | `FlowsConfig`                                                                                                                        | Raw config threaded through the plugin kernel's config waterfall.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -5636,24 +5637,25 @@ for an answer. Its failure prevents entry.
 delegation must stand before adoption. The default is
 `Ownership.heartbeatStaleAfter` (30 seconds); adoption starts at the cutoff.
 
-| Field             | Type                                                                      | What it decides                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `limits`          | `Sandbox.Limits`                                                          | The explicit sandbox budget every cell runs under. Required; never unlimited.                                                                       |
-| `quotaPolicy`     | `Layer<QuotaPolicy.QuotaClassifier>`                                      | The required quota park/retry policy every model call in the run is decided under.                                                                  |
-| `budget`          | `(envelope: Envelope) => Layer<Budget.Budget, Budget.ConfigurationError>` | Builds the run-local spending policy from the plan that was approved. Provided inside each body invocation.                                         |
-| `flows`           | `ReadonlyArray<FlowBinding.Source>`                                       | Host executable-flow sources composed into every run's catalog. The durable wait and the control-wired approval are composed by the session itself. |
-| `sandbox`         | `(selection) => Effect<SandboxOpener, SandboxRefused> \| undefined`       | Opens the machine for a flow's `sandbox:` selection; `undefined` when no provider of that name is configured. Absent, every selection is refused.   |
-| `system`          | `ReadonlyArray<string>`                                                   | Stable system teaching placed ahead of the cell contract.                                                                                           |
-| `maxFrames`       | `number`                                                                  | The cell-loop bound.                                                                                                                                |
-| `readOnlyCap`     | `number`                                                                  | Consecutive read-only frames a task run may spend. Defaults to `CellTurn.defaultReadOnlyFrames`.                                                    |
-| `modelCallMs`     | `number`                                                                  | Wall-clock milliseconds one model call may spend. Defaults to `CellTurn.modelCallMsFor(effort)`; zero disarms it.                                   |
-| `repeatCap`       | `number`                                                                  | Consecutive repeat-observation frames. Defaults to `CellTurn.defaultRepeatFrames`; zero disarms it.                                                 |
-| `narrowingCap`    | `number`                                                                  | Completions bounced for narrowed evidence. Defaults to `CellTurn.defaultNarrowingDemands`; zero disarms it.                                         |
-| `unmovedCap`      | `number`                                                                  | Completions bounced for an unmoved tree. Defaults to `CellTurn.defaultUnmovedDemands`; zero disarms it.                                             |
-| `unresolvedCap`   | `number`                                                                  | Completions bounced for a failing check the run replaced. Defaults to `CellTurn.defaultUnresolvedDemands`; zero disarms it.                         |
-| `approvalChannel` | `boolean`                                                                 | Whether a human answers this executor's runs. Defaults to false; a run that claims false has its `park` transitions refused and answered in-frame.  |
-| `judged`          | `boolean`                                                                 | Whether the host's `Evaluator` is a real judge; forwarded to `Agent.Options.judged`.                                                                |
-| `reasoningEffort` | `ModelRequest.ReasoningEffort`                                            | The reasoning effort agent seats run at when their flow declares none. The flow's own `effort:` frontmatter wins; the built-in default is `high`.   |
+| Field              | Type                                                                      | What it decides                                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limits`           | `Sandbox.Limits`                                                          | The explicit sandbox budget every cell runs under. Required; never unlimited.                                                                       |
+| `quotaPolicy`      | `Layer<QuotaPolicy.QuotaClassifier>`                                      | The required quota park/retry policy every model call in the run is decided under.                                                                  |
+| `budget`           | `(envelope: Envelope) => Layer<Budget.Budget, Budget.ConfigurationError>` | Builds the run-local spending policy from the plan that was approved. Provided inside each body invocation.                                         |
+| `flows`            | `ReadonlyArray<FlowBinding.Source>`                                       | Host executable-flow sources composed into every run's catalog. The durable wait and the control-wired approval are composed by the session itself. |
+| `markdownChildren` | `boolean`                                                                 | Runs each markdown flow a cell calls as a nested run through `Agent.Options.children`, journaled under `control.child.*`. Defaults to false.        |
+| `sandbox`          | `(selection) => Effect<SandboxOpener, SandboxRefused> \| undefined`       | Opens the machine for a flow's `sandbox:` selection; `undefined` when no provider of that name is configured. Absent, every selection is refused.   |
+| `system`           | `ReadonlyArray<string>`                                                   | Stable system teaching placed ahead of the cell contract.                                                                                           |
+| `maxFrames`        | `number`                                                                  | The cell-loop bound.                                                                                                                                |
+| `readOnlyCap`      | `number`                                                                  | Consecutive read-only frames a task run may spend. Defaults to `CellTurn.defaultReadOnlyFrames`.                                                    |
+| `modelCallMs`      | `number`                                                                  | Wall-clock milliseconds one model call may spend. Defaults to `CellTurn.modelCallMsFor(effort)`; zero disarms it.                                   |
+| `repeatCap`        | `number`                                                                  | Consecutive repeat-observation frames. Defaults to `CellTurn.defaultRepeatFrames`; zero disarms it.                                                 |
+| `narrowingCap`     | `number`                                                                  | Completions bounced for narrowed evidence. Defaults to `CellTurn.defaultNarrowingDemands`; zero disarms it.                                         |
+| `unmovedCap`       | `number`                                                                  | Completions bounced for an unmoved tree. Defaults to `CellTurn.defaultUnmovedDemands`; zero disarms it.                                             |
+| `unresolvedCap`    | `number`                                                                  | Completions bounced for a failing check the run replaced. Defaults to `CellTurn.defaultUnresolvedDemands`; zero disarms it.                         |
+| `approvalChannel`  | `boolean`                                                                 | Whether a human answers this executor's runs. Defaults to false; a run that claims false has its `park` transitions refused and answered in-frame.  |
+| `judged`           | `boolean`                                                                 | Whether the host's `Evaluator` is a real judge; forwarded to `Agent.Options.judged`.                                                                |
+| `reasoningEffort`  | `ModelRequest.ReasoningEffort`                                            | The reasoning effort agent seats run at when their flow declares none. The flow's own `effort:` frontmatter wins; the built-in default is `high`.   |
 
 ### AgentSession.make
 
@@ -5792,6 +5794,38 @@ empty regenerates the payloads, and so the identities, the first attempt wrote.
 
 `trace(event, previous?)` takes the same `RequestTrail` as an argument and
 stays pure. Without one it writes the request whole.
+
+### AgentSession.childTracer
+
+```ts
+const childEventPrefix: "control.child."
+
+interface ChildRecord {
+  readonly sourceSeq: JournalEvent.SourceSeq
+  readonly eventType: string
+  readonly payload: Record<string, unknown>
+}
+
+const childTracer: () => (child: Agent.Child, event: AgentEvent.AgentEvent) => ChildRecord | undefined
+```
+
+The journal projection of a run's markdown children (since 1.0.0-rc.17). Each
+child is projected as `tracer` projects a run, under its own frame clock, and
+its record type replaces `control.agent.` with `control.child.`:
+`control.child.model-settled` is the child's own `control.agent.model-settled`.
+Every payload gains `child: { callId, flow, scope }`. `callId` is the caller's
+call, the same value its `control.agent.cell-call-started` and
+`control.agent.cell-call-settled` records carry; `scope` is the child's
+session, `<run>/child/<callId>`. The identity is `traceIdentity` over the
+child's own coordinates with `child` in its material, so a child that runs
+again after a crash journals each record once and moves no row of its caller's.
+
+A separate prefix keeps every reader of `control.agent.*` folding only the
+caller's frames, and keeps a child's records out of resume validation.
+`AgentSession` writes these records into the run's trail when
+`Options.markdownChildren` is set; `AgentAction` writes them on the lossy
+channel under producer `/agent/action/child` when its host sets
+`markdownChildren` and the composition has a journal.
 
 ### AgentSession.traceIdentity
 
@@ -6031,6 +6065,7 @@ through `layerHost`:
 | `limits`             | `Sandbox.Limits`                                | The explicit sandbox budget every cell runs under. Required; never unlimited.                                                                                           |
 | `flows`              | `ReadonlyArray<FlowBinding.Source>`             | Host executable-flow sources composed into every run's catalog.                                                                                                         |
 | `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>` | Host implementations for module-backed flows, keyed by flow name.                                                                                                       |
+| `markdownChildren`   | `boolean`                                       | Runs each markdown flow a step's cell calls as a nested run through `Agent.Options.children`. Defaults to false.                                                        |
 | `plugins`            | `PluginInput<FlowsHooks>`                       | Plugins composed into every run.                                                                                                                                        |
 | `config`             | `FlowsConfig`                                   | Configuration composed into every run.                                                                                                                                  |
 | `system`             | `ReadonlyArray<string>`                         | Stable system teaching placed ahead of every action's own.                                                                                                              |
@@ -7201,6 +7236,7 @@ const shell: (
   container?: Container.Container,
   options?: {
     readonly sealedTo?: string | undefined
+    readonly sealedCwd?: string | undefined
     readonly terminal?: "agent" | undefined
     readonly callLimitMillis?: number | undefined
   }
@@ -7212,7 +7248,10 @@ to `Container.makeCommand()`, the docker or podman CLI; a composition that
 supplies none refuses a containerised call. A command that names no `stdin`
 reads `/dev/null`, so a command that waits on input ends at once.
 
-`options.sealedTo` restricts execution to one container. `options.terminal`
+`options.sealedTo` restricts execution to one container: a call that names no
+container runs there, in `options.sealedCwd` when it names no `cwd`, and a
+call that names another container fails with `outside_container`.
+`options.terminal`
 (since 1.0.0) accepts `"agent"` and fails with `provider_unavailable` until
 registered PTY execution and card evidence are available. It never falls back
 to container execution.
@@ -21339,7 +21378,9 @@ re-derived declaration digest must equal the call's
 (`declaration_changed`). An executable binding then answers first, after an
 identity check against the disclosed declaration; a markdown flow renders
 against `{ args: string }` and runs through the supplied `PromptRunner`, or
-settles `unimplemented`; anything else dispatches to the host's
+settles `unimplemented`. The runner receives `Prompt`: the `call`, the
+rendered `text`, and the flow's `descriptor` (since 1.0.0-rc.17), whose
+`model` and frontmatter choose the child's seat and effort. Anything else dispatches to the host's
 `Implementation` for the name, or settles `unimplemented`. The resolver's
 shape is exactly the call runner a durable host wires behind
 `EngineLike.call`, so this browser-safe package never depends on the engine
@@ -40963,7 +41004,7 @@ Standard input for a transport with no input channel is staged under a session p
 
 `commandProvider(provider, options)` projects the lifecycle back onto the spawn-only provider. Existing `RemoteChildProcessSpawner` adapters, `SandboxHealth.make`, `SandboxSupervision`, and `ProviderConformance` then compose unchanged. `options.provides` declares `kill` and `ping` before acquisition, because the projected provider must expose those capabilities statically; `stdin` is not among them, because delivering it is an obligation of every session rather than a capability a session may lack. A supervision retire-and-reopen cycle acquires a new generation; an older generation's late finalizer cannot clear the newer held session.
 
-`fileSystem(session)` uses `Session.readFile` and `Session.writeFile` for byte transfer. It derives `exists`, `stat`, `makeDirectory`, `readDirectory`, `remove`, `rename`, `realPath`, and `readLink` with POSIX `sh` probes. Entries in `session.files` override the derived operations one by one, and an override is installed through the workdir resolver rather than beside it, so a native operation receives the rooted path without re-implementing the rule. Both arguments are rooted where both are paths the machine must reach (`rename`, `copyFile`, `link`); `symlink` is the exception, because its first argument is the text stored inside the link and POSIX resolves a relative one against the link's own directory, so rooting it would move where the link pointed. Other `FileSystem` operations retain `makeNoop`'s explicit refusal rather than simulating watches, open handles, or temporary directories.
+`fileSystem(session)` uses `Session.readFile` and `Session.writeFile` for byte transfer. It derives `exists`, `stat`, `makeDirectory`, `readDirectory`, `remove`, `rename`, `realPath`, and `readLink` with POSIX `sh` probes. Entries in `session.files` override the derived operations one by one, and an override is installed through the workdir resolver rather than beside it, so a native operation receives the rooted path without re-implementing the rule. Both arguments are rooted where both are paths the machine must reach (`rename`, `copyFile`, `link`); `symlink` is the exception, because its first argument is the text stored inside the link and POSIX resolves a relative one against the link's own directory, so rooting it would move where the link pointed. Other `FileSystem` operations retain `makeNoop`'s explicit refusal rather than simulating watches, open handles, or temporary directories. A symbol-keyed member of `session.files` is a wire contract another package reads, such as `@smthrs/std`'s `Read.Batched` calls. It reaches the result unchanged, so it roots its own paths, and non-enumerable, so a wrapper that spreads the result to guard its operations does not inherit it.
 
 The probe surface is intentionally honest. `stat` reports exact file size, but mode is `0` and times and ownership are absent. A probe whose utility answers `Permission denied` fails with `PermissionDenied`, the reason the platform gives `EACCES`; `stat`'s fallback is the exception, because it reads a file's bytes to size it where the platform `stat` would not. Directory listings are NUL framed through `find -print0`, so a filename may hold a newline, and no pseudo-terminal transport can columnize them. Probes require the named POSIX utilities on the machine.
 
@@ -41419,7 +41460,7 @@ const host = yield * Sandbox.hostContext(session)
 
 `existing(options)` serves the session contract over a container the caller already runs and owns, such as a benchmark's task container, reached through a transport of `@smthrs/std/Container`'s shape: `exec(request)` answers with the host command that runs one program in the container. A host passes the transport its `bash` flow uses, so its file operations take the same route as its commands. Nothing runs until the session is asked for something, and closing a scope leaves the container as it was.
 
-Every command, read, and write is one `/bin/sh -c` through the transport, run in `workdir` unless the command names another directory. File bytes come back as base64, so a transport whose output channel carries only text returns them intact, and go in on standard input unchanged. The caller's environment travels as for `make`, through standard input to an `env(1)` prefix; the transport's host command gets the least-authority environment plus the plan's own `env`, such as the variables a container CLI finds its daemon by. `readFile` answers a directory with `BadResource`, an absent path with `NotFound`, and a path the container's user may not read with `PermissionDenied`, as the platform implementations do. The other file operations are the Linux ones `make`'s sessions have. The guest needs `sh`, `base64`, and GNU or BusyBox utilities. The session declares no `kill`: a container engine does not pass the end of its client process on to the process it started, so use it for short commands such as file operations.
+Every command, read, and write is one `/bin/sh -c` through the transport, run in `workdir` unless the command names another directory. File bytes come back as base64, so a transport whose output channel carries only text returns them intact, and go in on standard input unchanged. The caller's environment travels as for `make`, through standard input to an `env(1)` prefix; the transport's host command gets the least-authority environment plus the plan's own `env`, such as the variables a container CLI finds its daemon by. `readFile` answers a directory with `BadResource`, an absent path with `NotFound`, and a path the container's user may not read with `PermissionDenied`, as the platform implementations do. The other file operations are the Linux ones `make`'s sessions have, including `@smthrs/std`'s batched file calls: `read` and `ls` take one transport call and `edit`, `write`, and `apply_patch` two, where the separate operations took up to ten. The guest needs `sh`, `base64`, and GNU or BusyBox utilities. The session declares no `kill`: a container engine does not pass the end of its client process on to the process it started, so use it for short commands such as file operations.
 
 ### KubernetesSandbox
 
@@ -42445,10 +42486,14 @@ image. Custom transports return any host process environment overrides in
 
 The identity of one directory tree, measured where the tree is. The host's
 workspace walk cannot see a container's filesystem, so `bash` runs this
-script through the container transport before and after a containerised
-command and reports whether the two answers differ under the reserved
-`mutated` key. The harness reads `true` as a measured write, the way it reads
-`invalidProbe` as a measured refusal.
+script before and after a containerised command and reports whether the two
+answers differ under the reserved `mutated` key. The harness reads `true` as
+a measured write, the way it reads `invalidProbe` as a measured refusal.
+
+Both measurements ride in the transport call that runs the command: `bash`
+spawns `sh -c <around> sh bash -lc <command>`, so a containerised command is
+one round trip. `around` writes the measurements as the last line of standard
+error and `split` takes them off before the result is returned.
 
 | Export                  | Type                                                | Meaning                                                                                                                                        |
 | ----------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -42460,11 +42505,16 @@ command and reports whether the two answers differ under the reserved
 | `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.                                                                     |
 | `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.                                                                      |
 | `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less.                                                                 |
+| `marker`                | `"__smithers_tree__"`                               | The word `around` starts its line of standard error with.                                                                                      |
+| `measureSeconds`        | `60`                                                | How long one measurement inside `around` may take; a longer one is unmeasured.                                                                 |
+| `around`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script that measures, runs `"$@"` with its own stdin and streams, measures again and exits with the command's status.          |
+| `split`                 | `(stderr: string) => { stderr, before?, after? }`   | Separates `around`'s last line from the command's standard error; standard error without it is returned whole, unmeasured.                     |
 
 Identity, not content: size and mtime per file, so a rewrite that restores
 both is invisible, exactly as it is to the host walk. Every tool the script
-needs is POSIX or busybox; a container without one exits non-zero and `bash`
-reports no `mutated` at all.
+needs is POSIX or busybox; a container without `find`, `stat -c` or `timeout`
+is unmeasured and `bash` reports no `mutated` at all. A tree with no file in
+it is a measurement, so the first write into an empty directory is a move.
 
 ## TestRunner
 

@@ -90,9 +90,11 @@ import * as CellPlugin from "./CellPlugin.ts"
 import * as Checkpointed from "./Checkpointed.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
 import * as CallIdentity from "./internal/CallIdentity.ts"
+import * as PromptChild from "./internal/PromptChild.ts"
 import * as MemoryMine from "./MemoryMine.ts"
 import * as QuotaPolicy from "./QuotaPolicy.ts"
 import * as Seat from "./Seat.ts"
+import type * as SeatResolver from "./SeatResolver.ts"
 import * as StandardFlows from "./StandardFlows.ts"
 
 /**
@@ -155,6 +157,14 @@ export interface Options {
    * @since 1.0.0-rc.16
    */
   readonly profile?: CellTurn.Profile | undefined
+  /**
+   * What the host measured or declares about the checkout and container the
+   * run works in; see `CellTurn.Environment`. Rendered into the run's
+   * teaching once, so it is constant for the run.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly environment?: CellTurn.Environment | undefined
   readonly registry: Registry.Registry
   /** Shared-kernel plugins resolved for the harness target. */
   readonly plugins?: PluginInput<FlowsHooks> | undefined
@@ -185,6 +195,13 @@ export interface Options {
   readonly implementations?: ReadonlyMap<string, CellCalls.Implementation> | undefined
   /** Runs a rendered markdown flow. A host with none refuses them catchably. */
   readonly promptRunner?: CellCalls.PromptRunner | undefined
+  /**
+   * Runs each markdown flow a cell calls as a nested run of this same loop;
+   * see {@link Children}. `promptRunner` wins when both are set.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly children?: Children | undefined
   /**
    * Decides whether a call may proceed, before its durable boundary opens.
    *
@@ -333,6 +350,76 @@ export interface Options {
    * @since 1.0.0-rc.0
    */
   readonly pinnedSources?: ReadonlyArray<string> | undefined
+}
+
+/**
+ * One markdown child run: the cell call it answers and the session it runs
+ * under.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface Child {
+  /**
+   * The caller's cell call, as `callId` names it on that call's
+   * `cell-call-started` and `cell-call-settled` records.
+   */
+  readonly callId: string
+  /** The markdown flow the child runs. */
+  readonly flow: string
+  /**
+   * The child's own durable session: `<caller session>/child/<callId>`. Its
+   * model steps and calls are keyed under it.
+   */
+  readonly session: string
+}
+
+/**
+ * What a host supplies so that a cell's `ctx.call("<markdown flow>", { args })`
+ * runs that flow as a nested run of the caller's own loop.
+ *
+ * The child is this same loop, run from inside the caller's durable call
+ * boundary: one keyed, journaled call whose recorded result a replay serves
+ * without running the child again. It runs with the caller's options except:
+ *
+ * - its `session` is {@link Child.session} and its `prompt` is the rendered
+ *   markdown body;
+ * - its seat is the one the flow's `model:` names, resolved through
+ *   {@link seats}, or the caller's seat and fallbacks when it names none; its
+ *   reasoning effort is the flow's `effort:`, or the caller's;
+ * - its catalog is {@link flows}, and it is offered no markdown flow, so
+ *   children nest one level deep;
+ * - its capability envelope is what the flow's `capabilities:` declares,
+ *   which the call boundary admitted only within the caller's envelope; a
+ *   flow that declares none claims whole authority and is admitted only by a
+ *   caller that holds it;
+ * - it never parks the caller: no `authorize`, no approval channel, no
+ *   capacity park and no budget park, so a quota or budget refusal fails the
+ *   child instead;
+ * - it is given no opening memory and no output check, writes no memory, and
+ *   drains no steering.
+ *
+ * It spends the caller's `Budget` and runs inside the caller's call, so it can
+ * neither outspend nor outlive the run that called it. Its answer is the
+ * call's value: the child's `ctx.done` text. A child that fails or ends its
+ * frames without an answer resolves the call as `flow_failed`, which the cell
+ * reads as `{ ok: false, error }`.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface Children {
+  /** The flow sources a child is offered, in place of the caller's `flows`. */
+  readonly flows: ReadonlyArray<FlowBinding.Source>
+  /** Resolves the `model:` a child flow declares. */
+  readonly seats: SeatResolver.Service
+  /**
+   * The markdown flow this run is itself. It is left out of the run's catalog
+   * and a call to it is refused as `unknown_flow`, so a run never calls itself.
+   */
+  readonly self?: string | undefined
+  /** Observes every event a child emits, in order, with the child it belongs to. */
+  readonly observe: (child: Child, event: AgentEvent.AgentEvent) => Effect.Effect<void>
 }
 
 /**
@@ -527,7 +614,7 @@ const opening = (
       ]
     }),
     flows,
-    undefined,
+    options.environment,
     stanceOf(options),
     options.profile
   )
@@ -1018,17 +1105,39 @@ const runProductionUnmeasured: Service["run"] = (options) =>
           // registry before executing, so a mid-frame change is refused.
           // A host with no prompt runner runs no markdown flow, so it never
           // shows one: the model would call it and every call would be refused.
-          const runnable = options.promptRunner !== undefined ? discovered : {
-            ...discovered,
-            visible: () =>
-              Effect.map(discovered.visible(), (entries) => entries.filter((entry) => entry.body._tag !== "Markdown"))
-          }
+          // A run whose markdown calls run as nested children is never shown
+          // itself, so a project whose one markdown flow is the run's own
+          // shows exactly the catalog it showed before children existed.
+          const children = options.promptRunner === undefined ? options.children : undefined
+          const runnable = options.promptRunner !== undefined
+            ? discovered
+            : children === undefined
+            ? {
+              ...discovered,
+              visible: () =>
+                Effect.map(discovered.visible(), (entries) => entries.filter((entry) => entry.body._tag !== "Markdown"))
+            }
+            : PromptChild.withoutSelf(discovered, children.self)
           const registry = FlowBinding.registry(runnable, catalog)
           const resolver = CellCalls.make({
             registry,
             catalog,
             implementations: options.implementations,
-            prompt: options.promptRunner
+            prompt: children === undefined ? options.promptRunner : PromptChild.runner({
+              parent: options,
+              children,
+              // The services this run holds are the ones its child runs with,
+              // so a child spends this run's budget inside this execution.
+              services: yield* Effect.context<
+                | FlowRuntime.FlowRuntime
+                | FlowRuntime.FlowInstance
+                | Sandbox.Sandbox
+                | Budget.Budget
+                | QuotaPolicy.QuotaClassifier
+                | Evaluator.Evaluator
+              >(),
+              run: runProduction
+            })
           })
           // This composition is the one place that knows the run's whole
           // authority, so it is the one place that may declare it (issue #75).

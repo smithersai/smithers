@@ -44,6 +44,7 @@ import * as Bash from "@smthrs/std/Bash"
 import * as Search from "@smthrs/std/Search"
 import { StdError } from "@smthrs/std/StdError"
 import * as TestRunner from "@smthrs/std/TestRunner"
+import * as TreeFingerprint from "@smthrs/std/TreeFingerprint"
 import {
   Cause,
   Clock,
@@ -383,6 +384,9 @@ const collect = (options: {
     )
     return collected
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
+
+/** How a rendered transport command spells the script `bash` runs a containerised command under. */
+const measured = `sh -c ${CommandLine.quote(TreeFingerprint.around())} sh`
 
 describe("standard capabilities are flows", () => {
   it("runs a std filesystem read, a std shell command, and a memory write through one call boundary", async () => {
@@ -734,18 +738,19 @@ ctx.done(probe.stdout.trim())`
     // re-parsed as shell text. The `--` before the container name is the
     // option terminator `@smthrs/std` `Container.makeCommand` emits, so a
     // container whose name begins with a dash cannot be read as a docker flag.
-    // `bash` brackets a containerised command with two tree fingerprints
-    // through the same transport; the command itself is the spawn asserted on.
-    expect(spawned.find((argv) => argv.includes("bash -lc"))).toBe(
-      `docker exec -i -w /testbed -- testbed bash -lc 'exec "$@"' bash python3 -`
-    )
+    // `bash` runs a containerised command under the script that measures its
+    // tree either side of it, in the one transport call.
+    expect(spawned).toEqual([
+      `docker exec -i -w /testbed -- testbed ${measured} bash -lc 'exec "$@"' bash python3 -`
+    ])
   })
 
-  it("refuses host bash with outside_container when the shell is sealed to one container", async () => {
+  it("runs every sealed bash call in the one container and none on the host", async () => {
     // A benchmark host holds other tasks' tests and reference solutions. The
     // sealed binding lets a cell reach the task's container and nothing else:
-    // a call with no container, which would run on this host, and a call
-    // naming another container both fail before anything is spawned.
+    // a call with no container runs there, in the sealed directory, instead
+    // of on this host, and a call naming another container fails before
+    // anything is spawned.
     const spawned: Array<string> = []
     const outcome = await drive(
       collect({
@@ -774,15 +779,15 @@ ctx.done(probe.stdout.trim())`
               })
             ).pipe((spawner) => Context.merge(spawner, pathServices)),
             undefined,
-            { sealedTo: "testbed" }
+            { sealedTo: "testbed", sealedCwd: "/app" }
           )
         ],
         cells: [
           `const seen = []
 for (const input of [
-  { mode: "unhermetic", command: "cat /host/tests/test_outputs.py" },
-  { mode: "unhermetic", container: "other", command: "cat /solution/solve.sh" },
-  { mode: "unhermetic", container: "testbed", command: "echo ok" }
+  { command: "cat tests/test_outputs.py" },
+  { container: "other", command: "cat /solution/solve.sh" },
+  { container: "testbed", cwd: "/srv", command: "echo ok" }
 ]) { const result = await ctx.call("bash", input); seen.push(result.ok === false ? "refused" : result.stdout.trim()) }
 ctx.done(seen.join(","))`
         ]
@@ -791,16 +796,20 @@ ctx.done(seen.join(","))`
 
     expect(outcome._tag).toBe("completed")
     const settled = settledCalls(eventsOf(outcome))
-    expect(settled.map((event) => event.result.outcome)).toEqual(["failure", "failure", "success"])
-    expect(settled[0]?.result.code).toBe("flow_failed")
-    expect(settled[0]?.result.message).toContain("only inside container \"testbed\"")
+    expect(settled.map((event) => event.result.outcome)).toEqual(["success", "failure", "success"])
+    expect(settled[1]?.result.code).toBe("flow_failed")
+    expect(settled[1]?.result.message).toContain("only inside container \"testbed\"")
     expect(settled[1]?.result.message).toContain("not \"other\"")
-    // Only the sealed container was reached; no host command was spawned.
-    expect(spawned.some((argv) => argv.includes("/host/tests") || argv.includes("solve.sh"))).toBe(false)
-    expect(spawned.find((argv) => argv.includes("echo ok"))).toBe(`docker exec -- testbed bash -lc 'echo ok'`)
+    // Every process started is the transport aimed at the sealed container:
+    // the unnamed call ran there, in the sealed directory, and the call that
+    // named another container started nothing.
+    expect(spawned).toEqual([
+      `docker exec -w /app -- testbed ${measured} bash -lc 'cat tests/test_outputs.py'`,
+      `docker exec -w /srv -- testbed ${measured} bash -lc 'echo ok'`
+    ])
     const resolved = eventsOf(outcome).find((event) => event._tag === "resolved")
     expect(resolved?._tag === "resolved" ? resolved.message.content : []).toEqual([
-      { type: "text", text: "refused,refused,ok" }
+      { type: "text", text: "ok,refused,ok" }
     ])
   })
 

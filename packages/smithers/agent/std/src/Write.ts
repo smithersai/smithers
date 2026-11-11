@@ -7,6 +7,8 @@
 import * as Path from "@smthrs/kernel/Path"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
+import type * as PlatformError from "effect/PlatformError"
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as Diagnostics from "./internal/Diagnostics.ts"
@@ -148,48 +150,54 @@ export const run = Effect.fn("Write.run")(function*(
 ): Effect.fn.Return<typeof Output.Type, StdError.StdError, FileSystem.FileSystem | Path.Path> {
   const fileSystem = yield* FileSystem.FileSystem
   const path = yield* Path.Path
+  const batched = FileMutation.batched(fileSystem) !== undefined
+  const parentFailure = FsFailure.denied(
+    input.path,
+    () => writeError(input.path, `Could not create the parent directory of ${input.path}`)
+  )
+  const inspectFailure = FsFailure.denied(
+    input.path,
+    () => writeError(input.path, `Could not inspect ${input.path} before writing`)
+  )
   yield* FileMutation.validate(fileSystem, [input.path])
-  if (!FileMutation.isVersioned(fileSystem)) {
+  if (!FileMutation.isVersioned(fileSystem) && !batched) {
     yield* fileSystem.makeDirectory(path.dirname(input.path), { recursive: true }).pipe(
-      Effect.mapError(
-        FsFailure.denied(
-          input.path,
-          () => writeError(input.path, `Could not create the parent directory of ${input.path}`)
-        )
-      )
+      Effect.mapError(parentFailure)
     )
   }
   return yield* Effect.scoped(Effect.gen(function*() {
-    const mutation = yield* FileMutation.acquire(fileSystem, [input.path], path)
-    const existed = yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false))
-    if (existed) {
-      const info = yield* fileSystem.stat(input.path).pipe(
-        Effect.mapError(
-          FsFailure.denied(input.path, () => writeError(input.path, `Could not inspect ${input.path} before writing`))
-        )
-      )
-      if (info.type === "Directory") {
-        return yield* Effect.fail(writeError(input.path, `Cannot write a file over directory ${input.path}`))
-      }
+    const mutation = yield* FileMutation.acquire(fileSystem, [input.path], path, { read: [], failure: inspectFailure })
+    // A batched host's snapshot answers what `exists` and `stat` would. A
+    // path it could not describe is written as new, as one `exists` could
+    // not answer for is.
+    let existing: FileSystem.File.Type | undefined
+    if (batched) {
+      const info = mutation.seen!(input.path).info
+      existing = Result.isSuccess(info) ? info.success.type : undefined
+    } else if (yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false))) {
+      existing = (yield* fileSystem.stat(input.path).pipe(Effect.mapError(inspectFailure))).type
     }
+    if (existing === "Directory") {
+      return yield* Effect.fail(writeError(input.path, `Cannot write a file over directory ${input.path}`))
+    }
+    const writeFailure = (error: PlatformError.PlatformError): StdError.StdError =>
+      error.reason.method === "chmod"
+        ? writeError(input.path, `Could not preserve the mode of ${input.path} before replacement by chmod`)
+        : FsFailure.denied(input.path, () => writeError(input.path, `Could not write ${input.path}`))(error)
     yield* mutation.commit(
       [{
         path: input.path,
         content: new TextEncoder().encode(input.content)
       }],
-      Preserve.writeFileString(fileSystem, input.path, input.content).pipe(
-        Effect.mapError((error) =>
-          error.reason.method === "chmod"
-            ? writeError(input.path, `Could not preserve the mode of ${input.path} before replacement by chmod`)
-            : FsFailure.denied(input.path, () => writeError(input.path, `Could not write ${input.path}`))(error)
-        )
-      )
+      Preserve.writeFileString(fileSystem, input.path, input.content).pipe(Effect.mapError(writeFailure)),
+      // A batched commit creates the parent the ordinary path made first.
+      (error) => error.reason.method === "makeDirectory" ? parentFailure(error) : writeFailure(error)
     )
     yield* Diagnostics.sync(path.resolve(input.path), input.content)
     return {
       path: input.path,
       bytesWritten: new TextEncoder().encode(input.content).byteLength,
-      created: !existed
+      created: existing === undefined
     }
   }))
 })
