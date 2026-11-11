@@ -29,7 +29,18 @@ export const boundaryResources = [
     serviceName: "arrays",
     attributes: {
       strings: Array.from({ length: Resource.maximumAttributeArrayLength }, () => "é".repeat(100)),
-      numbers: [1, 0.5, -1, Number.MAX_VALUE],
+      numbers: [
+        1,
+        0.5,
+        -1,
+        Number.MAX_SAFE_INTEGER,
+        2 ** 53,
+        -(2 ** 63),
+        2 ** 63,
+        -(2 ** 63) - 2048,
+        Number.MAX_VALUE,
+        -Number.MAX_VALUE
+      ],
       booleans: [true, false]
     }
   }
