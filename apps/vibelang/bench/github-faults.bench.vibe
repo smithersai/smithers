@@ -22,7 +22,7 @@ it("GitHub-bound modules refuse faulty answers, and a VIP draft never reaches Gi
     expect(await refusal(answering(500, "{}"), "abc")).toBe("GitHub answered 500")
     expect(await refusal(answering(200, "not json"), "abc")).toBe("GitHub's answer is not JSON")
     expect(await refusal(answering(200, "{}"), "abc")).toBe("GitHub's answer is not a commit list")
-    expect(await refusal(answering(200, "[]"), "abc")).toBe("main's last folded commit is not within reach")
+    expect(await refusal(answering(200, "[]"), "abc")).toBe("main's folded cursor or merge ancestry is not within reach")
     expect(await refusal(answering(200, "[]"), "")).toEqual([])
   }).run(quick)
   const drafted = workload(bench, "issues-draft-without-github", "async", async () => {

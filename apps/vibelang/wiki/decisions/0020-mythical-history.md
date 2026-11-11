@@ -143,7 +143,9 @@ the routes).
 
 `LiveMythical` is the `Mythical` layer over it. A live Fold reads GitHub's commit list of `smithersai/vibelang`
 (`worker/MainLog.vibe`, at most ten pages of 100) and walks first parents back to the last folded commit; a merge's side
-commits the pages hold come before it, and one already folded is refused `duplicate`. It reads signed out through
+commits come before it, and one already folded is refused `duplicate`. Finding the cursor does not end pagination
+until every new side ancestor is fetched or connects to known ancestry of the folded cursor. An incomplete delta
+at the short final page or the ten-page limit answers `unavailable` before any fold advances the cursor. It reads signed out through
 smithers.sh's App and the object's cache ([0031](0031-public-reads.md)); the site holds no GitHub token. Authorization is itself a journaled step, so a refusal is on the record
 as an acceptance is.
 

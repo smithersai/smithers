@@ -1,7 +1,7 @@
 // VibeLang's main as a fold reads it on Cloudflare (wiki/decisions/0020-mythical-history.md): GitHub's commit list of
-// the repository's main, newest first, read a page at a time until it reaches the history's last folded commit. The
-// commits after it are main's first-parent steps since, each preceded by the side commits its merge brought in that
-// the pages hold; a side commit already folded is refused `duplicate` by the sequencer and changes nothing.
+// the repository's main, newest first, read a page at a time until the folded cursor and every new ancestor are
+// accounted for. Each first-parent step follows the side commits its merge brought in; a side commit already folded
+// is refused `duplicate` by the sequencer and changes nothing.
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { MainLog, MainUnavailable } from "../src/history/flows.vibe"
 import { SHA_LENGTH, titleOf } from "../src/history/seed.vibe"
@@ -24,8 +24,8 @@ export const MAX_PAGES = 10
 /**
  * The commits of `fetched` (newest first, as GitHub lists them) after `cursor`, a shortened id of a commit on main's
  * first-parent line, oldest first: each first-parent step after its side commits. `undefined` when the first-parent
- * walk from the newest commit doesn't reach `cursor` within `fetched`, or meets a commit twice. An empty `cursor` takes
- * the whole walk.
+ * walk from the newest commit doesn't reach `cursor`, a new side ancestor of `cursor` is unlisted, or the walk meets
+ * a commit twice. An empty `cursor` takes the walk `fetched` holds.
  */
 export function newCommits(fetched: ReadonlyArray<GitHubCommit>, cursor: string): ReadonlyArray<MainCommit> | undefined {
   // The proved order (mainLogDecision newCommitOrder) over each commit's id and its parents' ids.
@@ -59,7 +59,7 @@ export function githubMain(repository: string, client: HttpClient.HttpClient): M
         if (!readsAnotherPage(commits.length, page, PER_PAGE, MAX_PAGES)) break
         page += 1
       }
-      throw new MainUnavailable({ reason: "main's last folded commit is not within reach" })
+      throw new MainUnavailable({ reason: "main's folded cursor or merge ancestry is not within reach" })
     },
   }
 }

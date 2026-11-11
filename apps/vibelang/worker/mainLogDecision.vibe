@@ -75,6 +75,45 @@ export function sideShas(fetched: ReadonlyArray<LogCommit>, bySha: Map<string, n
   return group
 }
 
+/**
+ * All known ancestry of `starts`, including unlisted parent ids at the edge of the fetched graph. An edge reached
+ * from the folded cursor is already folded; an edge reached only from the head still needs another page.
+ */
+//@ verify
+//@ requires forall(k: string, k in bySha ==> 0 <= bySha[k] && bySha[k] < fetched.length && fetched[bySha[k]].sha == k)
+//@ ensures forall(i, 0 <= i && i < starts.length ==> starts[i] in \result)
+export function ancestryShas(fetched: ReadonlyArray<LogCommit>, bySha: Map<string, number>, starts: ReadonlyArray<string>): Set<string> {
+  const listed = sideShas(fetched, bySha, starts, new Set<string>(), new Set<string>(), "")
+  const ancestry = new Set<string>()
+  let i = 0
+  while (i < starts.length) {
+    //@ invariant 0 <= i && i <= starts.length
+    //@ invariant forall(j, 0 <= j && j < i ==> starts[j] in ancestry)
+    //@ decreases starts.length - i
+    ancestry.add(starts[i]!)
+    i += 1
+  }
+  let c = 0
+  while (c < fetched.length) {
+    //@ invariant 0 <= c && c <= fetched.length
+    //@ invariant forall(j, 0 <= j && j < starts.length ==> starts[j] in ancestry)
+    //@ decreases fetched.length - c
+    if (listed.has(fetched[c]!.sha)) {
+      const parents = fetched[c]!.parents
+      let p = 0
+      while (p < parents.length) {
+        //@ invariant 0 <= p && p <= parents.length
+        //@ invariant forall(j, 0 <= j && j < starts.length ==> starts[j] in ancestry)
+        //@ decreases parents.length - p
+        ancestry.add(parents[p]!)
+        p += 1
+      }
+    }
+    c += 1
+  }
+  return ancestry
+}
+
 /** The indices of `group`'s commits, newest listed first: GitHub lists newest first, so this is oldest last. */
 //@ verify
 //@ requires forall(k: string, k in bySha ==> 0 <= bySha[k] && bySha[k] < fetched.length && fetched[bySha[k]].sha == k)
@@ -102,7 +141,8 @@ export function groupOrder(fetched: ReadonlyArray<LogCommit>, bySha: Map<string,
 /**
  * The commits of `fetched` (newest first, as GitHub lists them) after `cursor`, as indices into `fetched`: main's
  * first-parent line from the newest commit, oldest first, each step after the side commits its merge brought in.
- * `undefined` when the line doesn't reach `cursor` within `fetched`, or meets a commit twice (a listing no history has).
+ * `undefined` when the line doesn't reach `cursor`, a new ancestor of a non-empty `cursor` is unlisted, or the line
+ * meets a commit twice.
  */
 //@ verify
 //@ ensures fetched.length == 0 && cursor == "" ==> \result != undefined
@@ -117,6 +157,7 @@ export function groupOrder(fetched: ReadonlyArray<LogCommit>, bySha: Map<string,
 //@ ensures \result != undefined && cursor == "" && fetched.length > 0 ==> exists(i, 0 <= i && i < \result.length && forall(j, 0 <= j && j < fetched.length ==> fetched[j].sha != (fetched[\result[i]].parents.length > 0 ? fetched[\result[i]].parents[0] : "")))
 export function newCommitOrder(fetched: ReadonlyArray<LogCommit>, cursor: string): ReadonlyArray<number> | undefined {
   if (fetched.length === 0) return cursor === "" ? [] : undefined
+  if (isCursor(fetched[0]!.sha, cursor)) return []
   const bySha = lastIndexBySha(fetched)
   let spine: ReadonlyArray<number> = []
   const onSpine = new Set<string>()
@@ -136,7 +177,30 @@ export function newCommitOrder(fetched: ReadonlyArray<LogCommit>, cursor: string
     spine = [...spine, at]
     at = firstParent(fetched, bySha, at)
   }
-  if (cursor !== "" && at < 0) return undefined
+  if (cursor !== "") {
+    if (at < 0) return undefined
+    // First-parent reachability alone says nothing about a merge's side ancestry. Check every known edge before
+    // returning a delta: only ancestors of the cursor are safe to leave unlisted. An empty cursor folds nothing yet,
+    // so it takes the walk the pages hold.
+    const folded = ancestryShas(fetched, bySha, [fetched[at]!.sha])
+    const reachable = sideShas(fetched, bySha, [fetched[0]!.sha], new Set<string>(), new Set<string>(), "")
+    let c = 0
+    while (c < fetched.length) {
+      //@ invariant 0 <= c && c <= fetched.length
+      //@ decreases fetched.length - c
+      if (reachable.has(fetched[c]!.sha) && !folded.has(fetched[c]!.sha)) {
+        const parents = fetched[c]!.parents
+        let p = 0
+        while (p < parents.length) {
+          //@ invariant 0 <= p && p <= parents.length
+          //@ decreases parents.length - p
+          if (!bySha.has(parents[p]!) && !folded.has(parents[p]!)) return undefined
+          p += 1
+        }
+      }
+      c += 1
+    }
+  }
   const seen = new Set<string>()
   let commits: ReadonlyArray<number> = []
   let s = spine.length - 1

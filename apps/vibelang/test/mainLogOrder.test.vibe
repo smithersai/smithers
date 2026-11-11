@@ -1,8 +1,8 @@
-// The proved commit order (worker/mainLogDecision.vibe) against the implementation it replaced, over generated
+// The proved commit order (worker/mainLogDecision.vibe) against a complete-ancestry oracle and the implementation it replaced, over generated
 // listings: DAGs listed newest first, cut to a page prefix, with overlapping pages and every kind of cursor.
 import { describe, expect, it } from "@effect/vitest"
 import { type GitHubCommit, newCommits } from "../worker/MainLog.vibe"
-import { firstParent, groupOrder, isCursor, lastIndexBySha, newCommitOrder, sideShas } from "../worker/mainLogDecision.vibe"
+import { ancestryShas, firstParent, groupOrder, isCursor, lastIndexBySha, newCommitOrder, sideShas } from "../worker/mainLogDecision.vibe"
 import { SHA_LENGTH, titleOf } from "../src/history/seed.vibe"
 
 /** The replaced `newCommits` (main before 0018 third-lane batch 22), verbatim but for its name. */
@@ -37,6 +37,33 @@ function replaced(fetched: ReadonlyArray<GitHubCommit>, cursor: string) {
   return commits
 }
 
+/** Independent graph walk: only ids reachable from the folded cursor may be absent from a complete delta; an empty
+ * cursor takes what the pages hold. */
+function complete(fetched: ReadonlyArray<GitHubCommit>, cursor: string): boolean {
+  if (cursor === "") return true
+  const bySha = new Map(fetched.map((each) => [each.sha, each]))
+  const folded = new Set<string>()
+  const cursorCommit = cursor === "" ? undefined : fetched.find((each) => each.sha.startsWith(cursor))
+  const older = cursorCommit === undefined ? [] : [cursorCommit.sha]
+  while (older.length > 0) {
+    const sha = older.pop()!
+    if (folded.has(sha)) continue
+    folded.add(sha)
+    older.push(...(bySha.get(sha)?.parents.map((parent) => parent.sha) ?? []))
+  }
+  const seen = new Set<string>()
+  const pending = fetched.length === 0 ? [] : [fetched[0]!.sha]
+  while (pending.length > 0) {
+    const sha = pending.pop()!
+    if (folded.has(sha) || seen.has(sha)) continue
+    seen.add(sha)
+    const each = bySha.get(sha)
+    if (each === undefined) return false
+    pending.push(...each.parents.map((parent) => parent.sha))
+  }
+  return true
+}
+
 /** A seeded linear congruential generator: the same listings on every run. */
 function generator(seed: number) {
   let state = seed
@@ -64,7 +91,7 @@ function listing(next: (below: number) => number, size: number): ReadonlyArray<G
 }
 
 describe("main's commit order", () => {
-  it("is the replaced order on every generated listing", () => {
+  it("keeps the complete delta order and refuses missing new ancestry on generated listings", () => {
     const next = generator(20261110)
     let compared = 0
     for (let round = 0; round < 600; round++) {
@@ -73,7 +100,7 @@ describe("main's commit order", () => {
       const fetched = next(4) === 0 ? [...page, ...page.slice(next(page.length))] : page
       const cursors = ["", sha(next(full.length)).slice(0, 12), sha(next(full.length)), "zzz", "c"]
       for (const cursor of cursors) {
-        expect(newCommits(fetched, cursor)).toEqual(replaced(fetched, cursor))
+        expect(newCommits(fetched, cursor)).toEqual(complete(fetched, cursor) ? replaced(fetched, cursor) : undefined)
         compared++
       }
     }
@@ -84,6 +111,23 @@ describe("main's commit order", () => {
     const loop = [commit(0, [1]), commit(1, [0])]
     expect(newCommitOrder(loop.map((each) => ({ sha: each.sha, parents: each.parents.map((p) => p.sha) })), "")).toBeUndefined()
     expect(newCommits(loop, "")).toBeUndefined()
+  })
+
+  it("tracks unlisted boundary ids only through reachable ancestors", () => {
+    const fetched = [
+      { sha: "m", parents: ["a", "s"] },
+      { sha: "a", parents: ["b"] },
+      { sha: "s", parents: ["t"] },
+      { sha: "unrelated", parents: ["unknown"] },
+    ]
+    const bySha = lastIndexBySha(fetched)
+    expect([...ancestryShas(fetched, bySha, ["a"])]).toEqual(["a", "b"])
+    expect([...ancestryShas(fetched, bySha, ["missing"])]).toEqual(["missing"])
+    expect([...ancestryShas(fetched, bySha, [])]).toEqual([])
+    expect([...ancestryShas(fetched, bySha, ["m"])].sort()).toEqual(["a", "b", "m", "s", "t"])
+    expect(newCommitOrder(fetched, "a")).toBeUndefined()
+    expect(newCommitOrder([...fetched, { sha: "t", parents: ["b"] }], "a")).toEqual([4, 2, 0])
+    expect(newCommitOrder([{ sha: "m", parents: ["missing"] }], "")).toEqual([0])
   })
 
   it("keeps each id's last index and finds first parents", () => {

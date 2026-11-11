@@ -3,6 +3,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
 import { githubMain, newCommits, MAX_PAGES, PER_PAGE, type GitHubCommit } from "../worker/MainLog.vibe"
+import { make, memoryStore } from "../src/history/Sequencer.vibe"
 import { SHA_LENGTH } from "../src/history/seed.vibe"
 
 /** Commit `n` with `parents`, as GitHub's list carries it. */
@@ -105,6 +106,55 @@ describe("githubMain", () => {
     })
   })
 
+  it.effect("fetches a merge's older side ancestry before a later fold can stop at that merge", () => effect {
+    // The cursor is on page one, but the oldest new side commit is on page two.
+    const seen: Array<string> = []
+    const first = [commit(200, [100, 99]), ...pageOf(2, 98), commit(100, [0])]
+    const pages = [
+      { status: 200, body: json(first) },
+      { status: 200, body: json([commit(1, [0]), commit(0, [])]) },
+    ]
+    const main = githubMain("o/r", clientWith(pages, seen))
+    const sequencer = try make(try memoryStore())
+    const initial = newCommits([commit(100, [0]), commit(0, [])], "")!
+    for (const each of initial) try sequencer.fold(each)
+    const before = try sequencer.read()
+    const commits = try main.since(before.main)
+    for (const each of commits) try sequencer.fold(each)
+    const after = try sequencer.read()
+    const next = try main.since(after.main)
+    try Effect.try(() => {
+      expect(first.length).toBe(PER_PAGE)
+      expect(commits.map((each) => each.sha)).toEqual([...Array.from({ length: 100 }, (_, n) => short(n)), short(200)])
+      expect(after.main).toBe(short(200))
+      expect(after.real.map((each) => each.sha)).toEqual([short(0), short(100), ...Array.from({ length: 99 }, (_, n) => short(n + 1)), short(200)])
+      expect(next).toEqual([])
+      expect(seen).toEqual(["1 ", "2 ", "1 "])
+    })
+  })
+
+  it.effect("fails visibly when a short final page still omits new side ancestry", () => effect {
+    const seen: Array<string> = []
+    const reason = try reasonOf(clientWith([{ status: 200, body: json([commit(4, [2, 3]), commit(2, [0])]) }], seen), short(2))
+    try Effect.try(() => {
+      expect(reason).toBe("main's folded cursor or merge ancestry is not within reach")
+      expect(seen).toEqual(["1 "])
+    })
+  })
+
+  it.effect("refuses a partial merge when its side ancestry stays beyond the page limit", () => effect {
+    const seen: Array<string> = []
+    const pages = [
+      { status: 200, body: json([commit(2000, [1001, 999]), ...pageOf(902, 98), commit(1001, [0])]) },
+      ...Array.from({ length: MAX_PAGES - 1 }, (_, n) => ({ status: 200, body: json(pageOf(802 - n * PER_PAGE, PER_PAGE)) })),
+    ]
+    const reason = try reasonOf(clientWith(pages, seen), short(1001))
+    try Effect.try(() => {
+      expect(reason).toBe("main's folded cursor or merge ancestry is not within reach")
+      expect(seen.length).toBe(MAX_PAGES)
+    })
+  })
+
   it.effect("gives up when the cursor stays out of reach past the last page", () => effect {
     const seen: Array<string> = []
     const pages = Array.from({ length: MAX_PAGES }, (_, index) => ({
@@ -113,7 +163,7 @@ describe("githubMain", () => {
     }))
     const reason = try reasonOf(clientWith(pages, seen), short(5000).slice(0, 8))
     try Effect.try(() => {
-      expect(reason).toBe("main's last folded commit is not within reach")
+      expect(reason).toBe("main's folded cursor or merge ancestry is not within reach")
       expect(seen.length).toBe(MAX_PAGES)
     })
   })
@@ -123,7 +173,7 @@ describe("githubMain", () => {
     const seen: Array<string> = []
     const reason = try reasonOf(clientWith([{ status: 200, body: json([commit(1, [0]), commit(0, [])]) }], seen), short(9).slice(0, 8))
     try Effect.try(() => {
-      expect(reason).toBe("main's last folded commit is not within reach")
+      expect(reason).toBe("main's folded cursor or merge ancestry is not within reach")
       expect(seen).toEqual(["1 "])
     })
   })
