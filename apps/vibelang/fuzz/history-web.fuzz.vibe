@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest"
 import { scene, given, getAllByRole, type SceneSimulation } from "foldkit/scene"
+import { ROLES } from "../src/history/roles.vibe"
 import { HistoryModel, HistoryFlags, HistoryMessage, init, update } from "../src/web/historyApp.vibe"
 import { view } from "../src/web/historyView.vibe"
 import { historyModelCodec } from "./history-corpus.vibe"
@@ -29,11 +30,15 @@ it.live("history/update-sequences", () => run("history/update-sequences", Schema
   return true
 }, undefined, { revision: "2" }))
 
-/** Any message leaves a valid model; a live origin resolves every role to viewer, and mock keeps the chosen one. */
+/**
+ * Any message leaves a valid model; a live origin resolves every role to viewer until the session answers, then plays
+ * the session's role; mock keeps the chosen one through both.
+ */
 it.live("history/arbitrary-update", () => run("history/arbitrary-update", Schema.Struct({ model: HistoryModel, message: HistoryMessage }), ({ model, message }) => {
   const next = update(model, message).model
   if (!Schema.is(HistoryModel)(next)) return false
   const live = update(model, HistoryMessage.ResolvedMode({ mode: "live" })).model
   const mock = update(model, HistoryMessage.ResolvedMode({ mode: "mock" })).model
-  return live.mode === "live" && live.role === "viewer" && mock.mode === "mock" && mock.role === model.role
+  if (!(live.mode === "live" && live.role === "viewer" && mock.mode === "mock" && mock.role === model.role)) return false
+  return ROLES.every((role) => update(live, HistoryMessage.ResolvedRole({ role })).model.role === role && update(mock, HistoryMessage.ResolvedRole({ role })).model.role === model.role)
 }, undefined, { revision: "2" }))

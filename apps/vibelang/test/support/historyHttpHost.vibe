@@ -15,7 +15,7 @@ export const unavailableConversations: Conversations = {
 }
 
 /** The same Histories host contract as the Worker, backed by actual product flows on their in-memory engine. */
-export effect function serveHistory() {
+export effect function histories() {
   const product = try Mythical
   const histories: Histories = {
     page: effect (request) => {
@@ -63,5 +63,10 @@ export effect function serveHistory() {
       return written
     },
   }
-  try HttpServer.serveEffect(handle(unavailableConversations, histories))
+  return histories
+}
+
+/** Serves the Worker's history routes, and its health, on the scope's server. */
+export effect function serveHistory() {
+  try HttpServer.serveEffect(handle(unavailableConversations, try histories()))
 }

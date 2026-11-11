@@ -202,6 +202,15 @@ export function resolvedRole(mode: string, current: Role): Role {
 }
 
 
+/** The role the page plays once the server says who you are (decision 0019): live, the session's; the mock keeps the role it plays. */
+//@ verify
+//@ ensures mode == "live" ==> \result == signed
+//@ ensures mode != "live" ==> \result == current
+export function signedRole(mode: string, current: Role, signed: Role): Role {
+  return mode === "live" ? signed : current
+}
+
+
 //@ verify
 //@ ensures \result.includes(id) == !ids.includes(id)
 //@ ensures forall(i, 0 <= i && i < ids.length && ids[i] != id ==> \result.includes(ids[i]))

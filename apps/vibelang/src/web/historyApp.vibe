@@ -7,7 +7,7 @@ import { Command, Dom, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Refused, Unavailable } from "../history/MythicalHistory.vibe"
-import { resolvedRole, toggleEpic, planFields, initialEpic, validPlanField } from "../history/flowMachine.vibe"
+import { resolvedRole, signedRole, toggleEpic, planFields, initialEpic, validPlanField } from "../history/flowMachine.vibe"
 import { MAX_QUERY, PAGE } from "../history/pages.vibe"
 import { clipQuery } from "../history/pageDecision.vibe"
 import { epicIndex, commitShown, failureReason, wroteCleanly, closesDialog, mergedPages, readOffsets, outlineArrival, commitApplies, matchesApply, eventArrival, hashRead, epicOpenReads, filterSearches,
@@ -83,6 +83,7 @@ const emptyForm: PlanForm = { how: "append", title: "", epic: "", newEpic: "", t
 
 export const HistoryMessage = defineMessageUnion({
   ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
+  ResolvedRole: { role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
   GotOutline: { outline: Outline },
   GotEpic: { page: EpicPage },
   GotCommit: { id: Schema.String, page: CommitPage },
@@ -213,8 +214,9 @@ function write(model: HistoryModel, command: Command.Command<HistoryMessage, nev
 
 export function update(model: HistoryModel, message: HistoryMessage): Return {
   return HistoryMessage.match<Return>(message, {
-    // Live, the server decides who you are: a viewer until sign-in (decision 0019) lands.
+    // Live, the server decides who you are (decision 0019): a viewer until the session answers, then the session's role.
     ResolvedMode: ({ mode }) => ({ model: { ...model, mode, role: resolvedRole(mode, model.role) } }),
+    ResolvedRole: ({ role }) => ({ model: { ...model, role: signedRole(model.mode, model.role, role) } }),
     // A newer outline reads again what the page shows; an older one, arriving late, changes nothing.
     GotOutline: ({ outline }) => {
       const arrival = outlineArrival(model.status === "ready", model.outline.seq, outline.seq, model.latest)

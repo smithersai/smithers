@@ -195,7 +195,10 @@ work.
 - **Export:** a maintainer's button beside Fold; a publication shows `mythical <sha>` (title `Exported`), a refusal its
   line in the alert (the design's smallest addition, `wiki/designs/mythical/NOTES.md`).
 - **Roles:** an action renders only for a role that may take it; a viewer gets no dialog at all. In mock mode the page
-  plays `?role=` or the `vibelang.role` key (maintainer when neither says); live, it is a viewer until 0019 lands.
+  plays `?role=` or the `vibelang.role` key (maintainer when neither says). Live, the session decides (0019): the page
+  is a viewer until `/api/auth/session` answers, then plays that role and follows the project's role events through
+  `Accounts`, so a grant or a demotion changes its controls without a reload; signed out, or while the session can't be
+  read (asked again 2 seconds later), it is a viewer. The server still decides every write from the session itself.
 
 Where the design and the data differ, the data wins: no docs/code/test planes (the bootstrap groups by queue entry,
 not by plane), no diff (no trees), no `tree = main` badge (equality isn't checked; "Folded through" is what is known),

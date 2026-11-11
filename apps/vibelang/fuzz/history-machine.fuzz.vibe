@@ -12,7 +12,7 @@ const Action = Schema.Literals(["show", "append", "retell", "start", "note", "ap
 const Word = Schema.Union([Text, Schema.Literals(["forbidden", "empty", "too-long", "duplicate", "unknown", "state", "full", "unavailable", "planned", "working", "approved", "landed", "new", "how", "live", "mock"])])
 const Step = Schema.Literals(["authorize", "record", "begin"])
 const Input = Schema.Struct({
-  role: Role, action: Action, agent: Schema.Boolean, name: Text, steps: Schema.Array(Step).check(Schema.isMaxLength(8)),
+  role: Role, signed: Role, action: Action, agent: Schema.Boolean, name: Text, steps: Schema.Array(Step).check(Schema.isMaxLength(8)),
   word: Word, other: Word, status: Schema.Literals([200, 201, 400, 403, 404, 409, 500, 503]), ids: Schema.Array(Word).check(Schema.isMaxLength(4)),
   how: Schema.Literals(["append", "insert", "amend"]), first: Schema.NullOr(Word),
 })
@@ -43,6 +43,7 @@ it.live("history/machine-contracts", () => run("history/machine-contracts", Inpu
   if (response !== (input.status === 200 ? "accepted" : [403, 409, 503].includes(input.status) ? "refused" : "unavailable")) return false
   if (M.historySignature(input.name, input.agent) !== (input.agent ? `${input.name} (agent)` : input.name)) return false
   if (M.resolvedRole(input.word, input.role) !== (input.word === "live" ? "viewer" : input.role)) return false
+  if (M.signedRole(input.word, input.role, input.signed) !== (input.word === "live" ? input.signed : input.role)) return false
   const toggled = M.toggleEpic(input.ids, input.word)
   if (input.ids.includes(input.word) ? toggled.includes(input.word) : !toggled.includes(input.word) || toggled.length !== input.ids.length + 1) return false
   const fields = M.planFields(input.how, input.word, input.other)

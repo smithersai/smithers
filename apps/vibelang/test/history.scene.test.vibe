@@ -96,9 +96,24 @@ describe("the list", () => {
     ])
   })
 
-  it("is a viewer's once live, whatever mock role the page had", () => {
-    assert(update(loaded("maintainer"), HistoryMessage.ResolvedMode({ mode: "live" })).model.role).toBe("viewer")
+  it("is a viewer's once live until the session answers, then the session's role; the mock keeps the role it plays", () => {
+    const live = update(loaded("maintainer"), HistoryMessage.ResolvedMode({ mode: "live" })).model
+    assert(live.role).toBe("viewer")
     assert(update(loaded("contributor"), HistoryMessage.ResolvedMode({ mode: "mock" })).model.role).toBe("contributor")
+    const signed = update(live, HistoryMessage.ResolvedRole({ role: "contributor" })).model
+    assert(signed.role).toBe("contributor")
+    assert(update(loaded("contributor"), HistoryMessage.ResolvedRole({ role: "maintainer" })).model.role).toBe("contributor")
+    scene(
+      { update, view },
+      given(signed),
+      expect(role("button", { name: "Plan work" })).toExist(),
+      expect(role("button", { name: "Fold" })).toBeAbsent(),
+    )
+    scene(
+      { update, view },
+      given(update(signed, HistoryMessage.ResolvedRole({ role: "maintainer" })).model),
+      expect(role("button", { name: "Fold" })).toExist(),
+    )
   })
 
   it("filters commits by title, and says when the history is empty, loading or unreachable", () => {

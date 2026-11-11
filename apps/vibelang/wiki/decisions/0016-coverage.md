@@ -42,6 +42,7 @@ Named browser gaps that stay open:
 | `src/web/main.vibe:391`–`394` and `issueRecovered`, `issueRecoveredView` (`issueDecision.vibe`) | `IssuesState.saved` comes only from `worker/Issues.vibe`. No browser-side service produces it, so only a browser against the live worker reaches the recovered-issue arm. |
 | `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code. |
+| `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
 
 ### Browser journeys and measurement (session 16, 2026-11-11)
 

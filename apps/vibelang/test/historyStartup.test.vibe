@@ -1,15 +1,26 @@
-// Real happy-dom input, the page's actual startup and Foldkit runtime, and the product MockMythical flows.
-import "../src/history/MockMythical.vibe"
+// Real happy-dom input, the page's actual startup and Foldkit runtime, and the product MockMythical flows; live, the
+// real Accounts object and the Worker's history routes on a loopback socket.
+import { MockMythical } from "../src/history/MockMythical.vibe"
 import { expect, it } from "@effect/vitest"
 import { vi } from "vitest"
-import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
+import { Core, GitHub } from "@smthrs/integrations"
 import { Runtime } from "foldkit"
+import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
 import { historyMain, mockRole } from "../src/web/historyStartup.vibe"
 import { page } from "../src/web/startup.vibe"
 import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
 import type { History } from "../src/history/mythical.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import * as Accounts from "../worker/Accounts.vibe"
+import { handle } from "../worker/Http.vibe"
+import type { Storage } from "../worker/Objects.vibe"
 import { container, remove } from "./support/browser.ts"
 import { heldHealth } from "./support/heldHealth.vibe"
+import { histories, unavailableConversations } from "./support/historyHttpHost.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
 
 /** An actual window with the page's root; restore this host's URL, storage and styles when it closes. */
 effect function host() {
@@ -247,5 +258,174 @@ it.live("?agent=live forgets a stored mock choice and asks the server", () => sc
       expect(probes).toBeGreaterThan(0)
     }, { timeout: 5000 }))
     try Effect.try(() => expect(window.localStorage.getItem("vibelang.agent")).toBeNull())
+  }
+}), 30_000)
+
+// ── live: the session decides who you are (decision 0019) ────────────────────────────────────────────────────────
+
+/** The compiler (m1), then Docs (m2), landed: a small history for the live page to read. */
+const small = () => succeed(replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : ["000000000001"],
+})), []))).history)
+
+const PERSON = { role: "maintainer" as const, name: "Ada", agent: false }
+
+/**
+ * The project's API on the scope's loopback server: health live, the real Accounts object over stored sessions (host
+ * fixture state, as test/accountsClientHttp.test.vibe sets it) for sign-in and roles, and the Worker's history routes
+ * over the product mock. Answers the origin, a native client, the session cookie of a new person, and the first
+ * maintainer's own Accounts client for the grants a test makes while a page is open.
+ */
+effect function serveApi() {
+  const address = (try HttpServer.HttpServer).address
+  const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+  const signingSecret = Redacted.make("fixture-only-signing-secret-32-chars")
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Storage
+  const github = Context.get(try Layer.build(GitHub.Auth.layer({ clientId: "fixture", clientSecret: Redacted.make("fixture-only") })), GitHub.Auth.GitHubAuth)
+  const keys = try Core.CookieKeys.make({ primary: signingSecret }, "primary")
+  const expires = (try Clock.currentTimeMillis) + 60_000
+  effect function session(person: { readonly id: string; readonly login: string }) {
+    const token = try keys.token
+    try promise(() => storage.put("session/" + token, { ...person, expires }))
+    try promise(() => storage.put("person/" + person.id, person))
+    return Accounts.SESSION + "=" + (try keys.sign("session", token))
+  }
+  const will = try session({ id: "1", login: "will" })
+  const ada = try session({ id: "7", login: "ada" })
+  const accounts = try Accounts.make("history-startup", storage, {
+    origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github,
+  })
+  const history = try histories()
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = new URL(request.url, origin).pathname
+    return path.startsWith("/api/auth/") || path.startsWith("/api/roles") ? try accounts.fetch : try handle(unavailableConversations, history)
+  })
+  const native = Context.get(try Layer.build(NodeHttpClient.layerNodeHttp), HttpClient.HttpClient)
+  const maintainer = try Effect.provideService(LiveAccounts.make(origin), HttpClient.HttpClient, HttpClient.mapRequest(native, (request) => HttpClientRequest.setHeader(request, "cookie", will)))
+  return { origin, native, ada, maintainer }
+}
+
+/**
+ * The page's client: requests to its own origin reach the loopback API with the browser's session cookie (none when
+ * `cookie` is empty). Each path in `faults` fails once, as a lost transport would, before any request is sent.
+ */
+function pageClient(native: HttpClient.HttpClient, origin: string, cookie: string, faults: Array<string> = []) {
+  const asked: Array<string> = []
+  const routed = HttpClient.mapRequest(native, (request) => {
+    const url = new URL(request.url)
+    const toApi = HttpClientRequest.setUrl(request, origin + url.pathname + url.search)
+    return cookie === "" ? toApi : HttpClientRequest.setHeader(toApi, "cookie", cookie)
+  })
+  const client = HttpClient.transform(routed, (response, request) => {
+    const path = new URL(request.url).pathname
+    asked.push(path)
+    const at = faults.indexOf(path)
+    if (at < 0) return response
+    faults.splice(at, 1)
+    return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+  })
+  return { layer: Layer.succeed(HttpClient.HttpClient, client), asked: (path: string) => asked.filter((each) => each === path).length, faults }
+}
+
+/** Mounts the page's own live startup with `client` on the host's window; the frame and the buttons it shows. */
+effect function mountLive(node: HTMLElement, window: Window, client: Layer.Layer<HttpClient.HttpClient>) {
+  try sync(() => {
+    window.history.replaceState(null, "", "/history?agent=live")
+    window.localStorage.removeItem("vibelang.role")
+  })
+  provide Layer.merge(page, client) {
+    const { application, flags } = try historyMain()
+    try Effect.try(() => expect(flags.mode).toBe("pending"))
+    try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+  }
+  return {
+    frame: () => node.querySelector("[data-surface='history']"),
+    buttons: () => Array.from(node.querySelectorAll("button"), (button) => button.textContent),
+  }
+}
+
+it.live("live, a signed-in person plays the session's role, and a grant changes it without a reload", () => scoped(effect {
+  const { node, window } = try host()
+  provide NodeHttpServer.layerTest, MockMythical(PERSON, small) {
+    try scoped(effect {
+      const api = try serveApi()
+      try api.maintainer.grant("7", "contributor")
+      const client = pageClient(api.native, api.origin, api.ada)
+      const { frame, buttons } = try mountLive(node, window, client.layer)
+      try promise(() => vi.waitFor(() => {
+        expect(frame()?.getAttribute("data-mode")).toBe("live")
+        expect(frame()?.getAttribute("data-role")).toBe("contributor")
+        expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull()
+      }, { timeout: 5000 }))
+      try Effect.try(() => {
+        expect(buttons()).toContain("Plan work")
+        expect(buttons()).not.toContain("Fold")
+        expect(client.asked("/api/auth/session")).toBe(1)
+      })
+      try api.maintainer.grant("7", "maintainer")
+      try promise(() => vi.waitFor(() => {
+        expect(frame()?.getAttribute("data-role")).toBe("maintainer")
+        expect(buttons()).toContain("Fold")
+      }, { timeout: 5000 }))
+      // The grant arrived as a role event; the session was not read again.
+      try Effect.try(() => expect(client.asked("/api/auth/session")).toBe(1))
+    })
+  }
+}), 30_000)
+
+it.live("live, a visitor is a viewer and follows no grants", () => scoped(effect {
+  const { node, window } = try host()
+  provide NodeHttpServer.layerTest, MockMythical(PERSON, small) {
+    try scoped(effect {
+      const api = try serveApi()
+      const client = pageClient(api.native, api.origin, "")
+      const { frame, buttons } = try mountLive(node, window, client.layer)
+      try promise(() => vi.waitFor(() => {
+        expect(frame()?.getAttribute("data-mode")).toBe("live")
+        expect(client.asked("/api/auth/session")).toBe(1)
+        expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull()
+      }, { timeout: 5000 }))
+      try Effect.try(() => {
+        expect(frame()?.getAttribute("data-role")).toBe("viewer")
+        expect(buttons()).not.toContain("Plan work")
+        expect(client.asked("/api/roles/events")).toBe(0)
+      })
+    })
+  }
+}), 30_000)
+
+it.live("live, an unanswered session or a lost grant stream leaves a viewer who is asked about again 2 seconds later", () => scoped(effect {
+  const { node, window } = try host()
+  provide NodeHttpServer.layerTest, MockMythical(PERSON, small) {
+    try scoped(effect {
+      const api = try serveApi()
+      try api.maintainer.grant("7", "contributor")
+      const client = pageClient(api.native, api.origin, api.ada, ["/api/auth/session", "/api/roles/events"])
+      const { frame, buttons } = try mountLive(node, window, client.layer)
+      // The session failed once: a viewer, with the history loaded.
+      try promise(() => vi.waitFor(() => {
+        expect(frame()?.getAttribute("data-mode")).toBe("live")
+        expect(client.asked("/api/auth/session")).toBe(1)
+        expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull()
+      }, { timeout: 5000 }))
+      try Effect.try(() => {
+        expect(frame()?.getAttribute("data-role")).toBe("viewer")
+        expect(buttons()).not.toContain("Plan work")
+      })
+      // Asked again: the session answers and the role shows, although the grant stream failed once.
+      try promise(() => vi.waitFor(() => {
+        expect(frame()?.getAttribute("data-role")).toBe("contributor")
+        expect(client.asked("/api/roles/events")).toBe(1)
+      }, { timeout: 5000 }))
+      // Followed again: a later grant reaches the page.
+      try promise(() => vi.waitFor(() => expect(client.asked("/api/roles/events")).toBe(2), { timeout: 5000 }))
+      try api.maintainer.grant("7", "maintainer")
+      try promise(() => vi.waitFor(() => {
+        expect(frame()?.getAttribute("data-role")).toBe("maintainer")
+        expect(buttons()).toContain("Fold")
+      }, { timeout: 5000 }))
+      try Effect.try(() => expect(client.faults).toEqual([]))
+    })
   }
 }), 30_000)

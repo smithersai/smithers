@@ -1,10 +1,13 @@
 import { preferenceWrite, wantsMock, startupRole } from "./startupDecision.vibe"
 // The history page's startup (wiki/decisions/0020-mythical-history.md): renders at once with mode `pending`, then the
 // backend selection resolves. In mock mode the page lets you be any role, with `?role=<role>` or the `vibelang.role`
-// storage key (maintainer when neither says); live, the server decides who you are, a viewer until sign-in lands.
+// storage key (maintainer when neither says); live, the server decides who you are (decision 0019): a viewer until the
+// session answers, then its role, followed as grants change it.
 import { HttpClient } from "effect/http"
 import { ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { Runtime, Subscription } from "foldkit"
+import * as LiveAccounts from "../core/LiveAccounts.vibe"
+import { Accounts } from "../core/roles.vibe"
 import type { Role } from "../history/roles.vibe"
 import { ROLES } from "../history/roles.vibe"
 import { HistoryFlags, HistoryMessage, HistoryModel, init, subscriptions, update } from "./historyApp.vibe"
@@ -44,11 +47,41 @@ export function mockRole(window: Window): Role {
   return startupRole(asked, "maintainer", ROLES) as Role
 }
 
+/** A Message from its constructor. Constructors validate with Schema, so a bad payload is a defect. */
+effect function message<A>(make: () => A) {
+  return try orDie(Effect.try(make))
+}
+
+/**
+ * Live, who you are (decision 0019): the session's role, then the role of each grant that names you. A session that
+ * can't be read makes you a viewer and is read again 2 seconds later, as a lost grant stream is followed again; signed
+ * out, there is nothing to follow.
+ */
+function signedRoles(): Stream.Stream<HistoryMessage, never, Accounts> {
+  return Stream.unwrap(effect {
+    const accounts = try Accounts
+    const identity = accounts.current() catch () => undefined
+    const asked: Stream.Stream<HistoryMessage, never, Accounts> = Stream.make(try message(() => HistoryMessage.ResolvedRole({ role: identity === undefined ? "viewer" : identity.role })))
+    const again = (why: string): Stream.Stream<HistoryMessage, never, Accounts> =>
+      Stream.concat(Stream.fromEffect(Effect.andThen(Effect.logWarning(why), Effect.sleep("2 seconds"))).pipe(Stream.drain), Stream.suspend(signedRoles))
+    if (identity === undefined) return Stream.concat(asked, again("session unavailable; asking again"))
+    if (identity.id === "") return asked
+    const granted: Stream.Stream<HistoryMessage, never, Accounts> = accounts.events(identity.ledger?.seq ?? 0).pipe(
+      Stream.flatMap((event): Stream.Stream<HistoryMessage> =>
+        event.type === "RoleGranted" && event.id === identity.id ? Stream.fromEffect(message(() => HistoryMessage.ResolvedRole({ role: event.role }))) : Stream.empty),
+      Stream.catch(() => again("role events lost; following again")),
+    )
+    return Stream.concat(asked, granted)
+  })
+}
+
+/** The chosen mode becomes a message, independently of any read; live, who you are follows it. */
 function backendMode() {
-  return Subscription.make<HistoryModel, HistoryMessage, HistoryBackend>()(() => ({
-    backend: Subscription.persistentEntry(Stream.fromEffect(effect {
+  return Subscription.make<HistoryModel, HistoryMessage, HistoryBackend | Accounts>()(() => ({
+    backend: Subscription.persistentEntry(Stream.unwrap(effect {
       const mode = try (try HistoryBackend).ready
-      return try orDie(Effect.try(() => HistoryMessage.ResolvedMode({ mode })))
+      const resolved: Stream.Stream<HistoryMessage, never, Accounts> = Stream.make(try message(() => HistoryMessage.ResolvedMode({ mode })))
+      return mode === "live" ? Stream.concat(resolved, signedRoles()) : resolved
     })),
   }))
 }
@@ -69,10 +102,12 @@ export effect function historyMain(around: (layer: HistoryLayer) => HistoryLayer
     return document.getElementById("root")!
   })
   const role = mockRole(window)
-  const resources = Layer.merge(
-    around(BrowserMythical(window.location.origin, askedForMock(window), { role, name: "Guest", agent: false }).pipe(
-      Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
-    )),
+  const origin = window.location.origin
+  const http = Layer.succeed(HttpClient.HttpClient, client)
+  const resources = Layer.mergeAll(
+    around(BrowserMythical(origin, askedForMock(window), { role, name: "Guest", agent: false }).pipe(Layer.provide(http))),
+    // Live, the session says who you are (decision 0019); the mock plays `role` and never asks.
+    Layer.effect(Accounts, LiveAccounts.make(origin)).pipe(Layer.provide(http)),
     ExperimentalBrowserWindow.layer,
   )
   const flags: HistoryFlags = { mode: "pending", role, hash: window.location.hash.slice(1) }
