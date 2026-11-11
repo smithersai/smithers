@@ -21,6 +21,7 @@ import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -104,7 +105,7 @@ export const make = (options) => {
         maxIterations,
         targetScore,
         onMaxReached
-    }, options);
+    }, options, [stages.generate, stages.evaluate]);
     const body = ({ input }) => {
         const visit = (previous, standing, iteration) => Node.bindPlanned(callMember(stages.generate, { input, previous, iteration }), Node.capture({ ...captures, iteration }, (candidate) => Node.bindPlanned(callMember(stages.evaluate, { value: candidate, iteration }), Node.capture({ ...captures, iteration }, (evaluation) => {
             // `score` and `feedback` are read off the evaluation as planned
@@ -147,11 +148,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        // `@smthrs/core` carried its error type as a phantom parameter and
-        // declared no error schema. `@smthrs/flow` needs a real one, because the
-        // engine encodes a typed failure through it, and a search fails with
-        // whatever the member it called failed with.
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [stages.generate, stages.evaluate]),
         body: Node.capture(captures, body)
     });
 };

@@ -750,15 +750,18 @@ export const BY_ORIGIN: {
   }
 }
 
-/** The fault's row with a Worker code's written lead, and its overrides where it states them. */
-const workerRow = (base: RefusalCopyRow, row: WorkerRefusalCopyRow): RefusalCopyRow => ({
+/** A Worker code's row as {@link WORKER_REFUSAL_COPY} writes it: every code states its own doors. */
+type WorkerCodeRow = WorkerRefusalCopyRow & { readonly doors: ReadonlyArray<RefusalDoor> }
+
+/** The fault's row with a Worker code's written lead and doors, and its agent sentence where it states one. */
+const workerRow = (base: RefusalCopyRow, row: WorkerCodeRow): RefusalCopyRow => ({
   lead: row.lead,
   agent: row.agent ?? base.agent,
-  doors: row.doors ?? base.doors
+  doors: row.doors
 })
 
 /** A Worker code's row, reworded when the native host — not a deployment — is the one refusing. */
-const codeRow = (code: WorkerFailureCode, origin: RefusalOrigin): WorkerRefusalCopyRow => {
+const codeRow = (code: WorkerFailureCode, origin: RefusalOrigin): WorkerCodeRow => {
   const written = WORKER_REFUSAL_COPY[code]
   const local = origin === "local" ? BY_ORIGIN.local[code] : undefined
   return local === undefined ? written : { ...written, ...local }

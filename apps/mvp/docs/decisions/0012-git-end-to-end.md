@@ -79,7 +79,7 @@ The TODO flow (mvp.md §4, §8) is context only. Opus and Sol designed independe
   - `@smthrs/integrations`: `GitHub.AppAuth` (an RS256 JWT through WebCrypto; installation tokens scoped to repository and permissions), and issue, pull request, branch and GraphQL actions that reconcile before retrying;
   - `@smthrs/effect-code-storage`: App mode, `listBranches` and `X-Pierre-Signature` verification;
   - `@smthrs/ui`: the pieces in §6;
-  - `@smthrs/triggers`: a Cloudflare host, for the cron.
+  - `@smthrs/triggers`: a Cloudflare host, for the cron. It exists: `triggers/Tick` in `worker/ci/Cron.ts` ticks `Scheduler.tick` once a minute ([CI schedules](../features/ci.md#schedules)); moving the reconcile trigger onto it is its own change.
 - **The GitHub App changes** (question 2): new permissions, a webhook, and its ID and private key as deploy secrets. Code Storage's organization registers the same App, since `access: app` refuses with `412 github_app_not_configured` unless the organization has exactly one [CS-create].
 - **0007 Q3 is decided for triage.** An event-started flow may label with no person present, under the role of the person who enabled it, re-checked at every write (0007 decision 6).
 - **Private repositories wait for 0007 phase 2.** Until shapes are authorized per request, only public repositories sync items. Today a session carries one role, for `GITHUB_REPOSITORY` ([sign-in](../features/sign-in.md#roles-and-role-checks)), so slice G0 uses that one repository.
@@ -359,7 +359,7 @@ It's proven by G1 to G3 plus the dropped-response test, with GIFs.
 | W6 | `src/screens/{issues,pulls,branches}/**` | screens | W4, W5 |
 | W7 | `worker/flows/{Triage,ApplyTriage}.ts`, `src/features/triage/**` | triage | W2, W3 |
 | W8 | `packages/effect-code-storage/**`, `worker/flows/RepoPull.ts` | the App-mode mirror | S0 |
-| W9 | `packages/smithers/agent/triggers` Cloudflare host | the reconcile cron | nothing |
+| W9 | `packages/smithers/agent/triggers` Cloudflare host (built: `worker/ci/Cron.ts`) | the reconcile cron | nothing |
 | W10 | `e2e/git-*.spec.ts`, `docs/features/git.md`, `docs/observability.md` rows | proof and docs | each slice |
 | W11 | `infra/`, `alchemy.run.ts` | App ID, key, webhook secret | question 2 |
 

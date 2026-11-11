@@ -38,6 +38,10 @@ Checked on disk on 2026-10-21. Paths are relative to `apps/mvp` unless they star
 | Shapes | `ShapeProxy` (`packages/effect-electric/src/ShapeProxy.ts:16`, `:175`) | Drops client subset requests; the server fixes every `where` |
 | Migrations | `db/migrations/` | The highest is `0034_prototypes.ts` |
 
+### Built
+
+- **Addressed waits, server side** (2026-11-10): migration `0117_wait_address` (not `0035`: that number was taken) adds `runs.addressed_to`; the runs shape gives a row to its addressee (`(launched_by = $1 AND execution IS NULL) OR addressed_to = $1`) and syncs `repo_id`; `run/answer` admits only the addressee, in person, a Maintainer or Admin of the row's repository. `queue/ask` runs on `FlowExecution`, started by an agent's machine token (`ask/create`) through `POST /api/repos/<owner>/<name>/asks`; the answer reaches the parked run through its object's `answer`. [agent-status.md](../features/agent-status.md#addressed-waits). The queue's view of these rows is not built.
+
 ## 1. What the queue is
 
 ### Items and kinds

@@ -7,8 +7,9 @@
 import { z } from "zod"
 import type { ContextItem } from "./CardPrimitives.ts"
 
-// Metadata occupies one instruction line. Keep the wire contract bounded and
-// defend direct renderer callers too, which may not have parsed the payload.
+// Metadata occupies one instruction line. Keep the wire contract bounded; the
+// renderer also collapses newlines in string metadata, but only a context that
+// passed AgentRuntimeContextSchema is safe to render, so callers parse first.
 const runtimeLineLimit = 4096
 const runtimeLineSchema = z.string().regex(/^[^\r\n]*$/).max(runtimeLineLimit)
 const line = (text: string): string => text.replace(/\r\n|[\r\n]/g, " ").slice(0, runtimeLineLimit)

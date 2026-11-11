@@ -14,6 +14,7 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import * as Stalling from "./internal/Stalling.js";
@@ -142,13 +143,17 @@ export const make = (options) => {
     const maxTasks = options.maxTasks;
     const concurrency = options.concurrency;
     const names = workers.map(([name]) => name);
+    // A `Failed` outcome is handed to the review and to finalize and may be in
+    // the value the supervision settles with, so it carries its error as data.
+    const wire = Failure.wire(workers.map(([, worker]) => worker));
+    const recorded = (outcome) => outcome._tag === "Failed" ? { ...outcome, error: wire(outcome.error) } : outcome;
     const stall = Stalling.resolve("Supervisor", options.stall);
     if (stall instanceof PatternError)
         throw stall;
     const captures = stall === undefined
         ? { maxRounds, concurrency, workers: names }
         : { maxRounds, concurrency, workers: names, stall };
-    const { name, description } = Compose.label("supervisor", { workers: names, maxRounds, concurrency, stall: Stalling.labelOf(stall) }, options);
+    const { name, description } = Compose.label("supervisor", { workers: names, maxRounds, concurrency, stall: Stalling.labelOf(stall) }, options, [boss.plan, ...names.map((worker) => routes[worker]), boss.review, boss.finalize]);
     const body = ({ input }) => {
         const tasks = planned(input, maxTasks);
         const ids = tasks.map((task) => task.id);
@@ -209,7 +214,7 @@ export const make = (options) => {
                 for (const outcomes of state.batched) {
                     for (const id of Object.keys(outcomes)) {
                         if (state.pending === null || state.pending.includes(id)) {
-                            merged.set(id, outcomes[id]);
+                            merged.set(id, recorded(outcomes[id]));
                         }
                     }
                 }
@@ -261,7 +266,9 @@ export const make = (options) => {
         // no error schema. `@smthrs/flow` needs a real one, because the engine
         // encodes a typed failure through it, and a supervision fails with whatever
         // the boss or worker it called failed with.
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [boss.plan, ...workers.map(([, worker]) => worker), boss.review, boss.finalize]),
         body: Node.capture(captures, body)
     });
 };

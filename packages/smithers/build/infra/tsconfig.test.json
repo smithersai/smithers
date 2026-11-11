@@ -17,6 +17,9 @@
     "worker/test/**/*.vibe"
   ],
   "exclude": [
-    "worker/test/cli-contract.test.ts"
+    "worker/test/cli-contract.test.ts",
+    "worker/test/cli-output-contract.test.ts",
+    "worker/test/cli-output-faults-contract.test.ts",
+    "worker/test/cli-output-runner-contract.test.ts"
   ]
 }

@@ -662,11 +662,16 @@ export const make = <R = never>(options: MakeOptions<R>): TrellisFlow<R> => {
     fanout: envelope.fanout,
     continue: continuation !== undefined
   }
-  const { name, description } = Compose.label("trellis", {
-    fuel: envelope.fuel,
-    depth: envelope.depth,
-    fanout: envelope.fanout
-  }, options)
+  const { name, description } = Compose.label(
+    "trellis",
+    {
+      fuel: envelope.fuel,
+      depth: envelope.depth,
+      fanout: envelope.fanout
+    },
+    options,
+    [author, leaf, continuation]
+  )
   const runRound = (
     input: unknown,
     state: typeof RoundState.Type

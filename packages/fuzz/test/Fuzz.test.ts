@@ -78,6 +78,56 @@ describe("Fuzz", () => {
         assert.deepStrictEqual(finding.failure, { _tag: "PropertyError", error: new Boom({ n: 100 }) })
       }))
 
+    it.effect("an empty property cause remains a finding through shrinking and replay", () =>
+      Effect.gen(function*() {
+        const property = (n: number) => n >= 100 ? Effect.failCause(Cause.empty) : Effect.succeed(true)
+        const finding = firstFinding(yield* fuzz(ints, property))
+        assert.strictEqual(finding.signature, "Died:EmptyCause")
+        assert.deepStrictEqual(finding.failure, { _tag: "Died", defect: { _tag: "EmptyCause", cause: Cause.empty } })
+        assert.strictEqual(finding.input, 100)
+        assert.isTrue(finding.initialInput > finding.input)
+        assert.isTrue(finding.shrinks > 0)
+        const replayed = firstFinding(yield* Fuzz.run(ints, property, { replay: finding.replay }))
+        assert.deepStrictEqual([replayed.input, replayed.failure], [100, finding.failure])
+      }))
+
+    it.effect("an empty property cause does not discard other findings or saved failures", () =>
+      Effect.gen(function*() {
+        const store = Fuzz.memoryCorpus()
+        const target = Fuzz.target(Int, (n) =>
+          n % 2 === 0 ? Effect.failCause(Cause.empty) : Effect.fail(new Boom({ n })), {
+          id: "empty-cause",
+          revision: "1"
+        })
+        const report = yield* Fuzz.runTarget(target, { seed: 1, executions: 100, maxFindings: 2 }).pipe(withStore(store))
+        assert.strictEqual(report._tag, "Falsified")
+        if (report._tag !== "Falsified") return
+        assert.deepStrictEqual(report.findings.map((finding) => finding.signature).sort(), [
+          "Died:EmptyCause",
+          "PropertyError:Boom"
+        ])
+        assert.include(Fuzz.formatReport(report)!, "Died:EmptyCause")
+        const replayed = yield* Fuzz.runTarget(target, { executions: 0, maxFindings: 2 }).pipe(withStore(store))
+        assert.strictEqual(replayed._tag, "Falsified")
+        if (replayed._tag !== "Falsified") return
+        assert.strictEqual(replayed.stats.regressions, 2)
+        assert.deepStrictEqual(replayed.findings.map((finding) => finding.signature).sort(),
+          report.findings.map((finding) => finding.signature).sort())
+      }))
+
+    it.effect("cause-valued defects keep their original constructor signature", () =>
+      Effect.gen(function*() {
+        for (const [cause, signature] of [
+          [Cause.empty, "Died:CauseImpl"],
+          [Cause.fail("typed error"), "Died:CauseImpl"],
+          [Cause.die("nested defect"), "Died:CauseImpl"]
+        ] as const) {
+          const finding = firstFinding(yield* fuzz(Arbitrary.Constant(0), () => Effect.die(cause), { executions: 1 }))
+          assert.strictEqual(finding.signature, signature)
+          assert.deepStrictEqual(finding.failure, { _tag: "Died", defect: cause })
+        }
+      }))
+
     it.effect("defects raised by the property are findings", () =>
       Effect.gen(function*() {
         const thrown = firstFinding(
@@ -506,6 +556,71 @@ describe("Fuzz", () => {
         assert.strictEqual(failures[0].value, "500")
         assert.strictEqual(finding.saved, "Value")
         assert.isTrue(saves.some((entry) => entry.kind === "Input"))
+      }))
+
+    for (const separator of ["\n", "\r", "\u2028", "\u2029"]) {
+      for (const died of [false, true]) {
+        it.effect(`multi-line tags round-trip in ${died ? "defects" : "typed failures"}: ${JSON.stringify(separator)}`, () =>
+          Effect.gen(function*() {
+            const error = { _tag: `Odd${separator}Tag` }
+            const property = () => died ? Effect.die(error) : Effect.fail(error)
+            const signature = `${died ? "Died" : "PropertyError"}:${error._tag}`
+            for (const values of [true, false]) {
+              const store = Fuzz.memoryCorpus()
+              const options = { id: "multi-line", revision: "1" }
+              const target = values ? Fuzz.target(Int, property, options) : Fuzz.target(ints, property, options)
+              const first = firstFinding(
+                yield* Fuzz.runTarget(target, { seed: 1, executions: 1 }).pipe(withStore(store))
+              )
+              assert.strictEqual(first.signature, signature)
+              assert.strictEqual(first.saved, values ? "Value" : "Tape")
+              const entries = (yield* store.load(target.id)).filter((entry) => entry.kind === "Failure")
+              assert.strictEqual(entries.length, 1)
+              assert.strictEqual(Format.decodeEntry(entries[0].text).signature, signature)
+              const replayed = firstFinding(yield* Fuzz.runTarget(target, { replay: first.replay }))
+              assert.deepStrictEqual([replayed.signature, replayed.input], [signature, first.input])
+              const saved = yield* Fuzz.runTarget(target, { executions: 0 }).pipe(withStore(store))
+              assert.deepStrictEqual([firstFinding(saved).signature, saved.stats.regressions], [signature, 1])
+            }
+          }))
+      }
+    }
+
+    it.effect("Schema targets keep their value codec when an optional codec is undefined", () =>
+      Effect.gen(function*() {
+        const store = Fuzz.memoryCorpus()
+        const options = { id: "optional-codec", revision: "1", codec: undefined }
+        const target = Fuzz.target(Int, (n) => n < 500, options)
+        const finding = firstFinding(
+          yield* Fuzz.runTarget(target, { seed: 1, executions: 2_000 }).pipe(withStore(store))
+        )
+        assert.deepStrictEqual([finding.input, finding.saved], [500, "Value"])
+        const bumped = Fuzz.target(Int, (n) => n < 500, { ...options, revision: "2" })
+        const replayed = yield* Fuzz.runTarget(bumped, { executions: 0 }).pipe(withStore(store))
+        assert.deepStrictEqual([firstFinding(replayed).input, replayed.stats.regressions, replayed.stats.stale], [500, 1, 0])
+      }))
+
+    it.effect("Schema targets preserve an explicit value codec", () =>
+      Effect.gen(function*() {
+        const store = Fuzz.memoryCorpus()
+        const codec: Fuzz.Codec<number> = {
+          id: "wrapped-number",
+          encode: (n) => JSON.stringify({ n }),
+          decode: (text) => JSON.parse(text).n
+        }
+        const options = { id: "explicit-codec", revision: "1", codec }
+        const target = Fuzz.target(Int, (n) => n < 500, options)
+        const finding = firstFinding(
+          yield* Fuzz.runTarget(target, { seed: 1, executions: 2_000 }).pipe(withStore(store))
+        )
+        assert.strictEqual(finding.saved, "Value")
+        const entries = (yield* store.load(target.id)).filter((entry) => entry.kind === "Failure")
+        assert.strictEqual(entries.length, 1)
+        const entry = Format.decodeEntry(entries[0].text)
+        assert.deepStrictEqual([entry.codec, entry.value], ["wrapped-number", '{"n":500}'])
+        const bumped = Fuzz.target(Int, (n) => n < 500, { ...options, revision: "2" })
+        const replayed = yield* Fuzz.runTarget(bumped, { executions: 0 }).pipe(withStore(store))
+        assert.deepStrictEqual([firstFinding(replayed).input, replayed.stats.regressions], [500, 1])
       }))
 
     it.effect("saved failures replay first and stop failing once the bug is fixed", () =>

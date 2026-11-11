@@ -90,6 +90,23 @@ def State.failuresOf (s : State) (c : Change) : List CheckId :=
     | none => []
   | _ => []
 
+/-- The run the queue is pushing, while that push can still succeed: the run
+is held and still live. A push whose run died (the target moved, a part was
+blamed) is over. -/
+def State.pushingRun (s : State) : Option Run :=
+  match s.pushing with
+  | none => none
+  | some id =>
+    match s.findRun id with
+    | none => none
+    | some r => if (s.live r).isSome then some r else none
+
+/-- The part is on its way onto the target: it is in the batch being pushed. -/
+def State.pushingPart (s : State) (p : Part) : Bool :=
+  match s.pushingRun with
+  | none => false
+  | some r => r.batch.contains p
+
 /-! ## Durations -/
 
 /-- Record one finished check, keeping at most `window` samples per check. -/
@@ -108,12 +125,29 @@ def State.enqueue (s : State) (id : ChangeId) (priority : Nat) : State :=
       changes := s.changes ++ [{ id, priority, seq := s.nextSeq, rev := 0, attempts := 0, status := .queued }]
       nextSeq := s.nextSeq + 1 }
 
-/-- The author takes a change back. Only a change that has not ended can be
-withdrawn. -/
-def State.withdraw (s : State) (id : ChangeId) : State :=
+/-- End a change that has not ended as withdrawn. -/
+def State.withdrawNow (s : State) (id : ChangeId) : State :=
   { s with
     changes := s.changes.map fun c =>
       if c.id = id ∧ (c.status.isQueued ∨ c.status.isFixing) then { c with status := .withdrawn } else c }
+
+/-- The author takes a change back. Only a change that has not ended can be
+withdrawn, and not one that is on its way onto the target: that one lands. -/
+def State.withdraw (s : State) (id : ChangeId) : State :=
+  if s.changes.any (fun c => c.id == id && s.pushingPart c.part) then s else s.withdrawNow id
+
+/-- Someone other than the queue put a commit on the target. The queue adopts
+the new tip: the commit joins the target's tree as a merged change the queue
+did not test, and every run on the old tip stops being live, so everything
+still queued is rebuilt on the new tip and tested again. -/
+def State.foreign (s : State) (id : ChangeId) : State :=
+  if s.changes.any (fun c => c.id == id) then s
+  else
+    { s with
+      main := s.main ++ [⟨id, 0⟩]
+      changes := s.changes ++ [{ id, priority := 0, seq := s.nextSeq, rev := 0, attempts := 0, status := .merged }]
+      nextSeq := s.nextSeq + 1
+      landed := s.landed ++ [{ run := 0, base := s.main, batch := [⟨id, 0⟩], results := [], foreign := true }] }
 
 /-- One check result streams in. It is recorded when the check is required, the
 run exists and the check has no result yet. -/
@@ -156,9 +190,21 @@ def State.start (cfg : Config) (s : State) (count : Nat) : State :=
       runs := s.runs ++ [{ id := s.nextRun, base := s.main, batch, results := [] }]
       nextRun := s.nextRun + 1 }
 
-/-- Move the target onto a run's tree. The run must be live and its result
-complete and green. The target becomes exactly the tree that was tested. -/
-def State.land (cfg : Config) (s : State) (run : RunId) : State :=
+/-- Decide to fast-forward the target onto a run's tree. The run must be live
+and its result complete and green, and no other push may be under way. Nothing
+lands yet: the landing is recorded when the target is seen on that tree. -/
+def State.push (cfg : Config) (s : State) (run : RunId) : State :=
+  match s.pushingRun with
+  | some _ => s
+  | none =>
+    match s.findRun run with
+    | none => s
+    | some r => if (s.live r).isSome && green cfg r.results then { s with pushing := some run } else s
+
+/-- Record a landing. The run must be live and its result complete and green.
+The target becomes exactly the tree that was tested, which extends the target
+as it is now: a fast-forward. -/
+def State.landNow (cfg : Config) (s : State) (run : RunId) : State :=
   match s.findRun run with
   | none => s
   | some r =>
@@ -171,8 +217,14 @@ def State.land (cfg : Config) (s : State) (run : RunId) : State :=
           changes := s.changes.map fun c =>
             if batch.contains c.part ∧ c.status.isQueued then { c with status := .merged } else c
           runs := s.runs.filter fun x => x.id != run
-          landed := s.landed ++ [{ run, base := s.main, batch, results := r.results }] }
+          landed := s.landed ++ [{ run, base := s.main, batch, results := r.results, foreign := false }]
+          pushing := none }
       else s
+
+/-- The target was seen on the tree the queue was pushing. Only the run being
+pushed can land. -/
+def State.land (cfg : Config) (s : State) (run : RunId) : State :=
+  if s.pushing = some run then s.landNow cfg run else s
 
 /-- The words recorded when a change runs out of fix attempts. -/
 def exhaustedDetail : String := "still failing after every allowed fix attempt"
@@ -210,6 +262,8 @@ def step (cfg : Config) (s : State) : Event → State
   | .result run check verdict duration => s.result cfg run check verdict duration
   | .fixed id attempt => s.fixed id attempt
   | .gaveUp id attempt detail => s.gaveUp id attempt detail
+  | .foreign id => s.foreign id
+  | .push run => s.push cfg run
   | .start count => s.start cfg count
   | .land run => s.land cfg run
   | .blame run => s.blame cfg run

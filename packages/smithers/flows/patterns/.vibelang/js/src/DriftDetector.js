@@ -22,6 +22,7 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 /**
@@ -56,7 +57,11 @@ export const make = (options) => {
     const capture = options.capture;
     const compare = options.compare;
     const baseline = options.baseline;
-    const { name, description } = Compose.label("driftDetector", { alerts: alert !== undefined }, options);
+    const { name, description } = Compose.label("driftDetector", { alerts: alert !== undefined }, options, [
+        capture,
+        compare,
+        alert
+    ]);
     const body = ({ input }) => Node.bindPlanned(callMember(capture, { input, baseline }), Node.capture({ baseline }, (snapshot) => 
     // The verdict is read at run time from the real comparison, so the
     // alert arm is taken only when it reports drift, as in `run`.
@@ -75,11 +80,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        // `@smthrs/core` carried its error type as a phantom parameter and
-        // declared no error schema. `@smthrs/flow` needs a real one, because the
-        // engine encodes a typed failure through it, and a detector fails with
-        // whatever the member it called failed with.
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: whatever a
+        // member the pattern called failed with.
+        error: Failure.schemaFor([], [capture, compare, alert]),
         body: Node.capture({ baseline, alerts: alert !== undefined }, body)
     });
 };

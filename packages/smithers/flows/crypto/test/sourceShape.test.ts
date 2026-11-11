@@ -10,9 +10,30 @@
  */
 import * as Effect from "effect"
 import * as esbuild from "esbuild"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import { functionIdentity } from "../src/Identity.ts"
 import { sourceShape } from "../src/internal/sourceShape.ts"
+
+const hostNames = [
+  "arguments",
+  "process",
+  "Buffer",
+  "require",
+  "window",
+  "self",
+  "document",
+  "navigator",
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+  "caches",
+  "setImmediate",
+  "XMLHttpRequest",
+  "Worker",
+  "MessageChannel",
+  "BroadcastChannel"
+]
 
 describe("sourceShape: what an edit moves", () => {
   it("gives a renamed but equivalent callback the same shape", () => {
@@ -43,7 +64,8 @@ describe("sourceShape: what an edit moves", () => {
       "Infinity",
       "URL",
       "crypto",
-      "setTimeout"
+      "setTimeout",
+      ...hostNames
     ]
     const shapes = names.map((name) => sourceShape(`() => ${name}(1)`))
     expect(new Set(shapes).size).toBe(names.length)
@@ -58,6 +80,28 @@ describe("sourceShape: what an edit moves", () => {
     )
     expect(sourceShape("() => { { let fetch = f; fetch(1) } return fetch(1) }")).toContain("return fetch ( 1 )")
     expect(sourceShape("() => [fetch(1), outer(2)]")).toBe(sourceShape("() => [fetch(1), renamed(2)]"))
+  })
+
+  it.each([
+    ["function () { return arguments[0] }", "function () { return settings[0] }"],
+    ["function () { return () => arguments[0] }", "function () { return () => settings[0] }"],
+    ["() => localStorage.clear()", "() => sessionStorage.clear()"],
+    ["() => process.exit(1)", "() => queue.exit(1)"],
+    ["() => class { value = 1\n reader = () => process }", "() => class { value = 1\n reader = () => queue }"]
+  ])("distinguishes %s from %s in resume identities", (before, after) => {
+    expect(sourceShape(before)).not.toBe(sourceShape(after))
+    const identity = (source: string) => functionIdentity(Function(`return (${source})`)()).resumeDigest
+    expect(identity(before)).not.toBe(identity(after))
+  })
+
+  it("keeps host names distinct from free bindings while renaming their explicit shadows", () => {
+    for (const name of hostNames) {
+      expect(sourceShape(`() => ${name}`), name).not.toBe(sourceShape("() => outer"))
+      expect(sourceShape(`(${name}) => ${name}`), name).toBe(sourceShape("(value) => value"))
+      expect(sourceShape(`() => { const ${name} = outer; return ${name} }`), name).toBe(
+        sourceShape("() => { const value = outer; return value }")
+      )
+    }
   })
 
   it("sees swapped arguments", () => {
@@ -79,6 +123,10 @@ describe("sourceShape: what an edit moves", () => {
       ["v => v.trim()", "v => v.trim().toLowerCase()"],
       ["(a, b) => a(b)", "(a, b) => a(b, b)"],
       ["v => /a/.test(v)", "v => /b/.test(v)"],
+      ["v => { if (v) /^allow/.test(v.name) || v.reject() }", "v => { if (v) /^deny/.test(v.name) || v.reject() }"],
+      ["v => { while (v) /a+/.exec(v) }", "v => { while (v) /b+/.exec(v) }"],
+      ["v => { for (;;) /x/.test(v) }", "v => { for (;;) /y/.test(v) }"],
+      ["v => { if (v) /foo/g.test(v) }", "v => { if (v) /foo/i.test(v) }"],
       ["v => `a${v}`", "v => `b${v}`"],
       ["v => v === null", "v => v === undefined"],
       ["v => { for (const k in v) f(k) }", "v => { for (const k of v) f(k) }"],
@@ -356,6 +404,82 @@ describe("sourceShape: tokens", () => {
     // A `/` that cannot close on its line divides.
     expect(sourceShape("e => [1,\n/ 2\n]")).toBe("$0 => [ 1 , / 2 ]")
     expect(sourceShape("/x")).toBe("/ $f0")
+  })
+
+  it("keeps a regex after a statement head, including nested parentheses and comments", () => {
+    for (
+      const head of [
+        "if (v)",
+        "if ((ready(v)))",
+        "if (/[(]/.test(v))",
+        "while (ready(v))",
+        "for (;;)",
+        "for (const x of v)",
+        "for await (const x of v)",
+        "for /* head */ await /* iterable */ (const x of v)",
+        "with (v)",
+        "do {} while (v)\n"
+      ]
+    ) {
+      const source = `async v => { ${head} /a[()/]b\\/c/gi.test(v) }`
+      // Parse real JavaScript without executing the loop or reading its free names.
+      const callback = Function(`return ${source}`)() as () => unknown
+      expect(sourceShape(callback.toString()), head).toContain("/a[()/]b\\/c/gi . test")
+      const changed = Function(`return ${source.replace("a[()/]b", "x[()/]y")}`)() as () => unknown
+      expect(functionIdentity(callback).resumeDigest, head).not.toBe(functionIdentity(changed).resumeDigest)
+      const flags = Function(`return ${source.replace("/gi.test", "/g.test")}`)() as () => unknown
+      expect(functionIdentity(callback).resumeDigest, head).not.toBe(functionIdentity(flags).resumeDigest)
+    }
+  })
+
+  it("keeps division after calls whose property names are statement keywords", () => {
+    expect(sourceShape("v => { if (v) (v) / divisor / v }")).toBe(
+      "$0 => { if ( $0 ) ( $0 ) / $f0 / $0 }"
+    )
+    expect(sourceShape("async v => (await(v)) / divisor / v")).toBe(
+      "async $0 => ( await ( $0 ) ) / $f0 / $0"
+    )
+    expect(sourceShape("async v => { v.for\nawait(v) / divisor / v }")).toBe(
+      "async $0 => { $0 . for await ( $0 ) / $f0 / $0 }"
+    )
+    for (const keyword of ["if", "while", "for", "with"]) {
+      for (const access of [".", "?."]) {
+        expect(sourceShape(`v => v${access}${keyword}(v) / divisor / v`)).toBe(
+          `$0 => $0 ${access} ${keyword} ( $0 ) / $f0 / $0`
+        )
+        expect(sourceShape(`v => { if (v${access}${keyword}(v) / divisor / v) /x/.test(v) }`)).toContain(
+          `if ( $0 ${access} ${keyword} ( $0 ) / $f0 / $0 ) /x/ . test`
+        )
+      }
+    }
+  })
+
+  it("preserves regex identity under pattern mutations and binding renames after statement heads", () => {
+    const pattern = FastCheck.array(FastCheck.constantFrom("a", "b", "c", "x", "y", "z"), {
+      minLength: 1,
+      maxLength: 20
+    }).map((letters) => letters.join(""))
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.uniqueArray(pattern, { minLength: 2, maxLength: 2 }),
+        FastCheck.constantFrom("if (v)", "while (v)", "for (; v;)", "for await (const x of v)", "with (v)"),
+        FastCheck.constantFrom("", "g", "i", "gi", "u"),
+        FastCheck.constantFrom(" ", "\n", "/* gap */"),
+        FastCheck.integer({ min: 0, max: 5 }),
+        ([before, after], head, flags, gap, depth) => {
+          const nested = head.replaceAll(/\bv\b/g, `${"(".repeat(depth)}v${")".repeat(depth)}`)
+          const source = `async v => { ${nested}${gap}/^${before}+/${flags}.test(v) }`
+          const changed = source.replace(`/^${before}+/`, `/^${after}+/`)
+          expect(sourceShape(source)).toContain(`/^${before}+/${flags}`)
+          expect(sourceShape(source)).not.toBe(sourceShape(changed))
+          expect(sourceShape(source)).toBe(sourceShape(source.replaceAll(/\bv\b/g, "renamed")))
+        }
+      ),
+      {
+        numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
+        ...(process.env.FC_SEED === undefined ? {} : { seed: Number(process.env.FC_SEED) })
+      }
+    )
   })
 
   it("reads every form of number", () => {

@@ -16,6 +16,9 @@
   },
   "include": [
     "worker/test/cli-contract.test.ts",
-    "worker/test/cli-contract.test.vibe"
+    "worker/test/cli-contract.test.vibe",
+    "worker/test/cli-output-contract.test.ts",
+    "worker/test/cli-output-faults-contract.test.ts",
+    "worker/test/cli-output-runner-contract.test.ts"
   ]
 }

@@ -16,13 +16,15 @@
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as HashMap from "effect/HashMap";
 import * as HashSet from "effect/HashSet";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
 import { Journal, JournalEvent } from "@smthrs/journal";
-import { alertId, decide, deliveredEventType, detectorsOf, failedEventType, observe, payloadRecord, Policy, recordSourceId } from "./AlertPolicy.js";
+import { acknowledgedEventType, alertId, coalescingKey, decide, deliveredEventType, detectorsOf, failedEventType, observe, payloadRecord, Policy, recordSourceId } from "./AlertPolicy.js";
 import { Sink } from "./AlertSink.js";
 import * as FoldCache from "./internal/foldCache.js";
 import { NotificationQueue } from "./NotificationQueue.js";
@@ -34,6 +36,15 @@ import { NotificationQueue } from "./NotificationQueue.js";
  */
 export class AlertRuntime extends Context.Service()("/notifications/AlertRuntime") {
 }
+/** The id a person acknowledges an alert by: its first page's. */
+const firstId = (alert) => alertId({ coalescingKey: alert.coalescingKey, since: alert.since });
+/** The same id, read back off a delivery record of any of the alert's pages. */
+const firstIdOf = (pageId, reminder) => {
+    const ending = `:r${String(reminder)}`;
+    return typeof reminder === "number" && pageId.endsWith(ending) ? pageId.slice(0, -ending.length) : pageId;
+};
+/** The longest name of an acknowledging person a record keeps. */
+const maxAcknowledgerLength = 200;
 /**
  * How many runs one alert runtime keeps folded at a time. The retention policy
  * is scan-resistant, so a sweep of more runs than this reads journal tails for
@@ -57,6 +68,8 @@ const alertNotification = (alert) => ({
         severity: alert.severity,
         since: alert.since,
         firedAt: alert.firedAt,
+        ...(alert.reminder === undefined ? {} : { reminder: alert.reminder }),
+        ...(alert.summary === undefined ? {} : { summary: alert.summary }),
         ...(alert.owner === undefined ? {} : { owner: alert.owner }),
         ...(alert.runbook === undefined ? {} : { runbook: alert.runbook })
     }
@@ -91,7 +104,13 @@ export const layer = (policy) => Layer.effect(AlertRuntime, Effect_1.gen(functio
     const watched = FoldCache.make(maximumWatchedRuns);
     const observed = (runId) => Effect_1.gen(function* () {
         const base = watched.get(runId) ??
-            { open: new Map(), delivered: HashSet.empty(), cursor: undefined };
+            {
+                open: new Map(),
+                delivered: HashSet.empty(),
+                paged: HashSet.empty(),
+                acknowledged: HashMap.empty(),
+                cursor: undefined
+            };
         const fresh = [];
         let after = base.cursor === undefined ? undefined : JournalEvent.Seq.make(base.cursor);
         while (true) {
@@ -107,6 +126,8 @@ export const layer = (policy) => Layer.effect(AlertRuntime, Effect_1.gen(functio
         // delivery history is not, so it grows by one persistent node.
         const open = new Map(base.open);
         let delivered = base.delivered;
+        let paged = base.paged;
+        let acknowledged = base.acknowledged;
         let cursor = base.cursor;
         for (const entry of fresh) {
             cursor = entry.seq;
@@ -120,11 +141,21 @@ export const layer = (policy) => Layer.effect(AlertRuntime, Effect_1.gen(functio
                 // The journal does not bind a source to a writer.
                 if (typeof id === "string" && entry.sourceId === recordSourceId(id, "delivered")) {
                     delivered = HashSet.add(delivered, id);
+                    paged = HashSet.add(paged, firstIdOf(id, payload["reminder"]));
+                }
+            }
+            if (entry.eventType === acknowledgedEventType) {
+                const id = payload["alertId"];
+                const by = payload["by"];
+                // Scoped to the alerter's source exactly as a delivery is.
+                if (typeof id === "string" && typeof by === "string" &&
+                    entry.sourceId === recordSourceId(id, "acknowledged")) {
+                    acknowledged = HashMap.set(acknowledged, id, by);
                 }
             }
             observe(checked, detectors, entry, payload, open);
         }
-        const next = { open, delivered, cursor };
+        const next = { open, delivered, paged, acknowledged, cursor };
         // Published at commit, exactly as `NotificationQueue.load` publishes
         // its fold. A tick inside an enclosing transaction reads that
         // transaction's uncommitted rows, and caching them would outlive the
@@ -148,24 +179,61 @@ export const layer = (policy) => Layer.effect(AlertRuntime, Effect_1.gen(functio
             since: alert.since,
             severity: alert.severity,
             alertId: alertId(alert),
+            ...(alert.reminder === undefined ? {} : { reminder: alert.reminder }),
             ...(outcome.code === undefined ? {} : { code: outcome.code }),
             ...(outcome.status === undefined ? {} : { status: outcome.status })
         }
     })).pipe(Effect.asVoid);
+    /** One run's fold, and the alerts its open conditions raise now. */
+    const considered = (runId) => {
+        return Effect_1.gen(function* considered() {
+            const history = yield* observed(JournalEvent.RunId.make(runId));
+            const now = yield* Clock.currentTimeMillis;
+            const open = Array.from(history.open, ([condition, opened]) => ({ runId, condition, ...opened }));
+            return { history, raised: decide(checked, open, now) };
+        });
+    };
     return AlertRuntime.of({
+        acknowledge: Effect.fn("AlertRuntime.acknowledge")((runId, id, by) => {
+            return Effect_1.gen(function* () {
+                const history = yield* observed(JournalEvent.RunId.make(runId));
+                const open = Array.from(history.open).some(([condition, opened]) => firstId({ coalescingKey: coalescingKey(runId, condition), since: opened.since }) === id);
+                if (!open)
+                    return false;
+                yield* journal.emitDurableUnfenced(new JournalEvent.Input({
+                    runId: JournalEvent.RunId.make(runId),
+                    sourceId: JournalEvent.SourceId.make(recordSourceId(id, "acknowledged")),
+                    sourceSeq: JournalEvent.SourceSeq.make(0),
+                    // The first acknowledgement stands. A second person saying the
+                    // same thing later is the same fact.
+                    dedupe: "identity",
+                    eventType: acknowledgedEventType,
+                    payload: { runId, alertId: id, by: by.slice(0, maxAcknowledgerLength) }
+                }));
+                return true;
+            });
+        }),
+        standing: Effect.fn("AlertRuntime.standing")((runId) => {
+            return Effect_1.gen(function* () {
+                const { history, raised } = yield* considered(runId);
+                return raised.map((alert) => {
+                    const id = firstId(alert);
+                    const by = HashMap.get(history.acknowledged, id);
+                    if (Option.isSome(by))
+                        return { alertId: id, alert, state: "acknowledged", acknowledgedBy: by.value };
+                    return { alertId: id, alert, state: HashSet.has(history.paged, id) ? "delivered" : "raised" };
+                });
+            });
+        }),
         tick: Effect.fn("AlertRuntime.tick")((runId) => {
             return Effect_1.gen(function* () {
-                const journalRunId = JournalEvent.RunId.make(runId);
-                const history = yield* observed(journalRunId);
-                const now = yield* Clock.currentTimeMillis;
-                const open = Array.from(history.open, ([condition, since]) => ({ runId, condition, since }));
-                const raised = decide(checked, open, now);
+                const { history, raised } = yield* considered(runId);
                 const delivered = [];
                 const failed = [];
                 const refused = [];
                 const suppressed = [];
                 for (const alert of raised) {
-                    if (HashSet.has(history.delivered, alertId(alert))) {
+                    if (HashMap.has(history.acknowledged, firstId(alert)) || HashSet.has(history.delivered, alertId(alert))) {
                         suppressed.push(alert);
                         continue;
                     }

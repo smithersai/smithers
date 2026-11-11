@@ -158,6 +158,16 @@ describe("activity rows", () => {
     const diff = "--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n--- a/b\n+++ b/b\n@@ -1,0 +1 @@\n+c"
     expect(SubagentCard.diffCounts(diff)).toEqual({ added: 2, removed: 1 })
   })
+
+  test("a hunk that promises more lines than it holds ends at the next file", () => {
+    const diff = "--- a/a\n+++ b/a\n@@ -1,3 +1,3 @@\n-a\n+b\ndiff --git a/b b/b\n--- a/b\n+++ b/b\n@@ -1 +1 @@\n-c\n+d"
+    expect(SubagentCard.diffCounts(diff)).toEqual({ added: 2, removed: 2 })
+  })
+
+  test("counts bare +/- lines of a diff without hunk headers", () => {
+    expect(SubagentCard.diffCounts("+a\n+b\n-c\n context")).toEqual({ added: 2, removed: 1 })
+    expect(SubagentCard.diffCounts("")).toEqual({ added: 0, removed: 0 })
+  })
 })
 
 describe("files line", () => {
@@ -250,6 +260,11 @@ describe("batch header", () => {
     // Live, or more than one, it keeps the batch words.
     expect(SubagentCard.headerLine(SubagentCard.header(["running"], 150, docs))).toBe("◓ Running 1 subagent (0/1)")
     expect(SubagentCard.headerLine(SubagentCard.header(["done", "done"], 0, docs))).toBe("Ran 2 subagents ✓")
+  })
+
+  test("a settled subagent without an end time is clocked to now", () => {
+    const lint = { title: "Lint", startedAt: 1_000 }
+    expect(SubagentCard.headerLine(SubagentCard.header(["done"], 9_000, lint))).toBe("✓ Lint · done at 8s")
   })
 })
 

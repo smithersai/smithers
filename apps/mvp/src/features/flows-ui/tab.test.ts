@@ -18,6 +18,7 @@ import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions
 import { codePath, draftFailureWords, draftPath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
 import { type RunStatus, shownRound } from "./round"
 import { FlowsUi } from "./flowsUi"
+import { FORM } from "./schema"
 import { awaitEditorWrites, hasPendingEditorWrites } from "./editorWrites"
 import { placementOf, renderSource, SOURCE_PATH } from "./source"
 import { FlowsUiStore } from "./store"
@@ -134,6 +135,11 @@ test("two tabs keep separate unfinished flow requests and answers through reload
   await until(() => expect(otherFlows.queries.form.toArray[0]?.name).toBe("second"))
   expect(t.flows.queries.answers.toArray[0]?.value).toBe("first answer")
   expect(otherFlows.queries.answers.toArray[0]?.value).toBe("second answer")
+  // Each tab's edit is durable before the reload. Two stored form rows prove nothing: each restore first stores an empty
+  // seed row, and these hosts stage no pending form snapshot to recover an edit closed before its receipt.
+  await awaitEditorWrites()
+  expect(t.host.storedRows("flow-form")).toContainEqual(expect.objectContaining({ id: `${FORM}:${t.host.editorTabId}`, name: "first" }))
+  expect(t.host.storedRows("flow-form")).toContainEqual(expect.objectContaining({ id: `${FORM}:${otherHost.editorTabId}`, name: "second" }))
   await other.dispose()
   await t.runtime.dispose()
 

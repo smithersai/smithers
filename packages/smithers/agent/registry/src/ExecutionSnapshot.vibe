@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema"
 import * as Descriptor from "./Descriptor.vibe"
 import type { ClosureModule, Executable, VerifiedSource } from "./Executable.vibe"
 import { measureLockfiles } from "./internal/Lockfiles.vibe"
+import * as ModuleClosure from "./internal/ModuleClosure.vibe"
 import * as Prompt from "./Prompt.vibe"
 export { measureLockfiles } from "./internal/Lockfiles.vibe"
 
@@ -76,18 +77,29 @@ const fail = (code: ExecutionSnapshotError["code"], message: string, cause?: unk
   new ExecutionSnapshotError({ code, message, cause, ...(indexMissing ? { indexMissing } : {}) })
 const address = (value: string) => /^[a-f0-9]{64}$/.test(value)
 
-const verifiedCompilation = (filename: string, module: ClosureModule, descriptor: Descriptor.FlowDescriptor) =>
+/**
+ * Refuses a module whose executable text or static links are not what its
+ * measured bytes give. The links are rewritten into the text that is imported,
+ * so they are recomputed from the verified bytes rather than believed: a
+ * stored link over a statement would remove approved code under an unchanged
+ * digest. A Markdown body is not a module and has no links.
+ */
+const verifiedCompilation = (
+  path: Path.Path,
+  filename: string,
+  module: ClosureModule,
+  descriptor: Descriptor.FlowDescriptor,
+  has: (file: string) => boolean
+) =>
   effect {
     const raw = try Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(module.bytes), catch: keepDefect }))
-    const expected = descriptor.body._tag === "Module" && filename.endsWith(".mdx")
+    const isModule = descriptor.body._tag === "Module"
+    const expected = isModule && filename.endsWith(".mdx")
       ? try Prompt.compile(raw)
       : raw
     if (
       module.source !== expected ||
-      module.links.some((link) =>
-        !Number.isInteger(link.start) || !Number.isInteger(link.end) || link.start < 0 || link.end <= link.start ||
-        link.end > module.source.length
-      )
+      !(isModule ? ModuleClosure.linked(path, filename, module, has) : module.links.length === 0)
     ) {
       throw fail("corrupt", "Execution source compilation or static links differ")
     }
@@ -177,10 +189,16 @@ export const makeFileSystem = effect (options: { readonly root: string; readonly
       for (const [filename, blob] of Object.entries(manifest.modules)) {
         const bytes = try get(blob)
         const compiled = manifest.compiled[filename]
-        if (compiled === undefined || compiled.links.some((link) => manifest.modules[link.target] === undefined)) {
+        if (compiled === undefined) {
           throw fail("corrupt", "Incomplete execution closure")
         }
-        try verifiedCompilation(filename, { bytes, ...compiled }, manifest.descriptor)
+        try verifiedCompilation(
+          path,
+          filename,
+          { bytes, ...compiled },
+          manifest.descriptor,
+          (file) => Object.hasOwn(manifest.modules, file)
+        )
         modules.set(filename, { bytes, ...compiled })
       }
       const entry = modules.get(manifest.entry)
@@ -270,7 +288,7 @@ export const makeFileSystem = effect (options: { readonly root: string; readonly
       const compiled: Record<string, { readonly source: string; readonly links: ReadonlyArray<typeof Link.Type> }> =
         {}
       for (const [filename, module] of source.modules) {
-        try verifiedCompilation(filename, module, executable.descriptor)
+        try verifiedCompilation(path, filename, module, executable.descriptor, (file) => source.modules.has(file))
         modules[filename] = try put(module.bytes)
         compiled[filename] = { source: module.source, links: module.links }
       }

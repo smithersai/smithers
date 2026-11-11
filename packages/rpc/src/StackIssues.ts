@@ -57,8 +57,8 @@ export const issueGroupOf = (item: MythicalItem): IssueGroupId =>
     "working" :
     "done"
 
-const at = (iso: string | undefined): number => {
-  const value = iso === undefined ? Number.NaN : Date.parse(iso)
+const at = (iso: string): number => {
+  const value = Date.parse(iso)
   return Number.isNaN(value) ? 0 : value
 }
 

@@ -15,7 +15,9 @@
  * result <run> <check> pass|fail <duration>
  * fixed <id> <attempt>
  * gaveup <id> <attempt> <detail to end of line>
+ * foreign <id>
  * start <count>
+ * push <run>
  * land <run>
  * blame <run>
  * cancel <run>
@@ -67,8 +69,13 @@ const renderStatus = (status: Status): string => {
 const renderChange = (change: Change): string =>
   `${change.id}:p${change.priority}:s${change.seq}:r${change.rev}:a${change.attempts}:${renderStatus(change.status)}`
 
-const renderRun = (run: Run | Landing, id: number): string =>
+const renderRun = (run: Run, id: number): string =>
   `${id}:${renderTree(run.base)}/${renderTree(run.batch)}:${renderResults(run.results)}`
+
+const renderLanding = (landing: Landing): string =>
+  landing.foreign
+    ? `foreign:${renderTree(landing.base)}/${renderTree(landing.batch)}`
+    : `${landing.run}:${renderTree(landing.base)}/${renderTree(landing.batch)}:${renderResults(landing.results)}`
 
 /**
  * Renders one event as its input line.
@@ -88,6 +95,10 @@ export const renderEvent = (event: Event): string => {
       return `fixed ${event.id} ${event.attempt}`
     case "gaveUp":
       return `gaveup ${event.id} ${event.attempt} ${event.detail}`
+    case "foreign":
+      return `foreign ${event.id}`
+    case "push":
+      return `push ${event.run}`
     case "start":
       return `start ${event.count}`
     case "land":
@@ -124,7 +135,8 @@ export const renderState = (config: Config, state: State): string => {
     `changes=${state.changes.map(renderChange).join(";")}`,
     `runs=${state.runs.map((run) => renderRun(run, run.id)).join(";")}`,
     `next=${state.nextRun},${state.nextSeq}`,
-    `landed=${state.landed.map((landing) => renderRun(landing, landing.run)).join(";")}`,
+    `pushing=${state.pushing === null ? "-" : state.pushing}`,
+    `landed=${state.landed.map(renderLanding).join(";")}`,
     `history=${list(state.history.map((sample) => `${sample.check}:${sample.duration}`))}`,
     `ready=${list(ready(state).map((change) => String(change.id)))}`,
     `plan=${planned === undefined ? "wait" : renderEvent(planned)}`,
@@ -245,6 +257,10 @@ export const parseLine = (text: string): Line | undefined => {
   switch (head) {
     case "withdraw":
       return event({ _tag: "withdraw", id: first })
+    case "foreign":
+      return event({ _tag: "foreign", id: first })
+    case "push":
+      return event({ _tag: "push", run: first })
     case "start":
       return event({ _tag: "start", count: first })
     case "land":

@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type * as Input from "@smthrs/targets/Input"
+import * as Input from "@smthrs/targets/Input"
 import * as RemoteCache from "@smthrs/targets/RemoteCache"
 import type * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -33,12 +33,12 @@ export interface ExpandedInput {
 }
 
 /**
- * The only target declaration filename.
+ * The target declaration filenames, TypeScript and VibeLang.
  *
  * @category discovery
  * @since 0.1.0
  */
-export const declarationFileNames = ["PACKAGE.ts"] as const
+export const declarationFileNames = Input.declarationFileNames
 /**
  * Which credentials a workspace declared for its remote cache.
  *

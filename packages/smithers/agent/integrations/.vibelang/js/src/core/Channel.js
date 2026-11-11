@@ -18,6 +18,11 @@
  * The decoder's output is validated against `ExternalEvent` before it leaves
  * this module, so a decoder bug fails on the delivery that triggered it.
  *
+ * A polling source has no request to verify: it fetched its events itself.
+ * {@link fromSource} gives it the same door, so a polled event starts a flow or
+ * signals a run through `Channels.ingest` with the same idempotency, and
+ * nothing but that source can use it.
+ *
  * @since 1.0.0
  */
 import * as Cause from "effect/Cause";
@@ -25,12 +30,15 @@ import * as Schema from "effect/Schema";
 import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
 import * as runtime from "vibelang-runtime/internal";
+import { Channels } from "@smthrs/control/Channels";
 import { InvalidInput, Unauthorized } from "@smthrs/control/ControlError";
 import * as WebhookChannel from "@smthrs/control/WebhookChannel";
 import { Effect, Redacted } from "effect";
 import { decode as decodeExternalEvent } from "./ExternalEvent.js";
 import { IntegrationError, isIntegrationError, toInvalidInput, toUnauthorized } from "./IntegrationError.js";
 import * as SignalName from "./SignalName.js";
+import { sourcePass } from "./Channel.platform.js";
+import { constantTimeEqual } from "./Signature.js";
 /**
  * A resolver that always answers with one secret. For a single-tenant
  * deployment that reads its webhook secret from the environment.
@@ -142,3 +150,89 @@ export const startFlow = (flowId) => (event) => Effect.succeed({ _tag: "Start", 
  * @since 1.0.0
  */
 export const signalRun = (runId) => (event) => Effect.succeed({ _tag: "Signal", runId, signal: SignalName.toSignalPayload(event) });
+const SOURCE_PASS_HEADER = "x-smithers-source-pass";
+const SOURCE_RECEIVED_HEADER = "x-smithers-source-received-at-ms";
+const RETRYABLE_CONTROL_ERRORS = [
+    "/control/Unavailable",
+    "/control/TransportError",
+    "/control/PersistenceError"
+];
+const sourceEncoder = new TextEncoder();
+/**
+ * Builds the control-plane door for one polling source.
+ *
+ * A polled event carries no signature, because nobody sent it: the source
+ * fetched it over its own authenticated request. So the door verifies where
+ * the event came from instead. Each door holds a random pass that never leaves
+ * the process, `ingest` presents it, and the channel refuses every delivery
+ * without it with `Unauthorized`. A host that mounts the channel's name on an
+ * HTTP route by mistake therefore opens nothing.
+ *
+ * The idempotency key is the event's dedupe key, and the delivered bytes leave
+ * out `receivedAtMs`. A batch polled again after a crash carries the same
+ * events with a later receipt time; they answer `AlreadyApplied` instead of
+ * starting a second run.
+ *
+ * `handle` treats two receipts as not delivered. `Parked` means the start
+ * waits for a plan approval and has not launched, so the failure is marked
+ * retryable and the cursor stays behind the event. `Conflict` means the dedupe
+ * key was already used for different content, which another attempt never
+ * clears. `Terminal` is delivered: the run a signal addressed has ended, and
+ * nothing is left to receive it.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const fromSource = (config) => {
+    const pass = sourcePass();
+    const passBytes = sourceEncoder.encode(pass);
+    const refused = (reason, message, details) => new IntegrationError(reason, message, { channel: config.name, ...details });
+    const controlFailure = (error) => error._tag === "/control/InvalidInput"
+        ? refused("decode-failed", `${config.name} source event is not a valid event.`, { retryable: false })
+        : new IntegrationError("delivery-failed", `${config.name} source event did not reach the control plane.`, { channel: config.name, control: error._tag, retryable: RETRYABLE_CONTROL_ERRORS.includes(error._tag) }, { cause: error });
+    const channel = {
+        name: config.name,
+        schema: Schema.Unknown,
+        verify: (raw) => constantTimeEqual(passBytes, sourceEncoder.encode(raw.headers[SOURCE_PASS_HEADER] ?? ""))
+            ? Effect.void
+            : Effect.fail(new Unauthorized({ message: `${config.name} takes events from its polling source only.` })),
+        decode: (raw) => 
+        // A body that is not JSON dies, as a throw inside `Effect.suspend` does.
+        Effect.orDie(Effect.try({ try: () => JSON.parse(new TextDecoder().decode(raw.body)), catch: (cause) => cause }))
+            .pipe(Effect.flatMap((parsed) => decodeExternalEvent({
+            ...parsed,
+            receivedAtMs: Number(raw.headers[SOURCE_RECEIVED_HEADER])
+        })), Effect.mapError(() => new InvalidInput({ issue: `${config.name} source event is not a valid event.` }))),
+        map: (event) => config.route(event),
+        project: config.project ?? noProjection
+    };
+    const ingest = (event) => Effect.try({
+        // The key order is fixed here, not taken from the event, so a journaled
+        // copy and a freshly polled copy of one event are the same bytes.
+        try: () => sourceEncoder.encode(JSON.stringify({
+            source: event.source,
+            eventName: event.eventName,
+            correlationId: event.correlationId,
+            payload: event.payload,
+            dedupeKey: event.dedupeKey
+        })),
+        catch: () => refused("decode-failed", `${config.name} source event is not JSON.`, { retryable: false })
+    }).pipe(Effect.flatMap((body) => Effect.flatMap(Channels, (channels) => channels.ingest({
+        channel: config.name,
+        raw: {
+            body,
+            headers: { [SOURCE_PASS_HEADER]: pass, [SOURCE_RECEIVED_HEADER]: String(event.receivedAtMs) },
+            idempotencyKey: event.dedupeKey
+        }
+    })).pipe(Effect.mapError(controlFailure))), Effect.withSpan("integrations.source.ingest", { attributes: { "smithers.channel": config.name } }));
+    const handle = (events) => Effect.forEach(events, (event) => Effect.flatMap(ingest(event), (receipt) => {
+        if (receipt._tag === "Parked") {
+            return Effect.fail(refused("delivery-failed", `${config.name} source event waits for a plan approval and has not started its flow.`, { retryable: true, planId: receipt.planId }));
+        }
+        if (receipt._tag === "Conflict") {
+            return Effect.fail(refused("delivery-failed", `${config.name} source event reuses a dedupe key with different content.`, { retryable: false }));
+        }
+        return Effect.void;
+    }), { discard: true });
+    return { channel, ingest, handle };
+};

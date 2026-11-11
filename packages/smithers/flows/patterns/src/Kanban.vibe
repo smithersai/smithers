@@ -14,6 +14,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.vibe"
+import * as FailureSchema from "./internal/Failure.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.vibe"
@@ -159,7 +160,8 @@ const bound = (value: number): boolean => Number.isSafeInteger(value) && value >
 const completionBoard = (
   outcomes: ReadonlyArray<unknown>,
   ids: ReadonlyArray<string>,
-  names: ReadonlyArray<string>
+  names: ReadonlyArray<string>,
+  wire: (error: unknown) => unknown
 ): Board<unknown, unknown> => {
   const board = new Map<string, Record<string, unknown>>()
   const failed: Array<Failure<unknown>> = []
@@ -175,7 +177,8 @@ const completionBoard = (
         board.set(id, { ...board.get(id), [column]: outcome.value })
       } else {
         rejected.add(id)
-        failed.push({ id, column, error: outcome.error })
+        // The board is what the flow settles with, so a rejection is data.
+        failed.push({ id, column, error: wire(outcome.error) })
       }
     }
   }
@@ -255,6 +258,7 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
     $raise(new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" }))
   }
   const captures = { columns: names, items: ids, concurrency }
+  const wire = FailureSchema.wire(columns.map((column) => column.flow))
   // What one column hands the next: each live card's latest output, and every
   // card a column has rejected so far.
   const advance = (values: unknown, rejected: ReadonlyArray<string>): Carried => {
@@ -315,7 +319,10 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
     }
     return visit(0, {})
   }
-  const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options)
+  const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options, [
+    ...columns.map((column) => column.flow),
+    onComplete
+  ])
   const body = (): Node.Node<unknown, unknown, R> => {
     const walk = (
       index: number,
@@ -346,7 +353,7 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
           const board = Node.map(
             Node.succeed(outcomes),
             Node.capture(captures, (settled) =>
-              completionBoard(settled as ReadonlyArray<unknown>, ids, names))
+              completionBoard(settled as ReadonlyArray<unknown>, ids, names, wire))
           )
           if (onComplete === undefined) return board
           return Node.bindPlanned(
@@ -362,7 +369,12 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: FailureSchema.schemaFor(
+      [PatternError],
+      [...columns.map((column) => column.flow), onComplete]
+    ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }

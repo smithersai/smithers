@@ -32,6 +32,27 @@ const roundTrip = (schema: Schema.Top, failure: unknown): unknown => {
   return Schema.decodeUnknownSync(codec)(encoded)
 }
 
+describe("Failure.wire", () => {
+  it("encodes a caught error through the schema of the member that declares it", () => {
+    const wire = Failure.wire([member("throttles", Throttled), member("untagged", Message), undefined])
+    const encoded = wire(new Throttled({ seconds: 3 }))
+    expect(encoded).toEqual({ _tag: "patterns-test/Throttled", seconds: 3 })
+    expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
+    expect(Object.getPrototypeOf(wire(new Message({ message: "m" })))).toBe(Object.prototype)
+  })
+
+  it("leaves plain data as it is", () => {
+    const wire = Failure.wire([member("throttles", Throttled)])
+    expect(wire({ code: "down", message: "seat down" })).toEqual({ code: "down", message: "seat down" })
+    expect(wire("down")).toBe("down")
+  })
+
+  it("hands back an error no member schema encodes", () => {
+    const refused = new Refused({ reason: "undeclared" })
+    expect(Failure.wire([member("throttles", Throttled)])(refused)).toBe(refused)
+  })
+})
+
 describe("Failure.schemaFor", () => {
   it("encodes the pattern's own errors and each member's declared error as themselves", () => {
     const schema = Failure.schemaFor([PatternError], [

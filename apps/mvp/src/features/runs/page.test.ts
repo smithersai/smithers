@@ -297,6 +297,7 @@ describe("the list", () => {
       [
         cloud("todo:a", { createdAtMs: 9 }),
         cloud("ci:1", { kind: "repo", flow: "ci", trigger: "pull_request", branch: "main", actor: "github", createdAtMs: 3 }),
+        cloud("nightly:cron-1", { kind: "repo", flow: "nightly", trigger: "schedule", branch: "main", actor: "github", createdAtMs: 4 }),
         cloud("spend-1", { kind: "system", flow: "ops/SpendAlert", trigger: "system", branch: null, actor: null, repo: null, createdAtMs: 2, startedAtMs: null, status: "pending" }),
       ],
     )
@@ -305,6 +306,7 @@ describe("the list", () => {
     expect(rows.map((run) => [run.id, run.trigger, run.branch, run.actor, run.where, run.href])).toEqual([
       ["todo:a", "commit", "todo/fix", "maya", undefined, "/app/runs/todo%3Aa"],
       ["answer", "composer", null, "agent", undefined, "/app/runs/answer"],
+      ["nightly:cron-1", "schedule", "main", "github", undefined, "/octo/hello/actions/runs/nightly%3Acron-1?from=runs"],
       ["ci:1", "pull request", "main", "github", undefined, "/octo/hello/actions/runs/ci%3A1?from=runs"],
       ["spend-1", "system", null, null, undefined, "/app/runs/spend-1"],
       ["theme", "button", null, "you", undefined, "/app/runs/theme"],

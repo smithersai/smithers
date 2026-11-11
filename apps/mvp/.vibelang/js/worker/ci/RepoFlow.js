@@ -12,6 +12,7 @@ import { Node } from "@smthrs/plan";
 import { CiJob } from "@smthrs/sandbox";
 import { Effect, Layer, Metric, Schema } from "effect";
 import { HttpClient } from "effect/http";
+import { RUN_EVENTS } from "../../src/features/actions/contract.js";
 import { statusContextOf } from "../../src/features/pulls/contract.js";
 import { codeOf } from "../ErrorCode.js";
 import { classify, withToken } from "../github/Calls.js";
@@ -46,8 +47,11 @@ export const RunRequest = Schema.Struct({
     flow: Schema.String.check(Schema.isPattern(FLOW_NAME)),
     sha: CiJob.Target.fields.sha,
     ref: CiJob.Target.fields.ref,
-    /** What started it: a push, a pull request, or a person by hand (docs/features/actions.md#running-a-flow-by-hand). */
-    event: Schema.Literals(["push", "pull_request", "manual"]),
+    /**
+     * What started it: a push, a pull request, a person by hand (docs/features/actions.md#running-a-flow-by-hand), or a
+     * schedule (docs/features/ci.md#schedules).
+     */
+    event: Schema.Literals(RUN_EVENTS),
     /** Whether the run's jobs may have the repository's secrets: never for a fork's pull request. */
     secrets: Schema.Boolean,
     /** A run by hand's inputs, which the flow's body receives beside the run's own fields. */

@@ -5,17 +5,20 @@ import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect, Exit, Layer, Option, Schedule, Schema } from "effect"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
+import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { test } from "node:test"
 import { promisify } from "node:util"
+import { vibeLangLoader } from "../automation/run-module.ts"
 import ReleaseContent from "../release-content/flow.ts"
 import * as Content from "../release-content/workflow.vibe"
 import { contentInput, releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
 import { actionLayers, operations } from "../release-support/operations.ts"
-import { agentLayers } from "../release-support/runtime.ts"
+import { agentHost, agentLayers } from "../release-support/runtime.ts"
 import { type Candidate, ReleaseError } from "../release-support/schema.vibe"
-import ReleaseFlow from "../release/flow.ts"
+import ReleaseFlow, { layer as releaseLayer } from "../release/flow.ts"
+import { layerAt } from "../release/layer.ts"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
 import * as Release from "../release/workflow.vibe"
 import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
@@ -23,10 +26,11 @@ import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixture
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
   const fixture = await repository(test)
   const worker = join(import.meta.dirname, "resume-worker.ts")
-  // The worker's imports reach `.vibe` modules, which load through VibeLang.
-  const loader = ["--import", import.meta.resolve("vibelang/register")]
-  const start = await promisify(execFile)(process.execPath, [...loader, worker, fixture.root, "start"])
-  const resume = await promisify(execFile)(process.execPath, [...loader, worker, fixture.root, "resume"])
+  // The worker imports workspace source, some of it `.vibe`, so it needs VibeLang's loader too.
+  const node = (phase: string) =>
+    promisify(execFile)(process.execPath, [...vibeLangLoader(), worker, fixture.root, phase])
+  const start = await node("start")
+  const resume = await node("resume")
   const first = JSON.parse(start.stdout.trim().split("\n").at(-1)!)
   const last = JSON.parse(resume.stdout.trim().split("\n").at(-1)!)
   assert.equal(first.result.status, "waiting")
@@ -45,6 +49,46 @@ const waiting = (id: string) =>
     assert.equal(row.value.reason, "approval")
     return Schema.decodeUnknownSync(DurableDeferred.Token)(row.value.token)
   })
+
+test("a flow started with only a version decodes every other input key to its preview default", () => {
+  assert.deepEqual(Schema.decodeUnknownSync(ReleaseFlow.payloadSchema)({ version: "1.0.0" }), {
+    version: "1.0.0",
+    from: "auto",
+    phase: "prepare",
+    dryRun: true,
+    contentArtifact: "",
+    requireContentApproval: true,
+    provenance: true
+  })
+  const content = Schema.decodeUnknownSync(ReleaseContent.payloadSchema)({
+    version: "1.0.0",
+    channels: { blog: false }
+  })
+  assert.equal(content.dryRun, true)
+  assert.equal(content.publish, false)
+  assert.equal(content.minScore, 0.86)
+  assert.deepEqual(content.channels, { changelog: true, blog: false, thread: true, media: true })
+  // The plan a version-only publish request builds is the full validation path, ending in a preview.
+  const calls = [...Graph.nodes(Graph.build(
+    ReleaseFlow,
+    Schema.decodeUnknownSync(ReleaseFlow.payloadSchema)({
+      version: "1.0.0",
+      phase: "publish"
+    })
+  ))].filter((node) => node.kind === "ActionCall").map((node) => (node.ast as { action: string }).action)
+  assert.equal(calls.includes("release/smoke"), true)
+  assert.equal(calls.includes("system/human-task"), false)
+  const refuse = (input: unknown, message: RegExp) =>
+    assert.throws(() => Schema.decodeUnknownSync(ReleaseContent.payloadSchema)(input), message)
+  refuse({}, /version/)
+  refuse({ version: "1.0.0", postX: true }, /postX requires publish=true/)
+  refuse({ version: "1.0.0", autoCommit: true }, /autoCommit requires publish=true/)
+  refuse({ version: "1.0.0", channels: { changelog: false, blog: false, thread: false } }, /at least one text channel/)
+  refuse(
+    { version: "1.0.0", recording: { url: "https://example.com", readySelector: "main", steps: [] } },
+    /local HTTP\(S\) origin/
+  )
+})
 
 test("planning contains the bounded revision loop and no disabled drafting stages", () => {
   const input = contentInput({ channels: { blog: false, thread: false }, maxRevisions: 2 }, evidence.version)
@@ -468,3 +512,68 @@ for (
     assert.deepEqual(after, [], "no gate runs after the failure, so build and pack never start")
   })
 }
+
+test(
+  "the layer release/flow.ts exports previews a preparation, and parks a real one until a person answers",
+  { timeout: 90_000 },
+  async (test) => {
+    const fixture = await repository(test)
+    const counts: Record<string, number> = {}
+    // What a Smithers host supplies: the engine, the agent services and the seats.
+    // Every release step is the exported layer's own, against the scratch checkout.
+    const engine = () =>
+      NodeRuntime.layerHost(
+        {
+          filename: join(fixture.root, ".flows", "engine.db"),
+          workspaceRoot: fixture.root,
+          owner: { hostId: "release-layer-test" },
+          signals: []
+        },
+        Layer.mergeAll(
+          layerAt({ root: fixture.root, evaluator: scriptedTemplate }),
+          HumanTask.layer,
+          Interpreter.layer(ReleaseFlow)
+        ).pipe(
+          Layer.provideMerge(agentHost(scriptedSeats(counts), 250_000, scriptedTemplate)),
+          Layer.provideMerge(Action.layerImplementations)
+        )
+      )
+    const input = (dryRun: boolean) =>
+      releaseInput(
+        { phase: "prepare", from: "v0.35.0", dryRun, requireContentApproval: false },
+        fixture.evidence.version
+      )
+    assert.ok(Layer.isLayer(releaseLayer), "the flow module exports the layer a host loads")
+
+    const preview = await Effect.runPromise(Effect.scoped(
+      ReleaseFlow.execute(input(true), { executionId: "layer-preview" }).pipe(Effect.provide(engine()))
+    ))
+    const directory = `.flows/releases/preparation/${fixture.evidence.version}/${fixture.evidence.sourceSha}`
+    assert.deepEqual(preview, {
+      status: "preview",
+      version: fixture.evidence.version,
+      artifact: directory,
+      published: []
+    })
+    assert.equal(counts.audit, 1)
+    const plan = JSON.parse(await readFile(join(fixture.root, directory, "plan.json"), "utf8"))
+    assert.equal(plan.evidence.sourceSha, fixture.evidence.sourceSha)
+
+    const token = await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        yield* ReleaseFlow.execute(input(false), { executionId: "layer-approval", discard: true })
+        return yield* waiting("layer-approval")
+      }).pipe(Effect.provide(engine()))
+    ))
+    const declined = await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        yield* HumanTask.answer({ token, value: false })
+        return yield* ReleaseFlow.execute(input(false), { executionId: "layer-approval" })
+      }).pipe(Effect.provide(engine()))
+    ))
+    assert.equal(declined.status, "declined")
+    // The declined run wrote nothing: the version is the fixture's.
+    assert.equal(fixture.git("status", "--porcelain"), "")
+    assert.equal(counts.audit, 2)
+  }
+)

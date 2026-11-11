@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, it } from "vitest"
+import * as Presentation from "../src/cli/Presentation.ts"
 import { createMemoryCli } from "../src/operator/Memory.ts"
 
 const roots: Array<string> = []
@@ -68,4 +69,17 @@ it("recalls from an explicit bank instead of the namespace's own bank", async ()
   expect(await keys()).toEqual([])
   expect(await keys("--bank", "alpha")).toEqual(["flow-guide"])
   expect(await keys("--bank", "alpha", "--method", "fts")).toEqual(["flow-guide"])
+})
+
+it("refuses a project root an MCP client names, and serves the host's own store", async () => {
+  const root = await fixture()
+  expect((await invoke(root, "set", "theme", "dark")).code).toBe(0)
+  await Presentation.scope({ agent: true, formatExplicit: true, globals: {} }, {}, async () => {
+    const refused = await invoke(root, "get", "theme")
+    expect(refused.code).toBe(2)
+    expect(refused.data.message).toBe(
+      "--root is not accepted over MCP; the host selects the project and its memory store"
+    )
+  })
+  expect((await invoke(root, "get", "theme")).data.value).toBe("dark")
 })

@@ -26,7 +26,7 @@ import { type Executable, execute } from "./Execute.ts"
  * payload, so one shared optional struct covers every role; a field outside it
  * would be dropped by the decode, which the answers below never read.
  */
-const fields = Object.fromEntries(
+export const fields = Object.fromEntries(
   [
     "alert",
     "applied",

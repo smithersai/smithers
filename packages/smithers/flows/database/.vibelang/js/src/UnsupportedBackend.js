@@ -4,8 +4,11 @@
  */
 import * as ReleasePolicy from "./internal/ReleasePolicy.js";
 /**
- * The `SMITHERS_*` names rc.0 ignores: `SMITHERS_TEST_PG_URL` and every
- * legacy `SMITHERS_POSTGRES_*` configuration name (the release policy).
+ * Legacy database names the CLI announces as ignored for production selection.
+ * Production selects PostgreSQL through `SMITHERS_POSTGRES_URL`, with the
+ * optional schema prefix `SMITHERS_POSTGRES_SCHEMA`.
+ * `SMITHERS_TEST_PG_URL` selects PostgreSQL only in `test/TestDatabase`; the
+ * CLI announces it along with legacy `SMITHERS_POSTGRES_*` configuration.
  * `SMITHERS_POSTGRES_TEST_BIN` selects native programs for Go test fixtures;
  * it is not a database configuration setting.
  *

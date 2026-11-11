@@ -1112,6 +1112,7 @@
     "@smthrs/model": "1.0.0-rc.17",
     "@smthrs/notifications": "1.0.0-rc.17",
     "@smthrs/observability": "1.0.0-rc.17",
+    "@smthrs/patterns": "1.0.0-rc.17",
     "@smthrs/plan": "1.0.0-rc.17",
     "@smthrs/platform-node": "1.0.0-rc.17",
     "@smthrs/registry": "1.0.0-rc.17",

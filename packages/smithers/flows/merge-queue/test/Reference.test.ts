@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { replay } from "../src/index.ts"
+import { replay } from "../src/Kernel.ts"
 import { trace } from "./support/Generate.ts"
 
 /**

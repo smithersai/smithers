@@ -69,7 +69,7 @@ export const layer = ControlRpcs.toLayer(Effect_1.gen(function* () {
         Run: Effect.fn("Control.run")((input) => {
             return Effect_1.gen(function* () {
                 const principal = yield* ControlPrincipal;
-                return yield* control.run({ ...input, principal });
+                return yield* control.run({ ...input, principal, ...yield* reader });
             });
         }, logged),
         Approve: Effect.fn("Control.approve")((input) => {

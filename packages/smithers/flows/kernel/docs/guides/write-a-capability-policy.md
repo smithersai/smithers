@@ -81,6 +81,28 @@ concatenating text an agent supplied. See
 [resource globs](/pkg/capability/concepts/resource-globs) for the full
 grammar and its edges.
 
+## Operations on a whole directory
+
+`rename`, a recursive `remove` and `copy` act on everything under a directory,
+but the grant check names the directory alone, and `/workspace/secrets/**`
+does not select `/workspace/secrets`. The kernel therefore adds two checks:
+
+- `rename` needs `fs:read` and `fs:write` on the source and `fs:write` on the
+  target. A renamed file is readable under its new name, so a read deny on
+  `/workspace/.env*` also stops `.env` from being renamed.
+- When the operand is a directory, the operation is refused if a `deny` or
+  `ask` rule may select anything under it: under the source of a `rename`
+  (`fs:read` and `fs:write`) or `copy` (`fs:read`), under the target of either
+  (`fs:write`), and under a recursively removed directory (`fs:write`). The
+  failure is `permission_denied` with the reason `"a deny or ask rule may
+  select content under this directory"`.
+
+The second check reads restrictions widely. A rule counts unless its pattern
+provably cannot match under the directory, so a deny on `**/*.pem` stops every
+directory rename. A later `allow` on `<directory>/**` or a tree containing it
+supersedes the restriction, except that a configured `deny` yields only to a
+later rule of the configured ruleset.
+
 ## The configured ruleset has a veto
 
 `MakeOptions.rules` accepts either a flat list or a nested one. The flat form

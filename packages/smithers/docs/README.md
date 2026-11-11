@@ -154,10 +154,13 @@ line.
   [output and exit codes](./concepts/output-and-exit-codes.md).
 - Guides: [script the CLI](./guides/script-the-cli.md),
   [launch a detached run](./guides/launch-a-detached-run.md),
+  [burn down a repository's issues](./guides/burn-down-issues.md),
   [diagnose a run](./guides/diagnose-a-run.md),
   [serve the workspace gateway](./guides/serve-the-workspace-gateway.md),
-  [wire the MCP server into an agent](./guides/wire-the-mcp-server.md), and
-  [embed the command tree](./guides/embed-the-command-tree.md).
+  [schedule a build target](./guides/schedule-a-target.md),
+  [wire the MCP server into an agent](./guides/wire-the-mcp-server.md),
+  [embed the command tree](./guides/embed-the-command-tree.md), and
+  [page a person from a shell probe](./guides/page-a-person-from-a-probe.md).
 - [The CLI reference](./reference/cli/README.md): every verb, and the three
   that start a run in depth.
 - [Troubleshooting](./troubleshooting.md): the refusals this CLI prints, and

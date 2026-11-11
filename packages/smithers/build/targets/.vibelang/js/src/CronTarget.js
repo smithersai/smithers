@@ -21,7 +21,12 @@ const cronDefinition = Target.make("Cron", {
     kinds: ["run"],
     implementation: () => Target.notImplemented("Cron")
 });
-/** A package-level inert schedule rendered by generated GitHub CI.
+/** A package-level schedule declaration.
+ *
+ * The build never executes a `Cron` target itself. `smthrs triggers serve`
+ * registers it as a durable trigger under its label and runs its `refresh`
+ * and then its `run` targets when an occurrence is due; generated GitHub CI
+ * renders it as a workflow schedule.
  *
  * @category targets
  * @since 0.1.0

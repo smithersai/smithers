@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
   CARD_CONTENT_CAP,
+  decodeFilePage,
   fileArgs,
   fileReadCard,
   FILES_READ_COMMAND,
@@ -169,5 +170,35 @@ describe("the file flow every host binds", () => {
       address: "/acme/app/logo.png"
     })
     expect(binary.value).toBe("logo.png in acme/app is a binary file; its bytes are not shown.")
+  })
+})
+
+describe("decodeFilePage", () => {
+  const wire = {
+    type: "file",
+    content: "plain text",
+    size: 10,
+    encoding: "utf8",
+    commit_sha: "a".repeat(40),
+    raw_url: "/api/repos/a/b/contents/x?raw=1"
+  }
+
+  test("text sent as UTF-8 is kept as it came", () => {
+    expect(decodeFilePage(wire)).toEqual({
+      content: "plain text",
+      binary: false,
+      size: 10,
+      commitSha: "a".repeat(40),
+      rawUrl: "/api/repos/a/b/contents/x?raw=1",
+      tooLarge: false
+    })
+  })
+
+  test.each(["utf8", "utf-8"])("UTF-8 text (%s) carrying a NUL is binary and its bytes stay opaque", (encoding) => {
+    expect(decodeFilePage({ ...wire, encoding, content: "head\u0000tail" })).toMatchObject({
+      content: null,
+      binary: true,
+      tooLarge: false
+    })
   })
 })

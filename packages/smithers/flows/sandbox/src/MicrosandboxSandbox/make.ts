@@ -251,6 +251,47 @@ const limitsLabel = "smithers.limits"
 const limitsValue = (limits: ResourceLimits): string =>
   JSON.stringify({ cpus: limits.cpus, memoryMib: limits.memoryMib, timeoutSecs: limits.timeoutSecs })
 
+/**
+ * The label recording what a machine booted from and under: its image or
+ * snapshot, root disk, vendor-named ceilings, and security profile. A reattach
+ * refuses a machine whose record differs in any of these this provider names.
+ */
+const configurationLabel = "smithers.configuration"
+
+/** The image a machine boots from when no snapshot is named. */
+const bootImage = (options: MicrosandboxSandboxOptions): string =>
+  options.image ?? (options.environment === undefined ? defaultImage : defaultNixImage)
+
+/** The configuration {@link configurationLabel} records; unset entries are left out. */
+const configurationValue = (options: MicrosandboxSandboxOptions): string =>
+  JSON.stringify({
+    ...options.snapshot === undefined
+      ? { image: bootImage(options), rootDiskMib: options.rootDiskMib }
+      : { snapshot: options.snapshot },
+    cpus: options.cpus,
+    maxCpus: options.maxCpus,
+    memoryMib: options.memoryMib,
+    maxMemoryMib: options.maxMemoryMib,
+    maxDurationSecs: options.maxDurationSecs,
+    security: options.security
+  })
+
+/**
+ * The entries of `requested` a machine's recorded configuration does not
+ * match. A machine that records none, or an unreadable one, matches nothing.
+ */
+const configurationDifferences = (labels: object, requested: string): ReadonlyArray<string> => {
+  let recorded: Record<string, unknown>
+  try {
+    recorded = Object(JSON.parse(String(Reflect.get(labels, configurationLabel))))
+  } catch {
+    recorded = {}
+  }
+  return Object.entries(JSON.parse(requested) as Record<string, unknown>)
+    .filter(([key, value]) => recorded[key] !== value)
+    .map(([key]) => key)
+}
+
 /** The builder network a machine boots with: none, a vendor policy, or the vendor's open default. */
 type GuestNetwork = "none" | "open" | NetworkPolicy
 
@@ -321,7 +362,7 @@ const configure = (
   ownership: Record<string, string>
 ): Builder => {
   let configured = options.snapshot === undefined
-    ? builder.image(options.image ?? (options.environment === undefined ? defaultImage : defaultNixImage))
+    ? builder.image(bootImage(options))
     : builder.fromSnapshot(options.snapshot)
   if (options.snapshot === undefined && options.rootDiskMib !== undefined) {
     configured = configured.rootDisk(options.rootDiskMib)
@@ -360,6 +401,19 @@ const openMachine = (
         if (!isAlreadyExists(cause)) throw cause
         const handle = await options.sdk.Sandbox.get(name)
         const recorded = Object(Reflect.get(Object(JSON.parse(handle.configJson)), "labels"))
+        // Only this installation's own machines are taken: another owner
+        // sharing the Microsandbox home, or another provider, may hold one
+        // under the same name, and taking it would relabel, run in, and on an
+        // ephemeral release remove a machine that is not ours.
+        if (
+          Reflect.get(recorded, providerLabel) !== ownership[providerLabel] ||
+          Reflect.get(recorded, ownerLabel) !== ownership[ownerLabel]
+        ) {
+          throw new MicrosandboxReattachRefusal({
+            code: "ownership_mismatch",
+            message: `${name} belongs to another owner or provider; remove it or acquire another session`
+          })
+        }
         // A reattached machine keeps the network it booted with; one that
         // records none booted under the vendor's open default.
         if (recordedNetwork(handle.configJson) !== ownership[networkLabel]) {
@@ -375,11 +429,24 @@ const openMachine = (
             message: `${name} was created with other limits; remove it or acquire another session`
           })
         }
+        // And the boot source, ceilings and security profile it booted with.
+        const differing = configurationDifferences(recorded, ownership[configurationLabel]!)
+        if (differing.length > 0) {
+          throw new MicrosandboxReattachRefusal({
+            code: "configuration_mismatch",
+            message: `${name} was created with another ${differing.join(", ")}; remove it or acquire another session`
+          })
+        }
         // The machine now belongs to this holder. Microsandbox cannot relabel
         // a running machine live, but a next-start modification is recorded
         // at once, and the recorded labels are what `reap` reads, so a sweep
         // does not take the dead creator's label as this holder's.
-        const plan = await handle.modify({ labels: ownership, policy: "next_start" })
+        // The recorded configuration is kept: a session that names fewer
+        // options than the machine booted with must not erase the rest.
+        const plan = await handle.modify({
+          labels: { ...ownership, [configurationLabel]: String(Reflect.get(recorded, configurationLabel)) },
+          policy: "next_start"
+        })
         if (!plan.applied) {
           throw new MicrosandboxReattachRefusal({
             code: "ownership_not_recorded",
@@ -564,6 +631,7 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
     [ownerLabel]: options.owner ?? defaultOwner,
     [holderLabel]: options.holder ?? globalThis.crypto.randomUUID(),
     [networkLabel]: typeof network === "string" ? network : JSON.stringify(network),
+    [configurationLabel]: configurationValue(options),
     ...recordedLimits === "{}" ? {} : { [limitsLabel]: recordedLimits }
   }
   const local = options.backend !== "any"

@@ -288,4 +288,6 @@ syntax: concatenating one unescaped truncates the specifier and imports the
 wrong module, or none.
 
 A module must default-export a tagged `@smthrs/flow` value or a schema/metadata record. Anything else is
-`ExecutableError { code: "invalid_module" }`.
+`ExecutableError { code: "invalid_module" }`. So is a module whose `Flow.make` tag differs from its registry
+name and names another entry, a registered delegate, the `registry/` namespace, or a tag another loaded entry
+declared: the runtime runs a tag's newest registration, so the module would take that flow over.

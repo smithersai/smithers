@@ -223,7 +223,8 @@ export const make = (options) => {
                         _tag: "Insert",
                         delivery: "steer",
                         admittedAt: 0,
-                        message
+                        message,
+                        outsideChange: true
                     })))
                 });
             }))),

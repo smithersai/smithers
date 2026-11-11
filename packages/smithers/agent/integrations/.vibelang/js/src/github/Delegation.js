@@ -331,14 +331,18 @@ export function make(options) {
                 yield* options.store.put("credential", { login, keyId: options.keyring.active, access, refresh, expires: tokens.expiresAt, generation });
             });
         };
+        /** A row that no longer decodes or opens (a retired key, an older shape) cannot be revoked, but it still goes, or Connect could never replace it. */
         const endCredential = (revoke) => {
             return Effect_1.gen(function* endCredential() {
-                const row = yield* credential();
-                if (row === undefined)
+                const raw = yield* options.store.get("credential");
+                if (raw === undefined)
                     return;
                 if (revoke) {
-                    const token = yield* open(row.keyId, "github_access", row.access);
-                    yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return options.github.revoke(token); }); })(), () => {
+                    const revoked = Effect_1.gen(function* revoked() {
+                        const row = yield* Effect.mapError(Schema.decodeUnknownEffect(Credential)(raw), () => refused("connect"));
+                        yield* options.github.revoke(yield* open(row.keyId, "github_access", row.access));
+                    });
+                    yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return revoked; }); })(), () => {
                         return Effect_1.gen(function* () { return yield* record("revoke", "failed"); });
                     });
                 }

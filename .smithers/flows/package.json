@@ -40,6 +40,7 @@
     "playwright": "1.62.1",
     "@pierre/diffs": "1.5.2",
     "@smthrs/harness": "workspace:*",
+    "@smthrs/integrations": "workspace:*",
     "@smthrs/ui-styleguide": "workspace:*",
     "mermaid": "^11.17.2",
     "@smthrs/platform-bun": "workspace:*",

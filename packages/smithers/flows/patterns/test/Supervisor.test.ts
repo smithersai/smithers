@@ -824,7 +824,10 @@ describe("Supervisor stall", () => {
       concurrency: 1,
       stall: { rounds: 2 }
     })
-    expect(supervisor._tag).toBe("supervisor(workers=coder, maxRounds=4, concurrency=1, stall=2/stop)")
+    expect(supervisor._tag).toBe(
+      "supervisor(workers=coder, maxRounds=4, concurrency=1, stall=2/stop)" +
+        "[step, recording-worker, recording-review, recording-finalize]"
+    )
 
     const result = await execute(
       supervisor,

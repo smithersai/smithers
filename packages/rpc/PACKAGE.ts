@@ -56,7 +56,10 @@ const unitTests = Smithers.Vitest({
     Smithers.glob("test/**/*.{ts,json,snap}"),
     Smithers.glob("testdata/**"),
     ...failureCodes,
-    releasedContracts
+    releasedContracts,
+    // The coverage gate's global setup, which vitest.config.ts names.
+    Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs")
   ],
   deps: [],
   config: Smithers.file("vitest.config.ts"),

@@ -144,4 +144,37 @@ describe("failureDetail", () => {
       }
     })).toBe("[REDACTED]")
   })
+
+  test("a _tag getter that throws is skipped and the walk goes on to the cause", () => {
+    const wrapper = {
+      get _tag(): string {
+        throw new Error("hostile tag")
+      },
+      cause: new Gone()
+    }
+    expect(presentUserFailure(registry, wrapper)).toEqual({
+      tag: "Gone",
+      fault: "user",
+      sentence: "Sign in again.",
+      actions: ["sign-in", "retry"],
+      detail: "[REDACTED]"
+    })
+  })
+
+  test("a cause getter that throws ends the walk as an unknown failure", () => {
+    const error = {
+      _tag: "Unlisted",
+      get cause(): unknown {
+        throw new Error("hostile cause")
+      }
+    }
+    const reported: Array<unknown> = []
+    expect(presentUserFailure(registry, error, { onUnknown: (value) => reported.push(value) })).toEqual({
+      tag: null,
+      ...UNKNOWN_FAILURE,
+      detail: "[REDACTED]"
+    })
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toBe(error)
+  })
 })

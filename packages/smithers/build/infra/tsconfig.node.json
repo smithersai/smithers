@@ -19,6 +19,7 @@
     "alchemy.run.vibe",
     "deployment.vibe",
     "scripts/**/*.vibe",
-    "vitest.config.vibe"
+    "vitest.config.vibe",
+    "../../../repo-targets/src/vibelang-eslint.d.ts"
   ]
 }

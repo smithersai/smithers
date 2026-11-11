@@ -229,6 +229,15 @@ The shell target flavors: `Shell.Build`, `Shell.Test`, `Shell.Run`, `Shell.Serve
 every host; wildcard selections omit the target on other hosts, and naming it
 there refuses the plan.
 
+`data` lists what a shell target reads: declared files and globs, targets whose
+outputs materialize before it runs, and `Target.subtree(pattern, name)`, which
+selects the target named `name` in every package under `pattern`. A glob in one
+package matches none of another package's files, so a check that reads other
+packages' sources names them by target:
+`data: [S.glob("src/**"), S.Target.subtree("//packages/...", "lib")]`. Each
+match is a graph edge: it runs first, its key enters the consumer's key, and
+`smthrs affected` selects the consumer when it is affected.
+
 `Host.bin(name)` resolves a declared host binary on PATH. Its resolved path
 and executable bytes enter the package executor's cache key, even when its
 version output is unchanged. Symlinks follow the target bytes. Shebang
@@ -356,7 +365,7 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.Copy`                   | rule               | Copies one declared artifact or file-producing target to a path.                                                                                                                     |
 | `Smithers.Literal`                | rule               | Materializes fixed bytes at a declared path.                                                                                                                                         |
 | `Smithers.Overlay`                | rule               | A derived file set with selected members replaced.                                                                                                                                   |
-| `Smithers.Cron`                   | rule               | A package-level inert schedule rendered by generated GitHub CI.                                                                                                                      |
+| `Smithers.Cron`                   | rule               | A package-level schedule that `smthrs triggers serve` runs.                                                                                                                          |
 | `Smithers.PackageDefaults`        | constructor        | Declares pure workspace defaults.                                                                                                                                                    |
 | `Smithers.Exec`                   | action             | The one shared action every catalog target uses to run a tool.                                                                                                                       |
 | `Smithers.ExecError`              | schema             | A typed external-tool failure.                                                                                                                                                       |

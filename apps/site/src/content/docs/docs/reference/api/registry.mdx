@@ -735,6 +735,8 @@ for a record declaration or a tag the reader can't evaluate, such as a
 variable or a template with a substitution. The descriptor's `name` is the
 path-derived `name` in a path-named source and `dirBasename` otherwise, so a
 caller that requires the tag to match the name compares the two itself.
+`Executable` refuses a differing tag that another entry, a host delegate or the
+registry already answers to (`invalid_module`).
 
 `descriptor` is `Option.none()` when the declaration has no literal
 description (`missing_description`). Metadata the reader can't project is

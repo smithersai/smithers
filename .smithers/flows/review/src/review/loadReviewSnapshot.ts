@@ -1,5 +1,5 @@
 import { loadDiffs } from "../git/loadDiffs.ts"
-import { runGit } from "../git/runGit.ts"
+import { revisionsFor } from "../git/revisions.ts"
 import { normalizeOpenCodeReviewInput } from "../workflow/normalizeOpenCodeReviewInput.ts"
 import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"
 import { reasonOf } from "../workflow/reviewFailureSchema.vibe"
@@ -10,13 +10,12 @@ import { reviewOwnPaths } from "./reviewOwnPaths.ts"
 import type { ReviewSnapshot } from "./reviewSnapshot.ts"
 
 // A branch name read twice can name two commits. Pinning the endpoints once
-// keeps merge-base, the diff itself and any later read on the same revisions.
+// keeps the fork point, the diff itself and any later read on the same revisions.
 async function pinRevisions(repoDir: string, input: OpenCodeReviewInput): Promise<OpenCodeReviewInput> {
-  // `--verify` keeps rev-parse strict: without it, an option it does not
-  // recognize is echoed into the output instead of rejected.
+  const revisions = await revisionsFor(repoDir)
   const pin = async (rev: string) => {
     try {
-      return (await runGit(repoDir, ["rev-parse", "--verify", "--end-of-options", `${rev}^{commit}`], 30_000)).trim()
+      return await revisions.pin(rev)
     } catch (cause) {
       throw new Error(`${rev} does not name a commit: ${reasonOf(cause)}`, { cause })
     }

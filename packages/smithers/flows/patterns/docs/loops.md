@@ -190,7 +190,8 @@ exists to produce.
 
 `make` declares both calls under one `Node.all`, which is what makes the
 shadow concurrent rather than an extra sequential step, with the shadow
-behind a `Node.catch` whose arm settles `{ quarantined: true, error }`.
+behind a `Node.catch` whose arm settles `{ quarantined: true, error }`, with
+`error` as the data the shadow's error schema encodes it to.
 Capability and cost analysis still count the shadow as work that happens;
 what the arm adds is that the plan shows a failed shadow does not fail the
 run. The scorer is the settled arm of a `Node.branch` on the real shadow, so

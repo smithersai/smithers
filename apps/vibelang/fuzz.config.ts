@@ -20,8 +20,9 @@ export default defineConfig({
     coverage: {
       provider: "v8", autoAttachSubprocess: true,
       // The unit gate's denominator (vite.config.ts): VL-14 asks each suite to cover the whole codebase, so no file is
-      // excluded here either, including worker/Api.vibe, which Alchemy evaluates to build the Worker (0015).
-      include: ["src/**/*.vibe", "worker/**/*.vibe", "scripts/**/*.vibe", "infra/**/*.vibe", "dist-factory/**/*.js"],
+      // excluded here either, including worker/Api.vibe, which Alchemy evaluates to build the Worker (0015). The emitted
+      // scripts are the CLIs fuzz/scripts.node.fuzz.vibe runs as child processes; their maps credit scripts/*.vibe.
+      include: ["src/**/*.vibe", "worker/**/*.vibe", "scripts/**/*.vibe", "infra/**/*.vibe", "dist-factory/**/*.js", "dist-scripts/**/*.js", "dist-script-tests/**/*.js"],
       reporter: ["text", "json", "json-summary", "html", "lcov"],
       // The fuzz flow's report stage applies the gate after workerd's counters (coverage/fuzz-unit/workerd-raw) and
       // Chromium join this report (fuzz/coverage.vibe).

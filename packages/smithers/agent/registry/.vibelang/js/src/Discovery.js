@@ -202,6 +202,10 @@ export const make = (fs, path) => Discovery.of({
         const realRoot = source.confinementRoot === undefined
             ? undefined
             : yield* Effect.result(fs.realPath(source.confinementRoot));
+        // The closure walk holds every module an entry reaches to the same root.
+        const confinement = realRoot !== undefined && Result.isSuccess(realRoot)
+            ? { root: path.resolve(source.confinementRoot), realRoot: path.resolve(realRoot.success) }
+            : undefined;
         // An explicit confinement boundary must be provable before reading it.
         const withinRoot = (location) => {
             return Effect_1.gen(function* withinRoot() {
@@ -396,7 +400,7 @@ export const make = (fs, path) => Discovery.of({
                             else {
                                 const { imports, hostImports } = contents.success.source === undefined
                                     ? { imports: [], hostImports: [] }
-                                    : yield* ModuleClosure.analyze(fs, path, location, contents.success.source, closures);
+                                    : yield* ModuleClosure.analyze(fs, path, location, contents.success.source, closures, confinement);
                                 const projected = projectEntry(directory, location, selected, contents.success, segments, imports, hostImports);
                                 warnings.push(...projected.warnings);
                                 Option.match(projected.descriptor, {

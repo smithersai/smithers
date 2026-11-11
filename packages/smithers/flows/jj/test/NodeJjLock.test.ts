@@ -19,6 +19,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>()
   return {
     ...actual,
+    readFile: vi.fn(actual.readFile),
     rename: vi.fn(actual.rename),
     readdir: vi.fn(actual.readdir),
     rmdir: vi.fn(actual.rmdir),
@@ -38,6 +39,16 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 const errno = (code: string) => Object.assign(new Error(code), { code })
+// Fail the next read of one directory; every other read stays real.
+const failReaddirOnce = (target: string, code: string) => {
+  let failed = false
+  const read = (path: string, options: unknown) => {
+    if (failed || path !== target) return actualFs.readdir(path, options as never)
+    failed = true
+    return Promise.reject(errno(code))
+  }
+  vi.mocked(readdir).mockImplementation(read as never)
+}
 
 const fixture = <A, E, R>(use: (root: string) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
@@ -391,7 +402,7 @@ fi
         Effect.gen(function*() {
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
           vi.mocked(rename).mockRejectedValueOnce(errno(code))
-          vi.mocked(readdir).mockRejectedValueOnce(errno("ENOENT"))
+          failReaddirOnce(join(root, ".jj", "smithers.lock"), "ENOENT")
           expect((yield* jj.snapshot()).commitId).toBe("0abc")
         })
       ))
@@ -402,7 +413,7 @@ fi
       Effect.gen(function*() {
         const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
         vi.mocked(rename).mockRejectedValueOnce(errno("ENOTEMPTY"))
-        vi.mocked(readdir).mockRejectedValueOnce(errno("EACCES"))
+        failReaddirOnce(join(root, ".jj", "smithers.lock"), "EACCES")
         expect((yield* Effect.flip(jj.snapshot())).message).toContain("EACCES")
         expect(existsSync(join(root, "started"))).toBe(false)
       })
@@ -428,6 +439,99 @@ fi
         expect((yield* jj.snapshot()).commitId).toBe("0abc")
       })
     ))
+
+  it.live.runIf(existsSync("/proc/self/stat"))(
+    "reclaims a lock an earlier incarnation of this PID left behind",
+    () =>
+      fixture((root) =>
+        Effect.gen(function*() {
+          const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
+          const lock = join(root, ".jj", "smithers.lock")
+          // A restarted container's PID 1 is alive under the crashed owner's
+          // PID; only its start time tells the two incarnations apart.
+          yield* Effect.promise(async () => {
+            await mkdir(lock)
+            await writeFile(join(lock, `${hostname()}-${process.pid}-s1-crashed`), "")
+          })
+          const snapshot = yield* jj.snapshot().pipe(Effect.provideService(NodeJj.RepositoryMutationTimeoutMs, 5_000))
+          expect(snapshot.commitId).toBe("0abc")
+          expect(existsSync(lock)).toBe(false)
+        })
+      )
+  )
+
+  it.live("records the owner's start time and keeps a same-PID owner it cannot date", () =>
+    fixture((root) =>
+      Effect.gen(function*() {
+        const lock = join(root, ".jj", "smithers.lock")
+        const owner = `${hostname()}-${process.pid}-s1-undated`
+        yield* Effect.promise(async () => {
+          await mkdir(lock)
+          await writeFile(join(lock, owner), "")
+        })
+        // Unreadable procfs for this process, an unparsable record for the
+        // owner's PID: neither proves the owner a different incarnation.
+        const readProc = (path: string, options: unknown) => {
+          if (path === "/proc/self/stat") return Promise.reject(errno("ENOENT"))
+          if (path === `/proc/${process.pid}/stat`) return Promise.resolve("garbage")
+          return actualFs.readFile(path, options as never)
+        }
+        vi.mocked(readFile).mockImplementation(readProc as never)
+        const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
+        const refused = yield* Effect.flip(
+          jj.snapshot().pipe(Effect.provideService(NodeJj.RepositoryMutationTimeoutMs, 30))
+        )
+        expect(refused.message).toContain("timed out waiting")
+        expect(yield* Effect.promise(() => readdir(lock))).toEqual([owner])
+      })
+    ))
+
+  it.live("removes lock candidates killed waiters left and keeps live or unclaimed ones", () =>
+    fixture((root) =>
+      Effect.gen(function*() {
+        const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
+        const candidate = (directory: string, name: string, owner?: string) =>
+          Effect.promise(async () => {
+            await mkdir(join(directory, `.smithers-lock-${name}`))
+            if (owner !== undefined) await writeFile(join(directory, `.smithers-lock-${name}`, owner), "")
+          })
+        const workspace = join(root, ".jj")
+        const store = join(root, ".jj", "repo")
+        yield* candidate(workspace, "dead00", `${hostname()}-2147483647-dead00`)
+        yield* candidate(store, "dead01", `${hostname()}-2147483647-dead01`)
+        yield* candidate(workspace, "live00", `${hostname()}-${process.pid}-live00`)
+        yield* candidate(workspace, "foreign", `remote-${hostname()}-2147483647-foreign`)
+        yield* candidate(workspace, "empty0")
+        yield* Effect.promise(() => writeFile(join(workspace, ".smithers-lock-file"), ""))
+        expect((yield* jj.snapshot()).commitId).toBe("0abc")
+        expect((yield* Effect.promise(() => readdir(workspace))).sort()).toEqual([
+          ".smithers-lock-empty0",
+          ".smithers-lock-file",
+          ".smithers-lock-foreign",
+          ".smithers-lock-live00",
+          "repo"
+        ])
+        expect(yield* Effect.promise(() => readdir(store))).toEqual([])
+      })
+    ))
+
+  for (const code of ["ENOENT", "EACCES"]) {
+    it.live(`${code === "ENOENT" ? "skips" : "reports"} a lock candidate that cannot be read (${code})`, () =>
+      fixture((root) =>
+        Effect.gen(function*() {
+          const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
+          const vanished = join(root, ".jj", ".smithers-lock-gone00")
+          yield* Effect.promise(() => mkdir(vanished))
+          failReaddirOnce(vanished, code)
+          if (code === "ENOENT") {
+            expect((yield* jj.snapshot()).commitId).toBe("0abc")
+          } else {
+            expect((yield* Effect.flip(jj.snapshot())).message).toContain("EACCES")
+            expect(existsSync(join(root, "started"))).toBe(false)
+          }
+        })
+      ))
+  }
 
   for (const code of ["ENOTEMPTY", "EEXIST"]) {
     it.live(`does not delete a replacement lock during stale recovery (${code})`, () =>

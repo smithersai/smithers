@@ -9,6 +9,7 @@
 import { Effect } from "effect";
 import { createServer, Socket } from "node:net";
 import { pipeline, Transform } from "node:stream";
+import { endpoint } from "../internal/SlowNetworkTarget.js";
 /**
  * Starts a proxy in front of the database at `url` for the enclosing scope
  * and answers the same URL pointed at the proxy. Chunks keep their order in
@@ -19,8 +20,7 @@ import { pipeline, Transform } from "node:stream";
  * @since 1.0.0
  */
 export const proxy = (url, options) => Effect.gen(function* () {
-    const target = new URL(url);
-    const targetPort = Number(target.port || 5432);
+    const target = endpoint(url);
     const sockets = new Set();
     // Equal delays fire in the order they were set, so chunks keep their order.
     const slow = () => new Transform({
@@ -44,7 +44,7 @@ export const proxy = (url, options) => Effect.gen(function* () {
         };
         pipeline(client, slow(), upstream, close);
         pipeline(upstream, slow(), client, close);
-        upstream.connect({ host: target.hostname, port: targetPort });
+        upstream.connect(target);
     });
     const port = yield* Effect.acquireRelease(Effect.callback((resume) => {
         server.listen(0, "127.0.0.1", () => resume(Effect.succeed(server.address().port)));

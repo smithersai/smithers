@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
+import * as Stream from "effect/Stream"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ModuleClosure from "../src/internal/ModuleClosure.vibe"
@@ -616,21 +617,22 @@ describe("the walk", () => {
         "two.ts": `import "./shared.ts"`,
         "shared.ts": "export const shared = 1"
       })
-      let reads = 0
-      const counting = FileSystem.make({
+      const reads: Array<string> = []
+      const counting = FileSystem.FileSystem.of({
         ...fs,
-        readFile: (requested) => Effect.tap(fs.readFile(requested), () => Effect.sync(() => void reads++))
+        stream: (requested, options) => {
+          reads.push(requested)
+          return fs.stream(requested, options)
+        }
       })
       const memo = ModuleClosure.cache()
 
       yield* Effect.provideService(walk(root, "one.ts", memo), FileSystem.FileSystem, counting)
-      const after = reads
       yield* Effect.provideService(walk(root, "two.ts", memo), FileSystem.FileSystem, counting)
 
-      // The second walk reads its own entry and serves `shared.ts` from the
-      // cache; without it a project's flows re-read their common imports once
-      // per flow.
-      expect(reads - after).toBe(1)
+      // The second walk serves `shared.ts` from the cache; without it a
+      // project's flows re-read their common imports once per flow.
+      expect(reads.filter((requested) => requested.endsWith("shared.ts"))).toHaveLength(1)
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
   it.effect("shares positive and missing resolution probes while preserving each entry's closure", () =>
@@ -859,12 +861,12 @@ describe("the walk", () => {
         "flow.ts": `import "./unreadable.ts"`,
         "unreadable.ts": "export const a = 1"
       })
-      const failing = FileSystem.make({
+      const failing = FileSystem.FileSystem.of({
         ...fs,
-        readFile: (requested) =>
+        stream: (requested, options) =>
           requested.endsWith("unreadable.ts")
-            ? Effect.fail(new Error("denied") as never)
-            : fs.readFile(requested)
+            ? Stream.fail(new Error("denied") as never)
+            : fs.stream(requested, options)
       })
 
       const found = yield* Effect.provideService(walk(root, "flow.ts"), FileSystem.FileSystem, failing)

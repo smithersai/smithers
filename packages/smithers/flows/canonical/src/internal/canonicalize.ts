@@ -10,6 +10,7 @@
  */
 
 import { describe } from "./describe.ts"
+import { rethrowUnlessMissingSlot } from "./slotFailure.ts"
 
 /**
  * Maximum supported nesting below the root value.
@@ -72,18 +73,43 @@ const assertWellFormed = (value: string, path: string, position: "key" | "value"
   return value
 }
 
+const constructorName = (name: unknown, fallback: string): string =>
+  typeof name === "string" && name !== "" ? name.slice(0, 1024) : fallback
+
+// These intrinsic operations require internal slots. A caller may replace a
+// built-in's prototype or toStringTag without removing its collection data.
+const slotReaders = [
+  ["Map", Map.prototype.has],
+  ["Set", Set.prototype.has]
+] as const
+
+// Internal collection slots cannot be added to an existing object. Remember
+// negative probes weakly so repeated digests do not pay for them again.
+const nonCollections = new WeakSet<object>()
+
 const builtInName = (value: object): string | undefined => {
   if (value instanceof Map) return "Map"
   if (value instanceof Set) return "Set"
   if (value instanceof WeakMap) return "WeakMap"
   if (value instanceof WeakSet) return "WeakSet"
   if (value instanceof ArrayBuffer) return "ArrayBuffer"
-  if (ArrayBuffer.isView(value)) return value.constructor.name
+  if (ArrayBuffer.isView(value)) return constructorName(value.constructor?.name, "typed array")
   if (value instanceof RegExp) return "RegExp"
   // An Error subclass reports its concrete constructor so the message names
   // the actual leaked value ("TypeError at $.x"), falling back to "Error" for
   // a subclass whose constructor name was erased.
-  if (value instanceof Error) return value.constructor?.name || "Error"
+  if (value instanceof Error) return constructorName(value.constructor?.name, "Error")
+  if (!nonCollections.has(value)) {
+    for (const [name, read] of slotReaders) {
+      try {
+        Reflect.apply(read, value, [value])
+        return name
+      } catch (cause) {
+        rethrowUnlessMissingSlot(cause)
+      }
+    }
+    nonCollections.add(value)
+  }
   return undefined
 }
 
@@ -269,6 +295,9 @@ export const canonicalize = (
       } catch (cause) {
         throw caused("canonical_getter_threw", cause, path)
       }
+      if (length > 0xffff_ffff) {
+        throw new CanonicalError("canonical_unsupported_value", "array length exceeds 4,294,967,295", path)
+      }
       const slots = Array.from({ length }, (): Slot => ({}))
       tasks.push({ kind: "finishArray", slots, slot })
       for (let index = length - 1; index >= 0; index--) {
@@ -286,9 +315,9 @@ export const canonicalize = (
     let unsupported: string | undefined
     try {
       unsupported = builtInName(object)
-      const prototype = Object.getPrototypeOf(object) as { readonly constructor?: { readonly name?: string } } | null
+      const prototype = Object.getPrototypeOf(object) as { readonly constructor?: { readonly name?: unknown } } | null
       if (unsupported === undefined && prototype !== null && prototype !== Object.prototype) {
-        unsupported = prototype.constructor?.name || "non-plain object"
+        unsupported = constructorName(prototype.constructor?.name, "non-plain object")
       }
     } catch (cause) {
       throw caused("canonical_getter_threw", cause, path)

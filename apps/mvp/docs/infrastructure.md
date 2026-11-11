@@ -319,6 +319,16 @@ Leave `SESSION_SECRET` unset: Alchemy generates it once (`infra/SignIn.vibe`) an
 1. Set the credentials above.
 2. `pnpm plan` shows what `pnpm run deploy` would create, update or run, and changes nothing.
 3. `pnpm run deploy` (`pnpm deploy` is pnpm's own command, not this script) asks before it changes anything; `pnpm run deploy --yes` doesn't, and a terminal that can't prompt needs it. It creates the Neon project, runs the migrations, then creates Hyperdrive, Electric's container and gateway, ChatApi and the site. It prints the site's URL.
+
+   In production, deploy through the rollout flow instead, from the repository root:
+
+   ```sh
+   ~/vault-ws-deployer/bin/mvp-prod-env smthrs flow start rollout --wait
+   ```
+
+   It reads the version each of the stack's Workers serves (the scripts Alchemy tagged `alchemy:stack:smithers-mvp` and `alchemy:stage:prod`) and the build `/version.json` names, runs `pnpm run deploy --yes`, checks that the new build serves, and runs [the deploy smoke](#the-deploy-smoke). When a check fails it points each Worker back at the version it served, through Cloudflare's deployments API (what `wrangler rollback` does), and checks that the old build serves again. Migrations stay applied ([Migrations](#migrations)). It refuses, deploying nothing, while a Worker splits its traffic between versions.
+
+   The run is the deploy record: its output is the receipt, naming what served before, what was published, each check and the restore. `.flows/rollout/smithers-mvp-prod.json` keeps the newest receipt, so the next run restores a run that stopped mid-deploy before it deploys again.
 4. Check it. First the health spec, which cold-loads the landing page and both repositories, signed out and signed in, in eight browsers at once, and fails on any server error, failed request, console error or page error ([Server and console errors](#server-and-console-errors)):
 
    ```sh
@@ -376,7 +386,7 @@ The production app is https://smithers.sh. Our hosted deployment's settings and 
 
 ### The deploy smoke
 
-Run it after every production deploy:
+The [rollout flow](#deploy) runs it after every production deploy and restores the earlier release when it fails. To run it by hand:
 
 ```sh
 cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/deploy-smoke/run.ts

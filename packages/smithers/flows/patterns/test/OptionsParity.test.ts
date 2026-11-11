@@ -62,6 +62,24 @@ const checkSuiteRun = {
   continueOnFail: true
 } satisfies KeysOf<CheckSuite.RuntimeOptions<unknown, unknown, never, never>>
 
+const checkSuiteDiscoveredMake = {
+  name: true,
+  description: true,
+  check: true,
+  strategy: true,
+  concurrency: true,
+  continueOnFail: true,
+  onEmpty: true
+} satisfies KeysOf<CheckSuite.DiscoveredMakeOptions>
+
+const checkSuiteDiscoveredRun = {
+  check: true,
+  strategy: true,
+  concurrency: true,
+  continueOnFail: true,
+  onEmpty: true
+} satisfies KeysOf<CheckSuite.DiscoveredRuntimeOptions<unknown, unknown, never, never>>
+
 const difference = (left: object, right: object): ReadonlyArray<string> =>
   Object.keys(left).filter((name) => !Object.hasOwn(right, name)).sort()
 
@@ -85,5 +103,10 @@ describe("team pattern make/run option parity", () => {
   it("keeps CheckSuite option names identical across declaration and runtime", () => {
     expect(difference(checkSuiteMake, checkSuiteRun)).toEqual(labelKeys)
     expect(difference(checkSuiteRun, checkSuiteMake)).toEqual([])
+  })
+
+  it("keeps discovered CheckSuite option names identical across declaration and runtime", () => {
+    expect(difference(checkSuiteDiscoveredMake, checkSuiteDiscoveredRun)).toEqual(labelKeys)
+    expect(difference(checkSuiteDiscoveredRun, checkSuiteDiscoveredMake)).toEqual([])
   })
 })

@@ -31,6 +31,9 @@ plus what syncing needs.
   checked before Electric sees it. Every member must be a valid change, control
   or event message. An invalid member or a batch cut short stops the shape
   before Electric takes its offset, so `reconnect` asks for the same batch again.
+  A row the schema refuses stops the shape after Electric took its batch's
+  offset, so `reconnect` starts the shape again from the last batch the
+  collection committed: that batch is asked for again too.
 - **Traced.** Each shape request records one span, `electric.shape.request`,
   with the shape's handle and offset and the batch's row count, and no row
   content.

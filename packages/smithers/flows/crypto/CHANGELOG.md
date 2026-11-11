@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- Keep callbacks reading implicit `arguments` or common host globals distinct during resume; correct the digest-service documentation and API-reference checks. ([#4488](https://github.com/smithersai/smithers/issues/4488)).
+
 - `Uuid.v5` rejects unpaired UTF-16 surrogates instead of assigning distinct
   malformed names the same UUID, and rejects malformed SHA-1 host digests.
   UUIDs for well-formed names remain unchanged. ([#4487](https://github.com/smithersai/smithers/issues/4487)).

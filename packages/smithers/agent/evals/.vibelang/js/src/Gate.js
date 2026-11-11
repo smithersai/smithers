@@ -28,11 +28,13 @@ const samples = (report) => report.run.observations.map((observation) => observa
     });
 /**
  * An environment fault: something the comparison needed was never observed, so
- * the harness owes an answer it cannot give. A fault withholds a decision;
- * it does not make one.
+ * the harness owes an answer it cannot give. A failed case, a case no binding
+ * applies to, and a missing observation are each one. A fault withholds a
+ * decision; it does not make one.
  */
 const environmentFaults = (report) => [
     ...report.run.cases.flatMap((result) => result.error === undefined ? [] : [`case '${result.case}' failed: ${result.error.code}: ${result.error.message}`]),
+    ...report.run.cases.flatMap((result) => result.ungraded === "unbound" ? [`case '${result.case}' executed but no scorer binding applies to its target`] : []),
     ...report.missing.map((item) => `missing ${item.side} observation for ${item.case}/${scorerLabel(item)}/${item.stepKey}`)
 ];
 /**

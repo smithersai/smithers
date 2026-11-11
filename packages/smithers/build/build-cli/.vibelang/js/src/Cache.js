@@ -3,9 +3,10 @@
  * Read-through result cache: a content-addressed local file store fronting an
  * optional HTTP remote.
  *
- * The local store answers reads first. A remote lookup runs only on a local
- * miss, and a remote hit hydrates the local file so the next read stays on
- * disk. A put writes both stores. Any remote failure prints one warning line
+ * The local store answers reads first. Missing metadata is read through from
+ * the remote; missing output files are hydrated from its verified CAS. A
+ * complete local hit stays on disk. A put writes the local result, uploads
+ * missing output blobs, then publishes remote metadata. Any remote failure prints one warning line
  * and degrades the store to local-only for the rest of the process. A `429`
  * is not a failure: it costs only the request it answered.
  *
@@ -25,6 +26,7 @@ import * as Fs from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util/types";
 import { errorCode, failureMessage, optionalOpenFlag } from "./internal/Fs.js";
+import * as OutputCas from "./internal/OutputCas.js";
 /**
  * The largest entry either store will read.
  *
@@ -58,13 +60,16 @@ export const remoteEntryLimit = 1024 * 1024;
  */
 export const maximumRemoteBodyChunks = 16_384;
 /**
- * The default deadline for one remote request, including its whole body.
+ * The default deadline for action-cache metadata, including its whole body.
  *
  * @category constants
  * @since 0.1.0
  * @slop
  */
 export const remoteTimeouts = { get: 3_000, put: 8_000 };
+// Artifact exchanges include up to 16 MiB plus verification and fsync.
+const remoteArtifactTimeouts = { get: 60_000, put: 60_000 };
+const remoteFileResultTimestamp = "1970-01-01T00:00:00.000Z";
 /**
  * The stored entry shape both stores decode through.
  *
@@ -765,7 +770,7 @@ const cancelBody = (body) => {
  * passes the limit. `response.text()` and `response.json()` have neither
  * property: both buffer whatever arrives.
  */
-const readBoundedBody = async (response, limit) => {
+const readBoundedBytes = async (response, limit) => {
     const declared = response.headers.get("content-length");
     let declaredLength;
     if (declared !== null) {
@@ -778,7 +783,7 @@ const readBoundedBody = async (response, limit) => {
     }
     const body = response.body;
     if (body === null)
-        return declaredLength === undefined || declaredLength === 0 ? "" : undefined;
+        return declaredLength === undefined || declaredLength === 0 ? Buffer.alloc(0) : undefined;
     const reader = body.getReader();
     let bytes = Buffer.allocUnsafe(Math.min(limit, Math.max(1024, declaredLength ?? 64 * 1024)));
     let total = 0;
@@ -834,8 +839,14 @@ const readBoundedBody = async (response, limit) => {
         return undefined;
     if (declaredLength !== undefined && total !== declaredLength)
         return undefined;
+    return bytes.subarray(0, total);
+};
+const readBoundedBody = async (response, limit) => {
+    const bytes = await readBoundedBytes(response, limit);
+    if (bytes === undefined)
+        return undefined;
     try {
-        return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, total));
+        return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     }
     catch {
         return undefined;
@@ -988,6 +999,8 @@ const normalizeOpenCacheOptions = (value) => {
         "timeouts",
         "io"
     ]), "cache options");
+    const timeoutOverride = dataMember(record, "timeouts", "cache options");
+    const timeouts = validateTimeouts(timeoutOverride);
     const workspaceRoot = dataMember(record, "workspaceRoot", "cache options");
     const cacheDirectory = dataMember(record, "cacheDirectory", "cache options");
     const readToken = dataMember(record, "readToken", "cache options") ?? (() => undefined);
@@ -1026,7 +1039,8 @@ const normalizeOpenCacheOptions = (value) => {
         publishNamespace: normalizePublishNamespace(dataMember(record, "publishNamespace", "cache options")),
         fetch: fetch,
         warn: warn,
-        timeouts: validateTimeouts(dataMember(record, "timeouts", "cache options")),
+        timeouts,
+        artifactTimeouts: timeoutOverride === undefined ? remoteArtifactTimeouts : timeouts,
         io: normalizeCacheIo(dataMember(record, "io", "cache options"))
     });
 };
@@ -1038,10 +1052,139 @@ class RemoteStore {
     fetch;
     warn;
     timeouts;
+    artifactTimeouts;
     degraded = false;
     publishDenied = false;
     conflictWarned = false;
     busyWarned = false;
+    limitWarned = false;
+    skipLimit() {
+        if (this.limitWarned)
+            return;
+        this.limitWarned = true;
+        this.warn("smthrs: remote cache entry exceeds limits; skipped one entry");
+    }
+    // One CAS exchange at a time per cache handle, across all target workers.
+    // Metadata requests retain their existing independent concurrency.
+    blobQueue = Promise.resolve();
+    blobs(run) {
+        const pending = this.blobQueue.then(run);
+        this.blobQueue = pending.then(() => undefined, () => undefined);
+        return pending;
+    }
+    /** Reads missing outputs into the CAS; never writes a declared output path. */
+    async hydrate(cas, output) {
+        return this.blobs(async () => {
+            try {
+                return await OutputCas.hydrate(cas, output, async (digest) => {
+                    if (this.degraded)
+                        return false;
+                    const status = await withDeadline("get", this.artifactTimeouts.get, async (signal) => {
+                        const response = await this.fetch(`${this.endpoint}/cas/${digest}`, {
+                            method: "GET",
+                            headers: this.headers("read"),
+                            redirect: "error",
+                            signal
+                        });
+                        if (response.status !== 200) {
+                            cancelBody(response.body);
+                            return response.status;
+                        }
+                        const bytes = await readBoundedBytes(response, OutputCas.chunkBytes);
+                        if (bytes === undefined)
+                            throw new Error("remote CAS body exceeds its bound or is truncated");
+                        signal.throwIfAborted();
+                        await OutputCas.writeBlob(cas, digest, bytes, signal);
+                        return 200;
+                    });
+                    if (status === 200)
+                        return true;
+                    if (status === 429)
+                        this.skipBusy();
+                    else if (status !== 404)
+                        this.degrade("GET", { status });
+                    return false;
+                });
+            }
+            catch (cause) {
+                if (cause instanceof OutputCas.OutputLimitError)
+                    this.skipLimit();
+                else
+                    this.degrade("GET", { cause });
+                return false;
+            }
+        });
+    }
+    async upload(cas, digests) {
+        for (let offset = 0; offset < digests.length; offset += 1000) {
+            if (this.degraded || this.publishDenied)
+                return false;
+            const batch = digests.slice(offset, offset + 1000);
+            const missing = await withDeadline("get", this.timeouts.get, async (signal) => {
+                const response = await this.fetch(`${this.endpoint}/cas/findMissing`, {
+                    method: "POST",
+                    headers: this.headers("write"),
+                    body: JSON.stringify({ digests: batch }),
+                    redirect: "error",
+                    signal
+                });
+                if (response.status === 429) {
+                    cancelBody(response.body);
+                    this.skipBusy();
+                    return undefined;
+                }
+                if (response.status === 401 || response.status === 403) {
+                    cancelBody(response.body);
+                    this.denyPublication();
+                    return undefined;
+                }
+                if (response.status !== 200) {
+                    cancelBody(response.body);
+                    this.degrade("GET", { status: response.status });
+                    return undefined;
+                }
+                const text = await readBoundedBody(response, 128 * 1024);
+                if (text === undefined)
+                    throw new Error("invalid remote CAS missing-digest body");
+                const value = JSON.parse(text);
+                if (value === null || !Array.isArray(value.missing) || value.missing.length > batch.length ||
+                    !value.missing.every((digest) => typeof digest === "string" && batch.includes(digest)) ||
+                    new Set(value.missing).size !== value.missing.length)
+                    throw new Error("invalid remote CAS missing-digest list");
+                return value.missing;
+            });
+            if (missing === undefined)
+                return false;
+            for (const digest of missing) {
+                if (this.degraded || this.publishDenied)
+                    return false;
+                const bytes = await OutputCas.readBlob(cas, digest);
+                const status = await withDeadline("put", this.artifactTimeouts.put, async (signal) => {
+                    const headers = this.headers("write");
+                    headers.set("content-type", "application/octet-stream");
+                    const response = await this.fetch(`${this.endpoint}/cas/${digest}`, {
+                        method: "PUT",
+                        headers,
+                        body: new Uint8Array(bytes),
+                        redirect: "error",
+                        signal
+                    });
+                    cancelBody(response.body);
+                    return response.status;
+                });
+                if (status === 200 || status === 201)
+                    continue;
+                if (status === 401 || status === 403)
+                    this.denyPublication();
+                else if (status === 429)
+                    this.skipBusy();
+                else
+                    this.degrade("PUT", { status });
+                return false;
+            }
+        }
+        return true;
+    }
     constructor(options) {
         this.endpoint = options.endpoint.replace(/\/+$/, "");
         this.readToken = options.readToken;
@@ -1050,6 +1193,7 @@ class RemoteStore {
         this.fetch = options.fetch;
         this.warn = options.warn;
         this.timeouts = options.timeouts;
+        this.artifactTimeouts = options.artifactTimeouts;
     }
     /**
      * The key one result is published under.
@@ -1196,7 +1340,21 @@ class RemoteStore {
                 }
                 const candidate = envelope ? value["result"] : value;
                 const decoded = decodeFor(key, candidate);
-                return decoded === null ? { _tag: "degrade" } : { _tag: "entry", result: decoded };
+                if (decoded === null)
+                    return { _tag: "degrade" };
+                // The compared remote result has a canonical timestamp. Preserve
+                // the publication time in the local receipt and cache inspection.
+                const createdAtMs = envelope && Object.hasOwn(value, "createdAtMs")
+                    ? value["createdAtMs"]
+                    : undefined;
+                if (decoded.storedAt === remoteFileResultTimestamp && typeof createdAtMs === "number" &&
+                    Number.isSafeInteger(createdAtMs) && Math.abs(createdAtMs) <= 8_640_000_000_000_000) {
+                    return {
+                        _tag: "entry",
+                        result: Object.freeze({ ...decoded, storedAt: new Date(createdAtMs).toISOString() })
+                    };
+                }
+                return { _tag: "entry", result: decoded };
             });
         }
         catch (cause) {
@@ -1212,7 +1370,7 @@ class RemoteStore {
         }
         return null;
     }
-    async put(key, result) {
+    async put(key, result, cas) {
         const published = this.publishedKey(key);
         if (this.degraded || this.publishDenied || !remoteKeySupported(published))
             return;
@@ -1220,15 +1378,38 @@ class RemoteStore {
             // The envelope names the key it is filed under, which is the namespaced
             // one. The result inside keeps the content key it was produced for, so
             // the entry a trusted build reads is byte-identical whoever publishes it.
-            const body = JSON.stringify({
-                keyDigest: published,
-                result,
-                meta: { target: result.target, label: result.label, exitOk: result.exitOk },
-                createdAtMs: Date.parse(result.storedAt)
+            // File indexes carry no timestamps or machine identity. The stored
+            // result's timestamp is canonical too, so identical publishers agree.
+            const prepared = await this.blobs(async () => {
+                if (this.degraded || this.publishDenied)
+                    return undefined;
+                const value = await OutputCas.prepare(cas, result.output);
+                const remoteResult = value.digests.length === 0 ? result : {
+                    ...result,
+                    output: value.output,
+                    storedAt: remoteFileResultTimestamp
+                };
+                const body = JSON.stringify({
+                    keyDigest: published,
+                    result: remoteResult,
+                    meta: {
+                        target: result.target,
+                        label: result.label,
+                        exitOk: result.exitOk,
+                        ...(value.digests.length === 0 ? {} : {
+                            boundary: { declaredOutputs: { outputs: value.digests.map((digest) => ({ digest })) } }
+                        })
+                    },
+                    createdAtMs: Date.parse(result.storedAt)
+                });
+                if (Buffer.byteLength(body, "utf8") > remoteEntryLimit) {
+                    throw new OutputCas.OutputLimitError(`remote cache request exceeds its ${remoteEntryLimit}-byte limit`);
+                }
+                return await this.upload(cas, value.digests) ? body : undefined;
             });
-            if (Buffer.byteLength(body, "utf8") > remoteEntryLimit) {
-                throw new RangeError(`remote cache request exceeds its ${remoteEntryLimit}-byte limit`);
-            }
+            if (prepared === undefined || this.degraded || this.publishDenied)
+                return;
+            const body = prepared;
             const status = await withDeadline("put", this.timeouts.put, async (signal) => {
                 const response = await this.fetch(this.url(published), {
                     method: "PUT",
@@ -1258,7 +1439,10 @@ class RemoteStore {
             this.degrade("PUT", { status });
         }
         catch (cause) {
-            this.degrade("PUT", { cause });
+            if (cause instanceof OutputCas.OutputLimitError)
+                this.skipLimit();
+            else
+                this.degrade("PUT", { cause });
         }
     }
     async close() { }
@@ -1277,8 +1461,9 @@ class RemoteStore {
  * miss rather than another action's result. `cacheDirectory` is the
  * workspace-relative directory the CLI resolved and defaults to `.flows`. When
  * `endpoint` names an HTTP cache, the store also reads through its `/ac`
- * route: a local hit never touches the remote, a remote hit hydrates the local
- * file, and a put writes both sides.
+ * route and the output store's `/cas` routes. A complete local hit never
+ * touches the remote. Missing output blobs are verified before hydration;
+ * publication uploads all referenced blobs before putting the result entry.
  *
  * @category constructors
  * @since 0.1.0
@@ -1297,27 +1482,51 @@ export const openCache = async (opts) => {
             publishNamespace: options.publishNamespace,
             fetch: options.fetch,
             warn: options.warn,
-            timeouts: options.timeouts
+            timeouts: options.timeouts,
+            artifactTimeouts: options.artifactTimeouts
         });
+    const contentRoot = NodePath.join(workspaceRoot, ...options.cacheDirectory.split("/"), "cas");
+    const ensureContentRoot = async () => {
+        await confineDirectory(workspaceRoot, contentRoot, "content store");
+        await Fs.mkdir(contentRoot, { recursive: true });
+        await confineDirectory(workspaceRoot, contentRoot, "content store");
+        return contentRoot;
+    };
     return {
         async get(key) {
             const local = await readLocal(cacheRoot, key);
-            if (local !== null)
-                return local;
-            if (remote === null)
+            let result = local ?? (remote === null ? null : await remote.get(key));
+            if (result === null)
                 return null;
-            const fetched = await remote.get(key);
-            if (fetched === null)
-                return null;
-            await writeLocal(cacheRoot, key, fetched, options.io).catch(() => undefined);
-            return fetched;
+            if (remote !== null) {
+                try {
+                    const cas = await ensureContentRoot();
+                    if (!await remote.hydrate(cas, result.output)) {
+                        // A legacy local manifest may lack the remote chunk index. Read
+                        // the remote representation before treating that local gap as a miss.
+                        if (local === null)
+                            return null;
+                        result = await remote.get(key);
+                        if (result === null || !await remote.hydrate(cas, result.output))
+                            return local;
+                    }
+                }
+                catch {
+                    return local;
+                }
+            }
+            if (result !== local)
+                await writeLocal(cacheRoot, key, result, options.io).catch(() => undefined);
+            return result;
         },
         async put(key, r, putOptions) {
             sanitizeKey(key);
             const result = normalizeCachedResult(key, r);
             await writeLocal(cacheRoot, key, result, options.io);
-            if (remote !== null && putOptions?.shared !== false)
-                await remote.put(key, result);
+            if (remote !== null && putOptions?.shared !== false) {
+                // Remote preparation may fail; the complete local result is already safe.
+                await ensureContentRoot().then((cas) => remote.put(key, result, cas)).catch(() => undefined);
+            }
         },
         async close() {
             if (remote !== null)

@@ -32,7 +32,7 @@ import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as TestClock from "effect/testing/TestClock"
 import { execFile } from "node:child_process"
-import { basename, join, relative } from "node:path"
+import { basename, dirname, join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Descriptor from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.vibe"
@@ -1314,10 +1314,24 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const greet = yield* fs.readFileString(`${flowsRoot}/greet/flow.ts`)
       const root = yield* project({ ".smithers/flows/greet/flow.ts": greet })
       const directory = `${root}/.smithers/flows/greet`
-      const stale = `.smithers-deadbeef-1-${(Date.now() - 60 * 60 * 1000).toString(36)}.ts`
-      const fresh = `.smithers-deadbeef-2-${Date.now().toString(36)}.ts`
+      const now = 1_700_000_000_000
+      yield* TestClock.setTime(now)
+      const sibling = (sequence: number, at: number) => `smithers-${"d".repeat(64)}-${sequence}-${at.toString(36)}.ts`
+      const stale = sibling(1, now - 60 * 60 * 1000)
+      const fresh = sibling(2, now)
+      // Old names that are not regular files the loader wrote: the user's own
+      // helper, a hex digest that is too short, a stamp in the future, and a
+      // directory named exactly like a stale sibling.
+      const helper = "smithers-agent-flow-helper.ts"
+      const short = `smithers-deadbeef-1-${(now - 60 * 60 * 1000).toString(36)}.ts`
+      const future = sibling(3, now + 60 * 60 * 1000)
+      const folder = sibling(4, now - 60 * 60 * 1000)
       yield* fs.writeFileString(`${directory}/${stale}`, "")
       yield* fs.writeFileString(`${directory}/${fresh}`, "")
+      yield* fs.writeFileString(`${directory}/${helper}`, "export const helper = 1\n")
+      yield* fs.writeFileString(`${directory}/${short}`, "")
+      yield* fs.writeFileString(`${directory}/${future}`, "")
+      yield* fs.makeDirectory(`${directory}/${folder}`)
       const descriptor = yield* descriptorIn(root, "greet")
       const refused: Array<string> = []
       // The unlink of this load's own sibling fails, as EBUSY does on Windows.
@@ -1343,7 +1357,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       expect(refused).toHaveLength(1)
       const left = yield* fs.readDirectory(directory)
       expect(left).not.toContain(stale)
-      expect(left).toContain(fresh)
+      expect(left).toEqual(expect.arrayContaining([fresh, helper, short, future, folder]))
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
   it.effect("pins a NodeNext './x.js' import of x.ts and loads the module", () =>
@@ -2370,4 +2384,49 @@ describe("registration", () => {
         "tuned"
       ])
     }).pipe(Effect.scoped, Effect.provide(registryLayer), Effect.provide(platform)))
+})
+
+describe("a module flow's declared tag", () => {
+  /** Loads, for each module entry, a flow declaring the tag this table gives its directory. */
+  const declaring = (tags: Readonly<Record<string, string>>): Executable.Options["load"] => (path) =>
+    Effect.succeed({
+      default: Flow.make(tags[basename(dirname(path))] ?? basename(dirname(path)), {
+        payload: { input: Schema.Unknown },
+        body: () => Node.succeed(undefined)
+      })
+    })
+
+  it.effect("refuses a tag another entry, a host delegate or the registry answers to, and keeps a free one", () =>
+    Effect.gen(function*() {
+      // Registrations stack per tag and the newest wins, so a module registered
+      // under `greet` would run in place of the flow named `greet`, and one
+      // registered under `agent` in place of every prompt flow's delegate.
+      const built = yield* Executable.catalog(options({
+        load: declaring({
+          standalone: "greet",
+          scoped: "agent",
+          tuned: "test/echo",
+          cacheable: "registry/entry/0/greet",
+          "cacheable-plain": "shared/Tag",
+          "cacheable-reads": "shared/Tag",
+          "cacheable-expiring": "test/Expiring"
+        })
+      }))
+      const refused = new Map(built.refused.map((failure) => [failure.flow, failure]))
+      expect(refused.get("standalone")).toMatchObject({
+        code: "invalid_module",
+        message: "flow \"standalone\" declares Flow.make tag \"greet\", which belongs to the flow \"greet\""
+      })
+      expect(refused.get("scoped")?.message).toContain("belongs to the host delegate \"agent\"")
+      expect(refused.get("tuned")?.message).toContain("belongs to the host delegate \"test/echo\"")
+      expect(refused.get("cacheable")?.message).toContain("belongs to the registry's own adapters")
+      // Of two entries declaring one free tag, the first loaded keeps it.
+      const shared = ["cacheable-plain", "cacheable-reads"].map((name) => refused.get(name)?.message)
+      expect(shared.filter((message) => message?.includes("belongs to another loaded flow"))).toHaveLength(1)
+      const loaded = built.executables.map((executable) => executable.descriptor.name)
+      expect(loaded.filter((name) => name === "cacheable-plain" || name === "cacheable-reads")).toHaveLength(1)
+      // A tag nothing else answers to is still the author's, and the entry runs.
+      expect(loaded).toContain("cacheable-expiring")
+      expect(loaded).toContain("greet")
+    }).pipe(Effect.provide(registryLayer), Effect.provide(platform)))
 })

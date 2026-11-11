@@ -9,6 +9,7 @@
  *
  * @since 1.0.0
  */
+import { rethrowUnlessMissingSlot } from "./internal/slotFailure.js";
 /**
  * Objects whose state lives in internal slots. Copying one through its
  * prototype would lose the slot, and none of them can hold a collection, so
@@ -23,6 +24,17 @@ const isSlotted = (value) => value instanceof Date
     || value instanceof Promise
     || (typeof URL === "function" && value instanceof URL);
 const isObject = (value) => (typeof value === "object" && value !== null) || typeof value === "function";
+/**
+ * The rank of an object whose inspection threw, such as a revoked proxy. A
+ * `RangeError` is the engine's report of an exhausted call stack or an
+ * over-long string, which says nothing about the object, so it is rethrown
+ * and never becomes a rank.
+ */
+const uninspectable = (error) => {
+    if (error instanceof RangeError)
+        throw error;
+    return "x";
+};
 /** The values one walked object refers to: its own data properties, then its entries. */
 const children = (value) => {
     if (typeof value === "function" || isSlotted(value))
@@ -63,8 +75,9 @@ const dirtyObjects = (root) => {
             if (next instanceof Set || next instanceof Map)
                 dirty.add(next);
         }
-        catch {
+        catch (error) {
             // An object that cannot be inspected, such as a revoked proxy, is a leaf.
+            uninspectable(error);
             kids = [];
         }
         for (const child of kids) {
@@ -100,14 +113,10 @@ const constructorName = (prototype) => {
         : "";
 };
 const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
-/**
- * A stable text rank of a sorted value. Strings are JSON-quoted and every
- * container is tagged and delimited, so distinct data never shares a rank.
- * Object members are ranked under their own string keys, enumerable or not, in
- * UTF-16 code-unit order; an accessor ranks as `get` without being invoked.
- * A back edge to an enclosing object ranks as its distance.
- */
-const rank = (value, path = []) => {
+/** A rank at most this long is kept as text and spliced into its parent's. */
+const inlineLimit = 1024;
+/** The rank of a value that holds no other value, or `undefined` for an object. */
+const leafRank = (value) => {
     switch (typeof value) {
         case "string":
             return `s${JSON.stringify(value)}`;
@@ -126,24 +135,31 @@ const rank = (value, path = []) => {
             try {
                 return `F${JSON.stringify(value.name)}`;
             }
-            catch {
-                return "x";
+            catch (error) {
+                return uninspectable(error);
             }
-    }
-    if (value === null)
-        return "z";
-    try {
-        return rankObject(value, path);
-    }
-    catch {
-        // An object that cannot be inspected, such as a revoked proxy, has no rank.
-        return "x";
+        default:
+            return value === null ? "z" : undefined;
     }
 };
-const rankObject = (object, path) => {
-    const back = path.lastIndexOf(object);
-    if (back !== -1)
-        return `^${path.length - back}`;
+/** The rank of a slotted leaf, or the shape of an object that holds values. */
+const shapeOf = (object) => {
+    let primitive = "";
+    try {
+        if (object instanceof Number)
+            primitive = leafRank(Number.prototype.valueOf.call(object));
+        else if (object instanceof String)
+            primitive = leafRank(String.prototype.valueOf.call(object));
+        else if (object instanceof Boolean)
+            primitive = leafRank(Boolean.prototype.valueOf.call(object));
+        else if (object instanceof BigInt)
+            primitive = leafRank(BigInt.prototype.valueOf.call(object));
+    }
+    catch (cause) {
+        // A wrapper prototype or proxy need not have the primitive slot. Its
+        // own data still ranks normally; engine resource failures still escape.
+        rethrowUnlessMissingSlot(cause);
+    }
     if (object instanceof Date)
         return `d${object.getTime()}`;
     if (object instanceof RegExp)
@@ -156,33 +172,225 @@ const rankObject = (object, path) => {
     }
     if (object instanceof ArrayBuffer)
         return `a[${new Uint8Array(object).join(",")}]`;
-    path.push(object);
-    try {
-        let entries = "";
-        if (object instanceof Set) {
-            entries = `S[${Array.from(object, (entry) => rank(entry, path)).join(",")}]`;
+    const texts = [];
+    const children = [];
+    let text = `o${JSON.stringify(constructorName(Object.getPrototypeOf(object)))}${primitive}`;
+    const add = (value) => {
+        const leaf = leafRank(value);
+        if (leaf === undefined) {
+            texts.push(text);
+            children.push(value);
+            text = "";
         }
-        else if (object instanceof Map) {
-            entries = `M[${Array.from(object, ([key, entry]) => `${rank(key, path)}:${rank(entry, path)}`).join(",")}]`;
+        else {
+            text += leaf;
         }
-        const members = Reflect.ownKeys(object)
-            .filter((key) => typeof key === "string")
-            .sort(compareText)
-            .map((key) => {
-            const descriptor = Reflect.getOwnPropertyDescriptor(object, key);
-            const member = "value" in descriptor ? rank(descriptor.value, path) : "get";
-            return `${JSON.stringify(key)}:${member}`;
-        });
-        return `o${JSON.stringify(constructorName(Object.getPrototypeOf(object)))}${entries}{${members.join(",")}}`;
+    };
+    let separator = "";
+    if (object instanceof Set) {
+        text += "S[";
+        for (const entry of Array.from(object)) {
+            text += separator;
+            add(entry);
+            separator = ",";
+        }
+        text += "]";
     }
-    finally {
-        path.pop();
+    else if (object instanceof Map) {
+        text += "M[";
+        for (const [key, entry] of Array.from(object)) {
+            text += separator;
+            add(key);
+            text += ":";
+            add(entry);
+            separator = ",";
+        }
+        text += "]";
+    }
+    text += "{";
+    separator = "";
+    const keys = Reflect.ownKeys(object).filter((key) => typeof key === "string").sort(compareText);
+    for (const key of keys) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(object, key);
+        text += `${separator}${JSON.stringify(key)}:`;
+        if ("value" in descriptor)
+            add(descriptor.value);
+        else
+            text += "get";
+        separator = ",";
+    }
+    texts.push(`${text}}`);
+    return { texts, children };
+};
+/**
+ * Ranks values with an explicit stack, so depth is bounded by memory, not by
+ * the call stack. `building` holds the copies that are not filled yet.
+ *
+ * The rank of an object is remembered unless a back edge below it points at
+ * it or above it, or it read an unfilled copy: only then does the rank depend
+ * on where the walk met the object. An object on no cycle is therefore ranked
+ * once however many times it is shared.
+ */
+const ranker = (building) => {
+    const known = new Map();
+    const nodes = new Map();
+    /** One node per distinct text, so equal subtrees compare by reference. */
+    const node = (parts) => {
+        // Rank text holds no raw control character, so U+0000 marks a child unambiguously.
+        const key = parts.map((part) => typeof part === "string" ? part : `\u0000${part.id}\u0000`).join("");
+        const existing = nodes.get(key);
+        if (existing !== undefined)
+            return existing;
+        const made = { id: nodes.size, parts };
+        nodes.set(key, made);
+        return made;
+    };
+    return (root) => {
+        const leaf = leafRank(root);
+        if (leaf !== undefined)
+            return leaf;
+        const frames = [];
+        const onPath = new Map();
+        /** The rank of `object` when no walk is needed; otherwise starts its walk. */
+        const enter = (object) => {
+            const back = onPath.get(object);
+            if (back !== undefined) {
+                const parent = frames[frames.length - 1];
+                parent.lowest = Math.min(parent.lowest, back);
+                return `^${frames.length - back}`;
+            }
+            const remembered = known.get(object);
+            if (remembered !== undefined)
+                return remembered;
+            let shape;
+            try {
+                shape = shapeOf(object);
+            }
+            catch (error) {
+                // An object that cannot be inspected, such as a revoked proxy, has no rank.
+                shape = uninspectable(error);
+            }
+            if (typeof shape === "string")
+                return shape;
+            onPath.set(object, frames.length);
+            frames.push({
+                object,
+                texts: shape.texts,
+                children: shape.children,
+                index: 0,
+                parts: [],
+                text: shape.texts[0],
+                lowest: building.has(object) ? -1 : Infinity
+            });
+            return undefined;
+        };
+        /** Adds a ranked child and the text that follows it. */
+        const append = (frame, rank) => {
+            if (typeof rank === "string") {
+                frame.text += rank;
+            }
+            else {
+                frame.parts.push(frame.text, rank);
+                frame.text = "";
+            }
+            frame.index += 1;
+            frame.text += frame.texts[frame.index];
+        };
+        const first = enter(root);
+        if (first !== undefined)
+            return first;
+        for (;;) {
+            const frame = frames[frames.length - 1];
+            if (frame.index < frame.children.length) {
+                const rank = enter(frame.children[frame.index]);
+                if (rank !== undefined)
+                    append(frame, rank);
+                continue;
+            }
+            frames.pop();
+            onPath.delete(frame.object);
+            const rank = frame.parts.length === 0 && frame.text.length <= inlineLimit
+                ? frame.text
+                : node([...frame.parts, frame.text]);
+            if (frame.lowest > frames.length)
+                known.set(frame.object, rank);
+            const parent = frames[frames.length - 1];
+            if (parent === undefined)
+                return rank;
+            parent.lowest = Math.min(parent.lowest, frame.lowest);
+            append(parent, rank);
+        }
+    };
+};
+const reading = (rank) => ({ stack: [{ parts: [rank], index: 0 }], text: "", at: 0, done: false });
+/** Moves a reader that has used up its text to its next part, or marks it done. */
+const advance = (reader) => {
+    for (let frame = reader.stack[reader.stack.length - 1]; frame !== undefined; frame = reader.stack[reader.stack.length - 1]) {
+        if (frame.index < frame.parts.length)
+            return frame.parts[frame.index++];
+        reader.stack.pop();
+    }
+    return undefined;
+};
+const load = (reader, part) => {
+    if (part === undefined) {
+        reader.done = true;
+    }
+    else if (typeof part === "string") {
+        reader.text = part;
+        reader.at = 0;
+    }
+    else {
+        reader.stack.push({ parts: part.parts, index: 0 });
     }
 };
+/**
+ * Compares the texts two ranks spell, in UTF-16 code units, without building
+ * either text. Two readers that reach the same part at once step over it.
+ */
+const compareRank = (left, right) => {
+    if (typeof left === "string" && typeof right === "string")
+        return compareText(left, right);
+    const a = reading(left);
+    const b = reading(right);
+    for (;;) {
+        const length = Math.min(a.text.length - a.at, b.text.length - b.at);
+        for (let offset = 0; offset < length; offset++) {
+            const unitA = a.text.charCodeAt(a.at + offset);
+            const unitB = b.text.charCodeAt(b.at + offset);
+            if (unitA !== unitB)
+                return unitA < unitB ? -1 : 1;
+        }
+        a.at += length;
+        b.at += length;
+        const endA = a.at === a.text.length;
+        const endB = b.at === b.text.length;
+        if (endA && endB) {
+            const partA = advance(a);
+            const partB = advance(b);
+            if (partA === partB && partA !== undefined)
+                continue;
+            load(a, partA);
+            load(b, partB);
+        }
+        else if (endA) {
+            load(a, advance(a));
+        }
+        else {
+            load(b, advance(b));
+        }
+        if (a.done || b.done)
+            return a.done ? b.done ? 0 : -1 : 1;
+    }
+};
+/** The rank of a map entry: its key's rank, U+0000, then its value's. */
+const entryRank = (key, entry) => typeof key === "string" && typeof entry === "string"
+    ? `${key}\u0000${entry}`
+    : { id: -1, parts: [key, "\u0000", entry] };
 /** Sorts values by rank, keeping the original order of equal ranks. */
 const byRank = (values, rankOf) => values
     .map((value) => ({ value, rank: rankOf(value) }))
-    .sort((left, right) => compareText(left.rank, right.rank))
+    .sort((left, right) => compareRank(left.rank, right.rank))
     .map(({ value }) => value);
 const keepIntegrity = (source, copy) => {
     if (Object.isFrozen(source))
@@ -205,6 +413,8 @@ const shellOf = (value) => {
         Object.setPrototypeOf(shell, prototype);
     return shell;
 };
+/** What a copy returns for an object whose copy has only started. */
+const started = Symbol("started");
 /**
  * Copies `value` with every `Set`'s entries and every `Map`'s entries in
  * sorted order, at every depth, so that equal collections encode to equal
@@ -224,6 +434,9 @@ const shellOf = (value) => {
  *   Cycles and shared references survive the copy.
  * - Accessors are copied as accessors and never invoked. `Date`, `RegExp`,
  *   `URL`, buffers and typed arrays are leaves.
+ * - It keeps its own stack, so nesting depth is bounded by memory and the
+ *   order never depends on the runtime's call stack. An object on no cycle
+ *   is ranked once however often it is shared.
  *
  * @example
  * ```ts
@@ -234,6 +447,7 @@ const shellOf = (value) => {
  *
  * @param value - Any value; it is never mutated.
  * @returns `value` itself when it reaches no collection, otherwise a sorted copy.
+ * @throws {RangeError} Only one the engine raises while an object is inspected.
  *
  * @category transformations
  * @since 1.0.0
@@ -243,6 +457,10 @@ export const sortCollections = (value) => {
     if (dirty.size === 0)
         return value;
     const copies = new Map();
+    const building = new Set();
+    const rank = ranker(building);
+    const frames = [];
+    /** The copy of `current`, or `started` after starting one. */
     const copy = (current) => {
         if (!isObject(current) || !dirty.has(current))
             return current;
@@ -251,26 +469,65 @@ export const sortCollections = (value) => {
             return known;
         const shell = shellOf(current);
         copies.set(current, shell);
+        building.add(shell);
+        const entries = [];
         if (current instanceof Set) {
-            const target = shell;
-            for (const entry of byRank(Array.from(current, copy), (entry) => rank(entry)))
-                target.add(entry);
+            for (const entry of current)
+                entries.push(entry);
         }
         else if (current instanceof Map) {
+            for (const [key, entry] of current)
+                entries.push(key, entry);
+        }
+        frames.push({ source: current, shell, entries, copied: [], keys: undefined, index: 0 });
+        return started;
+    };
+    /** Puts the copied entries into the shell in rank order. */
+    const fill = ({ copied, shell, source }) => {
+        if (source instanceof Set) {
             const target = shell;
-            const entries = Array.from(current, ([key, entry]) => [copy(key), copy(entry)]);
-            for (const [key, entry] of byRank(entries, ([key, entry]) => `${rank(key)}\u0000${rank(entry)}`)) {
+            for (const entry of byRank(copied, rank))
+                target.add(entry);
+        }
+        else if (source instanceof Map) {
+            const target = shell;
+            const pairs = [];
+            for (let index = 0; index < copied.length; index += 2)
+                pairs.push([copied[index], copied[index + 1]]);
+            for (const [key, entry] of byRank(pairs, ([key, entry]) => entryRank(rank(key), rank(entry)))) {
                 target.set(key, entry);
             }
         }
-        for (const key of Reflect.ownKeys(current)) {
-            const descriptor = Reflect.getOwnPropertyDescriptor(current, key);
-            if ("value" in descriptor)
-                descriptor.value = copy(descriptor.value);
-            Reflect.defineProperty(shell, key, descriptor);
-        }
-        keepIntegrity(current, shell);
-        return shell;
     };
-    return copy(value);
+    // The root reaches a collection, so its copy starts here.
+    copy(value);
+    for (let frame = frames[frames.length - 1]; frame !== undefined; frame = frames[frames.length - 1]) {
+        if (frame.copied.length < frame.entries.length) {
+            const copied = copy(frame.entries[frame.copied.length]);
+            if (copied !== started)
+                frame.copied.push(copied);
+            continue;
+        }
+        if (frame.keys === undefined) {
+            fill(frame);
+            frame.keys = Reflect.ownKeys(frame.source);
+        }
+        const key = frame.keys[frame.index];
+        if (key === undefined) {
+            keepIntegrity(frame.source, frame.shell);
+            building.delete(frame.shell);
+            frames.pop();
+            continue;
+        }
+        const descriptor = Reflect.getOwnPropertyDescriptor(frame.source, key);
+        if ("value" in descriptor) {
+            const copied = copy(descriptor.value);
+            if (copied === started)
+                continue;
+            descriptor.value = copied;
+        }
+        Reflect.defineProperty(frame.shell, key, descriptor);
+        frame.index += 1;
+    }
+    return copies.get(value);
 };

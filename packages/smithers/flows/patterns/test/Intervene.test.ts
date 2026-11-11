@@ -337,7 +337,9 @@ describe("Intervene", () => {
     expect(named._tag).toBe("rewrite")
     expect(named.description).toBe("Read, propose, apply, report.")
     const derived = Intervene.make({ read, propose, apply, report, dryRun: true })
-    expect(derived._tag).toBe("intervene(dryRun=true)")
+    expect(derived._tag).toBe(
+      "intervene(dryRun=true)[intervene/read, intervene/propose, intervene/apply, intervene/report, ]"
+    )
     expect(derived.description).toBeUndefined()
   })
 })

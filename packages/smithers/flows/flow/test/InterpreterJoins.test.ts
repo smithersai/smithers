@@ -35,6 +35,9 @@ const Crash = Action.make("joins/crash", { payload: {}, success: Schema.Number }
 /** Interrupts itself, as a parked dispatch does. */
 const Park = Action.make("joins/park", { payload: {}, success: Schema.Number })
 
+/** Succeeds with 7 after yielding the scheduler, so a member that parks at once settles first. */
+const Late = Action.make("joins/late", { payload: {}, success: Schema.Number })
+
 /** Parks until {@link Open} runs, then succeeds with 9. */
 const Hold = Action.make("joins/hold", { payload: {}, success: Schema.Number })
 
@@ -407,6 +410,39 @@ describe("a losing child execution after a crash (#2892)", () => {
       expect(replayed).toEqual([opened])
       expect(second.trace.started).toEqual([])
       expect(resumed.skipped).toContain("root.race.child")
+    }))
+
+  it.effect("journals and cancels a losing child that parked before the join decided, live and on replay (#4630)", () =>
+    Effect.gen(function*() {
+      // The child parks at once, so its node ends with no running fiber
+      // before the winner, which first yields the scheduler, settles.
+      const Parked = Flow.make("joins/parked-child", { payload: {}, success: Schema.Number, body: () => Park.call({}) })
+      const late = Late.toLayer(() =>
+        Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow).pipe(Effect.as(7))
+      )
+      const race = Node.race({ child: Parked.child({}), late: Late.call({}) })
+      const drives = (state: MemoryState, interrupts: Array<string>) =>
+        drive(
+          Interpreter.interpret(race),
+          Layer.mergeAll(tracing().layer, late, Interpreter.layer(Parked)),
+          state,
+          interrupts
+        )
+      const state = makeMemoryState()
+      const live: Array<string> = []
+      const settled = yield* drives(state, live)
+      expect(settled.value).toBe(7)
+      expect(live).toHaveLength(1)
+      const opened = live[0]!
+      expect(state.deferredResults.get("joins/join/root")).toEqual(
+        Exit.succeed({ members: ["late"], children: [{ node: "root.race.child", executionId: opened }] })
+      )
+
+      // The resumed walk cancels the parked child again from the record.
+      const replayed: Array<string> = []
+      const resumed = yield* drives(restarted(state), replayed)
+      expect(resumed.value).toBe(7)
+      expect(replayed).toEqual([opened])
     }))
 
   it.effect("replays a member list recorded before losing children were journaled", () =>

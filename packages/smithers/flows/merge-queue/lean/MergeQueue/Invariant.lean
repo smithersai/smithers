@@ -62,8 +62,9 @@ structure Inv (cfg : Config) (s : State) : Prop where
   reasons : ∀ c ∈ s.changes, ∀ r, c.status = .unmergeable r → r.detail ≠ ""
   /-- The landings are one chain from the empty tree to the target's tree. -/
   chain : Chained [] s.landed s.main
-  /-- Every landing landed something on a complete green result. -/
-  landings : ∀ l ∈ s.landed, l.batch ≠ [] ∧ green cfg l.results = true
+  /-- Every landing landed something. A landing the queue made was on a
+  complete green result; the others are commits someone else put on the target. -/
+  landings : ∀ l ∈ s.landed, l.batch ≠ [] ∧ (l.foreign = true ∨ green cfg l.results = true)
   /-- No more undecided runs than allowed. -/
   pending : s.pendingCount cfg ≤ cfg.maxRuns
   /-- A run's tree names only known changes, at revisions that exist. -/
@@ -147,8 +148,8 @@ theorem Inv.mapChanges {cfg : Config} {s : State} (inv : Inv cfg s) (g : Change 
     obtain ⟨c, member, same, rev⟩ := inv.runRevs r hr p hp
     exact ⟨g c, List.mem_map_of_mem member, by rw [hid]; exact same, Nat.le_trans rev (hrev c)⟩
 
-theorem Inv.withdraw {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) : Inv cfg (s.withdraw id) := by
-  unfold State.withdraw
+theorem Inv.withdrawNow {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) : Inv cfg (s.withdrawNow id) := by
+  unfold State.withdrawNow
   apply inv.mapChanges
   · intro c; split <;> rfl
   · intro c; split <;> rfl
@@ -169,6 +170,12 @@ theorem Inv.withdraw {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId
     · cases unmergeable
     · exact inv.reasons c member r unmergeable
   · intro c; split <;> exact Nat.le_refl _
+
+theorem Inv.withdraw {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) : Inv cfg (s.withdraw id) := by
+  unfold State.withdraw
+  split
+  · exact inv
+  · exact inv.withdrawNow id
 
 theorem Inv.fixed {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) (attempt : Nat) :
     Inv cfg (s.fixed id attempt) := by
@@ -501,8 +508,8 @@ theorem Inv.start {cfg : Config} {s : State} (inv : Inv cfg s) (count : Nat) : I
 
 /-! ## Land -/
 
-theorem Inv.land {cfg : Config} {s : State} (inv : Inv cfg s) (run : RunId) : Inv cfg (s.land cfg run) := by
-  unfold State.land
+theorem Inv.landNow {cfg : Config} {s : State} (inv : Inv cfg s) (run : RunId) : Inv cfg (s.landNow cfg run) := by
+  unfold State.landNow
   split
   · exact inv
   · rename_i r found
@@ -570,19 +577,117 @@ theorem Inv.land {cfg : Config} {s : State} (inv : Inv cfg s) (run : RunId) : In
           · exact inv.reasons old was reason unmergeable
         · show Chained [] (s.landed ++ [_]) r.tree
           rw [tree]
-          exact inv.chain.append ⟨run, s.main, batch, r.results⟩ rfl
+          exact inv.chain.append ⟨run, s.main, batch, r.results, false⟩ rfl
         · intro l hl
           rcases List.mem_append.mp hl with old | new
           · exact inv.landings l old
           · simp only [List.mem_singleton] at new
             subst new
-            exact ⟨nonempty, isGreen⟩
+            exact ⟨nonempty, Or.inr isGreen⟩
         · exact Nat.le_trans (countP_filter_le _ _ _) inv.pending
         · intro x hx p hp
           obtain ⟨c, was, same, rev⟩ := inv.runRevs x (sub.subset hx) p hp
           refine ⟨_, List.mem_map_of_mem was, by rw [hid]; exact same, ?_⟩
           split <;> exact rev
       · exact inv
+
+/-- Changing which run is being pushed keeps the invariant. -/
+theorem Inv.setPushing {cfg : Config} {s : State} (inv : Inv cfg s) (pushing : Option RunId) :
+    Inv cfg { s with pushing := pushing } :=
+  ⟨inv.changeIds, inv.seqs, inv.runIds, inv.runFresh, inv.runTrees, inv.resultsRequired, inv.resultsUnique,
+    inv.mainNodup, inv.mainMerged, inv.mergedMain, inv.attempts, inv.reasons, inv.chain, inv.landings, inv.pending,
+    inv.runRevs⟩
+
+theorem Inv.push {cfg : Config} {s : State} (inv : Inv cfg s) (run : RunId) : Inv cfg (s.push cfg run) := by
+  unfold State.push
+  split
+  · exact inv
+  · split
+    · exact inv
+    · split
+      · exact inv.setPushing _
+      · exact inv
+
+theorem Inv.land {cfg : Config} {s : State} (inv : Inv cfg s) (run : RunId) : Inv cfg (s.land cfg run) := by
+  unfold State.land
+  split
+  · exact inv.landNow run
+  · exact inv
+
+/-! ## A commit from outside -/
+
+theorem Inv.foreign {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) : Inv cfg (s.foreign id) := by
+  unfold State.foreign
+  split
+  · exact inv
+  · rename_i absent
+    simp only [List.any_eq_true, beq_iff_eq, not_exists, not_and] at absent
+    constructor
+    · show ((s.changes ++ [_]).map Change.id).Nodup
+      simp only [List.map_append, List.map_cons, List.map_nil]
+      refine List.nodup_append.mpr ⟨inv.changeIds, by simp, ?_⟩
+      intro a ha b hb
+      simp only [List.mem_singleton] at hb
+      subst hb
+      obtain ⟨c, member, rfl⟩ := List.mem_map.mp ha
+      exact absent c member
+    · intro c hc
+      rcases List.mem_append.mp hc with old | new
+      · exact Nat.lt_succ_of_lt (inv.seqs c old)
+      · simp only [List.mem_singleton] at new
+        subst new
+        exact Nat.lt_succ_self _
+    · exact inv.runIds
+    · exact inv.runFresh
+    · exact inv.runTrees
+    · exact inv.resultsRequired
+    · exact inv.resultsUnique
+    · show ((s.main ++ [_]).map Part.id).Nodup
+      simp only [List.map_append, List.map_cons, List.map_nil]
+      refine List.nodup_append.mpr ⟨inv.mainNodup, by simp, ?_⟩
+      intro a ha b hb
+      simp only [List.mem_singleton] at hb
+      subst hb
+      obtain ⟨p, inMain, rfl⟩ := List.mem_map.mp ha
+      obtain ⟨c, member, part, _⟩ := inv.mainMerged p inMain
+      intro same
+      exact absent c member (by rw [← same, ← part]; rfl)
+    · intro p hp
+      rcases List.mem_append.mp hp with old | new
+      · obtain ⟨c, member, part, merged⟩ := inv.mainMerged p old
+        exact ⟨c, List.mem_append_left _ member, part, merged⟩
+      · simp only [List.mem_singleton] at new
+        subst new
+        exact ⟨_, List.mem_append_right _ (List.mem_singleton.mpr rfl), rfl, rfl⟩
+    · intro c hc merged
+      rcases List.mem_append.mp hc with old | new
+      · exact List.mem_append_left _ (inv.mergedMain c old merged)
+      · simp only [List.mem_singleton] at new
+        subst new
+        exact List.mem_append_right _ (List.mem_singleton.mpr rfl)
+    · intro c hc
+      rcases List.mem_append.mp hc with old | new
+      · exact inv.attempts c old
+      · simp only [List.mem_singleton] at new
+        subst new
+        exact Nat.zero_le _
+    · intro c hc r unmergeable
+      rcases List.mem_append.mp hc with old | new
+      · exact inv.reasons c old r unmergeable
+      · simp only [List.mem_singleton] at new
+        subst new
+        cases unmergeable
+    · exact inv.chain.append ⟨0, s.main, [⟨id, 0⟩], [], true⟩ rfl
+    · intro l hl
+      rcases List.mem_append.mp hl with old | new
+      · exact inv.landings l old
+      · simp only [List.mem_singleton] at new
+        subst new
+        exact ⟨by simp, Or.inl rfl⟩
+    · exact inv.pending
+    · intro r hr p hp
+      obtain ⟨c, member, h⟩ := inv.runRevs r hr p hp
+      exact ⟨c, List.mem_append_left _ member, h⟩
 
 /-! ## Every event -/
 
@@ -595,6 +700,8 @@ theorem Inv.step {cfg : Config} {s : State} (inv : Inv cfg s) (e : Event) : Inv 
   | result run check verdict duration => exact inv.result run check verdict duration
   | fixed id attempt => exact inv.fixed id attempt
   | gaveUp id attempt detail => exact inv.gaveUp id attempt detail
+  | foreign id => exact inv.foreign id
+  | push run => exact inv.push run
   | start count => exact inv.start count
   | land run => exact inv.land run
   | blame run => exact inv.blame run

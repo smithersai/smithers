@@ -31,6 +31,20 @@ export const deliveredEventType = "flows.alerts.delivered";
  */
 export const failedEventType = "flows.alerts.failed";
 /**
+ * The journal event type one acknowledgement is recorded under.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const acknowledgedEventType = "flows.alerts.acknowledged";
+/**
+ * The most characters of a summary an alert carries.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maxSummaryLength = 500;
+/**
  * How loud an alert is.
  *
  * @category models
@@ -47,13 +61,18 @@ export const Severity = Schema.Literals(["info", "warning", "critical"]);
  * the field with a different value CLOSES the condition, which is what makes a
  * resume clear an approval alert without a second vocabulary for "cleared".
  *
+ * `summary` names a payload key whose string, on the entry that opened the
+ * condition, rides on the alert as the line a person reads. Only the first
+ * {@link maxSummaryLength} characters are kept.
+ *
  * @category models
  * @since 0.1.0
  */
 export const Detector = Schema.Struct({
     field: Schema.NonEmptyString,
     value: Schema.NonEmptyString,
-    eventTypes: Schema.optional(Schema.Array(Schema.NonEmptyString))
+    eventTypes: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+    summary: Schema.optional(Schema.NonEmptyString)
 });
 /**
  * What to do about one condition, and after how long.
@@ -64,11 +83,15 @@ export const Detector = Schema.Struct({
  * `null`, and a negative one fires with a `firedAt` earlier than the condition
  * it describes.
  *
+ * `repeatMs` pages again, every that many milliseconds, about a condition that
+ * is still open and that nobody acknowledged. Without it an alert pages once.
+ *
  * @category models
  * @since 0.1.0
  */
 export const Rule = Schema.Struct({
     afterMs: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
+    repeatMs: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
     severity: Schema.optional(Severity),
     owner: Schema.optional(Schema.String),
     runbook: Schema.optional(Schema.String)
@@ -128,7 +151,7 @@ const names = (eventTypes, eventType) => eventTypes.some((named) => named.endsWi
  * a writer.
  *
  * @param id the alert's {@link alertId}
- * @param outcome `delivered`, `refused`, or `failed/<code>`
+ * @param outcome `delivered`, `acknowledged`, `refused`, or `failed/<code>`
  * @private
  * @since 1.0.0
  */
@@ -154,11 +177,15 @@ export const coalescingKey = (runId, condition) => `${encodeURIComponent(runId)}
  * re-opens is a NEW alert, because the second approval wait is not the first
  * one, and a key without the time would suppress it forever.
  *
+ * A repeat of the page is a page of its own, so its id ends in `:r<n>` and a
+ * sink that dedupes on the id still sends it. The id without that ending
+ * names the alert itself, and is what a person acknowledges.
+ *
  * @param alert the alert
  * @category getters
  * @since 0.1.0
  */
-export const alertId = (alert) => `alert:${alert.coalescingKey}:${alert.since}`;
+export const alertId = (alert) => `alert:${alert.coalescingKey}:${alert.since}${alert.reminder === undefined ? "" : `:r${alert.reminder}`}`;
 /**
  * The detectors one policy decides with: the four this package ships, with
  * the deployment's own overriding them by name.
@@ -196,7 +223,8 @@ export const payloadRecord = (payload) => typeof payload === "object" && payload
  * @since 1.0.0
  */
 export const observe = (policy, detectors, entry, payload, open) => {
-    if (entry.eventType === deliveredEventType || entry.eventType === failedEventType)
+    if (entry.eventType === deliveredEventType || entry.eventType === failedEventType ||
+        entry.eventType === acknowledgedEventType)
         return;
     for (const condition of Object.keys(policy.rules)) {
         const detector = detectors[condition];
@@ -210,8 +238,14 @@ export const observe = (policy, detectors, entry, payload, open) => {
         if (!Object.hasOwn(payload, detector.field))
             continue;
         if (payload[detector.field] === detector.value) {
-            if (!open.has(condition))
-                open.set(condition, entry.emittedAtMs);
+            if (open.has(condition))
+                continue;
+            const key = detector.summary;
+            const summary = key !== undefined && Object.hasOwn(payload, key) ? payload[key] : undefined;
+            open.set(condition, {
+                since: entry.emittedAtMs,
+                ...(typeof summary === "string" ? { summary: summary.slice(0, maxSummaryLength) } : {})
+            });
         }
         else {
             open.delete(condition);
@@ -241,7 +275,7 @@ export const conditions = (policy, runId, entries) => {
             continue;
         observe(policy, detectors, entry, payload, open);
     }
-    return Array.from(open, ([condition, since]) => ({ runId, condition, since }));
+    return Array.from(open, ([condition, opened]) => ({ runId, condition, ...opened }));
 };
 /**
  * The alerts a policy raises for the conditions open at `now`.
@@ -267,6 +301,11 @@ export const decide = (policy, open, now) => open.flatMap((condition) => {
     const severity = rule.severity ?? policy.defaults?.severity ?? "warning";
     const owner = rule.owner ?? policy.defaults?.owner;
     const runbook = rule.runbook ?? policy.defaults?.runbook;
+    const firedAt = condition.since + rule.afterMs;
+    // How many whole repeat periods the condition has outlived its delay by.
+    // Each repeat is its own alert id, so its content is as stable across
+    // ticks as the first page's.
+    const reminder = rule.repeatMs === undefined ? 0 : Math.floor((now - firedAt) / rule.repeatMs);
     return [{
             runId: condition.runId,
             condition: condition.condition,
@@ -275,9 +314,11 @@ export const decide = (policy, open, now) => open.flatMap((condition) => {
             // stable across ticks, and the queue refuses a reused id whose content
             // changed, so an alert stamped with the reading time would become
             // permanently undeliverable the moment a tick refused and time moved on.
-            firedAt: condition.since + rule.afterMs,
+            firedAt: rule.repeatMs === undefined ? firedAt : firedAt + reminder * rule.repeatMs,
+            ...(reminder === 0 ? {} : { reminder }),
             severity,
             coalescingKey: coalescingKey(condition.runId, condition.condition),
+            ...(condition.summary === undefined ? {} : { summary: condition.summary }),
             ...(owner === undefined ? {} : { owner }),
             ...(runbook === undefined ? {} : { runbook })
         }];

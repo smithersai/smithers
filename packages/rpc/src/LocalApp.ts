@@ -195,6 +195,6 @@ export type Target = z.infer<typeof TargetSchema>
  */
 export const splitLabel = (label: string): { readonly package: string; readonly name: string } => {
   const colon = label.lastIndexOf(":")
-  if (colon < 0) return { package: label, name: label.replace(/^\/\//, "").split("/").pop() ?? label }
+  if (colon < 0) return { package: label, name: label.replace(/^\/\//, "").split("/").pop()! }
   return { package: label.slice(0, colon), name: label.slice(colon + 1) }
 }

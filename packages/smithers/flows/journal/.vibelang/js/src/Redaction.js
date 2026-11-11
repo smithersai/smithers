@@ -330,9 +330,8 @@ const bareValueEnd = (text, start, scope, stack, budget) => {
             continue;
         }
         if (char === "<") {
-            angleClose.lastIndex = end;
-            const close = angleClose.exec(text)?.index;
-            if (close !== undefined && text[close] === ">") {
+            const close = angleEnd(text, end);
+            if (text[close] === ">") {
                 end = close + 1;
                 continue;
             }
@@ -413,8 +412,23 @@ const userinfoEnd = (text, start, end) => {
  */
 const namesCredential = (name, value) => !plainKeyName(name) &&
     !(/tokens$/i.test(name) && /^["'`]?\d+(?![\w.])/.test(value));
-/** The `>` that closes an inspect marker, or the line end that means there is none. */
+/**
+ * The index of the `>` that closes an inspect marker opened at `index`, or of
+ * the line end or text end that means there is none.
+ */
+const angleEnd = (text, index) => {
+    // No `>` or line end lies between a search's start and what it found, so a
+    // later search from inside that span has the same answer: a run of `<` with
+    // no `>` on its line is read once, not once per `<` (#4541).
+    if (lastAngle.text === text && index >= lastAngle.from && index <= lastAngle.end)
+        return lastAngle.end;
+    angleClose.lastIndex = index;
+    const end = angleClose.exec(text)?.index ?? text.length;
+    lastAngle = { text, from: index, end };
+    return end;
+};
 const angleClose = /[>\r\n]/g;
+let lastAngle = { text: "", from: 0, end: 0 };
 /**
  * The `+` with which `util.inspect` continues a long string on the next line,
  * its newline raw or escaped (`\\n`) when the inspected text was itself

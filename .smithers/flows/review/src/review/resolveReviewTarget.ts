@@ -10,7 +10,8 @@ import { validateReviewInput } from "./validateReviewInput.ts"
 
 /**
  * Resolves a request against a real repository: validates the mode, confirms
- * the directory is a git repository, and pins the ref the review will read.
+ * the directory is a jj workspace (when it holds `.jj`) or a git repository,
+ * and names the ref the review will read.
  *
  * @since 1.0.0
  * @category constructors
@@ -19,7 +20,7 @@ export async function resolveReviewTarget(input: OpenCodeReviewInput): Promise<R
   input = normalizeOpenCodeReviewInput(input)
   validateReviewInput(input)
   const repoDir = resolve(input.repo || ".")
-  if (await runIo(io().fs.exists(join(repoDir, ".jj"))) && reviewMode(input) === "workspace") {
+  if (await runIo(io().fs.exists(join(repoDir, ".jj")))) {
     const result = await runCommand("jj", ["workspace", "root"], repoDir, 30_000)
     if (result.exitCode !== 0) throw new Error(result.stderr || "Cannot read jj workspace")
   } else await runGit(repoDir, ["rev-parse", "--git-dir"], 30_000)

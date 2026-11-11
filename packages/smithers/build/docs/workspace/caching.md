@@ -295,6 +295,9 @@ Every request to the remote (the fetch, its whole body, and the parse) runs
 inside one deadline that is a real race against a timer, not only an
 `AbortSignal`. A `fetch` that ignores the signal, or a body that never
 completes, degrades the store to local-only instead of hanging the run.
+Metadata reads use 3 seconds and writes use 8 seconds; artifact transfers use
+60 seconds, including verification and local blob publication. Output-limit
+refusals skip that entry while leaving other remote operations available.
 
 ### Admission
 
@@ -419,11 +422,13 @@ run. A stored manifest must name exactly the declared paths, and a missing or
 tampered blob, or an output over the tree limits at capture time, is a miss that
 re-executes the target.
 
-Only the local tier holds output blobs. An entry read from the remote tier
-carries the manifests but not the bytes, so it answers a hit only while the
-outputs on disk still measure correctly; fetching blobs from the remote
-content-addressed store is tracked in
-[#1870](https://github.com/smithersai/smithers/issues/1870).
+A configured remote tier publishes output blobs before its result entry.
+Missing local blobs are downloaded and SHA-256 verified before the runner
+restores outputs. Files larger than 16 MiB use deterministic chunks and a small
+index, while the manifest retains the whole-file digest. Missing or corrupt
+chunks are misses and leave no partial output file. Old whole-file local entries
+remain readable. See [Remote caching](remote-caching.md) for bounds, credentials,
+failure behavior, and retention.
 
 ## Planning versus caching
 

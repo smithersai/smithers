@@ -47,9 +47,17 @@ export interface NodeDatabaseOptions {
 }
 
 const readTableNames = (filename: string): ReadonlyArray<string> | undefined => {
+  // Filesystem errors quote caller-chosen paths, so lock text in a path is
+  // not evidence of SQLite contention. Only classify the driver's errors.
+  if (!filename.startsWith("file:")) {
+    try {
+      if (!statSync(filename, { throwIfNoEntry: false })?.isFile()) return undefined
+    } catch {
+      return undefined
+    }
+  }
   let db: DatabaseSync | undefined
   try {
-    if (!filename.startsWith("file:") && !statSync(filename).isFile()) return undefined
     db = new DatabaseSync(filename, { readOnly: true })
     return db
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)

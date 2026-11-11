@@ -265,6 +265,29 @@ class ReportCLI(unittest.TestCase):
         self.assertTrue(any(r.endswith("reports no n_cache_tokens") and r.startswith("smithers: ") for r in report["refusals"]),
                         report["refusals"])
 
+    def test_a_trial_re_run_in_place_after_a_usage_limit_is_refused(self) -> None:
+        """#4798: harness revisions before the fix re-ran a usage-limited
+        attempt in the container it had changed and kept only the last
+        attempt's tokens, recording the re-runs as `requeues`."""
+        self.paired(50)
+        requeued = {}
+        for arm in ("smithers", "baseline"):
+            trial = next(self.jobs[arm].glob("task-007__*"))
+            result = json.loads((trial / "result.json").read_text())
+            result["agent_result"]["metadata"]["requeues"] = [{"attempt": 1, "from": "codex-1", "to": "codex-2"}]
+            (trial / "result.json").write_text(json.dumps(result))
+            requeued[arm] = trial.name
+        self.assert_refused(*(f"{arm}: {name} was re-run in place after a usage limit; "
+                              "re-run it in a fresh environment before publishing" for arm, name in requeued.items()))
+
+    def test_an_empty_requeue_record_still_publishes(self) -> None:
+        self.paired(50)
+        trial = next(self.jobs["smithers"].glob("task-007__*"))
+        result = json.loads((trial / "result.json").read_text())
+        result["agent_result"]["metadata"]["requeues"] = []
+        (trial / "result.json").write_text(json.dumps(result))
+        self.assertTrue(self.run_report(0)[1]["publishable"])
+
     def test_a_smithers_host_call_unseals_the_trial(self) -> None:
         self.paired(1)
         trial = self.trial("smithers", "task-001", host_command="cat ../tests/test_outputs.py")
@@ -276,6 +299,15 @@ class ReportCLI(unittest.TestCase):
         trial = self.trial("smithers", "task-001", host_command="uname -a")
         self.trial("baseline", "task-001")
         self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign")
+
+    def test_a_forbidden_name_at_the_start_of_a_script_line_taints_the_trial(self) -> None:
+        """The audit reads the script's decoded lines. In its JSON encoding a
+        name after a newline or tab follows the escape's letter, which the
+        patterns' lookbehinds refuse."""
+        for index, (command, flag) in enumerate((("cd /task\ntests/run.sh", "tests_dir"), ("ls\n\tjobs/", "jobs_dir"))):
+            trial = self.trial("smithers", f"task-{index:03d}", host_command=command)
+            _, audit = self.audit(trial)
+            self.assertEqual((audit["verdict"], audit["hostCalls"][0]["flags"]), ("TAINTED", [flag]), command)
 
     FILE_CALLS = (("grep", {"pattern": "needle"}), ("read", {"path": "src/mod.py"}),
                   ("edit", {"path": "src/mod.py", "oldString": "a", "newString": "b"}),
@@ -321,11 +353,11 @@ class ReportCLI(unittest.TestCase):
         self.paired(1)
         trial = self.trial("smithers", "task-001", refused_input=marker)
         self.trial("baseline", "task-001")
-        self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign "
+        self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-unread "
                             "(target unknown for 1 call: the journal truncated its input)")
         process = subprocess.run([sys.executable, "-B", str(AUDIT), str(trial)], text=True, capture_output=True, timeout=60)
         self.assertEqual((process.returncode, process.stderr), (0, ""))
-        self.assertIn(f"host-calls-benign  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept unknown=1\n",
+        self.assertIn(f"host-calls-unread  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept unknown=1\n",
                       process.stdout)
         self.assertIn("    seq 2 bash exit=None code=invalid_input reason=too_large outcome=failure cwd=None TARGET UNKNOWN: "
                       "the journal kept a digest of this call's 73,691-byte input and nothing else, so its container and "
@@ -334,7 +366,7 @@ class ReportCLI(unittest.TestCase):
                                              capture_output=True, timeout=60).stdout)
         (call,) = audit["hostCalls"]
         self.assertEqual((audit["verdict"], audit["unknownTargets"], call["target"], call["truncated"], call["outcome"]),
-                         ("host-calls-benign", 1, "unknown", {"bytes": 73_691, "digest": "ab" * 32}, "failure"))
+                         ("host-calls-unread", 1, "unknown", {"bytes": 73_691, "digest": "ab" * 32}, "failure"))
 
     def test_a_truncated_input_that_kept_its_container_is_a_container_call(self) -> None:
         """Since the journal keeps an oversized input's small fields beside
@@ -359,13 +391,13 @@ class ReportCLI(unittest.TestCase):
         kept = {"cwd": "/work", "interpreter": "python3", "truncated": True, "bytes": 73_691, "digest": "ab" * 32}
         trial = self.trial("smithers", "task-001", refused_input=kept)
         self.trial("baseline", "task-001")
-        self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign")
+        self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-unread")
         text, audit = self.audit(trial)
         (call,) = audit["hostCalls"]
         self.assertEqual((audit["verdict"], audit["unknownTargets"], call["target"], call["truncated"], call["cwd"]),
-                         ("host-calls-benign", 0, "host", {"bytes": 73_691, "digest": "ab" * 32}, "/work"))
+                         ("host-calls-unread", 0, "host", {"bytes": 73_691, "digest": "ab" * 32}, "/work"))
         self.assertEqual((call["code"], call["reason"]), ("invalid_input", "too_large"))
-        self.assertIn(f"host-calls-benign  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept\n", text)
+        self.assertIn(f"host-calls-unread  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept\n", text)
         self.assertIn("    seq 2 bash exit=None code=invalid_input reason=too_large outcome=failure cwd=/work INPUT TRUNCATED: "
                       "the journal kept this call's small fields and a digest of its 73,691-byte input; it names no "
                       f"container and its command is not recorded: interpreter=python3 digest {'ab' * 32}\n", text)

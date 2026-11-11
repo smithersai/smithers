@@ -1,4 +1,3 @@
-import { extname } from "node:path"
 import type { DiffRecord } from "../git/diffRecord.ts"
 import { effectivePath } from "../git/effectivePath.ts"
 import type { FileFilter } from "./fileFilter.ts"
@@ -119,10 +118,15 @@ function isAllowedExt(path: string) {
   return ext === "" || supportedExtensions.has(ext)
 }
 
+/**
+ * The extension of the path's last segment, as POSIX `path.extname` reads it:
+ * from the last dot, unless that dot starts the name (`.bashrc`) or the name is
+ * `..`. Repository paths always use `/`, so no platform path module is needed.
+ */
 function extFromPath(path: string) {
   const name = path.split("/").pop() ?? path
-  const ext = extname(name)
-  return ext.startsWith(".") ? ext.toLowerCase() : ""
+  const dot = name.lastIndexOf(".")
+  return dot <= 0 || name === ".." ? "" : name.slice(dot).toLowerCase()
 }
 
 function isDefaultExcluded(path: string) {

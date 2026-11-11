@@ -551,10 +551,22 @@ export const make = <R = never>(caller: MakeOptions<R>): DelegationChainFlow<R> 
     maxDeriskRounds: options.maxDeriskRounds,
     budget: options.budget ?? null
   }
-  const { name, description } = Compose.label("delegationChain", {
-    tierOrder: captured.tierOrder,
-    maxDepth: captured.maxDepth
-  }, caller)
+  const { name, description } = Compose.label(
+    "delegationChain",
+    {
+      tierOrder: captured.tierOrder,
+      maxDepth: captured.maxDepth
+    },
+    caller,
+    [
+      options.refine,
+      options.plan,
+      options.derisk,
+      ...captured.tierOrder.map((tier) => options.execute[tier]),
+      options.review,
+      options.settle
+    ]
+  )
   const execution = (input: unknown, state: typeof ExecutionState.Type): Node.Node<unknown, unknown, R> => {
     const goal = state.goal
     // The state is payload a caller could hand in directly, so the derisk

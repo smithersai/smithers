@@ -4953,6 +4953,15 @@ The shell target flavors: `Shell.Build`, `Shell.Test`, `Shell.Run`, `Shell.Serve
 every host; wildcard selections omit the target on other hosts, and naming it
 there refuses the plan.
 
+`data` lists what a shell target reads: declared files and globs, targets whose
+outputs materialize before it runs, and `Target.subtree(pattern, name)`, which
+selects the target named `name` in every package under `pattern`. A glob in one
+package matches none of another package's files, so a check that reads other
+packages' sources names them by target:
+`data: [S.glob("src/**"), S.Target.subtree("//packages/...", "lib")]`. Each
+match is a graph edge: it runs first, its key enters the consumer's key, and
+`smthrs affected` selects the consumer when it is affected.
+
 `Host.bin(name)` resolves a declared host binary on PATH. Its resolved path
 and executable bytes enter the package executor's cache key, even when its
 version output is unchanged. Symlinks follow the target bytes. Shebang
@@ -5080,7 +5089,7 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.Copy`                   | rule               | Copies one declared artifact or file-producing target to a path.                                                                                                                     |
 | `Smithers.Literal`                | rule               | Materializes fixed bytes at a declared path.                                                                                                                                         |
 | `Smithers.Overlay`                | rule               | A derived file set with selected members replaced.                                                                                                                                   |
-| `Smithers.Cron`                   | rule               | A package-level inert schedule rendered by generated GitHub CI.                                                                                                                      |
+| `Smithers.Cron`                   | rule               | A package-level schedule that `smthrs triggers serve` runs.                                                                                                                          |
 | `Smithers.PackageDefaults`        | constructor        | Declares pure workspace defaults.                                                                                                                                                    |
 | `Smithers.Exec`                   | action             | The one shared action every catalog target uses to run a tool.                                                                                                                       |
 | `Smithers.ExecError`              | schema             | A typed external-tool failure.                                                                                                                                                       |
@@ -9807,7 +9816,7 @@ Input expansion and remote-cache resolution. From `@smthrs/build-cli/Workspace`.
 | ----------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `ExpandedInput`                     | `{ declaration: Input.Declared; files: ReadonlyArray<FileDigest>; digest: string }` | One declared matcher after discovery and measurement.               |
 | `FileDigest`                        | `Input.FileDigest`                                                                  | A file and the digest that enters key material.                     |
-| `declarationFileNames`              | `readonly ["PACKAGE.ts"]`                                                           | The only target declaration filename.                               |
+| `declarationFileNames`              | `readonly ["PACKAGE.ts", "PACKAGE.vibe"]`                                           | The target declaration filenames, TypeScript and VibeLang.          |
 | `ResolvedRemoteCache`               | `{ endpoint; credentials; discovered? }`                                            | The remote-cache settings one command runs under.                   |
 | `ResolvedRemoteCacheCredentials`    | tagged union: `shared`, `split`, `public`, `anonymous`                              | Which credentials a workspace declared.                             |
 | `RemoteCacheAccess`                 | `ResolvedRemoteCache` plus `readToken()`, `writeToken()`, `publishNamespace`        | A resolved cache with the readers that fetch its credentials.       |
@@ -10501,6 +10510,11 @@ shape or a host's runtime.
 Each code, with its cause and its fix, is in
 [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/troubleshooting.md).
 
+An array length above `4,294,967,295` also fails with
+`canonical_unsupported_value` before allocation. Constructor names in refusal
+details must be nonempty strings and are capped at 1,024 code units; other
+name values use a fixed type label without coercion.
+
 ## sortCollections
 
 ```ts
@@ -10524,9 +10538,23 @@ payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
 - It copies only objects that reach a collection; everything else keeps its
   reference. Cycles and shared references survive. Accessors are never
   invoked. The input is never mutated.
-- It never throws. An object it cannot inspect, such as a revoked proxy, is a
-  leaf and ranks after every value it can inspect.
-- Ranks read own data properties only. Elements that differ only behind
+- An object it cannot inspect, such as a revoked proxy, is a leaf and ranks
+  before symbols and `null`, and after the other inspectable values. The
+  one error it lets through is a
+  `RangeError` raised while it inspects an object: that is the engine
+  reporting an exhausted call stack or an over-long string, so it never
+  becomes a rank.
+- It keeps its own stack. Nesting depth is bounded by memory, not by the
+  runtime's call stack, so every runtime sorts a deep value the same way.
+- An object on no cycle is ranked once however often it is shared, so a chain
+  of shared references costs its objects, not its expanded tree. Inside a
+  cycle, a shared object is ranked once for each path that reaches it.
+- Boxed `Number`, `String`, `Boolean`, and `BigInt` ranks include their
+  internal primitive slot alongside their own data properties, ignoring
+  overridden coercion methods when reading the slot. This corrects
+  insertion-dependent identities for boxed collection entries; identities
+  containing distinct boxed entries can change from earlier versions.
+- Object member ranks read own data properties only. Elements that differ only behind
   accessors or private fields rank equal and keep their insertion order, and
   a copied class instance has its prototype and own properties but not its
   private fields. Keep the data a payload is identified by in own data
@@ -11896,7 +11924,8 @@ has one home instead of a copy per binding.
   booleans, and acyclic plain objects and arrays cross, and what crosses is
   a structural copy. `undefined` is refused everywhere except as the whole
   value, where it becomes `null`; array holes are refused; non-finite
-  numbers are refused; `-0` crosses as `0`; a `toJSON` method is never
+  numbers are refused; a string or key holding an unpaired UTF-16 surrogate
+  is refused; `-0` crosses as `0`; a `toJSON` method is never
   called; non-plain prototypes are refused; identity is not preserved.
 - `decodeOutcome(value): Option.Option<Outcome.Outcome>`: decodes a script's
   returned value into an outcome. Shared by every runner binding so they
@@ -12368,7 +12397,7 @@ https://smithers.sh/docs/reference/api/cli/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs)
 
-> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/build-cli`](/docs/reference/api/build-cli/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/evals`](/docs/reference/api/evals/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/gateway`](/docs/reference/api/gateway/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/integrations`](/docs/reference/api/integrations/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/mcp`](/docs/reference/api/mcp/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/migrate`](/docs/reference/api/migrate/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/scorers`](/docs/reference/api/scorers/) · [`@smthrs/std`](/docs/reference/api/std/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/targets`](/docs/reference/api/targets/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/) · [`@smthrs/triggers`](/docs/reference/api/triggers/)
+> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/build-cli`](/docs/reference/api/build-cli/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/evals`](/docs/reference/api/evals/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/gateway`](/docs/reference/api/gateway/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/integrations`](/docs/reference/api/integrations/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/mcp`](/docs/reference/api/mcp/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/migrate`](/docs/reference/api/migrate/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/patterns`](/docs/reference/api/patterns/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/scorers`](/docs/reference/api/scorers/) · [`@smthrs/std`](/docs/reference/api/std/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/targets`](/docs/reference/api/targets/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/) · [`@smthrs/triggers`](/docs/reference/api/triggers/)
 
 The root entry point exports each public module as a namespace. Import a module directly with `@smthrs/cli/<Module>`.
 
@@ -12776,12 +12805,13 @@ The agent configurations `smthrs mcp add` writes into.
 | -------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `serverName`         | `"smithers"`                               | The registered server name.                                                                                                                                                                            |
 | `codexConfigString`  | `(text: string) => string`                 | A TOML basic string for Codex overrides; refuses malformed Unicode.                                                                                                                                    |
-| `Agent`, `agents`    | `{ id, mcpConfig }`                        | `claude` at `~/.claude.json`, `codex` at `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`).                                                                                                   |
+| `Agent`, `agents` | `{ id, mcpConfig }` | `claude` at `$CLAUDE_CONFIG_DIR/.claude.json` (default `~/.claude.json`), `codex` at `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). |
 | `find`               | `(id) => Agent \| undefined`               | One agent by id.                                                                                                                                                                                       |
 | `launchCommand`      | `(execPath?, entry?) => { command, args }` | The current executable and entry, verbatim, so a local development install registers itself rather than a package runner.                                                                              |
+| `serverEnvironment` | `(environment) => { SMITHERS_MEMORY_DB } \| undefined` | The environment a registered server starts with: the absolute path of the memory store `SMITHERS_MEMORY_DB` names, or undefined without one. |
 | `Wired`              | `{ agent, path, status, reason? }`         | What one wiring attempt did.                                                                                                                                                                           |
-| `addMcp`             | `(agent, home?, environment?) => Wired`    | Registers through the Codex CLI and verifies discovery, or writes Claude JSON under a lock with atomic replacement. An explicit home isolates Codex unless the supplied environment sets `CODEX_HOME`. |
-| `manualInstructions` | `(targets?) => string`                     | What to do by hand when every write failed.                                                                                                                                                            |
+| `addMcp` | `(agent, home?, environment?) => Wired` | Registers through the Codex CLI and verifies discovery, or writes Claude JSON under a lock with atomic replacement. The entry carries `serverEnvironment(environment)`. An explicit home isolates the write unless the supplied environment sets `CODEX_HOME` or `CLAUDE_CONFIG_DIR`. |
+| `manualInstructions` | `(targets?, environment?) => string` | What to do by hand when every write failed, with the memory store the environment names. |
 
 ## Serve
 
@@ -14718,7 +14748,8 @@ schema-composition face of [`digest`](#digest).
 - Operational failures become `SchemaError` issues whose message is
   `[code] message` and whose annotations carry the stable `code` and the typed
   `Sha256Error` as `cause`.
-- The schema annotates `parseOptions: { reportInput: false }`, overriding
+- The schema owns its parsing boundary with `Schema.declareConstructor` and
+  passes `{ ...options, reportInput: false }` to the wrapped codec, disabling
   input reporting for its own node only. Enclosing Struct, Array, and Union
   issues use their own options and can retain the original input, including
   when a sibling field fails. Pass `reportInput: false` at the outermost
@@ -14802,9 +14833,9 @@ accept, are ordinary `SchemaError` validation failures rather than
 const syncCrypto: typeof EffectDigest.Digest.Service
 ```
 
-A synchronous, SHA-256-only Effect `Crypto` service backed by the same
+A synchronous, SHA-256-only Effect `Digest` service backed by the same
 package-owned implementation as `digestSync`. It exists for synchronous code
-that already consumes a `Crypto` service, and for tests that want real hashing
+that already consumes a `Digest` service, and for tests that want real hashing
 with no platform layer.
 
 - `digest(EffectDigest.sha256, input)` snapshots the input and returns the 32 raw bytes.
@@ -14817,7 +14848,7 @@ with no platform layer.
 - `digestHex(EffectDigest.sha256, input)` returns lowercase hexadecimal.
 - Randomness belongs to the separate `SecureRandom` service; this adapter exposes only digest operations.
 
-Normal application code should provide its platform `Crypto` layer, or
+Normal application code should provide its platform `Digest` layer, or
 [`WebCrypto.layer`](#webcryptolayer), instead.
 
 ### WebCrypto.make
@@ -14936,7 +14967,9 @@ could make two different functions share an identity.
   two locals' uses included, changes it. It cannot tell which outer binding a
   name reads beyond the pattern of its reads: `() => f(a, b)` and
   `() => f(b, a)` share it when `a` and `b` are declared outside the function.
-  A native or bound function has none.
+  Implicit `arguments` and recognized built-in and host names keep their
+  spelling; see [resume identity compatibility](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/contract.md#callback-resume-identity-compatibility)
+  for the behavior and upgrade constraints. A native or bound function has none.
 - **Throws** `TypeError("function identity requires a function")` for anything
   that is not a function.
 
@@ -15001,12 +15034,21 @@ interface FunctionIdentity {
   readonly digest: string
   readonly resumeDigest?: string | undefined
 }
-type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v5"
 ```
 
 The serializable stand-in a node AST stores in place of the function itself. The
 algorithm tag is versioned, so a change to identity semantics re-keys what is
 derived from one rather than colliding with it.
+
+### Identity.Algorithm
+
+```ts
+type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v5"
+```
+
+The versioned tag distinguishing an ephemeral source identity from an identity
+with declared captures. See [`Identity.functionIdentity`](#identityfunctionidentity)
+for how each identity is constructed.
 
 ## Requirements and platform
 
@@ -17553,8 +17595,10 @@ the same way.
 optional `cause` of its `interrupt-released` run decision:
 `{ kind: "lease-lapsed", unconfirmedMs }` when the host went that long without
 confirming its run lease, `{ kind: "yielded" }` when a hosted drive spent its
-budget ([Drive budget](#drive-budget)), or `{ kind: "interrupted" }` for any
-other non-cancel interruption, usually a host shutdown. `releaseCauseOf(decision)`
+budget ([Drive budget](#drive-budget)), `{ kind: "interrupted" }` for any
+other non-cancel interruption, usually a host shutdown, or `{ kind: "defect" }`
+when the drive died, for example on a storage error after it took the run.
+`releaseCauseOf(decision)`
 reads it and answers `undefined` for decisions recorded before the field
 existed.
 
@@ -18261,8 +18305,16 @@ Deterministic suite execution and bound scorer evaluation.
 - `ScoreObservation`: a score result aligned with a `ScoreRequest`.
 - `BatchResult`: `{ identity, observation }`, a batch result tagged with the
   identity of the job that produced it.
-- `CaseResult`: `{ case, execution?, error?, observations }`, the per-case
-  result retained by the runner.
+- `CaseResult`: `{ case, execution?, error?, observations, ungraded?, trials? }`,
+  the per-case result retained by the runner. `ungraded` names why an attempt
+  that executed produced no observation: `unbound` when any attempt matched no
+  binding, `sampled_out` when every attempt was sampled out. `trials` is absent
+  in the second case.
+- `Ungraded`: `"unbound" | "sampled_out"`, why an executed case has no
+  observation. `unbound`: no binding applies to the execution's target, and a
+  gate reports it as an environment fault. `sampled_out`: a binding applied
+  but its sampling policy decided against the execution, so the attempt is
+  not a trial.
 - `RunResult`: `{ runId, suite, cases, observations }`, the stable result of a
   suite run.
 - `RunOptions`: `{ scorer?, runId, sampleId?, at }`.
@@ -18285,7 +18337,10 @@ run through the provided `CaseExecutor` at the suite's concurrency. Every
 execution is graded by the bindings whose `appliesTo` is the flow the
 execution reports as its target, matched by reference identity. A case whose
 target failed keeps its typed error and produces no observations; a scorer
-that failed produces an inconclusive observation. The run itself fails only
+that failed produces an inconclusive observation. A case with an attempt that
+executed but produced no observation carries `ungraded`. Trial statistics leave out
+sampled-out attempts, so a case whose every attempt was sampled out has no
+`trials` and is absent from the aggregate. The run itself fails only
 with `invalid_run_options` for a non-canonical run identity or timestamp,
 `invalid_suite` for an unusable sampling policy, `ambiguous_score_job` when an
 order-only runner cannot distinguish two jobs, or `scorer_protocol` for a
@@ -18472,8 +18527,9 @@ const check = (report: Regression.Report, options?: Options): Effect.Effect<Verd
 Checks thresholds through the shared ScoreGate arithmetic in
 [@smthrs/scorers/ScoreGate](/docs/reference/api/scorers/). The threshold gates always run: an
 unobserved case cannot excuse the cases that were observed. Regressions and
-nondeterminism are findings and force a `Failed` verdict; failed cases and
-missing observations are environment faults and travel beside the verdict. A
+nondeterminism are findings and force a `Failed` verdict; failed cases,
+executed cases no binding applies to, and missing observations are
+environment faults and travel beside the verdict. A
 threshold outside [0, 1] fails in the error channel with a `ScoreGateError`,
 code `invalid_threshold`.
 
@@ -18548,6 +18604,7 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
 | `Runner.ScoreObservation`       | models        | A score result aligned with a `ScoreRequest`.                                   |
 | `Runner.BatchResult`            | models        | A batch result tagged with the identity of the job that produced it.            |
 | `Runner.CaseResult`             | models        | Per-case result retained by the deterministic runner.                           |
+| `Runner.Ungraded`               | models        | Why a case that executed produced no observations.                              |
 | `Runner.RunResult`              | models        | Stable result of a suite run.                                                   |
 | `Runner.RunOptions`             | models        | Options for a deterministic suite run.                                          |
 | `Runner.Runner`                 | services      | Injectable batch-runner service used when a caller wants a reusable adapter.    |
@@ -20916,7 +20973,8 @@ they are never acknowledged without a frame available to consume them.
 `Steering.Queue` is an immutable FIFO of `Steering.Item`s: transcript inserts
 (`SteerInsert` for the next boundary, `QueueInsert` for when the run would
 otherwise go idle), and `SeatChange` and `ThinkingChange` (applied only after
-the current turn closes).
+the current turn closes). A `SteerInsert` with `outsideChange: true` is a
+committed outside change.
 `Steering.empty`, `enqueue`, and `drainAtClose(queue, cutoff)` operate on it
 without mutation. `Steering.Drain` is
 what one boundary promoted; `Steering.DrainRecord` and `drainRecord` project
@@ -20931,6 +20989,13 @@ export interface Source {
   readonly drain: (input: BoundaryInput) => Effect.Effect<Drain, HarnessError>
 }
 ```
+
+`read` reports what is pending without promoting it. `CellTurn` reads it twice
+a frame. After the model returns, a pending `SteerInsert` holds the proposed
+cell: the next frame opens with a note that the cell did not run, then what
+the drain delivered, and on the final frame the run is granted one more frame
+to read it. While a cell runs, a pending outside change refuses the cell's
+later calls. A pending seat or thinking change holds nothing.
 
 A drain is idempotent in its boundary string: a second drain at one boundary
 promotes nothing and hands back exactly what the first promoted, with
@@ -20972,7 +21037,8 @@ export const layerForExecution: () => Layer.Layer<
 ```
 
 `make` captures the journal-backed queue as the harness steering source for
-one run lineage: its `read` reports an empty queue and its `drain` delegates
+one run lineage: its `read` reports the pending committed outside changes, each
+a `SteerInsert` marked `outsideChange: true`, and its `drain` delegates
 to the notification queue's own boundary-aware drain, mapping failures into
 `HarnessError`. `layer` provides it. A delivered message reads
 `[notification <id> from <actor> at <lineage> turn <n>]` and then its words; a
@@ -22301,15 +22367,16 @@ https://smithers.sh/docs/reference/api/integrations/
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
-The package exports `Core` and `GitHub` from `@smthrs/integrations`,
-`@smthrs/integrations/core`, and `@smthrs/integrations/github`.
+The package exports `Core`, `GitHub` and `Telegram` from `@smthrs/integrations`,
+`@smthrs/integrations/core`, `@smthrs/integrations/github`, and
+`@smthrs/integrations/telegram`.
 `Environment` is available through `@smthrs/integrations/Environment`.
 
 Conventions worth knowing before the signatures:
 
 - Clients are Effect services. Each has a tag (for example `GitHubClient`), a
   `make` constructor for direct use, and a `layer` for composition.
-- Everything that speaks HTTP (`GitHubClient`, `Proxy`, `OAuthToken`) takes
+- Everything that speaks HTTP (`GitHubClient`, `Proxy`, `OAuthToken`, `Telegram.Source`) takes
   Effect's `HttpClient` from context. Provide `FetchHttpClient.layer` from
   `effect/http`, or, in a test, a client of your own that injects a transport
   fault. None of them follows a redirect: each sets the fetch transport's
@@ -22375,6 +22442,7 @@ raw exceptions and schema issues never enter logs.
 | `credentialSecret` | `(credentials: Credential) => SecretResolver`                                       | Resolves through the control plane's credential store.                                                                                                                                                                                                              |
 | `startFlow`        | `(flowId: FlowId) => (event: ExternalEvent) => Effect<InboundResult, InvalidInput>` | A route that starts `flowId` with the event as its input.                                                                                                                                                                                                           |
 | `signalRun`        | `(runId: RunId) => (event: ExternalEvent) => Effect<InboundResult, InvalidInput>`   | A route that signals `runId` with the event's signal name and payload.                                                                                                                                                                                              |
+| `fromSource`       | `(config: SourceConfig) => SourceDoor`                                              | Builds the control-plane door for one polling source. Its channel refuses every delivery that did not come through the door's own `ingest` as `Unauthorized`; see [Polling source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/polling-source.md).                                                     |
 
 `Config` fields: `name` (the name `Channels.register` and `Channels.ingest`
 address the channel by), `credential` (the journal-safe `CredentialRef`),
@@ -22387,6 +22455,17 @@ verifies; a throw, a failure or a defect refuses the delivery.
 
 `SecretResolver` is
 `(credential: Redacted<CredentialRef>) => Effect<Redacted<string>, Unauthorized>`.
+
+`SourceConfig` fields: `name`, `route`, and an optional `project` that
+defaults to the same no-op projection. `SourceDoor` has three members.
+`channel` is what `Channels.register` takes, once, at host startup.
+`ingest(event)` is `Effect<Receipt, IntegrationError, Channels>`: it routes one
+`Core.ExternalEvent` through `Channels.ingest` under the event's `dedupeKey`,
+with `receivedAtMs` left out of the delivered bytes, so an event polled again
+answers `AlreadyApplied`. `handle(events)` is
+`Effect<void, IntegrationError, Channels>`, the `onBatch` of
+`Core.Source.runWithCursor`: it routes the batch in order and fails
+`delivery-failed` at the first `Parked` or `Conflict` receipt.
 
 ### Core.ExternalEvent
 
@@ -22804,6 +22883,12 @@ Schemas for the webhook payloads this package types: `User`, `Repository`,
 `IssueCommentEvent`, and `PushEvent`. Every schema validates the fields a
 caller is likely to read and passes everything else through untouched.
 
+| Export        | Signature                                               | Notes                                                                                                                                                                                                                                                                                                |
+| ------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pushSource`  | `(payload: unknown) => Result<PushSource, PushRefusal>` | The source a `push` delivery names. Every host that starts work on a push admits it through this function. Never throws.                                                                                                                                                                             |
+| `PushSource`  | type                                                    | `{ kind: "commit", ref, branch, tag, before, after }` for the commit a ref now points at (exactly one of `branch` and `tag` is set; `before` is forty zeros for a created ref), or `{ kind: "deleted", ref }`.                                                                                       |
+| `PushRefusal` | `"malformed" \| "deleted_identity" \| "no_candidate"`   | `malformed`: `ref` is not under `refs/heads/` or `refs/tags/`, or `before` or `after` is not a 40-hex commit id. `deleted_identity`: `deleted` is set but `after` is not forty zeros, or `before` is. `no_candidate`: `after` is forty zeros with nothing deleted, or `before` is without `created`. |
+
 ### GitHub.Actions
 
 The durable GitHub actions. [Durable actions](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/concepts/durable-actions.md)
@@ -22979,6 +23064,37 @@ ones `container`-scoped records. Deletions are not listed by GitHub; run a
 tombstones. A rate limit or a transient read failure fails the run once,
 `retryable`; run the sync as a durable step whose retry policy repeats it, and
 the repeat resumes from the committed cursor.
+
+## Telegram
+
+Receiving only: a `getUpdates` long-poll source and the schemas of what it
+delivers. Sending is `Channels` in `@smthrs/notifications`. See
+[the Telegram guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/telegram.md).
+
+### Telegram.Source
+
+| Export                                         | Signature                                                                                     | Notes                                                                                                                                    |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`                                         | `(options: Options, env?) => Effect<Source, IntegrationError, HttpClient>`                    | A core `Source.Source` over `getUpdates`. Fails `invalid-config` for bad options and `credentials-missing` for no well-formed token.     |
+| `Options`                                      | `{ allowedChatIds, botToken?, sourceId?, pollTimeoutSeconds?, requestTimeout?, apiBaseUrl? }` | `allowedChatIds` is required and non-empty. The token falls back to `SMITHERS_TELEGRAM_BOT_TOKEN` in `env`.                              |
+| `Source`                                       | `Core.Source.Source`                                                                          | `poll` is one request and commits nothing; `run` is `Core.Source.runWithCursor`, committing `update_id + 1` after the batch was handled. |
+| `updateToEvents`                               | `(source, update, receivedAtMs) => ReadonlyArray<ExternalEvent>`                              | A `message` or `edited_message` becomes one event, or two in a thread. Anything else, or a message with no chat, becomes none.           |
+| `chatCorrelationId`, `threadCorrelationId`     | `(chatId) => string`, `(chatId, threadId) => string`                                          | `chat:<id>` and `chat:<id>:thread:<id>`.                                                                                                 |
+| `MESSAGE_EVENT`, `EDITED_MESSAGE_EVENT`        | `string`                                                                                      | `integration:telegram:message` and `integration:telegram:edited_message`.                                                                |
+| `SERVICE`, `DEFAULT_API_BASE_URL`, `TOKEN_ENV` | `string`                                                                                      | `telegram`, `https://api.telegram.org`, `SMITHERS_TELEGRAM_BOT_TOKEN`.                                                                   |
+
+`poll` fails `poll-failed` with `details.retryable` true for a transport
+failure, a timeout, 408, 429 and 5xx, and false for every other status. A 429
+carries Telegram's `retry_after` as `details.retryAfterMillis`, capped at one
+minute. An answer with no update array, or an update with no `update_id`,
+fails `decode-failed`. A stored cursor that is not an update offset fails
+`invalid-config` before any request. No failure holds the token.
+
+### Telegram.Payload
+
+`Chat`, `User` and `Message` are open schemas: the common Bot API fields are
+typed and every other field passes through. `Message` is the payload of both
+Telegram signal names.
 
 ---
 
@@ -23201,9 +23317,15 @@ processes. `root(from)` fences its actual directory, preserving its exemption
 from the layer's bound root. The default 120-second deadline bounds acquisition of both fences only.
 Once acquired, execution can outlast the deadline; caller cancellation and
 operation failure release both permits. A caller
-records lock owners as `hostname-pid-random` and reclaims only an owner on the
-same host whose process is dead. Permission-denied probes count as alive;
-foreign-host and legacy owner markers require operator cleanup.
+records lock owners as `hostname-pid-s<start>-random`, where `<start>` is the
+process start time Linux procfs reports, and reclaims only an owner on the same
+host whose process is dead or whose PID now names a process that started at
+another time, such as a restarted container's PID 1. Where procfs is unreadable,
+owners are `hostname-pid-random` and only an exited PID is reclaimed. Before
+creating its lock candidate, a caller removes `.smithers-lock-*` candidates
+whose owners are dead by the same rule, which a waiter killed mid-wait leaves.
+Permission-denied probes count as alive; foreign-host and legacy owner markers
+require operator cleanup.
 
 A store-pointer read failure during configuration inspection is refused
 before jj starts. Its `JjError` retains the original cause and releases both
@@ -30232,13 +30354,13 @@ delivered-once notifications. Import from `@smthrs/notifications/Alerts`.
 
 ### Policy
 
-| Export             | Shape                                                                                                                                                                                                                                                                                              |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Severity`         | `"info" \| "warning" \| "critical"`.                                                                                                                                                                                                                                                               |
-| `Detector`         | `{ field: string; value: string; eventTypes?: ReadonlyArray<string> }`. `field` names a payload key, `value` the value that means the condition holds, and `eventTypes` narrows which entries are consulted; an item ending in `.*`, such as `control.*`, names every event type with that prefix. |
-| `Rule`             | `{ afterMs: number; severity?: Severity; owner?: string; runbook?: string }`. `afterMs` is a whole, non-negative number of milliseconds.                                                                                                                                                           |
-| `Policy`           | `{ defaults?: { severity?; owner?; runbook? }; rules: Record<string, Rule>; detectors?: Record<string, Detector> }`.                                                                                                                                                                               |
-| `defaultDetectors` | `Readonly<Record<string, Detector>>`: `waiting-approval` and `failed` on `status`, `stalled` on `health`, `quota-parked` on `waitingReason`, each consulting only the `control.*` event types.                                                                                                     |
+| Export             | Shape                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Severity`         | `"info" \| "warning" \| "critical"`.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `Detector`         | `{ field: string; value: string; eventTypes?: ReadonlyArray<string>; summary?: string }`. `field` names a payload key, `value` the value that means the condition holds, and `eventTypes` narrows which entries are consulted; an item ending in `.*`, such as `control.*`, names every event type with that prefix. `summary` names a payload key whose string, on the entry that opened the condition, rides on the alert. |
+| `Rule`             | `{ afterMs: number; repeatMs?: number; severity?: Severity; owner?: string; runbook?: string }`. `afterMs` is a whole, non-negative number of milliseconds. `repeatMs` is a whole, positive number of milliseconds: the alert pages again every period while the condition stays open and unacknowledged.                                                                                                                    |
+| `Policy`           | `{ defaults?: { severity?; owner?; runbook? }; rules: Record<string, Rule>; detectors?: Record<string, Detector> }`.                                                                                                                                                                                                                                                                                                         |
+| `defaultDetectors` | `Readonly<Record<string, Detector>>`: `waiting-approval` and `failed` on `status`, `stalled` on `health`, `quota-parked` on `waitingReason`, each consulting only the `control.*` event types.                                                                                                                                                                                                                               |
 
 An entry that carries a detector's field with the matching value opens the
 condition; an entry that carries it with any other value closes it. A policy's
@@ -30246,17 +30368,17 @@ own `detectors` are merged over `defaultDetectors`.
 
 ### Decisions
 
-| Export  | Shape                                                                                                                                                              |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Open`  | `{ runId: string; condition: string; since: number }`. `since` is the journal time of the entry that opened the condition.                                         |
-| `Alert` | `{ runId; condition; since; firedAt; severity; coalescingKey; owner?; runbook? }`. `firedAt` is `since + afterMs`, never the wall clock of whichever tick noticed. |
+| Export  | Shape                                                                                                                                                                                                                                                                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Open`  | `{ runId: string; condition: string; since: number; summary?: string }`. `since` is the journal time of the entry that opened the condition, and `summary` what that entry said.                                                                                                      |
+| `Alert` | `{ runId; condition; since; firedAt; reminder?; severity; coalescingKey; summary?; owner?; runbook? }`. `firedAt` is `since + afterMs`, never the wall clock of whichever tick noticed. On a repeat, `reminder` counts the periods and `firedAt` is the instant that repeat came due. |
 
-| Export          | Signature                                                                                            | Returns                                                                                                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conditions`    | `(policy: Policy, runId: string, entries: ReadonlyArray<JournalEvent.Entry>) => ReadonlyArray<Open>` | Every condition a run's journal leaves open, with the time each opened. `entries` are oldest first.                                                                   |
-| `decide`        | `(policy: Policy, open: ReadonlyArray<Open>, now: number) => ReadonlyArray<Alert>`                   | The alerts the policy raises for the conditions open at `now`. Pure: `now` decides whether an alert is raised and never appears in one.                               |
-| `coalescingKey` | `(runId: string, condition: string) => string`                                                       | The key an alert coalesces on: one open condition on one run. Each component is percent-encoded, so neither can forge another pair's key.                             |
-| `alertId`       | `(alert: Pick<Alert, "coalescingKey" \| "since">) => string`                                         | `alert:<coalescingKey>:<since>`. The identity a delivery is recorded under, stable for the life of one condition. A condition that clears and re-opens gets a new id. |
+| Export          | Signature                                                                                            | Returns                                                                                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conditions`    | `(policy: Policy, runId: string, entries: ReadonlyArray<JournalEvent.Entry>) => ReadonlyArray<Open>` | Every condition a run's journal leaves open, with the time each opened. `entries` are oldest first.                                                                                                      |
+| `decide`        | `(policy: Policy, open: ReadonlyArray<Open>, now: number) => ReadonlyArray<Alert>`                   | The alerts the policy raises for the conditions open at `now`. Pure: `now` decides whether an alert is raised and never appears in one.                                                                  |
+| `coalescingKey` | `(runId: string, condition: string) => string`                                                       | The key an alert coalesces on: one open condition on one run. Each component is percent-encoded, so neither can forge another pair's key.                                                                |
+| `alertId`       | `(alert: Pick<Alert, "coalescingKey" \| "since" \| "reminder">) => string`                           | `alert:<coalescingKey>:<since>`, with `:r<n>` appended on a repeat. The identity a delivery is recorded under, stable for the life of one condition. A condition that clears and re-opens gets a new id. |
 
 ### Sinks
 
@@ -30265,6 +30387,8 @@ own `detectors` are merged over `defaultDetectors`.
 | `SinkService`           | `{ deliver: (alert: Alert) => Effect.Effect<void, AlertError> }`                                           | Where a raised alert is sent. `deliver` MUST be idempotent on `alertId(alert)`, and MUST fail when the page did not go out.                                                                                                                                                                                                                                                                                                                                                                          |
 | `Sink`                  | `Context.Service` under `/notifications/AlertSink`                                                         | The service tag.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `layerNoop`             | `Layer<Sink>`                                                                                              | Accepts every alert and sends it nowhere. The admission and the delivery record still happen.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `layerChannels`         | `(options: { destination: Channels.Destination }) => Layer<Sink, never, Channels.Channels>`                | Sends each alert as one message through `Channels`, to a Telegram chat or by email. The message id is the alert's id, or its digest when the id is longer than 256 characters. Every channel failure fails the delivery: `unreachable` is `sink_unreachable`, `timeout` is `sink_timeout`, and every other code is `sink_rejected` with the channel's reason.                                                                                                                                        |
+| `messageOf`             | `(alert: Alert) => Channels.Message`                                                                       | The message `layerChannels` sends: the severity and condition as the subject, then the summary, run, opening time, owner, runbook and the id to acknowledge the alert by.                                                                                                                                                                                                                                                                                                                            |
 | `defaultWebhookTimeout` | `Duration.Duration`                                                                                        | Ten seconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `layerWebhook`          | `(options: { url: string; headers?: Record<string, string>; timeout?: Duration.Duration }) => Layer<Sink>` | POSTs each alert to one webhook using an owned Fetch client with redirects disabled and a scope per delivery. Injected `HttpClient` layers are not used. The body is the alert plus its `alertId`, and the same id is sent as an `Idempotency-Key` header, set after the caller's headers. A non-2xx answer is a failure; an endpoint that never answers fails after `timeout`. The delivery's HTTP span records the method, scheme, host, port and status, never the url's path, query or userinfo. |
 
@@ -30283,29 +30407,43 @@ through the delivery channel: a scheme bound is what keeps a credential set in
 credential the deployment handed `layerWebhook`, and an error is logged, encoded,
 and journaled in places a credential must never reach.
 
+### Probes
+
+| Export           | Signature                                                                       | What it does                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `ProbeState`     | `"failing" \| "ok"`                                                             | What a probe saw.                                                                                                                        |
+| `Report`         | `{ runId: string; probe: string; state: ProbeState; summary?: string }`         | One probe result. `runId` is the run that owns the problem. `runId` and `probe` are non-empty.                                           |
+| `report`         | `(input: Report) => Effect.Effect<void, Journal.JournalError, Journal.Journal>` | Journals one probe result into the owning run. Reporting the same state again changes nothing. An empty `runId` or `probe` dies.         |
+| `probes`         | `(rules: Record<string, Rule>) => Pick<Policy, "rules" \| "detectors">`         | The rules and detectors for a set of probes, keyed by probe name. Spread it into a policy.                                               |
+| `probeDetector`  | `(probe: string) => Detector`                                                   | The detector that reads one probe's reports.                                                                                             |
+| `probeEventType` | `(probe: string) => string`                                                     | `flows.alerts.probe.<name>`, with the name percent-encoded and `*` encoded too, so a probe's name is never read as an event-type family. |
+
 ### Runtime
 
-| Export           | Shape                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| `Tick`           | `{ delivered; failed; refused; suppressed }`, each a `ReadonlyArray<Alert>`.                   |
-| `RuntimeService` | `{ tick: (runId: string) => Effect.Effect<Tick, Journal.JournalError \| NotificationError> }`. |
-| `AlertRuntime`   | `Context.Service` under `/notifications/AlertRuntime`. The service tag.                        |
+| Export           | Shape                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Tick`           | `{ delivered; failed; refused; suppressed }`, each a `ReadonlyArray<Alert>`.                                                                                                                                                                                                                                                                                                                           |
+| `Standing`       | `{ alertId: string; alert: Alert; state: "raised" \| "delivered" \| "acknowledged"; acknowledgedBy?: string }`. One open alert and what has happened to it. `alertId` has no repeat ending.                                                                                                                                                                                                            |
+| `RuntimeService` | `{ tick: (runId: string) => Effect.Effect<Tick, Journal.JournalError \| NotificationError>; acknowledge: (runId: string, alertId: string, by: string) => Effect.Effect<boolean, Journal.JournalError>; standing: (runId: string) => Effect.Effect<ReadonlyArray<Standing>, Journal.JournalError> }`. `acknowledge` answers `false` and writes nothing when the run has no open condition with that id. |
+| `AlertRuntime`   | `Context.Service` under `/notifications/AlertRuntime`. The service tag.                                                                                                                                                                                                                                                                                                                                |
 
 | Field of `Tick` | Meaning                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------- |
 | `delivered`     | Raised and accepted by the sink on this tick.                                                           |
 | `failed`        | The sink refused them. Retried on the next tick.                                                        |
 | `refused`       | The notification queue was at capacity. The sink was not called, and they are retried on the next tick. |
-| `suppressed`    | Already delivered, and not delivered again.                                                             |
+| `suppressed`    | This page was already delivered, or the alert is acknowledged. Not delivered again.                     |
 
 | Export  | Signature                                                                                      | What it provides                                                                                                                                    |
 | ------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `layer` | `(policy: Policy) => Layer<AlertRuntime, never, Journal.Journal \| NotificationQueue \| Sink>` | The alert runtime over one policy. The policy is decoded when the layer is built, so a rule with an impossible delay fails the composition by name. |
 
-| Export               | Value                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| `deliveredEventType` | `"flows.alerts.delivered"`. One entry per delivered alert.                         |
-| `failedEventType`    | `"flows.alerts.failed"`. One entry per alert per failure code, never one per tick. |
+| Export                  | Value                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `deliveredEventType`    | `"flows.alerts.delivered"`. One entry per delivered alert.                                                             |
+| `failedEventType`       | `"flows.alerts.failed"`. One entry per alert per failure code, never one per tick.                                     |
+| `acknowledgedEventType` | `"flows.alerts.acknowledged"`. One entry per acknowledged alert, under `/notifications/alerts/<alertId>/acknowledged`. |
+| `maxSummaryLength`      | `500`. The most characters of a summary an alert carries.                                                              |
 
 A tick admits the alert, sends it, then journals the delivery. Admission is
 idempotent and the send is not, so a crash between the first two costs a
@@ -30313,7 +30451,7 @@ duplicate admission the queue drops, while a crash between an accepted send and
 the delivery record costs a duplicate page. That is why `deliver` is required to
 deduplicate on `alertId`.
 
-Both owned event types are excluded from condition detection: they are written
+All three owned event types are excluded from condition detection: they are written
 into the journal the detectors read, and they carry the alert's own vocabulary,
 so reading them as evidence would let a page close the condition it paged about.
 
@@ -30880,7 +31018,8 @@ const layerPrettyDev: (options?: Options) => Layer.Layer<never>
 ```
 
 A human-readable development logger, with colors and mode chosen from the
-output it finds.
+output it finds. The message, cause and annotations pass the journal's
+redaction rules (`RedactedLogger.wrap`) before the line is written.
 
 ### Logger.layerStructuredJson
 
@@ -30889,7 +31028,8 @@ const layerStructuredJson: (options?: Options) => Layer.Layer<never>
 ```
 
 One structured JSON object per log line: the record `Logger.formatStructured`
-builds, written to the console.
+builds, written to the console. The message, cause and annotations pass the
+journal's redaction rules (`RedactedLogger.wrap`) before the record is built.
 
 ### Logger.formatStructured
 
@@ -30927,7 +31067,8 @@ level.
 const layer: (logger: Logger.Logger<unknown, unknown>, options?: Options) => Layer.Layer<never>
 ```
 
-Installs a caller-supplied logger under the same two rules.
+Installs a caller-supplied logger under the same two rules, behind the same
+redaction: the logger receives each event already redacted.
 
 ## LogFailures
 
@@ -31447,9 +31588,14 @@ Most containers still export a pair. `Optimizer` and `ScanFixVerify` export
 A planner reads `make`. Execute a declared flow on the engine. The remaining
 `run` forms perform their callbacks as Effects. Every `make` takes one options
 object, and every `MakeOptions` accepts an optional `name` and `description`
-for the returned `Flow`. An unnamed pattern is named after its kind and its
-declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
-`saga(steps=reserve,charge, onFailure=compensate)`. The paired surfaces use the
+for the returned `Flow`. An unnamed pattern is named after its kind, its
+declared bounds and the tags of the members it calls, the way the decorators
+name theirs: `reviewLoop(maxRounds=3)[draft, critique, draft]`,
+`saga(steps=reserve,charge, onFailure=compensate)[reserve, release, charge, refund]`.
+The engine resolves a flow by its tag, so two unnamed patterns of one kind with
+equal bounds but different members are two flows. An absent optional member
+leaves its slot empty, and a member tag that contains a space, `,`, `=`, a
+parenthesis, a bracket or `"` is JSON-quoted. The paired surfaces use the
 same behavioral option names with call-shape differences: `Kanban` declares
 `items` in its `make` options, because a static declaration needs them to lay
 out the board, and `run` receives them as its first argument, the runtime
@@ -31544,11 +31690,22 @@ to read to repair a plan. All three carry a `code` from a stable literal
 schema, a `message`, and an optional `cause`. Causes can preserve member
 errors and results that contain caller input; patterns do not redact them.
 
+A declared pattern's error schema is the union of `PatternError` and the error
+schema each member declares, so a durable engine journals a member's tagged
+error and the pattern fails with that error. A declared pattern that catches a
+member error and reports it instead carries it as the data the member's error
+schema encodes it to: a tagged error class becomes a plain record with its
+`_tag`. That covers a saga's `Compensated.failure` and the `failure` and
+`residue` of `compensation_failed`, a quarantined sidecar shadow's `error`, a
+supervisor's `Failed` outcome, a check suite's `errors`, a kanban board's
+`failed` rows, and a merge queue's `quarantined` rows. `run` reports the
+original values.
+
 ### `PatternError`
 
 `PatternError` carries a `code` from `PatternErrorCode`, a message, and an
 optional `cause` with the reported error or errors.
-Member errors retain their original values, including any input they hold.
+Member errors keep every field, including any input they hold.
 
 | Code                  | Raised when                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -31800,7 +31957,9 @@ original failure under `compensate-and-fail`. Step values are nested under
 
 `Saga.run(input, { steps, onFailure })` registers one scope finalizer per
 completed step, so the unwind is LIFO and runs on interruption as well as on
-failure. A compensation that dies or whose callback throws before returning an
+failure. An interrupted run cannot fail with
+`compensation_failed`, so it logs the failed step ids at error level and adds
+them to the current span as `saga.compensation_failed`. A compensation that dies or whose callback throws before returning an
 effect is recorded as a failed compensation rather
 than raised as a defect, so the residue still names it and the finalizers
 behind it still run. See
@@ -32956,7 +33115,7 @@ The identity is versioned, because a key written under an older version must sta
 | `2`     | since `effect@4.0.4`        | The installed encoding with the rc.115 check ids. A brand is not part of the AST from `effect@4.0.4` on, so it contributes nothing.    |
 | `1`     | under `effect@4.0.0-rc.115` | Version 2 with each `Schema.brand` restored from the schema value as the `brands` annotation rc.115 wrote, in its place and key order. |
 
-Version 1 restores a brand at every position the schema value names: the schema itself, a struct's fields, an array's or a tuple's elements, a union's members, a record's key and value, the field `Schema.optionalKey`, `Schema.optional` or `Schema.mutableKey` wraps, and a definition a reference names. A brand below a class, a suspended schema or a transformation is not restored. A definition that two positions brand differently, such as one branded at one field and unbranded or branded otherwise at another, was two definitions under rc.115 and is one now, so no restoration reproduces it: version 1 is then the version 2 document. Restoring one position's brand there would print the rc.115 document of a different declaration, and its key could replay that declaration's outcome. A key behind such a schema re-keys once.
+Version 1 restores a brand at every position the schema value names: the schema itself, a struct's fields, an array's or a tuple's elements, a union's members, a record's key and value, the field `Schema.optionalKey`, `Schema.optional` or `Schema.mutableKey` wraps, and a definition a reference names. A brand below a class, a suspended schema or a transformation is not restored, and neither is a brand over a codec such as `Schema.Trim` or `Schema.NumberFromString`: rc.115 put that brand on the decoded side, which the representation never prints, so version 1 is the version 2 document there. A definition that two positions brand differently, such as one branded at one field and unbranded or branded otherwise at another, was two definitions under rc.115 and is one now, so no restoration reproduces it: version 1 is then the version 2 document. Restoring one position's brand there would print the rc.115 document of a different declaration, and its key could replay that declaration's outcome. A key behind such a schema re-keys once.
 
 Version 1 only adds `brands` annotations to the version 2 document, so two declarations share a version 1 document only if they share a version 2 document. A version 1 key can stand for another declaration only when the two differ in brands alone, which version 2 does not tell apart either. [`@smthrs/engine`](/docs/reference/api/engine/) derives a sealed key under each version and replays a record written under either.
 
@@ -38079,6 +38238,8 @@ for a record declaration or a tag the reader can't evaluate, such as a
 variable or a template with a substitution. The descriptor's `name` is the
 path-derived `name` in a path-named source and `dirBasename` otherwise, so a
 caller that requires the tag to match the name compares the two itself.
+`Executable` refuses a differing tag that another entry, a host delegate or the
+registry already answers to (`invalid_module`).
 
 `descriptor` is `Option.none()` when the declaration has no literal
 description (`missing_description`). Metadata the reader can't project is
@@ -40195,7 +40356,7 @@ A provider may add SDK details to `ProviderError.cause`, but it cannot create ne
 
 `Provider.kill` and `Provider.ping` are optional, because a transport that can only post a command line has neither. A provider that implements them buys two things it cannot otherwise have: one command can be stopped without tearing down the session that runs it, and the session's liveness can be supervised. When `kill` is present the adapter maps `ChildProcessHandle.kill` onto it and signals a still-running command when its scope closes, ahead of the provider's own release finalizer; a process this side has already seen exit is left alone. When `kill` is absent the adapter refuses with a `BadArgument` `PlatformError` rather than pretending to have delivered a signal.
 
-The command reaches the provider as the string `CommandLine.render` produces. `@smthrs/kernel`'s `proc:spawn` check is written against `CommandLine.resource`, which starts from that string and adds a `sh -c` wrapper for a shell line holding control syntax, an `env <NAME>… --` prefix for overridden environment names, and a `cwd <path> --` prefix for a directory outside the workspace. The two strings match only when none of those apply.
+The command reaches the provider as the string `CommandLine.renderForExecution` produces, so a `Redacted` argument arrives as its value. Every `PlatformError` names the command by `CommandLine.render`, which shows that argument as `<redacted>`. `@smthrs/kernel`'s `proc:spawn` check is written against `CommandLine.resource`, which starts from the `CommandLine.render` string and adds a `sh -c` wrapper for a shell line holding control syntax, an `env <NAME>… --` prefix for overridden environment names, and a `cwd <path> --` prefix for a directory outside the workspace. The two strings match only when none of those apply.
 
 Unsupported semantics are declared rather than dropped. Each of these fails with a `BadArgument` `PlatformError` before the provider is asked to start anything:
 
@@ -40853,7 +41014,7 @@ Commands run through `execStreamWith(shell, ["-c", command])` with the workdir a
 
 `kill(process, signal)` signals the command and everything it started. A second guest command walks the process tree below the recorded pid (`pgrep -P`, or `/proc` where there is none), stops the whole collected set, delivers the signal, and continues it, so no shell in the tree runs its next statement between one `kill(2)` and the next; the walk reaches descendants that left the command's process group with `setsid` while their parent is alive. The SDK's `signal(number)` then reaches the command's process group, which covers a guest without the walk's tools and a command whose pid is not known yet. Delivery succeeds when either did, and a command seen to exit is never signalled again. Closing a spawn's scope before its exit was observed, as an interrupted caller does, sends `SIGTERM` the same way, waits two seconds for the exit, and sends `SIGKILL` to whatever ignored it, all inside the five-second teardown bound. A start that the caller abandoned while the SDK was still starting it is killed when its handle arrives.
 
-`image` and `snapshot` are exclusive; naming both fails with `unavailable` before any vendor call. A removed machine is gone with its files. With the default `backend: "local"`, `acquire` refuses before provisioning unless `sdk.defaultBackendKind()` is `local`, and refuses again when the opened machine reports another `backendKind`, so an ambient `MSB_BACKEND`, `MSB_API_KEY`, or `MSB_PROFILE` cannot move guest work off the host; a composition that must stay local also calls `sdk.setDefaultBackend("local")` once at startup. `backend: "any"` accepts the hosted backend. `cpus`, `maxCpus`, `memoryMib`, `maxMemoryMib`, `maxDurationSecs`, `idleTimeoutSecs`, `security`, and `pullPolicy` go to the builder as named. The provider registers no guest scripts: the pinned runtime rewrites them in the guest-writable `/.msb` share by path and follows guest links there. `network: "none"`, and a machine that names neither `network` nor `networkPolicy`, calls `disableNetwork()`: the vendor's own default reaches the public internet, so the provider closes it. `network: "open"` leaves that vendor default. `network: { allow }` goes to `network(b => b.policy(...))` as deny-by-default ingress and egress with egress allowed only to each listed host, whose domain rules also admit the DNS queries for exactly those names; an empty list sends no rules, so DNS is denied too. A `*.` entry becomes a domain-suffix rule, which the vendor also matches against the apex, so a deny rule for the apex precedes the suffix rules unless another entry admits the apex. `networkPolicy` (a `NetworkPolicy`: per-direction defaults and ordered rules in the vendor's shape) goes to the same builder call for rules the neutral option cannot say; naming both throws at `make`. Every machine carries a `smithers.network` label recording its network. An acquire refuses to reattach a machine whose label differs or is missing (one booted under the vendor's open default), before relabelling or connecting; bringing back a sticky machine whose guest stopped answering refuses the same way, and `captureSnapshot` refuses to start a stopped machine that records no network. `rootDiskMib` sets the root disk of an image boot; a snapshot boot keeps the disk it captured.
+`image` and `snapshot` are exclusive; naming both fails with `unavailable` before any vendor call. A removed machine is gone with its files. With the default `backend: "local"`, `acquire` refuses before provisioning unless `sdk.defaultBackendKind()` is `local`, and refuses again when the opened machine reports another `backendKind`, so an ambient `MSB_BACKEND`, `MSB_API_KEY`, or `MSB_PROFILE` cannot move guest work off the host; a composition that must stay local also calls `sdk.setDefaultBackend("local")` once at startup. `backend: "any"` accepts the hosted backend. `cpus`, `maxCpus`, `memoryMib`, `maxMemoryMib`, `maxDurationSecs`, `idleTimeoutSecs`, `security`, and `pullPolicy` go to the builder as named. The provider registers no guest scripts: the pinned runtime rewrites them in the guest-writable `/.msb` share by path and follows guest links there. `network: "none"`, and a machine that names neither `network` nor `networkPolicy`, calls `disableNetwork()`: the vendor's own default reaches the public internet, so the provider closes it. `network: "open"` leaves that vendor default. `network: { allow }` goes to `network(b => b.policy(...))` as deny-by-default ingress and egress with egress allowed only to each listed host, whose domain rules also admit the DNS queries for exactly those names; an empty list sends no rules, so DNS is denied too. A `*.` entry becomes a domain-suffix rule, which the vendor also matches against the apex, so a deny rule for the apex precedes the suffix rules unless another entry admits the apex. `networkPolicy` (a `NetworkPolicy`: per-direction defaults and ordered rules in the vendor's shape) goes to the same builder call for rules the neutral option cannot say; naming both throws at `make`. Every machine carries a `smithers.network` label recording its network. An acquire refuses to reattach a machine whose label differs or is missing (one booted under the vendor's open default), before relabelling or connecting; bringing back a sticky machine whose guest stopped answering refuses the same way, and `captureSnapshot` refuses to start a stopped machine that records no network. `rootDiskMib` sets the root disk of an image boot; a snapshot boot keeps the disk it captured. A machine that already holds the session's name is reattached only when it is this installation's: its `smithers.provider` and `smithers.owner` labels must be this provider's, or the acquire fails with `unavailable` caused by a `MicrosandboxReattachRefusal` coded `ownership_mismatch`, and the machine is left as it is, never relabelled, connected to, or removed. Every machine also records a `smithers.configuration` label naming its image or snapshot, `rootDiskMib`, `cpus`, `maxCpus`, `memoryMib`, `maxMemoryMib`, `maxDurationSecs`, and `security`; a reattach whose image or snapshot, or any of these it names, differs from the record is refused with `configuration_mismatch`, so a sticky machine booted under `security: "default"` is not reused under `"restricted"`. A machine that records no configuration, created before the label, is refused and must be removed. The reattach keeps the recorded configuration.
 
 Snapshots are named `<family>.<member>` (`snapshotName(family, member)`, separator `snapshotSeparator`): the family is the preparation a snapshot repeats, the member tells its captures apart and never contains the separator, so `snapshotFamily(name)` places every name in exactly one family. `captureSnapshot({ sdk, machine, family, member, secrets, stopTimeoutMs? })` scrubs a machine of credentials, runs `sync` in the guest so files written just before the capture reach the disk whole (a failing `sync` refuses the capture before the stop), stops it, captures its root disk as that snapshot, removes the machine whether or not the capture succeeded, and returns the name; a family and member that cannot name a snapshot fail with `unavailable` before any vendor call and leave the machine. `hasSnapshot(sdk, name)` answers whether one exists (a `SnapshotNotFound` answer is `false`; any other failure is `unavailable`). `pruneSnapshots(sdk, family, keep, retain?)` removes that family's snapshots beyond the `keep` newest, except those named in `retain`, and returns their names; a family whose name extends another's is never touched by the other's prune. `removeSnapshot(sdk, name)` removes one; one already gone is not an error. A machine booted from a snapshot does not depend on it afterwards, so pruning never disturbs a running machine.
 
@@ -41402,7 +41563,9 @@ const tone = Rubric.make({
 `output` the text judged. `render` fences each piece of content in a fence
 longer than any backtick run inside it. `parse` reads the one JSON object with
 `"scores"` in the reply, fenced or not, refuses a reply with two (a judge
-quoting a verdict forged in the output), and requires an integer from 1 to 5 for every
+quoting a verdict forged in the output) or with a `"scores"` key outside the
+object it reads (the same quote beside a judge object that is invalid or cut
+off), and requires an integer from 1 to 5 for every
 criterion. An unparsable reply fails with code `invalid_score`; a rubric with
 no criteria or duplicate ids throws `invalid_declaration`. Criteria, examples,
 rule, and instructions are the scorer's `config`, so changing the rubric
@@ -45676,7 +45839,12 @@ rewind never needs a call the caller has to remember.
 
 An audit whose parent or planned child a live process still holds is declined.
 It keeps its `in_progress` status and remains in `pendingAudits` for a later
-build to retry unresolved work.
+build to retry unresolved work. A store failure (`unknown`) or a lost heartbeat
+(`fence_lost`) declines the audit the same way. Only a permanent condition
+closes it as failed: undecodable detail, a missing run row, a defect, a failed
+handler rollback, or a rollback that ran but could not be recorded. When a pass
+after the archive commit gives the run back, it restores the state at the
+frame.
 
 `Options.isAlive` is an [`Ownership.LivenessCheck`](/docs/reference/api/run-store/) and decides
 what "still live" means. It defaults to `Ownership.leaseLiveness()`, the same
@@ -46691,6 +46859,11 @@ The runner may have accepted a launch before the store persists its `launched`
 result. A crash, result-write failure, or expired reservation can cause another
 attempt with that key, even while the earlier attempt is in flight.
 
+A start that cannot launch now, for an outage it expects to pass, fails with
+`TriggerError` code `runner_unavailable`: the occurrence stays pending and the
+next tick retries it under the same key. Any other failure records the
+occurrence `failed`.
+
 ### Scheduler.Runner and its constructors
 
 ```ts
@@ -46840,7 +47013,10 @@ const layerNoop: Layer.Layer<Scheduler>
 ```
 
 `make` builds the service in the current scope and forks nothing; the caller
-decides when a tick happens. `layer` additionally forks a supervisor fiber that
+decides when a tick happens. The service keeps each trigger's watermark and
+its launch fibers in memory, so build it once and keep its scope open across
+ticks. A host that keeps no process between ticks calls
+[`Scheduler.tick`](#schedulertick) instead. `layer` additionally forks a supervisor fiber that
 ticks and sleeps forever. The supervisor sleeps only through the Effect Clock,
 so scope closure interrupts it, and it recovers from the whole cause of a failed
 tick rather than the typed error alone.
@@ -46858,10 +47034,66 @@ write failures never become failed run outcomes.
 
 A launch runs on its own fiber and compensates its own failures: a start that
 failed outright records `failed`, an ambiguous one (timed out, or answered but
-not persisted) re-arms the occurrence as pending, and a buffered occurrence is
+not persisted) or one that failed with `runner_unavailable` re-arms the
+occurrence as pending, and a buffered occurrence is
 re-armed. Every failure other than interruption is logged with the trigger id.
 Interrupting the fiber detaches it; the reservation lease re-arms the
 occurrence.
+
+### Scheduler.tick
+
+```ts
+interface TickOptions extends Omit<Options, "pollInterval" | "runPollInterval"> {
+  readonly since?: number | undefined
+}
+
+interface Ticked {
+  readonly at: number
+  readonly watermark: number
+}
+
+const tick: (
+  options?: TickOptions
+) => Effect.Effect<Ticked, TriggerError, Runner | TriggerStore.TriggerStore>
+```
+
+`tick` is one whole tick for a host that keeps no process between ticks: a
+durable flow step, a queue consumer, a scheduled function. It needs no scope.
+
+A scheduler from `make` keeps two things in memory that such a host loses. The
+first is the watermark each trigger was dispatched through: a scheduler built
+for every tick sees every trigger for the first time, and first sight owes a
+trigger that never fired nothing, so it never fires. The second is the fiber
+launching each run: closing the scope interrupts it, and the occurrence waits
+for the five-minute reservation lease.
+
+`tick` takes the watermark as `since` and answers the next one:
+
+- `since` is the `watermark` the previous tick answered, in epoch
+  milliseconds. Each trigger starts from `since`, or from the last fire the
+  store recorded when that is later, and the catch-up policy decides what the
+  interval owes, exactly as it does for a stalled poll. Absent, the tick is a
+  first tick. A `since` that is not a safe integer is refused with
+  `invalid_options` at `since`.
+- `at` is when the tick read the clock.
+- `watermark` is what the next tick passes as `since`. It is `at` when every
+  trigger finished dispatching. When one did not (a claim failed, a row would
+  not decode, a declaration changed mid-tick), it is this tick's own `since`,
+  so the next tick asks the policy about the same interval again; the claim
+  protocol refuses the occurrences that already fired.
+
+Keep the watermark wherever the host keeps durable state. A durable flow keeps
+it in the payload of its next round.
+
+`tick` returns once every launch it started is recorded as `launched`,
+compensated, or failed, so it waits at most `startTimeout` for one launch. It
+does not watch the runs it launched: the next tick asks `Runner.inspect` about
+the run each trigger holds and records how it stopped, which is also how the
+overlap policy sees a run across ticks. The fire ledger is pruned on a first
+tick and on a tick that crosses an hour boundary since the last one.
+
+`tick` fails with what `runOnce` fails with, such as a store that cannot list
+its triggers. Retry it with the same `since`.
 
 ## DispatchReader
 
@@ -47105,6 +47337,7 @@ message.
 | `verification_failed`     | Webhook verification fails, including a signature mismatch or typed credential-resolution failure.                                                                         |
 | `catch_up_bound_exceeded` | `maxCatchUp` is invalid, catch-up exceeds its bound, or an unbounded interval exceeds the package cap.                                                                     |
 | `runner`                  | The scheduler cannot plan, launch, inspect, cancel, or finish approval retries for a run.                                                                                  |
+| `runner_unavailable`      | A `Runner.start` could not start the run now, for an outage it expects to pass. The occurrence stays pending and the next tick retries it under the same `idempotencyKey`. |
 | `runner_timeout`          | A `Runner.start`, `inspect`, or `cancel` call exceeded `startTimeout`, `inspectTimeout`, or `cancelTimeout`.                                                               |
 | `store`                   | A migration, persistence, or row-decoding operation fails, or a no-op store method is unavailable.                                                                         |
 
@@ -49190,6 +49423,7 @@ Options:
   --mcp-config <string>  Path to the configured MCP servers
   --quiet                Suppress progress messages
   --agent <string>
+  --memory-db <string>   SQLite file the registered agents share as their memory store (defaults to SMITHERS_MEMORY_DB)
   --verbose              Show redacted diagnostic details
 
 Custom Global Options:

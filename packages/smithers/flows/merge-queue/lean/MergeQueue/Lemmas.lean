@@ -164,16 +164,17 @@ theorem State.start_cases (cfg : Config) (s : State) (count : Nat) :
     simp only [not_or, Nat.not_lt, Nat.not_le, List.any_eq_true, beq_iff_eq, not_exists, not_and] at guard
     exact Or.inr ⟨Nat.pos_of_ne_zero guard.1, guard.2.1, guard.2.2.1, guard.2.2.2, rfl⟩
 
-theorem State.land_cases (cfg : Config) (s : State) (run : RunId) :
-    s.land cfg run = s
+theorem State.landNow_cases (cfg : Config) (s : State) (run : RunId) :
+    s.landNow cfg run = s
       ∨ ∃ r batch, s.findRun run = some r ∧ s.live r = some batch ∧ green cfg r.results = true
-          ∧ s.land cfg run =
+          ∧ s.landNow cfg run =
             { s with
               main := r.tree
               changes := s.changes.map (landedChange batch)
               runs := s.runs.filter fun x => x.id != run
-              landed := s.landed ++ [Landing.mk run s.main batch r.results] } := by
-  unfold State.land
+              landed := s.landed ++ [Landing.mk run s.main batch r.results false]
+              pushing := none } := by
+  unfold State.landNow
   split
   · exact Or.inl rfl
   · rename_i r found
@@ -201,9 +202,9 @@ theorem State.blame_cases (cfg : Config) (s : State) (run : RunId) :
       · exact Or.inl rfl
     · exact Or.inl rfl
 
-theorem State.land_of_absent {cfg : Config} {s : State} {run : RunId} (absent : s.findRun run = none) :
-    s.land cfg run = s := by
-  unfold State.land
+theorem State.landNow_of_absent {cfg : Config} {s : State} {run : RunId} (absent : s.findRun run = none) :
+    s.landNow cfg run = s := by
+  unfold State.landNow
   simp [absent]
 
 theorem State.blame_of_dead {cfg : Config} {s : State} {run : RunId} {r : Run} (found : s.findRun run = some r)
@@ -230,5 +231,17 @@ theorem State.blamed_not_ready (cfg : Config) (s s' : State) (run : RunId) (r : 
     intro part queued
     simp only [Status.isQueued_iff] at other
     exact other ⟨by simpa [Change.part] using part, queued⟩
+
+/-- A landing is refused unless that run is the one being pushed; otherwise it
+is the recorded landing. -/
+theorem State.land_eq (cfg : Config) (s : State) (run : RunId) :
+    s.land cfg run = if s.pushing = some run then s.landNow cfg run else s := rfl
+
+theorem State.land_cases (cfg : Config) (s : State) (run : RunId) :
+    s.land cfg run = s ∨ (s.pushing = some run ∧ s.land cfg run = s.landNow cfg run) := by
+  unfold State.land
+  split
+  · rename_i pushed; exact Or.inr ⟨pushed, rfl⟩
+  · exact Or.inl rfl
 
 end MergeQueue

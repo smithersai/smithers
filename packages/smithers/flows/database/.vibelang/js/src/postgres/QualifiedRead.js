@@ -13,19 +13,23 @@
  * when it can prove the statement is one plain `SELECT` over those tables, and
  * answers undefined for everything else, which stays framed. A name the rewrite
  * misses fails loudly: outside the search path it resolves nowhere, unless
- * `public` holds a table of that name, and each table position is checked so
- * that no name is missed.
+ * `public` holds a table of that name. Each table position is checked, a
+ * `FROM` clause may not list a second relation after a comma, and a `flows_*`
+ * name anywhere but a table position or a table's column qualifier refuses the
+ * rewrite, so no name is missed and no other name is prefixed.
  *
  * @since 1.0.0-rc.17
  */
-const REFUSED = /\b(for\s+(no\s+key\s+)?update|for\s+(key\s+)?share|current_schema|current_schemas|set_config|nextval|setval|currval|to_regclass|into)\b|\bpg_\w+|::\s*regclass/i;
+const REFUSED = /\b(for\s+(no\s+key\s+)?update|for\s+(key\s+)?share|current_schema|current_schemas|set_config|nextval|setval|currval|to_regclass|into|table)\b|\bpg_\w+|::\s*regclass/i;
 /** The code of `sql` between its literals and quoted identifiers, or undefined if it can't be split with certainty. */
 const segments = (sql) => {
     const parts = [];
     let start = 0;
     for (let at = 0; at < sql.length; at++) {
         const char = sql[at];
-        if (char === ";" || (char === "$" && sql[at + 1] === "$") || (char === "-" && sql[at + 1] === "-") ||
+        if (
+        // `$1` is a parameter; `$$` and `$tag$` open a dollar-quoted literal.
+        char === ";" || (char === "$" && !/\d/.test(sql.charAt(at + 1))) || (char === "-" && sql[at + 1] === "-") ||
             (char === "/" && sql[at + 1] === "*")) {
             return undefined;
         }
@@ -57,6 +61,36 @@ const segments = (sql) => {
     parts.push({ code: true, text: sql.slice(start) });
     return parts;
 };
+/** A clause that ends a `FROM` clause at its own parenthesis depth. */
+const AFTER_FROM = /^(?:where|group|having|window|order|limit|offset|fetch|union|intersect|except|for)$/i;
+/**
+ * Whether a `FROM` clause of `code`, at any parenthesis depth, lists relations
+ * separated by a comma. A comma join's later relations follow `ON` clauses,
+ * aliases and subqueries, where no table position is read.
+ */
+const commaJoin = (code) => {
+    // One entry per open parenthesis: whether that depth is inside a FROM clause.
+    const inFrom = [false];
+    for (const [token] of code.matchAll(/[(),]|[a-z_]\w*/gi)) {
+        if (token === "(")
+            inFrom.push(false);
+        else if (token === ")") {
+            // A parenthesis closed before it opened: the depths can't be read.
+            if (inFrom.length === 1)
+                return true;
+            inFrom.pop();
+        }
+        else if (token === ",") {
+            if (inFrom.at(-1))
+                return true;
+        }
+        else if (/^from$/i.test(token))
+            inFrom[inFrom.length - 1] = true;
+        else if (AFTER_FROM.test(token))
+            inFrom[inFrom.length - 1] = false;
+    }
+    return false;
+};
 /**
  * `sql` with `schema` named on each `flows_*` table, when it is one plain read
  * of only those tables; undefined when it isn't, or when that can't be proved.
@@ -74,23 +108,34 @@ export const qualify = (sql, schema) => {
     if (REFUSED.test(code))
         return undefined;
     // Each name in a table position must be an engine table, or a subquery's parenthesis.
-    let tables = 0;
-    for (const match of code.matchAll(/\b(?:from|join)\s+([^\s(),]+|\()/gi)) {
-        if (match[1] === "(")
-            continue;
+    // A parenthesized join's first relation follows the parenthesis, where no name is read.
+    const tables = new Set();
+    for (const match of code.matchAll(/\b(?:from|join)\s+([^\s(),]+|\(\s*\w*)/gi)) {
+        if (match[1].startsWith("(")) {
+            if (/^\(\s*select$/i.test(match[1]))
+                continue;
+            return undefined;
+        }
         if (!/^flows_\w+$/i.test(match[1]))
             return undefined;
-        tables++;
+        tables.add(match[1].toLowerCase());
     }
-    if (tables === 0)
+    if (tables.size === 0)
         return undefined;
-    // A second table in a comma join isn't in a position the check above reads.
-    if (/\b(?:from|join)\s+flows_\w+(?:\s+(?!where\b|group\b|order\b|limit\b|on\b|join\b|inner\b|left\b|right\b|cross\b|full\b|having\b|union\b|offset\b)(?:as\s+)?\w+)?\s*,/i
-        .test(code)) {
+    if (commaJoin(code))
         return undefined;
-    }
     const name = `"${schema.replaceAll("\"", "\"\"")}"`;
-    return parts
-        .map((part) => part.code ? part.text.replace(/(?<![\w.])flows_\w+/gi, (table) => `${name}.${table}`) : part.text)
+    let stray = false;
+    const qualified = parts
+        .map((part) => part.code
+        ? part.text.replace(/(?<![\w.])flows_\w+/gi, (table, at) => {
+            const placed = /\b(?:from|join)\s+$/i.test(part.text.slice(0, at)) ||
+                (part.text[at + table.length] === "." && tables.has(table.toLowerCase()));
+            if (!placed)
+                stray = true;
+            return `${name}.${table}`;
+        })
+        : part.text)
         .join("");
+    return stray ? undefined : qualified;
 };

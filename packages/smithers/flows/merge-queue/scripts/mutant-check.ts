@@ -2,7 +2,7 @@
  * Runs one kernel with a planted bug through the package's detectors and says
  * which ones notice. Used by `scripts/mutants.ts`.
  *
- *   node scripts/mutant-check.ts <directory holding the mutated src/index.ts>
+ *   node scripts/mutant-check.ts <directory holding the mutated src/Kernel.ts>
  *
  * Exits 1 and prints the detectors that noticed; exits 0 when none did.
  */
@@ -21,7 +21,7 @@ if (directory === undefined) {
   process.exit(2)
 }
 
-const kernel = (await import(pathToFileURL(join(directory, "index.ts")).href)) as Kernel & {
+const kernel = (await import(pathToFileURL(join(directory, "Kernel.ts")).href)) as Kernel & {
   readonly replay: (lines: ReadonlyArray<string>) => ReadonlyArray<string>
 }
 

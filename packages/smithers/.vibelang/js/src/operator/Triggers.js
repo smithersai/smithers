@@ -14,7 +14,9 @@ import { resolve } from "node:path";
 import * as Presentation from "../cli/Presentation.js";
 import * as CliError from "../CliError.js";
 import * as NodeControl from "../NodeControl.js";
+import * as CronTargets from "./CronTargets.js";
 import { databaseLayer, localFields, localRoot } from "./Store.js";
+import * as TargetRuns from "./TargetRuns.js";
 import * as TriggerPlans from "./TriggerPlans.js";
 /** An operator request this command refuses; the operator fixes the input or the host setup. */
 const refused = (message, fault = "user") => new CliError.Refused({ fault, code: "operator_failed", message });
@@ -57,10 +59,23 @@ const execute = (context, body) => Presentation.guard(context, body, {
 export const withTriggers = (options, effect) => Effect.runPromise(effect.pipe(Effect.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(localRoot(options)))))));
 const required = (store, id) => store.get(id).pipe(Effect.flatMap((value) => Option.isSome(value) ? Effect.succeed(value.value) : Effect.fail(refused(`Unknown trigger ${id}`))));
 /** Hosts durable polling using the caller's Control service; it never approves a plan.
+ *
+ * The host registers the project's `S.Cron` targets as it starts, without
+ * waiting for them: reading a large workspace takes seconds, and a tick that
+ * runs first only fires the schedules already registered. A trigger that runs
+ * build targets is executed by the build, not by Control.
+ *
  * @category layers
  * @since 1.0.0
  */
-export const layerTriggerScheduler = (root, pollIntervalMs = 1000) => Scheduler.layer({ pollInterval: pollIntervalMs }).pipe(Layer.provide(TriggerPlans.layer(root)), Layer.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(root)))));
+export const layerTriggerScheduler = (root, pollIntervalMs = 1000, targets = {}) => {
+    const store = SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(root)));
+    const declarations = Layer.effectDiscard(CronTargets.sync(root).pipe(
+    // Declarations that cannot be read must not stop the schedules already
+    // registered, so the failure is reported and the host keeps serving.
+    Effect.catch((error) => Effect.logWarning(`S.Cron targets were not registered: ${error.message}`)), Effect.forkScoped)).pipe(Layer.provide(store));
+    return Scheduler.layer({ pollInterval: pollIntervalMs }).pipe(Layer.provide(TargetRuns.layer(root, targets)), Layer.provide(targets.command ?? TargetRuns.layerCommand()), Layer.provide(TriggerPlans.layer(root)), Layer.provide(store), Layer.provide(declarations));
+};
 /** Builds commands for registration, inspection and durable manual scheduling.
  * @category constructors
  * @since 1.0.0
@@ -94,11 +109,12 @@ export const createTriggersCli = (runtime = {}) => {
                     activeRun: Option.getOrNull(yield* store.activeRun(context.args.id))
                 };
             }));
+            const root = localRoot(context.options);
+            const targetRun = result.activeRun === null ? null : await TargetRuns.inspectRun(root, result.activeRun);
             return {
                 ...result,
-                activePlan: result.activeRun === null ?
-                    null :
-                    await TriggerPlans.inspect(localRoot(context.options), result.activeRun)
+                activePlan: result.activeRun === null ? null : await TriggerPlans.inspect(root, result.activeRun),
+                ...(targetRun === null ? {} : { activeTargetRun: targetRun })
             };
         })
     })
@@ -140,6 +156,12 @@ export const createTriggersCli = (runtime = {}) => {
             }));
         })
     })
+        .command("sync", {
+        description: "Register this project's S.Cron targets as triggers and disable those no longer declared",
+        mcp: { annotations: { readOnlyHint: false } },
+        options,
+        run: (context) => execute(context, () => withTriggers(context.options, CronTargets.sync(localRoot(context.options))))
+    })
         .command("fire", {
         description: "Queue one manual occurrence for triggers serve or smthrs serve; approvals remain required",
         mcp: { annotations: { readOnlyHint: false } },
@@ -161,11 +183,11 @@ export const createTriggersCli = (runtime = {}) => {
     })
         .command("serve", {
         mcp: false,
-        description: "Run the durable scheduler until interrupted, preserving Control approvals",
+        description: "Run the durable scheduler until interrupted: registers S.Cron targets, runs their build targets, preserves Control approvals for flows",
         options: options.extend({ pollIntervalMs: z.number().int().positive().default(1000) }),
         run: (context) => execute(context, () => {
             const root = localRoot(context.options);
-            return Effect.runPromise(Layer.launch(layerTriggerScheduler(root, context.options.pollIntervalMs).pipe(Layer.provide(NodeControl.layerControl({ root })))), { signal: runtime.signal });
+            return Effect.runPromise(Layer.launch(layerTriggerScheduler(root, context.options.pollIntervalMs, runtime.targets).pipe(Layer.provide(NodeControl.layerControl({ root })))), { signal: runtime.signal });
         })
     });
     for (const [command, enabled] of [["enable", true], ["disable", false]]) {

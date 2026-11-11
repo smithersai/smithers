@@ -23,6 +23,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import type * as Repetition from "@smthrs/plan/Repetition"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.vibe"
+import * as Failure from "./internal/Failure.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.vibe"
@@ -201,11 +202,16 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
     maxIterations,
     onMaxReached
   }
-  const { name, description } = Compose.label("optimizer", {
-    maxIterations,
-    targetScore,
-    onMaxReached
-  }, options)
+  const { name, description } = Compose.label(
+    "optimizer",
+    {
+      maxIterations,
+      targetScore,
+      onMaxReached
+    },
+    options,
+    [stages.generate, stages.evaluate]
+  )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const visit = (previous: unknown, standing: unknown, iteration: number): Node.Node<unknown, unknown, R> =>
       Node.bindPlanned(
@@ -271,11 +277,9 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    // `@smthrs/core` carried its error type as a phantom parameter and
-    // declared no error schema. `@smthrs/flow` needs a real one, because the
-    // engine encodes a typed failure through it, and a search fails with
-    // whatever the member it called failed with.
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor([PatternError], [stages.generate, stages.evaluate]) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }

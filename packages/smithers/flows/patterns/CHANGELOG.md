@@ -9,7 +9,28 @@
   before any worker call, so a model-returned plan cannot multiply worker
   calls without bound.
 
+### Added
+
+- `CheckSuite.makeDiscovered` and `CheckSuite.runDiscovered` run one check once
+  per id handed to the suite as `{ checks, input }`, so a suite can run the
+  checks found at run time. The ids keep their order, a repeated or empty id
+  fails `invalid_input`, and `onEmpty` decides the verdict when none were
+  found ([#4589](https://github.com/smithersai/smithers/issues/4589)).
+
 ### Fixed
+
+- A declared `Saga`, `Sidecar`, `Supervisor`, `ReviewLoop`, `Panel`,
+  `Recursion`, `ScanFixVerify`, `Debate`, `CheckSuite`, `Escalation`,
+  `DriftDetector`, `MapReduce`, `Kanban`, `MergeQueue` or `Optimizer` on a
+  durable engine now fails with the tagged error a member failed with, or with
+  its own `PatternError`, instead of dying with `UnencodableResult`: each
+  declares the union of `PatternError` and its members' error schemas. A member
+  error a declared pattern catches and reports (a saga's `Compensated.failure`
+  and `compensation_failed` cause, a quarantined sidecar shadow, a supervisor's
+  `Failed` outcome, check suite `errors`, kanban `failed` rows, merge queue
+  `quarantined` rows) is now the data the member's error schema encodes it to,
+  so the run settles instead of dying
+  ([#4707](https://github.com/smithersai/smithers/issues/4707)).
 
 - `Loop.ralph` rejects bounds above the existing branch-construction ceiling before planning, including the extra arms a stall breaker needs. ([#4103](https://github.com/smithersai/smithers/issues/4103)).
 

@@ -2706,12 +2706,11 @@ type PatchFor<C extends Card> = C extends Card
 /*
  * A patch field is optional WITHOUT its default. zod's `.partial()` keeps
  * `.default()`, so an omitted field would decode to the default and the
- * consumer's shallow merge would overwrite the stored value with it.
+ * consumer's shallow merge would overwrite the stored value with it. No card
+ * payload field declares a default; "card patches never invent defaults" in
+ * test/Cards.test.ts fails if one does, and this must then unwrap it too.
  */
 const withoutDefault = (field: z.ZodType): z.ZodType => {
-  if (field instanceof z.ZodDefault || field instanceof z.ZodPrefault) {
-    return withoutDefault(field.unwrap() as z.ZodType)
-  }
   if (field instanceof z.ZodOptional) return withoutDefault(field.unwrap() as z.ZodType)
   return field
 }

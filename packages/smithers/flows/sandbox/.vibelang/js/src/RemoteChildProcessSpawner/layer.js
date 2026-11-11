@@ -302,7 +302,7 @@ export const makeOpened = (provider) => Effect.map(provider.open(provider.sessio
             const rendered = CommandLine.render(command);
             const input = stdinStream(leftmostOptions(command));
             const stdin = input === undefined ? undefined : yield* collectStdin(rendered, input);
-            const started = yield* provider.spawn(rendered, {
+            const started = yield* provider.spawn(CommandLine.renderForExecution(command), {
                 cwd: CommandLine.cwd(command),
                 env: guestEnvironment(CommandLine.env(command)),
                 ...stdin === undefined ? {} : { stdin }
@@ -331,12 +331,15 @@ export const make = (provider) => Effect.catch(makeOpened(provider), (error) => 
  * or stream consumer closes that scope and therefore runs the finalizer
  * installed by `Provider.open`.
  *
- * The provider runs `@smthrs/kernel/CommandLine.render(command)`. The kernel's
- * `proc:spawn` grant resource is `@smthrs/kernel/CommandLine.resource`, which
- * starts from that line and adds a `sh -c` wrapper for a shell line holding
- * control syntax, an `env <NAME>… -- ` prefix for overridden environment
- * names, and a `cwd <path> -- ` prefix for a directory outside the workspace.
- * The two read the same only when none of those apply.
+ * The provider runs `@smthrs/kernel/CommandLine.renderForExecution(command)`,
+ * which reveals a `Redacted` argument; every error names the command by
+ * `@smthrs/kernel/CommandLine.render(command)`, which shows it as `<redacted>`.
+ * The kernel's `proc:spawn` grant resource is
+ * `@smthrs/kernel/CommandLine.resource`, which starts from the `render` line
+ * and adds a `sh -c` wrapper for a shell line holding control syntax, an
+ * `env <NAME>… -- ` prefix for overridden environment names, and a
+ * `cwd <path> -- ` prefix for a directory outside the workspace. The two read
+ * the same only when none of those apply.
  *
  * @category layers
  * @since 0.1.0

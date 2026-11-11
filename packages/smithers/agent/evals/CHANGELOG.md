@@ -46,6 +46,12 @@
 
 ### Fixed
 
+- A case that executed but that no binding applies to now leaves the gate
+  undecided (exit 5) instead of passing ungraded, and a sampled-out attempt no
+  longer counts as a failed trial. `Runner.CaseResult` gains `ungraded`
+  (`Runner.Ungraded`: `unbound` or `sampled_out`), and `trials` is absent for a
+  case whose every attempt was sampled out.
+
 - Bound the canonical encoder's total traversal at 2000000 values and 33554432
   output code units, leaving `[budget exceeded]` where a budget runs out. The
   cycle detector tracks ancestors only, so a value referenced twice is expanded

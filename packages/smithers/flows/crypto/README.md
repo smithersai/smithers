@@ -51,7 +51,8 @@ const synchronous = digestSync("hello")
 - `Sha256` is the one-way schema adapter. `Sha256.Digest`, `Sha256.digest`, and
   `Sha256.digestSync` remain attached for compatibility.
 - `syncCrypto` adapts the synchronous implementation to Effect `Digest`. It
-  accepts only `SHA-256` and deliberately refuses randomness.
+  exposes only `digest` and `digestHex`, accepting only `EffectDigest.sha256`.
+  Randomness belongs to the separate `SecureRandom` service.
 - `WebCrypto.layer` and `WebCrypto.make()` provide Effect `Crypto` over the
   global WebCrypto in Node, Bun, a browser, or a Cloudflare Worker. Randomness
   is filled in chunks of at most 65,536 bytes and read only on demand.

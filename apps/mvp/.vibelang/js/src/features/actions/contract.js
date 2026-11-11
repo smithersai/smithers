@@ -16,8 +16,8 @@ export const ACTION_COLUMNS = [
     "created_at",
     "updated_at",
 ];
-/** What started a repository's run: a push, a pull request, or a person by hand. */
-export const RUN_EVENTS = ["push", "pull_request", "manual"];
+/** What started a repository's run: a push, a pull request, a person by hand, or a schedule (`cron` trigger). */
+export const RUN_EVENTS = ["push", "pull_request", "manual", "schedule"];
 /** A repository run's states as its row holds them: settled from the engine's status when the run settles. */
 export const ACTION_STATES = ["working", "done", "failed", "stopped"];
 /** The engine's settled status, as a repository run's row holds it. */

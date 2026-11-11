@@ -7,6 +7,7 @@
 import * as Effect_1 from "effect/Effect";
 import * as Journal from "@smthrs/journal/Journal";
 import * as RunStore from "@smthrs/run-store/RunStore";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -18,6 +19,12 @@ import * as Lease from "./Lease.js";
 import { AuditDetail } from "./Rewind.js";
 import * as RunRow from "./RunRow.js";
 const isAuditDetail = Schema.is(AuditDetail);
+// A pass that hit one of these learned nothing permanent about the audit: the
+// run is held elsewhere, the store failed transiently, or the heartbeat could
+// not renew. Closing the audit on them abandoned a half-applied rewind. A
+// defect is a bug, not a transient fault, so it stays terminal.
+const retryable = (cause, failure) => !Cause.hasDies(cause) &&
+    (failure.code === "busy" || failure.code === "unknown" || failure.code === "fence_lost");
 const sameOwner = (left, right) => left.hostId === right.hostId &&
     left.pid === right.pid &&
     left.nonce === right.nonce;
@@ -204,12 +211,20 @@ const recoverOne = (audit, options) => Effect_1.gen(function* () {
      * as long as the pass holds it.
      */
     let acquired;
+    // After the archive commit the row carries post-frame state the truncated
+    // journal no longer records, so a failed pass gives the run back with the
+    // state derived at the frame instead.
+    let frameState;
+    // Set while handler rollbacks ran but the stripped detail is not yet
+    // persisted. A retry would read the old detail and repeat non-idempotent
+    // rollbacks, so a failure in that window stays terminal.
+    let rollbackUnrecorded = false;
     let releaseProblem;
     const release = (status) => Effect.suspend(() => acquired === undefined
         ? Effect.void
         : Effect.exit(runs.transitionOwned(audit.runId, options.owner, 
         // Pending cannot be restored directly; suspended releases ownership.
-        status === "pending" ? "suspended" : status, acquired.stateJson)).pipe(Effect.flatMap((released) => Effect.sync(() => {
+        status === "pending" ? "suspended" : status, frameState ?? acquired.stateJson)).pipe(Effect.flatMap((released) => Effect.sync(() => {
             if (Exit.isFailure(released)) {
                 releaseProblem = fromCause(released.cause).message;
             }
@@ -225,15 +240,15 @@ const recoverOne = (audit, options) => Effect_1.gen(function* () {
         return yield* Lease.withHeldLease(audit.runId, options.owner, (lease) => lease.guard(Effect_1.gen(function* () {
             const committed = yield* archiveCommitted(journal, store, audit, detail);
             if (committed) {
-                // The cancellations the rewind planned before its commit are
-                // finished here. Closing the audit without draining them dropped
-                // exactly the work `detachedChildren: "cancel"` was asked for.
-                const drained = yield* resolvePending(runs, audit, detail, options, true);
                 // The live run row still carries the post-frame state the rewind
                 // truncated. Derive the state at the surviving frame just as the
                 // normal rewind path does; a history without a decision payload
                 // falls back to the row recovery acquired.
-                const frameState = yield* store.stateAt(audit.runId, audit.frame);
+                frameState = yield* store.stateAt(audit.runId, audit.frame);
+                // The cancellations the rewind planned before its commit are
+                // finished here. Closing the audit without draining them dropped
+                // exactly the work `detachedChildren: "cancel"` was asked for.
+                const drained = yield* resolvePending(runs, audit, detail, options, true);
                 yield* lease.releasing;
                 const suspended = yield* runs.transitionOwned(audit.runId, options.owner, "suspended", frameState ?? acquiredRow.stateJson).pipe(Effect.mapError((cause) => RunRow.failure("finish recovered suspension", cause)));
                 if (suspended._tag !== "Transitioned") {
@@ -253,7 +268,7 @@ const recoverOne = (audit, options) => Effect_1.gen(function* () {
                 // pass never repeats those handler rollbacks. The guard
                 // interrupts this body when the fence is lost, so the rollback
                 // and its record are one uninterruptible unit.
-                yield* Effect.uninterruptible(Compensation.rollback(compensated, options.compensationTimeout).pipe(Effect.andThen(Effect.sync(() => (detail = stripped))), Effect.andThen(store.updateAudit(audit.id, { detail: stripped }))));
+                yield* Effect.uninterruptible(Effect.sync(() => (rollbackUnrecorded = true)).pipe(Effect.andThen(Compensation.rollback(compensated, options.compensationTimeout)), Effect.andThen(Effect.sync(() => (detail = stripped))), Effect.andThen(store.updateAudit(audit.id, { detail: stripped })), Effect.andThen(Effect.sync(() => (rollbackUnrecorded = false)))));
             }
             detail = yield* resolvePending(runs, audit, detail, options, false);
             yield* lease.releasing;
@@ -284,8 +299,9 @@ const recoverOne = (audit, options) => Effect_1.gen(function* () {
         };
     }
     // A `busy` refusal says only that someone else holds the run right now:
-    // an active claim, a live owner, a fence taken while this pass ran.
-    // Recording it as `failed` removed the audit from `pendingAudits`
+    // an active claim, a live owner, a fence taken while this pass ran. A
+    // store failure or a heartbeat lapse says as little about the audit.
+    // Recording any of them as `failed` removed the audit from `pendingAudits`
     // permanently, so a rewind interrupted after its compensation but before
     // its archive commit could never be rolled back by any later pass, and
     // the engine's stale-heartbeat steal would resume the run against a
@@ -294,7 +310,7 @@ const recoverOne = (audit, options) => Effect_1.gen(function* () {
     // Nothing is written on this path on purpose. The audit's detail is the
     // live rewind's own bookkeeping; a recovery pass that stamped a message
     // on it would clobber the phase the owner is still advancing.
-    if (failure.code === "busy") {
+    if (!rollbackUnrecorded && retryable(recoveryExit.cause, failure)) {
         return { _tag: "Busy", auditId: audit.id, error: failure };
     }
     return yield* terminalFailure(store, audit, detail, failure);
@@ -303,9 +319,10 @@ const recoverOne = (audit, options) => Effect_1.gen(function* () {
  * Scans and resolves every pending rewind audit independently.
  *
  * A committed archive finishes the suspended transition. An uncommitted
- * rewind restores its jj snapshot and handler receipts. Per-audit failures are
- * returned as typed terminal outcomes and recorded on the same audit row;
- * recovery never invents a run status.
+ * rewind restores its jj snapshot and handler receipts. Proven-permanent
+ * per-audit failures are returned as typed terminal outcomes and recorded on
+ * the same audit row; transient ones leave the audit open as `Busy`. Recovery
+ * never invents a run status.
  *
  * An audit whose run another process still holds is reported `Busy` and left
  * untouched, so it is picked up by the next pass rather than closed on the

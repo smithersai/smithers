@@ -2,7 +2,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Logger } from "@smthrs/observability"
 import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
-import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
+import { Cause, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
@@ -18,6 +18,7 @@ import { Forge } from "./branch/Forge.ts"
 import * as GitHubCreation from "./branch/GitHubCreation.ts"
 import * as JobMachines from "./branch/JobMachines.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
+import * as Cron from "./ci/Cron.ts"
 import * as RepoFlow from "#vibelang/emitted/worker/ci/RepoFlow"
 import * as DomainsConfig from "#vibelang/emitted/worker/domains/Config"
 import { DomainProvider } from "#vibelang/emitted/worker/domains/Provider"
@@ -68,6 +69,8 @@ export interface FlowExecutionShape {
   ) => Effect.Effect<void, ExecutionObject.IntentConflict, RuntimeContext>
   readonly repositoryRun: () => Effect.Effect<RepoRuns.Admitted | null, never, RuntimeContext>
   readonly signal: (deferredName: string) => Effect.Effect<void, never, RuntimeContext>
+  /** Records a person's answer for the open attempt of a human task its run is parked on: whether the run took it. */
+  readonly answer: (task: string, value: typeof Schema.Json.Type) => Effect.Effect<boolean, never, RuntimeContext>
   readonly wake: () => Effect.Effect<boolean, never, RuntimeContext>
   readonly cancel: () => Effect.Effect<void, import("@smthrs/flow").FlowRuntime.CancelRequestFailed, RuntimeContext>
   readonly alarm: () => Effect.Effect<void, never, RuntimeContext>
@@ -112,6 +115,29 @@ export const starter = (objects: Objects) =>
     })
   })
 
+/** What `answerer` reaches an execution's object through: the namespace, from ChatApi. */
+export interface Answerers {
+  readonly getByName: (executionId: string) => {
+    readonly answer: FlowExecutionShape["answer"]
+  }
+}
+
+/**
+ * Where a person's answer reaches a remote run parked on a human task (worker/Flows.ts `TaskAnswers`): the execution's
+ * own Durable Object, with the runtime of the request that builds it. A failed RPC is `AnswerUnavailable` with its code.
+ */
+export const answerer = (objects: Answerers) =>
+  Effect.gen(function*() {
+    const runtime = yield* RuntimeContext
+    return Flows.TaskAnswers.of({
+      answer: (executionId, task, value) =>
+        objects.getByName(executionId).answer(task, value).pipe(
+          Effect.provideService(RuntimeContext, runtime),
+          Effect.catchCause((cause) => Effect.fail(new Flows.AnswerUnavailable({ errorCode: codeOf(Cause.squash(cause)) })))
+        )
+    })
+  })
+
 /**
  * The object's implementation over `connection`, the Hyperdrive config the engine reaches Postgres through. Its id is
  * the engine's host id, the same for every incarnation of the object, so a new incarnation takes over its run at once.
@@ -128,6 +154,8 @@ interface ProgramOptions {
   readonly hostedModel?: boolean
   readonly repositories: ReadonlySet<string>
   readonly homeRepository: { readonly owner: string; readonly name: string }
+  /** `REPO_FLOWS`: whether repositories' flows run, their schedules' ticks included (docs/features/ci.md#schedules). */
+  readonly repoFlows?: boolean
 }
 
 export const live = <E, R>(
@@ -135,12 +163,19 @@ export const live = <E, R>(
   options: ProgramOptions
 ) =>
   Layer.unwrap(Effect.map(
-    Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher]),
+    Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher, Cron.ticker]),
     // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md),
     // then its window's look at the runners (docs/features/fleet.md#alerts), then each confirmed feed barrier's pass not
-    // yet completed (docs/features/notifications.md#rows-written-before).
-    ([sampleLoad, sampleSpend, sampleRunners, redactFeed]) =>
-      object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners), redactFeed)
+    // yet completed (docs/features/notifications.md#rows-written-before), and, with repositories' flows on, the
+    // minute's schedules tick (docs/features/ci.md#schedules).
+    ([sampleLoad, sampleSpend, sampleRunners, redactFeed, tick]) =>
+      object(
+        connection,
+        options,
+        Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners),
+        redactFeed,
+        options.repoFlows === true ? tick : Effect.void
+      )
   ))
 
 /** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
@@ -148,7 +183,8 @@ const object = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: ProgramOptions,
   sampleLoad: Effect.Effect<void, never, Flows.FlowStarter>,
-  redactFeed: Effect.Effect<void, never, Flows.FlowStarter | SqlClient.SqlClient>
+  redactFeed: Effect.Effect<void, never, Flows.FlowStarter | SqlClient.SqlClient>,
+  tick: Effect.Effect<void, never, Flows.FlowStarter>
 ) =>
   FlowExecution.make(
     Effect.gen(function*() {
@@ -171,6 +207,11 @@ const object = <E, R>(
       const signIn = yield* SignIn.configured().pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
       const roleFreshMs = yield* SessionStore.roleFreshMs.pipe(Effect.orDie)
       const appDatabase = Database.layer(hyperdrive.connectionString)
+      // The schedules' trigger store, in its own schema on the same Postgres (docs/features/ci.md#schedules).
+      const triggerStore = Cron.storeOn(Layer.unwrap(Effect.map(
+        hyperdrive.connectionString,
+        (url) => ExecutionHost.database(Redacted.value(url), Cron.TRIGGERS_SCHEMA)
+      )))
       // `chat/Expire` settles answers their devices left streaming (docs/features/agent.md#settling).
       const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
       // How long one alarm's drive keeps starting steps, under Cloudflare's 15-minute alarm limit
@@ -290,8 +331,12 @@ const object = <E, R>(
               ),
               wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake())
             },
+            // The schedules' tick needs `triggers/Tick` registered: only a host with the GitHub App has it.
             afterAlarm: Effect.flatMap(flowStarter, (started) =>
-              Effect.andThen(sampleLoad, redactFeed.pipe(Effect.provide(appDatabase), Effect.orDie)).pipe(
+              Effect.andThen(
+                Effect.andThen(sampleLoad, Option.isSome(github) ? tick : Effect.void),
+                redactFeed.pipe(Effect.provide(appDatabase), Effect.orDie)
+              ).pipe(
                 Effect.provideService(Flows.FlowStarter, started)
               )),
             // A repository's run settles its row from the engine's status and its reported result (docs/features/actions.md), and a `todo` run
@@ -361,7 +406,9 @@ const object = <E, R>(
         // The fleet's alerts (docs/features/fleet.md#alerts): an incident's `ops/FleetAlert` runs on its own object,
         // started through this alarm's runtime.
         const raiser = Effect.map(flowStarter, FleetAlert.startWith)
-        const base = ExecutionHost.withFeedRedaction(
+        // An agent's question to one person waits on its own object for their answer
+        // (docs/features/agent-status.md#addressed-waits).
+        const base = ExecutionHost.withAsks(ExecutionHost.withFeedRedaction(
           ExecutionHost.withFleet(
             ExecutionHost.withRunners(
               ExecutionHost.withCiJobs(
@@ -399,7 +446,7 @@ const object = <E, R>(
             alertChannels
           ),
           appDatabase
-        )
+        ), appDatabase)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are: triage's on
@@ -482,13 +529,16 @@ const object = <E, R>(
           })
         const dispatchServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
           todoServices(ready).pipe(Effect.map((services) => ({ ...services, repositories })))
+        const scheduleServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
+          dispatchServices(ready).pipe(Effect.map((services) => ({ ...services, store: triggerStore })))
         const withGitHub = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
           Option.isSome(github)
             ? hostFor(
               // A repository's own flows (docs/features/ci.md#repository-flows) read their flow.ts and report their
               // status as the App, and plan in the QuickJS build the agent's cells run on. GitHub's pushes and pull
-              // requests start them through `triggers/Dispatch`, on each run's own object.
-              ExecutionHost.withTriggers(
+              // requests start them through `triggers/Dispatch`, on each run's own object, and their schedules through
+              // `triggers/Tick` (docs/features/ci.md#schedules).
+              ExecutionHost.withSchedules(ExecutionHost.withTriggers(
                 ExecutionHost.withRepoFlows(
                   ExecutionHost.withTodos(
                     // Publish and Update branch (docs/features/branch-publish.md) read a branch's working copy on its
@@ -517,7 +567,7 @@ const object = <E, R>(
                   AgentSandbox.variant
                 ),
                 dispatchServices(github.value)
-              )
+              ), scheduleServices(github.value))
             )
             : hostFor(flows)
         const host = Option.isSome(repoClone)
@@ -526,6 +576,7 @@ const object = <E, R>(
         return {
           start: (intent: ExecutionObject.Intent) => host.start(intent).pipe(Effect.provide(logs)),
           signal: (deferredName: string) => host.signal(deferredName).pipe(Effect.provide(logs)),
+          answer: (task: string, value: typeof Schema.Json.Type) => host.answer(task, value).pipe(Effect.provide(logs)),
           wake: () => host.wake().pipe(Effect.provide(logs)),
           repositoryRun: () => host.repositoryRun.pipe(Effect.map(Option.getOrNull), Effect.provide(logs)),
           cancel: () => host.cancel().pipe(Effect.provide(logs)),

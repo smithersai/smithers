@@ -115,7 +115,14 @@ the write credential and environment described above.
 ## Tell whether it is working
 
 The transport reads through HTTP `/ac`. A local hit avoids the network, a
-remote hit hydrates the local entry, and a put publishes to both tiers.
+remote hit hydrates the local entry and missing output blobs. A publishable
+put uploads blobs before publishing its result entry. Files from 16 MiB up to 4 GiB
+use deterministic chunks and a small content-addressed index. Downloads verify
+every artifact and whole-file digest before output restoration. A missing or
+corrupt chunk is a miss; no partial output file is published. Existing local
+whole-file entries remain readable. One entry may reference at most 1000
+artifacts, represent at most 16 GiB of unique files, and have a remote body
+under 1 MiB. Complete legacy local results remain usable above remote limits.
 
 | Symptom                                        | What it means                                                                      |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -136,3 +143,11 @@ digest.
   content-addressed store guarantees.
 - [Target execution](../concepts/execution.md): why an unconfined result stays
   local.
+
+Artifact transfers have a 60-second deadline, including their bounded response
+body, verification, and local blob publication. Metadata retains 3-second reads
+and 8-second writes. A programmatic `timeouts` override applies to both.
+An output-limit refusal warns once and skips that entry while other remote
+operations remain available. During an outage, local metadata still reaches the
+runner so it can accept outputs that already measure correctly on disk.
+Go module-cache `directory-archive` blobs use the same verified transport.

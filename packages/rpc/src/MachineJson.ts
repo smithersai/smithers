@@ -63,8 +63,7 @@ export const addImagePackage = (
   if (current != null) {
     try {
       value = JSON.parse(current)
-    } catch (cause) {
-      if (!(cause instanceof SyntaxError)) throw cause
+    } catch {
       throw new MachineJsonRejected("invalid_json", "Invalid machine.json JSON")
     }
   }

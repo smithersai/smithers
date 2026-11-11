@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Bounded from "./Bounded.js";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -79,7 +80,7 @@ export const make = (options) => {
         ...material,
         panelists: plain ? names : JSON.stringify(names),
         ...(roles === undefined ? {} : { roles: JSON.stringify(material.roles) })
-    }, options);
+    }, options, [...panelists.map(([, panelist]) => panelist), moderator]);
     const body = ({ input }) => {
         const nodes = Object.fromEntries(panelists.map(([name, panelist]) => [name, callMember(panelist, payload(input, roles?.get(name)))]));
         // The opinions record is a planned reference until the run produces it, so
@@ -90,7 +91,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [...panelists.map(([, panelist]) => panelist), moderator]),
         body: Node.capture(material, body)
     });
 };

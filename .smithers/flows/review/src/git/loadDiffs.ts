@@ -3,8 +3,8 @@ import { io, runIo } from "../io.ts"
 import { reviewMode } from "../review/reviewMode.ts"
 import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"
 import { effectivePath } from "./effectivePath.ts"
-import { mergeBase } from "./mergeBase.ts"
 import { parseGitDiff } from "./parseGitDiff.ts"
+import { revisionsFor } from "./revisions.ts"
 import { runCommand } from "./runCommand.vibe"
 import { runGit } from "./runGit.ts"
 
@@ -138,7 +138,9 @@ function isOwnPath(path: string, own: ReadonlyArray<string>) {
 }
 
 /**
- * Reads the change set from git and parses it into one record per file.
+ * Reads the change set and parses it into one record per file. Commit and
+ * range mode read recorded revisions through {@link revisionsFor}: jj where
+ * `repoDir` holds `.jj`, Git otherwise.
  *
  * `own` names the repo-relative paths this run writes (see `reviewOwnPaths`);
  * they and the `.smithers-review` state dir are left out, so a repository
@@ -156,24 +158,10 @@ export async function loadDiffs(repoDir: string, input: OpenCodeReviewInput, own
   const mode = reviewMode(input)
   let diffText = ""
   if (mode === "range") {
-    const base = await mergeBase(repoDir, input.from, input.to)
-    diffText = await runGit(repoDir, [
-      "diff",
-      "--no-color",
-      `-U${DIFF_CONTEXT_LINES}`,
-      "--end-of-options",
-      base,
-      input.to.trim(),
-      "--"
-    ])
+    const revisions = await revisionsFor(repoDir)
+    diffText = await revisions.rangeDiff(await revisions.forkPoint(input.from.trim(), input.to.trim()), input.to.trim())
   } else if (mode === "commit") {
-    diffText = await runGit(repoDir, [
-      "show",
-      "--no-color",
-      `-U${DIFF_CONTEXT_LINES}`,
-      "--end-of-options",
-      input.commit.trim()
-    ])
+    diffText = await (await revisionsFor(repoDir)).commitDiff(input.commit.trim())
   } else {
     diffText = await workspaceDiffText(repoDir)
   }

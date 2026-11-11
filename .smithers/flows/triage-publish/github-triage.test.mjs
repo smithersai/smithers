@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "node:test"
+import { fileURLToPath } from "node:url"
 
 import { apply, BOT_LOGIN, botLogin, fallbackReport, neutralizeMentions, prepare, validateReport } from "./github-triage.mjs"
 
@@ -110,7 +111,7 @@ describe("GitHub triage preparation", () => {
 describe("GitHub triage entry point", () => {
   it("runs main from a checkout path that contains a space", async () => {
     const { spawnSync } = await import("node:child_process")
-    const { copyFileSync, mkdirSync, mkdtempSync, rmSync } = await import("node:fs")
+    const { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } = await import("node:fs")
     const { tmpdir } = await import("node:os")
     const { join } = await import("node:path")
     const root = mkdtempSync(join(tmpdir(), "smithers triage "))
@@ -119,6 +120,8 @@ describe("GitHub triage entry point", () => {
       mkdirSync(join(root, ".smithers", "flows", "triage-publish"), { recursive: true })
       copyFileSync(new URL("./github-triage.mjs", import.meta.url), join(root, ".smithers", "flows", "triage-publish", "github-triage.mjs"))
       copyFileSync(new URL("../../../packages/repo-targets/scripts/workspace-packages.mjs", import.meta.url), join(root, "packages/repo-targets/scripts/workspace-packages.mjs"))
+      // The membership reader imports the pinned `yaml` and `tinyglobby`.
+      symlinkSync(fileURLToPath(new URL("../../../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
       const result = spawnSync(process.execPath, [join(root, ".smithers", "flows", "triage-publish", "github-triage.mjs")], { encoding: "utf8", timeout: 30_000 })
       assert.equal(result.status, 1)
       assert.match(result.stderr, /usage: github-triage\.mjs/)

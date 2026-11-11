@@ -149,15 +149,16 @@ describe("approval mutations require independent authority", () => {
     })
 
     it(`${adapter}: host delegation grants exactly its scope and is not an actor-supplied role`, async () => {
+      const reviewer = { id: "delegated-reviewer", kind: "user", stampedAt: 0 }
       const policy = await Effect.runPromise(ApprovalAuthority.make([
-        { principal: { id: principal.id, kind: principal.kind }, targets: ["Plan"], scopes: ["once"] }
+        { principal: { id: reviewer.id, kind: reviewer.kind }, targets: ["Plan"], scopes: ["once"] }
       ]))
       await Effect.runPromise(
         Effect.gen(function*() {
           const control = yield* Control
           const runtime = yield* ControlRuntime
           const card = yield* control.plan({ flowId: "system/test", input: {} })
-          const input = { ...card.approval, principal }
+          const input = { ...card.approval, principal: reviewer }
           for (const scope of ["run", "remembered"] as const) {
             expect(yield* Effect.flip(control.approve({ ...input, scope }))).toBeInstanceOf(Unauthorized)
           }

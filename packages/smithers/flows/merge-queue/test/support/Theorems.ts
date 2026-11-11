@@ -5,7 +5,7 @@
  * runner (`scripts/mutants.ts`) runs them on kernels with a planted bug.
  */
 
-import type { Config, Event, Line, Result, Run, State, Status } from "../../src/index.ts"
+import type { Config, Event, Line, Result, Run, State, Status } from "../../src/Kernel.ts"
 import { random, trace } from "./Generate.ts"
 import { violation } from "./Invariant.ts"
 
@@ -21,6 +21,8 @@ export interface Kernel {
   readonly pending: (config: Config, run: Run) => boolean
   readonly isTerminal: (status: Status) => boolean
   readonly live: (state: State, run: Run) => ReadonlyArray<unknown> | undefined
+  readonly pushingRun: (state: State) => Run | undefined
+  readonly landNow: (config: Config, state: State, run: number) => State
   readonly green: (config: Config, results: ReadonlyArray<Result>) => boolean
   readonly complete: (config: Config, results: ReadonlyArray<Result>) => boolean
   readonly failed: (results: ReadonlyArray<Result>) => boolean
@@ -80,9 +82,10 @@ export const theorems: ReadonlyArray<Theorem> = [
   },
   {
     name: "main_moves_only_by_land, main_only_grows",
-    statement: "only a landing moves the target, and only by appending",
+    statement: "only a landing or someone else's commit moves the target, and only by appending",
     holds: (_, entry) =>
-      (entry.event._tag === "land" || JSON.stringify(entry.after.main) === JSON.stringify(entry.before.main))
+      (entry.event._tag === "land" || entry.event._tag === "foreign" ||
+        JSON.stringify(entry.after.main) === JSON.stringify(entry.before.main))
       && JSON.stringify(entry.after.main.slice(0, entry.before.main.length)) === JSON.stringify(entry.before.main)
   },
   {
@@ -115,7 +118,8 @@ export const theorems: ReadonlyArray<Theorem> = [
     holds: (kernel, entry) =>
       entry.config.required.length === 0 || entry.config.maxRuns === 0
       || kernel.plan(entry.config, entry.after) !== undefined || kernel.ready(entry.after).length === 0
-      || entry.after.runs.some((run) => kernel.pending(entry.config, run))
+      || entry.after.runs.some((run) => kernel.pending(entry.config, run)) ||
+      kernel.pushingRun(entry.after) !== undefined
   },
   {
     name: "enqueue_always_accepted, enqueue_keeps_runs_live",
@@ -137,9 +141,39 @@ export const theorems: ReadonlyArray<Theorem> = [
     holds: (kernel, entry) =>
       (entry.config.required.length === 0 || entry.config.maxRuns === 0 || kernel.ready(entry.after).length === 0
         || entry.after.runs.some((run) => kernel.pending(entry.config, run))
+        || kernel.pushingRun(entry.after) !== undefined
         || kernel.plan(entry.config, entry.after) !== undefined)
       && (kernel.ready(entry.after) as ReadonlyArray<{ readonly status: Status }>).every((change) =>
         change.status._tag === "queued"
+      )
+  },
+  {
+    name: "land_needs_a_push, land_fast_forwards, run_starts_on_the_tip",
+    statement: "only the pushed run lands, a landing appends to the tip, and a run is built on the tip",
+    holds: (_, entry) =>
+      (entry.event._tag !== "land" || entry.after.main.length === entry.before.main.length
+        || entry.before.pushing === entry.event.run)
+      && (entry.event._tag !== "start" || entry.after.runs.length === entry.before.runs.length
+        || JSON.stringify(entry.after.runs.at(-1)!.base) === JSON.stringify(entry.before.main))
+  },
+  {
+    name: "foreign_kills_every_run, moved_target_refuses_landing, moved_target_keeps_the_queue",
+    statement: "after someone else moves the target no run is live, no landing is accepted, and no change is lost",
+    holds: (kernel, entry) => {
+      const id = 1000 + entry.after.changes.length
+      const moved = kernel.step(entry.config, entry.after, { _tag: "foreign", id })
+      return moved.main.length === entry.after.main.length + 1
+        && moved.runs.every((run) => kernel.live(moved, run) === undefined)
+        && moved.runs.every((run) => same(kernel.step(entry.config, moved, { _tag: "land", run: run.id }), moved))
+        && entry.after.changes.every((change, index) => JSON.stringify(moved.changes[index]) === JSON.stringify(change))
+    }
+  },
+  {
+    name: "landNow_refuses_partial, landNow_refuses_failed",
+    statement: "the landing step itself refuses a run that is not green, pushed or not",
+    holds: (kernel, entry) =>
+      entry.after.runs.every((run) =>
+        kernel.green(entry.config, run.results) || same(kernel.landNow(entry.config, entry.after, run.id), entry.after)
       )
   },
   {

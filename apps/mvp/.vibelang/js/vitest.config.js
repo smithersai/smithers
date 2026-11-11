@@ -150,6 +150,9 @@ export default defineConfig({
                 // Agent status: the runs routes and table (docs/features/agent-status.md).
                 "worker/Runs.ts",
                 "db/migrations/0013_runs.ts",
+                // An agent's question to one person and its addressed wait (docs/features/agent-status.md#addressed-waits).
+                "worker/Asks.ts",
+                "db/migrations/0117_wait_address.ts",
                 // Notifications: the feed's fold, routes and shape, and the run index's scope (docs/features/notifications.md).
                 "worker/Notifications.ts",
                 "db/migrations/0020_notifications.ts",
@@ -215,12 +218,12 @@ export default defineConfig({
                 // Co-editing: the texts people edit together (docs/features/coedit.md).
                 "db/migrations/0026_text_updates.ts",
                 // What the Electric gateway lets through (docs/infrastructure.md).
-                "infra/ElectricAccess.ts",
+                "infra/ElectricAccess.vibe",
                 // How ChatApi calls the gateway: its service binding (docs/infrastructure.md).
                 "infra/ElectricUpstream.ts",
-                "infra/ElectricCache.ts",
+                "infra/ElectricCache.vibe",
                 // Electric's container kept running between visits (docs/infrastructure.md#electric).
-                "infra/ElectricAwake.ts",
+                "infra/ElectricAwake.vibe",
                 // An overloaded Electric object answered 503, and the gateway's record of each request (docs/infrastructure.md#electric).
                 "infra/ElectricRelay.ts",
                 // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).

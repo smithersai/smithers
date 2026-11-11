@@ -302,6 +302,63 @@ describe("registering the MCP server", () => {
     expect(readdirSync(directory)).toEqual([".claude.json"])
   })
 
+  it("writes the profile CLAUDE_CONFIG_DIR selects, not the home directory", () => {
+    const directory = home()
+    const profile = join(home(), "accounts", "second")
+
+    const wired = Agents.addMcp(Agents.find("claude")!, undefined, { HOME: directory, CLAUDE_CONFIG_DIR: profile })
+
+    // Claude Code reads `$CLAUDE_CONFIG_DIR/.claude.json` for such a profile,
+    // so an entry under the home directory never reached it.
+    expect(wired).toMatchObject({ status: "written", path: join(profile, ".claude.json") })
+    expect(JSON.parse(readFileSync(wired.path, "utf8")).mcpServers.smithers.args).toContain("--mcp")
+    expect(existsSync(join(directory, ".claude.json"))).toBe(false)
+  })
+
+  it("keeps an explicit home separate from an ambient CLAUDE_CONFIG_DIR", () => {
+    const directory = home()
+    const ambient = home()
+    const previous = process.env.CLAUDE_CONFIG_DIR
+    process.env.CLAUDE_CONFIG_DIR = ambient
+    try {
+      expect(Agents.addMcp(Agents.find("claude")!, directory).path).toBe(join(directory, ".claude.json"))
+      expect(existsSync(join(ambient, ".claude.json"))).toBe(false)
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR
+      else process.env.CLAUDE_CONFIG_DIR = previous
+    }
+  })
+
+  it("records the memory store the registering environment names, and follows it when it changes", () => {
+    const directory = home()
+    const claude = Agents.find("claude")!
+    const entry = () => JSON.parse(readFileSync(join(directory, ".claude.json"), "utf8")).mcpServers.smithers
+    const shared = { HOME: directory, SMITHERS_MEMORY_DB: join(directory, "shared", "memory.db") }
+
+    expect(Agents.addMcp(claude, undefined, shared).status).toBe("written")
+    expect(entry().env).toEqual({ SMITHERS_MEMORY_DB: join(directory, "shared", "memory.db") })
+    expect(Agents.addMcp(claude, undefined, shared).status).toBe("unchanged")
+
+    // A relative store is recorded where it resolves now, not wherever the agent later starts the server.
+    expect(Agents.addMcp(claude, undefined, { HOME: directory, SMITHERS_MEMORY_DB: "relative.db" }).status)
+      .toBe("written")
+    expect(entry().env).toEqual({ SMITHERS_MEMORY_DB: join(process.cwd(), "relative.db") })
+
+    for (const none of [{ HOME: directory }, { HOME: directory, SMITHERS_MEMORY_DB: "" }]) {
+      Agents.addMcp(claude, undefined, shared)
+      expect(Agents.addMcp(claude, undefined, none).status).toBe("written")
+      expect(entry()).not.toHaveProperty("env")
+    }
+  })
+
+  it("prints instructions that carry the memory store", () => {
+    const instructions = Agents.manualInstructions(["claude", "codex"], { SMITHERS_MEMORY_DB: "/srv/memory.db" })
+
+    expect(instructions).toContain("claude mcp add --env SMITHERS_MEMORY_DB=/srv/memory.db smithers -- ")
+    expect(instructions).toContain("codex mcp add --env SMITHERS_MEMORY_DB=/srv/memory.db smithers -- ")
+    expect(instructions).toContain("\"env\": {\"SMITHERS_MEMORY_DB\":\"/srv/memory.db\"} }")
+  })
+
   it("prints instructions with the separator an agent CLI needs", () => {
     const instructions = Agents.manualInstructions(["claude"])
 
@@ -318,6 +375,42 @@ describe("registering the MCP server", () => {
 })
 
 describe("registering with Codex", () => {
+  it.each([
+    ["no store on either side", undefined, undefined, "unchanged"],
+    ["a null store listed and none wanted", null, undefined, "unchanged"],
+    ["the same store on both sides", "/srv/memory.db", "/srv/memory.db", "unchanged"],
+    ["another store listed", "/srv/other.db", "/srv/memory.db", "failed"],
+    ["a store listed and none wanted", "/srv/memory.db", undefined, "failed"],
+    ["no store listed and one wanted", undefined, "/srv/memory.db", "failed"]
+  ])("compares the listed entry's memory store: %s", (_, listed, wanted, status) => {
+    const launch = Agents.launchCommand()
+    const bin = home()
+    const directory = home()
+    // This `codex` lists one fixed entry and accepts every `mcp add` without changing it.
+    const servers = [{
+      name: "smithers",
+      enabled: true,
+      transport: {
+        type: "stdio",
+        command: launch.command,
+        args: launch.args,
+        ...(listed === undefined ? {} : { env: listed === null ? null : { SMITHERS_MEMORY_DB: listed } })
+      }
+    }]
+    writeFileSync(join(bin, "servers.json"), JSON.stringify(servers))
+    writeFileSync(join(bin, "codex"), `#!/bin/sh\nif [ "$2" = "list" ]; then cat "${join(bin, "servers.json")}"; fi\n`)
+    chmodSync(join(bin, "codex"), 0o755)
+
+    const wired = Agents.addMcp(Agents.find("codex")!, directory, {
+      PATH: `${bin}:/usr/bin:/bin`,
+      HOME: directory,
+      CODEX_HOME: join(directory, ".codex"),
+      ...(wanted === undefined ? {} : { SMITHERS_MEMORY_DB: wanted })
+    })
+
+    expect(wired.status, wired.reason).toBe(status)
+  })
+
   /** A `codex` on PATH that answers `mcp list --json` with `listed` and exits `status` for `mcp add`. */
   const fakeCodex = (listed: string, status = 0): NodeJS.ProcessEnv => {
     const bin = home()

@@ -455,7 +455,21 @@ const staticPrefix = (pattern) => {
 const inputNoun = "declared input";
 const ignoreNoun = ".gitignore";
 const directoryNoun = "declared input directory";
-const declarationFileNames = ["PACKAGE.ts"];
+/**
+ * The file names that make a directory a package: a target declaration in
+ * TypeScript or in VibeLang. A directory holds at most one of them.
+ *
+ * @category discovery
+ * @since 1.0.0
+ */
+export const declarationFileNames = ["PACKAGE.ts", "PACKAGE.vibe"];
+/**
+ * Checks whether a base name is one of the {@link declarationFileNames}.
+ *
+ * @category discovery
+ * @since 1.0.0
+ */
+export const isDeclarationFileName = (name) => declarationFileNames.includes(name);
 const insideEnteredRepository = (scan, relative) => {
     for (const boundary of scan.enteredRepositories) {
         if (relative === boundary || relative.startsWith(`${boundary}/`))

@@ -38,7 +38,39 @@ Named browser gaps that stay open:
 | --- | --- |
 | `src/history/flows.vibe:213` | V8 range defect (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm/`), if the bundle ships it. |
 | `src/history/tools.vibe:93` | The compiler's exhaustive-match fallthrough arm (ruling VL-37; the fleet lead's compiler change). |
-| `src/web/wikiView.vibe:88` (`toHtml`) | Runs only when the repository's wiki source differs from the build. Needs a recorded fixture from `vl-record-replay`. |
+| `src/web/wikiView.vibe:88` (`toHtml`) | Runs only when the repository's wiki source differs from the build. The fixture wiki host never changes a page's source, and decision 0032's recordings replay GitHub in Node, not behind a browser. Needs a browser-to-worker run over a recording. |
+| `src/web/main.vibe:391`–`394` and `issueRecovered`, `issueRecoveredView` (`issueDecision.vibe`) | `IssuesState.saved` comes only from `worker/Issues.vibe`. No browser-side service produces it, so only a browser against the live worker reaches the recovered-issue arm. |
+| `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
+| `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code. |
+
+### Browser journeys and measurement (session 16, 2026-11-11)
+
+New Chromium journeys over faulty Effect services (`test/support/FaultyFactory.vibe`): `fault=accounts` fails the
+first sign-in or Visit as choice, member list, grant and sign-out once each (`e2e/accounts.spec.ts`, which also
+covers the lost role stream's Retry and Dismiss); `fault=live-details` runs the live screens over the mock and fails
+the first issue-details read (`e2e/issue-details.spec.ts`); `e2e/actions-faults.spec.ts` drives the Actions list
+failure, Retry and a Post run's typed input.
+
+Bug found and fixed: on a phone in live mode the header (88px, two rows) covered the issues surface's own header and
+back link, because only the mock-only Visit as picker set `--vl-header-height`; surfaces started at the 56px
+fallback. The height now keys on the identity tools. Regression: `e2e/phone-header.spec.ts` (live failed, mock
+passed, before the fix).
+
+Full `pnpm e2e:coverage` (box, all three projects): 315 passed, 12 opt-in skips, 0 unexpected; exit 1 on thresholds
+only. Before is the first run with this roster (old structure counting); after includes the structure counting from
+`9fa0b210`, so totals are snapshots, not a controlled delta.
+
+| File (lines, branches, functions, statements) | Before | After |
+| --- | --- | --- |
+| All 106 roster files | 3721/4947, 3713/5891, 1537/2023, 4317/6261 | 3930/5025, 3792/5875, 1649/2091, 4656/6420 |
+| `src/web/main.vibe` | 606/667, 589/823, 305/369, 747/884 | 637/663, 620/823, 362/402, 789/877 |
+| `src/web/modelDecision.vibe` | 52/78, 73/112, 37/51, 59/95 | 74/76, 95/112, 51/51, 89/93 |
+| `src/web/issueDecision.vibe` | 79/91, 173/257, 16/22, 99/142 | 80/90, 173/257, 17/22, 100/141 |
+| `src/web/historyView.vibe` | 64/73, 116/145, 40/43, 70/82 | 67/72, 116/145, 40/43, 73/81 |
+| `src/web/wikiView.vibe` | 27/27, 82/96, 17/19, 33/38 | 27/27, 82/96, 17/19, 36/38 |
+
+Files below 100%: 91 of 105, then 89 of 106. The history page has no fault host yet, so its failed, empty and
+refused states (`historyView.vibe` 48–59, 206–211) are the next journeys.
 
 ## Landed behavior
 

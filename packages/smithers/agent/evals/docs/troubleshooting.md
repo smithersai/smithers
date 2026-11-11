@@ -102,6 +102,10 @@ The target flow failed for a case, or no executor was available.
   executor succeeded but returned a malformed execution. `path` is
   `cases['<name>'].stepKey` or `cases['<name>'].latencyMs`. Return the step
   key as a string and the latency in milliseconds as a number of 0 or more.
+- `Target failed for case '<name>': executor returned an output that is not
+  structured-cloneable`: the output holds a function, a symbol, a stream, or
+  anything else `structuredClone` rejects. `path` is `cases['<name>'].output`,
+  and the retained `cause` is the `DataCloneError`. Return plain data.
 - `No executor is available for case '<name>'`: the run was provided
   `CaseExecutor.makeNoop()` or `CaseExecutor.layerNoop`. Wire a real executor.
 
@@ -151,7 +155,8 @@ Two wiring mistakes fail outside the `EvalError` channel:
 - A binding graded nothing. The execution's `target` is not the exact flow
   value the binding's `appliesTo` holds (reference identity, not structure),
   the case failed before scoring, or the sampling policy decided against the
-  execution.
+  execution. The case's `ungraded` field says which: `unbound` makes the gate
+  exit 5, and `sampled_out` leaves the attempt out of the trial statistics.
 - The gate exits 5. The gate could not decide, or it passed with unresolved
   observations. The Markdown report's Case failures, Missing observations, and
   Inconclusive sections name what is missing. Exit 5 is an unusable harness to

@@ -12,6 +12,13 @@
 
 ### Added
 
+- `Core.Channel.fromSource`: the control-plane door of a polling source. Its
+  `handle` is the batch handler of `Core.Source.runWithCursor`, so each polled
+  event starts a flow or signals a run through `Channels.ingest` under its
+  dedupe key and the cursor commits only after the control plane took the
+  batch. The door's channel refuses any delivery that did not come through the
+  door itself
+  ([#4603](https://github.com/smithersai/smithers/issues/4603)).
 - `GitHub.Proxy` and `GitHub.RateLimit`: one reverse proxy per machine that
   every GitHub client calls instead of `api.github.com`. It holds the
   credential and one limiter per principal enforcing GitHub's documented

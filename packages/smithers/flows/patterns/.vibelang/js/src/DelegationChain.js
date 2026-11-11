@@ -304,7 +304,14 @@ export const make = (caller) => {
     const { name, description } = Compose.label("delegationChain", {
         tierOrder: captured.tierOrder,
         maxDepth: captured.maxDepth
-    }, caller);
+    }, caller, [
+        options.refine,
+        options.plan,
+        options.derisk,
+        ...captured.tierOrder.map((tier) => options.execute[tier]),
+        options.review,
+        options.settle
+    ]);
     const execution = (input, state) => {
         const goal = state.goal;
         // The state is payload a caller could hand in directly, so the derisk

@@ -8,6 +8,7 @@ Options:
   --mcp-config <string>  Path to the configured MCP servers
   --quiet                Suppress progress messages
   --agent <string>
+  --memory-db <string>   SQLite file the registered agents share as their memory store (defaults to SMITHERS_MEMORY_DB)
   --verbose              Show redacted diagnostic details
 
 Custom Global Options:

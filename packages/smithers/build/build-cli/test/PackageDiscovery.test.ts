@@ -83,6 +83,25 @@ describe("PackageDiscovery.discover boundaries", () => {
     })
   })
 
+  it.each(["", "lib"])(
+    "refuses a directory that declares its package in PACKAGE.ts and PACKAGE.vibe (%j)",
+    async (at) => {
+      const root = await temporaryWorkspace()
+      const file = (name: string) => at === "" ? name : `${at}/${name}`
+      await write(root, file("PACKAGE.vibe"), "export const Package = 2\n")
+      await write(root, file("PACKAGE.ts"), "export const Package = 1\n")
+      const refused = PackageDiscovery.discover(root)
+      await expect(refused).rejects.toMatchObject({ code: "duplicate_package_path", path: file("PACKAGE.ts") })
+      await expect(refused).rejects.toThrow(`${file("PACKAGE.ts")} and ${file("PACKAGE.vibe")} both declare //${at}`)
+    }
+  )
+
+  it("discovers a PACKAGE.vibe beside a sibling directory's PACKAGE.ts", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "lib/PACKAGE.vibe", "export const Package = 2\n")
+    expect((await PackageDiscovery.discover(root)).packageFiles).toEqual(["PACKAGE.ts", "lib/PACKAGE.vibe"])
+  })
+
   it("rejects an obsolete nested BUILD.ts with its workspace-relative path", async () => {
     const root = await temporaryWorkspace()
     await write(root, "nested/BUILD.ts", "export const stale = 1\n")

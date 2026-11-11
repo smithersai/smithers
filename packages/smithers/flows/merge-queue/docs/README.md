@@ -17,8 +17,15 @@ names it.
 - **The target is always green.** The target's tree is the tree it started
   from, or exactly the tree of a recorded landing whose result was complete
   and green.
-- **The tested tree is the merged tree.** Only a landing moves the target, and
-  it moves it onto the tree one run tested, never a tree rebuilt afterwards.
+- **The tested tree is the merged tree.** The queue lands only the run it
+  pushed, onto the tree that run tested, never a tree rebuilt afterwards.
+- **Everything is rebased on the tip of the target.** A run is built on the
+  target's tip, a landing is a fast-forward of that tip, and there is no side
+  branch. When someone else moves the target, nothing tested on the old tip
+  lands: the stack is rebuilt on the new tip and tested again.
+- **The queue never blocks.** A new change is accepted in every state, a green
+  run lands whatever else is failing or being fixed, and a moved target does
+  not stop it.
 - **A partial result never merges.** Results stream in one check at a time; a
   run that still misses a required check cannot land, whatever has passed.
 - **Fixing starts at the first failure.** One failed check is enough to send a
@@ -61,11 +68,15 @@ revisions in the same order, so "the tree that was tested" is a precise thing.
 
 The queue is one function, `step(config, state, event)`. Every state change is
 an event, and every event has a guard: an event whose guard fails returns the
-state unchanged. Five events arrive from outside (`enqueue`, `withdraw`,
-`result`, `fixed`, `gaveUp`). Four are the queue's own decisions (`start`,
-`land`, `blame`, `cancel`), and `plan(config, state)` picks the next one:
+state unchanged. Seven events arrive from outside (`enqueue`, `withdraw`,
+`result`, `fixed`, `gaveUp`, `foreign` for a commit someone else put on the
+target, and `land` when the target is seen on the tree the queue pushed). Four
+are the queue's own decisions (`start`, `push`, `blame`, `cancel`), and
+`plan(config, state)` picks the next one:
 
-1. **Land** the longest run that is live, complete and green.
+1. **Push** the longest run that is live, complete and green: fast-forward the
+   target onto its tree. The landing is recorded when the target is seen
+   there, so a push that loses a race lands nothing.
 2. **Blame** the one change left in a failed run. It goes to a fix agent, or,
    with no attempts left, out of the queue with a reason.
 3. **Cancel** a run that can no longer land or help a fix.
@@ -76,6 +87,30 @@ state unchanged. Five events arrive from outside (`enqueue`, `withdraw`,
 
 Safety does not depend on `plan`. `step` checks every guard itself, so a wrong
 policy can waste CI time and cannot land an untested tree.
+
+## The driver
+
+`Driver.round(config, position)` is one round of the queue against the world,
+through four services a host provides: `Inbox` (changes handed in and taken
+back), `Ci`, `Fixer` (fix agents) and `Target` (the branch).
+
+```text
+sync     make the world match the state: fast-forward the target onto the
+         tree being pushed (compare-and-swap from the tip it was tested on),
+         keep exactly the wanted CI runs and fix agents going
+gather   read the target's tip, new letters, every finished check, lost
+         runs, fix agents' answers; wait only when there is nothing new and
+         nothing to decide
+fold     apply those events and let the policy settle
+check    the state's tree must be exactly the tip that was read
+```
+
+Every command is derived from the state alone and is a reconciliation, so a
+host records the position between rounds and repeats a round after a crash.
+The tip is read every round, never assumed. A commit on top of it that the
+queue did not put there becomes a `foreign` event. A tip that does not extend
+the tree the queue knows (rewritten history) fails the round with
+`TargetDiverged` and changes nothing.
 
 ## When a change is unmergeable
 

@@ -30,6 +30,7 @@ import * as Executor from "./Executor.js";
 import * as GitHooks from "./GitHooks.js";
 import * as GraphOutput from "./GraphOutput.js";
 import * as ApprovalBridge from "./internal/ApprovalBridge.js";
+import * as Shards from "./internal/Shards.js";
 import { requireRecorded } from "./internal/UnrecordedGates.js";
 import * as KnownRed from "./KnownRed.js";
 import * as Label from "./Label.js";
@@ -80,6 +81,10 @@ const executionOptions = workspaceOption.extend({
 });
 const lifecycleOptions = executionOptions.extend({
     lifecycle: z.enum(["evergreen", "artifact", "all"]).optional().describe("Select targets by lifecycle; omitted selects all")
+});
+const ciOptions = lifecycleOptions.extend({
+    shard: z.string().optional().describe("Run one part of the selection, as <index>/<count>; parts are balanced by the durations --timings measured"),
+    timings: z.array(z.string()).optional().describe("A --results-file of an earlier run whose durations weigh the --shard split; repeatable, later files win")
 });
 /** The flags outward and agent targets take: the commit message override, the sweep, and payload inputs. */
 const invocationOptions = {
@@ -578,6 +583,21 @@ export const runVerb = async (verb, patterns, flags, config, reporter) => {
 const ciKinds = ["lint", "build", "test", "docs"];
 /** Plans every CI-safe verb over the patterns' union and executes the merged graph. */
 const runCi = async (patterns, flags, config, reporter) => {
+    // The split is refused before any declaration loads: a mistyped part must not cost a plan.
+    if (flags.shard === undefined && flags.timings !== undefined)
+        throw new Error("--timings needs --shard");
+    const shard = flags.shard === undefined ? undefined : Shards.parse(flags.shard);
+    const measured = new Map();
+    for (const path of flags.timings ?? []) {
+        let content;
+        try {
+            content = await NodeFs.readFile(NodePath.resolve(flags.workspace, path), "utf8");
+        }
+        catch (cause) {
+            throw new Error(`${path}: cannot read the timings (${Diagnostic.describe(cause)})`);
+        }
+        Shards.measure(path, content, measured);
+    }
     const index = await openPackageIndex(flags, config);
     const pattern = patterns.join(" ");
     {
@@ -634,7 +654,7 @@ const runCi = async (patterns, flags, config, reporter) => {
             // Only a recorded unsupported-verb refusal removes an input from every plan.
             throw refusals.find((refusal) => refusal.pattern === unsupported);
         }
-        const merged = Executor.mergePlans(packagePlans.map(({ kind, plan }) => ({
+        const whole = Executor.mergePlans(packagePlans.map(({ kind, plan }) => ({
             verb: kind,
             pattern,
             roots: plan.roots,
@@ -642,6 +662,7 @@ const runCi = async (patterns, flags, config, reporter) => {
             edges: plan.workList.flatMap((node) => node.dependencies.map((from) => ({ from, to: node.label }))),
             warnings: []
         })));
+        const merged = shard === undefined ? whole : Shards.select(whole, shard, measured);
         if (flags.plan)
             return { verb: "ci", pattern, ...merged, targets: merged.targets.map(plannedTarget) };
         // Services and key-only dependencies are planned but never scheduled.
@@ -1543,7 +1564,7 @@ const makeCommands = (config) => Cli.create(config.cliName ?? "smithers-build", 
     description: "Execute build, test, lint, and documentation targets; wildcards omit exclusive tiers unless --include-exclusive is set",
     mcp: { annotations: { readOnlyHint: false } },
     args: patternsArgument,
-    options: lifecycleOptions,
+    options: ciOptions,
     alias: executionAlias,
     run: (context) => executeCommand(context, config, "ci_failed", (reporter) => runCi(context.args.patterns, context.options, config, reporter))
 })

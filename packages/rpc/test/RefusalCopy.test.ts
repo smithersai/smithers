@@ -583,3 +583,13 @@ describe("leadingRefusal", () => {
     expect(leadingRefusal("The box failed: workspace_gone — x")).toBeNull()
   })
 })
+
+describe("refusalUserFailure detail", () => {
+  test("a coded refusal with no words of its own keeps just the code", () => {
+    for (const message of ["", "   "]) {
+      const failure = refusalUserFailure(forCode("no_capacity", message))
+      expect(failure.tag).toBe("no_capacity")
+      expect(failure.detail).toBe("no_capacity")
+    }
+  })
+})

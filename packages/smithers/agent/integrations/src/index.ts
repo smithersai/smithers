@@ -1,5 +1,5 @@
 /**
- * GitHub adapters over
+ * GitHub and Telegram adapters over
  * the Smithers control plane.
  *
  * Import a provider through its own subpath (`@smthrs/integrations/github`)
@@ -19,3 +19,9 @@ export * as Core from "./core.ts"
  * @since 1.0.0
  */
 export * as GitHub from "./github.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Telegram from "./telegram.ts"

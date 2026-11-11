@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as DurableWriter from "../src/DurableWriter.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
@@ -9,13 +10,12 @@ const connectPair = (layer: typeof TestDatabase.layer) =>
   Effect.map(connect(layer), (sql) => ({ sql, write: DurableWriter.make(sql).write }))
 
 /**
- * The in-memory path used by every other suite. `:memory:` is private to a
- * connection, so both handles are the same pair and serialization comes
- * from the client's in-process transaction mutex rather than the database —
- * a weaker mechanism that must still satisfy the same contract.
+ * The matrix-selected test client: SQLite in memory, or an isolated PostgreSQL
+ * schema. Sharing one pair exercises client serialization; the independent
+ * driver harnesses additionally exercise cross-client isolation and rollback.
  */
 const memoryHarness: Harness = {
-  label: "TestDatabase, one shared in-memory connection",
+  label: "TestDatabase, one shared client",
   realDriver: false,
   crossConnection: false,
   run: (body) =>
@@ -25,4 +25,4 @@ const memoryHarness: Harness = {
     })) as Effect.Effect<never>
 }
 
-describeContract(memoryHarness)
+describeContract(memoryHarness, { describe, expect, it })

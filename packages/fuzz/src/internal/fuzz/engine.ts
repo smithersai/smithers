@@ -235,6 +235,9 @@ export const signatureOf = (outcome: Outcome<unknown>): string => {
 const classify = <E>(exit: Exit.Exit<unknown, unknown>): Effect.Effect<Fuzz.Failure<E> | typeof passed> => {
   if (Exit.isSuccess(exit)) return Effect.succeed(exit.value === true ? passed : { _tag: "ReturnedFalse" })
   const reasons = exit.cause.reasons
+  if (reasons.length === 0) {
+    return Effect.succeed({ _tag: "Died", defect: { _tag: "EmptyCause", cause: exit.cause } })
+  }
   // Interruption belongs to whoever interrupted the property, so it leaves the fuzz run.
   if (reasons.some(Cause.isInterruptReason)) return Effect.failCause(exit.cause as Cause.Cause<never>)
   const died = reasons.find(Cause.isDieReason)

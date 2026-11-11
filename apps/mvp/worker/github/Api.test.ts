@@ -219,7 +219,7 @@ describe("POST /api/github/webhook", () => {
 
   test("with REPO_FLOWS on, a push or a pull request of any installed repository starts its triggers/Dispatch; off, none", async () => {
     const sha = "d".repeat(40)
-    const pushEvent = { ref: "refs/heads/feature/x", after: sha, repository: { full_name: "octo/other", default_branch: "trunk" } }
+    const pushEvent = { ref: "refs/heads/feature/x", before: "c".repeat(40), after: sha, repository: { full_name: "octo/other", default_branch: "trunk" } }
     const on = await githubHarness(runtime, { repoFlows: true })
     const id = crypto.randomUUID()
     expect((await on.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", pushEvent, { id }))).status).toBe(200)
@@ -243,6 +243,36 @@ describe("POST /api/github/webhook", () => {
     expect(on.line("github.webhook")[0]!.annotations).toMatchObject({ event: "push", dispatched: "octo/other", status: 200 })
     const off = await githubHarness(runtime)
     expect((await off.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", pushEvent))).status).toBe(200)
+    expect(off.starts).toEqual([])
+  })
+
+  test("with REPO_FLOWS on, a push to the default branch also starts its triggers/Sync; another push or a pull request, none", async () => {
+    const sha = "e".repeat(40)
+    const repository = { full_name: "octo/other", default_branch: "trunk" }
+    const on = await githubHarness(runtime, { repoFlows: true })
+    const id = crypto.randomUUID()
+    const toDefault = { ref: "refs/heads/trunk", before: "f".repeat(40), after: sha, repository }
+    expect((await on.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", toDefault, { id }))).status).toBe(200)
+    expect(on.starts.map((start) => start.flow)).toEqual(["triggers/Dispatch", "triggers/Sync"])
+    expect(on.starts[1]).toEqual({
+      flow: "triggers/Sync",
+      executionId: `triggers/sync:${id}`,
+      payload: { delivery: id, repo: "octo/other", defaultBranch: "trunk" },
+    })
+    expect(on.line("github.webhook")[0]!.annotations).toMatchObject({ dispatched: "octo/other", synced: "octo/other" })
+    const elsewhere = await githubHarness(runtime, { repoFlows: true })
+    expect((await elsewhere.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", { ...toDefault, ref: "refs/heads/feature/x" })))
+      .status).toBe(200)
+    const pull = {
+      action: "opened",
+      repository,
+      pull_request: { number: 3, author_association: "MEMBER", head: { sha, repo: { full_name: "octo/other" } }, base: { ref: "trunk" } },
+    }
+    expect((await elsewhere.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("pull_request", pull))).status).toBe(200)
+    expect(elsewhere.starts.map((start) => start.flow).filter((flow) => flow.startsWith("triggers/")))
+      .toEqual(["triggers/Dispatch", "triggers/Dispatch"])
+    const off = await githubHarness(runtime)
+    expect((await off.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", toDefault))).status).toBe(200)
     expect(off.starts).toEqual([])
   })
 

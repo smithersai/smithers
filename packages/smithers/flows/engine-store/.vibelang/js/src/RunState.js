@@ -132,7 +132,9 @@ export const RunState = Schema.Struct({
  * spent its budget (`EngineStore.drive`'s `budgetMs`) and released the run
  * at a step boundary for its host to drive again at once. `interrupted` is
  * any other interruption that was not a cancellation, usually a host
- * shutdown.
+ * shutdown. `defect` means the drive died, for example on a storage error
+ * after it took the run, and released the run so it is driven again rather
+ * than left owned by a process that still lives.
  *
  * Decisions written before this field existed carry no cause; read them with
  * {@link releaseCauseOf}, which answers `undefined` for them.
@@ -146,7 +148,8 @@ export const ReleaseCause = Schema.Union([
         unconfirmedMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
     }),
     Schema.Struct({ kind: Schema.Literal("yielded") }),
-    Schema.Struct({ kind: Schema.Literal("interrupted") })
+    Schema.Struct({ kind: Schema.Literal("interrupted") }),
+    Schema.Struct({ kind: Schema.Literal("defect") })
 ]);
 const decodeReleaseCause = Schema.decodeUnknownOption(ReleaseCause);
 /**

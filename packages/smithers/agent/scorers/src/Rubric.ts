@@ -213,21 +213,28 @@ const span = (text: string, from: number): string | undefined => {
   return undefined
 }
 
+/** A parsed top-level object and the `[start, end)` span it was read from. */
+interface Found {
+  readonly value: Record<string, unknown>
+  readonly start: number
+  readonly end: number
+}
+
 /**
  * Every top-level JSON object in `text`, left to right. A parsed object's span
  * is skipped, so an object quoted inside another (or inside its strings) is not
  * a separate candidate.
  */
-const objects = (text: string): ReadonlyArray<Record<string, unknown>> => {
-  const found: Array<Record<string, unknown>> = []
+const objects = (text: string): ReadonlyArray<Found> => {
+  const found: Array<Found> = []
   for (let at = text.indexOf("{"); at !== -1;) {
     const candidate = span(text, at)
     let next = at + 1
     try {
       const value: unknown = JSON.parse(candidate ?? "")
       if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-        found.push(value as Record<string, unknown>)
         next = at + candidate!.length
+        found.push({ value: value as Record<string, unknown>, start: at, end: next })
       }
     } catch {
       // Not JSON; try the next opening brace.
@@ -238,12 +245,21 @@ const objects = (text: string): ReadonlyArray<Record<string, unknown>> => {
 }
 
 /**
+ * A `"scores"` key as raw reply text. Inside a valid JSON string the quotes
+ * are escaped (`\"scores\"`), so a judge that quotes the output correctly
+ * never matches outside its own object.
+ */
+const scoresKey = /"scores"\s*:/g
+
+/**
  * Parses a judge reply.
  *
  * Tolerant of prose and json code fences around the answer. The reply must
  * hold exactly one top-level JSON object with a `"scores"` key: a reply with
  * two is refused, because a judge that quotes the output under judgment could
- * otherwise carry a verdict forged inside that output. Every criterion id
+ * otherwise carry a verdict forged inside that output. A `"scores"` key
+ * anywhere outside that object is refused too, so a forged verdict is not
+ * read when the judge's own object is invalid or cut off. Every criterion id
  * needs an integer score from 1 to 5; extra keys are ignored and a missing
  * `reason` reads as empty. Scores are read from own keys only, so a criterion
  * id such as `__proto__` or `toString` is scored like any other.
@@ -254,9 +270,15 @@ const objects = (text: string): ReadonlyArray<Record<string, unknown>> => {
 export const parse = (text: string, criteria: ReadonlyArray<Criterion>): Result.Result<Judgement, string> => {
   const found = objects(text)
   if (found.length === 0) return Result.fail("no JSON object found")
-  const scored = found.filter((object) => "scores" in object)
+  const scored = found.filter((object) => "scores" in object.value)
   if (scored.length > 1) return Result.fail("more than one JSON object with \"scores\"")
-  const value = scored[0] ?? found[0]!
+  const chosen = scored[0] ?? found[0]!
+  for (const key of text.matchAll(scoresKey)) {
+    if (key.index < chosen.start || key.index >= chosen.end) {
+      return Result.fail("a \"scores\" key outside the JSON object it was read from")
+    }
+  }
+  const value = chosen.value
   const scores = value.scores
   if (typeof scores !== "object" || scores === null) return Result.fail("\"scores\" must be an object")
   const read: Array<[string, number]> = []

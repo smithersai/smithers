@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
 /**
- * Throwaway git repositories for one test file, removed after every test.
+ * Throwaway git and jj repositories for one test file, removed after every test.
  * `track` registers any other temp directory for the same cleanup.
  */
 export function tempRepos() {
@@ -39,5 +39,19 @@ export function tempRepos() {
     return dir
   }
 
-  return { git, write, track, initRepo }
+  function jj(dir: string, args: Array<string>) {
+    return execFileSync("jj", args, { cwd: dir, stdio: "pipe", encoding: "utf8" })
+  }
+
+  /** A jj repository with no `.git` beside it, as a secondary jj workspace is. */
+  function initJjRepo(): string {
+    const dir = mkdtempSync(join(tmpdir(), "ocr-jj-"))
+    tempDirs.push(dir)
+    jj(dir, ["git", "init", "--no-colocate", "."])
+    jj(dir, ["config", "set", "--repo", "user.name", "T"])
+    jj(dir, ["config", "set", "--repo", "user.email", "t@example.com"])
+    return dir
+  }
+
+  return { git, jj, write, track, initRepo, initJjRepo }
 }

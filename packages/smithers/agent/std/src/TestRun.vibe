@@ -300,7 +300,7 @@ const execute = (
       ? result.stderr
       : `${result.stdout}\n${result.stderr}`
     const tail = truncateBytes(combined, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
-    const report = TestReport.parse(combined)
+    const report = TestReport.read(result)
     // Judged on the text this call returns rather than the text it captured,
     // so the attribution is made from the output the reader can see. A judge
     // that does not answer fails the call: see `Probe.unjudged`.

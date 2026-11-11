@@ -202,6 +202,11 @@ Copy semantics a caller must expect:
   becomes `null`. Array holes read as `undefined` and are refused too,
   because `JSON.stringify` would rewrite them to `null`.
 - Non-finite numbers (`NaN`, `Infinity`) are refused rather than rewritten.
+- A string or key holding an unpaired UTF-16 surrogate is refused, such as
+  the half emoji `"\u{1F680}".slice(0, 1)` leaves. It is not Unicode text,
+  so canonical JSON could never compare it on replay. Observation messages
+  are cut on a code point and carry U+FFFD for an unpaired surrogate, and
+  author output whose flow block holds one is a `shape` rejection.
 - `-0` crosses as `0`. It is the one accepted value the boundary normalizes,
   because JSON cannot represent a negative zero and the QuickJS binding,
   which encodes in-realm, already hands the host `0`. Every other accepted

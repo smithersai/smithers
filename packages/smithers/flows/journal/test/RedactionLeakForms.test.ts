@@ -689,6 +689,18 @@ describe("the scanner's cost", () => {
     expect(bestRatio(run(8_000), run(32_000))).toBeLessThan(10)
   })
 
+  // Each `<` searched on to the end of the text for a `>`: eight times the
+  // run cost about fifty times as much, and 320 kB blocked the process for
+  // 11 s (#4541). Eight times the input separates linear from quadratic by
+  // more than any noise does.
+  it.each([
+    ["a durable row", (n: number) => () => Redaction.redact(`token=${"<".repeat(n)}`)],
+    ["a diagnostic", (n: number) => () => Redaction.redactDiagnostic(`token=${"<".repeat(n)}`)]
+  ])("grows linearly over a run of < after a credential name in %s (#4541)", (_name, run) => {
+    run(500)()
+    expect(ratio(run(16_000), run(128_000))).toBeLessThan(25)
+  })
+
   // Each unclosed container past its line reads the 4 KiB floor, and the
   // first few read on through the text's scan budget (#3088).
   it("grows linearly over unclosed multi-line containers in a durable row (#3088)", () => {

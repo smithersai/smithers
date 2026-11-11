@@ -92,7 +92,7 @@ describe("DriftDetector", () => {
     expect(named._tag).toBe("config-drift")
     expect(named.description).toBe("Watch the config against its baseline.")
     const derived = DriftDetector.make({ capture, compare, baseline: { checksum: "a" } })
-    expect(derived._tag).toBe("driftDetector(alerts=false)")
+    expect(derived._tag).toBe("driftDetector(alerts=false)[drift/capture, drift/compare, ]")
     expect(derived.description).toBeUndefined()
   })
 

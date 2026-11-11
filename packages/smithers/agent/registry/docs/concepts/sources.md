@@ -48,7 +48,9 @@ and its literal arrays. Comments do not change declared capabilities. Dynamic
 capability expressions, object spreads, and computed members retain conservative
 wildcard authority. Their discovery warning names the reason and declaration's
 source line, such as `flow.ts:5`; `smthrs flow plan` carries the warning and
-`smthrs flow start` includes it when refusing automatic wildcard approval.
+`smthrs flow start` includes it when refusing automatic wildcard approval. A key
+written with an escape, such as `"capabilitie\x73"`, and a `__proto__` member
+count as computed members, because the reader does not evaluate them.
 
 ## Two ways a flow gets its name
 

@@ -1714,8 +1714,10 @@ the same way.
 optional `cause` of its `interrupt-released` run decision:
 `{ kind: "lease-lapsed", unconfirmedMs }` when the host went that long without
 confirming its run lease, `{ kind: "yielded" }` when a hosted drive spent its
-budget ([Drive budget](#drive-budget)), or `{ kind: "interrupted" }` for any
-other non-cancel interruption, usually a host shutdown. `releaseCauseOf(decision)`
+budget ([Drive budget](#drive-budget)), `{ kind: "interrupted" }` for any
+other non-cancel interruption, usually a host shutdown, or `{ kind: "defect" }`
+when the drive died, for example on a storage error after it took the run.
+`releaseCauseOf(decision)`
 reads it and answers `undefined` for decisions recorded before the field
 existed.
 

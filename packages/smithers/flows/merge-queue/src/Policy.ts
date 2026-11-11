@@ -25,6 +25,7 @@ import {
   live,
   pending,
   pendingCount,
+  pushingRun,
   ready,
   step
 } from "./Step.ts"
@@ -196,22 +197,39 @@ export const bestLandable = (config: Config, state: State): Run | undefined =>
   }, undefined)
 
 /**
+ * The run to push next: the best landable run, unless a push is under way.
+ *
+ * @category decisions
+ * @since 0.1.0
+ */
+export const nextPush = (config: Config, state: State): Run | undefined =>
+  pushingRun(state) !== undefined ? undefined : bestLandable(config, state)
+
+/**
+ * Whether the queue should forget a run: it can no longer land or help a fix,
+ * or it is doomed. The run being pushed is never forgotten.
+ *
+ * @category decisions
+ * @since 0.1.0
+ */
+export const useless = (state: State, run: Run): boolean =>
+  (live(state, run) === undefined && !evidence(state, run)) || (doomed(state, run) && state.pushing !== run.id)
+
+/**
  * The queue's next decision, or `undefined` when it has to wait for the world.
- * In order: land what can land, blame what can be blamed, cancel what is no
+ * In order: push what can land, blame what can be blamed, cancel what is no
  * longer useful, then start the next run.
  *
  * @category decisions
  * @since 0.1.0
  */
 export const plan = (config: Config, state: State): Event | undefined => {
-  const landing = bestLandable(config, state)
-  if (landing !== undefined) return { _tag: "land", run: landing.id }
+  const pushed = nextPush(config, state)
+  if (pushed !== undefined) return { _tag: "push", run: pushed.id }
   const blamed = state.runs.find((run) => blameable(state, run))
   if (blamed !== undefined) return { _tag: "blame", run: blamed.id }
-  const useless = state.runs.find((run) =>
-    (live(state, run) === undefined && !evidence(state, run)) || doomed(state, run)
-  )
-  if (useless !== undefined) return { _tag: "cancel", run: useless.id }
+  const forgotten = state.runs.find((run) => useless(state, run))
+  if (forgotten !== undefined) return { _tag: "cancel", run: forgotten.id }
   const count = nextStart(config, state)
   return count === undefined ? undefined : { _tag: "start", count }
 }

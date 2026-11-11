@@ -18,6 +18,7 @@ import { Forge } from "./branch/Forge.js";
 import * as GitHubCreation from "./branch/GitHubCreation.js";
 import * as JobMachines from "./branch/JobMachines.js";
 import * as BranchSandboxes from "./BranchSandboxes.js";
+import * as Cron from "./ci/Cron.js";
 import * as RepoFlow from "./ci/RepoFlow.js";
 import * as DomainsConfig from "./domains/Config.js";
 import { DomainProvider } from "./domains/Provider.js";
@@ -74,13 +75,24 @@ export const starter = (objects) => Effect.gen(function* () {
         }))
     });
 });
-export const live = (connection, options) => Layer.unwrap(Effect.map(Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher]), 
+/**
+ * Where a person's answer reaches a remote run parked on a human task (worker/Flows.ts `TaskAnswers`): the execution's
+ * own Durable Object, with the runtime of the request that builds it. A failed RPC is `AnswerUnavailable` with its code.
+ */
+export const answerer = (objects) => Effect.gen(function* () {
+    const runtime = yield* RuntimeContext;
+    return Flows.TaskAnswers.of({
+        answer: (executionId, task, value) => objects.getByName(executionId).answer(task, value).pipe(Effect.provideService(RuntimeContext, runtime), Effect.catchCause((cause) => Effect.fail(new Flows.AnswerUnavailable({ errorCode: codeOf(Cause.squash(cause)) }))))
+    });
+});
+export const live = (connection, options) => Layer.unwrap(Effect.map(Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher, Cron.ticker]), 
 // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md),
 // then its window's look at the runners (docs/features/fleet.md#alerts), then each confirmed feed barrier's pass not
-// yet completed (docs/features/notifications.md#rows-written-before).
-([sampleLoad, sampleSpend, sampleRunners, redactFeed]) => object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners), redactFeed)));
+// yet completed (docs/features/notifications.md#rows-written-before), and, with repositories' flows on, the
+// minute's schedules tick (docs/features/ci.md#schedules).
+([sampleLoad, sampleSpend, sampleRunners, redactFeed, tick]) => object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners), redactFeed, options.repoFlows === true ? tick : Effect.void)));
 /** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
-const object = (connection, options, sampleLoad, redactFeed) => FlowExecution.make(Effect.gen(function* () {
+const object = (connection, options, sampleLoad, redactFeed, tick) => FlowExecution.make(Effect.gen(function* () {
     const state = yield* Cloudflare.DurableObjectState;
     // This class's own namespace: the router reaches any other execution's object through it, creating each one where
     // the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
@@ -92,6 +104,8 @@ const object = (connection, options, sampleLoad, redactFeed) => FlowExecution.ma
     const signIn = yield* SignIn.configured().pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie);
     const roleFreshMs = yield* SessionStore.roleFreshMs.pipe(Effect.orDie);
     const appDatabase = Database.layer(hyperdrive.connectionString);
+    // The schedules' trigger store, in its own schema on the same Postgres (docs/features/ci.md#schedules).
+    const triggerStore = Cron.storeOn(Layer.unwrap(Effect.map(hyperdrive.connectionString, (url) => ExecutionHost.database(Redacted.value(url), Cron.TRIGGERS_SCHEMA))));
     // `chat/Expire` settles answers their devices left streaming (docs/features/agent.md#settling).
     const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) };
     // How long one alarm's drive keeps starting steps, under Cloudflare's 15-minute alarm limit
@@ -174,7 +188,8 @@ const object = (connection, options, sampleLoad, redactFeed) => FlowExecution.ma
                 start: RedactFeed.recordingHandoffs((intent) => executions.getByName(intent.executionId).start(intent), appDatabase),
                 wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake())
             },
-            afterAlarm: Effect.flatMap(flowStarter, (started) => Effect.andThen(sampleLoad, redactFeed.pipe(Effect.provide(appDatabase), Effect.orDie)).pipe(Effect.provideService(Flows.FlowStarter, started))),
+            // The schedules' tick needs `triggers/Tick` registered: only a host with the GitHub App has it.
+            afterAlarm: Effect.flatMap(flowStarter, (started) => Effect.andThen(Effect.andThen(sampleLoad, Option.isSome(github) ? tick : Effect.void), redactFeed.pipe(Effect.provide(appDatabase), Effect.orDie)).pipe(Effect.provideService(Flows.FlowStarter, started))),
             // A repository's run settles its row from the engine's status and its reported result (docs/features/actions.md), and a `todo` run
             // that ended in a defect fails its TODO `crashed` and starts the TODOs that frees (docs/features/todos.md).
             settled: (executionId) => Effect.all([
@@ -210,9 +225,11 @@ const object = (connection, options, sampleLoad, redactFeed) => FlowExecution.ma
         // The fleet's alerts (docs/features/fleet.md#alerts): an incident's `ops/FleetAlert` runs on its own object,
         // started through this alarm's runtime.
         const raiser = Effect.map(flowStarter, FleetAlert.startWith);
-        const base = ExecutionHost.withFeedRedaction(ExecutionHost.withFleet(ExecutionHost.withRunners(ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(ExecutionHost.withSandboxTools(ExecutionHost.withTerminals(Option.isSome(signIn)
+        // An agent's question to one person waits on its own object for their answer
+        // (docs/features/agent-status.md#addressed-waits).
+        const base = ExecutionHost.withAsks(ExecutionHost.withFeedRedaction(ExecutionHost.withFleet(ExecutionHost.withRunners(ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(ExecutionHost.withSandboxTools(ExecutionHost.withTerminals(Option.isSome(signIn)
             ? ExecutionHost.remoteWithSignIn(app, signIn.value, alertChannels, pool)
-            : ExecutionHost.remote(app, alertChannels, pool), appDatabase, BranchSandboxes.sandboxesLayer(sandboxObjects, keep)), appDatabase, BranchSandboxes.machinesLayer(machineObjects, keep), idleMs), appDatabase), appDatabase, credentials), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(machineObjects, keep)), appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels), appDatabase);
+            : ExecutionHost.remote(app, alertChannels, pool), appDatabase, BranchSandboxes.sandboxesLayer(sandboxObjects, keep)), appDatabase, BranchSandboxes.machinesLayer(machineObjects, keep), idleMs), appDatabase), appDatabase, credentials), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(machineObjects, keep)), appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels), appDatabase), appDatabase);
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are: triage's on
@@ -266,17 +283,19 @@ const object = (connection, options, sampleLoad, redactFeed) => FlowExecution.ma
             };
         });
         const dispatchServices = (ready) => todoServices(ready).pipe(Effect.map((services) => ({ ...services, repositories })));
+        const scheduleServices = (ready) => dispatchServices(ready).pipe(Effect.map((services) => ({ ...services, store: triggerStore })));
         const withGitHub = (flows) => Option.isSome(github)
             ? hostFor(
             // A repository's own flows (docs/features/ci.md#repository-flows) read their flow.ts and report their
             // status as the App, and plan in the QuickJS build the agent's cells run on. GitHub's pushes and pull
-            // requests start them through `triggers/Dispatch`, on each run's own object.
-            ExecutionHost.withTriggers(ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
+            // requests start them through `triggers/Dispatch`, on each run's own object, and their schedules through
+            // `triggers/Tick` (docs/features/ci.md#schedules).
+            ExecutionHost.withSchedules(ExecutionHost.withTriggers(ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
             // Publish and Update branch (docs/features/branch-publish.md) read a branch's working copy on its
             // machine and write GitHub as the person who pressed; Resync moves the working copy to GitHub's head.
             ExecutionHost.withBranchPublish(ExecutionHost.withGitHub(flows, githubServices(github.value)), githubServices(github.value), machines, forge), todoServices(github.value), machines, 
             // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
-            Layer.unwrap(Effect.map(flowStarter, (started) => TodoAgent.registration(seats("coding", started, todoOwner), appDatabase, AgentSandbox.layer, commandSeconds, stepWaitSeconds))), commandSeconds, stepWaitSeconds), Effect.map(githubServices(github.value), (services) => ({ ...services, machines: declaredMachines })), AgentSandbox.variant), dispatchServices(github.value)))
+            Layer.unwrap(Effect.map(flowStarter, (started) => TodoAgent.registration(seats("coding", started, todoOwner), appDatabase, AgentSandbox.layer, commandSeconds, stepWaitSeconds))), commandSeconds, stepWaitSeconds), Effect.map(githubServices(github.value), (services) => ({ ...services, machines: declaredMachines })), AgentSandbox.variant), dispatchServices(github.value)), scheduleServices(github.value)))
             : hostFor(flows);
         const host = Option.isSome(repoClone)
             ? withGitHub(ExecutionHost.withRepoClone(base, repoClone.value))
@@ -284,6 +303,7 @@ const object = (connection, options, sampleLoad, redactFeed) => FlowExecution.ma
         return {
             start: (intent) => host.start(intent).pipe(Effect.provide(logs)),
             signal: (deferredName) => host.signal(deferredName).pipe(Effect.provide(logs)),
+            answer: (task, value) => host.answer(task, value).pipe(Effect.provide(logs)),
             wake: () => host.wake().pipe(Effect.provide(logs)),
             repositoryRun: () => host.repositoryRun.pipe(Effect.map(Option.getOrNull), Effect.provide(logs)),
             cancel: () => host.cancel().pipe(Effect.provide(logs)),

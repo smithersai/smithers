@@ -48,10 +48,25 @@
  * beats already carry, so a deployment that journals a different vocabulary
  * supplies its own detectors instead of a fork of this module.
  *
+ * ## Acknowledged, or paged again
+ *
+ * An alert pages once. A rule with a `repeatMs` pages again every that long
+ * while the condition stays open, until a person takes it with
+ * {@link RuntimeService.acknowledge}. {@link RuntimeService.standing} lists
+ * what a run has open and who took it.
+ *
+ * ## Raising one from a step
+ *
+ * A flow step that checks something outside the run calls {@link report} with
+ * what it saw. The report is one more journal entry and the probe one more
+ * condition, built by {@link probes}, so a probe that keeps failing pages once
+ * and an `ok` report clears it.
+ *
  * @since 0.1.0
  */
 
 export {
+  acknowledgedEventType,
   type Alert,
   alertId,
   coalescingKey,
@@ -61,11 +76,14 @@ export {
   deliveredEventType,
   Detector,
   failedEventType,
+  maxSummaryLength,
   type Open,
   Policy,
   Rule,
   Severity
 } from "./AlertPolicy.vibe"
-export { AlertRuntime, layer, type RuntimeService, type Tick } from "./AlertRuntime.vibe"
+export { probeDetector, probeEventType, probes, ProbeState, Report, report } from "./AlertProbe.ts"
+export { AlertRuntime, layer, type RuntimeService, type Standing, type Tick } from "./AlertRuntime.vibe"
 export { AlertError, FailureCode, layerNoop, Sink, type SinkService } from "./AlertSink.vibe"
+export { type ChannelsSinkOptions, layerChannels, messageOf } from "./layerChannels.ts"
 export { defaultWebhookTimeout, layerWebhook } from "./layerWebhook.vibe"

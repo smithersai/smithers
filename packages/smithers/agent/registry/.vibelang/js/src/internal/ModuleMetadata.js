@@ -504,9 +504,14 @@ const propertyKey = (source) => {
     if (tokens.length !== 1)
         return undefined;
     const token = tokens[0];
-    if (token.kind === "string" && ["\"", "'"].includes(token.value[0]))
-        return token.value.slice(1, -1);
-    return token.kind === "identifier" && token.escaped !== true ? token.value : undefined;
+    // The reader does not decode escapes, and `__proto__: value` sets the
+    // prototype instead of a member, so neither key is read as written.
+    const key = token.kind === "string" && ["\"", "'"].includes(token.value[0]) && !token.value.includes("\\")
+        ? token.value.slice(1, -1)
+        : token.kind === "identifier" && token.escaped !== true
+            ? token.value
+            : undefined;
+    return key === "__proto__" ? undefined : key;
 };
 const propertiesFrom = (source) => {
     const properties = new Map();
@@ -831,8 +836,6 @@ const schemaFields = (source, namespaces, depth = 0) => {
         return undefined;
     const fields = Object.create(null);
     for (const [key, value] of properties.values) {
-        if (key === "__proto__" || key.includes("\\"))
-            return undefined;
         const schema = schemaExpression(value, namespaces, depth);
         if (schema === undefined)
             return undefined;

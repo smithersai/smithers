@@ -19,6 +19,7 @@ import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -73,7 +74,11 @@ export const make = (options) => {
     const maxIssues = options.maxIssues;
     const concurrency = options.concurrency;
     const captures = { maxRetries, maxIssues, concurrency };
-    const { name, description } = Compose.label("scanFixVerify", { maxRetries, maxIssues, concurrency }, options);
+    const { name, description } = Compose.label("scanFixVerify", { maxRetries, maxIssues, concurrency }, options, [
+        stages.scan,
+        stages.fix,
+        stages.verify
+    ]);
     const clean = Node.capture({ ...captures, clean: true }, (issues) => issueCount(issues) === 0);
     const body = ({ input }) => {
         const visit = (iteration, verifications) => Node.branch(callMember(stages.scan, { input, iteration }), {
@@ -138,7 +143,9 @@ export const make = (options) => {
         // no error schema. `@smthrs/flow` needs a real one, because the engine
         // encodes a typed failure through it, and this pattern fails with whatever
         // the stage it called failed with.
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [stages.scan, stages.fix, stages.verify]),
         body: Node.capture(captures, body)
     });
 };

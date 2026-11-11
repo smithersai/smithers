@@ -41,7 +41,7 @@ for (const kind of ["module", "markdown"] as const) {
         expect(scanned.entries).toHaveLength(1)
         let loads = 0
         let executions = 0
-        const flow = Flow.make("agent", {
+        const agent = Flow.make("agent", {
           payload: Executable.Invocation,
           success: Schema.String,
           body: () => {
@@ -49,12 +49,21 @@ for (const kind of ["module", "markdown"] as const) {
             return Node.succeed("approved")
           }
         })
+        // The module's own declaration, under its own tag like the source above.
+        const repair = Flow.make("repair", {
+          payload: {},
+          success: Schema.String,
+          body: () => {
+            executions++
+            return Node.succeed("approved")
+          }
+        })
         const options: Executable.Options = {
-          delegates: [flow],
+          delegates: [agent],
           load: (_path, verified) => {
             loads++
             expect(new TextDecoder().decode(verified!.bytes)).toBe(source)
-            return Effect.succeed({ default: flow })
+            return Effect.succeed({ default: repair })
           }
         }
         const executable = yield* Executable.fromDescriptor(scanned.entries[0]!, options)

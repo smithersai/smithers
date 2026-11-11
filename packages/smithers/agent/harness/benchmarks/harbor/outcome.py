@@ -28,7 +28,7 @@ UNPLACEABLE = "PlueUnplaceable"
 INFRA_EXCEPTIONS = (
     "PlueError", "VerifierTimeoutError", "CancelledError", "EnvironmentStartTimeoutError",
     "AgentSetupTimeoutError", "ContainerUnreachable", "ModelRouteError", "RuntimeError",
-    "TimeoutError", "NoSeatLeft", "RunParked",
+    "TimeoutError", "SeatExhausted", "NoSeatLeft", "RunParked",
     # Harbor's verifier plumbing: test.sh never got to write a grade.
     "RewardFileNotFoundError", "RewardFileEmptyError", "VerifierOutputParseError",
     "DownloadVerifierDirError", "AddTestsDirError", "HealthcheckError",

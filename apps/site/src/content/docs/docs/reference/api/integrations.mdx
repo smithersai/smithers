@@ -1,6 +1,6 @@
 ---
 title: "@smthrs/integrations"
-description: "GitHub adapters over the Smithers control plane"
+description: "GitHub and Telegram adapters over the Smithers control plane"
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/integrations/docs/api.md"
 ---
 
@@ -10,15 +10,16 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
-The package exports `Core` and `GitHub` from `@smthrs/integrations`,
-`@smthrs/integrations/core`, and `@smthrs/integrations/github`.
+The package exports `Core`, `GitHub` and `Telegram` from `@smthrs/integrations`,
+`@smthrs/integrations/core`, `@smthrs/integrations/github`, and
+`@smthrs/integrations/telegram`.
 `Environment` is available through `@smthrs/integrations/Environment`.
 
 Conventions worth knowing before the signatures:
 
 - Clients are Effect services. Each has a tag (for example `GitHubClient`), a
   `make` constructor for direct use, and a `layer` for composition.
-- Everything that speaks HTTP (`GitHubClient`, `Proxy`, `OAuthToken`) takes
+- Everything that speaks HTTP (`GitHubClient`, `Proxy`, `OAuthToken`, `Telegram.Source`) takes
   Effect's `HttpClient` from context. Provide `FetchHttpClient.layer` from
   `effect/http`, or, in a test, a client of your own that injects a transport
   fault. None of them follows a redirect: each sets the fetch transport's
@@ -84,6 +85,7 @@ raw exceptions and schema issues never enter logs.
 | `credentialSecret` | `(credentials: Credential) => SecretResolver`                                       | Resolves through the control plane's credential store.                                                                                                                                                                                                              |
 | `startFlow`        | `(flowId: FlowId) => (event: ExternalEvent) => Effect<InboundResult, InvalidInput>` | A route that starts `flowId` with the event as its input.                                                                                                                                                                                                           |
 | `signalRun`        | `(runId: RunId) => (event: ExternalEvent) => Effect<InboundResult, InvalidInput>`   | A route that signals `runId` with the event's signal name and payload.                                                                                                                                                                                              |
+| `fromSource`       | `(config: SourceConfig) => SourceDoor`                                              | Builds the control-plane door for one polling source. Its channel refuses every delivery that did not come through the door's own `ingest` as `Unauthorized`; see [Polling source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/polling-source.md).                                                     |
 
 `Config` fields: `name` (the name `Channels.register` and `Channels.ingest`
 address the channel by), `credential` (the journal-safe `CredentialRef`),
@@ -96,6 +98,17 @@ verifies; a throw, a failure or a defect refuses the delivery.
 
 `SecretResolver` is
 `(credential: Redacted<CredentialRef>) => Effect<Redacted<string>, Unauthorized>`.
+
+`SourceConfig` fields: `name`, `route`, and an optional `project` that
+defaults to the same no-op projection. `SourceDoor` has three members.
+`channel` is what `Channels.register` takes, once, at host startup.
+`ingest(event)` is `Effect<Receipt, IntegrationError, Channels>`: it routes one
+`Core.ExternalEvent` through `Channels.ingest` under the event's `dedupeKey`,
+with `receivedAtMs` left out of the delivered bytes, so an event polled again
+answers `AlreadyApplied`. `handle(events)` is
+`Effect<void, IntegrationError, Channels>`, the `onBatch` of
+`Core.Source.runWithCursor`: it routes the batch in order and fails
+`delivery-failed` at the first `Parked` or `Conflict` receipt.
 
 ### Core.ExternalEvent
 
@@ -513,6 +526,12 @@ Schemas for the webhook payloads this package types: `User`, `Repository`,
 `IssueCommentEvent`, and `PushEvent`. Every schema validates the fields a
 caller is likely to read and passes everything else through untouched.
 
+| Export        | Signature                                               | Notes                                                                                                                                                                                                                                                                                                |
+| ------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pushSource`  | `(payload: unknown) => Result<PushSource, PushRefusal>` | The source a `push` delivery names. Every host that starts work on a push admits it through this function. Never throws.                                                                                                                                                                             |
+| `PushSource`  | type                                                    | `{ kind: "commit", ref, branch, tag, before, after }` for the commit a ref now points at (exactly one of `branch` and `tag` is set; `before` is forty zeros for a created ref), or `{ kind: "deleted", ref }`.                                                                                       |
+| `PushRefusal` | `"malformed" \| "deleted_identity" \| "no_candidate"`   | `malformed`: `ref` is not under `refs/heads/` or `refs/tags/`, or `before` or `after` is not a 40-hex commit id. `deleted_identity`: `deleted` is set but `after` is not forty zeros, or `before` is. `no_candidate`: `after` is forty zeros with nothing deleted, or `before` is without `created`. |
+
 ### GitHub.Actions
 
 The durable GitHub actions. [Durable actions](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/concepts/durable-actions.md)
@@ -688,3 +707,34 @@ ones `container`-scoped records. Deletions are not listed by GitHub; run a
 tombstones. A rate limit or a transient read failure fails the run once,
 `retryable`; run the sync as a durable step whose retry policy repeats it, and
 the repeat resumes from the committed cursor.
+
+## Telegram
+
+Receiving only: a `getUpdates` long-poll source and the schemas of what it
+delivers. Sending is `Channels` in `@smthrs/notifications`. See
+[the Telegram guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/telegram.md).
+
+### Telegram.Source
+
+| Export                                         | Signature                                                                                     | Notes                                                                                                                                    |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`                                         | `(options: Options, env?) => Effect<Source, IntegrationError, HttpClient>`                    | A core `Source.Source` over `getUpdates`. Fails `invalid-config` for bad options and `credentials-missing` for no well-formed token.     |
+| `Options`                                      | `{ allowedChatIds, botToken?, sourceId?, pollTimeoutSeconds?, requestTimeout?, apiBaseUrl? }` | `allowedChatIds` is required and non-empty. The token falls back to `SMITHERS_TELEGRAM_BOT_TOKEN` in `env`.                              |
+| `Source`                                       | `Core.Source.Source`                                                                          | `poll` is one request and commits nothing; `run` is `Core.Source.runWithCursor`, committing `update_id + 1` after the batch was handled. |
+| `updateToEvents`                               | `(source, update, receivedAtMs) => ReadonlyArray<ExternalEvent>`                              | A `message` or `edited_message` becomes one event, or two in a thread. Anything else, or a message with no chat, becomes none.           |
+| `chatCorrelationId`, `threadCorrelationId`     | `(chatId) => string`, `(chatId, threadId) => string`                                          | `chat:<id>` and `chat:<id>:thread:<id>`.                                                                                                 |
+| `MESSAGE_EVENT`, `EDITED_MESSAGE_EVENT`        | `string`                                                                                      | `integration:telegram:message` and `integration:telegram:edited_message`.                                                                |
+| `SERVICE`, `DEFAULT_API_BASE_URL`, `TOKEN_ENV` | `string`                                                                                      | `telegram`, `https://api.telegram.org`, `SMITHERS_TELEGRAM_BOT_TOKEN`.                                                                   |
+
+`poll` fails `poll-failed` with `details.retryable` true for a transport
+failure, a timeout, 408, 429 and 5xx, and false for every other status. A 429
+carries Telegram's `retry_after` as `details.retryAfterMillis`, capped at one
+minute. An answer with no update array, or an update with no `update_id`,
+fails `decode-failed`. A stored cursor that is not an update offset fails
+`invalid-config` before any request. No failure holds the token.
+
+### Telegram.Payload
+
+`Chat`, `User` and `Message` are open schemas: the common Bot API fields are
+typed and every other field passes through. `Message` is the payload of both
+Telegram signal names.

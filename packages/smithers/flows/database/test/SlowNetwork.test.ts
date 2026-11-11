@@ -8,18 +8,20 @@ import { Context, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { connect } from "node:net"
 import { PostgresDatabase } from "../src/index.vibe"
+import { endpoint } from "../src/internal/SlowNetworkTarget.ts"
 import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import { listening } from "./harness/listening.ts"
 
 const url = process.env.SMITHERS_TEST_PG_URL
 
 describe("SlowNetwork", () => {
-  it.effect("names PostgreSQL's port for a URL that names none", () =>
-    Effect.scoped(Effect.gen(function*() {
-      const proxied = new URL(yield* SlowNetwork.proxy("postgres://smithers@127.0.0.1/smithers", { delayMs: 1 }))
-      expect(proxied.hostname).toBe("127.0.0.1")
-      expect(Number(proxied.port)).toBeGreaterThan(0)
-    })))
+  it("resolves PostgreSQL's default port for a URL that names none", () => {
+    expect(endpoint("postgres://smithers@localhost/smithers")).toEqual({ host: "localhost", port: 5432 })
+  })
+
+  it("preserves an explicit upstream host and port", () => {
+    expect(endpoint("postgres://smithers@localhost:6543/smithers")).toEqual({ host: "localhost", port: 6543 })
+  })
 
   it.live.skipIf(url === undefined)(
     "adds its delay to every round trip, and closes with its scope",

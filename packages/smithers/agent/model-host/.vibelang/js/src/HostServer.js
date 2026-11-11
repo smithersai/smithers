@@ -6,7 +6,7 @@
  */
 import { digestSync } from "@smthrs/crypto";
 import { ModelError } from "@smthrs/model";
-import { AgentTurnJournal, ContextPreflight } from "@smthrs/rpc";
+import { AgentContext, AgentTurnJournal, ContextPreflight } from "@smthrs/rpc";
 import { Cause, Effect, Exit, Metric, Option } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { z } from "zod";
@@ -95,6 +95,8 @@ const ToolsSchema = z.array(z.object({
     description: z.string(),
     parameters: z.record(z.string(), z.unknown())
 }).strict());
+/** A turn's runtime context is rendered into hidden instructions, so a body whose context fails its schema is refused. */
+const validContext = (context) => context === undefined || AgentContext.AgentRuntimeContextSchema.safeParse(context).success;
 const turnRequest = (value) => {
     if (typeof value !== "object" || value === null)
         return undefined;
@@ -105,6 +107,8 @@ const turnRequest = (value) => {
     if (!z.array(MessageSchema).safeParse(body.messages).success)
         return undefined;
     if (body.tools !== undefined && !ToolsSchema.safeParse(body.tools).success)
+        return undefined;
+    if (!validContext(body.context))
         return undefined;
     return value;
 };
@@ -160,6 +164,8 @@ const streamRequest = (value) => {
     if (!z.array(MessageSchema).safeParse(body.messages).success)
         return undefined;
     if (body.tools !== undefined && !ToolsSchema.safeParse(body.tools).success)
+        return undefined;
+    if (!validContext(body.context))
         return undefined;
     return {
         ...body,

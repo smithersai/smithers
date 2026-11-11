@@ -6,8 +6,11 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
+import { createApprovalsCli } from "../src/cli/ControlCommands.ts"
 import { databaseLayer } from "../src/operator/Store.vibe"
+import * as TriggerPlans from "../src/operator/TriggerPlans.ts"
 import { createTriggersCli, withTriggers } from "../src/operator/Triggers.ts"
 
 const directories: Array<string> = []
@@ -177,6 +180,81 @@ describe("trigger CLI", () => {
       activePlan: null
     })
   })
+
+  it("#4571 runs each occurrence of a compiled flow unattended under one standing approval", async () => {
+    const directory = await root()
+    await Fs.mkdir(Path.join(directory, ".smithers/flows/tick"), { recursive: true })
+    // The flow's package imports resolve from this package's installed dependencies.
+    await Fs.symlink(
+      fileURLToPath(new URL("../node_modules", import.meta.url)),
+      Path.join(directory, "node_modules"),
+      "dir"
+    )
+    // One step, so every plan carries a compiled graph named after its own plan ID.
+    await Fs.writeFile(
+      Path.join(directory, ".smithers/flows/tick/flow.ts"),
+      `import { Action, Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Effect, Schema } from "effect"
+const Tick = Action.make("tick/write", { payload: {}, success: Schema.String })
+export const layer = Tick.toLayer(() => Effect.succeed("ticked"))
+export default Flow.make("tick", {
+  description: "One step per occurrence.", capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize" },
+  payload: Schema.Struct({}), success: Schema.String,
+  body: Node.capture({}, () => Tick.call({}))
+})
+`
+    )
+    await serve(directory, ["register", "tick", "--flow", "tick", "--cron", "0 9 * * *"])
+    const approvals = async (args: ReadonlyArray<string>) => {
+      let output = ""
+      const codes: Array<number> = []
+      await createApprovalsCli({ environment: { HOME: directory, XDG_CONFIG_HOME: directory } }).serve(
+        [...args, "--root", directory, "--json"],
+        {
+          exit: (value) => {
+            codes.push(value)
+          },
+          stdout: (value) => {
+            output += value
+          }
+        }
+      )
+      expect(codes.every((code) => code === 0), output).toBe(true)
+      return JSON.parse(output)
+    }
+    const consent = await approvals(["trigger-plan", "tick"])
+    const again = await approvals(["trigger-plan", "tick"])
+    expect(again.plan.planId).not.toBe(consent.plan.planId)
+    expect(again.plan.digest).not.toBe(consent.plan.digest)
+    await approvals(["grant-trigger", JSON.stringify(consent)])
+    const controller = new AbortController()
+    const served = createTriggersCli({ signal: controller.signal }).serve(
+      ["serve", "--root", directory, "--poll-interval-ms", "20", "--json"],
+      { exit: () => {}, stdout: () => {} }
+    )
+    try {
+      const runs: Array<string | null | undefined> = []
+      for (const occurrence of [1000, 2000]) {
+        const fired = await serve(directory, ["fire", "tick", "--occurrence", String(occurrence)])
+        const handle = `trigger-plan:${fired.data.idempotencyKey}`
+        const deadline = Date.now() + 120_000
+        let plan = await TriggerPlans.inspect(directory, handle)
+        while (plan?.status !== "completed") {
+          expect(Date.now(), JSON.stringify(plan)).toBeLessThan(deadline)
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          plan = await TriggerPlans.inspect(directory, handle)
+        }
+        runs.push(plan.runId)
+      }
+      expect(runs).toEqual([expect.any(String), expect.any(String)])
+      expect(runs[0]).not.toBe(runs[1])
+    } finally {
+      controller.abort()
+      await served
+    }
+  }, 300_000)
 
   it("polls the durable store until its host aborts the scheduler", async () => {
     const directory = await root()

@@ -41,6 +41,9 @@ under `probe-02`. `probe-01` retains startup metadata, not a completed measureme
 Probes are excluded from campaign results and costs. The unsupported-model
 probe predates the explicit `access_failure` classification and retains its
 original `model_failure` label. It must not be counted as task-quality data.
+Probe manifests hash `run.mjs` and `measure.mjs`, but probes predate archiving
+those two sources. `verify.mjs` verifies a probe's receipts, summary, report,
+corpus and archived sources, and names the two sources it could not verify.
 
 ## Method
 
@@ -75,7 +78,11 @@ The report includes Wilson 95% end-to-end success intervals and a conservative
 paired Hoeffding 95% bound, with its independence assumption and exclusions.
 Provider access failures count as attempted end-to-end failures, with unknown
 spend where usage is absent. Paired task quality excludes access/provider/host
-failures; the report calls out that conditional selection. Token usage and the
+failures; the report calls out that conditional selection. A failed records or
+submit action is the arm's own failure (`cell_failure`, `tool_failure`) and
+counts toward task quality. A measurement that fails outside its arm (engine,
+journal or sandbox) is written as a `harness_failure` receipt with no model
+turns, and the campaign continues. Token usage and the
 SDK rate-card snapshot are retained; USD values are estimates, not subscription
 invoices. Unpriced or partially metered totals stay unknown.
 
@@ -90,7 +97,8 @@ node --import vibelang/register --test \
   packages/smithers/agent/harness/benchmarks/cell-comparison/measure.check.mjs
 ```
 
-The offline checks are also registered as the benchmark package’s `offline` target.
+These commands are the benchmark package’s `offline` target, which also
+verifies `probe-02` and `probe-03`.
 Their `.check.mjs` names keep Node’s test runner separate from the parent
 package’s Vitest discovery.
 

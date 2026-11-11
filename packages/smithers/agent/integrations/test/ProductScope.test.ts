@@ -5,11 +5,24 @@ import * as Integrations from "../src/index.ts"
 
 const root = resolve(import.meta.dirname, "..")
 const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"))
-const providers = ["linear", "slack", "telegram", "gmail", "googlecalendar", "x"]
+const providers = ["linear", "slack", "gmail", "googlecalendar", "x"]
+// Telegram receives only: sending is @smthrs/notifications, and approvals, Mini App data, Markdown,
+// chunking, issue sync and the Bot API client stay removed.
+const removedTelegram = [
+  "Actions",
+  "Approval",
+  "Chunk",
+  "Config",
+  "InitData",
+  "Markdown",
+  "TelegramClient",
+  "IssueSync"
+]
 
 describe("integration product scope", () => {
-  it("exports GitHub and the shared primitives", () => {
-    expect(Object.keys(Integrations).sort()).toEqual(["Core", "GitHub"])
+  it("exports GitHub, Telegram receiving, and the shared primitives", () => {
+    expect(Object.keys(Integrations).sort()).toEqual(["Core", "GitHub", "Telegram"])
+    expect(Object.keys(Integrations.Telegram).sort()).toEqual(["Payload", "Source"])
     expect(Object.keys(Integrations.GitHub).sort()).toEqual([
       "Actions",
       "AppAuth",
@@ -49,6 +62,13 @@ describe("integration product scope", () => {
         path === `./${provider}` || path.startsWith(`./${provider}/`)
       )
       expect(entries.every(([, target]) => target === null)).toBe(true)
+    }
+  })
+
+  it.each(removedTelegram)("keeps telegram/%s removed", (module) => {
+    expect(existsSync(resolve(root, "src", "telegram", module + ".ts"))).toBe(false)
+    for (const map of [manifest.exports, manifest.publishConfig.exports]) {
+      expect(map[`./telegram/${module}`] ?? null).toBeNull()
     }
   })
 })

@@ -43,6 +43,7 @@ import * as Effect_1 from "effect/Effect";
 import { identity as keepDefect } from "effect/Function";
 import * as Digest from "@smthrs/core/Digest";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import * as Prompt from "../Prompt.js";
 import { stringLiteral, tokenize } from "./ModuleMetadata.js";
 /**
@@ -64,6 +65,41 @@ export const closureFileLimit = 512;
  * @private
  */
 export const closureByteLimit = 16 * 1024 * 1024;
+/**
+ * How many bytes one package.json, tsconfig.json or jsconfig.json may hold.
+ *
+ * A larger config is not parsed, and a bare specifier it could map is reported
+ * as unpinnable: a loader would still honour the mapping, so reading the
+ * config as absent would leave the mapped file unmeasured.
+ *
+ * @category constants
+ * @since 1.0.0
+ * @private
+ */
+export const configByteLimit = 1024 * 1024;
+/** Whether `candidate` is `root` or a path beneath it. Both are resolved paths. */
+const contains = (path, root, candidate) => candidate === root || candidate.startsWith(path.join(root, path.sep));
+/**
+ * A file's bytes, or `undefined` when it holds more than `limit` of them.
+ *
+ * A `"bounded"` read stops one byte past the ceiling, so a file of any size
+ * costs at most `limit + 1` bytes of memory, whatever size the host reports
+ * for it. A `"whole"` read is checked after the host returned it.
+ */
+const readWithin = (fs, file, limit, reading) => reading === "whole"
+    ? Effect.map(fs.readFile(file), (bytes) => bytes.length > limit ? undefined : bytes)
+    : fs.stream(file, { bytesToRead: limit + 1 }).pipe(Stream.runCollect, Effect.map((chunks) => {
+        const size = chunks.reduce((total, chunk) => total + chunk.length, 0);
+        if (size > limit)
+            return undefined;
+        const bytes = new Uint8Array(size);
+        let position = 0;
+        for (const chunk of chunks) {
+            bytes.set(chunk, position);
+            position += chunk.length;
+        }
+        return bytes;
+    }));
 /**
  * The suffixes a specifier is resolved through, in order.
  *
@@ -152,7 +188,7 @@ const scan = (tokens) => {
     const record = (literal) => {
         if (literal === undefined)
             return;
-        if (literal.startsWith("./") || literal.startsWith("../"))
+        if (isRelativeSpecifier(literal))
             relative.push(literal);
         else if (isAbsoluteSpecifier(literal))
             absolute.push(literal);
@@ -242,11 +278,36 @@ const scan = (tokens) => {
  * under each of its names. A `require` property of any other object is data.
  */
 const loaderHosts = new Set(["meta", "module", "globalThis", "global", "self", "window"]);
+/** A specifier naming a file beside the importer. */
+const isRelativeSpecifier = (specifier) => specifier.startsWith("./") || specifier.startsWith("../");
 /** A specifier naming a file by absolute path or URL rather than beside the importer. */
 const isAbsoluteSpecifier = (specifier) => specifier.startsWith("/") || specifier.startsWith("\\") || /^file:/i.test(specifier) ||
     /^[A-Za-z]:[\\/]/.test(specifier);
 /** A POSIX-separated path from `fromDirectory` to `target`, for the record. */
 const relativePath = (path, fromDirectory, target) => path.relative(fromDirectory, target).replaceAll("\\", "/");
+/** What `base` can stand for when it is not itself a file, in the loader's order. */
+const fallbacks = (path, base) => {
+    const candidates = [];
+    for (const [extension, sources] of typeScriptCounterparts) {
+        if (!base.endsWith(extension))
+            continue;
+        for (const source of sources) {
+            candidates.push(`${base.slice(0, -extension.length)}${source}`);
+        }
+    }
+    candidates.push(...suffixes.map((suffix) => `${base}${suffix}`), ...indexNames.map((name) => path.join(base, name)));
+    return candidates;
+};
+/**
+ * The module of a measured closure a relative specifier names, in the order
+ * {@link resolve} probes the disk. Every file a relative specifier resolves to
+ * is a module of the closure that pinned it, so membership answers what the
+ * disk answered when the closure was measured.
+ */
+const member = (path, directory, specifier, has) => {
+    const base = path.resolve(directory, specifier);
+    return [base, ...fallbacks(path, base)].find(has);
+};
 /**
  * The file a relative specifier names, or `undefined` when nothing answers to
  * it. The order is the loader's: the exact path first, then the suffixes this
@@ -264,6 +325,8 @@ const resolve = (fs, path, fromDirectory, specifier, memo) => Effect_1.gen(funct
         const stat = yield* Effect.result(fs.stat(candidate));
         const found = stat._tag === "Success" && stat.success.type === "File";
         memo.isFile.set(candidate, found);
+        if (found)
+            memo.sizes.set(candidate, Number(stat.success.size));
         return found;
     });
     const base = path.resolve(fromDirectory, specifier);
@@ -271,15 +334,7 @@ const resolve = (fs, path, fromDirectory, specifier, memo) => Effect_1.gen(funct
         memo.resolutions.set(key, base);
         return base;
     }
-    const candidates = [];
-    for (const [extension, sources] of typeScriptCounterparts) {
-        if (!base.endsWith(extension))
-            continue;
-        for (const source of sources) {
-            candidates.push(`${base.slice(0, -extension.length)}${source}`);
-        }
-    }
-    candidates.push(...suffixes.map((suffix) => `${base}${suffix}`), ...indexNames.map((name) => path.join(base, name)));
+    const candidates = fallbacks(path, base);
     // Most fallbacks are missing wildcard aliases. Overlap their host reads,
     // then select in loader order regardless of which probe finished first.
     const matches = yield* Effect.forEach(candidates, isFile, { concurrency: 16 });
@@ -373,17 +428,28 @@ const packageName = (specifier) => {
  * not have picked costs an approval, never a hole. A candidate that is not a
  * file is dropped, which is how `"*": ["./*"]` leaves `effect` to the
  * installed package. A specifier naming the nearest package.json's own `name`
- * is a self-import through `exports`, which this walk does not follow.
+ * is a self-import through `exports`, which this walk does not follow. A
+ * config past {@link configByteLimit} is not parsed, and the specifier is
+ * unpinnable because that config could map it.
  */
-const bareTargets = (fs, path, directory, specifier, configs) => Effect_1.gen(function* () {
+const bareTargets = (fs, path, directory, specifier, configs, reading) => Effect_1.gen(function* () {
+    const files = [];
+    const unpinnable = [];
     // A config that is missing, unreadable or not a JSON object is no config.
     const readConfig = (file) => Effect_1.gen(function* () {
-        if (configs.has(file))
-            return configs.get(file);
-        const bytes = yield* Effect.result(fs.readFile(file));
-        const parsed = bytes._tag === "Success" ? parseJsonc(yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes.success), catch: keepDefect }))) : undefined;
-        configs.set(file, parsed);
-        return parsed;
+        if (!configs.has(file)) {
+            const bytes = yield* Effect.result(readWithin(fs, file, configByteLimit, reading));
+            configs.set(file, bytes._tag === "Failure"
+                ? undefined
+                : bytes.success === undefined
+                    ? "oversized"
+                    : parseJsonc(yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes.success), catch: keepDefect }))));
+        }
+        const config = configs.get(file);
+        if (config !== "oversized")
+            return config;
+        unpinnable.push(`"${specifier}", which "${relativePath(path, directory, file)}" may map: that config is larger than ${configByteLimit} bytes`);
+        return undefined;
     });
     const ancestors = [];
     for (let current = path.resolve(directory);;) {
@@ -401,8 +467,6 @@ const bareTargets = (fs, path, directory, specifier, configs) => Effect_1.gen(fu
         nearestPackage = { directory: candidate, json };
         break;
     }
-    const files = [];
-    const unpinnable = [];
     if (specifier.startsWith("#")) {
         let matched = false;
         for (const [key, target] of Object.entries(objectField(nearestPackage?.json, "imports") ?? {})) {
@@ -490,7 +554,9 @@ export const cache = () => ({
     configs: new Map(),
     bare: new Map(),
     resolutions: new Map(),
-    isFile: new Map()
+    isFile: new Map(),
+    sizes: new Map(),
+    confined: new Map()
 });
 /** The record for a specifier nothing could be pinned for. */
 const unpinnable = (description) => ({ path: description });
@@ -515,33 +581,41 @@ export const collect = (fs, path, entryPath, entrySource, memo = cache(),
 bounds = {
     files: closureFileLimit,
     bytes: closureByteLimit
-}) => walk(fs, path, entryPath, entrySource, memo, bounds, undefined, new Set());
+}) => walk(fs, path, entryPath, entrySource, memo, bounds, undefined, new Set(), undefined);
 /**
  * The pinned closure and its unrestricted builtin, addon and package imports.
  * External packages are
  * listed conservatively: a static scan cannot prove whether they load addons.
  *
+ * With `confinement`, a specifier that leaves the root, by its spelling or
+ * through a symbolic link, is recorded as unpinnable and its target is never
+ * read: a pack's `import "../../../x"` must not get a host file hashed into
+ * the pack's descriptor.
+ *
  * @category constructors
  * @since 1.0.0
  * @private
  */
-export const analyze = (fs, path, entryPath, entrySource, memo = cache()) => Effect_1.gen(function* () {
+export const analyze = (fs, path, entryPath, entrySource, memo = cache(), confinement) => Effect_1.gen(function* () {
     const hostImports = new Set();
     const imports = yield* walk(fs, path, entryPath, entrySource, memo, {
         files: closureFileLimit,
         bytes: closureByteLimit
-    }, undefined, hostImports);
+    }, undefined, hostImports, confinement);
     return { imports, hostImports: [...hostImports].sort() };
 });
 /**
  * The closure walk behind {@link collect} and {@link snapshot}. With `reads`,
  * every module is read afresh rather than answered from `memo`, and its bytes
- * — the very bytes its digest is taken over — are kept there by path.
+ * — the very bytes its digest is taken over — are kept there by path. That
+ * is the loader's walk, which reads whole files ({@link Reading}); without
+ * `reads` the walk is a discovery scan and every read is a bounded stream.
  */
-const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports) => Effect_1.gen(function* () {
+const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports, confinement) => Effect_1.gen(function* () {
     const normalizedEntryPath = path.resolve(entryPath);
     const entryDirectory = path.dirname(normalizedEntryPath);
     const found = new Map();
+    const reading = reads === undefined ? "bounded" : "whole";
     const visited = new Set([normalizedEntryPath]);
     // `pending` carries the importer so an unresolvable specifier can name the
     // file that asked for it rather than only the specifier nothing answered.
@@ -574,7 +648,8 @@ const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports
         const directory = path.dirname(from);
         for (const specifier of specifiers) {
             const key = `${directory}\0${specifier}`;
-            const targets = memo.bare.get(key) ?? (yield* bareTargets(fs, path, directory, specifier, memo.configs));
+            const targets = memo.bare.get(key) ??
+                (yield* bareTargets(fs, path, directory, specifier, memo.configs, reading));
             memo.bare.set(key, targets);
             for (const reason of targets.unpinnable) {
                 const description = `${importer} imports ${reason}`;
@@ -604,13 +679,37 @@ const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports
     reportBuiltins(builtins);
     enqueue(normalizedEntryPath, entryDirectory, relative);
     yield* followBare("the entry", normalizedEntryPath, bare);
+    // A real path that cannot be resolved cannot be shown to be inside the root.
+    const confined = (root, file) => Effect_1.gen(function* () {
+        if (memo.confined.has(file))
+            return memo.confined.get(file);
+        const real = yield* Effect.result(fs.realPath(file));
+        const inside = real._tag === "Success" && contains(path, root, path.resolve(real.success));
+        memo.confined.set(file, inside);
+        return inside;
+    });
     while (pending.length > 0) {
         const { directory, from, specifier } = pending.shift();
-        const resolved = yield* resolve(fs, path, directory, specifier, memo);
         const importer = from === normalizedEntryPath ? "the entry" : `"${relativePath(path, entryDirectory, from)}"`;
+        const escapes = () => {
+            const description = `${importer} imports "${specifier}", which resolves outside the source's confinement root`;
+            found.set(description, unpinnable(description));
+        };
+        // The spelling alone decides `../../../x`, before the host is asked
+        // whether the file exists.
+        if (confinement !== undefined && !contains(path, confinement.root, path.resolve(directory, specifier))) {
+            escapes();
+            continue;
+        }
+        const resolved = yield* resolve(fs, path, directory, specifier, memo);
         if (resolved === undefined) {
             const description = `${importer} imports "${specifier}", which resolves to no file`;
             found.set(description, unpinnable(description));
+            continue;
+        }
+        // A symbolic link inside the root can still name a file outside it.
+        if (confinement !== undefined && !(yield* confined(confinement.realRoot, resolved))) {
+            escapes();
             continue;
         }
         if (resolved.endsWith(".node"))
@@ -642,20 +741,33 @@ const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports
             yield* followBare(`"${recorded}"`, resolved, cached.bare);
             continue;
         }
-        const read = yield* Effect.result(fs.readFile(resolved));
+        const remaining = bounds.bytes - bytes;
+        const overflows = () => {
+            const description = `the closure totals more than ${bounds.bytes} bytes`;
+            found.set(description, unpinnable(description));
+        };
+        // A whole read cannot stop early, so a file the host already reported
+        // as past the ceiling is not read at all.
+        if (reading === "whole" && memo.sizes.get(resolved) > remaining) {
+            overflows();
+            break;
+        }
+        // The ceiling is enforced on the bytes read, never on a reported size
+        // alone: a bounded read holds at most one byte past what is left.
+        const read = yield* Effect.result(readWithin(fs, resolved, remaining, reading));
         if (read._tag === "Failure") {
             const description = `"${recorded}" could not be read`;
             found.set(description, unpinnable(description));
             continue;
         }
-        bytes += read.success.length;
-        if (bytes > bounds.bytes) {
-            const description = `the closure totals more than ${bounds.bytes} bytes`;
-            found.set(description, unpinnable(description));
+        const contents = read.success;
+        if (contents === undefined) {
+            overflows();
             break;
         }
-        const contentDigest = yield* Effect.orDie(Effect.try({ try: () => Digest.digest(read.success), catch: keepDefect }));
-        const rawSource = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(read.success), catch: keepDefect }));
+        bytes += contents.length;
+        const contentDigest = yield* Effect.orDie(Effect.try({ try: () => Digest.digest(contents), catch: keepDefect }));
+        const rawSource = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(contents), catch: keepDefect }));
         const compiled = yield* Effect.result(resolved.endsWith(".mdx") ? Prompt.compile(rawSource) : Effect.succeed(rawSource));
         if (compiled._tag === "Failure") {
             const description = `"${recorded}" could not be compiled as MDX`;
@@ -663,14 +775,14 @@ const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports
             continue;
         }
         const source = compiled.success;
-        reads?.set(resolved, { bytes: read.success, source });
+        reads?.set(resolved, { bytes: contents, source });
         const specifiers = specifiersOf(source);
         reportOpaque(`"${recorded}"`, specifiers.opaque);
         reportAbsolute(`"${recorded}"`, specifiers.absolute);
         reportBuiltins(specifiers.builtins);
         memo.files.set(resolved, {
             contentDigest,
-            size: read.success.length,
+            size: contents.length,
             specifiers: specifiers.relative,
             opaque: specifiers.opaque,
             absolute: specifiers.absolute,
@@ -700,11 +812,16 @@ const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports
  * @since 1.0.0
  * @private
  */
-export const snapshot = (fs, path, entryPath, entryBytes) => Effect_1.gen(function* () {
+export const snapshot = (fs, path, entryPath, entryBytes, 
+/** The bounds, lowered by the suite that proves they are enforced. */
+bounds = {
+    files: closureFileLimit,
+    bytes: closureByteLimit
+}) => Effect_1.gen(function* () {
     const memo = cache();
     const entrySource = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(entryBytes), catch: keepDefect }));
     const reads = new Map([[path.resolve(entryPath), { bytes: entryBytes, source: entrySource }]]);
-    const imports = yield* walk(fs, path, entryPath, entrySource, memo, { files: closureFileLimit, bytes: closureByteLimit }, reads, new Set());
+    const imports = yield* walk(fs, path, entryPath, entrySource, memo, bounds, reads, new Set(), undefined);
     const modules = new Map();
     const unsupported = new Set();
     for (const [file, read] of reads) {
@@ -719,14 +836,15 @@ export const snapshot = (fs, path, entryPath, entryBytes) => Effect_1.gen(functi
             return resolved !== undefined && reads.has(resolved);
         }) ?? false;
         for (const literal of specifiers.runtime) {
-            if (literal.startsWith("./") || literal.startsWith("../") || hasMappedModule(literal)) {
+            if (isRelativeSpecifier(literal) || hasMappedModule(literal)) {
                 unsupported.add(`"${relativePath(path, path.dirname(entryPath), file)}" loads "${literal}" through import() or require()`);
             }
         }
         for (const site of specifiers.statics) {
-            const target = site.literal.startsWith("./") || site.literal.startsWith("../")
-                ? yield* resolve(fs, path, directory, site.literal, memo) : site.literal.startsWith("#")
-                ? yield* soleImportsTarget(fs, path, directory, site.literal, memo) : undefined;
+            const target = isRelativeSpecifier(site.literal)
+                ? member(path, directory, site.literal, (candidate) => reads.has(candidate))
+                : site.literal.startsWith("#")
+                    ? yield* soleImportsTarget(fs, path, directory, site.literal, memo) : undefined;
             if (target !== undefined && reads.has(target))
                 links.push({ start: site.start, end: site.end, target });
             else if (hasMappedModule(site.literal)) {
@@ -745,3 +863,37 @@ const soleImportsTarget = (fs, path, directory, specifier, memo) => Effect_1.gen
     return targets.files.length === 1 && targets.unpinnable.length === 0
         ? yield* resolve(fs, path, directory, targets.files[0], memo) : undefined;
 });
+/**
+ * Whether `module.links` are exactly the links its own text gives it within a
+ * closure whose modules `has` names.
+ *
+ * A link replaces a span of source with the path of the module it names, so a
+ * stored link is code, and a store is not evidence. Every link has to sit on a
+ * static specifier token this scanner finds in `module.source`. A relative
+ * specifier must link to the module {@link member} resolves it to, and to no
+ * other. A package.json `imports` specifier (`#x`) must link to a module of the
+ * closure: the mapping lives in a config the closure does not hold, so which
+ * module it names is not recomputed, but an unlinked one would reopen a live
+ * path whose bytes nobody measured.
+ *
+ * @category verification
+ * @since 1.0.0
+ * @private
+ */
+export const linked = (path, file, module, has) => {
+    const directory = path.dirname(file);
+    let count = 0;
+    for (const site of specifiersOf(module.source).statics) {
+        const relative = isRelativeSpecifier(site.literal);
+        if (!relative && !site.literal.startsWith("#"))
+            continue;
+        const target = relative ? member(path, directory, site.literal, has) : module.links[count]?.target;
+        if (relative && target === undefined)
+            continue;
+        const link = module.links[count++];
+        if (link === undefined || link.start !== site.start || link.end !== site.end || link.target !== target ||
+            !has(link.target))
+            return false;
+    }
+    return count === module.links.length;
+};

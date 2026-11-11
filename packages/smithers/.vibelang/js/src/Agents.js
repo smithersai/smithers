@@ -3,7 +3,10 @@
  * Wiring Smithers into the agents an operator already runs.
  *
  * `smthrs mcp add` writes the stdio MCP server entry into an agent's own
- * configuration.
+ * configuration: the profile `CLAUDE_CONFIG_DIR` or `CODEX_HOME` selects, else
+ * the one under the home directory. The entry carries the memory store
+ * `SMITHERS_MEMORY_DB` names, so every agent and profile registered with one
+ * store saves and recalls the same facts.
  *
  * rc.0 knows two agents, Claude Code and Codex, because those are the two the
  * release supports directly; every other 0.x target (Hermes, OpenClaw, Pi)
@@ -94,6 +97,20 @@ export const launchCommand = (execPath = process.execPath, entry = process.argv[
     command: execPath,
     args: [entry, "--mcp"]
 });
+/**
+ * The environment a registered server starts with: the memory store the
+ * registering environment names, as an absolute path, and nothing else.
+ *
+ * Codex starts an MCP server without its own environment, so a store named
+ * only in the operator's shell would never reach the server.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const serverEnvironment = (environment) => {
+    const store = environment["SMITHERS_MEMORY_DB"];
+    return store === undefined || store === "" ? undefined : { SMITHERS_MEMORY_DB: resolve(store) };
+};
 const isUnusable = (value) => "reason" in value;
 /**
  * Reads an agent's configuration, or says why it must not be written over.
@@ -311,6 +328,7 @@ const codexRefused = (code, message) => new CliError.Refused({ fault: "dependenc
 /** Register through Codex's configuration writer and verify its discovery result. */
 const registerCodex = (path, home, environment) => {
     const entry = launchCommand();
+    const store = serverEnvironment(environment);
     const run = (args) => {
         const result = spawnSync("codex", ["mcp", ...args], {
             // Avoid project configuration overriding the user registration we verify.
@@ -351,14 +369,23 @@ const registerCodex = (path, home, environment) => {
             if (!("transport" in server) || server.transport === null || typeof server.transport !== "object")
                 return false;
             const transport = server.transport;
+            const recorded = "env" in transport && transport.env !== null ? transport.env : {};
             return "type" in transport && transport.type === "stdio" &&
                 "command" in transport && transport.command === entry.command &&
-                "args" in transport && JSON.stringify(transport.args) === JSON.stringify(entry.args);
+                "args" in transport && JSON.stringify(transport.args) === JSON.stringify(entry.args) &&
+                JSON.stringify(recorded) === JSON.stringify(store ?? {});
         });
     };
     if (discoversEntry())
         return { agent: "codex", path, status: "unchanged" };
-    run(["add", serverName, "--", entry.command, ...entry.args]);
+    run([
+        "add",
+        serverName,
+        ...(store === undefined ? [] : ["--env", `SMITHERS_MEMORY_DB=${store.SMITHERS_MEMORY_DB}`]),
+        "--",
+        entry.command,
+        ...entry.args
+    ]);
     if (!discoversEntry()) {
         throw codexRefused("codex_mcp_not_discovered", "Codex did not discover the enabled Smithers MCP server after registration");
     }
@@ -370,11 +397,13 @@ const registerCodex = (path, home, environment) => {
  * @category constructors
  * @since 1.0.0
  */
-export const addMcp = (agent, home, environment = home === undefined ? process.env : { ...process.env, CODEX_HOME: undefined }) => {
+export const addMcp = (agent, home, environment = home === undefined
+    ? process.env
+    : { ...process.env, CODEX_HOME: undefined, CLAUDE_CONFIG_DIR: undefined }) => {
     const directory = home ?? environment["HOME"] ?? homedir();
     const path = agent.id === "codex"
         ? resolve(environment["CODEX_HOME"] || join(directory, ".codex"), "config.toml")
-        : join(directory, ...agent.mcpConfig);
+        : resolve(environment["CLAUDE_CONFIG_DIR"] || directory, ...agent.mcpConfig);
     const entry = launchCommand();
     const lockPath = `${path}.smithers.lock`;
     const token = `${process.pid}:${Date.now()}:${randomUUID()}`;
@@ -402,7 +431,8 @@ export const addMcp = (agent, home, environment = home === undefined ? process.e
             };
         }
         const servers = existing === undefined ? {} : { ...existing };
-        const desired = { command: entry.command, args: [...entry.args] };
+        const store = serverEnvironment(environment);
+        const desired = { command: entry.command, args: [...entry.args], ...(store === undefined ? {} : { env: store }) };
         if (JSON.stringify(servers[serverName]) === JSON.stringify(desired)) {
             return { agent: agent.id, path, status: "unchanged" };
         }
@@ -463,16 +493,19 @@ export const addMcp = (agent, home, environment = home === undefined ? process.e
  * @category constructors
  * @since 1.0.0
  */
-export const manualInstructions = (targets = agents.map((agent) => agent.id)) => {
+export const manualInstructions = (targets = agents.map((agent) => agent.id), environment = {}) => {
     const entry = launchCommand();
     const launch = [entry.command, ...entry.args].join(" ");
+    const store = serverEnvironment(environment);
+    const flag = store === undefined ? "" : ` --env SMITHERS_MEMORY_DB=${store.SMITHERS_MEMORY_DB}`;
+    const member = store === undefined ? "" : `, "env": ${JSON.stringify(store)}`;
     return [
         "Could not register the Smithers MCP server automatically.",
         "",
         "Register it with the agent's own CLI. The `--` separator is required so the",
         "agent treats everything after it as the launch command, not its own flags:",
         "",
-        ...targets.map((target) => `  ${target} mcp add ${serverName} -- ${launch}`),
+        ...targets.map((target) => `  ${target} mcp add${flag} ${serverName} -- ${launch}`),
         "",
         ...(targets.includes("claude") ?
             [
@@ -480,7 +513,7 @@ export const manualInstructions = (targets = agents.map((agent) => agent.id)) =>
                 "",
                 "  {",
                 "    \"mcpServers\": {",
-                `      "${serverName}": { "command": ${JSON.stringify(entry.command)}, "args": ${JSON.stringify(entry.args)} }`,
+                `      "${serverName}": { "command": ${JSON.stringify(entry.command)}, "args": ${JSON.stringify(entry.args)}${member} }`,
                 "    }",
                 "  }",
                 ""

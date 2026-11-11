@@ -1,0 +1,12 @@
+/** The platform code of Channel.vibe, which a .vibe file does not use directly (EK4402). */
+
+/**
+ * A random pass for one polling source's door: 32 bytes from the host's
+ * cryptographic generator, as lowercase hex.
+ *
+ * @private
+ * @since 1.0.0
+ * @throws {never}
+ */
+export const sourcePass = (): string =>
+  Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("")

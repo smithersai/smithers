@@ -56,15 +56,24 @@ theorem enqueue_keeps_runs_and_main (s : State) (id : ChangeId) (priority : Nat)
   unfold State.enqueue
   split <;> exact ⟨rfl, rfl⟩
 
-/-- **A green run always lands.** A live run with a complete green result
-lands when the queue says so, whatever any other change is doing: failing,
-being fixed, waiting. No repair anywhere holds a landing back. -/
+/-- **A green run is always pushed.** When no push is under way, a live run
+with a complete green result is pushed when the queue says so, whatever any
+other change is doing: failing, being fixed, waiting. No repair anywhere holds
+a landing back. -/
+theorem green_run_is_always_pushed {cfg : Config} {s : State} {run : RunId} {r : Run} {batch : List Part}
+    (idle : s.pushingRun = none) (found : s.findRun run = some r) (live : s.live r = some batch)
+    (isGreen : green cfg r.results = true) : (s.push cfg run).pushing = some run := by
+  unfold State.push
+  simp [idle, found, live, isGreen]
+
+/-- **A pushed run always lands.** Once the target is seen on the pushed tree,
+the landing is recorded, whatever any other change is doing. -/
 theorem green_run_always_lands {cfg : Config} {s : State} {run : RunId} {r : Run} {batch : List Part}
-    (found : s.findRun run = some r) (live : s.live r = some batch) (isGreen : green cfg r.results = true) :
-    (s.land cfg run).main = r.tree ∧ s.land cfg run ≠ s := by
+    (pushed : s.pushing = some run) (found : s.findRun run = some r) (live : s.live r = some batch)
+    (isGreen : green cfg r.results = true) : (s.land cfg run).main = r.tree ∧ s.land cfg run ≠ s := by
   have moved : (s.land cfg run).main = r.tree := by
-    unfold State.land
-    simp only [found, live, isGreen, if_true]
+    unfold State.land State.landNow
+    simp only [pushed, found, live, isGreen, if_true]
   refine ⟨moved, ?_⟩
   intro same
   rw [same] at moved
@@ -81,13 +90,16 @@ theorem fixing_is_out_of_the_way (s : State) (c : Change) (fixing : c.status.isF
   cases fixing
 
 /-- **A free slot is always used.** With something to check and a run slot,
-while a change waits and no run is pending, the policy has a decision to make:
-the queue never idles with work it could start. -/
+while a change waits, no run is pending and no push is under way, the policy
+has a decision to make: the queue never idles with work it could start. -/
 theorem free_slot_is_used {cfg : Config} {s : State} (checks : cfg.required ≠ []) (slots : 0 < cfg.maxRuns)
-    (waiting : s.ready ≠ []) (nonePending : ∀ r ∈ s.runs, r.pending cfg = false) : plan cfg s ≠ none := by
+    (waiting : s.ready ≠ []) (nonePending : ∀ r ∈ s.runs, r.pending cfg = false) (noPush : s.pushingRun = none) :
+    plan cfg s ≠ none := by
   intro idle
-  obtain ⟨r, member, pending⟩ := no_deadlock checks slots idle waiting
-  rw [nonePending r member] at pending
-  cases pending
+  rcases no_deadlock checks slots idle waiting with ⟨r, member, pending⟩ | busy
+  · rw [nonePending r member] at pending
+    cases pending
+  · rw [noPush] at busy
+    cases busy
 
 end MergeQueue

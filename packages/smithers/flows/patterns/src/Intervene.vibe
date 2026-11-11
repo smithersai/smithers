@@ -137,7 +137,13 @@ export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
     ? undefined
     : Pattern.bind(Pattern.slot({ input: ApprovalInput, output: Pattern.Approved }), options.approval)
   const captures = { dryRun, gated: options.approval !== undefined, reason }
-  const { name, description } = Compose.label("intervene", { dryRun }, options)
+  const { name, description } = Compose.label("intervene", { dryRun }, options, [
+    stages.read,
+    stages.propose,
+    apply,
+    stages.report,
+    options.approval
+  ])
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
     Node.bindPlanned(
       callMember(stages.read, { phase: "read", input }),

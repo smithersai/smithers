@@ -115,7 +115,15 @@ describe("FileSystem.confined", () => {
         const view = yield* FileSystem.confined(viaConfined.host, "/alias")
         yield* exercise(view)
       }).pipe(Effect.provideService(GrantStore, neverGrants))
-      expect(viaConfined.requests).toEqual(viaLayer.requests)
+      // The guarded layer alone asks what a rename's source is, to apply the
+      // policy to a directory's content. A confined view consults no policy.
+      // This host records a request when it is built, so the rename is listed
+      // ahead of the question that runs before it.
+      expect(viaConfined.requests).toEqual(
+        viaLayer.requests.filter((request, index, all) =>
+          !(request.operation === "stat" && all[index - 1]?.operation === "rename")
+        )
+      )
       expect(viaConfined.requests[0]).toMatchObject({
         boundaryRoot: "/canonical",
         logicalRoot: "/alias",

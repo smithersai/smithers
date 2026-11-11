@@ -142,6 +142,11 @@ export interface Landing {
   readonly batch: ReadonlyArray<Part>
   /** The results that justified it. */
   readonly results: ReadonlyArray<Result>
+  /**
+   * Someone other than the queue put these commits on the target. The queue
+   * did not test them; it adopted the new tip and retests everything on it.
+   */
+  readonly foreign: boolean
 }
 
 /**
@@ -195,13 +200,20 @@ export interface State {
   readonly landed: ReadonlyArray<Landing>
   /** Durations of finished checks, oldest first, at most `window` per check. */
   readonly history: ReadonlyArray<Sample>
+  /**
+   * The run whose tree the queue is fast-forwarding the target onto, or
+   * `null`. The landing is recorded when the target is seen there.
+   */
+  readonly pushing: number | null
 }
 
 /**
- * What happens to the queue. `enqueue`, `withdraw`, `result`, `fixed` and
- * `gaveUp` arrive from outside; `start`, `land`, `blame` and `cancel` are what
- * the queue decides, and `plan` chooses among them. Every event is safe at any
- * time: `step` refuses one whose guard does not hold.
+ * What happens to the queue. `enqueue`, `withdraw`, `result`, `fixed`,
+ * `gaveUp`, `foreign` (someone else put a commit on the target) and `land`
+ * (the target was seen on the pushed tree) arrive from outside; `start`,
+ * `push`, `blame` and `cancel` are what the queue decides, and `plan` chooses
+ * among them. Every event is safe at any time: `step` refuses one whose guard
+ * does not hold.
  *
  * @category models
  * @since 0.1.0
@@ -218,7 +230,9 @@ export type Event =
   }
   | { readonly _tag: "fixed"; readonly id: number; readonly attempt: number }
   | { readonly _tag: "gaveUp"; readonly id: number; readonly attempt: number; readonly detail: string }
+  | { readonly _tag: "foreign"; readonly id: number }
   | { readonly _tag: "start"; readonly count: number }
+  | { readonly _tag: "push"; readonly run: number }
   | { readonly _tag: "land"; readonly run: number }
   | { readonly _tag: "blame"; readonly run: number }
   | { readonly _tag: "cancel"; readonly run: number }
@@ -236,7 +250,8 @@ export const empty: State = {
   nextRun: 0,
   nextSeq: 0,
   landed: [],
-  history: []
+  history: [],
+  pushing: null
 }
 
 /**

@@ -6,6 +6,9 @@ spread across every Codex login the host holds: `~/.codex/auth.json` (label
 `default`) and `~/.smithers/accounts/codex-*/auth.json` (label = the directory
 name). An account that hits its usage limit is taken out of the rotation with
 the reset time the message names, and comes back once that time has passed.
+A limit that names no reset time the pool can read takes the account out for
+`NO_RESET_COOLOFF_SEC` (five hours, one Codex usage window); if the seat is
+still dry then, the next limit takes it out again.
 
 An infrastructure failure is never a score. A trial whose seat ran dry is
 re-run on the next healthy account (`SeatExhausted` carries what happened);
@@ -19,6 +22,10 @@ The rotation state is one JSON file shared by every runner process on the host
 (`SMITHERS_CODEX_POOL_STATE`, default `~/.smithers/accounts/pool.json`),
 updated under an exclusive `flock`, so two Harbor jobs (one per arm) draw from
 the same wheel. New `codex-*` directories are picked up on the next lease.
+Each update writes a temporary file beside it and renames it over the state,
+so a runner killed mid-write leaves the previous state whole. A state file that
+exists but cannot be read raises `PoolStateUnreadable`: reading it as empty
+would put every disabled account back in the rotation.
 """
 
 from __future__ import annotations
@@ -29,7 +36,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -38,6 +45,7 @@ WAIT_VARIABLE = "SMITHERS_CODEX_POOL_WAIT_SEC"
 DEFAULT_LABEL = "default"
 DEFAULT_WAIT_SEC = 6 * 3600
 POLL_SEC = 60
+NO_RESET_COOLOFF_SEC = 5 * 3600
 # The reasoning effort a benchmark arm asks for unless the run names another
 # (`--ak reasoning_effort=<effort>`): a pair is only a pair at one effort.
 # Owner ruling 2026-10-10: benchmarks run at `xhigh`, not `max`.
@@ -60,6 +68,10 @@ SEAT_CODES = ("quota_exceeded",)
 # the arm chose, so the trial is graded as it stands (ruling 2026-09-23).
 INFRA_CODES = ("authentication", "no_route", "provider_internal", "transport", "completion_unjudged", "unconfigured")
 _RESET_RE = re.compile(r"(?:try again|resets?|available again)\s+(?:at|on|after)\s+([A-Z][a-z]{2,8}\.? \d{1,2}(?:st|nd|rd|th)?,? \d{4},? \d{1,2}:\d{2}\s*[AP]M(?: [A-Z]{2,4})?)", re.I)
+_RESET_TIME_RE = re.compile(r"(?:try again|resets?|available again)\s+at\s+(\d{1,2}):(\d{2})\s*([AP])M\b", re.I)
+_RESET_IN_RE = re.compile(r"(?:try again|resets?|available again)\s+in\s+((?:\d+\s*[a-z]+[\s,]*(?:and\s+)?)+)", re.I)
+_RESET_UNIT = re.compile(r"(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b", re.I)
+_UNIT_SEC = {"d": 86400, "h": 3600, "m": 60, "s": 1}
 _RESET_ISO_RE = re.compile(r"(?:resets?_at|reset_at|try again after)\W+(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?)", re.I)
 
 
@@ -108,6 +120,12 @@ class NoSeatLeft(Exception):
     """Every account is out of rotation and the pause wait ran out."""
 
 
+class PoolStateUnreadable(Exception):
+    """The rotation state file exists but is not readable JSON. Its disabled
+    accounts are unknown, so no account is leased until an operator repairs or
+    removes the file."""
+
+
 def discover(home: Path | None = None, accounts_dir: Path | None = None) -> list[Account]:
     """Every Codex login on the host, `default` first, then `codex-*` sorted."""
     home = home or Path.home()
@@ -128,9 +146,16 @@ def mentions_usage_limit(text: str) -> bool:
     return any(signal in lowered for signal in USAGE_LIMIT_SIGNAL)
 
 
-def reset_time_of(text: str) -> str | None:
+def _utc(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).isoformat(timespec="minutes")
+
+
+def reset_time_of(text: str, now: float | None = None) -> str | None:
     """The reset time a usage-limit message names, as ISO 8601 UTC, when it
-    names one ("try again at Sep 27th, 2026 9:27 AM", "resets_at 2026-…")."""
+    names one ("try again at Sep 27th, 2026 9:27 AM", "resets_at 2026-…",
+    "try again at 9:27 AM", "try again in 3 hours 12 minutes"). A time with
+    no date is the next such time on the host's clock after `now`."""
+    now = time.time() if now is None else now
     m = _RESET_ISO_RE.search(text)
     if m:
         try:
@@ -139,7 +164,7 @@ def reset_time_of(text: str) -> str | None:
             return None
     m = _RESET_RE.search(text)
     if not m:
-        return None
+        return _reset_time_only(text, now) or _reset_relative(text, now)
     raw = re.sub(r"(\d)(st|nd|rd|th)", r"\1", m.group(1)).replace(".", "").replace(",", "")
     raw = re.sub(r"(?<=[AP]M)\s+[A-Z]{2,4}$", "", raw, flags=re.I)  # a trailing zone name
     for fmt in ("%b %d %Y %I:%M %p", "%B %d %Y %I:%M %p"):
@@ -150,6 +175,32 @@ def reset_time_of(text: str) -> str | None:
         except ValueError:
             continue
     return None
+
+
+def _reset_time_only(text: str, now: float) -> str | None:
+    m = _RESET_TIME_RE.search(text)
+    if not m:
+        return None
+    hour, minute = int(m.group(1)), int(m.group(2))
+    if not 1 <= hour <= 12 or minute > 59:
+        return None
+    hour = hour % 12 + (12 if m.group(3).upper() == "P" else 0)
+    # The CLI prints the local time of the host it ran on.
+    local = datetime.fromtimestamp(now).astimezone()
+    at = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if at.timestamp() <= now:
+        at = (local + timedelta(days=1)).replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return _utc(at)
+
+
+def _reset_relative(text: str, now: float) -> str | None:
+    m = _RESET_IN_RE.search(text)
+    if not m:
+        return None
+    seconds = sum(int(n) * _UNIT_SEC[unit[0].lower()] for n, unit in _RESET_UNIT.findall(m.group(1)))
+    if not seconds:
+        return None
+    return _utc(datetime.fromtimestamp(now + seconds, timezone.utc))
 
 
 def classify_cause(cause: str | None) -> str | None:
@@ -192,12 +243,26 @@ class Pool:
 
     def _load(self) -> dict:
         try:
-            return json.loads(self.state_path.read_text())
-        except (OSError, ValueError):
+            text = self.state_path.read_text()
+        except FileNotFoundError:
             return {}
+        except OSError as error:
+            raise PoolStateUnreadable(f"{self.state_path}: {error}") from error
+        try:
+            state = json.loads(text)
+        except ValueError as error:
+            raise PoolStateUnreadable(f"{self.state_path}: not JSON ({error}); repair or remove it") from error
+        if not isinstance(state, dict):
+            raise PoolStateUnreadable(f"{self.state_path}: not a JSON object; repair or remove it")
+        return state
 
     def _save(self, state: dict) -> None:
-        self.state_path.write_text(json.dumps(state, indent=2))
+        temporary = self.state_path.with_name(f"{self.state_path.name}.{os.getpid()}.tmp")
+        with open(temporary, "w") as file:
+            file.write(json.dumps(state, indent=2))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, self.state_path)
 
     def _locked(self):
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,19 +271,22 @@ class Pool:
         return lock
 
     def _enabled(self, state: dict) -> list[Account]:
-        """Accounts in rotation, after re-admitting those whose reset passed."""
+        """Accounts in rotation, after re-admitting those whose reset passed.
+        A disable with no readable reset time ends `NO_RESET_COOLOFF_SEC`
+        after it was recorded."""
         disabled = state.get("disabled", {})
         now = self.clock()
         for label, info in list(disabled.items()):
             reset = info.get("resetAt")
-            if reset:
-                try:
-                    at = datetime.fromisoformat(reset).timestamp()
-                except ValueError:
-                    continue
-                if at <= now:
-                    state.setdefault("reenabled", []).append({"label": label, "at": now, "resetAt": reset})
-                    del disabled[label]
+            try:
+                at = datetime.fromisoformat(reset).timestamp() if reset else None
+            except ValueError:
+                at = None
+            if at is None:
+                at = float(info.get("at") or 0) + NO_RESET_COOLOFF_SEC
+            if at <= now:
+                state.setdefault("reenabled", []).append({"label": label, "at": now, "resetAt": reset})
+                del disabled[label]
         if self.rediscover is not None:
             self.accounts = self.rediscover()
         return [a for a in self.accounts if a.label not in disabled]

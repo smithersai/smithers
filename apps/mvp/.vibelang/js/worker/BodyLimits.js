@@ -90,6 +90,8 @@ export const forRequest = (url) => Effect.gen(function* () {
         return MAX_REQUEST_BYTES;
     if (/^\/api\/repos\/[^/]+\/[^/]+\/writes$/.test(path))
         return MAX_WRITE_BYTES;
+    if (/^\/api\/repos\/[^/]+\/[^/]+\/asks$/.test(path))
+        return MAX_RUN_BODY_BYTES;
     if (/^\/api\/repos\/[^/]+\/[^/]+\/issues\/[^/]+\/links$/.test(path))
         return MAX_POST_BYTES;
     if (/^\/api\/repos\/[^/]+\/[^/]+\/pulls\/[^/]+\/review$/.test(path))

@@ -18,7 +18,9 @@ withdraw <id>
 result <run> <check> pass|fail <duration>
 fixed <id> <attempt>
 gaveup <id> <attempt> <detail to end of line>
+foreign <id>
 start <count>
+push <run>
 land <run>
 blame <run>
 cancel <run>
@@ -61,7 +63,8 @@ def change (c : Change) : String :=
 
 def run (r : Run) : String := s!"{r.id}:{tree r.base}/{tree r.batch}:{results r.results}"
 
-def landing (l : Landing) : String := s!"{l.run}:{tree l.base}/{tree l.batch}:{results l.results}"
+def landing (l : Landing) : String :=
+  if l.foreign then s!"foreign:{tree l.base}/{tree l.batch}" else s!"{l.run}:{tree l.base}/{tree l.batch}:{results l.results}"
 
 def event : Event → String
   | .enqueue id priority => s!"enqueue {id} {priority}"
@@ -69,6 +72,8 @@ def event : Event → String
   | .result r check v duration => s!"result {r} {check} {match v with | .pass => "pass" | .fail => "fail"} {duration}"
   | .fixed id attempt => s!"fixed {id} {attempt}"
   | .gaveUp id attempt detail => s!"gaveup {id} {attempt} {detail}"
+  | .foreign id => s!"foreign {id}"
+  | .push r => s!"push {r}"
   | .start count => s!"start {count}"
   | .land r => s!"land {r}"
   | .blame r => s!"blame {r}"
@@ -90,6 +95,7 @@ def state (cfg : Config) (s : State) : String :=
       s!"changes={";".intercalate (s.changes.map change)}",
       s!"runs={";".intercalate (s.runs.map run)}",
       s!"next={s.nextRun},{s.nextSeq}",
+      s!"pushing={match s.pushing with | some r => toString r | none => "-"}",
       s!"landed={";".intercalate (s.landed.map landing)}",
       s!"history={list (s.history.map fun h => s!"{h.1}:{h.2}")}",
       s!"ready={list (s.ready.map fun c => toString c.id)}",
@@ -132,6 +138,8 @@ def line (text : String) : Option Line :=
   | ["fixed", id, attempt] => do pure (.event (.fixed (← id.toNat?) (← attempt.toNat?)))
   | "gaveup" :: id :: attempt :: detail =>
     do pure (.event (.gaveUp (← id.toNat?) (← attempt.toNat?) (" ".intercalate detail)))
+  | ["foreign", id] => do pure (.event (.foreign (← id.toNat?)))
+  | ["push", r] => do pure (.event (.push (← r.toNat?)))
   | ["start", count] => do pure (.event (.start (← count.toNat?)))
   | ["land", r] => do pure (.event (.land (← r.toNat?)))
   | ["blame", r] => do pure (.event (.blame (← r.toNat?)))

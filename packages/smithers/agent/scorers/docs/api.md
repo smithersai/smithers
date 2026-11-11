@@ -398,7 +398,9 @@ const tone = Rubric.make({
 `output` the text judged. `render` fences each piece of content in a fence
 longer than any backtick run inside it. `parse` reads the one JSON object with
 `"scores"` in the reply, fenced or not, refuses a reply with two (a judge
-quoting a verdict forged in the output), and requires an integer from 1 to 5 for every
+quoting a verdict forged in the output) or with a `"scores"` key outside the
+object it reads (the same quote beside a judge object that is invalid or cut
+off), and requires an integer from 1 to 5 for every
 criterion. An unparsable reply fails with code `invalid_score`; a rubric with
 no criteria or duplicate ids throws `invalid_declaration`. Criteria, examples,
 rule, and instructions are the scorer's `config`, so changing the rubric

@@ -3358,12 +3358,21 @@ const settleFailure = (dispatch: Dispatch, admitted: Admitted, cause: Cause.Caus
 const recordCopyBack = (dispatch: Dispatch, settlement: SandboxedExecution.Settlement) =>
   Effect.gen(function*() {
     const { attemptId } = dispatch
+    // Both records are keyed by the bundle they describe, not by the
+    // attempt alone (issue #4760). They commit before the attempt row
+    // does, so a process that dies in between leaves a running row whose
+    // adoption re-executes the body over a host that already holds its
+    // output. That execution proposes a different (empty) bundle, and an
+    // attempt-only key would make its records an `idempotency_conflict`
+    // on every later drive. An identical re-emission of the same bundle
+    // still collapses into a `Duplicate`.
+    const bundle = settlement.bundleIdentity
     // Forensics requires both halves as journal facts, never inferred
     // from an absence: what the
     // transaction proposed, and that it reached the host.
     yield* emitConverging(
       dispatch,
-      JournalRecords.diffBundleCaptured(attemptSource(dispatch, "diff-bundle"), {
+      JournalRecords.diffBundleCaptured(attemptSource(dispatch, `diff-bundle:${bundle}`), {
         ...attemptId,
         bundleIdentity: settlement.bundleIdentity,
         changedPaths: settlement.files.map((change) => change.path),
@@ -3385,7 +3394,7 @@ const recordCopyBack = (dispatch: Dispatch, settlement: SandboxedExecution.Settl
     }
     yield* emitConverging(
       dispatch,
-      JournalRecords.copyBackSettled(attemptSource(dispatch, "copy-back"), {
+      JournalRecords.copyBackSettled(attemptSource(dispatch, `copy-back:${bundle}`), {
         ...attemptId,
         bundleIdentity: settlement.bundleIdentity,
         rebases: settlement.rebases,

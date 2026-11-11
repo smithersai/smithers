@@ -55,7 +55,7 @@
 - [@smthrs/fs](https://smithers.sh/docs/reference/api/fs/): Private metadata routing and schema-checked command projections for Smithers flows
 - [@smthrs/gateway](https://smithers.sh/docs/reference/api/gateway/): Effect workspace gateway contracts, projections, and supervision ports for flows
 - [@smthrs/harness](https://smithers.sh/docs/reference/api/harness/): The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls
-- [@smthrs/integrations](https://smithers.sh/docs/reference/api/integrations/): GitHub adapters over the Smithers control plane
+- [@smthrs/integrations](https://smithers.sh/docs/reference/api/integrations/): GitHub and Telegram adapters over the Smithers control plane
 - [@smthrs/jj](https://smithers.sh/docs/reference/api/jj/): Jujutsu version control as a portable Effect host service
 - [@smthrs/journal](https://smithers.sh/docs/reference/api/journal/): Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel
 - [@smthrs/kernel](https://smithers.sh/docs/reference/api/kernel/): Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services
@@ -96,7 +96,7 @@
 - [@smthrs/agent](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs): The Smithers agent: the production agent loop composed on the durable engine, plus the two adapters that run it, AgentSession for control-plane runs and AgentAction for typed workflow steps
 - [@smthrs/evals](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/evals/docs): Fixed-suite evaluation, baselines, regression reports, and score gates for flows
 - [@smthrs/harness](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/harness/docs): The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls
-- [@smthrs/integrations](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/integrations/docs): GitHub adapters over the Smithers control plane
+- [@smthrs/integrations](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/integrations/docs): GitHub and Telegram adapters over the Smithers control plane
 - [@smthrs/memory](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/docs): Effect services for durable cross-run facts, history, notes, recall, and maintenance
 - [@smthrs/model](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/model/docs): Schema-first Effect model protocols, routes, and streaming events for flows
 - [@smthrs/plugin](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/docs): Vite-style typed plugin kernel for flows: hooks, resolution, and config execution

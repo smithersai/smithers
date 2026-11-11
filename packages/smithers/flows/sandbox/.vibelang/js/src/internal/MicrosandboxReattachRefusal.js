@@ -18,7 +18,9 @@ import * as Schema from "effect/Schema";
 export const MicrosandboxReattachRefusalCode = Schema.Literals([
     "network_mismatch",
     "limits_mismatch",
-    "ownership_not_recorded"
+    "ownership_not_recorded",
+    "ownership_mismatch",
+    "configuration_mismatch"
 ]);
 /**
  * A machine that cannot be reattached to under this session's configuration.

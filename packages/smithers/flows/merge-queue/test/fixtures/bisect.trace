@@ -8,9 +8,11 @@ result 0 1 fail 12
 plan
 result 1 1 pass 30
 plan
+land 1
 plan
 result 2 1 pass 31
 plan
+land 2
 plan
 plan
 fixed 4 1

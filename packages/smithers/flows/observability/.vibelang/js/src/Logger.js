@@ -2,12 +2,18 @@
 /**
  * Effect logger layers used by flows.
  *
+ * Every layer that installs a sink installs it through
+ * `RedactedLogger.wrap`, the journal's redaction rules over the message, the
+ * cause and the log annotations, so a credential a line quotes never reaches
+ * the console in clear.
+ *
  * @since 0.1.0
  */
 import * as Context from "effect/Context";
 import * as Formatter from "effect/Formatter";
 import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
+import { RedactedLogger } from "@smthrs/journal";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 /**
@@ -23,17 +29,18 @@ const optionsWithDefaults = (options) => ({
     mergeWithExisting: options?.mergeWithExisting ?? false
 });
 /**
- * Provides a human-readable development logger.
+ * Replaces (or joins) the ambient logger set with `logger` behind the
+ * journal's redaction rules.
+ */
+const redactedLayer = (logger, options) => withMinimumLogLevel(Logger.layer([RedactedLogger.wrap(logger)], { mergeWithExisting: options.mergeWithExisting }), options.minimumLogLevel);
+/**
+ * Provides a human-readable development logger. The message, cause and
+ * annotations pass the journal's redaction rules before the line is written.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerPrettyDev = (options) => {
-    const resolved = optionsWithDefaults(options);
-    return withMinimumLogLevel(Logger.layer([Logger.consolePretty({ colors: "auto", mode: "auto" })], {
-        mergeWithExisting: resolved.mergeWithExisting
-    }), resolved.minimumLogLevel);
-};
+export const layerPrettyDev = (options) => redactedLayer(Logger.consolePretty({ colors: "auto", mode: "auto" }), optionsWithDefaults(options));
 /**
  * Effect's structured record of a log line (`Logger.formatStructured`), with
  * the current span's `trace_id` and `span_id` among its annotations when the
@@ -53,17 +60,13 @@ export const formatStructured = Logger.make((options) => {
 });
 /**
  * Provides one structured JSON object per log line: {@link formatStructured},
- * with the current span's ids, written to the console.
+ * with the current span's ids, written to the console. The message, cause and
+ * annotations pass the journal's redaction rules before the line is built.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerStructuredJson = (options) => {
-    const resolved = optionsWithDefaults(options);
-    return withMinimumLogLevel(Logger.layer([Logger.withConsoleLog(Logger.map(formatStructured, (output) => Formatter.formatJson(output)))], {
-        mergeWithExisting: resolved.mergeWithExisting
-    }), resolved.minimumLogLevel);
-};
+export const layerStructuredJson = (options) => redactedLayer(Logger.withConsoleLog(Logger.map(formatStructured, (output) => Formatter.formatJson(output))), optionsWithDefaults(options));
 /**
  * Removes the active logger set and pins the minimum level to `None` unless
  * `options.minimumLogLevel` explicitly selects another level.
@@ -74,11 +77,10 @@ export const layerStructuredJson = (options) => {
 export const layerNoop = (options) => withMinimumLogLevel(Logger.layer([]), options?.minimumLogLevel ?? "None");
 /**
  * A logger layer that can be composed without requiring a runtime service.
+ * `logger` receives each log event with the journal's redaction rules already
+ * applied to its message, cause and annotations, and a redacting console.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer = (logger, options) => {
-    const resolved = optionsWithDefaults(options);
-    return withMinimumLogLevel(Logger.layer([logger], { mergeWithExisting: resolved.mergeWithExisting }), resolved.minimumLogLevel);
-};
+export const layer = (logger, options) => redactedLayer(logger, optionsWithDefaults(options));

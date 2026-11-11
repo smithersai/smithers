@@ -701,3 +701,38 @@ corpora, not per-token/individual-call latency. Initialization/shared-host/cold-
 The separately named draft fault artifact contains **counts only**: 12 settlement attempts, one admission, one
 model request, one warning, zero charged tokens and the retained 327,680-token ceiling in the instrumented sample.
 Its approximately two-minute policy is a configured deadline; no observed fault duration is published.
+
+## Delegated issue and wiki writes (lane vl-bench, 2026-11-10)
+
+`bench/issues-delegated.bench.vibe` and `bench/wiki-delegated.bench.vibe` run `worker/Issues.vibe` and
+`worker/Wiki.vibe`'s durable flows over Node SQLite object storage, with every GitHub call going through smithers.sh's
+real per-person connection host (`fuzz/delegated.vibe`) to the in-memory GitHub over the real client protocol
+(`fuzz/issues-node-fake.vibe`). That is the seam the unit coverage tests use; nothing intercepts a request. One
+maintainer journey per callback, on a fresh store and GitHub:
+
+| Workload | Journey | Checked every callback |
+| --- | --- | --- |
+| `issues-delegated-writes` | new, split, comment, link, commit to the agent, uncommit, VIP proposal, accept, decline | selected number, parent, note, task, assignee, labels, VIP state and review URL, approver, closed state |
+| `wiki-delegated-edit` | read, drafted edit, save, second proposal | page source, draft and its kept copy, both review URLs, the kept draft cleared after save |
+
+Each fails when its product write is removed: decline without `issue.close` reads `"open"`; a save that keeps the
+draft fails the cleared check. Limitations: no api.github.com latency, rate limit or network; SQLite, not a Durable
+Object; the wiki writer is a deterministic `WikiWriter` service, not the model. Live writes remain the opt-in
+`GITHUB_TEST_TOKEN` tests. On nyc-01 at 22:10 UTC (load about 21), nine Issues flows took 3,856 ms mean (about 430 ms
+each) and four wiki flows 815 ms (about 200 ms each), three samples each. Every Issues write ends by re-reading the
+issue list, the selected issue's timeline and comments and, for a VIP, its reviews (GitHub is the truth, 0165); that
+re-read dominates. It is a recorded finding, not a fix; this benchmark is the regression for any change that narrows it.
+
+**Measured benchmark coverage at `c3a8187b` (2026-11-10, 23:12 to 23:53 UTC, nyc-01, load 21 to 52).** One complete
+`pnpm bench:coverage`: 98 files passed, 2 skipped; 203 tests passed, 7 skipped; Vitest, 111 workerd-evidenced and 105
+Chromium-evidenced files merged. It ran on nyc-01 with `run-heavy --overflow host` because the box image's git 2.39
+fails `bench/scripts.bench.vibe`, and `bench:coverage` merges only after every workload passes. Lines of `src/` and
+`worker/`: **7,785/7,936 (98.10%)**, src 5,447/5,554 (98.07%), worker 2,338/2,382 (98.15%), up from 7,435/7,716
+(96.36%) at c5bbf81b. `worker/Issues.vibe` went from 91 uncovered lines to 6, `worker/Wiki.vibe` from 46 to 5. The
+strict all-metric gate still fails in 121 files.
+
+The largest remaining file, `src/core/issueGraphDecision.vibe` (26/46, new from the proof lanes), is mostly
+specification: `issueAncestorAt` (25-30) and the functions after `issuesAfter` run only in proofs, and VibeLang has no
+spec-only function (`~/vl/vibelang-bugs/spec-only-function/`); they stay counted. `src/web/markdown.vibe` fell from 104/106 to 97/106 with no
+change to the file, because its tables and continued list items were credited only by whichever wiki pages the view
+workloads rendered; `markdown-compile` now renders one fixed document with every block the compiler knows.

@@ -13,6 +13,7 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -143,9 +144,12 @@ export const make = (options) => {
         concurrency,
         failurePolicy
     };
-    const { name, description } = Compose.label("mergeQueue", { members: captures.members, concurrency, failurePolicy }, options);
+    const { name, description } = Compose.label("mergeQueue", { members: captures.members, concurrency, failurePolicy }, options, queue.map((entry) => entry.member.flow));
     // Each landing settles to a tagged outcome, so the final fold can tell a
     // landed member from a quarantined one whatever the member returned.
+    // The result is what the flow settles with, so a quarantined member
+    // carries its error as data.
+    const wire = Failure.wire(queue.map((entry) => entry.member.flow));
     const settled = (values) => {
         const outcomes = values;
         const landed = [];
@@ -155,7 +159,7 @@ export const make = (options) => {
             if (outcome._tag === "Landed")
                 landed.push({ id: entry.id, output: outcome.output });
             else
-                quarantined.push({ id: entry.id, error: outcome.error });
+                quarantined.push({ id: entry.id, error: wire(outcome.error) });
         }
         return { landed, quarantined, order: captures.members };
     };
@@ -206,7 +210,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], queue.map((entry) => entry.member.flow)),
         body: Node.capture(captures, body)
     });
 };

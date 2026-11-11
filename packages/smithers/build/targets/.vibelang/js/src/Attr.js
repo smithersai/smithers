@@ -18,13 +18,19 @@ import * as Secret from "./Secret.js";
 import * as Target from "./Target.js";
 /**
  * Schema for one entry of a `data` array: a target whose files materialize
- * before dispatch, a declared input, or an installed-module dependency
- * reference.
+ * before dispatch, a workspace subtree selection
+ * (`Target.subtree("//packages/...", "lib")`) whose every match is such a
+ * target, a declared input, or an installed-module dependency reference.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const DataMember = Schema.Union([Target.Target, Input.Declared, Reference.NodeModuleDep]);
+export const DataMember = Schema.Union([
+    Target.Target,
+    Target.DependencySelector,
+    Input.Declared,
+    Reference.NodeModuleDep
+]);
 /**
  * Schema for a `data` array.
  *

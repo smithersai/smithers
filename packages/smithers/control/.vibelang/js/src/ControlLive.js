@@ -1381,9 +1381,12 @@ export const layer = Layer.effect(Control, Effect.gen(function* () {
             // the engine's continuation state; it replayed a recorded receipt as
             // `AlreadyApplied` for a run that had since settled; and it journaled
             // `control.run.resumed`, which `AgentSession` reads as an approval
-            // DELEGATION rather than as the claim a resume is.
-            if (input._tag === "Resume")
-                return yield* runMutation(input);
+            // DELEGATION rather than as the claim a resume is. It is confined
+            // as `Control.resume` is, so a restricted principal cannot resume
+            // another principal's run by spelling the resume through `Run`.
+            if (input._tag === "Resume") {
+                return yield* confined({ reader: submitted.reader, runId: input.runId }, runMutation(input));
+            }
             const principal = yield* runtime.stampPrincipal(input.principal);
             let admitted;
             const receipt = yield* mutate("run", input.idempotencyKey, principal, fingerprint("run", principal, input), Effect.gen(function* () {

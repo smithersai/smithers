@@ -1,9 +1,9 @@
 ---
 title: "Integrations"
-description: "GitHub adapters and shared durable integration primitives."
+description: "GitHub and Telegram adapters and shared durable integration primitives."
 ---
 
-GitHub adapters over the Smithers control plane. Shared channels, cursors,
+GitHub and Telegram adapters over the Smithers control plane. Shared channels, cursors,
 source stores, and durable delivery receipts remain available for host integrations.
 
 Release scope and compatibility are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
@@ -36,12 +36,34 @@ limit's `Retry-After`; the clients never retry. Ambiguous writes report
 `outcomeUnknown` and are not blindly repeated. GitHub webhooks enter through
 the backend at `POST /webhooks/github`.
 
+## Telegram
+
+```ts
+import { Core, Telegram } from "@smthrs/integrations"
+import { Effect } from "effect"
+import { FetchHttpClient } from "effect/http"
+
+const door = Core.Channel.fromSource({ name: "telegram", route: Core.Channel.startFlow("triage") })
+
+// Inside a flow action: poll getUpdates, start one flow per message, then commit the offset.
+const receive = Effect.gen(function*() {
+  const source = yield* Telegram.Source.make({ allowedChatIds: [123456789] })
+  yield* source.run(door.handle)
+}).pipe(Effect.provide(FetchHttpClient.layer))
+```
+
+`Telegram.Source` receives a bot's messages by long-polling `getUpdates`, so it
+needs no public URL. It reads `SMITHERS_TELEGRAM_BOT_TOKEN`, drops every chat
+outside `allowedChatIds`, and commits the offset only after the batch was
+handled. Sending is `@smthrs/notifications`. See [the Telegram guide](./guides/telegram.md).
+
 ## Shared webhook ingress
 
 `Core.Channel.make` binds verify, decode, map, and dispatch in that order.
 Verification reads the exact delivered bytes. The receiver bounds body size
 before `Channels.ingest`, and gives every delivery an `idempotencyKey` to
-prevent duplicate work. See [the receiver guide](./guides/webhook-ingress.md).
+prevent duplicate work. See [the receiver guide](./guides/webhook-ingress.md). A polled
+source uses the same door: see [the polling source guide](./guides/polling-source.md).
 
 ## Tests
 
@@ -55,7 +77,7 @@ live suite requires an explicit test repository and credentials.
 
 ## Documentation
 
-[Quickstart](./quickstart.md) · [GitHub](./guides/github.md) ·
+[Quickstart](./quickstart.md) · [GitHub](./guides/github.md) · [Telegram](./guides/telegram.md) ·
 [API](./api.md) · [Durable actions](./concepts/durable-actions.md)
 
 Hosted-site sign-in uses `GitHub.Auth.Broker`; see [the package guide](../README.md#hosted-site-sign-in) for the

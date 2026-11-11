@@ -27,6 +27,17 @@ describe("JsonBoundary", () => {
     expect(JsonBoundary.jsonBoundary(cycle)._tag).toBe("Refused")
   })
 
+  it("refuses an unpaired surrogate in a string or a key, and copies a paired one", () => {
+    const cut = "release notes \u{1F680} shipped".slice(0, 15)
+    expect(JsonBoundary.jsonBoundary({ title: cut })._tag).toBe("Refused")
+    expect(JsonBoundary.jsonBoundary(["\uDE80"])._tag).toBe("Refused")
+    expect(JsonBoundary.jsonBoundary({ [cut]: 1 })._tag).toBe("Refused")
+    expect(JsonBoundary.jsonBoundary({ "\u{1F680}": "\u{1F680}" })).toEqual({
+      _tag: "Ok",
+      value: { "\u{1F680}": "\u{1F680}" }
+    })
+  })
+
   it("normalizes the one value JSON cannot represent, and refuses array holes", () => {
     // The QuickJS binding encodes in-realm, so it hands the host `0` for a
     // script's `-0`. The in-process binding must agree, or the two runners

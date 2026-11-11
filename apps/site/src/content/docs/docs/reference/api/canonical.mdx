@@ -192,6 +192,11 @@ shape or a host's runtime.
 Each code, with its cause and its fix, is in
 [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/troubleshooting.md).
 
+An array length above `4,294,967,295` also fails with
+`canonical_unsupported_value` before allocation. Constructor names in refusal
+details must be nonempty strings and are capped at 1,024 code units; other
+name values use a fixed type label without coercion.
+
 ## sortCollections
 
 ```ts
@@ -215,9 +220,23 @@ payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
 - It copies only objects that reach a collection; everything else keeps its
   reference. Cycles and shared references survive. Accessors are never
   invoked. The input is never mutated.
-- It never throws. An object it cannot inspect, such as a revoked proxy, is a
-  leaf and ranks after every value it can inspect.
-- Ranks read own data properties only. Elements that differ only behind
+- An object it cannot inspect, such as a revoked proxy, is a leaf and ranks
+  before symbols and `null`, and after the other inspectable values. The
+  one error it lets through is a
+  `RangeError` raised while it inspects an object: that is the engine
+  reporting an exhausted call stack or an over-long string, so it never
+  becomes a rank.
+- It keeps its own stack. Nesting depth is bounded by memory, not by the
+  runtime's call stack, so every runtime sorts a deep value the same way.
+- An object on no cycle is ranked once however often it is shared, so a chain
+  of shared references costs its objects, not its expanded tree. Inside a
+  cycle, a shared object is ranked once for each path that reaches it.
+- Boxed `Number`, `String`, `Boolean`, and `BigInt` ranks include their
+  internal primitive slot alongside their own data properties, ignoring
+  overridden coercion methods when reading the slot. This corrects
+  insertion-dependent identities for boxed collection entries; identities
+  containing distinct boxed entries can change from earlier versions.
+- Object member ranks read own data properties only. Elements that differ only behind
   accessors or private fields rank equal and keep their insertion order, and
   a copied class instance has its prototype and own properties but not its
   private fields. Keep the data a payload is identified by in own data

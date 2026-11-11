@@ -4,6 +4,27 @@
 
 ### Fixed
 
+- A confined source's module closure stays inside its confinement root
+  ([#4731](https://github.com/smithersai/smithers/issues/4731)). A pack
+  `flow.ts` importing `../../../x`, or reaching a host file through a symbolic
+  link, used to get that file read and its SHA-256 recorded in the pack flow's
+  descriptor. The import is now recorded as unpinnable without reading its
+  target, and `Executable` refuses the flow before measuring or writing
+  anything. A discovery scan reads closure modules through a stream bounded
+  by what the 16 MiB closure ceiling has left, and `package.json`,
+  `tsconfig.json` and `jsconfig.json` through one bounded at 1 MiB; a bare
+  specifier below a larger config is unpinnable. The loader, whose confined
+  host offers only whole-file reads, skips a module the host reports as past
+  the ceiling.
+
+- Snapshot restore no longer trusts a manifest's static links or paths
+  ([#4731](https://github.com/smithersai/smithers/issues/4731)). Links are
+  recomputed from the verified bytes, so a rewritten manifest cannot drop,
+  retarget, widen or add one while every digest still matches, and a restored
+  closure loads at the descriptor's own locators rather than the paths the
+  manifest stores. A flow whose `#` import maps to a file that does not exist
+  can no longer be pinned.
+
 - Snapshot lockfile reads measure concurrent removal as absence (#3602). Index
   read failures retain their platform cause as `unavailable` (#3603).
 

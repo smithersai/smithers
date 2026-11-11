@@ -21,6 +21,7 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -85,7 +86,10 @@ const declarationRefusal = (steps) => {
  * value only when every compensation succeeds; under `fail` no arm is declared
  * at all. Failed compensations are collected without stopping earlier undos.
  * Both compensation policies fail with `compensation_failed`, preserving the
- * original failure and the residue sorted by step id.
+ * original failure and the residue sorted by step id. A failure the saga
+ * reports, in a `Compensated` outcome or in that error's `cause`, is the data
+ * the step's error schema encodes it to; a failure it re-raises is the error
+ * itself.
  *
  * A step whose action or compensation is not a flow is refused here, because
  * the declaration cannot be built out of anything else.
@@ -109,7 +113,11 @@ export const make = (options) => {
     if (refusal !== undefined)
         $raise(refusal);
     const policy = options.onFailure ?? "compensate";
-    const { name, description } = Compose.label("saga", { steps: steps.map((step) => step.id), onFailure: policy }, options);
+    const members = steps.flatMap((step) => [step.action, step.compensation]);
+    // A failure the saga reports rather than re-raises leaves as data: inside a
+    // `Compensated` value, or inside the `cause` of `compensation_failed`.
+    const wire = Failure.wire(members);
+    const { name, description } = Compose.label("saga", { steps: steps.map((step) => step.id), onFailure: policy }, options, members);
     const body = ({ input }) => {
         const visit = (index, completed) => {
             const step = steps[index];
@@ -146,13 +154,18 @@ export const make = (options) => {
             return chain;
         const reported = Node.catch(chain, {
             onFailure: Node.capture({ residue: true }, (error) => Node.bindPlanned(Node.map(Node.succeed(error), Node.capture({ residue: true }, (unwind) => {
-                if (unwind.residue.length === 0)
-                    return unwind;
-                const residue = [...unwind.residue].sort((left, right) => left.id.localeCompare(right.id));
+                if (unwind.residue.length === 0) {
+                    // `compensate-and-fail` re-raises the failure itself, which
+                    // the saga's error schema encodes.
+                    return policy === "compensate" ? { failure: wire(unwind.failure), residue: [] } : unwind;
+                }
+                const residue = [...unwind.residue]
+                    .sort((left, right) => left.id.localeCompare(right.id))
+                    .map((entry) => ({ id: entry.id, error: wire(entry.error) }));
                 return new PatternError({
                     code: "compensation_failed",
                     message: `Saga compensation failed for: ${residue.map((entry) => entry.id).join(", ")}`,
-                    cause: { failure: unwind.failure, residue }
+                    cause: { failure: wire(unwind.failure), residue }
                 });
             })), Node.capture({ residue: true }, (failure) => Node.fail(failure))))
         });
@@ -173,7 +186,9 @@ export const make = (options) => {
         // no error schema. `@smthrs/flow` needs a real one, because the engine
         // encodes a typed failure through it, and a saga fails with whatever the
         // step it called failed with.
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], members),
         body: Node.capture({ steps: steps.map((step) => step.id), onFailure: policy }, body)
     });
 };
@@ -190,7 +205,9 @@ export const make = (options) => {
  * runs on interruption as well as on failure. A compensation that fails does
  * not stop the ones behind it; every failing step id is collected and the run
  * fails `PatternError { code: "compensation_failed" }` naming them, because
- * state left dirty outranks the failure that started the unwind.
+ * state left dirty outranks the failure that started the unwind. An
+ * interrupted run cannot return that failure, so it logs the failing step ids
+ * at error level and annotates the current span with them instead.
  *
  * A compensation that DIES counts as a failed compensation, not as a defect
  * the run raises: the undo did not happen, so the step belongs in the residue
@@ -216,7 +233,18 @@ export const run = (input, options) => {
         if (refusal !== undefined)
             return Effect.fail(refusal);
         const residue = [];
+        // An interrupted saga never reaches `settle`, so the failed undos would be
+        // lost. Registered first, this finalizer runs after every compensation and
+        // reports them; it logs step ids only, never values or errors.
+        const reportInterrupted = (exit) => {
+            if (residue.length === 0 || !Exit.hasInterrupts(exit))
+                return Effect.void;
+            const ids = residue.map((entry) => entry.id).sort((left, right) => left.localeCompare(right));
+            return Effect.annotateCurrentSpan("saga.compensation_failed", ids).pipe(Effect.andThen(Effect.logError(`Saga compensation failed on interruption for: ${ids.join(", ")}`)));
+        };
         const forward = Effect_1.gen(function* forward() {
+            if (policy !== "fail")
+                yield* Effect.addFinalizer(reportInterrupted);
             const completed = new Map();
             for (const step of steps) {
                 const value = yield* step.action({

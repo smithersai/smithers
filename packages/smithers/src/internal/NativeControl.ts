@@ -115,7 +115,7 @@ import { packageVersion } from "../Version.ts"
 import * as AuthoredRebuild from "./AuthoredRebuild.vibe"
 import * as ReplacedFlowPolicy from "./ReplacedFlowPolicy.vibe"
 
-import { authorizeTriggerLaunch } from "./ApprovalScope.vibe"
+import { authorizeTriggerLaunch } from "./ApprovalScope.ts"
 import * as ControlAffinity from "./ControlAffinity.vibe"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
 import * as DatabaseLocation from "./DatabaseLocation.ts"

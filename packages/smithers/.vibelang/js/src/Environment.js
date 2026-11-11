@@ -44,6 +44,8 @@ export const names = [
     entry("MEMORY_DB", "Path of a separate SQLite file for the memory store, shared across runs that name it"),
     entry("SUPERVISOR_STANCE", "`careful` (the default) or `paranoid`, the static stance a judged run is taught"),
     entry("BUG_ENDPOINT", "Bug report endpoint"),
+    entry("ALERT_TELEGRAM_TOKEN", "Telegram bot token `alerts report` pages with"),
+    entry("ALERT_EMAIL_API_KEY", "Resend API key `alerts report` sends email with"),
     entry("JJ_PATH", "Explicit path to the jj binary"),
     entry("DETACHED_ADMISSION_TIMEOUT_MS", "How long `up -d` waits for the detached run's admission line"),
     entry("INSIDE_RUN", "Set on an agent process by the engine; keeps its 0.x meaning"),

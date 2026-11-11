@@ -76,14 +76,57 @@ describe("GitProxy.classify", () => {
       ["GET", "/o/n/git-upload-pack", undefined],
       ["PUT", "/o/n/info/refs?service=git-upload-pack", undefined],
       ["GET", "/o/n/info/lfs/objects/batch", undefined],
-      ["GET", "/o/n/HEAD", undefined]
+      ["GET", "/o/n/HEAD", undefined],
+      ["GET", "//", undefined],
+      ["GET", "//x/info/refs?service=git-upload-pack", "info-refs"]
     ] as const
   )("%s %s is %s", (method, path, service) => {
+    expect(GitProxy.classify(method, path)).toBe(service)
     expect(GitProxy.classify(method, `${GUEST}${path}`)).toBe(service)
   })
 })
 
 describe("GitProxy.uploadPack", () => {
+  test("refuses a malformed guest URL with a counted, logged 403", async () => {
+    const { response, seen, recorded } = await proxy(new Request("http://forge.smithers.internal//"))
+    expect(response.status).toBe(403)
+    expect(seen).toEqual([])
+    expect(recorded.count(GitProxy.requests, { service: "refused", outcome: "refused" })).toBe(1)
+    expect(recorded.logs).toContainEqual({
+      message: ["git.proxy"],
+      annotations: expect.objectContaining({ service: "refused", outcome: "refused", status: 403 })
+    })
+    const span = recorded.spans.find((span) => span.name === "GitProxy.uploadPack")!
+    expect(span.attributes.get("git.proxy.service")).toBe("refused")
+    expect(span.attributes.get("http.response.status_code")).toBe(403)
+  })
+
+  test.each(
+    [
+      ["GET", "info/refs?service=git-upload-pack", "info-refs", 200],
+      ["POST", "git-upload-pack", "upload-pack", 200],
+      ["GET", "info/refs?service=git-upload-pack", "info-refs", 404]
+    ] as const
+  )("annotates %s %s with %s and status %i before returning its body", async (method, path, service, status) => {
+    const recorded = telemetry()
+    const fetch: typeof globalThis.fetch = async () => new Response("body", { status })
+    const { response, context } = await Effect.runPromise(recorded.provide(
+      Effect.all({
+        response: GitProxy.uploadPack(HttpServerRequest.fromWeb(new Request(GUEST + "/" + path, { method })), UPSTREAM),
+        context: Effect.context<never>()
+      }).pipe(Effect.provide(httpClient(fetch)))
+    ))
+    const span = recorded.spans.find((span) => span.name === "GitProxy.uploadPack")!
+    expect(span.status._tag).toBe("Ended")
+    expect(Object.fromEntries(span.attributes)).toEqual({
+      "git.proxy.service": service,
+      "http.response.status_code": status
+    })
+    expect(recorded.count(GitProxy.requests, { service, outcome: status === 200 ? "ok" : "4xx" })).toBe(0)
+    expect(await HttpServerResponse.toWeb(response, { context }).text()).toBe("body")
+    expect(recorded.count(GitProxy.requests, { service, outcome: status === 200 ? "ok" : "4xx" })).toBe(1)
+  })
+
   test("sends the ref advertisement request to the upstream with its credential, never the guest's", async () => {
     const { response, body, seen, recorded } = await proxy(
       new Request(`${GUEST}/info/refs?service=git-upload-pack`, {

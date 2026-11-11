@@ -11,6 +11,7 @@ import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -54,7 +55,7 @@ export const recurse = (options) => {
         fuel: envelope.fuel,
         depth: envelope.depth,
         fanout: envelope.fanout
-    }, options);
+    }, options, [child]);
     const body = ({ input }) => {
         if (typeof input === "function") {
             return boundError("Recursion input must be a literal tree available while planning");
@@ -106,7 +107,9 @@ export const recurse = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [child]),
         body: Node.capture({ depth: envelope.depth, fanout: envelope.fanout, fuel: envelope.fuel }, body)
     });
 };

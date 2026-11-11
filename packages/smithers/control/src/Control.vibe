@@ -73,6 +73,14 @@ export type RunInput = typeof RunInputSchema.Type & {
   readonly reservedRunId?: RunId | undefined
   /** Authenticated actor used only to scope durable idempotency. */
   readonly principal?: Principal | undefined
+  /**
+   * Resume only. Set by the server to the authenticated principal unless its
+   * `RunVisibility` lets that principal see every run. A run the reader may
+   * not see fails `RunNotFound`, exactly as a missing run does, as it does
+   * through `Control.resume`. Not on the wire; an in-process caller that
+   * names no reader resumes any run.
+   */
+  readonly reader?: Principal | undefined
 }
 
 /**

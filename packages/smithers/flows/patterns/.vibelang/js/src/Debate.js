@@ -12,6 +12,7 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -36,7 +37,11 @@ export const make = (options) => {
     const rounds = options.rounds;
     if (!Number.isSafeInteger(rounds) || rounds < 1)
         invalidRounds(rounds);
-    const { name, description } = Compose.label("debate", { rounds }, options);
+    const { name, description } = Compose.label("debate", { rounds }, options, [
+        participants.proponent,
+        participants.opponent,
+        participants.judge
+    ]);
     // The transcript is a real array of planned references, assembled while the
     // graph builds. A planned value may be read by field and passed into a
     // payload but never computed on, so a round appends to the array the builder
@@ -55,7 +60,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [participants.proponent, participants.opponent, participants.judge]),
         body: Node.capture({ rounds }, body)
     });
 };

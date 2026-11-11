@@ -796,6 +796,7 @@ const makeWalk = (name, runtime, graph, declarations, scope) => {
         scope,
         executions: new Map(),
         childExecutions: new Map(),
+        openChildren: new Set(),
         reported: new Set(),
         record: recordNode === undefined ? () => Effect.void : (make) => recordNode(make())
     };
@@ -1210,7 +1211,14 @@ const runChild = (walk, node) => {
         const childPayload = resolve(walk, node.payload);
         const executionId = yield* Effect.flatMap(Effect.orDie(payloadPreimage(declaration.payloadSchema, childPayload)), (preimage) => childExecutionId(instance.executionId, node.id, declaration._tag, preimage));
         walk.childExecutions.set(node.id, executionId);
-        return yield* declaration.execute(childPayload, { executionId }).pipe(attenuateCapabilities(node.capabilityCeilings));
+        walk.openChildren.add(node.id);
+        return yield* declaration.execute(childPayload, { executionId }).pipe(attenuateCapabilities(node.capabilityCeilings), 
+        // An interruption is the child suspending or the node being stopped:
+        // either way the child execution is still open.
+        Effect.onExit((exit) => Effect.sync(() => {
+            if (Exit.isSuccess(exit) || !Cause.hasInterruptsOnly(exit.cause))
+                walk.openChildren.delete(node.id);
+        })));
     });
 };
 /**
@@ -1433,7 +1441,8 @@ const stopLosers = (walk, joinId, losers, decided, journalDecision) => {
 };
 /**
  * The work of the members a join no longer waits for: their running node
- * fibers and the child executions those nodes opened.
+ * fibers and the child executions those nodes opened that are still open,
+ * whether their node is still running or ended because the child parked.
  *
  * A member's structural subtree is its own, so its running executions are
  * interrupted; nothing else demands them again. A node something outside that
@@ -1452,12 +1461,10 @@ const losingWork = (walk, joinId, roots) => {
         if (kept.has(id))
             continue;
         const fiber = walk.executions.get(id);
-        if (fiber === undefined)
-            continue;
-        fibers.push(fiber);
-        const executionId = walk.childExecutions.get(id);
-        if (executionId !== undefined)
-            childRuns.push({ node: id, executionId });
+        if (fiber !== undefined)
+            fibers.push(fiber);
+        if (walk.openChildren.has(id))
+            childRuns.push({ node: id, executionId: walk.childExecutions.get(id) });
     }
     return { fibers, childRuns };
 };

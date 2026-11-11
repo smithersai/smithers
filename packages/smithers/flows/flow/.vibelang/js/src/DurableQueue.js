@@ -322,7 +322,7 @@ const makeWorkerEffect = (self, f, concurrency) => {
         , FlowRuntime, engine)
         // The worker checked this token against the execution's name before it started it.
         ), () => Effect.andThen(Effect.logWarning("DurableQueue could not record a handler result; the completion is retried"), Effect.fail(new CompletionUnavailable({ queue: self.name }))))))));
-        const worker = (topic_1 = Effect.forever(Effect.orDie(Effect.tapCause(queue.take((item_, metadata) => {
+        const worker = (topic_1 = Effect.forever(Effect.catchCause(queue.take((item_, metadata) => {
             const item = item_;
             const $do_t1 = Effect;
             const $do_t2 = runtime.$bindMethod($do_t1.withSpan, $do_t1);
@@ -385,8 +385,12 @@ const makeWorkerEffect = (self, f, concurrency) => {
                 parent: externalParent(item)
             });
         })
-        // Store failures terminate this worker; its host owns recovery. Item completion retries belong to the engine.
-        , (cause) => { var topic_2; return (topic_2 = Effect.logWarning("DurableQueue worker stopped after a take failure"), Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) })(topic_2)); }))), Effect.annotateLogs({
+        // A store failure terminates this worker; its host owns recovery. Any other failure is the item's: the store
+        // has already scheduled its redelivery, so the worker logs it and takes the next item. Interrupting the worker
+        // itself still ends the loop, because an interrupted fiber does not run a recovery.
+        , (cause) => cause.reasons.some((reason) => Cause.isFailReason(reason) && reason.error instanceof PersistedQueue.PersistedQueueError)
+            ? Effect.logWarning("DurableQueue worker stopped after a store failure").pipe(Effect.andThen(Effect.failCause(cause)), Effect.orDie)
+            : Effect.logWarning("DurableQueue item execution stopped; the store delivers it again").pipe(Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) })))), Effect.annotateLogs({
             package: "@smthrs/flow",
             module: "DurableQueue",
             fiber: "worker",
@@ -399,6 +403,9 @@ const makeWorkerEffect = (self, f, concurrency) => {
  * Create a worker effect that processes items from the durable queue.
  *
  * A store take failure terminates the worker as a defect for its host to recover.
+ * An item whose execution fails or is interrupted, for example because the
+ * engine's store is briefly unavailable, is delivered again by the queue and
+ * the worker goes on to its next item.
  * Each item runs as a durable execution named by its completion address: the
  * handler's exit is recorded as a step, then recorded against the caller's
  * deferred as a second step that the engine retries without a limit. A failure

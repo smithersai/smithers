@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url"
 
 const fixture = fileURLToPath(new URL("./fixtures/bun-affected-rows.ts", import.meta.url))
 
-// BunDatabase.test.ts shims bun:sqlite with Node, so only a real Bun process
-// proves the Bun adapter's affected-row contract (issue #2419).
+// database BunSqliteClient.test.ts shims bun:sqlite with Node, so only a real
+// Bun process proves the Bun adapter's affected-row contract (issue #2419).
 const bunInstalled = spawnSync("bun", ["--version"], { stdio: "ignore" }).status === 0
 
 describe("Bun affected rows and memory deletion", () => {

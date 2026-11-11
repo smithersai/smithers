@@ -179,8 +179,9 @@ plan and node targets and all grant scopes. The memory adapter's own default
 also delegates its `memory/test` identity. Authentication
 and approval authority are independent: a custom operator identity has no
 authority until the host explicitly delegates it. Hosts may delegate exact
-identity tuples, including agents, with specific target kinds and approval
-scopes. Denial requires a delegated target kind and installs no grant. Callers
+identity tuples with specific target kinds and approval scopes. People approve:
+`ApprovalAuthority.make` refuses a delegation to an `agent` identity with
+`InvalidInput`. Denial requires a delegated target kind and installs no grant. Callers
 without authority receive `Unauthorized` (`code: "unauthorized"`) before target
 reads or receipt replay. See [who may decide](docs/guides/approvals.md#who-may-decide).
 

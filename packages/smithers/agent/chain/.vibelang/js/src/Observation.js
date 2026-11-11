@@ -9,6 +9,7 @@
  * @since 0.1.0
  */
 import * as Schema from "effect/Schema";
+import { prefix, toWellFormed } from "./internal/unicode.js";
 /**
  * Which gate produced the observation, or which stage failed.
  *
@@ -37,16 +38,21 @@ export const Observation = Schema.Struct({
 });
 /**
  * Builds an observation, capping its message at 8192 UTF-16 code units
- * including a truncation marker.
+ * including a truncation marker. The cut never splits a surrogate pair, and
+ * an unpaired surrogate in the message becomes U+FFFD, so the message is
+ * always text the JSON boundary admits.
  *
  * @category constructors
  * @since 0.1.0
  * @slop
  */
-export const make = (kind, message) => ({
-    kind,
-    message: message.length > 8192 ? `${message.slice(0, 8192 - "[truncated]".length)}[truncated]` : message
-});
+export const make = (kind, message) => {
+    const text = toWellFormed(message);
+    return {
+        kind,
+        message: text.length > 8192 ? `${prefix(text, 8192 - "[truncated]".length)}[truncated]` : text
+    };
+};
 /**
  * Renders an observation as one context line for the next author call,
  * applying the message cap to older journal entries too.

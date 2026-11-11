@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { ActionSchema, BranchForkInputSchema } from "../src/CardAction.ts"
+import { ActionSchema, BranchForkInputSchema, registeredAction } from "../src/CardAction.ts"
 
 it("retains primary action metadata and rejects unknown commands", () => {
   const action = { tag: "todo.resume", label: "Resume", args: { n: "3" }, primary: true }
@@ -167,4 +167,40 @@ it("recorded PR doors retain list and numbered repository targets", () => {
       ["prs.view", { number: "42", repo: "owner/repo" }, { number: "42", repo: "owner/repo" }]
     ] as const
   ) expect(ActionSchema.parse({ tag, args, label: "Open" })).toEqual({ tag: "pr", args: expected, label: "Open" })
+})
+
+it("saved secret scopes decode to the current scope names and keep a current name as recorded", () => {
+  for (
+    const [scope, current] of [["all", "all_branches"], ["main-only", "main_only"], ["main_only", "main_only"]]
+  ) {
+    expect(ActionSchema.parse({ tag: "secrets.scope", label: "Scope", args: { name: "KEY", scope } })).toEqual({
+      tag: "secrets",
+      label: "Scope",
+      args: { name: "KEY", operation: "scope", scope: current }
+    })
+  }
+})
+
+it("saved proposal and flow-list controls decode to the wiki and flows doors", () => {
+  expect(ActionSchema.parse({ tag: "proposal", label: "Propose", args: { page: "intro" } })).toEqual({
+    tag: "wiki",
+    label: "Propose",
+    args: { page: "intro", operation: "proposal" }
+  })
+  expect(ActionSchema.parse({ tag: "flow.list", label: "Flows" })).toEqual({
+    tag: "flows",
+    label: "Flows",
+    args: { operation: "workspace" }
+  })
+})
+
+it("registeredAction binds a current or saved action to its current door and refuses an unknown one", () => {
+  const current = { tag: "todo.resume", label: "Resume", args: { n: "3" } } as const
+  expect(registeredAction(current)).toEqual(current)
+  expect(registeredAction({ tag: "flow.list", label: "Flows" } as never)).toEqual({
+    tag: "flows",
+    label: "Flows",
+    args: { operation: "workspace" }
+  })
+  expect(() => registeredAction({ tag: "unknown", label: "Nope" } as never)).toThrow()
 })

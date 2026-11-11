@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { CardSchema } from "../src/Cards.ts"
 import {
   draftCard,
+  issueDigest,
   parseTodoArgs,
   STACK_COMMAND,
   TODO_COMMAND,
@@ -138,5 +140,22 @@ describe("the TODO commands every host binds", () => {
     expect(CardSchema.parse(placed)).toEqual(placed)
     // An empty Draft is titled empty; the person fills it on the card.
     expect(draftCard({ ...seed, text: "" }, 0, 0).title).toBe("")
+  })
+
+  test("a Draft made from an issue carries the issue and the digest of its text", () => {
+    const issue = { number: 42, title: "Retries vanish", url: "https://github.com/acme/app/issues/42", fixes: true }
+    const digest = issueDigest(issue.title, "The worker drops retry counts.")
+    const seed = { id: "draft:2", author: "ben", text: issue.title, options: [], idempotencyKey: "k-2" }
+    const draft = draftCard({ ...seed, issue, issueDigest: digest }, 0, 0)
+    expect(draft.payload).toMatchObject({ title: "Retries vanish", issue, issueDigest: digest })
+    expect(CardSchema.parse(draft)).toEqual(draft)
+    expect(draftCard({ ...seed, issue }, 0, 0).payload).not.toHaveProperty("issueDigest")
+  })
+
+  test("an issue digest is the SHA-256 of title, NUL and body", () => {
+    const expected = createHash("sha256").update("Retries vanish\u0000Body").digest("hex")
+    expect(issueDigest("Retries vanish", "Body")).toBe(expected)
+    expect(issueDigest("ab", "c")).not.toBe(issueDigest("a", "bc"))
+    expect(issueDigest("", "")).toBe(createHash("sha256").update("\u0000").digest("hex"))
   })
 })

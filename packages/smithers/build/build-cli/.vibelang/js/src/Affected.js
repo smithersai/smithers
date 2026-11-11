@@ -79,7 +79,7 @@ export const changedPaths = async (root, options) => {
         : await gitPaths(["diff", "--name-only", "--no-renames", "-z", base, await revision(options.head), "--"]);
     return [...new Set(paths)].sort();
 };
-const globalPath = (path) => !path.includes("/") || path.startsWith(".smithers/") || Path.posix.basename(path) === "PACKAGE.ts" ||
+const globalPath = (path) => !path.includes("/") || path.startsWith(".smithers/") || Input.isDeclarationFileName(Path.posix.basename(path)) ||
     /(^|\/)(?:[^/]*lock[^/]*|package\.json|tsconfig[^/]*\.json|\.npmrc|\.yarnrc[^/]*|\.gitignore)$/.test(path);
 const ambientInput = (input) => input._tag === "GitDiff" || input._tag === "PnpmWorkspace";
 const compileInput = (input, packagePath, glob) => {

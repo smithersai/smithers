@@ -749,9 +749,12 @@ describe("edges and bounds", () => {
     await write("src.ts", "export const value = 1\n")
     await write("PACKAGE.ts", "export const Package = {}\n")
     await write("WORKSPACE.ts", "export const Workspace = {}\n")
+    await write("lib/rules.vibe", "export const rules = 1\n")
+    await write("lib/PACKAGE.vibe", "export const Package = {}\n")
     const glob = { base: "", source: { _tag: "Glob", pattern: "**/*.ts", exclude: [] } as const }
-    await expect(expandAnchoredSources({ workspaceRoot: root, sources: [glob], requireFiles: true }))
-      .resolves.toEqual(["src.ts"])
+    const vibe = { base: NodePath.join(root, "lib"), source: { _tag: "Glob", pattern: "*.vibe", exclude: [] } as const }
+    await expect(expandAnchoredSources({ workspaceRoot: root, sources: [glob, vibe], requireFiles: true }))
+      .resolves.toEqual(["lib/rules.vibe", "src.ts"])
     await expect(expandAnchoredSources({
       workspaceRoot: root,
       sources: [{ base: "", source: { _tag: "File", path: "PACKAGE.ts" } as const }],

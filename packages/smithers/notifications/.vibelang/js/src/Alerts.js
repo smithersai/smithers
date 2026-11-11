@@ -49,9 +49,25 @@
  * beats already carry, so a deployment that journals a different vocabulary
  * supplies its own detectors instead of a fork of this module.
  *
+ * ## Acknowledged, or paged again
+ *
+ * An alert pages once. A rule with a `repeatMs` pages again every that long
+ * while the condition stays open, until a person takes it with
+ * {@link RuntimeService.acknowledge}. {@link RuntimeService.standing} lists
+ * what a run has open and who took it.
+ *
+ * ## Raising one from a step
+ *
+ * A flow step that checks something outside the run calls {@link report} with
+ * what it saw. The report is one more journal entry and the probe one more
+ * condition, built by {@link probes}, so a probe that keeps failing pages once
+ * and an `ok` report clears it.
+ *
  * @since 0.1.0
  */
-export { alertId, coalescingKey, conditions, decide, defaultDetectors, deliveredEventType, Detector, failedEventType, Policy, Rule, Severity } from "./AlertPolicy.js";
+export { acknowledgedEventType, alertId, coalescingKey, conditions, decide, defaultDetectors, deliveredEventType, Detector, failedEventType, maxSummaryLength, Policy, Rule, Severity } from "./AlertPolicy.js";
+export { probeDetector, probeEventType, probes, ProbeState, Report, report } from "./AlertProbe.js";
 export { AlertRuntime, layer } from "./AlertRuntime.js";
 export { AlertError, FailureCode, layerNoop, Sink } from "./AlertSink.js";
+export { layerChannels, messageOf } from "./layerChannels.js";
 export { defaultWebhookTimeout, layerWebhook } from "./layerWebhook.js";

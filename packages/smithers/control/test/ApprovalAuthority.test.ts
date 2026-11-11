@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
 
 const envelope = { capabilities: [], flows: [], budget: {} }
-const actor = { id: "agent-with-delegation", kind: "agent" }
+const actor = { id: "delegated-reviewer", kind: "user" }
 const principal = { ...actor, stampedAt: 0 }
 const target = { _tag: "Plan" as const, planId: "plan", digest: "digest", envelope }
 const request: ApprovalAuthority.Request = { principal, target, decision: "approved", scope: "once" }
@@ -59,14 +59,14 @@ describe("explicit approval authority", () => {
       targets: ["Plan"]
     }]
     const policy = await Effect.runPromise(ApprovalAuthority.make(grants))
-    grants.push({ principal: { id: "another", kind: "agent" }, scopes: ["remembered"], targets: ["Plan"] })
+    grants.push({ principal: { id: "another", kind: "user" }, scopes: ["remembered"], targets: ["Plan"] })
     Object.assign(grants[0]!.principal, { id: "mutated" })
     // Use the original identity after mutating the caller's object too.
     await Effect.runPromise(
-      policy.authorize({ ...request, principal: { id: "agent-with-delegation", kind: "agent", stampedAt: 1 } })
+      policy.authorize({ ...request, principal: { id: "delegated-reviewer", kind: "user", stampedAt: 1 } })
     )
     const error = await Effect.runPromise(
-      Effect.flip(policy.authorize({ ...request, principal: { id: "another", kind: "agent", stampedAt: 1 } }))
+      Effect.flip(policy.authorize({ ...request, principal: { id: "another", kind: "user", stampedAt: 1 } }))
     )
     expect(error._tag).toBe("/control/Unauthorized")
     const tuples = await Effect.runPromise(ApprovalAuthority.make([
@@ -80,7 +80,7 @@ describe("explicit approval authority", () => {
   })
 
   it("refuses malformed or oversized delegation configuration without disclosing it", async () => {
-    const valid = { principal: { id: "RAW-SECRET", kind: "agent" }, scopes: ["once"], targets: ["Plan"] }
+    const valid = { principal: { id: "RAW-SECRET", kind: "user" }, scopes: ["once"], targets: ["Plan"] }
     for (
       const input of [
         [{ ...valid, unknown: true }],
@@ -88,7 +88,7 @@ describe("explicit approval authority", () => {
         [{ ...valid, scopes: ["all"] }],
         [{ ...valid, targets: [] }],
         [{ ...valid, targets: ["Unknown"] }],
-        [{ ...valid, principal: { id: "", kind: "agent" } }],
+        [{ ...valid, principal: { id: "", kind: "user" } }],
         Array.from({ length: 1025 }, () => valid)
       ]
     ) {
@@ -99,5 +99,23 @@ describe("explicit approval authority", () => {
     const empty = await Effect.runPromise(ApprovalAuthority.make([]))
     expect((await Effect.runPromise(Effect.exit(empty.authorize(request))))._tag).toBe("Failure")
     await Effect.runPromise(ApprovalAuthority.make(Array.from({ length: 1024 }, () => valid) as never))
+  })
+
+  it("refuses to delegate approve or deny to an agent identity", async () => {
+    // People approve and merge; agents never do. No scope or target makes an
+    // agent a delegate, and one agent entry refuses the whole configuration.
+    const person = { principal: { id: "local", kind: "operator" }, scopes: ["once"], targets: ["Plan"] } as const
+    for (
+      const entries of [
+        [{ principal: { id: "RAW-SECRET", kind: "agent" }, scopes: ["once"], targets: ["Plan"] }],
+        [{ principal: { id: "RAW-SECRET", kind: "agent" }, scopes: ["once", "run", "remembered"], targets: ["Node"] }],
+        [person, { principal: { id: "RAW-SECRET", kind: "agent" }, scopes: ["remembered"], targets: ["Plan", "Node"] }]
+      ] satisfies ReadonlyArray<ReadonlyArray<ApprovalAuthority.Delegation>>
+    ) {
+      const error = await Effect.runPromise(Effect.flip(ApprovalAuthority.make(entries)))
+      expect(error._tag).toBe("/control/InvalidInput")
+      expect(error.issue).toBe("Approval authority cannot be delegated to an agent identity")
+      expect(JSON.stringify(error)).not.toContain("RAW-SECRET")
+    }
   })
 })

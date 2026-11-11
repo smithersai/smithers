@@ -11,7 +11,9 @@ const events: ReadonlyArray<readonly [string, Event]> = [
   ["result 2 1 fail 0", { _tag: "result", run: 2, check: 1, verdict: "fail", duration: 0 }],
   ["fixed 3 1", { _tag: "fixed", id: 3, attempt: 1 }],
   ["gaveup 3 1 needs a rewrite", { _tag: "gaveUp", id: 3, attempt: 1, detail: "needs a rewrite" }],
+  ["foreign 9", { _tag: "foreign", id: 9 }],
   ["start 2", { _tag: "start", count: 2 }],
+  ["push 0", { _tag: "push", run: 0 }],
   ["land 0", { _tag: "land", run: 0 }],
   ["blame 0", { _tag: "blame", run: 0 }],
   ["cancel 0", { _tag: "cancel", run: 0 }]
@@ -81,12 +83,13 @@ describe("renderState", () => {
       "result 0 1 pass 30",
       "result 0 2 pass 50",
       "plan",
+      "land 0",
       "result 1 1 fail 10",
       "plan"
     )
     expect(renderState(config, state)).toBe(
       "main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged"
-        + " | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10"
+        + " | runs=1:/12.0,10.0,11.0:1f | next=2,3 | pushing=- | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10"
         + " | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:"
     )
   })
@@ -107,13 +110,14 @@ describe("renderState", () => {
       "start 1",
       "result 1 2 fail 4",
       "blame 1",
-      "enqueue 5 9"
+      "enqueue 5 9",
+      "foreign 77"
     )
     expect(renderState(config, state)).toBe(
-      "main= | changes=1:p0:s0:r0:a1:unmergeable(agentVerdict;1;1;needs a rewrite);2:p0:s1:r0:a0:withdrawn;"
-        + "3:p0:s2:r0:a0:queued;4:p9:s3:r0:a1:fixing(1);5:p9:s4:r0:a0:queued"
-        + " | runs=1:/4.0:2f | next=2,5 | landed= | history=1:4,2:4 | ready=5,3 | plan=start 2 | ci=1@4:1"
-        + " | fix=4.0#1:2:"
+      "main=77.0 | changes=1:p0:s0:r0:a1:unmergeable(agentVerdict;1;1;needs a rewrite);2:p0:s1:r0:a0:withdrawn;"
+        + "3:p0:s2:r0:a0:queued;4:p9:s3:r0:a1:fixing(1);5:p9:s4:r0:a0:queued;77:p0:s5:r0:a0:merged"
+        + " | runs=1:/4.0:2f | next=2,6 | pushing=- | landed=foreign:/77.0 | history=1:4,2:4 | ready=5,3"
+        + " | plan=start 2 | ci=1@4:1 | fix=4.0#1:2:"
     )
   })
 })
@@ -132,15 +136,17 @@ describe("apply and replay", () => {
 
   it("replay prints one line per input line and `error` for a line it cannot read", () => {
     expect(replay(["enqueue 1 0", "bogus", "plan"])).toEqual([
-      "main= | changes=1:p0:s0:r0:a0:queued | runs= | next=0,1 | landed= | history= | ready=1 | plan=start 1 | ci= | fix=",
+      "main= | changes=1:p0:s0:r0:a0:queued | runs= | next=0,1 | pushing=- | landed= | history= | ready=1"
+      + " | plan=start 1 | ci= | fix=",
       "error",
-      "main= | changes=1:p0:s0:r0:a0:queued | runs=0:/1.0: | next=1,1 | landed= | history= | ready=1 | plan=wait | ci= | fix="
+      "main= | changes=1:p0:s0:r0:a0:queued | runs=0:/1.0: | next=1,1 | pushing=- | landed= | history= | ready=1"
+      + " | plan=wait | ci= | fix="
     ])
   })
 })
 
 describe("scenarios the reference printed", () => {
-  it.each(["land-and-fix", "bisect"])("%s matches the Lean reference line for line", (name) => {
+  it.each(["land-and-fix", "bisect", "moved-target"])("%s matches the Lean reference line for line", (name) => {
     const read = (kind: string) =>
       readFileSync(new URL(`./fixtures/${name}.${kind}`, import.meta.url), "utf8").split("\n").slice(0, -1)
     expect(replay(read("trace"))).toEqual(read("expected"))

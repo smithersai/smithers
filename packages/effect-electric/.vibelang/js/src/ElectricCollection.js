@@ -171,9 +171,16 @@ export function make(options) {
                 accepted = undefined;
                 return response;
             }
-            // Older Electric servers answered 204, with no body, when nothing was new. A subset snapshot (`subset__`
-            // parameters, in progressive mode) answers an object, which Electric parses before it takes anything from it.
-            if (response.status === 204 || [...url.searchParams.keys()].some((key) => key.startsWith("subset__"))) {
+            // A subset snapshot (`subset__` parameters, in progressive mode) answers an object, which Electric parses
+            // before it takes anything from it.
+            const subset = [...url.searchParams.keys()].some((key) => key.startsWith("subset__"));
+            // Electric refuses a 2xx of the shape's log without its headers (`MissingHeadersError`): such a response is
+            // answered `Unreadable` before Electric sees it, so it is never reported `Succeeded`.
+            const headless = !subset && requiredHeaders(url).some((name) => !response.headers.has(name));
+            // Older Electric servers answered 204, with no body, when nothing was new.
+            if (response.status === 204 || subset) {
+                if (headless)
+                    return new Unreadable({ status: response.status, bytes: 0 });
                 accepted = {
                     handle: response.headers.get("electric-handle"),
                     offset: response.headers.get("electric-offset")
@@ -192,7 +199,7 @@ export function make(options) {
                 "electric.shape.complete": rows !== undefined,
                 ...(rows === undefined ? {} : { "electric.shape.rows": rows })
             });
-            if (rows === undefined)
+            if (rows === undefined || headless)
                 return new Unreadable({ status: response.status, bytes: body.byteLength });
             accepted = {
                 handle: response.headers.get("electric-handle"),
@@ -228,13 +235,20 @@ export function make(options) {
             });
         };
         // A stopped shape is a failure the sync policy can't wait out: logged and counted by the collection's kind and
-        // the status Electric or a proxy answered, never the shape's URL or a message.
+        // the status Electric or a proxy answered, never the shape's URL or a message. It waits for `reconnect`, which ends
+        // the session that stopped (unless `evict` replaced it already) and starts a new one, resuming from the last batch
+        // the collection committed. Electric never restarts the shape itself: restarted where it stopped, it would skip a
+        // batch whose offset it took before the stop (a row the schema refuses, a parser that throws), and
+        // @electric-sql/client 1.5.28 gives up for good after 50 stops in a row or one `MissingHeadersError`.
         const kind = options.id.split(":", 1)[0];
+        // Whether the current session stopped.
+        let halted = false;
         const stopped = (error) => {
             return Effect_1.gen(function* stopped() {
                 var topic_1;
                 const failure = syncFailed(error);
                 const status = failure.status === undefined ? "none" : String(failure.status);
+                halted = true;
                 yield* restart.close;
                 yield* Metric.update(Metric.withAttributes(stops, { collection: kind, status }), 1);
                 yield* ((topic_1 = Effect.logWarning("electric.shape.stopped"), Effect.annotateLogs({ collection: kind, status, error: nameOf(failure.cause) })(topic_1)));
@@ -256,7 +270,7 @@ export function make(options) {
             fetchClient: $platform.fetchClient((input, init) => run(request(input, init), init?.signal ? AbortSignal.any([closing.signal, init.signal]) : closing.signal)),
             // The sync policy retries; Electric's own backoff never waits, and gives a failure straight to `onError`.
             backoffOptions: { initialDelay: 0, maxDelay: 0, multiplier: 1, maxRetries: 0 },
-            // An object restarts the shape where it stopped (ShapeStreamOptions.onError).
+            // The object would restart the shape where it stopped (ShapeStreamOptions.onError), but its session has ended.
             onError: (error) => run(stopped(error), closing.signal).then(() => ({})),
             transformer
         };
@@ -279,8 +293,8 @@ export function make(options) {
         // The sync controls TanStack DB hands Electric's sync, kept for `evict`: with `persist`, the persisted collection's,
         // so what `evict` writes reaches the device too. A program that watches gets controls that drop every write.
         let controls;
-        // Electric's sync session over them, which `evict` ends and starts again; each writes through a fence that closes
-        // when it ends, so a batch an ended session is still applying never lands.
+        // Electric's sync session over them, which `evict`, and `reconnect` on a stopped shape, end and start again; each
+        // writes through a fence that closes when it ends, so a batch an ended session is still applying never lands.
         let session;
         let sessions = 0;
         // Set by `evict` on a persisted collection nobody read yet: its stored rows go once TanStack DB restores them and
@@ -312,6 +326,7 @@ export function make(options) {
         });
         const startSession = (params) => {
             const current = ++sessions;
+            halted = false;
             session = electricOptions.sync.sync(fenced({
                 ...params,
                 markReady: () => {
@@ -421,7 +436,15 @@ export function make(options) {
                 waitingForApplied.add(ready);
                 return Effect.sync(() => waitingForApplied.delete(ready));
             }),
-            reconnect: Effect.asVoid(Effect.andThen(woken.release, restart.open)),
+            // The new session starts before `reconnect` returns, so a wait that follows it waits on that session.
+            reconnect: Effect_1.gen(function* reconnect() {
+                yield* woken.release;
+                if (halted) {
+                    session.cleanup();
+                    startSession(controls);
+                }
+                yield* restart.open;
+            }),
             evict,
             awaitTxId: (txid, timeout) => awaiting(() => utils.awaitTxId(txid, Duration.toMillis(timeout))),
             awaitMatch: (match, timeout) => awaiting(() => utils.awaitMatch((message) => isChangeMessage(message) &&
@@ -451,7 +474,14 @@ export const statusOf = (failure) => {
 /** A failure's name: a tagged error's tag, else its name, never its message. */
 const nameOf = (cause) => "_tag" in cause ? String(cause._tag) : cause.name;
 const syncFailed = (cause) => new SyncFailed(cause instanceof FetchError ? { cause, status: cause.status } : { cause });
-// A 2xx whose body isn't a whole batch: cut short, empty, or not Electric's.
+// The headers Electric 1.5.28 requires of a 2xx of the shape's log (`createFetchWithResponseHeadersCheck`). Its client
+// sends `live=true` on a live request and no `live` otherwise.
+const requiredHeaders = (url) => [
+    "electric-handle",
+    "electric-offset",
+    url.searchParams.get("live") === "true" ? "electric-cursor" : "electric-schema"
+];
+// A 2xx whose body isn't a whole batch (cut short, empty, or not Electric's), or that lacks Electric's headers.
 class Unreadable extends TaggedError("Unreadable") {
     static {
         $schemaErrorMatcher(this, "Unreadable", true);

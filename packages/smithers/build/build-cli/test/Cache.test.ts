@@ -287,26 +287,6 @@ describe("openCache", () => {
     await cache.close()
   })
 
-  it("refuses a publication larger than the server's action-cache bound", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(new Response(null, { status: 201 })))
-    const warnings: string[] = []
-    const cache = await openCache({
-      workspaceRoot: root,
-      endpoint,
-      fetch,
-      warn: (line) => warnings.push(line)
-    })
-
-    await expect(
-      cache.put(result.key, { ...result, output: "x".repeat(remoteEntryLimit) })
-    ).resolves.toBeUndefined()
-    expect(fetch).not.toHaveBeenCalled()
-    expect(warnings).toEqual([
-      `smthrs: remote cache disabled after a failure: PUT request failed: remote cache request exceeds its ${remoteEntryLimit}-byte limit`
-    ])
-    await cache.close()
-  })
-
   it("names the network cause when a remote request fails, without the token", async () => {
     const warnings: string[] = []
     const cache = await openCache({

@@ -1,4 +1,5 @@
-import { Effect, Logger as EffectLogger, References, Tracer } from "effect"
+import { Cause, Effect, Logger as EffectLogger, References, Tracer } from "effect"
+import type * as Layer from "effect/Layer"
 import { describe, expect, it } from "vitest"
 import * as Logger from "../src/Logger.vibe"
 
@@ -160,5 +161,61 @@ describe("Logger layers", () => {
 
     expect(level).toBe("Info")
     expect(values).toHaveLength(1)
+  })
+  describe("redacts a credential in the message, the cause and an annotation", () => {
+    const token = "sk-ant-api03-synthetic-0123456789abcdef"
+    const line = Effect.logError(
+      `model call failed for Bearer ${token}`,
+      Cause.fail(new Error(`401 for Bearer ${token}`))
+    )
+      .pipe(Effect.annotateLogs({ authorization: `Bearer ${token}` }))
+    const methods = ["log", "error", "warn", "info", "debug", "trace"] as const
+    const consoleLines = async (layer: Layer.Layer<never>) => {
+      const lines: Array<string> = []
+      const saved = methods.map((name) => console[name])
+      for (const name of methods) {
+        console[name] = (...args: Array<unknown>) => void lines.push(args.map(String).join(" "))
+      }
+      try {
+        await Effect.runPromise(line.pipe(Effect.provide(layer)))
+      } finally {
+        methods.forEach((name, index) => {
+          console[name] = saved[index]!
+        })
+      }
+      return lines.join("\n")
+    }
+
+    it.each(
+      [
+        ["layerStructuredJson", () => Logger.layerStructuredJson()],
+        ["layerPrettyDev", () => Logger.layerPrettyDev()]
+      ] as const
+    )("on the %s console line", async (_, make) => {
+      const output = await consoleLines(make())
+      expect(output).toContain("model call failed")
+      expect(output).toContain("401 for")
+      expect(output).toContain("authorization")
+      expect(output).not.toContain(token)
+    })
+
+    it("in a structured JSON record, keeping its shape", async () => {
+      const record = JSON.parse(await consoleLines(Logger.layerStructuredJson()))
+      expect(record.message).toContain("model call failed")
+      expect(record.cause).toContain("401 for")
+      expect(record.annotations).toHaveProperty("authorization")
+      expect(JSON.stringify(record)).not.toContain(token)
+    })
+
+    it("before a caller-supplied logger installed through `layer` reads it", async () => {
+      const { logger, values } = captured()
+      await Effect.runPromise(line.pipe(Effect.provide(Logger.layer(logger))))
+      expect(values).toHaveLength(1)
+      const rendered = JSON.stringify([values[0]!.options.message, values[0]!.annotations])
+        + Cause.pretty(values[0]!.options.cause)
+      expect(rendered).toContain("model call failed")
+      expect(rendered).toContain("authorization")
+      expect(rendered).not.toContain(token)
+    })
   })
 })

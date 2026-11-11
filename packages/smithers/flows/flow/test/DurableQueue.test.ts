@@ -650,17 +650,68 @@ describe("DurableQueue", () => {
     )
   })
 
+  const itemFor = (id: string) => ({
+    token: new DurableDeferred.TokenParsed({
+      flowName: Flow_._tag,
+      executionId: id,
+      deferredName: `${Queue.deferred.name}/${id}`
+    }).asToken,
+    payload: { id, value: 0 },
+    traceId: "0".repeat(32),
+    spanId: "0".repeat(16),
+    sampled: false
+  })
+
+  effect("an item whose execution fails is delivered again and the worker keeps taking items", () => {
+    let executions = 0
+    const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
+      const base = yield* FlowRuntime.FlowRuntime
+      return FlowRuntime.FlowRuntime.of({
+        ...base,
+        execute: ((flow, options) =>
+          ++executions === 1
+            ? Effect.fail(new FlowRuntime.StoreUnavailable({ executionId: options.executionId }))
+            : base.execute(flow, options)) as typeof base.execute
+      })
+    })).pipe(Layer.provide(layerMemory))
+    return Effect.gen(function*() {
+      const queue = yield* PersistedQueue.make({ name: `DurableQueue/${Queue.name}`, schema: itemSchema })
+      const handled: Array<string> = []
+      const worker = yield* Effect.forkChild(
+        DurableQueue.makeWorker(Queue, ({ id }) => Effect.sync(() => (handled.push(id), 1))),
+        { startImmediately: true }
+      )
+      yield* queue.offer(itemFor("outage"), { id: "outage" })
+      for (let turn = 0; turn < 500 && executions === 0; turn++) yield* Effect.yieldNow
+      expect(executions).toBe(1)
+      expect(handled).toEqual([])
+      yield* queue.offer(itemFor("next"), { id: "next" })
+      for (let turn = 0; turn < 500 && handled.length < 2; turn++) {
+        yield* Effect.yieldNow
+        yield* TestClock.adjust("1 second")
+      }
+      expect([...handled].sort()).toEqual(["next", "outage"])
+      expect(worker.pollUnsafe()).toBeUndefined()
+      yield* Fiber.interrupt(worker)
+    }).pipe(Effect.provide(runtime), Effect.provide(PersistedQueueLayer))
+  })
+
   for (const mixed of [false, true]) {
     effect(
       mixed
         ? "workers strip interrupts from mixed handler failures"
-        : "interrupt-only handler exits requeue without an attempt",
+        : "interrupt-only handler exits requeue without an attempt and the worker keeps taking items",
       () => {
         const recorded: Array<Exit.Exit<unknown, unknown>> = []
+        const executed: Array<string> = []
         const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
           const base = yield* FlowRuntime.FlowRuntime
           return FlowRuntime.FlowRuntime.of({
             ...base,
+            execute: ((flow, options) => {
+              executed.push(options.executionId)
+              return base.execute(flow, options)
+            }) as typeof base.execute,
             deferredDone: (deferred, options) => {
               recorded.push(options.exit)
               return base.deferredDone(deferred, options)
@@ -669,23 +720,13 @@ describe("DurableQueue", () => {
         })).pipe(Layer.provide(layerMemory))
         return Effect.gen(function*() {
           const queue = yield* PersistedQueue.make({ name: `DurableQueue/${Queue.name}`, schema: itemSchema })
-          const token = new DurableDeferred.TokenParsed({
-            flowName: Flow_._tag,
-            executionId: "interrupt",
-            deferredName: `${Queue.deferred.name}/interrupt`
-          }).asToken
-          yield* queue.offer({
-            token,
-            payload: { id: "interrupt", value: 0 },
-            traceId: "0".repeat(32),
-            spanId: "0".repeat(16),
-            sampled: false
-          }, { id: "interrupt" })
-          let handled = 0
+          yield* queue.offer(itemFor("interrupt"), { id: "interrupt" })
+          const handled: Array<string> = []
           const worker = yield* Effect.forkChild(
-            DurableQueue.makeWorker(Queue, () =>
+            DurableQueue.makeWorker(Queue, ({ id }) =>
               Effect.gen(function*() {
-                handled++
+                handled.push(id)
+                if (id !== "interrupt") return 1
                 if (mixed) {
                   return yield* Effect.failCause(Cause.fromReasons([
                     ...Cause.fail("boom").reasons,
@@ -698,24 +739,38 @@ describe("DurableQueue", () => {
               })),
             { startImmediately: true }
           )
-          for (let turn = 0; turn < 500 && (handled === 0 || (mixed && recorded.length === 0)); turn++) {
+          for (let turn = 0; turn < 500 && (handled.length === 0 || (mixed && recorded.length === 0)); turn++) {
             yield* Effect.yieldNow
           }
-          expect(handled).toBe(1)
-          yield* Fiber.interrupt(worker)
+          expect(handled[0]).toBe("interrupt")
           if (mixed) {
+            yield* Fiber.interrupt(worker)
             expect(recorded).toHaveLength(1)
             const exit = recorded[0]!
             if (!Exit.isFailure(exit)) throw new Error("expected handler failure")
             expect(exit.cause.reasons).toEqual([expect.objectContaining({ _tag: "Fail", error: "boom" })])
           } else {
-            expect(recorded).toEqual([])
+            // The same worker takes the interrupted item again on redelivery, and takes the next item.
+            const interruptExecution = `${Queue.deferred.name}/interrupt`
+            yield* queue.offer(itemFor("later"), { id: "later" })
+            for (
+              let turn = 0;
+              turn < 500 && (recorded.length === 0 || executed.filter((id) => id === interruptExecution).length < 2);
+              turn++
+            ) {
+              yield* Effect.yieldNow
+            }
+            expect(executed.filter((id) => id === interruptExecution).length).toBeGreaterThanOrEqual(2)
+            expect(handled).toContain("later")
+            expect(recorded).toEqual([Exit.succeed(1)])
+            expect(worker.pollUnsafe()).toBeUndefined()
+            yield* Fiber.interrupt(worker)
             const take = yield* Effect.forkChild(queue.take((item, metadata) => Effect.succeed({ item, metadata })), {
               startImmediately: true
             })
             for (let turn = 0; turn < 50 && take.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
             expect(take.pollUnsafe()).toEqual(Exit.succeed({
-              item: expect.objectContaining({ token }),
+              item: expect.objectContaining({ token: itemFor("interrupt").token }),
               metadata: { id: "interrupt", attempts: 1 }
             }))
             yield* Fiber.interrupt(take)

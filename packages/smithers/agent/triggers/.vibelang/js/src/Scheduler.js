@@ -11,6 +11,7 @@ import * as Control from "@smthrs/control/Control";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -253,13 +254,7 @@ const attempted = (annotations, work, effect) => Effect.catchCause(Effect.as(eff
     ? Effect.failCause(cause)
     : Effect.as(Effect.annotateLogs(Effect.logWarning(`A trigger ${work} failed`, cause), annotations), false));
 const isolate = (annotations, work, effect) => Effect.asVoid(attempted(annotations, work, effect));
-/**
- * Constructs a scheduler service in the current Scope.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (options = {}) => Effect_1.gen(function* () {
+const build = (options, seed) => Effect_1.gen(function* () {
     const parentScope = yield* Effect.scope;
     const providedStore = yield* TriggerStore;
     // Every fire the ledger records is counted by outcome, so a dropped,
@@ -280,7 +275,16 @@ export const make = (options = {}) => Effect_1.gen(function* () {
     const inspectTimeout = yield* duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout");
     const cancelTimeout = yield* duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout");
     const fireRetention = yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention");
-    const lastPrunedAt = yield* Ref.make(undefined);
+    // A one-shot tick remembers no earlier prune. Its `since` stands in: the
+    // ledger is pruned on a first tick and when an hour boundary passed since.
+    const lastPrunedAt = yield* Ref.make(seed?.since !== undefined && Math.floor(seed.at / pruneEvery) === Math.floor(seed.since / pruneEvery)
+        ? seed.at
+        : undefined);
+    // The watermark a trigger starts from when this process has not seen it:
+    // the caller's, or the last fire the store recorded when that is later.
+    const seeded = (trigger) => seed?.since === undefined ? undefined : Math.max(seed.since, trigger.lastFiredAt ?? seed.since);
+    const launching = new Set();
+    let clean = true;
     // Every runner call carries a deadline. A runtime that never answers used
     // to hold the launch, and the tick waiting on it, for the life of the
     // scope with nothing written down.
@@ -402,6 +406,8 @@ export const make = (options = {}) => Effect_1.gen(function* () {
         // The occurrence takes the entry under its reservation before the
         // runner hears of it, so every write below is fenced on this launch.
         yield* active.take(trigger.id, { occurrence, runId: reservation });
+        const recorded = yield* Deferred.make();
+        launching.add(recorded);
         let runId;
         let launchRecorded = false;
         let completed = false;
@@ -423,6 +429,7 @@ export const make = (options = {}) => Effect_1.gen(function* () {
                 reservationId: reservation
             });
             launchRecorded = true;
+            yield* Deferred.succeed(recorded, undefined);
             let state;
             while (true) {
                 const inspected = yield* inspectRun(trigger.id, runId);
@@ -465,8 +472,10 @@ export const make = (options = {}) => Effect_1.gen(function* () {
                 // hold the run. Keep the occurrence pending exactly as when the
                 // launched result failed to persist, so the next tick retries
                 // under the same idempotency key and the runtime's durable
-                // deduplication answers with the same run.
-                if (runId !== undefined || error.code === "runner_timeout") {
+                // deduplication answers with the same run. A runner that could
+                // not start the run now (`runner_unavailable`) is retried the
+                // same way.
+                if (runId !== undefined || error.code === "runner_timeout" || error.code === "runner_unavailable") {
                     yield* isolate({ triggerId: trigger.id }, "launch compensation", store.restorePending({
                         triggerId: trigger.id,
                         occurrence,
@@ -484,9 +493,12 @@ export const make = (options = {}) => Effect_1.gen(function* () {
         // any other scope closure must leave it alone: the next incarnation
         // re-attaches through `resolveActive`. Cancellation is a deliberate
         // act and belongs to `cancelActive` alone.
-        Effect.ensuring(Effect.suspend(() => launchRecorded && !completed
-            ? active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber: undefined }))
-            : active.remove(trigger.id, occurrence))));
+        Effect.ensuring(Effect.suspend(() => {
+            launching.delete(recorded);
+            return Effect.andThen(Deferred.succeed(recorded, undefined), launchRecorded && !completed
+                ? active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber: undefined }))
+                : active.remove(trigger.id, occurrence));
+        })));
         // The tick does not wait for the launch. The claim already fenced
         // the occurrence under its reservation, and every failure below is
         // compensated in the lifecycle itself. A tick that waited held every
@@ -625,7 +637,7 @@ export const make = (options = {}) => Effect_1.gen(function* () {
             return;
         if (running === undefined || trigger.overlap === "supersede")
             yield* resumePending(trigger, held);
-        const observed = (yield* Ref.get(observedAt)).get(trigger.id);
+        const observed = (yield* Ref.get(observedAt)).get(trigger.id) ?? seeded(trigger);
         const due = yield* DueOccurrences.compute(trigger, now, observed);
         let dispatched;
         let interrupted = false;
@@ -640,10 +652,13 @@ export const make = (options = {}) => Effect_1.gen(function* () {
                 break;
             if (settledHere && !interrupted)
                 dispatched = occurrence;
-            if (!settledHere)
+            if (!settledHere) {
                 interrupted = true;
+                clean = false;
+            }
         }
         if (stale) {
+            clean = false;
             // The occurrences were computed from a declaration the store has
             // since replaced, so the schedule decision is what went stale: a
             // trigger edited to fire at noon owes nothing for the hourly
@@ -676,6 +691,7 @@ export const make = (options = {}) => Effect_1.gen(function* () {
         yield* isolate({ host }, "heartbeat", store.heartbeat(host));
         // Nothing else deletes from the fire ledger, so without this it keeps
         // one row per occurrence forever and every fires listing reads it all.
+        clean = true;
         const now = yield* Clock.currentTimeMillis;
         const last = yield* Ref.get(lastPrunedAt);
         if (last === undefined || now - last >= pruneEvery) {
@@ -691,12 +707,55 @@ export const make = (options = {}) => Effect_1.gen(function* () {
         // parked plan hold every trigger after it for the whole wait. A row
         // the store could not decode is one more isolated failure, so one
         // corrupt declaration cannot stop the healthy schedules beside it.
-        yield* Effect.forEach(listing, (row) => isolate({ triggerId: row.triggerId }, "tick", Result.isFailure(row.trigger)
+        yield* Effect.forEach(listing, (row) => attempted({ triggerId: row.triggerId }, "tick", Result.isFailure(row.trigger)
             ? Effect.fail(row.trigger.failure)
-            : processTrigger(row.trigger.success, row)), { concurrency, discard: true });
+            : processTrigger(row.trigger.success, row)).pipe(Effect.map((finished) => {
+            if (!finished)
+                clean = false;
+        })), { concurrency, discard: true });
     })).pipe((tick) => timed(tickDuration, tick), Effect.withSpan("Scheduler.runOnce", { attributes: { host } })));
-    return Scheduler.of({ runOnce });
+    return {
+        service: Scheduler.of({ runOnce }),
+        launched: Effect.suspend(() => Effect.forEach([...launching], (recorded) => Deferred.await(recorded), { discard: true })),
+        clean: Effect.sync(() => clean)
+    };
 });
+/**
+ * Constructs a scheduler service in the current Scope.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = (options = {}) => Effect.map(build(options, undefined), (built) => built.service);
+/**
+ * One whole tick for a host that keeps no process between ticks: a durable
+ * flow step, a queue consumer, a scheduled function.
+ *
+ * {@link make} keeps two things in memory that such a host loses: the
+ * watermark each trigger was dispatched through, and the fibers launching its
+ * runs. A scheduler built for every tick therefore never fires a trigger that
+ * has not fired before, and closing its scope cuts a launch off until the
+ * reservation lease expires. `tick` takes the watermark as `since`, answers
+ * the next one, and returns only once every launch it started is recorded,
+ * compensated, or failed. It waits at most `startTimeout` for one launch.
+ *
+ * It does not watch the runs it launched. The next tick asks the runner about
+ * the run each trigger holds and records how it stopped.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.18
+ */
+export const tick = (options = {}) => Effect.scoped(Effect_1.gen(function* () {
+    const since = options.since;
+    if (since !== undefined && !Number.isSafeInteger(since)) {
+        return yield* Effect_1.fail(invalidOption("since", "a safe integer of epoch milliseconds"));
+    }
+    const at = yield* Clock.currentTimeMillis;
+    const built = yield* build(options, { since, at });
+    yield* built.service.runOnce;
+    yield* built.launched;
+    return { at, watermark: since === undefined || (yield* built.clean) ? at : since };
+}));
 /**
  * Constructs a scheduler that performs no work.
  *

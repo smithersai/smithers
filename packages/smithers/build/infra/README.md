@@ -468,3 +468,21 @@ Use [`../terraform/`](../terraform/) when cache data must remain on
 self-managed Docker, Postgres, and local storage. That stack remains supported
 and independent of these Cloudflare resources. It exposes the same `/ac` and
 `/cas` routes, so no cache-data or client-protocol migration is required.
+
+### CLI output-cache traffic and retention
+
+The CLI uses `/cas` for declared outputs, including deterministic 16 MiB
+chunks and an index for large files. One cold publication of 5000 distinct
+blobs across entries costs 5000 artifact uploads, at least five
+`findMissing` requests (1000 digests per batch), and one `/ac` request per
+entry. Entries are limited to 1000 direct artifact references. Concurrent jobs
+share the credential's 12000-request and 600-probe per-minute location budgets
+in `deployment.ts`; bursts can receive `429`, skip that publication or
+restore, and rebuild locally. The client does not retry or raise those budgets.
+
+Every chunk and index is declared directly in the publication's artifact
+references, so the self-hosted reference accounting retains both while the entry
+is live. Hosted R2's 90-day upload-age lifecycle remains independent of action
+entry access: a frequently read entry can outlive an index or chunk. That is a
+verified miss and rebuild, never a partial restore. No retention guarantee or
+deployment budget changes with this client feature.

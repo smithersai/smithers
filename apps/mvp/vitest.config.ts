@@ -150,6 +150,9 @@ export default defineConfig({
         // Agent status: the runs routes and table (docs/features/agent-status.md).
         "worker/Runs.ts",
         "db/migrations/0013_runs.ts",
+        // An agent's question to one person and its addressed wait (docs/features/agent-status.md#addressed-waits).
+        "worker/Asks.ts",
+        "db/migrations/0117_wait_address.ts",
         // Notifications: the feed's fold, routes and shape, and the run index's scope (docs/features/notifications.md).
         "worker/Notifications.ts",
         "db/migrations/0020_notifications.ts",

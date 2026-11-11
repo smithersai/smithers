@@ -19,6 +19,7 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -81,7 +82,7 @@ export const make = (options) => {
     const rungs = options.rungs.map(declared);
     const accept = options.accept;
     const fallback = options.fallback;
-    const { name, description } = Compose.label("escalation", { rungs: rungs.length, fallback: fallback !== undefined }, options);
+    const { name, description } = Compose.label("escalation", { rungs: rungs.length, fallback: fallback !== undefined }, options, [...rungs.flatMap((rung) => [rung.flow, rung.escalateIf]), accept, fallback]);
     const body = ({ input }) => {
         const exhausted = (last, level) => fallback === undefined
             ? Node.succeed({ level, result: last, accepted: false, exhausted: true })
@@ -120,11 +121,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        // `@smthrs/core` carried its error type as a phantom parameter and
-        // declared no error schema. `@smthrs/flow` needs a real one, because the
-        // engine encodes a typed failure through it, and a ladder fails with
-        // whatever the rung it called failed with.
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [...rungs.flatMap((rung) => [rung.flow, rung.escalateIf]), accept, fallback]),
         body: Node.capture({ rungs: rungs.length, fallback: fallback !== undefined }, body)
     });
 };

@@ -1,5 +1,5 @@
 import { createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
-import { Arbitrary, Effect, Exit, Layer, Metric, Option, Schema, Scope } from "effect"
+import { Arbitrary, Cause, Deferred, Effect, Exit, Fiber, Layer, Metric, Option, Schema, Scope } from "effect"
 import { describe, expect, test } from "vitest"
 import { Collection, Migrations, Persistence } from "../src/index.ts"
 import { databaseFile, id, Note, persistenceOn, sqlite, withLogs } from "./fixtures.ts"
@@ -785,6 +785,111 @@ describe("apply", () => {
     expect(await readLocal(path, notesAt(collection, 1))).toEqual([v1("a", 1), v1("b", 2)])
     expect((await applyOn(path, registry)).collections[0]).toMatchObject({ outcome: "migrated", migrated: 2 })
   })
+
+  for (const stage of ["BEGIN IMMEDIATE", "UPDATE", "COMMIT"] as const) {
+    test(`interruption at ${stage} rolls back before the same connection is reused`, async () => {
+      const path = databaseFile()
+      const collection = id("notes")
+      const original = [v1("a", 1), v1("b", 2)]
+      await writeLocal(path, notesAt(collection, 1), original)
+      const registry = Migrations.registry({ stores: [notesAt(collection, 2)] })
+      const database = sqlite(path)
+      const sql = Migrations.promiseSql(database)
+      const paused = Effect.runSync(Deferred.make<void>())
+      const release = Effect.runSync(Deferred.make<void>())
+      const pause = Effect.gen(function*() {
+        yield* Deferred.succeed(paused, undefined)
+        // BEGIN is acquisition: interruption must wait until the connection is safely owned.
+        if (stage === "BEGIN IMMEDIATE") yield* Deferred.await(release)
+        else yield* Effect.never
+      })
+      const injected: Migrations.Sql = {
+        execute: (statement, params) =>
+          Effect.gen(function*() {
+            // Never commit a partial migration; pause other stages after SQLite accepted the statement.
+            if (stage === "COMMIT" && statement === "COMMIT") yield* pause
+            const rows = yield* sql.execute(statement, params)
+            if (stage !== "COMMIT" && statement.startsWith(stage)) yield* pause
+            return rows
+          })
+      }
+      const fiber = Effect.runFork(Migrations.apply(registry, injected).pipe(Effect.provide(ownMetrics())))
+      try {
+        await Effect.runPromise(Deferred.await(paused))
+        const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
+        await Effect.runPromise(Deferred.succeed(release, undefined))
+        await interrupted
+        const exit = await Effect.runPromise(Fiber.await(fiber))
+        expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+        // The original connection sees no partial rows or schema version, without closing to force a rollback.
+        expect(
+          await database.execute("SELECT schema_version FROM collection_registry WHERE collection_id = ?", [
+            collection
+          ])
+        ).toEqual([{ schema_version: 1 }])
+        const [stored] = await database.execute<{ table_name: string }>(
+          "SELECT table_name FROM collection_registry WHERE collection_id = ?",
+          [collection]
+        )
+        const rows = await database.execute<{ value: string }>(`SELECT value FROM "${stored!.table_name}" ORDER BY key`)
+        expect(rows.map(({ value }) => JSON.parse(value))).toEqual(original)
+        const report = await Effect.runPromise(Migrations.apply(registry, sql).pipe(Effect.provide(ownMetrics())))
+        expect(report.collections[0]).toMatchObject({ outcome: "migrated", migrated: 2 })
+      } finally {
+        await Effect.runPromise(Deferred.succeed(release, undefined))
+        await Effect.runPromise(Fiber.interrupt(fiber))
+        database.close()
+      }
+      expect(await readLocal(path, notesAt(collection, 2))).toEqual(original.map((row) => ({ ...row, tags: [] })))
+    })
+  }
+
+  for (const outcome of ["migrated", "reset", "retired"] as const) {
+    for (const discard of outcome === "retired" ? [false] : [false, true]) {
+      for (const count of [0, 1]) {
+        test(`${outcome} logs ${count ? "Warn" : "Info"} when ${count} rows are ${discard ? "dropped" : "set aside"}`, async () => {
+          const path = databaseFile()
+          const collection = id("notes")
+          await writeLocal(path, notesAt(collection, 1), count ? [v1("private-row-content", -1)] : [])
+          const store = outcome === "reset"
+            ? Migrations.local({ id: collection, versions: [NoteV2], first: 2, getKey: (row) => row.id, discard })
+            : Migrations.local({
+              id: collection,
+              versions: [NoteV1, NoteV2],
+              migrations: [toV2],
+              getKey: (row) => row.id,
+              discard
+            })
+          const registry = outcome === "retired"
+            ? Migrations.registry({
+              stores: [],
+              retired: [Migrations.retired({ id: collection, kind: "local", version: 1 })]
+            })
+            : Migrations.registry({ stores: [store] })
+          const database = sqlite(path)
+          const { result, logs } = await withLogs(
+            Migrations.apply(registry, Migrations.promiseSql(database)).pipe(
+              Effect.ensuring(Effect.sync(() => database.close())),
+              Effect.provide(ownMetrics())
+            )
+          )
+          expect(result.collections[0]).toMatchObject({
+            outcome,
+            migrated: 0,
+            kept: discard ? 0 : count,
+            dropped: discard ? count : 0
+          })
+          const lines = logs.filter((log) => (log.message as Array<unknown>)[0] === "device.migrate")
+          expect(lines).toHaveLength(1)
+          expect(lines[0]).toMatchObject({
+            level: count ? "Warn" : "Info",
+            annotations: { collection, outcome, kept: discard ? 0 : count, dropped: discard ? count : 0 }
+          })
+          expect(JSON.stringify(logs)).not.toContain("private-row-content")
+        })
+      }
+    }
+  }
 
   test("a registry that can't be read fails with MigrationFailed", async () => {
     const exit = await Effect.runPromiseExit(

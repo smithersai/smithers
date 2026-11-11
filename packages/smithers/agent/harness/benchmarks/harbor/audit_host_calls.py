@@ -22,8 +22,15 @@ Verdict per trial:
 
     clean              no host call
     host-calls-benign  host calls, none touching a forbidden path or name
+    host-calls-unread  host calls, none touching a forbidden path or name in
+                       what the journal kept, and at least one whose input the
+                       journal truncated, so it could not be read
     TAINTED            a host call references a forbidden path or name
     no-journal         the trial has no journal yet
+
+The forbidden patterns are searched in the input's decoded string values, one
+per line, so `cd /task` and `tests/run.sh` on two lines of one script are read
+as the script's lines and not as JSON's `\\n` escape.
 
 The journal keeps `{truncated, bytes, digest}` in place of an input too large
 to keep, and beside it the input's small scalar fields: `container`, `cwd`,
@@ -135,8 +142,17 @@ def calls(db: Path) -> list[dict]:
     return [started[c] for c in order]
 
 
-def text_of(given: dict) -> str:
-    return json.dumps(given, ensure_ascii=False)
+def text_of(given: object) -> str:
+    """Every string value in the input, decoded, one per line. Searching the
+    JSON encoding instead puts an escape's letter (`\\n`, `\\t`) before a name
+    at the start of a script line, and the lookbehinds refuse it."""
+    if isinstance(given, str):
+        return given
+    if isinstance(given, dict):
+        return "\n".join(text_of(value) for value in given.values())
+    if isinstance(given, list):
+        return "\n".join(text_of(value) for value in given)
+    return ""
 
 
 MARKER_KEYS = ("truncated", "bytes", "digest")
@@ -174,7 +190,7 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
     patterns = dict(FORBIDDEN)
     patterns["task_dir"] = re.compile(re.escape(task))
     sealed = sealed_to(trial) is not None
-    tainted = False
+    tainted = unread = False
     for call in every:
         given = call["input"] if isinstance(call["input"], dict) else {}
         flow = call["flow"]
@@ -188,7 +204,8 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
         tainted = tainted or bool(hits)
         listed = {
             "seq": call["seq"], "flow": flow,
-            "command": given.get("command") or given.get("script") or given.get("path") or given.get("pattern") or text,
+            "command": given.get("command") or given.get("script") or given.get("path") or given.get("pattern")
+            or json.dumps(given, ensure_ascii=False),
             "cwd": given.get("cwd"), "exitCode": call.get("exitCode"), "outcome": call.get("outcome"),
             "flags": hits,
             "target": "host",
@@ -199,6 +216,7 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
             # Still a host call: what the journal kept names no container,
             # and a digest cannot be read for a forbidden name.
             listed["truncated"] = cut
+            unread = True
             listed["kept"] = kept_fields(given)
             if flow == "bash" and not listed["kept"]:
                 # The marker alone, from before routing fields were kept:
@@ -206,7 +224,8 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
                 listed["target"] = "unknown"
                 result["unknownTargets"] += 1
         result["hostCalls"].append(listed)
-    result["verdict"] = "TAINTED" if tainted else ("host-calls-benign" if result["hostCalls"] else "clean")
+    result["verdict"] = ("TAINTED" if tainted else "host-calls-unread" if unread
+                         else "host-calls-benign" if result["hostCalls"] else "clean")
     return result
 
 

@@ -3,7 +3,7 @@
 /** Bun SQLite driver using the same SQL, migration and write contracts as Node.
  * @since 1.0.0
  */
-import { Database } from "bun:sqlite";
+import { constants, Database } from "bun:sqlite";
 import { Effect, Layer } from "effect";
 import { statSync } from "node:fs";
 import * as BunSqliteClient from "../internal/BunSqliteClient.js";
@@ -11,11 +11,25 @@ import * as PostgresSelection from "../internal/PostgresSelection.js";
 import * as SqliteOpen from "../internal/SqliteOpen.js";
 export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.js";
 const readTableNames = (filename) => {
+    // Filesystem errors quote caller-chosen paths, so lock text in a path is
+    // not evidence of SQLite contention. Only classify the driver's errors.
+    if (!filename.startsWith("file:")) {
+        try {
+            if (!statSync(filename, { throwIfNoEntry: false })?.isFile())
+                return undefined;
+        }
+        catch {
+            return undefined;
+        }
+    }
     let db;
     try {
-        if (!filename.startsWith("file:") && !statSync(filename).isFile())
-            return undefined;
-        db = new Database(filename, { readonly: true, create: false });
+        // Bun reads a `file:` name as a URI only when the open flags say so. With
+        // an options object it looks for a file literally named `file:...`, finds
+        // none, and the guard would wave the real 0.x database through.
+        db = new Database(filename, filename.startsWith("file:")
+            ? constants.SQLITE_OPEN_URI | constants.SQLITE_OPEN_READONLY
+            : { readonly: true, create: false });
         return db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name);
     }
     catch (error) {

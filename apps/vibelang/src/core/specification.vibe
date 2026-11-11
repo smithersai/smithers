@@ -3,6 +3,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Digest, SecureRandom } from "effect/crypto"
 import { unansweredSpecificationReview, reviseSpecificationUnder, recordSpecificationReview, type Specification, type SpecificationReviewer, type SpecRevisionPolicy, SPEC_REVISION_POLICY } from "./conversation.vibe"
 import { IssueFailure, type IssueRequest, IssuesState, SpecificationReview } from "./issueSchemas.vibe"
+import { reviewAnswerAccepted, scriptedGrade, specificationRefusal } from "./specificationDecision.vibe"
 export const reviewers: ReadonlyArray<{ readonly id: SpecificationReviewer; readonly name: string }> = [
   { id: "astra", name: "Codex Astra" }, { id: "sol", name: "Codex Sol" }, { id: "fable", name: "Claude Fable" }, { id: "opus", name: "Claude Opus" },
 ]
@@ -33,21 +34,20 @@ export function revisedSpecificationState(before: typeof IssuesState.Type, text:
 export effect function performSpecification(before: typeof IssuesState.Type, request: IssueRequest, scripted = true) {
   const spec = before.specification ?? emptySpecification
   const history = before.specificationHistory ?? []
-  if (request.key === "" || request.revision !== spec.revision) throw new IssueFailure({ reason: "review", unwritten: true })
+  const revise = request.op === "spec-revise"
+  const refusal = specificationRefusal(revise, request.key, request.revision, spec.revision, request.text.trim() === "", request.reviewer !== undefined)
+  if (refusal !== "") throw new IssueFailure({ reason: refusal, unwritten: true })
   const at = new Date(try Clock.currentTimeMillis).toISOString()
-  if (request.op === "spec-revise") {
-    if (request.text.trim() === "" || spec.revision >= Number.MAX_SAFE_INTEGER) throw new IssueFailure({ reason: "invalid", unwritten: true })
-    return revisedSpecificationState(before, request.text, at)
-  }
-  const reviewer = request.reviewer
-  if (reviewer === undefined || spec.revision === 0) throw new IssueFailure({ reason: "invalid", unwritten: true })
+  if (revise) return revisedSpecificationState(before, request.text, at)
+  // specificationRefusal admits a review only with a reviewer.
+  const reviewer = request.reviewer!
   const provider = try Effect.serviceOption(SpecificationReviewers)
   const answer = Option.isSome(provider) ? try provider.value.review(reviewer, spec) : scripted
-    ? { verdict: "LGTM" as const, grade: reviewer === "opus" && spec.opus.verdict === "" ? "B+" : fixtureSpecification[reviewer].grade, revision: spec.revision, link: `#spec-review-${history.length + 1}`, review: "Scripted review" }
+    ? { verdict: "LGTM" as const, grade: scriptedGrade(reviewer, spec.opus.verdict, fixtureSpecification[reviewer].grade), revision: spec.revision, link: `#spec-review-${history.length + 1}`, review: "Scripted review" }
     : undefined
   if (answer === undefined) throw new IssueFailure({ reason: "no-model", unwritten: true })
   // A provider returning another revision is refused rather than being relabelled as current.
-  if (answer.revision !== spec.revision || answer.verdict === "" || answer.link === "") throw new IssueFailure({ reason: "review", unwritten: true })
+  if (!reviewAnswerAccepted(answer.revision, spec.revision, answer.verdict, answer.link)) throw new IssueFailure({ reason: "review", unwritten: true })
   const receipt = { ...answer, link: `#spec-review-${history.length + 1}` }
   const next = recordSpecificationReview(spec, reviewer, reviewer, receipt)
   return { ...before, seq: before.seq + 1, specification: next, specificationHistory: [...history, { revision: spec.revision, event: "review" as const, reviewer, verdict: answer.verdict, grade: answer.grade, link: receipt.link, review: answer.review ?? "", at }] }

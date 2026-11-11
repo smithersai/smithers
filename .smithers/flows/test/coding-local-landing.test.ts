@@ -572,11 +572,165 @@ test("green prefix: a stack longer than one process answer still advances main",
   assert.equal(commitOf(root, "main"), passed.commitId)
 })
 
-test("green prefix: a merge where a page of a long stack ends is not one line", async (t) => {
-  const { lander } = await longStack(t, 1_200, 999)
-  const error = await failure(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: [] }))
-  assert.equal(error.code, "invalid_receipt")
-  assert.match(error.message, /not one line/)
+test("green prefix: a merge where a page of a long stack ends stays on the line", async (t) => {
+  const { root, main, revisions, lander } = await longStack(t, 1_200, 999)
+  // The listing holds the merged-in side commit too; the tip is its last row.
+  const tip = revisions.at(-1) as unknown as Revision
+  assert.deepEqual(
+    await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: [verdictOf(tip, "passed")] })),
+    { status: "advanced", from: main, to: tip.commitId, above: 0 }
+  )
+  assert.equal(commitOf(root, "main"), tip.commitId)
+})
+
+test("green prefix: a line of exactly one page ends at main", async (t) => {
+  const { main, revisions, lander } = await longStack(t, 1_000)
+  const first = revisions[0] as unknown as Revision
+  assert.deepEqual(
+    await Effect.runPromise(
+      lander.advanceGreenPrefix({ required, tip: "vibe", receipts: [verdictOf(first, "passed")] })
+    ),
+    { status: "advanced", from: main, to: first.commitId, above: 999 }
+  )
+})
+
+/**
+ * The shape a merge queue leaves once main's own commits are merged back into the stack:
+ *
+ *   base ── s1 ── s2 ── merge ── c1 ── c2 (vibe)
+ *      └── m1 (main) ────┘
+ *
+ * Only `merge`, `c1` and `c2` descend from main; `s1` and `s2` reach main inside the merge.
+ */
+const mergedBackRepository = async (t: Cleanup) => {
+  const root = await mkdtemp(join(tmpdir(), "coding-green-prefix-merged-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  jj(root, "git", "init")
+  await writeFile(join(root, "a.txt"), "a\n")
+  jj(root, "commit", "-m", "base")
+  const commitOn = async (parents: ReadonlyArray<string>, name: string) => {
+    jj(root, "new", ...parents, "-m", name)
+    await writeFile(join(root, `${name}.txt`), `${name}\n`)
+    jj(root, "new")
+    return revisionOf(root, "@-")
+  }
+  const base = commitOf(root, "@-")
+  const s1 = await commitOn([base], "s1"), s2 = await commitOn([s1.commitId], "s2")
+  const m1 = await commitOn([base], "m1")
+  jj(root, "bookmark", "create", "main", "-r", m1.commitId)
+  const merge = await commitOn([s2.commitId, m1.commitId], "merge")
+  const c1 = await commitOn([merge.commitId], "c1"), c2 = await commitOn([c1.commitId], "c2")
+  jj(root, "bookmark", "create", "vibe", "-r", c2.commitId)
+  return { root, main: m1.commitId, s1, s2, merge, c1, c2 }
+}
+
+test("green prefix: main merged back into the stack fast-forwards along the first-parent line", async (t) => {
+  const { root, main, s1, s2, merge, c1, c2 } = await mergedBackRepository(t)
+  const lander = await landerOf(root, "fast-forward")
+  const advance = (receipts: ReadonlyArray<Receipt>) => lander.advanceGreenPrefix({ required, tip: "vibe", receipts })
+  // s2 passed, but main cannot fast-forward to a commit that does not hold main.
+  assert.deepEqual(await Effect.runPromise(advance([verdictOf(s2, "passed")])), {
+    status: "unchanged",
+    main,
+    reason: "no passed commit above main"
+  })
+  // A failure the merge brought in fails the merge, and with it every commit above.
+  const carried = [verdictOf(s1, "failed"), verdictOf(c1, "passed")]
+  assert.deepEqual(await Effect.runPromise(advance(carried)), {
+    status: "unchanged",
+    main,
+    reason: `${merge.commitId} merged a failed commit above main`
+  })
+  // Its receipt must still be its own tree's.
+  const foreign = await failure(advance([verdictOf(s1, "failed", { treeId: c1.treeId }), verdictOf(c1, "passed")]))
+  assert.equal(foreign.code, "invalid_receipt")
+  assert.match(foreign.message, new RegExp(`${s1.commitId} .*tree`))
+  assert.equal(commitOf(root, "main"), main)
+  // An outage, a fast check, an unrequired check, a superseded failure and a commit outside the stack veto nothing.
+  const cleared = [
+    verdictOf(s1, "failed", { fault: "infra" }),
+    verdictOf(s1, "failed", { tier: "fast" }),
+    verdictOf(s1, "failed", { checkId: "bench" }),
+    verdictOf(s2, "superseded"),
+    verdictOf({ ...s1, commitId: "0".repeat(40) }, "failed"),
+    verdictOf({ ...s1, commitId: "not a commit" }, "failed"),
+    verdictOf(c1, "passed"),
+    verdictOf(c2, "failed")
+  ]
+  assert.deepEqual(await Effect.runPromise(advance(cleared)), {
+    status: "advanced",
+    from: main,
+    to: c1.commitId,
+    above: 1
+  })
+  assert.equal(commitOf(root, "main"), c1.commitId)
+  assert.deepEqual(filesOf(root, "main"), ["a.txt", "c1.txt", "m1.txt", "merge.txt", "s1.txt", "s2.txt"])
+})
+
+test("green prefix: a branch merged into the stack blocks from its merge up, not below", async (t) => {
+  const { root, main, stack } = await stackRepository(t)
+  const [c1, c2, c3, c4] = stack as [Revision, Revision, Revision, Revision]
+  // side forks from main and joins the line in a merge above c4; old forks below main and joins above that.
+  jj(root, "new", "main", "--no-edit", "-m", "side")
+  const side = revisionOf(root, "description(exact:\"side\\n\")")
+  jj(root, "new", "vibe", side.commitId, "--no-edit", "-m", "merge side")
+  const first = revisionOf(root, "description(exact:\"merge side\\n\")")
+  jj(root, "new", "main-", "--no-edit", "-m", "old")
+  const old = revisionOf(root, "description(exact:\"old\\n\")")
+  jj(root, "new", first.commitId, old.commitId, "--no-edit", "-m", "merge old")
+  const second = revisionOf(root, "description(exact:\"merge old\\n\")")
+  jj(root, "bookmark", "create", "merged", "-r", second.commitId)
+  const lander = await landerOf(root, "fast-forward")
+  const advance = (receipts: ReadonlyArray<Receipt>) => lander.advanceGreenPrefix({ required, tip: "merged", receipts })
+  // side descends from main, yet it is not on the line: its pass moves nothing.
+  assert.deepEqual(await Effect.runPromise(advance([verdictOf(side, "passed")])), {
+    status: "unchanged",
+    main,
+    reason: "no passed commit above main"
+  })
+  // More failures than one listing names, most of them for commits this repository never had.
+  const unknown = Array.from(
+    { length: 1_000 },
+    (_, index) => verdictOf({ ...side, commitId: index.toString(16).padStart(40, "f") }, "failed")
+  )
+  const blocked = [
+    ...unknown,
+    verdictOf(old, "failed"),
+    verdictOf(side, "failed"),
+    verdictOf(c2, "passed"),
+    verdictOf(second, "passed")
+  ]
+  assert.deepEqual(await Effect.runPromise(advance(blocked)), {
+    status: "advanced",
+    from: main,
+    to: c2.commitId,
+    above: 4
+  })
+  assert.deepEqual(await Effect.runPromise(advance(blocked)), {
+    status: "unchanged",
+    main: c2.commitId,
+    reason: `${first.commitId} merged a failed commit above main`
+  })
+  // side's failure is superseded: old's still fails the second merge, so main stops under it.
+  const later = [
+    verdictOf(old, "failed"),
+    verdictOf(side, "superseded"),
+    verdictOf(first, "passed"),
+    verdictOf(second, "passed")
+  ]
+  assert.deepEqual(await Effect.runPromise(advance(later)), {
+    status: "advanced",
+    from: c2.commitId,
+    to: first.commitId,
+    above: 1
+  })
+  assert.deepEqual(await Effect.runPromise(advance([verdictOf(second, "passed")])), {
+    status: "advanced",
+    from: first.commitId,
+    to: second.commitId,
+    above: 0
+  })
+  assert.deepEqual([c1, c3, c4].map((revision) => revision.commitId).every((id) => id !== commitOf(root, "main")), true)
 })
 
 test("green prefix: a failed commit below holds main under it, never moving backwards", async (t) => {
@@ -635,14 +789,6 @@ test("green prefix: refusals leave main where it is", async (t) => {
   jj(root, "bookmark", "create", "side", "-r", "description(exact:\"elsewhere\\n\")")
   const sideways = await failure(lander.advanceGreenPrefix({ required, tip: "side", receipts: [] }))
   assert.equal(sideways.code, "stale_revision")
-  // A stack with a merge in it is not one line above main.
-  jj(root, "new", "vibe", "side", "--no-edit", "-m", "merge")
-  jj(root, "bookmark", "create", "merged", "-r", "description(exact:\"merge\\n\")")
-  const merged = await failure(
-    lander.advanceGreenPrefix({ required, tip: "merged", receipts: [verdictOf(c1, "passed")] })
-  )
-  assert.equal(merged.code, "invalid_receipt")
-  assert.match(merged.message, /one line/)
   assert.equal(commitOf(root, "main"), main)
   const pullRequest = await landerOf(root, "pull-request")
   assert.equal(

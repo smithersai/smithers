@@ -4,16 +4,17 @@
  *
  * @since 0.1.0
  */
+import * as Input from "@smthrs/targets/Input";
 import * as RemoteCache from "@smthrs/targets/RemoteCache";
 import * as Fs from "node:fs/promises";
 import * as NodePath from "node:path";
 /**
- * The only target declaration filename.
+ * The target declaration filenames, TypeScript and VibeLang.
  *
  * @category discovery
  * @since 0.1.0
  */
-export const declarationFileNames = ["PACKAGE.ts"];
+export const declarationFileNames = Input.declarationFileNames;
 /**
  * Every environment variable name a resolved credential reads.
  *

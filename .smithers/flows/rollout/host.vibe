@@ -1,16 +1,10 @@
 import { Interpreter } from "@smthrs/flow"
-import Rollout, { Execute } from "./flow.ts"
-import { rollout, type RolloutHost } from "./runtime.ts"
+import Rollout, { Execute, execute } from "./flow.ts"
+import type { RolloutHost } from "./runtime.ts"
 
 /** Supply an exclusively leased host per run. The returned receipt is the existing run output. */
 export const executionLayer = (host: RolloutHost) =>
   Interpreter.layerWithImplementations(
     Rollout,
-    Execute.toLayer(effect () => {
-      const receipt = try tryPromise({ try: () => rollout(host), catch: () => "Rollout receipt unavailable" })
-      if (receipt.status !== "passed") throw receipt
-      return receipt
-    }, {
-      implementationVersion: "rollout/v2"
-    })
+    Execute.toLayer(() => execute(host), { implementationVersion: "rollout/v2" })
   )

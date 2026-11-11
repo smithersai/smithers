@@ -549,7 +549,8 @@ const layerPrettyDev: (options?: Options) => Layer.Layer<never>
 ```
 
 A human-readable development logger, with colors and mode chosen from the
-output it finds.
+output it finds. The message, cause and annotations pass the journal's
+redaction rules (`RedactedLogger.wrap`) before the line is written.
 
 ### Logger.layerStructuredJson
 
@@ -558,7 +559,8 @@ const layerStructuredJson: (options?: Options) => Layer.Layer<never>
 ```
 
 One structured JSON object per log line: the record `Logger.formatStructured`
-builds, written to the console.
+builds, written to the console. The message, cause and annotations pass the
+journal's redaction rules (`RedactedLogger.wrap`) before the record is built.
 
 ### Logger.formatStructured
 
@@ -596,7 +598,8 @@ level.
 const layer: (logger: Logger.Logger<unknown, unknown>, options?: Options) => Layer.Layer<never>
 ```
 
-Installs a caller-supplied logger under the same two rules.
+Installs a caller-supplied logger under the same two rules, behind the same
+redaction: the logger receives each event already redacted.
 
 ## LogFailures
 

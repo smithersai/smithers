@@ -2,6 +2,7 @@
 import { CircularImports, ImportRules, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
+import { sourceFiles, testHelpers } from "./SourceInputs.ts"
 
 const cwd = "packages/smithers/build/build-cli"
 const sources = Smithers.glob("src/**/*.ts")
@@ -369,6 +370,8 @@ export const Package = Smithers.Package({
     lint,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
+    sourceFiles,
+    testHelpers,
     test,
     ...securityReview
   }

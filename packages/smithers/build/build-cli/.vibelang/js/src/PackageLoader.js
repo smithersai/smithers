@@ -28,6 +28,7 @@
  * @since 0.1.0
  */
 import { Smithers } from "@smthrs/targets";
+import * as Input from "@smthrs/targets/Input";
 import * as Package from "@smthrs/targets/Package";
 import * as SafeFs from "@smthrs/targets/SafeFs";
 import * as Target from "@smthrs/targets/Target";
@@ -43,6 +44,8 @@ import { assertDeclarationDependencies } from "./internal/DeclarationDependencie
 import { byCodeUnit, posix } from "./internal/Text.js";
 import { PackageError } from "./PackageError.js";
 import { validateWorkspaceModule } from "./WorkspaceLoader.js";
+/** The base name of a workspace-relative declaration path: `PACKAGE.ts` or `PACKAGE.vibe`. */
+const declarationName = (file) => NodePath.posix.basename(file);
 const packagePathOf = (file) => {
     const directory = posix(NodePath.dirname(file));
     return directory === "." ? "" : directory;
@@ -292,9 +295,10 @@ const resolveRelative = (file, specifier) => {
 };
 /**
  * The on-disk files a NodeNext specifier may resolve to, in tsx's order: the
- * `.ts` sibling first, the literal file second. A specifier without a
- * scannable extension (JSON, assets) resolves to nothing here; the real
- * import fails loudly if it is genuinely broken.
+ * `.ts` sibling first, the literal file second. A VibeLang module names its
+ * own `.vibe` file. A specifier without a scannable extension (JSON, assets)
+ * resolves to nothing here; the real import fails loudly if it is genuinely
+ * broken.
  */
 const moduleCandidates = (resolved) => {
     if (resolved.endsWith(".js"))
@@ -303,7 +307,7 @@ const moduleCandidates = (resolved) => {
         return [`${resolved.slice(0, -4)}.mts`, resolved];
     if (resolved.endsWith(".cjs"))
         return [`${resolved.slice(0, -4)}.cts`, resolved];
-    if (resolved.endsWith(".ts") || resolved.endsWith(".mts") || resolved.endsWith(".cts"))
+    if (resolved.endsWith(".ts") || resolved.endsWith(".mts") || resolved.endsWith(".cts") || resolved.endsWith(".vibe"))
         return [resolved];
     return [];
 };
@@ -347,7 +351,9 @@ const scanImports = async (discovery) => {
             const text = await readModule(file);
             if (text === undefined) {
                 if (packageSet.has(file)) {
-                    throw new PackageError("module_missing", "PACKAGE.ts disappeared before it was scanned", { path: file });
+                    throw new PackageError("module_missing", `${declarationName(file)} disappeared before it was scanned`, {
+                        path: file
+                    });
                 }
                 continue;
             }
@@ -416,7 +422,7 @@ const checkFactoryImports = (discovery, edges) => {
             if (next === discovery.workspaceFile)
                 continue;
             const nextChain = [...chain, next];
-            if (packageSet.has(next) || (next.split("/").at(-1) ?? "") === "PACKAGE.ts") {
+            if (packageSet.has(next) || Input.isDeclarationFileName(declarationName(next))) {
                 throw new PackageError("factory_imports_package", `FACTORY.ts imports a PACKAGE.ts; a factory names the targets it needs by label, S.label("//pkg:name"), never by import`, { path: discovery.factoryFile, chain: nextChain });
             }
             stack.push(nextChain);
@@ -494,7 +500,9 @@ const loads = new Map();
 const probes = new Map();
 const validatePackageModule = (namespace, file) => {
     if (typeof namespace !== "object" || namespace === null) {
-        throw new PackageError("module_import_failed", "PACKAGE.ts did not evaluate to a module namespace", { path: file });
+        throw new PackageError("module_import_failed", `${declarationName(file)} did not evaluate to a module namespace`, {
+            path: file
+        });
     }
     let value;
     for (const [name, exported] of Object.entries(namespace)) {
@@ -503,7 +511,7 @@ const validatePackageModule = (namespace, file) => {
                 throw new PackageError("invalid_package_export", `a Package value is exported as ${JSON.stringify(name)}; the one legal export name is Package`, { path: file });
             }
             if (value !== undefined) {
-                throw new PackageError("invalid_package_export", "PACKAGE.ts exports more than one Package value", {
+                throw new PackageError("invalid_package_export", `${declarationName(file)} exports more than one Package value`, {
                     path: file
                 });
             }
@@ -514,11 +522,11 @@ const validatePackageModule = (namespace, file) => {
             throw new PackageError("invalid_package_export", "the Package export is not an S.Package value", { path: file });
         }
         if (Target.isTarget(exported)) {
-            throw new PackageError("naked_target_export", `PACKAGE.ts exports a naked target ${JSON.stringify(name)}; a target is addressable only through the Package map`, { path: file });
+            throw new PackageError("naked_target_export", `${declarationName(file)} exports a naked target ${JSON.stringify(name)}; a target is addressable only through the Package map`, { path: file });
         }
     }
     if (value === undefined) {
-        throw new PackageError("package_export_missing", "PACKAGE.ts has no Package export", { path: file });
+        throw new PackageError("package_export_missing", `${declarationName(file)} has no Package export`, { path: file });
     }
     return value;
 };

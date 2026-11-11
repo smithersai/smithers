@@ -27,11 +27,12 @@ run-kind targets; `flow start` starts durable flows.
 | `runs list/show/logs/output/cancel/cancel-all/resume/signal/steer` | Inspect and operate durable runs. |
 | `runs inspect/replay/fork/rewind` | Read frames, branch history, or restore an earlier frame. |
 | `approvals list/approve/deny/grant` | Inspect pending decisions, answer them, or grant a build target's revision. |
+| `approvals trigger-plan/grant-trigger/revoke-trigger` | Prepare, grant or revoke the standing approval that lets a trigger run unattended. |
 | `init [name]`, `generate flow/package/ci` | Initialize a workspace or scaffold a declared resource. |
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `cache steps`, `clean [patterns...]`, `gc` | Maintain target results, step results, declared cleanup targets, or terminal run history. |
 | `environment add/list/view/remove/exec/shell/forward` | Save an execution location and run commands there. |
-| `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate the persistent agent features described below. |
+| `memory`, `credentials`, `triggers`, `integrations`, `eval`, `alerts` | Operate the persistent agent features described below. |
 | `open [dir]`, `.` | Open the checkout's `owner/repo` in the Smithers app (`smithers://open/<owner>/<repo>`), or print its smithers.sh page. |
 | `host start [--bundle <dir>] [--bind <addr>] [--origin <url>]`, `host stop`, `host status` | Run a verified server bundle as an unprivileged macOS LaunchAgent, stop it, or inspect its health. |
 | `host backup`, `host upgrade`, `host restore <directory>` | Host maintenance commands. Currently refuse until capture, drain and owner authorization are composed; restore validates the backup before any state change. |
@@ -323,9 +324,10 @@ declared request's kind, options, and schema to shape the answer.
 | --- | --- |
 | `memory` | `list/get/set/rm`, `recall`, `notes list/get/add/status/supersede`, `threads list/create/show/rm`, `messages list/add`, and `compact`. |
 | `credentials` | `list/add/rotate/revoke`; encrypted secrets are supplied through `--secret-env` or `--secret-file`, and output contains references only. |
-| `triggers` | `list/show/register/enable/disable/fire/serve`; registration accepts flags or `--file`, and `fire` queues an occurrence for the scheduler. |
+| `triggers` | `list/show/register/sync/enable/disable/fire/serve`; registration accepts flags or `--file`, `sync` registers the workspace's `S.Cron` targets, and `fire` queues an occurrence for the scheduler. |
 | `integrations` | `list` and `doctor [--offline]`. |
 | `eval` | `list/run/baseline/compare`; discover `evals/**/*.eval.ts` modules exporting `suite` and `executor`, and compare saved results with committed baselines. `run` also records score observations in the project's `.flows/engine.db` when it exists. |
+| `alerts` | `report/list/ack`; record a probe result in a run, page a person once on Telegram or by email, list the run's open alerts, and acknowledge one. See [probe alerts](#probe-alerts). |
 
 Memory defaults to `--namespace user:cli` and accepts `kind:id` or a bare kind
 with optional `--id`; a bare kind's ID defaults to `cli`. Bare `memory` prints help. Missing fact arguments, such as
@@ -339,6 +341,11 @@ with `branch:`, `stream:`, `source:`, or `scope:`; `--ttl-ms` is a positive
 integer TTL in milliseconds. `compact` requires `--summary` and an exclusive
 `--before` cutoff in Unix epoch milliseconds, and accepts a retained-message
 count (`--keep`); `--dry-run` previews it.
+
+`memory list`, `memory get`, `memory set`, and `memory recall` are also MCP
+tools of `smthrs --mcp`, so agent CLIs registered with
+`smthrs mcp add --memory-db <file>` share facts; see [shared agent memory](../../guides/wire-the-mcp-server.md#shared-agent-memory).
+Over MCP, `--root` is refused.
 
 `memory messages add --message-id <id>` is idempotent for the same thread,
 role and text. When `--at` is omitted, a retry keeps the saved timestamp;
@@ -361,13 +368,44 @@ named by `SMITHERS_GITHUB_API_BASE_URL`. These host settings stay outside the
 repository configuration.
 
 `serve` (also available as `gateway`) hosts the trigger scheduler; `triggers serve` runs it separately.
-Scheduled and manual occurrences preserve approval requirements. Disabling a
-trigger stops future dispatch without cancelling its active run.
-`triggers show <id>` exposes the persisted `activePlan.plan.approval` payload;
-submit that unchanged to `approvals approve '<payload>' --scope run`. The
+Scheduled and manual occurrences preserve approval requirements: each
+occurrence waits at `waiting-approval` until a person approves it or a standing
+approval matches it. Disabling a trigger stops future dispatch without
+cancelling its active run.
+
+A standing approval lets a trigger run unattended:
+
+```bash
+smthrs approvals trigger-plan inbox-triage > consent.json   # review what will run
+smthrs approvals grant-trigger @consent.json                # prints the grantId
+smthrs triggers serve                                       # occurrences now start on their own
+smthrs approvals revoke-trigger <grantId>                   # later occurrences wait again
+```
+
+The consent binds to the trigger registration (any `register`, `enable` or
+`disable` changes it) and to what an occurrence would run: the flow, its input,
+its capability envelope, its source and every compiled step. It does not bind
+to a plan ID, because each occurrence is planned under a new one. After an
+edit to the trigger or the flow, occurrences wait at `waiting-approval` until
+you grant a new consent; an occurrence already waiting starts on the next poll
+after the grant. Each use is journaled as an approval by the granting
+principal, and a revoked grant keeps its recorded uses. These three commands
+need a local `--root`.
+
+To approve one waiting occurrence by hand instead, `triggers show <id>` exposes
+the persisted `activePlan.plan.approval` payload; submit that unchanged to `approvals approve '<payload>' --scope run`. The
 scheduler retains the same plan across restarts and waits until it is approved
 or denied. Both `approvals approve` and `approve` default to `--scope run`.
 `approvals list` lists in-run requests, not these pre-run plans.
+
+A scheduler host also registers every `S.Cron` target the workspace's
+`PACKAGE.ts` files declare, under the target's label, and `triggers sync` does
+the same on demand. Such a trigger has the reserved flow `system/target-run`
+and the labels to run as its input. The build executes it as
+`smthrs target <labels>`, so it has no plan and needs no approval;
+`triggers show <label>` reports the run under `activeTargetRun`, and the
+command's output is kept under `.flows/logs/`. See
+[Schedule a build target](../../guides/schedule-a-target.md).
 A launch attempt persists `launching` before calling Control. Cancellation
 before the run ID is recorded remains `cancelling` while the scheduler
 reconciles the durable launch key. Any accepted run is recorded and cancelled.
@@ -378,6 +416,32 @@ a waiting plan prevents its launch. Inspections serialize across processes on
 stale parked receipt cannot undo another inspection's unresolved launch. A
 crashed inspector releases the database lock; the next inspection reconciles
 the same durable launch key.
+
+## Probe alerts
+
+`alerts report --run <owner> --probe <name> --state failing|ok [--summary <text>]`
+records one probe result in the run `<owner>` in the project's journal, the one
+`.flows/control.db` holds, then pages about any of the run's alerts that have
+waited long enough. `<owner>` is any run id; it need not be a run the control
+plane started. The result names the `destination` and the alerts the report
+`delivered`, `failed`, `refused` and `suppressed`. A failing probe and a page
+the channel did not take both exit 0; the next report sends the page again.
+
+`alerts list --run <owner>` prints each open alert's id, condition, state
+(`raised`, `delivered` or `acknowledged`), who acknowledged it, its summary and
+when it opened. `alerts ack --run <owner> --id <alertId> [--by <name>]` takes an
+alert so it is not paged again; `--by` defaults to the operating system user
+name. An id with no open alert on the run is refused with exit status 1 and the
+code `alert_not_open`.
+
+The policy is `.smithers/alerts.json`: `defaults`, a rule per probe under
+`probes`, and a `telegram` (`chatId`) or `email` (`to`, `from`) destination. A
+`url` under either may name a provider origin on this machine. A bad file exits
+2 and names the field. The bot token is `SMITHERS_ALERT_TELEGRAM_TOKEN` and the
+Resend API key is `SMITHERS_ALERT_EMAIL_API_KEY`; without a usable destination
+the report is recorded and nothing is paged.
+[Page a person from a shell probe](../../guides/page-a-person-from-a-probe.md)
+is the guide.
 
 ## Telemetry
 

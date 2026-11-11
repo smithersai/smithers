@@ -86,6 +86,8 @@ describe("public executable bootstrap", () => {
     expect(main).not.toHaveBeenCalled()
     expect(install).toHaveBeenNthCalledWith(1, {
       "@smthrs/agent": new URL("../src/bin.ts", import.meta.url).href,
+      "@smthrs/integrations": new URL("../src/bin.ts", import.meta.url).href,
+      "@smthrs/patterns": new URL("../src/bin.ts", import.meta.url).href,
       "@smthrs/registry/Prompt/jsx-runtime": new URL("../src/bin.ts", import.meta.url).href
     }, { deferTypeScript: false })
     expect(install).toHaveBeenNthCalledWith(2)

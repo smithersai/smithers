@@ -21,17 +21,17 @@ example below imports it directly, so declare it in your own package too.
 
 The root entry point exports these namespaces; each is also importable from `@smthrs/notifications/<Module>`.
 
-| Module              | Description                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------- |
-| `Alerts`            | Turns run conditions that outlive a delay into coalesced, at-least-once alerts.           |
-| `Channels`          | Sends one short message by email (Resend) or Telegram, each failure classified for retry. |
-| `Inbox`             | Routes a run's state to its launcher and watchers, and merges acks on per-person notices. |
-| `Notification`      | Defines notification schemas, admission classes, and coalescing keys.                     |
-| `NotificationEvent` | Defines journal notification events and decodes them from journal entries.                |
-| `NotificationQueue` | Defines the durable admit/drain/pending service and its journal-backed layer.             |
-| `NotificationState` | Implements the pure notification admission and promotion state machine.                   |
-| `Projection`        | Derives notification state from journal entries.                                          |
-| `SteerPayload`      | Defines the steering vocabulary a control plane and a harness exchange through a payload. |
+| Module              | Description                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Alerts`            | Turns run conditions and probe reports from flow steps into coalesced, at-least-once alerts a person acknowledges. |
+| `Channels`          | Sends one short message by email (Resend) or Telegram, each failure classified for retry.                          |
+| `Inbox`             | Routes a run's state to its launcher and watchers, and merges acks on per-person notices.                          |
+| `Notification`      | Defines notification schemas, admission classes, and coalescing keys.                                              |
+| `NotificationEvent` | Defines journal notification events and decodes them from journal entries.                                         |
+| `NotificationQueue` | Defines the durable admit/drain/pending service and its journal-backed layer.                                      |
+| `NotificationState` | Implements the pure notification admission and promotion state machine.                                            |
+| `Projection`        | Derives notification state from journal entries.                                                                   |
+| `SteerPayload`      | Defines the steering vocabulary a control plane and a harness exchange through a payload.                          |
 
 Every export of every module, with its signature and the meaning of each
 parameter, is on

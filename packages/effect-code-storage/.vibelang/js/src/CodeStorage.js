@@ -28,6 +28,7 @@
  *
  * @since 0.1.0
  */
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Exit from "effect/Exit";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -54,7 +55,8 @@ import * as Token from "./internal/token.js";
  *   a documented one (`sync_in_progress`, `repository_not_found`,
  *   `rate_limited`, ...), its generic code for the status otherwise, or one of
  *   this client's: `transport` (no answer), `invalid_response` (an answer it
- *   couldn't read), `too_large` (a file over `maxBytes`) and `invalid_key`
+ *   couldn't read), `too_large` (a file over `maxBytes`), `invalid_argument`
+ *   (a malformed repository name or invalid read limit) and `invalid_key`
  *   (the key didn't import). A code the docs don't list becomes the status's
  *   generic code, as the docs say to treat it.
  * - `unknownCode` is that undocumented code, kept for diagnosis only. Messages
@@ -131,7 +133,7 @@ export const config = Config.map(Config.all({
 }), ({ org, key, apiUrl }) => ({ org, key, apiUrl: Option.getOrUndefined(apiUrl) }));
 /**
  * The counter every call updates once: `code_storage_requests`, by
- * `operation` and `outcome` (`ok`, or the failure's code).
+ * `operation` and `outcome` (`ok`, `defect`, `interrupted`, or the failure's code).
  *
  * @category observability
  * @since 0.1.0
@@ -330,11 +332,18 @@ function make(credentials) {
                 Effect.fail(new CodeStorageError({ operation, code: "invalid_response", status })) :
                 Effect.succeed(page.next_cursor);
         /** One span and one count per call; the span names only the repository. */
-        const observe = (operation, repo, effect) => withSpan(Effect.onExit(effect, (exit) => Metric.update(Metric.withAttributes(requests, {
+        const observe = (operation, repo, effect) => withSpan(Effect.onExit(Effect.andThen(Effect.try({
+            try: () => encodeURIComponent(repo),
+            catch: () => new CodeStorageError({ operation, code: "invalid_argument" })
+        }), effect), (exit) => Metric.update(Metric.withAttributes(requests, {
             operation,
             outcome: Exit.isSuccess(exit) ?
                 "ok" :
-                Option.match(Exit.findErrorOption(exit), { onNone: () => "interrupted", onSome: (error) => error.code })
+                Cause.hasDies(exit.cause) ?
+                    "defect" :
+                    Cause.hasInterrupts(exit.cause) ?
+                        "interrupted" :
+                        Option.match(Exit.findErrorOption(exit), { onNone: () => "defect", onSome: (error) => error.code })
         }), 1)), `CodeStorage.${operation}`, { attributes: { "code_storage.repo": repo } });
         const params = (entries) => Object.fromEntries(Object.entries(entries).flatMap(([name, value]) => (value === undefined ? [] : [[name, String(value)]])));
         const gitBase = `https://${credentials.org}.code.storage`;
@@ -370,8 +379,8 @@ function make(credentials) {
                 const { body } = yield* readJson("createRepo", response, CreatedJson);
                 return { name: body.repo_name, created: response.status === 201 };
             })),
-            deleteRepo: (repo) => observe("deleteRepo", repo, Effect.asVoid(send("deleteRepo", repo, ["repo:write"], HttpClientRequest.delete(url(repo))))),
-            pullUpstream: (repo) => observe("pullUpstream", repo, Effect.asVoid(send("pullUpstream", repo, ["git:write"], HttpClientRequest.post(url(repo, "/upstream/pull"))))),
+            deleteRepo: (repo) => observe("deleteRepo", repo, Effect.suspend(() => Effect.asVoid(send("deleteRepo", repo, ["repo:write"], HttpClientRequest.delete(url(repo)))))),
+            pullUpstream: (repo) => observe("pullUpstream", repo, Effect.suspend(() => Effect.asVoid(send("pullUpstream", repo, ["git:write"], HttpClientRequest.post(url(repo, "/upstream/pull")))))),
             createBranch: (repo, options) => observe("createBranch", repo, Effect_1.gen(function* () {
                 const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url(repo, "/branches/create")), {
                     base_ref: options.from,

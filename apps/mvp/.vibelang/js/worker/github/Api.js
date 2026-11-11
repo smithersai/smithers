@@ -23,6 +23,7 @@ import { canAsk, refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as PersonalStore from "../personal/Store.js";
+import * as Cron from "../ci/Cron.js";
 import * as Dispatch from "../ci/Dispatch.js";
 import { FlowStarter, StartUnavailable } from "../Flows.js";
 import * as Notifications from "../Notifications.js";
@@ -53,7 +54,8 @@ import { Write } from "./Write.js";
 // - `POST /api/github/webhook`: GitHub's webhook. Verified with `X-Hub-Signature-256` (`Core.Channel` from
 //   `@smthrs/integrations`), it starts `github/Apply` for the issue it names, one execution per delivery, and records
 //   the delivery; it never writes a row itself. A payload names a subject; it never sets state. With `REPO_FLOWS` on, a
-//   push or a pull request also starts its `triggers/Dispatch` (worker/ci/Dispatch.ts).
+//   push or a pull request also starts its `triggers/Dispatch` (worker/ci/Dispatch.ts), and a push to the default
+//   branch its `triggers/Sync` (worker/ci/Cron.ts).
 // - `POST /api/repos/<owner>/<name>/writes`: the one door every git write goes through. It checks sign-in, the App,
 //   the person's role on the repository the path names (`RepoRoles`, decision 0079), the bounds and the payload's
 //   hash, records the write while that role holds, and starts `github/Write` keyed by the device's write id. The
@@ -507,6 +509,16 @@ export const make = (database, options) => Effect.gen(function* () {
                     payload: dispatch.value,
                 });
                 fields.dispatched = dispatch.value.repo;
+                // A push to the default branch may change its schedules: its own `triggers/Sync` registers them
+                // (docs/features/ci.md#schedules).
+                const sync = Cron.syncRequestOf(dispatch.value);
+                if (Option.isSome(sync)) {
+                    yield* (yield* FlowStarter).start(Cron.Sync, {
+                        executionId: Cron.syncExecutionId(deliveryId),
+                        payload: sync.value,
+                    });
+                    fields.synced = sync.value.repo;
+                }
             }
             // `main` moving and a new release reach everyone watching the repository (decision 0009 §8).
             const now = new Date(yield* Clock.currentTimeMillis);
@@ -1148,7 +1160,7 @@ export const make = (database, options) => Effect.gen(function* () {
                 source = actor.value.value.login ?? actor.value.value.subject.id;
             }
             else {
-                const machine = yield* MachineWrite.machineOf(request, target.id).pipe(Effect.provide(database), Effect.result);
+                const machine = yield* WriteAuthority.wait("runner_lookup", MachineWrite.machineOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result);
                 if (machine._tag === "Failure")
                     return refused(503, "unavailable");
                 if (Option.isSome(machine.success)) {

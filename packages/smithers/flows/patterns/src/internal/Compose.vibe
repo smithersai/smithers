@@ -365,19 +365,51 @@ export interface Label {
 const labelValue = (value: unknown): string => Array.isArray(value) ? value.map(String).join(",") : String(value)
 
 /**
- * Names a pattern flow the way the decorators name theirs: the pattern kind
- * and its declared bounds, `reviewLoop(maxRounds=3)`, unless the caller
- * supplied a `name`. An `undefined` field is left out of the label.
+ * The identity a pattern member carries: a flow names itself with `_tag` and
+ * an action with `name`.
  *
  * @since 1.0.0
  * @private
  */
-export const label = (kind: string, fields: Readonly<Record<string, unknown>>, options: Labeled): Label => ({
+export interface Named {
+  readonly _tag?: string | undefined
+  readonly name?: string | undefined
+}
+
+// A member name that could imitate the label's own separators is JSON-quoted,
+// so two different member lists never read as one label. An absent optional
+// member is an empty slot, which no quoted or `anonymous` name can be.
+const memberName = (member: Named | undefined): string => {
+  if (member === undefined) return ""
+  const name = member._tag || member.name || "anonymous"
+  return /^[^\s,=()"[\]]+$/.test(name) ? name : JSON.stringify(name)
+}
+
+/**
+ * Names a pattern flow the way the decorators name theirs: the pattern kind,
+ * its declared bounds and the members it calls,
+ * `reviewLoop(maxRounds=3)[draft, critique, draft]`, unless the caller
+ * supplied a `name`. An `undefined` field is left out of the label; an
+ * `undefined` member keeps its slot empty.
+ *
+ * The engine resolves a flow by its tag, so the members are part of the
+ * default: two unnamed patterns of one kind with equal bounds but different
+ * members are two flows, not one tag whose last registration runs for both.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const label = (
+  kind: string,
+  fields: Readonly<Record<string, unknown>>,
+  options: Labeled,
+  members: ReadonlyArray<Named | undefined>
+): Label => ({
   name: options.name ?? `${kind}(${
     Object.entries(fields)
       .filter(([, value]) => value !== undefined)
       .map(([key, value]) => `${key}=${labelValue(value)}`)
       .join(", ")
-  })`,
+  })[${members.map(memberName).join(", ")}]`,
   description: options.description
 })

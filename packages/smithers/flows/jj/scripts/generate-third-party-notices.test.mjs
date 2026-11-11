@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -13,6 +13,8 @@ test("notices follow Cargo's wasm normal/build closure and --check detects drift
     mkdirSync(join(root, "packages/smithers/flows/jj/scripts"), { recursive: true })
     cpSync(join(repoRoot, "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"), join(root, "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"))
     cpSync(join(repoRoot, "packages/repo-targets/scripts/workspace-packages.mjs"), join(root, "packages/repo-targets/scripts/workspace-packages.mjs"))
+    // The membership reader imports the pinned `yaml` and `tinyglobby`.
+    symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "dir")
     cpSync(join(repoRoot, "packages/smithers/flows/jj/scripts/third-party-notices.template.md"), join(root, "packages/smithers/flows/jj/scripts/third-party-notices.template.md"))
     const crates = ["flows-jj", "normal", "build", "dev", "native"]
     writeFileSync(join(root, "Cargo.toml"), `[workspace]\nresolver = "3"\nmembers = ${JSON.stringify(crates)}\n`)

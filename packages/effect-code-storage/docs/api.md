@@ -33,6 +33,10 @@ interface Client {
   readonly pullUpstream: (repo: string) => Effect.Effect<void, CodeStorageError>
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
+  readonly streamFile: (repo: string, options: Omit<ReadFileOptions, "maxBytes">) => Effect.Effect<{
+    readonly stream: Stream.Stream<Uint8Array, CodeStorageError>
+    readonly blobSha: string | undefined
+  }, CodeStorageError>
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
   readonly listBranches: (repo: string, options?: ListBranchesOptions) => Effect.Effect<BranchesPage, CodeStorageError>
   readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
@@ -60,6 +64,11 @@ interface Client {
 - `listFiles` lists one page of the tree. `nextCursor` is set when there is
   another page.
 - `readFile` reads one file's bytes, up to `maxBytes`.
+- `streamFile` returns `{ stream, blobSha }` without buffering or a preview cap.
+  Its Effect stream consumes chunks on demand, counts consumed bytes and fails
+  with `CodeStorageError` code `transport` if the body breaks off. The consumer
+  owns its byte budget and cancellation; stopping the stream cancels the body.
+  See [stream an original file](guides/stream-file.md).
 - `listCommits` lists one page of commits, newest first.
 - `listBranches` lists one page of branches, each with its head commit.
 - `gitRemote` signs a five-minute `git:read` token for `repo` and returns
@@ -76,6 +85,10 @@ interface Client {
   `ref_not_found`. `force: true` moves a branch that exists to `from` instead,
   fast-forward or not (the provider's `force`); moving it to where it is
   changes nothing.
+
+Every API operation rejects a repository name containing an unpaired UTF-16
+surrogate with `invalid_argument` before sending HTTP. `gitRemote` keeps its
+infallible public type and requires a well-formed repository name.
 
 ### `CodeStorage.Credentials` and `CodeStorage.config`
 
@@ -230,6 +243,8 @@ const isTransient: (error: CodeStorageError) => boolean
     - `invalid_response`: a body over 8 MiB, not JSON, or not the documented
       shape;
     - `too_large`;
+    - `invalid_argument`: a malformed repository name or invalid `readFile`
+      `maxBytes` (not a finite, non-negative safe integer);
     - `invalid_key`.
 - **`retryAfterMillis`** is the server's `Retry-After` in milliseconds, from
   delta-seconds or an HTTP date. `@smthrs/flow`'s `RetryPolicy` reads this
@@ -241,7 +256,7 @@ const isTransient: (error: CodeStorageError) => boolean
   is used only when it is a snake_case identifier.
 - **`isTransient`** is true for `transport`, `request_timeout`,
   `rate_limited`, `sync_in_progress`, `repository_thawing`,
-  `authentication_unavailable` and any 5xx.
+  `authentication_unavailable` and HTTP 500, 502, 503 and 504.
 
 ### `CodeStorage.requests`
 
@@ -249,7 +264,7 @@ const isTransient: (error: CodeStorageError) => boolean
 const requests: Metric.Counter<number>
 ```
 
-`code_storage_requests`: one count per call, by `operation` and `outcome` (`ok`, `interrupted`, or the failure's code).
+`code_storage_requests`: one count per call, by `operation` and `outcome` (`ok`, `defect`, `interrupted`, or the failure's code).
 
 ### `CodeStorage.bytesRead`
 
@@ -347,7 +362,7 @@ class GitRemoteError extends Schema.TaggedError<GitRemoteError>()("@smthrs/effec
 const requests: Metric.Counter<number>
 ```
 
-`git_remote_requests`: one count per `head` or `ref`, by `outcome` (`ok`, `interrupted`, or the failure's code). Each call is also one span, `GitRemote.head` or `GitRemote.ref`, with the attribute `git.remote`.
+`git_remote_requests`: one count per `head` or `ref`, by `outcome` (`ok`, `defect`, `interrupted`, or the failure's code). Each call is also one span, `GitRemote.head` or `GitRemote.ref`, with the attribute `git.remote`.
 
 ## `GitProxy`
 
@@ -391,8 +406,10 @@ const requests: Metric.Counter<number>
 `upload-pack` or `refused`) and `outcome` (`ok`, `refused`, the upstream's
 status class such as `4xx`, `transport`, or `broken` for an answer that broke
 off), counted once the answer's body has ended. Each request is also one span,
-`GitProxy.uploadPack`, and one log line, `git.proxy`, with the service, the
-outcome, the status and the duration.
+`GitProxy.uploadPack`, annotated with `git.proxy.service` and
+`http.response.status_code` before the headers are returned. The span ends at
+the headers; one log line, `git.proxy`, records the service, outcome, status and
+duration through the end of the body.
 
 ### Ref namespaces
 

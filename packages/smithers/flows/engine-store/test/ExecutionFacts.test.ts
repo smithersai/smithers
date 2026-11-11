@@ -282,7 +282,10 @@ describe("native facts over file SQLite", () => {
               ...journal,
               emitDurableUnfenced: (input) => {
                 const payload = input.payload as { decision?: string; status?: string }
-                return payload.decision === "transitioned" && payload.status === "suspended"
+                // The release the dead drive then attempts (issue #4773) is
+                // refused too, so the rollback stays observable.
+                return (payload.decision === "transitioned" && payload.status === "suspended") ||
+                    payload.decision === "interrupt-released"
                   ? journal.emitDurableUnfenced(input).pipe(
                     Effect.andThen(
                       Effect.fail(new Journal.JournalError({ code: "sink_failed", message: "after suspension insert" }))

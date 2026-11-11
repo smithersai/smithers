@@ -351,7 +351,7 @@ export const make = (options) => {
         throw new PatternError({ code: "invalid_decorator", message: "Burndown signal must be a nonblank name" });
     }
     const captures = { maxRounds, signal: signalName, capacity: capacity !== undefined };
-    const { name, description } = Compose.label("burndown", { maxRounds, capacity: capacity !== undefined }, options);
+    const { name, description } = Compose.label("burndown", { maxRounds, capacity: capacity !== undefined }, options, [discover, dispatcher, capacity]);
     const body = (payload) => {
         const round = payload.round ?? 0;
         const rows = payload.rows ?? [];
@@ -880,6 +880,11 @@ export const round = (input, options) => {
  * execution id the round hands it, so a rerun reattaches instead of
  * duplicating.
  *
+ * For a declared flow the work output is the flow's success, so `land` and
+ * `detail` read it at that type. Bind the member to a constant before the
+ * round options when `land` or `detail` leave their arguments unannotated;
+ * written inline, TypeScript reads those arguments as `unknown`.
+ *
  * @category constructors
  * @since 1.0.0
  */
@@ -889,6 +894,11 @@ export const child = (flow, payload) => (args) => flow.execute(payload(args), { 
  *
  * The dispatch payload's `items` is read as the round's backlog, so `round`'s
  * input checks are what refuse a malformed discovery.
+ *
+ * The members name the input's type, as they name the item's: annotate one
+ * member's argument with {@link ItemArgs} and the rest infer it. The lineage
+ * decoded that input with the payload schema of its discovery member before
+ * the first round, so the members read what discovery read.
  *
  * @category layers
  * @since 1.0.0

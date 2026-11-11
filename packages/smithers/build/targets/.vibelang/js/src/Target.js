@@ -759,11 +759,12 @@ const sourceSite = () => {
         catch {
             continue;
         }
-        // PACKAGE.ts and WORKSPACE.ts are the routed declarations. The site is
-        // diagnostic context only — build-system
-        // labels come exclusively from the package index, never from this stack.
+        // Package declarations (PACKAGE.ts, PACKAGE.vibe) and WORKSPACE.ts are
+        // the routed declarations. The site is diagnostic context only —
+        // build-system labels come exclusively from the package index, never
+        // from this stack.
         const basename = NodePath.basename(file);
-        if (basename !== "PACKAGE.ts" && basename !== "WORKSPACE.ts")
+        if (!Input.isDeclarationFileName(basename) && basename !== "WORKSPACE.ts")
             continue;
         const positive = (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
         return { path: NodePath.resolve(file), line: positive(site.lineNumber), column: positive(site.columnNumber) };

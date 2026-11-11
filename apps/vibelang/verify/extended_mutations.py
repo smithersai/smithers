@@ -5619,3 +5619,20 @@ cases.extend([('src/core/accountCookieDecision.vibe', *case) for case in [
 ('presented-insecure-none', 'presentedSession', '? plain : host', '? plain : undefined', 'local HTTP falls back to the host cookie'),
 ('presented-prefer', 'presentedSession', 'plain !== undefined ? plain : host', 'host !== undefined ? host : plain', 'the plain cookie outranks the host cookie on HTTP'),
 ]])
+
+# Lane vl-proveall3, batch 20: specification admission and review answers.
+cases.extend([('src/core/specificationDecision.vibe', *case) for case in [
+('spec-key', 'specificationRefusal', 'if (key === "" || requested !== current) return "review"', 'if (requested !== current) return "review"', 'a missing key is refused'),
+('spec-stale', 'specificationRefusal', 'if (key === "" || requested !== current) return "review"', 'if (key === "") return "review"', 'a stale revision is refused'),
+('spec-stale-order', 'specificationRefusal', 'if (key === "" || requested !== current) return "review"\n', '', 'staleness outranks invalid input'),
+('spec-blank', 'specificationRefusal', 'blank || current >= 9007199254740991', 'current >= 9007199254740991', 'a blank revision is invalid'),
+('spec-exhausted', 'specificationRefusal', 'blank || current >= 9007199254740991', 'blank || current > 9007199254740991', 'the last safe revision cannot advance'),
+('spec-reviewer', 'specificationRefusal', '!hasReviewer || current === 0', 'current === 0', 'a review names its reviewer'),
+('spec-unwritten', 'specificationRefusal', '!hasReviewer || current === 0', '!hasReviewer', 'no review before the first revision'),
+('spec-revise-branch', 'specificationRefusal', 'if (revise) return', 'if (!revise) return', 'revisions and reviews have their own rules'),
+('answer-revision', 'reviewAnswerAccepted', 'answered === current && ', '', 'an answer for another revision is refused'),
+('answer-verdict', 'reviewAnswerAccepted', 'verdict !== "" && ', '', 'an answer needs a verdict'),
+('answer-link', 'reviewAnswerAccepted', ' && link !== ""', '', 'an answer needs a link'),
+('grade-opus', 'scriptedGrade', 'reviewer === "opus" && ', '', 'only Opus starts at B+'),
+('grade-first', 'scriptedGrade', ' && previousVerdict === ""', '', 'only the first Opus review is B+'),
+]])

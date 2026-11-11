@@ -1,0 +1,11 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// A wait addressed to a person (decision 0031 §6, docs/features/agent-status.md#addressed-waits): `addressed_to` is the
+// subject id of the person a run asks, as `launched_by` holds its launcher's. A row that names one is answered by that
+// person alone, and the runs shape gives it to them. Only `queue/ask` rows have one, so the index holds only those.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`ALTER TABLE runs ADD COLUMN addressed_to text CHECK (length(addressed_to) BETWEEN 1 AND 256)`
+  yield* sql`CREATE INDEX runs_addressed_to ON runs (addressed_to) WHERE addressed_to IS NOT NULL`
+})

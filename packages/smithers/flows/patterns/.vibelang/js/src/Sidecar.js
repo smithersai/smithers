@@ -22,6 +22,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
@@ -91,8 +92,9 @@ export const delta = (primary, shadow) => {
  * The score call is the settled arm of a `Node.branch` on the real shadow, so a
  * quarantined shadow is never scored, as in {@link run}. The declared result
  * is `{ primary, shadow, delta? }`, which is {@link Result}, except that a
- * quarantined shadow carries its typed `error` where `run` carries the whole
- * `Cause`: a cause does not cross the declared wire.
+ * quarantined shadow carries its typed `error`, as the data the shadow's error
+ * schema encodes it to, where `run` carries the whole `Cause`: a cause does
+ * not cross the declared wire.
  *
  * @category constructors
  * @since 0.1.0
@@ -102,10 +104,18 @@ export const make = (options) => {
     // these snapshots and never the caller's options again.
     const declared = { primary: options.primary, shadow: options.shadow };
     const score = options.score;
-    const { name, description } = Compose.label("sidecar", { scores: score !== undefined }, options);
+    const wire = Failure.wire([declared.shadow]);
+    const { name, description } = Compose.label("sidecar", { scores: score !== undefined }, options, [
+        declared.primary,
+        declared.shadow,
+        score
+    ]);
     const body = ({ input }) => {
         const shadow = Node.catch(Node.map(callMember(declared.shadow, input), Node.capture({ shadow: "settled" }, (value) => ({ quarantined: false, value }))), {
-            onFailure: Node.capture({ shadow: "quarantined" }, (error) => Node.succeed({ quarantined: true, error }))
+            // The error is a planned reference until the run produces it, so the
+            // marker a plan reader sees is declared here and a mapper encodes the
+            // real error.
+            onFailure: Node.capture({ shadow: "quarantined" }, (error) => Node.map(Node.succeed({ quarantined: true, error }), Node.capture({ shadow: "quarantined" }, (settled) => ({ quarantined: true, error: wire(settled.error) }))))
         });
         // The delta is computed on the REAL scores, and the pair beside it is
         // carried as planned references: a mapper that closed over the pair would
@@ -143,7 +153,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [declared.primary, declared.shadow, score]),
         body: Node.capture({ scores: score !== undefined }, body)
     });
 };

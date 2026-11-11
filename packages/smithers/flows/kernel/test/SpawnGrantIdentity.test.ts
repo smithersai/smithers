@@ -9,7 +9,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
-import { Effect, Layer, Option, Path, type PlatformError, Sink, Stream } from "effect"
+import { Cause, Effect, FileSystem, Layer, Option, Path, type PlatformError, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import {
   ChildProcessSpawner as HostChildProcessSpawner,
@@ -215,57 +215,64 @@ describe("proc:spawn grant identity", () => {
       expect(inside.exit._tag).toBe("Success")
     }))
 
-  it.effect("a grant does not follow the command through a workspace symlink that leads out", () =>
-    Effect.gen(function*() {
-      const base = NodeFs.mkdtempSync(NodePathModule.join(NodeOs.tmpdir(), "spawn-cwd-"))
-      const workspace = NodePathModule.join(base, "workspace")
-      const other = NodePathModule.join(base, "other-repo")
-      NodeFs.mkdirSync(NodePathModule.join(workspace, "sub"), { recursive: true })
-      NodeFs.mkdirSync(other)
-      NodeFs.symlinkSync(other, NodePathModule.join(workspace, "link"))
-      const realOther = NodeFs.realpathSync(other)
-      const onDisk = (rules: ReadonlyArray<Permission.Rule>, command: ChildProcess.Command) =>
-        Effect.gen(function*() {
-          spawned.length = 0
-          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-          const exit = yield* Effect.exit(spawner.exitCode(command))
-          return { exit, spawned: spawned.length }
-        }).pipe(
-          Effect.provide(
-            ChildProcessSpawner.layer.pipe(
-              Layer.provide(ProcessConfinement.layerNoop),
-              Layer.provide(GrantStore.layer({ attended: false, rules })),
-              Layer.provide([
-                Workspace.layer(workspace),
-                NodePath.layer,
-                NodeFileSystem.layer,
-                Layer.succeed(HostChildProcessSpawner)(host)
-              ])
+  it.effect.each(["other-repo", "other repo", "other-repo'quoted"])(
+    "a grant does not follow the command through a workspace symlink that leads out (%s)",
+    (directory) =>
+      Effect.gen(function*() {
+        const base = NodeFs.mkdtempSync(NodePathModule.join(NodeOs.tmpdir(), "spawn-cwd-"))
+        const workspace = NodePathModule.join(base, "workspace")
+        const other = NodePathModule.join(base, directory)
+        NodeFs.mkdirSync(NodePathModule.join(workspace, "sub"), { recursive: true })
+        NodeFs.mkdirSync(other)
+        NodeFs.symlinkSync(other, NodePathModule.join(workspace, "link"))
+        const realOther = yield* Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath(other)).pipe(
+          Effect.provide(NodeFileSystem.layer)
+        )
+        const onDisk = (rules: ReadonlyArray<Permission.Rule>, command: ChildProcess.Command) =>
+          Effect.gen(function*() {
+            spawned.length = 0
+            const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+            const exit = yield* Effect.exit(spawner.exitCode(command))
+            return { exit, spawned: spawned.length }
+          }).pipe(
+            Effect.provide(
+              ChildProcessSpawner.layer.pipe(
+                Layer.provide(ProcessConfinement.layerNoop),
+                Layer.provide(GrantStore.layer({ attended: false, rules })),
+                Layer.provide([
+                  Workspace.layer(workspace),
+                  NodePath.layer,
+                  NodeFileSystem.layer,
+                  Layer.succeed(HostChildProcessSpawner)(host)
+                ])
+              )
             )
           )
-        )
-      try {
-        const linked = ChildProcess.make("git", ["status"], { cwd: NodePathModule.join(workspace, "link") })
-        const bare = yield* onDisk([allow("git status")], linked)
-        expect(refused(bare)).toBe(true)
-        expect(bare.spawned).toBe(0)
-        const named = yield* onDisk([allow(`cwd ${CommandLine.quote(realOther)} -- git status`)], linked)
-        expect(named.exit._tag).toBe("Success")
-        // The same directory reached through its real path (/private/... on
-        // macOS) is still inside the workspace.
-        const real = yield* onDisk(
-          [allow("git status")],
-          ChildProcess.make("git", ["status"], { cwd: NodeFs.realpathSync(NodePathModule.join(workspace, "sub")) })
-        )
-        expect(real.exit._tag).toBe("Success")
-        // A directory that does not exist yet cannot be resolved, so it is judged lexically.
-        const missing = yield* onDisk(
-          [allow("git status")],
-          ChildProcess.make("git", ["status"], { cwd: NodePathModule.join(workspace, "not-yet") })
-        )
-        expect(missing.exit._tag).toBe("Success")
-      } finally {
-        NodeFs.rmSync(base, { recursive: true, force: true })
-      }
-    }))
+        try {
+          const linked = ChildProcess.make("git", ["status"], { cwd: NodePathModule.join(workspace, "link") })
+          const bare = yield* onDisk([allow("git status")], linked)
+          expect(refused(bare)).toBe(true)
+          expect(bare.spawned).toBe(0)
+          const named = yield* onDisk([allow(`cwd ${CommandLine.quote(realOther)} -- git status`)], linked)
+          expect(named.exit._tag, named.exit._tag === "Failure" ? Cause.pretty(named.exit.cause) : undefined).toBe(
+            "Success"
+          )
+          // The same directory reached through its real path (/private/... on
+          // macOS) is still inside the workspace.
+          const real = yield* onDisk(
+            [allow("git status")],
+            ChildProcess.make("git", ["status"], { cwd: NodeFs.realpathSync(NodePathModule.join(workspace, "sub")) })
+          )
+          expect(real.exit._tag).toBe("Success")
+          // A directory that does not exist yet cannot be resolved, so it is judged lexically.
+          const missing = yield* onDisk(
+            [allow("git status")],
+            ChildProcess.make("git", ["status"], { cwd: NodePathModule.join(workspace, "not-yet") })
+          )
+          expect(missing.exit._tag).toBe("Success")
+        } finally {
+          NodeFs.rmSync(base, { recursive: true, force: true })
+        }
+      })
+  )
 })

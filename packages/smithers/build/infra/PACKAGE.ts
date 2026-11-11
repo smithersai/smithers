@@ -9,6 +9,7 @@
  */
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
+import { sourceFiles as cliSources, testHelpers as cliTestHelpers } from "../build-cli/SourceInputs.ts"
 
 const cwd = "packages/smithers/build/infra"
 
@@ -36,11 +37,11 @@ const sources = [
   Smithers.file("tsconfig.node.json"),
   Smithers.file("tsconfig.test.json"),
   Smithers.file("tsconfig.contract.json"),
-  // `worker/test/cli-contract.test.ts` drives the real CLI client against the
-  // handler, so a client change must re-run the suite.
-  Smithers.file("//packages/smithers/build/build-cli/src/Cache.ts"),
-  Smithers.file("//packages/smithers/build/build-cli/src/internal/Fs.ts")
+  Smithers.file("//packages/repo-targets/src/vibelang-eslint.d.ts"),
 ]
+
+/** Owning source group for protocol consumers outside this package. */
+const sourceFiles = Smithers.Filegroup({ srcs: sources, cwd })
 
 /**
  * Checks the workspace against its own tsconfig.
@@ -50,7 +51,7 @@ const sources = [
  */
 const check = Smithers.Typecheck({
   srcs: sources,
-  deps: [],
+  deps: [cliSources, cliTestHelpers],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: true,
   incremental: false,
@@ -69,7 +70,7 @@ const suite = Smithers.Vitest({
     Smithers.glob("//packages/smithers/build/infra/scripts/**/*.test.ts")
   ],
   sources,
-  deps: [],
+  deps: [cliSources, cliTestHelpers],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,
@@ -295,6 +296,7 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     suite,
+    sourceFiles,
     ...securityReview
   }
 })

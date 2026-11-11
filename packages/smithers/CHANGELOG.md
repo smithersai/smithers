@@ -4,6 +4,13 @@
 
 ### Added
 
+- `smthrs --mcp` serves `memory_list`, `memory_get`, `memory_set`, and
+  `memory_recall`, so agent CLIs registered with `smthrs mcp add` save and
+  recall shared facts. A memory tool call that names `root` is refused (#4582).
+- `smthrs mcp add --memory-db <file>` records the memory store in each
+  registered entry (default: `SMITHERS_MEMORY_DB`), and
+  `@smthrs/cli/Agents` exports `serverEnvironment`; `manualInstructions`
+  accepts the registering environment (#4582).
 - `@smthrs/agent/Budget` exports `reportsTokens`, and `Usage.unreported`
   counts the calls whose provider reported no usable token count, live and after
   recovery, so a caller can tell a free call from an unreported one.
@@ -68,6 +75,9 @@
 
 ### Fixed
 
+- `smthrs mcp add --agent claude` writes `$CLAUDE_CONFIG_DIR/.claude.json` for
+  a Claude Code profile instead of `~/.claude.json`, which that profile never
+  reads (#4582).
 - A host sealed to a container (`SMITHERS_BASH_CONTAINER`) offers the file
   flows on that container's files when `SMITHERS_TEST_CWD` names the
   repository inside it: `read`, `edit`, `apply_patch`, `grep` and the rest

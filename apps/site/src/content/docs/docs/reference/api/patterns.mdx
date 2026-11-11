@@ -33,9 +33,14 @@ Most containers still export a pair. `Optimizer` and `ScanFixVerify` export
 A planner reads `make`. Execute a declared flow on the engine. The remaining
 `run` forms perform their callbacks as Effects. Every `make` takes one options
 object, and every `MakeOptions` accepts an optional `name` and `description`
-for the returned `Flow`. An unnamed pattern is named after its kind and its
-declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
-`saga(steps=reserve,charge, onFailure=compensate)`. The paired surfaces use the
+for the returned `Flow`. An unnamed pattern is named after its kind, its
+declared bounds and the tags of the members it calls, the way the decorators
+name theirs: `reviewLoop(maxRounds=3)[draft, critique, draft]`,
+`saga(steps=reserve,charge, onFailure=compensate)[reserve, release, charge, refund]`.
+The engine resolves a flow by its tag, so two unnamed patterns of one kind with
+equal bounds but different members are two flows. An absent optional member
+leaves its slot empty, and a member tag that contains a space, `,`, `=`, a
+parenthesis, a bracket or `"` is JSON-quoted. The paired surfaces use the
 same behavioral option names with call-shape differences: `Kanban` declares
 `items` in its `make` options, because a static declaration needs them to lay
 out the board, and `run` receives them as its first argument, the runtime
@@ -130,11 +135,22 @@ to read to repair a plan. All three carry a `code` from a stable literal
 schema, a `message`, and an optional `cause`. Causes can preserve member
 errors and results that contain caller input; patterns do not redact them.
 
+A declared pattern's error schema is the union of `PatternError` and the error
+schema each member declares, so a durable engine journals a member's tagged
+error and the pattern fails with that error. A declared pattern that catches a
+member error and reports it instead carries it as the data the member's error
+schema encodes it to: a tagged error class becomes a plain record with its
+`_tag`. That covers a saga's `Compensated.failure` and the `failure` and
+`residue` of `compensation_failed`, a quarantined sidecar shadow's `error`, a
+supervisor's `Failed` outcome, a check suite's `errors`, a kanban board's
+`failed` rows, and a merge queue's `quarantined` rows. `run` reports the
+original values.
+
 ### `PatternError`
 
 `PatternError` carries a `code` from `PatternErrorCode`, a message, and an
 optional `cause` with the reported error or errors.
-Member errors retain their original values, including any input they hold.
+Member errors keep every field, including any input they hold.
 
 | Code                  | Raised when                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -386,7 +402,9 @@ original failure under `compensate-and-fail`. Step values are nested under
 
 `Saga.run(input, { steps, onFailure })` registers one scope finalizer per
 completed step, so the unwind is LIFO and runs on interruption as well as on
-failure. A compensation that dies or whose callback throws before returning an
+failure. An interrupted run cannot fail with
+`compensation_failed`, so it logs the failed step ids at error level and adds
+them to the current span as `saga.compensation_failed`. A compensation that dies or whose callback throws before returning an
 effect is recorded as a failed compensation rather
 than raised as a defect, so the residue still names it and the finalizers
 behind it still run. See

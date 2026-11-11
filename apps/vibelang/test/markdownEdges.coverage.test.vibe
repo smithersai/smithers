@@ -19,6 +19,13 @@ describe("lists", () => {
     ] }])
   })
 
+  it("a change of marker starts a new list: dashes then numbers are a bulleted list and then an ordered one", () => {
+    assert(compile("- one\n1. first\n2. second\n- two")).toEqual([
+      { tag: "ul", children: [{ tag: "li", children: ["one"] }] },
+      { tag: "ol", children: [{ tag: "li", children: ["first"] }, { tag: "li", children: ["second"] }] },
+      { tag: "ul", children: [{ tag: "li", children: ["two"] }] },
+    ])
+  })
   it("a ruling item is its own anchor, so a link can open it", () => {
     assert(compile("1. **VL-7.** Mock mode always works.")).toEqual([{ tag: "ol", children: [
       { tag: "li", id: "vl-7", children: [{ tag: "strong", children: ["VL-7."] }, " Mock mode always works."] },

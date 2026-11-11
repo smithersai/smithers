@@ -3,8 +3,10 @@ const same = (left, right) => left.toLowerCase() === right.toLowerCase();
 export function grantOf(grants, repository) {
     return grants.find((grant) => same(grant.repository, repository));
 }
+// The URL parser drops tab, LF and CR before it resolves dot segments, so `.<tab>.` would reach GitHub as `..`.
+const control = (char) => char < " " || char === "\x7f";
 function safePath(path) {
-    if (path.includes("\\") || path.includes("%"))
+    if (path.includes("\\") || path.includes("%") || [...path].some(control))
         return false;
     return path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && segment.toLowerCase() !== ".github");
 }

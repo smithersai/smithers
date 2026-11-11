@@ -129,7 +129,7 @@ export const parseFileReadArgs = (
   if (token === undefined) return { error: "file needs a file path" }
   if (tokens.length > 2) return { error: "file takes a path and optionally an owner/repo" }
   const anchor = /^(.*?):(\d+)(?::(\d+))?$/.exec(token)
-  const path = anchor === null ? token : anchor[1] ?? ""
+  const path = anchor === null ? token : anchor[1]!
   if (path === "") return { error: "file needs a file path" }
   const line = anchor === null ? undefined : Number(anchor[2])
   const column = anchor?.[3] === undefined ? undefined : Number(anchor[3])

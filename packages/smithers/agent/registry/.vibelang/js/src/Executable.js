@@ -275,10 +275,11 @@ let loadSequence = 0;
  * relative to a pinned parent descriptor without following one, so a name an
  * attacker pre-creates costs this load an attempt and reaches nothing.
  */
-const reserveSibling = (fs, prefix, extension, attempts = 8) => Effect.suspend(() => {
+const reserveSibling = (fs, prefix, extension, attempts = 8) => Effect_1.gen(function* () {
     loadSequence += 1;
-    const candidate = `${prefix}${loadSequence.toString(36)}-${Date.now().toString(36)}${extension}`;
-    return fs.writeFile(candidate, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(Effect.as(candidate), Effect.catch((cause) => attempts > 1 ? reserveSibling(fs, prefix, extension, attempts - 1) : Effect.fail(cause)));
+    const now = yield* Clock.currentTimeMillis;
+    const candidate = `${prefix}${loadSequence.toString(36)}-${now.toString(36)}${extension}`;
+    return yield* fs.writeFile(candidate, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(Effect.as(candidate), Effect.catch((cause) => attempts > 1 ? reserveSibling(fs, prefix, extension, attempts - 1) : Effect.fail(cause)));
 });
 /**
  * How old a load sibling must be before a later load may remove it.
@@ -288,19 +289,31 @@ const reserveSibling = (fs, prefix, extension, attempts = 8) => Effect.suspend((
  * concurrent load in another process from losing the file mid-import.
  */
 const staleSiblingAgeMs = 10 * 60 * 1000;
-/** `smithers-<digest>-<sequence>-<base-36 epoch ms><extension>`, as {@link reserveSibling} names it. */
-const loadSibling = /^\.?smithers-.+-[0-9a-z]+-([0-9a-z]+)\.[A-Za-z0-9]+$/;
 /**
- * Removes the load siblings a crash left in `directory`. Best effort: a
- * listing or an unlink that fails leaves the file for the next load.
+ * `smithers-<SHA-256 hex>-<sequence>-<base-36 epoch ms><extension>`, exactly
+ * as {@link reserveSibling} names it. The 64-digit digest keeps a user file
+ * such as `smithers-agent-flow-helper.ts` out of the sweep, and the 8 or 9
+ * digit stamp spans the epoch milliseconds of 1972 to 5188.
  */
-const removeStaleSiblings = (fs, path, directory) => fs.readDirectory(directory).pipe(Effect.flatMap((names) => Effect.forEach(names, (name) => {
-    const stamp = loadSibling.exec(name)?.[1];
-    const createdAt = stamp === undefined ? Number.NaN : Number.parseInt(stamp, 36);
-    return Number.isFinite(createdAt) && Date.now() - createdAt > staleSiblingAgeMs
-        ? Effect.ignore(fs.remove(path.join(directory, name)))
-        : Effect.void;
-}, { discard: true })), Effect.ignore);
+const loadSibling = /^smithers-[0-9a-f]{64}-[0-9a-z]+-([0-9a-z]{8,9})\.[A-Za-z0-9]+$/;
+/**
+ * Removes the load siblings a crash left in `directory`. Only a regular file
+ * whose name {@link loadSibling} matches and whose stamp is older than
+ * {@link staleSiblingAgeMs} goes; a stamp in the future reads as fresh. Best
+ * effort: a listing, stat or unlink that fails leaves the file for the next
+ * load.
+ */
+const removeStaleSiblings = (fs, path, directory) => Effect_1.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const names = yield* fs.readDirectory(directory);
+    yield* Effect.forEach(names, (name) => {
+        const stamp = loadSibling.exec(name)?.[1];
+        if (stamp === undefined || now - Number.parseInt(stamp, 36) <= staleSiblingAgeMs)
+            return Effect.void;
+        const sibling = path.join(directory, name);
+        return fs.stat(sibling).pipe(Effect.flatMap((info) => info.type === "File" ? fs.remove(sibling) : Effect.void), Effect.ignore);
+    }, { discard: true });
+}).pipe(Effect.ignore);
 /**
  * Evaluates a verified closure as one coherent version.
  *
@@ -595,16 +608,21 @@ const verifyImports = (descriptor, path, bytes, recorded) => Effect_1.gen(functi
     const platformPath = yield* Path.Path;
     const entryPath = path.startsWith("file:")
         ? yield* Effect.orDie(Effect.flatMap(Effect.try({ try: () => new URL(path), catch: keepDefect }), (url) => platformPath.fromFileUrl(url))) : platformPath.normalize(path);
+    const cannotPin = (entry) => Effect.fail(refuse({
+        code: "body_unavailable",
+        flow: descriptor.name,
+        path,
+        message: `flow "${descriptor.name}" runs code this host cannot pin: ${entry.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
+    }));
+    // Discovery already refused to measure this load, for instance one that
+    // leaves a pack's root. Measuring it here would read the file it declined.
+    const unmeasured = recorded.find((entry) => entry.contentDigest === undefined);
+    if (unmeasured !== undefined)
+        return yield* cannotPin(unmeasured);
     const { imports: measured, modules, unsupported } = yield* ModuleClosure.snapshot(fs, platformPath, entryPath, bytes);
     const unpinnable = measured.find((entry) => entry.contentDigest === undefined);
-    if (unpinnable !== undefined) {
-        return yield* Effect.fail(refuse({
-            code: "body_unavailable",
-            flow: descriptor.name,
-            path,
-            message: `flow "${descriptor.name}" runs code this host cannot pin: ${unpinnable.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
-        }));
-    }
+    if (unpinnable !== undefined)
+        return yield* cannotPin(unpinnable);
     const pinned = new Map(recorded.map((entry) => [entry.path, entry.contentDigest]));
     const changed = measured.find((entry) => pinned.get(entry.path) !== entry.contentDigest)?.path ??
         [...pinned.keys()].find((recordedPath) => measured.every((entry) => entry.path !== recordedPath));
@@ -626,23 +644,45 @@ const verifyImports = (descriptor, path, bytes, recorded) => Effect_1.gen(functi
     }
     return modules;
 });
+/**
+ * A restored closure keyed by this descriptor's own locators.
+ *
+ * A snapshot manifest stores absolute paths, and the loader writes each module
+ * beside the path it is keyed by. The store is not evidence of where approved
+ * code lives, so only each module's position relative to the entry is kept
+ * (restore checked those against the descriptor) and the closure is placed at
+ * the entry this descriptor names.
+ */
+const relocated = (platformPath, restored, entry) => {
+    const place = (file) => platformPath.resolve(platformPath.dirname(entry), platformPath.relative(platformPath.dirname(restored.entry), file));
+    return {
+        entry,
+        bytes: restored.bytes,
+        modules: new Map([...restored.modules].map(([file, module]) => [place(file), {
+                ...module,
+                links: module.links.map((link) => ({ ...link, target: place(link.target) }))
+            }]))
+    };
+};
 const loadModule = (descriptor, path, recorded, options, approvedDigest) => Effect_1.gen(function* () {
     const platformPath = yield* Path.Path;
+    const located = path.startsWith("file:")
+        ? Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url)).pipe(Effect.mapError((cause) => refuse({
+            code: "body_unavailable",
+            flow: descriptor.name,
+            path,
+            message: "Invalid module source locator",
+            cause
+        })))
+        : Effect.succeed(platformPath.resolve(path));
     const source = yield* Effect_1.gen(function* () {
         const bytes = yield* sourceBytes(descriptor, path);
         const modules = yield* verifyImports(descriptor, path, bytes, recorded);
-        const entry = path.startsWith("file:")
-            ? yield* platformPath.fromFileUrl(new URL(path)).pipe(Effect.mapError((cause) => refuse({
-                code: "body_unavailable",
-                flow: descriptor.name,
-                path,
-                message: "Invalid module source locator",
-                cause
-            }))) : platformPath.resolve(path);
+        const entry = yield* located;
         return { entry, bytes, modules, loadPath: path.startsWith("file:") ? path : platformPath.resolve(path) };
     }).pipe(Effect.catch((error) => options.snapshots === undefined || approvedDigest === undefined ?
         Effect.fail(error)
-        : options.snapshots.restore(approvedDigest).pipe(Effect.mapError((cause) => snapshotFailure(error, cause)))));
+        : Effect.flatMap(located, (entry) => options.snapshots.restore(approvedDigest).pipe(Effect.map((restored) => relocated(platformPath, restored, entry)), Effect.mapError((cause) => snapshotFailure(error, cause))))));
     const { bytes, modules } = source;
     const loadPath = "loadPath" in source ? source.loadPath : source.entry;
     if (yield* Effect.sync(() => isLegacyObjectModule(bytes))) {
@@ -975,7 +1015,12 @@ const dispatchedAction = (options) => {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const fromDescriptor = (descriptor, options) => Effect.suspend(() => {
+export const fromDescriptor = (descriptor, options) => build(descriptor, options, new Set());
+/**
+ * {@link fromDescriptor}, also refusing a module that declares a tag another
+ * loaded entry of the same catalog already declared.
+ */
+const build = (descriptor, options, declared) => Effect.suspend(() => {
     let moduleScope;
     const loadEffect = Effect_1.gen(function* () {
         // The delegate is resolved BEFORE the body is loaded, and the refusal for a
@@ -1049,6 +1094,34 @@ export const fromDescriptor = (descriptor, options) => Effect.suspend(() => {
             : load);
         if (body.flow === undefined && registered === undefined)
             return yield* Effect.fail(missing);
+        // A module that is its own flow registers its declaration under the tag it
+        // declares, and the runtime runs the newest registration of a tag. A tag
+        // that is not this entry's registry name must therefore not be one that
+        // something else answers to, or this module takes that flow over: another
+        // entry's name (a pack would replace the project flow that shadows it), a
+        // host delegate (every prompt flow would run this module), the registry's
+        // own adapter and bridge tags, or a tag another loaded entry declared.
+        if (body.flow !== undefined && body.flow._tag !== descriptor.name) {
+            const tag = body.flow._tag;
+            const registry = yield* Effect.serviceOption(Registry.Registry);
+            const owner = tag.startsWith("registry/")
+                ? "the registry's own adapters"
+                : tag === (options.agent ?? defaultAgent) || options.delegates.some((delegate) => delegate._tag === tag)
+                    ? `the host delegate "${tag}"`
+                    : Option.isSome(registry) && Option.isSome(yield* registry.value.getOption(tag))
+                        ? `the flow "${tag}"`
+                        : declared.has(tag)
+                            ? "another loaded flow"
+                            : undefined;
+            if (owner !== undefined) {
+                return yield* Effect.fail(refuse({
+                    code: "invalid_module",
+                    flow: descriptor.name,
+                    path: descriptor.body.path,
+                    message: `flow "${descriptor.name}" declares Flow.make tag "${tag}", which belongs to ${owner}`
+                }));
+            }
+        }
         const delegate = body.flow === undefined ? registered : selfDelegate(body.flow);
         const lowered = lower(descriptor, body.annotations);
         const invocation = (input) => {
@@ -1271,6 +1344,7 @@ export const catalog = (options) => Effect_1.gen(function* () {
     const executables = [];
     const refused = [];
     const deferred = [];
+    const declared = new Set();
     const eager = options.initialFlows === undefined ? undefined : new Set(options.initialFlows);
     if (eager !== undefined) {
         // Set iteration also visits added names; cycles and repeated collaborators terminate.
@@ -1290,7 +1364,7 @@ export const catalog = (options) => Effect_1.gen(function* () {
         }
         const startedAt = yield* Clock.currentTimeMillis;
         yield* Effect.logDebug("Loading flow body", { flow: descriptor.name });
-        const result = yield* Effect.result(fromDescriptor(descriptor, options).pipe(Effect.timeoutOrElse({
+        const result = yield* Effect.result(build(descriptor, options, declared).pipe(Effect.timeoutOrElse({
             duration: loadTimeoutMs,
             orElse: () => Effect.fail(refuse({
                 code: "load_timeout",
@@ -1306,6 +1380,8 @@ export const catalog = (options) => Effect_1.gen(function* () {
         });
         if (result._tag === "Success") {
             executables.push(result.success);
+            if (result.success.declaredTag !== undefined)
+                declared.add(result.success.declaredTag);
             continue;
         }
         const failure = result.failure;
@@ -1461,7 +1537,7 @@ const makeRefresh = (options, read, swap) => Effect_1.gen(function* () {
             const scope = yield* Scope.fork(host);
             let committed = false;
             return yield* Effect_1.gen(function* () {
-                const result = yield* Effect.result(restore(fromDescriptor(descriptor, options).pipe(Effect.provideService(Scope.Scope, scope))));
+                const result = yield* Effect.result(restore(build(descriptor, options, new Set(read().executables.flatMap((entry) => entry.descriptor.name === name || entry.declaredTag === undefined ? [] : [entry.declaredTag]))).pipe(Effect.provideService(Scope.Scope, scope))));
                 if (result._tag === "Failure") {
                     // The previous executable, if any, keeps serving with its scope
                     // held; only the refusal beside it changes.

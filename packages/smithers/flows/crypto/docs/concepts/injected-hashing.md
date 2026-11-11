@@ -51,7 +51,7 @@ function of its own.
 
 ## The third door: syncCrypto
 
-`syncCrypto` is the same synchronous implementation wearing the `Crypto`
+`syncCrypto` is the same synchronous implementation wearing the Effect `Digest`
 interface, for code that already consumes the service and cannot suspend:
 
 ```ts
@@ -62,7 +62,7 @@ import * as Effect from "effect/Effect"
 Effect.runSync(Effect.provideService(digest("hello"), EffectDigest.Digest, syncCrypto))
 ```
 
-It is deliberately narrow. It implements Digest for SHA-256 and rejects other
+It is deliberately narrow. It implements `Digest` for SHA-256 and rejects other
 algorithms as defects. It supplies no SecureRandom service. Provide a platform
 layer when the program needs secure bytes, UUIDv4, or another digest algorithm.
 

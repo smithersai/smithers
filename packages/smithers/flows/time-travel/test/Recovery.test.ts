@@ -367,6 +367,7 @@ describe("Recovery", () => {
           steal: () => Effect.fail(persistenceFailure)
         })
         const failed = refusal === "claim-error" || refusal === "steal-error"
+        // A store failure is as transient as a refusal: the plan stays open.
         expect(
           yield* runRecovery(
             store,
@@ -383,9 +384,9 @@ describe("Recovery", () => {
                 })
             }
           )
-        ).toMatchObject([{ _tag: failed ? "Failed" : "Busy", error: { code: failed ? "unknown" : "busy" } }])
+        ).toMatchObject([{ _tag: "Busy", error: { code: failed ? "unknown" : "busy" } }])
         expect(store.state().audits[0]).toMatchObject({
-          status: failed ? "failed" : "in_progress",
+          status: "in_progress",
           detail: { pendingChildren: ["child"] }
         })
         expect(yield* runs.get("child")).toEqual(child)
@@ -480,6 +481,83 @@ describe("Recovery", () => {
       expect(store.state().audits).toMatchObject([
         { id: "audit-compensated", status: "failed" }
       ])
+    }))
+
+  it.effect("keeps a compensated audit open across a transient store read and rolls it back on the next pass", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      seed(store, audit("compensated", compensation))
+      let rollbacks = 0
+      const registry = Effect.runSync(
+        EffectHandlerRegistry.make([{
+          kind: "send",
+          tier: "irreversible",
+          requiresIdempotencyKey: true,
+          residue: () => "message residue",
+          revert: () => Effect.succeed({ value: "sent" }),
+          rollback: () => Effect.sync(() => (rollbacks += 1))
+        }])
+      )
+      const unavailable = {
+        ...store,
+        archivedAt: () => Effect.fail(error("unknown", "archive read failed"))
+      }
+      const runs = makeRuns()
+      const jj = Jj.makeNoop({ restore: () => Effect.void })
+
+      const first = yield* runRecovery(unavailable, runs, jj, registry, false)
+
+      expect(first).toMatchObject([{ _tag: "Busy", error: { code: "unknown", message: "archive read failed" } }])
+      expect(rollbacks).toBe(0)
+      expect(store.state().audits[0]).toMatchObject({
+        status: "in_progress",
+        detail: { phase: "compensated", compensation }
+      })
+      expect(runs.state()).toMatchObject({ status: "suspended", owner: null })
+
+      const second = yield* runRecovery(store, makeRuns(), jj, registry, true)
+
+      expect(second).toEqual([{ _tag: "RolledBack", auditId: "audit-compensated" }])
+      expect(rollbacks).toBe(1)
+      expect(store.state().audits[0]).toMatchObject({ status: "failed", detail: { phase: "rolled_back" } })
+    }))
+
+  it.effect("closes the audit when a rollback ran but its record could not be written", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      seed(store, audit("compensated", compensation))
+      let rollbacks = 0
+      const registry = Effect.runSync(
+        EffectHandlerRegistry.make([{
+          kind: "send",
+          tier: "irreversible",
+          requiresIdempotencyKey: true,
+          residue: () => "message residue",
+          revert: () => Effect.succeed({ value: "sent" }),
+          rollback: () => Effect.sync(() => (rollbacks += 1))
+        }])
+      )
+      // Retrying would read the old detail and roll the handler back twice.
+      const unrecorded = {
+        ...store,
+        updateAudit: (id: string, patch: Parameters<typeof store.updateAudit>[1]) =>
+          patch.status === undefined
+            ? Effect.fail(error("unknown", "audit write failed"))
+            : store.updateAudit(id, patch)
+      }
+
+      const outcomes = yield* runRecovery(
+        unrecorded,
+        makeRuns(),
+        Jj.makeNoop({ restore: () => Effect.void }),
+        registry,
+        true
+      )
+
+      expect(outcomes).toMatchObject([{ _tag: "Failed", error: { code: "unknown", message: "audit write failed" } }])
+      expect(rollbacks).toBe(1)
+      expect(store.state().audits[0]).toMatchObject({ status: "failed", detail: { phase: "terminal_failure" } })
+      expect((store.state().audits[0]!.detail as AuditDetail).compensation).toBeUndefined()
     }))
 
   it.effect("persists a successful rollback before a busy restoration and never repeats it", () =>
@@ -719,7 +797,7 @@ describe("Recovery", () => {
       expect(store.state().audits[0]).toMatchObject({ status: "completed" })
     }))
 
-  it.effect("fails owned recovery work when the heartbeat loses its fence", () =>
+  it.effect("keeps a committed audit open when the heartbeat loses its fence", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make()
       seed(store, audit("archive_committed"))
@@ -754,13 +832,13 @@ describe("Recovery", () => {
       const outcomes = yield* Fiber.join(fiber)
 
       expect(outcomes[0]).toMatchObject({
-        _tag: "Failed",
+        _tag: "Busy",
         error: { code: "fence_lost", message: "run run lost its ownership lease" }
       })
       expect(runs.state()).toMatchObject({ status: "suspended", owner: null })
       expect(store.state().audits[0]).toMatchObject({
-        status: "failed",
-        detail: { phase: "terminal_failure" }
+        status: "in_progress",
+        detail: { phase: "archive_committed" }
       })
     }))
 

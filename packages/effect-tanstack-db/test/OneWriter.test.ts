@@ -1,8 +1,8 @@
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
-import { Cause, Effect, Exit, Layer, Metric, Option, Scope } from "effect"
+import { Cause, Effect, Exit, Layer, Metric, Scope } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
 import { Collection, Persistence } from "../src/index.ts"
-import { databaseFile, id, Note, note, persistenceOn, sqlite, webLocks, withLogs } from "./fixtures.ts"
+import { databaseFile, id, Note, note, sqlite, webLocks, withLogs } from "./fixtures.ts"
 
 // A persisted synced collection on a device whose programs share one SQLite file through TanStack DB's coordinator,
 // as a browser's tabs do, and elect its writer with the device's lock (Persistence's `lock`): only the program holding
@@ -56,6 +56,7 @@ const program = async (options: {
   readonly metrics: Map<string, unknown>
   readonly answer?: Answer
   readonly late?: { readonly ms: number }
+  readonly lock?: boolean
 }) => {
   const scope = Effect.runSync(Scope.make())
   // The collection's own scope, inside the program's: closing it stops the collection, and the database stays open.
@@ -71,7 +72,7 @@ const program = async (options: {
       options.late === undefined
         ? new BrowserCollectionCoordinator({ dbName: options.device })
         : new LateCoordinator(options.device, options.late),
-    lock: webLocks({ prefix: `${options.device}/` })
+    ...(options.lock === false ? {} : { lock: webLocks({ prefix: `${options.device}/` }) })
   }).pipe(Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, options.metrics as never)))
   const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(layer)))
   const sync = (params: Params) => {
@@ -322,11 +323,23 @@ describe("one writer per persisted synced collection", () => {
   }
 
   test("a persistence without a lock elects no writer: every program's source stores what it syncs", async () => {
-    const scope = Effect.runSync(Scope.make())
-    scopes.push(scope)
-    const { lock } = await Effect.runPromise(
-      Effect.provide(Persistence.Persistence, persistenceOn(databaseFile())).pipe(Scope.provide(scope))
-    )
-    expect(Option.fromUndefinedOr(lock)).toEqual(Option.none())
+    const on = { ...device(), lock: false }
+    const first = await program(on)
+    await Effect.runPromise(first.notes.restored)
+    const second = await program(on)
+    await Effect.runPromise(second.notes.restored)
+    await until(() => writes(first.now()) && writes(second.now()))
+    await commit(first.now(), [note("first", 1)])
+    await until(() => second.notes.tanstack.has("first"))
+    await commit(second.now(), [note("second", 2)])
+    await until(() => first.notes.tanstack.has("second"))
+    await first.close()
+    await second.close()
+
+    const third = await program(on)
+    await Effect.runPromise(third.notes.restored)
+    expect(ids(third.notes)).toEqual(["first", "second"])
+    expect(await Effect.runPromise(third.notes.get("first"))).toMatchObject({ value: note("first", 1) })
+    expect(await Effect.runPromise(third.notes.get("second"))).toMatchObject({ value: note("second", 2) })
   })
 })

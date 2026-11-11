@@ -24,9 +24,7 @@ const program = Effect.gen(function*() {
     stale: stale.code,
     before: Descriptor.executionDigest(before),
     after: Descriptor.executionDigest(after),
-    leftovers: (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) =>
-      name.startsWith(".smithers-")
-    )
+    leftovers: (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) => name.startsWith("smithers-"))
   }
 })
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

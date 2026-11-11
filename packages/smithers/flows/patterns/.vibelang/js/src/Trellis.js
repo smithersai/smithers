@@ -448,7 +448,7 @@ export const make = (options) => {
         fuel: envelope.fuel,
         depth: envelope.depth,
         fanout: envelope.fanout
-    }, options);
+    }, options, [author, leaf, continuation]);
     const runRound = (input, state) => {
         const { plan: authored, remaining, round } = state;
         // The state is payload a caller could hand in directly, so its round

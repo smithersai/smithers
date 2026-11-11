@@ -67,9 +67,9 @@ Effect.gen(function*() {
 The threshold gates always run: an unobserved case cannot excuse the cases
 that were observed. With no options the gate still runs, as `mean(0)`, so a
 run with no score at all is undecidable rather than a pass. Regressions and
-nondeterminism are findings and force a `Failed` verdict. Failed cases and
-missing observations are environment faults and travel beside the verdict as
-unresolved.
+nondeterminism are findings and force a `Failed` verdict. Failed cases,
+executed cases no binding applies to, and missing observations are
+environment faults and travel beside the verdict as unresolved.
 
 A threshold outside [0, 1] is gate misuse and fails in the error channel with
 a `ScoreGateError`, code `invalid_threshold`. Catch it and report it rather

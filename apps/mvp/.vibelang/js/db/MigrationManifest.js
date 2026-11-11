@@ -115,6 +115,8 @@ import m0113 from "./migrations/0113_session_ends.js";
 import m0114 from "./migrations/0114_session_key_fingerprints.js";
 import m0115 from "./migrations/0115_compromised_session_keys.js";
 import m0116 from "./migrations/0116_session_seal_fingerprint.js";
+import m0117 from "./migrations/0117_wait_address.js";
+import m0118 from "./migrations/0118_scheduled_runs.js";
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
     "0001_messages": m0001,
@@ -232,4 +234,6 @@ export const migrations = {
     "0114_session_key_fingerprints": m0114,
     "0115_compromised_session_keys": m0115,
     "0116_session_seal_fingerprint": m0116,
+    "0117_wait_address": m0117,
+    "0118_scheduled_runs": m0118,
 };

@@ -68,6 +68,13 @@ const noteStatus = z.enum(["pending", "accepted", "rejected"]);
 export const withMemory = (options, effect) => {
     if (options.namespace !== undefined)
         namespace({ ...options, namespace: options.namespace });
+    // The host that registered the MCP server chose its project and memory store. A connected agent naming another
+    // root would read and write a store the host never offered it.
+    if (Presentation.current()?.transport === "mcp" && options.root !== undefined) {
+        throw new CliError.UsageError({
+            message: "--root is not accepted over MCP; the host selects the project and its memory store"
+        });
+    }
     // The store the executor writes: `SMITHERS_MEMORY_DB` when set, else the control database.
     const stores = SupervisorMemory.memoryDatabase({
         environment: process.env,

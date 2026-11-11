@@ -18,10 +18,11 @@ Use `checkEffect` (or `it.effect.prop`) for laws that random inputs exercise wel
 behind conditions that random inputs almost never satisfy together: a magic number, a protocol prefix, a state reached
 after a precise sequence of commands, or a fiber interleaving.
 
-The test suite in `test/fuzz/Fuzz.benchmark.test.ts` has a parser with a four-byte magic number. `checkEffect` passes
-it after 100,000 runs (seeds 1, 2 and 3). `Fuzz.run` finds the crash with each of seeds 1 to 8, in 47,749 to 701,387
-executions (median 93,017.5), guided only by the `Effect.fn` spans the parser already has. Without span feedback
-(`feedback: []`) it finds nothing in 1,000,000 executions.
+The retained tests in [`test/Fuzz.benchmark.test.ts`](../test/Fuzz.benchmark.test.ts) use a parser with a four-byte
+magic number. With seed `1`, `checkEffect` passes `100,000` random runs, while `Fuzz.run` finds the magic prefix
+within a `400,000`-execution budget at `size: 10`, guided by the parser's existing `Effect.fn` spans.
+Run `pnpm --filter @smthrs/fuzz test` to reproduce these assertions; the tests do not measure other seeds or compare
+search with span feedback disabled.
 
 ## A first run
 
@@ -44,7 +45,8 @@ Use an execution budget as above, or raise the test timeout.
 
 The property contract is the one of `checkEffect`: return `true` (or an Effect of `true`) to pass. Returning anything
 else, failing, or **dying** is a finding. Unlike `checkEffect`, a defect raised by the property is a finding (`Died`),
-because a crash is what fuzzing looks for. Interruption propagates.
+because a crash is what fuzzing looks for. An empty failure cause is a `Died` finding carrying that cause, with the stable
+signature `Died:EmptyCause`. Interruption propagates.
 
 A run stops at the first of `duration` (default 10 seconds when no budget is given), `executions`, `plateau`
 (executions without new feedback) and `maxFindings` confirmed distinct signatures (default 1).
@@ -74,10 +76,10 @@ Fuzz.run(wide, (n) => Effect.as(Fuzz.score("closeness", -Math.abs(n - 777_777_77
 
 ## Findings
 
-Each finding has a `signature`: `ReturnedFalse`, `PropertyError:<tag>`, `Died:<constructor>` or `Deadlock`. The tag is
-the error's `_tag`, else its constructor name. Confirmed findings with the same signature are deduplicated within a run; flaky candidates do not block later confirmed failures. Shrinking uses the
+Each finding has a `signature`: `ReturnedFalse`, `PropertyError:<name>`, `Died:<name>` or `Deadlock`. The name is
+the error's or defect's `_tag`, else its constructor name, else its `typeof`. Confirmed findings with the same signature are deduplicated within a run; flaky candidates do not block later confirmed failures. Shrinking uses the
 existing Arbitrary shrink trees and accepts a smaller input only if it keeps the signature, so a `Bust` failure never
-shrinks into a `Boom`.
+shrinks into a `Boom`. Tags containing line terminators are preserved in signatures, corpus fixtures and replay tokens.
 
 `finding.replay` is a `fuzz1:` token: the generator tape, the schedule tape and the shrink path. Pass it back to
 reproduce the finding:
@@ -113,7 +115,8 @@ Fuzz.runTarget(target, { duration: "1 minute" }).pipe(Effect.provideService(Fuzz
 A store saves two kinds of entries:
 
 - **Confirmed failures are saved after shrinking and rechecking.** When the target was built from a Schema, the value
-  is encoded with `Schema.toCodecJson`. A compatible codec lets it replay independently of generator changes. Pass
+  is encoded with `Schema.toCodecJson`, including when `codec: undefined` is forwarded in the options. An explicit
+  codec overrides that default. A compatible codec lets it replay independently of generator changes. Pass
   `codec` to `Fuzz.target` to save values of a plain Arbitrary. If encoding throws, the finding remains available and
   is saved as a tape (`saved: "Tape"`); `codecError` and `formatReport` explain the fallback. An interrupted shrink
   does not persist its candidate.
@@ -161,7 +164,8 @@ test name with punctuation replaced by `-`, then 16 hex digits of a SHA-256 of t
 avoid the sanitization collisions of the readable prefix alone. Search inputs go to `node_modules/.cache/effect-fuzz`.
 
 After the fix, the plain run prints `Replayed 1 saved failure(s) of Container > parse never dies` and passes. The test
-in `packages/vitest/test/fuzz-example.test.ts` is this workflow, with its saved failure committed.
+in [`packages/testing/test/fuzz-example.test.ts`](../../testing/test/fuzz-example.test.ts) exercises this workflow,
+with its saved failure committed.
 
 `it.fuzz` is the synchronous form. Options: `id` (default: the test's full name), `revision` (default `"1"`), `fuzz`
 (search options for sessions), and the usual Vitest options.
@@ -174,7 +178,7 @@ each evaluation; the other test services (`TestConsole`, the scope) are still pr
 
 ## Fuzzing interleavings
 
-`FuzzSimulation.execution()` from `effect/testing` makes fiber scheduling part of the input:
+`FuzzSimulation.execution()` from `@smthrs/fuzz` makes fiber scheduling part of the input:
 
 ```ts
 import { FuzzSimulation } from "@smthrs/fuzz"
@@ -188,13 +192,14 @@ means the ordinary slice, so shrinking a schedule zeroes words until the failing
 the shrink budget permits. `Effect.sleep`, `Clock` and timeouts run on a virtual clock that jumps to the next timer when nothing is
 runnable. A program with nothing runnable, no pending timer and an unfinished property is a `Deadlock` finding.
 
-`test/fuzz/FuzzSimulation.test.ts` has two withdrawals that read a balance, check it, and write it back. `checkEffect`
-passes 10,000 runs: the default scheduler runs each withdrawal to completion. Under the simulation, `Fuzz.run` finds the
-lost update at execution 5 and shrinks it to amounts `[1, 1]` with one nonzero schedule word. Its replay token gives
-the same interleaving 1,000 times out of 1,000:
+[`test/FuzzSimulation.test.ts`](../test/FuzzSimulation.test.ts) has two withdrawals that read a balance, check it,
+and write it back. With seed `1`, `checkEffect` passes `10,000` runs: the default scheduler runs each withdrawal to
+completion. Under the simulation, `Fuzz.run` finds the lost update within a `10,000`-execution budget and shrinks it
+to amounts `[1, 1]` with at most two nonzero schedule words. The test replays its token `1,000` times, asserting the same
+interleaving each time, with both withdrawals reading the initial balance:
 
 ```
-A reads balance 100 | B reads balance 100 | B writes balance 99, pays 1 | A writes balance 99, pays 1
+A reads 100 | B reads 100
 ```
 
 The world is closed: real I/O, native timers, `Date.now`, `Math.random` and promises from outside Effect escape it.
@@ -235,7 +240,7 @@ that breaks this can show up as a flaky finding; one recheck does not detect eve
 - **Energy follows rarity.** A parent is chosen by the rarity of the rarest feature it owns (AFL++'s "fast" schedule);
   the best entry for each score has top energy. When spans, observations or an injected provider produced features,
   only theirs give energy: structural features keep adding diverse inputs, but must not starve the entry at the
-  frontier of the program (this took the benchmark from 2 of 5 seeds to 8 of 8). One in four parents is uniform, one in
+  frontier of the program. One in four parents is uniform, one in
   eight inputs is fresh.
 - **Infrastructure errors are not findings.** A dying generator, feedback source, store or execution driver is a
   `FuzzError`, as are decode errors and codec-id mismatches. Value-encoding errors retain the finding as a tape.

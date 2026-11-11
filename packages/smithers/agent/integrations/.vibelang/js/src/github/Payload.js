@@ -9,6 +9,7 @@
  *
  * @since 1.0.0
  */
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 const rest = [Schema.Record(Schema.String, Schema.Unknown)];
 const open = (fields) => Schema.StructWithRest(Schema.Struct(fields), rest);
@@ -144,7 +145,48 @@ export const PushEvent = open({
     ref: Schema.String,
     before: Schema.optional(Schema.String),
     after: Schema.optional(Schema.String),
+    created: Schema.optional(Schema.Boolean),
+    deleted: Schema.optional(Schema.Boolean),
     repository: Repository,
     commits: Schema.optional(Schema.Array(open({ id: Schema.optional(Schema.String), message: Schema.optional(Schema.String) }))),
     pusher: Schema.optional(open({ name: Schema.optional(Schema.String) }))
 });
+const commitId = /^[0-9a-f]{40}$/;
+const pushedRef = /^refs\/(heads|tags)\/[^\s]+$/;
+const noCommit = "0".repeat(40);
+/**
+ * Reads the source a `push` delivery names, or why it names none.
+ *
+ * Every host that starts work on a push admits it through this one function,
+ * so a delivery one host runs is never one another refuses. It reads the
+ * payload as untrusted data: a missing or mistyped field is `malformed`, never
+ * a thrown error.
+ *
+ * @category push
+ * @since 1.0.0
+ */
+export const pushSource = (payload) => {
+    const fields = payload !== null && typeof payload === "object"
+        ? { ...payload }
+        : {};
+    const { after, before, ref } = fields;
+    if (typeof before !== "string" || !commitId.test(before) || typeof after !== "string" || !commitId.test(after) ||
+        typeof ref !== "string" || !pushedRef.test(ref))
+        return Result.fail("malformed");
+    if (fields.deleted === true) {
+        return after !== noCommit || before === noCommit
+            ? Result.fail("deleted_identity")
+            : Result.succeed({ kind: "deleted", ref });
+    }
+    if (after === noCommit || (before === noCommit && fields.created !== true))
+        return Result.fail("no_candidate");
+    const branch = ref.startsWith("refs/heads/");
+    return Result.succeed({
+        kind: "commit",
+        ref,
+        branch: branch ? ref.slice("refs/heads/".length) : null,
+        tag: branch ? null : ref.slice("refs/tags/".length),
+        before,
+        after
+    });
+};

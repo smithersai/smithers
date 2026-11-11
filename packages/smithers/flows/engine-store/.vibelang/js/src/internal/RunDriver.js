@@ -637,8 +637,13 @@ const steal = (driver, row, expected, nowMs) => Effect.gen(function* () {
         yield* refuseFreshLease(driver, row, nowMs, freshOwner);
         return undefined;
     }
-    // An owner the probe just proved gone is not asked again.
+    // An owner the probe just proved gone is not asked again. A stale lease
+    // this owner holds is not asked either: the coordinator runs one drive
+    // per run, so a new drive finds it only after the drive that held it
+    // ended without releasing it, and a pid probe answers this live process.
+    const ownLease = sameOwner(row.owner, driver.dependencies.owner);
     if (!leaseFresh &&
+        !ownLease &&
         (yield* driver.isAlive(row.owner, {
             claimant: driver.dependencies.owner,
             heartbeatAtMs: row.heartbeatAtMs,
@@ -647,7 +652,7 @@ const steal = (driver, row, expected, nowMs) => Effect.gen(function* () {
         yield* refuseLiveOwner(driver, row.runId, row.owner, row.heartbeatAtMs, nowMs);
         return undefined;
     }
-    const evidence = livenessEvidenceKind(driver, row.owner);
+    const evidence = ownLease ? "lease-expired" : livenessEvidenceKind(driver, row.owner);
     // A stealer that died between its steal and its activation left its claim
     // on the running row, and every later steal lost to it (`AlreadyClaimed`):
     // on Cloudflare its execution retried `Undriven` every alarm, for hours
@@ -717,21 +722,28 @@ const claimParked = (driver, row, expected, nowMs) => Effect.gen(function* () {
  * parked or pending row, and every later claim loses to it: the run could
  * never be driven again. A claim older than the lease whose claimant is gone
  * is released first, by the same liveness rule a steal applies to a running
- * owner.
+ * owner. A stale claim this owner holds is released without asking: an
+ * earlier drive of this run left it, as a stale lease of this owner is in
+ * {@link steal}.
  */
 const recoverDeadClaim = (driver, row, nowMs) => Effect.gen(function* () {
-    if (row.claim === null || row.claimedAtMs === null || sameOwner(row.claim, driver.dependencies.owner)) {
+    if (row.claim === null || row.claimedAtMs === null)
         return undefined;
-    }
     if (!(row.claimedAtMs < nowMs - Duration.toMillis(Ownership.heartbeatStaleAfter)))
         return undefined;
-    if (yield* driver.isAlive(row.claim, {
-        claimant: driver.dependencies.owner,
-        heartbeatAtMs: row.claimedAtMs,
-        nowMs
-    }))
+    const ownClaim = sameOwner(row.claim, driver.dependencies.owner);
+    if (!ownClaim &&
+        (yield* driver.isAlive(row.claim, {
+            claimant: driver.dependencies.owner,
+            heartbeatAtMs: row.claimedAtMs,
+            nowMs
+        })))
         return undefined;
-    const recovered = yield* driver.store.recoverClaim(row.runId, row.claim, row.claimedAtMs, driver.dependencies.owner, nowMs, { expectedOwner: row.claim, checkedAtMs: nowMs, kind: livenessEvidenceKind(driver, row.claim) }).pipe(Effect.orDie);
+    const recovered = yield* driver.store.recoverClaim(row.runId, row.claim, row.claimedAtMs, driver.dependencies.owner, nowMs, {
+        expectedOwner: row.claim,
+        checkedAtMs: nowMs,
+        kind: ownClaim ? "lease-expired" : livenessEvidenceKind(driver, row.claim)
+    }).pipe(Effect.orDie);
     return recovered._tag === "Recovered" ? { claimant: row.claim, claimedAtMs: row.claimedAtMs } : undefined;
 });
 /**
@@ -1688,7 +1700,11 @@ const drive = (driver, executionId) => Effect.withFiber((owner) => {
     // the execution race strands an activated row if shutdown lands in
     // setup or settlement; a replacement host in the same process then
     // correctly refuses to steal from the still-live PID forever.
-    Effect.onInterrupt(() => releaseInterrupted(driver, attempt)), Effect.onExit(() => endDrive(driver, attempt)), 
+    Effect.onInterrupt(() => releaseInterrupted(driver, attempt)), 
+    // A defect (every storage call after the claim is `orDie`) releases the
+    // run too. Left as it was, the row stayed claimed or `running` under this
+    // live process, and a pid probe refuses to steal from a live pid.
+    Effect.onError((cause) => Cause.hasInterrupts(cause) ? Effect.void : releaseDefect(driver, attempt)), Effect.onExit(() => endDrive(driver, attempt)), 
     // Release this registration only after ownership and retained scopes have
     // been cleaned up. A coordinator fiber can serve another drive afterward.
     Effect.ensuring(Effect.sync(() => {
@@ -2129,6 +2145,10 @@ const releaseInterrupted = (driver, attempt) => attempt.state === undefined
         : driver.yielding.has(attempt.executionId)
             ? { kind: "yielded" }
             : { kind: "interrupted" }, attempt.round);
+/** Settles a drive that died against the state it read, as a `defect` release. */
+const releaseDefect = (driver, attempt) => attempt.state === undefined
+    ? Effect.void
+    : settleInterrupted(driver, attempt.executionId, attempt.state, { kind: "defect" }, attempt.round);
 /**
  * Ends the active drive of `executionId`, recording its release as
  * `yielded`. See {@link Service.yieldDrive}.

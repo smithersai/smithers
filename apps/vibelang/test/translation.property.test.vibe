@@ -1,0 +1,170 @@
+// update's translation helpers (0018, lane vl-proveall4): `runAccount` and `runActions` write exactly the proved step's
+// state over the model and leave every other field as it was; `accountCommand` and `actionCommand` turn each proved
+// command into the Foldkit command of the same name and arguments. LemmaScript cannot read the Schema Model or Foldkit
+// commands, so these are checked here, over random screens, against the proved decisions themselves.
+import { describe, expect, it } from "@effect/vitest"
+import * as ModelDecision from "../src/web/modelDecision.vibe"
+import * as TourDecision from "../src/web/tourDecision.vibe"
+import * as UpdateDecision from "../src/web/updateDecision.vibe"
+import { escapeAction } from "../src/web/screenDecision.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { actionsOf, modeCommands } from "../src/web/actionModel.vibe"
+import { accountOf, init, Message, type Model, update } from "../src/web/main.vibe"
+
+const home = init({ session: "u", mode: "mock" as const, name: "Guest" }).model
+const Small = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 9 }))
+const Word = Schema.Literals(["", "a", "b"])
+
+const Account = Schema.Struct({
+  surface: Schema.Literals(["splash", "chat"]), docs: Schema.Literals(["pane", "max"]), menu: Schema.Boolean,
+  people: Schema.Literals(["closed", "pane", "max"]), pending: Schema.Boolean, error: Word,
+  retry: Schema.Literals(["sign-in", "people", "grant", "sign-out", "roles"]), target: Word,
+  targetRole: Schema.Literals(["new", "community", "contributor", "maintainer"]), epoch: Small, from: Small,
+})
+const Actions = Schema.Struct({
+  open: Schema.Boolean, maximized: Schema.Boolean, selected: Word, run: Word, loading: Schema.Boolean, starting: Schema.Boolean,
+  error: Word, input: Word, highlight: Small, epochAt: Small, hasEpoch: Schema.Boolean, name: Word, code: Word, entries: Schema.Boolean,
+})
+
+const Escape = Schema.Struct({
+  target: Word, error: Word, dialog: Schema.Literals(["", "commit", "link", "split"]), issuesOpen: Schema.Boolean, slash: Schema.Boolean,
+  menu: Schema.Boolean, actionsMax: Schema.Boolean, editing: Schema.Boolean, submitting: Schema.Boolean, sandboxMax: Schema.Boolean,
+  docs: Schema.Literals(["pane", "max"]), wikiPane: Schema.Boolean,
+})
+const Tour = Schema.Struct({ tour: Schema.Boolean, paused: Schema.Boolean, step: Small })
+
+/** What Escape reads, read back from a model. */
+const escapeOf = (model: Model): UpdateDecision.EscapeScreen => ({
+  target: accountOf(model).target, error: accountOf(model).error, dialog: model.issues?.dialog ?? "", issuesOpen: model.issues?.open === true,
+  slash: actionsOf(model).slash, menu: accountOf(model).menu, actionsMax: actionsOf(model).maximized, editing: model.wikiEdit !== undefined,
+  submitting: model.wikiEdit?.submission !== undefined, sandboxMax: model.sandboxPane === "max", docs: model.docs,
+})
+/** Everything Escape does not read, which it must leave as it was. */
+const outsideEscape = (model: Model) => {
+  const { account, issues, actions, wikiEdit, sandboxPane, docs, ...rest } = model
+  const { target, error, menu, ...person } = accountOf(model)
+  const { dialog, open, ...issuesRest } = model.issues ?? initialIssues
+  const { slash, maximized, ...panel } = actionsOf(model)
+  return { rest, person, issuesRest, panel }
+}
+
+/** The Foldkit command each proved account command names: the specification `accountCommand` must meet. */
+const accountSpec = (command: ModelDecision.AccountCommand) => {
+  switch (command.type) {
+    case "FocusAccountMenu": return { name: "FocusAccountMenu", args: { open: command.open } }
+    case "SignIn": return { name: "SignInAccount", args: { mock: command.mock } }
+    case "SignOut": return { name: "SignOutAccount", args: {} }
+    case "LoadPeople": return { name: "LoadPeople", args: {} }
+    case "ShowRoleDialog": return { name: "ShowRoleDialog", args: {} }
+    case "CloseRoleDialog": return { name: "CloseRoleDialog", args: {} }
+    case "GrantRole": return { name: "GrantRole", args: { id: command.id, role: command.role } }
+  }
+}
+const actionSpec = (command: ModelDecision.ActionCommand) =>
+  command.type === "FocusComposer" ? { name: "FocusComposer", args: {} } : { name: "LoadActions", args: { flow: command.flow, ...(command.epoch === null ? {} : { epoch: command.epoch }) } }
+const sent = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) => (result.commands ?? []).map((command) => ({ name: command.name, args: "args" in command ? command.args : undefined }))
+
+describe("update's translation of proved steps", () => {
+  it.effect("an account step writes its state and nothing else, and sends its commands in order", () => effect {
+    const result = try Arbitrary.checkEffect(Arbitrary.schema(Account), (screen) => {
+      const { surface, docs, ...account } = screen
+      const model: Model = { ...home, surface, docs, account: { ...accountOf(home), identity: { id: "1", login: "ada", role: "maintainer" }, ...account } }
+      const arms: ReadonlyArray<readonly [Message, ModelDecision.AccountStep]> = [
+        [Message.ClickedAccount(), ModelDecision.clickedAccount(screen)],
+        [Message.ClickedSignIn(), ModelDecision.clickedSignIn(screen, false, false, true)],
+        [Message.ClickedSignOut(), ModelDecision.clickedSignOut(screen)],
+        [Message.ClickedPeople(), ModelDecision.clickedPeople(screen)],
+        [Message.ClosedPeople(), ModelDecision.closedPeople(screen)],
+        [Message.ToggledPeople(), ModelDecision.toggledPeople(screen)],
+        [Message.SelectedRole({ id: "2", role: "contributor" }), ModelDecision.selectedRole(screen, "2", "contributor")],
+        [Message.CancelledRole(), ModelDecision.cancelledRole(screen)],
+        [Message.ConfirmedRole(), ModelDecision.confirmedRole(screen)],
+        [Message.GrantedRole(), ModelDecision.grantedRole(screen)],
+        [Message.FailedRoles(), ModelDecision.failedRoles(screen)],
+        [Message.AccountFailed(), ModelDecision.accountFailed(screen)],
+        [Message.DismissedAccountError(), ModelDecision.dismissedAccountError(screen)],
+        ...(screen.retry === "sign-in" ? [] : [[Message.RetriedAccount(), ModelDecision.retriedAccount(screen, 0)] as const]),
+      ]
+      for (const [message, step] of arms) {
+        const after = update(model, message)
+        const { surface: nextSurface, docs: nextDocs, ...nextAccount } = step.state
+        expect(after.model).toEqual({ ...model, surface: nextSurface, docs: nextDocs, account: { ...accountOf(model), ...nextAccount } })
+        expect(sent(after)).toEqual(step.commands.map(accountSpec))
+      }
+      return true
+    }, { runs: 200 })
+    try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+
+  it.effect("an actions step writes its panel state and nothing else, and sends its commands in order", () => effect {
+    const result = try Arbitrary.checkEffect(Arbitrary.schema(Actions), (generated) => {
+      const { name, code, entries, epochAt, hasEpoch, ...screen } = generated
+      const epoch = hasEpoch ? epochAt : undefined
+      const panel = { ...actionsOf(home), ...screen, ...(epoch === undefined ? {} : { epoch }), entries: entries ? modeCommands("live") : [] }
+      const model: Model = { ...home, actions: panel }
+      const known = actionsOf(model).entries.length !== 0
+      const arms: ReadonlyArray<readonly [Message, ModelDecision.ActionStep]> = [
+        [Message.ClickedActions(), ModelDecision.clickedActions(screen, known, epoch ?? null)],
+        [Message.MaximizedActions(), ModelDecision.maximizedActions(screen)],
+        [Message.SelectedAction({ name }), ModelDecision.selectedAction(screen, name, epoch ?? null)],
+        [Message.UpdatedActionInput({ value: name }), ModelDecision.updatedActionInput(screen, name)],
+        [Message.RetriedActions(), ModelDecision.retriedActions(screen, epoch ?? null)],
+        [Message.FailedActions({ code, ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code)],
+      ]
+      for (const [message, step] of arms) {
+        const after = update(model, message)
+        expect(after.model).toEqual({ ...model, actions: { ...panel, ...step.state } })
+        expect(sent(after)).toEqual(step.commands.map(actionSpec))
+      }
+      return true
+    }, { runs: 200 })
+    try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+
+  it.effect("Escape writes exactly the one thing its proved step closes, with that thing's command", () => effect {
+    const result = try Arbitrary.checkEffect(Arbitrary.schema(Escape), (generated) => {
+      const { wikiPane, editing, submitting, sandboxMax, ...screen } = generated
+      const draft = { page: "index", base: "a", text: "a", busy: false, error: "" }
+      const model: Model = {
+        ...home, surface: "chat", palette: false, docs: screen.docs, sandboxPane: sandboxMax ? "max" : "pane",
+        client: { ...home.client, conversation: { ...home.client.conversation, pane: wikiPane ? "/wiki/index" : "" } },
+        account: { ...accountOf(home), target: screen.target, error: screen.error, menu: screen.menu },
+        issues: { ...initialIssues, open: screen.issuesOpen, dialog: screen.dialog },
+        actions: { ...actionsOf(home), slash: screen.slash, maximized: screen.actionsMax },
+        ...(editing ? { wikiEdit: submitting ? { ...draft, submission: { op: "save" as const, page: "index", base: "a", text: "b", key: "k" } } : draft } : {}),
+      }
+      const before = escapeOf(model)
+      const step = UpdateDecision.pressedEscape(before, escapeAction(false, false, false, "chat", screen.docs), wikiPane)
+      const after = update(model, Message.PressedEscape())
+      expect(escapeOf(after.model)).toEqual(step.kind === "splash" ? before : step.state)
+      expect(outsideEscape(after.model)).toEqual(outsideEscape(model))
+      expect(after.model.wikiEdit === undefined || after.model.wikiEdit === model.wikiEdit).toBe(true)
+      expect(after.model.sandboxPane).toBe(step.kind === "sandbox" ? "pane" : model.sandboxPane)
+      const expected = step.kind === "role" ? ["CloseRoleDialog"] : step.kind === "issue-dialog" ? ["CloseIssueDialog"] : step.kind === "menu" ? ["FocusAccountMenu"] : step.kind === "docs" && step.reveal ? ["RevealWiki"] : []
+      expect(sent(after).map(command => command.name)).toEqual(expected)
+      if (step.kind === "menu") expect(sent(after)[0]?.args).toEqual({ open: false })
+      return true
+    }, { runs: 300 })
+    try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+
+  it.effect("a tour control sends the proved move to this tab's tour and changes no state", () => effect {
+    const result = try Arbitrary.checkEffect(Arbitrary.schema(Tour), ({ tour, paused, step }) => {
+      const model: Model = { ...home, tour, theatre: { ...home.theatre, paused, step } }
+      const arms: ReadonlyArray<readonly [Message, TourDecision.TourControl]> = [
+        [Message.ClickedPauseTour(), TourDecision.pauseTour(tour, paused)],
+        [Message.ClickedBackStop(), TourDecision.backTour(tour, step)],
+        [Message.ClickedSkipStop(), TourDecision.skipTour(tour, step)],
+      ]
+      for (const [message, control] of arms) {
+        const after = update(model, message)
+        expect(after.model).toBe(model)
+        const moved = control.action === "none" ? [] : [{ name: "ControlTour", args: { conversation: "tour-u", action: control.action, step: control.step } }]
+        const measured = tour ? [{ name: "MeasureTheatre", args: { target: model.theatre.target } }] : []
+        expect(sent(after)).toEqual([...moved, ...measured])
+      }
+      return true
+    }, { runs: 200 })
+    try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+})

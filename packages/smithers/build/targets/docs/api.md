@@ -61,7 +61,9 @@ verdict cache do.
 ## Declared inputs and outputs
 
 `Input` declares what a target reads: `file`, `glob`, `gitDiff`, and
-`pnpmWorkspace`. `Input.resolvePath` resolves one declaration against its
+`pnpmWorkspace`. `Input.declarationFileNames` lists the files that make a
+directory a package, `PACKAGE.ts` and `PACKAGE.vibe`, and
+`Input.isDeclarationFileName` tests a base name against it. `Input.resolvePath` resolves one declaration against its
 package directory, and `Input.rootRelative` renders a workspace-rooted `//`
 path for a child running under a target's own `cwd`. A rule that renders a
 declared path into argv uses the second one; stripping the `//` alone resolves

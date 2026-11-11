@@ -1077,6 +1077,13 @@ interface Walk {
    */
   readonly childExecutions: Map<string, string>
   /**
+   * The `.child()` nodes whose child execution is still open: running, or
+   * suspended. A child that parks ends its node with no running fiber, so a
+   * join cancels a losing child from this set, not from `executions`; a
+   * child that completed or failed leaves it and is never cancelled.
+   */
+  readonly openChildren: Set<string>
+  /**
    * The nodes this walk has already settled a record for.
    *
    * Everything else is what the walk never reached, which is exactly the
@@ -1124,6 +1131,7 @@ const makeWalk = (
     scope,
     executions: new Map(),
     childExecutions: new Map(),
+    openChildren: new Set(),
     reported: new Set(),
     record: recordNode === undefined ? () => Effect.void : (make) => recordNode(make())
   }
@@ -1646,8 +1654,16 @@ const runChild = effect (walk: Walk, node: Graph.GraphNode) => {
     (preimage) => childExecutionId(instance.executionId, node.id, declaration._tag, preimage)
   ) as unknown as Effect.Effect<string, never, Services>)
   walk.childExecutions.set(node.id, executionId)
+  walk.openChildren.add(node.id)
   return try (declaration.execute(childPayload, { executionId }) as Effect.Effect<unknown, unknown, Services>).pipe(
-    attenuateCapabilities(node.capabilityCeilings)
+    attenuateCapabilities(node.capabilityCeilings),
+    // An interruption is the child suspending or the node being stopped:
+    // either way the child execution is still open.
+    Effect.onExit((exit) =>
+      Effect.sync(() => {
+        if (Exit.isSuccess(exit) || !Cause.hasInterruptsOnly(exit.cause)) walk.openChildren.delete(node.id)
+      })
+    )
   )
 }
 
@@ -1953,7 +1969,8 @@ const stopLosers = effect (
 
 /**
  * The work of the members a join no longer waits for: their running node
- * fibers and the child executions those nodes opened.
+ * fibers and the child executions those nodes opened that are still open,
+ * whether their node is still running or ended because the child parked.
  *
  * A member's structural subtree is its own, so its running executions are
  * interrupted; nothing else demands them again. A node something outside that
@@ -1971,10 +1988,8 @@ const losingWork = (walk: Walk, joinId: string, roots: ReadonlyArray<string>) =>
   for (const id of subtree) {
     if (kept.has(id)) continue
     const fiber = walk.executions.get(id)
-    if (fiber === undefined) continue
-    fibers.push(fiber)
-    const executionId = walk.childExecutions.get(id)
-    if (executionId !== undefined) childRuns.push({ node: id, executionId })
+    if (fiber !== undefined) fibers.push(fiber)
+    if (walk.openChildren.has(id)) childRuns.push({ node: id, executionId: walk.childExecutions.get(id)! })
   }
   return { fibers, childRuns }
 }

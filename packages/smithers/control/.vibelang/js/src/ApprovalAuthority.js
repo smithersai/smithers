@@ -13,7 +13,8 @@ import { GrantScope } from "./ControlSchema.js";
 const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
 /**
  * An explicit delegation to one authenticated identity, not everyone whose
- * kind resembles a role. Scopes are exact, not implicitly hierarchical. A
+ * kind resembles a role. People approve; an `agent` identity is never a
+ * delegate. Scopes are exact, not implicitly hierarchical. A
  * delegation may approve only its listed scopes and may deny either target
  * kind it names (denial installs no grant).
  * Delegation is reusable: `scopes: ["once"]` permits once-scoped grants, not
@@ -67,14 +68,17 @@ const compile = (delegations, options = {}) => {
 };
 /**
  * Builds an immutable policy from explicit host configuration. Invalid
- * configuration is refused without including its contents in the error.
+ * configuration, including a delegation to an `agent` identity, is refused
+ * without including its contents in the error.
  * The caller's arrays and objects are not retained after acquisition.
  * @category constructors
  * @since 1.0.0
  */
-export const make = (delegations, options = {}) => Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Schema.Array(Delegation).check(Schema.isMaxLength(1024)))(delegations, {
+export const make = (delegations, options = {}) => Effect.flatMap(Effect.mapError(Schema.decodeUnknownEffect(Schema.Array(Delegation).check(Schema.isMaxLength(1024)))(delegations, {
     onExcessProperty: "error"
-}), () => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" })), (entries) => compile(entries, options));
+}), () => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" })), (entries) => entries.some((entry) => entry.principal.kind === "agent")
+    ? Effect.fail(new InvalidInput({ issue: "Approval authority cannot be delegated to an agent identity" }))
+    : Effect.succeed(compile(entries, options)));
 /**
  * Default trusted-local policy. Only the local operator identity is an
  * approver. A custom actor, gateway identity, or agent needs explicit host

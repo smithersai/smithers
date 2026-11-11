@@ -156,7 +156,7 @@ export const Package = S.Package({ targets: { declared } })
       _tag: "smithers-build/PackageError",
       code: "install_identity_missing",
       path: "deps/package.json",
-      message: expect.stringContaining('S.nodeModules("//deps"): deps has no package.json')
+      message: expect.stringContaining("S.nodeModules(\"//deps\"): deps has no package.json")
     })
   })
 

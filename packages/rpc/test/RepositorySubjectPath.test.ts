@@ -349,3 +349,19 @@ it("round trips every original subject kind and pull tab", () => {
     expect(parseRepositorySubject(formatRepositorySubject(subject).split("/"))).toEqual(subject)
   }
 })
+
+describe("locations whose escapes are not UTF-8", () => {
+  it("a well-formed escape that decodes to no character divides into no ref", () => {
+    for (const segment of ["%FF", "%C3", "%C3%28", "%E2%82"]) {
+      expect(repositoryLocation(["main", segment])).toBe(`main/${segment}`)
+      expect(resolveRefLocation(`main/${segment}`, ["main"])).toBeUndefined()
+    }
+    expect(resolveRefLocation("main/%C3%A9", ["main"])).toEqual({ ref: "main", path: "é" })
+  })
+  it("a commits location the location rules refuse is no subject", () => {
+    for (const below of [[".."], ["."], ["a:b", "src"], ["main", ""], ["main", "%2F"]]) {
+      expect(parseRepositorySubject(["commits", ...below])).toBeUndefined()
+    }
+    expect(parseRepositorySubject(["commits", "main", "src"])).toEqual({ kind: "commits", location: "main/src" })
+  })
+})

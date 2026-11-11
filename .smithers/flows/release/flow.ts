@@ -18,6 +18,7 @@ import {
   VerifyCandidate,
   WritePreparation
 } from "./workflow.vibe"
+export { layer } from "./layer.ts"
 
 type Requirements = Action.Requirement<
   (
@@ -38,7 +39,15 @@ type Requirements = Action.Requirement<
 export default Flow.make("smithers/Release", {
   description:
     "Prepare a Smithers release or validate, build, smoke-test and publish its exact npm tarballs with durable human approval.",
-  capabilities: ["*"],
+  // Concrete: `smthrs flow start` refuses an envelope that grants every capability.
+  capabilities: [
+    "fs:read:**",
+    "fs:write:**",
+    "proc:spawn:*",
+    "net:get:registry.npmjs.org/**",
+    "net:post:registry.npmjs.org/**",
+    "model:call:*"
+  ],
   effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
   payload: ReleaseInput,
   success: ReleaseResult,

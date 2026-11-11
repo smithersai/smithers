@@ -28,7 +28,7 @@ adapter's own logic and is the only thing here CI runs.
 | `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool                                             |
 | `seal.py`                 | The denied-connect probe and verdict behind the stock arm's `sealed`                                              |
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim                                             |
-| `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED      |
+| `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container: clean / host-calls-benign / host-calls-unread / TAINTED |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
 | `calls.py`                | Every model call of a trial as one row, for either arm: totals by purpose, the time split and the fit             |
 | `verify.sh`               | Offline checks for the adapter, containment, ownership, resources and health                                      |
@@ -190,11 +190,16 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
 
 - A usage limit (`rate_limited: The usage limit has been reached`,
   `quota_exceeded`, the Codex CLI's "You've hit your usage limit") takes the
-  account out of rotation with the reset time the message names, and the
-  trial is re-run whole on the next healthy account. Every re-run is in the
-  trial's `agent/requeue.log` and in `requeues` of `smithers-run.json` /
-  `codex-account.json`; the earlier attempt's log and workspace are kept as
-  `*-attempt-N`.
+  account out of rotation with the reset time the message names (a date, a
+  time of day such as "Try again at 9:27 AM.", or "in 3 hours"), or for five
+  hours when it names none the pool can read, and raises `SeatExhausted`, an
+  infra exception. The attempt already changed the task container and spent
+  part of the agent timeout, so it is never re-run in place: the runner
+  re-runs the trial in a fresh environment on the next healthy account
+  (`--retry-include SeatExhausted`, or `requeue.py`). The stock arm records
+  the limit as `usageLimit` and `resetAt` in `codex-account.json`.
+  `report.py` refuses a scored trial whose metadata carries `requeues`: older
+  harness revisions re-ran it in place.
 - A route fault (`authentication`, `no_route`, `provider_internal`,
   `transport`, `completion_unjudged`, a `rate_limited` the
   harness gave up on) raises `ModelRouteError`, so Harbor records an
@@ -221,6 +226,9 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
 - When no healthy account is left the pool PAUSES: a lease waits
   (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
   `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
+  Each update replaces `pool.json` by rename, so a killed runner leaves the
+  previous state whole. A `pool.json` that is not a JSON object raises
+  `PoolStateUnreadable` instead of re-admitting every disabled account.
 - The model's own failures (`claim_unproven`, `read_only_cap`, a wrong
   answer) are scored as the verifier says. So is `call_timeout`: the
   harness's per-call ceiling (`modelCallMs`, 1,800 s at `xhigh` and `max`)

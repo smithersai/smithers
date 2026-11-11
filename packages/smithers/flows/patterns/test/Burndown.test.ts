@@ -782,6 +782,27 @@ const host = (flow: unknown, ...layers: ReadonlyArray<Layer.Layer<any, any, any>
   ) as Layer.Layer<any, never, never>
 
 describe("Burndown.child", () => {
+  it("hands land and detail the child's success at its declared type", async () => {
+    const Patch = Flow.make("burndown-test/patch", {
+      payload: { issue: Schema.String },
+      success: Schema.Struct({ patch: Schema.String }),
+      body: ({ issue }) => Node.succeed({ patch: `diff for ${issue}` })
+    })
+    const { note } = recorder()
+    const work = Burndown.child(Patch, ({ item }: Burndown.ItemArgs<unknown, Issue>) => ({ issue: item.id }))
+    const result = await Effect.runPromise(
+      Burndown.round({ input: undefined, round: 0, items: items("7") }, {
+        ...baseOptions(note),
+        key: "typed-child",
+        work,
+        land: ({ output }) => Effect.succeed(output.patch.length),
+        detail: (output, landing) => `${output.patch}: ${landing} characters`
+      }).pipe(Effect.provide(host(Patch)), Effect.scoped) as Effect.Effect<Burndown.RoundResult>
+    )
+
+    expect(result.rows).toEqual([{ id: "7", status: "landed", detail: "diff for 7: 10 characters" }])
+  })
+
   it("runs work under the derived execution id, so a rerun reattaches instead of duplicating", async () => {
     workRuns.length = 0
     const { note } = recorder()
@@ -1053,7 +1074,9 @@ describe("Burndown.make", () => {
     const { layers, tape } = scripted({ discover: (round) => backlog[round] ?? [] })
     const burndown = Burndown.make({ discover: Discover, dispatch: Dispatch, maxRounds: 10 })
 
-    expect(burndown._tag).toBe("burndown(maxRounds=10, capacity=false)")
+    expect(burndown._tag).toBe(
+      "burndown(maxRounds=10, capacity=false)[burndown-test/discover, burndown-test/dispatch, ]"
+    )
     expect(await settle(burndown, { input: { repo: "acme/app" } }, layers)).toEqual({
       rows: [
         { id: "a", status: "landed", detail: "" },
@@ -1151,6 +1174,40 @@ describe("Burndown.make", () => {
       )
     }
     expect(tape).toEqual([])
+  })
+
+  it("gives every member the lineage's input at the type one member declares", async () => {
+    const Typed = Burndown.dispatch("burndown-test/typed-input-dispatch")
+    const { note, tape } = recorder()
+    const layers = [
+      Discover.toLayer(() => Effect.succeed(items("a"))),
+      Capacity.toLayer(() => Effect.succeed(Burndown.available(1))),
+      Burndown.layer(Typed, {
+        key: "typed-input",
+        concurrency: 1,
+        select: ({ input }: Burndown.ItemArgs<{ readonly repo: string }, Issue>) =>
+          Effect.as(note(`select:${input.repo}`), Burndown.ours),
+        claim: ({ input }) => note(`claim:${input.repo}`),
+        work: ({ input, item }) => Effect.as(note(`work:${input.repo}`), `${input.repo}#${item.id}`),
+        land: ({ input, output }) => Effect.as(note(`land:${output}`), input.repo.length),
+        release: ({ input }) => note(`release:${input.repo}`),
+        detail: (output, landing) => `${output} in ${landing} characters`
+      })
+    ]
+    const burndown = Burndown.make({ discover: Discover, capacity: Capacity, dispatch: Typed, maxRounds: 3 })
+
+    expect(await settle(burndown, { input: { repo: "acme/app" } }, layers)).toEqual({
+      rows: [{ id: "a", status: "landed", detail: "acme/app#a in 8 characters" }],
+      rounds: 2,
+      stopped: "drained"
+    })
+    expect(tape).toEqual([
+      "select:acme/app",
+      "claim:acme/app",
+      "work:acme/app",
+      "land:acme/app#a",
+      "release:acme/app"
+    ])
   })
 
   it("still completes drained when a round skips every item by policy", async () => {

@@ -3,6 +3,7 @@ import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
+import { CheckSuite } from "@smthrs/patterns"
 import { Node } from "@smthrs/plan"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
@@ -35,7 +36,7 @@ import * as SandboxCommand from "./SandboxCommand.ts"
 // publishes. Each check is a row of `runs` with the head's SHA, which the pull request's Checks tab reads:
 //
 //   checks/Scripts  each `.smithers/checks/<name>.sh` of the head, run with sh at the head on the head's own throwaway job
-//                   machine, one after another: `checks/<name>`, Passed when it exits 0, else Failed. Each script is a
+//                   machine, one after another as a `CheckSuite` of discovered checks (`@smthrs/patterns`): `checks/<name>`, Passed when it exits 0, else Failed. Each script is a
 //                   `sandbox/Command` job (worker/flows/SandboxCommand.ts), so a lint of the whole monorepo holds no
 //                   step: the run parks while it runs, and a host that stops mid-script loses nothing. The job machine
 //                   reaches the package registries and nothing else (worker/branch/RegistryEgress.ts), and sleeps once done
@@ -360,31 +361,42 @@ export const steps = <E, R>(
           (result as typeof SandboxTools.ListResult.Type).entries.filter((entry) => entry.kind === "file" && entry.name.endsWith(".sh"))
             .map((entry) => entry.name.slice(0, -3)).filter((name) => CHECK_NAME.test(name)).sort(),
       })
-      const done: Array<{ readonly name: string; readonly status: "done" | "failed" }> = []
-      for (const name of names) {
-        const id = yield* checkRunIdOf(request, name)
-        // Each script runs as its own `sandbox/Command` (`SandboxCommand.run`): one that ends within the step's wait answers
-        // here, and a longer one parks this step while its job runs, which then runs again from the top once it ends: a
-        // check is announced, counted and logged only by the call that recorded its start or end.
-        if (yield* started(request, id, name)) yield* pending(request, name)
-        const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:check:${name}`).pipe(
-          Effect.provide(WebCrypto.layer),
-        )
-        const script = { tool: "run" as const, command: `sh ${CHECKS_DIRECTORY}/${name}.sh`, timeoutSeconds: commandSeconds }
-        const ran = yield* SandboxCommand.run(machines, machine, callId, script, SandboxCommand.stepWait(script, stepWaitSeconds))
-          .pipe(Effect.option)
-        const status = Option.match(ran, {
-          onNone: () => "failed" as const,
-          onSome: (run) => (run.exitCode === 0 && !run.timedOut ? "done" as const : "failed" as const),
-        })
-        if (yield* ended(id, status)) {
-          yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: status }), 1)
-          yield* Effect.logInfo("checks.script").pipe(
-            Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name, outcome: status }),
-          )
-        }
-        done.push({ name, status })
-      }
+      // The scripts are a check suite of the checks this head turned out to have (`CheckSuite.runDiscovered`,
+      // `@smthrs/patterns`), one at a time in name order. A script that fails is its check's answer, a failed row, so
+      // the next still runs; a machine or Postgres that couldn't answer fails the suite, and this step for its retry
+      // policy. A head with no scripts has none to fail.
+      const verdict = yield* CheckSuite.runDiscovered({ checks: names, input: request }, {
+        strategy: "all-pass",
+        concurrency: 1,
+        continueOnFail: false,
+        onEmpty: "pass",
+        check: ({ check: name }) =>
+          Effect.gen(function* () {
+            const id = yield* checkRunIdOf(request, name)
+            // Each script runs as its own `sandbox/Command` (`SandboxCommand.run`): one that ends within the step's wait
+            // answers here, and a longer one parks this step while its job runs, which then runs again from the top once
+            // it ends: a check is announced, counted and logged only by the call that recorded its start or end.
+            if (yield* started(request, id, name)) yield* pending(request, name)
+            const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:check:${name}`).pipe(
+              Effect.provide(WebCrypto.layer),
+            )
+            const script = { tool: "run" as const, command: `sh ${CHECKS_DIRECTORY}/${name}.sh`, timeoutSeconds: commandSeconds }
+            const ran = yield* SandboxCommand.run(machines, machine, callId, script, SandboxCommand.stepWait(script, stepWaitSeconds))
+              .pipe(Effect.option)
+            const status = Option.match(ran, {
+              onNone: () => "failed" as const,
+              onSome: (run) => (run.exitCode === 0 && !run.timedOut ? "done" as const : "failed" as const),
+            })
+            if (yield* ended(id, status)) {
+              yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: status }), 1)
+              yield* Effect.logInfo("checks.script").pipe(
+                Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name, outcome: status }),
+              )
+            }
+            return { passed: status === "done" }
+          }),
+      })
+      const done = names.map((name) => ({ name, status: verdict.failed.includes(name) ? "failed" as const : "done" as const }))
       // Done with the job: its machine sleeps now rather than idling until its keep-alive gives up. Best effort.
       yield* machines.sleepIfIdle(machine.branch.branchId, generation, 0).pipe(Effect.ignore)
       return { checks: done } satisfies Checked

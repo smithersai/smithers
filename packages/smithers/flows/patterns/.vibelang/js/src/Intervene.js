@@ -53,7 +53,13 @@ export const make = (options) => {
         ? undefined
         : Pattern.bind(Pattern.slot({ input: ApprovalInput, output: Pattern.Approved }), options.approval);
     const captures = { dryRun, gated: options.approval !== undefined, reason };
-    const { name, description } = Compose.label("intervene", { dryRun }, options);
+    const { name, description } = Compose.label("intervene", { dryRun }, options, [
+        stages.read,
+        stages.propose,
+        apply,
+        stages.report,
+        options.approval
+    ]);
     const body = ({ input }) => Node.bindPlanned(callMember(stages.read, { phase: "read", input }), Node.capture(captures, (context) => Node.bindPlanned(callMember(stages.propose, { phase: "propose", input, context }), Node.capture(captures, (proposal) => dryRun
         ? callMember(stages.report, {
             phase: "report",

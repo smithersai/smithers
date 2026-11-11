@@ -551,14 +551,15 @@ const reserveSibling = (
   extension: string,
   attempts = 8
 ): Effect.Effect<string, unknown> =>
-  Effect.suspend(() => {
+  effect {
     loadSequence += 1
-    const candidate = `${prefix}${loadSequence.toString(36)}-${Date.now().toString(36)}${extension}`
-    return fs.writeFile(candidate, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(
+    const now = try Clock.currentTimeMillis
+    const candidate = `${prefix}${loadSequence.toString(36)}-${now.toString(36)}${extension}`
+    return try fs.writeFile(candidate, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(
       Effect.as(candidate),
       Effect.catch((cause) => attempts > 1 ? reserveSibling(fs, prefix, extension, attempts - 1) : Effect.fail(cause))
     )
-  })
+  }
 
 /**
  * How old a load sibling must be before a later load may remove it.
@@ -569,30 +570,39 @@ const reserveSibling = (
  */
 const staleSiblingAgeMs = 10 * 60 * 1000
 
-/** `smithers-<digest>-<sequence>-<base-36 epoch ms><extension>`, as {@link reserveSibling} names it. */
-const loadSibling = /^\.?smithers-.+-[0-9a-z]+-([0-9a-z]+)\.[A-Za-z0-9]+$/
+/**
+ * `smithers-<SHA-256 hex>-<sequence>-<base-36 epoch ms><extension>`, exactly
+ * as {@link reserveSibling} names it. The 64-digit digest keeps a user file
+ * such as `smithers-agent-flow-helper.ts` out of the sweep, and the 8 or 9
+ * digit stamp spans the epoch milliseconds of 1972 to 5188.
+ */
+const loadSibling = /^smithers-[0-9a-f]{64}-[0-9a-z]+-([0-9a-z]{8,9})\.[A-Za-z0-9]+$/
 
 /**
- * Removes the load siblings a crash left in `directory`. Best effort: a
- * listing or an unlink that fails leaves the file for the next load.
+ * Removes the load siblings a crash left in `directory`. Only a regular file
+ * whose name {@link loadSibling} matches and whose stamp is older than
+ * {@link staleSiblingAgeMs} goes; a stamp in the future reads as fresh. Best
+ * effort: a listing, stat or unlink that fails leaves the file for the next
+ * load.
  */
 const removeStaleSiblings = (
   fs: FileSystem.FileSystem,
   path: Path.Path,
   directory: string
 ): Effect.Effect<void> =>
-  fs.readDirectory(directory).pipe(
-    Effect.flatMap((names) =>
-      Effect.forEach(names, (name) => {
-        const stamp = loadSibling.exec(name)?.[1]
-        const createdAt = stamp === undefined ? Number.NaN : Number.parseInt(stamp, 36)
-        return Number.isFinite(createdAt) && Date.now() - createdAt > staleSiblingAgeMs
-          ? Effect.ignore(fs.remove(path.join(directory, name)))
-          : Effect.void
-      }, { discard: true })
-    ),
-    Effect.ignore
-  )
+  effect {
+    const now = try Clock.currentTimeMillis
+    const names = try fs.readDirectory(directory)
+    try Effect.forEach(names, (name) => {
+      const stamp = loadSibling.exec(name)?.[1]
+      if (stamp === undefined || now - Number.parseInt(stamp, 36) <= staleSiblingAgeMs) return Effect.void
+      const sibling = path.join(directory, name)
+      return fs.stat(sibling).pipe(
+        Effect.flatMap((info) => info.type === "File" ? fs.remove(sibling) : Effect.void),
+        Effect.ignore
+      )
+    }, { discard: true })
+  }.pipe(Effect.ignore)
 
 /**
  * Evaluates a verified closure as one coherent version.
@@ -1000,6 +1010,20 @@ const verifyImports = (
         Effect.flatMap(Effect.try({ try: () => new URL(path), catch: keepDefect }), (url) => platformPath.fromFileUrl(url))
       )
       : platformPath.normalize(path)
+    const cannotPin = (entry: Descriptor.ModuleImport) =>
+      Effect.fail(
+        refuse({
+          code: "body_unavailable",
+          flow: descriptor.name,
+          path,
+          message:
+            `flow "${descriptor.name}" runs code this host cannot pin: ${entry.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
+        })
+      )
+    // Discovery already refused to measure this load, for instance one that
+    // leaves a pack's root. Measuring it here would read the file it declined.
+    const unmeasured = recorded.find((entry) => entry.contentDigest === undefined)
+    if (unmeasured !== undefined) return try cannotPin(unmeasured)
     const { imports: measured, modules, unsupported } = try ModuleClosure.snapshot(
       fs,
       platformPath,
@@ -1007,17 +1031,7 @@ const verifyImports = (
       bytes
     )
     const unpinnable = measured.find((entry) => entry.contentDigest === undefined)
-    if (unpinnable !== undefined) {
-      return try Effect.fail(
-        refuse({
-          code: "body_unavailable",
-          flow: descriptor.name,
-          path,
-          message:
-            `flow "${descriptor.name}" runs code this host cannot pin: ${unpinnable.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
-        })
-      )
-    }
+    if (unpinnable !== undefined) return try cannotPin(unpinnable)
     const pinned = new Map(recorded.map((entry) => [entry.path, entry.contentDigest] as const))
     const changed = measured.find((entry) => pinned.get(entry.path) !== entry.contentDigest)?.path ??
       [...pinned.keys()].find((recordedPath) => measured.every((entry) => entry.path !== recordedPath))
@@ -1046,6 +1060,35 @@ const verifyImports = (
     return modules
   }
 
+/**
+ * A restored closure keyed by this descriptor's own locators.
+ *
+ * A snapshot manifest stores absolute paths, and the loader writes each module
+ * beside the path it is keyed by. The store is not evidence of where approved
+ * code lives, so only each module's position relative to the entry is kept
+ * (restore checked those against the descriptor) and the closure is placed at
+ * the entry this descriptor names.
+ */
+const relocated = (
+  platformPath: Path.Path,
+  restored: VerifiedSource,
+  entry: string
+): VerifiedSource => {
+  const place = (file: string) =>
+    platformPath.resolve(
+      platformPath.dirname(entry),
+      platformPath.relative(platformPath.dirname(restored.entry), file)
+    )
+  return {
+    entry,
+    bytes: restored.bytes,
+    modules: new Map([...restored.modules].map(([file, module]) => [place(file), {
+      ...module,
+      links: module.links.map((link) => ({ ...link, target: place(link.target) }))
+    }]))
+  }
+}
+
 const loadModule = (
   descriptor: Descriptor.FlowDescriptor,
   path: string,
@@ -1055,11 +1098,9 @@ const loadModule = (
 ): Effect.Effect<LoadedBody, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   effect {
     const platformPath = try Path.Path
-    const source = try effect {
-      const bytes = try sourceBytes(descriptor, path)
-      const modules = try verifyImports(descriptor, path, bytes, recorded)
-      const entry = path.startsWith("file:")
-        ? try platformPath.fromFileUrl(new URL(path)).pipe(Effect.mapError((cause) =>
+    const located = path.startsWith("file:")
+      ? Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url)).pipe(
+        Effect.mapError((cause) =>
           refuse({
             code: "body_unavailable",
             flow: descriptor.name,
@@ -1067,13 +1108,22 @@ const loadModule = (
             message: "Invalid module source locator",
             cause
           })
-        ))
-        : platformPath.resolve(path)
+        )
+      )
+      : Effect.succeed(platformPath.resolve(path))
+    const source = try effect {
+      const bytes = try sourceBytes(descriptor, path)
+      const modules = try verifyImports(descriptor, path, bytes, recorded)
+      const entry = try located
       return { entry, bytes, modules, loadPath: path.startsWith("file:") ? path : platformPath.resolve(path) }
     }.pipe(Effect.catch((error) =>
       options.snapshots === undefined || approvedDigest === undefined ?
         Effect.fail(error)
-        : options.snapshots.restore(approvedDigest).pipe(Effect.mapError((cause) => snapshotFailure(error, cause)))
+        : Effect.flatMap(located, (entry) =>
+          options.snapshots!.restore(approvedDigest).pipe(
+            Effect.map((restored) => relocated(platformPath, restored, entry)),
+            Effect.mapError((cause) => snapshotFailure(error, cause))
+          ))
     ))
     const { bytes, modules } = source
     const loadPath = "loadPath" in source ? source.loadPath : source.entry
@@ -1492,6 +1542,17 @@ export const fromDescriptor = (
   descriptor: Descriptor.FlowDescriptor,
   options: Options
 ): Effect.Effect<Executable, ExecutableError, FileSystem.FileSystem | Path.Path> =>
+  build(descriptor, options, new Set())
+
+/**
+ * {@link fromDescriptor}, also refusing a module that declares a tag another
+ * loaded entry of the same catalog already declared.
+ */
+const build = (
+  descriptor: Descriptor.FlowDescriptor,
+  options: Options,
+  declared: ReadonlySet<string>
+): Effect.Effect<Executable, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.suspend(() => {
     let moduleScope: Scope.Closeable | undefined
     const loadEffect = effect {
@@ -1581,6 +1642,34 @@ export const fromDescriptor = (
         ? Effect.catch(load, () => Effect.fail(missing))
         : load)
       if (body.flow === undefined && registered === undefined) return try Effect.fail(missing)
+      // A module that is its own flow registers its declaration under the tag it
+      // declares, and the runtime runs the newest registration of a tag. A tag
+      // that is not this entry's registry name must therefore not be one that
+      // something else answers to, or this module takes that flow over: another
+      // entry's name (a pack would replace the project flow that shadows it), a
+      // host delegate (every prompt flow would run this module), the registry's
+      // own adapter and bridge tags, or a tag another loaded entry declared.
+      if (body.flow !== undefined && body.flow._tag !== descriptor.name) {
+        const tag = body.flow._tag
+        const registry = try Effect.serviceOption(Registry.Registry)
+        const owner = tag.startsWith("registry/")
+          ? "the registry's own adapters"
+          : tag === (options.agent ?? defaultAgent) || options.delegates.some((delegate) => delegate._tag === tag)
+          ? `the host delegate "${tag}"`
+          : Option.isSome(registry) && Option.isSome(try registry.value.getOption(tag))
+          ? `the flow "${tag}"`
+          : declared.has(tag)
+          ? "another loaded flow"
+          : undefined
+        if (owner !== undefined) {
+          return try Effect.fail(refuse({
+            code: "invalid_module",
+            flow: descriptor.name,
+            path: descriptor.body.path,
+            message: `flow "${descriptor.name}" declares Flow.make tag "${tag}", which belongs to ${owner}`
+          }))
+        }
+      }
       const delegate = body.flow === undefined ? registered! : selfDelegate(body.flow)
       const lowered = lower(descriptor, body.annotations)
       const invocation = (input: Schema.Json): Invocation => {
@@ -1883,6 +1972,7 @@ export const catalog = (
     const executables: Array<Executable> = []
     const refused: Array<ExecutableError> = []
     const deferred: Array<Descriptor.FlowDescriptor> = []
+    const declared = new Set<string>()
     const eager = options.initialFlows === undefined ? undefined : new Set(options.initialFlows)
     if (eager !== undefined) {
       // Set iteration also visits added names; cycles and repeated collaborators terminate.
@@ -1905,7 +1995,7 @@ export const catalog = (
       const startedAt = try Clock.currentTimeMillis
       try Effect.logDebug("Loading flow body", { flow: descriptor.name })
       const result = try Effect.result(
-        fromDescriptor(descriptor, options).pipe(
+        build(descriptor, options, declared).pipe(
           Effect.timeoutOrElse({
             duration: loadTimeoutMs,
             orElse: () =>
@@ -1926,6 +2016,7 @@ export const catalog = (
       })
       if (result._tag === "Success") {
         executables.push(result.success)
+        if (result.success.declaredTag !== undefined) declared.add(result.success.declaredTag)
         continue
       }
       const failure = result.failure
@@ -2183,7 +2274,15 @@ const makeRefresh = (
           let committed = false
           return try effect {
             const result = try Effect.result(restore(
-              fromDescriptor(descriptor, options).pipe(Effect.provideService(Scope.Scope, scope))
+              build(
+                descriptor,
+                options,
+                new Set(
+                  read().executables.flatMap((entry) =>
+                    entry.descriptor.name === name || entry.declaredTag === undefined ? [] : [entry.declaredTag]
+                  )
+                )
+              ).pipe(Effect.provideService(Scope.Scope, scope))
             ))
             if (result._tag === "Failure") {
               // The previous executable, if any, keeps serving with its scope

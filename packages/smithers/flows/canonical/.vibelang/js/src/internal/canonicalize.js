@@ -10,6 +10,7 @@
  * @since 0.1.0
  */
 import { describe } from "./describe.js";
+import { rethrowUnlessMissingSlot } from "./slotFailure.js";
 /**
  * Maximum supported nesting below the root value.
  *
@@ -50,6 +51,16 @@ const assertWellFormed = (value, path, position) => {
     }
     return value;
 };
+const constructorName = (name, fallback) => typeof name === "string" && name !== "" ? name.slice(0, 1024) : fallback;
+// These intrinsic operations require internal slots. A caller may replace a
+// built-in's prototype or toStringTag without removing its collection data.
+const slotReaders = [
+    ["Map", Map.prototype.has],
+    ["Set", Set.prototype.has]
+];
+// Internal collection slots cannot be added to an existing object. Remember
+// negative probes weakly so repeated digests do not pay for them again.
+const nonCollections = new WeakSet();
 const builtInName = (value) => {
     if (value instanceof Map)
         return "Map";
@@ -62,14 +73,26 @@ const builtInName = (value) => {
     if (value instanceof ArrayBuffer)
         return "ArrayBuffer";
     if (ArrayBuffer.isView(value))
-        return value.constructor.name;
+        return constructorName(value.constructor?.name, "typed array");
     if (value instanceof RegExp)
         return "RegExp";
     // An Error subclass reports its concrete constructor so the message names
     // the actual leaked value ("TypeError at $.x"), falling back to "Error" for
     // a subclass whose constructor name was erased.
     if (value instanceof Error)
-        return value.constructor?.name || "Error";
+        return constructorName(value.constructor?.name, "Error");
+    if (!nonCollections.has(value)) {
+        for (const [name, read] of slotReaders) {
+            try {
+                Reflect.apply(read, value, [value]);
+                return name;
+            }
+            catch (cause) {
+                rethrowUnlessMissingSlot(cause);
+            }
+        }
+        nonCollections.add(value);
+    }
     return undefined;
 };
 // ECMAScript ToLength: ToNumber, NaN -> 0, truncate, clamp to [0, 2^53 - 1].
@@ -223,6 +246,9 @@ export const canonicalize = (input, options = {}) => {
             catch (cause) {
                 throw caused("canonical_getter_threw", cause, path);
             }
+            if (length > 0xffff_ffff) {
+                throw new CanonicalError("canonical_unsupported_value", "array length exceeds 4,294,967,295", path);
+            }
             const slots = Array.from({ length }, () => ({}));
             tasks.push({ kind: "finishArray", slots, slot });
             for (let index = length - 1; index >= 0; index--) {
@@ -242,7 +268,7 @@ export const canonicalize = (input, options = {}) => {
             unsupported = builtInName(object);
             const prototype = Object.getPrototypeOf(object);
             if (unsupported === undefined && prototype !== null && prototype !== Object.prototype) {
-                unsupported = prototype.constructor?.name || "non-plain object";
+                unsupported = constructorName(prototype.constructor?.name, "non-plain object");
             }
         }
         catch (cause) {

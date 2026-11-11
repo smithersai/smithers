@@ -40,7 +40,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -310,14 +310,54 @@ const removeLockOwner = async (lockPath, owner) => {
             throw cause;
     }
 };
+/**
+ * When `pid` started, in clock ticks since boot, read from Linux procfs. With
+ * the PID it names one process incarnation, and every thread of a process reads
+ * the same value. Undefined where procfs is absent or unreadable.
+ */
+const processStartOf = async (pid) => {
+    let stat;
+    try {
+        stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    }
+    catch {
+        return undefined;
+    }
+    // The command name may hold spaces and parentheses; fields resume after its
+    // last `)` at field 3, so the start time is the 20th field from there (22).
+    const started = /^\) (?:\S+ ){19}(\d+) /.exec(stat.slice(stat.lastIndexOf(")")));
+    return started === null ? undefined : started[1];
+};
+/** `hostname-pid-s<start>-random`, or `hostname-pid-random` where the start is unknown. */
+const ownerPattern = /^(.*)-(\d+)-(?:s(\d+)-)?[^-]+$/;
+const lockOwnerOf = async (random) => {
+    const started = await processStartOf("self");
+    return `${hostname()}-${process.pid}-${started === undefined ? "" : `s${started}-`}${random}`;
+};
+/**
+ * An owner is dead only when this host can prove it: its PID has exited, or
+ * the PID now names a process that started at another time (a restarted
+ * container's PID 1, or a PID reused after a reboot).
+ */
+const lockOwnerIsDead = async (owner) => {
+    const match = ownerPattern.exec(owner);
+    if (match === null || match[1] !== hostname())
+        return false;
+    const pid = Number(match[2]);
+    if (!processIsAlive(pid))
+        return true;
+    const recorded = match[3];
+    if (recorded === undefined)
+        return false;
+    const current = await processStartOf(pid);
+    return current !== undefined && current !== recorded;
+};
 const reclaimDeadLock = async (lockPath) => {
     try {
         const owners = await readdir(lockPath);
         for (const owner of owners) {
-            const match = /^(.*)-(\d+)-[^-]+$/.exec(owner);
-            if (match !== null && match[1] === hostname() && !processIsAlive(Number(match[2]))) {
+            if (await lockOwnerIsDead(owner))
                 await removeLockOwner(lockPath, owner);
-            }
         }
     }
     catch (cause) {
@@ -325,17 +365,44 @@ const reclaimDeadLock = async (lockPath) => {
             throw cause;
     }
 };
+const candidatePrefix = ".smithers-lock-";
+/**
+ * Remove lock candidates a killed waiter left behind: those whose owner entry
+ * names a dead process. A live waiter's candidate, and one still empty because
+ * its owner is about to write its entry, stay.
+ */
+const sweepDeadCandidates = async (directory) => {
+    for (const name of await readdir(directory)) {
+        if (!name.startsWith(candidatePrefix))
+            continue;
+        const candidate = join(directory, name);
+        let owners;
+        try {
+            owners = await readdir(candidate);
+        }
+        catch (cause) {
+            if (errnoIs(cause, "ENOENT") || errnoIs(cause, "ENOTDIR"))
+                continue;
+            throw cause;
+        }
+        const dead = await Promise.all(owners.map(lockOwnerIsDead));
+        if (owners.length > 0 && dead.every(Boolean))
+            await rm(candidate, { recursive: true, force: true });
+    }
+};
 /**
  * Publish a populated directory with one atomic rename. No contender can see a
  * half-written owner record, and rename cannot replace a populated live lock.
- * Temporary candidates left by a killed process do not block future callers.
+ * Temporary candidates left by a killed process do not block future callers,
+ * and the next caller in the same directory removes them.
  */
 const acquireLockFile = (method, lockPath) => {
     const io = (run) => Effect.tryPromise({ try: run, catch: (cause) => lockFailure(method, cause) });
     const cleanup = (run) => io(run).pipe(Effect.catch((failure) => Effect.logWarning("Failed to release the jj repository lock", failure)));
     return Effect.gen(function* () {
-        const candidate = yield* Effect.acquireRelease(io(() => mkdtemp(join(dirname(lockPath), ".smithers-lock-"))), (candidate) => cleanup(() => rm(candidate, { recursive: true, force: true })));
-        const owner = `${hostname()}-${process.pid}-${candidate.slice(candidate.lastIndexOf("-") + 1)}`;
+        yield* io(() => sweepDeadCandidates(dirname(lockPath)));
+        const candidate = yield* Effect.acquireRelease(io(() => mkdtemp(join(dirname(lockPath), candidatePrefix))), (candidate) => cleanup(() => rm(candidate, { recursive: true, force: true })));
+        const owner = yield* io(() => lockOwnerOf(candidate.slice(candidate.lastIndexOf("-") + 1)));
         yield* io(() => writeFile(join(candidate, owner), "", { flag: "wx", mode: 0o600 }));
         const acquire = Effect.gen(function* () {
             for (;;) {

@@ -41,7 +41,12 @@ const count = (text, pattern) => {
  * incomplete capture but cannot establish that the run completed.
  */
 const pytest = (text) => {
-    const summaryFailed = collect(text, /^(?:FAILED|ERROR)[ \t]+(.+?)(?:[ \t]+-[ \t]+.*)?$/gm);
+    // Summary lines follow pytest's `short test summary info` rule. Captured log
+    // sections before it print records such as `ERROR    app:views.py:12 boom`
+    // that have the same shape, so they are not read as test ids.
+    const summaryRule = [...text.matchAll(/^=+[ \t]*short test summary info[ \t]*=+[ \t]*$/gm)].at(-1);
+    const summaryText = summaryRule === undefined ? text : text.slice(summaryRule.index);
+    const summaryFailed = collect(summaryText, /^(?:FAILED|ERROR)[ \t]+(.+?)(?:[ \t]+-[ \t]+.*)?$/gm);
     const outcomes = [...text.matchAll(/^(.+?)[ \t]+(PASSED|FAILED|ERROR)(?:[ \t]+.*)?$/gm)];
     const verboseFailed = outcomes.flatMap((match) => match[2] === "FAILED" || match[2] === "ERROR" ? [match[1]] : []);
     const verbosePassed = unique(outcomes.flatMap((match) => match[2] === "PASSED" ? [match[1]] : [])).length;
@@ -153,6 +158,27 @@ export const parse = (text) => {
             return report;
     }
     return { passed: 0, failed: [], reportedFailed: undefined, parsed: false };
+};
+/**
+ * Reads one run's report from its two output streams.
+ *
+ * Runners report on one stream: pytest and TAP on stdout, unittest on stderr.
+ * Joining the streams first would put stray text from the other stream after
+ * the report, where it hides pytest's terminal tally. A stream that holds a
+ * complete report on its own is that report. When neither or both do, the
+ * joined text is read, which keeps partial outcomes and refuses mixed runners.
+ *
+ * @category parsing
+ * @since 1.0.0
+ * @throws {never}
+ */
+export const read = (streams) => {
+    if (streams.stderr === "")
+        return parse(streams.stdout);
+    if (streams.stdout === "")
+        return parse(streams.stderr);
+    const complete = [parse(streams.stdout), parse(streams.stderr)].filter((report) => report.parsed);
+    return complete.length === 1 ? complete[0] : parse(`${streams.stdout}\n${streams.stderr}`);
 };
 /**
  * How two runs of the same command differ, which is the whole of attribution.

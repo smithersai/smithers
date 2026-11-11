@@ -2,8 +2,8 @@
  * Tests describe the queue as traces: the same lines the Lean reference reads.
  */
 
-import type { Config, State } from "../../src/index.ts"
-import { apply, empty, initialConfig, parseLine } from "../../src/index.ts"
+import type { Config, State } from "../../src/Kernel.ts"
+import { apply, empty, initialConfig, parseLine } from "../../src/Kernel.ts"
 
 /** The settings most tests use: two checks, two fix attempts, batches of two, two runs at once. */
 export const standard = "config required=1,2 maxAttempts=2 maxBatch=2 maxRuns=2 window=3 defaultDuration=60"

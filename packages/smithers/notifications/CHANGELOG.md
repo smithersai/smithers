@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Alerts.report` journals a probe result from a flow step into the run that
+  owns the problem, and `Alerts.probes` builds the rules and detectors that
+  read it. A probe that keeps failing is one condition and pages once.
+- `Alerts.layerChannels` is an alert sink that sends each alert as one message
+  through `Channels`, to a Telegram chat or by email. `Alerts.messageOf` is the
+  message it sends.
+- `AlertRuntime.acknowledge` records who took an alert, and `standing` lists a
+  run's open alerts as `raised`, `delivered` or `acknowledged`. An acknowledged
+  alert is not paged again.
+- `Alerts.Rule.repeatMs` pages again every period while a condition stays open
+  and unacknowledged. A repeat carries `Alert.reminder`, and its id ends in
+  `:r<n>`.
+- `Alerts.Detector.summary` names a payload key whose string, on the entry that
+  opened the condition, rides on the alert as `Alert.summary`.
+
 ### Breaking Changes
 
 - `SteerPayload.decode` takes the notification instead of its payload and

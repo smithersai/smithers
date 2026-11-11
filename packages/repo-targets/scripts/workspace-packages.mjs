@@ -17,7 +17,8 @@
  */
 import { readFileSync, realpathSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
-import { createRequire } from "node:module"
+import { globSync } from "tinyglobby"
+import { parse } from "yaml"
 
 /** The repository root, resolved from this file rather than `process.cwd()`. */
 export const repoRoot = resolve(import.meta.dirname, "../../..")
@@ -44,7 +45,6 @@ export const isMain = (meta) => {
  * belong to the shared YAML parser, not to the glob matcher.
  */
 export const readWorkspacePatterns = (path = join(repoRoot, "pnpm-workspace.yaml")) => {
-  const { parse } = createRequire(import.meta.url)("yaml")
   const manifest = parse(readFileSync(path, "utf8"))
   const patterns = manifest?.packages
   if (!Array.isArray(patterns)) throw new Error(`${path} has no packages list`)
@@ -67,9 +67,7 @@ export const readWorkspacePatterns = (path = join(repoRoot, "pnpm-workspace.yaml
  * member also matched by a wider pattern) name one package once.
  */
 export const workspacePackages = (root = repoRoot) => {
-  // Keep root/entry-point utilities usable before dependencies are installed.
   // Membership uses the same pinned matcher as pnpm, including its negations.
-  const { globSync } = createRequire(import.meta.url)("tinyglobby")
   const patterns = readWorkspacePatterns(join(root, "pnpm-workspace.yaml"))
     .map((pattern) => `${pattern.replace(/\/$/, "")}/package.json`)
   const found = new Map()

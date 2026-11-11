@@ -67,7 +67,7 @@ export const layer = ControlRpcs.toLayer(
       Plan: Effect.fn("Control.plan")((input) => control.plan(input), logged),
       Run: Effect.fn("Control.run")(effect (input) => {
         const principal = try ControlPrincipal
-        return try control.run({ ...input, principal })
+        return try control.run({ ...input, principal, ...try reader })
       }, logged),
       Approve: Effect.fn("Control.approve")(effect (input) => {
         const principal = try ControlPrincipal

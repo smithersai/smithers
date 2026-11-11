@@ -111,6 +111,15 @@ describe("isPublicAddress", () => {
       expect(isPublicAddress(ip)).toBe(true)
     }
   })
+  test.each([
+    "2606:zz::1", // a bad group before the gap
+    "2606:4700::zz", // a bad group after the gap
+    "2606:4700::1.2.3", // a short dotted tail
+    "2606:1:2:3::4:5:6:7", // a gap that stands for no group
+    "2606:4700:1:2:3:4:5" // seven groups and no gap
+  ])("refuses the malformed global-unicast IPv6 literal %s", (ip) => {
+    expect(isPublicAddress(ip)).toBe(false)
+  })
   test.each(["0x8.8.8.8", "+8.8.8.8", "8e0.8.8.8", "8.8.8.0008", "8. 8.8.8"])(
     "rejects noncanonical numeric IPv4 spelling %s",
     (ip) => {

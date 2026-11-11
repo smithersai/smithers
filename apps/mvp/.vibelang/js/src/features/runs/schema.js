@@ -19,10 +19,10 @@ export const RunRow = Schema.Struct({
     origin: Schema.optionalKey(Schema.NullOr(Schema.Struct({ door: Schema.String, actor: Schema.String }))),
 });
 /**
- * What started a run on Cloudflare: a TODO's commit or retry, a repository's push, pull request or manual run, or the
- * deployment itself (`system`).
+ * What started a run on Cloudflare: a TODO's commit or retry, a repository's push, pull request, manual or scheduled
+ * run, or the deployment itself (`system`).
  */
-export const CloudTrigger = Schema.Literals(["commit", "retry", "push", "pull_request", "manual", "system"]);
+export const CloudTrigger = Schema.Literals(["commit", "retry", "push", "pull_request", "manual", "schedule", "system"]);
 /**
  * One run on Cloudflare as `CLOUD_RUNS_ROUTE` answers it: the engine's state of it (`pending` until the engine begins
  * a run its TODO or trigger recorded), and what the Runs page lists beside it: what started it, the branch it worked

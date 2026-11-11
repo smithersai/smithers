@@ -247,6 +247,9 @@ importers:
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/harness
+      '@smthrs/integrations':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/integrations
       '@smthrs/jj':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/jj
@@ -522,6 +525,9 @@ importers:
       '@smthrs/observability':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/observability
+      '@smthrs/patterns':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/patterns
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/plan
@@ -558,6 +564,9 @@ importers:
       '@smthrs/terminal-frame':
         specifier: workspace:*
         version: link:../../packages/smithers/ui/terminal-frame
+      '@smthrs/triggers':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/triggers
       '@smthrs/ui':
         specifier: workspace:*
         version: link:../../packages/smithers/ui
@@ -1752,6 +1761,9 @@ importers:
       '@smthrs/observability':
         specifier: 1.0.0-rc.17
         version: link:flows/observability
+      '@smthrs/patterns':
+        specifier: 1.0.0-rc.17
+        version: link:flows/patterns
       '@smthrs/plan':
         specifier: 1.0.0-rc.17
         version: link:flows/plan
@@ -5050,6 +5062,9 @@ importers:
       dprint:
         specifier: 0.57.1
         version: 0.57.1
+      effect:
+        specifier: 4.1.1
+        version: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2

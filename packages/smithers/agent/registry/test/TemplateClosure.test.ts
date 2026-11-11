@@ -97,7 +97,7 @@ describe("native loading of template closures", () => {
         const after = yield* read
         expect(Descriptor.executionDigest(after)).not.toBe(Descriptor.executionDigest(before))
         expect(
-          (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) => name.startsWith(".smithers-"))
+          (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) => name.startsWith("smithers-"))
         )
           .toEqual([])
       }).pipe(Effect.scoped, Effect.provide(platform)))

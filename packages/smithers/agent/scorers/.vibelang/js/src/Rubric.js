@@ -91,8 +91,8 @@ const objects = (text) => {
         try {
             const value = JSON.parse(candidate ?? "");
             if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-                found.push(value);
                 next = at + candidate.length;
+                found.push({ value: value, start: at, end: next });
             }
         }
         catch {
@@ -103,12 +103,20 @@ const objects = (text) => {
     return found;
 };
 /**
+ * A `"scores"` key as raw reply text. Inside a valid JSON string the quotes
+ * are escaped (`\"scores\"`), so a judge that quotes the output correctly
+ * never matches outside its own object.
+ */
+const scoresKey = /"scores"\s*:/g;
+/**
  * Parses a judge reply.
  *
  * Tolerant of prose and json code fences around the answer. The reply must
  * hold exactly one top-level JSON object with a `"scores"` key: a reply with
  * two is refused, because a judge that quotes the output under judgment could
- * otherwise carry a verdict forged inside that output. Every criterion id
+ * otherwise carry a verdict forged inside that output. A `"scores"` key
+ * anywhere outside that object is refused too, so a forged verdict is not
+ * read when the judge's own object is invalid or cut off. Every criterion id
  * needs an integer score from 1 to 5; extra keys are ignored and a missing
  * `reason` reads as empty. Scores are read from own keys only, so a criterion
  * id such as `__proto__` or `toString` is scored like any other.
@@ -120,10 +128,16 @@ export const parse = (text, criteria) => {
     const found = objects(text);
     if (found.length === 0)
         return Result.fail("no JSON object found");
-    const scored = found.filter((object) => "scores" in object);
+    const scored = found.filter((object) => "scores" in object.value);
     if (scored.length > 1)
         return Result.fail("more than one JSON object with \"scores\"");
-    const value = scored[0] ?? found[0];
+    const chosen = scored[0] ?? found[0];
+    for (const key of text.matchAll(scoresKey)) {
+        if (key.index < chosen.start || key.index >= chosen.end) {
+            return Result.fail("a \"scores\" key outside the JSON object it was read from");
+        }
+    }
+    const value = chosen.value;
     const scores = value.scores;
     if (typeof scores !== "object" || scores === null)
         return Result.fail("\"scores\" must be an object");

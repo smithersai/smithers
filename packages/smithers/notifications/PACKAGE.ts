@@ -29,7 +29,7 @@ const securityReview = Smithers.SecurityReview({
         "An AlertError or failed-delivery journal payload that embeds the url, the request, the headers, or the HttpClientError cause instead of only its reason tag.",
         "Caller headers set after Idempotency-Key so a deployment header can replace the dedupe key."
       ],
-      paths: ["src/layerWebhook.vibe", "src/AlertSink.vibe", "src/AlertRuntime.vibe"]
+      paths: ["src/layerWebhook.vibe", "src/layerChannels.ts", "src/AlertSink.vibe", "src/AlertRuntime.vibe"]
     },
     {
       id: "webhook-bounded-delivery",
@@ -116,9 +116,11 @@ const securityReview = Smithers.SecurityReview({
         "observe or the delivered set trusting any entry with a matching eventType or payload field regardless of its sourceId or writer.",
         "A detector without eventTypes that lets any payload carrying status or health close the condition.",
         "A detector field read through the prototype chain instead of Object.hasOwn.",
+        "A flows.alerts.acknowledged entry that stops a page under any source other than the alerter's own, or an acknowledge call that journals for an id no open condition has.",
+        "A probe name that reaches an event type unencoded, so a name ending in .* reads another probe's reports.",
         "Policy decoding that admits a NaN, negative, or non-integer afterMs."
       ],
-      paths: ["src/AlertPolicy.vibe", "src/AlertRuntime.vibe"]
+      paths: ["src/AlertPolicy.vibe", "src/AlertProbe.ts", "src/AlertRuntime.vibe"]
     }
   ]
 })

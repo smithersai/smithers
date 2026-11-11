@@ -30,6 +30,7 @@ import { Effect, FileSystem as EffectFileSystem, Layer, Path as EffectPath, Plat
 import * as Batch from "./FileSystemBatch.js";
 import { GrantStore } from "./GrantStore.js";
 import { makeCapability } from "./internal/makeCapability.js";
+import { restrictsContent } from "./internal/restrictsContent.js";
 import { Workspace } from "./Workspace.js";
 export * from "./FileSystemBatch.js";
 /**
@@ -618,24 +619,41 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect_1.gen(func
         // still name it when the decision arrives: a symlink or rename
         // swapped in during the wait is refused, never followed.
         Effect.andThen(resolvedResource(action, method, value, glob)), Effect.flatMap((settled) => settled === resource
-            ? Effect.void
+            ? Effect.succeed(resource)
             : deny(action, method, resource, "path no longer names the resource that was authorized"))));
     };
+    /**
+     * `rename`, recursive `remove` and `copy` act on everything under a
+     * directory while the grant check names the directory alone, and a rule
+     * such as `deny fs:read /workspace/secrets/**` does not select
+     * `/workspace/secrets`. So when `value` is a directory, the operation is
+     * refused if a deny or ask rule may select anything under one of the
+     * authorized `operands`. A path that names nothing has no content; one
+     * that cannot be inspected is treated as a directory.
+     */
+    const directoryContent = (host, method, value, operands) => pinned(host, root)({ operation: "stat", path: normalize(value) }).pipe(Effect.match({
+        onFailure: (error) => error.reason._tag !== "NotFound",
+        onSuccess: (info) => info.type === "Directory"
+    }), Effect.flatMap((directory) => directory
+        ? grants.policy.pipe(Effect.mapError(refuse(method, normalize(value))), Effect.flatMap((policy) => {
+            const restricted = operands.find(([action, resource]) => restrictsContent(policy, action, resource));
+            return restricted === undefined
+                ? Effect.void
+                : deny(restricted[0], method, restricted[1], "a deny or ask rule may select content under this directory");
+        }))
+        : Effect.void));
     const read = (value) => guard("fs:read", value);
     const write = (value) => guard("fs:write", value);
     const atomicUnavailable = (action, value, method) => deny(action, method, normalize(value), unconfinedDescription);
-    const atomicOne = (action, value, method, request) => atomic === undefined
+    const atomicChecked = (action, value, method, checks, request) => atomic === undefined
         ? atomicUnavailable(action, value, method)
-        : (Effect.andThen(guard(action, value, request.operation === "glob"), pinned(atomic, root)(request)));
-    const atomicTwo = (first, second, method, request) => atomic === undefined
-        ? atomicUnavailable(first[0], first[1], method)
-        : (Effect.andThen(Effect.andThen(guard(first[0], first[1]), guard(second[0], second[1])), pinned(atomic, root)(request)));
-    const isolatedOne = (action, value, method, use) => atomic?.isolated === undefined
+        : checks(atomic).pipe(Effect.andThen(pinned(atomic, root)(request)));
+    const atomicOne = (action, value, method, request) => atomicChecked(action, value, method, () => guard(action, value, request.operation === "glob"), request);
+    const isolatedChecked = (action, value, method, checks, use) => atomic?.isolated === undefined
         ? atomicUnavailable(action, value, method)
-        : (Effect.andThen(guard(action, value), use(atomic.isolated)));
-    const isolatedTwo = (first, second, method, use) => atomic?.isolated === undefined
-        ? atomicUnavailable(first[0], first[1], method)
-        : (Effect.andThen(Effect.andThen(guard(first[0], first[1]), guard(second[0], second[1])), use(atomic.isolated)));
+        : checks(atomic).pipe(Effect.andThen(use(atomic.isolated)));
+    const isolatedOne = (action, value, method, use) => isolatedChecked(action, value, method, () => guard(action, value), use);
+    const isolatedTwo = (first, second, method, use) => isolatedChecked(first[0], first[1], method, () => guard(first[0], first[1]).pipe(Effect.andThen(guard(second[0], second[1]))), use);
     const temp = (directory) => directory === undefined
         ? write(path.resolve(workspace.root, "..", systemTemporaryDirectoryName))
         : write(directory);
@@ -756,7 +774,11 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect_1.gen(func
             }),
             copy: Effect.fn("FileSystem.copy")((from, to, options) => {
                 const captured = snapshotOptions(options);
-                return (isolatedTwo(["fs:read", from], ["fs:write", to], "copy", (host) => host.copy(normalize(from), normalize(to), captured)));
+                return isolatedChecked("fs:read", from, "copy", (host) => Effect_1.gen(function* () {
+                    const source = yield* read(from);
+                    const target = yield* write(to);
+                    yield* directoryContent(host, "copy", from, [["fs:read", source], ["fs:write", target]]);
+                }), (host) => host.copy(normalize(from), normalize(to), captured));
             }),
             copyFile: Effect.fn("FileSystem.copyFile")((from, to) => isolatedTwo(["fs:read", from], ["fs:write", to], "copyFile", (host) => host.copyFile(normalize(from), normalize(to)))),
             chmod: Effect.fn("FileSystem.chmod")((value, mode) => atomicOne("fs:write", value, "chmod", { operation: "chmod", path: normalize(value), options: { mode } })),
@@ -833,17 +855,22 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect_1.gen(func
             })),
             remove: Effect.fn("FileSystem.remove")((value, options) => {
                 const captured = snapshotOptions(options);
-                return atomicOne("fs:write", value, "remove", {
-                    operation: "remove",
-                    path: normalize(value),
-                    options: captured
-                });
+                return atomicChecked("fs:write", value, "remove", (host) => write(value).pipe(Effect.flatMap((resource) => captured?.recursive === true
+                    ? directoryContent(host, "remove", value, [["fs:write", resource]])
+                    : Effect.void)), { operation: "remove", path: normalize(value), options: captured });
             }),
-            rename: Effect.fn("FileSystem.rename")((from, to) => atomicTwo(["fs:write", from], ["fs:write", to], "rename", {
-                operation: "rename",
-                from: normalize(from),
-                to: normalize(to)
-            })),
+            // A rename makes the source readable under its new name, so it needs
+            // `fs:read` on the source as well as `fs:write` on both names.
+            rename: Effect.fn("FileSystem.rename")((from, to) => atomicChecked("fs:write", from, "rename", (host) => Effect_1.gen(function* () {
+                const source = yield* read(from);
+                yield* write(from);
+                const target = yield* write(to);
+                yield* directoryContent(host, "rename", from, [
+                    ["fs:read", source],
+                    ["fs:write", source],
+                    ["fs:write", target]
+                ]);
+            }), { operation: "rename", from: normalize(from), to: normalize(to) })),
             stat: Effect.fn("FileSystem.stat")((value) => atomicOne("fs:read", value, "stat", {
                 operation: "stat",
                 path: normalize(value)

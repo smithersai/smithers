@@ -3,7 +3,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { GitHub } from "@smthrs/integrations";
 import { Node } from "@smthrs/plan";
 import { CiJob } from "@smthrs/sandbox";
-import { Cause, Config, Effect, Layer, Metric, Option, Schema } from "effect";
+import { Cause, Config, Effect, Layer, Metric, Option, Result, Schema } from "effect";
 import { HttpClient } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { codeOf } from "../ErrorCode.js";
@@ -50,12 +50,8 @@ export const repositories = Config.String("REPO_FLOWS_REPOSITORIES").pipe(Config
 /** The association GitHub gives a pull request's author who is Member or above: their head may have secrets. */
 export const TRUSTED_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
 const Repository = Schema.Struct({ full_name: Schema.String, default_branch: Schema.String });
-const PushEvent = Schema.Struct({
-    ref: Schema.String,
-    after: Schema.String,
-    deleted: Schema.optional(Schema.Boolean),
-    repository: Repository,
-});
+/** What a push says of its repository; its ref and commits are read by `GitHub.Payload.pushSource`. */
+const PushEvent = Schema.Struct({ repository: Repository });
 const PullRequestEvent = Schema.Struct({
     action: Schema.String,
     pull_request: Schema.Struct({
@@ -70,21 +66,28 @@ const decodePush = Schema.decodeUnknownOption(PushEvent);
 const decodePullRequest = Schema.decodeUnknownOption(PullRequestEvent);
 const decodeRequest = Schema.decodeUnknownOption(DispatchRequest);
 /**
- * The dispatch a delivery of `event` asks for: a push (not a deleted ref) or a pull request, of any repository the App
- * is installed on; `None` for any other delivery. It names the event; the commit's files are read from GitHub.
+ * The dispatch a delivery of `event` asks for: a push `GitHub.Payload.pushSource` admits (a commit on a branch or a tag,
+ * never a deleted ref) or a pull request, of any repository the App is installed on; `None` for any other delivery. It
+ * names the event; the commit's files are read from GitHub.
  */
 export const requestOf = (event, delivery, payload) => {
     if (event === "push") {
-        return Option.flatMap(decodePush(payload), (push) => push.deleted === true ? Option.none() : decodeRequest({
+        // The one push admission every host shares: a deleted ref, or a push that doesn't name its ref and commits, starts
+        // nothing.
+        const source = GitHub.Payload.pushSource(payload);
+        if (Result.isFailure(source) || source.success.kind === "deleted")
+            return Option.none();
+        const pushed = source.success;
+        return Option.flatMap(decodePush(payload), (push) => decodeRequest({
             delivery,
             repo: push.repository.full_name,
             defaultBranch: push.repository.default_branch,
             event: "push",
-            ref: push.ref,
-            branch: push.ref.startsWith("refs/heads/") ? push.ref.slice("refs/heads/".length) : null,
-            tag: push.ref.startsWith("refs/tags/") ? push.ref.slice("refs/tags/".length) : null,
+            ref: pushed.ref,
+            branch: pushed.branch,
+            tag: pushed.tag,
             action: null,
-            sha: push.after,
+            sha: pushed.after,
             // Pushing needs write access to the repository.
             trusted: true,
         }));
@@ -157,25 +160,37 @@ export const starts = Metric.counter("smithers_ci_starts", {
     description: "Repository flow runs triggers started, by outcome",
     incremental: true,
 });
+/**
+ * Repository `repo` as the App, with an installation token that reads its contents: `call` runs a GitHub call as the
+ * App, and `read` reads a file at a ref, absent when no retry will read it (a refusal, or no text). `None` when the App
+ * can't read the repository at all; a token GitHub or Postgres couldn't mint fails with `DispatchUnavailable`.
+ */
+export const asApp = (services, repo) => Effect.gen(function* () {
+    const repository = repositoryOf(repo);
+    const token = yield* services.tokens.forInstallation(repository, "contents").pipe(Effect.result);
+    if (token._tag === "Failure") {
+        if (token.failure.reason === "unavailable" || token.failure.reason === "refreshing") {
+            return yield* Effect.fail(new DispatchUnavailable());
+        }
+        return Option.none();
+    }
+    const call = (effect) => effect.pipe(withToken(token.success, services.apiBaseUrl), Effect.provideService(HttpClient.HttpClient, services.http));
+    const read = (path, ref) => call(GitHub.Contents.getText(repository.owner, repository.name, path, { ref })).pipe(Effect.map(Option.map((file) => file.text)), Effect.catch((error) => RepoFlow.isUnreadable(error) ? Effect.succeed(Option.none()) : Effect.fail(new DispatchUnavailable())));
+    return Option.some({ repository, call, read });
+});
 /** The steps over `services`. */
 export const steps = (services) => {
     const match = ({ request }) => Effect.gen(function* () {
         if (!services.repositories.has(request.repo.toLowerCase())) {
             return { flows: [], outcome: "not_allowed" };
         }
-        const repository = repositoryOf(request.repo);
-        const token = yield* services.tokens.forInstallation(repository, "contents").pipe(Effect.result);
-        if (token._tag === "Failure") {
-            if (token.failure.reason === "unavailable" || token.failure.reason === "refreshing") {
-                return yield* Effect.fail(new DispatchUnavailable());
-            }
+        const app = yield* asApp(services, request.repo);
+        if (Option.isNone(app))
             return { flows: [], outcome: "unreadable" };
-        }
-        // Read as the App at the default branch: what a person merged, never the event's commit.
-        const read = (path) => GitHub.Contents.getText(repository.owner, repository.name, path, { ref: request.defaultBranch }).pipe(withToken(token.success, services.apiBaseUrl), Effect.provideService(HttpClient.HttpClient, services.http), Effect.map(Option.map((file) => file.text)), 
-        // A file no retry will read is read as absent: an unreadable manifest starts nothing, an unreadable flow isn't
-        // active, and the rest still start.
-        Effect.catch((error) => RepoFlow.isUnreadable(error) ? Effect.succeed(Option.none()) : Effect.fail(new DispatchUnavailable())));
+        // Read as the App at the default branch: what a person merged, never the event's commit. A file no retry will
+        // read is read as absent: an unreadable manifest starts nothing, an unreadable flow isn't active, and the rest
+        // still start.
+        const read = (path) => app.value.read(path, request.defaultBranch);
         const manifest = yield* read(Triggers.MANIFEST_PATH);
         if (Option.isNone(manifest))
             return { flows: [], outcome: "no_manifest" };

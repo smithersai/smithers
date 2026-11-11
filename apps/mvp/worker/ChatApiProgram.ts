@@ -26,6 +26,7 @@ import * as SignInSecret from "#vibelang/emitted/infra/SignIn"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
+import * as Asks from "./Asks.ts"
 import { BranchRoles } from "./branch/Access.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import * as Conversations from "./branch/Conversations.ts"
@@ -439,6 +440,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
 
     /** Where ChatApi's routes start a remote flow (worker/Flows.ts): its own Durable Object, named by the execution id. */
     const flowStarter = Executions.starter(executions)
+    /** Where a person's answer reaches a remote run parked on it (worker/Flows.ts `TaskAnswers`): its own object. */
+    const taskAnswerer = Executions.answerer(executions)
+    // An agent's questions to people (worker/Asks.ts), started on `FlowExecution` as `queue/ask`.
+    const asks = Asks.make(database)
     // A confirmed feed barrier's pass starts with the next request, whatever else runs
     // (docs/features/notifications.md#rows-written-before): at most one indexed read a minute per isolate.
     const launchFeedRedaction = yield* RedactFeed.launcher
@@ -557,6 +562,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   Effect.provide(FetchHttpClient.layer)
                 )
               }
+              // Before the repository routes: an agent's question to a person is `/api/repos/<owner>/<name>/asks`
+              // (docs/features/agent-status.md#addressed-waits).
+              if (Asks.handles(path)) {
+                return yield* asks.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(directory))
+              }
               // Before the repository routes: a feed is `/api/repos/<owner>/<name>/feeds`.
               if (FeedsApi.handles(path)) return yield* feedsApi.fetch.pipe(Effect.provide(signedIn))
               if (DomainsApi.handles(path)) {
@@ -621,6 +631,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               // only, and their answers kept in this Worker's Cache API (worker/WebPreview.ts).
               return yield* chat.fetch.pipe(
                 Effect.provideService(Flows.FlowStarter, starter),
+                // An answer to a run addressed to the person reaches the run's own object (worker/Runs.ts).
+                Effect.provideService(Flows.TaskAnswers, yield* taskAnswerer),
                 // The model endpoint answers a person who saved a model of their own with it.
                 Effect.provide(personalModels),
                 Effect.provide(signedIn),
@@ -647,6 +659,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     Effect.provide(GitHubConnection.live),
     Effect.provide(Executions.live(DatabaseRoutes.route(pools, "FlowExecution"), {
       repositories,
+      repoFlows,
       homeRepository,
       ...(options.dev === true ? { dev: true } : {}),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),

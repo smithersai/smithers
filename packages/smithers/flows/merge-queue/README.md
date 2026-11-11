@@ -14,19 +14,23 @@ same states, transitions and names in TypeScript, one definition per Lean
 definition. A differential fuzz test runs random event traces through both and
 fails on the first line that differs.
 
-It is pure TypeScript with no dependencies and no Node built-ins, so it runs in
-a browser, a Worker, Node and Bun.
+The kernel (`step`, `plan`) is pure TypeScript with no dependencies. The
+driver that runs it against CI, fix agents and the target branch is written in
+Effect and reaches the world only through four injected services. Nothing
+imports a Node built-in, so it runs in a browser, a Worker, Node and Bun.
 
 **Documentation:** [`docs/`](docs/README.md)
 
 ## Install
 
-The package is private in this repository. Add it as a workspace dependency.
+The package is private in this repository. Add it as a workspace dependency,
+with `effect` at this exact version.
 
 ```json
 {
   "dependencies": {
-    "@smthrs/merge-queue": "workspace:*"
+    "@smthrs/merge-queue": "workspace:*",
+    "effect": "4.1.1"
   }
 }
 ```

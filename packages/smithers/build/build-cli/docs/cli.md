@@ -88,6 +88,13 @@ policy in `.smithers/factory.json`.
 | `--fail-fast`            |       | boolean    | `false`          | Stop at the first failure that fails the run; cancel the rest.       |
 | `--results-file`         |       | path       | none             | Also write the summary, one status per label, as JSON to a new file. |
 
+`ci` also takes:
+
+| Option      | Type              | Default | Meaning                                                         |
+| ----------- | ----------------- | ------- | --------------------------------------------------------------- |
+| `--shard`   | `<index>/<count>` | none    | Run one part of the selected roots; see [Shards](#shards).      |
+| `--timings` | path, repeatable  | none    | Earlier `--results-file` files whose durations weigh the split. |
+
 Exclusive targets run alone after ready ordinary work drains, regardless of
 `--jobs`. Dependencies keep their ordering. Explicit labels, including
 `//packages/...:faults`, select exclusive targets without an opt-in flag.
@@ -114,6 +121,35 @@ and each job uploads the files as the artifact
 status from that artifact, never from the log (`.specs/engineering/checks/README.md`).
 `hit` appears only for cached green results, and `cancelled` only under
 `--fail-fast`.
+
+### Shards
+
+`ci --shard <index>/<count>` runs one part of the selected roots, so `count`
+machines each run a part and together run the selection once:
+
+```sh
+smthrs ci //... --shard 2/6 --timings last-run/part-1.json --timings last-run/part-2.json
+```
+
+The split is a function of the plan's roots and the `--timings` files only.
+Machines that plan the same commit with the same files agree on it without
+talking to each other.
+
+- `--timings <path>` names a `--results-file` of an earlier run; repeat it for
+  a run that wrote one file per machine. A root weighs the `durationMs` of its
+  last `ran` or `failed` row, and a later file wins. Cache hits, skipped and
+  cancelled rows carry no measurement.
+- A root no file measured weighs the median of the measured roots. With no
+  timings, every root weighs the same and the split is by label.
+- Roots are placed longest first, each on the lightest part so far, so two
+  parts never differ by more than the longest root.
+- A part runs its roots and their dependencies. A dependency two parts need
+  runs in both unless a [shared cache](./guides/share-a-remote-cache.md)
+  replays it.
+- A part past the last root runs nothing and passes. `--plan` prints the part.
+
+`--timings` without `--shard`, an unreadable file, or a file that isn't a
+results file refuses the run before any declaration loads.
 
 ### Known-red targets
 
@@ -550,7 +586,8 @@ cache. `targets` lists the available target surface and defaults to `//...`.
 It compares `--base` (default `HEAD`) with `--head`, or with the working tree
 and untracked files when `--head` is absent. Repeatable `--files` bypasses Git
 discovery, and `--list` explains the selection without executing it. Unknown
-or ambient inputs conservatively select the graph. Any change selects every
+or ambient inputs conservatively select the graph, and so does a changed
+`PACKAGE.ts` or `PACKAGE.vibe`, which `--list` reports in `globalInputs`. Any change selects every
 uncacheable target and its dependents, because only a cache key declares
 complete inputs.
 

@@ -64,9 +64,9 @@ theorem Change.budget_pos {cfg : Config} {c : Change} (unfinished : c.status.isT
   split <;> omega
 
 /-- **A withdrawal never raises the budget.** -/
-theorem budget_withdraw (cfg : Config) (s : State) (id : ChangeId) :
-    (s.withdraw id).budget cfg ≤ s.budget cfg := by
-  unfold State.withdraw State.budget
+theorem budget_withdrawNow (cfg : Config) (s : State) (id : ChangeId) :
+    (s.withdrawNow id).budget cfg ≤ s.budget cfg := by
+  unfold State.withdrawNow State.budget
   apply sum_map_le
   intro c _
   split
@@ -161,9 +161,9 @@ theorem landedChange_budget_le (cfg : Config) (batch : List Part) (c : Change) :
   · exact Nat.le_refl _
 
 /-- **Every landing strictly lowers the budget.** -/
-theorem budget_land_lt (cfg : Config) (s : State) (run : RunId) (took : s.land cfg run ≠ s) :
-    (s.land cfg run).budget cfg < s.budget cfg := by
-  rcases s.land_cases cfg run with refused | ⟨r, batch, _, live, _, eq⟩
+theorem budget_landNow_lt (cfg : Config) (s : State) (run : RunId) (took : s.landNow cfg run ≠ s) :
+    (s.landNow cfg run).budget cfg < s.budget cfg := by
+  rcases s.landNow_cases cfg run with refused | ⟨r, batch, _, live, _, eq⟩
   · exact absurd refused took
   · rw [eq]
     unfold State.budget
@@ -179,6 +179,35 @@ theorem budget_land_lt (cfg : Config) (s : State) (run : RunId) (took : s.land c
       have positive := Change.budget_pos (cfg := cfg) (c := c) (by simp [queued, Status.isTerminal])
       simp only [landedChange, inBatch, queued, Status.isQueued, and_self, if_true]
       simpa [Change.budget, Status.isTerminal] using positive
+
+/-- **Every landing strictly lowers the budget.** -/
+theorem budget_land_lt (cfg : Config) (s : State) (run : RunId) (took : s.land cfg run ≠ s) :
+    (s.land cfg run).budget cfg < s.budget cfg := by
+  rcases s.land_cases cfg run with refused | ⟨_, eq⟩
+  · exact absurd refused took
+  · rw [eq] at took ⊢
+    exact budget_landNow_lt cfg s run took
+
+/-- A withdrawal never raises the budget. -/
+theorem budget_withdraw (cfg : Config) (s : State) (id : ChangeId) :
+    (s.withdraw id).budget cfg ≤ s.budget cfg := by
+  unfold State.withdraw
+  split
+  · exact Nat.le_refl _
+  · exact budget_withdrawNow cfg s id
+
+/-- A commit from outside costs the queue nothing: the budget is unchanged. -/
+theorem budget_foreign (cfg : Config) (s : State) (id : ChangeId) :
+    (s.foreign id).budget cfg = s.budget cfg := by
+  unfold State.foreign
+  split
+  · rfl
+  · simp [State.budget, Change.budget, Status.isTerminal]
+
+/-- Deciding to push does not touch the budget. -/
+theorem budget_push (cfg : Config) (s : State) (run : RunId) : (s.push cfg run).budget cfg = s.budget cfg := by
+  unfold State.push
+  (repeat' split) <;> rfl
 
 /-- Results, starts and cancels do not touch the budget. -/
 theorem budget_unchanged (cfg : Config) (s : State) (e : Event)
@@ -202,6 +231,8 @@ theorem budget_never_rises (cfg : Config) (s : State) (e : Event) (notEnqueue : 
     exact Nat.le_of_eq (budget_unchanged cfg s _ (Or.inl ⟨run, check, verdict, duration, rfl⟩))
   | fixed id attempt => exact budget_fixed cfg s id attempt
   | gaveUp id attempt detail => exact budget_gaveUp cfg s id attempt detail
+  | foreign id => exact Nat.le_of_eq (budget_foreign cfg s id)
+  | push run => exact Nat.le_of_eq (budget_push cfg s run)
   | start count => exact Nat.le_of_eq (budget_unchanged cfg s _ (Or.inr (Or.inl ⟨count, rfl⟩)))
   | land run =>
     by_cases took : s.land cfg run = s
@@ -284,18 +315,32 @@ theorem plan_takes_effect {cfg : Config} {s : State} {e : Event} (inv : Inv cfg 
     step cfg s e ≠ s := by
   unfold plan at planned
   split at planned
-  · rename_i r best
+  · rename_i r next
     cases planned
+    have idle : s.pushingRun = none := by
+      unfold State.nextPush at next
+      split at next
+      · cases next
+      · rename_i busy
+        simpa using busy
+    have best : s.bestLandable cfg = some r := by
+      simpa [State.nextPush, idle] using next
     obtain ⟨member, can⟩ := State.bestLandable_some best
-    simp only [State.landable, Bool.and_eq_true, Option.isSome_iff_exists] at can
-    obtain ⟨⟨batch, live⟩, isGreen⟩ := can
+    simp only [State.landable, Bool.and_eq_true] at can
     have found := State.findRun_of_mem inv.runIds member
-    obtain ⟨tree, nonempty, _⟩ := State.live_some live
     intro same
-    have main := congrArg State.main same
-    simp only [step, State.land, found, live, isGreen, if_true] at main
-    rw [tree] at main
-    exact nonempty (List.append_right_eq_self.mp main)
+    have took : s.push cfg r.id = { s with pushing := some r.id } := by
+      unfold State.push
+      simp [idle, found, can.1, can.2]
+    have pushing : s.pushing = some r.id := by
+      have := congrArg State.pushing same
+      simp only [step, took] at this
+      exact this.symm
+    have busy : s.pushingRun = some r := by
+      unfold State.pushingRun
+      simp [pushing, found, can.1]
+    rw [idle] at busy
+    cases busy
   · split at planned
     · rename_i r found
       cases planned
@@ -347,10 +392,15 @@ theorem plan_takes_effect {cfg : Config} {s : State} {e : Event} (inv : Inv cfg 
 /-! ## No deadlock -/
 
 /-- **No deadlock.** With something to check and a run slot, if the policy has
-nothing to do while a change is still waiting, then some run is pending: the
-queue is waiting on CI, never on itself. -/
+nothing to do while a change is still waiting, then some run is pending or a
+push is under way: the queue is waiting on CI or on the target, never on
+itself. -/
 theorem no_deadlock {cfg : Config} {s : State} (checks : cfg.required ≠ []) (slots : 0 < cfg.maxRuns)
-    (idle : plan cfg s = none) (waiting : s.ready ≠ []) : ∃ r ∈ s.runs, r.pending cfg = true := by
+    (idle : plan cfg s = none) (waiting : s.ready ≠ []) :
+    (∃ r ∈ s.runs, r.pending cfg = true) ∨ s.pushingRun.isSome = true := by
+  by_cases busy : s.pushingRun.isSome = true
+  · exact Or.inr busy
+  refine Or.inl ?_
   apply Classical.byContradiction
   intro nonePending
   have settled : ∀ r ∈ s.runs, r.pending cfg = false := by
@@ -370,7 +420,9 @@ theorem no_deadlock {cfg : Config} {s : State} (checks : cfg.required ≠ []) (s
   unfold plan at idle
   split at idle
   · cases idle
-  · rename_i noLand
+  · rename_i noPush
+    have noLand : s.bestLandable cfg = none := by
+      simpa [State.nextPush, busy] using noPush
     have cannotLand := State.bestLandable_none noLand
     split at idle
     · cases idle
@@ -428,15 +480,17 @@ theorem no_deadlock {cfg : Config} {s : State} (checks : cfg.required ≠ []) (s
 and no fix agent is working) every change has ended. **Nothing is left
 behind.** -/
 theorem quiet_means_done {cfg : Config} {s : State} (checks : cfg.required ≠ []) (slots : 0 < cfg.maxRuns)
-    (idle : plan cfg s = none) (noRuns : ∀ r ∈ s.runs, r.pending cfg = false)
+    (idle : plan cfg s = none) (noRuns : ∀ r ∈ s.runs, r.pending cfg = false) (noPush : s.pushingRun = none)
     (noFixes : ∀ c ∈ s.changes, c.status.isFixing = false) : ∀ c ∈ s.changes, c.status.isTerminal = true := by
   intro c member
   cases status : c.status with
   | queued =>
     have waiting : s.ready ≠ [] := List.ne_nil_of_mem (State.mem_ready.mpr ⟨member, status⟩)
-    obtain ⟨r, inRuns, pending⟩ := no_deadlock checks slots idle waiting
-    rw [noRuns r inRuns] at pending
-    cases pending
+    rcases no_deadlock checks slots idle waiting with ⟨r, inRuns, pending⟩ | busy
+    · rw [noRuns r inRuns] at pending
+      cases pending
+    · rw [noPush] at busy
+      cases busy
   | fixing run =>
     have := noFixes c member
     simp [status, Status.isFixing] at this

@@ -11,6 +11,7 @@
  */
 import * as Schema from "effect/Schema";
 import * as Digest from "@smthrs/core/Digest";
+import { isWellFormed } from "./internal/unicode.js";
 /**
  * A link's flow-script text paired with the content digest that keys every
  * call it makes.
@@ -41,7 +42,8 @@ const fence = /(?<!`)(`{3,})flow\n([\s\S]*?)\n\1`*[ \t]*(?=\n|$)/g;
  * block, whose body becomes the script. The block opens with three or more
  * backticks followed by `flow` and closes on a line holding only at least
  * as many backticks, so a longer opening fence can carry inner fences.
- * CRLF line endings are read as LF, so the script text always uses LF.
+ * CRLF line endings are read as LF, so the script text always uses LF. A
+ * block holding an unpaired UTF-16 surrogate is rejected: it has no digest.
  *
  * @category gates
  * @since 0.1.0
@@ -61,6 +63,10 @@ export const extract = (raw) => {
         };
     }
     // The capture group always participates when the fence matches.
-    return { _tag: "Extracted", script: make(first[2]) };
+    const text = first[2];
+    if (!isWellFormed(text)) {
+        return { _tag: "Rejected", reason: "the ```flow block holds an unpaired UTF-16 surrogate, which is not text" };
+    }
+    return { _tag: "Extracted", script: make(text) };
 };
 import { invoke as $invoke } from "./Script.vibe.-24-call-24-ts.js";

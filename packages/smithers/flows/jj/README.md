@@ -150,7 +150,8 @@ and the store's `smithers.lock`; `root(from)` fences the directory it actually
 queries. The default 120-second deadline bounds acquisition of both fences only;
 execution can outlast it after acquisition.
 Cancellation releases both permits. A caller reclaims only a same-host lock
-whose owner process has exited.
+whose owner process has exited or whose PID now names a later process, and
+removes the lock candidates such dead owners left.
 
 `NodeJj.withRepositoryMutation` lets host adoption share these permits, and
 `NodeJj.layerRepositoryMutation` provides them as the root's `RepositoryMutation`

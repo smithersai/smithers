@@ -4,8 +4,8 @@
  * package's kernel produces. Returns the name of the first field that fails.
  */
 
-import type { Config, State } from "../../src/index.ts"
-import { green, pendingCount, tree } from "../../src/index.ts"
+import type { Config, State } from "../../src/Kernel.ts"
+import { green, pendingCount, tree } from "../../src/Kernel.ts"
 
 const unique = (values: ReadonlyArray<number>): boolean => new Set(values).size === values.length
 
@@ -45,7 +45,11 @@ export const violation = (config: Config, state: State): string | undefined => {
     end = [...landing.base, ...landing.batch]
   }
   if (!sameParts(state.main, end)) return "chain"
-  if (!state.landed.every((landing) => landing.batch.length > 0 && green(config, landing.results))) return "landings"
+  if (
+    !state.landed.every((landing) => landing.batch.length > 0 && (landing.foreign || green(config, landing.results)))
+  ) {
+    return "landings"
+  }
   if (pendingCount(config, state) > config.maxRuns) return "pending"
   const counts = new Map<number, number>()
   for (const sample of state.history) counts.set(sample.check, (counts.get(sample.check) ?? 0) + 1)

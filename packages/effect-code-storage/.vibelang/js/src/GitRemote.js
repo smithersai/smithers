@@ -17,6 +17,7 @@
  *
  * @since 0.1.0
  */
+import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as Option from "effect/Option";
@@ -67,8 +68,8 @@ export class GitRemoteError extends Schema.TaggedError()("@smthrs/effect-code-st
     }
 }
 /**
- * The counter {@link head} updates once per call: `git_remote_requests`, by
- * `outcome` (`ok`, or the failure's code).
+ * The counter {@link head} and {@link ref} update once per call: `git_remote_requests`, by
+ * `outcome` (`ok`, `defect`, `interrupted`, or the failure's code).
  *
  * @category observability
  * @since 0.1.0
@@ -149,7 +150,11 @@ const withCredential = (request, upstream) => upstream.authorization === undefin
 const observed = (span, remote) => (effect) => withSpan(Effect.onExit(effect, (exit) => Metric.update(Metric.withAttributes(requests, {
     outcome: Exit.isSuccess(exit) ?
         "ok" :
-        Option.match(Exit.findErrorOption(exit), { onNone: () => "interrupted", onSome: (error) => error.code })
+        Cause.hasDies(exit.cause) ?
+            "defect" :
+            Cause.hasInterrupts(exit.cause) ?
+                "interrupted" :
+                Option.match(Exit.findErrorOption(exit), { onNone: () => "defect", onSome: (error) => error.code })
 }), 1)), span, { attributes: { "git.remote": remote } });
 /**
  * Reads the HEAD of the git remote at `remote`, such as

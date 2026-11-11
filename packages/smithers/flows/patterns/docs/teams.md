@@ -170,6 +170,49 @@ A check that succeeds but returns a failure row is always listed in `failed`. It
 
 `run` takes the same record, with each value an `(input) => Effect` instead of a flow. It rejects the same suites `make` rejects, and it rejects them before any check runs: an empty record, an empty check id, and a `concurrency` that is not a positive safe integer each fail with a `PatternError`. An empty record fails rather than returning a false verdict, which would read like a failing suite rather than like a misconfigured one.
 
+### Discovered checks
+
+`make` and `run` need every check when the suite is written. When the checks are found at run time, such as the check scripts a commit has, use `makeDiscovered` and `runDiscovered`. They take one `check` and the ids to run it for:
+
+```ts
+import * as CheckSuite from "@smthrs/patterns/CheckSuite"
+
+const suite = CheckSuite.makeDiscovered({
+  check: runScript,
+  strategy: "all-pass",
+  concurrency: 1,
+  continueOnFail: true,
+  onEmpty: "pass"
+})
+
+// A step before the suite lists the scripts; the suite takes them as input.
+const checked = suite.call({ checks: ["lint", "test"], input: head })
+```
+
+The payload is `{ checks, input }` (`CheckSuite.DiscoveredPayload`). Each id becomes one call to `check` with `{ check: id, input }`. A declared suite needs the ids when its graph builds, which they are when the suite is called with an earlier step's result. `runDiscovered(payload, options)` takes the same payload and the same options, with `check` a `({ check, input }) => Effect`:
+
+```ts
+const verdict = yield * CheckSuite.runDiscovered({ checks: names, input: head }, {
+  check: ({ check, input }) => runScript(check, input),
+  strategy: "all-pass",
+  concurrency: 1,
+  continueOnFail: false,
+  onEmpty: "pass"
+})
+```
+
+| Behavior                   | `make`, `run`                                     | `makeDiscovered`, `runDiscovered`                                       |
+| -------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------- |
+| Checks                     | A record written with the suite                   | One `check`, run once per id in the payload                             |
+| Order                      | Record key order: ids like array indexes go first | The order of the ids                                                    |
+| No checks                  | Refused with `invalid_decorator`                  | Runs nothing; the verdict is `true` for `onEmpty: "pass"`, else `false` |
+| Repeated id                | Cannot be written                                 | Refused with `invalid_input`                                            |
+| Batching, `continueOnFail` | As described above                                | The same                                                                |
+
+Ids must be an array of unique, non-empty strings; anything else settles a declared suite, and fails `runDiscovered`, with a `PatternError` coded `invalid_input` before any check runs. The calls are joined under positional keys, not under the ids, so an id such as `__proto__` or `10` keeps its place in the order and in the verdict. A `concurrency` that is not a positive safe integer makes `makeDiscovered` throw and `runDiscovered` fail, as it does for `make` and `run`.
+
+`onEmpty` is required because finding no checks is an answer, not a mistake: a repository without check scripts usually passes, while a suite that must gate a release should fail when it finds nothing to run.
+
 ### Command checks
 
 `CheckSuite` runs flows, not commands. A command check is a shell flow from [`@smthrs/std`](/api/std), `Bash` or `ShellCommand`, composed under `CheckSuite` with a row that carries `ok`, `passed`, or `error` so `CheckSuite.passed` can classify it. The timeout, the output capture, and the exit-code reading belong to that shell flow, and you configure them there. `CheckSuite` adds the concurrency bound, the declaration order, and the verdict.

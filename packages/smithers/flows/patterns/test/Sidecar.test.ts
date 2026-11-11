@@ -86,11 +86,15 @@ describe("Sidecar", () => {
     // One arm, on the shadow. A sidecar is not a fallback ladder: a failed
     // primary is a failed run, so the primary must not gain an arm of its own.
     expect(Graph.nodes(graph).filter((node) => node.kind === "Catch")).toHaveLength(1)
-    // The marker the arm produces lives on the node's payload, and the error
-    // inside it is the planned reference to the shadow it recovers.
+    // The marker the arm produces lives on a node's payload, and the error
+    // inside it is the planned reference to the shadow it recovers. The arm
+    // itself is a mapper over that marker, which encodes the real error once
+    // the run has it.
     const recovery = Graph.nodes(graph).find((node) => node.id.endsWith("all.shadow.failure"))
-    expect(recovery?.draft.material.body).toEqual({ _tag: "Succeed" })
-    expect(recovery?.payload).toMatchObject({ quarantined: true })
+    expect(recovery?.draft.material.body).toMatchObject({ _tag: "Map" })
+    const marker = Graph.nodes(graph).find((node) => node.id.endsWith("all.shadow.failure.map"))
+    expect(marker?.draft.material.body).toEqual({ _tag: "Succeed" })
+    expect(marker?.payload).toMatchObject({ quarantined: true })
     // The sidecar declares no ceiling of its own, so it inherits its caller's
     // authority and neither member's declaration falls outside the grant.
     expect(Graph.diagnostics(graph)).toEqual([])

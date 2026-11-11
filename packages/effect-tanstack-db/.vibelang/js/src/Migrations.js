@@ -35,6 +35,7 @@ import * as Effect from "effect/Effect";
 import * as Metric from "effect/Metric";
 import * as Schema from "effect/Schema";
 import { fnv1a } from "./internal/fnv1a.js";
+import { decodeOutboxValue, encodeOutboxValue } from "./internal/outboxStored.js";
 import { toJsonSchemaDocument } from "./internal/schemaFingerprintDocument.js";
 import { decodeStored, encodeKey, encodeStored, quote } from "./internal/stored.js";
 // ---------------------------------------------------------------------------
@@ -413,17 +414,8 @@ const forward = (store, from, row) => {
         return kept("key");
     return { _tag: "Row", value: encodeStored(checked.value) };
 };
-/** Runs `body` in one transaction on `sql`, and rolls back if it fails. */
-const transaction = (sql, collection, body) => Effect.mapError(Effect_1.gen(function* () {
-    yield* sql.execute("BEGIN IMMEDIATE");
-    const exit = yield* Effect.exit(body);
-    if (Exit.isFailure(exit)) {
-        yield* Effect.ignore(sql.execute("ROLLBACK"));
-        return yield* Effect.failCause(exit.cause);
-    }
-    yield* sql.execute("COMMIT");
-    return exit.value;
-}), (cause) => new MigrationFailed({ collection, cause }));
+/** Runs `body` in one transaction on `sql`, rolling back on failure or interruption. */
+const transaction = (sql, collection, body) => Effect.mapError(Effect.acquireUseRelease(sql.execute("BEGIN IMMEDIATE"), () => body.pipe(Effect.tap(() => sql.execute("COMMIT"))), (_, exit) => Exit.isFailure(exit) ? Effect.ignore(sql.execute("ROLLBACK")) : Effect.void), (cause) => new MigrationFailed({ collection, cause }));
 /**
  * Brings a local collection forward in one transaction: migrates each row to
  * this build's version, sets aside each one that can't be, and records the
@@ -515,17 +507,17 @@ const bring = (sql, registry, stored) => {
     return bringLocal(sql, store, stored);
 };
 /**
- * Logs and counts one collection's outcome, without its rows: at Warn when a migration couldn't bring rows forward,
- * so they were set aside or dropped and no longer show; Debug when it was current; Info otherwise.
+ * Logs and counts one collection's outcome, without its rows: at Warn whenever rows were set aside or dropped,
+ * since they no longer show; Debug when it was current; Info otherwise.
  */
 const record = (outcome) => {
     var topic_1;
     return Effect.all([
         Metric.update(Metric.withAttributes(migrations, { store: outcome.store ?? "undeclared", outcome: outcome.outcome }), 1),
-        (topic_1 = (outcome.outcome === "current"
-            ? Effect.logDebug
-            : outcome.outcome === "migrated" && outcome.kept + outcome.dropped > 0
-                ? Effect.logWarning
+        (topic_1 = (outcome.kept + outcome.dropped > 0
+            ? Effect.logWarning
+            : outcome.outcome === "current"
+                ? Effect.logDebug
                 : Effect.logInfo)("device.migrate"), Effect.annotateLogs({ ...outcome, store: outcome.store ?? "undeclared", to: outcome.to ?? "none" })(topic_1))
     ], { discard: true });
     /**
@@ -649,10 +641,29 @@ export const outbox = (registry) => {
         const name = declaration.renamed?.[parsed.mutationFnName] ?? parsed.mutationFnName;
         if (!declaration.mutations.includes(name))
             return parked("mutation");
-        const versions = parsed.metadata?.versions ?? declaration.unstamped ?? {};
-        let changed = name !== parsed.mutationFnName || parsed.metadata?.versions === undefined;
+        if (parsed.valueEncoding !== undefined && parsed.valueEncoding !== 2 && parsed.valueEncoding !== 3) {
+            return parked("unreadable");
+        }
+        let metadata;
+        let rows;
+        try {
+            metadata = parsed.valueEncoding === 3
+                ? decodeOutboxValue(parsed.metadata, parsed.valueEncoding)
+                : parsed.metadata;
+            rows = parsed.mutations.map((mutation) => ({
+                ...mutation,
+                modified: decodeOutboxValue(mutation.modified, parsed.valueEncoding),
+                original: decodeOutboxValue(mutation.original, parsed.valueEncoding),
+                changes: decodeOutboxValue(mutation.changes, parsed.valueEncoding)
+            }));
+        }
+        catch {
+            return parked("decode");
+        }
+        const versions = metadata?.versions ?? declaration.unstamped ?? {};
+        let changed = name !== parsed.mutationFnName || metadata?.versions === undefined;
         const mutations = [];
-        for (const mutation of parsed.mutations) {
+        for (const mutation of rows) {
             const declared = payloads.get(mutation.collectionId);
             if (declared === undefined)
                 return parked("collection");
@@ -686,15 +697,26 @@ export const outbox = (registry) => {
         if (!changed)
             return { _tag: "Current" };
         const stamped = Object.fromEntries(parsed.mutations.map((mutation) => [mutation.collectionId, stamp[mutation.collectionId]]));
-        return {
-            _tag: "Upgraded",
-            value: JSON.stringify({
-                ...parsed,
-                mutationFnName: name,
-                mutations,
-                metadata: { ...parsed.metadata, versions: stamped }
-            })
-        };
+        try {
+            return {
+                _tag: "Upgraded",
+                value: JSON.stringify({
+                    ...parsed,
+                    valueEncoding: 3,
+                    mutationFnName: name,
+                    mutations: mutations.map((mutation) => ({
+                        ...mutation,
+                        modified: encodeOutboxValue(mutation.modified),
+                        original: encodeOutboxValue(mutation.original),
+                        changes: encodeOutboxValue(mutation.changes)
+                    })),
+                    metadata: encodeOutboxValue({ ...metadata, versions: stamped })
+                })
+            };
+        }
+        catch {
+            return parked("invalid");
+        }
     };
     return { stamp, write };
 };

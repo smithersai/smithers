@@ -1,6 +1,6 @@
 # @smthrs/integrations
 
-GitHub adapters over the Smithers control plane. Shared channels, cursors,
+GitHub and Telegram adapters over the Smithers control plane. Shared channels, cursors,
 source stores, and durable delivery receipts remain available for host integrations.
 
 Release scope and compatibility are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
@@ -51,12 +51,34 @@ total. Counts always start at page one, overriding caller pagination. Issue
 write reconciliation rejects every truncated scan, including scans with a
 matching marker, because the original may be older than the visible copy.
 
+## Telegram
+
+```ts
+import { Core, Telegram } from "@smthrs/integrations"
+import { Effect } from "effect"
+import { FetchHttpClient } from "effect/http"
+
+const door = Core.Channel.fromSource({ name: "telegram", route: Core.Channel.startFlow("triage") })
+
+// Inside a flow action: poll getUpdates, start one flow per message, then commit the offset.
+const receive = Effect.gen(function*() {
+  const source = yield* Telegram.Source.make({ allowedChatIds: [123456789] })
+  yield* source.run(door.handle)
+}).pipe(Effect.provide(FetchHttpClient.layer))
+```
+
+`Telegram.Source` receives a bot's messages by long-polling `getUpdates`, so it
+needs no public URL. It reads `SMITHERS_TELEGRAM_BOT_TOKEN`, drops every chat
+outside `allowedChatIds`, and commits the offset only after the batch was
+handled. Sending is `@smthrs/notifications`. See [the Telegram guide](docs/guides/telegram.md).
+
 ## Shared webhook ingress
 
 `Core.Channel.make` binds verify, decode, map, and dispatch in that order.
 Verification reads the exact delivered bytes. The receiver bounds body size
 before `Channels.ingest`, and gives every delivery an `idempotencyKey` to
-prevent duplicate work. Decoder warnings omit raw errors and schema issues. See [the receiver guide](docs/guides/webhook-ingress.md).
+prevent duplicate work. Decoder warnings omit raw errors and schema issues. See [the receiver guide](docs/guides/webhook-ingress.md). A polled
+source uses the same door: see [the polling source guide](docs/guides/polling-source.md).
 
 ## Tests
 
@@ -70,7 +92,7 @@ live suite requires an explicit test repository and credentials.
 
 ## Documentation
 
-[Quickstart](docs/quickstart.md) · [GitHub](docs/guides/github.md) ·
+[Quickstart](docs/quickstart.md) · [GitHub](docs/guides/github.md) · [Telegram](docs/guides/telegram.md) ·
 [API](docs/api.md) · [Durable actions](docs/concepts/durable-actions.md)
 
 PKCE helpers return lazy Effects and fail validation during execution. Authorization

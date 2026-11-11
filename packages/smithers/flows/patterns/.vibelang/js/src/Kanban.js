@@ -14,12 +14,13 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Compose from "./internal/Compose.js";
+import * as FailureSchema from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
 import * as Quarantine from "./Quarantine.js";
 const bound = (value) => Number.isSafeInteger(value) && value >= 1;
-const completionBoard = (outcomes, ids, names) => {
+const completionBoard = (outcomes, ids, names, wire) => {
     const board = new Map();
     const failed = [];
     const rejected = new Set();
@@ -36,7 +37,8 @@ const completionBoard = (outcomes, ids, names) => {
             }
             else {
                 rejected.add(id);
-                failed.push({ id, column, error: outcome.error });
+                // The board is what the flow settles with, so a rejection is data.
+                failed.push({ id, column, error: wire(outcome.error) });
             }
         }
     }
@@ -115,6 +117,7 @@ export const make = (options) => {
         $raise(new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" }));
     }
     const captures = { columns: names, items: ids, concurrency };
+    const wire = FailureSchema.wire(columns.map((column) => column.flow));
     // What one column hands the next: each live card's latest output, and every
     // card a column has rejected so far.
     const advance = (values, rejected) => {
@@ -160,7 +163,10 @@ export const make = (options) => {
         };
         return visit(0, {});
     };
-    const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options);
+    const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options, [
+        ...columns.map((column) => column.flow),
+        onComplete
+    ]);
     const body = () => {
         const walk = (index, carried, history) => Node.bindPlanned(column(index, carried), Node.capture({ ...captures, column: names[index] }, (values) => {
             const outcomes = [...history, values];
@@ -170,7 +176,7 @@ export const make = (options) => {
             }
             // The board is the same {@link Board} `run` returns for one pass.
             // `onComplete` sees it and its own answer is discarded, as in `run`.
-            const board = Node.map(Node.succeed(outcomes), Node.capture(captures, (settled) => completionBoard(settled, ids, names)));
+            const board = Node.map(Node.succeed(outcomes), Node.capture(captures, (settled) => completionBoard(settled, ids, names, wire)));
             if (onComplete === undefined)
                 return board;
             return Node.bindPlanned(board, Node.capture(captures, (settled) => Node.andThen(callMember(onComplete, { items, board: settled }), Node.succeed(settled))));
@@ -181,7 +187,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: OpaqueInput,
         success: Schema.Unknown,
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: FailureSchema.schemaFor([PatternError], [...columns.map((column) => column.flow), onComplete]),
         body: Node.capture(captures, body)
     });
 };

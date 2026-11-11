@@ -80,7 +80,7 @@ function bias(value: number): number {
   return value
 }
 
-const failureSignature = /^(ReturnedFalse|Deadlock|PropertyError:.+|Died:.+)$/
+const failureSignature = /^(ReturnedFalse|Deadlock|PropertyError:.+|Died:.+)$/s
 
 /**
  * Checks that a signature names a failure, so a token or a corpus entry cannot turn a pass into a finding.

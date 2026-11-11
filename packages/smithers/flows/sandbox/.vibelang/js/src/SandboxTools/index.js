@@ -929,12 +929,15 @@ export const cancel = (session, options) => commandSpan("cancel", Effect_1.gen(f
 // Each step that can fail exits with its own code (120 to 124), so a failure names its step (`ToolUnavailable.exitCode`).
 // The index the changes are staged in starts as a copy of the checkout's own, whose stat data lets `git add` hash only
 // the files that changed rather than every file in the checkout (on 15,000 files, 25 ms rather than a second); a checkout
-// with no index starts from `HEAD`. Either way `add -A` makes it the working copy, so the patch is the same.
+// with no index starts from `HEAD`. Either way `add -A` makes it the working copy, so the patch is the same. The copy
+// keeps the index's modification time (`cp -p`) because git reads it: an entry is trusted unless it is at least as new as
+// the index file, in whole seconds, so a copy stamped at copy time read a same-size edit from the second the index was
+// written as unchanged and left it out (#3431). REBASE stages through the same copy.
 const CHECKPOINT = `cd -- "$1" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
 dir=$(mktemp -d) || exit 120
 trap 'rm -rf -- "$dir"' EXIT
 own=$(git rev-parse --git-path index) || exit 121
-{ [ -f "$own" ] && cp -- "$own" "$dir/index" 2>/dev/null; } || GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
+{ [ -f "$own" ] && cp -p -- "$own" "$dir/index" 2>/dev/null; } || GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
 GIT_INDEX_FILE="$dir/index" git add -A || exit 122
 GIT_INDEX_FILE="$dir/index" git diff --cached --binary --no-color --no-ext-diff HEAD >"$dir/patch" || exit 123
 : >"$dir/bundle"
@@ -1043,7 +1046,7 @@ if ! has "$3"; then
 fi
 head=$(git rev-parse HEAD) || exit 121
 own=$(git rev-parse --git-path index) || exit 121
-{ [ -f "$own" ] && cp -- "$own" "$dir/index" 2>/dev/null; } || GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
+{ [ -f "$own" ] && cp -p -- "$own" "$dir/index" 2>/dev/null; } || GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
 GIT_INDEX_FILE="$dir/index" git add -A || exit 122
 tree=$(GIT_INDEX_FILE="$dir/index" git write-tree) || exit 122
 paths=${REBASE_PATHS}

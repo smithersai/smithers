@@ -41,7 +41,7 @@ const runtime = Effect.gen(function*() {
       targets: ["Plan", "Node"]
     },
     {
-      principal: { id: "release-bot", kind: "agent" },
+      principal: { id: "release-reviewer", kind: "user" },
       scopes: ["once"],
       targets: ["Node"]
     }
@@ -50,7 +50,9 @@ const runtime = Effect.gen(function*() {
 })
 ```
 
-Delegations bind an exact identity tuple, target kind, and approval scope. Scopes
+Delegations bind an exact identity tuple, target kind, and approval scope. People
+approve and deny; `make` refuses a delegation to an `agent` identity with
+`InvalidInput`, whatever its scopes or targets. Scopes
 are not hierarchical. A delegated actor may deny its listed target kinds without
 installing any grant. Delegation is reusable: `scopes: ["once"]` permits
 once-scoped grants; it is not a single-use delegation. A custom host policy must
@@ -65,10 +67,8 @@ trusted host capabilities, not endpoints for untrusted input. In particular,
 `installBulkGrant` is a storage port, not an authorization API. Use Control for
 an atomic durable decision, grant, journal entry, and receipt.
 
-Default MCP surfaces omit approval decisions and auto-approving starts. The
-compatibility server requires both host tool exposure and a separately delegated
-agent identity. Delegating an agent to approve is automated approval, not an
-independent human review. None of these checks sandboxes a caller that already
+Default MCP surfaces omit approval decisions and auto-approving starts. An MCP
+caller is the `mcp/agent` identity, which `make` cannot delegate. None of these checks sandboxes a caller that already
 has arbitrary host shell, code execution, or direct database write access.
 On loopback, `smthrs serve` prints a fresh per-session approval token to
 stderr (even with `--quiet`). Send `Authorization: Bearer <token>` to approve,

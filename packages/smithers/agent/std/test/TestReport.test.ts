@@ -23,6 +23,62 @@ describe("TestReport", () => {
     })
   })
 
+  it("does not read captured-log ERROR records as failed pytest ids", () => {
+    const output = [
+      "tests/test_a.py::test_x FAILED",
+      "tests/test_a.py::test_y PASSED",
+      "=================================== FAILURES ===================================",
+      "------------------------------ Captured log call -------------------------------",
+      "ERROR    django.request:log.py:224 Internal Server Error: /x",
+      "=========================== short test summary info ============================",
+      "FAILED tests/test_a.py::test_x - AssertionError",
+      "========================= 1 failed, 1 passed in 0.12s =========================="
+    ].join("\n")
+    expect(TestReport.parse(output)).toEqual({
+      passed: 1,
+      failed: ["tests/test_a.py::test_x"],
+      reportedFailed: 1,
+      parsed: true
+    })
+  })
+
+  it("reads a pytest report on stdout when stderr also has text", () => {
+    const stdout = [
+      "FAILED tests/test_a.py::test_x - AssertionError",
+      "========================= 1 failed, 1 passed in 0.12s =========================="
+    ].join("\n")
+    const report = {
+      passed: 1,
+      failed: ["tests/test_a.py::test_x"],
+      reportedFailed: 1,
+      parsed: true
+    }
+    expect(TestReport.read({ stdout, stderr: "make: *** [Makefile:3: test] Error 1\n" })).toEqual(report)
+    expect(TestReport.read({ stdout, stderr: "" })).toEqual(report)
+  })
+
+  it("reads a unittest report on stderr when stdout has test prints", () => {
+    const stderr = "FAIL: test_x (tests.Case.test_x)\nRan 2 tests in 0.001s\nFAILED (failures=1)\n"
+    const report = { passed: 1, failed: ["tests.Case.test_x"], reportedFailed: 1, parsed: true }
+    expect(TestReport.read({ stdout: "debug: 1 passed\n", stderr })).toEqual(report)
+    expect(TestReport.read({ stdout: "", stderr })).toEqual(report)
+  })
+
+  it("reads the joined streams when neither or both streams hold a complete report", () => {
+    expect(TestReport.read({ stdout: "tests/test_a.py::test_x FAILED", stderr: "1 failed in 0.1s" })).toEqual({
+      passed: 0,
+      failed: ["tests/test_a.py::test_x"],
+      reportedFailed: 1,
+      parsed: true
+    })
+    expect(TestReport.read({ stdout: "1..1\nok 1 - a", stderr: "Ran 0 tests in 0.001s\nOK" })).toEqual({
+      passed: 0,
+      failed: [],
+      reportedFailed: undefined,
+      parsed: false
+    })
+  })
+
   it("keeps observed pytest outcomes but rejects a verbose capture without a tally", () => {
     const output = [
       "tests/test_a.py::test_one PASSED",

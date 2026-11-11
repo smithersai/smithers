@@ -259,18 +259,33 @@ export const declaredSchemasCompatible = (input, output, declared) => {
     return undefined;
 };
 const labelValue = (value) => Array.isArray(value) ? value.map(String).join(",") : String(value);
+// A member name that could imitate the label's own separators is JSON-quoted,
+// so two different member lists never read as one label. An absent optional
+// member is an empty slot, which no quoted or `anonymous` name can be.
+const memberName = (member) => {
+    if (member === undefined)
+        return "";
+    const name = member._tag || member.name || "anonymous";
+    return /^[^\s,=()"[\]]+$/.test(name) ? name : JSON.stringify(name);
+};
 /**
- * Names a pattern flow the way the decorators name theirs: the pattern kind
- * and its declared bounds, `reviewLoop(maxRounds=3)`, unless the caller
- * supplied a `name`. An `undefined` field is left out of the label.
+ * Names a pattern flow the way the decorators name theirs: the pattern kind,
+ * its declared bounds and the members it calls,
+ * `reviewLoop(maxRounds=3)[draft, critique, draft]`, unless the caller
+ * supplied a `name`. An `undefined` field is left out of the label; an
+ * `undefined` member keeps its slot empty.
+ *
+ * The engine resolves a flow by its tag, so the members are part of the
+ * default: two unnamed patterns of one kind with equal bounds but different
+ * members are two flows, not one tag whose last registration runs for both.
  *
  * @since 1.0.0
  * @private
  */
-export const label = (kind, fields, options) => ({
+export const label = (kind, fields, options, members) => ({
     name: options.name ?? `${kind}(${Object.entries(fields)
         .filter(([, value]) => value !== undefined)
         .map(([key, value]) => `${key}=${labelValue(value)}`)
-        .join(", ")})`,
+        .join(", ")})[${members.map(memberName).join(", ")}]`,
     description: options.description
 });

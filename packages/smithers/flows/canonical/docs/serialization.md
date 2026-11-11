@@ -129,6 +129,9 @@ so in a fixed order.
 - **Proxies are serialized through their traps.** A trap that throws, including
   a `get` on an array's `length`, surfaces as `canonical_getter_threw` at the
   path where it threw, never as the raw error.
+- **An array length above `4,294,967,295`** is refused with
+  `canonical_unsupported_value` at the array's path before allocating its
+  elements. This includes a proxy that reports a larger length.
 - **A value reachable twice is walked twice.** Two members pointing at one
   object are not a cycle; the object is serialized and validated at each
   occurrence, so a refusal fires whichever occurrence reaches it first. Work
@@ -166,7 +169,18 @@ re-serializes it on the way through. The `Canonical` schema's encode direction
 is the same round trip in reverse: it parses a document back into a plain JSON
 value.
 
+Constructor names in refusal messages are accepted only as nonempty strings
+and capped at 1,024 code units. Other name values use a fixed type label and
+are never coerced.
+
 ## Values with no canonical form
+
+Replacing a `Map` or `Set` prototype with `null` or `Object.prototype`
+does not make it plain data: its internal collection slot is still refused.
+This prevents populated collections from colliding with `{}` in a digest.
+Detecting their internal slots adds two intrinsic probes for each new object.
+Negative brand results are cached weakly, so repeated digests of the same
+objects reuse them; fresh parsed or schema-encoded records pay this cost again.
 
 These are refused, each with a stable code and the path of the offending value:
 non-finite numbers, `bigint` (boxed or not), unpaired surrogates, cycles,

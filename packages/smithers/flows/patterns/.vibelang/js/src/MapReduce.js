@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Bounded from "./Bounded.js";
 import * as Compose from "./internal/Compose.js";
+import * as Failure from "./internal/Failure.js";
 import { call as callMember } from "./internal/Member.js";
 import { PatternError } from "./PatternError.js";
 /**
@@ -48,7 +49,10 @@ export const make = (options) => {
             message: "MapReduce concurrency must be a positive safe integer"
         }));
     }
-    const { name, description } = Compose.label("mapReduce", { concurrency, onEmpty }, options);
+    const { name, description } = Compose.label("mapReduce", { concurrency, onEmpty }, options, [
+        stages.map,
+        stages.reduce
+    ]);
     const body = (input) => {
         if (typeof input !== "object" ||
             input === null ||
@@ -88,7 +92,9 @@ export const make = (options) => {
         ...(description === undefined ? {} : { description }),
         payload: Payload,
         success: Schema.Unknown,
-        error: Schema.Unknown,
+        // The engine encodes a typed failure through this schema: the pattern's
+        // own `PatternError`, and whatever a member it called failed with.
+        error: Failure.schemaFor([PatternError], [stages.map, stages.reduce]),
         body: Node.capture({ concurrency, onEmpty }, body)
     });
 };

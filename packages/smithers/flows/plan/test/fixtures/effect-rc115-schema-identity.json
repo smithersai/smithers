@@ -1,7 +1,7 @@
 {
   "producer": {
     "source": {
-      "sha": "116ba5fa05"
+      "sha": "0e051052ef"
     },
     "effect": "4.0.0-rc.115",
     "package": {
@@ -9,7 +9,7 @@
       "version": "4.0.0-rc.115",
       "integrity": "sha512-ogYulZ5ffeOzrJqQrG0XOkDO5lKn2s9KNHhoxJy/6wKUkF0i12dlVXWA9TgsgQ+zV/JzizyG0+XMPepZEQX6vw=="
     },
-    "node": "v26.10.0",
+    "node": "v26.5.0",
     "emitter": "Schema.toJsonSchemaDocument(schema, options)",
     "generator": "packages/smithers/flows/plan/test/fixtures/effect-rc115-schema-identity.generate.mjs",
     "note": "One recording per value of onExcessProperty. Each document is JSON.stringify of what the emitter above returned for the corpus entry of that name, key order included. Each failure is the message it threw, and whether the emitter or an earlier step threw it. The representation entries are the same for SchemaRepresentation.toJsonSchemaDocument(document, options). Nothing was regenerated under a newer effect."
@@ -451,6 +451,10 @@
         "brand/twice-annotated": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"title\":\"t\"},\"definitions\":{}}",
         "brand/tuple-with-rest": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"array\",\"prefixItems\":[{\"type\":\"string\"}],\"minItems\":1,\"items\":{\"anyOf\":[{\"type\":\"number\"},{\"type\":\"string\",\"enum\":[\"Infinity\",\"-Infinity\",\"NaN\"]}]}},\"definitions\":{}}",
         "brand/struct-with-rest": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"string\"}},\"required\":[\"a\"],\"allOf\":[{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}]},\"definitions\":{}}",
+        "brand/trim": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
+        "brand/number-from-string": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
+        "brand/number-from-string-checked": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
+        "brand/codec-field": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"slug\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"slug\",\"count\"],\"additionalProperties\":false},\"definitions\":{}}",
         "transform/decodeTo": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "transform/struct-fields": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"n\":{\"type\":\"string\"},\"d\":{\"type\":\"string\"}},\"required\":[\"n\",\"d\"],\"additionalProperties\":false},\"definitions\":{}}",
         "transform/fromJsonString": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"contentMediaType\":\"application/json\"},\"definitions\":{}}",
@@ -984,6 +988,10 @@
         "brand/twice-annotated": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"title\":\"t\"},\"definitions\":{}}",
         "brand/tuple-with-rest": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"array\",\"prefixItems\":[{\"type\":\"string\"}],\"minItems\":1,\"items\":{\"anyOf\":[{\"type\":\"number\"},{\"type\":\"string\",\"enum\":[\"Infinity\",\"-Infinity\",\"NaN\"]}]}},\"definitions\":{}}",
         "brand/struct-with-rest": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"string\"}},\"required\":[\"a\"],\"allOf\":[{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}}]},\"definitions\":{}}",
+        "brand/trim": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
+        "brand/number-from-string": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
+        "brand/number-from-string-checked": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
+        "brand/codec-field": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"slug\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"slug\",\"count\"],\"additionalProperties\":true},\"definitions\":{}}",
         "transform/decodeTo": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "transform/struct-fields": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"n\":{\"type\":\"string\"},\"d\":{\"type\":\"string\"}},\"required\":[\"n\",\"d\"],\"additionalProperties\":true},\"definitions\":{}}",
         "transform/fromJsonString": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"contentMediaType\":\"application/json\"},\"definitions\":{}}",

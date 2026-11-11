@@ -339,10 +339,15 @@ const drive = (memory, state, entry, instance) => snapshot(instance.flow, state.
 const resumeUnlocked = Effect.fnUntraced(function* (memory, executionId, state, admittedEntry) {
     wake(memory, executionId);
     // Only the first drive and a suspended round are driven: a live round
-    // keeps running, and every other settlement is terminal.
+    // keeps running, and every other settlement is terminal. A wake that lands
+    // on a live round is delivered once the round settles: the round may park
+    // having read its wait before the completion, and a child round has no
+    // polling follower to re-drive it.
     if (state.fiber !== undefined && !settledSuspended(state)) {
-        if (state.fiber.pollUnsafe() === undefined)
-            memory.missedWakes.add(executionId);
+        if (state.fiber.pollUnsafe() !== undefined || memory.missedWakes.has(executionId))
+            return;
+        memory.missedWakes.add(executionId);
+        yield* Effect.forkIn(Effect.andThen(Fiber.await(state.fiber), resume(memory, executionId)), memory.scope);
         return;
     }
     // The latest still-open registration serves every drive, so a re-drive
@@ -574,14 +579,15 @@ const hasPendingClock = (memory, executionId) => {
 /**
  * A follower's elapsed poll (`{ poll: true }`). As the durable engine does, it
  * re-drives a parked run only when a wake may be due: it leaves a run to the
- * timer this engine holds for it, which re-drives the run when it fires,
- * unless a completion may have landed while a round was live. Re-driving it
- * earlier replays the round only to park it again, once per poll.
+ * timer this engine holds for it, which re-drives the run when it fires. A
+ * completion that landed while a round was live re-drives the run when that
+ * round settles. Re-driving it earlier replays the round only to park it
+ * again, once per poll.
  */
 const pollResume = (memory, flow, executionId) => Effect.suspend(() => {
     const state = executionOf(memory, flow, executionId);
     const waitsOnItsTimer = state !== undefined && settledSuspended(state) && !state.instance.interrupted &&
-        !memory.missedWakes.has(executionId) && hasPendingClock(memory, executionId);
+        hasPendingClock(memory, executionId);
     return waitsOnItsTimer ? authorize(flow, state, executionId) : resumeAuthorized(memory, flow, executionId);
 });
 const resumeSignal = (memory, executionId) => Effect.suspend(() => {

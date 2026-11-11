@@ -77,5 +77,8 @@ poll times out with `[{"headers":{"control":"up-to-date",...}}]`).
 `fetchClient`. A body that breaks off is a network failure for the sync policy.
 A body that ends but is not a JSON array fails the `fetchClient` call, so
 Electric stops the shape before `#onInitialResponse` runs, and `reconnect`
-sends the same request again. A row that fails the collection's schema still
-skips its batch on `reconnect`; that path needs the upstream fix.
+sends the same request again. A row that fails the collection's schema, or a
+`parser` that throws, stops the shape after `#onInitialResponse` ran. For that
+stop `reconnect` does not answer `onError` with a retry in place: it ends the
+`ShapeStream` and starts a new one from the last handle and offset the
+collection committed, so the batch is asked for again.

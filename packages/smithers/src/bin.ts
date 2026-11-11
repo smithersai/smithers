@@ -27,8 +27,12 @@ const bootstrap = async (): Promise<void> => {
       // version check, so older Node releases get the actionable refusal too.
       const { installEffectResolution } = await import("@smthrs/build-cli/effect-resolution")
       const original = process.argv.slice(2)
+      // What a project flow imports besides Effect and the flow core. Owning them
+      // lets a CLI installed outside the project host a flow built on a pattern.
       installEffectResolution({
         "@smthrs/agent": import.meta.url,
+        "@smthrs/integrations": import.meta.url,
+        "@smthrs/patterns": import.meta.url,
         "@smthrs/registry/Prompt/jsx-runtime": import.meta.url
       }, { deferTypeScript: deferTypeScript(original) })
       const parsed = Argv.parse(original)

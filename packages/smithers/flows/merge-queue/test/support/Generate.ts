@@ -7,8 +7,8 @@
  * ones. The same seed always gives the same trace.
  */
 
-import type { Config, State } from "../../src/index.ts"
-import { empty, initialConfig, parseLine, plan, step } from "../../src/index.ts"
+import type { Config, State } from "../../src/Kernel.ts"
+import { empty, initialConfig, parseLine, plan, step } from "../../src/Kernel.ts"
 
 /** A small seeded generator (mulberry32). */
 export const random = (seed: number): () => number => {
@@ -46,7 +46,8 @@ const eventLine = (next: () => number, config: Config, state: State): string => 
   const change = pick(next, state.changes)
   const run = pick(next, state.runs)
   const check = next() < 0.9 ? pick(next, config.required) ?? below(next, 6) : below(next, 6)
-  if (roll < 0.34) return "plan"
+  if (roll < 0.3) return "plan"
+  if (roll < 0.34) return state.pushing !== null ? `land ${state.pushing}` : "plan"
   if (roll < 0.46) return `enqueue ${next() < 0.9 ? state.changes.length + 1 : below(next, 6)} ${below(next, 3)}`
   if (roll < 0.74) {
     const verdict = next() < 0.8 ? "pass" : "fail"
@@ -63,8 +64,10 @@ const eventLine = (next: () => number, config: Config, state: State): string => 
     return `gaveup ${change?.id ?? below(next, 6)} ${attempt}${next() < 0.8 ? " needs a rewrite" : ""}`
   }
   if (roll < 0.88) return `withdraw ${change?.id ?? below(next, 6)}`
-  if (roll < 0.91) return `start ${below(next, 5)}`
-  if (roll < 0.94) return `land ${run?.id ?? below(next, 8)}`
+  if (roll < 0.9) return `start ${below(next, 5)}`
+  if (roll < 0.91) return `foreign ${next() < 0.8 ? 100 + state.changes.length : below(next, 6)}`
+  if (roll < 0.925) return `push ${run?.id ?? below(next, 8)}`
+  if (roll < 0.94) return `land ${next() < 0.85 && state.pushing !== null ? state.pushing : run?.id ?? below(next, 8)}`
   if (roll < 0.96) return `blame ${run?.id ?? below(next, 8)}`
   if (roll < 0.98) return `cancel ${run?.id ?? below(next, 8)}`
   return pick(next, malformed)!

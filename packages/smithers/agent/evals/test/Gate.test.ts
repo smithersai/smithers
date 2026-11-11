@@ -1,6 +1,9 @@
+import * as Binding from "@smthrs/scorers/Binding"
+import * as Scorer from "@smthrs/scorers/Scorer"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { describe, expect, it } from "vitest"
+import * as Baseline from "../src/Baseline.vibe"
 import * as CaseExecutor from "../src/CaseExecutor.ts"
 import { EvalError } from "../src/EvalError.vibe"
 import * as Gate from "../src/Gate.vibe"
@@ -169,6 +172,46 @@ describe("Gate", () => {
       "case 'c' failed: invalid_suite: Target failed for case 'c': the fixture file evals/x.jsonl is missing its expected column"
     )
     expect(Gate.ciGrade(verdict).exitCode).toBe(5)
+  })
+
+  // A case whose execution reported a target no binding applies to used to
+  // carry neither an error nor a missing observation, so a baseline recorded
+  // from the run knew nothing of it and the gate passed with it never graded.
+  it("leaves a run undecided when an executed case had no binding to grade it", async () => {
+    const target = { name: "target" } as const
+    const exact = Scorer.make({
+      id: "packages/smithers/agent/evals/test/Gate/exact",
+      version: "1",
+      name: "exact",
+      score: ({ output, groundTruth }) => Effect.succeed({ score: Object.is(output, groundTruth) ? 1 : 0 })
+    })
+    const suite = await Effect.runPromise(
+      Suite.make({
+        name: "s",
+        concurrency: 1,
+        bindings: [Binding.make({ scorer: exact, appliesTo: target })],
+        cases: [{ name: "graded", input: 1, expected: 1 }, { name: "ungraded", input: 2, expected: 3 }]
+      })
+    )
+    const executor = Layer.succeed(CaseExecutor.CaseExecutor)(
+      CaseExecutor.make((suiteCase) =>
+        Effect.succeed({
+          output: suiteCase.input,
+          stepKey: suiteCase.name,
+          latencyMs: 0,
+          target: suiteCase.name === "graded" ? target : { ...target }
+        })
+      )
+    )
+    const run = await Effect.runPromise(
+      Runner.run(suite, { runId: "run", at: "2026-01-01T00:00:00.000Z" }).pipe(Effect.provide(executor))
+    )
+    const baseline = await Effect.runPromise(Baseline.fromRun(run))
+    const comparison = await Effect.runPromise(Regression.compare(baseline, run))
+    const graded = Gate.ciGrade(await Effect.runPromise(Gate.check(comparison, { min: 1 })))
+    expect(graded.exitCode).toBe(5)
+    expect(graded.summary).toContain("case 'ungraded' executed but no scorer binding applies to its target")
+    expect(run.cases.map((result) => result.ungraded)).toEqual([undefined, "unbound"])
   })
 
   it("never lets a verdict reason print its own CI log line", async () => {

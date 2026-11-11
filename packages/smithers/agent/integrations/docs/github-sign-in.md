@@ -71,9 +71,9 @@ The host serves `PublicRead.ROUTE` with `PublicRead.route({ origin, sites, token
 
 `GitHub.ReadCache.make({ store, upstream })` caches every `GET` with its ETag. A copy confirmed within 30 seconds answers alone; an older one is revalidated with `If-None-Match`, whose `304` costs no rate limit. A rate limit, `401`, `5xx`, a refusal or a lost connection answers the copy with `x-smithers-stale`, and `ReadCache.observeStale(program)` reports when GitHub last confirmed it. A `404` drops the copy. Bodies over 1 MiB are not kept. A request to GitHub runs detached from its reader and is shared by every reader of its URL, so a reader that stops waiting still leaves GitHub's answer stored. `observeStale(program, { patience })` bounds how long the whole program waits for revalidations of copies it holds: after that, each such copy answers at once, stale (outcome `slow`), while its revalidation finishes. A read with no copy always waits.
 
-| Counter                        | Outcomes                                                                           |
-| ------------------------------ | ---------------------------------------------------------------------------------- |
-| `smithers_github_public_reads` | `ok`, `not_modified`, `missing`, `rate_limited`, `refused`, `forbidden`, `unavailable` |
+| Counter                        | Outcomes                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `smithers_github_public_reads` | `ok`, `not_modified`, `missing`, `rate_limited`, `refused`, `forbidden`, `unavailable`   |
 | `smithers_github_read_cache`   | `fresh`, `revalidated`, `stored`, `stale`, `slow`, `dropped`, `too_large`, `miss_failed` |
 
 Logs carry the outcome only, never a path, body or token.

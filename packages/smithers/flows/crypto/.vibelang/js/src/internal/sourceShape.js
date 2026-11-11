@@ -15,7 +15,7 @@
  *   `let` and `const`, function and class names, and `catch` parameters, in
  *   function, block, `catch`, `for` and class-name scopes.
  * - A name the source reads but never declares is `$f` and its number in
- *   order of first use (except standard built-in globals, kept by name),
+ *   order of first use (except built-in and host names, kept by name),
  *   a label `$l` and its number, a private name `#` and its number.
  * - Literals, keywords and operators are kept verbatim, and so are a property
  *   name after `.` or `?.` and an object or class key. A shorthand member
@@ -33,10 +33,11 @@
  * outside the function, because a minifier may give them each other's names.
  *
  * This reads tokens, not a syntax tree, and decides the two ambiguities a
- * tokenizer must by the token before: `/` starts a regular expression where
- * an operand cannot end, and `{` opens an object where an expression can
- * start. Source a function was parsed from is valid; a misread of an unusual
- * construct makes two builds of one callback read differently, which a
+ * tokenizer must: `/` starts a regular expression where an operand cannot
+ * end, including after a statement head's closing parenthesis, and `{` opens
+ * an object where an expression can start. Source a function was parsed from
+ * is valid; a misread of an unusual construct makes two builds of one
+ * callback read differently, which a
  * resume refuses, rather than two different callbacks read alike.
  *
  * @since 1.0.0
@@ -92,7 +93,8 @@ const reserved = new Set([
     "yield"
 ]);
 /**
- * Standard global names are semantic identities, never minifier bindings.
+ * Built-in and host names, including implicit arguments, are semantic identities,
+ * never minifier bindings.
  * Keep this explicit and host-independent: inspecting globalThis would make
  * the same callback's identity depend on the runtime building its plan.
  * Scope resolution runs first, so a local with any of these names still renames.
@@ -100,6 +102,7 @@ const reserved = new Set([
  */
 const builtinGlobals = new Set([
     "globalThis",
+    "arguments",
     "undefined",
     "NaN",
     "Infinity",
@@ -190,6 +193,22 @@ const builtinGlobals = new Set([
     "File",
     "FormData",
     "WebSocket",
+    "process",
+    "Buffer",
+    "require",
+    "window",
+    "self",
+    "document",
+    "navigator",
+    "localStorage",
+    "sessionStorage",
+    "indexedDB",
+    "caches",
+    "setImmediate",
+    "XMLHttpRequest",
+    "Worker",
+    "MessageChannel",
+    "BroadcastChannel",
     "console",
     "performance",
     "structuredClone",
@@ -221,6 +240,8 @@ const beforeExpression = new Set([
     "void",
     "yield"
 ]);
+/** Words whose parenthesized heads are followed by a statement. @private */
+const statementHeads = new Set(["if", "while", "for", "with"]);
 /** Words after which `{` opens an object literal or pattern rather than a block. @private */
 const beforeObject = new Set([
     "await",
@@ -428,10 +449,23 @@ const tokenize = (source) => {
     const tokens = [];
     // Which open brace a `}` closes: a block or object, or a template substitution.
     const braces = [];
+    // A statement head's closing parenthesis admits a regex; an operand's does not.
+    const parentheses = [];
+    let afterStatementHead = false;
     let newline = false;
     let index = 0;
     const push = (kind, end) => {
-        tokens.push({ kind, text: source.slice(index, end), newline });
+        const text = source.slice(index, end);
+        if (kind === "punctuator" && text === "(") {
+            const previous = tokens.length - 1;
+            const head = tokens[previous]?.text === "await" && tokens[previous - 1]?.text === "for"
+                ? previous - 1
+                : previous;
+            parentheses.push(tokens[head]?.kind === "name" && statementHeads.has(tokens[head].text) &&
+                tokens[head - 1]?.text !== "." && tokens[head - 1]?.text !== "?.");
+        }
+        afterStatementHead = kind === "punctuator" && text === ")" && parentheses.pop() === true;
+        tokens.push({ kind, text, newline });
         newline = false;
         index = end;
     };
@@ -470,7 +504,7 @@ const tokenize = (source) => {
                 end += source.charCodeAt(end) === 92 ? 2 : 1;
             push("literal", Math.min(end + 1, source.length));
         }
-        else if (code === 47 && regexAfter(tokens[tokens.length - 1]) && regexEnd(source, index) !== -1) {
+        else if (code === 47 && (afterStatementHead || regexAfter(tokens[tokens.length - 1])) && regexEnd(source, index) !== -1) {
             push("literal", regexEnd(source, index));
         }
         else if (isDigit(code) || (code === 46 && isDigit(next))) {

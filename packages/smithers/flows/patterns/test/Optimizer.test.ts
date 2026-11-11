@@ -170,7 +170,9 @@ describe("Optimizer", () => {
     expect(named._tag).toBe("tune-prompt")
     expect(named.description).toBe("Generate a prompt, score it, try again.")
     const derived = Optimizer.make({ generate, evaluate, maxIterations: 2 })
-    expect(derived._tag).toBe("optimizer(maxIterations=2, onMaxReached=return-last)")
+    expect(derived._tag).toBe(
+      "optimizer(maxIterations=2, onMaxReached=return-last)[optimizer/generate, optimizer/evaluate]"
+    )
     expect(derived.description).toBeUndefined()
   })
 

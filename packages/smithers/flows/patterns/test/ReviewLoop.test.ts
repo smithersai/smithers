@@ -162,7 +162,9 @@ describe("ReviewLoop", () => {
 
     expect(named._tag).toBe("derisk")
     expect(named.description).toBe("Plan, review the plan, revise it.")
-    expect(ReviewLoop.make({ produce, review, revise, maxRounds: 2 })._tag).toBe("reviewLoop(maxRounds=2)")
+    expect(ReviewLoop.make({ produce, review, revise, maxRounds: 2 })._tag).toBe(
+      "reviewLoop(maxRounds=2)[reviewLoop/produce, reviewLoop/review, reviewLoop/revise]"
+    )
     expect(ReviewLoop.make({ produce, review, revise, maxRounds: 2 }).description).toBeUndefined()
   })
 
@@ -319,7 +321,9 @@ describe("ReviewLoop stall", () => {
       maxRounds: 5,
       stall: { rounds: 2, on: "park" }
     })
-    expect(loop._tag).toBe("reviewLoop(maxRounds=5, stall=2/park)")
+    expect(loop._tag).toBe(
+      "reviewLoop(maxRounds=5, stall=2/park)[reviewLoop/produce, reviewLoop/review, reviewLoop/stuck-revise]"
+    )
     const settled = await settle(loop, "seed", "review-loop-stall", 99)
 
     expect(settled).toEqual({

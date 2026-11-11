@@ -231,7 +231,7 @@ describe("a follower's poll of a run parked on its own timer", () => {
   )
 
   effect(
-    "re-drives the run on the next poll when a resume found its round still running",
+    "re-drives the run when a resume found its round still running and the round parks",
     () =>
       Effect.gen(function*() {
         const engine = yield* FlowRuntime.FlowRuntime
@@ -263,11 +263,14 @@ describe("a follower's poll of a run parked on its own timer", () => {
         yield* Deferred.await(entered)
         yield* engine.resume(Cools, "cools-after-a-live-resume")
         yield* Deferred.succeed(release, undefined)
+        // So the settled round is re-driven at once, without waiting for a poll.
+        for (let turn = 0; turn < 50 && drives < 2; turn++) yield* Effect.yieldNow
+        expect(drives).toBe(2)
+
+        // The re-driven round parks on its timer, so elapsed polls leave it be
+        // and the timer wakes it.
         const parked = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
         yield* pollUntil(pollOf(Cools.poll("cools-after-a-live-resume")), parked, { turns: 200 })
-        expect(drives).toBe(1)
-
-        // So the first elapsed poll re-drives it, and the timer still wakes it.
         yield* TestClock.adjust(200)
         for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
         expect(drives).toBe(2)
