@@ -1,0 +1,40 @@
+import { Digest, digest, digestSync, type Sha256Error, WebCrypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+
+/** The store: bytes under the digest of those bytes, and nothing else. */
+const blobs = new Map<string, Uint8Array>()
+
+/** Publishes bytes and returns the only name they will ever have. */
+export effect function put(bytes: Uint8Array): Digest!Sha256Error!EffectDigest.Digest {
+  const owned = Uint8Array.from(bytes)
+  const address = try digest(owned)
+  blobs.set(address, owned)
+  return address
+}
+
+/** Reads bytes back, checking the address and then the bytes it names. */
+export effect function get(address: string) {
+  const requested = try Schema.decodeUnknownEffect(Digest)(address)
+  const bytes = blobs.get(requested)
+  if (bytes === undefined) return "missing" as const
+
+  // Bytes are what they claim to be only while they still hash to the
+  // address they are stored under.
+  const recomputed = try digest(bytes)
+  return recomputed === requested ? "verified" as const : "corrupt" as const
+}
+
+/** Stores the quickstart bytes, then reads back their address and an unknown one. */
+export effect function quickstart() {
+  provide WebCrypto.layer {
+    const input = new TextEncoder().encode("the quickstart bytes")
+    const address = try put(input)
+    input.fill(0) // Reusing the caller's buffer leaves the stored bytes intact.
+    return [address, try get(address), try get("0".repeat(64))] as const
+  }
+}
+
+/** `digestSync` needs no service; it may throw, so Effect code runs it in `Effect.try`. */
+export effect function digestNow(text: string): Digest!Sha256Error {
+  return try Effect.try({ try: () => digestSync(text), catch: (error) => error as Sha256Error })
+}

@@ -1,0 +1,29 @@
+import { expect, it } from "@effect/vitest"
+import { syncCrypto } from "@smthrs/crypto"
+import * as EffectDigest from "effect/crypto/Digest"
+import { digestNow, get, put, quickstart } from "../examples/quickstart.vibe"
+
+const quickstartDigest = "43648540bc1311ad4731c914b68594dbf0cf1870f84de1f6c8511481dc1f76b7"
+
+it.effect("stores bytes under their digest and verifies them on the way back", effect () => {
+  expect(try quickstart()).toEqual([quickstartDigest, "verified", "missing"])
+})
+
+it.effect("refuses a malformed address before touching the store", effect () => {
+  const refused = try exit(provideService(get(quickstartDigest.toUpperCase()), EffectDigest.Digest, syncCrypto))
+  expect(Exit.isFailure(refused)).toBe(true)
+})
+
+it.effect("keeps stored bytes when the caller reuses its buffer", effect () => {
+  provide Layer.succeed(EffectDigest.Digest, syncCrypto) {
+    const input = new TextEncoder().encode("abc")
+    const address = try put(input)
+    input.fill(0)
+    expect(address).toBe(try digestNow("abc"))
+    expect(try get(address)).toBe("verified")
+  }
+})
+
+it.effect("digestSync agrees with the injected service", effect () => {
+  expect(try digestNow("the quickstart bytes")).toBe(quickstartDigest)
+})

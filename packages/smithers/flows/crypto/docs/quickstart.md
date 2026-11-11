@@ -9,7 +9,9 @@ This quickstart builds the smallest thing a digest is actually for: a store
 that names bytes after their own hash. By the end you will have hashed a
 value through the injected `Crypto` service, validated a digest that arrived
 as an untrusted string, and re-verified bytes against the address they were
-stored under.
+stored under. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -124,6 +126,61 @@ validated the address before using it as a key, then re-hashed the stored bytes 
 trusting the map. Those two habits are the whole discipline of content
 addressing: never accept a digest you have not validated, and never trust
 bytes you have not re-hashed.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) `put` and `get` are
+`effect` functions, so `try` replaces `yield*` and the `Digest` requirement
+still travels in the return type. `provide` supplies the package's
+`WebCrypto.layer` around the run. `digestSync` is a TypeScript function that
+may throw `Sha256Error`, and the compiler refuses a bare call in Effect code, so
+`digestNow` runs it through `Effect.try`.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Digest, digest, digestSync, type Sha256Error, WebCrypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+
+/** The store: bytes under the digest of those bytes, and nothing else. */
+const blobs = new Map<string, Uint8Array>()
+
+/** Publishes bytes and returns the only name they will ever have. */
+export effect function put(bytes: Uint8Array): Digest!Sha256Error!EffectDigest.Digest {
+  const owned = Uint8Array.from(bytes)
+  const address = try digest(owned)
+  blobs.set(address, owned)
+  return address
+}
+
+/** Reads bytes back, checking the address and then the bytes it names. */
+export effect function get(address: string) {
+  const requested = try Schema.decodeUnknownEffect(Digest)(address)
+  const bytes = blobs.get(requested)
+  if (bytes === undefined) return "missing" as const
+
+  // Bytes are what they claim to be only while they still hash to the
+  // address they are stored under.
+  const recomputed = try digest(bytes)
+  return recomputed === requested ? "verified" as const : "corrupt" as const
+}
+
+/** Stores the quickstart bytes, then reads back their address and an unknown one. */
+export effect function quickstart() {
+  provide WebCrypto.layer {
+    const input = new TextEncoder().encode("the quickstart bytes")
+    const address = try put(input)
+    input.fill(0) // Reusing the caller's buffer leaves the stored bytes intact.
+    return [address, try get(address), try get("0".repeat(64))] as const
+  }
+}
+
+/** `digestSync` needs no service; it may throw, so Effect code runs it in `Effect.try`. */
+export effect function digestNow(text: string): Digest!Sha256Error {
+  return try Effect.try({ try: () => digestSync(text), catch: (error) => error as Sha256Error })
+}
+```
 
 ## Next steps
 
