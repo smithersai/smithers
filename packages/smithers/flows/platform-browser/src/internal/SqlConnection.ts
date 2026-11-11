@@ -167,6 +167,11 @@ export interface Service {
   /** Whether this owner still holds an open transaction, including after a failed statement. */
   readonly isOpen: (owner: string) => boolean
   /**
+   * The number of the request that opened `owner`'s open transaction, if it has one: its receipt names it. A request
+   * that ends the transaction and opens another names itself.
+   */
+  readonly opened: (owner: string) => number | undefined
+  /**
    * Rolls back `owner`'s open transaction, if it has one, and lends the connection again.
    * A failed rollback poisons the connection, wakes its waiters with SQL errors,
    * and defects instead of reporting successful abandonment.
@@ -556,7 +561,8 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
       run: run as Service["run"],
       runBatch,
       abandon,
-      isOpen: (owner) => holder?.owner === owner
+      isOpen: (owner) => holder?.owner === owner,
+      opened: (owner) => holder?.owner === owner ? holder.receipt?.id : undefined
     })
   })
 

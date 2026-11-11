@@ -74,8 +74,9 @@ export const Execute = Schema.TaggedStruct("Execute", {
 
 /**
  * The leader ran the statement. `leader` names the leader; `open` says
- * whether the statement left the client's transaction open. A batch's reply
- * carries each statement's rows in `results`.
+ * whether the statement left the client's transaction open, and `opened`
+ * the request that opened it, which the tab sends as `Execute`'s `opened`.
+ * A batch's reply carries each statement's rows in `results`.
  *
  * @category protocol
  * @since 1.0.0
@@ -85,12 +86,14 @@ export const Executed = Schema.TaggedStruct("Executed", {
   leader: Schema.String,
   rows: Schema.Array(Schema.Unknown),
   open: Schema.Boolean,
+  opened: Schema.optional(Schema.Number),
   results: Schema.optional(Schema.Array(Schema.Array(Schema.Unknown)))
 })
 
 /**
- * The leader refused the statement. `error` is the failure's tag; `code` and
- * `message` are SQLite's, when SQLite refused it.
+ * The leader refused the statement. `error` is the failure's tag; `open` and
+ * `opened` are as in {@link Executed}; `code` and `message` are SQLite's, when
+ * SQLite refused it.
  *
  * @category protocol
  * @since 1.0.0
@@ -100,6 +103,7 @@ export const Failed = Schema.TaggedStruct("Failed", {
   error: Schema.String,
   leader: Schema.optional(Schema.String),
   open: Schema.optional(Schema.Boolean),
+  opened: Schema.optional(Schema.Number),
   code: Schema.optional(Schema.Number),
   message: Schema.optional(Schema.String)
 })

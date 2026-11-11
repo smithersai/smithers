@@ -441,6 +441,7 @@ const faultyLeaderOver = (name: string, pool: Effect.Success<typeof MemorySqlite
         SqlConnection.SqlConnection.of({
           abandon: connection.abandon,
           isOpen: connection.isOpen,
+          opened: connection.opened,
           runBatch: (owner, statements, continuing, request) =>
             connection.runBatch(owner, statements, continuing, request).pipe(
               Effect.tap(() =>
@@ -536,6 +537,35 @@ describe("SharedSqlite across a handover", () => {
           "error.type": "@smthrs/platform-browser/TransactionUnrecorded"
         })
       )
+    })))
+  })
+
+  it.live("lands once a transaction one request rolled back and opened again, when the leader ended as it committed", () => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const name = Engines.name()
+        const pool = yield* MemorySqlite.pool
+        const first = yield* faultyLeaderOver(name, pool, { hangAfterCommit: true, refuseRecordRead: false })
+        const tab = yield* Engines.sharedTab(name)
+        yield* tab.execute("CREATE TABLE log (v TEXT)")
+        const work = yield* Effect.forkChild(Effect.gen(function*() {
+          yield* tab.execute("BEGIN IMMEDIATE")
+          yield* tab.execute("INSERT INTO log (v) VALUES ('discarded')")
+          // The transaction the COMMIT ends is the one this request opened, not the first.
+          yield* tab.execute("ROLLBACK; BEGIN IMMEDIATE")
+          yield* tab.execute("INSERT INTO log (v) VALUES ('once')")
+          yield* tab.execute("COMMIT")
+        }))
+        expect(yield* untilCommitted(work, first)).toBe("committed")
+        yield* Engines.close(first.fiber)
+        yield* leaderOver(name, pool)
+        expect(Exit.isSuccess(yield* Fiber.await(work))).toBe(true)
+        expect(yield* tab.execute("SELECT v FROM log")).toEqual([{ v: "once" }])
+      }).pipe(Effect.scoped)
+    ).pipe(Effect.andThen(Effect.sync(() => {
+      expect(telemetry.count(BrowserRuntime.statements, { outcome: "committed" })).toBe(1)
+      expect(telemetry.count(BrowserRuntime.statements, { outcome: "lost" })).toBe(0)
     })))
   })
 

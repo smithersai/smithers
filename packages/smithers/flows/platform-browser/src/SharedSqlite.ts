@@ -134,7 +134,7 @@ interface Ran {
 /** A tab's open transaction: the leader holding it, the request that opened it, and what it ran. */
 interface Transaction {
   readonly leader: string
-  readonly opened: number
+  opened: number
   replayable: boolean
   readonly ran: Array<Ran>
 }
@@ -263,6 +263,14 @@ const connect = (options: Options): Effect.Effect<Client, never, TabChannel | We
         return { id, answer }
       })
 
+    // Records the transaction request `id` left open on `leader`. A request that ended the transaction and opened
+    // another is the one its receipt names, so a later leader can tell whether it committed: the leader says which.
+    // A leader of an older build says nothing, and its receipt names the first.
+    const opens = (leader: string, opened: number | undefined, id: number) => {
+      if (transaction === null) transaction = { leader, opened: opened ?? id, ran: [], replayable: true }
+      else if (opened !== undefined) transaction.opened = opened
+    }
+
     // Runs one request. When the leader holding this tab's transaction ended before answering it, the transaction
     // runs again on the leader now serving, then the request.
     const run = (request: Request): Effect.Effect<Answer, SqlError> =>
@@ -270,16 +278,14 @@ const connect = (options: Options): Effect.Effect<Client, never, TabChannel | We
         const { answer, id } = yield* send(request)
         if (answer._tag === "Executed") {
           if (!answer.open) transaction = null
-          else if (transaction === null) transaction = { leader: answer.leader, opened: id, ran: [], replayable: true }
+          else opens(answer.leader, answer.opened, id)
           const answered = { rows: answer.rows, results: answer.results }
           transaction?.ran.push({ request, answer: answered })
           return answered
         }
         if (answer.error !== lost) {
           if (answer.open === false) transaction = null
-          else if (answer.open && transaction === null && answer.leader !== undefined) {
-            transaction = { leader: answer.leader, opened: id, ran: [], replayable: true }
-          }
+          else if (answer.open && answer.leader !== undefined) opens(answer.leader, answer.opened, id)
           if (transaction !== null) transaction.replayable = false
           return yield* refused(answer)
         }

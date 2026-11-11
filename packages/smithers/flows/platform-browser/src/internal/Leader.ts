@@ -502,6 +502,9 @@ const serveStatements = (
         Effect.flatMap((exit) =>
           Effect.gen(function*() {
             const open = Option.isSome(database) && database.value.isOpen(request.client)
+            // The request its receipt names, which a later leader matches against the tab's `opened`.
+            const opened = Option.isSome(database) ? database.value.opened(request.client) : undefined
+            const opener = opened === undefined ? {} : { opened }
             if (Option.isSome(database)) yield* watch(request.client, open, database.value)
             const failure = Exit.isFailure(exit) ? RetryPolicy.failureType(exit.cause) : undefined
             const outcome = failure === undefined ?
@@ -516,7 +519,8 @@ const serveStatements = (
                 ...(request.batch === undefined ?
                   { rows: exit.value.results[0]! }
                   : { rows: [], results: exit.value.results }),
-                open: exit.value.open
+                open: exit.value.open,
+                ...(exit.value.open ? opener : {})
               }
               : {
                 _tag: "Failed",
@@ -525,7 +529,7 @@ const serveStatements = (
                 error: failure!,
                 leader,
                 // An undecided transaction may still be the tab's: say nothing of it, so the tab asks again.
-                ...(failure === "@smthrs/platform-browser/TransactionUndecided" ? {} : { open }),
+                ...(failure === "@smthrs/platform-browser/TransactionUndecided" ? {} : { open, ...opener }),
                 ...sqliteDetail(Cause.squash(exit.cause))
               }
             return yield* Metric.update(Metric.withAttributes(statements, { outcome }), 1).pipe(
