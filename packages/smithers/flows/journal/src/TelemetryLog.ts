@@ -28,6 +28,7 @@ import * as Redacted from "effect/Redacted"
 import * as References from "effect/References"
 import * as Schema from "effect/Schema"
 import * as Tracer from "effect/Tracer"
+import { type operations, TelemetryText } from "./internal/TelemetryText.ts"
 import * as Redaction from "./Redaction.ts"
 
 /**
@@ -218,9 +219,8 @@ export interface SnapshotOptions {
   readonly rules?: ReadonlyArray<Redaction.Rule> | undefined
 }
 
-const encoder = new TextEncoder()
-
 interface SnapshotBudget {
+  readonly text: typeof operations
   bytes: number
   members: number
   /** The configured ceiling: no text longer than this many units is measured whole. */
@@ -233,7 +233,7 @@ const reserve = (budget: SnapshotBudget, bytes: number): boolean => {
   return true
 }
 
-const textBytes = (value: string): number => encoder.encode(JSON.stringify(value)).byteLength
+const textBytes = (value: string, text: typeof operations): number => text.encode(JSON.stringify(value)).byteLength
 
 const shortEscapes = new Set([0x08, 0x09, 0x0a, 0x0c, 0x0d])
 
@@ -263,7 +263,11 @@ const plainStreak = 16
  * the run is matched natively instead of unit by unit. The match reads a window
  * one unit past the bytes still free, never the tail the cut drops.
  */
-const boundedPrefix = (value: string, limit: number): { readonly text: string; readonly bytes: number } => {
+const boundedPrefix = (
+  value: string,
+  limit: number,
+  text: typeof operations
+): { readonly text: string; readonly bytes: number } => {
   let bytes = 0
   let index = 0
   let streak = 0
@@ -279,10 +283,10 @@ const boundedPrefix = (value: string, limit: number): { readonly text: string; r
       streak = 0
       continue
     }
-    const code = value.charCodeAt(index)
+    const code = text.charCodeAt(value, index)
     let width = 1
     let cost: number
-    if (code >= 0xd800 && code <= 0xdbff && isLowSurrogate(value.charCodeAt(index + 1))) {
+    if (code >= 0xd800 && code <= 0xdbff && isLowSurrogate(text.charCodeAt(value, index + 1))) {
       width = 2
       cost = 4
     } else if (code >= 0xd800 && code <= 0xdfff) {
@@ -299,9 +303,9 @@ const boundedPrefix = (value: string, limit: number): { readonly text: string; r
 }
 
 const boundedText = (value: string, budget: SnapshotBudget): string => {
-  if (value.length <= budget.limit && reserve(budget, textBytes(value))) return value
-  const markerBytes = textBytes(truncatedMarker)
-  const prefix = boundedPrefix(value, Math.max(0, budget.bytes - markerBytes))
+  if (value.length <= budget.limit && reserve(budget, textBytes(value, budget.text))) return value
+  const markerBytes = textBytes(truncatedMarker, budget.text)
+  const prefix = boundedPrefix(value, Math.max(0, budget.bytes - markerBytes), budget.text)
   budget.bytes = Math.max(0, budget.bytes - prefix.bytes - markerBytes)
   return `${prefix.text}${truncatedMarker}`
 }
@@ -511,6 +515,7 @@ export const snapshot = (options: Logger.Options<unknown>, settings: SnapshotOpt
   const bounded = settings.maximumBytes !== undefined
   const kept = settings.annotations ?? {}
   try {
+    const text = Context.get(options.fiber.context, TelemetryText)
     const span = Option.getOrUndefined(Context.getOption(options.fiber.context, Tracer.ParentSpan))
     const ids = span === undefined ? {} : { traceId: span.traceId, spanId: span.spanId }
     // An explicit bound is a bound on the whole record, so the envelope around
@@ -518,7 +523,7 @@ export const snapshot = (options: Logger.Options<unknown>, settings: SnapshotOpt
     // annotations a spent budget dropped, and a long message is cut rather
     // than costing the record its message.
     const envelope = bounded
-      ? encoder.encode(JSON.stringify({
+      ? text.encode(JSON.stringify({
         version: 1,
         level: options.logLevel,
         message: "",
@@ -530,7 +535,12 @@ export const snapshot = (options: Logger.Options<unknown>, settings: SnapshotOpt
       })).byteLength
       : 0
     const project = (room: number) => {
-      const budget: SnapshotBudget = { bytes: Math.max(0, room - envelope), members: maximumSnapshotMembers, limit }
+      const budget: SnapshotBudget = {
+        text,
+        bytes: Math.max(0, room - envelope),
+        members: maximumSnapshotMembers,
+        limit
+      }
       // The producer's annotations are copied before anything the caller
       // logged, so no message can spend the budget their attribution needs.
       const own = settings.annotations === undefined ? undefined : snapshotAnnotations(settings.annotations, budget)
@@ -551,11 +561,11 @@ export const snapshot = (options: Logger.Options<unknown>, settings: SnapshotOpt
       // A scalar message can spend the whole value budget. Reserve the actual
       // record envelope first so the final size check does not discard its prefix.
       if (typeof options.message === "string") {
-        budget.bytes = Math.max(0, room - encoder.encode(JSON.stringify(candidate)).byteLength + 2)
+        budget.bytes = Math.max(0, room - text.encode(JSON.stringify(candidate)).byteLength + 2)
         candidate = { ...candidate, message: boundedText(options.message, budget) }
       }
       const redacted = Redaction.redact(candidate, { onTooDeep: "name", rules: settings.rules }) as Log
-      return { candidate, redacted, bytes: encoder.encode(JSON.stringify(redacted)).byteLength }
+      return { candidate, redacted, bytes: text.encode(JSON.stringify(redacted)).byteLength }
     }
     let projected = project(limit)
     // The budget counts values, not the JSON punctuation between them, so a

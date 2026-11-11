@@ -20,16 +20,16 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DurableWriter, type Service as WriterService } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, PubSub, Scope, Semaphore } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, PubSub, Scope } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
-import { vi } from "vitest"
 import { Journal, type Service as JournalService } from "../src/Journal.ts"
 import { Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 import * as Leases from "./fixtures/leases.ts"
+import { observeJournal } from "./fixtures/observations.ts"
 
 const run = "lock-order" as RunId
 const first = "first-producer" as SourceId
@@ -45,6 +45,7 @@ const explicit = (source: SourceId, eventType: string, sequence: number): Input 
   )
 
 interface Barriers {
+  readonly observed: ReturnType<typeof observeJournal>
   /** Completed inside the armed write, once its transaction is open. */
   readonly batchHasTransaction: Deferred.Deferred<void>
   /** The armed write runs its body only once this completes. */
@@ -89,6 +90,7 @@ const seams: Effect.Effect<Seams> = Effect.gen(function*() {
   let requestSkip: number | undefined
   let armed = false
   return {
+    observed: observeJournal(),
     checkpointSources,
     observeCheckpoints: () => {
       checkpointsObserved = true
@@ -225,7 +227,7 @@ const withJournal = (
       const journal = yield* Journal
       const sql = yield* Effect.service(SqlClient.SqlClient)
       yield* body(seams, journal, sql)
-    }).pipe(Effect.provide(journalLayer)))
+    }).pipe(Effect.provide(journalLayer.pipe(Layer.provide(seams.observed.layer)))))
 
 /** Queues `first-producer` and holds its batch open inside the writer transaction. */
 const holdBatchInTransaction = (seams: Barriers, journal: JournalService) =>
@@ -244,26 +246,12 @@ const seedCheckpoint = (journal: JournalService, sql: SqlClient.SqlClient) =>
     yield* journal.checkpoint({ runId: run, seq: receipt.seq, state: null }, owner)
   })
 
-/** Observe the real semaphore and gate, without adding a production test API. */
-const observeRunBarrier = () => {
-  let barrier: { readonly semaphore: Semaphore.Semaphore; compaction: Deferred.Deferred<void> | undefined } | undefined
-  const original = Map.prototype.set
-  const spy = vi.spyOn(Map.prototype, "set").mockImplementation(function(this: Map<unknown, unknown>, key, value) {
-    if (key === run && value && typeof value === "object" && "compactionLock" in value) barrier = value
-    return original.call(this, key, value)
+/** Reads the injected observation exactly at the compactor's SQL request. */
+const assertSqlWaitIsUnowned = (observed: ReturnType<typeof observeJournal>) =>
+  Effect.gen(function*() {
+    expect(yield* observed.admission(run))
+      .toEqual({ gateClosed: false, permitAvailable: true })
   })
-  return {
-    // Called exactly at the compactor's writer request, after its first drain.
-    assertSqlWaitIsUnowned: Effect.gen(function*() {
-      expect(barrier).toBeDefined()
-      const available = yield* barrier!.semaphore.takeIfAvailable(1)
-      if (available) yield* barrier!.semaphore.release(1)
-      expect({ gateClosed: barrier!.compaction !== undefined, permitAvailable: available })
-        .toEqual({ gateClosed: false, permitAvailable: true })
-    }),
-    restore: () => spy.mockRestore()
-  }
-}
 
 describe("SqlJournal lock order", () => {
   for (const enclosing of ["managed", "raw SQL"] as const) {
@@ -276,17 +264,7 @@ describe("SqlJournal lock order", () => {
             const transactionOwned = yield* Deferred.make<void>()
             const resumeCompaction = yield* Deferred.make<void>()
             const drainedWhileOwningSql = yield* Deferred.make<void>()
-            const original = Map.prototype.set
-            // No readers exist. A per-run Set registered here is the actual
-            // compaction drain waiter, not a wall-clock guess about progress.
-            const spy = vi.spyOn(Map.prototype, "set").mockImplementation(
-              function(this: Map<unknown, unknown>, key, value) {
-                if (key === run && value instanceof Set && [...value].some(Deferred.isDeferred)) {
-                  Deferred.doneUnsafe(drainedWhileOwningSql, Effect.void)
-                }
-                return original.call(this, key, value)
-              }
-            )
+            seams.observed.watchDrain(run, drainedWhileOwningSql)
             yield* Effect.gen(function*() {
               const body = Deferred.succeed(transactionOwned, undefined).pipe(
                 Effect.andThen(Deferred.await(resumeCompaction)),
@@ -325,7 +303,7 @@ describe("SqlJournal lock order", () => {
                 expect((yield* Effect.flip(journal.emitDurableUnfenced(explicit(second, "conflict", 0)))).code)
                   .toBe("idempotency_conflict")
               }).pipe(Effect.ensuring(Fiber.interrupt(compactor).pipe(Effect.andThen(Fiber.interrupt(producer)))))
-            }).pipe(Effect.ensuring(Effect.sync(() => spy.mockRestore())))
+            })
           })
       )
     }
@@ -487,6 +465,7 @@ describe("SqlJournal lock order", () => {
         const writer = yield* DurableWriter
         const innerFinished = yield* Deferred.make<void>()
         const resumeOuter = yield* Deferred.make<void>()
+        const observed = observeJournal()
         let journal: JournalService
         // Reenter the journal sequentially from a real SQL adapter callback.
         // The inner savepoint completes before the outer write continues, so
@@ -508,10 +487,13 @@ describe("SqlJournal lock order", () => {
           }
         }) as SqlClient.SqlClient
         journal = Context.get(
-          yield* Layer.build(journalLayer.pipe(Layer.provide(Layer.merge(
-            Layer.succeed(SqlClient.SqlClient)(sql),
-            Layer.succeed(DurableWriter)(writer)
-          )))),
+          yield* Layer.build(journalLayer.pipe(
+            Layer.provide(observed.layer),
+            Layer.provide(Layer.merge(
+              Layer.succeed(SqlClient.SqlClient)(sql),
+              Layer.succeed(DurableWriter)(writer)
+            ))
+          )),
           Journal
         )
         yield* seedCheckpoint(journal, sql)
@@ -526,15 +508,7 @@ describe("SqlJournal lock order", () => {
         // If the inner completion incorrectly removed the outer reference, a
         // compactor would request SQL instead of registering its open drain.
         const drainRegistered = yield* Deferred.make<void>()
-        const original = Map.prototype.set
-        const spy = vi.spyOn(Map.prototype, "set").mockImplementation(
-          function(this: Map<unknown, unknown>, key, value) {
-            if (key === run && value instanceof Set && [...value].some(Deferred.isDeferred)) {
-              Deferred.doneUnsafe(drainRegistered, Effect.void)
-            }
-            return original.call(this, key, value)
-          }
-        )
+        observed.watchDrain(run, drainRegistered)
         yield* Effect.gen(function*() {
           const compacting = yield* journal.compact({ runId: run }, owner).pipe(
             Effect.forkChild({ startImmediately: true })
@@ -548,7 +522,7 @@ describe("SqlJournal lock order", () => {
             .toEqual(["inner", "outer"])
           expect(yield* journal.emitDurableUnfenced(explicit(first, "inner", 1)))
             .toMatchObject({ _tag: "Duplicate", seq: 1 })
-        }).pipe(Effect.ensuring(Fiber.interrupt(outer)), Effect.ensuring(Effect.sync(() => spy.mockRestore())))
+        }).pipe(Effect.ensuring(Fiber.interrupt(outer)))
       })).pipe(Effect.provide(Layer.provideMerge(Migrations.layer, TestDatabase.layer)))
   )
 
@@ -556,7 +530,7 @@ describe("SqlJournal lock order", () => {
     "an in-transaction floor read resumes after compaction has drained",
     (seams, journal, sql) =>
       Effect.gen(function*() {
-        const observed = observeRunBarrier()
+        const observed = seams.observed
         yield* Effect.gen(function*() {
           yield* seedCheckpoint(journal, sql)
           yield* Deferred.succeed(seams.floorReadGate, undefined)
@@ -569,7 +543,7 @@ describe("SqlJournal lock order", () => {
             .pipe(Effect.forkChild({ startImmediately: true }))
           yield* Effect.gen(function*() {
             yield* Deferred.await(seams.writeRequested)
-            yield* observed.assertSqlWaitIsUnowned
+            yield* assertSqlWaitIsUnowned(observed)
             yield* Deferred.succeed(seams.resumeWriteRequest, undefined)
             // Compaction is now requesting the connection the producer owns.
             expect(compactor.pollUnsafe()).toBeUndefined()
@@ -586,7 +560,7 @@ describe("SqlJournal lock order", () => {
             // before interrupting the compactor that was waiting for it.
             Fiber.interrupt(producer).pipe(Effect.andThen(Fiber.interrupt(compactor)))
           ))
-        }).pipe(Effect.ensuring(Effect.sync(observed.restore)))
+        })
       })
   )
 
@@ -595,7 +569,7 @@ describe("SqlJournal lock order", () => {
       `a transaction owner admits ${channel} after compaction requests SQL`,
       (seams, journal, sql) =>
         Effect.gen(function*() {
-          const observed = observeRunBarrier()
+          const observed = seams.observed
           yield* Effect.gen(function*() {
             yield* seedCheckpoint(journal, sql)
             yield* releaseFloorRead(seams)
@@ -618,7 +592,7 @@ describe("SqlJournal lock order", () => {
               .pipe(Effect.forkChild({ startImmediately: true }))
             yield* Effect.gen(function*() {
               yield* Deferred.await(seams.writeRequested)
-              yield* observed.assertSqlWaitIsUnowned
+              yield* assertSqlWaitIsUnowned(observed)
               yield* Deferred.succeed(seams.resumeWriteRequest, undefined)
               expect(compactor.pollUnsafe()).toBeUndefined()
               // In the old order compaction already held the run permit and
@@ -630,7 +604,7 @@ describe("SqlJournal lock order", () => {
               expect(yield* committedSources(sql)).toEqual([first, second])
               if (channel === "explicit lossy") expect(yield* Deferred.isDone(seams.floorReadStarted)).toBe(false)
             }).pipe(Effect.ensuring(Fiber.interrupt(producer).pipe(Effect.andThen(Fiber.interrupt(compactor)))))
-          }).pipe(Effect.ensuring(Effect.sync(observed.restore)))
+          })
         })
     )
   }

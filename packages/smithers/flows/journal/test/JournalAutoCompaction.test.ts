@@ -1,14 +1,14 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Stream } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
-import { vi } from "vitest"
 import { Journal } from "../src/Journal.ts"
 import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 import * as Leases from "./fixtures/leases.ts"
+import { observeJournal } from "./fixtures/observations.ts"
 
 const run = "auto-run" as RunId
 const other = "other-run" as RunId
@@ -31,32 +31,32 @@ const committed = (runId: RunId) =>
       .map((row) => row.seq)
   })
 
-/** Observes the private barrier map without adding a production diagnostics API. */
-const observeBarriers = () => {
-  let barriers: Map<unknown, unknown> | undefined
-  // The journal's per-run counters, told apart from a map that only ever
-  // held one run, such as the database client's per-transaction lock map.
-  const counters = new Map<Map<unknown, unknown>, Set<string>>()
-  const original = Map.prototype.set
-  const spy = vi.spyOn(Map.prototype, "set").mockImplementation(function(this: Map<unknown, unknown>, key, value) {
-    if (value && typeof value === "object" && "compactionLock" in value && "maintenance" in value) {
-      barriers = this
-    }
-    if (typeof key === "string" && key.startsWith("completed-") && typeof value === "number") {
-      const keys = counters.get(this) ?? new Set<string>()
-      counters.set(this, keys.add(key))
-    }
-    return original.call(this, key, value)
-  })
-  return {
-    size: () => barriers?.size,
-    counterSizes: () =>
-      [...counters].filter(([, keys]) => keys.size > 1).map(([map]) => map.size).sort((a, b) => a - b),
-    restore: () => spy.mockRestore()
-  }
-}
-
 describe("automatic compaction maintenance", () => {
+  it.effect("isolates observations between journal instances without changing global prototypes", () =>
+    Effect.gen(function*() {
+      const before = { set: Map.prototype.set, digest: crypto.subtle.digest }
+      const left = observeJournal()
+      const right = observeJournal()
+      const build = (observed: ReturnType<typeof observeJournal>) =>
+        Layer.build(SqlJournal.layer({ capacity: 8, overflow: "reject" }).pipe(Layer.provide(observed.layer)))
+      const first = Context.get(yield* build(left), Journal)
+      const second = Context.get(yield* build(right), Journal)
+      expect(left.size()).toBe(0)
+      expect(right.size()).toBe(0)
+      yield* first.emitDurableUnfenced(input(0))
+      expect(left.size()).toBe(1)
+      expect(right.size()).toBe(0)
+      yield* second.emitDurableUnfenced(input(0, other))
+      expect(left.size()).toBe(1)
+      expect(right.size()).toBe(1)
+      yield* first.flush
+      expect(left.size()).toBe(0)
+      expect(right.size()).toBe(1)
+      yield* second.flush
+      expect(right.size()).toBe(0)
+      expect({ set: Map.prototype.set, digest: crypto.subtle.digest }).toEqual(before)
+    }).pipe(Effect.provide(database), Effect.scoped))
+
   for (const nested of [false, true]) {
     for (const compaction of [false, true]) {
       it.effect(`finishes cancellation cleanup after a durable write (transaction=${nested}, compaction=${compaction})`, () =>
@@ -136,7 +136,9 @@ describe("automatic compaction maintenance", () => {
       expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).compactedAtMs).not.toBeNull()
       expect((yield* committed(run)).at(-1)).toBe(19)
     }).pipe(
-      Effect.provide(journal({ compaction: { entryThreshold: 3, capture: () => Effect.succeed(null) } })),
+      Effect.provide(
+        journal({ compaction: { entryThreshold: 3, capture: () => Effect.succeed(null) } })
+      ),
       Effect.scoped
     ))
 
@@ -203,30 +205,35 @@ describe("automatic compaction maintenance", () => {
 
   it.effect("retires idle barriers at flush after many distinct runs and safely re-admits a run", () =>
     Effect.gen(function*() {
-      const observed = observeBarriers()
+      const observed = observeJournal()
       yield* Effect.gen(function*() {
         const service = yield* Journal
+        expect(yield* observed.admission(run)).toBeUndefined()
         for (let index = 0; index < 100; index++) {
           yield* service.emitDurableUnfenced(input(0, `completed-${index}` as RunId))
         }
         expect(observed.size()).toBe(100)
+        expect(observed.policyRunCount()).toBe(100)
         yield* service.flush
         expect(observed.size()).toBe(0)
         // Policy counters retire; sequence floors deliberately survive.
-        expect(observed.counterSizes()).toEqual([0, 0, 100])
+        expect(observed.policyRunCount()).toBe(0)
         expect((yield* service.emitDurableUnfenced(input(1, "completed-0" as RunId))).seq).toBe(1)
         yield* service.flush
         expect(observed.size()).toBe(0)
       }).pipe(
-        Effect.provide(journal({ compaction: { entryThreshold: 3, capture: () => Effect.succeed(null) } })),
-        Effect.scoped,
-        Effect.ensuring(Effect.sync(observed.restore))
+        Effect.provide(
+          journal({ compaction: { entryThreshold: 3, capture: () => Effect.succeed(null) } }).pipe(
+            Layer.provide(observed.layer)
+          )
+        ),
+        Effect.scoped
       )
     }))
 
   it.effect("does not retire a barrier with a compaction holder and an admission waiter", () =>
     Effect.gen(function*() {
-      const observed = observeBarriers()
+      const observed = observeJournal()
       const reached = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
       let armed = false
@@ -263,6 +270,7 @@ describe("automatic compaction maintenance", () => {
         const waiter = yield* service.emitLossy(input(1)).pipe(Effect.forkChild({ startImmediately: true }))
         yield* service.flush
         expect(observed.size()).toBe(1)
+        expect(yield* observed.admission(run)).toEqual({ gateClosed: true, permitAvailable: true })
         expect(holder.pollUnsafe()).toBeUndefined()
         expect(waiter.pollUnsafe()).toBeUndefined()
         yield* Fiber.interrupt(waiter)
@@ -277,17 +285,16 @@ describe("automatic compaction maintenance", () => {
         expect(yield* committed(run)).toEqual([0, 1])
       }).pipe(
         Effect.provide(Layer.provideMerge(
-          SqlJournal.layer({ capacity: 64, overflow: "reject" }),
+          SqlJournal.layer({ capacity: 64, overflow: "reject" }).pipe(Layer.provide(observed.layer)),
           Layer.provideMerge(gatedSql, database)
         )),
-        Effect.scoped,
-        Effect.ensuring(Effect.sync(observed.restore))
+        Effect.scoped
       )
     }))
 
   it.effect("keeps a live reader's barrier until the reader closes", () =>
     Effect.gen(function*() {
-      const observed = observeBarriers()
+      const observed = observeJournal()
       yield* Effect.gen(function*() {
         const service = yield* Journal
         yield* service.emitDurableUnfenced(input(0))
@@ -302,7 +309,7 @@ describe("automatic compaction maintenance", () => {
         yield* Fiber.interrupt(follower)
         yield* service.flush
         expect(observed.size()).toBe(0)
-      }).pipe(Effect.provide(journal()), Effect.scoped, Effect.ensuring(Effect.sync(observed.restore)))
+      }).pipe(Effect.provide(journal().pipe(Layer.provide(observed.layer))), Effect.scoped)
     }))
 
   it.effect("preserves consumed sequence floors across rollback and idle retirement", () =>

@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Logger from "effect/Logger"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
+import { operations, TelemetryText } from "../src/internal/TelemetryText.ts"
 import * as Redaction from "../src/Redaction.ts"
 import * as TelemetryLog from "../src/TelemetryLog.ts"
 
@@ -41,9 +42,14 @@ const one = (effect: Effect.Effect<unknown>, settings?: TelemetryLog.SnapshotOpt
 /** A snapshot of a hand-built log event on the current fiber. */
 const direct = (
   build: (fiber: Logger.Options<unknown>["fiber"]) => Logger.Options<unknown>,
-  settings?: TelemetryLog.SnapshotOptions
+  settings?: TelemetryLog.SnapshotOptions,
+  text = operations
 ): TelemetryLog.Log =>
-  Effect.runSync(Effect.withFiber((fiber) => Effect.sync(() => decode(TelemetryLog.snapshot(build(fiber), settings)))))
+  Effect.runSync(
+    Effect.withFiber((fiber) => Effect.sync(() => decode(TelemetryLog.snapshot(build(fiber), settings)))).pipe(
+      Effect.provideService(TelemetryText, text)
+    )
+  )
 
 /** The malformation a well-formed cut never leaves. */
 const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
@@ -54,26 +60,21 @@ const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\
  * encode. Both are integers no machine load can move.
  */
 const bufferPasses = <A>(
-  body: () => A
+  body: (text: typeof operations) => A
 ): { readonly result: A; readonly unitsRead: number; readonly unitsEncoded: number } => {
-  const charCodeAt = String.prototype.charCodeAt
-  const encode = TextEncoder.prototype.encode
   let unitsRead = 0
   let unitsEncoded = 0
-  String.prototype.charCodeAt = function(this: string, index: number): number {
-    unitsRead += 1
-    return charCodeAt.call(this, index)
-  }
-  TextEncoder.prototype.encode = function(this: TextEncoder, input?: string): ReturnType<TextEncoder["encode"]> {
-    unitsEncoded += input === undefined ? 0 : input.length
-    return encode.call(this, input)
-  }
-  try {
-    return { result: body(), unitsRead, unitsEncoded }
-  } finally {
-    String.prototype.charCodeAt = charCodeAt
-    TextEncoder.prototype.encode = encode
-  }
+  const result = body({
+    charCodeAt: (value, index) => {
+      unitsRead += 1
+      return operations.charCodeAt(value, index)
+    },
+    encode: (input) => {
+      unitsEncoded += input.length
+      return operations.encode(input)
+    }
+  })
+  return { result, unitsRead, unitsEncoded }
 }
 
 /** A seeded generator, so a red property run is reproducible from its seed. */
@@ -491,12 +492,18 @@ describe("TelemetryLog", () => {
     const lines = `${"a".repeat(47)}\n`.repeat(30_000)
     const inputs = [astral, escaped, malformed, lines]
     const measured = inputs.map((input) =>
-      bufferPasses(() =>
-        direct((fiber) => ({ message: input, logLevel: "Info", cause: Cause.empty, fiber, date: new Date(0) }))
+      bufferPasses((text) =>
+        direct(
+          (fiber) => ({ message: input, logLevel: "Info", cause: Cause.empty, fiber, date: new Date(0) }),
+          undefined,
+          text
+        )
       )
     )
     measured.forEach(({ result, unitsEncoded, unitsRead }, index) => {
       const input = inputs[index]!
+      expect(unitsRead).toBeGreaterThan(0)
+      expect(unitsEncoded).toBeGreaterThan(0)
       expect(unitsRead).toBeLessThanOrEqual(maximumSnapshotBytes + 2)
       expect(unitsRead).toBeLessThan(input.length)
       // The only full encode is the one size check on the bounded projection;

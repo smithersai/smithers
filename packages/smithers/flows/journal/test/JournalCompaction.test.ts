@@ -23,7 +23,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
-import { vi } from "vitest"
+import { digest, JournalDigest } from "../src/internal/JournalDigest.ts"
 import { Journal, JournalError, type Service } from "../src/Journal.ts"
 import { type Entry, Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -340,23 +340,38 @@ const replayView = (service: Service) =>
   })
 
 describe("compacted producer identities", () => {
+  const digestFailure = new Error("digest unavailable")
   effect("a fingerprint failure rolls back compaction without losing replay evidence", () =>
     Effect.gen(function*() {
       const service = yield* Journal
       yield* claim(owner)
       yield* emitMany(service, 0, 3)
       yield* service.checkpoint({ runId: run, seq: seqOf(2), state: { applied: 3 } }, owner)
-      const digest = vi.spyOn(crypto.subtle, "digest").mockRejectedValueOnce(new Error("digest unavailable"))
-      const failure = yield* service.compact({ runId: run }, owner).pipe(
-        Effect.flip,
-        Effect.ensuring(Effect.sync(() => digest.mockRestore()))
-      )
+      const failure = yield* service.compact({ runId: run }, owner).pipe(Effect.flip)
       expect(failure.code).toBe("sink_failed")
       expect(failure.message).toBe("could not fingerprint journal content")
+      expect(failure.cause).toBe(digestFailure)
       expect((yield* service.entries({ runId: run, limit: 10 })).entries.map((entry) => entry.seq)).toEqual([0, 1, 2])
       expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).compactedAtMs).toBe(null)
       expect((yield* service.compact({ runId: run }, owner)).deleted).toBe(2)
-    }).pipe(Effect.provide(journal()), Effect.scoped))
+    }).pipe(
+      Effect.provide(
+        journal().pipe(Layer.provide(Layer.succeed(JournalDigest, {
+          digest: (() => {
+            let refuse = true
+            return (bytes) =>
+              Effect.suspend(() => {
+                if (refuse) {
+                  refuse = false
+                  return Effect.fail(digestFailure)
+                }
+                return digest(bytes)
+              })
+          })()
+        })))
+      ),
+      Effect.scoped
+    ))
 
   effect(
     "deduplicates compacted events after cache eviction and preserves producer floors",

@@ -40,7 +40,9 @@ import type * as SqlError from "effect/sql/SqlError"
 import * as Stream from "effect/Stream"
 import { Consensus, sameOwner } from "./Consensus.ts"
 import * as EventTally from "./internal/EventTally.ts"
+import { JournalDigest } from "./internal/JournalDigest.ts"
 import { JournalInternalFault } from "./internal/JournalInternalFault.ts"
+import { JournalTestObserver } from "./internal/JournalTestObserver.ts"
 import {
   Checkpoint,
   CheckpointOptions,
@@ -643,6 +645,8 @@ export const make = (
     const writeRun = <A, E, R>(runId: RunId, effect: Effect.Effect<A, E, R>) =>
       writer.write(flushing([runId], effect), { partition: runId })
     const consensus = yield* Consensus
+    const observer = yield* JournalTestObserver
+    const digest = yield* JournalDigest
     yield* JournalGeneration.initialize.pipe(
       Effect.mapError((cause) => error("read_failed", "could not initialize journal generations", cause))
     )
@@ -652,11 +656,8 @@ export const make = (
     // Hash the same encoded content the ordinary dedup check compares.
     // A JSON tuple keeps boundaries unambiguous without retaining payloads.
     const contentFingerprint = (eventType: string, payloadJson: string, metaJson: string) =>
-      Effect.tryPromise({
-        try: () =>
-          crypto.subtle.digest("SHA-256", byteCounter.encode(JSON.stringify([eventType, payloadJson, metaJson]))),
-        catch: (cause) => error("sink_failed", "could not fingerprint journal content", cause)
-      }).pipe(
+      digest.digest(byteCounter.encode(JSON.stringify([eventType, payloadJson, metaJson]))).pipe(
+        Effect.mapError((cause) => error("sink_failed", "could not fingerprint journal content", cause)),
         Effect.map((digest) =>
           Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
         )
@@ -755,11 +756,25 @@ export const make = (
     const maintenanceScope = yield* Scope.make()
     yield* Effect.addFinalizer((exit) => Scope.close(maintenanceScope, exit))
     let pendingMaintenance = 0
-    const compactionCounts = new Map<RunId, number>()
+    const policyRunCounts = new Map<RunId, number>()
     const compactingRuns = new Set<RunId>()
     const runBarriers = new Map<RunId, RunBarrier>()
     const runDrainWaiters = new Map<RunId, Set<Deferred.Deferred<void>>>()
     const activeWritesByRun = new Map<RunId, number>()
+
+    observer?.opened({
+      barrierCount: () => runBarriers.size,
+      policyRunCount: () => policyRunCounts.size,
+      admission: (runId) =>
+        Effect.gen(function*() {
+          const barrier = runBarriers.get(runId)
+          if (barrier === undefined) return undefined
+          const permitAvailable = yield* barrier.semaphore.withPermitsIfAvailable(1)(Effect.void).pipe(
+            Effect.map(Option.isSome)
+          )
+          return { gateClosed: barrier.compaction !== undefined, permitAvailable }
+        })
+    })
 
     const barrierFor = (runId: RunId): RunBarrier => {
       const existing = runBarriers.get(runId)
@@ -798,7 +813,7 @@ export const make = (
           compactingRuns.has(runId)
         ) continue
         runBarriers.delete(runId)
-        compactionCounts.delete(runId)
+        policyRunCounts.delete(runId)
       }
     }
 
@@ -905,6 +920,7 @@ export const make = (
         const waiters = runDrainWaiters.get(runId) ?? new Set()
         waiters.add(waiter)
         runDrainWaiters.set(runId, waiters)
+        observer?.drainRegistered(runId)
         // No cleanup on the way out: `completeRunDrain` deletes the whole
         // set as it completes it, and an interrupted waiter is a Deferred
         // nobody awaits that the next drain of this run discards. Deleting
@@ -2737,13 +2753,13 @@ export const make = (
         // threshold.
         yield* checkpointInternal({ runId, seq: upTo, state: captured }, unfenced)
         yield* compactInternal({ runId, upTo }, unfenced)
-        compactionCounts.set(runId, yield* countEntries(runId))
+        policyRunCounts.set(runId, yield* countEntries(runId))
       }).pipe(
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
             ? Effect.failCause(cause as Cause.Cause<never>)
             : Effect.sync(() => {
-              compactionCounts.set(runId, 0)
+              policyRunCounts.set(runId, 0)
             }).pipe(
               Effect.andThen(
                 Effect.logWarning("journal auto-compaction failed; retrying after the next threshold", cause)
@@ -2792,9 +2808,9 @@ export const make = (
               if (compactingRuns.has(runId)) {
                 return false
               }
-              const known = compactionCounts.get(runId)
+              const known = policyRunCounts.get(runId)
               const current = known === undefined ? yield* countEntries(runId) : known + committed
-              compactionCounts.set(runId, current)
+              policyRunCounts.set(runId, current)
               if (current < policy.entryThreshold) {
                 return false
               }
