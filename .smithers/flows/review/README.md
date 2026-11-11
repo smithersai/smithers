@@ -6,6 +6,8 @@ Where `repo` holds `.jj`, `commit`, `from` and `to` are jj revsets, read without
 
 Run it through the normal app flow catalog or `smthrs flow start review --payload '{"repo":"."}'`. The host supplies the engine, identity, permissions, filesystem, process launcher, model aliases, policy, and budget. The module exports implementations only; it does not start a service, create an engine, resolve credentials, or choose a budget. Review and verification use the host's `coding/review` seat; narration uses `coding/implement`.
 
+A host without a checkout registers the rounds from `src/workflow/reviewFlow.ts`, `src/workflow/reviewActions.ts` and `src/review/preparedReviewOf.ts`, which import no platform module (`tests/workflow/hostFreeRounds.test.ts` fails if one does), and supplies its own `PrepareReview` and `RenderWalkthrough`. The checkout-reading and file-writing implementations of those two live in `src/workflow/reviewHostActions.ts`.
+
 The typed result retains findings, coverage gaps, warnings, story and artifact receipts, and a `verdict` read from the post-verification review:
 
 | `verdict`    | When                                                                                                                                                            |

@@ -5,15 +5,10 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Layer } from "effect"
-import {
-  applyVerdictsLayer,
-  finalizeReviewLayer,
-  mergeFileBatchLayer,
-  prepareReviewLayer,
-  renderWalkthroughLayer
-} from "./reviewActions.ts"
+import { applyVerdictsLayer, finalizeReviewLayer, mergeFileBatchLayer } from "./reviewActions.ts"
 import { NarrateChanges, ReviewFile, VerifyFindings } from "./reviewAgentActions.ts"
 import { NarrateReview, ReviewFiles, VerifyReview } from "./reviewFlow.ts"
+import { prepareReviewLayer, renderWalkthroughLayer } from "./reviewHostActions.ts"
 /** Child rounds register in the caller's engine; no engine, seats or policy is constructed here. */
 const declarations = Layer.mergeAll(
   prepareReviewLayer,
