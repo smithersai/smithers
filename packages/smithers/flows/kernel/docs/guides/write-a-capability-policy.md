@@ -103,6 +103,24 @@ directory rename. A later `allow` on `<directory>/**` or a tree containing it
 supersedes the restriction, except that a configured `deny` yields only to a
 later rule of the configured ruleset.
 
+## Globs
+
+`glob` lists every path its wildcards match, but the grant check names the
+pattern text, and `deny fs:read /workspace/secrets/**` does not select the
+text `/workspace/sec*/**`. The kernel therefore refuses a pattern with a
+wildcard if a `deny` or `ask` rule on `fs:read` may select anything under the
+directory the first wildcard segment is matched in: `/workspace` for
+`sec*/**`, `**/*` and `{secrets,x}/*`, and `/workspace/src` for `src/**/*.ts`.
+The failure is `permission_denied` with the reason `"a deny or ask rule may
+select paths this pattern can match"`. A batch `glob` member is refused the
+same way.
+
+Restrictions are read as widely as for a whole directory, and a later `allow`
+supersedes them by the same rule. With a deny on `/workspace/secrets/**`,
+glob each readable directory by name (`src/**/*.ts`) instead of the workspace
+root. A pattern without a wildcard names one path and gets the ordinary grant
+check.
+
 ## The configured ruleset has a veto
 
 `MakeOptions.rules` accepts either a flat list or a nested one. The flat form

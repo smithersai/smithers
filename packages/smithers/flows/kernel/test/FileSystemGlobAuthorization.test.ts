@@ -1,5 +1,7 @@
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
+import { CapabilityPattern } from "@smthrs/capability/Capability"
+import * as Permission from "@smthrs/capability/Permission"
 import { Effect, FileSystem, Option, Path, PlatformError, Result } from "effect"
 import * as Guarded from "../src/FileSystem.ts"
 import * as GrantStore from "../src/GrantStore.ts"
@@ -357,4 +359,127 @@ describe("glob authorization", () => {
         true
       )
     }))
+})
+
+const fsRead = (resource: string, effect: "allow" | "deny" | "ask" = "allow") =>
+  new Permission.Rule({ effect, pattern: new CapabilityPattern({ action: "fs:read", resource }) })
+
+const refusal = (error: PlatformError.PlatformError) => {
+  const denied = Option.getOrThrow(Permission.fromPlatformError(error))
+  return "reason" in denied ? `${denied.capability.resource}: ${denied.reason}` : denied.code
+}
+
+/** Runs `body` over the fixture host with a real grant store, or with `store` in its place. */
+const governed = <A, E>(
+  body: Effect.Effect<A, E, FileSystem.FileSystem>,
+  host: ReturnType<typeof fixture>,
+  root: string,
+  windows: boolean,
+  store: ReadonlyArray<Permission.Rule> | GrantStore.Service
+) =>
+  Effect.gen(function*() {
+    const grants = "check" in store ? store : yield* GrantStore.make({ attended: false, rules: store })
+    return yield* body.pipe(
+      Effect.provide(Guarded.layer),
+      Effect.provideService(FileSystem.FileSystem, host.fs),
+      Effect.provide(windows ? NodePath.layerWin32 : Path.layer),
+      Effect.provideService(GrantStore.GrantStore, grants)
+    )
+  }).pipe(Effect.provide(Workspace.layer(root)), Effect.scoped)
+
+const contentReason = "a deny or ask rule may select paths this pattern can match"
+
+/** What reached the host globber, as single requests or batch members. */
+const globbed = (host: ReturnType<typeof fixture>) =>
+  host.requests.flatMap((request) =>
+    request.operation === "glob"
+      ? [request.pattern]
+      : request.operation === "batch"
+      ? request.requests.filter((member) => member.operation === "glob").map((member) => member.path)
+      : []
+  )
+
+describe("glob content", () => {
+  for (const windows of [false, true]) {
+    const root = windows ? "C:\\workspace" : "/workspace"
+    const sep = windows ? "\\" : "/"
+    const under = (...segments: ReadonlyArray<string>) => [root, ...segments].join(sep)
+    for (const batched of [false, true]) {
+      const label = `${windows ? "Windows" : "POSIX"}, ${batched ? "batch" : "single"}`
+      const glob = (pattern: string): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> =>
+        Effect.flatMap(FileSystem.FileSystem, (fs) =>
+          batched
+            ? Effect.flatMap(
+              Guarded.batch(fs)!.execute([{ operation: "glob", path: pattern, root }]),
+              (response): Effect.Effect<void, PlatformError.PlatformError> => {
+                const result = response.entries[0]!.result
+                return Result.isFailure(result) ? Effect.fail(result.failure) : Effect.void
+              }
+            )
+            : Effect.asVoid(fs.glob(pattern)))
+      const refused = (pattern: string) => Effect.map(Effect.flip(glob(pattern)), refusal)
+
+      it.effect(`refuses a pattern that can match under a denied subtree (${label})`, () =>
+        Effect.gen(function*() {
+          const host = fixture(root)
+          yield* governed(
+            Effect.gen(function*() {
+              // No wildcard spelling lists the denied tree (#4643).
+              for (const pattern of ["sec*/**", "**/*", "{secrets,x}/*", "?ecrets/*.key", "secrets/*.key"]) {
+                expect(yield* refused(pattern)).toBe(`${under(...pattern.split("/"))}: ${contentReason}`)
+              }
+              expect(globbed(host)).toEqual([])
+              // A pattern whose literal directory is provably outside the denied tree still runs.
+              yield* glob("src/**/*.ts")
+              // A pattern without a wildcard names one path, which the grant check decides.
+              yield* glob("secrets")
+              expect(globbed(host)).toEqual([under("src", "**", "*.ts"), under("secrets")])
+            }),
+            host,
+            root,
+            windows,
+            [fsRead(under("**")), fsRead(under("secrets", "**"), "deny")]
+          )
+        }))
+
+      it.effect(`refuses under an ask rule until a later allow covers the directory (${label})`, () =>
+        Effect.gen(function*() {
+          const host = fixture(root)
+          yield* governed(
+            Effect.gen(function*() {
+              expect(yield* refused("**/*.md")).toBe(`${under("**", "*.md")}: ${contentReason}`)
+              expect(yield* refused("drafts/*.md")).toBe(`${under("drafts", "*.md")}: ${contentReason}`)
+              expect(globbed(host)).toEqual([])
+              yield* glob("out/**/*.md")
+              expect(globbed(host)).toEqual([under("out", "**", "*.md")])
+            }),
+            host,
+            root,
+            windows,
+            [
+              fsRead(under("**")),
+              fsRead(under("drafts", "**"), "ask"),
+              fsRead(under("out", "**"), "ask"),
+              fsRead(under("out", "**"))
+            ]
+          )
+        }))
+
+      it.effect(`refuses a wildcard pattern when the policy cannot be read (${label})`, () =>
+        Effect.gen(function*() {
+          const host = fixture(root)
+          yield* governed(
+            Effect.gen(function*() {
+              expect(yield* refused("src/*.ts")).toBe("store_closed")
+              expect(globbed(host)).toEqual([])
+              expect(host.grants).toEqual([])
+            }),
+            host,
+            root,
+            windows,
+            { ...host.store, policy: Effect.fail(new Permission.GrantStoreError({ code: "store_closed" })) }
+          )
+        }))
+    }
+  }
 })

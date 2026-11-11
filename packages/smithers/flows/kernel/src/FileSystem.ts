@@ -769,6 +769,9 @@ const pinnedPath = (
 const segmentsBelow = (path: EffectPath.Path, root: string, value: string): Array<string> =>
   path.relative(root, value).split(path.sep).filter((segment) => segment !== "")
 
+/** A path segment the host globber reads as a pattern, not as a name. */
+const wildcardSegment = /[*?[{]|[@+!]\(/
+
 /** Resolve a glob's literal prefix, keeping pattern syntax out of filename lookups. */
 const globAuthorizationPath = (
   path: EffectPath.Path,
@@ -780,7 +783,7 @@ const globAuthorizationPath = (
   if (requested === undefined) return { prefix: value, suffix: [] }
   // The workspace's own name is literal even if it contains glob metacharacters.
   const parts = segmentsBelow(path, root.boundaryRoot, requested)
-  const wildcard = parts.findIndex((part) => /[*?[{]|[@+!]\(/.test(part))
+  const wildcard = parts.findIndex((part) => wildcardSegment.test(part))
   return wildcard < 0
     ? { prefix: value, suffix: [] }
     // Keep logical spelling so the executor mapping pins the prefix exactly once.
@@ -1059,6 +1062,29 @@ export const layer: Layer.Layer<
         }, { concurrency: Batch.fallbackConcurrency })
       })
     }
+    /**
+     * A glob lists every path its wildcards match while the grant check names
+     * the pattern text alone, and a rule such as
+     * `deny fs:read /workspace/secrets/**` does not select the text
+     * `/workspace/sec*` + `/**`. So a pattern with a wildcard is refused if a
+     * deny or ask rule may select anything under the directory its first
+     * wildcard segment is matched in. A pattern without a wildcard names one
+     * path, which the grant check decides exactly.
+     */
+    const globContent = (method: string, resource: string): Effect.Effect<void, PlatformError.PlatformError> => {
+      const parts = segmentsBelow(path, logicalRoot, resource)
+      const wildcard = parts.findIndex((part) => wildcardSegment.test(part))
+      return wildcard < 0
+        ? Effect.void
+        : grants.policy.pipe(
+          Effect.mapError(refuse(method, resource)),
+          Effect.flatMap((policy) =>
+            restrictsContent(policy, "fs:read", path.join(logicalRoot, ...parts.slice(0, wildcard)), path.sep)
+              ? deny("fs:read", method, resource, "a deny or ask rule may select paths this pattern can match")
+              : Effect.void
+          )
+        )
+    }
     const guard = (
       action: "fs:read" | "fs:write",
       value: string,
@@ -1067,19 +1093,23 @@ export const layer: Layer.Layer<
       const method = action === "fs:read" ? "read" : "write"
       return resolvedResource(action, method, value, glob).pipe(
         Effect.flatMap((resource) =>
-          makeCapability(action, resource).pipe(
-            Effect.flatMap((capability) => grants.check(capability)),
-            Effect.mapError(refuse(method, resource)),
-            // The grant decision can suspend — an attended request waiting for
-            // a human, a journal-backed store doing IO. What was authorized is
-            // the resource the path named at check time, so the path must
-            // still name it when the decision arrives: a symlink or rename
-            // swapped in during the wait is refused, never followed.
-            Effect.andThen(resolvedResource(action, method, value, glob)),
-            Effect.flatMap((settled) =>
-              settled === resource
-                ? Effect.succeed(resource)
-                : deny(action, method, resource, "path no longer names the resource that was authorized")
+          (glob ? globContent(method, resource) : Effect.void).pipe(
+            Effect.andThen(
+              makeCapability(action, resource).pipe(
+                Effect.flatMap((capability) => grants.check(capability)),
+                Effect.mapError(refuse(method, resource)),
+                // The grant decision can suspend — an attended request waiting for
+                // a human, a journal-backed store doing IO. What was authorized is
+                // the resource the path named at check time, so the path must
+                // still name it when the decision arrives: a symlink or rename
+                // swapped in during the wait is refused, never followed.
+                Effect.andThen(resolvedResource(action, method, value, glob)),
+                Effect.flatMap((settled) =>
+                  settled === resource
+                    ? Effect.succeed(resource)
+                    : deny(action, method, resource, "path no longer names the resource that was authorized")
+                )
+              )
             )
           )
         )
@@ -1681,9 +1711,13 @@ export const layer: Layer.Layer<
         for (const [index, request] of captured.entries()) {
           const resource = resources[index]!
           const checked = Result.isFailure(resource) ? Result.fail(resource.failure) : yield* Effect.result(
-            makeCapability("fs:read", resource.success).pipe(
-              Effect.flatMap((capability) => grants.check(capability)),
-              Effect.mapError(refuse("read", resource.success))
+            (request.operation === "glob" ? globContent("read", resource.success) : Effect.void).pipe(
+              Effect.andThen(
+                makeCapability("fs:read", resource.success).pipe(
+                  Effect.flatMap((capability) => grants.check(capability)),
+                  Effect.mapError(refuse("read", resource.success))
+                )
+              )
             )
           )
           if (Result.isFailure(checked)) {

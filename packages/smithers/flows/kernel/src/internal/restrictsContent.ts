@@ -31,6 +31,10 @@ const coversCeiling = (ceiling: PolicyRule["ceiling"], content: CapabilityPatter
  * A name containing `*` or `?` yields a pattern wider than the directory.
  * That only makes more rules count.
  *
+ * `separator` is the host's path separator. Rules and resources on a Windows
+ * host are spelled with `\\`, and a pattern joined with `/` there would be
+ * provably disjoint from every rule under the directory.
+ *
  * @category predicates
  * @since 1.0.0
  * @private
@@ -38,9 +42,10 @@ const coversCeiling = (ceiling: PolicyRule["ceiling"], content: CapabilityPatter
 export const restrictsContent = (
   policy: Policy,
   action: "fs:read" | "fs:write",
-  directory: string
+  directory: string,
+  separator = "/"
 ): boolean => {
-  const resource = `${directory.endsWith("/") ? directory.slice(0, -1) : directory}/**`
+  const resource = `${directory.endsWith(separator) ? directory.slice(0, -1) : directory}${separator}**`
   if (resource.length > maxResourceLength) return true
   const content = new CapabilityPattern({ action, resource })
   let restricted = false

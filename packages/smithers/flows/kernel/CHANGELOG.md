@@ -25,6 +25,13 @@
 
 ### Fixed
 
+- `FileSystem.layer` no longer lets `glob`, or a batch `glob` member, list
+  paths a rule restricts. The grant check named the pattern text alone, so
+  `deny fs:read /workspace/secrets/**` did not stop `glob("sec*/**")` or
+  `glob("**/*")` from returning the names under `secrets`. A pattern with a
+  wildcard is now refused with `permission_denied` if a `deny` or `ask` rule
+  may select anything under the directory its first wildcard segment is
+  matched in, unless a later `allow` covers that whole directory.
 - `FileSystem.layer` no longer lets `rename`, a recursive `remove` or `copy`
   reach content a rule restricts. `rename` now also requires `fs:read` on its
   source, so a read deny cannot be renamed away. When the operand is a
