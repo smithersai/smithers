@@ -1,0 +1,28 @@
+import { NodeServices } from "@effect/platform-node"
+import { expect, it } from "@effect/vitest"
+import { DurableWriter } from "@smthrs/database"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { ScoreStore, SqlScoreStore } from "@smthrs/scorers"
+import { main } from "../examples/quickstart.vibe"
+
+/** Reads the job's aggregate back from the journal the host wrote. */
+effect function aggregate(filename: string) {
+  const database = Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename }))
+  return try scoped(effect {
+    provide Layer.provide(SqlScoreStore.layer, database) {
+      return try (try ScoreStore.ScoreStore).aggregate("greet/ada")
+    }
+  })
+}
+
+it.live("scores once and replays the journaled action on the second run", effect () => {
+  const result = try scoped(effect {
+    provide NodeServices.layer {
+      const root = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      try main(root)
+      try main(root)
+      return try aggregate(`${root}/.flows/scoring.sqlite`)
+    }
+  })
+  expect(result).toEqual({ count: 1, mean: 1, min: 1, inconclusive: 0 })
+})

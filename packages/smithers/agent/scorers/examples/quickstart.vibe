@@ -1,0 +1,56 @@
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { NodeRuntime } from "@smthrs/platform-node"
+import { Scorers, Scoring, SqlScoreStore } from "@smthrs/scorers"
+
+export const Grade = Action.make("example/Grade", {
+  payload: {
+    jobKey: Schema.String,
+    output: Schema.String,
+    expected: Schema.String,
+    at: Schema.Number
+  },
+  success: Schema.Void,
+  implementationVersion: "grade/v1"
+})
+
+export const GradeFlow = Flow.make("example/GradeFlow", {
+  payload: Grade.payloadSchema,
+  success: Schema.Void,
+  body: Node.capture({ action: Grade.name }, (payload) => Grade.call(payload))
+})
+
+const exact = Scorers.exact()
+
+/** Scores inside the action; a store write that failed must not complete it. */
+export const implementation = Grade.toLayer(effect ({ jobKey, output, expected, at }) => {
+  const outcomes = try Scoring.runBatchCorrelated([{
+    identity: Scoring.jobIdentity([jobKey, exact.scorerKey]),
+    observation: { targetStepKey: jobKey, scorerKey: exact.scorerKey },
+    score: exact.score({ input: null, output, groundTruth: expected }),
+    at
+  }])
+  if (outcomes.some((outcome) => outcome.recorded === "failed")) {
+    try die("Scoring observation could not be persisted")
+  }
+}, { implementationVersion: "grade/v1" }) |> Layer.provide(%, SqlScoreStore.layer)
+
+/** Grades one job on the Node host whose SQL journal lives under `workspaceRoot`. */
+export effect function main(workspaceRoot: string) {
+  const host = NodeRuntime.layerHost({
+    filename: `${workspaceRoot}/.flows/scoring.sqlite`,
+    workspaceRoot,
+    owner: { hostId: "scoring-example" }
+  }, Interpreter.layerWithImplementations(GradeFlow, implementation))
+
+  try scoped(effect {
+    provide host {
+      try GradeFlow.execute({
+        jobKey: "greet/ada",
+        output: "Hello, Ada",
+        expected: "Hello, Ada",
+        at: 1
+      }, { executionId: "grade-ada-1" })
+    }
+  })
+}

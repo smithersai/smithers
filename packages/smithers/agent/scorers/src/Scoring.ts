@@ -82,6 +82,7 @@ export interface Outcome {
  * delimiter cannot promise that: the only consumer of this package built its
  * identity by `NUL`-joining five unconstrained strings.
  *
+ * @throws {never}
  * @category constructors
  * @since 0.1.0
  */
