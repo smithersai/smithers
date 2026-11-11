@@ -87,11 +87,15 @@ A `cause` of `undefined` is treated as no cause, so the instance has no own
 therefore always spell the key and let the caller decide:
 
 ```vibe
-error IntegrationError extends SmithersError {
+class IntegrationError extends SmithersError {
+  declare readonly _tag: "IntegrationError"
+
   constructor(options?: { readonly cause?: unknown }) {
     super("INTEGRATION_ERROR", "poll failed", undefined, { cause: options?.cause })
+    this._tag = "IntegrationError"
   }
 }
+IntegrationError.prototype.name = "IntegrationError"
 ```
 
 A supplied cause is stored as given. Non-`Error` causes are kept as-is, and a
@@ -119,14 +123,23 @@ The consequence for a caller: `details` from a Smithers integration adapter is
 already provider-safe and can go straight into a log. `details` on an error you
 constructed yourself is only as safe as you made it.
 
-## Subclasses are error declarations
+## Subclasses tag themselves
 
-A subclass is an error declaration that extends `SmithersError`. It keeps the
-base's constructor, so `instanceof` holds for both classes, and it is tagged
-with its own name, which it reports and its stack starts with:
+A subclass is a class that extends `SmithersError`. An `error` declaration
+cannot extend a class (VibeLang VIP-13), so the subclass sets its own tag after
+`super(...)` and its own name on its prototype. `instanceof` holds for both
+classes, and the subclass reports its own name, which its stack starts with:
 
 ```vibe
-error AdapterError extends SmithersError
+class AdapterError extends SmithersError {
+  declare readonly _tag: "AdapterError"
+
+  constructor(code: SmithersErrorCode, summary: string) {
+    super(code, summary)
+    this._tag = "AdapterError"
+  }
+}
+AdapterError.prototype.name = "AdapterError"
 
 const error = new AdapterError("TELEGRAM_API_ERROR", "bad request")
 error instanceof AdapterError // true

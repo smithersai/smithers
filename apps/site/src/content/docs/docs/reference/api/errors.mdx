@@ -42,14 +42,14 @@ package.
 ### class SmithersError
 
 ```vibe
-error SmithersError {
-  _tag: string
-  message: string
-  code: SmithersErrorCode
-  summary: string
-  docsUrl: string
-  details?: Readonly<Record<string, unknown>>
-
+class SmithersError extends TaggedError("SmithersError" as string)<{
+  readonly _tag: string
+  readonly message: string
+  readonly code: SmithersErrorCode
+  readonly summary: string
+  readonly docsUrl: string
+  readonly details?: Readonly<Record<string, unknown>>
+}> {
   constructor(
     code: SmithersErrorCode,
     summary: string,
@@ -61,8 +61,10 @@ error SmithersError {
 }
 ```
 
-An error declaration (VibeLang D278): the class extends Effect's
-`Data.TaggedError`, and every field is readonly.
+The class extends Effect's `Data.TaggedError`, through the VibeLang prelude's
+`TaggedError`, and every field is readonly. It is a class rather than an
+`error` declaration because a declaration takes no constructor, no `_tag`
+field and no subclass (VibeLang VIP-13).
 
 Constructor parameters:
 

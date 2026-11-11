@@ -73,14 +73,17 @@ treated as no cause, so the instance gets no own `cause` property and
 `util.inspect` prints no `[cause]` line:
 
 ```vibe
-error IntegrationError extends SmithersError {
-  reason: Reason
+class IntegrationError extends SmithersError {
+  declare readonly _tag: "IntegrationError"
+  readonly reason: Reason
 
   constructor(reason: Reason, message: string, options?: { readonly cause?: unknown }) {
     super("INTEGRATION_ERROR", message, { reason }, { cause: options?.cause })
+    this._tag = "IntegrationError"
     this.reason = reason
   }
 }
+IntegrationError.prototype.name = "IntegrationError"
 ```
 
 That is why a subclass can always spell the optional key instead of building a
@@ -94,11 +97,13 @@ Subclass `SmithersError` when your adapter has fields a caller reads by name.
 
 Two rules make a subclass behave:
 
-1. Declare it `error YourError extends SmithersError`. It is tagged with its
-   own name, which it reports and its stack starts with, so
-   `Effect.catchTag("YourError")` routes to your handler.
+1. Declare it `class YourError extends SmithersError`, with
+   `declare readonly _tag: "YourError"`, set `this._tag = "YourError"` after
+   `super(...)`, and set `YourError.prototype.name = "YourError"` after the
+   class. It is then tagged with its own name, which it reports and its stack
+   starts with, so `Effect.catchTag("YourError")` routes to your handler. An
+   `error` declaration cannot extend a class (VibeLang VIP-13, `EK2117`).
 2. Declare your fields in its body and set them after `super(...)` in its
-   constructor; a subclass without fields inherits `SmithersError`'s
    constructor.
 
 ## Ship a refinement with the subclass

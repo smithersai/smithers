@@ -67,7 +67,9 @@ again.
 so it cannot regress.
 
 **Fix.** Pass the details at construction. For a name and a tag of its own,
-declare a subclass: `error MyError extends SmithersError`.
+declare a subclass: `class MyError extends SmithersError`, as
+[Subclass when you have typed fields](guides/raise-an-error.md#subclass-when-you-have-typed-fields)
+shows.
 
 ## The message has no documentation URL
 

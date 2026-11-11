@@ -2,9 +2,8 @@
 "@smthrs/errors": minor
 ---
 
-`SmithersError` is a VibeLang `error` declaration: an Effect `Data.TaggedError`
-tagged with its class's own name. A subclass is
-`error IntegrationError extends SmithersError`, tagged and named
+`SmithersError` is an Effect `Data.TaggedError` tagged with its class's own
+name. A subclass such as `IntegrationError` sets its own tag and name,
 `"IntegrationError"`.
 
 - `SmithersErrorOptions` has no `name`, and `SmithersError` takes no tag type

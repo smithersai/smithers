@@ -5,15 +5,16 @@
  * human summary, caller-supplied `details`, and a documentation URL appended
  * to the message. It stores context verbatim and does not redact it.
  * Integration adapters must remove credentials before constructing it.
- * Adapters subclass it, `error IntegrationError extends SmithersError`, to add
- * their own typed fields and their own Effect tag; callers classify with the
- * tag or the code rather than by matching message text.
+ * Adapters subclass it, as `@smthrs/integrations`' `IntegrationError` does, to
+ * add their own typed fields and their own Effect tag; callers classify with
+ * the tag or the code rather than by matching message text.
  *
  * @since 1.0.0
  */
 
-import { TaggedError as $ErrorTaggedError } from "vibelang-runtime"
-import { $schemaErrorMatcher as $ErrorMatcher } from "vibelang-runtime"
+// The one generated-code helper this source still writes; see the class's
+// comment for why and for the VibeLang gap it records.
+import { $schemaErrorMatcher } from "vibelang-runtime"
 
 import { ERROR_REFERENCE_URL, type SmithersErrorCode } from "./ErrorCode.ts"
 
@@ -39,15 +40,21 @@ export interface SmithersErrorOptions {
 /**
  * A Smithers integration failure, and an Effect tagged error.
  *
- * Each class is tagged with its own name: `Effect.catchTag("SmithersError")`
- * catches a base instance, an adapter's `error IntegrationError extends
- * SmithersError` is caught by `"IntegrationError"`, and `is SmithersError`
- * matches them all. The tag is also the name the error reports.
+ * A subclass tags itself with its own name: `Effect.catchTag("SmithersError")`
+ * catches a base instance, an adapter's `IntegrationError` subclass is caught
+ * by `"IntegrationError"`, and `is SmithersError` matches them all. The tag is
+ * also the name the error reports. `is SmithersError` also matches an
+ * instance from another copy of this package by its `"SmithersError"` tag; a
+ * subclass matches its own instances only.
+ *
+ * It is a class over the prelude's `TaggedError`, not an `error` declaration,
+ * because a declaration takes no constructor, no `_tag` field and no subclass
+ * (VibeLang VIP-13: EK1301, EK2117).
  *
  * @category errors
  * @since 1.0.0
  */
-export class SmithersError extends $ErrorTaggedError("SmithersError" as string)<{
+export class SmithersError extends TaggedError("SmithersError" as string)<{
     /** The Effect tag: `"SmithersError"`, or a subclass's own name. */
     readonly _tag: string;
     /** The summary with the documentation URL appended, unless left out. */
@@ -68,8 +75,12 @@ export class SmithersError extends $ErrorTaggedError("SmithersError" as string)<
      */
     readonly details?: Readonly<Record<string, unknown>>;
 }> {
-static { $ErrorMatcher(this, "SmithersError") }
-
+  // An own matcher keeps `is SmithersError` matching an instance from another
+  // copy of this package by its tag, as an `error` declaration's does; pattern
+  // dispatch reads no inherited matcher, so the prelude's on `TaggedError`'s
+  // class does not reach this one. VibeLang has no source form for that yet,
+  // so this calls the generated-code helper (smithersai/smithers#4472).
+  static { $schemaErrorMatcher(this, "SmithersError") }
 
   /**
    * Constructs a tagged integration failure with a frozen shallow context copy.
