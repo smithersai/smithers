@@ -16,7 +16,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as Dialect from "../src/Dialect.ts"
 import { PostgresDatabase } from "../src/index.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
-import { listening, pgbouncerUrl } from "./harness/listening.ts"
+import { absence, pgbouncer, postgres } from "./harness/listening.ts"
 
 const count = (sql: SqlClient.SqlClient, table = "snapshot_probe") =>
   Effect.map(
@@ -93,23 +93,11 @@ describe("Dialect.readTransaction", () => {
     }).pipe(Effect.provide(TestDatabase.layer)))
 })
 
-const postgres = process.env.SMITHERS_TEST_PG_URL
-const endpoints = [
-  { name: "PostgreSQL", url: postgres, start: "`pnpm coverage` provides a server" },
-  {
-    name: "PgBouncer with pool_mode=transaction",
-    url: pgbouncerUrl,
-    start: "run `docker compose up -d pgbouncer` in apps/mvp"
-  }
-]
+const endpoints = [postgres(), pgbouncer()]
 
 for (const endpoint of endpoints) {
   const url = endpoint.url
-  const absent = url === undefined
-    ? `SMITHERS_TEST_PG_URL is unset; ${endpoint.start}`
-    : await listening(url)
-    ? undefined
-    : `nothing listens on ${new URL(url).host}; ${endpoint.start}`
+  const absent = await absence(endpoint)
 
   describe(`Dialect.readTransaction on ${endpoint.name}`, () => {
     if (url === undefined || absent !== undefined) {

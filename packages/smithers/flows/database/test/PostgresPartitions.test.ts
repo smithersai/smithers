@@ -4,7 +4,7 @@ import * as TestSchemas from "../src/TestSchemas.ts"
  * writes to one partition commit one at a time, writes to two commit
  * concurrently, and a write that names no partition commits alone. A nested
  * write takes whatever lock its transaction lacks. The cases run on
- * `SMITHERS_TEST_PG_URL` and through the compose PgBouncer in transaction
+ * `SMITHERS_TEST_PG_URL` and through PgBouncer in transaction
  * pooling, as `PostgresPooling.test.ts` does, and skip where nothing listens.
  */
 import * as Pg from "@effect/sql-pg"
@@ -14,24 +14,13 @@ import { SqlClient } from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { DatabaseMetrics, DurableWriter, Migrations, PostgresDatabase } from "../src/index.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
-import { listening, pgbouncerUrl } from "./harness/listening.ts"
+import { absence, pgbouncer, postgres } from "./harness/listening.ts"
 
-const endpoints = [
-  { name: "PostgreSQL", url: process.env.SMITHERS_TEST_PG_URL, start: "`pnpm coverage` provides a server" },
-  {
-    name: "PgBouncer with pool_mode=transaction",
-    url: pgbouncerUrl,
-    start: "run `docker compose up -d pgbouncer` in apps/mvp"
-  }
-]
+const endpoints = [postgres(), pgbouncer()]
 
 for (const endpoint of endpoints) {
   const url = endpoint.url
-  const absent = url === undefined
-    ? `SMITHERS_TEST_PG_URL is unset; ${endpoint.start}`
-    : await listening(url)
-    ? undefined
-    : `nothing listens on ${new URL(url).host}; ${endpoint.start}`
+  const absent = await absence(endpoint)
 
   describe(endpoint.name, () => {
     if (url === undefined || absent !== undefined) {

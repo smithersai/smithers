@@ -38,14 +38,14 @@ import { afterAll, describe, test, type TestContext } from "vitest"
 import { DurableWriter, PostgresDatabase } from "../src/index.ts"
 import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
-import { listening, pgbouncerUrl } from "./harness/listening.ts"
+import { composePgbouncerUrl, listening } from "./harness/listening.ts"
 
 const scope = Effect.runSync(Scope.make())
 afterAll(() => Effect.runPromise(Scope.close(scope, Exit.void)))
 
 const postgresUrl = "postgres://smithers:smithers@127.0.0.1:54321/smithers"
 const endpoints = [
-  { name: "PgBouncer pool_mode=transaction", url: pgbouncerUrl, probe: pgbouncerUrl },
+  { name: "PgBouncer pool_mode=transaction", url: composePgbouncerUrl, probe: composePgbouncerUrl },
   { name: "PostgreSQL", url: postgresUrl, probe: postgresUrl },
   {
     name: "PostgreSQL behind a 2 ms slow network",

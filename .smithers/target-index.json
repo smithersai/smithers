@@ -71752,6 +71752,22 @@
     }
   },
   {
+    "label": "//packages/smithers/flows/database:adapterPgbouncer",
+    "package": "packages/smithers/flows/database",
+    "name": "adapterPgbouncer",
+    "rule": "Docker.Service",
+    "kinds": [
+      "run"
+    ],
+    "cacheable": false,
+    "inputs": [],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/database/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/flows/database:adapterPostgresDatabase",
     "package": "packages/smithers/flows/database",
     "name": "adapterPostgresDatabase",
@@ -72324,6 +72340,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/database:adapterPgbouncer",
       "//packages/smithers/flows/database:adapterPostgresDatabase",
       "//packages/smithers/flows/database:lib"
     ],
