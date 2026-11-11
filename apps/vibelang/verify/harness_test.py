@@ -200,6 +200,12 @@ class MutationLocation(unittest.TestCase):
         self.assertIn('return 2', source[start:end])
         self.assertIsNone(function_span(source, 'c'))
 
+    def test_a_spec_function_is_found_and_ends_at_the_next_function(self):
+        from mutation_edit import function_span
+        source = 'spec function a(n: number): number {\n  return n\n}\nexport function b(n: number): number {\n  return a(n)\n}\n'
+        start, end = function_span(source, 'a')
+        self.assertEqual(source[start:end], 'spec function a(n: number): number {\n  return n\n}\n')
+
     def test_a_parent_folder_import_is_copied_beside_the_mutant(self):
         from mutation_edit import flatten_imports
         folder = ROOT.parent / 'src/web'
@@ -528,6 +534,68 @@ export function trusted(): boolean { return lie() }
             result=subprocess.run([sys.executable,str(ROOT/'check.py'),str(caller)],capture_output=True,text=True,env=env,timeout=120)
             self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('function lie',result.stdout+result.stderr)
+
+COUNT = """//@ verify
+//@ requires 0 <= end && end <= xs.length
+//@ ensures 0 <= \\result && \\result <= end
+//@ decreases end
+spec function countPrefix(xs: ReadonlyArray<boolean>, end: number): number {
+  if (end <= 0) return 0
+  return countPrefix(xs, end - 1) + (xs[end - 1]! ? 1 : 0)
+}
+
+"""
+
+
+class SpecFunctions(unittest.TestCase):
+    """A `spec function` (VIP-43) is proved as VibeLang lowers it: an exported function (spec_functions.py)."""
+
+    def check(self, text):
+        env = {key: value for key, value in os.environ.items() if key not in ('VIBELANG_VERIFY_ROOT', 'VERIFY_MUTATION_MANIFEST')}
+        import shutil
+        folder = tempfile.mkdtemp(dir=ROOT / '.checks')
+        self.addCleanup(shutil.rmtree, folder, True)
+        source = pathlib.Path(folder) / 'count.vibe'
+        source.write_text(text)
+        result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(source)], capture_output=True, text=True, env=env)
+        return source, result
+
+    def test_a_loop_is_proved_against_a_spec_function(self):
+        source, result = self.check(COUNT + """//@ verify
+//@ ensures \\result == countPrefix(xs, xs.length)
+export function count(xs: ReadonlyArray<boolean>): number {
+  let total = 0
+  for (let i = 0; i < xs.length; i++) {
+    //@ invariant 0 <= i && i <= xs.length
+    //@ invariant total == countPrefix(xs, i)
+    //@ decreases xs.length - i
+    if (xs[i]!) total++
+  }
+  return total
+}
+""")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(pathlib.Path(result.stdout.rsplit('results: ', 1)[1].strip()).read_text())
+        generated = pathlib.Path(summary['results'][0]['dfy']).read_text()
+        self.assertIn('function countPrefix(', generated)
+        self.assertNotIn('ghost function countPrefix(', generated)
+        self.assertEqual(source.read_text().count('spec function'), 1, 'the original is never rewritten')
+
+    def test_an_unmarked_spec_function_contract_in_a_proof_import_is_refused(self):
+        from sources import require_proved
+        folder = pathlib.Path(tempfile.mkdtemp(dir=ROOT / '.checks'))
+        import shutil
+        self.addCleanup(shutil.rmtree, folder, True)
+        dependency = folder / 'dep.vibe'
+        dependency.write_text('//@ ensures \\result >= 0\nspec function f(n: number): number {\n  return n\n}\n')
+        with self.assertRaisesRegex(SystemExit, 'contract on unmarked function f'):
+            require_proved(dependency, [dependency])
+
+    def test_only_the_form_at_a_line_start_is_lowered(self):
+        from spec_functions import lower
+        self.assertEqual(lower('  spec function f() {}\n'), '  export function f() {}\n')
+        for kept in ['const spec = 1\n', 'spec\nfunction f() {}\n', '// spec function f\n', 'specs function f() {}\n']:
+            self.assertEqual(lower(kept), kept)
 
 if __name__ == '__main__':
     (ROOT / '.checks').mkdir(exist_ok=True)

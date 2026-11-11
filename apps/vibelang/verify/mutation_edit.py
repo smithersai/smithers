@@ -11,7 +11,7 @@ def executable_matches(body, old):
         start=at+len(old)
 
 
-FUNCTION_HEAD = r'^(?:export )?function {name}(?:<[^>(]*>)?\('
+FUNCTION_HEAD = r'^(?:export |spec )?function {name}(?:<[^>(]*>)?\('
 
 
 def function_span(source, fn):

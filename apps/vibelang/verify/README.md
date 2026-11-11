@@ -11,6 +11,11 @@ From the app:
 - `pnpm verify <file-or-directory> ...`: check every supplied source; a missing extra source is an error.
 - `pnpm verify verify/bugs/<name>.ts`: reproduce a documented tool boundary; unsafe-integer intentionally proves the mathematical model while its native counterexample fails.
 
+A `spec function` (VIP-43: proofs only, erased from JavaScript and declarations, EK4310 outside a proof) is the one
+change to that copy: `spec_functions.py` writes it as `export function`, as VibeLang's own lowering does (Appendix F,
+"The lowering file"). Lines keep their numbers, so reports give the `.vibe` line. Mutants and staged imports get the
+same lowering.
+
 See [decision 0018](../wiki/decisions/0018-proofs.md) for the current inventory, claims and proof boundaries, and
 [0005](../wiki/decisions/0005-formal-verification.md) for the original conversation proof.
 

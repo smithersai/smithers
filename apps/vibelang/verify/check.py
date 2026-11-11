@@ -4,6 +4,7 @@ import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subpr
 from sources import production_sources, require_proved, proof_dependencies, VERIFY, dafny_keywords, dafny_name
 from proof_additions import add_proof_steps, insertion_names
 from declarations import stage as stage_declarations, copied_imports, declared_imports
+from spec_functions import lower as lower_spec_functions
 from proof_diagnostics import read_diagnostics
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, INVARIANTS, postcondition_line, case_assertion_line, invariant_line, time_limit, wall_limit
 ROOT=pathlib.Path(__file__).resolve().parent
@@ -30,6 +31,7 @@ proof_sources.mkdir()
 (proof_sources/'tsconfig.json').write_text(json.dumps({'extends':str(APP/'tsconfig.json'),'files':[],'include':[],'exclude':[]}))
 # LemmaScript reads TypeScript. A `.vibe` module written in its verifiable subset is TypeScript syntax, so the run
 # proves an exact `.ts` copy of its text, staged with this run's artifacts; reports name the `.vibe` file and line.
+# The one change is each `spec function`, written as `export function` on the same line (spec_functions.py).
 # A type-only import of a module that is not TypeScript syntax (`import type { Message } from "./main.vibe"`) reads the module's emitted declaration instead,
 # `x.vibe.d.ts` beside the copy, so a proved module can name the types of a module outside the subset (declarations.py).
 declarations={}
@@ -50,7 +52,7 @@ def stage_imports(original, staged):
   require_proved(dep, PRODUCTION)
   copy.parent.mkdir(parents=True,exist_ok=True)
   if not copy.exists():
-   copy.write_bytes(proof_bytes(dep)); stage_imports(dep,copy)
+   copy.write_text(lower_spec_functions(proof_bytes(dep).decode())); stage_imports(dep,copy)
 PRODUCTION=production_sources(APP)
 manifest_path=pathlib.Path(os.environ['VERIFY_MUTATION_MANIFEST']).resolve() if os.environ.get('VERIFY_MUTATION_MANIFEST') else None
 manifest=json.loads(manifest_path.read_text()) if manifest_path else {}
@@ -63,7 +65,7 @@ files=[]
 for original in selected:
  if original.suffix=='.vibe':
   staged=run/'source'/original.relative_to(APP).with_suffix('.ts')
-  staged.parent.mkdir(parents=True,exist_ok=True); staged.write_bytes(proof_bytes(original))
+  staged.parent.mkdir(parents=True,exist_ok=True); staged.write_text(lower_spec_functions(proof_bytes(original).decode()))
   shown[staged]=original; files.append(staged)
   stage_imports(original, staged)
  else: files.append(original)
@@ -88,7 +90,10 @@ def command(args, cwd, wall_seconds=180):
 def verify(item):
  idx,ts=item; is_mutation=ts in mutant_files; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
  # Report function declarations and contract lines even for extraction failures.
- funcs=[(n+1,re.search(r'^\s*(?:export )?function\s+(\w+)',s).group(1)) for n,s in enumerate(lines) if re.search(r'^\s*(?:export )?function\s+(\w+)',s)]
+ # The hash is the original's, which the run rechecks at completion; a staged copy differs only by spec_functions.lower.
+ origin_bytes=origin.read_bytes()
+ head=r'^\s*(?:export )?(?:spec )?function\s+(\w+)'
+ funcs=[(n+1,re.search(head,s).group(1)) for n,s in enumerate(origin_bytes.decode().splitlines()) if re.search(head,s)]
  loc=', '.join(f'{origin}:{n} function {name}' for n,name in funcs) or str(origin)
  work=run/ts.relative_to(APP).parent; work.mkdir(parents=True,exist_ok=True)
  dfy=work/ts.with_suffix('.dfy').name
@@ -152,7 +157,7 @@ def verify(item):
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'
- if ts.read_bytes() != original or origin.read_bytes() != original:
+ if ts.read_bytes() != original or (lower_spec_functions(origin.read_text()).encode() if origin != ts else origin.read_bytes()) != original:
   code=2;out+='ERROR: source changed during verification\n'
  elapsed=time.monotonic()-t
  # Dafny emits generated locations. Identify enclosing generated symbol, then
@@ -161,7 +166,7 @@ def verify(item):
  mapped=[f"{origin}:{d['source_line']}: function {d['function']} [{d['symbol']}; generated line {d['line']}]"
          for d in diagnostics if d['function'] is not None]
  log=work/(ts.stem+'.output.log');log.write_text(out)
- return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy),'diagnostics':diagnostics,'mutation':is_mutation}
+ return {'sha256':hashlib.sha256(origin_bytes).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy),'diagnostics':diagnostics,'mutation':is_mutation}
 
 KEYWORDS=dafny_keywords()
 initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}

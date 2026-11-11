@@ -1,6 +1,7 @@
 """Production discovery follows LemmaScript's whitespace-tolerant verify directive."""
 import pathlib
 import re
+from spec_functions import lower as lower_spec_functions
 
 VERIFY = re.compile(r'^[ \t]*//@[ \t]+verify\b', re.M)
 
@@ -15,7 +16,7 @@ def require_proved(dependency: pathlib.Path, production) -> None:
 
     before=''
     for line in dependency.read_text().splitlines():
-        function=re.match(r'\s*(?:export\s+)?function\s+(\w+)',line)
+        function=re.match(r'\s*(?:export\s+|spec\s+)?function\s+(\w+)',line)
         if function:
             if re.search(r'//@\s*(?:ensures|requires)\b',before) and not VERIFY.search(before):
                 raise SystemExit(f'Proof import {dependency}: contract on unmarked function {function.group(1)} would be an unproved axiom')
@@ -35,7 +36,8 @@ def proof_dependencies(roots,production):
         edges[source]=[]
         snapshot=source.read_bytes()
         snapshots[source]=hashlib.sha256(snapshot).hexdigest()
-        result=subprocess.run(['node',str(scanner),str(source)],capture_output=True,text=True,timeout=120)
+        # The scanner reads the text as staged: a `spec function` is not TypeScript until lowered (spec_functions.py).
+        result=subprocess.run(['node',str(scanner),str(source)],input=lower_spec_functions(snapshot.decode()),capture_output=True,text=True,timeout=120)
         if source.read_bytes()!=snapshot:raise SystemExit(f'Proof source changed while inspecting imports: {source}')
         if result.returncode:raise SystemExit(f'Cannot inspect proof imports of {source}: {result.stderr}')
         for item in json.loads(result.stdout):

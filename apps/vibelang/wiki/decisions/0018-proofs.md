@@ -5350,3 +5350,19 @@ Still outside the subset, each with its reason in the inventory: `REGENERATED` (
 `titleOf` and `wholeSentences` (`replace`), `scopeOf` and `evidenceOf`'s capture (`exec`), `trailerOf`'s line splits and
 its `Mythical:` capture (`split`, `replace`, `exec`), and the wiki script's `exec`, `match`, `replace` and two `i`-flag
 tests. They need explicit string decisions, or an `exec` capture model in LemmaScript.
+
+## Spec functions in the harness (vl-ghost-functions, 2026-11-10)
+
+A function that only states a proof, such as `runningCountPrefix`, is compiled, exported and counted by coverage. VIP-43
+gives it a form: a `spec function` erases from JavaScript and declarations, and EK4310 rejects any runtime reference.
+The harness reads a `.vibe` module as TypeScript, so each staged copy writes `spec function` as `export function` on
+the same line, as VibeLang's own lowering does (VIP-43 Appendix F, "The lowering file"). Lines keep their numbers.
+
+| Piece | Where | Test |
+| --- | --- | --- |
+| A staged source, staged import or mutant writes `spec function` as `export function` | `verify/spec_functions.py`, `check.py`, `mutations.py` | `harness_test.SpecFunctions` |
+| A mutation finds a spec function's span | `verify/mutation_edit.py` | `test_a_spec_function_is_found_and_ends_at_the_next_function` |
+
+The app declares no spec function yet: the compiler does not parse the form. When a VibeLang release does,
+`runningCountPrefix`, `restartsBefore` and `issueKnownAction` become spec functions and
+`test/decisionEdges.coverage.test.vibe` loses the tests that only covered them.

@@ -3,7 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { ts } = require(path.resolve(__dirname, "../../../packages/lemmascript/node_modules/ts-morph"));
 const file = process.argv[2];
-const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+// The caller passes the text on stdin, lowered as the proof stages it (spec_functions.py); `file` names it in errors.
+const source = ts.createSourceFile(file, fs.readFileSync(0, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 if (source.parseDiagnostics.length) throw new Error("Cannot inspect proof imports in " + file);
 const imports = [];
 function add(specifier, values) {

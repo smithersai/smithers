@@ -10,6 +10,7 @@ contract and assertion stays byte-identical, and each case must match exactly on
 import json, pathlib, re, sys
 from mutation_edit import executable_matches, flatten_imports, function_span
 from declarations import stage as stage_declarations, parses_as_typescript, value_imports
+from spec_functions import lower as lower_spec_functions
 declarations={}
 from sources import production_sources, require_proved
 root=pathlib.Path(__file__).resolve().parent
@@ -204,7 +205,7 @@ def stage_dependencies(text,dependencies,out):
                 continue
             seen[spec]=path
             copied,more=flatten_imports(path.read_text(),path.parent)
-            (out/f'{spec}.ts').write_text(copied)
+            (out/f'{spec}.ts').write_text(lower_spec_functions(copied))
             pending.append((copied,more))
 
 manifest={}
@@ -224,7 +225,7 @@ for module,name,fn,old,new,claim in cases:
     broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+edited+source[end:]
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
     broken,dependencies=flatten_imports(broken,(root.parent/module).parent)
-    (out/f'{name}.ts').write_text(broken)
+    (out/f'{name}.ts').write_text(lower_spec_functions(broken))
     stage_dependencies(broken,dependencies,out)
     manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
 if modules and not manifest: raise SystemExit('No mutations in: '+', '.join(sorted(modules)))
