@@ -1,0 +1,19 @@
+import { Canonical } from "@smthrs/canonical"
+import * as Digest from "effect/crypto/Digest"
+
+/** The value's only canonical form, or a schema failure naming the member that has none. */
+export effect function canonicalText(value: unknown): Canonical!Schema.SchemaError {
+  return try Schema.decodeUnknownEffect(Canonical)(value)
+}
+
+/** A content key: the SHA-256 of the canonical text, so it names the value, not the object. */
+export effect function contentKey(value: unknown): string!Schema.SchemaError!Digest.Digest {
+  const text = try canonicalText(value)
+  const digest = try Digest.Digest
+  return try digest.digestHex(Digest.sha256, new TextEncoder().encode(text))
+}
+
+/** Reports a refused value by its failure message instead of copying the value into a log. */
+export effect function keyOrRefusal(value: unknown): string!!Digest.Digest {
+  return contentKey(value) catch (error) => `refused: ${error.message}`
+}

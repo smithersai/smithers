@@ -1,0 +1,24 @@
+import { expect, it } from "@effect/vitest"
+import * as Digest from "effect/crypto/Digest"
+import { canonicalText, contentKey, keyOrRefusal } from "../examples/vibe/quickstart.vibe"
+
+const built = { flowId: "build", input: { target: "web-app", clean: false } }
+const submitted = { input: { clean: false, target: "web-app" }, flowId: "build" }
+
+it.effect("sorts members at every level and leaves nothing else to choose", effect () => {
+  expect(try canonicalText(built)).toBe(`{"flowId":"build","input":{"clean":false,"target":"web-app"}}`)
+})
+
+it.effect("gives two insertion orders of one value the same key", effect () => {
+  provide Digest.layerWebCrypto {
+    expect(try contentKey(built)).toBe("1a5d898ee183f17cd1f3c89eacf8c9dc036bc5614e76264456316d1831415ec4")
+    expect(try contentKey(submitted)).toBe(try contentKey(built))
+  }
+})
+
+it.effect("refuses a Set by its stable code and path", effect () => {
+  provide Digest.layerWebCrypto {
+    expect(try keyOrRefusal({ flowId: "build", input: { tags: new Set(["release"]) } })).toBe("refused: canonical_unsupported_value: Set at $.input.tags")
+    expect(try keyOrRefusal({ flowId: "build", input: { tags: [...new Set(["release"])].sort() } })).toMatch(/^[0-9a-f]{64}$/)
+  }
+})

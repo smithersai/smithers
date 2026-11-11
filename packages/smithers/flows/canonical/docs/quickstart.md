@@ -8,7 +8,9 @@ sidebar:
 This quickstart builds a content key: a hash that names a value rather than the
 object that carried it. By the end you will have a function that returns the
 same key for two objects a `===` comparison would call different, and that
-fails loudly on a value with no canonical form.
+fails loudly on a value with no canonical form. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -121,6 +123,40 @@ const document = Effect.runSync(Schema.decodeUnknownEffect(Canonical)(built))
 The decoded value is branded, so a function that requires a canonical document
 cannot be handed an arbitrary string. See
 [Canonicalize inside an Effect pipeline](./guides/use-the-schema.md).
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the walkthrough runs as
+Effect code, so it takes the schema path from the last step throughout: a
+value with no canonical form fails `contentKey` with a `SchemaError` instead of
+throwing, and `catch` turns that failure into the code and path a caller logs.
+The hash comes from Effect's `Digest` service, which the test provides with
+`Digest.layerWebCrypto`, so the example imports no `node:crypto`.
+
+This is `examples/vibe/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Canonical } from "@smthrs/canonical"
+import * as Digest from "effect/crypto/Digest"
+
+/** The value's only canonical form, or a schema failure naming the member that has none. */
+export effect function canonicalText(value: unknown): Canonical!Schema.SchemaError {
+  return try Schema.decodeUnknownEffect(Canonical)(value)
+}
+
+/** A content key: the SHA-256 of the canonical text, so it names the value, not the object. */
+export effect function contentKey(value: unknown): string!Schema.SchemaError!Digest.Digest {
+  const text = try canonicalText(value)
+  const digest = try Digest.Digest
+  return try digest.digestHex(Digest.sha256, new TextEncoder().encode(text))
+}
+
+/** Reports a refused value by its failure message instead of copying the value into a log. */
+export effect function keyOrRefusal(value: unknown): string!!Digest.Digest {
+  return contentKey(value) catch (error) => `refused: ${error.message}`
+}
+```
 
 ## What just happened
 
