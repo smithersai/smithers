@@ -4,11 +4,18 @@ description: "Bound request bodies before shared channel ingestion."
 ---
 
 Register a verified `Core.Channel.make` channel named `signed`. The host
-provides `channelsLayer` and requires a stable `x-delivery` identity. GitHub
-webhooks use the backend receiver; this is the generic host channel boundary.
+provides `channelsLayer`. GitHub webhooks use the backend receiver; this is the
+generic host channel boundary.
+
+The idempotency key is `Core.Channel.signedBodyKey(body)`, the SHA-256 of the
+signed bytes. Never key on a delivery id header: it is not signed, so a captured
+delivery resent under a new id would start a second run. A provider retry
+resends the same bytes and is dropped; distinct events carry their own ids and
+timestamps in the body.
 
 ```ts
 import * as Channels from "@smthrs/control/Channels"
+import { Core } from "@smthrs/integrations"
 import { Effect } from "effect"
 import { createServer } from "node:http"
 
@@ -41,20 +48,16 @@ const server = createServer((request, response) => {
     if (stopped) return
     const body = Buffer.concat(chunks)
     discard()
-    const delivery = request.headers["x-delivery"]
-    if (typeof delivery !== "string" || delivery.trim() === "") {
-      response.writeHead(401).end()
-      return
-    }
     const program = Effect.gen(function*() {
       const channels = yield* Channels.Channels
-      const raw = {
-        body,
-        headers: request.headers as Record<string, string | undefined>
-      }
+      const idempotencyKey = yield* Core.Channel.signedBodyKey(body)
       return yield* channels.ingest({
         channel: "signed",
-        raw: { ...raw, idempotencyKey: delivery }
+        raw: {
+          body,
+          headers: request.headers as Record<string, string | undefined>,
+          idempotencyKey
+        }
       })
     })
     Effect.runPromise(Effect.provide(program, channelsLayer)).then(

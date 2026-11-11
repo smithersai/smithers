@@ -2,7 +2,7 @@ import * as Channels from "@smthrs/control/Channels"
 import * as Control from "@smthrs/control/Control"
 import { Unauthorized } from "@smthrs/control/ControlError"
 import { Effect, Exit, Layer, Redacted, Stream } from "effect"
-import { createHmac } from "node:crypto"
+import { createHash, createHmac } from "node:crypto"
 import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Core from "../src/core/Channel.ts"
@@ -87,26 +87,37 @@ const unprovidedServiceProbe = () => {
 }
 
 /**
- * Ingests the same delivery twice through ONE `Channels` instance.
+ * Ingests signed deliveries in order through ONE `Channels` instance, keying
+ * each the way the ingress guide does: by `Core.signedBodyKey` of its body.
  *
  * Building the layer per call would give each ingest its own replay set, which
  * is exactly the thing this helper exists to not do.
  */
-const ingestTwice = (
+const ingestInOrder = (
   channel: Channels.Channel,
-  raw: Channels.RawInbound,
-  calls: Array<string> = []
+  deliveries: ReadonlyArray<{ readonly body: string; readonly deliveryId: string }>,
+  calls: Array<string>
 ): Promise<ReadonlyArray<{ readonly _tag: string }>> =>
   Effect.runPromise(
     Effect.gen(function*() {
       const channels = yield* Channels.Channels
       yield* channels.register(channel)
-      const first = yield* channels.ingest({ channel: channel.name, raw })
-      const second = yield* channels.ingest({ channel: channel.name, raw })
-      return [first, second]
+      return yield* Effect.forEach(deliveries, (delivery) =>
+        Effect.flatMap(Core.signedBodyKey(bytes(delivery.body)), (idempotencyKey) =>
+          channels.ingest({
+            channel: channel.name,
+            raw: {
+              ...signedDelivery(
+                delivery.body,
+                `sha256=${computeHmacSha256Hex(delivery.body, SECRET)}`,
+                delivery.deliveryId
+              ),
+              idempotencyKey
+            }
+          })))
     }).pipe(
       Effect.provide(Channels.layerMemory.pipe(Layer.provide(controlLayer(calls)))),
-      // Both deliveries verify, so a control failure here is a defect in the
+      // Every delivery verifies, so a control failure here is a defect in the
       // test rather than an outcome worth asserting on.
       Effect.orDie
     )
@@ -114,14 +125,15 @@ const ingestTwice = (
 
 const bytes = (value: string) => new TextEncoder().encode(value)
 
-// A channel over the package's `sha256=` HMAC verifier, keyed by its own
-// delivery header: the shape every signed webhook channel here shares.
+// A channel over the package's `sha256=` HMAC verifier: the shape every signed
+// webhook channel here shares.
 const signedChannel = (secret = SECRET, route = Core.startFlow("triage")) =>
   Core.make({
     name: "signed",
     credential: CREDENTIAL,
     secret: Core.constantSecret(Redacted.make(secret)),
-    fingerprintHeaders: ["x-delivery"],
+    // A semantic header, like GitHub's event name. Never the delivery id.
+    fingerprintHeaders: ["x-event"],
     verify: (raw, value) =>
       verifySignature({
         payload: raw.body,
@@ -222,38 +234,39 @@ describe("case 17: a WebhookChannel bound with the sha256 verifier rejects a bad
 describe("redelivery", () => {
   it("applies a correctly signed delivery once and reports the retry as AlreadyApplied", async () => {
     const calls: Array<string> = []
-    const signature = `sha256=${computeHmacSha256Hex(ISSUE_BODY, SECRET)}`
-    const receipts = await ingestTwice(signedChannel(), signedDelivery(ISSUE_BODY, signature), calls)
-    // The second delivery carries the same delivery id, so it is the same
-    // key and must not start a second run.
+    const delivery = { body: ISSUE_BODY, deliveryId: "delivery-1" }
+    const receipts = await ingestInOrder(signedChannel(), [delivery, delivery], calls)
     expect(calls).toEqual(["plan", "run"])
-    expect(receipts[0]?._tag).toBe("Accepted")
-    expect(receipts[1]?._tag).toBe("AlreadyApplied")
+    expect(receipts.map((receipt) => receipt._tag)).toEqual(["Accepted", "AlreadyApplied"])
   })
 
-  // The second delivery differs only in its delivery id, so the two keys
-  // differ.
-  it("treats a different delivery id as a new delivery", async () => {
+  // #4884: the delivery header is not signed. A captured delivery resent under
+  // a new header carries the same signed bytes, so it is the same key.
+  it("drops the same signed body resent under a new delivery header", async () => {
     const calls: Array<string> = []
-    const signature = `sha256=${computeHmacSha256Hex(ISSUE_BODY, SECRET)}`
-    const channel = signedChannel()
-    const first = signedDelivery(ISSUE_BODY, signature)
-    const second = signedDelivery(ISSUE_BODY, signature, "delivery-2")
-    expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
-    const receipts = await Effect.runPromise(
-      Effect.gen(function*() {
-        const channels = yield* Channels.Channels
-        yield* channels.register(channel)
-        const accepted = yield* channels.ingest({ channel: channel.name, raw: first })
-        const next = yield* channels.ingest({ channel: channel.name, raw: second })
-        return [accepted, next]
-      }).pipe(
-        Effect.provide(Channels.layerMemory.pipe(Layer.provide(controlLayer(calls)))),
-        Effect.orDie
-      )
-    )
+    const receipts = await ingestInOrder(signedChannel(), [
+      { body: ISSUE_BODY, deliveryId: "delivery-1" },
+      { body: ISSUE_BODY, deliveryId: "delivery-2" }
+    ], calls)
+    expect(calls).toEqual(["plan", "run"])
+    expect(receipts.map((receipt) => receipt._tag)).toEqual(["Accepted", "AlreadyApplied"])
+  })
+
+  it("treats a different signed body under the same delivery header as a new delivery", async () => {
+    const calls: Array<string> = []
+    const receipts = await ingestInOrder(signedChannel(), [
+      { body: ISSUE_BODY, deliveryId: "delivery-1" },
+      { body: JSON.stringify({ ...JSON.parse(ISSUE_BODY), issue: { number: 13 } }), deliveryId: "delivery-1" }
+    ], calls)
     expect(calls).toEqual(["plan", "run", "plan", "run"])
     expect(receipts.map((receipt) => receipt._tag)).toEqual(["Accepted", "Accepted"])
+  })
+})
+
+describe("signedBodyKey", () => {
+  it("is the SHA-256 of the exact body bytes", async () => {
+    const key = await Effect.runPromise(Core.signedBodyKey(bytes(ISSUE_BODY)))
+    expect(key).toBe(`signed-body:sha256:${createHash("sha256").update(ISSUE_BODY).digest("hex")}`)
   })
 })
 

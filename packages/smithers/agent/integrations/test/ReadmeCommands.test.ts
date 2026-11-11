@@ -104,7 +104,7 @@ describe("documented HTTP receiver", () => {
           { readonly channel: string; readonly raw: { readonly body: Uint8Array; readonly idempotencyKey: string } }
         ]
         expect(call.channel).toBe("signed")
-        expect(call.raw.idempotencyKey).toBe("doc-delivery")
+        expect(call.raw.idempotencyKey).toBe(await Effect.runPromise(Core.Channel.signedBodyKey(body)))
         expect(Buffer.compare(Buffer.from(call.raw.body), body)).toBe(0)
       }
     } finally {
@@ -116,7 +116,9 @@ describe("documented HTTP receiver", () => {
   })
 })
 
-it.each([undefined, "   "])("refuses a generic delivery without a stable identity (%j)", async (delivery) => {
+// #4884: the delivery header is not signed, so the documented receiver keys on
+// the body. The same body under two delivery headers is one key.
+it("keys a generic delivery on its signed body, not its delivery header", async () => {
   const ingest = vi.fn(() => Effect.succeed({ _tag: "Accepted" as const, receiptId: "receipt" }))
   const channelsLayer = Layer.succeed(Channels.Channels, {
     register: () => Effect.void,
@@ -129,14 +131,19 @@ it.each([undefined, "   "])("refuses a generic delivery without a stable identit
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing fixture address")
   try {
-    const response = await fetch(`http://127.0.0.1:${address.port}`, {
-      method: "POST",
-      body: "{}",
-      ...(delivery === undefined ? {} : { headers: { "x-delivery": delivery } })
-    })
-    expect(response.status).toBe(401)
-    expect(ingest).not.toHaveBeenCalled()
-    await response.body?.cancel()
+    for (const delivery of ["delivery-1", "delivery-2"]) {
+      const response = await fetch(`http://127.0.0.1:${address.port}`, {
+        method: "POST",
+        body: "{}",
+        headers: { "x-delivery": delivery }
+      })
+      expect(response.status).toBe(200)
+      await response.body?.cancel()
+    }
+    const keys = (ingest.mock.calls as unknown as Array<[{ readonly raw: { readonly idempotencyKey: string } }]>)
+      .map(([call]) => call.raw.idempotencyKey)
+    const expected = await Effect.runPromise(Core.Channel.signedBodyKey(new TextEncoder().encode("{}")))
+    expect(keys).toEqual([expected, expected])
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }

@@ -10,9 +10,11 @@
  *
  * `Channels.ingest` drops a replayed `idempotencyKey`, which is what makes a
  * provider redelivery safe to accept. The key is the caller's to supply on the
- * `RawInbound` it hands `ingest`; each provider module exports the
- * `idempotencyKey` that derives it from that provider's delivery identity, and
- * an ingress that does not pass one has no redelivery protection.
+ * `RawInbound` it hands `ingest`, and an ingress that does not pass one has no
+ * redelivery protection. A webhook ingress derives it with
+ * {@link signedBodyKey} from the bytes the signature covers: a delivery header
+ * is not signed, so a key read from one lets a captured delivery replay under a
+ * new header.
  *
  * The decoder's output is validated against `ExternalEvent` before it leaves
  * this module, so a decoder bug fails on the delivery that triggered it.
@@ -35,6 +37,25 @@ import { decode as decodeExternalEvent, type ExternalEvent } from "./ExternalEve
 import { IntegrationError, isIntegrationError, toInvalidInput, toUnauthorized } from "./IntegrationError.ts"
 import * as SignalName from "./SignalName.ts"
 import { constantTimeEqual } from "./Signature.ts"
+
+/**
+ * The idempotency key for a signed webhook delivery: the SHA-256 of the exact
+ * body bytes its signature covers.
+ *
+ * A delivery id header is not signed, so anyone holding one signed delivery
+ * could resend it under a new id and start a second run. This key changes only
+ * when the signed bytes change. A provider retry carries the same bytes and is
+ * dropped; distinct provider events carry their own ids and timestamps in the
+ * body, so they stay distinct.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const signedBodyKey = (body: Uint8Array): Effect.Effect<string> =>
+  Effect.promise(async () => {
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(body)))
+    return `signed-body:sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`
+  })
 
 /**
  * How a channel obtains the signing secret behind a credential reference.

@@ -72,7 +72,9 @@ A delivery decodes to one event with one correlation.
 
 ## The redelivery guarantee
 
-`Channels.ingest` drops a replayed `idempotencyKey`. The host derives the key
-from the source's delivery identity and puts it on `RawInbound` before ingestion.
+`Channels.ingest` drops a replayed `idempotencyKey`. A webhook host derives the
+key from the signed body with `Core.Channel.signedBodyKey` and puts it on
+`RawInbound` before ingestion; an unsigned delivery header would let a captured
+delivery replay under a new id.
 Leaving the field unset allows a retry to start work twice. The
 [receiver guide](../guides/webhook-ingress.md) bounds the body before ingestion.

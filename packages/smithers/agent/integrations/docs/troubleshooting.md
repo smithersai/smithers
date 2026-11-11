@@ -15,4 +15,5 @@ retrying. A normal refusal does not claim
 a remote write happened. Durable action receipts survive restart.
 
 Shared webhook receivers must preserve signed bytes, reject oversized bodies
-before ingestion, and supply a stable delivery identity for replay protection.
+before ingestion, and key each delivery with `Core.Channel.signedBodyKey` for
+replay protection, never with an unsigned delivery header.
