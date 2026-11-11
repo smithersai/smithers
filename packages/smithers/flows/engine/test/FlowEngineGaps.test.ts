@@ -422,6 +422,10 @@ describe("suspended resume policy", () => {
 
 describe("action retry give-up reasons", () => {
   effect("uses a durable retry origin when calculating an action expiration", () => {
+    // The durable origin is 0 and the clock is at 50 ms, so 50 ms of a 40 ms
+    // budget are spent and attempt 1 gives up as expired. An engine that
+    // ignored the origin would start the budget now, retry after 10 ms, and
+    // reach attempt 2.
     const action = Action.make({
       name: "Gaps/durable-retry-origin",
       success: Schema.Number,
@@ -430,7 +434,8 @@ describe("action retry give-up reasons", () => {
         initialMs: 10,
         factor: 1,
         maxMs: 10,
-        expirationMs: 1
+        maxAttempts: 2,
+        expirationMs: 40
       }),
       execute: Effect.die("action executor must not run in this driver test")
     })
@@ -440,14 +445,21 @@ describe("action retry give-up reasons", () => {
       error: Schema.String,
       body: () => Node.succeed(0)
     })
-    let requestedKey: string | undefined
+    const attempts: Array<number> = []
     const scripted = scriptedEngine({
-      actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.fail("unavailable") })),
-      actionRetryOrigin: ({ key }) => Effect.sync(() => (requestedKey = key, Option.some(0)))
+      actionExecute: ({ attempt }) =>
+        Effect.sync(() => {
+          attempts.push(attempt)
+          return new Flow.Complete({ exit: Exit.fail("unavailable") })
+        }),
+      actionRetryOrigin: () => Effect.succeedSome(0)
     })
     return Effect.gen(function*() {
-      const result = yield* scripted.actionExecute(action, 1)
-      expect(requestedKey).toBeTypeOf("string")
+      yield* TestClock.adjust("50 millis")
+      const fiber = yield* Effect.forkChild(scripted.actionExecute(action, 1))
+      yield* TestClock.adjust("10 millis")
+      const result = yield* Fiber.join(fiber)
+      expect(attempts).toEqual([1])
       expect(result._tag).toBe("Complete")
       if (result._tag === "Complete") {
         expect(Exit.isFailure(result.exit)).toBe(true)

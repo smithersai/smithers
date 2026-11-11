@@ -8,18 +8,22 @@
  * log is this suite's process-restart shape: everything in-process dies with
  * the scope, and only what a durable driver would have persisted (payloads,
  * settled round results, settled action outcomes, attempt rows, deferred
- * exits, parent edges, cancel requests) survives into the next instance.
+ * exits, cancel requests) survives into the next instance.
  *
- * The execution machinery mirrors `FlowEngine.layerMemory`: both record only
- * settled action outcomes, so a fiber killed mid-attempt leaves no outcome
- * to replay, and both die with the same typed refusals (`FlowNotRegistered`,
- * `ExecutionIdentityConflict`). The durability hooks diverge where a real driver would: attempt
- * rows persist a first-start time and the highest attempt for
- * `actionRetryOrigin`/`actionLatestAttempt`,
- * plus pre-attempt handles for `actionSnapshot`,
- * and `interrupt` records the cancel request durably and cascades it over the
- * persisted parent edges (the `RunDriver.cancelOwned` shape) instead of
- * relying on the in-process parent link.
+ * The fixture is storage for tests whose assertion is about what
+ * `FlowEngine.makeUnsafe` decides from the durable hooks (key stability,
+ * retry origin, attempt resume, snapshot handles); it is not a second
+ * engine to prove driver behavior against. Like `FlowEngine.layerMemory` it
+ * records only settled action outcomes, so a fiber killed mid-attempt leaves
+ * no outcome to replay. Attempt rows persist a first-start time and the
+ * highest attempt for `actionRetryOrigin`/`actionLatestAttempt`, plus
+ * pre-attempt handles for `actionSnapshot`, and `interrupt` records the
+ * cancel request durably. It dies with `FlowNotRegistered` for an
+ * unregistered flow and with `ExecutionIdentityConflict` for a deferred
+ * addressed to another flow, but it does not compare the flow or payload of
+ * a reused execution id and does not cascade cancellation over parent edges.
+ * Those are driver contracts, covered by the `FlowEngine.layerMemory` tests
+ * and by `@smthrs/engine-store`.
  */
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Clock, Effect, Exit, Fiber, Layer, Option } from "effect"
@@ -50,8 +54,6 @@ export interface DurableLog {
   readonly attempts: Map<string, AttemptRow>
   /** Deferred exits by encoded `[flowTag, executionId, deferredName]`. */
   readonly deferreds: Map<string, Exit.Exit<unknown, unknown>>
-  /** Parent edges: child execution id to parent execution id. */
-  readonly parents: Map<string, string>
   /** Durably recorded cancel requests. */
   readonly cancelled: Set<string>
 }
@@ -63,7 +65,6 @@ export const makeLog = (): DurableLog => ({
   actionOutcomes: new Map(),
   attempts: new Map(),
   deferreds: new Map(),
-  parents: new Map(),
   cancelled: new Set()
 })
 
@@ -167,9 +168,6 @@ export const layerDurable = (log: DurableLog): Layer.Layer<FlowRuntime.FlowRunti
               payload: options.payload,
               parent: options.parent?.executionId
             })
-            if (options.parent !== undefined) {
-              log.parents.set(options.executionId, options.parent.executionId)
-            }
           }
           const recorded = log.results.get(options.executionId)
           if (recorded !== undefined && recorded._tag === "Complete") {
@@ -182,27 +180,12 @@ export const layerDurable = (log: DurableLog): Layer.Layer<FlowRuntime.FlowRunti
           const state = live.get(options.executionId)
           return (yield* Fiber.join(state!.fiber!)) as never
         }),
-        // Untraced because cancellation cascades over persisted edges.
+        // Untraced because interrupt re-drives the cancelled execution.
         interrupt: Effect.fnUntraced(function*(_flow, executionId) {
-          // Children first, then the parent: the durable cascade a driver
-          // performs over its persisted parent-edge table.
-          const owned: Array<string> = []
-          const collect = (parent: string) => {
-            for (const [child, parentId] of log.parents) {
-              if (parentId === parent) {
-                collect(child)
-                owned.push(child)
-              }
-            }
-          }
-          collect(executionId)
-          owned.push(executionId)
-          for (const target of owned) {
-            log.cancelled.add(target)
-            const state = live.get(target)
-            if (state !== undefined) state.instance.interrupted = true
-            yield* resume(target)
-          }
+          log.cancelled.add(executionId)
+          const state = live.get(executionId)
+          if (state !== undefined) state.instance.interrupted = true
+          yield* resume(executionId)
         }),
         interruptUnsafe: Effect.fnUntraced(function*(_flow, executionId) {
           log.cancelled.add(executionId)

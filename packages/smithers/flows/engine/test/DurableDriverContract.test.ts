@@ -4,8 +4,11 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * rather than a scripted log: an engine instance is killed mid-run and a
  * SECOND instance is built over the same durable log, which must then resume
  * without duplicating keyed side effects, preserve the retry origin and
- * attempt numbering, deliver child cancellations over the persisted parent
- * edges, and answer polls coherently.
+ * attempt numbering, and answer polls coherently. Each case asserts what
+ * `FlowEngine.makeUnsafe` decides from the durable hooks; the fixture only
+ * stores rows. Cancellation cascading over persisted parent edges is a
+ * durable-driver decision, so it is proved against the real driver in
+ * `@smthrs/engine-store` (`CancelCascade.test.ts`), not here.
  *
  * Process death is modeled as discarding one engine instance (closing its
  * provide scope kills every in-process fiber) and constructing a fresh
@@ -153,15 +156,15 @@ describe("durable driver contract across an engine restart", () => {
       }).pipe(Effect.provide(stack))
 
       // Engine instance 2: the persisted sequence resumes at the recorded
-      // attempt. Attempts 1 and 2 replay from their journaled failures —
-      // neither is re-dispatched, and their backoff is not re-slept from
-      // attempt 1 — then attempt 3 dispatches once and settles the run.
+      // attempt 2, replays its journaled failure without re-dispatching it,
+      // and sleeps one backoff before attempt 3. The clock moves exactly one
+      // backoff: an engine that restarted the ladder at attempt 1 would
+      // still be asleep before attempt 2 and never reach attempt 3.
       yield* Effect.gen(function*() {
         yield* flow.execute({ id: "x" }, { executionId: "attempts-run", discard: true })
-        for (let index = 0; index < 50 && dispatched.length < 3; index++) {
-          yield* Effect.yieldNow
-          yield* TestClock.adjust("10 seconds")
-        }
+        yield* waitFor(() => false)
+        yield* TestClock.adjust("10 seconds")
+        yield* waitFor(() => dispatched.length === 3)
         const settled = yield* pollUntil(flow.poll("attempts-run"), (result) => result._tag === "Complete", {
           turns: 100
         })
@@ -343,91 +346,6 @@ describe("durable driver contract across an engine restart", () => {
         expect(defect).toBe("still-broken")
         // Replay only: the restarted engine never re-dispatched the attempt.
         expect(dispatched).toEqual([1])
-      }).pipe(Effect.provide(stack))
-    })
-  })
-
-  effect("cascades a cancel request over the persisted parent edge after a restart", () => {
-    const log = makeLog()
-    const childGate = DurableDeferred.make("DurableContract/child-gate", { success: Schema.Number })
-    const childStepDeclaration = Action.make("DurableContract/cascade-child/action", {
-      payload: { n: Schema.Number },
-      success: Schema.Number
-    })
-    const child = Flow.make("DurableContract/cascade-child", {
-      payload: { n: Schema.Number },
-      success: Schema.Number,
-      body: (payload) => childStepDeclaration.call(payload)
-    })
-    const parentStepDeclaration = Action.make("DurableContract/cascade-parent/action", {
-      payload: { id: Schema.String },
-      success: Schema.Number
-    })
-    const parent = Flow.make("DurableContract/cascade-parent", {
-      payload: { id: Schema.String },
-      success: Schema.Number,
-      body: (payload) => parentStepDeclaration.call(payload)
-    })
-    const stack = Layer.mergeAll(
-      // The literal child payload always satisfies its schema, so the typed
-      // SchemaError on execute cannot occur and is disposed of as a defect.
-      parentStepDeclaration.toLayer(() => Effect.orDie(child.execute({ n: 1 }, { executionId: "cascade-child" }))),
-      Interpreter.layer(parent)
-    ).pipe(
-      Layer.provideMerge(Action.layerImplementations),
-      Layer.provideMerge(
-        Layer.mergeAll(
-          childStepDeclaration.toLayer(() => DurableDeferred.await(childGate)),
-          Interpreter.layer(child)
-        ).pipe(
-          Layer.provideMerge(Action.layerImplementations)
-        )
-      ),
-      Layer.provideMerge(layerDurable(log))
-    )
-
-    return Effect.gen(function*() {
-      // Engine instance 1: the parent opens the child (persisting the parent
-      // edge), the child parks on its gate, the parent parks behind the
-      // child, and the instance dies.
-      yield* Effect.gen(function*() {
-        yield* parent.execute({ id: "x" }, { executionId: "cascade-parent", discard: true })
-        const parked = yield* pollUntil(parent.poll("cascade-parent"), (result) => result._tag === "Suspended", {
-          turns: 100
-        })
-        expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
-        expect(log.parents.get("cascade-child")).toBe("cascade-parent")
-      }).pipe(Effect.provide(stack))
-
-      // Engine instance 2: cancelling the parent must reach the child over
-      // the persisted edge — the in-process parent link died with instance 1.
-      yield* Effect.gen(function*() {
-        yield* parent.interrupt("cascade-parent")
-        expect(log.cancelled.has("cascade-parent")).toBe(true)
-        expect(log.cancelled.has("cascade-child")).toBe(true)
-
-        const childResult = yield* pollUntil(child.poll("cascade-child"), (result) => result._tag === "Complete", {
-          turns: 100
-        })
-        expect(Option.isSome(childResult) && childResult.value._tag).toBe("Complete")
-        const childExit = Option.isSome(childResult) && childResult.value._tag === "Complete"
-          ? childResult.value.exit
-          : undefined
-        // The child was cancelled, not answered: its gate never resolved.
-        expect(childExit !== undefined && Exit.isFailure(childExit)).toBe(true)
-        expect(
-          childExit !== undefined && Exit.isFailure(childExit) &&
-            childExit.cause.reasons.some(Cause.isInterruptReason)
-        ).toBe(true)
-
-        const parentResult = yield* pollUntil(parent.poll("cascade-parent"), (result) => result._tag === "Complete", {
-          turns: 100
-        })
-        expect(Option.isSome(parentResult) && parentResult.value._tag).toBe("Complete")
-        const parentExit = Option.isSome(parentResult) && parentResult.value._tag === "Complete"
-          ? parentResult.value.exit
-          : undefined
-        expect(parentExit !== undefined && Exit.isFailure(parentExit)).toBe(true)
       }).pipe(Effect.provide(stack))
     })
   })
