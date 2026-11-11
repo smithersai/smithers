@@ -342,6 +342,41 @@ export interface Options<
 }
 
 /**
+ * The decoder a binding runs on cell input before its handler, exactly.
+ *
+ * The flow's input schema decodes the call input. When that fails, it retries
+ * once with JSON `null` read as an omission (`{}` for a bare `null`, and only
+ * the declared optional fields whose encoded schema rejects `null` for an
+ * object), and reports the first attempt's failure when the retry fails too.
+ * Code that must agree with a handler about its input, such as a gate deriving
+ * an identity before the binding runs, decodes with this rather than reading
+ * the raw call input.
+ *
+ * @category decoding
+ * @since 0.1.0
+ */
+export const decodeInput = <I extends SchemaTypes.Top & SchemaTypes.ConstraintDecoder<unknown, never>>(
+  schema: I
+): (input: unknown) => Result.Result<I["Type"], Schema.SchemaError> => {
+  const decode = Schema.decodeUnknownResult(schema)
+  // Retry JSON nulls as omissions only where the encoded struct declares an
+  // optional field that rejects null. Other nullable fields must survive even
+  // when a sibling caused the original decode to fail. The full input schema
+  // still validates the retry, including refinements and transformations.
+  const nullKeys = omittableNullKeys(schema)
+  return (input) => {
+    const first = decode(input)
+    if (first._tag !== "Failure") return first
+    // A cell that omits the input (`ctx.call("tab.list")`) sends JSON null.
+    // Retry it as `{}`, so an all-optional object schema accepts the call.
+    const retried = decode(input === null ? {} : withoutRejectedNulls(input, nullKeys))
+    // When the retry fails too, the first attempt's failure is the one worth
+    // reporting: it names the key the caller actually wrote.
+    return retried._tag === "Failure" ? first : retried
+  }
+}
+
+/**
  * Binds one flow declaration to its runtime implementation.
  *
  * @category constructors
@@ -360,22 +395,7 @@ export const make = <
     ...(options.inputDocument === undefined ? { inputDocument: document(options.flow.input) } : {}),
     ...(options.outputDocument === undefined ? { outputDocument: document(options.flow.output) } : {})
   })
-  const decodeInput = Schema.decodeUnknownResult(options.flow.input)
-  // Retry JSON nulls as omissions only where the encoded struct declares an
-  // optional field that rejects null. Other nullable fields must survive even
-  // when a sibling caused the original decode to fail. The full input schema
-  // still validates the retry, including refinements and transformations.
-  const nullKeys = omittableNullKeys(options.flow.input)
-  const decodeCall = (input: unknown): ReturnType<typeof decodeInput> => {
-    const first = decodeInput(input)
-    if (first._tag !== "Failure") return first
-    // A cell that omits the input (`ctx.call("tab.list")`) sends JSON null.
-    // Retry it as `{}`, so an all-optional object schema accepts the call.
-    const retried = decodeInput(input === null ? {} : withoutRejectedNulls(input, nullKeys))
-    // When the retry fails too, the first attempt's failure is the one worth
-    // reporting: it names the key the caller actually wrote.
-    return retried._tag === "Failure" ? first : retried
-  }
+  const decodeCall = decodeInput<I>(options.flow.input)
   const encodeOutput = Schema.encodeUnknownResult(options.flow.output)
   const asJson = Schema.decodeUnknownResult(Schema.Json)
   return {

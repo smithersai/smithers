@@ -1883,6 +1883,78 @@ describe("AgentSession", () => {
     expect(notes).toEqual(["frame zero note"])
   })
 
+  /**
+   * Runs one frame holding a single `ask`, approving the request it parks on
+   * when `approve` is set, and reports how the run settled and what the cell
+   * finished with.
+   */
+  const settleAsk = (input: string, approve: boolean) => {
+    const frame = `const decision = await ctx.call("ask", ${input})
+ctx.done(JSON.stringify(decision))`
+    return Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        yield* Deferred.succeed(gate, void 0)
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const card = yield* control.plan({ flowId: "agents/notes", input: {} })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:decoded-ask"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected an accepted run")
+          }
+          const runId = receipt.runId
+          const questions = approve ? [yield* approvePark(control, runtime, runId, 1)] : []
+          const settled = (attempts: number): Effect.Effect<ControlSchema.RunStatus, unknown> =>
+            Effect.gen(function*() {
+              const run = yield* runtime.getRun(runId)
+              if (run.status === "completed" || run.status === "failed" || attempts <= 0) return run.status
+              yield* Effect.yieldNow
+              return yield* settled(attempts - 1)
+            })
+          const status = yield* settled(20_000)
+          const requests = yield* control.watch({ runId }).pipe(
+            Stream.takeUntil((event) => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+            Stream.filter((event) => event.kind === "control.approval.requested"),
+            Stream.runCollect
+          )
+          return { questions, requests: requests.length, status }
+        }).pipe(Effect.provide(stack({ resolve: seat(scripted([frame], [])), notes: [], gate })))
+      }).pipe(Effect.scoped)
+    )
+  }
+
+  // The approval gate and the ask flow must name one request. The gate saw the
+  // cell's raw input while the flow saw it decoded, so an input that decoding
+  // changes (a JSON null for an omitted option, a key the schema drops) parked
+  // on one request and read another, failing the run after the operator
+  // answered (#4956).
+  for (
+    const [label, input] of [
+      ["a null option", `{ question: "deploy?", options: null }`],
+      ["an undeclared key", `{ question: "deploy?", context: "prod is red" }`]
+    ] as const
+  ) {
+    it(`completes an approved ask whose input carries ${label}`, { timeout: 30_000 }, async () => {
+      expect(await settleAsk(input, true)).toEqual({ questions: ["deploy?"], requests: 1, status: "completed" })
+    })
+  }
+
+  it(
+    "parks nothing on an ask the ask flow refuses, and lets the cell read the refusal",
+    { timeout: 30_000 },
+    async () => {
+      expect(await settleAsk(`{ question: 5 }`, false)).toEqual({ questions: [], requests: 0, status: "completed" })
+    }
+  )
+
   it("durably cancels a driver blocked in a tool before its side effect runs", async () => {
     const notes: Array<string> = []
     const status = await Effect.runPromise(

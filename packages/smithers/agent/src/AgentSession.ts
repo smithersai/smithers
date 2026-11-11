@@ -68,7 +68,7 @@ import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as CellTurn from "@smthrs/harness/CellTurn"
-import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as HarnessError from "@smthrs/harness/HarnessError"
 import * as Notifications from "@smthrs/harness/Notifications"
 import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
@@ -1728,21 +1728,21 @@ const effortFor = (
 /** The envelope an in-run ask approval binds to: the ask flow, nothing else. */
 const askEnvelope: Envelope = { capabilities: [], flows: ["ask"], budget: {} }
 
-interface AskInput {
-  readonly question: string
-  readonly options?: ReadonlyArray<string> | undefined
-}
+/** The ask input exactly as the ask flow's handler receives it. */
+const decodeAsk = FlowBinding.decodeInput(StandardFlows.AskInput)
 
 /**
- * The identity of one ask, derived from its run and whole input. Including the
- * run id prevents a grant for a byte-identical question in one run from
- * answering it in another, while remaining stable across this run's park and
- * resumed attempt. The raw call input and its decoded form digest identically
- * — both are plain JSON and canonical serialization sorts keys.
+ * The identity of one ask, derived from its run and whole decoded input.
+ * Including the run id prevents a grant for a byte-identical question in one
+ * run from answering it in another, while remaining stable across this run's
+ * park and resumed attempt. Both the approval gate and the ask handler derive
+ * it from the decoded input: the raw call input can differ from it (a JSON
+ * `null` read as an omitted option, an undeclared key the schema drops), and
+ * the two would then name different requests (#4956).
  */
 const askIdentity = (
   runId: string,
-  input: unknown
+  input: typeof StandardFlows.AskInput.Type
 ): { readonly digest: string; readonly requestId: string } => {
   const digest = Digest.digest(CanonicalJson.stringify({ input, runId }))
   return { digest, requestId: `ask/${runId}/${digest}` }
@@ -3108,8 +3108,12 @@ export const make = (
       (call: Cell.Call): Effect.Effect<void, HarnessError.HarnessError> =>
         Effect.gen(function*() {
           if (call.flowName !== StandardFlows.askFlow.name) return
-          const input = call.input as unknown as AskInput
-          const identity = askIdentity(runId, call.input)
+          const decoded = decodeAsk(call.input)
+          // Input the ask flow refuses parks nothing: the binding answers the
+          // cell `invalid_input` instead.
+          if (decoded._tag === "Failure") return
+          const input = decoded.success
+          const identity = askIdentity(runId, input)
           const target = {
             _tag: "Node" as const,
             runId,
