@@ -93,7 +93,7 @@ export interface TargetOptions<A> {
  * **Details**
  *
  * A Schema input is compiled with `Arbitrary.schema` and gets a value codec from `Schema.toCodecJson` unless
- * `options.codec` is given. An Arbitrary input has no codec unless one is given; its failures are saved as tapes,
+ * `options.codec` is defined. An Arbitrary input has no codec unless one is given; its failures are saved as tapes,
  * which replay only while `revision` is unchanged.
  *
  * @stability unstable
@@ -120,8 +120,8 @@ export const target: {
   const schema = input as Schema.Constraint
   const codec = Schema.toCodecJson(schema)
   return Internal.makeTarget(Arbitrary.schema(schema), property, {
-    codec: Internal.jsonCodec(Schema.encodeSync(codec as any), Schema.decodeSync(codec as any)),
-    ...options
+    ...options,
+    codec: options.codec ?? Internal.jsonCodec(Schema.encodeSync(codec as any), Schema.decodeSync(codec as any))
   })
 }
 
@@ -177,13 +177,16 @@ export interface Options {
 export type Replay = string
 
 /**
- * Identifies a property whose evaluation died.
+ * Identifies a property whose evaluation died or failed with an empty cause.
  *
  * **Details**
  *
  * Unlike `checkEffect`, fuzzing reports a defect raised by the property under test as a finding: a crash is what
  * fuzzing exists to find. Defects raised by generation, feedback, the corpus store or the execution driver are a
  * {@link FuzzError} instead.
+ *
+ * An empty failure cause has no typed error. Its `defect` is tagged `EmptyCause` and retains the original cause in
+ * `cause`.
  *
  * @stability unstable
  * @category models
@@ -229,8 +232,9 @@ export type Outcome<E> = Failure<E> | { readonly _tag: "Passed" } | { readonly _
  *
  * **Details**
  *
- * `signature` is the deduplication key: `ReturnedFalse`, `PropertyError:<tag>`, `Died:<constructor>` or `Deadlock`,
- * where the tag is the error's `_tag`, else its constructor name, else its `typeof`. Shrinking keeps the signature.
+ * `signature` is the deduplication key: `ReturnedFalse`, `PropertyError:<name>`, `Died:<name>` or `Deadlock`.
+ * The name is the error's or defect's `_tag`, else its constructor name, else its `typeof`. An empty failure cause uses
+ * `Died:EmptyCause`, independently of its constructor name. Shrinking keeps the signature.
  * `execution` is the exploratory execution that found the failure, `0` for a saved failure that still fails, or `1`
  * for a replay token.
  * `saved` says how a corpus store kept it: `"Value"` survives generator changes, `"Tape"` replays only while the
@@ -626,7 +630,8 @@ export interface Execution {
  * **Example** (Finding a magic header)
  *
  * ```ts
- * import { Arbitrary, Effect, Fuzz, Schema } from "effect"
+ * import { Arbitrary, Effect, Schema } from "effect"
+ * import { Fuzz } from "@smthrs/fuzz"
  *
  * const byte = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }))
  * const parse = (bytes: ReadonlyArray<number>) =>

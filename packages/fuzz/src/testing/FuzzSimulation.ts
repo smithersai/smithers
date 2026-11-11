@@ -58,8 +58,8 @@ export interface Options {
  * **Example** (Finding a check-then-act race)
  *
  * ```ts
- * import { Arbitrary, Effect, Fuzz, Ref, Schema } from "effect"
- * import { FuzzSimulation } from "effect/testing"
+ * import { Arbitrary, Effect, Ref, Schema } from "effect"
+ * import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
  *
  * // Reads, checks, then writes: a preemption between the read and the write loses an update.
  * const withdraw = (balance: Ref.Ref<number>, paid: Ref.Ref<number>, amount: number) =>
