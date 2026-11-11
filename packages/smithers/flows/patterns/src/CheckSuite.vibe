@@ -1,0 +1,151 @@
+/**
+ * Check-suite pattern: run independent checks with bounded concurrency and
+ * reduce their rows to one verdict.
+ *
+ * `make` and `run` take the checks as a record written with the suite.
+ * `makeDiscovered` and `runDiscovered` take one check and the ids to run it
+ * for, so a suite can run the checks a repository turned out to have.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import {
+  bound,
+  type CheckResult,
+  classify,
+  discoveredIds,
+  type DiscoveredRuntimeOptions,
+  emptyVerdict,
+  type RuntimeOptions,
+  verdict,
+  type Verdict
+} from "./internal/CheckSuiteMake.ts"
+
+export {
+  type CheckResult,
+  type CheckSuiteFlow,
+  type DiscoveredFlow,
+  type DiscoveredMakeOptions,
+  DiscoveredPayload,
+  type DiscoveredRuntimeOptions,
+  make,
+  makeDiscovered,
+  type MakeOptions,
+  type OnEmpty,
+  passed,
+  rows,
+  type RuntimeOptions,
+  type Strategy,
+  verdict,
+  type Verdict
+} from "./internal/CheckSuiteMake.ts"
+
+/** One runtime check's classified result; a tolerant suite turns its typed failure into a failed result. */
+effect function attempt<Out, E, R>(id: string, check: Out!E!R, continueOnFail: boolean): CheckResult!E!R {
+  const classified = map(check, (row) => classify(id, row))
+  if (!continueOnFail) return try classified
+  return classified catch (error) => ({ id, passed: false, error })
+}
+
+/**
+ * Runs the checks with bounded concurrency and returns the verdict.
+ *
+ * With `continueOnFail: false` the first failing check fails the suite and the
+ * remaining checks do not run. With `continueOnFail: true` every check runs and
+ * a failed one is listed in the verdict's `failed`, with its original error
+ * retained in `errors` under its id. A check that succeeds but
+ * returns a failure row is always listed in `failed`; it does not fail the
+ * suite, because the row is the check's answer, not an error.
+ *
+ * `continueOnFail` tolerates a typed check failure. A check that throws
+ * raises a defect, which fails the suite under either setting and cancels
+ * the checks still in flight.
+ *
+ * `run` rejects the same suites `make` rejects, and it rejects them before any
+ * check runs: an empty record, an empty check id, and a `concurrency` that is
+ * not a positive safe integer each fail with a `PatternError`. An empty record
+ * would otherwise return a false verdict, which reads like a failing suite
+ * rather than like a misconfigured one. Keying `checks` by id rules out a
+ * duplicate, which would otherwise list the same check twice in the verdict.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, Out, E, R>(
+  input: I,
+  options: RuntimeOptions<I, Out, E, R>
+): Verdict!(E | PatternError)!R => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the record or the option object in between must not reach it.
+  const declared = Object.entries(options.checks)
+  const strategy = options.strategy
+  const concurrency = options.concurrency
+  const continueOnFail = options.continueOnFail
+  return effect {
+    if (declared.length === 0) {
+      throw new PatternError({ code: "invalid_decorator", message: "CheckSuite requires at least one check" })
+    }
+    if (!bound(concurrency)) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: "CheckSuite concurrency must be a positive safe integer"
+      })
+    }
+    if (declared.some(([id]) => id === "")) {
+      throw new PatternError({ code: "invalid_decorator", message: "CheckSuite check ids must not be empty" })
+    }
+    const results = try forEach(declared, ([id, check]) => attempt(id, check(input), continueOnFail), { concurrency })
+    // The verdict reads check rows in `sync`, so a throw while reading one
+    // stays a defect, as it was inside `map`.
+    return try sync(() => verdict(results, strategy))
+  }
+}
+
+/**
+ * Runs `check` once per discovered id with bounded concurrency and returns
+ * the verdict.
+ *
+ * The runtime form of {@link makeDiscovered}: the same payload, the same
+ * order, the same `continueOnFail` and `onEmpty`, and the same refusals. A
+ * `concurrency` that is not a positive safe integer and ids that are not an
+ * array of unique, non-empty strings each fail with a `PatternError` before
+ * any check runs. No ids succeeds with the verdict `onEmpty` names and runs
+ * nothing.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const runDiscovered = <I, Out, E, R>(
+  payload: { readonly checks: ReadonlyArray<string>; readonly input: I },
+  options: DiscoveredRuntimeOptions<I, Out, E, R>
+): Verdict!(E | PatternError)!R => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the id array or the option object in between must not reach it.
+  const check = options.check
+  const strategy = options.strategy
+  const concurrency = options.concurrency
+  const continueOnFail = options.continueOnFail
+  const onEmpty = options.onEmpty
+  const input = payload.input
+  const ids = discoveredIds(payload.checks)
+  return effect {
+    if (!bound(concurrency)) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: "CheckSuite concurrency must be a positive safe integer"
+      })
+    }
+    if (ids instanceof PatternError) throw ids
+    if (ids.length === 0) return try sync(() => emptyVerdict(strategy, onEmpty))
+    const results = try forEach(
+      ids,
+      (id) => attempt(id, suspend(() => check({ check: id, input })), continueOnFail),
+      { concurrency }
+    )
+    return try sync(() => verdict(results, strategy))
+  }
+}

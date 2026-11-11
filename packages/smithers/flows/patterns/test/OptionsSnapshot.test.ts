@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Bounded from "../src/Bounded.vibe"
-import * as CheckSuite from "../src/CheckSuite.ts"
+import * as CheckSuite from "../src/CheckSuite.vibe"
 import * as Debate from "../src/Debate.vibe"
 import * as DelegationChain from "../src/DelegationChain.ts"
 import * as DriftDetector from "../src/DriftDetector.vibe"
@@ -21,7 +21,7 @@ import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as Runbook from "../src/Runbook.vibe"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.vibe"
-import * as Trellis from "../src/Trellis.ts"
+import * as Trellis from "../src/Trellis.vibe"
 
 // Every field any pattern here hands a member, as the one struct a
 // `@smthrs/flow` flow states. Two flows a plan can tell apart: a flow's tag

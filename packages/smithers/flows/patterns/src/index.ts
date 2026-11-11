@@ -76,7 +76,7 @@ export * as Saga from "./Saga.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Trellis from "./Trellis.ts"
+export * as Trellis from "./Trellis.vibe"
 
 /**
  * @category patterns
@@ -88,7 +88,7 @@ export * as DelegationChain from "./DelegationChain.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as CheckSuite from "./CheckSuite.ts"
+export * as CheckSuite from "./CheckSuite.vibe"
 
 /**
  * @category patterns
@@ -106,7 +106,7 @@ export * as Intervene from "./Intervene.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Kanban from "./Kanban.ts"
+export * as Kanban from "./Kanban.vibe"
 
 /**
  * @category patterns

@@ -1,0 +1,170 @@
+/**
+ * Kanban pattern: move every item through an ordered list of columns, with a
+ * concurrency bound applied inside each column.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import {
+  type Board,
+  bound,
+  type Failure,
+  type Item,
+  type RuntimeColumn,
+  type RuntimeOptions
+} from "./internal/KanbanMake.ts"
+
+export {
+  type Board,
+  type Column,
+  type Failure,
+  type Item,
+  type KanbanFlow,
+  make,
+  type MakeOptions,
+  type RuntimeColumn,
+  type RuntimeOptions
+} from "./internal/KanbanMake.ts"
+
+// A card pairs the id `run` read at the call with the caller's own item
+// record, so the board is keyed by a name that cannot move under it while the
+// column still receives the object the caller handed over.
+interface Card<It> {
+  readonly id: string
+  readonly item: It
+}
+
+effect function pass<It extends Item, Out, E, R>(
+  cards: ReadonlyArray<Card<It>>,
+  columns: ReadonlyArray<RuntimeColumn<It, Out, E, R>>,
+  concurrency: number
+): Omit<Board<Out, E>, "iterations">!!R {
+  const board = new Map<string, Map<string, Out>>()
+  const failed: Array<Failure<E>> = []
+  const latest = new Map<string, Out>()
+  let active: ReadonlyArray<Card<It>> = cards
+  for (const column of columns) {
+    const outcomes = try forEach(
+      active,
+      effect (card) => {
+        const landed = map(
+          column.run({ item: card.item, column: column.name, previous: latest.get(card.id) }),
+          (output) => ({ ok: true, card, output }) as const
+        )
+        return landed catch (error) => ({ ok: false, card, error }) as const
+      },
+      { concurrency }
+    )
+    const next: Array<Card<It>> = []
+    for (const outcome of outcomes) {
+      if (outcome.ok) {
+        const row = board.get(outcome.card.id) ?? new Map<string, Out>()
+        row.set(column.name, outcome.output)
+        board.set(outcome.card.id, row)
+        latest.set(outcome.card.id, outcome.output)
+        next.push(outcome.card)
+      } else {
+        failed.push({ id: outcome.card.id, column: column.name, error: outcome.error })
+      }
+    }
+    active = next
+  }
+  return {
+    board: Object.fromEntries(
+      Array.from(board, ([id, columns]) => [id, Object.fromEntries(columns)])
+    ),
+    completed: active.map((card) => card.id),
+    failed
+  }
+}
+
+/**
+ * Moves every item through the columns in order.
+ *
+ * A column runs its items with `Effect.forEach` at `concurrency`, so at most
+ * `concurrency` items are in flight in that column, and a column starts only
+ * after the preceding column has settled for every item. An item a column
+ * rejects is dropped from the board and listed in `failed`; the other items
+ * keep moving. A column rejects an item by failing on the typed channel: a
+ * card that throws raises a defect, which fails the pass and cancels the
+ * cards beside it.
+ *
+ * The board runs `maxIterations` passes over the same items, one when the
+ * option is absent. The old `<Kanban>` component defaulted that bound to five,
+ * so a port that relied on the default must pass `maxIterations: 5`. `until`
+ * stops the board early after the pass whose result satisfies the predicate. Each pass starts from an empty board, and the
+ * returned board is the last pass's.
+ *
+ * `run` fails with a `PatternError` when two items share an id: the board is
+ * keyed by item id, so a repeated id would run the same id twice and report
+ * one row for both.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <It extends Item, Out, E = never, R = never, E2 = never, R2 = never>(
+  items: ReadonlyArray<It>,
+  options: RuntimeOptions<It, Out, E, R, E2, R2>
+): Board<Out, E>!(PatternError | E2)!(R | R2) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the arrays or the option object in between must not reach it.
+  // Each item's id is read once here; the record itself stays the caller's.
+  const columns = options.columns.map((column) => ({ name: column.name, run: column.run }))
+  const cards = items.map((item): Card<It> => ({ id: item.id, item }))
+  const snapshot: ReadonlyArray<It> = cards.map((card) => card.item)
+  const concurrency = options.concurrency
+  const until = options.until
+  const onComplete = options.onComplete
+  const maxIterations = options.maxIterations
+  return effect {
+    if (columns.length === 0) {
+      throw new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one column" })
+    }
+    if (cards.length === 0) {
+      throw new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one item" })
+    }
+    if (!bound(concurrency)) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: "Kanban concurrency must be a positive safe integer"
+      })
+    }
+    const ids = cards.map((card) => card.id)
+    if (new Set(ids).size !== ids.length) {
+      throw new PatternError({ code: "invalid_decorator", message: "Kanban item ids must be unique" })
+    }
+    const names = columns.map((column) => column.name)
+    if (new Set(names).size !== names.length) {
+      throw new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" })
+    }
+    if (until !== undefined && maxIterations === undefined) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: "Kanban until requires maxIterations"
+      })
+    }
+    if (maxIterations !== undefined && !bound(maxIterations)) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: "Kanban maxIterations must be a positive safe integer"
+      })
+    }
+    const limit = maxIterations ?? 1
+    let iterations = 0
+    for (;;) {
+      const settled = try pass(cards, columns, concurrency)
+      iterations += 1
+      const result: Board<Out, E> = { ...settled, iterations }
+      // The caller's predicate runs in `sync`: a throw is a defect, as in the generator.
+      const done = until !== undefined && (try sync(() => until(result)))
+      if (done || iterations >= limit) {
+        if (onComplete !== undefined) try onComplete({ items: snapshot, board: result })
+        return result
+      }
+    }
+  }
+}

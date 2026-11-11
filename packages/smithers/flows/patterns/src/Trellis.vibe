@@ -1,0 +1,100 @@
+/**
+ * Model-authored bounded delegation plans.
+ *
+ * A model returns a plan of nested `agent`, `sequence`, and `parallel` nodes.
+ * This module validates that plan against an {@link Envelope}, compiles it into
+ * ordinary flow calls, and runs it.
+ *
+ * `Recursion.recurse` needs a literal tree while the graph is being planned.
+ * A Trellis plan is discovered at run time instead, so {@link make} spends one
+ * durable trampoline round per authored plan: a round ends by handing the plan
+ * to the next round with the `To` outcome `@smthrs/flow` defines, and the next
+ * round reads it as data and compiles exactly the leaves it names. Each round
+ * is its own journal segment, so a crash resumes at the round boundary.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import * as Semaphore from "effect/Semaphore"
+import {
+  admissionRefusal,
+  childPath,
+  container,
+  copiedPlan,
+  type Leaf,
+  type Plan,
+  type TrellisError
+} from "./internal/TrellisMake.ts"
+
+export {
+  Agent,
+  compile,
+  type CompileOptions,
+  type Continuation,
+  type Envelope,
+  Failure,
+  type Leaf,
+  leaves,
+  make,
+  type MakeOptions,
+  Payload,
+  Plan,
+  type Round,
+  RoundState,
+  type RunResult,
+  TrellisError,
+  TrellisErrorCode,
+  type TrellisFlow,
+  validate
+} from "./internal/TrellisMake.ts"
+
+/**
+ * Executes one validated plan, holding at most `concurrency` leaves in flight.
+ *
+ * Sequence members run in plan order; parallel members are started together
+ * and admitted by a shared semaphore, so the bound holds across the whole
+ * plan rather than per container.
+ *
+ * `execute` copies the plan and snapshots the options at the call, so a later
+ * edit to either does not alter that execution.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const execute = <E, R>(
+  plan: Plan,
+  options: {
+    readonly leaf: (input: Leaf) => unknown!E!R
+    readonly concurrency: number
+  }
+): unknown!(E | TrellisError)!R => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the plan or the option object in between must not reach it.
+  const admitted = copiedPlan(plan)
+  const runLeaf = options.leaf
+  const concurrency = options.concurrency
+  const invalid = admissionRefusal({ concurrency })
+  return effect {
+    if (invalid !== undefined) throw invalid
+    const semaphore = try Semaphore.make(concurrency)
+    const visit = effect (node: Plan, path: string): unknown!E!R => {
+      // The plan is the copy taken at the call, so reading it cannot throw.
+      const members = container(node)
+      if (members === undefined) {
+        const agent = (node as { readonly agent: { readonly goal: string; readonly seat?: string | undefined } }).agent
+        const leaf: Leaf = agent.seat === undefined
+          ? { goal: agent.goal, path }
+          : { goal: agent.goal, seat: agent.seat, path }
+        return try semaphore.withPermits(1)(runLeaf(leaf))
+      }
+      return try forEach(
+        members,
+        (member, index) => visit(member, childPath(path, node, index)),
+        { concurrency: "parallel" in node ? "unbounded" : 1 }
+      )
+    }
+    return try visit(admitted, "root")
+  }
+}

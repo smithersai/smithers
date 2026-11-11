@@ -1,9 +1,7 @@
 /**
- * Kanban pattern: move every item through an ordered list of columns, with a
- * concurrency bound applied inside each column.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Kanban`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Kanban.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -11,15 +9,15 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as FailureSchema from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
-import * as Quarantine from "./Quarantine.vibe"
+import { PatternError } from "../PatternError.ts"
+import * as Quarantine from "../Quarantine.vibe"
+import * as Compose from "./Compose.ts"
+import * as FailureSchema from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 /**
  * One card on the board.
@@ -155,7 +153,14 @@ export interface RuntimeOptions<It extends Item, Out, E, R, E2 = never, R2 = nev
   readonly maxIterations?: number | undefined
 }
 
-const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 const completionBoard = (
   outcomes: ReadonlyArray<unknown>,
@@ -379,150 +384,7 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
   })
 }
 
-// A card pairs the id `run` read at the call with the caller's own item
-// record, so the board is keyed by a name that cannot move under it while the
-// column still receives the object the caller handed over.
 interface Carried {
   readonly previous: Readonly<Record<string, unknown>>
   readonly rejected: ReadonlyArray<string>
-}
-
-interface Card<It> {
-  readonly id: string
-  readonly item: It
-}
-
-const pass = <It extends Item, Out, E, R>(
-  cards: ReadonlyArray<Card<It>>,
-  columns: ReadonlyArray<RuntimeColumn<It, Out, E, R>>,
-  concurrency: number
-): Effect.Effect<Omit<Board<Out, E>, "iterations">, never, R> =>
-  Effect.gen(function*() {
-    const board = new Map<string, Map<string, Out>>()
-    const failed: Array<Failure<E>> = []
-    const latest = new Map<string, Out>()
-    let active: ReadonlyArray<Card<It>> = cards
-    for (const column of columns) {
-      const outcomes = yield* Effect.forEach(
-        active,
-        (card) =>
-          column.run({ item: card.item, column: column.name, previous: latest.get(card.id) }).pipe(
-            Effect.map((output) => ({ ok: true, card, output } as const)),
-            Effect.catch((error: E) => Effect.succeed({ ok: false, card, error } as const))
-          ),
-        { concurrency }
-      )
-      const next: Array<Card<It>> = []
-      for (const outcome of outcomes) {
-        if (outcome.ok) {
-          const row = board.get(outcome.card.id) ?? new Map<string, Out>()
-          row.set(column.name, outcome.output)
-          board.set(outcome.card.id, row)
-          latest.set(outcome.card.id, outcome.output)
-          next.push(outcome.card)
-        } else {
-          failed.push({ id: outcome.card.id, column: column.name, error: outcome.error })
-        }
-      }
-      active = next
-    }
-    return {
-      board: Object.fromEntries(
-        Array.from(board, ([id, columns]) => [id, Object.fromEntries(columns)])
-      ),
-      completed: active.map((card) => card.id),
-      failed
-    }
-  })
-
-/**
- * Moves every item through the columns in order.
- *
- * A column runs its items with `Effect.forEach` at `concurrency`, so at most
- * `concurrency` items are in flight in that column, and a column starts only
- * after the preceding column has settled for every item. An item a column
- * rejects is dropped from the board and listed in `failed`; the other items
- * keep moving. A column rejects an item by failing on the typed channel: a
- * card that throws raises a defect, which fails the pass and cancels the
- * cards beside it.
- *
- * The board runs `maxIterations` passes over the same items, one when the
- * option is absent. The old `<Kanban>` component defaulted that bound to five,
- * so a port that relied on the default must pass `maxIterations: 5`. `until`
- * stops the board early after the pass whose result satisfies the predicate. Each pass starts from an empty board, and the
- * returned board is the last pass's.
- *
- * `run` fails with a `PatternError` when two items share an id: the board is
- * keyed by item id, so a repeated id would run the same id twice and report
- * one row for both.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <It extends Item, Out, E = never, R = never, E2 = never, R2 = never>(
-  items: ReadonlyArray<It>,
-  options: RuntimeOptions<It, Out, E, R, E2, R2>
-): Effect.Effect<Board<Out, E>, PatternError | E2, R | R2> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the arrays or the option object in between must not reach it.
-  // Each item's id is read once here; the record itself stays the caller's.
-  const columns = options.columns.map((column) => ({ name: column.name, run: column.run }))
-  const cards = items.map((item): Card<It> => ({ id: item.id, item }))
-  const snapshot: ReadonlyArray<It> = cards.map((card) => card.item)
-  const concurrency = options.concurrency
-  const until = options.until
-  const onComplete = options.onComplete
-  const maxIterations = options.maxIterations
-  if (columns.length === 0) {
-    return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one column" }))
-  }
-  if (cards.length === 0) {
-    return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one item" }))
-  }
-  if (!bound(concurrency)) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "Kanban concurrency must be a positive safe integer"
-      })
-    )
-  }
-  const ids = cards.map((card) => card.id)
-  if (new Set(ids).size !== ids.length) {
-    return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Kanban item ids must be unique" }))
-  }
-  const names = columns.map((column) => column.name)
-  if (new Set(names).size !== names.length) {
-    return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" }))
-  }
-  if (until !== undefined && maxIterations === undefined) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "Kanban until requires maxIterations"
-      })
-    )
-  }
-  if (maxIterations !== undefined && !bound(maxIterations)) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "Kanban maxIterations must be a positive safe integer"
-      })
-    )
-  }
-  const limit = maxIterations ?? 1
-  return Effect.gen(function*() {
-    let iterations = 0
-    for (;;) {
-      const settled = yield* pass(cards, columns, concurrency)
-      iterations += 1
-      const result: Board<Out, E> = { ...settled, iterations }
-      const done = until !== undefined && until(result)
-      if (done || iterations >= limit) {
-        if (onComplete !== undefined) yield* onComplete({ items: snapshot, board: result })
-        return result
-      }
-    }
-  })
 }

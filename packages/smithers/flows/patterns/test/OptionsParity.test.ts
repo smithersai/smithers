@@ -1,7 +1,7 @@
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import type * as CheckSuite from "../src/CheckSuite.ts"
-import type * as Kanban from "../src/Kanban.ts"
+import type * as CheckSuite from "../src/CheckSuite.vibe"
+import type * as Kanban from "../src/Kanban.vibe"
 import type * as MergeQueue from "../src/MergeQueue.vibe"
 
 type KeysOf<T> = { readonly [K in keyof T]-?: true }

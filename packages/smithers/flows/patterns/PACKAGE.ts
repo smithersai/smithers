@@ -116,7 +116,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Supervisor.ts",
-        "src/Trellis.ts",
+        "src/Trellis.vibe",
+        "src/internal/TrellisMake.ts",
         "src/DelegationChain.ts",
         "src/Recursion.ts",
         "src/MapReduce.vibe",
@@ -142,7 +143,8 @@ const securityReview = Smithers.SecurityReview({
         "Quarantine or Sidecar outcome envelopes where a member's own value can be mistaken for the Quarantined or Succeeded protocol tag."
       ],
       paths: [
-        "src/Kanban.ts",
+        "src/Kanban.vibe",
+        "src/internal/KanbanMake.ts",
         "src/Supervisor.ts",
         "src/Panel.vibe",
         "src/internal/PanelMake.ts",
@@ -152,7 +154,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/QuarantineMake.ts",
         "src/Sidecar.vibe",
         "src/internal/SidecarMake.ts",
-        "src/CheckSuite.ts",
+        "src/CheckSuite.vibe",
+        "src/internal/CheckSuiteMake.ts",
         "src/Burndown.ts"
       ]
     },
@@ -164,7 +167,13 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A pattern that captures caller options by reference so a later edit changes key material or bypasses validation (DriftDetector, Kanban, MergeQueue snapshots)."
       ],
-      paths: ["src/DriftDetector.vibe", "src/Kanban.ts", "src/MergeQueue.vibe", "src/internal/MergeQueueMake.ts"]
+      paths: [
+        "src/DriftDetector.vibe",
+        "src/Kanban.vibe",
+        "src/internal/KanbanMake.ts",
+        "src/MergeQueue.vibe",
+        "src/internal/MergeQueueMake.ts"
+      ]
     }
   ]
 })

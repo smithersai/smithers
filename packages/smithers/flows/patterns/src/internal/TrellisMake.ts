@@ -1,18 +1,7 @@
 /**
- * Model-authored bounded delegation plans.
- *
- * A model returns a plan of nested `agent`, `sequence`, and `parallel` nodes.
- * This module validates that plan against an {@link Envelope}, compiles it into
- * ordinary flow calls, and runs it.
- *
- * `Recursion.recurse` needs a literal tree while the graph is being planned.
- * A Trellis plan is discovered at run time instead, so {@link make} spends one
- * durable trampoline round per authored plan: a round ends by handing the plan
- * to the next round with the `To` outcome `@smthrs/flow` defines, and the next
- * round reads it as data and compiles exactly the leaves it names. Each round
- * is its own journal segment, so a crash resumes at the round boundary.
- *
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Trellis`: its types and `make`, `compile` and `validate`, which throws a
+ * `PatternError` for a declaration it cannot build. `Trellis.vibe`
+ * re-exports all of it beside `execute`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -20,14 +9,12 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Semaphore from "effect/Semaphore"
-import * as Compose from "./internal/Compose.ts"
-import * as FailureSchema from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import type * as Recursion from "./Recursion.ts"
+import type * as Recursion from "../Recursion.ts"
+import * as Compose from "./Compose.ts"
+import * as FailureSchema from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
 
 /**
  * Stable Trellis failure codes.
@@ -163,10 +150,24 @@ export interface Leaf {
   readonly path: string
 }
 
-const container = (plan: Plan): ReadonlyArray<Plan> | undefined =>
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const container = (plan: Plan): ReadonlyArray<Plan> | undefined =>
   "sequence" in plan ? plan.sequence : "parallel" in plan ? plan.parallel : undefined
 
-const childPath = (path: string, plan: Plan, index: number): string =>
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const childPath = (path: string, plan: Plan, index: number): string =>
   `${path}.${"sequence" in plan ? "sequence" : "parallel"}[${index}]`
 
 /**
@@ -205,7 +206,13 @@ const copiedEnvelope = (envelope: Envelope): Envelope => ({
 
 // A structural copy of a plan, so an effect that runs later visits the leaves
 // the plan named when the effect was built.
-const copiedPlan = (plan: Plan): Plan => {
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const copiedPlan = (plan: Plan): Plan => {
   const members = container(plan)
   if (members === undefined) {
     const agent = (plan as { readonly agent: { readonly goal: string; readonly seat?: string | undefined } }).agent
@@ -215,7 +222,13 @@ const copiedPlan = (plan: Plan): Plan => {
   return "sequence" in plan ? { sequence: copies } : { parallel: copies }
 }
 
-const admissionRefusal = (options: {
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const admissionRefusal = (options: {
   readonly envelope?: Envelope | undefined
   readonly concurrency?: number | undefined
 }): TrellisError | undefined => {
@@ -758,51 +771,4 @@ export const make = <R = never>(options: MakeOptions<R>): TrellisFlow<R> => {
     body: Node.capture(captured, body)
   })
   return self
-}
-
-/**
- * Executes one validated plan, holding at most `concurrency` leaves in flight.
- *
- * Sequence members run in plan order; parallel members are started together
- * and admitted by a shared semaphore, so the bound holds across the whole
- * plan rather than per container.
- *
- * `execute` copies the plan and snapshots the options at the call, so a later
- * edit to either does not alter that execution.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const execute = <E, R>(
-  plan: Plan,
-  options: {
-    readonly leaf: (input: Leaf) => Effect.Effect<unknown, E, R>
-    readonly concurrency: number
-  }
-): Effect.Effect<unknown, E | TrellisError, R> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the plan or the option object in between must not reach it.
-  const admitted = copiedPlan(plan)
-  const runLeaf = options.leaf
-  const concurrency = options.concurrency
-  const invalid = admissionRefusal({ concurrency })
-  if (invalid !== undefined) return Effect.fail(invalid)
-  return Effect.flatMap(Semaphore.make(concurrency), (semaphore) => {
-    const visit = (node: Plan, path: string): Effect.Effect<unknown, E, R> => {
-      const members = container(node)
-      if (members === undefined) {
-        const agent = (node as { readonly agent: { readonly goal: string; readonly seat?: string | undefined } }).agent
-        const leaf: Leaf = agent.seat === undefined
-          ? { goal: agent.goal, path }
-          : { goal: agent.goal, seat: agent.seat, path }
-        return semaphore.withPermits(1)(runLeaf(leaf))
-      }
-      return Effect.forEach(
-        members,
-        (member, index) => visit(member, childPath(path, node, index)),
-        { concurrency: "parallel" in node ? "unbounded" : 1 }
-      )
-    }
-    return visit(admitted, "root")
-  })
 }

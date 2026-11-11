@@ -1,13 +1,7 @@
 /**
- * Check-suite pattern: run independent checks with bounded concurrency and
- * reduce their rows to one verdict.
- *
- * `make` and `run` take the checks as a record written with the suite.
- * `makeDiscovered` and `runDiscovered` take one check and the ids to run it
- * for, so a suite can run the checks a repository turned out to have.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `CheckSuite`: its types and `make` and `makeDiscovered`, which throws a
+ * `PatternError` for a declaration it cannot build. `CheckSuite.vibe`
+ * re-exports all of it beside `run` and `runDiscovered`, the pattern's Effect forms.
  *
  * @since 0.1.0
  */
@@ -15,15 +9,15 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
-import * as Quarantine from "./Quarantine.vibe"
+import { PatternError } from "../PatternError.ts"
+import * as Quarantine from "../Quarantine.vibe"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 /**
  * How per-check outcomes reduce to one verdict.
@@ -135,7 +129,13 @@ export const passed = (row: unknown): boolean => {
   return record.error === undefined || record.error === null || record.error === false
 }
 
-const classify = (id: string, row: unknown): CheckResult => {
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const classify = (id: string, row: unknown): CheckResult => {
   const result = { id, passed: passed(row) }
   const error = typeof row === "object" && row !== null ? (row as Record<string, unknown>).error : undefined
   return error === undefined || error === null || error === false ? result : { ...result, error }
@@ -196,7 +196,14 @@ export const verdict = (results: ReadonlyArray<CheckResult>, strategy: Strategy)
   return { passed: passing, failed: failing, errors, strategy, verdict: decided }
 }
 
-const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 // A tolerated failure is reported in the verdict the suite settles with, so
 // the row carries its error as data.
@@ -249,18 +256,6 @@ const joined = <R>(
     )
   }
   return visit(0, {})
-}
-
-/** One runtime check's classified result; a tolerant suite turns its typed failure into a failed result. */
-const attempt = <Out, E, R>(
-  id: string,
-  check: Effect.Effect<Out, E, R>,
-  continueOnFail: boolean
-): Effect.Effect<CheckResult, E, R> => {
-  const classified = Effect.map(check, (row) => classify(id, row))
-  return continueOnFail
-    ? Effect.catch(classified, (error) => Effect.succeed({ id, passed: false, error }))
-    : classified
 }
 
 /**
@@ -337,68 +332,6 @@ export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
 }
 
 /**
- * Runs the checks with bounded concurrency and returns the verdict.
- *
- * With `continueOnFail: false` the first failing check fails the suite and the
- * remaining checks do not run. With `continueOnFail: true` every check runs and
- * a failed one is listed in the verdict's `failed`, with its original error
- * retained in `errors` under its id. A check that succeeds but
- * returns a failure row is always listed in `failed`; it does not fail the
- * suite, because the row is the check's answer, not an error.
- *
- * `continueOnFail` tolerates a typed check failure. A check that throws
- * raises a defect, which fails the suite under either setting and cancels
- * the checks still in flight.
- *
- * `run` rejects the same suites `make` rejects, and it rejects them before any
- * check runs: an empty record, an empty check id, and a `concurrency` that is
- * not a positive safe integer each fail with a `PatternError`. An empty record
- * would otherwise return a false verdict, which reads like a failing suite
- * rather than like a misconfigured one. Keying `checks` by id rules out a
- * duplicate, which would otherwise list the same check twice in the verdict.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, Out, E, R>(
-  input: I,
-  options: RuntimeOptions<I, Out, E, R>
-): Effect.Effect<Verdict, E | PatternError, R> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the record or the option object in between must not reach it.
-  const declared = Object.entries(options.checks)
-  const strategy = options.strategy
-  const concurrency = options.concurrency
-  const continueOnFail = options.continueOnFail
-  if (declared.length === 0) {
-    return Effect.fail(
-      new PatternError({ code: "invalid_decorator", message: "CheckSuite requires at least one check" })
-    )
-  }
-  if (!bound(concurrency)) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "CheckSuite concurrency must be a positive safe integer"
-      })
-    )
-  }
-  if (declared.some(([id]) => id === "")) {
-    return Effect.fail(
-      new PatternError({ code: "invalid_decorator", message: "CheckSuite check ids must not be empty" })
-    )
-  }
-  return Effect.map(
-    Effect.forEach(
-      declared,
-      ([id, check]) => attempt(id, check(input), continueOnFail),
-      { concurrency }
-    ),
-    (results) => verdict(results, strategy)
-  )
-}
-
-/**
  * What a discovered suite with no checks decides: `pass` settles a true
  * verdict, `fail` a false one. Either way `passed` and `failed` are empty.
  *
@@ -466,7 +399,13 @@ export interface DiscoveredRuntimeOptions<I, Out, E, R> {
 }
 
 /** The ids a discovered suite was handed, copied, or why they are not a suite. */
-const discoveredIds = (checks: unknown): ReadonlyArray<string> | PatternError => {
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const discoveredIds = (checks: unknown): ReadonlyArray<string> | PatternError => {
   if (!Array.isArray(checks) || checks.some((id) => typeof id !== "string")) {
     return new PatternError({ code: "invalid_input", message: "CheckSuite discovered checks must be an array of ids" })
   }
@@ -480,7 +419,13 @@ const discoveredIds = (checks: unknown): ReadonlyArray<string> | PatternError =>
   return ids
 }
 
-const emptyVerdict = (strategy: Strategy, onEmpty: OnEmpty): Verdict => ({
+/**
+ * Shared with the Effect forms in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const emptyVerdict = (strategy: Strategy, onEmpty: OnEmpty): Verdict => ({
   passed: [],
   failed: [],
   errors: {},
@@ -560,49 +505,4 @@ export const makeDiscovered = <R = never>(options: DiscoveredMakeOptions<R>): Di
     error: Failure.schemaFor([PatternError], [check]) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
-}
-
-/**
- * Runs `check` once per discovered id with bounded concurrency and returns
- * the verdict.
- *
- * The runtime form of {@link makeDiscovered}: the same payload, the same
- * order, the same `continueOnFail` and `onEmpty`, and the same refusals. A
- * `concurrency` that is not a positive safe integer and ids that are not an
- * array of unique, non-empty strings each fail with a `PatternError` before
- * any check runs. No ids succeeds with the verdict `onEmpty` names and runs
- * nothing.
- *
- * @category combinators
- * @since 1.0.0
- */
-export const runDiscovered = <I, Out, E, R>(
-  payload: { readonly checks: ReadonlyArray<string>; readonly input: I },
-  options: DiscoveredRuntimeOptions<I, Out, E, R>
-): Effect.Effect<Verdict, E | PatternError, R> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the id array or the option object in between must not reach it.
-  const check = options.check
-  const strategy = options.strategy
-  const concurrency = options.concurrency
-  const continueOnFail = options.continueOnFail
-  const onEmpty = options.onEmpty
-  const input = payload.input
-  const ids = discoveredIds(payload.checks)
-  if (!bound(concurrency)) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "CheckSuite concurrency must be a positive safe integer"
-      })
-    )
-  }
-  if (ids instanceof PatternError) return Effect.fail(ids)
-  if (ids.length === 0) return Effect.succeed(emptyVerdict(strategy, onEmpty))
-  return Effect.map(
-    Effect.forEach(ids, (id) => attempt(id, Effect.suspend(() => check({ check: id, input })), continueOnFail), {
-      concurrency
-    }),
-    (results) => verdict(results, strategy)
-  )
 }
