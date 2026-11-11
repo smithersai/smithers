@@ -1,4 +1,7 @@
+import { WebSocketServer } from "@effect/platform-node/NodeWS"
 import { mkdtemp, rm } from "node:fs/promises"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -8,54 +11,14 @@ import { workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
 const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 const hostKey = { algorithm: "ssh-ed25519", public_key: key.split(" ")[1], known_hosts_line: key }
 const guest = { command: "ssh guest", hostKeys: [key] }
-const state = vi.hoisted(() => ({
-  terminal: "stopped",
-  sent: [] as unknown[],
-  url: "",
-  options: {} as unknown
-}))
 vi.mock(
   "../src/internal/backend/SSH.ts",
   async (original) => ({ ...await original<object>(), remote: vi.fn() })
 )
-vi.mock("@effect/platform-node/NodeWS", async () => {
-  const { EventEmitter } = await import("node:events")
-  return {
-    WebSocket: class extends EventEmitter {
-      closed = false
-      constructor(url: string, options: unknown) {
-        super()
-        state.url = url
-        state.options = options
-        queueMicrotask(() => {
-          if (state.terminal === "error") {
-            this.emit("error", new Error("socket failed"))
-            return
-          }
-          this.emit("open")
-          this.emit("message", Buffer.from("hello"), true)
-          this.emit("message", Buffer.from("not json"), false)
-          this.emit("message", Buffer.from(JSON.stringify({ type: "status", status: state.terminal })), false)
-        })
-      }
-      send(value: unknown) {
-        state.sent.push(value)
-      }
-      close() {
-        if (!this.closed) {
-          this.closed = true
-          this.emit("close")
-        }
-      }
-    }
-  }
-})
 const dirs: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   vi.mocked(remote).mockReset()
-  state.terminal = "stopped"
-  state.sent = []
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 const success = (stdout = "", code = 0) => ({ code, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) })
@@ -392,23 +355,66 @@ describe("box remote execution", () => {
     }
   )
   it.each(["stopped", "failed", "error"])("cleans up a terminal on %s", async (terminal) => {
-    const { c, request, exit } = await fixture()
-    state.terminal = terminal
-    request.mockResolvedValue({ id: "terminal" })
-    vi.spyOn(process.stdout, "write").mockReturnValue(true)
-    if (terminal === "error") {
-      await expect(workspaces["workspace shell"]!(c, { id: "box" }, { ...options, cols: 100, rows: 40 })).rejects
-        .toThrow("socket failed")
-    } else await workspaces["workspace shell"]!(c, { id: "box" }, { ...options, cols: 100, rows: 40 })
-    expect(state.url).toBe("wss://api.example.test/api/repos/owner/repo/workspace/sessions/terminal/terminal")
-    expect(state.options).toMatchObject({ headers: { Authorization: "token login-secret" } })
-    expect(request).toHaveBeenLastCalledWith(
-      "POST",
-      "/api/repos/owner/repo/workspace/sessions/terminal/destroy",
-      undefined,
-      { signal: expect.any(AbortSignal) }
-    )
-    if (terminal === "failed") expect(exit).toHaveBeenCalledWith(1)
+    const requests: Array<{ method: string | undefined; path: string | undefined; body: unknown }> = []
+    const server = createServer((incoming, response) => {
+      let body = ""
+      incoming.on("data", (chunk: Buffer) => body += chunk.toString())
+      incoming.on("end", () => {
+        requests.push({ method: incoming.method, path: incoming.url, body: body === "" ? undefined : JSON.parse(body) })
+        response.writeHead(200, { "content-type": "application/json" })
+        response.end(JSON.stringify(incoming.url?.endsWith("/destroy") ? {} : { id: "terminal" }))
+      })
+    })
+    const sockets = new WebSocketServer({ noServer: true })
+    let observedUrl: string | undefined
+    let observedHeaders: Record<string, unknown> | undefined
+    server.on("upgrade", (incoming, socket, head) => {
+      observedUrl = incoming.url
+      observedHeaders = incoming.headers
+      if (terminal === "error") {
+        socket.end("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+        return
+      }
+      sockets.handleUpgrade(incoming, socket, head, (connected) => {
+        connected.send(Buffer.from("hello"), { binary: true })
+        connected.send("not json")
+        connected.send(JSON.stringify({ type: "status", status: terminal }))
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+      const { c, request, exit } = await fixture({ SMITHERS_API_ORIGIN: origin })
+      request.mockRestore()
+      const output = vi.spyOn(process.stdout, "write")
+      const before = process.stdout.listenerCount("resize")
+      const run = workspaces["workspace shell"]!(c, { id: "box" }, { ...options, cols: 100, rows: 40 })
+      if (terminal === "error") await expect(run).rejects.toThrow("Unexpected server response: 503")
+      else {
+        await run
+        expect(output).toHaveBeenCalledWith("hello")
+        expect(output).toHaveBeenCalledWith("not json")
+      }
+      expect(observedUrl).toBe("/api/repos/owner/repo/workspace/sessions/terminal/terminal")
+      expect(observedHeaders).toMatchObject({ authorization: "token login-secret", origin })
+      expect(process.stdout.listenerCount("resize")).toBe(before)
+      expect(requests[0]).toEqual({
+        method: "POST",
+        path: "/api/repos/owner/repo/workspace/sessions",
+        body: { cols: 100, rows: 40, workspace_id: "box" }
+      })
+      expect(requests.at(-1)).toEqual({
+        method: "POST",
+        path: "/api/repos/owner/repo/workspace/sessions/terminal/destroy",
+        body: undefined
+      })
+      if (terminal === "failed") expect(exit).toHaveBeenCalledWith(1)
+    } finally {
+      for (const socket of sockets.clients) socket.terminate()
+      await new Promise<void>((resolve, reject) => sockets.close((error) => error ? reject(error) : resolve()))
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
   })
   it("refuses a terminal size that is not a whole number from 0 to 65535 before opening a session", async () => {
     const { c, request } = await fixture()
