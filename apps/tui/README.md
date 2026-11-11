@@ -302,9 +302,10 @@ file the run changed as a checklist, `[x] math.js  +1 −1`, `[x] check.log  new
 and Enter undoes the checked ones; Space unchecks one. In an agent tab these
 are **Alt+V** and **Alt+U**. Files a shell command
 wrote undo from the call's captured receipt; a named write another worker made
-during that command stays out of it. A file changed since the run, a path
-outside the working directory (directly or through a symlink), and a binary or
-large change are listed unchecked with the reason; the other files still undo.
+during that command stays out of it, even one that reached its file through a
+symlink. A file changed since the run, a path outside the working directory
+(directly or through a symlink), and a binary or large change are listed
+unchecked with the reason; the other files still undo.
 A deleted file comes back with its mode. **u** shows only when something can
 be undone and no turn, command, worker or flow runs. Afterwards the card reads
 `· undone`, the session records the undo, and the next turn is told. `/new`,

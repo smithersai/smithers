@@ -10,7 +10,7 @@ import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
 import { constants, realpathSync } from "node:fs"
 import { open, stat } from "node:fs/promises"
-import { isAbsolute, relative, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import * as Subprocess from "./subprocess.ts"
 import * as Timer from "./timer.ts"
 
@@ -341,8 +341,29 @@ const indexState = async (cwd: string, blob: string, before: FileStat): Promise<
  * receipts, so a shell receipt leaves them out.
  */
 const shells = new Set<Set<string>>()
-/** The resolved files of named writers in flight: a shell starting meanwhile leaves them out too. */
+/** The identities of named writers' files in flight: a shell starting meanwhile leaves them out too. */
 const writing = new Set<ReadonlyArray<string>>()
+/**
+ * The names a claim holds a file under: as resolved under `cwd`, and the
+ * file it reaches through symlinks. A named write follows an existing symlink
+ * to its target and a VCS diff names that target, so the spelled name alone
+ * let a shell claim the write. A new file's existing ancestors resolve; the
+ * rest stays as spelled.
+ */
+const identities = (full: string): ReadonlyArray<string> => {
+  let head = full
+  const tail: Array<string> = []
+  while (true) {
+    try {
+      return [...new Set([full, join(realpathSync(head), ...tail)])]
+    } catch {
+      const parent = dirname(head)
+      if (parent === head) return [full]
+      tail.unshift(basename(head))
+      head = parent
+    }
+  }
+}
 
 /** A bash call's changes against pre-call files, relative to `cwd`; no receipt outside a repository. */
 const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPatch: (receipt: Receipt) => void) =>
@@ -356,7 +377,9 @@ const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPat
       observed(binding, call, cwd, (receipt) =>
         onPatch({
           ...receipt,
-          patches: receipt.patches.filter((patch) => !claimed.has(resolve(cwd, patch.path)))
+          patches: receipt.patches.filter((patch) =>
+            !identities(resolve(cwd, patch.path)).some((name) => claimed.has(name))
+          )
         })),
     (claimed) => Effect.sync(() => shells.delete(claimed))
   )
@@ -429,7 +452,7 @@ const within = (cwd: string, path: string): string => {
 const named = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPatch: (receipt: Receipt) => void) =>
   Effect.gen(function*() {
     const files = [...new Set(paths(call.flowName, call.input).map((path) => within(cwd, path)))]
-    const resolved = files.map((file) => resolve(cwd, file))
+    const resolved = [...new Set(files.flatMap((file) => identities(resolve(cwd, file))))]
     const before = yield* Effect.promise(() => states(cwd, files))
     const result = yield* Effect.acquireUseRelease(
       Effect.sync(() => {

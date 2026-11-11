@@ -9,6 +9,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync
 } from "node:fs"
@@ -716,6 +717,83 @@ describe("undo", () => {
     await running
     expect(shellReceipts.map((receipt) => receipt.patches.map((patch) => patch.path))).toEqual([["a.ts"]])
     expect(writeReceipts.map((receipt) => receipt.patches.map((patch) => patch.path))).toEqual([["b.ts"]])
+  })
+
+  it("leaves the files named writes reached through a file or directory symlink out of a concurrent shell receipt", async () => {
+    const cwd = gitRepo()
+    put(cwd, "a.ts", "original A\n")
+    put(cwd, "target.txt", "original target\n")
+    symlinkSync("target.txt", join(cwd, "alias.txt"))
+    put(cwd, "realdir/sub/kept.txt", "kept\n")
+    symlinkSync("realdir", join(cwd, "linkdir"))
+    gitCommit(cwd)
+    let started!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const binding = async (receipts: Changes.Receipt[], body: () => Promise<void>) => {
+      const source = {
+        name: "test",
+        bindings: () =>
+          Effect.succeed([{
+            run: () =>
+              Effect.promise(async () => {
+                await body()
+                return { outcome: "success", value: {} }
+              })
+          }])
+      } as unknown as Parameters<typeof Changes.capture>[0]
+      const [bound] = await Effect.runPromise(
+        Changes.capture(source, cwd, (receipt) => receipts.push(receipt)).bindings()
+      )
+      return bound!
+    }
+    const shellReceipts: Changes.Receipt[] = []
+    const writeReceipts: Changes.Receipt[] = []
+    const shell = await binding(shellReceipts, async () => {
+      started()
+      await hold
+      put(cwd, "a.ts", "shell A\n")
+    })
+    // The standard writer follows an existing symlink, so each write lands on the file its alias reaches.
+    const throughFile = await binding(writeReceipts, async () => put(cwd, "target.txt", "worker target\n"))
+    const throughDirectory = await binding(
+      writeReceipts,
+      async () => put(cwd, "realdir/sub/new.txt", "worker new\n")
+    )
+    const running = Effect.runPromise(
+      shell.run({
+        flowName: "bash",
+        input: { command: "edit a.ts" },
+        identity: { session: "A", frame: 1, cell: 1, ordinal: 0 }
+      } as never)
+    )
+    await entered
+    await Effect.runPromise(
+      throughFile.run({
+        flowName: "write",
+        input: { path: "alias.txt", content: "worker target\n" },
+        identity: { session: "B", frame: 1, cell: 1, ordinal: 0 }
+      } as never)
+    )
+    await Effect.runPromise(
+      throughDirectory.run({
+        flowName: "write",
+        input: { path: "linkdir/sub/new.txt", content: "worker new\n" },
+        identity: { session: "C", frame: 1, cell: 1, ordinal: 0 }
+      } as never)
+    )
+    release()
+    await running
+    expect(shellReceipts.map((receipt) => receipt.patches.map((patch) => patch.path))).toEqual([["a.ts"]])
+    expect(writeReceipts.map((receipt) => receipt.patches.map((patch) => patch.path))).toEqual([
+      ["alias.txt"],
+      ["linkdir/sub/new.txt"]
+    ])
   })
 
   it("leaves a named write's file out of a shell call that starts and ends while the write runs", async () => {
