@@ -53,6 +53,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0018 outside the web app](decisions/0018-proofs.md#third-lane-batch-6-the-issues-hosts-decisions) | Third proofs lane: Issues, history pages, seed inputs, mock factory/accounts, wiki, action hosts and the mock sandbox device |
 | [0018 web decisions](decisions/0018-proofs.md#web-viewport-and-history-page-batch-lane-vl-proveall2) | Viewport, history-page and spotlight decisions, real-coordinate tool fixes and explicit host boundaries (lane vl-proveall2) |
 | [0018 web views](decisions/0018-proofs.md#web-views-batch-lane-vl-proveall2-2026-11-11) | Every choice the web views draw, proved in decision modules; the views build Html (lane vl-proveall2) |
+| [0018 witness statement](decisions/0018-proofs.md#witness-statement-lane-vl-proveall2-2026-11-11) | LemmaScript's `assert ... by exists(k, C)` proves forall-exists contracts; each inline Markdown piece keeps its part's parity (lane vl-proveall2) |
 | [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
 | [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
 | [0021](decisions/0021-wiki.md) | The working-memory wiki: shared pane, role-gated Markdown editing and person-owned review changes; agent drafts through the same flows |

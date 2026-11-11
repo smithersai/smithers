@@ -53,14 +53,14 @@ export interface InlinePiece { readonly code: boolean; readonly text: string }
 
 /**
  * A paragraph's text split at backticks: even pieces are text, odd ones inline code; no piece is empty. Every
- * nonempty part appears with its parity. A piece's parity is checked by its part, not proved: Dafny cannot carry
- * that exists-in-forall to the result without a witness statement (verify/bugs/forall-exists-witness.dfy).
+ * nonempty part appears with its parity, and every piece copies a part with that part's parity.
  */
 //@ verify
 //@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].text != "")
 //@ ensures \result.length <= text.split("`").length
 //@ ensures forall(i, 0 <= i && i < \result.length ==> text.split("`").includes(\result[i].text))
 //@ ensures forall(j, 0 <= j && j < text.split("`").length && text.split("`")[j] != "" ==> exists(i, 0 <= i && i < \result.length && \result[i].text == text.split("`")[j] && \result[i].code == (j % 2 == 1)))
+//@ ensures forall(i, 0 <= i && i < \result.length ==> exists(k, 0 <= k && k < text.split("`").length && \result[i].text == text.split("`")[k] && \result[i].code == (k % 2 == 1)))
 export function inlinePieces(text: string): ReadonlyArray<InlinePiece> {
   const parts = text.split("`")
   let pieces: InlinePiece[] = []
@@ -70,12 +70,14 @@ export function inlinePieces(text: string): ReadonlyArray<InlinePiece> {
     //@ invariant forall(i, 0 <= i && i < pieces.length ==> pieces[i].text != "")
     //@ invariant forall(i, 0 <= i && i < pieces.length ==> parts.includes(pieces[i].text))
     //@ invariant forall(k, 0 <= k && k < j && parts[k] != "" ==> exists(i, 0 <= i && i < pieces.length && pieces[i].text == parts[k] && pieces[i].code == (k % 2 == 1)))
+    //@ invariant forall(i, 0 <= i && i < pieces.length ==> exists(k, 0 <= k && k < j && pieces[i].text == parts[k] && pieces[i].code == (k % 2 == 1)))
     if (parts[j]! !== "") {
       const prev = pieces
       pieces = [...prev, { code: j % 2 === 1, text: parts[j]! }]
       //@ assert forall(i, 0 <= i && i < prev.length ==> pieces[i] == prev[i])
-      //@ assert pieces[prev.length].text == parts[j] && pieces[prev.length].code == (j % 2 == 1)
+      //@ assert pieces.length == prev.length + 1 && pieces[prev.length].text == parts[j]
     }
   }
+  //@ assert forall(i, 0 <= i && i < pieces.length ==> exists(k, 0 <= k && k < text.split("`").length && pieces[i].text == text.split("`")[k] && pieces[i].code == (k % 2 == 1))) by exists(k, 0 <= k && k < parts.length && pieces[i].text == parts[k] && pieces[i].code == (k % 2 == 1))
   return pieces
 }

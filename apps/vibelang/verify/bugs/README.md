@@ -12,7 +12,7 @@ tests; no Dafny/Z3 defect was observed.
 | `array-literal-map.ts` | `.map()` on a spread-array literal loses the receiver type (`Unsupported Dafny method call: .map() on unknown`) | Maps operate on typed record fields; append mutations spread the mapped result |
 | `empty-literal-union.ts` | A named string-literal union that includes `""` emits `return Found.;` for `return ""` (`invalid Suffix`) | `src/history/mythical.vibe` asks `isIn(commits, id, state)`, a boolean, instead of returning a state or `""` |
 | `inline-literal-union.ts` | An inline union with `""` as a return type emits `type State | ""` (`this symbol not expected in Dafny`) | The same boolean query |
-| `forall-exists-witness.dfy` | Dafny 4.11 does not prove an exists-in-forall postcondition from the identical requires clause; nothing instantiates the hypothesis. LemmaScript has no witness statement to supply `k` | `markdownDecision.inlinePieces` states origin by membership; parity is proved per part, not per piece |
+| `forall-exists-witness.dfy` | Dafny 4.11 does not prove an exists-in-forall postcondition from the identical requires clause: Z3 skolemizes the negated goal and no ground term instantiates the hypothesis. Fixed in LemmaScript: `//@ assert forall(i, A ==> exists(k, B)) by exists(k, C)` names the body as a predicate and picks `k` (`packages/lemmascript/tools/fixtures/forall-exists-witness.ts`) | `markdownDecision.inlinePieces` proves every piece copies a part with that part's parity |
 
 These minimal sources preserve the compiler error. Generated Dafny, exact diagnostics, exits and timings are kept
 under ignored `verify/.checks/run-*`; the lane report records the reproduction commands. The source is not patched
