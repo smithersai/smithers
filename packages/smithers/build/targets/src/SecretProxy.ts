@@ -363,30 +363,43 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
         [...new Map([...resolvedValues, ...seededValues]).entries()]
           .sort((left, right) => right[0].length - left[0].length)
       const redact = (text: string): string => {
-        let output = text
-        for (const [value, placeholder] of protections()) output = output.split(value).join(placeholder)
-        return output
+        const entries = new Map(protections())
+        if (entries.size === 0) return text
+        const pattern = new RegExp(
+          [...entries.keys()].map((value) => value.replace(/[.*+?^$(){}|[\]\\]/g, "\\$&")).join("|"),
+          "g"
+        )
+        // Replacement text is never searched again, even if it contains a
+        // shorter protected value such as a secret URL's pathname.
+        return text.replace(pattern, (match) => entries.get(match)!)
       }
       const redactBytes = (input: Uint8Array): Buffer => {
-        let output = Buffer.from(input)
-        for (const [value, placeholder] of protections()) {
+        const source = Buffer.from(input)
+        const entries = protections().map(([value, placeholder]) => {
           const needle = Buffer.from(value, "utf8")
-          if (needle.byteLength === 0) continue
-          const replacement = Buffer.from(placeholder, "utf8")
-          const pieces: Array<Buffer> = []
-          let offset = 0
-          let index = output.indexOf(needle, offset)
-          while (index !== -1) {
-            pieces.push(output.subarray(offset, index), replacement)
-            offset = index + needle.byteLength
-            index = output.indexOf(needle, offset)
+          return { needle, replacement: Buffer.from(placeholder, "utf8"), index: source.indexOf(needle) }
+        })
+        const pieces: Array<Buffer> = []
+        let offset = 0
+        while (offset < source.byteLength) {
+          let next = source.byteLength
+          let selected: typeof entries[number] | undefined
+          for (const entry of entries) {
+            // A missing needle stays missing. Only consumed matches need
+            // another search, so absent values do not rescan each suffix.
+            if (entry.index !== -1 && entry.index < offset) entry.index = source.indexOf(entry.needle, offset)
+            // Entries are longest first, so ties keep the longest match.
+            if (entry.index !== -1 && entry.index < next) {
+              next = entry.index
+              selected = entry
+            }
           }
-          if (pieces.length > 0) {
-            pieces.push(output.subarray(offset))
-            output = Buffer.concat(pieces)
-          }
+          if (selected === undefined) break
+          pieces.push(source.subarray(offset, next), selected.replacement)
+          offset = next + selected.needle.byteLength
         }
-        return output
+        pieces.push(source.subarray(offset))
+        return Buffer.concat(pieces)
       }
       return {
         substitute,
@@ -553,7 +566,7 @@ const forward = (
       const text = raw.toString("utf8")
       // Substituting a body only makes sense when it is text that survives
       // a round trip. Binary bodies are forwarded untouched.
-      const substituted = Buffer.byteLength(text, "utf8") === raw.byteLength
+      const substituted = Buffer.from(text, "utf8").equals(raw)
         ? Buffer.from(boundary.substitute(text), "utf8")
         : raw
       body = substituted
@@ -654,7 +667,14 @@ const forward = (
               }
             }
             const redacted = boundary.redactBytes(Buffer.concat(responseChunks))
-            responseHeaders["content-length"] = String(redacted.byteLength)
+            // HEAD and 304 carry metadata about a representation, not a body
+            // whose length can be recomputed after redaction.
+            if (request.method === "HEAD" || upstreamResponse.statusCode === 304) {
+              const length = upstreamResponse.headers["content-length"]
+              if (length !== undefined && !nominated.has("content-length")) responseHeaders["content-length"] = length
+            } else {
+              responseHeaders["content-length"] = String(redacted.byteLength)
+            }
             settled = true
             clear()
             response.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders)

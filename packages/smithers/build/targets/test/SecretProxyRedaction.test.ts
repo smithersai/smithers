@@ -421,3 +421,194 @@ describe("proxy connection cleanup", () => {
     }
   })
 })
+
+const exchange = (
+  endpoint: string,
+  path: string,
+  method: string,
+  body: Buffer = Buffer.alloc(0)
+): Promise<Answer> =>
+  new Promise((resolve, reject) => {
+    const url = new URL(endpoint)
+    const outgoing = NodeHttp.request({
+      hostname: url.hostname,
+      port: url.port,
+      path,
+      method,
+      headers: { "content-length": String(body.byteLength) }
+    }, (response) => {
+      const chunks: Array<Buffer> = []
+      response.on("error", reject)
+      response.on("data", (chunk: Buffer) => chunks.push(chunk))
+      response.on("end", () =>
+        resolve({
+          status: response.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString("utf8"),
+          headers: response.headers
+        }))
+    })
+    outgoing.on("error", reject)
+    outgoing.setTimeout(5_000, () => outgoing.destroy(new Error("proxy request timed out")))
+    outgoing.end(body)
+  })
+
+describe.each(["proxy", "destination", "origin"] as const)("%s response and upload integrity", (route) => {
+  const requestRoute = async (proxy: SecretProxy.Proxy, origin: string) => {
+    if (route === "proxy") return { endpoint: proxy.endpoint, path: `${origin}/upload` }
+    if (route === "origin") return { endpoint: await proxy.originFor(origin), path: "/upload" }
+    const capability = new URL(proxy.urlFor(Secret.Secret("UPLOAD_DESTINATION")))
+    return { endpoint: capability.origin, path: capability.pathname }
+  }
+
+  it.each([
+    { label: "equal-length decoding", bytes: [0x41, 0xf0, 0x90, 0x80, 0x42] },
+    { label: "expanded decoding", bytes: [0x00, 0xed, 0xa0, 0x80, 0xff] }
+  ])("forwards invalid UTF-8 upload bytes unchanged: $label", async ({ bytes }) => {
+    const body = Buffer.from(bytes)
+    let received = Buffer.alloc(0)
+    const upstream = await listen((request, response) => {
+      const chunks: Array<Buffer> = []
+      request.on("data", (chunk: Buffer) => chunks.push(chunk))
+      request.on("end", () => {
+        received = Buffer.concat(chunks)
+        response.end("accepted")
+      })
+    })
+    const vault = SecretProxy.makeVault({ read: () => `${upstream.origin}/upload` })
+    vault.mint(Secret.HttpSecret(Secret.Secret("UPLOAD_TOKEN"), [upstream.origin]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const target = await requestRoute(proxy, upstream.origin)
+      const answer = await exchange(target.endpoint, target.path, "POST", body)
+      expect(answer).toMatchObject({ status: 200, body: "accepted" })
+      expect(received).toEqual(body)
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+
+  it("still substitutes placeholders in valid UTF-8 uploads and updates their length", async () => {
+    const received: Array<Buffer> = []
+    let length: string | undefined
+    const upstream = await listen((request, response) => {
+      length = request.headers["content-length"]
+      request.on("data", (chunk: Buffer) => received.push(chunk))
+      request.on("end", () => response.end("accepted"))
+    })
+    const vault = SecretProxy.makeVault({
+      read: (name) => name === "UPLOAD_DESTINATION" ? `${upstream.origin}/upload` : "upload-token"
+    })
+    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret("UPLOAD_TOKEN"), [upstream.origin]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const target = await requestRoute(proxy, upstream.origin)
+      expect(await exchange(target.endpoint, target.path, "POST", Buffer.from(`héllo ${placeholder}`)))
+        .toMatchObject({ status: 200, body: "accepted" })
+      const expected = Buffer.from("héllo upload-token")
+      expect(Buffer.concat(received)).toEqual(expected)
+      expect(length).toBe(String(expected.byteLength))
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+
+  it.each(
+    [
+      ["HEAD", 200, "12345", false],
+      ["HEAD", 200, undefined, false],
+      ["HEAD", 200, "12345", true],
+      ["GET", 304, "12345", false],
+      ["GET", 304, undefined, false],
+      ["GET", 304, "12345", true]
+    ] as const
+  )("preserves %s %s length %s with hop nomination %s", async (method, status, length, nominated) => {
+    const upstream = await listen((_request, response) => {
+      response.writeHead(status, {
+        ...(length === undefined ? {} : { "content-length": length }),
+        ...(nominated ? { connection: "content-length" } : {})
+      })
+      response.end()
+    })
+    const vault = SecretProxy.makeVault({ read: () => `${upstream.origin}/upload` })
+    vault.mint(Secret.HttpSecret(Secret.Secret("UPLOAD_TOKEN"), [upstream.origin]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const target = await requestRoute(proxy, upstream.origin)
+      const answer = await exchange(target.endpoint, target.path, method)
+      expect(answer.status).toBe(status)
+      expect(answer.body).toBe("")
+      expect(answer.headers["content-length"]).toBe(nominated ? undefined : length)
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+})
+
+describe("single-pass redaction", () => {
+  it.each(["/s", "/.well-known", "/1"])("keeps the capability URL usable when the secret path is %s", async (path) => {
+    let destination = ""
+    const upstream = await listen((_request, response) => {
+      response.writeHead(302, { location: destination, "content-length": String(Buffer.byteLength(destination)) })
+      response.end(destination)
+    })
+    destination = `${upstream.origin}${path}`
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault({ read: () => destination }))
+    try {
+      const capability = proxy.urlFor(Secret.Secret("SHORT_PATH_DESTINATION"))
+      const answer = await get(capability)
+      expect(answer.status).toBe(302)
+      expect(answer.headers.location).toBe(capability)
+      expect(answer.body).toBe(capability)
+      expect(answer.headers["content-length"]).toBe(String(Buffer.byteLength(capability)))
+      expect((await get(answer.headers.location!)).body).toBe(capability)
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+
+  it("matches original text left to right, chooses the longest match, and treats metacharacters literally", () => {
+    const boundary = SecretProxy.makeVault().request("http://upstream.invalid", [
+      { value: "abc", placeholder: "short" },
+      { value: "abcdef", placeholder: "abc-long" },
+      { value: "bcdefg", placeholder: "overlap" },
+      { value: "[a].*+$?^{}()|\\", placeholder: "literal" }
+    ])
+    const text = "abcdefg abc [a].*+$?^{}()|\\ unmatched"
+    const expected = "abc-longg short literal unmatched"
+    expect(boundary.redact(text)).toBe(expected)
+    const invalid = Buffer.from([0xf0, 0x90, 0x80, 0x00, 0xff])
+    expect(boundary.redactBytes(Buffer.concat([invalid, Buffer.from(text), invalid])))
+      .toEqual(Buffer.concat([invalid, Buffer.from(expected), invalid]))
+    expect(boundary.redactBytes(Buffer.alloc(0))).toEqual(Buffer.alloc(0))
+  })
+
+  it("handles many short matches with absent URL protections without changing inserted capabilities", () => {
+    const capability = "http://127.0.0.1:1234/.well-known/smithers-secret-url/capability"
+    const boundary = SecretProxy.makeVault().request("http://upstream.invalid", [
+      { value: "https://upstream.invalid/s", placeholder: capability },
+      { value: "https://upstream.invalid", placeholder: "http://127.0.0.1:1234" },
+      { value: "/s", placeholder: capability }
+    ])
+    const repetitions = 16_384
+    expect(boundary.redactBytes(Buffer.from("/s".repeat(repetitions) + "tail")).toString("utf8"))
+      .toBe(capability.repeat(repetitions) + "tail")
+  })
+
+  it("redacts Unicode, repeated adjacent matches, and values resolved after the boundary was opened", () => {
+    const vault = SecretProxy.makeVault({ read: () => "éclair" })
+    const boundary = vault.request("https://upstream.invalid", [{ value: "", placeholder: "ignored" }])
+    expect(boundary.redact("untouched")).toBe("untouched")
+    expect(boundary.redactBytes(Buffer.from("untouched"))).toEqual(Buffer.from("untouched"))
+    const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret("LATE_TOKEN"), ["https://upstream.invalid"]))
+    boundary.substitute(placeholder)
+    expect(boundary.redact("éclairéclair")).toBe(placeholder.repeat(2))
+    expect(boundary.redactBytes(Buffer.from("éclairéclair"))).toEqual(Buffer.from(placeholder.repeat(2)))
+    const seeded = vault.request("https://upstream.invalid", [{ value: "éclair", placeholder: "seed" }])
+    expect(seeded.redact("éclair")).toBe("seed")
+    expect(seeded.redactBytes(Buffer.from("éclair"))).toEqual(Buffer.from("seed"))
+  })
+})
