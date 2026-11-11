@@ -1,6 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { readdirSync } from "node:fs"
-import { basename, join } from "node:path"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect } from "vitest"
 import * as Patterns from "../src/index.ts"
@@ -12,8 +12,10 @@ const moduleNames = (directory: string): ReadonlyArray<string> =>
     if (entry.isDirectory()) {
       return entry.name === "internal" ? [] : moduleNames(join(directory, entry.name))
     }
-    if (!entry.isFile() || !entry.name.endsWith(".ts") || entry.name === "index.ts") return []
-    return [basename(entry.name, ".ts")]
+    // A module is a `.ts` or `.vibe` source; `x.d.vibe.ts` is VibeLang's generated sidecar.
+    const module = /^(?<name>[^.]+)\.(?:ts|vibe)$/.exec(entry.name)?.groups?.name
+    if (!entry.isFile() || module === undefined || module === "index") return []
+    return [module]
   })
 
 describe("package barrel", () => {

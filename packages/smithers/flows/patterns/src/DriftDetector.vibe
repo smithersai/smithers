@@ -19,8 +19,6 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
 import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
@@ -71,18 +69,18 @@ export interface RuntimeOptions<I, Baseline, Snapshot, Comparison, Alert, E, R, 
   readonly capture: (input: {
     readonly input: I
     readonly baseline: Baseline
-  }) => Effect.Effect<Snapshot, E, R>
+  }) => Snapshot!E!R
   readonly compare: (input: {
     readonly snapshot: Snapshot
     readonly baseline: Baseline
-  }) => Effect.Effect<Comparison, E2, R2>
+  }) => Comparison!E2!R2
   readonly alertIf?: ((comparison: Comparison) => boolean) | undefined
   readonly alert?:
     | ((input: {
       readonly comparison: Comparison
       readonly snapshot: Snapshot
       readonly baseline: Baseline
-    }) => Effect.Effect<Alert, E3, R3>)
+    }) => Alert!E3!R3)
     | undefined
 }
 
@@ -204,18 +202,18 @@ export const make = <R = never>(options: MakeOptions<R>): DriftDetectorFlow<R> =
 export const run = <I, Baseline, Snapshot, Comparison, Alert, E, R, E2, R2, E3 = never, R3 = never>(
   input: I,
   options: RuntimeOptions<I, Baseline, Snapshot, Comparison, Alert, E, R, E2, R2, E3, R3>
-): Effect.Effect<Result<Snapshot, Comparison, Alert>, E | E2 | E3, R | R2 | R3> => {
+): Result<Snapshot, Comparison, Alert>!(E | E2 | E3)!(R | R2 | R3) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const { alert, alertIf, baseline, capture, compare } = options
-  return Effect.gen(function*() {
-    const snapshot = yield* capture({ input, baseline })
-    const comparison = yield* compare({ snapshot, baseline })
+  return effect {
+    const snapshot = try capture({ input, baseline })
+    const comparison = try compare({ snapshot, baseline })
     const moved = alertIf === undefined ? drifted(comparison) : alertIf(comparison)
     if (!moved || alert === undefined) {
       return { snapshot, comparison, drifted: moved }
     }
-    const raised = yield* alert({ comparison, snapshot, baseline })
+    const raised = try alert({ comparison, snapshot, baseline })
     return { snapshot, comparison, drifted: moved, alert: raised }
-  })
+  }
 }

@@ -10,7 +10,8 @@ const sourceFiles = (directory: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sourceFiles(path)
-    return entry.isFile() && entry.name.endsWith(".ts") ? [path] : []
+    // `.ts` and `.vibe` sources; `x.d.vibe.ts` is VibeLang's generated sidecar.
+    return entry.isFile() && /^[^.]+\.(?:ts|vibe)$/.test(entry.name) ? [path] : []
   })
 
 const adapter = /member\.call\(payload as never\)/

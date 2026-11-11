@@ -13,7 +13,7 @@ import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as DriftDetector from "../src/DriftDetector.ts"
+import * as DriftDetector from "../src/DriftDetector.vibe"
 import { callsTo, payloadOf } from "./Graphs.ts"
 
 /** The capture member: it is handed `{ input, baseline }`. */
