@@ -262,3 +262,16 @@ export function afterIssuesWrite(model: Model, issues: NonNullable<Model["issues
   const gated: NonNullable<Model["issues"]> = { ...issues, role, dialog: step.closeDialog ? "" : issues.dialog }
   return { ...model, issues: step.clearRetry ? { ...gated, retry: undefined, busy: false } : gated }
 }
+
+/** A change of person or role retires what was scoped to the old one: the sandbox snapshot and its busy flag, the wiki
+ *  editor and its review, and the panel's commands, slash menu and starting run. The panel's epoch and the wiki and
+ *  sandbox request numbers take the step's values, so a reply sent under the old ones no longer applies. An unchanged
+ *  scope writes only the panel. Every other field is unchanged. */
+//@ verify
+//@ ensures !changed ==> \result == { ...model, actions: actions }
+//@ ensures changed ==> \result == { ...model, sandbox: undefined, actions: { ...actions, epoch: actionsEpoch, commands: [], slash: false, starting: false }, wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: wikiEditRequest, sandboxBusy: false, sandboxRequest: sandboxRequest }
+export function scopeWrite(model: Model, actions: ActionView, changed: boolean, actionsEpoch: number, wikiEditRequest: number, sandboxRequest: number): Model {
+  if (!changed) return { ...model, actions }
+  const { sandbox: retired, ...kept } = model
+  return { ...kept, actions: { ...actions, epoch: actionsEpoch, commands: [], slash: false, starting: false }, wikiEdit: undefined, wikiReview: undefined, wikiEditRequest, sandboxBusy: false, sandboxRequest }
+}

@@ -329,14 +329,12 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ResolvedMode: ({ mode }) => ({ model: { ...model, mode }, commands: [LoadAccount({})] }),
     AccountLoaded: ({ identity }) => {
       const { ledger: snapshot, ...person } = identity
-      const { sandbox: previousSandbox, ...withoutSandbox } = model
       const ledger = { conversation: snapshot ?? Machine.empty, pending: [], gap: false }
       const account = accountOf(model)
       const step = ModelDecision.accountLoaded({ id: account.identity.id, role: account.identity.role, target: account.target, error: account.error, people: account.people, epoch: account.epoch, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest ?? 0, sandboxRequest: model.sandboxRequest ?? 0 }, person.id, person.login, person.role, ledger.conversation.seq)
-      const nextActions = step.changedAccount ? { ...actionsOf(model), epoch: step.actionsEpoch, commands: [], slash: false, starting: false } : actionsOf(model)
-      const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.changedAccount ? [LoadActions({ flow: nextActions.selected, epoch: step.actionsEpoch })] : [])]
+      const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.changedAccount ? [LoadActions({ flow: actionsOf(model).selected, epoch: step.actionsEpoch })] : [])]
       return {
-        model: { ...(step.changedAccount ? withoutSandbox : model), actions: nextActions, ...(step.changedAccount ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: step.wikiEditRequest, sandboxBusy: false, sandboxRequest: step.sandboxRequest } : {}), ...(step.changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: step.name, account: {
+        model: { ...ModelWrite.scopeWrite(model, actionsOf(model), step.changedAccount, step.actionsEpoch, step.wikiEditRequest, step.sandboxRequest), ...(step.changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: step.name, account: {
           ...account, identity: person, pending: false,
           error: step.error, menu: false, target: "",
           people: step.people,
@@ -369,10 +367,8 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       )
       if (step.replay) return { model: { ...model, account: { ...account, ledger: Machine.resume(ledger), epoch: step.state.epoch, from: step.state.from } } }
       const identity = step.state.role === account.identity.role ? account.identity : { ...account.identity, role: step.state.role }
-      const { sandbox: previousSandbox, ...withoutSandbox } = model
-      const nextActions = step.changedRole ? { ...actionsOf(model), epoch: step.state.actionsEpoch, commands: [], slash: false, starting: false } : actionsOf(model)
-      const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.loadPeople ? [LoadPeople({})] : []), ...(step.changedRole ? [LoadActions({ flow: nextActions.selected, epoch: step.state.actionsEpoch })] : [])]
-      return { model: { ...(step.changedRole ? withoutSandbox : model), actions: nextActions, ...(step.changedRole ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: step.state.wikiEditRequest, sandboxBusy: false, sandboxRequest: step.state.sandboxRequest } : {}), account: { ...account, ledger, identity, notice: step.state.notice, target: step.state.target, pending: step.state.pending } }, ...(commands.length > 0 ? { commands } : {}) }
+      const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.loadPeople ? [LoadPeople({})] : []), ...(step.changedRole ? [LoadActions({ flow: actionsOf(model).selected, epoch: step.state.actionsEpoch })] : [])]
+      return { model: { ...ModelWrite.scopeWrite(model, actionsOf(model), step.changedRole, step.state.actionsEpoch, step.state.wikiEditRequest, step.state.sandboxRequest), account: { ...account, ledger, identity, notice: step.state.notice, target: step.state.target, pending: step.state.pending } }, ...(commands.length > 0 ? { commands } : {}) }
     },
     FailedRoles: () => runAccount(model, ModelDecision.failedRoles(accountScreen(model))),
     RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : runAccount(model, ModelDecision.retriedAccount(accountScreen(model), accountOf(model).ledger.conversation.seq)),
