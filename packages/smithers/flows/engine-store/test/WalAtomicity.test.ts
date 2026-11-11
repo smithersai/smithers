@@ -330,7 +330,9 @@ describe("run lifecycle history is atomic with the run row", () => {
       const executionId = "wal-run-terminal"
       const result = yield* run(Effect.gen(function*() {
         const store = yield* RunStore.RunStore
-        const terminal = (args: ReadonlyArray<unknown>): boolean => args[2] === "completed"
+        // The process dies at the terminal write, so the release a live drive
+        // makes after a defect (issue #4773) never commits either.
+        const terminal = (args: ReadonlyArray<unknown>): boolean => args[2] === "completed" || args[2] === "suspended"
         const crashingScope = yield* Scope.make()
         const crashingDriver = yield* makeDriver("crasher").pipe(
           Scope.provide(crashingScope),
