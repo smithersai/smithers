@@ -504,6 +504,9 @@ importers:
       '@smthrs/observability':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/observability
+      '@smthrs/patterns':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/patterns
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/plan

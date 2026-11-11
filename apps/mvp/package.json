@@ -58,6 +58,7 @@
     "@smthrs/model-host": "workspace:*",
     "@smthrs/notifications": "workspace:*",
     "@smthrs/observability": "workspace:*",
+    "@smthrs/patterns": "workspace:*",
     "@smthrs/plan": "workspace:*",
     "@smthrs/platform-browser": "workspace:*",
     "@smthrs/platform-cloudflare": "workspace:*",
