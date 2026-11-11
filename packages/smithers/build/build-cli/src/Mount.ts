@@ -11,10 +11,12 @@
  * config resolves as if the overlay's `.smithers/` lived upstream.
  *
  * The checkout is derived state. Materialization never discards work: edits
- * to upstream files survive while the pin and patches hold still and block a
- * re-materialization that would replace them, and an edit to a laid
- * `.smithers/` file blocks the next lay. The upstream repository is only ever
- * read. See `docs/concepts/mounts.md` for the design and its alternatives.
+ * and commits to upstream files survive while the pin and patches hold still
+ * and block a re-materialization that would replace them, and an edit to a
+ * laid `.smithers/` file blocks the next lay. Laying never writes through a
+ * symbolic link or file upstream tracks under `.smithers/`. The upstream
+ * repository is only ever read. See `docs/concepts/mounts.md` for the design
+ * and its alternatives.
  *
  * @since 1.0.0
  */
@@ -335,6 +337,28 @@ const overlayFiles = async (
 }
 
 /**
+ * Refuses a laid path the checkout would redirect: every existing component
+ * from `.smithers` down must be a real directory and the file itself a
+ * regular file, so an upstream symbolic link or file at `.smithers/` or below
+ * cannot send a write or a removal outside the checkout.
+ */
+const refuseIndirection = async (checkout: string, display: string, relative: string): Promise<void> => {
+  const components = [".smithers", ...relative.split("/")]
+  for (let index = 0; index < components.length; index++) {
+    const path = components.slice(0, index + 1).join("/")
+    const stats = await Fs.lstat(NodePath.join(checkout, ...components.slice(0, index + 1))).catch(() => undefined)
+    if (stats === undefined) return
+    if (index === components.length - 1 ? stats.isFile() : stats.isDirectory()) continue
+    throw new MountError({
+      code: "mount_overlay_collision",
+      message: `overlay file .smithers/${relative} would be laid through ${path} in ${display}, which is a ${
+        stats.isSymbolicLink() ? "symbolic link" : stats.isDirectory() ? "directory" : "file"
+      }; change upstream with a patch instead`
+    })
+  }
+}
+
+/**
  * Lays the overlay over the checkout's `.smithers/`: copies new and changed
  * files, removes files an earlier lay placed that the overlay no longer has,
  * and refuses before writing anything when a destination holds an edit.
@@ -349,6 +373,9 @@ const lay = async (
   const tracked = new Set(
     (await git(checkout, ["ls-files", "-z", "--", ".smithers"], options)).split("\0").filter(Boolean)
   )
+  for (const relative of new Set([...Object.keys(previous), ...files.keys()])) {
+    await refuseIndirection(checkout, display, relative)
+  }
   const laid: Record<string, string> = {}
   const sources = new Map<string, Buffer>()
   for (const [relative, source] of files) {
@@ -402,13 +429,22 @@ const patchesOf = async (overlayRoot: string, name: string, mount: MountDeclarat
 
 const identity = ["-c", "user.name=Smithers", "-c", "user.email=mount@smithers.invalid", "-c", "commit.gpgsign=false"]
 
-/** Checks out `base` and commits each patch on top of it; returns the new head. */
+/** The first ten items, joined, and how many more there are. */
+const listed = (items: ReadonlyArray<string>): string =>
+  `${items.slice(0, 10).join(", ")}${items.length > 10 ? `, and ${items.length - 10} more` : ""}`
+
+/**
+ * Checks out `base` and commits each patch on top of it; returns the new
+ * head. An existing checkout must hold no edits and no commits beyond the
+ * `materialized` head its receipt names.
+ */
 const checkout = async (
   root: string,
   repository: string,
   base: string,
   overlayRoot: string,
   patches: ReadonlyArray<{ readonly path: string }>,
+  materialized: string | undefined,
   options: Options
 ): Promise<string> => {
   if (!(await isFile(NodePath.join(root, ".git", "HEAD")))) {
@@ -417,15 +453,28 @@ const checkout = async (
     await git(root, ["remote", "add", "origin", repository], options)
   } else {
     await git(root, ["remote", "set-url", "origin", repository], options)
+    const location = posix(NodePath.relative(overlayRoot, root))
     const status = await git(root, ["status", "--porcelain", "--untracked-files=all"], options)
     const edited = status.split("\n").filter(Boolean).map((line) => line.slice(3))
     if (edited.length > 0) {
       throw new MountError({
         code: "mount_dirty",
-        message: `re-materializing would discard edits in ${posix(NodePath.relative(overlayRoot, root))}: ${
-          edited.slice(0, 10).join(", ")
-        }${edited.length > 10 ? `, and ${edited.length - 10} more` : ""}; save them as a patch or discard them`
+        message: `re-materializing would discard edits in ${location}: ${
+          listed(edited)
+        }; save them as a patch or discard them`
       })
+    }
+    if (materialized !== undefined) {
+      const log = await git(root, ["log", "--format=%h %s", "HEAD", "--not", materialized], options)
+      const commits = log.split("\n").filter(Boolean)
+      if (commits.length > 0) {
+        throw new MountError({
+          code: "mount_dirty",
+          message: `re-materializing would drop commits in ${location} on top of ${short(materialized)}: ${
+            listed(commits)
+          }; push them or save them as a patch, then reset the checkout to ${short(materialized)}`
+        })
+      }
     }
   }
   await Fs.mkdir(NodePath.join(root, ".git", "info"), { recursive: true })
@@ -500,14 +549,17 @@ export const materialize = async (overlayRoot: string, name: string, options: Op
   const patches = await patchesOf(overlayRoot, name, mount)
   const files = await overlayFiles(overlayRoot, name, mounts)
   const receipt = await readReceipt(root)
+  // Commits made in the checkout on top of the materialized head keep it current.
   const current = receipt !== undefined &&
     receipt.repository === mount.repository &&
     receipt.base === base &&
     JSON.stringify(receipt.patches) === JSON.stringify(patches) &&
-    (await git(root, ["rev-parse", "HEAD"], options).then((head) => head.trim(), () => undefined)) === receipt.head
+    await git(root, ["merge-base", "--is-ancestor", receipt.head, "HEAD"], options).then(() => true, () => false)
   let head: string
   try {
-    head = current ? receipt.head : await checkout(root, mount.repository, base, overlayRoot, patches, options)
+    head = current
+      ? receipt.head
+      : await checkout(root, mount.repository, base, overlayRoot, patches, receipt?.head, options)
   } catch (cause) {
     if (cause instanceof GitFailure) throw new MountError({ code: "mount_fetch_failed", message: cause.message })
     throw cause

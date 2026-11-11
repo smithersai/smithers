@@ -281,6 +281,58 @@ describe("a mounted overlay", () => {
     expect(await read(checkout, "src/value.txt")).toBe("two\n")
   })
 
+  it("keeps commits made in the checkout, and refuses to drop them when the pin moves", async () => {
+    const source = await upstream()
+    const root = await overlay(source.root, { up: { ref: source.first } })
+    const { workspace: checkout } = await Mount.resolveWorkspace(root, silent)
+    await write(checkout, { "README.md": "my work\n" })
+    await git(checkout, ["-c", "user.name=Me", "-c", "user.email=me@example.invalid", "commit", "-qam", "my work"])
+    const work = await git(checkout, ["rev-parse", "HEAD"])
+
+    await Mount.resolveWorkspace(root, silent)
+    expect(await git(checkout, ["rev-parse", "HEAD"])).toBe(work)
+    expect(await read(checkout, "README.md")).toBe("my work\n")
+
+    await write(root, { ".smithers/config.ts": configFile(source.root, { up: { ref: source.second } }) })
+    const error = await mountError(Mount.resolveWorkspace(root, silent))
+    expect(error.code).toBe("mount_dirty")
+    expect(error.message).toContain("my work")
+    expect(await git(checkout, ["rev-parse", "HEAD"])).toBe(work)
+
+    await git(checkout, ["reset", "--quiet", "--hard", source.first])
+    await Mount.resolveWorkspace(root, silent)
+    expect(await git(checkout, ["rev-parse", "HEAD"])).toBe(source.second)
+  })
+
+  it.each(
+    [
+      ["a symbolic link at .smithers", ".smithers", "link"],
+      ["a symbolic link under .smithers", ".smithers/check", "link"],
+      ["a file at .smithers", ".smithers", "file"],
+      ["a directory at a laid file", ".smithers/WORKSPACE.ts", "directory"]
+    ] as const
+  )("refuses to lay the overlay through %s that upstream tracks", async (_, path, kind) => {
+    const source = await upstream()
+    const tracked = NodePath.join(source.root, ...path.split("/"))
+    await Fs.mkdir(NodePath.dirname(tracked), { recursive: true })
+    // The link points from the checkout at `<overlay>/.mounts/up` to `<overlay>/victim`.
+    const target = NodePath.posix.join(...path.split("/").map(() => ".."), "..", "victim")
+    if (kind === "link") await Fs.symlink(target, tracked)
+    else if (kind === "file") await Fs.writeFile(tracked, "upstream\n")
+    else await write(tracked, { "upstream.txt": "upstream\n" })
+    await git(source.root, ["add", "-A"])
+    await git(source.root, ["commit", "--quiet", "--no-verify", "-m", "track .smithers"])
+    const pin = await git(source.root, ["rev-parse", "HEAD"])
+    const root = await overlay(source.root, { up: { ref: pin } })
+    await Fs.mkdir(NodePath.join(root, "victim", "check"), { recursive: true })
+
+    const error = await mountError(Mount.resolveWorkspace(root, silent))
+    expect(error.code).toBe("mount_overlay_collision")
+    expect(error.message).toContain(path)
+    expect(await Fs.readdir(NodePath.join(root, "victim"))).toEqual(["check"])
+    expect(await Fs.readdir(NodePath.join(root, "victim", "check"))).toEqual([])
+  })
+
   it("re-lays overlay edits and deletions, and refuses to overwrite an edited mounted copy", async () => {
     const source = await upstream()
     const root = await overlay(source.root, { up: { ref: source.first } }, {

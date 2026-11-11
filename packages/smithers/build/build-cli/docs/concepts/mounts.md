@@ -156,13 +156,16 @@ merge and delete the patch.
 
 Materializing never discards work silently:
 
-- Edits to upstream files in the checkout survive every command while the
-  materialized commit and the patches hold still. A command that would check
-  out a new base fails with `mount_dirty` and lists the edited paths.
+- Edits to upstream files in the checkout, and commits on top of the
+  materialized commit, survive every command while the base and the patches
+  hold still. A command that would check out a new base fails with
+  `mount_dirty` and lists the edited paths or the commits it would drop. Push
+  or save the commits, then reset the checkout to the materialized commit.
 - A laid `.smithers/` file edited in the checkout fails the next lay with
   `mount_overlay_edited`. Edit the overlay, not the copy.
-- An overlay file that would replace a file upstream tracks fails with
-  `mount_overlay_collision`. Change upstream files with a patch.
+- An overlay file that would replace a file upstream tracks, or be laid
+  through a symbolic link or file upstream tracks at `.smithers/` or below,
+  fails with `mount_overlay_collision`. Change upstream files with a patch.
 
 ## Several mounts in one overlay
 
