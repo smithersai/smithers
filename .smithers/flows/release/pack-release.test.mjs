@@ -10,7 +10,7 @@ import test from "node:test"
 import { gunzipSync } from "node:zlib"
 import { pathToFileURL } from "node:url"
 import { parse, stringify } from "yaml"
-import { assertExportTargets, assertPackedExportTargets } from "./packed-export-targets.mjs"
+import { assertExportTargets, assertPackedExportTargets, isLocalSecret } from "./packed-export-targets.mjs"
 import {
   assertEffectPins,
   effectDeclarations,
@@ -813,6 +813,51 @@ test("the real staging and tarball retain authored template config and exclude r
     // The import closure beside .smithers is retained too.
     assert.ok(entries.includes("package/template/default/PACKAGE.ts"))
     assert.ok(entries.includes("package/template/default/TOOLS.ts"))
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+const localSecrets = [".env", ".env.local", ".env.production", ".npmrc", ".netrc", ".pypirc", "server.pem", "signing.key", "client.p12", "client.pfx", "id_rsa", "id_ed25519"]
+const authoredEnvironment = [".env.example", ".env.local.example", ".env.sample", ".env.template", "id_ed25519.pub"]
+
+test("isLocalSecret names local credentials and admits authored environment examples", () => {
+  for (const name of localSecrets) assert.equal(isLocalSecret(`package/docs/${name}`), true, name)
+  for (const name of authoredEnvironment) assert.equal(isLocalSecret(`package/docs/${name}`), false, name)
+  assert.equal(isLocalSecret(["docs", ".env"].join("\\")), true)
+})
+
+test("ignored local credentials under a published directory reach neither the stage nor the real tarball", async () => {
+  // The platform-node manifest publishes its whole docs/ directory this way.
+  const directory = await mkdtemp(join(tmpdir(), "smithers-pack-secrets-"))
+  try {
+    const source = join(directory, "source")
+    const staged = join(directory, "staged")
+    await mkdir(join(source, "docs/nested"), { recursive: true })
+    await writeFile(join(source, "docs/index.md"), "# Docs\n")
+    for (const name of [...localSecrets, ...authoredEnvironment]) await writeFile(join(source, "docs/nested", name), "FIXTURE_SECRET=1\n")
+    const manifest = { name: "smithers-pack-secret-fixture", version: "1.0.0", files: ["docs/"], publishConfig: { exports: { "./package.json": "./package.json" } } }
+    await writeFile(join(source, "package.json"), JSON.stringify(manifest))
+    await stagePackage(source, staged, manifest)
+    for (const name of localSecrets) assert.equal(existsSync(join(staged, "docs/nested", name)), false, name)
+    const packed = JSON.parse(execFileSync("pnpm", ["pack", "--json", "--config.ignore-scripts=true", "--pack-destination", directory], { cwd: staged, encoding: "utf8" }))
+    const file = resolve(directory, packed[0]?.filename ?? packed.filename)
+    assert.deepEqual(assertPackedExportTargets(file), { name: manifest.name, literalTargets: 1 })
+    const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" }).trim().split("\n")
+    assert.ok(entries.includes("package/docs/index.md"))
+    for (const name of authoredEnvironment) assert.ok(entries.includes(`package/docs/nested/${name}`), name)
+    assert.deepEqual(entries.filter((entry) => isLocalSecret(entry)), [])
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test("the final archive check refuses a tarball that carries a local credential", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smithers-packed-secret-"))
+  try {
+    const packageRoot = join(directory, "package")
+    await mkdir(join(packageRoot, "docs"), { recursive: true })
+    await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "secret-entry", exports: { "./package.json": "./package.json" } }))
+    await writeFile(join(packageRoot, "docs/.env"), "FIXTURE_SECRET=1\n")
+    const tarball = join(directory, "fixture.tgz")
+    execFileSync("tar", ["-czf", tarball, "-C", directory, "package"])
+    assert.throws(() => assertPackedExportTargets(tarball), /Local credential files package\/docs\/\.env in fixture\.tgz/)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 

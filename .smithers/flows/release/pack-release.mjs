@@ -16,7 +16,7 @@ import { tmpdir } from "node:os"
 import { basename, join, relative, resolve, sep } from "node:path"
 
 import { libraryPackages, packageKey, isMain, repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
-import { assertPackedExportTargets } from "./packed-export-targets.mjs"
+import { assertPackedExportTargets, isLocalSecret } from "./packed-export-targets.mjs"
 import { buildRelease } from "./build-release.mjs"
 import { nativeHelperFiles } from "./release-native-helpers.mjs"
 
@@ -506,12 +506,12 @@ export const assertBuilt = async (packageRoot, manifest, { rebuild = true } = {}
   }
 }
 
-/** Package-declared template trees are authored input, even when configuration is hidden. */
+/** Package-declared template trees are authored input, even when configuration is hidden; local credentials never are. */
 export const copyFilter = (packageRoot, manifest) => (source) => {
   const path = relative(packageRoot, source)
   if (path === "") return true
   const segments = path.split(sep)
-  if (segments.some((segment) => segment === "node_modules" || segment === "coverage" || segment === ".flows") || basename(path).endsWith(".tsbuildinfo")) return false
+  if (segments.some((segment) => segment === "node_modules" || segment === "coverage" || segment === ".flows") || basename(path).endsWith(".tsbuildinfo") || isLocalSecret(path)) return false
   const configAt = segments.indexOf(".smithers")
   if (configAt === -1) return true
   const prefix = segments.slice(0, configAt).join("/")
