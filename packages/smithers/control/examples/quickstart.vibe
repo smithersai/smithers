@@ -1,0 +1,50 @@
+import { Control } from "@smthrs/control/Control"
+import type * as ControlRuntime from "@smthrs/control/ControlRuntime"
+import * as TestControl from "@smthrs/control/test/TestControl"
+
+/** One flow this plane may be asked to plan. */
+export const Deploy: ControlRuntime.MemoryFlow = {
+  flowId: "quickstart/Deploy",
+  description: "Deploys one build",
+  deployClass: true,
+  envelope: {
+    capabilities: ["process:spawn"],
+    flows: [],
+    budget: { milliseconds: 60_000 }
+  }
+}
+
+/** Plans the flow, parks, approves, launches, retries, lists, and replays. */
+export effect function quickstart() {
+  const control = try Control
+  const card = try control.plan({ flowId: "quickstart/Deploy", input: { build: "v1.4.0" } })
+
+  // The exact plan, digest, envelope, and key every launch attempt resubmits.
+  const launch = {
+    _tag: "Plan" as const,
+    planId: card.planId,
+    digest: card.digest,
+    envelope: card.envelope,
+    idempotencyKey: "deploy:v1.4.0"
+  }
+
+  const parked = try control.run(launch)
+  try control.approve(card.approval)
+  const accepted = try control.run(launch)
+  const replayed = try control.run(launch)
+
+  const listed = try control.list({ _tag: "runs", filters: {} })
+  const runs = listed._tag === "runs" ? listed.items : []
+  const events = try Stream.runCollect(
+    Stream.map(control.watch({ runId: runs[0]!.runId, follow: false }), (event) => event.kind)
+  )
+
+  return { parked, accepted, replayed, runs, events: [...events] }
+}
+
+/** The same program over the in-memory stack: no database and no engine. */
+export effect function main() {
+  provide TestControl.layer({ flows: [Deploy], now: () => 0 }) {
+    return try quickstart()
+  }
+}

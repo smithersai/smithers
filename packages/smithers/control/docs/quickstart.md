@@ -9,7 +9,9 @@ This quickstart drives one plan through the whole gate: a plan card, a refused
 launch, an approval, an accepted launch, a listing, and a replay of the run's
 journal. The `Control` service is the production one. Only its collaborators
 are in memory, so the program is deterministic, needs no database, and starts
-no real work.
+no real work. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 By the end you will have seen the two answers that make the control plane
 usable from a script: a `Receipt` that says what happened, and a `ControlEvent`
@@ -150,6 +152,70 @@ Four things worth naming, because each is a promise the plane keeps everywhere:
   durable rows. `control.run.pending` is there because this composition's
   executor declined the launch, so the plane released the run rather than
   claiming to drive it. See [Journal projections](./concepts/projections.md).
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the program is an
+`effect` function: `try` runs each control call where the TypeScript writes
+`yield*`, and a `provide` block supplies `TestControl.layer` instead of
+`Effect.provide`. The receipts, the listing, and the replayed events are the
+ones above.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Control } from "@smthrs/control/Control"
+import type * as ControlRuntime from "@smthrs/control/ControlRuntime"
+import * as TestControl from "@smthrs/control/test/TestControl"
+
+/** One flow this plane may be asked to plan. */
+export const Deploy: ControlRuntime.MemoryFlow = {
+  flowId: "quickstart/Deploy",
+  description: "Deploys one build",
+  deployClass: true,
+  envelope: {
+    capabilities: ["process:spawn"],
+    flows: [],
+    budget: { milliseconds: 60_000 }
+  }
+}
+
+/** Plans the flow, parks, approves, launches, retries, lists, and replays. */
+export effect function quickstart() {
+  const control = try Control
+  const card = try control.plan({ flowId: "quickstart/Deploy", input: { build: "v1.4.0" } })
+
+  // The exact plan, digest, envelope, and key every launch attempt resubmits.
+  const launch = {
+    _tag: "Plan" as const,
+    planId: card.planId,
+    digest: card.digest,
+    envelope: card.envelope,
+    idempotencyKey: "deploy:v1.4.0"
+  }
+
+  const parked = try control.run(launch)
+  try control.approve(card.approval)
+  const accepted = try control.run(launch)
+  const replayed = try control.run(launch)
+
+  const listed = try control.list({ _tag: "runs", filters: {} })
+  const runs = listed._tag === "runs" ? listed.items : []
+  const events = try Stream.runCollect(
+    Stream.map(control.watch({ runId: runs[0]!.runId, follow: false }), (event) => event.kind)
+  )
+
+  return { parked, accepted, replayed, runs, events: [...events] }
+}
+
+/** The same program over the in-memory stack: no database and no engine. */
+export effect function main() {
+  provide TestControl.layer({ flows: [Deploy], now: () => 0 }) {
+    return try quickstart()
+  }
+}
+```
 
 ## Next steps
 

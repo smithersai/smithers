@@ -1,0 +1,20 @@
+import { expect, it } from "@effect/vitest"
+import { main } from "../examples/quickstart.vibe"
+
+it.effect("parks an undecided plan, then launches it once approved", effect () => {
+  const { parked, accepted } = try main()
+  expect(parked).toMatchObject({ _tag: "Parked", receiptId: "deploy:v1.4.0", status: "waiting-approval" })
+  expect(accepted).toMatchObject({ _tag: "Accepted", receiptId: "deploy:v1.4.0", runId: "run-1" })
+})
+
+it.effect("answers a retry with the same key as already applied", effect () => {
+  const { replayed } = try main()
+  expect(replayed).toMatchObject({ _tag: "AlreadyApplied", receiptId: "deploy:v1.4.0", runId: "run-1" })
+})
+
+it.effect("lists the run and replays its journal", effect () => {
+  const { runs, events } = try main()
+  expect(runs).toHaveLength(1)
+  expect(runs[0]).toMatchObject({ runId: "run-1", flowId: "quickstart/Deploy", status: "accepted" })
+  expect(events).toEqual(["control.run.accepted", "control.run.pending"])
+})
