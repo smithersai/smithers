@@ -1,0 +1,15 @@
+import { expect, it } from "@effect/vitest"
+import { gate, record } from "../examples/quickstart.vibe"
+
+it.effect("passes the gate when the run matches its baseline", effect () => {
+  const baseline = try record("Hello")
+  const { exitCode, summary, report } = try gate(baseline, "Hello")
+  expect(exitCode).toBe(0)
+  expect(summary).toBe("passed")
+  expect(report).toMatch(/^# Evaluation report: greetings\n/)
+})
+
+it.effect("fails the gate with exit code 1 when a score drops", effect () => {
+  const baseline = try record("Hello")
+  expect((try gate(baseline, "Hi")).exitCode).toBe(1)
+})

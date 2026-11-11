@@ -6,7 +6,9 @@ description: "Declare a fixed suite, run it, record a baseline, and gate the nex
 This tutorial walks one complete evaluation loop. You declare a suite for a
 greeting flow, run it, record the scores as a baseline, and gate a later run
 against that baseline. By the end you have a script that exits 0 while the
-flow behaves and 1 when a score drops.
+flow behaves and 1 when a score drops. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same loop as Effect
+code.
 
 You need a workspace package with `@smthrs/evals` installed. For setup, see
 [Installation](./installation.md).
@@ -233,6 +235,92 @@ process.exitCode = await Effect.runPromise(program)
 3. Change the executor to answer `Hi` instead of `Hello` and gate again. Both
    cases score 0 at their unchanged step keys, the comparison reports
    nondeterminism, and the script exits 1.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) recording and gating are
+`effect` functions: `try` runs each step where the TypeScript writes `yield*`,
+`throw` fails with the `EvalError`, and `provide CaseExecutor.CaseExecutor = …`
+supplies the executor in place of `Effect.provide(Layer.succeed(…))`. The
+baseline travels as text instead of `baseline.json`, because file access in
+VibeLang goes through Effect's `FileSystem` service, so a test can record and
+gate in one process.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Baseline, CaseExecutor, EvalError, Gate, Regression, Report, Runner, Suite } from "@smthrs/evals"
+import { Binding, Scorer } from "@smthrs/scorers"
+
+const greet = { name: "greet" }
+
+const polite = Scorer.make({
+  id: "quickstart/polite",
+  version: "1",
+  name: "polite",
+  score: ({ output }) => succeed({ score: String(output).startsWith("Hello") ? 1 : 0 })
+})
+
+/** The scorer applies to the greeting target. */
+const bindings = [Binding.make({ scorer: polite, appliesTo: greet })]
+
+/** An executor that answers each case with `greeting` and the case's name. */
+const executor = (greeting: string) =>
+  CaseExecutor.make((suiteCase) =>
+    succeed({
+      output: `${greeting}, ${(suiteCase.input as { readonly name: string }).name}`,
+      stepKey: suiteCase.name,
+      latencyMs: 0,
+      target: greet
+    })
+  )
+
+/** Declares the suite and runs it through whichever executor is provided. */
+effect function runSuite() {
+  const suite = try Suite.make({
+    name: "greetings",
+    cases: [
+      { name: "ada", input: { name: "Ada" }, expected: "Hello, Ada" },
+      { name: "grace", input: { name: "Grace" }, expected: "Hello, Grace" }
+    ],
+    bindings,
+    concurrency: 2
+  })
+  return try Runner.run(suite, { runId: "quickstart-1", at: "2026-01-01T00:00:00.000Z" })
+}
+
+/**
+ * Records the run as baseline text, refusing when any case did not finish.
+ * The package's plain functions are TypeScript that declares no `@throws`, so
+ * effect code calls them through `Effect.try`.
+ */
+export effect function record(greeting: string) {
+  provide CaseExecutor.CaseExecutor = executor(greeting) {
+    const run = try runSuite()
+    const failures = run.cases.filter((result) => result.error !== undefined)
+    if (failures.length > 0) {
+      throw new EvalError.EvalError({
+        code: "executor",
+        message: `Refusing to record a baseline: ${failures.length} case(s) did not finish`
+      })
+    }
+    const baseline = try Baseline.fromRun(run)
+    return try Effect.try(() => Baseline.write(baseline))
+  }
+}
+
+/** Gates a new run against recorded baseline text: the report, summary and CI exit code. */
+export effect function gate(baseline: string, greeting: string) {
+  provide CaseExecutor.CaseExecutor = executor(greeting) {
+    const run = try runSuite()
+    const comparison = try Regression.compare(try Baseline.load(baseline), run)
+    const verdict = try Gate.check(comparison, { mean: 1 })
+    const { exitCode, summary } = try Effect.try(() => Gate.ciGrade(verdict))
+    return { report: try Effect.try(() => Report.markdown(comparison)), summary, exitCode }
+  }
+}
+```
 
 From here: [author a larger suite](./guides/author-a-suite.md), or read how
 [step keys decide what a comparison reports](./concepts/step-keys.md).

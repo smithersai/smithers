@@ -1,0 +1,70 @@
+import { Baseline, CaseExecutor, EvalError, Gate, Regression, Report, Runner, Suite } from "@smthrs/evals"
+import { Binding, Scorer } from "@smthrs/scorers"
+
+const greet = { name: "greet" }
+
+const polite = Scorer.make({
+  id: "quickstart/polite",
+  version: "1",
+  name: "polite",
+  score: ({ output }) => succeed({ score: String(output).startsWith("Hello") ? 1 : 0 })
+})
+
+/** The scorer applies to the greeting target. */
+const bindings = [Binding.make({ scorer: polite, appliesTo: greet })]
+
+/** An executor that answers each case with `greeting` and the case's name. */
+const executor = (greeting: string) =>
+  CaseExecutor.make((suiteCase) =>
+    succeed({
+      output: `${greeting}, ${(suiteCase.input as { readonly name: string }).name}`,
+      stepKey: suiteCase.name,
+      latencyMs: 0,
+      target: greet
+    })
+  )
+
+/** Declares the suite and runs it through whichever executor is provided. */
+effect function runSuite() {
+  const suite = try Suite.make({
+    name: "greetings",
+    cases: [
+      { name: "ada", input: { name: "Ada" }, expected: "Hello, Ada" },
+      { name: "grace", input: { name: "Grace" }, expected: "Hello, Grace" }
+    ],
+    bindings,
+    concurrency: 2
+  })
+  return try Runner.run(suite, { runId: "quickstart-1", at: "2026-01-01T00:00:00.000Z" })
+}
+
+/**
+ * Records the run as baseline text, refusing when any case did not finish.
+ * The package's plain functions are TypeScript that declares no `@throws`, so
+ * effect code calls them through `Effect.try`.
+ */
+export effect function record(greeting: string) {
+  provide CaseExecutor.CaseExecutor = executor(greeting) {
+    const run = try runSuite()
+    const failures = run.cases.filter((result) => result.error !== undefined)
+    if (failures.length > 0) {
+      throw new EvalError.EvalError({
+        code: "executor",
+        message: `Refusing to record a baseline: ${failures.length} case(s) did not finish`
+      })
+    }
+    const baseline = try Baseline.fromRun(run)
+    return try Effect.try(() => Baseline.write(baseline))
+  }
+}
+
+/** Gates a new run against recorded baseline text: the report, summary and CI exit code. */
+export effect function gate(baseline: string, greeting: string) {
+  provide CaseExecutor.CaseExecutor = executor(greeting) {
+    const run = try runSuite()
+    const comparison = try Regression.compare(try Baseline.load(baseline), run)
+    const verdict = try Gate.check(comparison, { mean: 1 })
+    const { exitCode, summary } = try Effect.try(() => Gate.ciGrade(verdict))
+    return { report: try Effect.try(() => Report.markdown(comparison)), summary, exitCode }
+  }
+}
