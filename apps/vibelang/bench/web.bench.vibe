@@ -3,7 +3,7 @@ import { scene, given, expect, role, text, inside, expectAll, all } from "foldki
 import { newClient } from "../src/core/conversation.vibe"
 import { init, Message, type Model, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
-import { blocks } from "../src/web/markdown.vibe"
+import { blocks, toHtml } from "../src/web/markdown.vibe"
 import { transcript } from "./fixtures.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
@@ -37,4 +37,36 @@ it("streamed Markdown", async ({ bench }) => {
     assert(blocks(input)).toEqual([{ kind: "prose", text: "Use `service`." }, { kind: "code", language: "vibe", text: "service Users {}" }, { kind: "prose", text: "Done." }])
   }).run(quick)
   await runPromise(artifact("markdown", "Vitest built-in bench; parse a paragraph/code/paragraph answer; compare complete blocks.", ["Small fixed answer; rendering is measured separately."], measurement))
+})
+
+// Every block the compiler knows, as the wiki's build renders it: a fixed document, so coverage never depends on which
+// pages the wiki happens to contain.
+const DOCUMENT = [
+  "# Benchmarks `pnpm`", "",
+  "| Gate | Command |", "| --- | :-: |", "| unit | `a | b` |", "| **bench** | [run](gates.md) |", "",
+  "- **VL-5.** No new", "  dependency without approval.", "- [** **](#top)",
+  "1. [bad](javascript:alert(1))", "2. second", "",
+  "> quoted", "> twice", "",
+  "```ts", "const x = 1", "```",
+  "Plain text", "continues.",
+].join("\n")
+const HTML = [
+  '<h1 class="sui-md-heading sui-md-h1" id="benchmarks-pnpm">Benchmarks <code class="sui-md-inline-code">pnpm</code></h1>',
+  '<table class="sui-table sui-md-table"><thead class="sui-md-thead"><tr class="sui-md-tr"><th class="sui-md-th">Gate</th><th class="sui-md-th">Command</th></tr></thead>'
+    + '<tbody class="sui-md-tbody"><tr class="sui-md-tr"><td class="sui-md-td">unit</td><td class="sui-md-td"><code class="sui-md-inline-code">a | b</code></td></tr>'
+    + '<tr class="sui-md-tr"><td class="sui-md-td"><strong class="sui-md-strong">bench</strong></td><td class="sui-md-td"><a class="sui-md-link" href="/wiki/gates">run</a></td></tr></tbody></table>',
+  '<ul class="sui-md-list"><li class="sui-md-li" id="vl-5"><strong class="sui-md-strong">VL-5.</strong> No new dependency without approval.</li>'
+    + '<li class="sui-md-li"><a class="sui-md-link" href="#top">#top</a></li></ul>',
+  '<ol class="sui-md-list"><li class="sui-md-li">bad)</li><li class="sui-md-li">second</li></ol>',
+  '<blockquote class="sui-md-blockquote">quoted twice</blockquote>',
+  '<pre class="sui-md-pre"><code class="sui-md-code">const x = 1</code></pre>',
+  '<p class="sui-md-p">Plain text\ncontinues.</p>',
+].join("\n")
+
+it("wiki Markdown: headings, tables, lists, quotes, code and links", async ({ bench }) => {
+  const resolve = (href: string) => href.endsWith(".md") ? `/wiki/${href.slice(0, -3)}` : href
+  const measurement = await workload(bench, "markdown-compile", "sync", () => {
+    assert(toHtml(DOCUMENT, resolve)).toBe(HTML)
+  }).run(quick)
+  await runPromise(artifact("markdown-compile", "Vitest built-in bench; compile and render to HTML, as the wiki's build does, one fixed 21-line document with every block the compiler knows: heading with inline code, a table whose code cell holds a pipe, a list item continued on the next line with a ruling anchor, a link whose label has no visible text, a dashed list followed by a numbered one, an unsafe link left as text, a quote, a fence and a two-line paragraph. Exact HTML compared every call.", ["Fixed small document; the build-time wiki renders about 60 pages once per build. String rendering only; Foldkit rendering of the same tree is measured in the view workloads."], measurement))
 })
