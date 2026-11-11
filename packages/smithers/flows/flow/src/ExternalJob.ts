@@ -599,11 +599,12 @@ export const make = <
   const call: typeof flow.child = (payload) => flow.child(payload)
   /**
    * The first generation, done inside the calling step: `None` unless it
-   * exits within `waitMs` and collects, when it answers what it collected.
-   * Anything else (a failure, a lost generation, one still running) is the
-   * job's to decide, under the same key. Interrupted, it stops the work only
-   * when the caller's run was cancelled: a host that stops leaves it to the
-   * step's next attempt, which asks for the same key again.
+   * starts, exits and collects within `waitMs`, when it answers what it
+   * collected. Anything else (a failure, a lost generation, one still
+   * running, a provider call still going) is the job's to decide, under the
+   * same key. Interrupted, it stops the work only when the caller's run was
+   * cancelled: a host that stops leaves it to the step's next attempt, which
+   * asks for the same key again.
    */
   const inline = <R>(
     operations: Operations<State["input"], H["Type"], A["Type"], E["Type"], R>,
@@ -625,10 +626,9 @@ export const make = <
           if (status._tag === "Exited") return Option.some(yield* operations.collect(started, key, status))
           if (status._tag === "Lost") return Option.none<A["Type"]>()
           const now = Math.floor(yield* Clock.currentTimeMillis)
-          if (now >= until) return Option.none<A["Type"]>()
           // The next read is due on the job's schedule from this one's start: at once after a read that waited that
-          // long, as one that can wait does, and after the rest of the delay otherwise.
-          const dueAt = Math.min(until, begunAt + probeDelay(probe))
+          // long, as one that can wait does, and after the rest of the delay otherwise. The wait's end stops the loop.
+          const dueAt = begunAt + probeDelay(probe)
           yield* Effect.sleep(Math.max(0, dueAt - now))
         }
       })
@@ -640,6 +640,9 @@ export const make = <
           : operations.abandon(payload, key)
       return yield* attempt.pipe(
         Effect.catch(() => Effect.succeedNone),
+        // No provider call holds the step past the wait: a `start`, `status` or `collect` still going then is the
+        // job's, which asks for the same key, and `start` creates or gets it.
+        (bounded) => Effect.raceFirst(bounded, Effect.as(Effect.sleep(waitMs), Option.none<A["Type"]>())),
         Effect.onInterrupt(() =>
           Option.isSome(caller) && caller.value.interrupted
             ? stop().pipe(

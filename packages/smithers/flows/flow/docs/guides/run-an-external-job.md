@@ -90,7 +90,9 @@ generation uses (`<execution id>#g1`): the step's run never parks for it, and
 no execution of the job is made. Anything else, a failure, a lost generation or
 work still running when the wait is over, goes to the job's own execution under
 the same key, which the step then waits on as `.execute` does; the provider
-answers the handle it already gave and starts nothing. A step asked again after
+answers the handle it already gave and starts nothing. The wait bounds every
+provider call: a `start`, read or `collect` still going when it ends is
+interrupted, and the job asks for the same key again. A step asked again after
 a restart starts the same key, or joins the job an earlier attempt handed its
 work to. Interrupted, it cancels the work only when its run was cancelled: a
 host that stops leaves the work to the step's next attempt.

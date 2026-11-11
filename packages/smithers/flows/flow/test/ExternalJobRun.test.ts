@@ -34,18 +34,25 @@ const provider = (options: {
   readonly waitCap?: number
   readonly startFails?: number
   readonly holdStart?: boolean
+  /** How long the first start takes, as a container boots. */
+  readonly slowStart?: number
   readonly abandon?: boolean
   readonly stopFails?: boolean
 }) => {
   const calls: Array<string> = []
   let startFailures = options.startFails ?? 0
+  let slowStart = options.slowStart ?? 0
   const answers = [...(options.answers ?? [])]
   const operations: ExternalJob.Operations<{ readonly value: string }, string, string, string, never> = {
     start: (payload, key) =>
       Effect.suspend(() => {
         calls.push(`start ${key}`)
         if (options.holdStart === true) return Effect.never
-        return startFailures-- > 0 ? Effect.fail("start refused") : Effect.succeed(`handle:${payload.value}`)
+        const takes = slowStart
+        slowStart = 0
+        return startFailures-- > 0
+          ? Effect.fail("start refused")
+          : Effect.as(Effect.sleep(takes), `handle:${payload.value}`)
       }),
     status: (_handle, key, read) =>
       Effect.gen(function*() {
@@ -189,13 +196,13 @@ describe("ExternalJob run", () => {
           yield* TestClock.adjust(100)
         }
         expect(yield* Fiber.join(running)).toBe("collected handle:y")
-        // The step's reads end with a last look at the deadline, 150 ms in; then the job starts the same key and reads on.
+        // The step reads at 0 and 100 ms; at the deadline, 150 ms in, the job starts the same key and reads on.
         expect(p.calls.slice(0, 5)).toEqual([
           "start y#g1",
           "status y#g1 150",
           "status y#g1 50",
-          "status y#g1 0",
-          "start y#g1"
+          "start y#g1",
+          "status y#g1 100"
         ])
         expect(yield* made("y")).toBe(true)
       })
@@ -236,7 +243,7 @@ describe("ExternalJob run", () => {
   })
 
   it.effect("hands work still running when the wait is over to the job, under the same key", () => {
-    // Running through the step's 200 ms and the job's first probe, then exited.
+    // Running through the step's 200 ms and the job's first two probes, then exited.
     const p = provider({
       answers: [{ _tag: "Running" }, { _tag: "Running" }, { _tag: "Running" }, { _tag: "Running" }, {
         _tag: "Exited",
@@ -254,19 +261,59 @@ describe("ExternalJob run", () => {
           yield* TestClock.adjust(100)
         }
         expect(yield* Fiber.join(running)).toBe("collected handle:d")
-        // The step's reads at 0, 100 and 200 ms; then the job starts the same key (the provider answers its handle and
-        // starts nothing), and its probes wait until each next one is due: 100 ms, then 200.
+        // The step's reads at 0 and 100 ms; at 200 the job starts the same key (the provider answers its handle and
+        // starts nothing), and its probes wait until each next one is due: 100 ms, 200, then 400.
         expect(p.calls).toEqual([
           "start d#g1",
           "status d#g1 200",
           "status d#g1 100",
-          "status d#g1 0",
           "start d#g1",
           "status d#g1 100",
           "status d#g1 200",
+          "status d#g1 400",
           "collect d#g1"
         ])
         expect(yield* made("d")).toBe(true)
+      })
+    )
+  })
+
+  it.effect("hands a start still going when the wait is over to the job, which asks for the same key", () => {
+    const p = provider({ slowStart: 5000, answers: [{ _tag: "Exited", exitCode: 0 }] })
+    return on(
+      p,
+      Effect.gen(function*() {
+        const running = yield* Effect.forkChild(
+          Job.run({ value: "s" }, { executionId: "s", operations: p.operations, wait: "200 millis" })
+        )
+        yield* turns
+        yield* TestClock.adjust(200)
+        yield* turns
+        // The step held its drive no longer than its wait: the job has the work, under the same key.
+        expect(yield* made("s")).toBe(true)
+        expect(yield* Fiber.join(running)).toBe("collected handle:s")
+        expect(p.calls).toEqual(["start s#g1", "start s#g1", "status s#g1 100", "collect s#g1"])
+        expect(yield* Clock.currentTimeMillis).toBe(200)
+      })
+    )
+  })
+
+  it.effect("hands a read that ignores its wait to the job at its drive's deadline", () => {
+    const p = provider({ answers: ["hold", { _tag: "Exited", exitCode: 0 }] })
+    return on(
+      p,
+      Effect.gen(function*() {
+        const running = yield* Effect.forkChild(
+          Job.run({ value: "u" }, { executionId: "u", operations: p.operations }).pipe(
+            Effect.provideService(FlowRuntime.DriveDeadline, 150)
+          )
+        )
+        yield* turns
+        yield* TestClock.adjust(150)
+        yield* turns
+        expect(yield* made("u")).toBe(true)
+        expect(yield* Fiber.join(running)).toBe("collected handle:u")
+        expect(p.calls).toEqual(["start u#g1", "status u#g1 150", "start u#g1", "status u#g1 100", "collect u#g1"])
       })
     )
   })
