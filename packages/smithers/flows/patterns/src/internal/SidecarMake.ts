@@ -1,31 +1,22 @@
 /**
- * Run a cheap shadow beside the primary and measure the gap.
- *
- * A sidecar answers one question: would the cheaper model have been good
- * enough? It runs both over the same input, concurrently, and scores them.
- * The shadow is an experiment, so its failure is quarantined and the primary
- * result stands. The primary is not: a sidecar is not a fallback ladder, and a
- * failed primary is a failed run. {@link Escalation} is the pattern for
- * alternatives.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Sidecar`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Sidecar.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
 
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
-import * as Cause from "effect/Cause"
-import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
+import type * as Cause from "effect/Cause"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 /**
  * The declared form of a sidecar.
@@ -145,7 +136,13 @@ const field = (value: unknown, key: string): unknown => (value as Record<string,
 
 // Scores are data an evaluator returned, so a non-finite one is an input
 // fault rather than a declaration fault.
-const scoreRefusal = (primary: number, shadow: number): PatternError | undefined => {
+/**
+ * The refusal for evaluator scores {@link delta} cannot compare, or `undefined`.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const scoreRefusal = (primary: number, shadow: number): PatternError | undefined => {
   if (!Number.isFinite(primary)) {
     return new PatternError({
       code: "invalid_input",
@@ -167,7 +164,13 @@ const scoreRefusal = (primary: number, shadow: number): PatternError | undefined
     })
 }
 
-const measuredDelta = (primary: number, shadow: number): Delta => ({
+/**
+ * The comparison of two finite scores.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const measuredDelta = (primary: number, shadow: number): Delta => ({
   primary,
   shadow,
   difference: Number((primary - shadow).toFixed(12)),
@@ -303,51 +306,5 @@ export const make = <R = never>(options: MakeOptions<R>): SidecarFlow<R> => {
     // own `PatternError`, and whatever a member it called failed with.
     error: Failure.schemaFor([PatternError], [declared.primary, declared.shadow, score]) as typeof Schema.Unknown,
     body: Node.capture({ scores: score !== undefined }, body)
-  })
-}
-
-/**
- * Runs the primary and its shadow concurrently and scores the pair.
- *
- * The shadow's failure, defect included, becomes a quarantined result rather
- * than a run failure. Interruption is not quarantined: a cancelled run is
- * cancelled, and reporting the shadow as merely failed would hide that.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, P, S, E, R, E2, R2, E3 = never, R3 = never>(
-  input: I,
-  options: RuntimeOptions<I, P, S, E, R, E2, R2, E3, R3>
-): Effect.Effect<Result<P, S>, E | E3 | PatternError, R | R2 | R3> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the option object in between must not reach it.
-  const declared = { primary: options.primary, shadow: options.shadow, score: options.score }
-  return Effect.gen(function*() {
-    // The shadow callback is invoked inside `Effect.suspend` so that a factory
-    // that throws before it returns an effect is a defect the quarantine
-    // claims, not one that fails the run before the primary ever starts.
-    const quarantine: Effect.Effect<Shadow<S>, never, R2> = Effect.flatMap(
-      Effect.exit(Effect.suspend(() => declared.shadow(input))),
-      (exit) =>
-        Exit.isSuccess(exit)
-          ? Effect.succeed<Shadow<S>>({ quarantined: false, value: exit.value })
-          // An interrupted shadow means the run itself is being cancelled.
-          // Reporting that as a quarantined experiment would hide the
-          // cancellation, so re-raise it as the interruption it is.
-          : Cause.hasInterrupts(exit.cause)
-          ? Effect.interrupt
-          : Effect.succeed<Shadow<S>>({ quarantined: true, cause: exit.cause })
-    )
-    const [primary, shadow] = yield* Effect.all([declared.primary(input), quarantine] as const, { concurrency: 2 })
-    if (declared.score === undefined || shadow.quarantined) {
-      const reported: Result<P, S> = { primary, shadow }
-      return reported
-    }
-    const scores = yield* declared.score({ primary, shadow: shadow.value })
-    const refusal = scoreRefusal(scores.primary, scores.shadow)
-    if (refusal !== undefined) return yield* Effect.fail(refusal)
-    const reported: Result<P, S> = { primary, shadow, delta: measuredDelta(scores.primary, scores.shadow) }
-    return reported
   })
 }

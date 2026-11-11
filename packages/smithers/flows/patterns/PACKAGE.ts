@@ -144,8 +144,10 @@ const securityReview = Smithers.SecurityReview({
         "src/Supervisor.ts",
         "src/Panel.ts",
         "src/Bounded.ts",
-        "src/Quarantine.ts",
-        "src/Sidecar.ts",
+        "src/Quarantine.vibe",
+        "src/internal/QuarantineMake.ts",
+        "src/Sidecar.vibe",
+        "src/internal/SidecarMake.ts",
         "src/CheckSuite.ts",
         "src/Burndown.ts"
       ]

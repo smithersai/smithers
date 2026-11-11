@@ -1,0 +1,86 @@
+/**
+ * Run a cheap shadow beside the primary and measure the gap.
+ *
+ * A sidecar answers one question: would the cheaper model have been good
+ * enough? It runs both over the same input, concurrently, and scores them.
+ * The shadow is an experiment, so its failure is quarantined and the primary
+ * result stands. The primary is not: a sidecar is not a fallback ladder, and a
+ * failed primary is a failed run. {@link Escalation} is the pattern for
+ * alternatives.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import {
+  measuredDelta,
+  type Result,
+  type RuntimeOptions,
+  scoreRefusal,
+  type Shadow
+} from "./internal/SidecarMake.ts"
+
+export {
+  delta,
+  type Delta,
+  make,
+  type MakeOptions,
+  type Result,
+  type RuntimeOptions,
+  type Scores,
+  type Shadow,
+  type SidecarFlow
+} from "./internal/SidecarMake.ts"
+
+
+/**
+ * Runs the primary and its shadow concurrently and scores the pair.
+ *
+ * The shadow's failure, defect included, becomes a quarantined result rather
+ * than a run failure. Interruption is not quarantined: a cancelled run is
+ * cancelled, and reporting the shadow as merely failed would hide that.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, P, S, E, R, E2, R2, E3 = never, R3 = never>(
+  input: I,
+  options: RuntimeOptions<I, P, S, E, R, E2, R2, E3, R3>
+): Result<P, S>!(E | E3 | PatternError)!(R | R2 | R3) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the option object in between must not reach it.
+  const declared = { primary: options.primary, shadow: options.shadow, score: options.score }
+  return effect {
+    // The shadow callback is invoked inside `suspend` so that a factory that
+    // throws before it returns an effect is a defect the quarantine claims,
+    // not one that fails the run before the primary ever starts.
+    const quarantine: Shadow<S>!!R2 = effect {
+      const outcome = try exit(suspend(() => declared.shadow(input)))
+      if (Exit.isSuccess(outcome)) {
+        const settled: Shadow<S> = { quarantined: false, value: outcome.value }
+        return settled
+      }
+      // An interrupted shadow means the run itself is being cancelled.
+      // Reporting that as a quarantined experiment would hide the
+      // cancellation, so re-raise it as the interruption it is.
+      if (Cause.hasInterrupts(outcome.cause)) return try interrupt
+      const quarantined: Shadow<S> = { quarantined: true, cause: outcome.cause }
+      return quarantined
+    }
+    const [primary, shadow] = try all([declared.primary(input), quarantine] as const, { concurrency: 2 })
+    if (declared.score === undefined || shadow.quarantined) {
+      const reported: Result<P, S> = { primary, shadow }
+      return reported
+    }
+    const scores = try declared.score({ primary, shadow: shadow.value })
+    // The scores are an evaluator's data; reading them in `sync` keeps a
+    // throwing value a defect, as in the generator.
+    const refusal = try sync(() => scoreRefusal(scores.primary, scores.shadow))
+    if (refusal !== undefined) throw refusal
+    const reported: Result<P, S> = { primary, shadow, delta: try sync(() => measuredDelta(scores.primary, scores.shadow)) }
+    return reported
+  }
+}

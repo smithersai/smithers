@@ -1,21 +1,15 @@
 /**
- * Continue-on-failure fan-out.
- *
- * `Node.all` and `Effect.all` fail the join on the first member failure and
- * interrupt the rest, which is right when the members are one unit of work and
- * wrong when they are independent errands. {@link all} isolates a failing
- * member instead: its siblings run to completion and the join returns a record
- * of explicit {@link Succeeded} and {@link Quarantined} outcomes.
- *
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Quarantine`: its types, the outcome refinements,
+ * and `all`, which throws a `PatternError` for a declaration it cannot build.
+ * `Quarantine.vibe` re-exports all of it beside `run` and `settle`, the
+ * pattern's Effect forms.
  *
  * @since 1.0.0
  */
 
 import * as Node from "@smthrs/plan/Node"
-import * as Effect from "effect/Effect"
-import * as Compose from "./internal/Compose.ts"
-import { PatternError } from "./PatternError.ts"
+import type { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
 
 /**
  * What a failing member does to its siblings.
@@ -134,9 +128,22 @@ const outcome = (value: unknown, tag: "Succeeded" | "Quarantined", payload: "val
     data(value, payload) !== undefined
 }
 
-const succeeded = <A>(member: string, value: A): Succeeded<A> => Object.freeze({ _tag: "Succeeded", member, value })
+/**
+ * Shared with `run` in `Quarantine.vibe`.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const succeeded = <A>(member: string, value: A): Succeeded<A> =>
+  Object.freeze({ _tag: "Succeeded", member, value })
 
-const quarantined = <E>(member: string, error: E): Quarantined<E> =>
+/**
+ * Shared with `run` in `Quarantine.vibe`.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const quarantined = <E>(member: string, error: E): Quarantined<E> =>
   Object.freeze({ _tag: "Quarantined", member, error })
 
 // Every refusal is minted once, as a value. `all` throws it, because a
@@ -144,12 +151,24 @@ const quarantined = <E>(member: string, error: E): Quarantined<E> =>
 // FAILS with it, because `PatternError` is in its declared error channel and a
 // caller composing it must be able to claim the refusal with `Effect.catchTag`.
 // A thrown refusal inside `Effect.suspend` would be a defect no handler claims.
-const nonEmptyRefusal = (names: ReadonlyArray<string>): PatternError | undefined =>
+/**
+ * Shared with `run` in `Quarantine.vibe`.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const nonEmptyRefusal = (names: ReadonlyArray<string>): PatternError | undefined =>
   Compose.nonEmptyMembersRefusal("Quarantine", names)
 
 // `"unbounded"` is the declared way to ask for no bound, so only a numeric one
 // is checked.
-const widthRefusal = (concurrency: number | "unbounded"): PatternError | undefined =>
+/**
+ * Shared with `run` in `Quarantine.vibe`.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const widthRefusal = (concurrency: number | "unbounded"): PatternError | undefined =>
   concurrency === "unbounded" ? undefined : Compose.concurrencyRefusal("Quarantine", concurrency)
 
 const nonEmpty = (names: ReadonlyArray<string>): void => {
@@ -202,104 +221,4 @@ export function all(
     ])
   ) as Record<string, Node.Any>
   return Node.all(isolated)
-}
-
-/**
- * Runs a record of effects under the declared failure policy.
- *
- * Under `quarantine` every member runs to completion and a typed failure becomes
- * a {@link Quarantined} entry in the result; no sibling is interrupted on its
- * behalf. A defect and an interruption still propagate: quarantine isolates
- * declared failures, not a broken process. Under `halt` the first failure interrupts the members still in
- * flight and the whole join fails.
- *
- * @category combinators
- * @since 1.0.0
- */
-export function run<A, E, R>(
-  members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
-  options: RuntimeOptions & { readonly policy: "quarantine" }
-): Effect.Effect<Readonly<Record<string, Settled<A, E>>>, PatternError, R>
-export function run<A, E, R>(
-  members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
-  options: RuntimeOptions & { readonly policy: "halt" }
-): Effect.Effect<Readonly<Record<string, A>>, E | PatternError, R>
-export function run<A, E, R>(
-  members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
-  options: RuntimeOptions
-): Effect.Effect<Readonly<Record<string, A | Settled<A, E>>>, E | PatternError, R> {
-  // Snapshots taken at the call, ahead of the suspend: the effect may run
-  // later, and a caller's edit to the record or the option object in between
-  // must not reach it. Own entries only, so a prototype-shaped member name
-  // stays a data property.
-  const declared: Readonly<Record<string, Effect.Effect<A, E, R>>> = Object.fromEntries(Object.entries(members))
-  const policy = options.policy
-  const concurrency = options.concurrency ?? "unbounded"
-  return Effect.suspend((): Effect.Effect<Readonly<Record<string, A | Settled<A, E>>>, E | PatternError, R> => {
-    const names = Object.keys(declared)
-    const refusal = nonEmptyRefusal(names) ?? widthRefusal(concurrency)
-    if (refusal !== undefined) return Effect.fail(refusal)
-    return Effect.map(
-      Effect.forEach(
-        names,
-        (member): Effect.Effect<readonly [string, A | Settled<A, E>], E, R> =>
-          policy === "halt"
-            ? Effect.map(declared[member]!, (value) => [member, value] as const)
-            : Effect.match(declared[member]!, {
-              onFailure: (error): readonly [string, Settled<A, E>] => [member, quarantined(member, error)],
-              onSuccess: (value): readonly [string, Settled<A, E>] => [member, succeeded(member, value)]
-            }),
-        { concurrency }
-      ),
-      (pairs) => Object.fromEntries(pairs) as Readonly<Record<string, A | Settled<A, E>>>
-    )
-  })
-}
-
-/**
- * Turns a joined result into values, failing when any member was quarantined.
- *
- * Use it when the caller wants halt-after-join: every member got its chance to
- * run, and one failure still fails the step.
- *
- * Every entry has to be a complete {@link Succeeded} or {@link Quarantined}
- * envelope. A successful value is nested under `value`, so it can carry any
- * shape, including either complete wire shape, and settles unchanged. Callers
- * do not wrap their values. An entry that is neither envelope, such as a raw
- * success value, fails `PatternError` with code `invalid_input` naming the
- * offending members, and a quarantined entry fails with code `quarantined`.
- * Its cause preserves each member error, including any input the error holds.
- *
- * @category combinators
- * @since 1.0.0
- */
-export const settle = <A, E>(
-  result: Readonly<Record<string, Settled<A, E>>>
-): Effect.Effect<Readonly<Record<string, A>>, PatternError> => {
-  const names = Object.keys(result)
-  const invalid = names.filter((member) => !isQuarantined(result[member]) && !isSucceeded(result[member]))
-  if (invalid.length > 0) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_input",
-        message: `Invalid quarantine outcomes: ${invalid.sort().join(", ")}`
-      })
-    )
-  }
-  const failures = names.filter((member) => isQuarantined(result[member])).sort()
-  if (failures.length > 0) {
-    return Effect.fail(
-      new PatternError({
-        code: "quarantined",
-        message: `Quarantined members: ${failures.join(", ")}`,
-        cause: failures.map((member) => {
-          const entry = result[member] as Quarantined<E>
-          return { member, error: entry.error }
-        })
-      })
-    )
-  }
-  return Effect.succeed(
-    Object.fromEntries(names.map((member) => [member, (result[member] as Succeeded<A>).value]))
-  )
 }

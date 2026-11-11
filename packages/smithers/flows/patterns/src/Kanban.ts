@@ -19,7 +19,7 @@ import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
 import { PatternError } from "./PatternError.ts"
-import * as Quarantine from "./Quarantine.ts"
+import * as Quarantine from "./Quarantine.vibe"
 
 /**
  * One card on the board.

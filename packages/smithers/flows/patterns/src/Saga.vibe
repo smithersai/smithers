@@ -1,0 +1,123 @@
+/**
+ * Forward steps with compensations that unwind in reverse.
+ *
+ * A saga is the answer to "the third call failed and the first two already
+ * changed the world". Each step registers the call that undoes it, and a
+ * failure walks those calls backwards, most recent first.
+ *
+ * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import { type RuntimeOptions, type RuntimeStep, type Settled, stepsRefusal } from "./internal/SagaMake.ts"
+
+export {
+  type Compensated,
+  type Completed,
+  make,
+  type MakeOptions,
+  type OnFailure,
+  type RuntimeOptions,
+  type RuntimeStep,
+  type SagaFlow,
+  type Settled,
+  type Step
+} from "./internal/SagaMake.ts"
+
+
+/**
+ * Runs the forward chain, unwinding completed steps on a failure or an
+ * interruption.
+ *
+ * The policy defaults to `compensate`. Both outcomes are tagged: a chain that
+ * ran to the end returns {@link Completed} with its step values nested under
+ * `values`, and a clean unwind under `compensate` returns
+ * {@link Compensated}.
+ *
+ * Each completed step registers a scope finalizer, so the unwind is LIFO and
+ * runs on interruption as well as on failure. A compensation that fails does
+ * not stop the ones behind it; every failing step id is collected and the run
+ * fails `PatternError { code: "compensation_failed" }` naming them, because
+ * state left dirty outranks the failure that started the unwind. An
+ * interrupted run cannot return that failure, so it logs the failing step ids
+ * at error level and annotates the current span with them instead.
+ *
+ * A compensation that DIES counts as a failed compensation, not as a defect
+ * the run raises: the undo did not happen, so the step belongs in the residue
+ * with the typed failures. This includes a synchronous throw while constructing
+ * the compensation effect. Letting the defect escape would lose both the
+ * residue and the failure that started the unwind.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, A, E, R, E2, R2>(
+  input: I,
+  options: RuntimeOptions<I, A, E, R, E2, R2>
+): Settled<A, E>!(E | PatternError)!(R | R2) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the array, a step record, or the option object in between must
+  // not reach it.
+  const steps: ReadonlyArray<RuntimeStep<I, A, E, R, E2, R2>> = options.steps.map((step) => ({
+    id: step.id,
+    action: step.action,
+    compensation: step.compensation
+  }))
+  const policy = options.onFailure ?? "compensate"
+  return effect {
+    const refusal = try sync(() => stepsRefusal(steps))
+    if (refusal !== undefined) throw refusal
+    const residue: Array<{ readonly id: string; readonly error: unknown }> = []
+    // An interrupted saga never reaches `settle`, so the failed undos would be
+    // lost. Registered first, this finalizer runs after every compensation and
+    // reports them; it logs step ids only, never values or errors.
+    const reportInterrupted = effect (outcome: Exit.Exit<unknown, unknown>) => {
+      if (residue.length === 0 || !Exit.hasInterrupts(outcome)) return
+      const ids = residue.map((entry) => entry.id).sort((left, right) => left.localeCompare(right))
+      try annotateCurrentSpan("saga.compensation_failed", ids)
+      try logError(`Saga compensation failed on interruption for: ${ids.join(", ")}`)
+    }
+    const forward = effect {
+      if (policy !== "fail") try addFinalizer(reportInterrupted)
+      const completed = new Map<string, A>()
+      for (const step of steps) {
+        const value = try step.action({
+          input,
+          completed: Object.fromEntries(completed)
+        })
+        completed.set(step.id, value)
+        if (policy === "fail") continue
+        try addFinalizer(effect (outcome) => {
+          if (Exit.isSuccess(outcome)) return
+          const undone = try exit(suspend(() => step.compensation({ id: step.id, input, value })))
+          if (Exit.isFailure(undone)) residue.push({ id: step.id, error: Cause.squash(undone.cause) })
+        })
+      }
+      return Object.fromEntries(completed)
+    }
+    const outcome = try exit(scoped(forward))
+    const failure = Exit.findErrorOption(outcome)
+    if (residue.length > 0) {
+      const sorted = [...residue].sort((left, right) => left.id.localeCompare(right.id))
+      throw new PatternError({
+        code: "compensation_failed",
+        message: `Saga compensation failed for: ${sorted.map((entry) => entry.id).join(", ")}`,
+        cause: {
+          ...(Option.isSome(failure) ? { failure: failure.value } : {}),
+          residue: sorted
+        }
+      })
+    }
+    if (!Exit.isSuccess(outcome) && policy === "compensate" && Option.isSome(failure)) {
+      const compensated: Settled<A, E> = { _tag: "Compensated", failure: failure.value }
+      return compensated
+    }
+    // A failure exit re-raises its whole cause; a success exit becomes the
+    // completed envelope.
+    const completed: Settled<A, E> = { _tag: "Completed", values: try outcome }
+    return completed
+  }
+}

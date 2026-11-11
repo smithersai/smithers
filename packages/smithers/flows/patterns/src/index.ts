@@ -64,13 +64,13 @@ export * as Bounded from "./Bounded.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Quarantine from "./Quarantine.ts"
+export * as Quarantine from "./Quarantine.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Saga from "./Saga.ts"
+export * as Saga from "./Saga.vibe"
 
 /**
  * @category patterns
@@ -142,7 +142,7 @@ export * as ScanFixVerify from "./ScanFixVerify.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Sidecar from "./Sidecar.ts"
+export * as Sidecar from "./Sidecar.vibe"
 
 /**
  * @category patterns
