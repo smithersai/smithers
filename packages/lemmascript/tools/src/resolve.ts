@@ -218,9 +218,45 @@ function widenStringUnionPair(left: TExpr, right: TExpr, typeDecls: TypeDeclInfo
  *    - `U`   into a synth `T[] | U` slot → wrap with `NonArrayBranch(...)`
  *  Returns `value` unchanged if no coercion applies (types already match,
  *  source is unknown, or no rule matches). */
+/** The record declaration behind a user type, through aliases (`type AccountState = ModelAccount`). */
+function recordDeclOf(ty: Ty, typeDecls: TypeDeclInfo[]): TypeDeclInfo | undefined {
+  let name = ty.kind === "user" ? tyBaseName(ty.name) : undefined;
+  for (let hops = 0; name !== undefined && hops < 8; hops++) {
+    const d = declOf(typeDecls, name);
+    if (d?.kind === "record") return d;
+    name = d?.kind === "alias" && d.aliasOf && /^\w+$/.test(d.aliasOf) ? d.aliasOf : undefined;
+  }
+  return undefined;
+}
+
+/** TypeScript's structural assignability of a record to a wider one: every field of `value`'s record is a field of
+ *  the target's, and each target field it lacks is optional (`{ op, page }` as a request whose `recovery?` is
+ *  absent). The target record reads each field from `value`, read once, and leaves the others absent. */
+function widenRecord(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TExpr | null {
+  const target = targetTy.kind === "optional" ? targetTy.inner : targetTy;
+  if (value.ty.kind !== "user" || target.kind !== "user" || tyEqual(value.ty, target)) return null;
+  const from = recordDeclOf(value.ty, typeDecls), to = recordDeclOf(target, typeDecls);
+  if (!from?.fields || !to?.fields || from === to) return null;
+  const same = (a: Ty | undefined, b: Ty | undefined) => a !== undefined && b !== undefined && (tyEqual(a, b) || (b.kind === "optional" && tyEqual(a, b.inner)));
+  if (!from.fields.every(g => same(g.type, to.fields!.find(f => f.name === g.name)?.type))) return null;
+  if (!to.fields.every(f => from.fields!.some(g => g.name === f.name) || f.type?.kind === "optional")) return null;
+  const input: TExpr = value.kind === "var" ? value : { kind: "var", name: freshName("_widened"), ty: value.ty };
+  const fields = to.fields.map(f => {
+    const g = from.fields!.find(d => d.name === f.name);
+    const read: TExpr = g ? { kind: "field", obj: input, field: f.name, ty: g.type! } : { kind: "var", name: "undefined", ty: { kind: "void" } };
+    return { name: f.name, value: g && f.type!.kind === "optional" && g.type!.kind !== "optional" ? wrapSome(read, f.type!) : read };
+  });
+  const record: TExpr = { kind: "record", spread: null, fields, ty: target };
+  if (input === value) return record;
+  const lambda: TExpr = { kind: "lambda", params: [{ name: (input as { name: string }).name, ty: value.ty }],
+    body: [{ kind: "return", value: record }], ty: { kind: "fn", params: [value.ty], result: target } };
+  return { kind: "call", fn: lambda, args: [value], ty: target, callKind: "pure" };
+}
+
 function coerceToTargetTy(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TExpr {
   value = coerceStr(value, targetTy);
   value = widenStringUnion(value, targetTy.kind === "optional" ? targetTy.inner : targetTy, typeDecls);
+  value = widenRecord(value, targetTy, typeDecls) ?? value;
   if (value.ty.kind === "unknown" || value.ty.kind === "void") return value;
   if (targetTy.kind === "optional" && value.ty.kind !== "optional") {
     return wrapSome(value, targetTy);
@@ -1370,6 +1406,10 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       let else_ = resolveExpr(e.else, elseCtx);
       then_ = coerceStr(then_, else_.ty);
       else_ = coerceStr(else_, then_.ty);
+      // Branches of two record types where one widens to the other (a record without an optional field, and the
+      // record with it): both are the wider one.
+      then_ = widenRecord(then_, else_.ty, ctx.typeDecls) ?? then_;
+      else_ = widenRecord(else_, then_.ty, ctx.typeDecls) ?? else_;
       const ty = conditionalResultTy(then_.ty, else_.ty);
       return { kind: "conditional", cond, then: then_, else: else_, ty };
     }

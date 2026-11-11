@@ -11,6 +11,9 @@ export interface FieldInfo {
   name: string;
   tsType: string;
   type?: Ty;     // pre-computed Ty — populated by resolveModule, avoids re-parsing tsType
+  /** An inline string-literal union field (`pane: "closed" | "max"`), read as `string` until `unifyLiteralUnions`
+   *  names it: its members, sorted. */
+  literalValues?: string[];
 }
 
 export interface VariantInfo {
@@ -30,6 +33,9 @@ export interface TypeDeclInfo {
   kind: "string-union" | "discriminated-union" | "record" | "alias" | "opaque";
   /** For string unions: the literal values */
   values?: string[];
+  /** For a string union whose members another string union of this module already has: that union's name. It is
+   *  emitted as a synonym of it, so one TypeScript type is one backend type (`unifyLiteralUnions`). */
+  sameAs?: string;
   /** For discriminated unions: the discriminant field and variants */
   discriminant?: string;
   variants?: VariantInfo[];

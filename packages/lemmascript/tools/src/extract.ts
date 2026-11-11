@@ -1278,6 +1278,7 @@ function fieldsOf(owner: string, type: Type, locationNode: Node, extraDecls?: Ty
     if (extraDecls && /\b__(?:type|object)\b/.test(tsType)) {
       tsType = namedTypeString(propType, typeName(owner, prop.getName()), locationNode, extraDecls);
     }
+    const literalValues = /^(?:undefined \| )?string(?: \| undefined)?$/.test(tsType) ? literalUnionValues(propType) : undefined;
     // Optional property: `foo?: T` reports as `T` (ts-morph strips the `| undefined` from a question-token type, and
     // `exactOptionalPropertyTypes` never adds it). Add it back so the field resolves to `Optional<T>`. A mapped type's
     // optional key (an Effect Schema `optionalKey`) is optional through its symbol: its declaration is the schema's.
@@ -1290,9 +1291,48 @@ function fieldsOf(owner: string, type: Type, locationNode: Node, extraDecls?: Ty
       if (tsType.startsWith("undefined | ")) tsType = `${tsType.slice("undefined | ".length)} | undefined`;
       else if (!tsType.includes(" | undefined")) tsType = `${tsType} | undefined`;
     }
-    fields.push({ name: prop.getName(), tsType });
+    fields.push(literalValues ? { name: prop.getName(), tsType, literalValues } : { name: prop.getName(), tsType });
   }
   return fields;
+}
+
+/** A local's type text, or null for a string-literal union: the local then takes its initializer's type, the union
+ *  it was read from (a field's enum), never a plain string it could not be compared against. */
+function localLetType(type: Type): string | null {
+  return literalUnionValues(type) ? null : _eraseGenerics(typeToString(type));
+}
+
+/** The members of a union of two or more string literals (`undefined` aside), sorted; otherwise undefined. */
+function literalUnionValues(type: Type): string[] | undefined {
+  if (!type.isUnion()) return undefined;
+  const members = type.getUnionTypes().filter(m => !m.isUndefined() && !m.isNull());
+  if (members.length < 2 || !members.every(m => m.isStringLiteral())) return undefined;
+  return members.map(m => String(m.getLiteralValue())).sort();
+}
+
+/**
+ * One string-literal union is one type however it is written (TypeScript is structural). Unions with the same members
+ * are one enum datatype, the first by name, the others its synonyms (`sameAs`, so lookups by name still find a string
+ * union); an inline union field with those members names it.
+ * A union no alias names stays `string`, as before.
+ */
+function unifyLiteralUnions(typeDecls: TypeDeclInfo[]): void {
+  const key = (values: string[]) => JSON.stringify([...values].sort());
+  const canonical = new Map<string, string>();
+  const unions = typeDecls.filter(d => d.kind === "string-union" && !d.typeParams && d.values).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  for (const d of unions) {
+    const k = key(d.values!);
+    const first = canonical.get(k);
+    if (first === undefined) { canonical.set(k, d.name); continue; }
+    d.sameAs = first;
+  }
+  for (const d of typeDecls) {
+    for (const f of [...(d.fields ?? []), ...(d.variants ?? []).flatMap(v => v.fields)]) {
+      const name = f.literalValues ? canonical.get(key(f.literalValues)) : undefined;
+      if (name !== undefined) f.tsType = f.tsType.replace(/\bstring\b/, name);
+      delete f.literalValues;
+    }
+  }
 }
 
 /** A datatype name made of `parts`: each one's identifier characters, capitalized after the first. */
@@ -1885,7 +1925,7 @@ function extractStmts(stmts: Node[]): RawStmt[] {
               }
               const name = inner.getText();
               const isRest = !!el.getDotDotDotToken();
-              const elTs = _eraseGenerics(typeToString(el.getType()));
+              const elTs = localLetType(el.getType());
               const init: RawExpr = isRest
                 ? { kind: "call",
                     fn: { kind: "field", obj: initVar, field: "slice" },
@@ -1925,7 +1965,7 @@ function extractStmts(stmts: Node[]): RawStmt[] {
                 const localName = inner.getText();
                 const propNode = el.getPropertyNameNode();
                 const fieldName = propNode ? propNode.getText() : localName;
-                const elTs = _eraseGenerics(typeToString(el.getType()));
+                const elTs = localLetType(el.getType());
                 result.push({
                   kind: "let",
                   name: localName,
@@ -1962,7 +2002,7 @@ function extractStmts(stmts: Node[]): RawStmt[] {
               const inner = el.getNameNode();
               if (!Node.isIdentifier(inner)) throw new Error(`nested binding pattern in object destructuring not yet supported: ${el.getText()}`);
               const field = el.getPropertyNameNode()?.getText() ?? inner.getText();
-              result.push({ kind: "let", name: inner.getText(), mutable: s.getDeclarationKind() === "let", tsType: _eraseGenerics(typeToString(el.getType())), init: { kind: "field", obj: source, field }, line });
+              result.push({ kind: "let", name: inner.getText(), mutable: s.getDeclarationKind() === "let", tsType: localLetType(el.getType()), init: { kind: "field", obj: source, field }, line });
             }
             // Omitting a required field changes the type: `rest` is then a record of the remaining fields, each read
             // from `obj`.
@@ -2059,7 +2099,7 @@ function extractStmts(stmts: Node[]): RawStmt[] {
         const literal = d.getInitializer();
         const anonymousLiteral = !annotatedText && !isHavoc && literal !== undefined && Node.isObjectLiteralExpression(literal)
           && literal.getProperties().every(p => Node.isPropertyAssignment(p) || Node.isShorthandPropertyAssignment(p));
-        const inferred = annotatedText ? null : _eraseGenerics(anonymousLiteral ? localTypeText(declType, d.getName(), d) : typeToString(declType));
+        const inferred = annotatedText ? null : anonymousLiteral ? _eraseGenerics(localTypeText(declType, d.getName(), d)) : localLetType(declType);
         const tsType: string | null = havocType
           ?? (annotatedText ? _eraseGenerics(annotatedText) : (inferred === "any" ? null : inferred));
         result.push({
@@ -3293,6 +3333,8 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     }
     classes.push({ name: cls.getName() ?? "Anonymous", fields, methods });
   }
+
+  unifyLiteralUnions(typeDecls);
 
   // Clear the synth-union accumulator so typeToString reverts to plain
   // union stringification outside of an extractModule call.

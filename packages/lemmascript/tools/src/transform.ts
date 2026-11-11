@@ -2450,6 +2450,9 @@ function transformPureMatch(chain: Chain, typeDecls: TypeDeclInfo[]): Expr | nul
 // ── Generate type declarations ───────────────────────────────
 
 function transformTypeDecl(d: TypeDeclInfo): Decl {
+  if (d.kind === "string-union" && d.sameAs !== undefined) {
+    return { kind: "type-alias", name: d.name, target: { kind: "user", name: d.sameAs } };
+  }
   if (d.kind === "string-union") {
     return {
       kind: "inductive", name: d.name,
