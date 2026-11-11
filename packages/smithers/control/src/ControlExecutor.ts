@@ -106,6 +106,35 @@ export interface ResumeRequest {
 }
 
 /**
+ * A settled run to retry, and the step an operator named.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RetryRequest {
+  /** The settled source run. */
+  readonly run: RunSummary
+  /** The approved plan the source run, and the retry, start from. */
+  readonly plan: StoredPlan
+  /** An action name or engine node id the source ran; absent, the step it failed at. */
+  readonly step?: string | undefined
+}
+
+/**
+ * The engine node a retry starts from, or why the executor refuses it.
+ *
+ * A refusal's `reason` is an operator sentence that names what to pass
+ * instead: the steps that ran, or the node ids an ambiguous action name
+ * matched.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RetryStep =
+  | { readonly _tag: "Step"; readonly nodeId: string }
+  | { readonly _tag: "Refused"; readonly reason: string }
+
+/**
  * What the executor did with a resume request.
  *
  * `resuming` means this executor hosts the run's execution, has taken the
@@ -354,6 +383,14 @@ export interface Service {
    */
   readonly resumeRun: (input: ResumeRequest) => Effect.Effect<ResumeUptake, PersistenceError>
   /**
+   * Resolves the engine node a retry of a settled run starts from, reading
+   * the source run's recorded steps. Absent on an executor that keeps no step
+   * history, where `Control.run` refuses every retry.
+   *
+   * @since 1.0.0
+   */
+  readonly retryStep?: ((input: RetryRequest) => Effect.Effect<RetryStep, PersistenceError>) | undefined
+  /**
    * Finishes a PARKED execution whose cancellation is already durable.
    *
    * A park has no owner — that is what makes it resumable — so nothing is
@@ -453,6 +490,7 @@ export const makeObserving = (service: Service): Service => {
   return make({
     ...service,
     requestComplete: undefined,
+    retryStep: undefined,
     launch: Effect.fn("ControlExecutor.launch")(() => refuse("launch")),
     resumeRun: Effect.fn("ControlExecutor.resumeRun")(() => refuse("resumeRun")),
     settleCancelledPark: Effect.fn("ControlExecutor.settleCancelledPark")(() => Effect.void)

@@ -14,6 +14,7 @@ Commands:
   output      Read recorded outputs for one node or all nodes
   replay      Replay committed history and sealed results without re-executing any actions
   resume      Resume a parked durable run
+  retry       Retry a settled run from a step as a new run
   show        Open a run's card
   signal      Deliver a durable JSON signal
   signals     Inspect durable signal delivery receipts

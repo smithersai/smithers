@@ -63,6 +63,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { ExecutionFacts } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { AttemptEvidenceQuarantined } from "@smthrs/engine-store/Errors"
+import * as RunInspection from "@smthrs/engine-store/RunInspection"
 import { Action, Deadline, DurableDeferred, Fault, Flow, FlowRuntime, WaitFor } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
@@ -114,6 +115,7 @@ import { callId } from "./internal/CallIdentity.ts"
 import { failureJson } from "./internal/FailureJson.ts"
 import { failureSummary } from "./internal/FailureSummary.ts"
 import { latestPendingApproval } from "./internal/PendingApproval.ts"
+import * as RetryStep from "./internal/RetryStep.ts"
 import { unordered } from "./internal/TraceOrder.ts"
 import { waitingAnnotation } from "./internal/WaitingAnnotation.ts"
 import type * as QuotaPolicy from "./QuotaPolicy.ts"
@@ -1845,6 +1847,24 @@ const budgetStops = () => {
 }
 
 /** Visits every page of one run's control journal, in order. */
+/** The source run and engine node a retried run starts from. */
+type RetryOf = typeof RetryOfPayload.Type["retryOf"]
+
+const RetryOfPayload = Schema.Struct({ retryOf: Schema.Struct({ runId: Schema.String, step: Schema.String }) })
+
+/**
+ * The retry `Control.run` recorded on a run's `control.run.accepted` entry,
+ * if these entries hold it.
+ */
+const retryOf = (entries: ReadonlyArray<JournalEvent.Entry>): RetryOf | undefined => {
+  for (const entry of entries) {
+    if (entry.eventType !== "control.run.accepted") continue
+    const decoded = Schema.decodeUnknownOption(RetryOfPayload)(entry.payload)
+    if (Option.isSome(decoded)) return decoded.value.retryOf
+  }
+  return undefined
+}
+
 const scanRun = (
   journal: Journal.Service,
   runId: string,
@@ -3013,6 +3033,9 @@ export const make = (
     // A host registers native modules through the existing executable catalog.
     // Prompt-only compositions retain their current admission behavior.
     const executables = yield* Effect.serviceOption(Executable.Catalog)
+    // Optional for the same reason: a host that reads its engine's runs can
+    // retry a settled module run from a step; any other refuses every retry.
+    const inspection = yield* Effect.serviceOption(RunInspection.RunInspection)
     const engine = yield* FlowRuntime.FlowRuntime
     const seats = yield* SeatResolver
     // Optional so every existing composition keeps its requirements: without
@@ -3700,6 +3723,7 @@ export const make = (
         let after: JournalEvent.Seq | undefined
         const raises: Array<Envelope["budget"]> = []
         const stops = budgetStops()
+        let retry: RetryOf | undefined
         for (;;) {
           const page = yield* journal.entries({
             runId: JournalEvent.RunId.make(payload.runId),
@@ -3708,6 +3732,7 @@ export const make = (
           })
           yield* Effect.fromResult(Transcript.validateJournal(page.entries))
           raises.push(...approvedRaises(page.entries))
+          retry ??= retryOf(page.entries)
           stops.visit(page.entries)
           if (!page.hasMore) break
           after = page.entries.at(-1)!.seq
@@ -3866,8 +3891,23 @@ export const make = (
               )
             }
           }
-          const result = yield* executable.flow.execute({ input }, {
-            executionId: moduleId(ordinal)
+          const result = yield* Effect.gen(function*() {
+            // A retry admits the module's child as a retry of the source
+            // run's child from the step, as this run's child and under the
+            // same authority, and the execution below joins it. The parent
+            // edge commits with the row, so no host drives the child before
+            // it has this run's authority. Repeating it on a later drive
+            // joins the child the first one admitted. The engine keeps
+            // history: it resolved the step before the retry was admitted.
+            if (retry !== undefined) {
+              yield* engine.retryFrom!(executable.flow, {
+                source: moduleExecutionId(retry.runId, pinnedDigest),
+                step: retry.step,
+                executionId: moduleId(ordinal),
+                parent: instance
+              })
+            }
+            return yield* executable.flow.execute({ input }, { executionId: moduleId(ordinal) })
           }).pipe(
             CapabilitySet.attenuate(patterns(card.envelope.capabilities)),
             Effect.provide(options.budget(envelope)),
@@ -5134,6 +5174,35 @@ export const make = (
 
     return ControlExecutor.make({
       readExecution: (runId) => Effect.provide(readExecution(runId), services),
+      ...(Option.isNone(inspection) ? {} : {
+        retryStep: Effect.fn("AgentSession.retryStep")((input: ControlExecutor.RetryRequest) =>
+          Effect.gen(function*() {
+            const runId = input.run.runId
+            // A retained module runs in rounds, each a child of its own; no
+            // one record holds the steps a retry would start from.
+            if (options.reenterModules?.includes(input.plan.card.flowId) === true) {
+              return { _tag: "Refused", reason: `run ${runId} is a retained module, which cannot be retried` } as const
+            }
+            const digest = input.plan.card.executionDigest
+            const recorded = digest === undefined ? undefined : yield* inspection.value.inspect(
+              moduleExecutionId(runId, digest)
+            ).pipe(
+              Effect.catchTag("@smthrs/engine-store/RunNotFound", () => Effect.succeed(undefined)),
+              Effect.mapError((cause) =>
+                new PersistenceError({
+                  operation: "AgentSession.retryStep",
+                  message: `Cannot read the steps of run ${runId}`,
+                  cause
+                })
+              )
+            )
+            if (recorded === undefined) {
+              return { _tag: "Refused", reason: `run ${runId} recorded no flow steps to retry from` } as const
+            }
+            return RetryStep.select(runId, recorded, input.step)
+          })
+        )
+      }),
       launch: Effect.fn("AgentSession.launch")(launch),
       requestComplete: Effect.fn("AgentSession.requestComplete")((input) =>
         Effect.gen(function*() {

@@ -831,7 +831,15 @@ export const PlanInputSchema = Schema.Struct({
 })
 
 /**
- * The RPC request schema for starting a plan or resuming a run.
+ * The RPC request schema for starting a plan, resuming a run, or retrying a
+ * settled run from one of its steps.
+ *
+ * A `Retry` admits a new run of the source run's approved plan, so the
+ * approval that covered the source covers the retry and a denied or missing
+ * plan refuses it. `step` names an action or an engine node id the source ran;
+ * absent, the retry starts at the step the source failed at. Every step that
+ * finished before it is served from the source's record, and the source is
+ * left as it was.
  *
  * @since 0.1.0
  * @category models
@@ -847,6 +855,11 @@ export const RunInputSchema = Schema.Union([
     runId: RunId,
     idempotencyKey: IdempotencyKey,
     allowCodeDrift: Schema.optional(Schema.Boolean)
+  }),
+  Schema.TaggedStruct("Retry", {
+    runId: RunId,
+    step: Schema.optional(Schema.NonEmptyString),
+    idempotencyKey: IdempotencyKey
   })
 ])
 

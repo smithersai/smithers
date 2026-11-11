@@ -28,6 +28,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { ExecutionFacts } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as ReplayOnly from "@smthrs/engine-store/ReplayOnly"
+import * as RunInspection from "@smthrs/engine-store/RunInspection"
 import { RunState } from "@smthrs/engine-store/RunState"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
@@ -2222,7 +2223,12 @@ export const make = (
         })
         const executor = yield* (catalog === undefined ? session : session.pipe(
           Effect.provideService(Executable.Catalog, catalog)
-        )).pipe(Effect.provideService(Journal.Journal, controlJournal))
+        )).pipe(
+          Effect.provideService(Journal.Journal, controlJournal),
+          // The engine's run reads, so `runs retry` resolves a step against
+          // the source run's record.
+          Effect.provideService(RunInspection.RunInspection, yield* RunInspection.make())
+        )
         yield* Effect.forkScoped(supervisor.recover)
         const observed = supervisor.wrap({ ...executor, readExecutions: yield* NativeExecutionRead.makeFromSql() })
         // The process's start-up clock: registered here, and handed its first run below.

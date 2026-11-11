@@ -75,25 +75,11 @@ export const resume = (planOrRunId: string, allowCodeDrift = false, quiet = fals
     return Settlement.receiptDocument(receipt, settlement)
   })
 
-/**
- * Execute a plan approval and return its settled receipt.
- * @category constructors
- * @since 1.0.0
- */
-export const run = (payload: ControlService.ApprovalInput, wait = false, quiet = false) =>
+/** Admit one run and settle it: owned by this process, or awaited with `wait`. */
+const admit = (request: ControlService.RunInput, wait: boolean, quiet: boolean) =>
   Effect.gen(function*() {
-    const target = payload.target
-    if (target._tag !== "Plan") {
-      return yield* Effect.fail(new CliError.UsageError({ message: "run requires a plan approval payload" }))
-    }
     const control = yield* ControlService.Control
-    const receipt = yield* control.run({
-      _tag: "Plan",
-      planId: target.planId,
-      digest: target.digest,
-      envelope: target.envelope,
-      idempotencyKey: payload.idempotencyKey
-    })
+    const receipt = yield* control.run(request)
     yield* Detached.announceAdmission(receipt)
     const owned = yield* Settlement.awaitOwnedRun(control, receipt, undefined, quiet)
     const settlement = wait && owned === undefined && receipt._tag === "Accepted" && receipt.runId !== undefined
@@ -105,6 +91,50 @@ export const run = (payload: ControlService.ApprovalInput, wait = false, quiet =
     yield* Settlement.report(settlement)
     return Settlement.receiptDocument(receipt, settlement)
   })
+
+/**
+ * Execute a plan approval and return its settled receipt.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const run = (payload: ControlService.ApprovalInput, wait = false, quiet = false) =>
+  Effect.gen(function*() {
+    const target = payload.target
+    if (target._tag !== "Plan") {
+      return yield* Effect.fail(new CliError.UsageError({ message: "run requires a plan approval payload" }))
+    }
+    return yield* admit(
+      {
+        _tag: "Plan",
+        planId: target.planId,
+        digest: target.digest,
+        envelope: target.envelope,
+        idempotencyKey: payload.idempotencyKey
+      },
+      wait,
+      quiet
+    )
+  })
+
+/**
+ * Retry a settled run from a step as a new run, and return its settled
+ * receipt. `step` names an action or node id; absent, the run's failed step.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const retry = (runId: string, step: string | undefined, wait = false, quiet = false) =>
+  // Unique to this command: each `runs retry` is a new run. Retries inside
+  // this command reuse the one key.
+  admit(
+    {
+      _tag: "Retry",
+      runId,
+      ...(step === undefined ? {} : { step }),
+      idempotencyKey: `cli:retry:${runId}:${randomUUID()}`
+    },
+    wait,
+    quiet
+  )
 
 /**
  * Decode and execute a serialized plan approval.

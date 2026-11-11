@@ -708,6 +708,29 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
           ))
       }
     })
+    .command("retry", {
+      description: "Retry a settled run from a step as a new run",
+      mcp: { annotations: { readOnlyHint: false } },
+      args: runArgs,
+      options: options.extend({
+        from: z.string().min(1).optional().describe(
+          "The step to start from, by action name or node id; defaults to the step the run failed at"
+        ),
+        wait: z.boolean().default(false).describe("Wait for the run's status before exiting")
+      }),
+      run: (c) => {
+        const { from, wait, ...connection } = c.options
+        return guard(c, async () =>
+          Bridge.launch(
+            Effect.andThen(checks(connection, runtime), Launch.retry(c.args.run, from, wait, connection.quiet)),
+            connection,
+            {
+              ...runtime,
+              ...await prepareHistoryRun(c.args.run, connection, runtime)
+            }
+          ))
+      }
+    })
     .command("continue", {
       description: "Continue a run a budget or time limit parked, under the allowance it recorded",
       mcp: false,

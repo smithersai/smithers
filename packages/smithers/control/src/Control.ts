@@ -64,7 +64,8 @@ export interface PlanInput {
 }
 
 /**
- * Starts an approved plan or joins/resumes an existing run.
+ * Starts an approved plan, joins/resumes an existing run, or retries a settled
+ * run from one of its steps.
  *
  * @category models
  * @since 0.1.0
@@ -75,11 +76,11 @@ export type RunInput = typeof RunInputSchema.Type & {
   /** Authenticated actor used only to scope durable idempotency. */
   readonly principal?: Principal | undefined
   /**
-   * Resume only. Set by the server to the authenticated principal unless its
-   * `RunVisibility` lets that principal see every run. A run the reader may
-   * not see fails `RunNotFound`, exactly as a missing run does, as it does
-   * through `Control.resume`. Not on the wire; an in-process caller that
-   * names no reader resumes any run.
+   * Resume and Retry only. Set by the server to the authenticated principal
+   * unless its `RunVisibility` lets that principal see every run. A run, or a
+   * retry's source run, the reader may not see fails `RunNotFound`, exactly as
+   * a missing run does, as it does through `Control.resume`. Not on the wire;
+   * an in-process caller that names no reader resumes or retries any run.
    */
   readonly reader?: Principal | undefined
 }

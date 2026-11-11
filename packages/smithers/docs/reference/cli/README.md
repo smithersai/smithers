@@ -24,7 +24,7 @@ run-kind targets; `flow start` starts durable flows.
 | `watch <verb> [patterns...]` | Replan and rerun after workspace changes; `--once` runs one cycle. |
 | `explain <label>` | Show the planned key and local cache state without running the target. |
 | `flow list/show/plan/start/execute` | Discover flows, compile plans, start flows, or execute approved payloads. |
-| `runs list/show/logs/output/cancel/cancel-all/resume/signal/steer` | Inspect and operate durable runs. |
+| `runs list/show/logs/output/cancel/cancel-all/resume/retry/signal/steer` | Inspect and operate durable runs. |
 | `runs inspect/replay/fork/rewind` | Read frames, branch history, or restore an earlier frame. |
 | `approvals list/approve/deny/grant` | Inspect pending decisions, answer them, or grant a build target's revision. |
 | `approvals trigger-plan/grant-trigger/revoke-trigger` | Prepare, grant or revoke the standing approval that lets a trigger run unattended. |
@@ -471,6 +471,22 @@ with `runs resume`. `--step <digest> --result <json|@file>` edits one recorded
 step result on the child: it replays the edited value and runs every step after
 the frame again, while the parent keeps its own result.
 SQLite read-only statements wait at most one second for a peer lock before failing; observing opens do not migrate or acquire a writer lock.
+
+`runs retry <run> [--from <step>] [--wait]` retries a settled code-flow run
+from one of its steps as a new run. It is a retry, not a history fork: the
+source run is left as it was. The new run executes the same flow with the same
+input under the source run's approved plan, so the approval that covered the
+source covers the retry. Every step that finished before the chosen one is
+served from the source's record without running again; the chosen step and
+every step after it run. `--from` names a step by its action name, such as
+`release/smoke`, or by its engine node id; without it the retry starts at the
+step the run failed at. It refuses, admitting nothing, a run that has not
+settled, a run with no failed step when `--from` is absent, a step the run did
+not run (the refusal lists the steps that ran), and an action name that ran
+more than once (the refusal lists its node ids; pass one with `--from`). A
+prompt flow and a retained module record no steps to retry from. The command
+returns the new run's receipt and settles like `flow start`; each invocation
+starts a new run.
 
 `runs show` reports confirmed lease lapses in `warnings`, with the execution,
 unconfirmed duration, and recorded time. A `lease-reconfirmed` warning keeps

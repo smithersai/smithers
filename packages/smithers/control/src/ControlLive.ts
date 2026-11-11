@@ -46,6 +46,7 @@ import * as ControlFacts from "./ControlFacts.ts"
 import { ControlRuntime, type IdPage, type IdPageRequest, launchedByMatches, type RunPage } from "./ControlRuntime.ts"
 import type {
   ControlEvent,
+  Envelope,
   FireSummary,
   IdempotencyKey,
   ListResponse,
@@ -213,7 +214,8 @@ const AttributedRunInput = Schema.Union([
     principal: Schema.optional(Principal),
     reservedRunId: Schema.optional(Schema.NonEmptyString)
   }),
-  Schema.Struct({ ...RunInputSchema.members[1].fields, principal: Schema.optional(Principal) })
+  Schema.Struct({ ...RunInputSchema.members[1].fields, principal: Schema.optional(Principal) }),
+  Schema.Struct({ ...RunInputSchema.members[2].fields, principal: Schema.optional(Principal) })
 ])
 const AttributedSignalInput = Schema.Struct({
   ...SignalInputSchema.fields,
@@ -1793,6 +1795,132 @@ export const layer: Layer.Layer<
       )
     }
 
+    /**
+     * Admits one run of an approved plan under one idempotency key and hands
+     * it to the executor.
+     *
+     * `Plan` names the plan the caller reviewed; a `Retry` names its source
+     * run's plan, so the approval that covered the source covers the retry.
+     * `retryOf` rides on the new run's `control.run.accepted` record, which is
+     * where the executor reads the retry back on every drive of the run.
+     */
+    const admitPlan = (
+      input: {
+        readonly planId: string
+        readonly digest: string
+        readonly envelope: Envelope
+        readonly idempotencyKey: string
+        readonly reservedRunId?: RunId | undefined
+      },
+      request: unknown,
+      principal: typeof Principal.Type,
+      retryOf?: { readonly runId: RunId; readonly step: string }
+    ) =>
+      Effect.gen(function*() {
+        let admitted: Launch | undefined
+        const receipt = yield* mutate<
+          | RunNotFound
+          | PlanNotFound
+          | PlanDenied
+          | PlanDigestMismatch
+          | EnvelopeMismatch
+          | ClaimLost
+          | LaunchFailed
+          | PersistenceError,
+          never
+        >(
+          "run",
+          input.idempotencyKey,
+          principal,
+          fingerprint("run", principal, request),
+          Effect.gen(function*() {
+            const launched = yield* runtime.launch(
+              input.planId,
+              input.digest,
+              input.envelope,
+              principal,
+              input.reservedRunId
+            )
+            if (launched._tag === "Parked") {
+              return { ...launched.receipt, receiptId: input.idempotencyKey }
+            }
+            const plan = yield* runtime.getPlan(input.planId)
+            const trigger = declaredTrigger(plan.decodedInput)
+            yield* emit(
+              launched.run.runId,
+              "control.run.accepted",
+              {
+                runId: launched.run.runId,
+                planId: input.planId,
+                digest: input.digest,
+                status: launched.run.status,
+                ...(trigger === undefined ? {} : { trigger }),
+                ...(retryOf === undefined ? {} : { retryOf }),
+                ...ControlFacts.runFact(launched.run, "created")
+              } as ControlEvent["payload"]
+            )
+            admitted = { plan, run: launched.run }
+            return {
+              _tag: "Accepted",
+              receiptId: input.idempotencyKey,
+              runId: launched.run.runId
+            }
+          }),
+          true,
+          true
+        )
+        // The executor may immediately read through another connection or
+        // fork a driver. Its run, approval and dedupe receipt must all be
+        // committed before any execution crosses that boundary.
+        if (receipt._tag === "Accepted" && admitted !== undefined) yield* hand(admitted)
+        else if (receipt._tag === "AlreadyApplied" && receipt.runId !== undefined) {
+          yield* relaunchStranded(receipt.runId)
+        }
+        return receipt
+      })
+
+    /**
+     * Retries a settled run from one of its steps as a new run of the source's
+     * approved plan: a retry, not a history fork (ruling FLOW-11).
+     *
+     * Every refusal comes before anything is written: a source that has not
+     * settled, one no plan started, a host that keeps no step history, and a
+     * step the executor cannot resolve against the source's record.
+     */
+    const retry = (input: {
+      readonly runId: RunId
+      readonly step?: string | undefined
+      readonly idempotencyKey: string
+      readonly principal?: typeof Principal.Type | undefined
+    }) =>
+      Effect.gen(function*() {
+        const principal = yield* runtime.stampPrincipal(input.principal)
+        const source = yield* runtime.getRun(input.runId)
+        if (!terminal(source.status)) {
+          return yield* invalid(`retry: run ${source.runId} is ${source.status}; only a settled run can be retried`)
+        }
+        if (source.planId === undefined) {
+          return yield* invalid(`retry: run ${source.runId} was not started from a plan`)
+        }
+        const plan = yield* runtime.getPlan(source.planId)
+        // No executor, or one that keeps no step history, has nothing to retry from.
+        const retryStep = Option.flatMap(executor, (service) => Option.fromNullishOr(service.retryStep))
+        if (Option.isNone(retryStep)) return yield* invalid("retry: this host keeps no step history to retry from")
+        const step = yield* retryStep.value({ run: source, plan, step: input.step })
+        if (step._tag === "Refused") return yield* invalid(`retry: ${step.reason}`)
+        return yield* admitPlan(
+          {
+            planId: plan.card.planId,
+            digest: plan.card.digest,
+            envelope: plan.card.envelope,
+            idempotencyKey: input.idempotencyKey
+          },
+          input,
+          principal,
+          { runId: source.runId, step: step.nodeId }
+        )
+      })
+
     const service: Service = {
       plan: Effect.fn("Control.plan")((input) =>
         mutationSemaphore.withPermits(1)(
@@ -1860,66 +1988,11 @@ export const layer: Layer.Layer<
           if (input._tag === "Resume") {
             return yield* confined({ reader: submitted.reader, runId: input.runId }, runMutation(input))
           }
-          const principal = yield* runtime.stampPrincipal(input.principal)
-          let admitted: Launch | undefined
-          const receipt = yield* mutate<
-            | RunNotFound
-            | PlanNotFound
-            | PlanDenied
-            | PlanDigestMismatch
-            | EnvelopeMismatch
-            | ClaimLost
-            | LaunchFailed
-            | PersistenceError,
-            never
-          >(
-            "run",
-            input.idempotencyKey,
-            principal,
-            fingerprint("run", principal, input),
-            Effect.gen(function*() {
-              const launched = yield* runtime.launch(
-                input.planId,
-                input.digest,
-                input.envelope,
-                principal,
-                input.reservedRunId
-              )
-              if (launched._tag === "Parked") {
-                return { ...launched.receipt, receiptId: input.idempotencyKey }
-              }
-              const plan = yield* runtime.getPlan(input.planId)
-              const trigger = declaredTrigger(plan.decodedInput)
-              yield* emit(
-                launched.run.runId,
-                "control.run.accepted",
-                {
-                  runId: launched.run.runId,
-                  planId: input.planId,
-                  digest: input.digest,
-                  status: launched.run.status,
-                  ...(trigger === undefined ? {} : { trigger }),
-                  ...ControlFacts.runFact(launched.run, "created")
-                } as ControlEvent["payload"]
-              )
-              admitted = { plan, run: launched.run }
-              return {
-                _tag: "Accepted",
-                receiptId: input.idempotencyKey,
-                runId: launched.run.runId
-              }
-            }),
-            true,
-            true
-          )
-          // The executor may immediately read through another connection or
-          // fork a driver. Its run, approval and dedupe receipt must all be
-          // committed before any execution crosses that boundary.
-          if (receipt._tag === "Accepted" && admitted !== undefined) yield* hand(admitted)
-          else if (receipt._tag === "AlreadyApplied" && receipt.runId !== undefined) {
-            yield* relaunchStranded(receipt.runId)
+          // A retry reads its source run, so it is confined the same way.
+          if (input._tag === "Retry") {
+            return yield* confined({ reader: submitted.reader, runId: input.runId }, retry(input))
           }
-          return receipt
+          return yield* admitPlan(input, input, yield* runtime.stampPrincipal(input.principal))
         })
       ),
       approve: Effect.fn("Control.approve")((input) => decide("approved", input)),

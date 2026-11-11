@@ -19,6 +19,7 @@ import { expectTypeOf } from "vitest"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlError, ControlExecutor, ControlLive, ControlRuntime, ControlSchema } from "@smthrs/control"
 import { DurableEngineState, type Service as EngineStateService } from "@smthrs/engine-store/DurableEngineState"
+import * as RunInspection from "@smthrs/engine-store/RunInspection"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, Flow, FlowRuntime, HumanTask, Interpreter, Sleep } from "@smthrs/flow"
@@ -60,6 +61,7 @@ import {
   Stream,
   Tracer
 } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -371,6 +373,8 @@ interface StackOptions {
   readonly asks?: "park" | "refuse" | undefined
   /** The host's opening-memory selection. */
   readonly memory?: AgentSession.Options["memory"]
+  /** The engine's run reads, which let the executor retry a run from a step. */
+  readonly inspection?: Layer.Layer<RunInspection.RunInspection, never, SqlClient.SqlClient> | undefined
 }
 
 /**
@@ -435,6 +439,7 @@ const stack = (options: StackOptions) => {
         : Layer.effect(DurableEngineState)(Effect.map(DurableEngineState, options.wrapEngineState))
     ),
     Layer.provideMerge(Action.layerImplementations),
+    Layer.provide(options.inspection ?? Layer.empty),
     Layer.provide(
       options.modules === undefined ? Layer.empty : Layer.merge(
         Layer.succeed(Executable.Catalog, options.modules.catalog),
@@ -540,6 +545,29 @@ const awaitStatus = (
     return yield* awaitStatus(runtime, runId, status, attempts - 1)
   })
 
+/** The catalog that registers `flow` as the `agents/module` body. */
+const moduleCatalog = (flow: Executable.Executable["flow"]): Executable.Catalog => ({
+  executables: [{
+    descriptor: moduleDescriptor,
+    input: undefined,
+    delegate: "test/Module",
+    lowered: { cache: undefined, placement: undefined, priority: undefined },
+    invocation: (input) => ({
+      flow: moduleDescriptor.name,
+      input,
+      prompt: "",
+      model: null,
+      placement: null,
+      placementOptions: null,
+      capabilities: [],
+      flows: ["test/Module"]
+    } as const),
+    flow: flow,
+    layer: Interpreter.layer(flow)
+  }],
+  refused: []
+})
+
 /**
  * Runs one registered module flow on the full stack and counts its claims.
  *
@@ -562,27 +590,7 @@ const moduleRun = (options: {
   readonly idempotencyKey: string
 }): Effect.Effect<{ readonly claims: number }, unknown> =>
   Effect.gen(function*() {
-    const catalog: Executable.Catalog = {
-      executables: [{
-        descriptor: moduleDescriptor,
-        input: undefined,
-        delegate: "test/Module",
-        lowered: { cache: undefined, placement: undefined, priority: undefined },
-        invocation: (input) => ({
-          flow: moduleDescriptor.name,
-          input,
-          prompt: "",
-          model: null,
-          placement: null,
-          placementOptions: null,
-          capabilities: [],
-          flows: ["test/Module"]
-        } as const),
-        flow: options.flow,
-        layer: Interpreter.layer(options.flow)
-      }],
-      refused: []
-    }
+    const catalog = moduleCatalog(options.flow)
     const gate = yield* Deferred.make<void>()
     return yield* Effect.gen(function*() {
       const control = yield* Control.Control
@@ -3687,4 +3695,177 @@ describe("regression: provide-then-cast test sites erase layer requirements (#27
     // The assertion is the `@ts-expect-error` directive on unprovidedServiceProbe.
     expect(unprovidedServiceProbe).toBeTypeOf("function")
   })
+})
+
+describe("AgentSession retry from a step", () => {
+  const Load = Action.make("test/RetryLoad", { payload: {}, success: Schema.String, error: Schema.Never })
+  const Work = Action.make("test/RetryWork", { payload: {}, success: Schema.String, error: Schema.Never })
+  const Finish = Action.make("test/RetryFinish", { payload: {}, success: Schema.String, error: Schema.Never })
+  const flow = Flow.make("agents/module", {
+    payload: Executable.Payload,
+    success: moduleResult,
+    error: moduleResult,
+    body: () => Load.call({}).pipe(Node.andThen(Work.call({})), Node.andThen(Finish.call({})))
+  })
+
+  /** Runs `body` on the full stack with `flow` registered; `work` fails while `failing` holds. */
+  const retrying = <A>(
+    body: (calls: Array<string>, failing: { value: boolean }) => Effect.Effect<A, unknown, unknown>,
+    options: Partial<StackOptions> = {}
+  ) =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      const failing = { value: true }
+      const gate = yield* Deferred.make<void>()
+      const call = (name: string) => Effect.sync(() => (calls.push(name), name))
+      return yield* (body(calls, failing) as Effect.Effect<A, unknown, never>).pipe(Effect.provide(stack({
+        gate,
+        notes: [],
+        resolve: () => Effect.die("a module must not resolve a model seat"),
+        inspection: RunInspection.layer,
+        ...options,
+        modules: {
+          catalog: moduleCatalog(flow),
+          layer: Layer.mergeAll(
+            Interpreter.layer(flow),
+            Load.toLayer(() => call("load")),
+            Work.toLayer(() =>
+              Effect.suspend(() =>
+                failing.value ? Effect.andThen(call("work"), Effect.die("work broke")) : call("work")
+              )
+            ),
+            Finish.toLayer(() => call("finish"))
+          )
+        }
+      })))
+    }).pipe(Effect.scoped, Effect.runPromise)
+
+  /** Plans, approves and starts one module run, and waits for `status`. */
+  const started = (status: ControlSchema.RunStatus) =>
+    Effect.gen(function*() {
+      const control = yield* Control.Control
+      const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
+      yield* control.approve(card.approval)
+      const receipt = yield* control.run({
+        _tag: "Plan",
+        planId: card.planId,
+        digest: card.digest,
+        envelope: card.envelope,
+        idempotencyKey: "run:retry-source"
+      })
+      const runId = (receipt as { readonly runId: string }).runId
+      yield* awaitStatus(yield* ControlRuntime.ControlRuntime, runId, status)
+      return { runId, planId: card.planId }
+    })
+
+  /** The executor's step resolution for `run` under the plan `planId`. */
+  const resolve = (run: ControlSchema.RunSummary, planId: string, step?: string) =>
+    Effect.gen(function*() {
+      const executor = yield* ControlExecutor.ControlExecutor
+      const plan = yield* (yield* ControlRuntime.ControlRuntime).getPlan(planId)
+      return yield* executor.retryStep!({ run, plan, ...(step === undefined ? {} : { step }) })
+    })
+
+  it("reruns the failed step and later ones as the new run's child, replaying the earlier ones", () =>
+    retrying((calls, failing) =>
+      Effect.gen(function*() {
+        const { runId } = yield* started("failed")
+        expect(calls).toEqual(["load", "work"])
+        failing.value = false
+        const control = yield* Control.Control
+        const runtime = yield* ControlRuntime.ControlRuntime
+        const receipt = yield* control.run({ _tag: "Retry", runId, idempotencyKey: "retry:1" })
+        const retried = (receipt as { readonly runId: string }).runId
+        yield* awaitStatus(runtime, retried, "completed")
+        expect(calls).toEqual(["load", "work", "work", "finish"])
+        // The retried module is the new control run's child, not a root.
+        const card = (yield* runtime.getPlan((yield* runtime.getRun(retried)).planId!)).card
+        const child = AgentSession.moduleExecutionId(retried, card.executionDigest!)
+        const parents = yield* (yield* DurableEngineState).runParents(child)
+        expect(parents.map((edge) => edge.parentId)).toEqual([retried])
+      })
+    ))
+
+  it("resolves a named step against the source's record", () =>
+    retrying(() =>
+      Effect.gen(function*() {
+        const { planId, runId } = yield* started("failed")
+        const run = yield* (yield* ControlRuntime.ControlRuntime).getRun(runId)
+        const resolved = yield* resolve(run, planId, Finish.name)
+        expect(resolved).toEqual({
+          _tag: "Refused",
+          reason: `run ${runId} ran no step ${Finish.name}; its steps are ${Load.name}, ${Work.name}`
+        })
+        expect(yield* resolve(run, planId, Load.name)).toMatchObject({ _tag: "Step" })
+      })
+    ))
+
+  it("refuses a run with no recorded flow steps", () =>
+    retrying(() =>
+      Effect.gen(function*() {
+        const { planId, runId } = yield* started("failed")
+        const run = yield* (yield* ControlRuntime.ControlRuntime).getRun(runId)
+        const refusal = (id: string) => ({ _tag: "Refused", reason: `run ${id} recorded no flow steps to retry from` })
+        // A run whose module never started.
+        expect(yield* resolve({ ...run, runId: "never-ran" }, planId)).toEqual(refusal("never-ran"))
+        // A plan that names no code, as a system flow's does.
+        const idle = yield* (yield* Control.Control).plan({ flowId: "system/idle", input: {} })
+        expect(yield* resolve(run, idle.planId)).toEqual(refusal(runId))
+      })
+    ))
+
+  it("refuses a retained module", () =>
+    retrying(() =>
+      Effect.gen(function*() {
+        const control = yield* Control.Control
+        const card = yield* control.plan({ flowId: "agents/module", input: { plan: { changes: ["native"] } } })
+        const run: ControlSchema.RunSummary = {
+          runId: "retained",
+          flowId: "agents/module",
+          status: "completed",
+          createdAt: 1,
+          updatedAt: 1
+        }
+        expect(yield* resolve(run, card.planId)).toEqual({
+          _tag: "Refused",
+          reason: "run retained is a retained module, which cannot be retried"
+        })
+      }), { reenterModules: ["agents/module"] }))
+
+  it("fails a step read the engine cannot answer as a persistence error", () =>
+    retrying(() =>
+      Effect.gen(function*() {
+        const card = yield* (yield* Control.Control).plan({
+          flowId: "agents/module",
+          input: { plan: { changes: ["native"] } }
+        })
+        const run: ControlSchema.RunSummary = {
+          runId: "unreadable",
+          flowId: "agents/module",
+          status: "failed",
+          createdAt: 1,
+          updatedAt: 1
+        }
+        const failure = yield* Effect.flip(resolve(run, card.planId))
+        expect(failure).toBeInstanceOf(ControlError.PersistenceError)
+        expect(failure).toMatchObject({
+          operation: "AgentSession.retryStep",
+          message: "Cannot read the steps of run unreadable"
+        })
+      }), {
+      inspection: Layer.succeed(RunInspection.RunInspection, {
+        inspect: () =>
+          Effect.fail(
+            new RunStore.RunStoreError({ code: "persistence_failed", method: "get", message: "down", cause: null })
+          ),
+        list: () => Effect.die("unused"),
+        payload: () => Effect.die("unused")
+      })
+    }))
+
+  it("offers no retry on a host that cannot read its engine's runs", () =>
+    retrying(() =>
+      Effect.gen(function*() {
+        expect((yield* ControlExecutor.ControlExecutor).retryStep).toBeUndefined()
+      }), { inspection: undefined }))
 })
