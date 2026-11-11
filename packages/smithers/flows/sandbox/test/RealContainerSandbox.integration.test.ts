@@ -5,6 +5,7 @@ import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
 import { spawnSync } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { afterAll } from "vitest"
 import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
 import { sessionSlug } from "../src/internal/sessionSlug.ts"
@@ -30,7 +31,8 @@ const keys = [
   "crash-reattach",
   "host-bundle",
   "neutral-limits",
-  "session-reuse"
+  "session-reuse",
+  "open-network"
 ].map(
   (name) => `sandbox-it-${process.pid}-${name}`
 )
@@ -59,6 +61,10 @@ const provider = Effect.gen(function*() {
 const conformanceBudget = 900_000
 const budget = 180_000
 
+// Exits 0 only when the guest reaches the public internet. busybox wget ships
+// in the image, so the probe runs on every machine this suite boots.
+const egressProbe = "wget -q -T 5 -O /dev/null http://example.com"
+
 // The skip has to be visible, and it has to name what is missing: a case that
 // silently disappears is indistinguishable from one that never existed, and one
 // that disappears without a reason is indistinguishable from a suite quietly
@@ -71,19 +77,42 @@ describe.skipIf(engineAvailable)("ContainerSandbox against a real engine", () =>
 
 describe.skipIf(!engineAvailable)("ContainerSandbox against a real engine", () => {
   it.effect(
-    "passes the sandbox conformance suite, the kill check included, against real containers",
+    "passes the sandbox conformance suite, kill and the default network's isolation included, against real containers",
     () =>
       Effect.gen(function*() {
         const container = yield* provider
         const violations = yield* SandboxConformance.check(container, {
           session: keys[0]!,
           checkTimeout: budget,
-          provides: { kill: true, ping: true }
+          provides: { kill: true, ping: true },
+          // The provider names no network, so these prove the `--network none`
+          // default and the host-path boundary on a real engine, not in argv.
+          isolation: {
+            // This file exists on the host and nowhere in the image.
+            hostSentinel: fileURLToPath(import.meta.url),
+            egressProbe
+          }
         })
         expect(violations).toEqual([])
       }),
     conformanceBudget
   )
+
+  it.effect("reaches the public internet when the network is explicitly open", () =>
+    Effect.gen(function*() {
+      // The positive control for `refuses-egress`: the same probe exits 0
+      // once the network is opened, so its failure above is the network
+      // mode's doing and not a probe that can never succeed.
+      const spawner = yield* ChildProcessSpawner
+      const open = ContainerSandbox.make({ spawner, image, network: "open" })
+      const code = yield* Effect.scoped(
+        Effect.flatMap(
+          open.acquire(keys[6]!),
+          (session) => Effect.scoped(Effect.flatMap(session.spawn(egressProbe, {}), (process) => process.exitCode))
+        )
+      )
+      expect(code).toBe(0)
+    }).pipe(Effect.provide(platform)), budget)
 
   it.effect("really places file IO and processes on the container's machine", () =>
     Effect.gen(function*() {
