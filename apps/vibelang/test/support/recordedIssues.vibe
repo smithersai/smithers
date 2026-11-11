@@ -1,0 +1,53 @@
+// Strict replay for the live browser host. Each HTTP operation gets the recorded window for that operation;
+// reads restart the matching recorded snapshot, since a browser may refresh it any number of times. No answer is
+// synthesized. Request markers vary with the browser's random key; only that digest and admission time are keyed out.
+// The VIP journey uses the recording's original request key so its document and branch identities remain exact.
+import { HttpRecording } from "@smthrs/testing"
+import { GitHub } from "@smthrs/integrations"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as Connection from "../../../mvp/worker/GitHubConnectionHost.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+
+export const REPOSITORY = { owner: "codeplanesmithers", name: "smithers-vibelang-e2e", id: 1443081815, api: "https://api.github.com", agent: "codeplanesmithers" }
+export const recordedPerson = { id: "7", login: REPOSITORY.owner, role: "maintainer" as const }
+const SITE = "https://vibelang.invalid"
+const BROKER = "https://smithers.invalid"
+const secret = Redacted.make("replay-site-delegation-secret-32-chars")
+const keyring = { active: "k1", keys: { k1: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") } }
+const sites: ReadonlyArray<GitHub.Delegation.Site> = [{ origin: SITE, secret, grants: [{ repository: REPOSITORY.owner + "/" + REPOSITORY.name, repositoryId: REPOSITORY.id, scopes: ["issues", "proposals"], paths: ["docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }] }]
+const normalize = (request: HttpRecording.RecordedRequest): HttpRecording.RecordedRequest => ({
+  ...request, url: request.url.replace(/([?&]since=)[^&]*/, "$1run"),
+  ...(request.body === undefined ? {} : { body: scrubMarker(request.body) }),
+})
+function scrubMarker(body: unknown): unknown {
+  if (typeof body === "string") return body.replace(/(smithers:write=)[0-9a-f]{64}/g, "$1key")
+  if (Array.isArray(body)) return body.map(scrubMarker)
+  if (typeof body === "object" && body !== null) return Object.fromEntries(Object.entries(body).map(([key, value]) => [key, scrubMarker(value)]))
+  return body
+}
+/** The windows are native operation boundaries in issues.json, not invented GitHub responses. */
+export function recordedClient(recording: HttpRecording.Recording, operation: string, phase: string) {
+  const window = operation === "new" ? [0, 15] : operation === "comment" ? [36, 53] : operation === "propose" ? [53, 88]
+    : phase === "new" ? [15, 21] : phase === "comment" ? [47, 53] : phase === "propose" ? [78, 88] : [0, 4]
+  const exchanges = recording.exchanges.slice(window[0], window[1])
+  // A fresh delegation checks the repository before its first read, and a selected issue can be read twice.
+  const repository = recording.exchanges[0]!
+  const prepared = [repository, ...exchanges].map(exchange => ({ ...exchange, request: normalize(exchange.request) }))
+  return HttpRecording.replay({ label: recording.label, exchanges: prepared }, { normalize })
+}
+
+/** The production smithers.sh connection on workerd SQLite; its GitHub HTTP service is the strict recorded client. */
+export effect function recordedConnection(storage: Storage, github: HttpClient.HttpClient) {
+  const unused = () => Effect.die("unused GitHub authorization operation")
+  const auth = GitHub.Auth.GitHubAuth.of({ authorizeUrl: () => "", exchange: unused, user: unused, permission: unused, deviceCode: unused, deviceToken: unused, refresh: unused, revoke: () => Effect.void })
+  const act: GitHub.Delegation.Act = token => program => program.pipe(GitHub.Calls.withToken(token, REPOSITORY.api), Effect.provideService(HttpClient.HttpClient, github)) as never
+  const host = try Connection.make(7, "recorded-browser-connection", storage as never, { origin: BROKER, sites, keyring }, auth, act)
+  const installed = try host.install({ origin: SITE, login: REPOSITORY.owner, tokens: { accessToken: Redacted.make("replay-sends-no-token"), refreshToken: null, expiresAt: null } })
+  const delegate = try GitHub.Delegation.site({ origin: SITE, brokerOrigin: BROKER, secret })
+  const http = HttpClient.make((request, url) => url.origin !== BROKER ? github.execute(request) : effect {
+    const web = try Effect.orDie(HttpClientRequest.toWeb(request))
+    const response = try GitHub.Delegation.route({ origin: BROKER, sites }, (_, inner) => Effect.provideService(host.fetch, HttpServerRequest.HttpServerRequest, inner)).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
+  })
+  return { http, delegate, connection: { person: 7, delegation: installed.delegation } }
+}

@@ -364,13 +364,12 @@ return Layer.effect(Factory, effect {
           return try accepted({ type: "AppendReply", id: tour, text: entry?.text ? `\n\n${text}` : text })
         },
         finish: (tour: string) => Effect.asVoid(record({ type: "FinishReply", id: tour })),
-        // Subscribe before reading the state, so the event that ends the tour can't fall between.
+        // As the worker's sequencer does, the log replays an end that came before the call. Subscribing before reading
+        // the log keeps the event that ends the tour from falling between the two.
         ended: (tour: string) => scoped(effect {
           const live = try PubSub.subscribe(published)
-          if (!isTouring((try Ref.get(state)).conversation, tour)) return
-          try Stream.runDrain(Stream.fromSubscription(live).pipe(
-            Stream.takeUntil((item) => item.conversation === conversation && endsTour(item.event, tour)),
-          ))
+          const later = Stream.fromSubscription(live).pipe(Stream.filter((item) => item.conversation === conversation), Stream.map((item) => item.event))
+          try Stream.runDrain(Stream.concat(Stream.fromIterable((try Ref.get(state)).log), later).pipe(Stream.takeUntil((event) => endsTour(event, tour))))
         }),
       }
       const flows = Layer.mergeAll(

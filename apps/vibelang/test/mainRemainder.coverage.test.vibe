@@ -46,6 +46,20 @@ describe("a resumed write's answer", () => {
     expect(issues?.retry).toEqual(status === "completed" ? undefined : request)
     expect(issues?.error).toBe(status === "completed" ? "" : "Couldn't save. Retry.")
   })
+  it("loads the recovered issue's notes in live mode and ignores an answer for a different selection", () => {
+    const request = asked({ op: "comment", number: 7, text: "Thanks" })
+    const result = update({ ...chat, mode: "live" }, loaded(saved(request, "completed")))
+    expect(result.commands?.map(command => ({ name: command.name, args: command.args }))).toEqual([
+      { name: "LoadIssueDetails", args: { number: 7, key: "u-restored-7" } },
+    ])
+    expect(names(update({ ...chat, mode: "live" }, loaded({ ...saved(request, "completed"), saved: { ...saved(request, "completed").saved, selected: 0 } })))).toEqual([])
+    const detailed = { seq: 4, items: [{ ...issue(7), notes: [{ age: "today", author: "ada", text: "Thanks", event: false }] }] }
+    const shown = update(result.model, Message.IssueDetailsLoaded({ number: 7, data: detailed })).model
+    expect(shown.issues?.data.items[0]?.notes[0]?.text).toBe("Thanks")
+    expect(shown.issues?.retry).toBeUndefined()
+    const selectedElsewhere = { ...result.model, issues: { ...result.model.issues!, selected: 8 } }
+    expect(update(selectedElsewhere, Message.IssueDetailsLoaded({ number: 7, data: detailed })).model).toBe(selectedElsewhere)
+  })
   it("offers no retry for a write that never reached the store", () => {
     const { issues } = update(chat, loaded(saved(asked({ op: "comment" }), "failed", true))).model
     expect(issues).toMatchObject({ error: "" })
@@ -105,6 +119,18 @@ describe("an issues answer", () => {
 describe("a role change", () => {
   const person = (id: string, role: "new" | "maintainer") => ({ id, login: id, role })
   const held = (dialog: "" | "split"): Model => ({ ...open({ dialog, retry: asked(), busy: true }), account: { ...accountOf(chat), identity: person("1", "maintainer") } })
+  it("the first session answer keeps the write recovered before it; a later sign-out clears it", () => {
+    const request = asked({ op: "new", title: "Recovered", text: "Kept" })
+    const restored = update(init({ session: "reload", mode: "live", name: "Guest" }).model, loaded({ seq: 1, items: [], saved: { request, status: "failed", unwritten: false, selected: 0 } })).model
+    const signedIn = update(restored, Message.AccountLoaded({ identity: person("1", "maintainer") })).model
+    expect(signedIn.issues?.retry).toEqual(request)
+    expect(signedIn.issues).toMatchObject({ screen: "new", title: "Recovered", summary: "Kept" })
+    const signedOut = update(signedIn, Message.AccountLoaded({ identity: { id: "", login: "", role: "viewer" } })).model
+    expect(signedOut.issues?.retry).toBeUndefined()
+    // A confirmed guest becoming a person is a real switch, even though the previous id is empty.
+    const guest = update(restored, Message.AccountLoaded({ identity: { id: "", login: "", role: "viewer" } })).model
+    expect(update(guest, Message.AccountLoaded({ identity: person("2", "maintainer") })).model.issues?.retry).toBeUndefined()
+  })
   it("a different person drops the write in flight", () => {
     const issues = update(held(""), Message.AccountLoaded({ identity: person("2", "maintainer") })).model.issues
     expect(issues).toMatchObject({ busy: false })

@@ -55,3 +55,26 @@ it.live("in mock mode too, the tour after an ended one greets the person first",
     try factory.endTour("again")
   }
 }), 30_000)
+
+
+// Both ends are accepted before the sequencer gets a chance to speak. The next ordinary post must not wait on an
+// already-ended tour, including one queued behind another ended run; its response is still produced once.
+it.live("an immediately ended queued tour releases the next post", () => scoped(effect {
+  provide mockFactoryFor() {
+    const factory = try Factory
+    try factory.tour("immediate")
+    try factory.endTour("immediate")
+    try factory.tour("immediate")
+    try factory.endTour("immediate")
+    try factory.post("immediate", "after-ends", "Guest", "How do I install it?")
+    const events = Array.from(try Stream.runCollect(factory.events("immediate", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished"))))
+    try Effect.try(() => {
+      expect(events.filter(event => event.type === "TourEnded")).toHaveLength(2)
+      expect(events.filter(event => event.type === "ReplyFinished")).toHaveLength(1)
+    })
+    const entries = (try factory.read("immediate", 0)).entries
+    const posted = entries.find(entry => entry.clientId === "after-ends")!
+    const reply = entries.find(entry => entry.inReplyTo === posted.id)
+    try Effect.try(() => expect(reply).toMatchObject({ done: true, error: "" }))
+  }
+}))

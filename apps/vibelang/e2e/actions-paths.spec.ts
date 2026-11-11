@@ -58,3 +58,18 @@ test("a cancel that fails says so; the next cancel stops the run", async ({ page
   await actions.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(actions.getByText("Cancelled", { exact: true }).first()).toBeVisible()
 })
+
+test("a run the agent requests whose read fails shows the failure in Actions; Retry loads it", async ({ page }) => {
+  // Open the panel before the request: opening it afterwards also loads runs, clearing the prior read failure.
+  const actions = await pane(page, "actions-read")
+  const input = page.getByRole("textbox", { name: "Message", exact: true })
+  await input.fill("Run /tour")
+  await input.press("Enter")
+  await expect(page.getByText("Tour requested.", { exact: true })).toBeVisible()
+  await expect(actions.getByText("Couldn't load runs", { exact: false })).toBeVisible()
+  await actions.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(actions.getByText("Couldn't load runs", { exact: false })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: /Open Tour run/ })).toBeVisible()
+  await actions.getByRole("button", { name: /^Tour(?: \d+s)?$/ }).click()
+  await expect(actions.getByRole("button", { name: /Tour #/ })).toBeVisible()
+})

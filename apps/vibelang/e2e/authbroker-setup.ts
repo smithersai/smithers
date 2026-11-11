@@ -25,7 +25,12 @@ export default async function setup() {
       host.stdout!.on("data", chunk => {
         output += String(chunk)
         const ready = output.match(/AUTH_BROKER_READY (\{[^\n]+\})/)
-        if (ready) { clearTimeout(timer); resolve(ready[1]!) }
+        if (ready) {
+          clearTimeout(timer)
+          // The host prints the live issue sites' origins first (live-issues.spec.ts).
+          process.env.LIVE_ISSUES_TEST_ORIGINS = output.match(/LIVE_ISSUES_READY (\{[^\n]+\})/)![1]!
+          resolve(ready[1]!)
+        }
       })
       host.stderr!.on("data", chunk => { output += String(chunk) })
       host.once("exit", code => { clearTimeout(timer); reject(new Error(`Auth host exited ${code}: ${output}`)) })

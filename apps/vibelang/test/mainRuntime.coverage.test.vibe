@@ -13,6 +13,7 @@ import { accountOf, CloseIssueDialog, CloseRoleDialog, FocusAccountMenu, FocusIs
 import { Factory as FactoryService, Refused, Unavailable } from "../src/core/Factory.vibe"
 import { overlaid } from "./support/overlaid.vibe"
 import { application } from "./support/application.vibe"
+import { faultyActions } from "./support/FaultyActions.vibe"
 import { activeIs, addElement, clickLink, container, dispatchWindow, location, popTo, press, remove } from "./support/browser.ts"
 
 const flags = { session: "r", name: "Ada", mode: "mock" as const }
@@ -205,3 +206,23 @@ describe("a backend that fails", () => {
     try Effect.try(() => expect(accountOf(seen.model).identity).toEqual(identity))
   }))
 })
+
+
+it.live("a run cancelled by another client settles in the page after its first follow is lost", () => scoped(effect {
+  const services = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provideMerge(MockFactory))
+  provide services {
+    const factory = try FactoryService
+    const actions = try Actions
+    const seen = try started(
+      quiet({ actions: { ...initialActions, open: true } }, () => [RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none" })]),
+      faultyActions(Layer.succeed(Actions, actions), "follow"),
+      Layer.succeed(FactoryService, factory),
+    )
+    try settled(() => expect(seen.model.actions?.runs.some(run => run.state === "running" || run.state === "queued")).toBe(true))
+    const id = seen.model.actions!.runs[0]!.id
+    // Another client cancels through the same public Actions service. The page receives no CancelAction reply;
+    // only its reconnected follow can learn that the run ended.
+    try actions.cancel(id)
+    try settled(() => expect(seen.model.actions?.runs.find(run => run.id === id)?.state).toBe("cancelled"), 8000)
+  }
+}))

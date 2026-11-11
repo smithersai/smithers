@@ -6,7 +6,7 @@ import { GitHub } from "@smthrs/integrations"
 import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase, RunInspection } from "@smthrs/platform-cloudflare"
 import { HttpClient, FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { applyWikiEdits, emptyWikiEdits, wikiPermission, type WikiEdits, type WikiOperation, type WikiPageState } from "../src/core/conversation.vibe"
+import { applyWikiEdits, emptyWikiEdits, wikiPermission, type WikiEdits, type WikiOperation } from "../src/core/conversation.vibe"
 import { WikiHost, wikiEditFlows, wikiEditRegistration, authorizeWiki, wikiExecutionId, wikiRecoveryId } from "../src/core/wikiFlows.vibe"
 import { WikiFailure, WikiRequest, WikiState } from "../src/core/wikiSchemas.vibe"
 import { pages } from "../src/core/wikiIndex.vibe"
@@ -64,14 +64,6 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
     const stored = try promise(() => storage.get(`wiki/draft/${person}/${page}`))
     return Schema.decodeUnknownOption(StoredDraft)(stored).pipe(Option.getOrUndefined)
   }
-  effect function note(page: WikiPageState) {
-    edits = applyWikiEdits(edits, { type: "WikiEditsObserved", seq: edits.seq + 1, pages: [...edits.pages.filter((entry) => entry.id !== page.id), page] })
-    if (storage !== undefined) {
-      try promise(() => storage.put("wiki/revision", edits.seq))
-      try promise(() => storage.put(`wiki/page/${page.id}`, { id: page.id, source: page.source, revision: page.revision }))
-    }
-    return edits
-  }
   effect function readSource(path: string, ref = repo.branch) {
     const file = try GitHub.Contents.getText(repo.owner, repo.name, path, { ref }).pipe(Effect.mapError(wikiFailureOf))
     if (Option.isNone(file)) throw new WikiFailure({ reason: "missing" })
@@ -88,7 +80,10 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         if (request.op === "read") {
           // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
           const observed = try GitHub.ReadCache.observeStale(readSource(path), { patience: READ_PATIENCE })
-          const state = try note({ id: request.page, source: observed.value.text, revision: observed.value.sha })
+          // executeWiki constructs a host per request. Observations belong to its answer; only people's drafts persist.
+          const page = { id: request.page, source: observed.value.text, revision: observed.value.sha }
+          const state = applyWikiEdits(edits, { type: "WikiEditsObserved", seq: edits.seq + 1, pages: [...edits.pages.filter(entry => entry.id !== page.id), page] })
+          edits = state
           const draft = try loadDraft(actor?.id ?? "", request.page)
           const answer = draft === undefined ? state : { ...state, draft }
           return observed.stale === undefined ? answer : { ...answer, stale: observed.stale }

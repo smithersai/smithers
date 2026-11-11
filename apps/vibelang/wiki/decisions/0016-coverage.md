@@ -3,7 +3,7 @@
 **Status:** in progress, 2026-11-07. **Rulings:** VL-5, VL-7, VL-14, VL-29.
 
 The goal remains 100% lines, branches, functions and statements for each production file, independently per suite.
-That goal has **not been achieved**. No source file is excluded, from this gate or, since 2026-11-10, the fuzz gate,
+That goal has **not been achieved**. No source file is excluded from the unit or workerd roster, or, since 2026-11-10, the fuzz gate,
 whose roster had left out `scripts/`, `infra/` and `worker/Api.vibe` ("Measuring every gate" below). This decision records landed behavioral tests and
 the coverage commands. `pnpm e2e` measures and reports Chromium coverage without failing on it. The strict gates
 `pnpm test:coverage` and `pnpm e2e:coverage` are the exclusive PACKAGE targets `coverage` and `browserCoverage`: a
@@ -32,17 +32,44 @@ build, with no configuration change.
 The roster is `browserSources` in `e2e/coverage-reporter.ts`. It reads `dist/assets/*.js.map`, fails if the build
 has no source maps, and the reporter prints its size on each run. Test: `test/browserCoverageScope.test.vibe`.
 
-Named browser gaps that stay open:
+Named browser sites and status:
 
 | Site | Reason |
 | --- | --- |
 | `src/history/flows.vibe:213` | V8 range defect (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm/`), if the bundle ships it. |
 | `src/history/tools.vibe:93` | The compiler's exhaustive-match fallthrough arm (ruling VL-37; the fleet lead's compiler change). |
-| `src/web/wikiView.vibe:88` (`toHtml`) | Runs only when the repository's wiki source differs from the build. The fixture wiki host never changes a page's source, and decision 0032's recordings replay GitHub in Node, not behind a browser. Needs a browser-to-worker run over a recording. |
-| `src/web/main.vibe:391`–`394` and `issueRecovered`, `issueRecoveredView` (`issueDecision.vibe`) | `IssuesState.saved` comes only from `worker/Issues.vibe`. No browser-side service produces it, so only a browser against the live worker reaches the recovered-issue arm. |
+| `src/web/wikiView.vibe:88` (`toHtml`) | Closed in session 19: the GitHub-recorded repository copy differs from the build; the browser saves an edit and renders it. |
+| `src/web/main.vibe:391`–`394` and `issueRecovered`, `issueRecoveredView` (`issueDecision.vibe`) | Closed in session 20: the browser uses production issue routes on workerd over recorded GitHub. Pending new issues and VIPs restore their forms; completed and unwritten-refused comments restore their issue. |
 | `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code. |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
+
+### Issue recovery and agent run reads (session 20, 2026-11-11)
+
+The browser now reaches the production issue routes on workerd SQLite over GitHub's recording, using the real
+smithers.sh per-person connection (`test/support/recordedIssues.vibe`, `liveSite.vibe`, `workerd.vibe`). Each project
+owns its host. A faulty IssueHost fails a write once; normal calls construct the production GitHub host. No request
+is intercepted. New-issue and VIP recovery restore their saved forms and retry; a completed comment leaves its
+resume address, and an unwritten refusal offers no issue retry. GitHub's initial post-create list really is stale:
+refreshed reads use its later recorded observation, not a manufactured response.
+
+Two UI regressions failed first: startup's first account answer erased a recovered retry, and a restored detail
+screen never requested its comments. Startup confirmation now uses the account epoch; a subsequent sign-out or
+person switch still clears the prior request. Restoring a detail screen asks the existing LoadIssueDetails command
+for its notes; a late response for another selection remains ignored. The browser checks the actual comment list.
+
+The Actions fault page binds the scripted agent to the same Actions service as its controls. The agent requests
+`/tour` through the healthy service, while the page's first run read fails. Retry reloads the real run; its card and
+run row then appear. A runtime unit regression also cancels a Tour through another client while the page's first
+follow is lost: only the reconnected subscription can update the page to Cancelled. Tests open Actions before requesting the run so opening it cannot hide the read failure.
+
+The wiki host's `wiki/revision` and `wiki/page/*` writes had no reader and are deleted, along with their single-use
+helper. The recording test poisons old values: reads still answer GitHub and leave those values alone; only the
+person's draft persists. MockFactory's ended-tour wait replays the journal before following live events, as the
+worker does; this removes its redundant state guard (the reported line 367). A queued, immediately ended pair of
+tours releases the next post. Strict thresholds and all unit/workerd source directories remain unchanged.
+
+Final full-suite counts and per-file measurements follow once the session's gates finish.
 
 ### Browser journeys and measurement (session 16, 2026-11-11)
 
@@ -146,9 +173,13 @@ with evidence; exit 1 on thresholds only.
 | Browser (session 18 → 19) | 89/109 → 90/112 | 4019/5075 → 4036/5088 (79.32%) | 3889/5937 → 3918/5945 (65.90%) | 1704/2115 → 1717/2121 (80.95%) | 4775/6481 → 4801/6499 (73.87%) |
 
 Unit gaps by owner: specification-only functions in `src/core/issueGraphDecision.vibe` and `replayDecision.vibe`
-(vl-ghost-functions); `src/history/tools.vibe:93` (VL-37); `src/core/flows.vibe:343`, the V8 suspend-else range
-(`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm/`, was line 213); single arms in `MockFactory`, the sandbox hosts,
+(vl-ghost-functions); `src/history/tools.vibe:93` (VL-37); `src/core/flows.vibe:343`; single arms in
+`MockFactory`, the sandbox hosts,
 `issueHostDecision`, `historyView`, `main.vibe:939`, `view.vibe:149` and `worker/Wiki.vibe:68`.
+
+Correction in session 20: `core/flows.vibe:343` is a distinct current gap after a suspending conditional.
+The plain-JavaScript V8 reproduction names `history/flows.vibe:213`; it does not establish the cause of the core gap.
+The historical V8 defect remains named above even when merged history counters are positive.
 
 Bugs found and fixed, each with a browser check that failed first (`e2e/actions-paths.spec.ts` over new
 `FaultyActions` points `start`, `read`, `follow` and `cancel`):

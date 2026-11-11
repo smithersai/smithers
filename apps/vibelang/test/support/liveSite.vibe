@@ -1,0 +1,33 @@
+// A live deployment's single origin for a browser test: the built site from `site` (the e2e preview server) and every
+// `/api/` and `/__` route from a local workerd (test/support/workerd.vibe), as the deployed Worker serves both. The page
+// it serves finds a live health answer, so it runs LiveFactory against the workerd's production routes. The server
+// lives as long as the calling scope.
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { Served } from "./workerd.vibe"
+
+/** Body-framing and hop-by-hop headers the server recomputes; the client has already decoded any content encoding. */
+const DROPPED = new Set(["connection", "content-length", "content-encoding", "transfer-encoding", "keep-alive"])
+
+export effect function serveLiveSite(api: Served, site: string) {
+  const context = try Layer.build(NodeHttpServer.layerTest)
+  const server = Context.get(context, HttpServer.HttpServer)
+  if (server.address._tag === "UnixPathAddress") return try Effect.die(new Error("live site has no TCP port"))
+  const origin = `http://127.0.0.1:${server.address.port}`
+  const client = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+  const route = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = new URL(request.url, origin)
+    if (path.pathname.startsWith("/api/") || path.pathname.startsWith("/__")) {
+      const web = try HttpServerRequest.toWeb(request)
+      return HttpServerResponse.fromWeb(try promise(() => api.fetch(web)))
+    }
+    const answer = try client.execute(HttpClientRequest.make(request.method as "GET")(site + path.pathname + path.search))
+    const body = try answer.arrayBuffer
+    const headers = Object.fromEntries(Object.entries(answer.headers).filter(([name]) => !DROPPED.has(name) && name !== "content-type"))
+    return HttpServerResponse.uint8Array(new Uint8Array(body), { status: answer.status, headers, contentType: answer.headers["content-type"] ?? "application/octet-stream" })
+  }
+  const logged = route.pipe(Effect.catchCause((cause) => Effect.logError("vibelang.e2e.live-site-failed").pipe(Effect.annotateLogs({ cause: Cause.pretty(cause).split("\n")[0] ?? "" }), Effect.as(HttpServerResponse.empty({ status: 502 })))))
+  try forkScoped(HttpServer.serveEffect(logged).pipe(Effect.provide(context)))
+  return { origin }
+}

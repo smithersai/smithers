@@ -6,6 +6,8 @@ import { Factory } from "../../src/core/Factory.vibe"
 import { mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { MockActions } from "../../src/actions/MockActions.vibe"
 import { faultyActions } from "../../test/support/FaultyActions.vibe"
+import { Actions } from "../../src/actions/Actions.vibe"
+import { AgentActions, deferredActions } from "../../src/actions/agent.vibe"
 import type { Role } from "../../src/actions/Actions.vibe"
 import { application } from "../../test/support/application.vibe"
 import { stylesheet } from "../../src/web/styles.vibe"
@@ -26,7 +28,10 @@ const program = await runPromise(effect {
       document.head.append(style)
       return document.getElementById("root")!
     })
-    const base = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role)
+    // The scripted agent requests runs ("Run /tour") through the page's own MockActions, never through the fault, as
+    // the app's BrowserFactory wires it: a fault point is the page's call, not the agent's.
+    const agent = try deferredActions()
+    const base = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role).pipe(Layer.provideMerge(Layer.succeed(AgentActions, { actions: agent.actions })))
     // A fixture agent's real Post flow, observed by a signed-out browser through the unchanged label component.
     const factory = params.get("agent") === "yes" ? Layer.effect(Factory, effect {
       const product = Context.get(try Layer.build(base), Factory)
@@ -35,7 +40,11 @@ const program = await runPromise(effect {
       try Effect.orDie(product.accounts!.signOut())
       return product
     }) : base
-    const actions = MockActions({ role, actor: "person" })
+    const actions = Layer.effect(Actions, effect {
+      const real = try Actions
+      try agent.resolve(real)
+      return real
+    }).pipe(Layer.provide(MockActions({ role, actor: "person" })))
     // `actions` fails the first list; `actions-<point>` the first call at that point (FaultyActions.vibe).
     const point = fault === "actions" ? "list" : fault === "actions-start" ? "start" : fault === "actions-read" ? "read" : fault === "actions-follow" ? "follow" : fault === "actions-cancel" ? "cancel" : undefined
     return application(root, factory, () => {}, undefined, point === undefined ? actions : faultyActions(actions, point))

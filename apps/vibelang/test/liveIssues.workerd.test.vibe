@@ -1,0 +1,35 @@
+// Production issue routes on workerd SQLite, through the production GitHub delegation host and strict recording.
+import { expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientRequest, FetchHttpClient } from "effect/http"
+import { HttpRecording } from "@smthrs/testing"
+import { IssuesState } from "../src/core/issueSchemas.vibe"
+import { recordingPath } from "./support/github.vibe"
+import { deadline, serveLiveIssues } from "./support/workerd.vibe"
+
+it.live("a failed new issue is recovered and retried once; a completed comment replays its saved receipt", () => scoped(effect {
+  const recording = try HttpRecording.load(try recordingPath("issues"))
+  const server = try acquireRelease(serveLiveIssues(), server => promise(() => server.dispose()))
+  provide FetchHttpClient.layer {
+    const http = try HttpClient.HttpClient
+    const post = (path: string, body: unknown) => http.execute(HttpClientRequest.post(server.origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(body)))
+    const payload = { op: "new", key: "browser-new", number: 0, parent: 0, title: recording.label + " issue", text: "Body", assignee: "", example: "", prior: "" }
+    const answer = effect (body: unknown) => {
+      const response = try post("/api/issues", body)
+      expect(response.status).toBe(200)
+      return try Schema.decodeUnknownEffect(IssuesState)(try response.json)
+    }
+    expect((try http.get(server.origin + "/api/issues")).status).toBe(200)
+    try post("/__fault?writes=1", {})
+    expect((try post("/api/issues", payload)).status).toBe(503)
+    const recovered = try answer({ ...payload, op: "read", key: "reload", resumeOp: "new", resumeKey: payload.key })
+    expect(recovered.saved).toMatchObject({ status: "failed", unwritten: false, request: payload })
+    const written = try answer({ ...payload, recovery: "retry" })
+    expect(written.items.find(item => item.number === written.selected)).toMatchObject({ title: payload.title, body: "Body" })
+    expect(try answer({ ...payload, recovery: "retry" })).toEqual(written)
+    const comment = { ...payload, op: "comment", key: recording.label + "-3", number: 124, title: "", text: "Thanks" }
+    const commented = try answer(comment)
+    expect(commented.items.find(item => item.number === 124)?.notes.some(note => note.text === "Thanks")).toBe(true)
+    const completed = try answer({ ...payload, op: "read", key: "completed", resumeOp: "comment", resumeKey: comment.key })
+    expect(completed.saved).toMatchObject({ status: "completed", selected: 124 })
+  }
+}), deadline(120_000))

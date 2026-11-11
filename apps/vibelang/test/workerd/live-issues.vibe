@@ -1,0 +1,59 @@
+// Unshipped live browser host: production issue HTTP routes and GitHub host, the real durable engine and delegation,
+// SQLite in workerd, and strict GitHub replay (test/support/recordedIssues.vibe). Faults fail the host at its Effect
+// boundary before a GitHub call; the engine keeps that failed request for the browser to recover after a reload.
+import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { HttpRecording } from "@smthrs/testing"
+import { IssueHost } from "../../src/core/issueFlows.vibe"
+import { IssueFailure, IssueRequest } from "../../src/core/issueSchemas.vibe"
+import { HEALTH_PATH } from "../../src/core/wire.vibe"
+import { IssueAuthority, serveIssues } from "../../worker/Issues.vibe"
+import { GitHubDelegate } from "../../worker/GitHubDelegate.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+import { recordedClient, recordedConnection, recordedPerson, REPOSITORY } from "../support/recordedIssues.vibe"
+
+const FAULTS = "faults/writes"
+const PHASE = "recording/phase"
+export class LiveIssuesObject {
+  constructor(readonly state: { readonly storage: Storage; readonly id: { toString(): string } }, readonly env: { readonly RECORDING: string }) {}
+  async fetch(request: Request): Promise<Response> {
+    const storage = this.state.storage
+    const url = new URL(request.url)
+    if (url.pathname === "/__fault") {
+      await storage.put(FAULTS, Number(url.searchParams.get("writes") ?? "0"))
+      return HttpServerResponse.toWeb(HttpServerResponse.empty())
+    }
+    const input = request.method === "POST" ? Schema.decodeUnknownSync(IssueRequest)(await request.clone().json()) : undefined
+    const phase = await storage.get(PHASE)
+    const recording = JSON.parse(this.env.RECORDING) as HttpRecording.Recording
+    return HttpServerResponse.toWeb(await runPromise(scoped(effect {
+      const recorded = recordedClient(recording, input?.op ?? "read", typeof phase === "string" ? phase : "")
+      const site = try recordedConnection(storage, recorded)
+      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ ...recordedPerson, kind: "person" as const, connection: site.connection }), authorize: () => Effect.void }
+      const pending = try promise(() => storage.get(FAULTS))
+      const failing = input !== undefined && input.op !== "read" && typeof pending === "number" && pending > 0
+      const faulty: IssueHost.Shape = { perform: effect payload => {
+        try promise(() => storage.put(FAULTS, Number(pending) - 1))
+        try Effect.logWarning("vibelang.e2e.issue-fault").pipe(Effect.annotateLogs({ op: payload.op }))
+        throw new IssueFailure({ reason: "unavailable" })
+      } }
+      const served = serveIssues(this.state.id.toString(), storage, REPOSITORY).pipe(
+        Effect.provideService(IssueAuthority, authority),
+        Effect.provideService(HttpClient.HttpClient, site.http), Effect.provideService(GitHubDelegate, site.delegate),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
+      )
+      // Successful calls leave executeIssues to build its production host, including fresh/unwritten and revision rules.
+      const response = try (failing ? Effect.provideService(served, IssueHost, faulty) : served)
+      if (response.status === 200 && input !== undefined && input.op !== "read") try promise(() => storage.put(PHASE, input.op))
+      return response
+    })))
+  }
+}
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(request: Request): Promise<Response> } }
+export default { fetch(request: Request, env: { readonly ISSUES: Namespace }) {
+  const path = new URL(request.url).pathname
+  if (path === HEALTH_PATH) return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ok: true, agent: "live" }))
+  if (path === "/api/auth/session") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(recordedPerson))
+  if (path === "/api/roles") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe([recordedPerson]))
+  if (path === "/api/issues" || path === "/__fault") return env.ISSUES.get(env.ISSUES.idFromName("issues")).fetch(request)
+  return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
+} }

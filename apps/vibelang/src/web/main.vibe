@@ -397,7 +397,10 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       if (data.saved !== undefined) {
         const { request, status, unwritten, selected } = data.saved
         const step = IssueDecision.issueRecovered(issueScreen(ui), request.op, status === "completed", unwritten, selected, request.title, request.text, request.example, request.prior, String(request.parent), request.assignee)
-        return { model: { ...model, issues: { ...ui, ...step.state, keyPrefix: model.session, data, role, retry: step.clearRetry ? undefined : request } } }
+        // The recovery read returns the list; a restored detail view still needs its comments and timeline.
+        const commands = step.state.screen === "detail" && selected > 0 && IssueDecision.issueCardLoadsDetails(model.mode)
+          ? [LoadIssueDetails({ number: selected, key: `${model.session}-restored-${selected}` })] : []
+        return { model: { ...model, issues: { ...ui, ...step.state, keyPrefix: model.session, data, role, retry: step.clearRetry ? undefined : request } }, commands }
       }
       const settled = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
       const assignee = data.assignees === undefined ? ui.assignee : IssueDecision.issueAssigneeAfter(data.assignees.some((a) => a.login === ui.assignee), ui.assignee, data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "")
@@ -587,7 +590,9 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
   const before = accountOf(model).identity
   const after = accountOf(next.model).identity
   const issues = next.model.issues
-  const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message)
+  // The first session answer confirms startup identity; it must preserve a request already recovered for that session.
+  // Once an account has been observed, changing people still drops the prior person's pending write.
+  const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, (accountOf(model).epoch > 0 || before.id !== "") && before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message)
   if (after2.kind === "issues" && issues !== undefined) {
     return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: after2.closeDialog ? "" : issues.dialog, ...(after2.clearRetry ? { retry: undefined, busy: false } : {}) } }, commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
   }

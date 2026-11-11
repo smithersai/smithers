@@ -457,3 +457,19 @@ No tool or dependency added.
 The `model-budget-faults.bench.vibe` workloads additionally exercise the real reviewer and Reply flow with a faulty
 Spend service, exact budget outcomes, request/attempt/failure counts and retained reservations. Timing methods and
 raw sample counts are in [benchmarks](../benchmarks.md#resume-8-physical-call-budgets-and-the-run-clock-2026-11-11).
+
+## Browser issue recovery over GitHub replay (0016, session 20)
+
+`test/support/workerd.vibe`'s `serveLiveIssues` runs the production issue HTTP routes and durable engine on workerd
+SQLite. `test/support/recordedIssues.vibe` supplies smithers.sh's production per-person connection with
+`HttpRecording.replay` over `test/recordings/issues.json`. A browser refresh replays a recorded read snapshot; native
+writes replay their recorded operation window. Only the admission time and plaintext write-marker digests are
+normalized. VIPs use the recorded request key so branch, document, commit and review identities stay exact. The
+post-create list uses GitHub's later observation: the recording also retains its initially stale list.
+
+`test/support/liveSite.vibe` serves the built site and these API routes at one browser origin. Each Playwright project
+has isolated durable storage; a fault control injects an IssueHost failure for the next write. All other calls let
+`executeIssues` construct its normal GitHub host, including fresh-request, revision and unwritten-refusal rules.
+The product's unavailable routes remain unavailable on this test host. No requests are intercepted and no dependency
+was added. The focused API regression is `test/liveIssues.workerd.test.vibe`; browser journeys are
+`e2e/live-issues.spec.ts`. Counts and verification receipts belong to 0016 and the lane report.
