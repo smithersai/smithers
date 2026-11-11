@@ -453,9 +453,9 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
   const billing = context.billing
   if (billing !== undefined && billing !== null) {
     lines.push(
-      billing.state === "unavailable" || billing.state === "unknown"
+      billing.state === "unavailable" || billing.state === "unknown" || billing.totalUsd === null
         ? `- Balance: the billing service did not answer (${line(billing.state)}) — say so rather than naming a figure.`
-        : `- Balance: $${line(billing.totalUsd ?? "0")} left; $${
+        : `- Balance: $${line(billing.totalUsd)} left; $${
           line(billing.lifetimeChargedUsd ?? "0")
         } spent across ${billing.chargeCount} turn(s). This IS the number — never state a different one.`
     )

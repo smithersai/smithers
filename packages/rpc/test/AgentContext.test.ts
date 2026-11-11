@@ -559,13 +559,30 @@ describe("runtime context branch contracts", () => {
     expect(lines.join("\n")).not.toContain("$519")
   })
 
-  test("states the balance figure and null defaults, and omits absent billing", () => {
+  test.each(["available", "loading", "custom-state"])(
+    "refuses to invent a balance when the total is null and billing is %s",
+    (state) => {
+      for (const lifetimeChargedUsd of [null, "4"]) {
+        const context = AgentRuntimeContextSchema.parse(contextFixture({
+          billing: { state, totalUsd: null, lifetimeChargedUsd, chargeCount: 0 }
+        }))
+        const rendered = renderAgentRuntimeContext(context)
+        expect(rendered.split("\n")).toContain(
+          `- Balance: the billing service did not answer (${state}) — say so rather than naming a figure.`
+        )
+        expect(rendered).not.toContain("- Balance: $")
+        expect(rendered).not.toContain("This IS the number")
+      }
+    }
+  )
+
+  test("states the balance figure and spending default, and omits absent billing", () => {
     for (
-      const [totalUsd, lifetimeChargedUsd, expected] of [["519", "4", "$519 left; $4"], [
-        null,
-        null,
-        "$0 left; $0"
-      ]] as const
+      const [totalUsd, lifetimeChargedUsd, expected] of [
+        ["519", "4", "$519 left; $4"],
+        ["0", "0", "$0 left; $0"],
+        ["519", null, "$519 left; $0"]
+      ] as const
     ) {
       expect(
         renderAgentRuntimeContext(contextFixture({
