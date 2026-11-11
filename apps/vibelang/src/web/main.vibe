@@ -26,6 +26,7 @@ import { escapeAction, hasContent, scrollFollow, follows, paletteChange, complet
 import { MediaSources, observeMedia } from "./media.vibe"
 import { Identity, viewer } from "../core/roles.vibe"
 import { WikiFailure, WikiRequest } from "../core/wikiSchemas.vibe"
+import { DurableText } from "../core/wire.vibe"
 import * as PaneDecision from "./paneDecision.vibe"
 import * as UpdateDecision from "./updateDecision.vibe"
 import * as ArmDecision from "./armDecision.vibe"
@@ -41,7 +42,8 @@ import { transcriptViewport } from "./viewport.vibe"
 /** What the page knows when it starts: a random id for this tab's posts, the backend (pending until selected), and the name posts carry. */
 export schema Flags {
   readonly tutorialSession?: string
-  readonly session: string
+  /** A fresh UUID at startup; every request, retry and recovery key starts with it, so it is durable text. */
+  readonly session: DurableText
   readonly mode: "mock" | "live" | "pending"
   readonly name: string
   readonly mediaSources?: MediaSources
@@ -91,7 +93,7 @@ export schema Model {
   readonly palette: boolean
   readonly draft: string
   readonly tutorialSession?: string
-  readonly session: string
+  readonly session: DurableText
   readonly name: string
   readonly mediaSources?: MediaSources
   readonly failedMedia?: ReadonlyArray<string>

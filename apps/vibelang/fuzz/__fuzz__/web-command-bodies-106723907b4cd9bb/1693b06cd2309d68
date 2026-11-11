@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 82
+bias 3
+null-prototype false
+key 3309359437
+tape JMwMBQNMF8wGgdR7s0Bp3l-VoMWa3VeV4orzqA
+schedule-key 3193779583
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"backend\":\"mock\",\"wiki\":\"stale\",\"role\":\"community\",\"body\":{\"command\":\"OpenWikiEditor\",\"page\":\"designs/mythical/NOTES\",\"request\":0}}"
+# ReturnedFalse
+# {"backend":"mock","wiki":"stale","role":"community","body":{"command":"OpenWikiEditor","page":"designs/mythical/NOTES","request":0}}

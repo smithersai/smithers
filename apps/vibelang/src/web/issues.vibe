@@ -35,12 +35,13 @@ export const initialIssues: IssuesUi = {
   comment: "", parent: "", assignee: "VibeLang agent", step: 1, error: "", serial: 0,
 }
 /** Typed text that is not a whole issue number names no parent; the server's tree check refuses it as a typed reason. */
-function parentNumber(text: string): number {
-  const parent = Number(text.trim())
-  return IssueDecision.issueParent(Number.isSafeInteger(parent), parent)
+/** An issue number typed or sent as text; text that is not a whole non-negative number names no issue (0). */
+function issueNumber(text: string): number {
+  const number = Number(text.trim())
+  return IssueDecision.issueParent(Number.isSafeInteger(number), number)
 }
 export function issueRequest(ui: IssuesUi, op: IssueRequest["op"]): IssueRequest {
-  return { op, number: ui.selected, parent: parentNumber(ui.parent), title: ui.title, text: IssueDecision.issueRequestText(op === "comment", ui.comment, ui.summary), example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
+  return { op, number: ui.selected, parent: issueNumber(ui.parent), title: ui.title, text: IssueDecision.issueRequestText(op === "comment", ui.comment, ui.summary), example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
 }
 /** The plain state the proved decisions in `issueDecision.vibe` read and return. */
 export function issueScreen(ui: IssuesUi): IssueDecision.IssueScreen {
@@ -55,7 +56,7 @@ function issueFacts(ui: IssuesUi, action: string, value: string): IssueDecision.
     retryAllowed: ui.retry !== undefined && issuePermission(ui.role, ui.retry.op),
     allowed: op !== "" && issuePermission(ui.role, op as IssueRequest["op"]),
     specText: ui.data.specification?.text ?? "",
-    number: Number(value),
+    number: issueNumber(value),
     kind: value as IssuesUi["kind"],
     listState: value as IssuesUi["state"],
     blankTitle: ui.title.trim() === "",

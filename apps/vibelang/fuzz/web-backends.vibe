@@ -68,7 +68,10 @@ export function backend(kind: Backend, role: typeof Role.Type) {
 }
 
 /** What the wiki answers in an otherwise working mock: its own pages, or one injected fault. */
-export const WikiFault = Schema.Literals(["none", "read-fails", "missing", "draft", "unwritten", "kept"])
+export const WikiFault = Schema.Literals(["none", "read-fails", "missing", "draft", "unwritten", "kept", "stale", "unlisted"])
+
+/** The confirmation time the `stale` wiki answers with. */
+export const WIKI_STALE = 1_762_782_000_000
 
 function faultyWiki(wiki: NonNullable<Factory.Shape["wiki"]>, fault: typeof WikiFault.Type): NonNullable<Factory.Shape["wiki"]> {
   switch (fault) {
@@ -78,6 +81,8 @@ function faultyWiki(wiki: NonNullable<Factory.Shape["wiki"]>, fault: typeof Wiki
     case "draft": return Object.assign(Object.create(wiki), { read: (page: string) => map(wiki.read(page), (snapshot) => ({ ...snapshot, draft: { page, text: "# Draft" } })) })
     case "unwritten": return Object.assign(Object.create(wiki), { act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) })
     case "kept": return Object.assign(Object.create(wiki), { act: () => fail(new WikiFailure({ reason: "unavailable" })) })
+    case "stale": return Object.assign(Object.create(wiki), { read: (page: string) => map(wiki.read(page), (snapshot) => ({ ...snapshot, stale: WIKI_STALE })) })
+    case "unlisted": return Object.assign(Object.create(wiki), { act: (request: Parameters<typeof wiki.act>[0]) => map(wiki.act(request), (snapshot) => { const { review: _, ...rest } = snapshot; return { ...rest, pages: rest.pages.filter((entry) => entry.id !== request.page) } }) })
   }
 }
 

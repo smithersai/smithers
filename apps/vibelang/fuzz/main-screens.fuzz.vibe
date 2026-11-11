@@ -7,7 +7,7 @@ import { IssueOperation, IssueRequest } from "../src/core/issueSchemas.vibe"
 import { WikiRequest } from "../src/core/wikiSchemas.vibe"
 import { pages } from "../src/core/wiki.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
-import { backend, backendWithFailingPosts, backendWithWiki, Backend, Role, WikiFault } from "./web-backends.vibe"
+import { backend, backendWithFailingPosts, backendWithWiki, Backend, Role, WikiFault, WIKI_STALE } from "./web-backends.vibe"
 import { run, Finding, Int, Text, TextOrBoundary } from "./run.vibe"
 import { gesture, GRANTS, pump, tab, tourEnded, tourStop } from "./web-tab.vibe"
 
@@ -255,6 +255,9 @@ it.live("web/command-bodies", () => run("web/command-bodies", Bodies, ({ backend
     if (answer._tag !== "FailedActions" || answer.code !== "input") return false
   }
   if ((body.command === "RunAction" || body.command === "LoadActions") && "epoch" in answer && (answer as { epoch?: number }).epoch !== body.epoch) return false
+  // A stale read reaches the editor with its time; a write answered without the page or a review leaves both empty.
+  if (kind === "mock" && wiki === "stale" && answer._tag === "BeganWikiEdit" && answer.stale !== WIKI_STALE) return false
+  if (kind === "mock" && wiki === "unlisted" && answer._tag === "CompletedWikiEdit" && (answer.revision !== "" || answer.review !== "")) return false
   if (body.command === "SandboxAction" && answer._tag === "FailedSandbox" && kind === "faulty") return answer.reason === (body.kind === "stop" ? "fault" : "busy")
   return true
 }, Layer.merge(kind === "mock" && wiki !== "none" ? backendWithWiki(role, wiki) : backend(kind, role), Layer.empty))))

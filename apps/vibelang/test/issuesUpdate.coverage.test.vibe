@@ -2,7 +2,7 @@
 // a person must retry before starting another write.
 import { describe, expect, it } from "@effect/vitest"
 import { initialIssues, issueRequest, issuesUpdate, type IssuesUi } from "../src/web/issues.vibe"
-import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { IssueRequest as IssueRequestSchema, type IssueRequest } from "../src/core/issueSchemas.vibe"
 
 const ready = (over: Partial<IssuesUi> = {}): IssuesUi => ({ ...initialIssues, keyPrefix: "s", role: "maintainer", status: "ready", ...over })
 const saved: IssueRequest = { op: "comment", number: 7, parent: 0, title: "", text: "hello", example: "", prior: "", assignee: "", key: "s-1" }
@@ -17,6 +17,14 @@ describe("the issues screen", () => {
     const result = issuesUpdate(ready({ error: "stale" }), action, value)
     expect(result.ui).toMatchObject(expected)
     expect(result.request).toBeUndefined()
+  })
+
+  // The view sends only issue numbers, but a Message carries any text; a comment on what it selected must still decode.
+  it.each(["\u0000", "1.5", "-1", "NaN", "9007199254740993", "abc"])("selecting %j names no issue, and a comment on it still decodes", (value) => {
+    const selected = issuesUpdate(ready(), "select", value).ui
+    expect(selected).toMatchObject({ screen: "detail", selected: 0 })
+    const request = issuesUpdate({ ...selected, comment: "hi" }, "comment", "").request
+    expect(Schema.decodeUnknownExit(Schema.fromJsonString(IssueRequestSchema))(JSON.stringify(request))._tag).toBe("Success")
   })
 
   it("cancelling a dialog closes it, clears its error and returns focus to the commit control", () => {

@@ -960,6 +960,22 @@ Enter on the comment box, title and assignee), which only a scene interaction fi
 resolve, and `issueChatCard`, which the chat renders. Mutation: showing the comment box without the connection check
 is falsified in 218 executions.
 
+### `src/web/main.vibe`: wiki command bodies and restored editors
+
+Two wiki faults join `fuzz/web-backends.vibe`: `stale` (a read answers a confirmation time) and `unlisted` (a write
+answers without the page or a review). `web/command-bodies` checks that `OpenWikiEditor` carries the stale time into
+`BeganWikiEdit` and that `SubmitWikiEdit` answers an empty revision and review; dropping the stale time from
+`OpenWikiEditor` is falsified in 153 executions. `web/pane-messages` gains `restore-editor`: a schema-valid editor
+installed directly, as a decoded Model can hold it, with or without the request and serial that opening one records,
+and with a role set on the account and the issues pane together. It reaches `main.vibe`'s `?? 0` and `?? null`
+fallbacks for an editor update never built (472, 477, 479, 481 on `83c6afb4`).
+
+| Finding | Target, seed | Kind | Fix | Regression |
+| --- | --- | --- | --- | --- |
+| `IssueUi` `select` stored `Number(value)`: text such as `"\u0000"`, `"1.5"`, `"-1"` selected NaN, a fraction or a negative, and a comment on it sent a request whose `number` the wire refuses (the Model left the schema) | `web/pane-messages`, 20261134, after `restore-editor` gave the session a role that may comment | product | `issues.vibe`'s `issueNumber`: text that is not a whole non-negative number names no issue (0), as the parent field already did | `test/issuesUpdate.coverage.test.vibe` "selecting ... names no issue": 6 failed before, 6 passed after; saved value `5998fa97f74997a5` |
+| `Flags.session` and `Model.session` were any string, but every request, retry and recovery key starts with the session and must be `DurableText`; a generated session with an unpaired surrogate made a wiki submission's recovery key invalid | `web/pane-messages`, 20261133 | schema | both are `DurableText`; startup always passes a fresh UUID, so no product input changes | the target passes at 20261133 to 20261135 |
+| `restore-editor` first set the role on the account alone; update re-syncs the issues pane's role on the next message, so a stale projection "changed" the Model | `web/pane-messages`, 20261133 | target | the step sets both, as a sign-in does | same |
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
