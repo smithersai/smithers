@@ -112,7 +112,9 @@
     "@effect/sql-sqlite-do": "4.1.1",
     "@effect/sql-sqlite-node": "4.1.1",
     "@effect/vitest": "4.1.1",
-    "vitest@5.0.0>happy-dom": "20.13.2",
+    "vitest@5.0.0": {
+      "happy-dom": "20.13.2"
+    },
     "vibelang": "0.0.12",
     "vibelang-runtime": "0.0.12",
     "vibelang-vite": "0.0.12",

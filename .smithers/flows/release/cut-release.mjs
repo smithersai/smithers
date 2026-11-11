@@ -185,6 +185,34 @@ export const steps = (
   smthrs("verify workspace formatting", ["lint", "//...:fmt"])
 ]
 
+// pnpm's separator excludes range comparators after @, a space or |.
+const overrideDelimiter = (selector) => selector.search(/[^ |@]>/)
+
+/**
+ * Express pnpm parent>child selectors as npm's equivalent nested overrides.
+ * Bun records that same nested tree in its lockfile.
+ *
+ * @since 1.0.0
+ * @category utilities
+ */
+export const npmOverrides = (overrides) => {
+  const entries = Object.entries(overrides)
+  const result = new Map(entries.filter(([selector]) => overrideDelimiter(selector) < 0))
+  for (const [selector, value] of entries) {
+    const delimiter = overrideDelimiter(selector)
+    if (delimiter < 0) continue
+    const separator = delimiter + 1
+    const parent = selector.slice(0, separator)
+    const child = selector.slice(separator + 1)
+    const previous = result.get(parent)
+    result.set(parent, npmOverrides({
+      ...(typeof previous === "string" ? { ".": previous } : previous),
+      [child]: value
+    }))
+  }
+  return Object.fromEntries(result)
+}
+
 const run = (root, command, args) => execFileSync(command, args, { cwd: root, stdio: ["ignore", "inherit", "inherit"] })
 
 /**
@@ -301,13 +329,24 @@ export const main = (argv, root = repoRoot) => {
     // same-process manifest rewrite. Regenerate from the manifests, restoring
     // the old lock on failure so a failed cut never leaves it deleted.
     const lockPath = join(root, "bun.lock")
+    const manifestPath = join(root, "package.json")
+    // Bun migrates pnpm-workspace.yaml settings into package.json when no
+    // bun.lock exists. Convert its parent>child keys to npm's nested form;
+    // dropping them would make Bun's frozen install reject the new lockfile.
+    const manifest = readFileSync(manifestPath)
     const previous = readFileSync(lockPath)
     unlinkSync(lockPath)
     try {
       run(root, step.command, step.args)
       if (!existsSync(lockPath)) throw new Error("bun install did not recreate the tracked bun.lock")
+      const migrated = JSON.parse(readFileSync(manifestPath, "utf8"))
+      if (migrated.overrides !== undefined) {
+        migrated.overrides = npmOverrides(migrated.overrides)
+        writeFileSync(manifestPath, `${JSON.stringify(migrated, null, 2)}\n`)
+      }
     } catch (error) {
       writeFileSync(lockPath, previous)
+      writeFileSync(manifestPath, manifest)
       throw error
     }
   }

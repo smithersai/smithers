@@ -1,9 +1,11 @@
 import { Effect, Exit, Schema } from "effect"
 import assert from "node:assert/strict"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { commandRunner, type RunCommand } from "../release-support/io.ts"
+import { refreshReleaseLockfiles } from "../release-support/operations.ts"
 import { GateEvidence } from "../release-support/schema.ts"
 import { type ReleaseGateSet, runReleaseGates } from "../release/gates/flow.ts"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
@@ -120,4 +122,69 @@ test("interrupting the run stops the gate in flight and starts no later gate", a
   controller.abort()
   assert.ok(Exit.hasInterrupts(await exit))
   assert.equal(calls, 1, "an interrupted gate is not red, so no later gate starts")
+})
+
+test("release preparation keeps pnpm selectors npm-compatible and both frozen installs usable", {
+  timeout: 120_000
+}, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "release-locks-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const run = commandRunner(root)
+  const opts = { signal: t.signal }
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: "release-locks-fixture",
+      private: true,
+      dependencies: { effect: "4.0.5" }
+    }) + "\n"
+  )
+  await writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\n")
+  await run("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], opts)
+  await run("bun", ["install", "--lockfile-only", "--ignore-scripts"], opts)
+  const workspace = "packages: []\noverrides:\n  \"a@1>b\": \"2.0.0\"\n  \"@scope/a@1>@other/b\": \"3.0.0\"\n"
+  await writeFile(join(root, "pnpm-workspace.yaml"), workspace)
+
+  await refreshReleaseLockfiles(root, run, t.signal)
+
+  assert.match(await run("npx", ["--offline", "--call", "node --version"], opts), /^v\d+/)
+  const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
+  assert.deepEqual(manifest.overrides, {
+    "a@1": { b: "2.0.0" },
+    "@scope/a@1": { "@other/b": "3.0.0" }
+  })
+  assert.equal(await readFile(join(root, "pnpm-workspace.yaml"), "utf8"), workspace)
+  const lock = await readFile(join(root, "pnpm-lock.yaml"), "utf8")
+  await run("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], opts)
+  await run("bun", ["install", "--frozen-lockfile", "--ignore-scripts"], opts)
+  assert.equal(await readFile(join(root, "pnpm-lock.yaml"), "utf8"), lock)
+})
+
+test("release preparation restores the manifest and tracked lock when Bun removes an empty lock", {
+  timeout: 120_000
+}, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "release-empty-lock-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const run = commandRunner(root)
+  const opts = { signal: t.signal }
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: "release-locks-fixture",
+      private: true,
+      dependencies: { effect: "4.0.5" }
+    }) + "\n"
+  )
+  await writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\n")
+  await run("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], opts)
+  await run("bun", ["install", "--lockfile-only", "--ignore-scripts"], opts)
+  const lock = await readFile(join(root, "bun.lock"), "utf8")
+  const manifest = JSON.stringify({ name: "release-locks-fixture", private: true }) + "\n"
+  await writeFile(join(root, "package.json"), manifest)
+  await writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\noverrides:\n  \"a@1>b\": \"2.0.0\"\n")
+
+  await assert.rejects(refreshReleaseLockfiles(root, run, t.signal), /did not recreate the tracked bun.lock/)
+
+  assert.equal(await readFile(join(root, "bun.lock"), "utf8"), lock)
+  assert.equal(await readFile(join(root, "package.json"), "utf8"), manifest)
 })

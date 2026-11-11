@@ -440,7 +440,11 @@ three sources that repeat the version as a literal
 (`.smithers/flows/release/set-release-version.mjs`), writes the commit section into
 `CHANGELOG.md` (`.smithers/flows/release/generate-changelog.mjs`), refreshes both lockfiles,
 and regenerates the site's CLI data, `.smithers/factory.json` and
-`.smithers/target-index.json`. It then verifies each with the same check
+`.smithers/target-index.json`. Bun imports pnpm settings while rebuilding its
+lockfile. Release preparation converts selectors such as `a@1>b` to npm's equivalent nested
+`overrides` in the root manifest; the pnpm selectors stay in
+`pnpm-workspace.yaml`. This keeps npm commands and both frozen installs working.
+It then verifies each with the same check
 `release.yml` runs, including `smthrs lint '//:factoryProjection'` and
 `smthrs lint '//:targetIndex'`, so landings that added a flow, source file or
 test since the last regeneration do not turn the drift gates red. It prints

@@ -16,7 +16,7 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpath
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
-import { dirtyPaths, nextCommands, parseArguments, releaseMessage, releaseTag, steps } from "./cut-release.mjs"
+import { dirtyPaths, nextCommands, npmOverrides, parseArguments, releaseMessage, releaseTag, steps } from "./cut-release.mjs"
 import { releaseGates } from "./release-gates.mjs"
 import { versionedChangelogs, versionedSources, versionedTemplates } from "./set-release-version.mjs"
 
@@ -312,6 +312,71 @@ test("a cut bumps every manifest, retargets internal ranges, and writes the sect
     write(root, templatePath, json(staleTemplate))
     assert.throws(() => execFileSync(process.execPath, [".smithers/flows/release/set-release-version.mjs", "--check", "0.2.0"],
       { cwd: root, stdio: "pipe" }), (error) => error.status === 1 && /packages\/smithers\/package\.json/.test(String(error.stderr)))
+  })
+})
+
+test("npm overrides keep greater-than version comparators distinct from child selectors", () => {
+  const ranges = { "a@>=1": "1.2.0", "@scope/a@>1 <2": "1.2.0" }
+  assert.deepEqual(npmOverrides(ranges), ranges)
+  assert.deepEqual(npmOverrides({ "a@>1>b": "2.0.0" }), { "a@>1": { b: "2.0.0" } })
+})
+
+test("npm overrides retain parent pins, sibling children and scoped selectors in either order", () => {
+  const parent = ["a@1", "1.2.0"]
+  const child = ["a@1>b", "2.0.0"]
+  for (const entries of [[parent, child], [child, parent]]) {
+    const input = Object.fromEntries([...entries, ["a@1>c", "3.0.0"], ["@scope/a@1>@other/b", "4.0.0"]])
+    assert.deepEqual(npmOverrides(input), {
+      "a@1": { ".": "1.2.0", b: "2.0.0", c: "3.0.0" },
+      "@scope/a@1": { "@other/b": "4.0.0" }
+    })
+    assert.equal(input["a@1>b"], "2.0.0", "the input is not mutated")
+  }
+  const nested = { "a@1": { ".": "1.2.0", b: "2.0.0" } }
+  assert.deepEqual(npmOverrides(nested), nested)
+  assert.deepEqual(npmOverrides({ "a@1": { b: "2.0.0" }, "a@1>c": "3.0.0" }), {
+    "a@1": { b: "2.0.0", c: "3.0.0" }
+  })
+})
+
+test("a cut keeps pnpm selectors out of npm overrides while refreshing both lockfiles", () => {
+  withFixture((root) => {
+    const workspace = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8") +
+      'overrides:\n  "a@1>b": "2.0.0"\n  "@scope/a@1>@other/b": "3.0.0"\n'
+    write(root, "pnpm-workspace.yaml", workspace)
+    cut(root, ["0.2.0"])
+    const after = readFileSync(join(root, "package.json"), "utf8")
+
+    // npm's real parser rejects pnpm's parent>child syntax, even for unrelated commands.
+    const output = execFileSync("npx", ["--offline", "--call", "node --version"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 30_000
+    })
+    assert.match(output, /^v\d+/)
+    assert.deepEqual(manifest(root, "package.json").overrides, {
+      "a@1": { b: "2.0.0" },
+      "@scope/a@1": { "@other/b": "3.0.0" }
+    })
+    assert.equal(readFileSync(join(root, "pnpm-workspace.yaml"), "utf8"), workspace,
+      "pnpm retains both scoped and unscoped selectors")
+    assert.match(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"), /a@1>b/)
+    const bunLock = readFileSync(join(root, "bun.lock"), "utf8")
+    assert.match(bunLock, /"a@1":\s*\{\s*"b": "2.0.0"/)
+    assert.match(bunLock, /"@scope\/a@1":\s*\{\s*"@other\/b": "3.0.0"/)
+    const lock = readFileSync(join(root, "pnpm-lock.yaml"), "utf8")
+    execFileSync("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], {
+      cwd: root,
+      stdio: "pipe",
+      timeout: 60_000
+    })
+    assert.equal(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"), lock)
+    execFileSync("bun", ["install", "--frozen-lockfile", "--ignore-scripts"], {
+      cwd: root,
+      stdio: "pipe",
+      timeout: 60_000
+    })
+    assert.equal(readFileSync(join(root, "package.json"), "utf8"), after)
   })
 })
 

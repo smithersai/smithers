@@ -7,9 +7,10 @@ import { setTimeout as delay } from "node:timers/promises"
 import { evaluatorLayer } from "../coding/evaluator.ts"
 import { chooseTemplate } from "../release-content/jev-template.ts"
 import * as Content from "../release-content/workflow.ts"
+import { npmOverrides } from "../release/cut-release.mjs"
+import { gateReceipt, type ReleaseGateSet, runReleaseGates } from "../release/gates/flow.ts"
 import { readWorkspaceManifests } from "../release/pack-release.mjs"
 import { candidateIntegrity, preflight, publishCandidate, verifyLocalCandidate } from "../release/publish-release.mjs"
-import { gateReceipt, type ReleaseGateSet, runReleaseGates } from "../release/gates/flow.ts"
 import { releaseGateSetForHost } from "../release/release-gates.mjs"
 import { readVersionedManifests, retarget, retargetSource, versionedSources } from "../release/set-release-version.mjs"
 import * as Release from "../release/workflow.ts"
@@ -61,6 +62,36 @@ export interface Options {
    * mutated copy to prove the receipt without running the real gates.
    */
   readonly gates?: ReleaseGateSet
+}
+
+/** Refresh both release locks using the action's real command runner. */
+export const refreshReleaseLockfiles = async (
+  root: string,
+  run: RunCommand = commandRunner(root),
+  signal?: AbortSignal
+): Promise<void> => {
+  const opts = signal ? { signal } : {}
+  await run("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], opts)
+  const lock = await inside(root, "bun.lock")
+  const previous = await maybeRead(lock)
+  if (previous !== undefined) {
+    const manifestPath = await inside(root, "package.json")
+    const manifest = await readFile(manifestPath, "utf8")
+    await unlink(lock)
+    try {
+      await run("bun", ["install", "--lockfile-only", "--ignore-scripts"], opts)
+      if (await maybeRead(lock) === undefined) throw new Error("bun install did not recreate the tracked bun.lock")
+      const migrated = json<{ overrides?: Record<string, unknown> }>(await readFile(manifestPath, "utf8"))
+      if (migrated.overrides !== undefined) {
+        migrated.overrides = npmOverrides(migrated.overrides)
+        await atomicWrite(root, "package.json", JSON.stringify(migrated, null, 2) + "\n")
+      }
+    } catch (error) {
+      await atomicWrite(root, "bun.lock", previous)
+      await atomicWrite(root, "package.json", manifest)
+      throw error
+    }
+  }
 }
 
 /** All I/O lives in registered action implementations, never in flow planning. */
@@ -484,18 +515,7 @@ export const operations = (
       [".smithers/flows/release/generate-changelog.mjs", "--version", input.version, "--from", evidence.from],
       opts
     )
-    await run("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], opts)
-    const lock = await inside(root, "bun.lock")
-    const previous = await maybeRead(lock)
-    if (previous !== undefined) {
-      await unlink(lock)
-      try {
-        await run("bun", ["install", "--lockfile-only", "--ignore-scripts"], opts)
-      } catch (error) {
-        await atomicWrite(root, "bun.lock", previous)
-        throw error
-      }
-    }
+    await refreshReleaseLockfiles(root, run, signal)
     await run(process.execPath, [".smithers/flows/release/set-release-version.mjs", "--check", input.version], opts)
     await run(process.execPath, [
       ".smithers/flows/release/generate-changelog.mjs",
