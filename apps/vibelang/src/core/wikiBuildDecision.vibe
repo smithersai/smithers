@@ -90,7 +90,7 @@ export function firstHeading(text: string, at: number): number {
   if (at < 0 || at >= text.length) return -1
   if (headingAt(text, at) && lineStart(text, at)) return at
   const end = lineEnd(text, at)
-  if (end < at || end >= text.length) return -1
+  if (end >= text.length) return -1
   return firstHeading(text, end + 1)
 }
 
@@ -100,9 +100,8 @@ export function firstHeading(text: string, at: number): number {
 //@ ensures firstHeading(text, 0) >= 0 && firstHeading(text, 0) + 2 <= lineEnd(text, firstHeading(text, 0) + 2) && lineEnd(text, firstHeading(text, 0) + 2) <= text.length ==> \result == text.slice(firstHeading(text, 0) + 2, lineEnd(text, firstHeading(text, 0) + 2))
 export function headingTitle(text: string): string {
   const at = findHeading(text)
-  if (at < 0 || at + 2 > text.length) return ""
+  if (at < 0) return ""
   const end = findLineEnd(text, at + 2)
-  if (end < at + 2 || end > text.length) return ""
   return text.slice(at + 2, end)
 }
 
@@ -181,7 +180,6 @@ export function earlier(a: number, b: number): number {
 export function fieldText(text: string, start: number): string {
   if (start < 0 || start > text.length) return ""
   const end = findFeed(text, start)
-  if (end < start || end > text.length) return ""
   return text.slice(start, end)
 }
 
@@ -268,12 +266,14 @@ export function firstDate(text: string, at: number): string {
 /** `lineEnd` as a loop. */
 //@ verify
 //@ ensures \result == lineEnd(text, at)
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
 export function findLineEnd(text: string, at: number): number {
   if (at < 0) return at
   let i = at
   while (i < text.length && !terminatorUnit(text.charCodeAt(i))) {
     //@ invariant at <= i
     //@ invariant lineEnd(text, at) == lineEnd(text, i)
+    //@ invariant i <= text.length || i == at
     //@ decreases text.length - i
     i = i + 1
   }
@@ -283,6 +283,7 @@ export function findLineEnd(text: string, at: number): number {
 /** `firstHeading(text, 0)` as a loop over line starts. */
 //@ verify
 //@ ensures \result == firstHeading(text, 0)
+//@ ensures \result == -1 || (0 <= \result && \result + 2 < text.length)
 export function findHeading(text: string): number {
   let i = 0
   while (i < text.length) {
@@ -291,7 +292,7 @@ export function findHeading(text: string): number {
     //@ decreases text.length - i
     if (headingAt(text, i) && lineStart(text, i)) return i
     const end = findLineEnd(text, i)
-    if (end < i || end >= text.length) return -1
+    if (end >= text.length) return -1
     i = end + 1
   }
   return -1
@@ -315,12 +316,14 @@ export function findKey(text: string, key: string): number {
 /** `feedFrom` as a loop. */
 //@ verify
 //@ ensures \result == feedFrom(text, at)
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
 export function findFeed(text: string, at: number): number {
   if (at < 0) return at
   let i = at
   while (i < text.length && text.charCodeAt(i) !== 10) {
     //@ invariant at <= i
     //@ invariant feedFrom(text, at) == feedFrom(text, i)
+    //@ invariant i <= text.length || i == at
     //@ decreases text.length - i
     i = i + 1
   }

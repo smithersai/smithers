@@ -62,3 +62,96 @@ describe("the wiki build's proved text decisions", () => {
     }
   })
 })
+
+import * as Scan from "../src/core/wikiBuildDecision.vibe"
+
+describe("the wiki scan specifications", () => {
+  it("classifies digits, line ends and ASCII folding on every UTF-16 unit", () => {
+    for (let unit = 0; unit < 65536; unit++) {
+      const text = String.fromCharCode(unit)
+      expect(Scan.digitAt(unit)).toBe(/[0-9]/.test(text))
+      expect(Scan.terminatorUnit(unit)).toBe(/[\n\r\u2028\u2029]/.test(text))
+      expect(Scan.foldedUnit(unit)).toBe(/[A-Z]/.test(text) ? text.toLowerCase().charCodeAt(0) : unit)
+    }
+  })
+  it("reads ids and labels outside the numbered-decision case too", () => {
+    for (const id of ["", "short", "abcdefghijx", "abcdefghij1234-x", "abcdefghij1234x", "decisions/99-x",
+      "decisions/x234-x", "decisions/1x34-x", "decisions/12x4-x", "decisions/123x-x"]) {
+      expect(Scan.decisionLabel(id)).toBe(id.slice(10).replace(/^(\d{4})-/, "$1 "))
+    }
+    expect([Scan.valueStart("a**b", 1), Scan.valueStart("a*b", 1), Scan.valueStart("", -1)]).toEqual([3, 1, -1])
+    expect([Scan.earlier(-1, -1), Scan.earlier(-1, 3), Scan.earlier(3, -1), Scan.earlier(3, 4),
+      Scan.earlier(4, 3), Scan.earlier(3, 3)]).toEqual([-1, 3, 3, 3, 3, 3])
+  })
+  it("reads complete lines, keys, dates and rulings at valid and absent positions", () => {
+    const texts = ["", "plain", "# ", "#  ", "# Title", "x\n# A\r\n# B", "x# T\n# B", "\r# C\u2028# D\u2029tail",
+      "**Status:** in PROGRESS\nRulings: VL-7 VL-2 VL-7", "Status:**Replaced\n2026-12-34 and 2026-01-02",
+      "VL-0xVL-123 9x", "2026-0x-12", "9", "VL-x", "***Status:*** superseded", "**Status:**", "# Title\n", "x\n"]
+    const heading = /^# (.+)$/gm
+    const ruling = /VL-[0-9]+/y
+    const date = /2026-\d\d-\d\d/y
+    for (const text of texts) {
+      expect(Scan.headingTitle(text)).toBe(/^# (.+)$/m.exec(text)?.[1] ?? "")
+      expect(Scan.findDate(text)).toBe(/2026-\d\d-\d\d/.exec(text)?.[0] ?? "")
+      expect(Scan.findRulings(text)).toEqual(text.match(/VL-[0-9]+/g) ?? [])
+      for (const key of ["", "Status:", "**Status:**", "VL-", "missing"]) expect(Scan.findKey(text, key)).toBe(text.indexOf(key))
+      const status = /(?:\*\*)?Status:(?:\*\*)?([^\n]*)/.exec(text)
+      expect(Scan.fieldValue(text, "Status:")).toBe(status === null ? -1 : status.index + status[0].length - status[1]!.length)
+      const keyAt = text.indexOf("**Status:**")
+      expect(Scan.keyValue(text, "**Status:**")).toBe(keyAt < 0 ? -1 : keyAt + 11)
+      for (const at of [-1, 0, 1, text.length, text.length + 1]) {
+        const lineEnd = at < 0 || at >= text.length ? at : at + /^[^\n\r\u2028\u2029]*/.exec(text.slice(at))![0].length
+        expect(Scan.lineEnd(text, at)).toBe(lineEnd)
+        expect(Scan.findLineEnd(text, at)).toBe(lineEnd)
+        const feed = at < 0 || at >= text.length ? at : at + /^[^\n]*/.exec(text.slice(at))![0].length
+        expect(Scan.feedFrom(text, at)).toBe(feed)
+        expect(Scan.findFeed(text, at)).toBe(feed)
+        expect(Scan.lineStart(text, at)).toBe(at === 0 || (0 < at && at <= text.length && /[\n\r\u2028\u2029]/.test(text.charAt(at - 1))))
+        expect(Scan.headingAt(text, at)).toBe(at >= 0 && /^# ./.test(text.slice(at)))
+        heading.lastIndex = at
+        const h = at < 0 ? null : heading.exec(text)
+        expect(Scan.firstHeading(text, at)).toBe(h?.index ?? -1)
+        expect(Scan.fieldText(text, at)).toBe(at < 0 || at > text.length ? "" : text.slice(at).split("\n")[0])
+        for (const key of ["", "Status:", "VL-", "missing"]) {
+          expect(Scan.keyAt(text, at, key)).toBe(at >= 0 && at + key.length <= text.length && text.startsWith(key, at))
+          expect(Scan.keyFrom(text, at, key)).toBe(at < 0 || at > text.length ? -1 : text.indexOf(key, at))
+        }
+        ruling.lastIndex = at
+        const r = at < 0 ? null : ruling.exec(text)
+        const end = r === null ? -1 : at + r[0].length
+        expect(Scan.rulingEnd(text, at)).toBe(end)
+        expect(Scan.findRulingEnd(text, at)).toBe(end)
+        const digits = at < 0 || at >= text.length ? at : at + /^[0-9]*/.exec(text.slice(at))![0].length
+        expect(Scan.digitsEnd(text, at)).toBe(digits)
+        expect(Scan.findDigitsEnd(text, at)).toBe(digits)
+        expect(Scan.rulingsFrom(text, at)).toEqual(at < 0 ? [] : text.slice(at).match(/VL-[0-9]+/g) ?? [])
+        date.lastIndex = at
+        const d = at < 0 ? null : date.exec(text)
+        expect(Scan.dateAt(text, at)).toBe(d !== null)
+        expect(Scan.firstDate(text, at)).toBe(at < 0 ? "" : /2026-\d\d-\d\d/.exec(text.slice(at))?.[0] ?? "")
+      }
+    }
+  })
+  it("matches the case-insensitive status words at offsets and across whole fields", () => {
+    const words = ["replaced", "superseded", "in progress", ""]
+    const patterns = [/replaced/iy, /superseded/iy, /in progress/iy, /(?:)/iy]
+    for (const text of ["", "REPLACED", "a Superseded", "in PROGRESS", "replacex", "x", "\u017fuperseded", "\u212a"]) {
+      for (let n = 0; n < words.length; n++) {
+        const word = words[n]!
+        for (const at of [-1, 0, 1, text.length, text.length + 1]) {
+          const re = patterns[n]!
+          re.lastIndex = at
+          const exact = at < 0 || at > text.length ? false : re.exec(text) !== null
+          expect(Scan.foldedAt(text, at, word, 0)).toBe(exact)
+          let includes = false
+          if (at >= 0) for (let i = at; i + word.length <= text.length; i++) {
+            re.lastIndex = i
+            if (re.exec(text) !== null) { includes = true; break }
+          }
+          expect(Scan.foldedIncludes(text, at, word)).toBe(includes)
+        }
+        expect(Scan.findFolded(text, word)).toBe(Scan.foldedIncludes(text, 0, word))
+      }
+    }
+  })
+})

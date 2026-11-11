@@ -1,0 +1,151 @@
+// Batch 29: the original regular expressions remain the independent behavioral oracles.
+import { describe, expect, it } from "@effect/vitest"
+import { boundariesFrom, boundaryEnd, findBoundaryEnd, findMatchEnd, marker, matchEnd, pathPrefix, redactedFrom, redactText, runEnd, runFrom, runUnit, sentenceEnds, sentenceInitial, sentenceMark, sentenceOpener, sentenceTail, tailStart, textAt } from "../src/history/seedSanitizeDecision.vibe"
+
+function before(text: string, kind: number): string {
+  return kind === 0 ? text.replace(/(?:~|\/home|\/Users|\/tmp|\/private|\/var)\/[^\s'"`),;]*/g, "<path>")
+    : kind === 1 ? text.replace(/\bnyc-\d+\b/g, "<host>") : text.replace(/\s+/g, " ")
+}
+function endsBefore(text: string): ReadonlyArray<number> {
+  return [...text.matchAll(/[.!?]["'`)\]]*(?=\s+["'`(\[]?[A-Z0-9])/g)].map(m => m.index + m[0].length)
+}
+
+describe("bootstrap redaction and sentence boundaries", () => {
+  it("redacts paths at every prefix and stops on each excluded character", () => {
+    for (const prefix of ["~/", "/home/", "/Users/", "/tmp/", "/private/", "/var/"]) {
+      for (const end of [" ", "\t", "\n", "'", '"', "`", ")", ",", ";", "\u00a0", ""]) {
+        const text = "before " + prefix + "person/file" + end + "after"
+        expect(redactText(text, 0)).toBe(before(text, 0))
+      }
+      expect(redactText(prefix, 0)).toBe("<path>")
+    }
+    expect(redactText("x/home/a /HOME/a /home", 0)).toBe("x<path> /HOME/a /home")
+  })
+  it("redacts only complete host words and collapses every whitespace run", () => {
+    for (const text of ["nyc-1", "nyc-12", "xnyc-1", "nyc-12_", "nyc-12x", "nyc-x", "nyc-1-nyc-2", "ånyc-2å",
+      "one\r\n\t two\u2028three\u00a0\ufeff", "\u180e\u200b", ""]) {
+      expect(redactText(text, 1)).toBe(before(text, 1))
+      expect(redactText(text, 2)).toBe(before(text, 2))
+    }
+  })
+  it("reads punctuation, closers, whitespace and the next sentence's opening", () => {
+    for (const text of ["One. Two!", 'One.") [Two]', "a! '9 lives'", "a. lower", "a.. A", "a. \r\n(B)", "a!  [[B",
+      "a?\u2028Z", "a!", "a. 9. B", "", " ,;:\t", "a ,;:\n"]) {
+      expect(sentenceEnds(text)).toEqual(endsBefore(text))
+      expect(sentenceTail(text)).toBe(text.replace(/[\s,;:]+$/, ""))
+    }
+  })
+  it("agrees with native replacements and lookahead on generated text", () => {
+    const pool = ["x", "A", "9", "nyc-", "12", "_", "~/", "/home/", "/Users/", "/tmp/", "/private/", "/var/", " ",
+      "\t", "\n", "\r", "\u2028", "\u00a0", "\ufeff", "\ud800", "'", '"', "`", ")", "]", "(", "[", ".", "!", "?", ",", ";", ":"]
+    let state = 29
+    const next = () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0)
+    for (let n = 0; n < 6000; n++) {
+      let text = ""
+      for (let i = (next() >>> 8) % 22; i > 0; i--) text += pool[(next() >>> 8) % pool.length]
+      for (const kind of [0, 1, 2]) expect(redactText(text, kind)).toBe(before(text, kind))
+      expect(sentenceEnds(text)).toEqual(endsBefore(text))
+      expect(sentenceTail(text)).toBe(text.replace(/[\s,;:]+$/, ""))
+    }
+  })
+  it("handles long paths, hosts, whitespace and punctuation without recursive runtime calls", () => {
+    const word = "x".repeat(100000)
+    const path = "/home/" + word
+    const host = "nyc-" + "1".repeat(100000)
+    const spaced = "a." + " ".repeat(100000) + "Z"
+    const punctuated = "x" + ":".repeat(100000)
+    // Fixed expectations keep the reference regex's quadratic suffix search out of this runtime test.
+    for (const [text, replaced, ends, tail] of [
+      [word, [word, word, word], [], word],
+      [path, ["<path>", path, path], [], path],
+      [host, [host, "<host>", host], [], host],
+      [spaced, [spaced, spaced, "a. Z"], [2], spaced],
+      [punctuated, [punctuated, punctuated, punctuated], [], "x"],
+    ] as const) {
+      for (const kind of [0, 1, 2]) expect(redactText(text, kind)).toBe(replaced[kind])
+      expect(sentenceEnds(text)).toEqual(ends)
+      expect(sentenceTail(text)).toBe(tail)
+    }
+  })
+})
+
+import { sanitize, wholeSentences } from "../src/history/seed.vibe"
+import { MAX_NOTE } from "../src/history/mythical.vibe"
+
+function wholeBefore(text: string, max: number): string {
+  const trimmed = text.trim().replace(/[\s,;:]+$/, "")
+  if (trimmed === "") return ""
+  const ended = /[.!?]["'\x60)\]]*$/.test(trimmed) ? trimmed : trimmed + "."
+  if (ended.length <= max) return ended
+  const ends = endsBefore(ended)
+  const fit = ends.filter(end => end <= max).at(-1)
+  const cut = fit ?? ends[0] ?? ended.length
+  return fit !== undefined || cut <= MAX_NOTE ? ended.slice(0, cut) : ""
+}
+
+describe("bootstrap scan specifications and their callers", () => {
+  it("classifies every code unit as the native classes do", () => {
+    const patterns = [/[^\s'"\x60),;]/, /[0-9]/, /\s/, /["'\x60)\]]/, /[\s,;:]/]
+    for (let unit = 0; unit < 65536; unit++) {
+      const text = String.fromCharCode(unit)
+      for (let kind = 0; kind < patterns.length; kind++) expect(runUnit(unit, kind)).toBe(patterns[kind]!.test(text))
+      expect(sentenceMark(unit)).toBe(/[.!?]/.test(text))
+      expect(sentenceOpener(unit)).toBe(/["'\x60(\[]/.test(text))
+      expect(sentenceInitial(unit)).toBe(/[A-Z0-9]/.test(text))
+    }
+  })
+  it("specifies exact literals, replacement labels and path prefix lengths", () => {
+    expect([textAt("abc", -1, "a"), textAt("abc", 0, "a"), textAt("abc", 1, "a"), textAt("abc", 3, ""),
+      textAt("abc", 4, ""), textAt("abc", 0, "abcd")]).toEqual([false, true, false, true, false, false])
+    expect([0, 1, 2, 3].map(marker)).toEqual(["<path>", "<host>", " ", " "])
+    const prefixes = ["~/", "/home/", "/Users/", "/tmp/", "/private/", "/var/"]
+    for (const prefix of prefixes) {
+      expect(pathPrefix("a" + prefix, 1)).toBe(prefix.length)
+      expect(pathPrefix(prefix, -1)).toBe(0)
+    }
+    expect(pathPrefix("/HOME/a", 0)).toBe(0)
+  })
+  it("specifies run endpoints, global replacement and boundary endpoints independently", () => {
+    const runs = [/^[^\s'"\x60),;]*/, /^[0-9]*/, /^\s*/, /^["'\x60)\]]*/, /^[\s,;:]*/]
+    const replacements = [/(?:~|\/home|\/Users|\/tmp|\/private|\/var)\/[^\s'"\x60),;]*/y, /\bnyc-\d+\b/y, /\s+/y]
+    const boundary = /[.!?]["'\x60)\]]*(?=\s+["'\x60(\[]?[A-Z0-9])/y
+    for (const text of ["", "x", "~/a; z", "nyc-12", "xnyc-12_", "nyc-12_", "nyc-12x", "nyc-", "nyc-x", "nyc-1-nyc-2", "ånyc-2å", "a.\") [B]", "a.   9", " ,;:\r", "123x", "a! lower", "a!", "a.  "]) {
+      for (const at of [-1, 0, 1, text.length, text.length + 1]) {
+        for (let kind = 0; kind < runs.length; kind++) {
+          const expected = at < 0 || at >= text.length ? at : at + runs[kind]!.exec(text.slice(at))![0].length
+          expect(runFrom(text, at, kind)).toBe(expected)
+          expect(runEnd(text, at, kind)).toBe(expected)
+        }
+        for (let kind = 0; kind < replacements.length; kind++) {
+          const re = replacements[kind]!
+          re.lastIndex = at
+          const m = at < 0 || at >= text.length ? null : re.exec(text)
+          const expected = m === null ? -1 : at + m[0].length
+          expect(matchEnd(text, at, kind)).toBe(expected)
+          expect(findMatchEnd(text, at, kind)).toBe(expected)
+        }
+        boundary.lastIndex = at
+        const b = at < 0 || at >= text.length ? null : boundary.exec(text)
+        const expected = b === null ? -1 : at + b[0].length
+        expect(boundaryEnd(text, at)).toBe(expected)
+        expect(findBoundaryEnd(text, at)).toBe(expected)
+        expect(tailStart(text, at)).toBe(at < 0 || at > text.length ? at : text.slice(0, at).replace(/[\s,;:]+$/, "").length)
+      }
+      for (const kind of [0, 1, 2]) {
+        expect(redactedFrom(text, 0, kind)).toBe(before(text, kind))
+        expect(redactedFrom(text, -1, kind)).toBe("")
+      }
+      expect(boundariesFrom(text, 0)).toEqual(endsBefore(text))
+      expect(boundariesFrom(text, -1)).toEqual([])
+    }
+  })
+  it("preserves published notes and sentence cuts through the production callers", () => {
+    const pool = ["One. Two! Three?", "Run /home/person/file on nyc-12. Passed.", "a. lower", "one ,;:", "",
+      "Long " + "x".repeat(1100), 'Done.") [Next]', "nyc-1-nyc-2", "before\t after", "Path ~/a,b; ok!"]
+    for (const text of pool) for (const max of [-1, 0, 1, 12, 300, 1000, Infinity, NaN, 1.5]) {
+      expect(wholeSentences(text, max)).toBe(wholeBefore(text, max))
+      const clean = before(before(before(text, 0), 1), 2).trim()
+      expect(sanitize(text, max)).toBe(wholeBefore(clean, max))
+    }
+  })
+})

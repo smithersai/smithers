@@ -5797,7 +5797,7 @@ cases.extend([
 ('src/history/seedTextDecision.vibe', 'text-space-bom', 'spaceUnit', 'unit === 65279', 'unit === 65278', 'a byte-order mark is a space'),
 ('src/history/seedTextDecision.vibe', 'text-word-underscore', 'wordUnit', 'unit === 95', 'unit === 45', 'an underscore is a word character'),
 ('src/history/seedTextDecision.vibe', 'text-first-line', 'firstLine', 'text.slice(0, end)', 'text.slice(0, end + 1)', 'the first line stops before its line feed'),
-('src/history/seedTextDecision.vibe', 'text-regenerated-end', 'regeneratedTitle', 'title.length === 23 ||', 'title.length === 22 ||', 'the title may end right after regenerate'),
+('src/history/seedTextDecision.vibe', 'text-regenerated-end', 'regeneratedTitle', 'return title.length === 23 || !wordUnit(title.charCodeAt(23))', 'return title.length === 23', 'a non-word suffix preserves the title boundary'),
 ('src/history/seedTextDecision.vibe', 'text-regenerated-boundary', 'regeneratedTitle', '!wordUnit(title.charCodeAt(23))', 'wordUnit(title.charCodeAt(23))', 'a word character after regenerate is no boundary'),
 ('src/history/seedTextDecision.vibe', 'text-revert-start', 'revertedTitle', 'title.slice(8, title.length - 1)', 'title.slice(7, title.length - 1)', 'the reverted title starts after the quote'),
 ('src/history/seedTextDecision.vibe', 'text-spaces-step', 'spacesEnd', 'return spacesEnd(text, at + 1)', 'return at + 1', 'every leading space is skipped'),
@@ -5833,7 +5833,7 @@ cases.extend([
 ('src/core/wikiBuildDecision.vibe', 'wiki-build-field-value', 'fieldValue', 'at + key.length)', 'at + key.length + 1)', 'the value follows its key'),
 ('src/core/wikiBuildDecision.vibe', 'wiki-build-key-value', 'keyValue', 'at + key.length', 'at + key.length + 1', 'an exact key ends at its length'),
 ('src/core/wikiBuildDecision.vibe', 'wiki-build-earlier', 'earlier', 'a <= b', 'a >= b', 'the first field wins'),
-('src/core/wikiBuildDecision.vibe', 'wiki-build-field-text', 'fieldText', 'text.slice(start, end)', 'text.slice(start + 1, end)', 'keep the first value character'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-field-text', 'fieldText', 'text.slice(start, end)', '""', 'keep a nonempty field value'),
 ('src/core/wikiBuildDecision.vibe', 'wiki-build-ruling-end', 'rulingEnd', 'return -1', 'return 0', 'an absent ruling has no endpoint'),
 ('src/core/wikiBuildDecision.vibe', 'wiki-build-digits-next', 'digitsEnd', 'return digitsEnd(text, at + 1)', 'return at', 'read every digit'),
 ('src/core/wikiBuildDecision.vibe', 'wiki-build-fold-unit', 'foldedUnit', 'unit + 32', 'unit + 31', 'ASCII capitals fold to lower case'),
@@ -5854,3 +5854,33 @@ cases.extend([
 cases.extend([
 ('src/core/wikiBuildDecision.vibe', 'wiki-build-find-ruling', 'findRulingEnd', '!== "VL-"', '!== "VL+"', 'the runtime scan recognizes a VL- ruling'),
 ])
+
+# Lane vl-proveall3, batch 29: note redaction and sentence-boundary scans.
+cases.extend([
+('src/history/seedSanitizeDecision.vibe', 'note-literal', 'textAt', '=== key', '!== key', 'a literal is read exactly'),
+('src/history/seedSanitizeDecision.vibe', 'note-path-backtick', 'runUnit', 'unit !== 96', 'unit !== 97', 'a backtick ends a path'),
+('src/history/seedSanitizeDecision.vibe', 'note-digit-nine', 'runUnit', 'unit <= 57', 'unit < 57', 'nine is a digit'),
+('src/history/seedSanitizeDecision.vibe', 'note-run-all', 'runFrom', 'return runFrom(text, at + 1, kind)', 'return at', 'every unit of a run is counted'),
+('src/history/seedSanitizeDecision.vibe', 'note-run-loop', 'runEnd', 'return i', 'return at', 'the loop agrees with the full run'),
+('src/history/seedSanitizeDecision.vibe', 'note-private-prefix', 'pathPrefix', 'return 9', 'return 8', 'private has its full prefix'),
+('src/history/seedSanitizeDecision.vibe', 'note-path-marker', 'marker', '"<path>"', '"<host>"', 'paths keep their redacted label'),
+('src/history/seedSanitizeDecision.vibe', 'note-host-marker', 'marker', '"<host>"', '"<path>"', 'hosts keep their redacted label'),
+('src/history/seedSanitizeDecision.vibe', 'note-match-bound', 'matchEnd', 'return end', 'return at', 'a match advances the cursor'),
+('src/history/seedSanitizeDecision.vibe', 'note-host-left', 'findMatchEnd', 'at > 0 && wordUnit(text.charCodeAt(at - 1))', 'false', 'a host starts on a word boundary'),
+('src/history/seedSanitizeDecision.vibe', 'note-host-right', 'findMatchEnd', 'end === at + prefix || (end < text.length && wordUnit(text.charCodeAt(end)))', 'end === at + prefix', 'a host ends on a word boundary'),
+('src/history/seedSanitizeDecision.vibe', 'note-space-run', 'findMatchEnd', 'runEnd(text, at, 2)', 'runEnd(text, at, 1)', 'whitespace is one whole run'),
+('src/history/seedSanitizeDecision.vibe', 'note-redaction-end', 'redactedFrom', 'return ""', 'return "x"', 'the empty suffix adds nothing'),
+('src/history/seedSanitizeDecision.vibe', 'note-redaction-result', 'redactText', 'return out', 'return ""', 'all replacement output is kept'),
+('src/history/seedSanitizeDecision.vibe', 'note-redaction-append', 'redactText', 'out + marker(kind)', 'marker(kind)', 'a later replacement retains earlier output'),
+('src/history/seedSanitizeDecision.vibe', 'note-tail-skip', 'tailStart', 'return tailStart(text, end - 1)', 'return tailStart(text, end - 2)', 'only trailing units are removed'),
+('src/history/seedSanitizeDecision.vibe', 'note-tail-result', 'sentenceTail', 'return text.slice(0, i)', 'return ""', 'the nontrailing prefix is kept'),
+('src/history/seedSanitizeDecision.vibe', 'note-mark-bang', 'sentenceMark', 'unit === 33', 'unit === 32', 'bang ends a sentence'),
+('src/history/seedSanitizeDecision.vibe', 'note-opener-paren', 'sentenceOpener', 'unit === 40', 'unit === 41', 'a left parenthesis opens a sentence'),
+('src/history/seedSanitizeDecision.vibe', 'note-initial-z', 'sentenceInitial', 'unit <= 90', 'unit < 90', 'Z starts a sentence'),
+('src/history/seedSanitizeDecision.vibe', 'note-boundary-bound', 'boundaryEnd', '? end : -1', '? at : -1', 'a boundary advances after punctuation'),
+('src/history/seedSanitizeDecision.vibe', 'note-boundary-open', 'findBoundaryEnd', '? next + 1 : next', '? next : next', 'the next initial follows its optional opener'),
+('src/history/seedSanitizeDecision.vibe', 'note-boundary-closers', 'findBoundaryEnd', 'runEnd(text, at + 1, 3)', 'runEnd(text, at + 1, 2)', 'closers are read before whitespace'),
+('src/history/seedSanitizeDecision.vibe', 'note-boundaries-index', 'boundariesFrom', '[end, ...boundariesFrom(text, end)]', '[at, ...boundariesFrom(text, end)]', 'each endpoint follows its punctuation'),
+('src/history/seedSanitizeDecision.vibe', 'note-boundaries-loop', 'sentenceEnds', 'found.push(end)', 'found.push(end + 1)', 'the runtime loop retains the exact endpoints'),
+])
+

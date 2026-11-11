@@ -1,0 +1,246 @@
+// Bootstrap text scans (0018 batch 29). UTF-16 decisions replace native regex substitutions and lookahead.
+// Recursive functions specify each scan; runtime loops prove equality and avoid recursion on unbounded input.
+import { spaceUnit, wordUnit } from "./seedTextDecision.vibe"
+
+/** A literal at an index, including its bounds. */
+//@ verify
+//@ ensures \result == (0 <= at && at + key.length <= text.length && text.slice(at, at + key.length) == key)
+export function textAt(text: string, at: number, key: string): boolean {
+  return 0 <= at && at + key.length <= text.length && text.slice(at, at + key.length) === key
+}
+
+/** Path characters, digits, whitespace, sentence closers, or trailing note punctuation. */
+//@ verify
+//@ ensures kind == 0 ==> \result == (!spaceUnit(unit) && unit != 39 && unit != 34 && unit != 96 && unit != 41 && unit != 44 && unit != 59)
+//@ ensures kind == 1 ==> \result == (48 <= unit && unit <= 57)
+//@ ensures kind == 2 ==> \result == spaceUnit(unit)
+//@ ensures kind == 3 ==> \result == (unit == 34 || unit == 39 || unit == 96 || unit == 41 || unit == 93)
+//@ ensures kind != 0 && kind != 1 && kind != 2 && kind != 3 ==> \result == (spaceUnit(unit) || unit == 44 || unit == 59 || unit == 58)
+export function runUnit(unit: number, kind: number): boolean {
+  if (kind === 0) return !spaceUnit(unit) && unit !== 39 && unit !== 34 && unit !== 96 && unit !== 41 && unit !== 44 && unit !== 59
+  if (kind === 1) return 48 <= unit && unit <= 57
+  if (kind === 2) return spaceUnit(unit)
+  if (kind === 3) return unit === 34 || unit === 39 || unit === 96 || unit === 41 || unit === 93
+  return spaceUnit(unit) || unit === 44 || unit === 59 || unit === 58
+}
+
+/** The first character outside a run, or the text end. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+//@ ensures 0 <= at ==> forall(i, at <= i && i < \result ==> runUnit(text.charCodeAt(i), kind))
+//@ ensures \result < 0 || \result >= text.length || !runUnit(text.charCodeAt(\result), kind)
+export function runFrom(text: string, at: number, kind: number): number {
+  if (at < 0 || at >= text.length || !runUnit(text.charCodeAt(at), kind)) return at
+  return runFrom(text, at + 1, kind)
+}
+
+/** A run executed as a loop. */
+//@ verify
+//@ ensures \result == runFrom(text, at, kind)
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+//@ ensures 0 <= at && at < text.length && runUnit(text.charCodeAt(at), kind) ==> at < \result
+export function runEnd(text: string, at: number, kind: number): number {
+  if (at < 0) return at
+  let i = at
+  while (i < text.length && runUnit(text.charCodeAt(i), kind)) {
+    //@ invariant at <= i
+    //@ invariant i <= text.length || i == at
+    //@ invariant runFrom(text, at, kind) == runFrom(text, i, kind)
+    //@ decreases text.length - i
+    i = i + 1
+  }
+  return i
+}
+
+/** The whole local-path prefix at an index; zero when absent. */
+//@ verify
+//@ ensures \result == (textAt(text, at, "~/") ? 2 : textAt(text, at, "/home/") ? 6 : textAt(text, at, "/Users/") ? 7 : textAt(text, at, "/tmp/") ? 5 : textAt(text, at, "/private/") ? 9 : textAt(text, at, "/var/") ? 5 : 0)
+//@ ensures \result == 0 || (0 <= at && 0 < \result && at + \result <= text.length)
+export function pathPrefix(text: string, at: number): number {
+  if (textAt(text, at, "~/")) return 2
+  if (textAt(text, at, "/home/")) return 6
+  if (textAt(text, at, "/Users/")) return 7
+  if (textAt(text, at, "/tmp/")) return 5
+  if (textAt(text, at, "/private/")) return 9
+  if (textAt(text, at, "/var/")) return 5
+  return 0
+}
+
+/** The replacement for a local path, a complete host word, or a whitespace run. */
+//@ verify
+//@ ensures \result == (kind == 0 ? "<path>" : kind == 1 ? "<host>" : " ")
+export function marker(kind: number): string {
+  return kind === 0 ? "<path>" : kind === 1 ? "<host>" : " "
+}
+
+/** The selected substitution matches at this index and ends here, or -1. */
+//@ verify
+//@ ensures \result == -1 || (0 <= at && at < \result && \result <= text.length)
+export function matchEnd(text: string, at: number, kind: number): number {
+  if (at < 0 || at >= text.length) return -1
+  if (kind !== 0 && kind !== 1) return spaceUnit(text.charCodeAt(at)) ? runFrom(text, at, 2) : -1
+  const prefix = kind === 0 ? pathPrefix(text, at) : 4
+  if (prefix === 0) return -1
+  if (kind === 1 && (!textAt(text, at, "nyc-") || (at > 0 && wordUnit(text.charCodeAt(at - 1))))) return -1
+  const end = runFrom(text, at + prefix, kind === 0 ? 0 : 1)
+  if (kind === 1 && (end === at + prefix || (end < text.length && wordUnit(text.charCodeAt(end))))) return -1
+  return end
+}
+
+/** A match endpoint whose unbounded run executes as a loop. */
+//@ verify
+//@ ensures \result == matchEnd(text, at, kind)
+//@ ensures \result == -1 || (0 <= at && at < \result && \result <= text.length)
+export function findMatchEnd(text: string, at: number, kind: number): number {
+  if (at < 0 || at >= text.length) return -1
+  if (kind !== 0 && kind !== 1) return spaceUnit(text.charCodeAt(at)) ? runEnd(text, at, 2) : -1
+  const prefix = kind === 0 ? pathPrefix(text, at) : 4
+  if (prefix === 0) return -1
+  if (kind === 1 && (!textAt(text, at, "nyc-") || (at > 0 && wordUnit(text.charCodeAt(at - 1))))) return -1
+  const end = runEnd(text, at + prefix, kind === 0 ? 0 : 1)
+  if (kind === 1 && (end === at + prefix || (end < text.length && wordUnit(text.charCodeAt(end))))) return -1
+  return end
+}
+
+/** Ordered, non-overlapping global replacement, from an index onward. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures at < 0 || at >= text.length ==> \result == ""
+export function redactedFrom(text: string, at: number, kind: number): string {
+  if (at < 0 || at >= text.length) return ""
+  const end = matchEnd(text, at, kind)
+  return end < 0 ? text.slice(at, at + 1) + redactedFrom(text, at + 1, kind) : marker(kind) + redactedFrom(text, end, kind)
+}
+
+/** The substitutions in left-to-right order, executed without recursive runtime calls. */
+//@ verify
+//@ ensures \result == redactedFrom(text, 0, kind)
+export function redactText(text: string, kind: number): string {
+  let out = ""
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ invariant out + redactedFrom(text, i, kind) == redactedFrom(text, 0, kind)
+    //@ decreases text.length - i
+    const end = findMatchEnd(text, i, kind)
+    if (end < 0) {
+      out = out + text.slice(i, i + 1)
+      i = i + 1
+    } else {
+      out = out + marker(kind)
+      i = end
+    }
+  }
+  return out
+}
+
+/** Where the run of trailing whitespace, commas, semicolons and colons starts. */
+//@ verify
+//@ decreases end
+//@ ensures 0 <= end && end <= text.length ==> 0 <= \result && \result <= end
+//@ ensures 0 <= end && end <= text.length ==> forall(i, \result <= i && i < end ==> runUnit(text.charCodeAt(i), 4))
+//@ ensures \result <= 0 || \result > text.length || !runUnit(text.charCodeAt(\result - 1), 4)
+export function tailStart(text: string, end: number): number {
+  if (end < 1 || end > text.length || !runUnit(text.charCodeAt(end - 1), 4)) return end
+  return tailStart(text, end - 1)
+}
+
+/** Remove that trailing run, using a loop. */
+//@ verify
+//@ ensures \result.length == tailStart(text, text.length)
+//@ ensures \result.length <= text.length
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result.charCodeAt(i) == text.charCodeAt(i))
+export function sentenceTail(text: string): string {
+  let i = text.length
+  while (i > 0 && runUnit(text.charCodeAt(i - 1), 4)) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ invariant tailStart(text, text.length) == tailStart(text, i)
+    //@ decreases i
+    i = i - 1
+  }
+  return text.slice(0, i)
+}
+
+/** Sentence-ending punctuation. */
+//@ verify
+//@ ensures \result == (unit == 46 || unit == 33 || unit == 63)
+export function sentenceMark(unit: number): boolean {
+  return unit === 46 || unit === 33 || unit === 63
+}
+
+/** The optional quote or bracket opening the next sentence. */
+//@ verify
+//@ ensures \result == (unit == 34 || unit == 39 || unit == 96 || unit == 40 || unit == 91)
+export function sentenceOpener(unit: number): boolean {
+  return unit === 34 || unit === 39 || unit === 96 || unit === 40 || unit === 91
+}
+
+/** An ASCII capital or digit starts the next sentence. */
+//@ verify
+//@ ensures \result == ((65 <= unit && unit <= 90) || (48 <= unit && unit <= 57))
+export function sentenceInitial(unit: number): boolean {
+  return (65 <= unit && unit <= 90) || (48 <= unit && unit <= 57)
+}
+
+/** Punctuation plus closers, followed by whitespace and an optionally quoted capital/digit, or -1. */
+//@ verify
+//@ ensures \result == -1 || (0 <= at && at < \result && \result <= text.length)
+export function boundaryEnd(text: string, at: number): number {
+  if (at < 0 || at >= text.length || !sentenceMark(text.charCodeAt(at))) return -1
+  const end = runFrom(text, at + 1, 3)
+  const next = runFrom(text, end, 2)
+  if (next === end || next >= text.length) return -1
+  const initial = sentenceOpener(text.charCodeAt(next)) ? next + 1 : next
+  return initial < text.length && sentenceInitial(text.charCodeAt(initial)) ? end : -1
+}
+
+/** The boundary endpoint with both runs executed as loops. */
+//@ verify
+//@ ensures \result == boundaryEnd(text, at)
+//@ ensures \result == -1 || (0 <= at && at < \result && \result <= text.length)
+export function findBoundaryEnd(text: string, at: number): number {
+  if (at < 0 || at >= text.length || !sentenceMark(text.charCodeAt(at))) return -1
+  const end = runEnd(text, at + 1, 3)
+  const next = runEnd(text, end, 2)
+  if (next === end || next >= text.length) return -1
+  const initial = sentenceOpener(text.charCodeAt(next)) ? next + 1 : next
+  return initial < text.length && sentenceInitial(text.charCodeAt(initial)) ? end : -1
+}
+
+/** Every non-overlapping boundary endpoint, in text order. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures at < 0 || at >= text.length ==> \result.length == 0
+//@ ensures forall(i, 0 <= i && i < \result.length ==> at < \result[i] && \result[i] <= text.length)
+//@ ensures forall(i, 0 < i && i < \result.length ==> \result[i - 1] < \result[i])
+export function boundariesFrom(text: string, at: number): ReadonlyArray<number> {
+  if (at < 0 || at >= text.length) return []
+  const end = boundaryEnd(text, at)
+  return end < 0 ? boundariesFrom(text, at + 1) : [end, ...boundariesFrom(text, end)]
+}
+
+/** The lookahead's endpoints, with no recursive runtime calls. */
+//@ verify
+//@ ensures \result == boundariesFrom(text, 0)
+//@ ensures forall(i, 0 <= i && i < \result.length ==> 0 < \result[i] && \result[i] <= text.length)
+//@ ensures forall(i, 0 < i && i < \result.length ==> \result[i - 1] < \result[i])
+export function sentenceEnds(text: string): ReadonlyArray<number> {
+  const found: Array<number> = []
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ invariant found.concat(boundariesFrom(text, i)) == boundariesFrom(text, 0)
+    //@ invariant forall(k, 0 <= k && k < found.length ==> 0 < found[k] && found[k] <= i)
+    //@ invariant forall(k, 0 < k && k < found.length ==> found[k - 1] < found[k])
+    //@ decreases text.length - i
+    const end = findBoundaryEnd(text, i)
+    if (end < 0) {
+      i = i + 1
+    } else {
+      found.push(end)
+      i = end
+    }
+  }
+  return found
+}
