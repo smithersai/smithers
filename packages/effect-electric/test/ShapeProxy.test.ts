@@ -100,7 +100,12 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
         return new Response(fault.body ?? "[]", { status: 200, headers: fault.headers })
       case "endlessBody":
         return new Response(
-          new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("[")) }),
+          new ReadableStream({
+            start: (controller) => {
+              held++
+              controller.enqueue(new TextEncoder().encode("["))
+            }
+          }),
           { status: 200, headers: { "content-type": "application/json" } }
         )
       case "redirect":
@@ -482,6 +487,146 @@ describe("refusals: no Electric needed", () => {
       ["where", "owner = $1"]
     ])
   })
+
+  test.each(["live_sse", "experimental_live_sse"])(
+    "row access refuses every %s opt-in on a public shape using its first value",
+    async (key) => {
+      for (const value of ["true", "1", "", "TRUE", "true&" + key + "=false", "1&" + key + "=false"]) {
+        const h = harness({
+          cache: "public",
+          rowAccess: { keyColumns: ["id"], allows: () => true }
+        })
+        h.fault({ _tag: "answer", headers: {} })
+        const response = await h.request(`?live=true&${key}=${value}`)
+        expect(response.status, value).toBe(503)
+        expect(response.headers.get("retry-after")).toBe("5")
+        expect(await response.text()).toBe("")
+        expect(h.upstream).toEqual([])
+        expect(h.logs).toHaveLength(1)
+        expect(h.line()?.annotations).toMatchObject({
+          status: 503,
+          upstream: "access",
+          reason: "sse_refused",
+          correlationId: response.headers.get("x-request-id")
+        })
+        expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "true", reason: "sse_refused" })).toBe(1)
+        expect(h.count(ShapeProxy.responses, {
+          name: "electric.shape",
+          statusClass: "5xx",
+          reason: "sse_refused"
+        })).toBe(1)
+      }
+      for (const suffix of ["", `&${key}=false`, `&${key}=true`, `&${key}=1`]) {
+        const h = harness({
+          cache: "public",
+          rowAccess: { keyColumns: ["id"], allows: () => true }
+        })
+        h.fault({ _tag: "answer", headers: {} })
+        const response = await h.request(`?live=true&${key}=false${suffix}`)
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual([])
+        expect(h.upstream[0]?.searchParams.get(key)).toBe("false")
+        expect(h.logs).toHaveLength(1)
+      }
+    }
+  )
+
+  test.each([200, 204, 205, 304])(
+    "a defect validating row access on %i answers a correlated, content-free 500",
+    async (status) => {
+      for (const cache of ["no-store", "public"] as const) {
+        let allowed = 0
+        const h = harness({
+          cache,
+          rowAccess: {
+            keyColumns: ["id"],
+            allows: () => {
+              allowed++
+              return true
+            },
+            validate: Effect.die(new Error("PRIVATE-VALIDATION-CONTENT"))
+          }
+        })
+        h.fault(
+          status === 200
+            ? {
+              _tag: "answer",
+              headers: { "electric-offset": "private-cursor", etag: "private-etag" },
+              body: JSON.stringify([{ value: { id: "private-row" } }])
+            }
+            : { _tag: "empty", status }
+        )
+        const response = await h.request("?offset=-1")
+        expect(response.status).toBe(500)
+        expect(await response.text()).toBe("")
+        expect(response.headers.get("x-request-id")).toMatch(/^[a-f0-9]{16}$/)
+        expect(response.headers.get("electric-offset")).toBeNull()
+        expect(response.headers.get("etag")).toBeNull()
+        expect(allowed).toBe(0)
+        expect(h.logs).toHaveLength(1)
+        expect(h.line()?.annotations).toMatchObject({
+          status: 500,
+          upstream: "access",
+          statusClass: "5xx",
+          correlationId: response.headers.get("x-request-id")
+        })
+        expect(h.span().attributes.get("http.response.status_code")).toBe(500)
+        expect(h.count(ShapeProxy.defaultMetric, { status: "500", live: "false" })).toBe(1)
+        expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx" })).toBe(1)
+        expect(JSON.stringify(h.logs)).not.toMatch(/PRIVATE-VALIDATION-CONTENT|private-cursor|private-row|private-etag/)
+      }
+    }
+  )
+
+  test.each(["buffer", "cleanup-defect", 200, 204, 205, 304] as const)(
+    "abandoning row access during %s records exactly one access abort",
+    async (stage) => {
+      let validating = false
+      let allowed = 0
+      const h = harness({
+        rowAccess: {
+          keyColumns: ["id"],
+          allows: () => {
+            allowed++
+            return true
+          },
+          validate: Effect.suspend(() => {
+            validating = true
+            return Effect.never
+          }).pipe(Effect.ensuring(
+            stage === "cleanup-defect" ? Effect.die(new Error("PRIVATE-CLEANUP-CONTENT")) : Effect.void
+          ))
+        }
+      })
+      h.fault(
+        stage === "buffer" ?
+          { _tag: "endlessBody" }
+          : stage === 200 || stage === "cleanup-defect" ?
+          { _tag: "answer", headers: {}, body: "[{\"value\":{\"id\":\"private-row\"}}]" }
+          : { _tag: "empty", status: stage }
+      )
+      const fiber = h.fork("?offset=-1&live=true")
+      try {
+        await until(() => expect(stage === "buffer" ? h.held() > 0 : validating).toBe(true))
+      } finally {
+        await Effect.runPromise(Fiber.interrupt(fiber))
+      }
+      expect(allowed).toBe(0)
+      expect(validating).toBe(stage !== "buffer")
+      expect(h.logs).toHaveLength(1)
+      expect(h.line()?.annotations).toMatchObject({
+        status: 499,
+        upstream: "access",
+        outcome: "aborted",
+        statusClass: "4xx"
+      })
+      expect(h.line()?.annotations.correlationId).toBe(h.span().spanId)
+      expect(h.span().attributes.get("http.response.status_code")).toBe(499)
+      expect(h.count(ShapeProxy.defaultMetric, { status: "499", live: "true" })).toBe(1)
+      expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "4xx" })).toBe(1)
+      expect(JSON.stringify(h.logs)).not.toMatch(/private-row|PRIVATE-CLEANUP-CONTENT/)
+    }
+  )
 
   test("a defect deciding a shape answers 500 with one content-free record", async () => {
     const h = harness({ shape: Effect.die(new Error("PRIVATE-DECISION-CONTENT")) })

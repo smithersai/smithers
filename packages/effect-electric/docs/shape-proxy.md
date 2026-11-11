@@ -91,8 +91,11 @@ access decision again. An already admitted long poll may return one last batch
 after access is removed; its next request must pass access again. An SSE
 response would keep delivering new rows indefinitely under the original check.
 
-Only an explicitly public shape (`cache: "public"`), whose rows never depend on
-access, may forward SSE. Do not mark a protected shape public to enable SSE.
+Only an explicitly public shape (`cache: "public"`) without `rowAccess`, whose
+rows never depend on access, may forward SSE. A `rowAccess` guard refuses
+either SSE parameter with 503 unless it is absent or its first value is
+`"false"`, including on public shapes. Do not mark a protected shape public
+to enable SSE.
 
 ## What reaches Electric
 
@@ -118,8 +121,11 @@ Every other parameter the browser sends is dropped, including `table`,
 subset request's `subset__*` (`subset__where`, `subset__params`,
 `subset__order_by`, `subset__limit`, `subset__offset`, `subset__where_expr`,
 `subset__order_by_expr`). A browser can follow the shape, but it can't change
-it or read part of it: `ElectricCollection` syncs whole shapes and sends no
-subset requests, and a client that sends one gets the whole shape.
+it or read part of it. Use `ElectricCollection` with `syncMode: "eager"`
+(the default) behind this proxy. Its `"progressive"` mode sends subset
+requests and needs a direct Electric URL: the proxy drops those parameters
+and returns a whole-shape log, which is not the subset snapshot format that
+progressive sync expects.
 
 Electric's status, headers and body stream back. `content-encoding` and
 `content-length` are dropped, because `fetch` has already decoded the body, and
@@ -190,7 +196,7 @@ A request the proxy refuses never reaches Electric:
 | A method other than `GET`             | 405, with `allow: GET`      | none |
 | A `shape` Effect that fails `Refused` | its status, 401, 403 or 503 | none |
 
-When Electric can't be reached, the proxy answers 502. A defect while deciding access answers 500 and is recorded without its message. `Refused.upstream` identifies a failed host dependency (`database`); other refusals default to `access`. An abandoned access check records 499.
+When Electric can't be reached, the proxy answers 502. A defect while deciding the shape or validating row access answers 500 with `x-request-id` and is recorded without its message. `Refused.upstream` identifies a failed host dependency (`database`); other refusals default to `access`. An abandoned shape decision, guarded body read or row-access validation records 499 with `upstream: access` and `outcome: aborted`.
 
 ## What it records
 
@@ -205,7 +211,8 @@ clause or a parameter value.
 - **Log line.** One line per request, once its body has ended, with the message
   `name` and the annotations `route` (the fixed shape name), `upstream`, `correlationId`, `statusClass`, `status`, `live`, `durationMs`, `bytes` and
   `outcome`, plus `reason` on 503 responses. `outcome` is `complete`, `aborted`
-  (the browser went away: status 499 before Electric answered, else mid-body)
+  (the browser went away: status 499 before Electric answered or during guarded
+  buffering or validation, else mid-body)
   or `failed` (Electric's body broke off). The level is Error for a 5xx or a
   failed body, Warn for another 4xx, and Info otherwise, an aborted request
   included.

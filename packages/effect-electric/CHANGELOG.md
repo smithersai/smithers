@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Row-access guards refuse every SSE opt-in except a first value of `false`,
+  including on public shapes. Abandoned guarded reads and validations now
+  record one abort; validation defects return a recorded 500 with a request id.
 - Validate every shape batch member before accepting its offset. Malformed
   change, control and event messages stop sync without skipping the batch.
 - A row the schema refuses no longer makes `reconnect` skip its batch. Electric

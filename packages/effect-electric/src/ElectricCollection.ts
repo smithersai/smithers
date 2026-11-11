@@ -233,7 +233,9 @@ export interface Options<A extends object, E, R> {
    * How rows load: `eager`, the whole shape before the collection is ready
    * (the default); `progressive`, what queries ask for first, then the whole
    * shape. Either way the collection holds every row of the shape, so a
-   * device can read all of it without the network.
+   * device can read all of it without the network. Progressive sync sends
+   * subset requests and needs a direct Electric URL; use eager sync with
+   * `ShapeProxy`, which drops subset parameters.
    */
   readonly syncMode?: "eager" | "progressive"
   /**
