@@ -104,7 +104,7 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `Npm.Downstream`         | NpmTarget         | test               | yes       | no               | unsupported      |
 | `Npm.Pack`               | NpmTarget         | build              | yes       | no               | package executor |
 | `Npm.Publish`            | NpmTarget         | run                | no        | no               | unsupported      |
-| `Npm.Published`          | NpmTarget         | build              | yes       | no               | package executor |
+| `Npm.Published`          | NpmTarget         | build              | no        | no               | package executor |
 | `NpmPublish`             | NpmPublish        | run                | no        | no               | flow body        |
 | `Overlay`                | NodeArtifact      | build              | yes       | no               | package executor |
 | `Owners.Codeowners`      | Owners            | build, lint        | no        | no               | package executor |

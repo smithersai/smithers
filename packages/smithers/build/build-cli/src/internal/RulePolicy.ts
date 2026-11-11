@@ -94,7 +94,7 @@ const policies: Readonly<Record<NativeRule, Policy>> & Readonly<Record<string, P
   "Npm.Downstream": { cache: "always" },
   "Npm.Pack": { writes: true, cache: "always" },
   "Npm.Publish": { outward: true },
-  "Npm.Published": { sandbox: "network", writes: true, cache: "always" },
+  "Npm.Published": { sandbox: "network", writes: true },
   "Overlay": { cache: "always" },
   "Owners.Codeowners": { check: true },
   "Owners.Tree": { check: true },

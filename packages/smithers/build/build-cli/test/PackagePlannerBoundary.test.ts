@@ -159,8 +159,27 @@ describe("public planner refusal boundaries", () => {
     if (rule === "Npm.Published" && !refusal) {
       expect(node.lane?.kind).toBe("published")
       expect(node.argv).toContain("pacote@21.0.0")
+      expect(node.cacheable).toBe(false)
     }
   })
+  it.each(
+    [["registry", "S.Npm.Published({manifest:S.file(\"//package.json\")})", false], [
+      "local",
+      "S.Shell.Build({shell:\"mkdir -p baseline\",outDirs:[\"baseline\"]})",
+      true
+    ]] as const
+  )(
+    "caches an Api.Compat verdict over a %s baseline only when its key holds the baseline",
+    async (_kind, baseline, cacheable) => {
+      const { options } = await fixture(
+        `const surface=S.Shell.Build({shell:"mkdir -p surface",outDirs:["surface"]})
+export const Package=S.Package({targets:{command:S.Api.Compat({baseline:${baseline},surface,manifest:S.file("//package.json")})}})`
+      )
+      const plan = await PackageExec.plan(options), node = plan.nodes.get("//:command")!
+      expect(node.refusal).toBeUndefined()
+      expect(node.cacheable).toBe(cacheable)
+    }
+  )
 })
 
 describe("manifest-selected binary names", () => {

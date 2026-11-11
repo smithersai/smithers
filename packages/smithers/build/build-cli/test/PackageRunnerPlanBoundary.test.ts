@@ -918,7 +918,7 @@ describe("value plans with missing members", () => {
 })
 
 describe("published package artifacts", () => {
-  it("clears stale extraction products and restores the captured package on a cache hit", async () => {
+  it("clears stale extraction products and extracts the registry package on every run", async () => {
     const { root, options, plan, node } = await fixture()
     await write(root, "published/stale.txt", "stale")
     await write(root, "registry/package/index.d.ts", "export declare const published: true;")
@@ -941,9 +941,9 @@ describe("published package artifacts", () => {
     const declarations = await Fs.readFile(Path.join(root, "published/index.d.ts"), "utf8")
     await Fs.rm(Path.join(root, "published"), { recursive: true })
     const second = await PackageExec.execute(prepared, options)
-    expect(second.results).toMatchObject([{ status: "hit" }])
+    expect(second.results).toMatchObject([{ status: "ran" }])
     expect(await Fs.readFile(Path.join(root, "published/index.d.ts"), "utf8")).toBe(declarations)
-    expect(await Fs.readFile(Path.join(root, ".flows/tmp/extractions"), "utf8")).toBe("executed")
+    expect(await Fs.readFile(Path.join(root, ".flows/tmp/extractions"), "utf8")).toBe("executedexecuted")
   })
 })
 

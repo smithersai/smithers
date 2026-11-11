@@ -68,10 +68,13 @@ export const Publish = publishDefinition
  */
 export const PublishedAttrs = Schema.Struct({ manifest: Input.File })
 
+// Never cacheable: the key holds the local manifest, but the extracted tree is
+// whatever version the registry tags `latest` now, so a key hit can restore a
+// version the registry has since replaced.
 const publishedDefinition = Target.make("Npm.Published", {
   attrs: PublishedAttrs,
   kinds: ["build"],
-  cache: true,
+  cache: false,
   implementation: () => Target.notImplemented("Npm.Published")
 })
 

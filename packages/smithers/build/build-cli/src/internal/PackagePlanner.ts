@@ -3069,8 +3069,15 @@ const visit = async (
   // stale, which is how run 11763 (main 2722d0e5) could fail `checks` on that
   // file alone. A planned write is therefore never cacheable.
   const plannedWrite = mode === "write" && plannedModeRules.has(rule)
+  // `Npm.Published` extracts the registry's current `latest`, which its key
+  // does not hold, so a consumer keyed on it (an `Api.Compat` baseline) would
+  // replay a verdict against a version the registry has since replaced.
+  const movingDependency = directDependencies.some((dependency) =>
+    Target.metadata(dependency).target === "Npm.Published"
+  )
   const cacheable = attrMember(attrs, "cache") !== false &&
-    refusal === undefined && pendingInstallations.length === 0 && !movingService && !plannedWrite &&
+    refusal === undefined && pendingInstallations.length === 0 && !movingService && !movingDependency &&
+    !plannedWrite &&
     (view.cacheable || RulePolicy.cacheable(rule, mode, repositoryState?.dirty))
 
   const spawnEnvironment = Exec.toolEnvironment(

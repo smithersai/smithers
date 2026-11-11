@@ -2739,19 +2739,14 @@ export const executeEffect = (
               ))
             }
             case "Npm.Published": {
-              return yield* withArtifactCache(
-                node,
-                Effect.gen(function*() {
-                  for (const outDir of node.outDirs) {
-                    yield* joined(() =>
-                      Fs.rm(NodePath.join(root, ...outDir.split("/")), { recursive: true, force: true })
-                    )
-                  }
-                  const spawned = yield* spawnNode(node, root)
-                  if (!spawned.ok) return fail(spawned.error)
-                  return green("ran")
-                })
-              )
+              // Never cached: the planner keys this rule on the manifest, not on
+              // the registry version it extracts.
+              for (const outDir of node.outDirs) {
+                yield* joined(() => Fs.rm(NodePath.join(root, ...outDir.split("/")), { recursive: true, force: true }))
+              }
+              const spawned = yield* spawnNode(node, root)
+              if (!spawned.ok) return fail(spawned.error)
+              return green("ran")
             }
             case "Api.Compat": {
               if (node.lane?.kind !== "api-compat") return fail("Api.Compat planned no producers")
