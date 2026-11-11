@@ -81,11 +81,12 @@ describe("POST /api/branches", () => {
     expect(await rows()).toEqual([
       { id: branch.branchId, name: SENTINEL, mode: "open", baseSha: shaOf(SENTINEL), conversationId: branch.conversationId },
     ])
-    // One ls-refs for the one branch, then HEAD for the default branch; never a credential.
+    // One ls-refs for the one branch, then HEAD for the default branch; never a credential, always the one User-Agent.
     expect(h.github.seen).toEqual([
       {
         method: "POST",
         path: "/OctoCat/Spoon-Knife.git/git-upload-pack",
+        userAgent: "smithers-integrations",
         authorization: null,
         gitProtocol: "version=2",
         prefixes: [`refs/heads/${SENTINEL}`],
@@ -93,6 +94,7 @@ describe("POST /api/branches", () => {
       {
         method: "GET",
         path: "/OctoCat/Spoon-Knife.git/info/refs?service=git-upload-pack",
+        userAgent: "smithers-integrations",
         authorization: null,
         gitProtocol: null,
         prefixes: [],
