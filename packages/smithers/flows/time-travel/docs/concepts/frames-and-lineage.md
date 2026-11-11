@@ -121,6 +121,11 @@ The record sits directly above the copied prefix and carries `parentRunId`,
 Reading the offset back is how a walk maps a child sequence number onto the
 parent's timeline.
 
+Copied prefix records retain their original provenance. A fork inherits
+history, while the original run keeps ownership of its spawned children and
+continuation rounds. Only children the fork actually spawns, or explicitly
+carries through rebinding, belong to it.
+
 ## Where to go next
 
 - [Replay a run into a view](../guides/replay-a-run.md) uses a frame to read.

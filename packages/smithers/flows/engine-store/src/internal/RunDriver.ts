@@ -3939,12 +3939,11 @@ const recordCreated = (
 /**
  * Records a child's spawn in its parent's journal.
  *
- * A spawn is a lineage edge, and a DETACHED spawn is a tier-3 effect:
- * nothing the parent's rewind can undo, because the child is its own claim
- * and its own journal. The record is boundary-shaped so the same assessment
- * that classifies a sent webhook classifies an orphaned child, and it is
- * emitted at `succeeded` because by this point the child run durably
- * exists. Unfenced: the creator of a detached child is not necessarily the
+ * A detached child keeps its own claim and journal. Its boundary-shaped
+ * spawn record is assessed by time travel's child policy: idle children may
+ * be cancelled, while terminal children survive with a warning. It is emitted
+ * at `succeeded` because by this point the child run durably exists.
+ * Unfenced: the creator of a detached child is not necessarily the
  * parent's current owner (an external spawn admission creates child rows
  * without holding the parent's fence), so this lineage-edge record is
  * first-writer-wins evidence keyed by its spawn identity.

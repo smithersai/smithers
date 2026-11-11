@@ -337,6 +337,11 @@ An **attached** child is not covered by this option at all. It still depends on
 the history being truncated, so a live one always refuses the rewind with
 `live_child`. Detach it or let it finish first.
 
+Engine-recorded child spawns are assessed by this policy and appear as
+`warning` assessments once the child check succeeds. They do not require a
+compensation handler. A fork's copied spawn history does not make the original
+run's children its own, so rewinding the fork leaves those children alone.
+
 The value is decoded before anything durable happens. A misspelled
 `"blcok"` is refused `invalid` rather than falling through to the destructive
 branch.

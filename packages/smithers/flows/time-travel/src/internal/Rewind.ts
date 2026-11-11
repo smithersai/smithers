@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import type { Jj } from "@smthrs/jj"
 import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
@@ -873,10 +874,46 @@ const preflight = (context: Context, progress: Progress) =>
     const plannedChildren = [...childAssessment.cancellable].sort(
       (left, right) => right.edge.parentSeq - left.edge.parentSeq
     )
-    const plan = yield* Compensation.assess(effects, snapshot?.changeId, {
-      wholeRepo: options.wholeRepo === true,
-      targetOperationId: snapshot?.operationId
-    })
+    // Child liveness and cancellation are governed by the child policy above.
+    // Copied prefix spawns still belong to their original run; a fork must
+    // neither claim nor cancel those children.
+    const copiedEffects = yield* EffectBoundary.fromEntries(
+      suffix.boundary.filter((entry) => entry.eventId.startsWith(`fork:${options.runId}:`))
+    )
+    const copiedEffectIds = new Set(copiedEffects.map((effect) => effect.id))
+    const childSpawns = effects.filter((effect) =>
+      effect.kind === EventTypes.childSpawnKind && effect.status === "succeeded" &&
+      Schema.is(Schema.Struct({
+        childRunId: Schema.NonEmptyString,
+        flowName: Schema.NonEmptyString,
+        attached: Schema.Boolean
+      }))(effect.output) &&
+      ((effect.runId !== options.runId && copiedEffectIds.has(effect.id)) ||
+        [...descendants.attached, ...descendants.detached].some((edge) =>
+          edge.kind === "child" && edge.parentRunId === effect.runId && edge.parentSeq === effect.seq
+        ))
+    )
+    const compensated = yield* Compensation.assess(
+      effects.filter((effect) => !childSpawns.includes(effect)),
+      snapshot?.changeId,
+      {
+        wholeRepo: options.wholeRepo === true,
+        targetOperationId: snapshot?.operationId
+      }
+    )
+    const plan: Compensation.Plan = {
+      ...compensated,
+      effects: [...effects].sort((left, right) => left.seq - right.seq),
+      assessments: [
+        ...compensated.assessments,
+        ...childSpawns.map((effect): Compensation.Assessment => ({
+          effect,
+          classification: "warning",
+          reason: "The child policy has assessed this spawn; inherited spawns remain owned by the original run.",
+          residue: effect.residue ?? "The child keeps its own journal."
+        }))
+      ].sort((left, right) => left.effect.seq - right.effect.seq)
+    }
     const blocking = plan.assessments.filter(
       (assessment) => assessment.classification === "blocking"
     )

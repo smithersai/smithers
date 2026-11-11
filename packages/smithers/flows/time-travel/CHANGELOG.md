@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Rewinds across engine-recorded child spawns now follow the detached-child policy.
+  Forks no longer claim their parent's children or continuation rounds from copied history.
+
 - Interrupted rewinds stay quarantined from engine takeover until their audit
   closes. Truncation commits the frame state, and post-commit failures finish
   under the held lease before returning the original error.

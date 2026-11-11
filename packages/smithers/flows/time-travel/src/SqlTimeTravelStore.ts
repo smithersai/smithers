@@ -267,6 +267,7 @@ export const make: Effect.Effect<
       FROM flows_journal_events ${Dialect.indexHint(sql, "flows_journal_events_child_spawn_idx")}
       WHERE event_type = ${sql.literal(`'${EffectBoundary.eventType}'`)}
         AND ${Dialect.jsonText(sql, sql`payload_json`, "$.effect.kind")} = ${sql.literal(`'${spawnEffectKind}'`)}
+        AND flows_journal_events.run_id = ${Dialect.jsonText(sql, sql`payload_json`, "$.effect.runId")}
         AND ${Dialect.jsonText(sql, sql`payload_json`, "$.effect.status")} = 'succeeded'
         AND ${Dialect.jsonText(sql, sql`payload_json`, "$.effect.output.childRunId")} IS NOT NULL
       UNION ALL
@@ -278,6 +279,7 @@ export const make: Effect.Effect<
       FROM flows_journal_events ${Dialect.indexHint(sql, "flows_journal_events_handoff_idx")}
       WHERE event_type = ${sql.literal(`'${handoffEventType}'`)}
         AND ${Dialect.jsonText(sql, sql`payload_json`, "$.decision")} = 'handed-off'
+        AND substr(event_id, 1, 5) <> 'fork:'
         AND ${Dialect.jsonText(sql, sql`payload_json`, "$.nextExecutionId")} IS NOT NULL
       ), reachable (run_id) AS (
         SELECT ${runId}
@@ -299,6 +301,7 @@ export const make: Effect.Effect<
         WHERE flows_journal_events.run_id = reachable.run_id
           AND event_type = ${sql.literal(`'${EffectBoundary.eventType}'`)}
           AND json_extract(payload_json, '$.effect.kind') = ${sql.literal(`'${spawnEffectKind}'`)}
+          AND flows_journal_events.run_id = json_extract(payload_json, '$.effect.runId')
           AND json_extract(payload_json, '$.effect.status') = 'succeeded'
           AND json_extract(payload_json, '$.effect.output.childRunId') IS NOT NULL
         UNION
@@ -307,6 +310,7 @@ export const make: Effect.Effect<
         WHERE flows_journal_events.run_id = reachable.run_id
           AND event_type = ${sql.literal(`'${handoffEventType}'`)}
           AND json_extract(payload_json, '$.decision') = 'handed-off'
+          AND substr(event_id, 1, 5) <> 'fork:'
           AND json_extract(payload_json, '$.nextExecutionId') IS NOT NULL
       )
       SELECT parent_run_id, parent_seq, child_run_id, kind, attached
@@ -322,6 +326,7 @@ export const make: Effect.Effect<
       WHERE flows_journal_events.run_id = reachable.run_id
         AND event_type = ${sql.literal(`'${EffectBoundary.eventType}'`)}
         AND json_extract(payload_json, '$.effect.kind') = ${sql.literal(`'${spawnEffectKind}'`)}
+        AND flows_journal_events.run_id = json_extract(payload_json, '$.effect.runId')
         AND json_extract(payload_json, '$.effect.status') = 'succeeded'
         AND json_extract(payload_json, '$.effect.output.childRunId') IS NOT NULL
       UNION ALL
@@ -334,6 +339,7 @@ export const make: Effect.Effect<
       WHERE flows_journal_events.run_id = reachable.run_id
         AND event_type = ${sql.literal(`'${handoffEventType}'`)}
         AND json_extract(payload_json, '$.decision') = 'handed-off'
+        AND substr(event_id, 1, 5) <> 'fork:'
         AND json_extract(payload_json, '$.nextExecutionId') IS NOT NULL
     `).pipe(Effect.flatMap(decodeEdges), Effect.mapError(mapError))
 

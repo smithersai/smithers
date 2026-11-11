@@ -71,7 +71,7 @@ describe("time-travel migrations", () => {
       const sql = yield* SqlClient.SqlClient
       const rows = yield* sql<{ readonly migration_id: number }>`SELECT migration_id
         FROM flows_migrations WHERE migration_id >= 5000 ORDER BY migration_id`
-      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005, 5006])
+      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005, 5006, 5007])
       // A completed rung is not a schema repair hook on each store build.
       yield* sql`DROP INDEX flows_journal_events_child_spawn_idx`
       yield* SqlTimeTravelStore.make
@@ -170,7 +170,7 @@ describe("time-travel migrations", () => {
       }])
       const rows = yield* sql<{ readonly migration_id: number }>`SELECT migration_id FROM flows_migrations
         WHERE migration_id >= 5000 ORDER BY migration_id`
-      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005, 5006])
+      expect(rows.map((row) => row.migration_id)).toEqual([5001, 5002, 5003, 5004, 5005, 5006, 5007])
     }).pipe(Effect.provide(TestDatabase.layer)))
 
   it.effect("widens a legacy snapshots table that predates plan_digest", () =>
@@ -277,7 +277,7 @@ describe("time-travel migrations", () => {
           )
         )
 
-        expect(rows).toEqual([5001, 5002, 5003, 5004, 5005, 5006].map((migration_id) => ({ migration_id })))
+        expect(rows).toEqual([5001, 5002, 5003, 5004, 5005, 5006, 5007].map((migration_id) => ({ migration_id })))
       } finally {
         yield* Effect.promise(() => rm(directory, { recursive: true, force: true }))
       }

@@ -12,6 +12,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import * as Dialect from "@smthrs/database/Dialect"
 import type * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
@@ -39,6 +40,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as CompensationHandlers from "../src/CompensationHandlers.ts"
@@ -455,6 +457,209 @@ describe("time travel over an engine-written journal", () => {
         yield* Deferred.succeed(releaseChild, "done")
       }).pipe(Effect.provide(engineLayer({ notifications: [], jjCalls: [] }, [])))
     ))
+
+  for (
+    const scenario of [
+      "completed:block",
+      "completed:cancel",
+      "parked:block",
+      "parked:cancel",
+      "parked:no-residue",
+      "parked:with-effect",
+      "parked:with-compensable",
+      "parked:unknown",
+      "parked:missing-edge",
+      "parked:foreign-run",
+      "parked:object-child",
+      "parked:array-child",
+      "parked:number-child",
+      "fork:cancel",
+      "fork:carry"
+    ] as const
+  ) {
+    it.effect("applies child policy to an engine spawn: " + scenario, () =>
+      Effect.scoped(
+        Effect.gen(function*() {
+          const scope = yield* Effect.scope
+          const registrations = yield* Scope.make()
+          yield* Effect.addFinalizer(() => Scope.close(registrations, Exit.succeed(undefined)))
+          const stopChild = yield* Deferred.make<Effect.Effect<void>>()
+          const childStarted = yield* Deferred.make<void>()
+          const child = Flow.make("time-travel/PolicyChild", {
+            payload: {},
+            success: Schema.String,
+            body: () => Post.call({})
+          })
+          const parent = Flow.make("time-travel/PolicyParent", {
+            payload: {},
+            success: Schema.String,
+            body: () => Post.call({})
+          })
+          const engine = yield* FlowRuntime.FlowRuntime
+          const completed = scenario.startsWith("completed:")
+          yield* engine.register(child, () =>
+            Deferred.succeed(childStarted, undefined).pipe(
+              Effect.andThen(completed ? Effect.succeed("done") : DurableDeferred.await(Settled))
+            )).pipe(Effect.provideService(Scope.Scope, registrations))
+          yield* engine.register(parent, () =>
+            Effect.gen(function*() {
+              yield* Action.make({
+                name: "time-travel/PolicyStage",
+                tier: "compensable",
+                success: Schema.Void,
+                idempotencyKey: "policy-stage",
+                execute: Effect.void
+              })
+              const runningChild = yield* engine.execute(child, { executionId: "policy-child", payload: {} }).pipe(
+                Effect.forkIn(scope)
+              )
+              if (completed) yield* Fiber.join(runningChild).pipe(Effect.orDie)
+              if (scenario === "parked:with-effect" || scenario === "parked:with-compensable") {
+                yield* Deferred.await(childStarted)
+                yield* Action.make({
+                  name: "time-travel/PolicyAfterSpawn",
+                  tier: scenario === "parked:with-effect" ? "irreversible" : "compensable",
+                  success: Schema.Void,
+                  idempotencyKey: "policy-after-spawn",
+                  execute: Effect.void
+                })
+              }
+              yield* Deferred.succeed(stopChild, Fiber.interrupt(runningChild).pipe(Effect.asVoid))
+              return yield* DurableDeferred.await(Settled)
+            })).pipe(Effect.provideService(Scope.Scope, registrations))
+          const running = yield* engine.execute(parent, { executionId: "policy-parent", payload: {} }).pipe(
+            Effect.forkChild
+          )
+          const runs = yield* RunStore.RunStore
+          for (
+            const [runId, status] of [["policy-parent", "suspended"], [
+              "policy-child",
+              completed ? "completed" : "suspended"
+            ]] as const
+          ) {
+            yield* TestDatabase.until(
+              runs.get(runId).pipe(
+                Effect.option,
+                Effect.map((row) => Option.isSome(row) && row.value.status === status)
+              )
+            )
+          }
+          yield* Fiber.interrupt(running)
+          yield* (yield* Deferred.await(stopChild))
+          yield* Scope.close(registrations, Exit.succeed(undefined))
+          yield* TestDatabase.until(
+            runs.get("policy-parent").pipe(
+              Effect.map((row) => row.status === "suspended" && row.owner === null && row.claim === null)
+            )
+          )
+          expect((yield* runs.get("policy-parent")).status).toBe("suspended")
+          const journal = yield* Journal.Journal
+          yield* journal.flush
+          const page = yield* journal.entries({ runId: "policy-parent" as JournalEvent.RunId, limit: 200 })
+          const spawn = page.entries.find((entry) =>
+            entry.eventType === "flows.time-travel.effect-boundary"
+            && (entry.payload as { effect?: { kind?: string } }).effect?.kind === "flows/engine-store/child-spawn"
+          )!
+          expect(spawn).toBeDefined()
+          const lineageId = FlowEngine.Lineage.root("policy-parent")
+          const frame = { lineageId, seq: spawn.seq - 1 }
+          const store = yield* SqlTimeTravelStore.make
+          const timeTravel = yield* TimeTravel
+          if (
+            scenario === "parked:no-residue" || scenario === "parked:unknown" || scenario === "parked:missing-edge" ||
+            scenario === "parked:foreign-run" || scenario === "parked:object-child" ||
+            scenario === "parked:array-child" || scenario === "parked:number-child"
+          ) {
+            const payload = structuredClone(spawn.payload) as { effect: Record<string, unknown> }
+            if (scenario === "parked:no-residue") delete payload.effect.residue
+            if (scenario === "parked:unknown") payload.effect.status = "unknown"
+            if (scenario === "parked:missing-edge") delete payload.effect.output
+            if (scenario === "parked:foreign-run") payload.effect.runId = "unrelated-run"
+            if (
+              scenario === "parked:object-child" || scenario === "parked:array-child" ||
+              scenario === "parked:number-child"
+            ) {
+              ;(payload.effect.output as Record<string, unknown>).childRunId = scenario === "parked:object-child"
+                ? {}
+                : scenario === "parked:array-child"
+                ? []
+                : 1
+            }
+            const sql = yield* SqlClient.SqlClient
+            yield* sql`UPDATE flows_journal_events SET payload_json = ${JSON.stringify(payload)}
+              WHERE run_id = 'policy-parent' AND seq = ${spawn.seq}`
+            if (scenario !== "parked:no-residue") {
+              const refusal = yield* Effect.flip(timeTravel.rewind({ runId: "policy-parent", frame }, {
+                detachedChildren: scenario === "parked:foreign-run" ? "block" : "cancel"
+              }))
+              expect(refusal.code).toBe(
+                scenario === "parked:number-child" && !Dialect.isPostgres(sql) ? "unknown" : "irreversible"
+              )
+              expect((yield* runs.get("policy-child")).status).toBe("suspended")
+              return
+            }
+          }
+          expect((yield* store.descendants("policy-parent", frame)).detached).toHaveLength(1)
+          if (scenario === "parked:with-effect") {
+            const refusal = yield* Effect.flip(
+              timeTravel.rewind({ runId: "policy-parent", frame }, { detachedChildren: "cancel" })
+            )
+            expect(refusal).toMatchObject({ code: "irreversible" })
+            expect(JSON.stringify(refusal.cause)).toContain("time-travel/PolicyAfterSpawn")
+            expect((yield* runs.get("policy-child")).status).toBe("suspended")
+            return
+          }
+          if (scenario.startsWith("fork:")) {
+            const forkFrame = { lineageId, seq: page.entries.at(-1)!.seq }
+            const fork = yield* timeTravel.fork({ runId: "policy-parent", frame: forkFrame })
+            expect(yield* store.descendants(fork.runId, { lineageId, seq: 0 })).toEqual({ attached: [], detached: [] })
+            if (scenario === "fork:carry") {
+              const refused = yield* Effect.flip(timeTravel.fork({ runId: fork.runId, frame: forkFrame }, {
+                rebind: () => Effect.succeed({ children: [{ from: "policy-child", to: "unrelated-copy" }] })
+              }))
+              expect(refused).toMatchObject({ code: "invalid" })
+              expect(refused.message).toContain("is not a child")
+            } else {
+              const result = yield* timeTravel.rewind({ runId: fork.runId, frame }, { detachedChildren: "cancel" })
+              expect(result.cancelledChildren).toEqual([])
+              expect(result.warnings).toEqual([])
+            }
+            expect((yield* runs.get("policy-child")).status).toBe("suspended")
+            expect((yield* journal.entries({ runId: "policy-child" as JournalEvent.RunId, limit: 200 })).entries.length)
+              .toBeGreaterThan(0)
+            return
+          }
+          if (scenario === "parked:block") {
+            expect(yield* Effect.flip(timeTravel.rewind({ runId: "policy-parent", frame }))).toMatchObject({
+              code: "live_child"
+            })
+            expect((yield* runs.get("policy-child")).status).toBe("suspended")
+            return
+          }
+          const result = yield* timeTravel.rewind({ runId: "policy-parent", frame }, {
+            detachedChildren:
+              scenario === "parked:no-residue" || scenario === "parked:with-compensable" || scenario.endsWith(":cancel")
+                ? "cancel"
+                : "block"
+          })
+          expect(result.cancelledChildren).toEqual(completed ? [] : ["policy-child"])
+          expect(result.assessments.find((assessment) => assessment.effect.kind === "flows/engine-store/child-spawn"))
+            .toMatchObject({ classification: "warning" })
+          if (scenario === "parked:with-compensable") {
+            expect(result.assessments.map((assessment) => [assessment.effect.kind, assessment.classification])).toEqual(
+              [
+                ["flows/engine-store/child-spawn", "warning"],
+                ["time-travel/PolicyAfterSpawn", "revertible"]
+              ]
+            )
+          }
+          expect(result.warnings.map((warning) => warning.childRunId)).toEqual(completed ? ["policy-child"] : [])
+          expect((yield* runs.get("policy-child")).status).toBe(completed ? "completed" : "cancelled")
+          const retained = yield* journal.entries({ runId: "policy-parent" as JournalEvent.RunId, limit: 200 })
+          expect(retained.entries.some((entry) => entry.eventId === spawn.eventId)).toBe(false)
+        }).pipe(Effect.provide(engineLayer({ notifications: [], jjCalls: [] }, [])))
+      ))
+  }
 
   it.effect("folds an ordinary engine journal with no hand-emitted metadata", () =>
     Effect.gen(function*() {

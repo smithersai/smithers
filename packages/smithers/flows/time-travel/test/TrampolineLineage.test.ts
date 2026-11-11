@@ -12,6 +12,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
@@ -179,6 +180,22 @@ describe("the lineage tree over an engine-driven trampoline", () => {
         attached: false
       }])
     }))
+
+  it.effect("does not inherit a copied handoff as a fork's continuation", () =>
+    drive(({ entries, store }) =>
+      Effect.gen(function*() {
+        const frame = { lineageId: FlowEngine.Lineage.root(rootRunId), seq: entries.at(-1)!.seq }
+        const fork = yield* store.createFork(rootRunId, frame)
+        expect(yield* store.descendants(fork.runId, { ...frame, seq: 0 })).toEqual({ attached: [], detached: [] })
+        expect(
+          (yield* store.descendants(rootRunId, { ...frame, seq: handoffSeq(entries) - 1 })).detached.filter((edge) =>
+            edge.kind === "continuation"
+          )
+        ).toHaveLength(
+          1
+        )
+      })
+    ))
 
   it.effect("leaves the continuation out of a frame that already follows the handoff", () =>
     Effect.gen(function*() {
