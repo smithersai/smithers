@@ -905,7 +905,8 @@ The decorator. The check is suspended into the spawn itself, so building a
 `Command` or a stream neither requests permission nor starts a process. The
 check runs once per pipeline stage, left to right, before any stage starts.
 Each stage's resource is `CommandLine.resource(stage, context)`: the rendered
-line, with a `shell: true` line that holds shell control syntax marked as
+line, with each protected (`Redacted`) argument fingerprinted under a key the
+layer draws once, a `shell: true` line that holds shell control syntax marked as
 `sh -c '<line>'`, environment overrides the child would not inherit named in an
 `env <NAME>… --` prefix, and a working directory outside `Workspace.root`
 named in a `cwd <path> --` prefix. When the host filesystem is in the layer's
@@ -916,7 +917,10 @@ environment as `context.ambient`. Pipeline `from`/`to` routing is not part of
 what a grant authorizes. `cwd` and the **names** of overridden environment
 variables also reach an attended surface as display metadata; the values do
 not. A
-command that cannot be snapshotted fails with an `InvalidData` `PlatformError`.
+command that cannot be snapshotted fails with an `InvalidData` `PlatformError`,
+and so does a stage that passes a protected argument through a shell
+(`shell: true` or a custom shell), before any check: the shell would parse the
+hidden value as code. Pass secrets in `env` instead.
 A command with no `cwd`, or a relative one, runs in `Workspace.root`, never the
 process's own directory, and the check sees that resolved directory.
 
@@ -1216,14 +1220,25 @@ commands and never the plumbing. The rendering is POSIX-only by contract.
 interface ResourceContext {
   readonly ambient?: Readonly<Record<string, string | undefined>>
   readonly contains?: (directory: string) => boolean
+  readonly resolvedCwd?: string
+  readonly redactionKey?: Uint8Array
 }
 const resource: (command: ChildProcess.StandardCommand, context?: ResourceContext) => string
 const stages: (command: ChildProcess.Command) => ReadonlyArray<ChildProcess.StandardCommand>
 ```
 
-The `proc:spawn` capability resource for one stage: `render`, with three
-additions so a prefix grant such as `git status *` authorizes only what the
-stage names.
+The `proc:spawn` capability resource for one stage: `render`, with four
+additions so a grant such as `git status *` authorizes only what the stage
+names.
+
+- A protected (`Redacted`) argument renders as `<redacted:<16 hex digits>>`,
+  the start of the value's HMAC-SHA256 under `context.redactionKey`, rather
+  than the constant `<redacted>` that `render` shows. A grant approved for one
+  hidden value does not match another. The spawner draws a random key per
+  layer, so a fingerprint in a prompt or the journal cannot be tested against
+  guesses and no grant for a hidden value outlives the process. Omitted, the
+  key is empty: the fingerprint still binds one value, but a guess can be
+  checked against it.
 
 - A `shell: true` stage whose line holds `;`, `&`, `|`, a backtick, `$`, `<`,
   `>`, `(`, `)`, or a line break is marked as `sh -c '<line>'`. `git status *`
@@ -1257,8 +1272,12 @@ const executable: (command: ChildProcess.Command) => string
 ```
 
 The program a command runs, without its arguments: `command` itself when no
-shell parses it, the leading token of the line when one does, and one name per
-stage of a pipeline joined with `|`. Durable process records name their program
+shell parses it, and one name per stage of a pipeline joined with `|`. When a
+shell parses the line, the program is its first word after any leading
+`NAME=value` assignments, with quotes removed: `PGPASSWORD=hunter2 psql -h db`
+yields `psql` and `'/opt/my tool/bin' --x` yields `/opt/my tool/bin`. A line
+whose program is not a plain word (an expansion such as `$TOOL`, an escape, a
+subshell, or no word at all) yields `sh`. Durable process records name their program
 this way rather than with `render`, because arguments carry credentials and a
 journal entry is permanent.
 

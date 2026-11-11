@@ -19,6 +19,7 @@
  * browser-safe side of the package.
  */
 
+import { digestSync } from "@smthrs/crypto/Sha256"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import * as Redacted from "effect/Redacted"
 import { isInheritedName } from "./ChildProcessEnvironment.ts"
@@ -133,6 +134,30 @@ export interface ResourceContext {
    * leads out of it is judged, and shown, by where the command really runs.
    */
   readonly resolvedCwd?: string | undefined
+  /**
+   * The HMAC-SHA256 key that fingerprints a protected argument. The spawner
+   * draws a random one per layer, so a fingerprint neither reveals a guessable
+   * value nor outlives the process. Omitted, the key is empty: the
+   * fingerprint still binds one value, but anyone can test a guess against it.
+   */
+  readonly redactionKey?: Uint8Array | undefined
+}
+
+const utf8 = new TextEncoder()
+
+const bytesOf = (hex: string): Uint8Array => Uint8Array.from(hex.match(/../g)!, (pair) => Number.parseInt(pair, 16))
+
+/** HMAC-SHA256 (RFC 2104) as lowercase hex. */
+const hmac = (key: Uint8Array, message: string): string => {
+  const block = new Uint8Array(64)
+  block.set(key.length > 64 ? bytesOf(digestSync(key)) : key)
+  const padded = (mask: number, tail: Uint8Array): Uint8Array => {
+    const bytes = new Uint8Array(64 + tail.length)
+    bytes.set(block.map((byte) => byte ^ mask))
+    bytes.set(tail, 64)
+    return bytes
+  }
+  return digestSync(padded(0x5c, bytesOf(digestSync(padded(0x36, utf8.encode(message))))))
 }
 
 /**
@@ -162,9 +187,13 @@ export const stages = (command: ChildProcess.Command): ReadonlyArray<ChildProces
 
 /**
  * The `proc:spawn` capability resource for one stage: {@link render}, with
- * three additions that keep a prefix grant from authorizing code the stage
- * never named.
+ * four additions that keep a grant from authorizing code the stage never
+ * named.
  *
+ *  - A protected (`Redacted`) argument renders as
+ *    `<redacted:<16 hex digits>>`, the start of its HMAC-SHA256 under
+ *    `context.redactionKey`, instead of the constant `<redacted>`. A grant
+ *    approved for one hidden value then does not match another.
  *  - A `shell: true` stage whose line holds shell control syntax (`;`, `&`,
  *    `|`, `` ` ``, `$`, `<`, `>`, `(`, `)`, or a line break) is marked as the
  *    explicit `sh -c '<line>'` it is. A grant such as `git status *` then
@@ -202,7 +231,11 @@ export const stages = (command: ChildProcess.Command): ReadonlyArray<ChildProces
  * @since 1.0.0-rc.1
  */
 export const resource = (command: ChildProcess.StandardCommand, context: ResourceContext = {}): string => {
-  const line = render(command)
+  const key = context.redactionKey ?? new Uint8Array()
+  const line = renderWith(
+    command,
+    (value) => Redacted.isRedacted(value) ? `<redacted:${hmac(key, Redacted.value(value)).slice(0, 16)}>` : value
+  )
   const shown = command.options.shell === true && shellControl.test(line.replace(harmlessRedirect, "$1"))
     ? `sh -c ${quote(line)}`
     : line
@@ -214,11 +247,25 @@ export const resource = (command: ChildProcess.StandardCommand, context: Resourc
     : `cwd ${quote(directory)} -- ${withEnv}`
 }
 
-/** The leading token of a shell line, which is the program the line runs. */
+/**
+ * The leading `NAME=value` words of a shell line: they set variables for the
+ * command, often credentials, rather than naming the program. An unquoted
+ * value stops at whitespace and holds no substitution or control character,
+ * so the word after them really is the next word.
+ */
+const assignments = /^(?:[A-Za-z_][A-Za-z0-9_]*=(?:[^\s'"\\`()<>;&|]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")*(?:\s+|$))*/
+
+/** A program word with no expansion: plain characters and quoted runs. */
+const plainWord = /^(?:[A-Za-z0-9_@%+=:,./~-]|'[^']*'|"[^"\\$`]*")+(?=\s|$)/
+
+/**
+ * The program a shell line runs: its first word after any leading
+ * assignments, unquoted. A line whose program word is anything else (an
+ * expansion, an escape, a subshell, or no word at all) names the shell, `sh`.
+ */
 const program = (line: string): string => {
-  const trimmed = line.trimStart()
-  const end = trimmed.search(/\s/)
-  return end === -1 ? trimmed : trimmed.slice(0, end)
+  const word = plainWord.exec(line.trimStart().replace(assignments, ""))?.[0]
+  return word === undefined ? "sh" : word.replaceAll(/'([^']*)'|"([^"]*)"/g, "$1$2")
 }
 
 /**
@@ -231,9 +278,12 @@ const program = (line: string): string => {
  * matches processes by pid and process group.
  *
  * Without `shell`, `command` is the executable itself, spaces and all. With a
- * shell, the line is what runs, so the program is its first token: both
+ * shell, the line is what runs, so the program is its first word: both
  * `make("mysql -phunter2", [], { shell: true })` and
- * `make("mysql", ["-phunter2"])` yield `mysql`. A pipeline names one
+ * `make("mysql", ["-phunter2"])` yield `mysql`. Leading assignments are
+ * skipped, so `PGPASSWORD=hunter2 psql` yields `psql`, and quotes are removed,
+ * so `'/opt/my tool/bin' --x` yields `/opt/my tool/bin`. A line whose program
+ * is not a plain word, such as `$TOOL --x`, yields `sh`. A pipeline names one
  * executable per stage, joined the way {@link render} joins the stages.
  *
  * @category rendering

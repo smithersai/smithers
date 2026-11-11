@@ -129,26 +129,57 @@ describe("ChildProcessSpawner real Node lifecycle", () => {
       }
     }))
 
-  it.effect("reveals a protected argument to the real child while its grant stays redacted", () =>
+  it.effect("reveals a protected argument to the real child while its grant binds that one hidden value", () =>
     Effect.gen(function*() {
-      const command = ChildProcess.make(process.execPath, [
-        "-e",
-        "console.log(process.argv[1])",
-        Redacted.make("protected argument")
-      ])
-      const resource = CommandLine.resource(command)
-      expect(resource).toContain("<redacted>")
-      expect(resource).not.toContain("protected argument")
-      const output = yield* withGuardedSpawner({
-        attended: false,
-        rules: [
-          new Permission.Rule({
-            effect: "allow",
-            pattern: new CapabilityPattern({ action: "proc:spawn", resource })
+      const command = (secret: string) =>
+        ChildProcess.make(process.execPath, ["-e", "console.log(process.argv[1])", Redacted.make(secret)])
+      const outputs = yield* withGuardedSpawner(
+        { runId: "protected-argument", planDigest: "protected-plan" },
+        (store) =>
+          Effect.gen(function*() {
+            const spawner = yield* EffectChildProcessSpawner
+            const first = yield* spawner.string(command("protected argument")).pipe(
+              Effect.forkChild({ startImmediately: true })
+            )
+            const approved = yield* awaitPending(store)
+            expect(approved.capability.resource).toMatch(/'<redacted:[0-9a-f]{16}>'$/)
+            expect(approved.capability.resource).not.toContain("protected argument")
+            yield* store.reply(approved.requestId, "run")
+            const revealed = yield* Fiber.join(first)
+            const again = yield* spawner.string(command("protected argument"))
+
+            const other = yield* spawner.string(command("other value")).pipe(
+              Effect.forkChild({ startImmediately: true })
+            )
+            const asked = yield* awaitPending(store)
+            expect(asked.capability.resource).not.toBe(approved.capability.resource)
+            yield* store.reply(asked.requestId, "deny")
+            const denied = yield* Effect.flip(Fiber.join(other))
+            return { revealed, again, denied }
           })
-        ]
-      }, () => Effect.flatMap(EffectChildProcessSpawner, (spawner) => spawner.string(command)))
-      expect(output.trim()).toBe("protected argument")
+      )
+      expect(outputs.revealed.trim()).toBe("protected argument")
+      expect(outputs.again.trim()).toBe("protected argument")
+      expect(Option.isSome(Permission.fromPlatformError(outputs.denied as PlatformError.PlatformError))).toBe(true)
+    }))
+
+  it.effect("refuses a protected argument passed through a shell before asking for a grant", () =>
+    Effect.gen(function*() {
+      const shells: ReadonlyArray<ChildProcess.CommandOptions["shell"]> = [true, "/bin/sh"]
+      for (const shell of shells) {
+        const failure = yield* withGuardedSpawner({ runId: "protected-shell" }, (store) =>
+          Effect.gen(function*() {
+            const spawner = yield* EffectChildProcessSpawner
+            const failure = yield* Effect.flip(
+              spawner.string(ChildProcess.make("echo", [Redacted.make("x; touch pwned")], { shell }))
+            )
+            expect(yield* store.list).toEqual([])
+            return failure
+          }))
+        expect(failure).toMatchObject({
+          reason: { _tag: "InvalidData", description: expect.stringContaining("protected argument") }
+        })
+      }
     }))
 
   it.effect("passes own __proto__ and ordinary environment values to a real child", () =>

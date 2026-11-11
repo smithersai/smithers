@@ -199,6 +199,13 @@ const replaceEnvironment = (command: ChildProcess.Command): ChildProcess.Command
 const maximumEnvironmentNames = 64
 
 /**
+ * Whether a stage hands a protected argument to a shell, which would parse
+ * the hidden value as code no grant could see.
+ */
+const shellsProtectedArgument = (stage: ChildProcess.StandardCommand): boolean =>
+  stage.options.shell !== undefined && stage.options.shell !== false && stage.args.some(Redacted.isRedacted)
+
+/**
  * The environment this process holds, which a child built with
  * `ChildProcessEnvironment.make` inherits its bootstrap names from. Empty on a
  * host with no process environment, such as a browser or a Cloudflare Worker,
@@ -298,12 +305,18 @@ export const layerNoop = (
  * does. Every pipeline stage is checked as its own capability, left to right,
  * and no stage starts until all pass. A stage's resource is
  * `CommandLine.resource`: the command line `CommandLine.render` produces, with
- * a `shell: true` line that holds shell control syntax marked as
+ * each protected (`Redacted`) argument fingerprinted under a key drawn once per
+ * layer, a `shell: true` line that holds shell control syntax marked as
  * `sh -c '<line>'`, any environment variable the child would not inherit from
  * this process named in an `env <NAME>… -- ` prefix, and a working directory
  * outside `Workspace.root` named in a `cwd <path> -- ` prefix. Custom shell
  * paths are included explicitly in the resource; browser and remote adapters
  * reject them rather than silently substituting a different shell.
+ *
+ * A stage that passes a protected argument through a shell (`shell: true` or
+ * a custom shell) fails with an `InvalidData` `PlatformError` before any
+ * check: the shell would parse the hidden value as code. Pass secrets in
+ * `env`, which the resource names but never shows.
  *
  * Every approved stage requires `ProcessConfinement` in the host context.
  * A missing service refuses spawning; its `layerNoop` is the explicit choice
@@ -344,6 +357,9 @@ export const layer: Layer.Layer<
     // judged on real paths; a directory that cannot be resolved (it does not
     // exist, or the host has no filesystem) is judged lexically.
     const fileSystem = yield* Effect.serviceOption(FileSystem.FileSystem)
+    // Fingerprints protected arguments in resources. Drawn per layer, so a
+    // fingerprint in a prompt or a journal cannot be tested against guesses.
+    const redactionKey = yield* Effect.sync(() => crypto.getRandomValues(new Uint8Array(32)))
     const real = (directory: string) =>
       Option.match(fileSystem, {
         onNone: () => Effect.succeed(directory),
@@ -367,7 +383,8 @@ export const layer: Layer.Layer<
           CommandLine.resource(stage, {
             ambient: ambientEnvironment(),
             contains,
-            resolvedCwd
+            resolvedCwd,
+            redactionKey
           })
         )
       })
@@ -444,6 +461,16 @@ export const layer: Layer.Layer<
                 description: "command must be an immutable supported process description"
               })
           }).pipe(
+            Effect.filterOrFail(
+              (snapshot) => !CommandLine.stages(snapshot).some(shellsProtectedArgument),
+              () =>
+                systemError({
+                  _tag: "InvalidData",
+                  module: "ChildProcessSpawner",
+                  method: "spawn",
+                  description: "a protected argument cannot pass through a shell; pass the secret in env instead"
+                })
+            ),
             Effect.map((snapshot) => Rooted.command(snapshot, rooted)),
             Effect.flatMap((rooted) =>
               check(rooted).pipe(
