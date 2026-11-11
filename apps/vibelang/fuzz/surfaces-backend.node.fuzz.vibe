@@ -171,14 +171,17 @@ it.live("surfaces/stored-session", () => run("surfaces/stored-session", Target, 
 
 const INITIALIZE = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "fuzz", version: "0" } } }) + "\n"
 const McpInput = Schema.Struct({
-  // Well-formed lines only: one malformed line leaves Effect's ndjson protocol deaf (~/vl/vibelang-bugs/effect-mcp-ndjson-malformed-line).
-  lines: Schema.Array(Schema.Literals(["\n", "{\"jsonrpc\":\"2.0\",\"method\":\"nope\"}\n", "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"])).check(Schema.isMaxLength(4)),
+  // Every run starts with a malformed frame; vary further frames and the host chunk boundaries.
+  lines: Schema.Array(Schema.Literals(["{\n", "nope\n", "\n", "{\"jsonrpc\":\"2.0\",\"method\":\"nope\"}\n", "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"])).check(Schema.isMaxLength(4)),
+  // Older corpus values omit this field and retain separate chunks.
+  coalesced: Schema.optionalKey(Schema.Boolean),
   fault: Schema.Literals(["signal", "stdin-ends", "settings-defect", "settings-interrupted"]),
 })
 
 /**
  * src/surfaces/mcp.vibe's stdio server in this process, over a fuzzed stdin. A host signal (interruption) or the
- * client closing stdin ends it with no failure on stderr, after it answered `initialize` on stdout. A settings read
+ * client closing stdin ends it with no failure on stderr. Malformed frames receive -32700 with a null id,
+ * followed by the initialize result. A settings read
  * that dies while the backend starts (an injected faulty FileSystem) ends it with the defect on stderr and nothing on
  * stdout; one that is interrupted ends it with nothing on either. stderr also carries the server's log lines; stdout carries only the protocol.
  */
@@ -191,7 +194,9 @@ it.live("surfaces/mcp-stdio", () => run("surfaces/mcp-stdio", McpInput, (input) 
     const console = try Console.Console
     const terminal = { ...console, error: (...args: ReadonlyArray<unknown>) => { errors.push(args.join(" ")) } }
     const encoder = new TextEncoder()
-    const stdin = Stream.concat(Stream.fromIterable([...input.lines, INITIALIZE].map((line) => encoder.encode(line))), input.fault === "stdin-ends" ? Stream.empty : Stream.never)
+    const frames = ["{\n", ...input.lines, INITIALIZE]
+    const chunks = input.coalesced ? [frames.join("")] : frames
+    const stdin = Stream.concat(Stream.fromIterable(chunks.map((line) => encoder.encode(line))), input.fault === "stdin-ends" ? Stream.empty : Stream.never)
     const stdout = Sink.forEach((chunk: string | Uint8Array) => Effect.map(Effect.orDie(Effect.try(() => typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk))), (text) => { written.push(text) }))
     const settings: FileSystem.FileSystem = input.fault !== "settings-defect" && input.fault !== "settings-interrupted" ? files
       : { ...files, readFileString: (path, encoding) => !path.endsWith("mock-session.json") ? files.readFileString(path, encoding) : input.fault === "settings-defect" ? Effect.die(new Error("settings EIO")) : Effect.interrupt }
@@ -214,7 +219,11 @@ it.live("surfaces/mcp-stdio", () => run("surfaces/mcp-stdio", McpInput, (input) 
       const answered = try Effect.timeoutOption(Effect.repeat(Effect.sync(() => written.join("").includes("vibelang-factory")), { until: (done) => done, schedule: Schedule.spaced("20 millis") }), "60 seconds")
       if (input.fault === "signal") try Fiber.interrupt(server)
       const exit = try Effect.timeoutOption(Fiber.await(server), "60 seconds")
-      if (Option.isSome(answered) && Option.isSome(exit) && Exit.isFailure(exit.value) && Cause.hasInterruptsOnly(exit.value.cause) && !failed()) return true
+      const replies = try Effect.try(() => written.join("").trim().split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line)))
+      const parseErrors = replies.filter((reply) => reply.error?.code === -32700)
+      const expectedErrors = 1 + input.lines.filter((line) => line === "{\n" || line === "nope\n").length
+      const recovered = parseErrors.length === expectedErrors && parseErrors.every((reply) => reply.id === null && reply.error.message === "Parse error")
+      if (recovered && Option.isSome(answered) && Option.isSome(exit) && Exit.isFailure(exit.value) && Cause.hasInterruptsOnly(exit.value.cause) && !failed()) return true
       console.error(`surfaces/mcp-stdio ${input.fault}: answered ${Option.isSome(answered)}, ended ${Option.isSome(exit)}, stderr: ${errors.join(" | ").slice(0, 800)}`)
       return false
     }

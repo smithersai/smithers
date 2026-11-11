@@ -1,0 +1,113 @@
+// @vitest-environment node
+// Exercise the real patched dependency: recover per frame, then keep the same stdio subscription alive.
+import { describe, expect, it } from "@effect/vitest"
+import { RpcSerialization, RpcServer } from "effect/rpc"
+
+const REQUEST = '{"jsonrpc":"2.0","id":1,"method":"ping"}\n'
+const encoder = new TextEncoder()
+
+describe("Effect NDJSON recovery", () => {
+  it.effect("clears a rejected frame before the next decode", () => effect {
+    for (const bytes of [false, true]) {
+      const parser = RpcSerialization.ndjson.makeUnsafe()
+      try Effect.try(() => {
+        expect(() => parser.decode(bytes ? encoder.encode("{\n") : "{\n")).toThrow(RpcSerialization.NdjsonDecodeError)
+        expect(parser.decode(bytes ? encoder.encode('{"ok":true}\n') : '{"ok":true}\n')).toEqual([{ ok: true }])
+      })
+    }
+  })
+
+  it.effect("discards partial UTF-8 state together with a rejected frame", () => effect {
+    const parser = RpcSerialization.ndjson.makeUnsafe()
+    try Effect.try(() => {
+      expect(() => parser.decode(new Uint8Array([123, 10, 195]))).toThrow(RpcSerialization.NdjsonDecodeError)
+      expect(parser.decode(encoder.encode('{"ok":true}\n'))).toEqual([{ ok: true }])
+    })
+  })
+
+  it.effect("retains valid frames around bad frames in one chunk when a caller handles errors", () => effect {
+    for (const bytes of [false, true]) {
+      const parser = RpcSerialization.ndjson.makeUnsafe()
+      const errors: Array<unknown> = []
+      const data = '{"ok":1}\r\n{\n\nnope\n{"ok":2}\n{"tail":'
+      // Structural signature lets this regression execute against the unpatched dependency too.
+      const decode = parser.decode as (data: string | Uint8Array, onError: (error: unknown) => void) => ReadonlyArray<unknown>
+      const decoded = try Effect.try(() => decode(bytes ? encoder.encode(data) : data, (error) => { errors.push(error) }))
+      try Effect.try(() => {
+        expect(decoded).toEqual([{ ok: 1 }, { ok: 2 }])
+        expect(errors).toHaveLength(2)
+        expect(errors.every((error) => error instanceof RpcSerialization.NdjsonDecodeError)).toBe(true)
+        expect(parser.decode('3}\n')).toEqual([{ tail: 3 }])
+      })
+    }
+  })
+})
+
+/** A real stdio protocol, with injected platform failures and a deadline on every observation. */
+effect function protocol(input: Stream.Stream<Uint8Array, PlatformError.PlatformError>, output: Sink.Sink<void, string | Uint8Array, never, PlatformError.PlatformError>) {
+  provide Stdio.layerTest({ stdin: input, stdout: () => output }), RpcSerialization.layerNdJsonRpc() {
+    const server = try RpcServer.makeProtocolStdio
+    try server.run((_id, message) => message._tag === "Request"
+      ? server.send(0, { _tag: "Exit", requestId: message.id, exit: { _tag: "Success", value: "ok" } })
+      : message._tag === "Eof" ? server.end(0) : Effect.void)
+  }
+}
+
+describe("Effect stdio recovery", () => {
+  it.live.each([false, true])("answers parse errors and later requests on one stdin subscription (coalesced=%s)", (coalesced) => scoped(effect {
+    const written: Array<string> = []
+    const ready = try Deferred.make<void>()
+    let subscriptions = 0
+    const lines = coalesced ? ["{\nnope\n" + REQUEST] : ["{\n", "nope\n", REQUEST]
+    const input = Stream.suspend(() => {
+      subscriptions++
+      return Stream.concat(Stream.fromIterable(lines.map((line) => encoder.encode(line))), Stream.never)
+    })
+    const output = Sink.forEach((chunk: string | Uint8Array) => effect {
+      const text = typeof chunk === "string" ? chunk : try Effect.orDie(Effect.try(() => new TextDecoder().decode(chunk)))
+      written.push(text)
+      if (written.join("").includes('"result":"ok"')) try Deferred.succeed(ready, undefined)
+    })
+    const server = try Effect.forkScoped(protocol(input, output))
+    const answered = try Effect.timeoutOption(Deferred.await(ready), "2 seconds")
+    try Fiber.interrupt(server)
+    try Effect.try(() => {
+      expect(Option.isSome(answered)).toBe(true)
+      expect(subscriptions).toBe(1)
+      const messages = written.join("").trim().split("\n").map((line) => JSON.parse(line))
+      expect(messages).toEqual([
+        { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } },
+        { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } },
+        { jsonrpc: "2.0", id: 1, result: "ok" },
+      ])
+    })
+  }))
+
+  it.live.each(["stdin", "stdout", "stdout-defect"])("logs a terminal %s failure once and ends without retry", (fault) => scoped(effect {
+    let reads = 0
+    let writes = 0
+    const logs: Array<unknown> = []
+    const failed = new PlatformError.PlatformError(new PlatformError.SystemError({
+      module: "Stdio", method: fault, _tag: "BadResource",
+    }))
+    const input = Stream.suspend(() => {
+      reads++
+      return fault === "stdin" ? Stream.fail(failed)
+        : Stream.concat(Stream.make(encoder.encode(REQUEST)), Stream.never)
+    })
+    const output = Sink.forEach((_chunk: string | Uint8Array) => Effect.suspend(() => {
+      writes++
+      return fault === "stdout-defect" ? Effect.die("stdout defect") : Effect.fail(failed)
+    }))
+    provide Logger.layer([Logger.make((entry) => { logs.push(entry.message) })]) {
+      const server = try Effect.forkScoped(protocol(input, output))
+      const ended = try Effect.timeoutOption(Fiber.await(server), "2 seconds")
+      try Effect.try(() => {
+        expect(Option.isSome(ended)).toBe(true)
+        expect(reads).toBe(1)
+        expect(writes).toBe(fault === "stdin" ? 0 : 1)
+        expect(logs).toHaveLength(1)
+      })
+    }
+  }))
+})

@@ -4,7 +4,7 @@ Patch registrations and removal conditions live beside `patchedDependencies` in 
 
 ## effect@4.1.1
 
-`effect@4.1.1.patch` corrects `Schema.Json`'s public type annotation in both shipped source and declarations. `JsonValueSchema` extends `Codec<Json>` and publishes the actual required readonly decoded/encoded key flags and a precise `Rebuild`. It retains Codec's other views. There is no runtime or VibeLang compiler change.
+`effect@4.1.1.patch` corrects `Schema.Json`'s public type annotation in both shipped source and declarations. `JsonValueSchema` extends `Codec<Json>` and publishes the actual required readonly decoded/encoded key flags and a precise `Rebuild`. It retains Codec's other views. This type correction has no runtime or VibeLang compiler change.
 
 The erased flags made valid VibeLang schema fields fail EK2109 under VIP-15. `apps/vibelang/test/schemaJson.test.vibe` compiles positive fields, aliases, annotation/check/rebuild, nesting, errors, tuples and records. Negative cases retain strict optional/mutable/widened-key rejection and missing-key rejection.
 
@@ -16,6 +16,19 @@ to `(typeof Schema.Json)` after every package compile and fails the build on one
 `packages/repo-targets/test/BuildLibrary.test.ts` covers both. Delete it together with the patch.
 
 Drop this patch when upgrading to an Effect release whose Json schema exposes these literal flags and retains them through rebuilds, after the positive and negative regressions pass without it. The same source correction and type/runtime tests landed in [smithersai/effect, c30802502817](https://github.com/smithersai/effect/commit/c30802502817062118a6b58904a362b6d2863ace) for upstream contribution. See VibeLang decision 0023.
+
+The same patch repairs RPC stdio recovery in shipped source, JavaScript and declarations. The stock NDJSON
+parser already clears its text buffer on a rejected line, but loses other frames in that chunk and retains its
+streaming UTF-8 decoder state. An optional per-frame error callback preserves valid frames and unfinished tails;
+callers without it keep the throwing API and reset both text and UTF-8 state on failure. NDJSON JSON-RPC forwards
+the callback. Stdio consumes each chunk once, queues a safe JSON-RPC parse error (-32700, null id), and continues
+the same subscription. Permanent stdin or stdout failures log once and terminate; neither is silently retried.
+
+Built with `pnpm patch effect@4.1.1 --edit-dir <scratch>`, editing source and the matching shipped `dist` files,
+then `pnpm patch-commit <scratch>`. Keep the existing Schema.Json hunks. `test/effectNdjson.test.vibe` in
+`apps/vibelang` covers decoder recovery and real stdio transport failures using injected faulty Stdio services.
+`surfaces/mcp-stdio` exercises the real factory with malformed lines in separate and coalesced chunks, parse-error
+replies, initialize, EOF and interruption. Remove these RPC hunks when those regressions pass on stock Effect.
 
 ## @effect/platform-node@4.1.1
 

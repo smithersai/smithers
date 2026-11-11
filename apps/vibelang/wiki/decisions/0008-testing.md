@@ -426,3 +426,9 @@ receipt identity, lease bounds, snapshot restoration, checkpoint frames and exac
 Forty production-body mutations retain the original contracts. LemmaScript optional generic record regressions
 use positive/wrong fixture pairs. Qualified storage/SQLite inventory detection has an independent failing-first
 regression. Existing dependencies are unchanged; the extended final checks are pending.
+
+**Effect stdio recovery.** No new dependency. The existing Effect 4.1.1 pnpm patch keeps its Schema.Json fix and
+repairs per-frame NDJSON recovery, JSON-RPC parse replies and terminal stdio failures. The dependency unit tests
+inject faulty Stdio services; the surfaces/mcp-stdio fuzz target sends malformed frames followed by initialize,
+both separately and in one chunk. Production app files are unchanged. See patches/README.md for patch construction
+and removal conditions.
