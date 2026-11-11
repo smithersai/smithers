@@ -1,0 +1,79 @@
+// A transport fault over the history page's real Mythical (e2e/history-runtime): each fault a page's `?fault=` names
+// happens once, and every read and write after it is real.
+import { Mythical, Unavailable } from "../../src/history/MythicalHistory.vibe"
+import { HistoryBackend } from "../../src/web/historyBackend.vibe"
+
+/**
+ * A fault the history fault host injects. `outline` fails the page's first load; `empty` answers a history with no
+ * epics; `reads` fails the first epic, commit and search read, and the first outline read after the load; `events`
+ * ends the first event stream; `writes` fails the first plan, start, note, approve and fold as unreachable.
+ */
+export type HistoryFault = "outline" | "empty" | "reads" | "events" | "writes"
+
+const FAULTS: ReadonlyArray<HistoryFault> = ["outline", "empty", "reads", "events", "writes"]
+
+/** The faults a page's `?fault=` names, comma-separated; an unknown name is ignored. */
+export function historyFaults(search: string): ReadonlyArray<HistoryFault> {
+  const named = (new URLSearchParams(search).get("fault") ?? "").split(",")
+  return FAULTS.filter((fault) => named.includes(fault))
+}
+
+/** `layer`'s Mythical with `faults` injected; its HistoryBackend passes through. */
+export function faultyMythical<E>(faults: ReadonlyArray<HistoryFault>, layer: Layer.Layer<Mythical | HistoryBackend, E>) {
+  return Layer.effectContext(effect {
+    const real = try Mythical
+    const backend = try HistoryBackend
+    const once = new Set<string>()
+    let outlines = 0
+    // The first call of each fault point fails, when its fault is named.
+    const first = (fault: HistoryFault, point: string) => {
+      if (!faults.includes(fault) || once.has(point)) return false
+      once.add(point)
+      return true
+    }
+    const unreachable = () => new Unavailable({ reason: "history unavailable" })
+    const mythical: Mythical.Shape = {
+      get mode() { return real.mode },
+      outline: effect () => {
+        outlines += 1
+        if (first("outline", "load") || (outlines > 1 && first("reads", "outline"))) throw unreachable()
+        const outline = try real.outline()
+        return faults.includes("empty") ? { ...outline, epics: [] } : outline
+      },
+      epic: effect (id, from) => {
+        if (first("reads", "epic")) throw unreachable()
+        return try real.epic(id, from)
+      },
+      commit: effect (id) => {
+        if (first("reads", "commit")) throw unreachable()
+        return try real.commit(id)
+      },
+      search: effect (query) => {
+        if (first("reads", "search")) throw unreachable()
+        return try real.search(query)
+      },
+      events: (after) => Stream.suspend(() => first("events", "events") ? Stream.fail(unreachable()) : real.events(after)),
+      plan: effect (request, operation) => {
+        if (first("writes", "plan")) throw unreachable()
+        return try real.plan(request, operation)
+      },
+      start: effect (id, lane, operation) => {
+        if (first("writes", "start")) throw unreachable()
+        try real.start(id, lane, operation)
+      },
+      note: effect (id, section, text, operation) => {
+        if (first("writes", "note")) throw unreachable()
+        try real.note(id, section, text, operation)
+      },
+      approve: effect (id) => {
+        if (first("writes", "approve")) throw unreachable()
+        try real.approve(id)
+      },
+      fold: effect () => {
+        if (first("writes", "fold")) throw unreachable()
+        return try real.fold()
+      },
+    }
+    return Context.make(Mythical, mythical).pipe(Context.add(HistoryBackend, backend))
+  }).pipe(Layer.provide(layer))
+}

@@ -70,7 +70,6 @@ it("history reducer actions and read recovery", async ({ bench }) => {
     assert(update(next, HistoryMessage.FailedRead({ reason: "unavailable" })).model.error).toBe("unavailable")
     assert(update(next, HistoryMessage.ClickedRetry()).model.epoch).toBe(2)
     assert(update(next, HistoryMessage.ReceivedEvent({ event: { type: "EpicOpened", seq: 4, id: "e2", title: "Other" } })).model.latest).toBe(4)
-    assert(update(next, HistoryMessage.FailedEvents()).model).toBe(next)
     assert(update(next, HistoryMessage.Settled()).model).toBe(next)
     assert(update(next, HistoryMessage.PressedEscape()).model).toBe(next)
     assert(merged([page], { ...page, seq: 0 })).toEqual([page])

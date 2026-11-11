@@ -55,7 +55,8 @@ function body(model: HistoryModel, shown: CommitPage | undefined, epic: EpicCoun
     return [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], ["No mythical history yet."])])]
   }
   if (shown?.commit != null) return commitPage(model, shown.commit, shown, h)
-  if (COMMIT_HASH.test(model.hash) && shown === undefined) return loading(h)
+  // A commit read that failed says so, with the way back, instead of a skeleton that never fills.
+  if (COMMIT_HASH.test(model.hash) && shown === undefined) return model.error === "" ? loading(h) : [crumbs(h, [["History", ""]], model.hash), ...failure(model, h)]
   if (epic !== undefined) return epicPage(model, epic, h)
   return list(model, h)
 }

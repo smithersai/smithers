@@ -9,6 +9,7 @@ import type { Role } from "../history/roles.vibe"
 import { ROLES } from "../history/roles.vibe"
 import { HistoryFlags, HistoryMessage, HistoryModel, init, subscriptions, update } from "./historyApp.vibe"
 import { BrowserMythical, HistoryBackend } from "./historyBackend.vibe"
+import type { Mythical } from "../history/MythicalHistory.vibe"
 import { view } from "./historyView.vibe"
 import { stylesheet } from "./styles.vibe"
 
@@ -52,8 +53,11 @@ function backendMode() {
   }))
 }
 
-/** The Foldkit application for /history, and the flags it starts with. */
-export effect function historyMain() {
+/** What the page reads the history through; the history fault host (e2e/history-runtime) wraps it. */
+type HistoryLayer = Layer.Layer<Mythical | HistoryBackend>
+
+/** The Foldkit application for /history, and the flags it starts with; `around` wraps the page's history service. */
+export effect function historyMain(around: (layer: HistoryLayer) => HistoryLayer = (layer) => layer) {
   const window = try (try Experimental.Window.Window).current
   const document = try (try Experimental.Document.Document).current
   const client = try HttpClient.HttpClient
@@ -66,9 +70,9 @@ export effect function historyMain() {
   })
   const role = mockRole(window)
   const resources = Layer.merge(
-    BrowserMythical(window.location.origin, askedForMock(window), { role, name: "Guest", agent: false }).pipe(
+    around(BrowserMythical(window.location.origin, askedForMock(window), { role, name: "Guest", agent: false }).pipe(
       Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
-    ),
+    )),
     ExperimentalBrowserWindow.layer,
   )
   const flags: HistoryFlags = { mode: "pending", role, hash: window.location.hash.slice(1) }

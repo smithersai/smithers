@@ -106,7 +106,6 @@ export const HistoryMessage = defineMessageUnion({
   Wrote: { hash: Schema.String },
   FailedWrite: { reason: Schema.String },
   ReceivedEvent: { event: HistoryEvent },
-  FailedEvents: {},
   PressedEscape: {},
   /** A command that only acts on the page: nothing changes. */
   Settled: {},
@@ -281,7 +280,6 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
       if (!arrival.accept) return { model }
       return { model: { ...model, ...latestFrame(frameOf(model), event.seq) }, commands: arrival.read ? [ReadOutline({})] : [] }
     },
-    FailedEvents: () => ({ model }),
     PressedEscape: () => model.dialog ? { model: { ...model, ...escapedFrame(frameOf(model)) }, commands: [ClosePlan({})] } : { model },
     Settled: () => ({ model }),
   })
@@ -473,12 +471,16 @@ export function subscriptions(window: Window) {
               return failed
             }
             const loaded = try message(() => HistoryMessage.GotOutline({ outline }))
+            // A lost stream follows again 2 seconds later, from the outline's `seq`; events it already delivered change nothing.
+            const follow = (): Stream.Stream<typeof HistoryEvent.Type> => mythical.events(outline.seq).pipe(
+              Stream.catchTag("Unavailable", () => Stream.concat(
+                Stream.fromEffect(Effect.andThen(Effect.logWarning("history events lost; following again"), Effect.sleep("2 seconds"))).pipe(Stream.drain),
+                Stream.suspend(follow),
+              )),
+            )
             const followed: Stream.Stream<HistoryMessage> = Stream.concat(
               Stream.make(loaded),
-              mythical.events(outline.seq).pipe(
-                Stream.map((event) => HistoryMessage.ReceivedEvent({ event })),
-                Stream.catchTag("Unavailable", () => Stream.make(HistoryMessage.FailedEvents())),
-              ),
+              follow().pipe(Stream.map((event) => HistoryMessage.ReceivedEvent({ event }))),
             )
             return followed
           }),

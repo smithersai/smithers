@@ -1,0 +1,14 @@
+// Built only in e2e mode: the real history page over a faulty Mythical (test/support/FaultyMythical.vibe), with the
+// faults `?fault=` names. Add `agent=mock` to run it on the mock history.
+import { FetchHttpClient } from "effect/http"
+import { Runtime } from "foldkit"
+import { faultyMythical, historyFaults } from "../../test/support/FaultyMythical.vibe"
+import { historyMain } from "../../src/web/historyStartup.vibe"
+import { page } from "../../src/web/startup.vibe"
+
+const services = Layer.merge(page, FetchHttpClient.layer)
+const { application, flags } = await runPromise(Effect.provide(effect {
+  const window = try (try Experimental.Window.Window).current
+  return try historyMain((layer) => faultyMythical(historyFaults(window.location.search), layer))
+}, services) |> Effect.orDie(%))
+Runtime.embed(application, { flags: succeed(flags) })

@@ -53,8 +53,7 @@ describe("update", () => {
   it("more of an unknown epic starts at its first commit", () => {
     expect(asked(update(home, HistoryMessage.ClickedMore({ id: "gone" })))).toEqual([["ReadEpic", { id: "gone", from: 0 }]])
   })
-  it("a lost event stream and Escape with no dialog change nothing", () => {
-    expect(update(home, HistoryMessage.FailedEvents()).model).toBe(home)
+  it("Escape with no dialog changes nothing", () => {
     expect(update(home, HistoryMessage.PressedEscape()).model).toBe(home)
   })
 })
