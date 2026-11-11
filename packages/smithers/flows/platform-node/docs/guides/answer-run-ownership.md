@@ -19,10 +19,13 @@ import { HostLiveness } from "@smthrs/platform-node"
 const isAlive = HostLiveness.isAlive({ hostId: "engine-1" })
 ```
 
-`isAlive` returns a function from an owner to `Effect<boolean>`. The owner type
-is structural: `{ hostId: string, pid: number }`, which is exactly the shape of
-[`@smthrs/journal`](/api/journal)'s `OwnerId` minus its nonce, so an `OwnerId`
-is accepted without this package depending on the journal to name a type.
+`isAlive` returns a function from an owner and an optional claim context to
+`Effect<boolean>`. The owner type is structural:
+`{ hostId: string, pid: number, nonce?: string }`, so
+[`@smthrs/journal`](/api/journal)'s `OwnerId` is accepted without this package
+depending on the journal to name a type. The context is
+`{ claimant: Owner }`, the identity that would take the run over, so an
+`Ownership.LivenessContext` is accepted too.
 
 This package's `NodeRuntime` defaults to this function, so a program that
 composes the runtime gets it without asking.
@@ -33,7 +36,11 @@ The rule is asymmetric on purpose:
 
 - **An owner on a different host is alive.** A pid means nothing across
   machines, and the process table this probe reads is only this machine's.
-- **An owner on this host is dead only when the signal-0 probe reports
+- **An owner with the claimant's own host and pid and another nonce is dead.**
+  The engine asks only after that owner's lease expired, and the pid names the
+  claimant itself. A host restarted under the same pid, as a container entry
+  point is on every start, reclaims its crashed predecessor's runs.
+- **Any other owner on this host is dead only when the signal-0 probe reports
   `ESRCH`.** Every other result preserves liveness.
 
 `process.kill(pid, 0)` sends no signal. `EPERM` means
@@ -71,6 +78,7 @@ The signal-error rows describe valid same-host pids:
 | signal error `ESRCH`                             | dead                   | dead                         |
 | signal error `EPERM`, `EINVAL`, or unknown error | alive                  | alive                        |
 | owner on a different `hostId`                    | alive                  | defer to expired lease       |
+| claimant's own pid, another nonce                | dead                   | alive                        |
 
 `sameHostPidProbe` returns `false` for a foreign host without probing its pid.
 The engine consults it after lease expiry, and the store verifies the expired
@@ -81,7 +89,8 @@ Which answer a deployment gets depends on the entry point it used:
 This package's `NodeRuntime` defaults to this function, while
 [`@smthrs/cli`](/api/cli)'s `NodeControl` passes `sameHostPidProbe`.
 
-`HostLiveness.isAlive` compares with its configured `hostId` and ignores the
-`context` argument of `Ownership.LivenessCheck`. `sameHostPidProbe` compares
-with `context.claimant.hostId`. Pick the probe for its cross-host policy and
+`HostLiveness.isAlive` compares with its configured `hostId` and reads the
+`context` argument of `Ownership.LivenessCheck` only to recognize an earlier
+incarnation under the claimant's own pid. `sameHostPidProbe` compares with
+`context.claimant.hostId`. Pick the probe for its cross-host policy and
 source of host identity.

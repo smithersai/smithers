@@ -21,6 +21,24 @@ export interface Owner {
   readonly hostId: string
   /** The operating-system process id that held the run. */
   readonly pid: number
+  /**
+   * The ownership nonce that tells two incarnations under one pid apart. A
+   * journal `OwnerId` always carries one.
+   */
+  readonly nonce?: string | undefined
+}
+
+/**
+ * What the engine knows about the takeover it is asking about: the identity
+ * that would take the run over. Structural for the same reason as
+ * {@link Owner}, so an `Ownership.LivenessContext` is accepted.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Context {
+  /** The owner that would take the run over. */
+  readonly claimant: Owner
 }
 
 /**
@@ -63,8 +81,13 @@ const signalable = (send: (pid: number, signal: 0) => void, pid: number): boolea
  *
  * - An owner from a **different host** is alive. A pid means nothing across
  *   machines, and the process table this probe reads is only this machine's.
- * - An owner from **this host** is dead only when the signal-0 probe reports
- *   `ESRCH`. Every other result preserves liveness.
+ * - An owner from **this host** with the claimant's own pid and another nonce
+ *   is dead. The engine asks only after that owner's lease expired, and the
+ *   process its pid names is the claimant itself: a host restarted under the
+ *   same pid, as a container entry point always is, is a later incarnation of
+ *   the crashed one, whose runs it must reclaim.
+ * - Any other owner from **this host** is dead only when the signal-0 probe
+ *   reports `ESRCH`. Every other result preserves liveness.
  *
  * The residual risk is pid reuse. An owner whose pid was recycled by an
  * unrelated program reads as alive and its run waits for an operator, which is
@@ -87,17 +110,31 @@ const signalable = (send: (pid: number, signal: 0) => void, pid: number): boolea
  *
  * Which answer a deployment gets depends on the entry point it used:
  * `@smthrs/flows`' `NodeRuntime` defaults to this function, while
- * `@smthrs/cli`'s `NodeControl` passes `sameHostPidProbe`. This function
- * returns a one-argument function, which is structurally accepted as an
- * `Ownership.LivenessCheck` and ignores its `context` argument. Pick the
- * probe for its cross-host policy and source of host identity.
+ * `@smthrs/cli`'s `NodeControl` passes `sameHostPidProbe`. The returned
+ * function is structurally an `Ownership.LivenessCheck`. It reads
+ * `context.claimant` only to recognize an earlier incarnation under the
+ * claimant's own pid; host identity always comes from the configured
+ * `hostId`. Pick the probe for its cross-host policy and source of host
+ * identity.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const isAlive = (options: Options): (owner: Owner) => Effect.Effect<boolean> => {
+export const isAlive = (
+  options: Options
+): (owner: Owner, context?: Context | undefined) => Effect.Effect<boolean> => {
   const send = options.signal ?? ((pid, signal) => {
     process.kill(pid, signal)
   })
-  return (owner) => Effect.sync(() => owner.hostId !== options.hostId || signalable(send, owner.pid))
+  return (owner, context) =>
+    Effect.sync(() =>
+      owner.hostId !== options.hostId ||
+      (!earlierIncarnation(owner, context?.claimant) && signalable(send, owner.pid))
+    )
 }
+
+const earlierIncarnation = (owner: Owner, claimant: Owner | undefined): boolean =>
+  claimant !== undefined &&
+  owner.hostId === claimant.hostId &&
+  owner.pid === claimant.pid &&
+  owner.nonce !== claimant.nonce

@@ -198,7 +198,9 @@ export const leaseLiveness = (
  * evidence about its pids.
  *
  * Two limits are inherent to asking a pid, and they bound what reclaim can
- * promise. Both are shared with `HostLiveness.isAlive`.
+ * promise. `HostLiveness.isAlive` shares the second. It answers the first
+ * differently: an owner with the claimant's own pid and another nonce is an
+ * earlier incarnation, and it reads as dead there.
  *
  * - An owner recorded with the CLAIMANT'S OWN pid is always alive. A previous
  *   incarnation of this process, or a second engine composed inside it, differs

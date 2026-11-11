@@ -93,7 +93,8 @@ verifies that expiry before allowing a steal.
 **Fix.** Choose the cross-host policy deliberately. `HostLiveness.isAlive`
 leaves foreign-host recovery to an operator or another liveness source;
 `sameHostPidProbe` lets the expired lease govern reclaiming foreign-host runs.
-`HostLiveness.isAlive` ignores the context argument the sibling reads. See
+`HostLiveness.isAlive` reads the context argument only to recognize an
+earlier incarnation under the claimant's own pid. See
 [answer whether a run owner is alive](./guides/answer-run-ownership.md).
 
 ## The reaper answers `failed` and keeps the record

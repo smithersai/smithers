@@ -71,6 +71,43 @@ describe("HostLiveness.isAlive", () => {
     }))
 
   /**
+   * The engine asks only after the owner's lease expired. An owner with the
+   * claimant's host and pid but another nonce is an earlier incarnation of
+   * the claimant, so the process its pid names is the claimant itself (#4998).
+   */
+  it.effect("reports an earlier incarnation under the claimant's own pid as dead", () =>
+    Effect.gen(function*() {
+      const isAlive = HostLiveness.isAlive({
+        hostId: "engine",
+        signal: () => {
+          throw new Error("the claimant's own pid must not be probed")
+        }
+      })
+      const claimant: OwnerId.OwnerId = { hostId: "engine", pid: 1, nonce: "restarted" }
+
+      expect(yield* isAlive({ hostId: "engine", pid: 1, nonce: "crashed" }, { claimant })).toBe(false)
+    }))
+
+  it.effect("probes an owner that differs from the claimant by pid", () =>
+    Effect.gen(function*() {
+      const probed: Array<number> = []
+      const isAlive = HostLiveness.isAlive({ hostId: "engine", signal: (pid) => void probed.push(pid) })
+      const claimant: OwnerId.OwnerId = { hostId: "engine", pid: 1, nonce: "claimant" }
+
+      expect(yield* isAlive({ hostId: "engine", pid: 2, nonce: "sibling" }, { claimant })).toBe(true)
+      expect(yield* isAlive({ hostId: "engine", pid: 1, nonce: "claimant" }, { claimant })).toBe(true)
+      expect(probed).toEqual([2, 1])
+    }))
+
+  it.effect("keeps another host's owner alive whatever the claimant's pid", () =>
+    Effect.gen(function*() {
+      const isAlive = HostLiveness.isAlive({ hostId: "engine" })
+      const claimant: OwnerId.OwnerId = { hostId: "other", pid: 1, nonce: "restarted" }
+
+      expect(yield* isAlive({ hostId: "other", pid: 1, nonce: "crashed" }, { claimant })).toBe(true)
+    }))
+
+  /**
    * The probe reads `code` off whatever was thrown. A thrown string, or a
    * thrown `null`, carries no `code` at all, and the rule that only `ESRCH`
    * means gone has to hold for those too: an owner nobody could ask about is a

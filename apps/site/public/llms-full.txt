@@ -36504,8 +36504,9 @@ the current platform.
 
 `HostLiveness.isAlive({ hostId })` is the probe a durable engine consults before
 it takes a run whose recorded owner it is not: an owner on a different host reads
-as alive, and an owner on this host reads as alive exactly while its pid is
-signalable. `@smthrs/run-store`'s `Ownership.sameHostPidProbe` answers the same
+as alive, an owner with the claimant's own pid and another nonce is an earlier
+incarnation and reads as dead, and any other owner on this host reads as alive
+exactly while its pid is signalable. `@smthrs/run-store`'s `Ownership.sameHostPidProbe` answers the same
 question differently for a foreign host, and the two are not interchangeable;
 the JSDoc on `isAlive` names both inputs on which they disagree.
 
