@@ -16,13 +16,12 @@
  * A resolve target keys on the config file digest, the declared universe
  * (targets become dependency keys, declared inputs become content digests),
  * and the implementation fingerprint — the resolver-row contract. A build
- * target's attrs carry the resolve target as `graph`, so today its key
- * includes the graph *target's* key. The spec's caching win — keying builds
- * on the resolved graph digest ({@link ResolveResult.graphDigest}) instead of
- * the declared universe — needs the planner to substitute a dependency's
- * cached result digest for its key, which is cache machinery outside this
- * module; {@link graphDigest} is the canonical digest that substitution must
- * use.
+ * target's attrs carry the resolve target as `graph`, so its key includes the
+ * graph target's key, and the package executor adds the resolved
+ * {@link graphDigest} beside it. The graph target's key stays in the build
+ * key: files the bundle consumes outside the development-mode module graph
+ * (public files, HTML, CSS tool configs, modules only a production compile
+ * reaches) are part of the declared universe, not of the graph.
  *
  * @since 0.1.0
  */
@@ -136,8 +135,8 @@ export type ResolveResult = typeof ResolveResult.Type
  * runs that resolve the same files must digest identically even when the
  * bundler reports runtime-module bookkeeping differently.
  *
- * This is the value a planner substitutes for the graph dependency's key to
- * key builds on the resolved graph rather than the declared universe.
+ * This is the value the package executor adds to a bundler build's key beside
+ * the graph dependency's key.
  *
  * @category keys
  * @since 0.1.0

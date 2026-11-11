@@ -12,8 +12,9 @@ import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
  *   changes; S.Test over Files.difference reports the leftover set, caches
  *   its verdict, and fails closed on a dynamic import.
  * - bundler: resolve and build through the workspace's own rsbuild, the
- *   build keyed on the resolved graph digest (a universe edit that leaves
- *   the graph unchanged replays the build). The dispatched workspace links
+ *   build keyed on the graph target's key and its resolved graph digest (a
+ *   public-file edit that leaves the graph unchanged still rebuilds). The
+ *   dispatched workspace links
  *   in this package's own `@rsbuild/core` devDependency, so the lane runs
  *   on a clean checkout.
  */
@@ -603,12 +604,13 @@ export const Package = S.Package({ targets: { srcs, closure, dead } })
 })
 
 describe("bundler build key template", () => {
-  it("substitutes the graph key into the attrs reference and the dependency row", () => {
+  it("substitutes the graph digest beside the graph dependency's key", () => {
     const template = {
       body: { target: "Bundler.Rspack.build" },
       inputs: {
-        attrs: { graph: { _tag: "Target", key: graphKeySentinel }, environment: "web" },
-        dependencies: [{ label: "//:graph", key: graphKeySentinel }, { label: "//:cfg", key: "abc" }],
+        attrs: { graph: { _tag: "Target", key: "resolve-key" }, environment: "web" },
+        dependencies: [{ label: "//:graph", key: "resolve-key" }, { label: "//:cfg", key: "abc" }],
+        bundlerGraph: graphKeySentinel,
         toolchain: []
       },
       layers: [],
@@ -616,12 +618,13 @@ describe("bundler build key template", () => {
     }
     const substituted = keyMaterialWithGraph(template, "bundler-graph:deadbeef")
     expect(substituted.inputs).toEqual({
-      attrs: { graph: { _tag: "Target", key: "bundler-graph:deadbeef" }, environment: "web" },
-      dependencies: [{ label: "//:graph", key: "bundler-graph:deadbeef" }, { label: "//:cfg", key: "abc" }],
+      attrs: { graph: { _tag: "Target", key: "resolve-key" }, environment: "web" },
+      dependencies: [{ label: "//:graph", key: "resolve-key" }, { label: "//:cfg", key: "abc" }],
+      bundlerGraph: "bundler-graph:deadbeef",
       toolchain: []
     })
     // The template itself is untouched.
-    expect((template.inputs.dependencies[0] as { readonly key: string }).key).toBe(graphKeySentinel)
+    expect(template.inputs.bundlerGraph).toBe(graphKeySentinel)
   })
 })
 
@@ -649,22 +652,24 @@ const resolveModulesSource = (): string => {
 const modulesSource = resolveModulesSource()
 
 describe("bundler dispatch", () => {
-  it("resolves and builds through the workspace bundler, keyed on the graph digest", async () => {
+  it("resolves and builds through the workspace bundler, keyed on the universe and the graph digest", async () => {
     const root = await temporaryWorkspace()
     await Fs.cp(rsbuildFixture, root, { recursive: true })
     await Fs.symlink(modulesSource, NodePath.join(root, "node_modules"), "dir")
     await write(root, ".gitignore", "node_modules\ndist\n.flows\n")
     await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "public/robots.txt", "first\n")
     await write(
       root,
       "PACKAGE.ts",
       `import { Smithers as S } from "@smthrs/targets"
 const srcs = S.Filegroup({ srcs: S.glob(["src/**"]) })
+const assets = S.Filegroup({ srcs: S.glob(["public/**"]) })
 const rspack = S.Bundler.Rspack({ config: S.file("//rsbuild.config.mjs") })
-const graph = rspack.resolve({ entries: ["main.ts"], universe: [srcs] })
+const graph = rspack.resolve({ entries: ["main.ts"], universe: [srcs, assets] })
 const build = rspack.build({ environment: "web", mode: "development", graph, outDirs: ["dist"] })
 const dead = S.Test({ expect: S.Files.difference(srcs, graph.files), toBe: "empty" })
-export const Package = S.Package({ targets: { srcs, graph, build, dead } })
+export const Package = S.Package({ targets: { srcs, assets, graph, build, dead } })
 `
     )
     commitAll(root)
@@ -675,6 +680,7 @@ export const Package = S.Package({ targets: { srcs, graph, build, dead } })
     expect(first.exitCode).toBe(0)
     const bundle = await Fs.readFile(NodePath.join(root, "dist", "static", "js", "index.js"), "utf8")
     expect(bundle).toContain("rsbuild-mini")
+    expect(await Fs.readFile(NodePath.join(root, "dist", "robots.txt"), "utf8")).toBe("first\n")
 
     // Warm: both replay. The build's execution key carried the graph digest
     // on the cold run too, so the digest-keyed plan of the warm run hits.
@@ -682,13 +688,21 @@ export const Package = S.Package({ targets: { srcs, graph, build, dead } })
     expect(second.logs).toContain("//:graph  hit")
     expect(second.logs).toContain("//:build  hit")
 
-    // A universe edit that leaves the resolved graph unchanged re-resolves
-    // (the resolve keys on the universe) but replays the build (keyed on the
-    // graph digest): the caching win the spec names.
-    await write(root, "src/extra.ts", `export const extra = 1\n`)
+    // A public file is bundled but is no module of the graph: editing it
+    // leaves the graph digest unchanged, and the declared universe in the
+    // graph dependency's key still re-runs the build.
+    await write(root, "public/robots.txt", "second\n")
     const third = await serve(root, ["//:build"])
     expect(third.logs).toContain("//:graph  ran")
-    expect(third.logs).toContain("//:build  hit")
+    expect(third.logs).toMatch(/\/\/:graph {2}graph: \d+ modules, 2 workspace files, 0 packages/)
+    expect(third.logs).toContain("//:build  ran")
+    expect(await Fs.readFile(NodePath.join(root, "dist", "robots.txt"), "utf8")).toBe("second\n")
+
+    // So does a universe source file the graph does not reach.
+    await write(root, "src/extra.ts", `export const extra = 1\n`)
+    const extra = await serve(root, ["//:build"])
+    expect(extra.logs).toContain("//:graph  ran")
+    expect(extra.logs).toContain("//:build  ran")
 
     // The unreached file is exactly the difference the dead-code test reports.
     const dead = await serve(root, ["//:dead"])

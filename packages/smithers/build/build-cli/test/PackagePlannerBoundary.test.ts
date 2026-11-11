@@ -27,7 +27,6 @@ import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
-import type * as Planner from "../src/Planner.ts"
 import * as StampExec from "../src/StampExec.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -89,29 +88,22 @@ describe("inert planning values", () => {
     expect(decodeStoredResolve(value)).toBeUndefined()
   })
 
-  it("keeps non-record values intact while substituting graph identities", () => {
-    const date = new Date(0), map = new Map([["key", graphKeySentinel]])
-    const nil = Object.assign(Object.create(null), { value: graphKeySentinel })
+  it("fills only the bundlerGraph input and keeps attr values that spell the sentinel", () => {
     const material = {
       body: {},
       inputs: {
-        attrs: { date, map, nil, list: [graphKeySentinel] },
-        dependencies: [{ label: "//:a", key: graphKeySentinel }, { label: "//:b", key: "stable" }]
+        attrs: { note: graphKeySentinel },
+        dependencies: [{ label: "//:a", key: "resolve-key" }],
+        bundlerGraph: graphKeySentinel
       },
-      toolchain: []
-    } as unknown as Planner.KeyMaterial
-    const result = keyMaterialWithGraph(material, "resolved")
-    const attrs = (result.inputs as typeof material.inputs & {
-      attrs: { date: Date; map: Map<string, string>; nil: { value: string }; list: Array<string> }
-    }).attrs
-    expect(attrs.date).toBe(date)
-    expect(attrs.map).toBe(map)
-    expect(attrs.nil.value).toBe("resolved")
-    expect(attrs.list).toEqual(["resolved"])
-    expect((result.inputs as { dependencies: Array<{ key: string }> }).dependencies.map((x) => x.key)).toEqual([
-      "resolved",
-      "stable"
-    ])
+      layers: [],
+      capabilities: []
+    }
+    expect(keyMaterialWithGraph(material, "resolved").inputs).toEqual({
+      attrs: { note: graphKeySentinel },
+      dependencies: [{ label: "//:a", key: "resolve-key" }],
+      bundlerGraph: "resolved"
+    })
   })
   it("collects data descriptors without invoking accessors or traversing class instances", () => {
     let reads = 0

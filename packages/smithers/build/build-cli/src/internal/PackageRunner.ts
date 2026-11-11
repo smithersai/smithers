@@ -3089,8 +3089,9 @@ export const executeEffect = (
               if (graph === undefined) {
                 return fail(`bundler graph ${node.lane.graphLabel} settled no result in this invocation`)
               }
-              // The effective key carries the resolved graph digest: an edit that
-              // leaves the resolved file set unchanged replays the build.
+              // The effective key adds the resolved graph digest to the graph
+              // dependency's key, so a re-resolve that reaches different files
+              // re-keys the build.
               const key = Planner.keyOf(keyMaterialWithGraph(node.keyTemplate, `bundler-graph:${graph.graphDigest}`))
               effectiveKeys.set(node.label, key)
               const cached = yield* cacheGet(node, key)

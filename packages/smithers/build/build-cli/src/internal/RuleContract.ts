@@ -171,8 +171,8 @@ export interface SharedFields extends Planner.PlannedTarget {
   /** Labels of the Serve targets this node's `services` attr acquires. */
   readonly serviceDeps: ReadonlyArray<string>
   /**
-   * Bundler builds only: the key material with the graph dependency's key
-   * left as `PackageExec.graphKeySentinel`. Execution derives the effective key
+   * Bundler builds only: the key material with its `bundlerGraph` input left
+   * as `PackageExec.graphKeySentinel`. Execution derives the effective key
    * from it once the resolved graph digest is known.
    */
   readonly keyTemplate: Planner.KeyMaterial | undefined

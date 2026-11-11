@@ -104,50 +104,33 @@ export const takesExclusiveTreePermit = (
 ): boolean => node.mode === "write" || RulePolicy.of(node.rule).exclusive === true || (node.overlays?.length ?? 0) > 0
 
 /**
- * The placeholder a bundler build's key template carries where the graph
- * dependency's key goes. Execution substitutes the resolved graph digest
- * (`bundler-graph:<digest>`) once the resolve node has settled, so a build
- * keys on the graph it bundles rather than on the declared universe; the
- * plan-time preview substitutes the digest when the cache already holds it
- * and the resolve node's own key otherwise.
+ * The placeholder a bundler build's key template carries in its `bundlerGraph`
+ * input. Execution substitutes the resolved graph digest
+ * (`bundler-graph:<digest>`) once the resolve node has settled; the plan-time
+ * preview substitutes the digest when the cache already holds it and the
+ * resolve node's own key otherwise. The digest is added to the graph
+ * dependency's key, never substituted for it: that key carries the config and
+ * the declared universe (public files, HTML, CSS tool configs, modules only a
+ * production compile reaches), which change the bundle without changing the
+ * development-mode graph.
  *
  * @category keys
  * @since 0.1.0
  */
 export const graphKeySentinel = "{smthrs:bundler-graph-key}"
 
-const replaceGraphKey = (value: unknown, key: string): unknown => {
-  if (value === graphKeySentinel) return key
-  if (typeof value !== "object" || value === null) return value
-  if (Array.isArray(value)) return value.map((entry) => replaceGraphKey(entry, key))
-  const prototype = Object.getPrototypeOf(value)
-  if (prototype !== Object.prototype && prototype !== null) return value
-  const out: Record<string, unknown> = {}
-  for (const [name, entry] of Object.entries(value)) out[name] = replaceGraphKey(entry, key)
-  return out
-}
-
 /**
- * Substitutes the graph key into a bundler build's key template: the `graph`
- * attr reference and the dependency row both carry the sentinel.
+ * Fills a bundler build's `bundlerGraph` key input, which the template
+ * carries as {@link graphKeySentinel}, with the graph key. Every other input,
+ * including attr values, is kept as is.
  *
  * @category keys
  * @since 0.1.0
  */
-export const keyMaterialWithGraph = (template: Planner.KeyMaterial, key: string): Planner.KeyMaterial => {
-  const inputs = template.inputs as {
-    readonly attrs: unknown
-    readonly dependencies: ReadonlyArray<{ readonly label: string; readonly key: string }>
-  }
-  return {
-    ...template,
-    inputs: {
-      ...inputs,
-      attrs: replaceGraphKey(inputs.attrs, key),
-      dependencies: inputs.dependencies.map((row) => row.key === graphKeySentinel ? { label: row.label, key } : row)
-    }
-  }
-}
+export const keyMaterialWithGraph = (template: Planner.KeyMaterial, key: string): Planner.KeyMaterial => ({
+  ...template,
+  inputs: { ...(template.inputs as Readonly<Record<string, unknown>>), bundlerGraph: key }
+})
 
 /**
  * Collects tagged records of one tag inside an attr value.
@@ -481,9 +464,8 @@ export const bundlerScratchDirectory = (root: string, cacheDirectory: string): s
 /**
  * Reads (memoized per label) the resolved graph digest of one bundler
  * resolve node from the cache, under the resolve node's own key. The digest
- * substitutes for the graph dependency's key in every `Bundler.Rspack.build`
- * consumer, which is the caching win the spec names: an edit that does not
- * change the resolved file set replays the build from cache.
+ * fills the `bundlerGraph` key input of every `Bundler.Rspack.build`
+ * consumer, beside the graph dependency's own key.
  *
  * Plan time is cache-only: the resolve target's universe (relay artifacts
  * and other data producers) may not be materialized before execution, so a
@@ -1510,11 +1492,12 @@ const visit = async (
       )
       depKey = `import-closure:${closureResultDigest(result)}`
     }
-    // A bundler build keys on the RESOLVED graph digest of its resolve target.
-    // The digest is known only once the resolve node has settled, so the key
-    // material carries a sentinel here; execution substitutes the digest, and
-    // the plan-time preview substitutes it when the cache already holds one
-    // (conservatively the resolve node's own key otherwise).
+    // A bundler build keys on its resolve target's key AND that target's
+    // RESOLVED graph digest. The digest is known only once the resolve node
+    // has settled, so the key material carries a sentinel in `bundlerGraph`;
+    // execution substitutes the digest, and the plan-time preview substitutes
+    // it when the cache already holds one (the resolve node's own key
+    // otherwise).
     // A `Cargo.Fetch` dependency keys its consumers on the lockfile it
     // delivered, not on the fetch declaration: relocking re-keys every offline
     // dependent, and a fetch that produced the same lockfile does not. The
@@ -1532,7 +1515,6 @@ const visit = async (
       depKey = `cargo-fetch:${Input.digestText(JSON.stringify({ home, delivered }))}`
     }
     if (rule === "Bundler.Rspack.build" && depRule === "Bundler.Rspack.resolve" && planned.refusal === undefined) {
-      depKey = graphKeySentinel
       graphResolveNode = planned
     }
     depKeys.set(dependency, depKey)
@@ -3207,6 +3189,7 @@ const visit = async (
       toolchain,
       execution: argv === undefined && !catalogToolBody ? null : { environmentDigest, executable },
       overlays: overlays.map(({ digest, path, source }) => ({ digest, path, source })),
+      ...(graphResolveNode === undefined ? {} : { bundlerGraph: graphKeySentinel }),
       submodules: lane?.kind === "submodules"
         ? lane.plan.gitlinks.map((link) => ({ path: link.path, sha: link.sha }))
         : null,
