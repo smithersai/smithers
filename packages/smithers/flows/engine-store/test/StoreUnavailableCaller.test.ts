@@ -20,7 +20,7 @@ import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as EngineStore from "../src/EngineStore.ts"
 import { EventTypes } from "../src/EventTypes.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

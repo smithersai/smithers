@@ -10,7 +10,7 @@ import { Effect, Layer, Schema } from "effect"
 import { expect } from "vitest"
 import * as Action from "../src/Action/index.ts"
 import * as Flow from "../src/Flow/index.ts"
-import * as Interpreter from "../src/Interpreter.ts"
+import * as Interpreter from "../src/Interpreter.vibe"
 
 const Versions = Schema.Record(Schema.Number, Schema.Number)
 
