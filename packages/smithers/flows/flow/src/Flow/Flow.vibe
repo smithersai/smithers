@@ -35,6 +35,7 @@ import type { FlowCycleDetected } from "../FlowRuntime/FlowCycleDetected.vibe"
 import type { FlowExecutionNotFound } from "../FlowRuntime/FlowExecutionNotFound.vibe"
 import type { FlowInstance, FlowRuntime } from "../FlowRuntime/index.ts"
 import type { RetryFromRefused } from "../FlowRuntime/RetryFromRefused.vibe"
+import type { StoreUnavailable } from "../FlowRuntime/StoreUnavailable.ts"
 import type * as RetryPolicy from "../RetryPolicy.vibe"
 import type { Outcome, To } from "./Outcome.vibe"
 import type { Result } from "./Result.vibe"
@@ -277,7 +278,7 @@ export interface Flow<
       readonly executionId?: string | undefined
     }
   ) =>
-    (Discard extends true ? string : Success["Type"])!(Schema.SchemaError | FlowCycleDetected | ExecutionIdentityConflict | (Discard extends true ? never : Error["Type"]))!(| FlowRuntime
+    (Discard extends true ? string : Success["Type"])!(Schema.SchemaError | FlowCycleDetected | StoreUnavailable | ExecutionIdentityConflict | (Discard extends true ? never : Error["Type"]))!(| FlowRuntime
       | (EffectDigest.Digest | SecureRandom.SecureRandom)
       | Requires
       | Payload["EncodingServices"]

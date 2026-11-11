@@ -47,10 +47,17 @@ export function fixtureDraft(title: string, summary: string, example: string, pr
 export function fixtureParticipation(op: string): boolean {
   return op === "new" || op === "comment"
 }
+/** An engine that could not record the step is unavailable; a reused key is a conflict; anything else failed. */
 //@ verify
-//@ ensures \result == (tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed")
-export function fixtureErrorReason(tag: string): "conflict" | "failed" {
-  return tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed"
+//@ ensures \result == (tag == "@smthrs/flow/StoreUnavailable" ? "unavailable" : (tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed"))
+export function fixtureErrorReason(tag: string): "unavailable" | "conflict" | "failed" {
+  return tag === "@smthrs/flow/StoreUnavailable" ? "unavailable" : tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed"
+}
+/** An unrecordable step may already have written: only the engine's other refusals prove nothing was written. */
+//@ verify
+//@ ensures \result == (tag != "@smthrs/flow/StoreUnavailable")
+export function fixtureErrorUnwritten(tag: string): boolean {
+  return tag !== "@smthrs/flow/StoreUnavailable"
 }
 
 export interface FixtureIds { readonly number: number; readonly githubId: number }

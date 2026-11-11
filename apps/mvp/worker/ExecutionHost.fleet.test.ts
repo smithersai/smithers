@@ -22,6 +22,8 @@ test("the host registers and runs Admin writes, runner health and fleet incident
   )
   const written = await runFlow(Admin.AddRunner, {
     repoId: "github/acme/widgets", name: "mini", tokenSha256: "a".repeat(64), labels: ["mac"], capacity: 2, actorId: "admin",
+    // Every Admin action carries its fence (worker/runners/Fence.ts): here local development's, bounded by expiry alone.
+    fence: { execution: "admin:fleet-mini", expiresAt: Date.now() + 60_000, generation: 0, authority: { _tag: "Local" } },
   }, runs.registration)
   expect(written.exit).toEqual(Exit.succeed({ change: "set" }))
   expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT name, capacity FROM runners`)))

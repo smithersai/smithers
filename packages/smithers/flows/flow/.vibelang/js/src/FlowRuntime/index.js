@@ -13,5 +13,6 @@ export * from "./FlowInstance.js";
 export * from "./FlowRuntime.js";
 export * from "./NodeRecord.js";
 export * from "./RetryFromRefused.js";
+export * from "./StoreUnavailable.js";
 export * from "./WaitingAnnotation.js";
 export * from "./ExecutionIdentityConflict.js";

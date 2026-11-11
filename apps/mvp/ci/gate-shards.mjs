@@ -19,13 +19,22 @@ const files = execFileSync("git", ["ls-files", "-z", "--", "apps/mvp"], { encodi
 const durations = JSON.parse(readFileSync(new URL("./gate-durations.json", import.meta.url), "utf8"))
 const known = Object.values(durations).sort((a, b) => a - b)
 const median = known.length === 0 ? 1 : known[Math.floor(known.length / 2)]
-const weighed = files.map((file) => ({ file, ms: durations[file] ?? median }))
-  .sort((a, b) => b.ms - a.ms || a.file.localeCompare(b.file))
+// The sandbox suites share one unit: each run that selects one packs infra/sandbox/cli and builds the image
+// (worker/test/sandboxImage.globalSetup.ts), so shards that share a checkout must not each do it at once.
+const unitOf = (file) => (/\.docker\.test\.(ts|vibe)$/.test(file) ? "docker" : file)
+const units = new Map()
+for (const file of files) {
+  const unit = units.get(unitOf(file)) ?? { name: unitOf(file), files: [], ms: 0 }
+  unit.files.push(file)
+  unit.ms += durations[file] ?? median
+  units.set(unit.name, unit)
+}
+const weighed = [...units.values()].sort((a, b) => b.ms - a.ms || a.name.localeCompare(b.name))
 const load = Array.from({ length: n }, () => 0)
 const shards = Array.from({ length: n }, () => [])
-for (const { file, ms } of weighed) {
+for (const { files: unitFiles, ms } of weighed) {
   const least = load.indexOf(Math.min(...load))
   load[least] += ms
-  shards[least].push(file)
+  shards[least].push(...unitFiles)
 }
 for (const file of shards[i - 1]) console.log(resolve("apps/mvp", file))

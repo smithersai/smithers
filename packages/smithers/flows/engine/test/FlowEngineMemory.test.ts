@@ -185,8 +185,10 @@ describe("execution identity", () => {
       yield* execute("leaf", "join")
 
       const failure = yield* Effect.flip(execute("root", "leaf"))
-      expect(failure).toBeInstanceOf(FlowRuntime.FlowCycleDetected)
-      expect(failure.path).toEqual(["root", "left", "join", "leaf"])
+      expect(failure).toMatchObject({
+        _tag: "@smthrs/flow/FlowCycleDetected",
+        path: ["root", "left", "join", "leaf"]
+      })
     }).pipe(Effect.provide(layer))
   })
 

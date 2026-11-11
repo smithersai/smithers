@@ -27,7 +27,7 @@ export effect function operation(call: Cell.Call) {
   return `agent/${try Effect.try(() => digestSync(JSON.stringify([call.identity.session, call.identity.frame, call.identity.cell, call.identity.ordinal, call.identity.declaration, call.identity.layers])))}`
 }
 function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly successSchema: O }, input: I) {
-  return { name: flow._tag, description: flow.description ?? flow._tag, input, output: flow.successSchema, capabilities: [], effects: undefined, modelInvocable: true }
+  return { name: flow._tag, description: flow.description, input, output: flow.successSchema, capabilities: [], effects: undefined, modelInvocable: true }
 }
 export function sandboxTools(factory: Tools, conversation: string): FlowBinding.Source {
   return FlowBinding.source("vibelang-sandbox", [

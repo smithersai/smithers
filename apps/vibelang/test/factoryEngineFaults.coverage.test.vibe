@@ -8,11 +8,24 @@ import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
 import { pages } from "../src/core/wiki.vibe"
 
 /** The memory engine, except that every execution ends with `cause`. */
-const faultyEngine = (cause: Cause.Cause<FlowRuntime.FlowCycleDetected>) => Layer.effect(FlowRuntime.FlowRuntime)(effect {
+const faultyEngine = (cause: Cause.Cause<FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable>) => Layer.effect(FlowRuntime.FlowRuntime)(effect {
   const real = try FlowRuntime.FlowRuntime
   return { ...real, execute: () => Effect.failCause(cause) }
 }).pipe(Layer.provide(FlowEngine.layerMemory))
 
+/** The real memory engine loses one receipt after the flow has committed. */
+const lostReceipt = (lost: Ref.Ref<boolean>) => Layer.effect(FlowRuntime.FlowRuntime)(effect {
+  const real = try FlowRuntime.FlowRuntime
+  const faulty: typeof real = {
+    ...real,
+    execute: (flow, options) => real.execute(flow, options).pipe(Effect.tap(effect {
+      if (try Ref.getAndSet(lost, false)) throw new FlowRuntime.StoreUnavailable({ executionId: options.executionId })
+    })),
+  }
+  return faulty
+}).pipe(Layer.provide(FlowEngine.layerMemory))
+
+const unavailable = Cause.fail(new FlowRuntime.StoreUnavailable({ executionId: "write" }))
 const cycle = Cause.fail(new FlowRuntime.FlowCycleDetected({ path: ["issues/a", "issues/a"] }))
 const conflict = new FlowRuntime.ExecutionIdentityConflict({ executionId: "issues/a", field: "payload", expected: "a", actual: "b", message: "held identity" })
 // A held identity together with another defect is not a plain reused key: the whole cause stays a defect.
@@ -23,27 +36,58 @@ const source = pages.find((page) => page.id === "index")!.source
 const save = { op: "save", key: "k1", page: "index", base: source, text: source + "\nMore.\n" } as const
 
 describe("the fixture factories over a faulty engine", () => {
-  it.effect("a flow cycle is a failed issue write, and the fixture repository keeps its issues", () => scoped(effect {
+  it.effect.each([["a flow cycle", cycle, "failed"], ["an unrecorded step", unavailable, "unavailable"]] as const)("%s refuses the issue write and keeps its issues", ([_name, cause, reason]) => scoped(effect {
     const store = try makeIssueStore()
     const before = try Ref.get(store.state)
-    const api = try makeIssueFactory("maintainer", undefined, store, faultyEngine(cycle))
+    const api = try makeIssueFactory("maintainer", undefined, store, faultyEngine(cause))
     const result = try Effect.result(api.act(comment))
     const after = try Ref.get(store.state)
     try Effect.try(() => {
-      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "IssueFailure", reason: "failed", unwritten: true } })
+      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "IssueFailure", reason, unwritten: reason !== "unavailable" } })
       expect(after).toEqual(before)
     })
   }))
 
-  it.effect("a flow cycle is a failed wiki save, and the fixture repository opens no review", () => scoped(effect {
+  it.effect.each([["a flow cycle", cycle, "failed"], ["an unrecorded step", unavailable, "unavailable"]] as const)("%s refuses the wiki save and opens no review", ([_name, cause, reason]) => scoped(effect {
     const store = try makeWikiStore()
-    const api = try makeWikiFactory("maintainer", store, faultyEngine(cycle))
+    const api = try makeWikiFactory("maintainer", store, faultyEngine(cause))
     const result = try Effect.result(api.act(save))
     const proposals = try Ref.get(store.proposals)
     try Effect.try(() => {
-      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "WikiFailure", reason: "failed", unwritten: true } })
+      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "WikiFailure", reason, unwritten: reason !== "unavailable" } })
       expect(proposals).toEqual([])
     })
+  }))
+
+  it.effect("a lost issue result reports uncertainty; retrying its key reads the one committed comment", () => scoped(effect {
+    const store = try makeIssueStore()
+    const before = try Ref.get(store.state)
+    const lost = try Ref.make(true)
+    const api = try makeIssueFactory("maintainer", undefined, store, lostReceipt(lost))
+    const result = try Effect.result(api.act(comment))
+    const written = try Ref.get(store.state)
+    try Effect.try(() => {
+      expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable", unwritten: false } })
+      expect(written.items.find(item => item.number === comment.number)!.comments).toBe(before.items.find(item => item.number === comment.number)!.comments + 1)
+    })
+    try api.act(comment)
+    const retried = try Ref.get(store.state)
+    try Effect.try(() => expect(retried).toEqual(written))
+  }))
+
+  it.effect("a lost wiki result reports uncertainty; retrying its key reads the one opened review", () => scoped(effect {
+    const store = try makeWikiStore()
+    const lost = try Ref.make(true)
+    const api = try makeWikiFactory("maintainer", store, lostReceipt(lost))
+    const result = try Effect.result(api.act(save))
+    const written = try Ref.get(store.proposals)
+    try Effect.try(() => {
+      expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable", unwritten: false } })
+      expect(written).toHaveLength(1)
+    })
+    try api.act(save)
+    const retried = try Ref.get(store.proposals)
+    try Effect.try(() => expect(retried).toEqual(written))
   }))
 
   it.effect.each([

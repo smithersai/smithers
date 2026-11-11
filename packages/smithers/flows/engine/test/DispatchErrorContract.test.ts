@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import * as ts from "typescript"
 import { expect, it } from "vitest"
 
-it("dispatch preserves the driver's declared cycle failure in its Effect type", () => {
+it("dispatch preserves the driver's declared cycle and storage failures in its Effect type", () => {
   // The package check compiles this signature and its implementation. This
   // regression guards the private annotation without loading the whole SDK's
   // type graph into a coverage worker a second time.
@@ -24,5 +24,7 @@ it("dispatch preserves the driver's declared cycle failure in its Effect type", 
   expect(ts.isTypeReferenceNode(contract!.type)).toBe(true)
   const result = contract!.type as ts.TypeReferenceNode
   expect(result.typeName.getText(source)).toBe("Effect.Effect")
-  expect(result.typeArguments?.[1]?.getText(source)).toBe("FlowRuntime.FlowCycleDetected")
+  expect(result.typeArguments?.[1]?.getText(source)).toBe(
+    "FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable"
+  )
 })

@@ -32,6 +32,11 @@
 
 ### Fixed
 
+- An unrecordable step releases its durable run and returns the typed
+  `FlowRuntime.StoreUnavailable` failure to outermost execute callers instead
+  of interrupting their requests. Every joining caller receives the failure;
+  child runs propagate the release, and genuine cancellation stays interrupted.
+
 - `ExecutionSnapshot`, `RunChangeFeed` and the run listing read through
   `@smthrs/database`'s `Dialect.readTransaction`, and
   `ExecutionSnapshot.withReadTransaction` is that function. Their read

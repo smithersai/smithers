@@ -104,6 +104,25 @@ The mini farm sets `TEST_ELECTRIC_PORT` together with `ELECTRIC_URL` when a comb
 Every fixture schema uses `<prefix>_<epoch-seconds>_<32 hex>` (at most 63 bytes) from the shared test-schema helper. Once at Vitest startup, the local-fixture-only reaper drops at most 16 matching schemas older than two hours (three times the farm’s 40-minute run cap), skipping schemas with relation locks, including unnamed flow connections. Concurrent reapers use a nonblocking advisory lock; drops use a 100 ms lock timeout, statements 400 ms, and the sweep eight seconds. Cleanup failures log and never fail the run; legacy names, `public`, `smithers_flows` and younger schemas are untouched. Clean scope exits still drop their own schemas.
 
 Use `pnpm test` for a full run, or `pnpm test src/features/chat/chat.test.ts --maxWorkers=3` for a targeted run.
+A full run is about 9,900 file-seconds on a 4-vCPU machine, so about 55 minutes at `maxWorkers: 3`, the most one
+fixture's 100 Postgres connections allow; a busy host takes far longer. `ci/gate.sh` runs the suite as shards, each
+with its own fixture, and merges their blob reports under the coverage thresholds. `ci/gate-shards.mjs` packs the
+files by `ci/gate-durations.json`, measured on 4-vCPU machines, and keeps the `*.docker.test.ts` suites in one shard:
+a run that selects one packs `infra/sandbox/cli` and builds the sandbox image in the checkout. Eight shards on 4-vCPU
+machines took 11 to 14 minutes each (2026-11-10).
+
+What a host needs besides Docker and Node:
+
+- The sandbox suites (`worker/**/*.docker.test.ts`) run commands in the container as users with uids up to
+  1,073,841,823 (`worker/branch/Users.ts`). Rootless Docker maps only the user's `/etc/subuid` and `/etc/subgid`
+  ranges, 65,536 ids by default, so those commands fail with `unable to setup user: chown /dev/stdout: invalid
+  argument` or `install: cannot change owner and permissions of '/workspace/home': Invalid argument`. Use rootful
+  Docker, or give the rootless user ranges of at least 1,073,841,824 ids.
+- Browser tests launch Playwright's Chromium and WebKit: `pnpm exec playwright install --with-deps chromium webkit`.
+  Without WebKit's system libraries, WebKit cases fail at `browser.newPage` with `Target page, context or browser
+  has been closed`.
+- `tests/Recording.browser.test.ts` and `tests/FullPageScreenshot.browser.test.ts` measure frames with `ffmpeg`,
+  which must be on `PATH`.
 The test command uses `db/test.sh` and `db/test-stack.sh` to start the same real Compose dependencies on
 assigned loopback ports with a fresh, run-owned volume, then removes only that project on success, failure or
 cancellation. The fixture keeps the farm's 100 PostgreSQL connections and four-connection transaction pool.

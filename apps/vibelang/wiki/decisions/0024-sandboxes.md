@@ -1,8 +1,9 @@
 # 0024. Sandboxes with monthly minutes
 
 Status: implemented in mock mode and as an opt-in Container host; live compute fails closed pending the 0019
-session/policy adapter and the deployment's binding. No deployment or real-container success is claimed.
-Rulings: VL-4, VL-5, VL-7 to VL-14, VL-17, VL-21, VL-23, VL-25, VL-29; ARCH-14, ARCH-16.
+session/policy adapter and the deployment's binding. A test stage with a real Container binding (`vl-test`) and its
+on-demand suite are written and await their first deploy; no real-container success is claimed until that run.
+Rulings: VL-4, VL-5, VL-7 to VL-14, VL-17, VL-21, VL-23, VL-25, VL-29, VL-35; ARCH-14, ARCH-16.
 
 ## One capability, shared flows
 
@@ -82,8 +83,8 @@ an unresolved command. A failed Stop retries Stop; uncertain commands never offe
 ## Evidence, packages and observability
 
 Scene, browser, Factory/flow, workerd SQLite, clock/month, recovery, role, stale-generation and prototype-identity
-regressions run locally. The real Container test is opt-in with VIBELANG_SANDBOX_TEST_URL and an authenticated
-VIBELANG_SANDBOX_TEST_COOKIE; otherwise it skips with that reason. No transport interception or model is required.
+regressions run locally. Real Containers run in the `vl-test` stage's suite, below. No transport interception or
+model is required.
 Feedback fuzz uses @smthrs/fuzz over Effect Arbitrary, fixed seeds, a millisecond-by-millisecond UTC oracle and Factory
 lifecycles. The benchmark checks real mock file/Stop/Start cycles; it is not a Cloudflare performance claim.
 
@@ -103,3 +104,60 @@ is introduced. @smthrs/fuzz is the monorepo test tool, listed in 0008 pending Wi
 Every lifecycle, meter, lease, checkpoint and command step has a span, outcome-only log and counter. The engine adds
 its real run/action records. Commands, terminal bytes, prompts, identities and keys never enter telemetry. Only
 private state/flow payloads carry user content; no credential is put in a sandbox environment or flow payload.
+
+## Real Containers in tests (VL-35, lane vl-containers-live, 2026-11-10)
+
+Will ruled that sandbox tests run real Cloudflare Containers (VL-35). The `vl-test` Alchemy stage (`PROBE_STAGE`)
+declares only the probe Worker (`worker/SandboxProbe.vibe`), the product's account and machine objects behind it and
+the offline image: no site, API, domain or model. The probe serves the product's `/api/sandboxes/*` protocol through the
+same `gatewayOf`, `accountObject` and `machineObject`; only the identity differs (`worker/sandboxProbeFetch.vibe`).
+
+```
+suite (LiveFactory) ── Bearer token, x-vibelang-probe-owner: probe-<deadline> ──▶ probe Worker
+                                                  ├─ gatewayOf ─▶ SandboxAccount: flows, ledger, meter alarm
+                                                  │                 └─ leaseClamped ─▶ SandboxMachine ─▶ Container (lite)
+                                                  └─ POST /api/probe/sweep ─▶ stop, then the Container's own state
+```
+
+- **Identity.** A request is a Contributor only with `VIBELANG_SANDBOX_PROBE_TOKEN` and an owner `probe-<deadline>`
+  whose deadline is in the future and at most `PROBE_WINDOW_MS` (10 minutes) away; anything else is signed out. Each
+  run is a new owner, so a new ledger. Production never declares the probe.
+- **Spend.** One conversation (`live`) per run, one run at a time (`--mode sandboxes-live`: one file, one worker), the
+  `lite` instance (now explicit in `machineObject`; it was Cloudflare's default), and compute ends by the deadline,
+  three ways:
+  1. The suite's scope finalizer sweeps its owner, on success or failure.
+  2. Past the deadline the owner is a Viewer, so the account's alarm runs the SandboxMeter flow, which stops every
+     running generation with actual Stop receipts (the existing path for a role that may not start). This durable flow
+     is the leftover sweeper; it needs no client, so a killed suite leaves nothing running past the deadline.
+  3. Every lease is clamped to the deadline, so Cloudflare's inactivity timeout stops the Container even if no alarm
+     runs.
+- **Sweep.** `POST /api/probe/sweep` stops the owner's running generation before the deadline, or runs its alarm after
+  it, then answers the Container's own state through the machine's `status` operation, which reads `running` whatever
+  the generation. A sweep it cannot finish answers 503, which the suite counts as still running.
+- **Suite.** `test/support/sandboxesLive.vibe` starts, writes `keep.txt`, stops (checkpoint), starts (restore), reads
+  the file back, stops, checks the metered minutes (used above zero, never above the run's wall time, remaining the
+  allowance left rounded up) and sweeps. `pnpm test:sandboxes-live` runs it against the stage; it fails, never skips,
+  without `VIBELANG_SANDBOX_PROBE_URL` and `VIBELANG_SANDBOX_PROBE_TOKEN`. `test/sandboxProbe.test.vibe` runs the same
+  body in every `pnpm test`, over loopback HTTP and local processes, with refusals, deadline teardown, the lease clamp
+  and sweep failures. That run proves the probe's logic, not Cloudflare's behavior.
+- **Record and replay (VL-36).** The suite's client is `@smthrs/testing`'s `HttpRecording`.
+  `VIBELANG_SANDBOX_MODE=record pnpm test:sandboxes-live` writes `test/recordings/sandboxes-live.json`; request headers,
+  so the token and the owner, never reach it, and the URL is keyed under `https://probe.invalid`. Once that file is
+  committed, `test/sandboxesReplay.test.vibe` replays the real run in every `pnpm test`, claims every exchange and scans
+  the file for credentials; until then it skips with that reason. `test/sandboxProbe.test.vibe` records the loopback run
+  and replays it, so the wiring is checked before the first real recording exists.
+- **Not yet proved.** Snapshot restore, start latency within `startTimeoutMs`, metering against real time and the
+  deploy itself wait on the first live run. Durable Object storage and native snapshots outlive a run (snapshots expire
+  after 30 days without restore); `pnpm destroy:sandboxes-test` removes the stage.
+
+The lead deploys and runs it from the Mac, with Cloudflare credentials:
+
+```sh
+cd apps/vibelang
+export VIBELANG_SANDBOX_IMAGE=docker.io/library/debian:bookworm-slim   # any image with sh and GNU timeout
+export VIBELANG_SANDBOX_PROBE_TOKEN="$(openssl rand -hex 32)"
+pnpm deploy:sandboxes-test                                             # prints the probe's workers.dev URL
+VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.dev pnpm test:sandboxes-live
+VIBELANG_SANDBOX_MODE=record VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.dev pnpm test:sandboxes-live   # then read and commit test/recordings/sandboxes-live.json
+pnpm destroy:sandboxes-test                                            # removes the stage
+```

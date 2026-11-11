@@ -1,0 +1,27 @@
+// @vitest-environment node
+// `pnpm test:sandboxes-live` (decision 0024, rulings VL-35 and VL-36): the sandbox lifecycle against real Cloudflare
+// Containers in the vl-test stage's probe Worker. On demand only; the ordinary suite runs the same body over local
+// processes (test/sandboxProbe.test.vibe) and over this run's recording (test/sandboxesReplay.test.vibe). It fails,
+// never skips, without its settings:
+//
+//   VIBELANG_SANDBOX_PROBE_URL     the probe's workers.dev URL, from `pnpm deploy:sandboxes-test`
+//   VIBELANG_SANDBOX_PROBE_TOKEN   the token the stage was deployed with
+//   VIBELANG_SANDBOX_MODE          passthrough (default), or record to write test/recordings/sandboxes-live.json
+//
+// Spend: one lite sandbox, one run at a time, at most PROBE_WINDOW_MS (10 minutes) of compute. A failed run sweeps it;
+// past the owner's deadline the probe's own alarm stops it and Cloudflare's inactivity timeout ends it.
+import { it } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { expectLifecycle, lifecycle, normalize, RECORDING } from "./support/sandboxesLive.vibe"
+
+it.live("a real Container starts, runs a command, checkpoints, restores, meters its minutes and is torn down", () => scoped(effect {
+  const origin = (try Config.String("VIBELANG_SANDBOX_PROBE_URL")).replace(/\/$/, "")
+  const token = Redacted.value(try Config.Redacted("VIBELANG_SANDBOX_PROBE_TOKEN"))
+  const mode = try Config.Literals(["passthrough", "record"] as const, "VIBELANG_SANDBOX_MODE").pipe(Config.withDefault("passthrough" as const))
+  const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+  const client = try HttpRecording.make({ mode, path: RECORDING, live, secrets: [token], normalize })
+  const run = try Effect.provideService(lifecycle(origin, token), HttpClient.HttpClient, client)
+  try Effect.logInfo("vibelang.sandbox.live").pipe(Effect.annotateLogs({ mode, elapsedMs: run.elapsed, usedMinutes: run.ended.used }))
+  try Effect.try(() => expectLifecycle(run, true))
+}), 9 * 60_000)

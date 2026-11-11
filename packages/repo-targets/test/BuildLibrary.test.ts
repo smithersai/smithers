@@ -18,6 +18,7 @@ import {
   copyCommonJsDeclarations,
   copyInputDeclarations,
   packageCompiler,
+  portableEffectDeclarations,
   vibeSourcePackages
 } from "../scripts/build-library.mjs"
 
@@ -394,4 +395,44 @@ it("fails the build on a type error in a .vibe module", async () => {
   write(join(root, "src/Broken.vibe"), "export function count(): Effect<number> {\n  return \"none\"\n}\n")
   await expect(buildLibrary(root)).rejects.toThrow(/^package compiler exited 2$/)
   expect(existsSync(join(root, "dist/cjs"))).toBe(false)
+})
+
+// patches/effect@4.1.1.patch types `Schema.Json` as `JsonValueSchema`, which
+// stock effect@4.1.1 does not export. Published declarations that named it failed
+// a consumer's typecheck with TS2694 (the 1.0.0-rc.17 release smoke).
+it("rewrites each patched-only JsonValueSchema reference to the type of Schema.Json", () => {
+  expect(portableEffectDeclarations(
+    "export declare const E: Schema.Struct<{ readonly payload: Schema.JsonValueSchema; }>;\n"
+  )).toBe("export declare const E: Schema.Struct<{ readonly payload: (typeof Schema.Json); }>;\n")
+  expect(portableEffectDeclarations("p: import(\"effect/Schema\").JsonValueSchema[];"))
+    .toBe("p: (typeof import(\"effect/Schema\").Json)[];")
+  expect(portableEffectDeclarations("export declare const n: number;\n")).toBe("export declare const n: number;\n")
+  expect(() => portableEffectDeclarations("p: Outer.Schema.JsonValueSchema;", "x.d.ts")).toThrow(
+    /x\.d\.ts still names JsonValueSchema/
+  )
+})
+
+it("emits Schema.Json fields in declarations without the patched-only JsonValueSchema", async () => {
+  const root = scratch()
+  link(root)
+  write(join(root, "package.json"), JSON.stringify({ name: "json-fields", type: "module" }))
+  write(join(root, "tsconfig.json"), tsconfig)
+  write(
+    join(root, "src/index.ts"),
+    [
+      "import { Schema } from \"effect\"",
+      "import * as S from \"effect/Schema\"",
+      "export const Event = Schema.Struct({ payload: Schema.Json, items: Schema.Array(S.Json) })",
+      "export const json = S.Json",
+      ""
+    ].join("\n")
+  )
+  await buildLibrary(root)
+  for (const branch of ["esm", "cjs"]) {
+    const declarations = read(join(root, `dist/${branch}/index.d.ts`))
+    expect(declarations).not.toContain("JsonValueSchema")
+    expect(declarations).toContain("readonly payload: (typeof Schema.Json);")
+    expect(declarations).toContain("readonly items: Schema.$Array<(typeof Schema.Json)>;")
+    expect(declarations).toContain("export declare const json: (typeof Schema.Json);")
+  }
 })

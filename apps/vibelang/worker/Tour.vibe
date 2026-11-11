@@ -1,7 +1,5 @@
 // VL-31: the designer's exact subtitles run through the same durable controller on both hosts.
 import { WebCrypto } from "@smthrs/crypto"
-import { walk, walkRegistration } from "../src/core/flows.vibe"
-import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { walkRegistration } from "../src/core/flows.vibe"
 
-export effect function spoken(tour: string) { try walk(tour) }
 export const tourAgentRegistration = walkRegistration.pipe(Layer.provide(WebCrypto.layer))

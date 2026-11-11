@@ -1,0 +1,74 @@
+// Public offline account and wiki APIs: refused grants, live followers and cold-engine proposal replay.
+import { expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import * as MockAccounts from "../src/core/MockAccounts.vibe"
+import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+
+it.live("the last fixture maintainer cannot demote themself, and a refused grant adds no event", () => scoped(effect {
+  const accounts = try MockAccounts.make()
+  const person = try accounts.choose("maintainer")
+  try accounts.grant(person.id, "maintainer")
+  try accounts.grant("5", "new")
+  const refused = try Effect.result(accounts.grant(person.id, "new"))
+  const current = try accounts.current()
+  const events = try Stream.runCollect(accounts.events(0).pipe(Stream.take(5), Stream.timeout("5 seconds")))
+  expect(refused).toMatchObject({ _tag: "Failure", failure: { _tag: "Denied", action: "roles", least: "maintainer" } })
+  expect(current.role).toBe("maintainer")
+  expect(try accounts.role(person.id)).toBe("maintainer")
+  expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5])
+  expect(events.at(-1)).toMatchObject({ type: "RoleGranted", id: "5", role: "new", seq: 5 })
+}))
+
+it.live("an agent sign-in with only a pregranted non-fixture maintainer is unavailable and preserves the selected person", () => scoped(effect {
+  const accounts = try MockAccounts.make()
+  const person = try accounts.choose("maintainer")
+  try accounts.grant("9001", "maintainer")
+  try accounts.grant("5", "new")
+  try accounts.grant(person.id, "new")
+  const before = try accounts.current()
+  const result = try Effect.result(accounts.signInAgent())
+  const after = try accounts.current()
+  expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "AccountUnavailable", reason: "no fixture" } })
+  expect(after).toEqual(before)
+  expect(try accounts.role("9001")).toBe("maintainer")
+}))
+
+it.live("an account follower at the current cut receives the signed-in participant's next grant once", () => scoped(effect {
+  const accounts = try MockAccounts.make()
+  const person = try accounts.choose("new")
+  // Startup is synchronous until the stream awaits its first live event.
+  const following = try Effect.forkScoped(
+    Stream.runCollect(accounts.events(4).pipe(Stream.take(1))),
+    { startImmediately: true },
+  )
+  try accounts.participated()
+  const events = try Fiber.join(following).pipe(Effect.timeout("5 seconds"))
+  expect(events).toMatchObject([{ type: "RoleGranted", seq: 5, id: person.id, by: person.id, role: "community", mode: "participation" }])
+  expect((try accounts.current()).role).toBe("community")
+}))
+
+it.live("a wiki proposal key survives a cold engine: the same edit replays and a changed edit conflicts without another review", () => scoped(effect {
+  const store = try makeWikiStore()
+  const first = try makeWikiFactory("maintainer", store, Layer.fresh(FlowEngine.layerMemory))
+  const missing = try Effect.result(first.read("not-a-page"))
+  expect(missing).toMatchObject({ _tag: "Failure", failure: { _tag: "WikiFailure", reason: "missing" } })
+  const page = try first.read("index")
+  const source = page.pages.find((item) => item.id === "index")!.source
+  try first.act({ op: "draft", key: "cold-draft", page: "index", base: source, text: "Draft note." })
+  try first.act({ op: "draft", key: "cold-draft-2", page: "index", base: source, text: "Revised draft note." })
+  const drafted = try first.read("index")
+  expect(drafted.draft).toMatchObject({ page: "index" })
+  expect(drafted.draft?.text).toContain("Revised draft note.")
+  expect(try Ref.get(store.drafts)).toHaveLength(1)
+  const request = { op: "propose", key: "cold-proposal", page: "index", base: source, text: source + "\nOne edit.\n" } as const
+  const accepted = try first.act(request)
+  const afterRestart = try makeWikiFactory("maintainer", store, Layer.fresh(FlowEngine.layerMemory))
+  const repeated = try afterRestart.act(request)
+  const anotherRestart = try makeWikiFactory("maintainer", store, Layer.fresh(FlowEngine.layerMemory))
+  const changed = try Effect.result(anotherRestart.act({ ...request, text: source + "\nAnother edit.\n" }))
+  const proposals = try Ref.get(store.proposals)
+  expect(repeated.review).toBe(accepted.review)
+  expect(changed).toMatchObject({ _tag: "Failure", failure: { _tag: "WikiFailure", reason: "conflict", unwritten: true } })
+  expect(proposals).toHaveLength(1)
+  expect(proposals[0]!.text).toBe(request.text)
+}))

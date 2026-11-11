@@ -1,0 +1,111 @@
+// The vl-test stage's sandbox probe (decision 0024, ruling VL-35): the product's sandbox objects and HTTP protocol over
+// real Cloudflare Containers, reached with a test token instead of a person's session. Alchemy is imported for types
+// only, so a Node test can serve this body; its binding is SandboxProbe.vibe.
+//
+// Spend is bounded by the owner itself: a probe owner is `probe-<deadline>`, admitted only while now < deadline and the
+// deadline is at most PROBE_WINDOW_MS away. Past the deadline the owner is a Viewer, so its account's alarm stops every
+// running generation through the SandboxMeter flow (the leftover sweeper), and every lease is clamped to the deadline,
+// so Cloudflare's inactivity timeout ends a container even if the alarm never runs.
+import { digestSync } from "@smthrs/crypto"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { Role } from "../src/core/sandboxDecision.vibe"
+import { observed } from "../src/core/sandboxHost.vibe"
+import type { AccountShape, SandboxIdentity } from "./accountObject.vibe"
+import type { MachineShape } from "./machineObject.vibe"
+import { sandboxRequest, type Gateway } from "./SandboxHttp.vibe"
+
+/** The Alchemy stage that deploys only the probe, its objects and the image (infra/Stack.vibe). */
+export const PROBE_STAGE = "vl-test"
+/** The longest a probe owner may hold compute: its deadline is at most this far from any admitted request. */
+export const PROBE_WINDOW_MS = 10 * 60_000
+/** The one conversation a probe run uses, so one run holds at most one sandbox. */
+export const PROBE_CONVERSATION = "live"
+export const OWNER_HEADER = "x-vibelang-probe-owner"
+const OWNER = /^probe-(\d{13})$/
+
+type Named<Shape> = { getByName(name: string): Shape }
+
+export function probeOwner(deadline: number) {
+  return `probe-${deadline}`
+}
+export function deadlineOf(owner: string): number | undefined {
+  const match = OWNER.exec(owner)
+  return match ? Number(match[1]) : undefined
+}
+/** An owner holds compute only before its deadline, and only a deadline within the window is accepted. */
+export function admitted(owner: string, now: number) {
+  const deadline = deadlineOf(owner)
+  return deadline !== undefined && now < deadline && deadline - now <= PROBE_WINDOW_MS
+}
+/** A lease never outlives its owner's deadline; machineObject's floor of one second still applies. */
+export function leaseFor(id: string, milliseconds: number, now: number) {
+  const deadline = deadlineOf(id.split("/")[0] ?? "") ?? now
+  return Math.max(1000, Math.min(milliseconds, deadline - now))
+}
+
+/** Compare by digest, so the comparison's time doesn't depend on how much of the token a caller guessed. */
+effect function authorized(token: string, header: string | undefined) {
+  return token !== "" && (try Effect.orDie(Effect.try(() => digestSync(header ?? "") === digestSync(`Bearer ${token}`))))
+}
+effect function ownerOf(request: HttpServerRequest.HttpServerRequest, token: string, now: number) {
+  const owner = request.headers[OWNER_HEADER] ?? ""
+  return (try authorized(token, request.headers["authorization"])) && admitted(owner, now) ? owner : ""
+}
+
+/** The probe's principal: a Contributor while its token matches and its owner's deadline holds; otherwise signed out. */
+export function probeIdentity(token: string): SandboxIdentity.Shape {
+  return {
+    request: effect () => {
+      const owner = try ownerOf(try HttpServerRequest.HttpServerRequest, token, try Clock.currentTimeMillis)
+      return { owner, role: owner === "" ? "viewer" as const : "contributor" as const }
+    },
+    role: effect (owner: string) => (admitted(owner, try Clock.currentTimeMillis) ? "contributor" : "viewer") as Role,
+  }
+}
+
+/** The machine namespace the probe's accounts see: every lease clamped to its owner's deadline. */
+export function leaseClamped(namespace: Named<MachineShape>): Named<MachineShape> {
+  return {
+    getByName: (id) => {
+      const stub = namespace.getByName(id)
+      return {
+        apply: (kind, generation, operationId, command) => kind !== "lease" ? stub.apply(kind, generation, operationId, command) : Effect.flatMap(Clock.currentTimeMillis, (now) => stub.apply(kind, generation, operationId, String(leaseFor(id, Number(command), now)))),
+      }
+    },
+  }
+}
+
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: { "cache-control": "no-store" } })
+
+/**
+ * Stops what a probe owner left running and answers whether its container still runs. Before the deadline it stops the
+ * running generation through the account's Stop flow; after it, the account's alarm runs SandboxMeter, which stops
+ * every generation of an owner who may no longer start. The answer is the container's own state, not the ledger's.
+ */
+export effect function sweep(accounts: Named<AccountShape>, machines: Named<MachineShape>, owner: string) {
+  const account = try Effect.try(() => accounts.getByName(owner))
+  const now = try Clock.currentTimeMillis
+  if (admitted(owner, now)) {
+    const read = try account.run(owner, "read", PROBE_CONVERSATION, `sweep-read/${now}`, 0, "")
+    if (read.ok && read.snapshot.status === "running") try account.run(owner, "stop", PROBE_CONVERSATION, `sweep/${read.snapshot.generation}`, read.snapshot.generation, "")
+  } else try account.alarm()
+  const machine = try Effect.try(() => machines.getByName(`${owner}/${PROBE_CONVERSATION}`))
+  const status = try machine.apply("status", 0, "", "")
+  return { running: !status.ok || status.output !== "stopped" }
+}
+
+/** The probe Worker's fetch: the product's sandbox protocol, and the token-only sweep. */
+export function probeFetch(token: string, gateway: Gateway<RuntimeContext>, accounts: Named<AccountShape>, machines: Named<MachineShape>) {
+  return effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = new URL(request.url, "http://probe.invalid").pathname
+    if (path.startsWith("/api/sandboxes/")) return try sandboxRequest(gateway)
+    if (path !== "/api/probe/sweep" || request.method !== "POST") return json({ error: "not found" }, 404)
+    if (!(try authorized(token, request.headers["authorization"]))) return json({ error: "forbidden" }, 403)
+    const owner = request.headers[OWNER_HEADER] ?? ""
+    if (deadlineOf(owner) === undefined) return json({ error: "owner" }, 400)
+    const answer = observed("probe-sweep", sweep(accounts, machines, owner)) catch () => undefined
+    return answer === undefined ? json({ error: "sandbox unavailable" }, 503) : json(answer)
+  }
+}

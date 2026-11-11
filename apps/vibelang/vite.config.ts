@@ -7,6 +7,9 @@ import { quickjsModule } from "./quickjs.vite.ts"
 // (wiki/decisions/0004-mock-mode.md, 0010-live-agent.md). `--mode e2e` adds the fault-injection page the recovery tests
 // drive. `vitest --mode workerd` runs only the suites that start local workerd (`pnpm test:workerd`), in Node.
 const WORKERD = "test/**/*.workerd.test.{ts,vibe}"
+// `vitest --mode sandboxes-live` (`pnpm test:sandboxes-live`) runs only the real-Container suite against the vl-test stage
+// (0024): one file, one worker, never part of `pnpm test`.
+const LIVE = "test/**/*.live.test.{ts,vibe}"
 
 export default defineConfig(({ mode }) => ({
   plugins: [vibelang(), quickjsModule],
@@ -21,13 +24,14 @@ export default defineConfig(({ mode }) => ({
   },
   server: { port: 5178 },
   test: {
-    environment: mode === "workerd" ? "node" : "happy-dom",
+    environment: mode === "workerd" || mode === "sandboxes-live" ? "node" : "happy-dom",
     // Process discovery starts both MCP and CLI; match the workspace's finite budget.
     testTimeout: 30_000,
     // Bound per-lane compiler and real-engine load on the shared host, matching the browser pool.
     maxWorkers: 2,
-    include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],
-    exclude: mode === "workerd" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD],
+    include: mode === "workerd" ? [WORKERD] : mode === "sandboxes-live" ? [LIVE] : ["test/**/*.test.{ts,vibe,mjs}"],
+    exclude: mode === "workerd" || mode === "sandboxes-live" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD, LIVE],
+    ...(mode === "sandboxes-live" ? { maxWorkers: 1, fileParallelism: false, testTimeout: 9 * 60_000 } : {}),
     // A measured run's Workers carry Istanbul counters and start slower (test/support/workerd.vibe `deadline`).
     ...(mode === "workerd" ? { testTimeout: 120_000 * (process.env.WORKERD_COVERAGE === "1" ? 5 : 1), hookTimeout: 120_000 * (process.env.WORKERD_COVERAGE === "1" ? 5 : 1) } : {}),
     coverage: {

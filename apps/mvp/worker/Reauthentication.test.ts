@@ -310,7 +310,14 @@ describe("in-place callback", () => {
     const failed = await complete()
     expect(failed.headers.get("location")).toBe("/app?sign_in=failed")
     expect((await rows()).map(r => [r.id, r.gen, r.key, r.revoked])).toEqual([[s.id, 0, "legacy", false]])
-    expect(await cleanups()).toEqual([])
+    // The held pair's cleanup rolled back with the renewal. The one row is the callback's own new pair, never kept, which
+    // a failed callback hands to the durable cleanup (94798ffe).
+    const sealed = { ciphertext: expect.any(String), nonce: expect.any(String) }
+    const discarded = s.h.github.issued.at(-1)!
+    const queued = await cleanups()
+    expect(queued).toEqual([{ id: legacy.cleanupStarts[0], session: expect.any(String), pair: Keys.digest(Redacted.value(discarded.accessToken)),
+      access: sealed, refresh: sealed, finished: false }])
+    expect(queued[0]!.session).not.toBe(s.id)
     expect(legacy.revocations).toEqual([])
     expect(await legacy.session(s.first.cookies)).toMatchObject({ signedIn: true })
   })

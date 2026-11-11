@@ -25,6 +25,7 @@ import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SignIn from "./SignIn.ts"
 import { harness, RUN_CREDENTIAL_SECRET, testFile } from "./test/harness.ts"
+import { confirmedSession } from "./github/test/fixtures.ts"
 import { cookie, signInHarness } from "./test/signIn.ts"
 
 const runtime = testFile("credentials")
@@ -361,6 +362,15 @@ describe("signing and reading a credential", () => {
 
 const open = (actor: Actor) => harness(runtime, () => Stream.empty, { actor })
 type Harness = Awaited<ReturnType<typeof open>>
+/**
+ * A Member whose session sign-in confirmed: the deployment repository's role is that receipt (decision 0156,
+ * `SessionStore.freshRole`), so only a recorded session may ask a question there.
+ */
+const asker: Actor = { subject: { kind: "person", id: crypto.randomUUID() }, role: "member", session: crypto.randomUUID() }
+const openSignedIn = async (actor: Actor) => {
+  await confirmedSession(runtime, actor)
+  return open(actor)
+}
 
 const post = (h: Harness, path: string, body: unknown, headers: Record<string, string> = {}) =>
   h.fetch(path, { method: "POST", headers, body: JSON.stringify(body) })
@@ -378,7 +388,7 @@ const waiting = { execution: "run/call/0.0", kind: "question", prompt: "Which br
 
 describe("POST /api/runs/<run>/credential", () => {
   test("the agent asks for its run's credential, and answering the person's question with it is refused", async () => {
-    const h = await open(member)
+    const h = await openSignedIn(asker)
     const answerId = await asked(h)
     const root = await mint(h, answerId, { flow: "chat/Answer" })
     expect(root).toEqual({ status: 200, body: { token: expect.any(String), act: "agent", expiresAt: expect.any(Number) } })
@@ -399,7 +409,7 @@ describe("POST /api/runs/<run>/credential", () => {
   })
 
   test("a nested call's credential grows the chain under its caller's and narrows; a wider callee is refused", async () => {
-    const h = await open(member)
+    const h = await openSignedIn(asker)
     const answerId = await asked(h)
     const root = (await mint(h, answerId, { flow: "chat/Answer" })).body.token as string
     const call = await mint(h, `${answerId}/call/0.1`, { flow: "app/agent/ask" }, bearer(root))
@@ -421,7 +431,7 @@ describe("POST /api/runs/<run>/credential", () => {
   })
 
   test("a credential for another person's run, another run, or none that reads is refused", async () => {
-    const mine = await open(member)
+    const mine = await openSignedIn(asker)
     const theirs = await open(other)
     const theirAnswer = await asked(theirs)
     // Minting for another person's answer.
@@ -435,7 +445,7 @@ describe("POST /api/runs/<run>/credential", () => {
     const write = await post(mine, `/api/answers/${second}`, { status: "streaming", parts: [] }, bearer(token))
     expect(write.status).toBe(403)
     // Forged and expired credentials read as nobody, never as the cookie's person: signed out.
-    const expired = await sign({ ...success(claims(member, first, { flow: "chat/Answer" })), exp: Date.now() - 1 })
+    const expired = await sign({ ...success(claims(asker, first, { flow: "chat/Answer" })), exp: Date.now() - 1 })
     for (const forged of ["forged", expired]) {
       expect((await post(mine, `/api/runs/${first}`, { status: "working" }, bearer(forged))).status).toBe(401)
     }

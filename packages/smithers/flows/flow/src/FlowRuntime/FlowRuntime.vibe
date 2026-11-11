@@ -42,6 +42,7 @@ import type { FlowExecutionNotFound } from "./FlowExecutionNotFound.vibe"
 import type { FlowInstance } from "./FlowInstance.vibe"
 import type * as NodeRecord from "./NodeRecord.ts"
 import type { RetryFromRefused } from "./RetryFromRefused.vibe"
+import type { StoreUnavailable } from "./StoreUnavailable.ts"
 
 /**
  * Result of atomically completing a deferred only while its run is parked.
@@ -135,7 +136,7 @@ export class FlowRuntime extends Context.Service<
           | undefined
       }
     ) =>
-      (Discard extends true ? string : Success["Type"])!(Error["Type"] | FlowCycleDetected)!(| Payload["EncodingServices"]
+      (Discard extends true ? string : Success["Type"])!(Error["Type"] | FlowCycleDetected | StoreUnavailable)!(| Payload["EncodingServices"]
         | Success["DecodingServices"]
         | Error["DecodingServices"])
 

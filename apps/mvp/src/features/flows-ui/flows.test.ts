@@ -3,7 +3,7 @@ import { FlowRegistry, registry as flowEntries } from "../../flows/registry"
 // runs as the browser's engine worker registers it (src/flows/registrations.ts), on the Node host over the compose
 // Postgres, against ChatApi's real handler on this file's schema. The model is the only scripted seam: the endpoint's
 // `agent` role answers with cells, which the drafting agent and the agent running a flow write.
-import { Effect, Exit, Logger, References, Stream } from "effect"
+import { Cause, Effect, Exit, Logger, References, Schema, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { eventually, stop, testFile, usage } from "../../../worker/test/harness.ts"
@@ -11,7 +11,8 @@ import { contents } from "../../../worker/test/harness.ts"
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
-import { FlowRuntime } from "@smthrs/flow"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import { QuickJSVariant, RealmFlow } from "@smthrs/harness"
 import { ModelError } from "@smthrs/model"
 import { EngineStore } from "@smthrs/flows"
@@ -945,6 +946,42 @@ describe("flow/run/evaluate and flow/run/call", () => {
     }
     failedWith(await evaluated(current), "FlowLimitExceeded", "too_many_calls")
   })
+
+  test("an unrecordable hosted agent call keeps its infrastructure failure instead of becoming a code failure", async () => {
+    const { engine, run } = await device(scripted(() => drafted()).script)
+    const outage = new FlowRuntime.StoreUnavailable({ executionId: "unrecorded-agent-call" })
+    let hosted: Exit.Exit<unknown, unknown> = Exit.void
+    const probe = Flow.make("test/hosted-agent-store-failure", {
+      payload: {},
+      success: Schema.Null,
+      body: () => Node.succeed(null),
+    })
+    const url = await Effect.runPromise(TestDatabase.serverUrl)
+    const store = PostgresDatabase.layer({ url: url.toString(), driver: Pg, schema: engine.schema })
+    const exit = await run(Effect.scoped(Effect.gen(function* () {
+      yield* engine.flows.register(probe, () => Effect.gen(function* () {
+        const real = yield* FlowRuntime.FlowRuntime
+        // Every other runtime operation is real. This service cannot admit its child call.
+        const faulty: FlowRuntime.FlowRuntime["Service"] = { ...real, execute: () => Effect.fail(outage) }
+        hosted = yield* Effect.exit(call({
+          pin: { flowId: "f", name: "dark-mode", revision: 1, digest: "d", allowed: [] },
+          call: { _tag: "Action", key: "k", name: RealmFlow.agentAction, payload: { step: "answer", seat: "agent", prompt: "Answer once." } },
+        }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, faulty)))
+        return null
+      }))
+      return yield* engine.flows.execute(probe, { executionId: crypto.randomUUID(), payload: {} })
+    })).pipe(
+      Effect.provide(EngineStore.RunInspection.layer.pipe(Layer.provide(store))),
+    ))
+    expect(exit).toEqual(Exit.succeed(null))
+    expect(Exit.isFailure(hosted)).toBe(true)
+    if (Exit.isFailure(hosted)) {
+      expect(hosted.cause.reasons).toHaveLength(1)
+      const reason = hosted.cause.reasons[0]!
+      expect(reason).toMatchObject({ _tag: "Die", defect: outage })
+      if (Cause.isDieReason(reason)) expect(reason.defect).toBe(outage)
+    }
+  }, SLOW)
 
   test("the host refuses a call outside the pin's list, and one a person's flow may never make", async () => {
     // Inert services: the call is refused before the run or the engine is read.

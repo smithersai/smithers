@@ -361,6 +361,7 @@ export const call = ({ pin, call }: typeof CallHost.payloadSchema.Type) =>
         payload: { flowId, name, revision, digest, prompt: asked.value.prompt, allowed },
       }).pipe(
         Effect.catchTag("@smthrs/flow/FlowCycleDetected", Effect.die),
+        Effect.catchTag("@smthrs/flow/StoreUnavailable", Effect.die),
         Effect.tapError(() => recordCall("agent", "failed")),
       )
       yield* recordCall("agent", "ok")

@@ -403,10 +403,11 @@ describe("issues through smithers.sh's delegation", () => {
     expect(failed(try w.act("read", { resumeOp: "comment", resumeKey: "never" }))?.reason).toBe("missing")
   }))
 
-  it.live("a resume reports a run its store lost mid-step as still running", () => scoped(effect {
+  it.live("an unrecordable step answers unavailable; a resume reports the unfinished run as still running", () => scoped(effect {
     const w = try world()
     w.store.fail(/^\s*INSERT INTO flows_attempts/)
-    expect(failed(try w.act("comment", { number: 1, text: "Hi", key: "c1" }))?.reason).toBe("defect")
+    expect(failed(try w.act("comment", { number: 1, text: "Hi", key: "c1" }))?.reason).toBe("unavailable")
+    expect(w.fake.writes).toBe(0)
     w.store.fail()
     const running = succeeded(try w.act("read", { resumeOp: "comment", resumeKey: "c1" }))
     expect(running.saved).toMatchObject({ status: "running", unwritten: false, selected: 1 })

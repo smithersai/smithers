@@ -3,9 +3,10 @@
 // body admission, and the refusal/unavailable status mapping. No object, no container.
 import { describe, expect, it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
 import { Refused, Unavailable } from "../src/core/Factory.vibe"
 import { emptySnapshot, sandboxRequest, signedOutGateway, type Gateway } from "../worker/SandboxHttp.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
 
 function originOf(server: HttpServer.HttpServer["Service"]): string {
   const address = server.address
@@ -129,14 +130,36 @@ describe("the sandbox protocol", () => {
       })
       return answer
     })
-    const writeAnswer = try posted(signedOutGateway, "/api/sandboxes/c-1/start", { operationId: "op-1" })
+    const writes = try all([
+      posted(signedOutGateway, "/api/sandboxes/c-1/start", { operationId: "op-1" }),
+      posted(signedOutGateway, "/api/sandboxes/c-1/stop", { operationId: "op-2", generation: 0 }),
+      posted(signedOutGateway, "/api/sandboxes/c-1/command", { operationId: "op-3", generation: 0, command: "echo denied" }),
+    ])
     try Effect.try(() => {
       expect(snapshot).toMatchObject({ id: "", generation: 0, role: "viewer", status: "stopped", allowance: 0, used: 0, remaining: 0, output: "" })
       expect(snapshot.resetAt).toBeGreaterThan(0)
       expect(readAnswer.status).toBe(200)
       expect((readAnswer.body as { role: string }).role).toBe("viewer")
-      expect(writeAnswer.status).toBe(403)
-      expect(writeAnswer.body).toEqual({ refusal: "forbidden" })
+      expect(writes).toEqual(Array.from({ length: 3 }, () => ({ status: 403, body: { refusal: "forbidden" } })))
     })
   }, 30_000)
+})
+
+it.effect("rejects a sandbox body without a declared size and a body that resets while being read", () => effect {
+  const path = "http://api.invalid/api/sandboxes/closed/start"
+  const chunked = HttpClientRequest.post(path).pipe(
+    HttpClientRequest.bodyStream(Stream.make(new TextEncoder().encode(JSON.stringify({ operationId: "closed-start" }))), { contentType: "application/json" }),
+  )
+  const reset = HttpClientRequest.post(path).pipe(
+    HttpClientRequest.bodyStream(Stream.fail(new Unreachable({ what: "connection reset" })), { contentType: "application/json" }),
+    HttpClientRequest.setHeader("content-length", "32"),
+  )
+  const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(chunked))
+  const missingSize = try sandboxRequest(signedOutGateway).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+  const brokenBody = try sandboxRequest(signedOutGateway).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(reset))))
+  try Effect.try(() => {
+    expect(request.headers["content-length"]).toBeUndefined()
+    expect(missingSize.status).toBe(413)
+    expect(brokenBody.status).toBe(400)
+  })
 })

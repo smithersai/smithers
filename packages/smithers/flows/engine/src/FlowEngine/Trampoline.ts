@@ -92,7 +92,7 @@ interface LineageRound {
 
 type Instance = FlowRuntime.FlowInstance["Service"]
 type Result = Flow.Result<unknown, unknown>
-type Dispatch = Effect.Effect<Result, FlowRuntime.FlowCycleDetected>
+type Dispatch = Effect.Effect<Result, FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable>
 
 /**
  * One `execute` call following its lineage. The linked-cancellation finalizer
@@ -179,7 +179,7 @@ const linkCancellation = (follower: Follower, parent: Instance) =>
 const settle = (
   follower: Follower,
   round: Dispatch
-): Effect.Effect<Result, FlowRuntime.FlowCycleDetected, FlowRuntime.FlowInstance> =>
+): Effect.Effect<Result, FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable, FlowRuntime.FlowInstance> =>
   follower.waiter === undefined ? round : Flow.wrapActionResult(round, (result) => result._tag === "Suspended")
 
 /**

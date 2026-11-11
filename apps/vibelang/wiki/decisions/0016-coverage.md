@@ -660,7 +660,7 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 
 | Path | Needs | Test that covers it once available |
 | --- | --- | --- |
-| `worker/SandboxMachine.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Live sandboxes wait on Will's yes/no (Containers spend). No scripted Container namespace. | `test/sandbox.container.workerd.test.vibe`, opt-in on `VIBELANG_SANDBOX_TEST_URL` and `VIBELANG_SANDBOX_TEST_COOKIE`, skipped with that reason |
+| `worker/SandboxMachine.vibe`, `worker/SandboxProbe.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Will ruled yes (VL-35, 2026-11-10); the `vl-test` stage declares one (0024) and awaits its first deploy. No scripted Container namespace. | `test/sandboxes.live.test.vibe` through `pnpm test:sandboxes-live` against the stage, on demand. Its body also runs in `pnpm test` over local processes (`test/sandboxProbe.test.vibe`), which covers `worker/sandboxProbeFetch.vibe` but not these bindings |
 | `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
@@ -1992,3 +1992,218 @@ project ran and passed while the report credited none of their code. In the last
 now use the fixture. A focused dark-project run of the two: 6 passed, all with evidence, and the three functions read
 called. The reporter now names every executed check without evidence (`missingEvidence`), and `pnpm e2e:coverage`
 fails on one (`gateFailed`, `test/browserCoverageEvidence.test.vibe`), so a new spec can't hide its code again.
+
+## Unrecordable steps answer unavailable (lane vl-coverage2, 2026-11-10)
+
+A failed attempt admission or result write used to interrupt the caller of
+`FlowRuntime.execute`, so Issues and Wiki could not map the failure to their
+existing "unavailable" answer. The fix belongs to `@smthrs/engine-store` and
+the `@smthrs/flow` runtime contract: `FlowRuntime.StoreUnavailable`, with
+`code: "store_unavailable"` and the execution id, is a typed infrastructure
+failure at the outermost execute boundary.
+
+The step remains undecided and the durable run remains released. Child flows
+propagate that release to their parent before the outermost caller receives
+the typed failure. Cause annotations carry the reason to every caller joining
+the same drive, without a consumable marker or an execution-id table. A caller's
+own cancellation stays interruption. The existing metric, warning and dispatch
+span still identify storage failure without recording payloads or credentials.
+
+Package regression, faulty AttemptStore and Journal services over the real SQLite engine:
+five cases fail with interruption on the old adapter; both interruption controls
+already pass. With the fix, all seven pass: attempt admission, result recording,
+actual step-journal refusal, nested child, eight joining callers, a step's own
+interruption, and caller cancellation. Recovery tests
+reuse the same execution id and retain the unfinished attempt. Issues and Wiki
+retain their existing error mapping; their faulty-storage cases now assert the
+typed unavailable answer and no GitHub write.
+
+No dependency, coverage threshold change, source coverage exclusion or VibeLang behavior change.
+
+
+The flow and engine strict gates retain 100% on lines, branches, functions and
+statements. The durable store's SQLite/PostgreSQL matrix also passes at 100%
+(7277 lines, 4565 branches, 2275 functions, 8127 statements). Its individual
+backend runs pass 2400 and 2412 tests; the seven recording/cancellation cases also pass in a focused
+SQLite run. An obsolete codec assertion was removed after the existing linter
+refused it; the compiler accepts the same declared return type without it.
+The engine's linter now ignores emitted `*.d.vibe.ts` declarations, as its
+coverage config already does; the `.vibe` source remains measured.
+
+The full app suite exposed a test lifecycle leak: entry tests imported a real
+page and removed its DOM without leaving the page. Foldkit's delayed scan then
+read globals Happy DOM had torn down. The initial pagehide regression checks
+failed first and passed after waiting for disposal. Main subsequently added an
+explicit page handle and teardown regression; the rebase retains that API and
+its tests, which supersede this lane's temporary pagehide helper.
+
+
+An unavailable engine result does not prove that a write was unwritten. The
+fixture factories therefore report `unwritten: false` for StoreUnavailable,
+as the live hosts already do. A faulty runtime over the real memory engine
+loses one result after committing: the issue comment or wiki review exists,
+and retrying the same key reads it once. Both cases failed first on the
+unwritten claim; the pre-write fault cases also retain their no-mutation
+assertions. No request interception or new GitHub double.
+
+The issue fixture maps engine errors through the proved decisions in
+`src/core/issueFixtureDecision.vibe` (main moved the reason there while this
+change was open): `fixtureErrorReason` answers `unavailable` for
+`@smthrs/flow/StoreUnavailable`, and `fixtureErrorUnwritten` is false only for
+it. Four mutation cases in `verify/extended_mutations.py` cover both. Two
+hand mutations each fail 3 of 16 unit cases (`issueFixtureDecision`,
+`factoryEngineFaults`); `WikiFactory` keeps the same mapping inline.
+
+## Closed sandbox boundaries (lane vl-coverage2, 2026-11-10)
+
+The production closed SandboxAgent service now runs through all three real
+FlowBinding tools in the unit suite. Each answers forbidden. The signedOut
+policy is also exercised through sandbox creation: an explicit contributor
+role hint cannot override it, and no generation or allowance is consumed.
+Changing either refusal or signed-out authority deliberately made its new
+assertion fail (two failed / two passed); sources were restored.
+
+All three signed-out HTTP writes answer 403. A streaming body with no
+Content-Length answers 413, and a faulty body stream answers 400. These are
+Effect HTTP requests, with the failing stream injected at the body service;
+there is no intercepted request, credential, external write, or new double.
+
+The private sandbox-tool declaration helper receives only SandboxStart,
+SandboxStop and SandboxCommand, all of which have descriptions. Its unused
+name fallback was deleted. worker/Tour.vibe's spoken wrapper had no callers:
+both deployed and workerd objects import tourAgentRegistration instead.
+Deleted the wrapper, its unused imports and the unused test import.
+
+Scoped unit coverage (Vitest/coverage-v8 5.0.0, the existing .vibe source maps):
+
+| File | Before lines / functions / statements / branches | After |
+| --- | --- | --- |
+| worker/SandboxTools.vibe | 8/11; 7/10; 9/12; 1/2 | 11/11; 10/10; 12/12; 0/0 |
+| src/core/sandboxPolicy.vibe | 2/2; 2/3; 3/4; 0/0 | 2/2; 3/3; 4/4; 0/0 |
+| worker/Tour.vibe | 1/2; 0/1; 1/2; 0/0 | 1/1; 0/0; 1/1; 0/0 |
+| worker/SandboxHttp.vibe | 28/30; 7/10; 39/42; 33/34 | 30/30; 10/10; 42/42; 34/34 |
+
+All four files pass all four 100% thresholds together: 20 tests across four
+files, 44/44 lines, 23/23 functions, 59/59 statements and 34/34 branches.
+No coverage exclusions, new dependency or VibeLang semantics change.
+
+## Worker recovery boundaries (lane vl-coverage2, 2026-11-10)
+
+History's reader now plans, starts and notes over its real SQLite engine and
+sequencer, then decodes the resulting epic and search pages. A faulty act
+service answers unavailable without exposing its transport detail. The
+history run host refuses another workflow, preserves an existing intent
+when busy, and drives its default admission to a recorded receipt.
+
+The three model writers also run on the real Cloudflare SQLite runtime.
+Each healthy control calls the local scripted model once and records its
+actual seven-token charge. The initial receipt below predates main's
+c5bbf81b reserved-ceiling policy: then an accounting-read outage answered
+budget, made no model call and wrote no charge. On fresh main, these tests
+forward the complete reservation/settlement arguments and retain that
+lane's policy: an unreadable usage journal refuses the draft/review, charges
+the full reserved ceiling rather than zero, and releases the reservation.
+Healthy controls still charge exactly seven tokens. The faulty read service
+heals after the writer's answer so the engine can persist that answer;
+an unavailable outcome journal is a different boundary. No request is
+intercepted, and no new dependency or protocol double was added.
+
+Five deliberately incorrect mappings made five new assertions fail, while
+four healthy controls passed. Restoring the sources passes all nine new
+tests. Together with the existing action, writer and deadline cases, 71
+tests pass / one skips across twelve files, and all five sources reach 100%
+for lines, functions, statements and branches:
+
+| File | Before lines / functions / statements / branches | After |
+| --- | --- | --- |
+| worker/HistoryObject.vibe | 57/59; 29/32; 71/74; 15/15 | 59/59; 32/32; 74/74; 15/15 |
+| worker/HistoryActions.vibe | 30/33; 9/11; 32/37; 15/19 | 33/33; 11/11; 37/37; 19/19 |
+| worker/VipDraft.vibe | 30/30; 7/8; 40/41; 10/10 | 30/30; 8/8; 41/41; 10/10 |
+| worker/WikiDraft.vibe | 32/32; 7/8; 43/44; 14/14 | 32/32; 8/8; 44/44; 14/14 |
+| worker/SpecificationReviewers.vibe | 31/31; 8/9; 41/42; 8/8 | 31/31; 9/9; 42/42; 8/8 |
+
+The grouped receipt covers 185/185 lines, 68/68 functions, 238/238 statements
+and 66/66 branches. The existing 100% thresholds remain unchanged.
+
+## Complete tour hosts (lane vl-coverage2, 2026-11-10)
+
+Both production implementations of Tours (MockFactory and Objects.toursOf)
+already provide current, drive and control. Every binding uses one of these
+complete implementations. These methods are now required; the unused
+partial-host fallbacks and corresponding non-null assertion were deleted.
+Existing tour, flow-body and wiki-tool behavior remains covered.
+
+The remaining narration-refusal guard stays. A new fault decorator for it
+is retained outside the app's test glob because compiler 0.0.12 drops the
+methods in a service Shape spread (service-method-spread reproduction).
+Upstream baf0d9a0f54c9335d1e6061be7f4947b507d8da1 already fixes that
+rejection on vibe, with positive and negative controls; it was not on green
+main at this check. No compiler replacement or app workaround was added.
+
+## Fixture recovery (lane vl-coverage2, 2026-11-10)
+
+MockAccounts now covers a refused final-maintainer demotion, an idempotent
+grant, a follower at the current event cut, and participation without an
+explicit person id. A pregrant for a future person allows both fixture
+maintainers to step down, so agent sign-in's no-fixture path is reachable:
+it answers AccountUnavailable and preserves the selected person. That
+guard was retained.
+
+Wiki's missing-page read recovers to a known page; a second draft replaces
+the first. Its proposal key also survives a fresh memory engine over the
+same fixture repository: the same edit returns the same review, and a changed
+edit is refused conflict without creating another proposal. The existing
+proposal guard is necessary after an engine restart and was retained.
+
+All four deliberately incorrect refusal/replay/filter mutations fail the
+new cases. Restored sources pass 65 tests across eight files. Scoped
+coverage is 100% on lines, functions, statements and branches for both
+src/core/MockAccounts.vibe and src/core/WikiFactory.vibe: 138/138 lines,
+47/47 functions, 183/183 statements and 103/103 branches.
+Before this extension, the whole-suite report had MockAccounts at 88.23%
+branches / 96.15% functions / 97.02% statements and WikiFactory at 98.59%
+branches / 98.82% statements; both already had 100% lines.
+
+The preceding whole unit run passed 2083 tests / one expected failure /
+four skipped, with 241 files passing / three skipped. Its strict coverage
+gate remains red: 99.42% lines, 98.29% branches, 99.38% functions and 99.11%
+statements, 26 files below 100%. This predates the fixture extension above.
+The newly measured fuzz-preflight script has zero native-loader coverage
+despite its two passing process-boundary runs. The existing
+coverage-native-loader reproduction records the provider's PARSE_ERROR on
+raw effect syntax; no exclusion or emitted-JavaScript substitution was added.
+
+## Action directory failure boundaries (lane vl-coverage2, 2026-11-10)
+
+A legacy ownerless Tour is admitted as a guest and cancelled through the
+real indexed host. A completed no-model Post reply can be cancelled under
+its registered parent's permission without changing its settled result.
+Faulty downstream start services retain an Unreachable failure or both
+defects in a compound cause; neither invents a run or answers conflict.
+Every other operation uses the real accounts, index, per-run hosts and SQLite.
+
+The four new cases pass. Mutating the cause mapping and removing the parent
+permission alias makes three fail, with the ownerless control still passing.
+After restoring the source, the five-file group passes 36 tests and
+worker/ActionDirectory.vibe is 100%: 40/40 lines, 22/22 functions,
+55/55 statements and 30/30 branches. No production code changed.
+
+## Recovered action and tour hosts (lane vl-coverage2, 2026-11-10)
+
+The real tour flow pauses, resumes, seeks to the final stop and finishes at
+its reading deadline. Idle controls refuse without changing the conversation;
+an invalid wiki path opens nothing and a valid one opens the pane.
+A failed narration closes the active answer and fails the registered run.
+A failed alarm preserves its own cause and settles nothing; retrying the
+healthy host keeps the question once. A host resumed after reply-start
+refuses a demoted person and closes the unfinished answer while retaining
+the already accepted Post's passed receipt.
+
+All five new cases pass; five deliberately incorrect source mappings make
+all five fail. Restoring both sources passes the current 45-file worker
+group: 329 tests / one skipped, and all eight measured worker files reach
+100% on every metric: ActionRuns, Objects, Sequencer, HistoryObject,
+HistoryActions, WikiDraft, VipDraft and SpecificationReviewers.
+Combined: 550/550 lines, 207/207 functions, 693/693 statements,
+359/359 branches. Production code was unchanged by these tests.
+The writer controls above also pass under main's reserved-ceiling policy.

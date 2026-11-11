@@ -17,7 +17,6 @@ import { toursOf } from "../worker/Objects.vibe"
 import { ChatModel, REASONS, Spend } from "../worker/Reply.vibe"
 import * as Sequencer from "../worker/Sequencer.vibe"
 import { Turn } from "../worker/Sequencer.vibe"
-import { spoken } from "../worker/Tour.vibe"
 import { started as progressed } from "../worker/Reply.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 

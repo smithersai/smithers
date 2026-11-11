@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Execute adapters preserve the typed `FlowRuntime.StoreUnavailable` failure
+  from durable stores, so callers can answer unavailable and retry the same
+  execution id. Step interruption and caller cancellation remain interrupts.
+
 - The first dispatch of an action whose retry policy declares `expirationMs`
   no longer logs the warning `no durable retry origin`. A durable store finds
   no attempt row for an action's first dispatch, as it does after retention

@@ -14,6 +14,7 @@ export * from "./FlowInstance.vibe"
 export * from "./FlowRuntime.vibe"
 export * from "./NodeRecord.ts"
 export * from "./RetryFromRefused.vibe"
+export * from "./StoreUnavailable.ts"
 export * from "./WaitingAnnotation.vibe"
 
 export * from "./ExecutionIdentityConflict.vibe"

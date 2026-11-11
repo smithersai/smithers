@@ -1,0 +1,74 @@
+// The real-Container suite's body (decision 0024, rulings VL-35 and VL-36), shared by `pnpm test:sandboxes-live` against
+// the vl-test stage, by test/sandboxesReplay.test.vibe over that run's recording, and by test/sandboxProbe.test.vibe
+// against the same probe served over loopback with local processes. One probe owner, one conversation, one sandbox at
+// a time; a scope that fails sweeps it.
+import { expect } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { Factory } from "../../src/core/Factory.vibe"
+import { LiveFactory } from "../../src/core/LiveFactory.vibe"
+import { OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeOwner } from "../../worker/sandboxProbeFetch.vibe"
+
+/** A real Container run's recording: request headers (the token, the owner) never reach it. */
+export const RECORDING = "test/recordings/sandboxes-live.json"
+/** The origin a recording is keyed under, whatever URL the probe was deployed at. */
+export const REPLAY_ORIGIN = "https://probe.invalid"
+export function normalize(request: HttpRecording.RecordedRequest): HttpRecording.RecordedRequest {
+  return { ...request, url: request.url.replace(/^https?:\/\/[^/]+/, REPLAY_ORIGIN) }
+}
+
+/** The probe's client: every request carries the token and this run's owner. */
+export function probeClient(client: HttpClient.HttpClient, token: string, owner: string) {
+  return HttpClient.mapRequest(client, (request) => request.pipe(
+    HttpClientRequest.setHeader("authorization", `Bearer ${token}`),
+    HttpClientRequest.setHeader(OWNER_HEADER, owner),
+  ))
+}
+
+/** Asks the probe to stop what `owner` left running; answers whether its container still runs. */
+export effect function sweep(client: HttpClient.HttpClient, origin: string) {
+  const response = try client.execute(HttpClientRequest.post(`${origin}/api/probe/sweep`))
+  if (response.status !== 200) return { running: true, status: response.status }
+  const body = (try response.json) as { readonly running: boolean }
+  return { running: body.running, status: response.status }
+}
+
+/**
+ * Start, write, Stop (checkpoint), Start (restore), read, Stop and sweep, through the product's Factory client and the
+ * HttpClient in context. The owner's deadline is `window` away, PROBE_WINDOW_MS at most, so the probe tears the sandbox
+ * down by then anyway; a scope that ends in failure sweeps at once.
+ */
+export effect function lifecycle(origin: string, token: string, window = PROBE_WINDOW_MS) {
+  const began = try Clock.currentTimeMillis
+  const owner = probeOwner(began + window)
+  const client = probeClient(try HttpClient.HttpClient, token, owner)
+  try Effect.addFinalizer((exit) => exit._tag === "Success" ? Effect.void : Effect.asVoid(Effect.exit(sweep(client, origin))))
+  provide LiveFactory(origin).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))) {
+    const factory = try Factory
+    const first = try factory.startSandbox(PROBE_CONVERSATION, "start-1")
+    const written = try factory.sandboxCommand(PROBE_CONVERSATION, "write", "printf saved > keep.txt && cat keep.txt", first.generation)
+    const stopped = try factory.stopSandbox(PROBE_CONVERSATION, "stop-1", first.generation)
+    const second = try factory.startSandbox(PROBE_CONVERSATION, "start-2")
+    const restored = try factory.sandboxCommand(PROBE_CONVERSATION, "read", "cat keep.txt", second.generation)
+    const ended = try factory.stopSandbox(PROBE_CONVERSATION, "stop-2", second.generation)
+    const elapsed = (try Clock.currentTimeMillis) - began
+    const swept = try sweep(client, origin)
+    return { owner, first, written, stopped, second, restored, ended, elapsed, swept }
+  }
+}
+export type Run = Effect.Success<ReturnType<typeof lifecycle>>
+
+/**
+ * What every run must show. `timed` compares the metered minutes with this run's own wall time, which a replay can't:
+ * its minutes were metered when it was recorded.
+ */
+export function expectLifecycle(run: Run, timed: boolean) {
+  expect([run.first.status, run.first.generation, run.first.role]).toEqual(["running", 1, "contributor"])
+  expect([run.written, run.restored]).toEqual(["saved", "saved"])
+  expect([run.stopped.status, run.second.status, run.second.generation, run.ended.status]).toEqual(["stopped", "running", 2, "stopped"])
+  expect(run.ended.used).toBeGreaterThan(0)
+  expect(run.ended.used).toBeGreaterThanOrEqual(run.stopped.used)
+  expect(run.ended.remaining).toBe(Math.ceil(run.ended.allowance - run.ended.used))
+  if (timed) expect(run.ended.used * 60_000).toBeLessThanOrEqual(run.elapsed)
+  expect(run.swept).toEqual({ running: false, status: 200 })
+}

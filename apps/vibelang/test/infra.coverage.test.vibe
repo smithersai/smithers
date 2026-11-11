@@ -9,6 +9,7 @@ import { CredentialsStoreLive } from "alchemy/Auth/Credentials"
 import { ProfileStoreLive } from "alchemy/Auth/Profile"
 import { State } from "alchemy/State"
 import stack, { STATE_STORE } from "../infra/Stack.vibe"
+import { PROBE_STAGE } from "../worker/sandboxProbeFetch.vibe"
 
 const IMAGE = "registry.example.test/vibelang@sha256:" + "0".repeat(64)
 for (const [dev, domain, image] of [[true, undefined, undefined], [false, undefined, undefined], [false, "factory.example.test", undefined], [false, undefined, IMAGE]] as const) {
@@ -37,3 +38,20 @@ it.live(`declares the bound resource graph: ${dev ? "dev" : image ? "offline con
 }))
 
 }
+
+// The vl-test stage (0024) declares only the probe Worker, its two objects and the image: no site, API or domain.
+it.live("declares only the sandbox probe in the vl-test stage", () => scoped(effect {
+  provide NodeServices.layer, FetchHttpClient.layer, WebCrypto.layer, Layer.provide(CredentialsStoreLive, NodeServices.layer), Layer.provide(ProfileStoreLive, NodeServices.layer) {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ ALCHEMY_DEV: false, VIBELANG_SANDBOX_IMAGE: IMAGE, VIBELANG_SANDBOX_PROBE_TOKEN: "probe-token" })), Alchemy.AlchemyContext = { dev: false, adopt: false, dotAlchemy: directory }, Alchemy.Stage = PROBE_STAGE {
+      const compiled = try stack
+      try Effect.try(() => {
+        expect(PROBE_STAGE).toBe("vl-test")
+        expect(Object.keys(compiled.resources).sort()).toEqual(["VibelangSandboxImage", "VibelangSandboxProbe", "VibelangSandboxProbe/VibelangSandboxMachine-Containers"])
+        expect(compiled.resources.VibelangSandboxProbe!.Props).toMatchObject({ main: "worker/SandboxProbe.vibe", build: { input: { plugins: expect.any(Array) } } })
+        expect(compiled.bindings.VibelangSandboxProbe!.flatMap((binding) => binding.data.bindings ?? []).filter((binding: { type: string }) => binding.type === "durable_object_namespace").map((binding: { className: string }) => binding.className).sort()).toEqual(["VibelangSandboxAccount", "VibelangSandboxMachine"])
+        expect(compiled.resources.VibelangSandboxImage!.Props).toMatchObject({ image: IMAGE, schedulingPolicy: "durable_object" })
+      })
+    }
+  }
+}))

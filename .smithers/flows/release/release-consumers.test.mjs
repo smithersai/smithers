@@ -491,6 +491,31 @@ test("a profile runs on the Effect the registry tags latest, beside the adapter 
   })
 })
 
+// Effect published 4.1.3 while the supported range was exactly 4.1.1 (#4238), so
+// the Node profile could not install on the registry's latest Effect and every
+// pinned 1.0.0-rc.17 candidate failed. The gate now proves that release is refused
+// cleanly, the same way it proves the old release candidate is.
+test("a strict install refuses a later Effect the supported range excludes", { timeout: 5 * 60_000 }, async () => {
+  const version = "1.0.0"
+  const later = "4.9.0"
+  assert.equal(satisfies(later, SUPPORTED_EFFECT_RANGE), false)
+  await withRegistries("smithers-later-effect-", {
+    later: [
+      { name: "@smthrs/database", version, peerDependencies: { effect: SUPPORTED_EFFECT_RANGE } },
+      { name: "effect", version: later }
+    ]
+  }, async (_name, registry, entries) => {
+    for (const manager of ["npm", "pnpm"]) {
+      const refusal = await refuseUnsupportedEffect(manager, registry.url, entries, later)
+      assert.notEqual(refusal.exit, 0, manager)
+      assert.deepEqual(
+        { ...refusal, exit: undefined },
+        { manager, exit: undefined, effect: later, range: SUPPORTED_EFFECT_RANGE }
+      )
+    }
+  })
+})
+
 // #3838: rc.4's quickstart needed five packages its install line never named.
 const flowsPages = () => {
   const directory = join(repoRoot, "packages/smithers/flows")

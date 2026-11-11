@@ -28,10 +28,11 @@ import { branchHarness } from "./test/branch.ts"
 import { branchRoles, harness, signedIn, testFile } from "./test/harness.ts"
 
 const runtime = testFile("person_only")
+const actingPerson = crypto.randomUUID()
 
 /** Someone acting for an Admin, who may do anything in person: only the `act` can refuse them. */
 const actingFor = (kind: Act["kind"]): Actor => ({
-  subject: { kind: "person", id: "person-admin" },
+  subject: { kind: "person", id: actingPerson },
   role: "admin",
   login: "admin",
   session: crypto.randomUUID(),

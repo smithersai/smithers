@@ -128,7 +128,7 @@ export interface Encoded {
        */
       readonly follow?: boolean | undefined
     }
-  ) => (Discard extends true ? void : Flow.Result<unknown, unknown>)!FlowRuntime.FlowCycleDetected
+  ) => (Discard extends true ? void : Flow.Result<unknown, unknown>)!(FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable)
   /**
    * The settlement of one execution of `flow`, when it has one.
    *

@@ -1,5 +1,5 @@
 import { agentRefused } from "./issueHostDecision.vibe"
-import { fixtureDraft, fixtureErrorReason, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "./issueFixtureDecision.vibe"
+import { fixtureDraft, fixtureErrorReason, fixtureErrorUnwritten, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "./issueFixtureDecision.vibe"
 // Product mock mode (VL-13). The real issue flows and state machine over local fixtures; no backend or model.
 import { fixtureSpecification, fixtureSpecificationHistory, performSpecification } from "./specification.vibe"
 import { WebCrypto } from "@smthrs/crypto"
@@ -115,11 +115,11 @@ export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer"
     // A reused key with a changed request is a typed conflict, never an engine defect: the engine refuses a held
     // identity with an ExecutionIdentityConflict defect, and the caller that chose the id receives it as a failure.
     const result = try runtime.execute(flow, { executionId, payload }).pipe(
-      Effect.catchCause((cause): Effect.Effect<never, IssueFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected> => {
+      Effect.catchCause((cause): Effect.Effect<never, IssueFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable> => {
         const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
         return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.fail(reason.defect) : Effect.failCause(cause)
       }),
-      Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: fixtureErrorReason(error._tag), unwritten: true })),
+      Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: fixtureErrorReason(error._tag), unwritten: fixtureErrorUnwritten(error._tag) })),
     )
     if (participated !== undefined && fixtureParticipation(request.op)) try participated(person.id)
     return { ...result, reviewers: ["Will"], role: (try personOf(identity)).role }

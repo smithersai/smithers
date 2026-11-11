@@ -28,7 +28,12 @@ export interface PackageCompiler {
   readonly sources: ReadonlyArray<VibeSourcePackage>
 }
 export declare const packageCompiler: (packageRoot: string) => PackageCompiler
-/** Runs the package compiler over `tsconfig.json`; throws when it fails or times out. */
+/**
+ * Rewrites each `JsonValueSchema` reference, which only the patched effect exports, to `(typeof <namespace>.Json)`.
+ * Throws, naming `file`, when a reference remains.
+ */
+export declare const portableEffectDeclarations: (text: string, file?: string) => string
+/** Runs the package compiler over `tsconfig.json` and makes its declarations portable; throws when it fails or times out. */
 export declare const compilePackage: (
   packageRoot: string,
   options?: { readonly timeoutMs?: number }
