@@ -595,7 +595,7 @@ const normalizeOptions = (value: Options, hostPlatform: Platform): NormalizedOpt
     root.length === 0 ||
     root.includes("\0") ||
     !Validate.isWellFormedText(root) ||
-    Buffer.byteLength(root, "utf8") > 32 * 1024 ||
+    Validate.utf8ByteLength(root) > 32 * 1024 ||
     !/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(root)
   ) {
     throw new TypeError("package-manager projectRoot must be a usable absolute path")
@@ -606,7 +606,7 @@ const normalizeOptions = (value: Options, hostPlatform: Platform): NormalizedOpt
     requirement.length === 0 ||
     requirement.includes("\0") ||
     !Validate.isWellFormedText(requirement) ||
-    Buffer.byteLength(requirement, "utf8") > 256
+    Validate.utf8ByteLength(requirement) > 256
   ) {
     throw new TypeError("package-manager requirement must be non-empty usable text no longer than 256 bytes")
   }
@@ -615,7 +615,7 @@ const normalizeOptions = (value: Options, hostPlatform: Platform): NormalizedOpt
   if (
     executable !== undefined &&
     (typeof executable !== "string" || executable.length === 0 || executable.includes("\0") ||
-      !Validate.isWellFormedText(executable) || Buffer.byteLength(executable, "utf8") > 32 * 1024)
+      !Validate.isWellFormedText(executable) || Validate.utf8ByteLength(executable) > 32 * 1024)
   ) {
     throw new TypeError("package-manager executable must be usable non-empty text")
   }
@@ -623,7 +623,7 @@ const normalizeOptions = (value: Options, hostPlatform: Platform): NormalizedOpt
   if (
     store !== undefined &&
     (typeof store !== "string" || store.length === 0 || store.includes("\0") ||
-      !Validate.isWellFormedText(store) || Buffer.byteLength(store, "utf8") > 32 * 1024 ||
+      !Validate.isWellFormedText(store) || Validate.utf8ByteLength(store) > 32 * 1024 ||
       !/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(store))
   ) {
     throw new TypeError("package-manager storeDirectory must be a usable absolute path")
@@ -1518,7 +1518,7 @@ const normalizeStoreManifestInput = (value: {
     typeof managerVersion !== "string" ||
     managerVersion.length === 0 ||
     !Validate.isWellFormedText(managerVersion) ||
-    Buffer.byteLength(managerVersion, "utf8") > maximumVersionOutputBytes ||
+    Validate.utf8ByteLength(managerVersion) > maximumVersionOutputBytes ||
     /[\u0000-\u001f\u007f]/.test(managerVersion)
   ) {
     throw new TypeError("store manifest managerVersion must be bounded single-line usable text")

@@ -111,6 +111,32 @@ export const isWellFormedText = (value: string): boolean => {
 }
 
 /**
+ * Counts the UTF-8 bytes of `value` without allocating an encoding.
+ *
+ * Matches `TextEncoder`: a lone surrogate counts as the three bytes of U+FFFD.
+ * Uses no host global, so the seams that call it stay browser-bundleable.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export const utf8ByteLength = (value: string): number => {
+  let bytes = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit < 0x80) bytes += 1
+    else if (unit < 0x800) bytes += 2
+    else if (unit >= 0xd800 && unit <= 0xdbff && index + 1 < value.length) {
+      const next = value.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4
+        index += 1
+      } else bytes += 3
+    } else bytes += 3
+  }
+  return bytes
+}
+
+/**
  * Refuses anything but non-empty, NUL-free, well-formed, bounded text.
  *
  * @private
@@ -121,7 +147,7 @@ export const usableText = (value: unknown, maximumBytes: number): value is strin
   value.length > 0 &&
   !value.includes("\0") &&
   isWellFormedText(value) &&
-  Buffer.byteLength(value, "utf8") <= maximumBytes
+  utf8ByteLength(value) <= maximumBytes
 
 /**
  * Maximum number of entries admitted from a host environment.
@@ -217,7 +243,7 @@ export const normalizeEnvironment = (
     if (member.includes("\0") || !isWellFormedText(member)) {
       throw new TypeError(`${what} ${name} is not usable text`)
     }
-    bytes += Buffer.byteLength(name, "utf8") + Buffer.byteLength(member, "utf8")
+    bytes += utf8ByteLength(name) + utf8ByteLength(member)
     if (!Number.isSafeInteger(bytes) || bytes > maximumEnvironmentBytes) {
       throw new TypeError(`${what} exceeds ${maximumEnvironmentBytes} bytes`)
     }
