@@ -1,0 +1,31 @@
+// @vitest-environment node
+// The Factory's answer to a refusal the protocol carries: a 409 whose body names the sequencer's reason, for each of
+// LiveFactory's refusable writes. bench/transport.bench.vibe covers malformed refusal bodies and other statuses.
+import { it, expect } from "@effect/vitest"
+import { HttpClient, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("a 409 carrying the sequencer's refusal reaches the caller as that refusal", async ({ bench }) => {
+  // The Worker's refusal answer for every write: 409 with `{ refusal }` (src/core/wire.vibe Refusal).
+  const refusing = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ refusal: "busy" }, { status: 409 })))))
+  const result = await workload(bench, "live-factory-refusals", "async", () => runPromise(effect {
+    provide HttpClient.HttpClient = refusing {
+      provide LiveFactory("http://refusing.invalid") {
+        const factory = try Factory
+        const writes = [
+          factory.post("home", "a", "Bench", "Measured"),
+          factory.openWiki("home", "rulings"),
+          factory.controlTour!("home", "pause", 0),
+          factory.tour("home"),
+          factory.endTour("home"),
+        ]
+        const outcomes: Array<string> = []
+        for (const write of writes) outcomes.push(try Effect.map(Effect.flip(write), (error) => error._tag === "Refused" ? `Refused ${error.refusal}` : `${error._tag} ${error.reason}`))
+        try Effect.try(() => expect(outcomes).toEqual(Array(5).fill("Refused busy")))
+      }
+    }
+  })).run(quick)
+  await runPromise(artifact("live-factory-refusals", "Vitest built-in bench; the actual LiveFactory's five refusable writes (post, open wiki, tour control, tour, end tour) against an injected HttpClient that answers every request with the Worker's refusal: 409 and { refusal: \"busy\" }. Each must fail as Refused busy.", ["An injected Effect HttpClient service, not the Worker: no network, no sequencer; the Worker's own refusals are timed in the workerd benchmarks."], result))
+})

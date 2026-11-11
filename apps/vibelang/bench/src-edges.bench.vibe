@@ -1,0 +1,123 @@
+// @vitest-environment node
+// Small paths in src/core, src/surfaces and src/web that no journey benchmark reached, each through the product code
+// that owns it: decisions against expected values written out here, a wiki proposal retried by a restarted engine, the
+// docs tool on the flow engine, a successful sandbox command's CLI text, and two clients that answer without a request.
+import { it, expect } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { FetchHttpClient } from "effect/http"
+import { fixtureErrorReason, fixtureErrorUnwritten } from "../src/core/issueFixtureDecision.vibe"
+import { sessionCookie } from "../src/core/protocolDecision.vibe"
+import { wikiLink } from "../src/core/wikiLinks.vibe"
+import { firstWithPrefix } from "../src/core/wikiPageDecision.vibe"
+import { conversationPath } from "../src/core/wire.vibe"
+import { notDeployed } from "../src/surfaces/backend.vibe"
+import { writeFailure } from "../src/surfaces/commandDecision.vibe"
+import { toHtml } from "../src/web/markdown.vibe"
+import { make as liveAccounts } from "../src/core/LiveAccounts.vibe"
+import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { OpenDocs, OpenDocsStep } from "../src/core/flows.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { RunSandbox, StartSandbox } from "../src/surfaces/commands.vibe"
+import { BrowserMythical, HistoryBackend } from "../src/web/historyBackend.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+const GITHUB_WIKI = "https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/"
+
+function decisions() {
+  // The issue fixture's engine refusals: only an unrecordable step may already have written.
+  expect(fixtureErrorReason("@smthrs/flow/StoreUnavailable")).toBe("unavailable")
+  expect(fixtureErrorReason("@smthrs/flow/ExecutionIdentityConflict")).toBe("conflict")
+  expect(fixtureErrorReason("@smthrs/flow/Other")).toBe("failed")
+  expect(fixtureErrorUnwritten("@smthrs/flow/StoreUnavailable")).toBe(false)
+  expect(fixtureErrorUnwritten("@smthrs/flow/ExecutionIdentityConflict")).toBe(true)
+  // A stored session's cookie goes only to the origin it was stored for, and only while valid.
+  expect(sessionCookie("https://a.example", "https://a.example", true, "s=1")).toBe("s=1")
+  expect(sessionCookie("https://a.example", "https://b.example", true, "s=1")).toBe("")
+  expect(sessionCookie("https://a.example", "https://a.example", false, "s=1")).toBe("")
+  // A relative link that climbs above the wiki root keeps its `..` parts and leaves for GitHub.
+  expect(wikiLink("designs/a", "../../../outside.md", ["designs/a", "index"]).startsWith(`${GITHUB_WIKI}../../outside`)).toBe(true)
+  expect(wikiLink("designs/a", "../index.md", ["designs/a", "index"])).toBe("/wiki/index")
+  expect(firstWithPrefix(["decisions/0001-a", "decisions/0002-b"], "decisions/0002-")).toBe(1)
+  expect(firstWithPrefix(["decisions/0001-a", "decisions/0002-b"], "decisions/0999-")).toBe(-1)
+  // A lone surrogate can't be URI-encoded: no path, never a thrown URIError.
+  expect(conversationPath("home")).toBe("/api/conversations/home")
+  expect(conversationPath("bad\uD800")).toBeUndefined()
+  expect(notDeployed("https://factory.example")).toBe("The live Factory backend is not deployed at https://factory.example. Use --mock or VIBELANG_FACTORY=mock.")
+  expect(writeFailure("forbidden", "Issue write failed.")).toBe("Not allowed.")
+  expect(writeFailure("unavailable", "Issue write failed.")).toBe("Issue write failed.")
+  // Without a resolver a link is printed as written.
+  expect(toHtml("[Guide](guide/x.md)")).toContain(' href="guide/x.md"')
+}
+
+it("decisions at the edges of links, sessions, paths and failures", async ({ bench }) => {
+  const result = await workload(bench, "src-edge-decisions", "sync", decisions).run(quick)
+  await runPromise(artifact("src-edge-decisions", "Vitest built-in bench; one sample calls the issue fixture's error decisions, the session-cookie choice, wiki link resolution above the root, the decision-number lookup with and without a match, conversation paths with a lone surrogate, the not-deployed and write-failure wording and Markdown without a link resolver, each against a value written here.", ["Pure functions; each is reached in the product through a journey other benchmarks time."], result))
+})
+
+it("a restarted engine answers a retried wiki proposal from the store, and refuses changed text under its key", async ({ bench }) => {
+  const result = await workload(bench, "wiki-proposal-restart", "async", () => runPromise(scoped(effect {
+    const store = try makeWikiStore()
+    const first = try makeWikiFactory("contributor", store)
+    const base = (try first.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
+    const request = { op: "propose" as const, page: "roadmap", base, text: base + "\nA retried proposal.", key: "bench-restart" }
+    const proposed = try first.act(request)
+    const restarted = try makeWikiFactory("contributor", store)
+    const retried = try restarted.act(request)
+    const changed = try Effect.flip(restarted.act({ ...request, text: base + "\nOther text." }))
+    const proposals = try Ref.get(store.proposals)
+    try Effect.try(() => {
+      expect(proposed.review).toMatch(/\/pull\/[0-9]+$/)
+      expect(retried.review).toBe(proposed.review)
+      expect([changed._tag, changed.reason, changed.unwritten]).toEqual(["WikiFailure", "conflict", true])
+      expect(proposals).toHaveLength(1)
+    })
+  }))).run(slow)
+  await runPromise(artifact("wiki-proposal-restart", "Vitest built-in bench, three samples. Each sample makes a fresh fixture wiki store, proposes a roadmap edit as a contributor, builds a second WikiFactory (a new in-memory flow engine) over the same store, retries the same key, then sends changed text under that key. Same review link, a conflict that wrote nothing, and one stored proposal checked.", ["The fixture store stands in for GitHub; no pull request is opened.", "Includes building two flow engines per sample."], result))
+})
+
+it("the docs tool answers what its open step answered", async ({ bench }) => {
+  const layer = Interpreter.layerWithImplementations(OpenDocs, OpenDocsStep.toLayer(({ path }) => Effect.succeed(path === "/setup")))
+  let n = 0
+  const result = await workload(bench, "docs-open-flow", "async", () => runPromise(scoped(effect {
+    const context = try Layer.build(layer.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
+    const engine = Context.get(context, FlowRuntime.FlowRuntime)
+    n += 1
+    const opened = try engine.execute(OpenDocs, { executionId: `docs/${n}/a`, payload: { path: "/setup" } })
+    const missing = try engine.execute(OpenDocs, { executionId: `docs/${n}/b`, payload: { path: "/nope" } })
+    try Effect.try(() => expect([opened, missing]).toEqual([true, false]))
+  }))).run(quick)
+  await runPromise(artifact("docs-open-flow", "Vitest built-in bench; the shipped vibelang/docs/open flow on a fresh in-memory flow engine per sample, twice: a page the step opens and one it doesn't. The flow's answer is checked against the step's.", ["The open step is a deterministic implementation (true for /setup); the worker's pane step and the model that invokes the tool are not measured."], result))
+})
+
+it("a running sandbox's command prints its output as CLI text", async ({ bench }) => {
+  const result = await workload(bench, "cli-sandbox-run-text", "async", () => runPromise(effect {
+    provide mockFactoryFor("contributor") {
+      const started = try StartSandbox.run({})
+      const output = try RunSandbox.render({ generation: started.generation, command: "echo hi" }, false)
+      try Effect.try(() => expect(output).toBe("hi"))
+    }
+  })).run(quick)
+  await runPromise(artifact("cli-sandbox-run-text", "Vitest built-in bench; in process, the sandbox-start and sandbox-run commands against the product mock factory, rendering sandbox-run's text with no operation id given (one is generated). Exact output checked.", ["In process: the CLI's process start and argument parsing are in cli-text; one mock process can't hold a running sandbox across two CLI invocations."], result))
+})
+
+it("two clients answer without a request: live accounts never choose, and a forced-mock history reports its mode", async ({ bench }) => {
+  const principal = { role: "maintainer" as const, name: "Ada", agent: false }
+  const result = await workload(bench, "client-local-answers", "async", () => runPromise(scoped(effect {
+    provide FetchHttpClient.layer {
+      const accounts = try liveAccounts("http://accounts.invalid")
+      const chose = try Effect.flip(accounts.choose("new"))
+      provide BrowserMythical("http://history.invalid", true, principal) {
+        const mode = try (try HistoryBackend).ready
+        const client = try Mythical
+        try Effect.try(() => {
+          expect([chose._tag, chose.reason]).toEqual(["AccountUnavailable", "account unavailable"])
+          expect([mode, client.mode]).toEqual(["mock", "mock"])
+        })
+      }
+    }
+  }))).run(quick)
+  await runPromise(artifact("client-local-answers", "Vitest built-in bench; LiveAccounts.choose (live accounts are chosen by GitHub sign-in, so it refuses at once) and BrowserMythical forced to mock: the backend's ready mode and the client's mode getter. Both checked; neither sends a request.", ["Includes loading the mock history module once per process (cached after the first sample)."], result))
+})
