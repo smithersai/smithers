@@ -22,9 +22,13 @@ import { mayRead } from "./stack/Access.ts"
 // ruling FLOW-13: runs read like GitHub Actions). One read, `GET /api/cloud-runs?limit=<n>`, joins three indexes the app
 // already keeps to the engine's own state of each run (`RunInspection.list` over the engine's schema):
 //
-//   TODO runs           todo_attempts + todo_requests   a Member of the deployment's repository, as the TODO itself
+//   TODO runs           todo_attempts + todo_requests   a Member of the attempt's repository, as the TODO itself (decision 0079)
 //   repositories' runs  runs (execution, ref, event)    a Member of that run's own repository (decision 0098)
 //   system flows        the engine's runs, by flow      an Admin of the deployment: issue sync, webhooks, triage, ...
+//
+// A run's role is its own repository's, resolved through `RepoRoles`, never the deployment's session role on another
+// repository: a deployment Member with no role on a second repository reads none of its runs, and a deployment Guest
+// who is a Member there reads them.
 //
 // A system flow is listed only when its declaration is here, so its run page renders every value through its own schema
 // (`Schema.Redacted` as `<redacted>`). Conversations' flows (`chat/*`), sign-in's (`auth/*`), secrets', models' and
@@ -53,7 +57,7 @@ export const lists = Metric.counter("smithers_cloud_run_lists", {
   incremental: true,
 })
 
-/** The most repositories one read resolves a role on; older repositories' runs wait for the next read. */
+/** The most repositories one read resolves a role on, TODO and repository runs together; older repositories' runs wait for the next read. */
 export const MAX_REPOSITORIES = 8
 
 const Limit = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: CLOUD_RUNS_LIMIT }))
@@ -122,22 +126,23 @@ export const read = <E, R, EE, ER>(
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const member = mayRead(Option.some(actor))
-    const todos = member
-      ? yield* sql<TodoRow>`
-        SELECT a.id::text AS id, a.ordinal, a.status, a.branch, a.repo_id, r.by_login,
-          (extract(epoch FROM a.created_at) * 1000)::bigint AS created_ms
-        FROM todo_attempts a JOIN todo_requests r ON r.todo_id = a.todo_id AND r.revision = a.revision
-        ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit}`
-      : []
+    const todoRows = yield* sql<TodoRow>`
+      SELECT a.id::text AS id, a.ordinal, a.status, a.branch, a.repo_id, r.by_login,
+        (extract(epoch FROM a.created_at) * 1000)::bigint AS created_ms
+      FROM todo_attempts a JOIN todo_requests r ON r.todo_id = a.todo_id AND r.revision = a.revision
+      ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit}`
     const repoRows = yield* sql<RepoRow>`
       SELECT execution, repo_id, flow, ref, event, launched_by,
         (extract(epoch FROM created_at) * 1000)::bigint AS created_ms
       FROM runs WHERE execution IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT ${limit}`
-    // A role read on one repository says nothing of another's (decision 0098): each repository is resolved once.
+    // Each run's repository, a TODO's run from its attempt's (decision 0079), newest run first. A role read on one
+    // repository says nothing of another's (decision 0098): each repository is resolved once, for both kinds of run.
+    const repoIds = [
+      ...new Set([...todoRows, ...repoRows].sort((left, right) => Number(right.created_ms) - Number(left.created_ms)).map((row) => row.repo_id)),
+    ]
     const readable = new Map<string, boolean>()
-    let partial = false
-    for (const repoId of [...new Set(repoRows.map((row) => row.repo_id))].slice(0, MAX_REPOSITORIES)) {
+    let partial = repoIds.length > MAX_REPOSITORIES
+    for (const repoId of repoIds.slice(0, MAX_REPOSITORIES)) {
       const resolved = yield* options.roles.resolve(actor, repositoryOf(repoOf(repoId))).pipe(Effect.result)
       if (resolved._tag === "Failure") {
         const status = RepoRoles.REFUSALS[resolved.failure.code]
@@ -147,7 +152,7 @@ export const read = <E, R, EE, ER>(
         readable.set(repoId, mayRead(Option.some({ ...actor, role: resolved.success.role })))
       }
     }
-    if (new Set(repoRows.map((row) => row.repo_id)).size > MAX_REPOSITORIES) partial = true
+    const todos = todoRows.filter((row) => readable.get(row.repo_id) === true)
     const repos = repoRows.filter((row) => readable.get(row.repo_id) === true)
     const indexed: ReadonlyArray<CloudRun> = [
       ...todos.map((row) =>

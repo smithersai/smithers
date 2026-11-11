@@ -24,7 +24,7 @@ export const steersRoute = (runId: string): string => `${remoteRunRoute(runId)}/
 
 /**
  * `GET <route>?limit=<n>`: the runs on Cloudflare this person may read, newest first (docs/features/runs.md#runs-on-cloudflare):
- * TODO runs and repositories' runs for a Member, and the deployment's own system flows for an Admin.
+ * TODO runs and repositories' runs for a Member of each run's repository, and the deployment's own system flows for an Admin.
  */
 export const CLOUD_RUNS_ROUTE = "/api/cloud-runs"
 

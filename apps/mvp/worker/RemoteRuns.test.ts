@@ -1232,7 +1232,8 @@ describe("GET /api/cloud-runs", () => {
       await engine.run(repoRun)
       await keptRun(engine, `ops-spend-${uuid()}`, "ops/SpendAlert", Date.now() + 60_000)
       await keptRun(engine, `chat-expire-${uuid()}`, "chat/Expire", Date.now() + 120_000)
-      const h = await routes(engine, { actor: member })
+      // A Member of octo/second as well, by the role there: the deployment's own role reaches no other repository.
+      const h = await routes(engine, { actor: member, roles: rolesOn({ "github/octo/second": "member" }) })
       const [status, body, response] = await listed(h)
       expect([status, response.headers.get("cache-control")]).toEqual([200, "no-store"])
       const byId = new Map(body.runs.map((run) => [run.runId, run]))
@@ -1258,7 +1259,7 @@ describe("GET /api/cloud-runs", () => {
       })
       expect(h.count(CloudRuns.lists, { outcome: "read" })).toBe(1)
 
-      const a = await routes(engine, { actor: admin })
+      const a = await routes(engine, { actor: admin, roles: rolesOn({ "github/octo/second": "member" }) })
       const [, all] = await listed(a)
       const system = all.runs.filter((run) => run.kind === "system")
       // A system flow is listed by its declaration; a conversation's never.
@@ -1271,6 +1272,27 @@ describe("GET /api/cloud-runs", () => {
       const [, one] = await listed(a, "?limit=1")
       expect(one.runs.map((run) => run.flow)).toEqual(["ops/SpendAlert"])
       expect(recorded(a)).not.toContain("maya")
+    })
+  })
+
+  test("a TODO's run lists by the role on its repository, never the deployment's (decision 0079)", async () => {
+    const own = await attempt()
+    const other = await attempt("github/acme/widgets")
+    const ownRun = todoExecutionId(own.attemptId)
+    const otherRun = todoExecutionId(other.attemptId)
+    await withEngine(async (engine) => {
+      // The deployment's Member, a Guest on acme/widgets or nobody there: that TODO's run is never listed.
+      for (const role of ["guest", null] as const) {
+        const outsider = await routes(engine, { actor: member, roles: rolesOn({ "github/acme/widgets": role }) })
+        const [status, body] = await listed(outsider)
+        expect([role, status, body.runs.map((run) => run.runId)]).toEqual([role, 200, [ownRun]])
+        expect(outsider.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "read", todo: 1, repo: 0 })
+      }
+      // The deployment's Guest, a Member of acme/widgets: that TODO's run, and not the deployment's own.
+      const insider = await routes(engine, { actor: guest, roles: rolesOn({ "github/acme/widgets": "member" }) })
+      const [, body] = await listed(insider)
+      expect(body.runs).toEqual([expect.objectContaining({ runId: otherRun, kind: "todo", repo: "acme/widgets", actor: "maya" })])
+      expect(insider.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "read", todo: 1, repo: 0 })
     })
   })
 
@@ -1307,31 +1329,45 @@ describe("GET /api/cloud-runs", () => {
   })
 
   test("a repository whose role can't be read now leaves its runs out and the read partial; a Guest lists nothing", async () => {
-    const start = await attempt()
+    const own = await attempt()
+    // A TODO on acme/widgets, whose role the reads below can't give.
+    await attempt("github/acme/widgets")
     const repoRun = `ci:${uuid()}`
     await recordRepoRun(repoRun)
     await withEngine(async (engine) => {
-      const h = await routes(engine, {
+      /** The session's role on octo/hello, as `RepoRoles` gives it; acme/widgets refused with `code`. */
+      const refusing = (code: RepoRoles.Refusal): RepoRoles.RepoRoles => ({
+        repository: repositoryOf("octo/hello"),
+        resolve: (actor, repository) =>
+          repository.id === "github/octo/hello"
+            ? Effect.succeed({ role: actor.role, held: Option.none() })
+            : Effect.fail(new RepoRoles.RoleRefused({ code })),
+      })
+      const h = await routes(engine, { actor: member, roles: refusing("unavailable") })
+      const [status, body] = await listed(h)
+      expect(status).toBe(200)
+      expect(body.runs.map((run) => run.runId).sort()).toEqual([repoRun, todoExecutionId(own.attemptId)].sort())
+      expect(h.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "partial", todo: 1, repo: 1 })
+      // A refusal that isn't about now (no App on the repository) leaves the runs out without a partial read.
+      const missing_ = await routes(engine, { actor: member, roles: refusing("app_not_installed") })
+      await listed(missing_)
+      expect(missing_.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "read", todo: 1, repo: 1 })
+      // The deployment's own role can't be read either: nothing is listed, and the read is partial.
+      const down = await routes(engine, {
         actor: member,
         roles: { repository: repositoryOf("octo/hello"), resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: "unavailable" })) },
       })
-      const [status, body] = await listed(h)
-      expect(status).toBe(200)
-      expect(body.runs.map((run) => run.runId)).toEqual([todoExecutionId(start.attemptId)])
-      expect(h.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "partial" })
-      // A refusal that isn't about now (no App on the repository) leaves the runs out without a partial read.
-      const missing_ = await routes(engine, {
-        actor: member,
-        roles: { repository: repositoryOf("octo/hello"), resolve: () => Effect.fail(new RepoRoles.RoleRefused({ code: "app_not_installed" })) },
-      })
-      await listed(missing_)
-      expect(missing_.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "read", repo: 0 })
+      const [, none] = await listed(down)
+      expect(none.runs).toEqual([])
+      expect(down.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "partial", todo: 0, repo: 0 })
       const [, nothing] = await listed(await routes(engine, { actor: guest }))
       expect(nothing.runs).toEqual([])
     })
   })
 
   test("reads at most eight repositories' roles; the runs of any older repository wait, and the read says partial", async () => {
+    // A TODO older than every repository's run: its repository counts among the read's, and waits with the oldest.
+    await attempt("github/octo/older")
     const repos = Array.from({ length: CloudRuns.MAX_REPOSITORIES + 1 }, (_, index) => `github/octo/r${index}`)
     for (const repoId of repos) {
       await runtime.runPromise(RepoRuns.record({
@@ -1352,6 +1388,7 @@ describe("GET /api/cloud-runs", () => {
       })
       const [, body] = await listed(h)
       expect(asked).toHaveLength(CloudRuns.MAX_REPOSITORIES)
+      expect(asked).not.toContain("octo/older")
       expect(body.runs).toHaveLength(CloudRuns.MAX_REPOSITORIES)
       expect(body.runs.every((run) => run.trigger === "pull_request")).toBe(true)
       expect(h.line("runs.cloud.list")[0]?.annotations).toMatchObject({ outcome: "partial" })
