@@ -1,0 +1,39 @@
+import { FileSystem as GuardedFileSystem, GrantStore, Permission } from "@smthrs/kernel"
+import type { PlatformError } from "effect"
+
+/** Reads the README through Effect's own `FileSystem` tag. It never mentions permission. */
+effect function readme(root: string) {
+  const fs = try FileSystem.FileSystem
+  return try fs.readFileString(`${root}/README.md`)
+}
+
+/** The kernel's structured refusal, kept on the cause of the `PlatformError`. */
+const refusalOf = (error: PlatformError.PlatformError) => Permission.fromPlatformError(error)
+
+/** No rules and nobody to ask: the guarded read is refused with the capability it needed. */
+export effect function unattended(root: string) {
+  provide Layer.provide(GuardedFileSystem.layer, Layer.orDie(GrantStore.layer({ attended: false }))) {
+    return readme(root) catch (error) => refusalOf(error)
+  }
+}
+
+/** Waits until the forked read has parked. A real host waits on its own UI. */
+effect function pending(store: GrantStore.Service): GrantStore.PendingRequest!! {
+  const requests = try store.list
+  if (requests[0] !== undefined) return requests[0]
+  try yieldNow
+  return try pending(store)
+}
+
+/** An attended store parks the read on a request; replying `"once"` resumes it. */
+export effect function attended(root: string) {
+  return try scoped(effect {
+    const store = try GrantStore.make({ runId: "quickstart" })
+    provide Layer.provide(GuardedFileSystem.layer, Layer.succeed(GrantStore.GrantStore, store)) {
+      const reading = fork readme(root)
+      const request = try pending(store)
+      try store.reply(request.requestId, "once")
+      return { capability: request.capability, contents: join reading }
+    }
+  })
+}

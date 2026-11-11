@@ -12,7 +12,9 @@ on. Nothing touches a real machine, so the run is deterministic.
 
 By the end you will have seen the two shapes every kernel refusal takes: the
 typed `PermissionRequired` that an unattended host reports, and the parked
-request an operator resolves.
+request an operator resolves. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs both programs as Effect
+code.
 
 ## Prerequisites
 
@@ -187,6 +189,61 @@ whether anybody was there to answer.
 Nothing in either program held an unguarded `FileSystem`. That is the whole
 design: there is no second, protected tag to reach for, so there is no
 unguarded one to hold.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) both programs are
+`effect` functions over the caller's raw host. They guard the filesystem with
+`FileSystem.layer`, the filesystem decorator `HostServices.layer` merges, so the
+raw host needs only `FileSystem`, `Path`, and `Workspace`. `catch` turns the
+refused read into the kernel's structured refusal, `fork` and `join` replace
+`Effect.forkChild` and `Fiber.join`, and `pending` polls by recursion.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it over a
+temporary workspace on the real filesystem, and the package's docs check fails
+if this block and the file differ.
+
+```vibe
+import { FileSystem as GuardedFileSystem, GrantStore, Permission } from "@smthrs/kernel"
+import type { PlatformError } from "effect"
+
+/** Reads the README through Effect's own `FileSystem` tag. It never mentions permission. */
+effect function readme(root: string) {
+  const fs = try FileSystem.FileSystem
+  return try fs.readFileString(`${root}/README.md`)
+}
+
+/** The kernel's structured refusal, kept on the cause of the `PlatformError`. */
+const refusalOf = (error: PlatformError.PlatformError) => Permission.fromPlatformError(error)
+
+/** No rules and nobody to ask: the guarded read is refused with the capability it needed. */
+export effect function unattended(root: string) {
+  provide Layer.provide(GuardedFileSystem.layer, Layer.orDie(GrantStore.layer({ attended: false }))) {
+    return readme(root) catch (error) => refusalOf(error)
+  }
+}
+
+/** Waits until the forked read has parked. A real host waits on its own UI. */
+effect function pending(store: GrantStore.Service): GrantStore.PendingRequest!! {
+  const requests = try store.list
+  if (requests[0] !== undefined) return requests[0]
+  try yieldNow
+  return try pending(store)
+}
+
+/** An attended store parks the read on a request; replying `"once"` resumes it. */
+export effect function attended(root: string) {
+  return try scoped(effect {
+    const store = try GrantStore.make({ runId: "quickstart" })
+    provide Layer.provide(GuardedFileSystem.layer, Layer.succeed(GrantStore.GrantStore, store)) {
+      const reading = fork readme(root)
+      const request = try pending(store)
+      try store.reply(request.requestId, "once")
+      return { capability: request.capability, contents: join reading }
+    }
+  })
+}
+```
 
 ## Next steps
 
