@@ -5,7 +5,7 @@
 
 import type * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
 import { constants, Database } from "bun:sqlite"
-import { Effect, Layer } from "effect"
+import { type Duration, Effect, Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { statSync } from "node:fs"
 import * as BunSqliteClient from "../internal/BunSqliteClient.ts"
@@ -20,6 +20,8 @@ export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } f
  */
 export interface BunDatabaseOptions {
   readonly filename: string
+  /** Synchronous lock wait. Defaults to one second for read-only opens, zero otherwise; overrides sqlite.busyTimeout when supplied. */
+  readonly busyTimeout?: Duration.Input | undefined
   readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
   /** Opens an existing store for reading only, as `NodeDatabase` does. */
   readonly readOnly?: boolean | undefined
@@ -69,7 +71,12 @@ const client = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =
       options.filename,
       sqlite?.readonly !== true && sqlite?.readwrite !== false && sqlite?.create !== false
     )
-    return BunSqliteClient.layer({ ...sqlite, filename: options.filename }).pipe(
+    return BunSqliteClient.layer({
+      ...sqlite,
+      busyTimeout: options.busyTimeout ?? sqlite?.busyTimeout ??
+        (options.readOnly || sqlite?.readonly ? 1_000 : 0),
+      filename: options.filename
+    }).pipe(
       // As on Node, a failed open or PRAGMA is a typed `SqlError`, and
       // `SqliteOpen` reads the driver's raw throw off the defect channel.
       Layer.catch((error): Layer.Layer<SqlClient.SqlClient> => Layer.effectContext(Effect.die(error.reason.cause)))

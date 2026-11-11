@@ -77,14 +77,16 @@ masked by the process umask. WAL and SHM sidecars inherit the main file's mode.
 On Node, set `mode: 0o640` when group-readable state is required. Existing files keep their permissions;
 `file:` URIs, temporary databases and read-only opens are left to SQLite.
 
-The default `busyTimeout` is `0`: the open ladder and `DurableWriter` wait
-between attempts through Effect, keeping the event loop available to peers.
+Both drivers default `busyTimeout` to `0` for writable opens and one second
+for read-only opens. The open ladder and `DurableWriter` wait between attempts
+through Effect, keeping the event loop available to peers.
 
 ## Tune the connection
 
 `NodeDatabaseOptions.sqlite` forwards to `@effect/sql-sqlite-node`'s client
 config, minus `filename`, which this layer owns. WAL stays enabled unless you
-disable it explicitly.
+disable it explicitly. `BunDatabaseOptions.sqlite` forwards to the Bun driver
+in the same way. Both adapters accept a top-level `busyTimeout`.
 
 ```ts
 import * as Duration from "effect/Duration"
@@ -97,7 +99,7 @@ NodeDatabase.layer({
 
 `busyTimeout` overrides `sqlite.busyTimeout`; the nested setting remains
 supported when the top-level setting is absent. A nonzero timeout blocks the
-Node event loop during contention, including WAL conversion at open. Keep it
+Node or Bun event loop during contention, including WAL conversion at open. Keep it
 short and tune the cooperative retry bounds for longer waits. See
 [SQLite and PostgreSQL](../concepts/sqlite-only.md).
 

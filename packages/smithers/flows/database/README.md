@@ -141,7 +141,9 @@ existing Effect services, selected at the executable's composition root.
 `NodeRuntime` from `@smthrs/platform-node` and `BunRuntime` from
 `@smthrs/platform-bun` select matching native services. Database adapters are `@smthrs/database/node/NodeDatabase` and
 `@smthrs/database/bun/BunDatabase`; both share the schema guard, startup retry
-policy and `DurableWriter`. Domain code must not open an extra database or create
+policy and `DurableWriter`. Both default to a synchronous `busyTimeout` of `0`
+for writes and one second for read-only opens; a top-level `busyTimeout`
+overrides `sqlite.busyTimeout`. Domain code must not open an extra database or create
 its own command, job, event, or locking ledger around the durable engine.
 
 Runtime parity must be demonstrated by the same execute, persist, restart, resume

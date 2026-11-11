@@ -605,9 +605,12 @@ a `bun:sqlite` client with the same schema guard, bounded open retries and
 failed-commit recovery as NodeDatabase. As on Node, `.raw` on a write without
 result columns returns `{ changes, lastInsertRowid }`, so `affectedRows` reads
 its count; the upstream `@effect/sql-sqlite-bun` client returns `[]` there.
-Options contain `filename`, optional
-`sqlite` settings from that Bun driver, and `readOnly`, which behaves as on
-NodeDatabase. A new plain-path database is created
+Options contain `filename`, optional `sqlite` settings from that Bun driver,
+`busyTimeout`, and `readOnly`, which behave as on `NodeDatabase`.
+The synchronous `busyTimeout` defaults to `0` for writable opens and one
+second for read-only opens, including `sqlite.readonly`. A top-level
+`busyTimeout` overrides `sqlite.busyTimeout`; either accepts `Duration.Input`.
+A nonzero timeout blocks the Bun event loop during contention. A new plain-path database is created
 with mode `0o600`, masked by the process umask, and its WAL and SHM sidecars
 inherit that mode. Existing files, `file:` URIs, temporary databases and opens
 whose settings disable creation are left to SQLite. Install its matching optional peer;
