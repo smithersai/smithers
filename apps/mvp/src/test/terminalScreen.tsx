@@ -26,6 +26,7 @@ import { ThemeProvider } from "../features/theme/components/ThemeButton"
 import { TerminalProvider } from "../features/terminal/components/TerminalContext"
 
 import { TodosProvider } from "../features/todos/components/TodosContext"
+import { PluginsProvider } from "../plugins/components/PluginsContext"
 import { ViewsProvider } from "../features/views/components/ViewsContext"
 
 export const renderTerminalScreen = (
@@ -58,7 +59,7 @@ export const renderTerminalScreen = (
                         <TerminalProvider value={context.terminal}>
                           <TodosProvider value={context.todos}>
                             <FilesProvider value={views.files}>
-                              <ViewsProvider value={context.views}><Match routeId="/$owner/$repo/tree/$ref/$" /></ViewsProvider>
+                              <ViewsProvider value={context.views}><PluginsProvider value={context.plugins}><Match routeId="/$owner/$repo/tree/$ref/$" /></PluginsProvider></ViewsProvider>
                             </FilesProvider>
                           </TodosProvider>
                         </TerminalProvider>
