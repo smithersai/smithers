@@ -4,7 +4,20 @@ set -euo pipefail
 app_directory=$(cd "$(dirname "$0")/.." && pwd)
 fixture_project="mvp-test-$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
 compose=(docker compose -p "$fixture_project" -f "$app_directory/docker-compose.yml" -f "$app_directory/docker-compose.test.yml")
-export MVP_TEST_POSTGRES_BIND=127.0.0.1: MVP_TEST_ELECTRIC_BIND=127.0.0.1: MVP_TEST_POOL_BIND=127.0.0.1:
+# Free loopback ports, from the kernel. Left to choose (`127.0.0.1::5432`), Docker takes the next port of the ephemeral
+# range it hasn't handed out itself, without asking whether a socket already holds it, and fails the start with
+# "bind: address already in use" rather than trying another: on a host with many open connections that happens often.
+read -r postgres_port electric_port pool_port < <(node --input-type=module -e '
+import { createServer } from "node:net"
+const servers = await Promise.all([0, 1, 2].map(() => new Promise((resolve) => {
+  const server = createServer()
+  server.listen(0, "127.0.0.1", () => resolve(server))
+})))
+process.stdout.write(servers.map((server) => server.address().port).join(" ") + "\n")
+await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))))
+')
+export MVP_TEST_POSTGRES_BIND="127.0.0.1:$postgres_port" MVP_TEST_ELECTRIC_BIND="127.0.0.1:$electric_port" \
+  MVP_TEST_POOL_BIND="127.0.0.1:$pool_port"
 export MVP_TEST_MAX_CONNECTIONS=100 MVP_TEST_POOL_MAX_CLIENTS=64 MVP_TEST_POOL_MAX_DATABASE_CONNECTIONS=8
 # Leave time for cleanup before a caller escalates termination of this owned process group.
 cleanup() { "${compose[@]}" down --timeout 1 --volumes --remove-orphans >/dev/null; }
