@@ -30,7 +30,8 @@ import type { JevRule, JevRulesTarget } from "./JevRules.ts"
  *   rule but `sdk.platform-neutral` applies.
  * - `components`: `@smthrs/ui`, `@smthrs/repo-view` and
  *   `@smthrs/terminal-frame`, which render React. Only
- *   `sdk.root-imports-only`, `sdk.no-dead-code` and `test.behavioral` apply.
+ *   `sdk.root-imports-only`, `sdk.no-dead-code`, `test.no-mocks-of-our-code`
+ *   and `test.behavioral` apply.
  *
  * @category models
  * @since 0.1.0
@@ -63,7 +64,7 @@ export interface Options {
   readonly role: Role
   /**
    * Package-relative globs of the package's test files, which
-   * `test.behavioral` reads.
+   * `test.behavioral` and `test.no-mocks-of-our-code` read.
    *
    * @default ["test/**\/*.test.ts", "test/**\/*.test.vibe"]
    */
@@ -111,7 +112,11 @@ const rootImportPackages = (known: KnownDeepImports | undefined): string => {
   return `@smthrs/!(${names.join("|")})`
 }
 
-const importRulesFor = (role: Role, known: KnownDeepImports | undefined): ReadonlyArray<ImportRule> => [
+const importRulesFor = (
+  role: Role,
+  known: KnownDeepImports | undefined,
+  tests: ReadonlyArray<string>
+): ReadonlyArray<ImportRule> => [
   ...(platformNeutral.includes(role)
     ? [{
       kind: "forbidHostModules" as const,
@@ -136,7 +141,18 @@ const importRulesFor = (role: Role, known: KnownDeepImports | undefined): Readon
         "callback a third-party library calls captures Effect.context() and uses Effect.runPromiseWith. See " +
         "apps/mvp/docs/rules.md."
     }]
-    : [])
+    : []),
+  {
+    kind: "forbidCalls",
+    files: tests,
+    callees: [
+      "vi.spyOn().mockReturnValue",
+      "vi.useFakeTimers",
+      "vi.setSystemTime"
+    ],
+    because: "test.no-mocks-of-our-code: tests inject an Effect Clock or TestClock for controlled time. " +
+      "Never replace the process clock with a return-value spy or fake timers. See apps/mvp/docs/rules.md."
+  }
 ]
 
 const jevRulesFor = (role: Role, tests: ReadonlyArray<string>): ReadonlyArray<JevRule> => [
@@ -246,7 +262,7 @@ const jevRulesFor = (role: Role, tests: ReadonlyArray<string>): ReadonlyArray<Je
  * @since 0.1.0
  */
 export const SdkRules = (options: Options): SdkRulesTargets => ({
-  importRules: ImportRules({ cwd: options.cwd, rules: importRulesFor(options.role, options.knownDeepImports) }),
+  importRules: ImportRules({ cwd: options.cwd, rules: importRulesFor(options.role, options.knownDeepImports, options.tests ?? defaultTests) }),
   jevRules: JevRules({
     cwd: options.cwd,
     threshold: 0.7,

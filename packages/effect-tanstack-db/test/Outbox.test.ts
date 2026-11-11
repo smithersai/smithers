@@ -1,5 +1,6 @@
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
 import {
+  Clock,
   Context,
   Deferred,
   Effect,
@@ -95,6 +96,16 @@ const scoped = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
 
 const save = (outbox: Outbox.Service, notes: Collection.Collection<Note, string>, row: Note) =>
   outbox.transact("save", { idempotencyKey: row.id }, Effect.asVoid(notes.insert(row)))
+
+/** Give admissions equal timestamps without changing the executor's clock or the process clock. */
+const saveAt = (queuedAt: number) => (outbox: Outbox.Service, notes: Collection.Collection<Note, string>, row: Note) =>
+  Clock.clockWith((clock) =>
+    save(outbox, notes, row).pipe(Effect.provideService(Clock.Clock, {
+      ...clock,
+      currentTimeMillis: Effect.succeed(queuedAt),
+      currentTimeMillisUnsafe: () => queuedAt
+    }))
+  )
 
 // Counter metadata survives an empty queue; assertions about retained writes exclude only that support row.
 const retainedKeys = (storage: ReturnType<typeof memoryStorage>) =>
@@ -313,77 +324,94 @@ describe("admission", () => {
     expect(seen.status).toEqual(Option.some({ leader: false, failing: null, held: false }))
   })
 
+  test("leadership lost before persistence reports follower without writing storage", async () => {
+    const world = await setup([])
+    let leading = true
+    let change = (_leader: boolean) => {}
+    const leader: Outbox.Leader = {
+      ...single,
+      isLeader: () => leading,
+      onLeadershipChange: (listener) => {
+        change = (now) => {
+          leading = now
+          listener(now)
+        }
+        return () => undefined
+      }
+    }
+    let stores = 0
+    const storage = {
+      ...world.storage,
+      set: async (key: string, value: string) => {
+        stores++
+        return await world.storage.set(key, value)
+      }
+    }
+    const seen = await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, storage, leader })
+      const write = yield* outbox.transact(
+        "save",
+        { idempotencyKey: "a" },
+        Effect.gen(function*() {
+          yield* notes.insert(note("a", 1))
+          change(false)
+        })
+      )
+      const admitted = yield* Effect.exit(write.admitted)
+      yield* Effect.exit(write.settled)
+      return { admitted, rows: yield* notes.toArray }
+    }))
+    expect(seen.admitted).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
+    expect(leader.isLeader()).toBe(false)
+    expect(seen.rows).toEqual([])
+    expect(stores).toBe(0)
+    expect(retainedKeys(world.storage).length).toBe(0)
+    expect(world.sent).toEqual([])
+  })
+
   test.each([false, true])(
-    "leadership lost before persistence reports follower (storage fault: %s)",
-    async (storageFault) => {
+    "storage failure reports the current leadership state (lost: %s)",
+    async (loseLeadership) => {
       const world = await setup([])
+      let leading = true
       let change = (_leader: boolean) => {}
       const leader: Outbox.Leader = {
         ...single,
+        isLeader: () => leading,
         onLeadershipChange: (listener) => {
-          change = listener
+          change = (now) => {
+            leading = now
+            listener(now)
+          }
           return () => undefined
         }
       }
       let stores = 0
       const storage = {
         ...world.storage,
-        set: async (key: string, value: string) => {
+        set: async () => {
           stores++
-          if (storageFault) throw new Error("quota")
-          return await world.storage.set(key, value)
+          if (loseLeadership) change(false)
+          throw new Error("quota")
         }
       }
       const seen = await scoped(Effect.gen(function*() {
         const { notes, outbox } = yield* start({ ...world, storage, leader })
-        const write = yield* outbox.transact(
-          "save",
-          { idempotencyKey: "a" },
-          Effect.gen(function*() {
-            yield* notes.insert(note("a", 1))
-            change(false)
-          })
-        )
+        const write = yield* save(outbox, notes, note("a", 1))
         const admitted = yield* Effect.exit(write.admitted)
         yield* Effect.exit(write.settled)
         return { admitted, rows: yield* notes.toArray }
       }))
-      expect(seen.admitted).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
+      expect(seen.admitted).toEqual(
+        Exit.fail(new Outbox.NotAdmitted({ reason: loseLeadership ? "follower" : "storage" }))
+      )
+      expect(leader.isLeader()).toBe(!loseLeadership)
+      expect(stores).toBe(1)
       expect(seen.rows).toEqual([])
-      expect(stores).toBe(0)
       expect(retainedKeys(world.storage).length).toBe(0)
       expect(world.sent).toEqual([])
     }
   )
-
-  test.each([false, true])("storage failure stays storage when leadership is lost: %s", async (loseLeadership) => {
-    const world = await setup([])
-    let change = (_leader: boolean) => {}
-    const leader: Outbox.Leader = {
-      ...single,
-      onLeadershipChange: (listener) => {
-        change = listener
-        return () => undefined
-      }
-    }
-    const storage = {
-      ...world.storage,
-      set: () => {
-        if (loseLeadership) change(false)
-        return Promise.reject(new Error("quota"))
-      }
-    }
-    const seen = await scoped(Effect.gen(function*() {
-      const { notes, outbox } = yield* start({ ...world, storage: storage as never, leader })
-      const write = yield* save(outbox, notes, note("a", 1))
-      const admitted = yield* Effect.exit(write.admitted)
-      yield* Effect.exit(write.settled)
-      return { admitted, rows: yield* notes.toArray }
-    }))
-    expect(seen.admitted).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "storage" })))
-    expect(seen.rows).toEqual([])
-    expect(world.sent).toEqual([])
-  })
 
   test("a restored write whose settlement cannot be stored retains its durable record", async () => {
     const world = await setup([new Outbox.Retry({})])
@@ -763,6 +791,8 @@ describe("Online.always and leadership", () => {
 
   test("default executor disposal drains a paused admission before reopening can allocate or replay", async () => {
     const world = await setup([])
+    const queuedAt = 1_800_000_000_000
+    const saveAtSameTime = saveAt(queuedAt)
     let enter!: () => void
     let release!: () => void
     const entered = new Promise<void>((resolve) => {
@@ -790,29 +820,27 @@ describe("Online.always and leadership", () => {
         sent.push(idempotencyKey)
       })
     const options = { ...world, storage, leader: undefined, orderingKeys: { save: () => ["same"] }, mutation }
-    vi.useFakeTimers({ toFake: ["Date"] })
-    vi.setSystemTime(1800000000000)
     try {
       await scoped(
         Effect.gen(function*() {
           const firstScope = yield* Scope.make()
           yield* Effect.addFinalizer(() => Scope.close(firstScope, Exit.void))
           const first = yield* Scope.provide(start({ ...options, online: offline() }), firstScope)
-          const firstWrite = yield* save(first.outbox, first.notes, note("first", 1))
+          const firstWrite = yield* saveAtSameTime(first.outbox, first.notes, note("first", 1))
           yield* Effect.promise(() => entered)
           const closing = yield* Scope.close(firstScope, Exit.void).pipe(Effect.forkScoped)
           for (let turn = 0; turn < 20; turn++) yield* Effect.yieldNow
-          expect(yield* Effect.exit(save(first.outbox, first.notes, note("late", 4))))
+          expect(yield* Effect.exit(saveAtSameTime(first.outbox, first.notes, note("late", 4))))
             .toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
           const secondScope = yield* Scope.make()
           yield* Effect.addFinalizer(() => Scope.close(secondScope, Exit.void))
           const second = yield* Scope.provide(start({ ...options, online: offline() }), secondScope)
           // A reopen that still follows retries after disposal completes. If it leads early, expose both allocations
           // before releasing the older batch so the counter history catches regression, not merely a duplicated value.
-          const early = yield* Effect.exit(save(second.outbox, second.notes, note("second", 2)))
+          const early = yield* Effect.exit(saveAtSameTime(second.outbox, second.notes, note("second", 2)))
           if (Exit.isSuccess(early)) {
             yield* early.value.admitted
-            yield* (yield* save(second.outbox, second.notes, note("third", 3))).admitted
+            yield* (yield* saveAtSameTime(second.outbox, second.notes, note("third", 3))).admitted
           }
           release()
           yield* firstWrite.admitted
@@ -822,13 +850,14 @@ describe("Online.always and leadership", () => {
           const reopened = yield* start({ ...options, online: network })
           if (Exit.isFailure(early)) {
             expect(early).toEqual(Exit.fail(new Outbox.NotAdmitted({ reason: "follower" })))
-            yield* (yield* save(reopened.outbox, reopened.notes, note("second", 2))).admitted
-            yield* (yield* save(reopened.outbox, reopened.notes, note("third", 3))).admitted
+            yield* (yield* saveAtSameTime(reopened.outbox, reopened.notes, note("second", 2))).admitted
+            yield* (yield* saveAtSameTime(reopened.outbox, reopened.notes, note("third", 3))).admitted
           }
           expect(counters.every((value, index) => index === 0 || value > counters[index - 1]!)).toBe(true)
           const rows = [...storage.entries.values()].map((value) => JSON.parse(value)).filter((row) =>
             row.idempotencyKey
           )
+          expect(rows.map((row) => row.metadata.queuedAt)).toEqual([queuedAt, queuedAt, queuedAt])
           const sequence = (key: string) => rows.find((row) => row.idempotencyKey === key).metadata.admissionSequence
           expect(sequence("first")).toBeLessThan(sequence("second"))
           expect(sequence("second")).toBeLessThan(sequence("third"))
@@ -840,7 +869,6 @@ describe("Online.always and leadership", () => {
       )
     } finally {
       release()
-      vi.useRealTimers()
     }
   })
 })
@@ -1824,6 +1852,8 @@ describe("round 3 admission regressions", () => {
 
   test("leadership transfer drains paused durable admission before allocating the next sequence", async () => {
     const world = await setup([])
+    const queuedAt = 1_800_000_000_000
+    const saveAtSameTime = saveAt(queuedAt)
     let enter!: () => void
     let release!: () => void
     const entered = new Promise<void>((resolve) => {
@@ -1842,7 +1872,6 @@ describe("round 3 admission regressions", () => {
         return await world.storage.set(key, value)
       }
     }
-    const now = vi.spyOn(Date, "now").mockReturnValue(1800000000000)
     const attempted: string[] = []
     let held = true
     const orderingKeys = { save: () => ["same"] }
@@ -1859,15 +1888,16 @@ describe("round 3 admission regressions", () => {
         const leaderB = yield* Outbox.lockLeader({ lock, name: "outbox" })
         const a = yield* start({ ...world, storage, leader: leaderA, online: offline(), orderingKeys, mutation })
         const b = yield* start({ ...world, storage, leader: leaderB, online: network, orderingKeys, mutation })
-        const first = yield* save(a.outbox, a.notes, note("first", 1))
+        const first = yield* saveAtSameTime(a.outbox, a.notes, note("first", 1))
         yield* Effect.promise(() => entered)
         yield* leaderB.take
-        const second = yield* save(b.outbox, b.notes, note("second", 2)).pipe(Effect.forkScoped)
+        const second = yield* saveAtSameTime(b.outbox, b.notes, note("second", 2)).pipe(Effect.forkScoped)
         yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
         release()
         yield* first.admitted
         yield* (yield* Fiber.join(second)).admitted
         const rows = [...storage.entries.values()].map((value) => JSON.parse(value)).filter((row) => row.idempotencyKey)
+        expect(rows.map((row) => row.metadata.queuedAt)).toEqual([queuedAt, queuedAt])
         const firstSequence = rows.find((row) => row.idempotencyKey === "first").metadata.admissionSequence
         const secondSequence = rows.find((row) => row.idempotencyKey === "second").metadata.admissionSequence
         expect(secondSequence).toBeGreaterThan(firstSequence)
@@ -1881,7 +1911,6 @@ describe("round 3 admission regressions", () => {
       }))
     } finally {
       release()
-      now.mockRestore()
     }
   })
 
@@ -2130,6 +2159,8 @@ describe("round 4 recovery regressions", () => {
 
   test("leadership reacquisition allocates a queued admission after the intervening leader's stored maximum", async () => {
     const world = await setup([])
+    const queuedAt = 1_000
+    const saveAtSameTime = saveAt(queuedAt)
     let entered!: () => void
     let release!: () => void
     const paused = new Promise<void>((resolve) => {
@@ -2150,7 +2181,6 @@ describe("round 4 recovery regressions", () => {
         return world.storage.set(key, value)
       }
     }
-    const now = vi.spyOn(Date, "now").mockReturnValue(1000)
     try {
       await scoped(Effect.gen(function*() {
         const lock = webLocks({ prefix: id("reacquire") })
@@ -2164,22 +2194,22 @@ describe("round 4 recovery regressions", () => {
           mutation: () => new Outbox.Retry({ held: true })
         })
         const b = yield* start({ ...world, storage, leader: leaderB, online: offline() })
-        yield* (yield* save(a.outbox, a.notes, note("held", 1))).admitted
+        yield* (yield* saveAtSameTime(a.outbox, a.notes, note("held", 1))).admitted
         yield* Effect.promise(() => paused)
-        const queued = yield* save(a.outbox, a.notes, note("queued", 2))
+        const queued = yield* saveAtSameTime(a.outbox, a.notes, note("queued", 2))
         yield* leaderB.take
-        yield* (yield* save(b.outbox, b.notes, note("intervening", 3))).admitted
+        yield* (yield* saveAtSameTime(b.outbox, b.notes, note("intervening", 3))).admitted
         yield* leaderA.take
         release()
         yield* queued.admitted
         const rows = [...storage.entries.values()].map((value) => JSON.parse(value)).filter((row) => row.idempotencyKey)
+        expect(rows.map((row) => row.metadata.queuedAt)).toEqual([queuedAt, queuedAt, queuedAt])
         const sequence = (id: string) => rows.find((row) => row.idempotencyKey === id).metadata.admissionSequence
         expect(sequence("queued")).toBeGreaterThan(sequence("intervening"))
         expect(new Set(rows.map((row) => row.metadata.admissionSequence)).size).toBe(3)
       }))
     } finally {
       release()
-      now.mockRestore()
     }
   })
 

@@ -2,7 +2,7 @@ import { builtinModules } from "node:module"
 import { Smithers } from "@smthrs/targets"
 import { describe, expect, it } from "vitest"
 import type { ImportRule } from "../src/ImportRulesCheck.ts"
-import { check } from "../src/ImportRulesCheck.ts"
+import { check as checkImportRules } from "../src/ImportRulesCheck.ts"
 import type { SdkRole } from "../src/index.ts"
 import { SdkRules } from "../src/index.ts"
 
@@ -19,6 +19,14 @@ const jevAttrsOf = (target: ReturnType<typeof SdkRules>["jevRules"]) =>
     readonly manual: boolean
     readonly rules: ReadonlyArray<{ readonly id: string; readonly files: ReadonlyArray<{ readonly pattern: string }> }>
   }
+
+/** Keep source and default test scopes present when checking a focused rule witness. */
+const check: typeof checkImportRules = (rules, sources) =>
+  checkImportRules(rules, [
+    { path: "src/Present.ts", text: "" },
+    { path: "test/Present.test.ts", text: "" },
+    ...sources
+  ])
 
 /** One library module that breaks every deterministic rule once, and one that breaks none. */
 const sources = [
@@ -78,6 +86,44 @@ describe("SdkRules", () => {
       const portable = ["@smthrs/platform-node", "effect", "http-client", "node-fetch", "./fs", "fs-extra", "@scope/fs", "bun-tools"]
       expect(check(rules, portable.map((name, i) => ({ path: `src/Portable${i}.ts`, text: `import value from "${name}"` })))).toEqual([])
     }
+  })
+
+  it.each(["library", "app-library", "host", "components"] as const)(
+    "%s rejects global clock replacements in TypeScript and VibeLang tests",
+    (role) => {
+      const rules = importRulesOf(SdkRules({ cwd: "packages/x", role }).importRules)
+      const calls = [
+        'vi.spyOn(Date, "now").mockReturnValue(1_000)',
+        'vi.useFakeTimers({ toFake: ["Date"] })',
+        'vi.setSystemTime(1_000)'
+      ]
+      for (const extension of ["ts", "vibe"]) {
+        for (const call of calls) {
+          const violations = check(rules, [{ path: `test/Clock.test.${extension}`, text: call }])
+          expect(violations, call).toHaveLength(1)
+          expect(violations[0]!.because).toContain("test.no-mocks-of-our-code")
+        }
+        expect(check(rules, [{
+          path: `test/Clock.test.${extension}`,
+          text: "Effect.provideService(program, Clock.Clock, fixedClock)"
+        }])).toEqual([])
+      }
+    }
+  )
+
+  it("applies the clock rule to a package's configured test paths", () => {
+    const rules = importRulesOf(SdkRules({
+      cwd: "packages/x",
+      role: "components",
+      tests: ["tests/**/*.test.tsx"]
+    }).importRules)
+    expect(check(rules, [
+      { path: "tests/Clock.test.tsx", text: 'vi.spyOn(Date, "now").mockReturnValue(1_000)' },
+      { path: "test/Clock.test.ts", text: "vi.useFakeTimers()" },
+      { path: "src/Clock.ts", text: "vi.useFakeTimers()" }
+    ]).map(({ file, usage }) => ({ file, usage }))).toEqual([
+      { file: "tests/Clock.test.tsx", usage: "calls vi.spyOn().mockReturnValue" }
+    ])
   })
 
   it("lets a host package import platform code, and a component package also run Effects", () => {
