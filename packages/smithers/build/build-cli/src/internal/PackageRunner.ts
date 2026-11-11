@@ -696,22 +696,33 @@ export const executeEffect = (
           environment: { ...ambient, ...resolved.env },
           sensitiveNames: credentialNames
         })
-        const exit = yield* Effect.exit(services.exec({
-          workspaceRoot,
-          cacheDirectory,
-          sensitiveEnv: credentialNames,
-          // The exec boundary enforces the confinement or fails the run closed;
-          // nothing here can weaken it into a warning.
-          sandbox,
-          ...(node.nixEnvironment === undefined ? {} : {
-            environment: {
-              path: node.nixEnvironment.path.join(NodePath.delimiter),
-              variables: node.nixEnvironment.variables
-            }
-          }),
-          onStdout: output.onStdout,
-          onStderr: output.onStderr
-        }, payload)).pipe(Effect.ensuring(Effect.sync(output.close)))
+        // A tool that may start `go` holds a lease for as long as it runs, so
+        // a concurrent `cache prune --max-size` leaves what it reads alone.
+        const lease = (yield* joined(() => GoCache.leased(node.rule, workspaceRoot, cacheDirectory)))
+          ? Effect.acquireRelease(
+            joined(() => GoCache.acquireLease(workspaceRoot, cacheDirectory)),
+            (path) => joined(() => GoCache.releaseLease(path)).pipe(Effect.orDie)
+          )
+          : Effect.void
+        const exit = yield* Effect.exit(Effect.scoped(Effect.andThen(
+          lease,
+          services.exec({
+            workspaceRoot,
+            cacheDirectory,
+            sensitiveEnv: credentialNames,
+            // The exec boundary enforces the confinement or fails the run closed;
+            // nothing here can weaken it into a warning.
+            sandbox,
+            ...(node.nixEnvironment === undefined ? {} : {
+              environment: {
+                path: node.nixEnvironment.path.join(NodePath.delimiter),
+                variables: node.nixEnvironment.variables
+              }
+            }),
+            onStdout: output.onStdout,
+            onStderr: output.onStderr
+          }, payload)
+        ))).pipe(Effect.ensuring(Effect.sync(output.close)))
         if (Exit.isSuccess(exit)) {
           if (node.stdoutPath !== undefined) {
             const destination = NodePath.join(workspaceRoot, ...node.stdoutPath.split("/"))

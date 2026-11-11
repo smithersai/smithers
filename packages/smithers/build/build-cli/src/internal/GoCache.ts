@@ -13,7 +13,9 @@
 
 import * as Config from "@smthrs/targets/Config"
 import * as Data from "effect/Data"
+import { randomUUID } from "node:crypto"
 import * as Fs from "node:fs/promises"
+import * as Os from "node:os"
 import * as NodePath from "node:path"
 
 /**
@@ -23,11 +25,14 @@ import * as NodePath from "node:path"
  * @since 0.1.0
  */
 export class GoCacheError extends Data.TaggedError("smithers-build/GoCacheError")<{
-  /** `not-a-directory` when the cache path is a file or a link. */
-  readonly reason: "not-a-directory"
+  /**
+   * `not-a-directory` when the cache path is a file or a link, `changed` when
+   * the directory was replaced while entries were being removed.
+   */
+  readonly reason: "not-a-directory" | "changed"
   readonly message: string
 }> {
-  constructor(reason: "not-a-directory", message: string) {
+  constructor(reason: "not-a-directory" | "changed", message: string) {
     super({ reason, message })
   }
 }
@@ -154,4 +159,209 @@ export const status = async (root: string, cacheDirectory: string): Promise<{
     entries: listed.length,
     bytes: listed.reduce((sum, entry) => sum + entry.bytes, 0)
   }
+}
+
+/**
+ * How stale an entry's use time can be while the entry is still in use.
+ *
+ * `go` marks an entry used by setting its modification time, and skips the
+ * write when the time is already less than an hour old. An entry a build
+ * touched can therefore carry a time up to one hour before that build began.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const useGranularityMs = 60 * 60 * 1000
+
+/**
+ * How long a lease can be believed. No tool run outlives it, so an older
+ * lease is one its owner never released: a killed process whose id another
+ * process now holds, or a file copied here with the workspace.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const leaseLifetimeMs = 24 * 60 * 60 * 1000
+
+/**
+ * What a lease is judged against: the clock, this machine's name, and whether
+ * a process is running. A caller that needs a different answer passes its own.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface LeaseHost {
+  readonly now: number
+  readonly host: string
+  readonly alive: (pid: number) => boolean
+}
+
+/**
+ * The lease host of the running process.
+ *
+ * @category execution
+ * @since 0.1.0
+ */
+export const leaseHost = (now: number = Date.now()): LeaseHost => ({
+  now,
+  host: Os.hostname(),
+  alive: (pid) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (cause) {
+      // A process this user may not signal is still a running process.
+      return (cause as NodeJS.ErrnoException).code === "EPERM"
+    }
+  }
+})
+
+const leaseDirectoryName = "smthrs-leases"
+
+interface LeaseRecord {
+  readonly pid: number
+  readonly host: string
+  readonly startedAt: number
+}
+
+/**
+ * Records that a tool is about to use the compile cache, and returns the
+ * lease to release when it exits.
+ *
+ * `cache prune --max-size` never evicts an entry a leased run could have
+ * used. The lease lives inside the cache it protects, in a directory `go`
+ * never reads or trims.
+ *
+ * @category execution
+ * @since 0.1.0
+ */
+export const acquireLease = async (
+  root: string,
+  cacheDirectory: string,
+  host: LeaseHost = leaseHost()
+): Promise<string> => {
+  const leases = NodePath.join(directory(root, cacheDirectory), leaseDirectoryName)
+  await Fs.mkdir(leases, { recursive: true })
+  const record: LeaseRecord = { pid: process.pid, host: host.host, startedAt: host.now }
+  const path = NodePath.join(leases, `${randomUUID()}.json`)
+  await Fs.writeFile(path, JSON.stringify(record), { flag: "wx" })
+  return path
+}
+
+/**
+ * Releases a lease {@link acquireLease} returned. Releasing twice is harmless.
+ *
+ * @category execution
+ * @since 0.1.0
+ */
+export const releaseLease = async (lease: string): Promise<void> => {
+  await Fs.rm(lease, { force: true })
+}
+
+/**
+ * Whether a tool that spawns with the owned cache takes a lease: a `Go.*` rule
+ * always does, and any other tool does once the workspace has a compile cache
+ * for a `go` it starts to read. A workspace that never ran `go` gains no
+ * directory from this.
+ *
+ * @category execution
+ * @since 0.1.0
+ */
+export const leased = async (rule: string, root: string, cacheDirectory: string): Promise<boolean> =>
+  rule.startsWith("Go.") ||
+  await Fs.lstat(directory(root, cacheDirectory)).then((stat) => stat.isDirectory(), () => false)
+
+/**
+ * What the leases say about the compile cache at one moment.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Usage {
+  /**
+   * Entries used after this time may be in use and are never evicted.
+   *
+   * It is one use-time granularity before the earliest live lease, or before
+   * now when no run holds a lease. The second case covers a `go` the planner
+   * started, and every run that starts after this moment: such a run began
+   * later than `now`, so everything it can touch is already above the floor
+   * or has its use time refreshed, which {@link evict} checks again.
+   */
+  readonly floor: number
+  /** Leases whose owner is gone. */
+  readonly stale: ReadonlyArray<string>
+}
+
+/**
+ * Reads the leases and answers which entries may be in use.
+ *
+ * @category querying
+ * @since 0.1.0
+ */
+export const usage = async (
+  root: string,
+  cacheDirectory: string,
+  host: LeaseHost = leaseHost()
+): Promise<Usage> => {
+  const leases = NodePath.join(directory(root, cacheDirectory), leaseDirectoryName)
+  let earliest = host.now
+  const stale: Array<string> = []
+  for (const name of (await Fs.readdir(leases).catch(() => [])).sort()) {
+    const path = NodePath.join(leases, name)
+    const text = await Fs.readFile(path, "utf8").catch(() => undefined)
+    // Released between the listing and this read.
+    if (text === undefined) continue
+    const record = parseLease(text)
+    if (
+      record === undefined || host.now - record.startedAt >= leaseLifetimeMs ||
+      (record.host === host.host && !host.alive(record.pid))
+    ) stale.push(path)
+    else earliest = Math.min(earliest, record.startedAt)
+  }
+  return { floor: earliest - useGranularityMs, stale }
+}
+
+const parseLease = (text: string): LeaseRecord | undefined => {
+  let record: Partial<LeaseRecord>
+  try {
+    record = JSON.parse(text) as Partial<LeaseRecord>
+  } catch {
+    return undefined
+  }
+  return typeof record?.pid === "number" && typeof record.host === "string" && typeof record.startedAt === "number"
+    ? { pid: record.pid, host: record.host, startedAt: record.startedAt }
+    : undefined
+}
+
+/**
+ * Removes the given compile cache entries, skipping any that `go` has used
+ * or replaced since it was listed.
+ *
+ * A run that starts while this works refreshes the use time of every old
+ * entry it reads, so the check made at the moment of removal sees it. This is
+ * the protocol `go`'s own trim relies on, with the margin taken from the runs
+ * in flight instead of a fixed five days.
+ *
+ * @category execution
+ * @since 0.1.0
+ */
+export const evict = async (
+  root: string,
+  cacheDirectory: string,
+  candidates: ReadonlyArray<Entry>
+): Promise<{ readonly removed: number; readonly bytes: number }> => {
+  let removed = 0
+  let bytes = 0
+  for (const entry of candidates) {
+    const base = await existing(root, cacheDirectory)
+    if (base === undefined || NodePath.dirname(NodePath.dirname(entry.path)) !== base) {
+      throw new GoCacheError("changed", "Go compile cache path changed during eviction")
+    }
+    const current = await Fs.lstat(entry.path).catch(() => undefined)
+    if (!current?.isFile() || current.ino !== entry.inode || current.mtimeMs !== entry.usedAt) continue
+    await Fs.rm(entry.path, { force: true })
+    removed += 1
+    bytes += entry.bytes
+  }
+  return { removed, bytes }
 }

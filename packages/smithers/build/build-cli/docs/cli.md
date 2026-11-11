@@ -555,19 +555,19 @@ it wrote.
 These commands inspect the workspace or operate on explicitly bounded local
 state.
 
-| Command          | Arguments              | Own options                               |
-| ---------------- | ---------------------- | ----------------------------------------- |
-| `cache status`   |                        |                                           |
-| `cache prune`    |                        | `--older-than-days`, `--dry-run`, `--yes` |
-| `cache clear`    |                        | `--dry-run`, `--yes`                      |
-| `show target`    | `<label>`              | `--verb`                                  |
-| `show workspace` |                        |                                           |
-| `targets`        | `[pattern]`            |                                           |
-| `info`           |                        |                                           |
-| `explain`        | `<label>`              | `--verb`                                  |
-| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`   |
-| `clean`          | `[patterns...]`        |                                           |
-| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`                 |
+| Command          | Arguments              | Own options                                             |
+| ---------------- | ---------------------- | ------------------------------------------------------- |
+| `cache status`   |                        |                                                         |
+| `cache prune`    |                        | `--older-than-days`, `--max-size`, `--dry-run`, `--yes` |
+| `cache clear`    |                        | `--dry-run`, `--yes`                                    |
+| `show target`    | `<label>`              | `--verb`                                                |
+| `show workspace` |                        |                                                         |
+| `targets`        | `[pattern]`            |                                                         |
+| `info`           |                        |                                                         |
+| `explain`        | `<label>`              | `--verb`                                                |
+| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`                 |
+| `clean`          | `[patterns...]`        |                                                         |
+| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`                               |
 
 `cache status` reports the local action-result count and size plus the remote
 endpoint without exposing credentials. Its `goBuild` field reports the
@@ -577,6 +577,15 @@ than 30 days by default; `cache clear` selects all entries. Deletion requires
 `--yes`, while `--dry-run` writes nothing. Only individual local action-result
 files are removed; durable runs, artifacts, stores, and directories remain.
 Deletion is irreversible and fails closed if a path changes mid-operation.
+
+`cache prune --max-size <size>` also caps the cache: the local action results
+plus the Go compile cache. The size is a byte count or a number with a unit,
+such as `40GiB` or `500MB`. Entries past the retention window go first, then
+the least recently used entries until the total fits. A compile cache entry a
+running tool may be reading is never removed, so the result can stay above
+the cap; the report's `goBuild.inUse` and `goBuild.inUseBytes` say how much
+was kept for that reason, and `size` gives the limit and the total before and
+after. Without `--max-size`, the compile cache is left alone.
 
 `show target` reports the rule, kinds, dependencies, owners, inputs, outputs,
 planned key, and local cache state for one target. `explain` returns the same

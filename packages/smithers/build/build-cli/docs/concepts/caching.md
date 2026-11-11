@@ -30,6 +30,17 @@ target that declares its own `GOCACHE` in `env` keeps it. The value is set
 when the tool starts and is not part of any key: a compile cache changes how
 long a build takes, not what it produces.
 
+`cache prune --max-size 40GiB` keeps the action results plus the compile
+cache under a size, evicting the least recently used entries first. It is
+safe to run while targets run. Every tool that can reach the compile cache
+holds a lease in `go-build/smthrs-leases` for as long as it runs. `go` marks
+an entry used by refreshing its modification time, at most once an hour, so
+prune keeps every entry used since one hour before the earliest live lease
+began, or since one hour ago when nothing is running. Just before removing an
+entry it checks that `go` has not used or replaced it since it was listed.
+This is the protocol `go`'s own trim relies on. A lease whose process has
+exited, or that is more than a day old, is ignored and removed.
+
 Keep the directory out of version control. Nothing in it is an input to
 anything: discovery never lists a path inside it, so its contents cannot feed
 input discovery or a digest, and the directory's name never enters a key.

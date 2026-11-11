@@ -3,9 +3,11 @@
  */
 
 import * as Config from "@smthrs/targets/Config"
+import * as Data from "effect/Data"
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { type CachedResult, entryLimit, sanitizeKey } from "./Cache.ts"
+import * as GoCache from "./internal/GoCache.ts"
 
 /** Metadata for an individually removable local action-result file.
  * @category models
@@ -88,7 +90,48 @@ export const inspect = async (
   return { key, label: entry.label, target: entry.target, exitOk: entry.exitOk, storedAt: entry.storedAt }
 }
 
-/** Removes individual action result files; never removes a directory or other run state.
+const sizeUnits: Readonly<Record<string, number>> = {
+  "": 1,
+  b: 1,
+  kb: 1000,
+  mb: 1000 ** 2,
+  gb: 1000 ** 3,
+  tb: 1000 ** 4,
+  kib: 1024,
+  mib: 1024 ** 2,
+  gib: 1024 ** 3,
+  tib: 1024 ** 4
+}
+
+/** A cache size the CLI could not read.
+ * @category errors
+ * @since 0.1.0
+ */
+export class CacheSizeError extends Data.TaggedError("smithers-build/CacheSizeError")<{
+  readonly text: string
+  readonly message: string
+}> {
+  constructor(text: string) {
+    super({ text, message: `cache size must be a number with an optional unit such as 40GiB or 500MB: ${text}` })
+  }
+}
+
+/** Reads a size such as `40GiB`, `500MB` or `1024` (bytes) as a byte count.
+ * @category querying
+ * @since 0.1.0
+ */
+export const parseSize = (text: string): number => {
+  const match = /^(\d+(?:\.\d+)?)\s*([A-Za-z]*)$/.exec(text.trim())
+  const unit = match === null ? undefined : sizeUnits[match[2]!.toLowerCase()]
+  if (match === null || unit === undefined) throw new CacheSizeError(text)
+  return Math.floor(Number(match[1]) * unit)
+}
+
+/** Removes individual action result files and, under a size cap, Go compile cache entries that are not in use;
+ * never removes a directory or other run state.
+ *
+ * `maxSizeBytes` caps the action results plus the Go compile cache. The least recently used entries go first, and a
+ * compile cache entry a running tool may be reading is never a candidate.
  * @category execution
  * @since 0.1.0
  */
@@ -96,18 +139,52 @@ export const remove = async (options: {
   readonly root: string
   readonly cacheDirectory: string
   readonly olderThanDays?: number | undefined
+  readonly maxSizeBytes?: number | undefined
   readonly dryRun: boolean
   readonly yes: boolean
   readonly now?: number | undefined
+  /** What Go compile cache leases are judged against; the running process's own clock and host when omitted. */
+  readonly leaseHost?: GoCache.LeaseHost | undefined
 }) => {
   if (!options.dryRun && !options.yes) {
     throw new Error("cache deletion requires --yes; use --dry-run to inspect candidates")
   }
-  const cutoff = options.olderThanDays === undefined ?
-    Infinity :
-    (options.now ?? Date.now()) - options.olderThanDays * 86_400_000
-  const candidates = (await entries(options.root, options.cacheDirectory))
-    .filter((entry) => Date.parse(entry.modifiedAt) < cutoff)
+  const now = options.now ?? Date.now()
+  const cutoff = options.olderThanDays === undefined ? Infinity : now - options.olderThanDays * 86_400_000
+  const results = await entries(options.root, options.cacheDirectory)
+  const candidates = results.filter((entry) => Date.parse(entry.modifiedAt) < cutoff)
+  const compiled = options.maxSizeBytes === undefined ? [] : await GoCache.entries(options.root, options.cacheDirectory)
+  const goBuild = { candidates: 0, candidateBytes: 0, removed: 0, bytes: 0, inUse: 0, inUseBytes: 0 }
+  const evicted: Array<GoCache.Entry> = []
+  const before = [...results, ...compiled].reduce((sum, entry) => sum + entry.bytes, 0)
+  let projected = before - candidates.reduce((sum, entry) => sum + entry.bytes, 0)
+  if (options.maxSizeBytes !== undefined) {
+    const usage = await GoCache.usage(options.root, options.cacheDirectory, options.leaseHost ?? GoCache.leaseHost(now))
+    if (!options.dryRun) { for (const lease of usage.stale) await GoCache.releaseLease(lease) }
+    const aged = new Set(candidates)
+    const pool = [
+      ...results.filter((entry) => !aged.has(entry)).map((entry) => ({
+        usedAt: Date.parse(entry.modifiedAt),
+        result: entry
+      })),
+      ...compiled.map((entry) => ({ usedAt: entry.usedAt, compiled: entry }))
+    ].sort((a, b) => a.usedAt - b.usedAt)
+    for (const item of pool) {
+      if (projected <= options.maxSizeBytes) break
+      if ("result" in item) {
+        candidates.push(item.result)
+        projected -= item.result.bytes
+      } else if (item.usedAt > usage.floor) {
+        goBuild.inUse += 1
+        goBuild.inUseBytes += item.compiled.bytes
+      } else {
+        evicted.push(item.compiled)
+        goBuild.candidates += 1
+        goBuild.candidateBytes += item.compiled.bytes
+        projected -= item.compiled.bytes
+      }
+    }
+  }
   let removed = 0
   let bytes = 0
   for (const entry of candidates) {
@@ -127,6 +204,7 @@ export const remove = async (options: {
     removed += 1
     bytes += entry.bytes
   }
+  if (!options.dryRun) Object.assign(goBuild, await GoCache.evict(options.root, options.cacheDirectory, evicted))
   return {
     scope: "local-action-results",
     dryRun: options.dryRun,
@@ -134,6 +212,14 @@ export const remove = async (options: {
     candidateBytes: candidates.reduce((sum, entry) => sum + entry.bytes, 0),
     removed,
     bytes,
-    recoverable: false
+    recoverable: false,
+    ...(options.maxSizeBytes === undefined ? {} : {
+      goBuild,
+      size: {
+        limit: options.maxSizeBytes,
+        before,
+        after: options.dryRun ? projected : before - bytes - goBuild.bytes
+      }
+    })
   }
 }

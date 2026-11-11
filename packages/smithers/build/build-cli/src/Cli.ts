@@ -1400,10 +1400,13 @@ const cacheCli = (config: RuntimeConfig) => {
       }
     })
     .command("prune", {
-      description: "Remove local action results older than the retention window",
+      description: "Remove local action results older than the retention window, and cap the cache size",
       mcp: { annotations: { readOnlyHint: false } },
       options: workspaceOption.extend({
         olderThanDays: z.number().min(0).default(30),
+        maxSize: z.string().optional().describe(
+          "Cap action results plus the Go compile cache, such as 40GiB; least recently used entries go first"
+        ),
         dryRun: z.boolean().default(false),
         yes: z.boolean().default(false)
       }),
@@ -1414,6 +1417,9 @@ const cacheCli = (config: RuntimeConfig) => {
             root: index.root,
             cacheDirectory: cacheDirectoryOf(index, context.options),
             olderThanDays: context.options.olderThanDays,
+            maxSizeBytes: context.options.maxSize === undefined
+              ? undefined
+              : CacheAdmin.parseSize(context.options.maxSize),
             dryRun: context.options.dryRun,
             yes: context.options.yes
           })
