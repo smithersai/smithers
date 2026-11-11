@@ -11,7 +11,7 @@ import * as NodeControl from "../src/NodeControl.ts"
 for (const discovered of [false, true]) {
   it(`durable Node composition forwards host principal and independent delegation (${discovered ? "registry" : "system"} catalog)`, async () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-host-authority-"))
-    const principal = { id: "explicit-host-agent", kind: "agent" }
+    const principal = { id: "explicit-host-reviewer", kind: "user" }
     const approvalAuthority = await Effect.runPromise(ApprovalAuthority.make([
       { principal, scopes: ["once"], targets: ["Plan"] }
     ]))

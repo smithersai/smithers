@@ -60,7 +60,8 @@ const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLeng
 
 /**
  * An explicit delegation to one authenticated identity, not everyone whose
- * kind resembles a role. Scopes are exact, not implicitly hierarchical. A
+ * kind resembles a role. People approve; an `agent` identity is never a
+ * delegate. Scopes are exact, not implicitly hierarchical. A
  * delegation may approve only its listed scopes and may deny either target
  * kind it names (denial installs no grant).
  * Delegation is reusable: `scopes: ["once"]` permits once-scoped grants, not
@@ -125,7 +126,8 @@ const compile = (delegations: ReadonlyArray<Delegation>, options: Options = {}):
 
 /**
  * Builds an immutable policy from explicit host configuration. Invalid
- * configuration is refused without including its contents in the error.
+ * configuration, including a delegation to an `agent` identity, is refused
+ * without including its contents in the error.
  * The caller's arrays and objects are not retained after acquisition.
  * @category constructors
  * @since 1.0.0
@@ -138,7 +140,11 @@ export const make = (
     onExcessProperty: "error"
   }).pipe(
     Effect.mapError(() => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" })),
-    Effect.map((entries) => compile(entries, options))
+    Effect.flatMap((entries) =>
+      entries.some((entry) => entry.principal.kind === "agent")
+        ? Effect.fail(new InvalidInput({ issue: "Approval authority cannot be delegated to an agent identity" }))
+        : Effect.succeed(compile(entries, options))
+    )
   )
 
 /**
