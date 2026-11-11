@@ -15,6 +15,8 @@ import { describe, expect, it } from "vitest"
 import type * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
 import * as CellTurn from "../src/CellTurn.ts"
+import * as EngineLike from "../src/EngineLike.ts"
+import * as Frame from "../src/internal/frame.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import { descriptor, emits, of, pattern, run, window } from "./fixtures/cellTurn.ts"
@@ -270,9 +272,12 @@ const drive = (options: {
   readonly checkpointCap?: number
   readonly pins?: boolean
   readonly tree?: string
+  readonly repeatCap?: number
+  readonly records?: Map<string, unknown>
 }) =>
   run({
     script: options.cells.map(emits),
+    ...(options.records === undefined ? {} : { records: options.records }),
     calls: options.calls ?? [],
     flows: [shell, editor, reader],
     tree: options.tree ?? "a.py=base",
@@ -286,7 +291,7 @@ const drive = (options: {
       placement: Option.none(),
       contextWindow: window,
       maxFrames: options.cells.length,
-      repeatCap: 0,
+      repeatCap: options.repeatCap ?? 0,
       narrowingCap: 0,
       ...(options.checkpointCap === undefined ? {} : { checkpointCap: options.checkpointCap })
     })
@@ -305,23 +310,40 @@ const settledText = (events: ReadonlyArray<AgentEvent.AgentEvent>): string =>
 
 describe("CellTurn checkpoints", () => {
   it("journals every mint with the store's own name for the tree", async () => {
-    const { engine, events } = await drive({
-      cells: [
-        `const cp = await ctx.checkpoint()
-         ctx.done(cp.checkpoint)`
-      ]
-    })
+    const records = new Map<string, unknown>()
+    const cells = [
+      `const cp = await ctx.checkpoint()
+       await ctx.call("read", { path: "a.py" }, { at: cp })
+       ctx.done(cp.checkpoint)`
+    ]
+    const first = await drive({ cells, records })
 
     // The id is derived from the frame and the ordinal, which is exactly the
     // pair a re-executed cell re-derives — so a resumed run addresses the trees
     // its original attempt addressed.
-    expect(of(events, "checkpoint-minted")).toEqual([
+    const minted = of(first.events, "checkpoint-minted")
+    expect(minted).toEqual([
       expect.objectContaining({ id: "cp-0-0", ref: "test/cp-0-0", ordinal: 0 })
     ])
-    // And it went through the journaled boundary rather than straight to the
-    // host, so a replayed frame is served the tree it pinned the first time.
-    expect(engine.recorder.records.map((boundary) => boundary.name)).toContain("checkpoint")
-    expect(engine.recorder.captures).toEqual([{ id: "cp-0-0", tree: "a.py=base" }])
+    expect(first.engine.recorder.captures).toEqual([{ id: "cp-0-0", tree: "a.py=base" }])
+    expect(first.engine.recorder.calls.map((call) => call.at)).toEqual(["cp-0-0"])
+
+    // The same frame re-executed over the same journal after the tree moved.
+    // The mint went through the journaled boundary rather than straight to
+    // the host, so the resumed frame is served the tree it pinned the first
+    // time: the host captures nothing, the journal names the same tree, and
+    // the read at it is replayed under the same boundaries rather than issued
+    // against the tree as it now stands.
+    const second = await drive({ cells, records, tree: "a.py=moved" })
+    expect(second.engine.recorder.captures).toEqual([])
+    expect(of(second.events, "checkpoint-minted")).toEqual(minted)
+    expect(second.engine.recorder.calls).toEqual([])
+    const boundaries = (attempt: typeof first) =>
+      attempt.engine.recorder.records.map((boundary) => JSON.stringify([boundary.name, boundary.identity]))
+    expect(first.engine.recorder.records.map((boundary) => boundary.name)).toContain("checkpoint")
+    // The same keys, though not in the same order: a resumed frame reads its
+    // attempt marker before it runs the cell rather than after.
+    expect(boundaries(second).sort()).toEqual(boundaries(first).sort())
   })
 
   it("pins between two edits, not before both of them", async () => {
@@ -482,22 +504,34 @@ describe("CellTurn checkpoints", () => {
   })
 
   it("keeps a reading of the pinned tree distinct from the same reading of the live one", async () => {
-    // Two calls, one command, two trees. They are two questions and the run's
-    // own ledger has to say so, or the second replays the first's answer.
-    const { engine } = await drive({
-      cells: [
-        `await ctx.call("read", { path: "a.py" }, { at: ctx.base })
-         await ctx.call("read", { path: "a.py" })
-         ctx.done("done")`
-      ]
-    })
+    // One command, two trees. They are two questions and the run's own ledger
+    // has to say so: asked in consecutive frames under a repeat cap of one, a
+    // ledger that keyed them alike would read the second frame as a repeat.
+    const after = (second: string) =>
+      drive({
+        repeatCap: 1,
+        cells: [
+          `await ctx.call("read", { path: "a.py" }, { at: ctx.base })
+           console.log("pinned")`,
+          second,
+          `ctx.done("done")`
+        ]
+      })
+    const { engine, events } = await after(`await ctx.call("read", { path: "a.py" })
+       console.log("live")`)
 
+    expect(of(events, "repeat-demanded")).toEqual([])
     const [pinned, live] = engine.recorder.calls
     expect(pinned?.at).toBe("base")
     expect(live?.at).toBeUndefined()
-    // Same lexical shape, different ordinal, and the `at` is what a key built
-    // over the call has to fold in. See `FlowEngineLike.callMaterial`.
+    // Same lexical shape, and the `at` is what a key built over the call has
+    // to fold in. See `callMaterial` in `@smthrs/agent`'s `FlowEngineLike`.
     expect(pinned?.input).toEqual(live?.input)
+
+    // The control: the same pinned reading asked again is a repeat.
+    const repeated = await after(`await ctx.call("read", { path: "a.py" }, { at: ctx.base })
+       console.log("pinned again")`)
+    expect(of(repeated.events, "repeat-demanded")).toHaveLength(1)
   })
 })
 
@@ -556,30 +590,73 @@ describe("the sympy__sympy-13878 proof loop, replayed with checkpoints", () => {
     expect(JSON.stringify(applied?.transition)).toContain("failed before, exits 0 after")
   })
 
-  it("tells the run it holds the evidence, from the frame that also did the editing", async () => {
+  it("remembers the failing baseline from the frame that also did the editing, stamped before its change", () => {
     // `Sufficiency` used to drop every check from a frame that also changed the
     // workspace, because nothing ordered a frame's calls against its edits. A
     // checkpointed reading is ordered by the pin instead of by the frame, which
-    // is what lets one frame hold both halves.
-    const { events } = await drive({
-      cells: [
-        cell,
-        `ctx.done("done")`
-      ],
-      calls: [
-        { _tag: "Success", value: { hunk: "-old\n+new" }, tree: "crv_types.py=fixed" },
-        { _tag: "Success", value: { exitCode: 1, stdout: "1 failed" } },
-        { _tag: "Success", value: { exitCode: 1, stdout: "1 failed" } },
-        { _tag: "Success", value: null }
-      ]
+    // is what lets one frame hold the *before* half. The frame is the cell
+    // above: edit, baseline at `ctx.base`, re-check on the live tree.
+    const check = { mode: "unhermetic", command: "bin/test sympy/stats/tests/test_continuous_rv.py" }
+    const subject = "bash:bin/test sympy/stats/tests/test_continuous_rv.py"
+    const settled = (changes: Partial<Frame.ObservedCall>): Frame.ObservedCall => ({
+      flow: "bash",
+      ok: true,
+      summary: "",
+      ordinal: 0,
+      mutates: false,
+      remote: false,
+      signature: subject,
+      subject,
+      at: undefined,
+      input: check,
+      value: null,
+      message: undefined,
+      invalidProbe: undefined,
+      declared: false,
+      failing: false,
+      passing: false,
+      ...changes
     })
+    const frame = (live: Partial<Frame.ObservedCall>) =>
+      Frame.account({
+        state: CellTurn.make({
+          session: "session-1",
+          seat: "anthropic:test-model",
+          modelParams: ModelRequest.GenerationParams.make(),
+          layers: [],
+          capabilityEnvelope: [],
+          placement: Option.none(),
+          contextWindow: window,
+          maxFrames: 3
+        }),
+        calls: [
+          settled({ flow: "edit", ordinal: 0, mutates: true, signature: "edit", subject: "edit", input: {} }),
+          settled({
+            ordinal: 1,
+            signature: `${subject}@base`,
+            at: "base",
+            value: { exitCode: 1 },
+            failing: true
+          }),
+          settled({ ordinal: 2, ...live })
+        ],
+        opened: Option.some(new EngineLike.Observation({ digest: "old", paths: 1, complete: true })),
+        closed: Option.some(new EngineLike.Observation({ digest: "fixed", paths: 1, complete: true })),
+        minted: [],
+        bindings: [],
+        captures: []
+      })
 
-    // The first frame's edit did not fix it, so the frame continues; the failing
-    // baseline it took against `ctx.base` is nonetheless remembered, stamped
-    // before the frame's own change.
-    const observed = of(events, "sufficiency-observed")
-    expect(observed).toEqual([])
-    expect(of(events, "checkpoint-minted")).toEqual([])
+    // The live re-check reported no exit status, so the baseline is the one
+    // failure the frame remembers, at epoch 0: before the frame's own edit.
+    const baseline = frame({ value: { stdout: "collection error" } })
+    expect(baseline.facts.mutations).toBe(1)
+    expect(baseline.facts.failures.map((failure) => [failure.signature, failure.epoch])).toEqual([[subject, 0]])
+
+    // A live re-check that failed too settled after the edit, so it read the
+    // tree the frame closed on and restamps the same check at epoch 1.
+    const failedAgain = frame({ value: { exitCode: 1 }, failing: true })
+    expect(failedAgain.facts.failures.map((failure) => [failure.signature, failure.epoch])).toEqual([[subject, 1]])
   })
 
   it("holds the failing baseline against the frame that fixes it, which recognises the fix", async () => {

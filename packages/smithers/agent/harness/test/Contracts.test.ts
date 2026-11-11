@@ -185,6 +185,353 @@ const jevEvents: ReadonlyArray<AgentEvent.AgentEvent> = [
   })
 ]
 
+// One of each stable event variant, every optional field the case sets present.
+const stableEvents: ReadonlyArray<AgentEvent.AgentEvent> = [
+  new AgentEvent.DisciplineArmed({
+    eventType: "flows.harness.discipline-armed.v1",
+    readOnlyCap: 3,
+    maxFrames: 100,
+    approvalChannel: true,
+    modelCallMs: 300_000,
+    repeatCap: 4,
+    narrowingCap: 1,
+    unmovedCap: 1,
+    unresolvedCap: 1,
+    calls: 8,
+    memoryBytes: 1024,
+    steps: 10_000,
+    timeMs: 500,
+    totalMs: 2_000,
+    callMs: 250
+  }),
+  new AgentEvent.CellProduced({
+    eventType: "flows.harness.cell-produced.v1",
+    cell: cellSource,
+    blocks: 3
+  }),
+  new AgentEvent.CellCallStarted({
+    eventType: "flows.harness.cell-call-started.v1",
+    call: flowCall
+  }),
+  new AgentEvent.CellCallSettled({
+    eventType: "flows.harness.cell-call-settled.v1",
+    flowName: flowCall.flowName,
+    identity: callIdentity,
+    result: Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] })
+  }),
+  new AgentEvent.CellSettled({
+    eventType: "flows.harness.cell-settled.v1",
+    cell: cellSource.digest,
+    outcome: new Cell.Settled({
+      transition: new Cell.Complete({ output: "done" })
+    })
+  }),
+  new AgentEvent.CellSettled({
+    eventType: "flows.harness.cell-settled.v1",
+    cell: cellSource.digest,
+    outcome: new Cell.Raised({ name: "TypeError", message: "x is not a function" })
+  }),
+  new AgentEvent.CellSettled({
+    eventType: "flows.harness.cell-settled.v1",
+    cell: "",
+    outcome: new Cell.Rejected({ code: "no_cell", message: "emit a cell" })
+  }),
+  new AgentEvent.TransitionApplied({
+    eventType: "flows.harness.transition-applied.v1",
+    transition: new Cell.Continue({ justification: "the workspace is still being read" })
+  }),
+  new AgentEvent.TransitionApplied({
+    eventType: "flows.harness.transition-applied.v1",
+    transition: new Cell.Park({ reason: "waiting-input", message: "choose a branch" })
+  }),
+  new AgentEvent.Suspended({
+    eventType: "flows.harness.suspended.v1",
+    reason: new EngineLike.SuspendReason({
+      code: "waiting-quota",
+      message: "the seat is rate limited",
+      details: { retryAfterMs: 1000 }
+    })
+  }),
+  new AgentEvent.TurnOpened({
+    eventType: "flows.harness.turn-opened.v1",
+    seat: "sdk:model",
+    modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: "low" }),
+    activeToolNames: ["flow"],
+    contextDigest: "context-digest"
+  }),
+  new AgentEvent.ModelDelta({
+    eventType: "flows.harness.model-delta.v1",
+    delta: ModelEvent.ModelEvent.TextDelta({
+      type: "text-delta",
+      id: "text-1",
+      text: "hello"
+    })
+  }),
+  new AgentEvent.ModelSettled({
+    eventType: "flows.harness.model-settled.v1",
+    message: assistantMessage,
+    usage: ModelEvent.Usage.make({ inputTokens: 1, outputTokens: 2 })
+  }),
+  new AgentEvent.CompactionSettled({
+    eventType: "flows.harness.compaction-settled.v1",
+    replacedPrefixDigest: "prefix-digest",
+    summary: assistantMessage
+  }),
+  new AgentEvent.SteeringDrained({
+    eventType: "flows.harness.steering-drained.v1",
+    messages: [ModelRequest.Message.user("continue")]
+  }),
+  new AgentEvent.TurnClosed({
+    eventType: "flows.harness.turn-closed.v1",
+    stopReason: "tool-calls",
+    outcome: "continue"
+  }),
+  new AgentEvent.PermissionRequired({
+    eventType: "flows.harness.permission-required.v1",
+    request: permissionRequest
+  }),
+  new AgentEvent.Aborted({
+    eventType: "flows.harness.aborted.v1",
+    reason: "interrupted"
+  }),
+  new AgentEvent.NarrowedDemanded({
+    eventType: "flows.harness.narrowed-demanded.v1",
+    flow: "bash",
+    broader: "{\"command\":\"check suite\"}",
+    narrower: "{\"command\":\"check suite -only one\"}",
+    broaderDigest: "digest-before",
+    currentDigest: "digest-after",
+    nextFrame: 7
+  }),
+  new AgentEvent.UnmovedDemanded({
+    eventType: "flows.harness.unmoved-demanded.v1",
+    openedDigest: "digest-opened",
+    currentDigest: "digest-opened",
+    nextFrame: 7
+  }),
+  new AgentEvent.UnresolvedDemanded({
+    eventType: "flows.harness.unresolved-demanded.v1",
+    flow: "bash",
+    failed: "{\"command\":\"check suite\"}",
+    instead: "{\"command\":\"check suite -only one\"}",
+    currentDigest: "digest-after",
+    nextFrame: 7
+  }),
+  new AgentEvent.FailedCallDemanded({
+    eventType: "flows.harness.failed-call-demanded.v1",
+    failures: [{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }],
+    nextFrame: 7
+  }),
+  new AgentEvent.UnobservedDemanded({
+    eventType: "flows.harness.unobserved-demanded.v1",
+    calls: [{ flow: "bash", ordinal: 3, ok: true, summary: "{\"exitCode\":0}" }],
+    nextFrame: 7
+  }),
+  new AgentEvent.OutputDemanded({
+    eventType: "flows.harness.output-demanded.v1",
+    note: "## Your previous answer did not validate",
+    nextFrame: 7
+  }),
+  new AgentEvent.ClaimDemanded({
+    eventType: "flows.harness.claim-demanded.v1",
+    complete: 0.12,
+    overclaims: 0.91,
+    invented: 0.93,
+    latencyMs: 480,
+    demanded: true,
+    currentDigest: "digest-after",
+    nextFrame: 7
+  }),
+  new AgentEvent.SupervisorSettled({
+    eventType: "flows.harness.supervisor-settled.v1",
+    scope: "session-1",
+    frame: 3,
+    thrashing: 0.62,
+    onTarget: 0.4,
+    suspect: 0.1,
+    frustrated: "strong",
+    anxious: "mild",
+    scared: "none",
+    confused: "none",
+    confident: "none",
+    needsHelp: "stuck",
+    crossed: true,
+    nudged: false,
+    latencyMs: 310
+  }),
+  new AgentEvent.SupervisorUnjudged({
+    eventType: "flows.harness.supervisor-unjudged.v1",
+    scope: "session-1",
+    frame: 4,
+    reason: "timeout",
+    detail: "The gateway did not answer within 1500 ms"
+  }),
+  new AgentEvent.SupervisorMemoryFailed({
+    eventType: "flows.harness.supervisor-memory-failed.v1",
+    scope: "session-1",
+    frame: 4,
+    operation: "remember",
+    detail: "database is locked"
+  }),
+  new AgentEvent.Resolved({
+    eventType: "flows.harness.resolved.v1",
+    message: assistantMessage
+  }),
+  new AgentEvent.ModelRequested({
+    eventType: "flows.harness.model-requested.v1",
+    scope: "session-1",
+    frame: 3,
+    attempt: 1,
+    purpose: "frame",
+    seat: "anthropic:model",
+    binding: new EngineLike.Binding({ routeId: "anthropic-direct", protocolId: "anthropic-messages" }),
+    request: ModelRequest.ModelRequest.make({
+      modelId: "model",
+      system: [ModelRequest.SystemPart.make({ text: "cell contract" })],
+      messages: [ModelRequest.Message.user("start")],
+      tools: [],
+      toolChoice: "none",
+      params: ModelRequest.GenerationParams.make({ maxTokens: 1024 })
+    })
+  }),
+  new AgentEvent.ModelSelected({
+    eventType: "flows.harness.model-selected.v1",
+    seat: "secondary"
+  }),
+  new AgentEvent.ModelFailed({
+    eventType: AgentEvent.eventType.modelFailed,
+    scope: "session-1",
+    frame: 3,
+    attempt: 1,
+    purpose: "frame",
+    code: "call_timeout",
+    durationMillis: 90_000,
+    stages: { firstEventMs: 1_200 },
+    tries: 2
+  }),
+  new AgentEvent.SeatFailedOver({
+    eventType: AgentEvent.eventType.seatFailedOver,
+    from: "first",
+    to: "second",
+    code: "rate_limited",
+    resetAtEpochMillis: 1000,
+    retryAfterMillis: 1000,
+    quotaScope: "model",
+    httpStatus: 429
+  }),
+  new AgentEvent.ModelParked({
+    eventType: AgentEvent.eventType.modelParked,
+    seat: "second",
+    wakeAt: 1000,
+    source: "reset",
+    code: "rate_limited"
+  }),
+  new AgentEvent.ModelUnparked({
+    eventType: AgentEvent.eventType.modelUnparked,
+    seat: "second",
+    at: 1000
+  }),
+  new AgentEvent.DecisionSettled({
+    eventType: "flows.harness.decision-settled.v1",
+    scope: "session-1",
+    frame: 3,
+    classifier: "triage/relevance",
+    digest: "classifier-digest",
+    state: { title: "a pull request" },
+    questions: {
+      relevant: Evaluator.BooleanQuestion.of({ instructions: "Relevant?", criteria: { true: "yes", false: "no" } }),
+      role: Evaluator.ChoiceQuestion.of({
+        instructions: "Which?",
+        criteria: { lead: "leads", support: "supports" }
+      })
+    },
+    answers: {
+      relevant: { kind: "boolean", p: 0.8 },
+      role: { kind: "choice", value: "lead", probabilities: { lead: 0.7, support: 0.3 }, confidence: 0.91 }
+    },
+    latencyMs: 480,
+    acted: true,
+    decidedBy: "jev"
+  }),
+  // The ten variants this list used to omit. A round-trip suite that names
+  // two thirds of a union proves nothing about the third it skipped.
+  new AgentEvent.CellPrinted({
+    eventType: "flows.harness.cell-printed.v1",
+    cell: "cell-digest",
+    text: "printed output"
+  }),
+  new AgentEvent.CellRejectedInFrame({
+    eventType: "flows.harness.cell-rejected-in-frame.v1",
+    attempt: 1,
+    code: "compile_failed",
+    message: "SyntaxError at line 2"
+  }),
+  new AgentEvent.CheckpointMinted({
+    eventType: "flows.harness.checkpoint-minted.v1",
+    id: "cp-1",
+    ref: "jj:abcdef",
+    cell: "cell-digest",
+    ordinal: 0
+  }),
+  new AgentEvent.ModelRetried({
+    eventType: "flows.harness.model-retried.v1",
+    attempt: 2,
+    code: "overloaded",
+    delayMillis: 250
+  }),
+  new AgentEvent.MutationObserved({
+    eventType: "flows.harness.mutation-observed.v1",
+    basis: "observed",
+    mutated: true,
+    digest: "tree-digest",
+    paths: 12,
+    declaredWrites: 1
+  }),
+  new AgentEvent.NarrowOnlyDemanded({
+    eventType: "flows.harness.narrow-only-demanded.v1",
+    flow: "bash",
+    check: "pytest -k one",
+    targets: ["tests/test_one.py"],
+    currentDigest: "tree-digest",
+    nextFrame: 4
+  }),
+  new AgentEvent.ReadOnlyDemanded({
+    eventType: "flows.harness.read-only-demanded.v1",
+    streak: 12,
+    cap: 12,
+    nextFrame: 13,
+    nextAction: "write"
+  }),
+  new AgentEvent.ReadOnlyDemandIssued({
+    eventType: "flows.harness.read-only-demand-issued.v1",
+    streak: 12,
+    cap: 12,
+    nextFrame: 13
+  }),
+  new AgentEvent.RepeatDemanded({
+    eventType: "flows.harness.repeat-demanded.v1",
+    frames: 4,
+    cap: 4,
+    nextFrame: 5
+  }),
+  new AgentEvent.SufficiencyObserved({
+    eventType: "flows.harness.sufficiency-observed.v1",
+    flow: "bash",
+    failed: "pytest tests",
+    passed: "pytest tests",
+    epoch: 0,
+    nextFrame: 6
+  }),
+  new AgentEvent.VacuousVerificationObserved({
+    eventType: "flows.harness.vacuous-verification-observed.v1",
+    flow: "bash",
+    check: "pytest tests",
+    callDigest: "call-digest",
+    nextFrame: 7
+  }),
+  ...jevEvents
+]
+
 describe("AgentEvent", () => {
   it("retains every member and its ordered unique tag after tagged-union validation", () => {
     const union = AgentEvent.AgentEvent
@@ -197,353 +544,7 @@ describe("AgentEvent", () => {
   })
 
   it("round-trips every stable event variant", () => {
-    const events: ReadonlyArray<AgentEvent.AgentEvent> = [
-      new AgentEvent.DisciplineArmed({
-        eventType: "flows.harness.discipline-armed.v1",
-        readOnlyCap: 3,
-        maxFrames: 100,
-        approvalChannel: true,
-        modelCallMs: 300_000,
-        repeatCap: 4,
-        narrowingCap: 1,
-        unmovedCap: 1,
-        unresolvedCap: 1,
-        calls: 8,
-        memoryBytes: 1024,
-        steps: 10_000,
-        timeMs: 500,
-        totalMs: 2_000,
-        callMs: 250
-      }),
-      new AgentEvent.CellProduced({
-        eventType: "flows.harness.cell-produced.v1",
-        cell: cellSource,
-        blocks: 3
-      }),
-      new AgentEvent.CellCallStarted({
-        eventType: "flows.harness.cell-call-started.v1",
-        call: flowCall
-      }),
-      new AgentEvent.CellCallSettled({
-        eventType: "flows.harness.cell-call-settled.v1",
-        flowName: flowCall.flowName,
-        identity: callIdentity,
-        result: Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] })
-      }),
-      new AgentEvent.CellSettled({
-        eventType: "flows.harness.cell-settled.v1",
-        cell: cellSource.digest,
-        outcome: new Cell.Settled({
-          transition: new Cell.Complete({ output: "done" })
-        })
-      }),
-      new AgentEvent.CellSettled({
-        eventType: "flows.harness.cell-settled.v1",
-        cell: cellSource.digest,
-        outcome: new Cell.Raised({ name: "TypeError", message: "x is not a function" })
-      }),
-      new AgentEvent.CellSettled({
-        eventType: "flows.harness.cell-settled.v1",
-        cell: "",
-        outcome: new Cell.Rejected({ code: "no_cell", message: "emit a cell" })
-      }),
-      new AgentEvent.TransitionApplied({
-        eventType: "flows.harness.transition-applied.v1",
-        transition: new Cell.Continue({ justification: "the workspace is still being read" })
-      }),
-      new AgentEvent.TransitionApplied({
-        eventType: "flows.harness.transition-applied.v1",
-        transition: new Cell.Park({ reason: "waiting-input", message: "choose a branch" })
-      }),
-      new AgentEvent.Suspended({
-        eventType: "flows.harness.suspended.v1",
-        reason: new EngineLike.SuspendReason({
-          code: "waiting-quota",
-          message: "the seat is rate limited",
-          details: { retryAfterMs: 1000 }
-        })
-      }),
-      new AgentEvent.TurnOpened({
-        eventType: "flows.harness.turn-opened.v1",
-        seat: "sdk:model",
-        modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: "low" }),
-        activeToolNames: ["flow"],
-        contextDigest: "context-digest"
-      }),
-      new AgentEvent.ModelDelta({
-        eventType: "flows.harness.model-delta.v1",
-        delta: ModelEvent.ModelEvent.TextDelta({
-          type: "text-delta",
-          id: "text-1",
-          text: "hello"
-        })
-      }),
-      new AgentEvent.ModelSettled({
-        eventType: "flows.harness.model-settled.v1",
-        message: assistantMessage,
-        usage: ModelEvent.Usage.make({ inputTokens: 1, outputTokens: 2 })
-      }),
-      new AgentEvent.CompactionSettled({
-        eventType: "flows.harness.compaction-settled.v1",
-        replacedPrefixDigest: "prefix-digest",
-        summary: assistantMessage
-      }),
-      new AgentEvent.SteeringDrained({
-        eventType: "flows.harness.steering-drained.v1",
-        messages: [ModelRequest.Message.user("continue")]
-      }),
-      new AgentEvent.TurnClosed({
-        eventType: "flows.harness.turn-closed.v1",
-        stopReason: "tool-calls",
-        outcome: "continue"
-      }),
-      new AgentEvent.PermissionRequired({
-        eventType: "flows.harness.permission-required.v1",
-        request: permissionRequest
-      }),
-      new AgentEvent.Aborted({
-        eventType: "flows.harness.aborted.v1",
-        reason: "interrupted"
-      }),
-      new AgentEvent.NarrowedDemanded({
-        eventType: "flows.harness.narrowed-demanded.v1",
-        flow: "bash",
-        broader: "{\"command\":\"check suite\"}",
-        narrower: "{\"command\":\"check suite -only one\"}",
-        broaderDigest: "digest-before",
-        currentDigest: "digest-after",
-        nextFrame: 7
-      }),
-      new AgentEvent.UnmovedDemanded({
-        eventType: "flows.harness.unmoved-demanded.v1",
-        openedDigest: "digest-opened",
-        currentDigest: "digest-opened",
-        nextFrame: 7
-      }),
-      new AgentEvent.UnresolvedDemanded({
-        eventType: "flows.harness.unresolved-demanded.v1",
-        flow: "bash",
-        failed: "{\"command\":\"check suite\"}",
-        instead: "{\"command\":\"check suite -only one\"}",
-        currentDigest: "digest-after",
-        nextFrame: 7
-      }),
-      new AgentEvent.FailedCallDemanded({
-        eventType: "flows.harness.failed-call-demanded.v1",
-        failures: [{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }],
-        nextFrame: 7
-      }),
-      new AgentEvent.UnobservedDemanded({
-        eventType: "flows.harness.unobserved-demanded.v1",
-        calls: [{ flow: "bash", ordinal: 3, ok: true, summary: "{\"exitCode\":0}" }],
-        nextFrame: 7
-      }),
-      new AgentEvent.OutputDemanded({
-        eventType: "flows.harness.output-demanded.v1",
-        note: "## Your previous answer did not validate",
-        nextFrame: 7
-      }),
-      new AgentEvent.ClaimDemanded({
-        eventType: "flows.harness.claim-demanded.v1",
-        complete: 0.12,
-        overclaims: 0.91,
-        invented: 0.93,
-        latencyMs: 480,
-        demanded: true,
-        currentDigest: "digest-after",
-        nextFrame: 7
-      }),
-      new AgentEvent.SupervisorSettled({
-        eventType: "flows.harness.supervisor-settled.v1",
-        scope: "session-1",
-        frame: 3,
-        thrashing: 0.62,
-        onTarget: 0.4,
-        suspect: 0.1,
-        frustrated: "strong",
-        anxious: "mild",
-        scared: "none",
-        confused: "none",
-        confident: "none",
-        needsHelp: "stuck",
-        crossed: true,
-        nudged: false,
-        latencyMs: 310
-      }),
-      new AgentEvent.SupervisorUnjudged({
-        eventType: "flows.harness.supervisor-unjudged.v1",
-        scope: "session-1",
-        frame: 4,
-        reason: "timeout",
-        detail: "The gateway did not answer within 1500 ms"
-      }),
-      new AgentEvent.SupervisorMemoryFailed({
-        eventType: "flows.harness.supervisor-memory-failed.v1",
-        scope: "session-1",
-        frame: 4,
-        operation: "remember",
-        detail: "database is locked"
-      }),
-      new AgentEvent.Resolved({
-        eventType: "flows.harness.resolved.v1",
-        message: assistantMessage
-      }),
-      new AgentEvent.ModelRequested({
-        eventType: "flows.harness.model-requested.v1",
-        scope: "session-1",
-        frame: 3,
-        attempt: 1,
-        purpose: "frame",
-        seat: "anthropic:model",
-        binding: new EngineLike.Binding({ routeId: "anthropic-direct", protocolId: "anthropic-messages" }),
-        request: ModelRequest.ModelRequest.make({
-          modelId: "model",
-          system: [ModelRequest.SystemPart.make({ text: "cell contract" })],
-          messages: [ModelRequest.Message.user("start")],
-          tools: [],
-          toolChoice: "none",
-          params: ModelRequest.GenerationParams.make({ maxTokens: 1024 })
-        })
-      }),
-      new AgentEvent.ModelSelected({
-        eventType: "flows.harness.model-selected.v1",
-        seat: "secondary"
-      }),
-      new AgentEvent.ModelFailed({
-        eventType: AgentEvent.eventType.modelFailed,
-        scope: "session-1",
-        frame: 3,
-        attempt: 1,
-        purpose: "frame",
-        code: "call_timeout",
-        durationMillis: 90_000,
-        stages: { firstEventMs: 1_200 },
-        tries: 2
-      }),
-      new AgentEvent.SeatFailedOver({
-        eventType: AgentEvent.eventType.seatFailedOver,
-        from: "first",
-        to: "second",
-        code: "rate_limited",
-        resetAtEpochMillis: 1000,
-        retryAfterMillis: 1000,
-        quotaScope: "model",
-        httpStatus: 429
-      }),
-      new AgentEvent.ModelParked({
-        eventType: AgentEvent.eventType.modelParked,
-        seat: "second",
-        wakeAt: 1000,
-        source: "reset",
-        code: "rate_limited"
-      }),
-      new AgentEvent.ModelUnparked({
-        eventType: AgentEvent.eventType.modelUnparked,
-        seat: "second",
-        at: 1000
-      }),
-      new AgentEvent.DecisionSettled({
-        eventType: "flows.harness.decision-settled.v1",
-        scope: "session-1",
-        frame: 3,
-        classifier: "triage/relevance",
-        digest: "classifier-digest",
-        state: { title: "a pull request" },
-        questions: {
-          relevant: Evaluator.BooleanQuestion.of({ instructions: "Relevant?", criteria: { true: "yes", false: "no" } }),
-          role: Evaluator.ChoiceQuestion.of({
-            instructions: "Which?",
-            criteria: { lead: "leads", support: "supports" }
-          })
-        },
-        answers: {
-          relevant: { kind: "boolean", p: 0.8 },
-          role: { kind: "choice", value: "lead", probabilities: { lead: 0.7, support: 0.3 }, confidence: 0.91 }
-        },
-        latencyMs: 480,
-        acted: true,
-        decidedBy: "jev"
-      }),
-      // The ten variants this list used to omit. A round-trip suite that names
-      // two thirds of a union proves nothing about the third it skipped.
-      new AgentEvent.CellPrinted({
-        eventType: "flows.harness.cell-printed.v1",
-        cell: "cell-digest",
-        text: "printed output"
-      }),
-      new AgentEvent.CellRejectedInFrame({
-        eventType: "flows.harness.cell-rejected-in-frame.v1",
-        attempt: 1,
-        code: "compile_failed",
-        message: "SyntaxError at line 2"
-      }),
-      new AgentEvent.CheckpointMinted({
-        eventType: "flows.harness.checkpoint-minted.v1",
-        id: "cp-1",
-        ref: "jj:abcdef",
-        cell: "cell-digest",
-        ordinal: 0
-      }),
-      new AgentEvent.ModelRetried({
-        eventType: "flows.harness.model-retried.v1",
-        attempt: 2,
-        code: "overloaded",
-        delayMillis: 250
-      }),
-      new AgentEvent.MutationObserved({
-        eventType: "flows.harness.mutation-observed.v1",
-        basis: "observed",
-        mutated: true,
-        digest: "tree-digest",
-        paths: 12,
-        declaredWrites: 1
-      }),
-      new AgentEvent.NarrowOnlyDemanded({
-        eventType: "flows.harness.narrow-only-demanded.v1",
-        flow: "bash",
-        check: "pytest -k one",
-        targets: ["tests/test_one.py"],
-        currentDigest: "tree-digest",
-        nextFrame: 4
-      }),
-      new AgentEvent.ReadOnlyDemanded({
-        eventType: "flows.harness.read-only-demanded.v1",
-        streak: 12,
-        cap: 12,
-        nextFrame: 13,
-        nextAction: "write"
-      }),
-      new AgentEvent.ReadOnlyDemandIssued({
-        eventType: "flows.harness.read-only-demand-issued.v1",
-        streak: 12,
-        cap: 12,
-        nextFrame: 13
-      }),
-      new AgentEvent.RepeatDemanded({
-        eventType: "flows.harness.repeat-demanded.v1",
-        frames: 4,
-        cap: 4,
-        nextFrame: 5
-      }),
-      new AgentEvent.SufficiencyObserved({
-        eventType: "flows.harness.sufficiency-observed.v1",
-        flow: "bash",
-        failed: "pytest tests",
-        passed: "pytest tests",
-        epoch: 0,
-        nextFrame: 6
-      }),
-      new AgentEvent.VacuousVerificationObserved({
-        eventType: "flows.harness.vacuous-verification-observed.v1",
-        flow: "bash",
-        check: "pytest tests",
-        callDigest: "call-digest",
-        nextFrame: 7
-      }),
-      ...jevEvents
-    ]
-
-    for (const event of events) {
+    for (const event of stableEvents) {
       expect(
         Schema.decodeUnknownSync(AgentEvent.AgentEvent)(
           Schema.encodeSync(AgentEvent.AgentEvent)(event)
@@ -556,7 +557,7 @@ describe("AgentEvent", () => {
     // a projection reading a literal the emitter no longer writes returns an
     // empty transcript with nothing failing.
     const declared = new Set<string>(Object.values(AgentEvent.eventType))
-    const constructed = new Set<string>(events.map((event) => event.eventType))
+    const constructed = new Set<string>(stableEvents.map((event) => event.eventType))
     expect([...constructed].filter((value) => !declared.has(value))).toEqual([])
     expect([...declared].filter((value) => !constructed.has(value))).toEqual([])
   })
@@ -640,40 +641,30 @@ describe("AgentEvent", () => {
     })
   })
 
-  it("round-trips the same variants with every optional field absent", () => {
-    const events: ReadonlyArray<AgentEvent.AgentEvent> = [
-      new AgentEvent.DisciplineArmed({
-        eventType: "flows.harness.discipline-armed.v1",
-        readOnlyCap: 0,
-        maxFrames: 1,
-        approvalChannel: false,
-        modelCallMs: 0,
-        repeatCap: 0,
-        narrowingCap: 0,
-        unmovedCap: 0,
-        unresolvedCap: 0
-      }),
-      new AgentEvent.Suspended({
-        eventType: "flows.harness.suspended.v1",
-        reason: new EngineLike.SuspendReason({ code: "permission-required", message: "fs:write is not granted" })
-      }),
-      new AgentEvent.TransitionApplied({
-        eventType: "flows.harness.transition-applied.v1",
-        transition: new Cell.Complete({ output: "" })
-      })
-    ]
-
-    for (const event of events) {
-      const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)(
-        Schema.encodeSync(AgentEvent.AgentEvent)(event)
-      )
-      expect(decoded).toEqual(event)
+  it("round-trips every stable event variant with every optional field absent", () => {
+    // The optional keys are read off each member's own schema, so a field
+    // added as optional joins this round trip without anybody listing it.
+    const optionalKeys = (event: AgentEvent.AgentEvent): ReadonlyArray<string> =>
+      Object.entries(
+        (AgentEvent.AgentEvent.cases[event._tag] as unknown as {
+          readonly fields: Readonly<Record<string, Schema.Top>>
+        }).fields
+      ).flatMap(([key, field]) => field.ast.context?.isOptional === true ? [key] : [])
+    let stripped = 0
+    for (const event of stableEvents) {
+      const keys = optionalKeys(event)
+      const encoded = { ...(Schema.encodeSync(AgentEvent.AgentEvent)(event) as Record<string, unknown>) }
+      for (const key of keys) delete encoded[key]
+      const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)(encoded)
       // An absent optional stays absent across the round trip: a key carrying
       // an explicit `undefined` is a different journal payload.
-      expect(Object.keys(decoded)).toEqual(Object.keys(event))
+      expect(keys.filter((key) => key in decoded)).toEqual([])
+      expect(Schema.encodeSync(AgentEvent.AgentEvent)(decoded)).toEqual(encoded)
+      stripped += keys.filter((key) => key in event).length
     }
-    expect("calls" in events[0]!).toBe(false)
-    expect("verification" in events[1]!).toBe(false)
+    // The list sets optional fields for the round trip above, so stripping
+    // them here removes something.
+    expect(stripped).toBeGreaterThan(0)
   })
 
   it("reuses one reason set for every unjudged reading", () => {
@@ -754,15 +745,22 @@ describe("AgentEvent", () => {
     expect(Schema.encodeSync(AgentEvent.AgentEvent)(decoded)).toEqual(payload)
   })
 
+  /** The one event of `tag` among the Jev events, checked by tag before use. */
+  const jevEvent = (tag: AgentEvent.AgentEvent["_tag"]): AgentEvent.AgentEvent => {
+    const found = jevEvents.filter((event) => event._tag === tag)
+    expect(found).toHaveLength(1)
+    return found[0]!
+  }
+
   it("decodes a compaction without a summary", () => {
-    const compaction = jevEvents[4]!
+    const compaction = jevEvent("compaction-settled")
     const encoded = Schema.encodeSync(AgentEvent.AgentEvent)(compaction) as Record<string, unknown>
     expect("summary" in encoded).toBe(false)
     expect(Schema.decodeUnknownSync(AgentEvent.AgentEvent)(encoded)).toEqual(compaction)
   })
 
   it("decodes a reading journaled with the retired inserted rows and drops them", () => {
-    const reading = jevEvents[5]!
+    const reading = jevEvent("supervisor-settled")
     const encoded = Schema.encodeSync(AgentEvent.AgentEvent)(reading) as Record<string, unknown>
     const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)({ ...encoded, inserted: [0] })
     expect(decoded).toEqual(reading)
@@ -770,7 +768,7 @@ describe("AgentEvent", () => {
   })
 
   it("decodes a reading journaled with the retired remembered indexes and drops them", () => {
-    const reading = jevEvents[5]!
+    const reading = jevEvent("supervisor-settled")
     const encoded = Schema.encodeSync(AgentEvent.AgentEvent)(reading) as Record<string, unknown>
     const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)({ ...encoded, remembered: [0, 2] })
     expect(decoded).toEqual(reading)
