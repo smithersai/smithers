@@ -134,7 +134,7 @@ describe("record", () => {
   })
 
   test("refuses a row without its commit, ref or event, and an event it doesn't know", async () => {
-    for (const partial of [{ sha: "short" }, { ref: "" }, { event: "schedule" as never }]) {
+    for (const partial of [{ sha: "short" }, { ref: "" }, { event: "workflow_dispatch" as never }]) {
       const exit = await runtime.runPromiseExit(RepoRuns.record(run(`ci:${uuid()}`, partial)))
       expect(exit._tag).toBe("Failure")
     }
