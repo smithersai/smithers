@@ -11,7 +11,7 @@ import * as Accounts from "../worker/Accounts.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { wikiRepository } from "../worker/Wiki.vibe"
 import { fakeClient, seed } from "../fuzz/issues-node-fake.vibe"
-import { delegated as connectionHost, reach } from "../fuzz/delegated.vibe"
+import { BROKER, delegated as connectionHost, reach } from "../fuzz/delegated.vibe"
 import { faultyStore } from "../fuzz/faulty-store.ts"
 import { ORIGIN, github, setupWith } from "./support/accountsWorld.vibe"
 
@@ -31,8 +31,13 @@ effect function world(setup: Partial<Accounts.Setup> = {}, delegated = true) {
   const fake = seed()
   fake.files[`${wikiRepository.root}/${PAGE}.md`] = SOURCE
   const site = try connectionHost(fakeClient(fake), reach())
-  const accounts = try Accounts.make("accounts-routes", store.storage, { ...setupWith(github([{ id: 1, login: "will" }, { id: 7, login: "ada" }])), ...(delegated ? { delegate: site.delegate } : {}), ...setup })
-    .pipe(Effect.provideService(HttpClient.HttpClient, site.http))
+  /** Runs before each request the site sends: a test's concurrent event, such as a sign-out in another tab. */
+  const hooks: { beforeSend: void!! ; sent: Array<string> } = { beforeSend: Effect.void, sent: [] }
+  const network = site.http.pipe(HttpClient.tapRequest((request) => Effect.suspend(() => { hooks.sent.push(new URL(request.url).origin); return hooks.beforeSend })))
+  /** The object as workerd starts it over this storage, as after an eviction. */
+  const start = () => Accounts.make("accounts-routes", store.storage, { ...setupWith(github([{ id: 1, login: "will" }, { id: 7, login: "ada" }])), ...(delegated ? { delegate: site.delegate } : {}), ...setup })
+    .pipe(Effect.provideService(HttpClient.HttpClient, network))
+  const accounts = try start()
   /** One browser request from the site's own origin. */
   const call = (method: string, path: string, cookie = "", body?: unknown) => effect {
     const request = try HttpClientRequest.toWeb(HttpClientRequest.make(method as "GET" | "POST")(ORIGIN + path).pipe(
@@ -56,7 +61,11 @@ effect function world(setup: Partial<Accounts.Setup> = {}, delegated = true) {
   /** Ada's smithers.sh connection, as a completed Connect GitHub stores it. */
   const connect = (id: string) => promise(() => store.storage.put(`delegation/${id}`, { ...site.connection, expires: Number.MAX_SAFE_INTEGER }))
   const connection = (id: string) => promise(() => store.storage.get(`delegation/${id}`))
-  return { accounts, store, site, call, signIn, device, connect, connection }
+  /** Every session ends, as a sign-out in another tab does. */
+  const signOutEveryone = effect {
+    for (const key of (try promise(() => store.storage.list({ prefix: "session/" }))).keys()) try promise(() => store.storage.delete(key))
+  }
+  return { accounts, start, store, site, call, signIn, device, connect, connection, hooks, signOutEveryone }
 }
 
 const body = (response: globalThis.Response) => promise(() => response.json())
@@ -128,6 +137,39 @@ describe("the principal behind a wiki request", () => {
     try w.connect("7")
     const save = try w.call("POST", "/api/wiki", ada, { op: "save", page: PAGE, base: SOURCE, text: "# Page\n\nBetter.\n", key: "k1" })
     expect([save.status, try body(save)]).toEqual([403, { reason: "forbidden" }])
+  }))
+
+  it.live("a signed-in person with no connection disconnects without asking smithers.sh", () => scoped(effect {
+    const w = try world()
+    const ada = try w.signIn(7)
+    const before = w.hooks.sent.length
+    const disconnect = try w.call("POST", "/api/auth/disconnect", ada)
+    expect([disconnect.status, disconnect.headers.get("location"), w.hooks.sent.length - before]).toEqual([303, "/?issues=1", 0])
+  }))
+
+  it.live("a read whose person signs out while smithers.sh refuses the ended connection still answers, and forgets no one", () => scoped(effect {
+    const w = try world()
+    const ada = try w.signIn(7)
+    try w.connect("7")
+    try w.site.end()
+    w.hooks.beforeSend = w.signOutEveryone
+    const wiki = try w.call("GET", `/api/wiki?page=${PAGE}`, ada)
+    // The read asked smithers.sh, so it began signed in and connected.
+    const askedForWiki = w.hooks.sent.includes(BROKER)
+    w.hooks.sent.length = 0
+    const page = (try body(wiki)) as { readonly pages: ReadonlyArray<{ readonly source: string }> }
+    const again = try w.signIn(7)
+    const issues = try w.call("GET", "/api/issues", again)
+    expect([wiki.status, page.pages[0]?.source, askedForWiki, issues.status, w.hooks.sent.includes(BROKER)]).toEqual([200, SOURCE, true, 200, true])
+    // No session is left to name whose connection ended, so the stored one stays until the person's next read.
+    expect(try w.connection("7")).toBeDefined()
+  }))
+
+  it.live("the per-site token migration runs once: a restarted object keeps a github/ record written after it", () => scoped(effect {
+    const w = try world()
+    try promise(() => w.store.storage.put("github/later", { token: "sealed" }))
+    try w.start()
+    expect(try promise(() => w.store.storage.get("github/later"))).toEqual({ token: "sealed" })
   }))
 
   it.live("a chat draft the engine can't record or open answers unavailable", () => scoped(effect {

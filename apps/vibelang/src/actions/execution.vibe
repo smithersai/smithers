@@ -34,6 +34,12 @@ export type HistoryInvocation = Exclude<Invocation, { readonly kind: "post" | "t
 export function isHistory(invocation: Invocation): invocation is HistoryInvocation {
   return invocation.kind !== "post" && invocation.kind !== "tour"
 }
+/** `prepare` for a run worker/HistoryActions drives: a post or a tour isn't one (`not-found`). */
+export effect function prepareHistory(name: string, input: Schema.Json, id: string) {
+  const invocation = try prepare(name, input, id)
+  if (!isHistory(invocation)) throw new ActionFailure({ code: "not-found" })
+  return invocation
+}
 
 /** A history write answers its refusal as a value, so its flow succeeds. The run still failed: nothing was written. */
 export function refused(answer: unknown): boolean {

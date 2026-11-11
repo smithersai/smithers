@@ -6,7 +6,7 @@ import { Flow, RunMetrics } from "@smthrs/flow"
 import { Run, type Role } from "../src/actions/Actions.vibe"
 import { allowed, registration } from "../src/actions/catalog.vibe"
 import { RunRequest } from "../src/actions/wire.vibe"
-import { isHistory, prepare, refused } from "../src/actions/execution.vibe"
+import { isHistory, prepare, prepareHistory, refused } from "../src/actions/execution.vibe"
 import { cancellable, historyPassed, isReplyChild, replyChildId, settledResult, settledState, startRuns, startSettles, tourSettles } from "../src/core/actionRunDecision.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
@@ -102,8 +102,8 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
     if (outcome._tag === "Settled") {
       // Only a settled run has a receipt, so only it prepares the stored request: a request stored by an older deployment
       // or before a crash may no longer prepare, and the host drives such a run without it.
-      const invocation = try Effect.orDie(prepare(request.flow, request.input, request.id))
-      const receipt: Option.Option<Flow.Result<unknown, unknown>> = isHistory(invocation) ? try Effect.orDie(historyHost.receipt(request, invocation)) : Option.none()
+      const invocation = try Effect.orDie(prepareHistory(request.flow, request.input, request.id))
+      const receipt = try Effect.orDie(historyHost.receipt(request, invocation))
       if (Option.isSome(receipt) && receipt.value._tag === "Complete") {
         const result = receipt.value.exit
         const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : "Action failed"

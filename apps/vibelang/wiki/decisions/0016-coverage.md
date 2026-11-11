@@ -2301,6 +2301,7 @@ Deleted, because no production input reaches it:
 | `src/history/Sequencer.vibe`, `trailerOf`'s `named === null` | `find` with a `!== null` predicate never answers null. The predicate is now a type guard. |
 | `worker/sandboxProbeFetch.vibe`, `leaseFor`'s `split("/")[0] ?? ""` | `split` always yields a first part. |
 | `worker/Issues.vibe`, the timeline read's `event.event ?? ""` | `GitHub.IssueChanges.TimelineEvent` requires `event` (since 2026-11-08): a timeline with an unnamed event fails to decode and the read answers unavailable. |
+| `worker/ActionRuns.vibe`, the settled alarm's `isHistory(invocation) ? … : Option.none()` | The branch runs only for a flow that is neither a tour nor a post, and `prepare` answers kind `post` or `tour` only for those two names. `prepareHistory` (`src/actions/execution.vibe`) now says so in the type: it refuses a post or a tour as `not-found`. |
 | `worker/accountObject.vibe`, `answer.reason ?? "unknown"` on a machine refusal | Every machine refusal goes through `refused(reason)`. The machine's `Answer` is now a union whose refusal member requires `reason`. |
 | `worker/machineObject.vibe`, `result.tool === "run" ? … : ""` | A `run` call always answers a `RunResult`. Fixed upstream: `@smthrs/sandbox`'s `SandboxTools.execute` now answers `ResultOf<C>`, the call's own result type, with a type test. |
 
@@ -2325,6 +2326,8 @@ New tests:
 | `test/pages.test.vibe` | an absent epic on either side of the stack sort |
 | `test/sequencerTrailer.test.vibe` | a trailer paragraph with a folded continuation line, and one whose later line is prose |
 | `test/accountsConfig.test.vibe` | a configured GitHub App slug and API base |
+| `test/accountsRoutes.coverage.test.vibe` (session 9) | a signed-in person with no connection disconnecting without a smithers.sh call; a wiki and an issues read whose person signs out (an injected network hook ends every session) while smithers.sh refuses the ended connection; an object restarted over migrated storage |
+| `test/actionClients.coverage.test.vibe` | `prepareHistory` for a history run, a post and a tour |
 | `test/accountObject.coverage.test.vibe` | the object's refusals of a bad operation id and a stale generation, carried through the gateway with no reason |
 
 Waiting: `src/history/tools.vibe:93`, the `epic` arm's presence test for a `from` the type requires

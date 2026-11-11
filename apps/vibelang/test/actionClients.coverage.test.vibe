@@ -4,7 +4,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
 import { LiveActions } from "../src/actions/LiveActions.vibe"
-import { prepare } from "../src/actions/execution.vibe"
+import { prepare, prepareHistory } from "../src/actions/execution.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 
 interface FaultAnswer { readonly status: number; readonly body: string }
@@ -86,6 +86,13 @@ describe("LiveActions follows one run", () => {
 })
 
 describe("prepare", () => {
+  it.effect("prepares a history run and refuses a post or a tour as no history run", () => effect {
+    const note = try prepareHistory("vibelang/history/Note", { id: "m1", section: "tried", text: "it" }, "h-1")
+    const post = prepareHistory("vibelang/Post", { text: "hi" }, "h-2").pipe(Effect.as("prepared")) catch (error) => error.code
+    const tour = prepareHistory("vibelang/Tour", null, "h-3").pipe(Effect.as("prepared")) catch (error) => error.code
+    try Effect.try(() => expect([note.kind, post, tour]).toEqual(["note", "not-found", "not-found"]))
+  })
+
   it.effect("builds every invocation kind, with the request id as the operation", () => effect {
     const post = try prepare("vibelang/Post", { text: "hi" }, "a-1")
     const tour = try prepare("vibelang/Tour", null, "a-2")

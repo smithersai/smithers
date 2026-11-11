@@ -9,7 +9,8 @@ import type { Connection as Delegated } from "../worker/GitHubDelegate.vibe"
 import { API, REPOSITORY_ID } from "./issues-node-fake.vibe"
 import { Finding } from "./run.vibe"
 
-const BROKER = "https://smithers.invalid"
+/** The fake smithers.sh origin every delegated call goes to. */
+export const BROKER = "https://smithers.invalid"
 const SITE = "https://vibelang.invalid"
 const PERSON = 7
 const secret = Redacted.make("fuzz-site-delegation-secret-32-chars")
