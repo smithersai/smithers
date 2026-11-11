@@ -586,6 +586,51 @@ describe("Linux native network seccomp", () => {
     }
   )
 
+  it("runs a shell stage as the /bin/sh it names when that shell links to a multi-call binary (#4999)", async () => {
+    const f = fixture()
+    const descriptor = Object.getOwnPropertyDescriptor(process, "arch")!
+    try {
+      Object.defineProperty(process, "arch", { ...descriptor, value: "x64" })
+      const service = ProcessConfinement.make({
+        ...f,
+        host: {
+          ...f.host,
+          platform: "linux",
+          executable: (name) =>
+            name === "bwrap" ? "/usr/bin/bwrap" : name === "/bin/sh" || name === "/bin/busybox" ? name : undefined,
+          exists: (path) => path === "/bin" || f.host.exists(path),
+          realpath: (path) => path === "/bin/sh" ? "/bin/busybox" : f.host.realpath?.(path)
+        }
+      })
+      const words = await run(Effect.gen(function*() {
+        const wrapped = yield* service.confine(
+          ChildProcess.make("ls", ["-l"], { shell: true, cwd: f.workspaceRoot }),
+          f.profile
+        )
+        return wrapped.args.map(plainWord)
+      }))
+      const script = words.findLastIndex((word) => word.endsWith("environment.sh"))
+      expect(words.slice(script + 1)).toEqual(["/bin/sh", "-c", "ls -l"])
+      expect(words).not.toContain("/bin/busybox")
+    } finally {
+      Object.defineProperty(process, "arch", descriptor)
+    }
+  })
+
+  it("refuses a bwrap found inside the workspace instead of running it unconfined (#4999)", async () => {
+    const f = fixture()
+    const planted = NodePath.join(f.workspaceRoot, "node_modules/.bin/bwrap")
+    const service = ProcessConfinement.make({
+      ...f,
+      host: { ...f.host, platform: "linux", executable: (name) => name === "bwrap" ? planted : undefined }
+    })
+    const error = await run(Effect.flip(service.confine(ChildProcess.make("fixture"), f.profile)))
+    expect(error).toMatchObject({
+      reason: { _tag: "PermissionDenied", description: expect.stringContaining(`${planted} is inside the workspace`) }
+    })
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
   it.each(["none", "open"] as const)("refuses unsupported architectures under %s networking", async (network) => {
     const f = fixture()
     const descriptor = Object.getOwnPropertyDescriptor(process, "arch")!

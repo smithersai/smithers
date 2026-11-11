@@ -1494,6 +1494,22 @@ describe("bubblewrap launcher (#3140)", () => {
     expect(tail(linked)).toEqual(["pnpm"])
   })
 
+  it("keeps a multi-call program in a runtime path spelled as asked when only workspace paths are granted (#4999)", () => {
+    const links: Readonly<Record<string, string>> = {
+      "/bin/sh": "/bin/busybox",
+      "/bin/ls": "/bin/busybox",
+      "/usr/bin/unxz": "/usr/bin/xz"
+    }
+    const facts = runner({
+      executable: (name) => name in links || name === "/bin/busybox" || name === "/usr/bin/xz" ? name : undefined,
+      exists: (path) => path === "/bin" || path === "/usr",
+      realpath: (path) => links[path] ?? path
+    })
+    for (const [program, path] of [["ls", "/bin"], ["/bin/sh", "/bin"], ["unxz", "/usr/bin"]] as const) {
+      expect(ProcessSandbox.launcher(program, path, [`${root}/src`], root, facts)).toEqual({ program, reads: [] })
+    }
+  })
+
   it("follows a link out of the grants to its real file, binding nothing when that file is granted", () => {
     const facts = runner({
       executable: (name) => name === "/opt/tools/pnpm" ? name : undefined,
@@ -1751,6 +1767,33 @@ describe("mechanism selection", () => {
       image: "node:22"
     })
     expect(ProcessSandbox.select(docker, host("win32"))).toMatchObject({ mechanism: "docker", missing: "docker" })
+  })
+
+  it("refuses a launcher a confined write could plant inside the workspace or link into it (#4999)", () => {
+    const location = { workspaceRoot: root, cwd: root, tmp: "/work/private" }
+    const refused = { missing: "launcher outside the workspace" }
+    expect(ProcessSandbox.plan(request, location, host("linux", { bwrap: `${root}/node_modules/.bin/bwrap` })))
+      .toMatchObject({ ...refused, mechanism: "bubblewrap" })
+    const linked = { ...linux, realpath: (path: string) => path === "/usr/bin/bwrap" ? `${root}/.bin/bwrap` : path }
+    expect(ProcessSandbox.plan(request, location, linked)).toMatchObject({ ...refused, mechanism: "bubblewrap" })
+    const docker: ProcessSandbox.Request = { ...request, mechanism: { _tag: "docker", image: "node:22" } }
+    expect(ProcessSandbox.plan(docker, location, host("linux", { docker: `${root}/bin/docker` })))
+      .toMatchObject({ ...refused, mechanism: "docker" })
+    expect(ProcessSandbox.isUnenforceable(ProcessSandbox.plan(request, location, linux))).toBe(false)
+  })
+
+  it("never searches a relative PATH entry, which names a directory below the current one (#4999)", () => {
+    const { base } = writeFixture()
+    try {
+      const bin = NodePath.join(base, "bin")
+      NodeFs.mkdirSync(bin)
+      NodeFs.writeFileSync(NodePath.join(bin, "bwrap"), "#!/bin/sh\n", { mode: 0o755 })
+      // The relative spelling reaches the same file from the test's current directory.
+      expect(ProcessSandbox.host({ PATH: NodePath.relative(process.cwd(), bin) }).executable("bwrap")).toBeUndefined()
+      expect(ProcessSandbox.host({ PATH: bin }).executable("bwrap")).toBe(NodePath.join(bin, "bwrap"))
+    } finally {
+      NodeFs.rmSync(base, { recursive: true, force: true })
+    }
   })
 
   it("refuses bubblewrap off Linux and returns planning refusals", () => {

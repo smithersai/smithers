@@ -269,7 +269,9 @@ export const host = (env: Readonly<Record<string, string | undefined>> = ambient
       // A host without Xcode needs no developer-tree grant.
     }
   }
-  const entries = (env["PATH"] ?? "").split(pathSeparator(platform)).filter((entry) => entry !== "")
+  // A relative entry names a directory below whatever the current directory
+  // is, often the workspace a confined run may write; it is never searched.
+  const entries = (env["PATH"] ?? "").split(pathSeparator(platform)).filter((entry) => NodePath.isAbsolute(entry))
   const extensions = platform === "win32" ? (env["PATHEXT"] ?? ".EXE;.CMD;.BAT").split(";") : [""]
   return {
     platform,
@@ -565,6 +567,24 @@ export const plan = (
   } catch {
     return unsafeWrite(hostFacts.platform, selected._tag, location.workspaceRoot)
   }
+  // The mechanism's program runs on the host outside any confinement. A
+  // `PATH` entry inside the workspace, such as the `node_modules/.bin` that
+  // `pnpm run` puts first, would let a confined write choose that program.
+  // The real host never returns a relative program: it skips relative entries.
+  const launcher = selected.executable
+  if (
+    [launcher, hostFacts.realpath?.(launcher) ?? launcher].some((path) =>
+      pathApi(root).isAbsolute(path) && insideRoot(root, path)
+    )
+  ) {
+    return unenforceable(
+      hostFacts.platform,
+      selected._tag,
+      "launcher outside the workspace",
+      `the ${selected._tag} program ${launcher} is inside the workspace; ` +
+        "remove the workspace directory from the host PATH ahead of it"
+    )
+  }
   const anchor = (relative: string): string | undefined => {
     const absolute = pathApi(root).resolve(root, ...relative.split("/"))
     return insideRoot(root, absolute) ? absolute : undefined
@@ -807,9 +827,11 @@ const credentialPaths = (hostFacts: Host): ReadonlyArray<string> => {
  * the run died with `bwrap: execvp pnpm` before the tool started (#3140).
  *
  * A bare name is resolved on the tool's `PATH` (the host's when none is
- * given). A program already inside a granted path is left exactly as spelled,
- * so a multi-call binary keeps the name it dispatches on, and so is one inside
- * the workspace, whose reads only the declaration may open. Otherwise the run
+ * given). A program already inside a runtime path or a granted path is left
+ * exactly as spelled, so a multi-call binary keeps the name it dispatches on:
+ * `/bin/sh` linked to `/bin/busybox` stays a shell and `unxz` linked to `xz`
+ * still decompresses. So is a program inside the workspace, whose reads only
+ * the declaration may open. Otherwise the run
  * execs the program's real file, and the nearest package directory holding it
  * (a named `package.json`, at most three levels up, never the home or the root)
  * is bound read-only, because a script like `pnpm.cjs` loads its siblings.
@@ -850,7 +872,8 @@ export const launcher = (
     ? resolved
     : hostFacts.realpath?.(named) ?? named
   if ([found, resolved, real].some((path) => insideRoot(workspaceRoot, path))) return unchanged
-  const covered = (path: string) => granted.some((parent) => insideRoot(parent, path))
+  const runtime = runtimeReads(hostFacts)
+  const covered = (path: string) => [...runtime, ...granted].some((parent) => insideRoot(parent, path))
   const withinGrant = covered(found) ? unchanged : { program: real, reads: [] }
   let directory = pathApi(real).dirname(real)
   for (let level = 0; level < 3; level++) {
@@ -918,7 +941,7 @@ export const bubblewrap = (
   const launch = program === undefined ? undefined : launcher(
     program,
     searchPath,
-    [...runtime, ...confinement.reads, ...confinement.writes, ...confinement.externalReads],
+    [...confinement.reads, ...confinement.writes, ...confinement.externalReads],
     confinement.workspaceRoot,
     hostFacts
   )
