@@ -761,15 +761,18 @@ const failureLintTests = Smithers.NodeTest({
  * What the app's typecheck, lint and suites read: every app file but its docs, and the workspace packages whose
  * sources the app imports. A glob here cannot reach another package's files, so each package comes in as a target:
  * its `lib`, or, for the packages that ship their sources (`@smthrs/rpc` and the UI kit), their `check` and
- * `sourceFiles`. The unit suite reads three documents, named in `testDocuments`; any other docs-only change leaves
- * these targets' keys unchanged, so the result cache answers them.
+ * `sourceFiles`. The example notification policy flow comes in by file: its suite runs that flow through
+ * `RecipientPolicy.layerFlow`. The unit suite reads three documents, named in `testDocuments`; any other docs-only
+ * change leaves these targets' keys unchanged, so the result cache answers them.
  */
 const appFiles = [
   Smithers.glob("**/*", { exclude: ["docs/**", "node_modules/**", "AGENTS.md"] }),
   Smithers.Target.subtree("//packages/...", "lib"),
   Smithers.Target.subtree("//packages/rpc/...", "check"),
   Smithers.Target.subtree("//packages/smithers/ui/...", "check"),
-  Smithers.Target.subtree("//packages/smithers/ui/...", "sourceFiles")
+  Smithers.Target.subtree("//packages/smithers/ui/...", "sourceFiles"),
+  Smithers.file("//.smithers/flows/notification-policy/flow.ts"),
+  Smithers.file("//.smithers/flows/notification-policy/src/policy.ts")
 ]
 
 /** The docs the unit suite reads: the bug disclosure page, the bindings table and the home view's fixture. */

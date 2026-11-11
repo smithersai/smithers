@@ -60,3 +60,8 @@ the real Smithers engine and the writer against an isolated Postgres schema.
 Faulty Effect services supply invalid output, hangs, and access changes. The
 suite checks fallback, strict output bounds, cancellation, replay, revocation,
 muting, identity-only payloads, quiet handling, and per-person acknowledgments.
+
+`.smithers/flows/notification-policy/flow.ts` is the policy a repository copies. It
+restates `Request` and `Decision` because a copy cannot import the app; the suite
+compares their JSON Schema documents with the app's and runs the flow through
+`layerFlow` on the requests `worker/Notifications.ts` builds. The retired app's `@smthrs/rpc` contract is deleted.

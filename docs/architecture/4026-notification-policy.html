@@ -2,7 +2,7 @@
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Repository notification policy — #4026</title>
 <style>body{max-width:52rem;margin:3rem auto;padding:0 1rem;font:17px/1.6 system-ui;color:#242424;background:#faf9f6}h1,h2{line-height:1.2}code{font-size:.9em}pre{overflow-x:auto;padding:.75rem;background:#f0efe9;border-radius:4px}table{border-collapse:collapse}th,td{padding:.5rem;text-align:left;border-bottom:1px solid #bbb}@media(prefers-color-scheme:dark){body{background:#20201e;color:#eee}pre{background:#2a2a27}}</style>
-<main><blockquote>Superseded on 2026-10-20 by <code>apps/mvp/docs/rulings.md</code> (ARCH-1; decision 0009). Kept as prior art.</blockquote><h1>Repository notification policy</h1>
+<main><blockquote>Superseded on 2026-10-20 by <code>apps/mvp/docs/rulings.md</code> (ARCH-1; decision 0009). Kept as prior art. <code>packages/rpc/src/NotificationPolicy.ts</code> was deleted in <a href="https://github.com/smithersai/smithers/issues/4527">#4527</a>; the one contract is <code>apps/mvp/worker/NotificationPolicy.ts</code>.</blockquote><h1>Repository notification policy</h1>
 <p>Implemented for <a href="https://github.com/smithersai/smithers/issues/4026">#4026</a> (M-47, <code>.specs/product/mvp.md</code> §6.17). A repository flow decides who is told about a defined set of repository notifications. Delivery is unchanged. Source-green only; this document is not production evidence.</p>
 
 <h2>Declaring it</h2>

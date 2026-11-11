@@ -3,13 +3,15 @@ import { Engine } from "@smthrs/flows"
 import { Node } from "@smthrs/plan"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { NodeHost } from "@smthrs/platform-node"
-import { Deferred, Effect, Exit, Fiber, Layer, Logger, Option } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import * as Policy from "./NotificationPolicy.ts"
 import * as Notifications from "./Notifications.ts"
 import { testFile } from "./test/harness.ts"
+import ExamplePolicy, { layer as examplePolicyRule } from "../../../.smithers/flows/notification-policy/flow.ts"
+import { Decision as ExampleDecision, Request as ExampleRequest } from "../../../.smithers/flows/notification-policy/src/policy.ts"
 
 const runtime = testFile("notification_policy")
 const repoId = "github/acme/widgets"
@@ -234,6 +236,35 @@ test("repository run policy narrows new notices; existing recipients still settl
   )
   expect(await runtime.runPromise(fold(id).pipe(Effect.provide(layer)))).toBe(1)
   expect(await query(`SELECT recipient, state, read_version FROM notifications`)).toEqual([{ recipient: "ben", state: "done", read_version: 1 }])
+})
+
+test("the shipped example flow decides on the requests the notification writer builds", async () => {
+  // `.smithers/flows/notification-policy` is the policy a repository copies. It must accept what `Notifications.ts`
+  // sends and answer what `select` decodes; a mismatch would fall back with a closed reason on every notice.
+  const layer = Policy.layerFlow(repoId, ExamplePolicy).pipe(
+    Layer.provide(Interpreter.layerWithImplementations(ExamplePolicy, examplePolicyRule).pipe(Layer.provideMerge(Engine.FlowEngine.layerMemory))),
+    Layer.provide(NodeHost.NodeCrypto.layer),
+  )
+  const logs: unknown[] = []
+  const loggers = new Set([Logger.make(entry => { logs.push(StructuredLogger.formatStructured.log(entry)) })])
+  const { id } = await run()
+  const question = { execution: "run/call/0.0", kind: "question", prompt: "Which branch should I deploy?", options: ["main"] }
+  await query(`UPDATE runs SET status = 'needs_you', waiting = 'input', wait = $2::jsonb WHERE id = $1`, id, JSON.stringify(question))
+  // The default tells the launcher and the branch watcher; the example tells only the launcher who must answer.
+  expect(await runtime.runPromise(fold(id).pipe(Effect.provide(layer), Effect.provideService(Logger.CurrentLoggers, loggers)))).toBe(1)
+  expect(await rows()).toEqual([{ recipient: "ann", quiet: false, version: 1 }])
+  await watch()
+  expect(await runtime.runPromise(Notifications.recordRepoEvent(event, people).pipe(Effect.provide(layer), Effect.provideService(Logger.CurrentLoggers, loggers)))).toBe(2)
+  // Both notices took the repository's own decision; none fell back to the default.
+  const decisions = logs.map(entry => JSON.stringify(entry)).filter(entry => entry.includes("notifications.policy"))
+  expect(decisions).toHaveLength(2)
+  for (const decision of decisions) expect(decision).toContain('"source":"policy"')
+})
+
+test("the shipped example flow restates the app's request and decision, checks included", () => {
+  // Types alone miss a changed identity pattern or recipient bound; the JSON Schema documents carry both.
+  expect(Schema.toJsonSchemaDocument(ExampleRequest)).toEqual(Schema.toJsonSchemaDocument(Policy.Request))
+  expect(Schema.toJsonSchemaDocument(ExampleDecision)).toEqual(Schema.toJsonSchemaDocument(Policy.Decision))
 })
 
 test.each(["branch", "repository"])("run policy cannot preserve revoked %s access", async (scope) => {

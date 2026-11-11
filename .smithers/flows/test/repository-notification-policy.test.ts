@@ -1,38 +1,31 @@
 /**
  * The authored `notification-policy` flow: its real graph (node ids, order and
- * schemas), its deterministic rule, and the agreement between its Effect
- * Schema wire shapes and the app's own zod contract, which is the only thing
- * that keeps the two sides of one decision from drifting apart.
+ * schemas), its deterministic rule, its place in this repository's catalog,
+ * and the copyability that keeps it free of the app. The flow's agreement with
+ * the app's contract is proved where the contract lives:
+ * `apps/mvp/worker/NotificationPolicy.test.ts` runs this flow through
+ * `RecipientPolicy.layerFlow` on requests the notification writer builds.
  */
 import * as Graph from "@smthrs/core/Graph"
 import { Schema } from "effect"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { test } from "node:test"
-import {
-  NOTIFICATION_POLICY_DECIDE_ACTION,
-  NOTIFICATION_POLICY_EVENT,
-  NOTIFICATION_POLICY_FLOW_TAG,
-  NOTIFICATION_POLICY_KINDS,
-  NOTIFICATION_RECIPIENT_LIMIT,
-  NotificationPolicyDecisionSchema,
-  notificationPolicyDeclaration,
-  NotificationPolicyRequestSchema,
-  notificationPolicyResult
-} from "../../../packages/rpc/src/NotificationPolicy.ts"
 import NotificationPolicy from "../notification-policy/flow.ts"
 import {
   decide,
   Decision,
-  NOTIFICATION_POLICY_DECIDE_ACTION as FLOW_DECIDE_ACTION,
-  NOTIFICATION_POLICY_KINDS as FLOW_KINDS,
-  NOTIFICATION_RECIPIENT_LIMIT as FLOW_RECIPIENT_LIMIT,
+  NOTIFICATION_POLICY_DECIDE_ACTION,
+  NOTIFICATION_POLICY_KINDS,
+  NOTIFICATION_RECIPIENT_LIMIT,
   Request
 } from "../notification-policy/src/policy.ts"
 
-const request = {
-  repo: "maya/app",
-  event: { kind: "needs_you" as const, entryId: "todo.needs-you.12.wait-question-1", todo: 12 },
+const request: typeof Request.Type = {
+  repoId: "github/maya/app",
+  kind: "needs_you",
+  subject: "run-12",
+  revision: "3",
   owner: "maya",
   candidates: ["maya", "ben"],
   defaults: ["maya", "ben"]
@@ -54,7 +47,7 @@ test("the flow is one deciding action feeding its entry, declared pure, never a 
   // declarations behind them.
   assert.deepEqual(nodes.map((node) => `${node.kind}:${node.id}:${tagOf(node)}`), [
     `ActionCall:root.flow:${NOTIFICATION_POLICY_DECIDE_ACTION}`,
-    `FlowCall:root:${NOTIFICATION_POLICY_FLOW_TAG}`
+    "FlowCall:root:notification-policy"
   ])
   assert.deepEqual(Graph.edges(graph).map((edge) => `${edge.from}->${edge.to}:${edge.reason}`), [
     "root.flow->root:value"
@@ -87,66 +80,41 @@ test("the deciding node carries the request it was called with, as its declared 
   assert.equal(declaration.success.schema.additionalProperties, false)
 })
 
-test("both branches of the rule route differently from the built-in audience", () => {
-  for (const kind of ["needs_you", "approval", "conflict"] as const) {
-    assert.deepEqual(decide({ ...request, event: { ...request.event, kind } }).recipients, ["maya"])
-  }
-  for (const kind of ["in_review", "failed", "merged"] as const) {
-    assert.deepEqual(decide({ ...request, event: { ...request.event, kind } }).recipients, ["maya", "ben"])
-  }
-  // Every routable kind the app can ask about has an answer here.
-  for (const kind of NOTIFICATION_POLICY_KINDS) {
-    const answer = decide({ ...request, event: { ...request.event, kind } })
+test("a run that needs an answer tells its launcher; every other notice tells everyone who can read it", () => {
+  assert.deepEqual(decide(request).recipients, ["maya"])
+  // A repository event has no launcher, so nobody is singled out.
+  const { owner: _, ...withoutOwner } = request
+  assert.deepEqual(decide(withoutOwner).recipients, ["maya", "ben"])
+  for (const kind of NOTIFICATION_POLICY_KINDS.filter((kind) => kind !== "needs_you")) {
+    const answer = decide({ ...request, kind })
     assert.deepEqual(Schema.decodeUnknownSync(Decision)(answer), answer)
-    assert.ok(answer.recipients.length > 0)
+    assert.deepEqual(answer.recipients, ["maya", "ben"])
   }
 })
 
-test("the flow's wire shapes and the app's contract accept and refuse the same values", () => {
-  assert.deepEqual(Schema.decodeUnknownSync(Request)(request), request)
-  assert.equal(NotificationPolicyRequestSchema.safeParse(request).success, true)
+test("the request and the decision refuse what the app never sends or accepts", () => {
   for (
     const broken of [
-      { ...request, repo: "no-owner" },
-      { ...request, owner: "-bad-login" },
-      { ...request, event: { ...request.event, kind: "invented" } },
-      { ...request, candidates: [] }
+      { ...request, repoId: "-leading-dash" },
+      { ...request, owner: "an email@example.com" },
+      { ...request, kind: "invented" },
+      { ...request, candidates: "maya" }
     ]
   ) {
-    assert.equal(NotificationPolicyRequestSchema.safeParse(broken).success, false)
     assert.throws(() => Schema.decodeUnknownSync(Request)(broken))
   }
-  const answer = decide(request)
-  assert.equal(NotificationPolicyDecisionSchema.safeParse(answer).success, true)
-  // A decision carrying anything beyond recipients and handling is refused by
-  // both sides, so no diagnostic, URL or secret value can ride an answer out.
-  for (
-    const [smuggled, kept] of [
-      [{ recipients: ["maya"], note: "ghp_token" }, { recipients: ["maya"] }],
-      [{ recipients: ["maya"], handling: { quiet: true, detail: "stack trace" } }, {
-        recipients: ["maya"],
-        handling: { quiet: true }
-      }]
-    ] as const
-  ) {
-    assert.equal(NotificationPolicyDecisionSchema.safeParse(smuggled).success, false)
-    // The flow's own shape carries neither extra key out of the run either.
-    assert.deepEqual(Schema.decodeUnknownSync(Decision)(smuggled), kept)
-  }
-})
-
-test("this repository's own answer, routed through the app's access check, narrows the audience", () => {
-  const outcome = notificationPolicyResult(request, decide(request))
-  assert.deepEqual([...outcome.recipients], ["maya"])
-  assert.deepEqual([...outcome.withheld], [])
-  assert.deepEqual(outcome.stamp, { source: "policy" })
+  const tooMany = { recipients: Array.from({ length: NOTIFICATION_RECIPIENT_LIMIT + 1 }, () => "maya") }
+  assert.throws(() => Schema.decodeUnknownSync(Decision)(tooMany))
+  assert.deepEqual(Schema.decodeUnknownSync(Decision)({ recipients: ["maya"], note: "ghp_token" }), {
+    recipients: ["maya"]
+  })
 })
 
 test("the flow is discovered into this repository's own catalog as a pure, human-only flow", async () => {
   const projection = JSON.parse(await readFile(new URL("../../factory.json", import.meta.url), "utf8")) as {
     readonly flows: ReadonlyArray<Record<string, unknown>>
   }
-  const row = projection.flows.find((flow) => flow.id === NOTIFICATION_POLICY_FLOW_TAG)
+  const row = projection.flows.find((flow) => flow.id === "notification-policy")
   assert.ok(row, "notification-policy is missing from .smithers/factory.json")
   assert.equal(row.path, ".smithers/flows/notification-policy/flow.ts")
   assert.equal(row.kind, "ts")
@@ -154,53 +122,19 @@ test("the flow is discovered into this repository's own catalog as a pure, human
   assert.deepEqual(row.capabilities, [])
 })
 
-test("the declaration a repository writes for this flow is the one the app reads", () => {
-  assert.deepEqual(
-    notificationPolicyDeclaration({
-      on: [{ event: NOTIFICATION_POLICY_EVENT, flow: NOTIFICATION_POLICY_FLOW_TAG, description: "Choose who is told" }]
-    }),
-    { kind: "flow", flowId: NOTIFICATION_POLICY_FLOW_TAG }
-  )
-  assert.deepEqual(notificationPolicyDeclaration({ on: [{ event: "change.opened", flow: "review" }] }), {
-    kind: "none"
-  })
-  // Two claims on one event, or one row naming two flows, is not a policy.
-  assert.deepEqual(
-    notificationPolicyDeclaration({
-      on: [
-        { event: NOTIFICATION_POLICY_EVENT, flow: "a" },
-        { event: NOTIFICATION_POLICY_EVENT, flow: "b" }
-      ]
-    }),
-    { kind: "ambiguous" }
-  )
-  assert.deepEqual(
-    notificationPolicyDeclaration({ on: [{ event: NOTIFICATION_POLICY_EVENT, flow: ["a", "b"] }] }),
-    { kind: "ambiguous" }
-  )
-})
-
-test("the copyable flow restates the app's three constants and never reaches into @smthrs/rpc", async () => {
-  // `@smthrs/rpc` is private to this monorepo. A maintainer copies
-  // `.smithers/flows/notification-policy/` into their own repository, where that path
-  // does not resolve, so the example depends on `@smthrs/flow` and `effect`
-  // alone and restates what it borrows. These assertions are the drift guard
-  // that restating costs: the app owns the values, this file only repeats them.
-  assert.equal(FLOW_DECIDE_ACTION, NOTIFICATION_POLICY_DECIDE_ACTION)
-  assert.deepEqual([...FLOW_KINDS], [...NOTIFICATION_POLICY_KINDS])
-  assert.equal(FLOW_RECIPIENT_LIMIT, NOTIFICATION_RECIPIENT_LIMIT)
-  const source = await readFile(new URL("../notification-policy/src/policy.ts", import.meta.url), "utf8")
-  const imports = [...source.matchAll(/^import\s[\s\S]*?from\s+"([^"]+)"/gm)].map((match) => match[1])
-  assert.deepEqual(imports, ["@smthrs/flow", "effect"])
-})
-
-test("the app resolves a declaration naming a repository's own flow, not only this one's", () => {
-  // The consumer proof in lane 86's receipts projects exactly this row from
-  // an ordinary repository's `.smithers/FACTORY.ts` with the published SDK.
-  assert.deepEqual(
-    notificationPolicyDeclaration({
-      on: [{ event: NOTIFICATION_POLICY_EVENT, flow: "team-notification-policy", description: "Choose who is told" }]
-    }),
-    { kind: "flow", flowId: "team-notification-policy" }
-  )
+test("the copyable flow imports only published packages", async () => {
+  // A maintainer copies `.smithers/flows/notification-policy/` into their own
+  // repository, where no path into this monorepo resolves, so the example
+  // depends on published packages alone and restates the app's shapes.
+  const importsOf = async (path: string) => {
+    const source = await readFile(new URL(path, import.meta.url), "utf8")
+    return [...source.matchAll(/^import\s[\s\S]*?from\s+"([^"]+)"/gm)].map((match) => match[1])
+  }
+  assert.deepEqual(await importsOf("../notification-policy/src/policy.ts"), ["@smthrs/flow", "effect"])
+  assert.deepEqual(await importsOf("../notification-policy/flow.ts"), [
+    "@smthrs/flow",
+    "@smthrs/plan",
+    "effect",
+    "./src/policy.ts"
+  ])
 })
