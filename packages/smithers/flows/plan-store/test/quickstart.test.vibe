@@ -1,0 +1,18 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { expect, it } from "@effect/vitest"
+import { recordAndGrow, store } from "../examples/quickstart.vibe"
+
+it.effect("records generation 0, appends generation 1, and reads the graph the page prints", effect () => {
+  provide Layer.provideMerge(store, NodeCrypto.layer) {
+    const { outcome, plan, stored } = try recordAndGrow()
+    expect(outcome._tag).toBe("Recorded")
+    expect(plan.digest).toBe("key1_61edccc875ff69b798e0c3874d167f65ff0a250b9fe67d27558b854fa2832302")
+    expect(stored.nodes.map((node) => [node.generation, node.id, node.key, node.dependsOn])).toEqual([
+      [0, "read-pr", "key1_6353326ab2a03804d6acfe916debc4f04f09f9deb8f0e93c1ebea3cdd983db18", []],
+      [0, "run-tests", "key1_e58229e3be2f6abf6f818baf8577fe7045edba6f5e88097b633898478da93985", ["read-pr"]],
+      [1, "post-comment", "key1_0ac2aef1d5d4226849c6009450ad987b47dc02cf39d39ab975db3c673698241d", ["run-tests"]]
+    ])
+    expect(stored.generation).toBe(1)
+    expect(stored.baseDigest).toBe(plan.digest)
+  }
+})

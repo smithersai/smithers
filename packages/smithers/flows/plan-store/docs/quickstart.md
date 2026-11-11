@@ -7,7 +7,9 @@ sidebar:
 
 This quickstart takes one plan from drafts to durable rows and back. By the end
 you will have an append-only SQLite table holding a compiled graph and a third
-node added at generation 1 without a single stored row being rewritten.
+node added at generation 1 without a single stored row being rewritten. Each
+step below is TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang)
+runs the same steps as Effect code.
 
 Nothing here executes a node. A plan is inert: driving one is
 [`@smthrs/engine-store`](/api/engine-store)'s `PlanScheduler`.
@@ -156,6 +158,81 @@ Read `post-comment`'s edge: it depends on `run-tests`, which it never consumed a
 value from. Two separate declarations put it there. Its `Pending` input is an
 ordering reference, and it reads `report.json`, which `run-tests` writes, so the
 reader-after-writer pass would have ordered it behind the producer anyway.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) `recordAndGrow` is an
+`effect` function: `try` runs each store call where the TypeScript wrote
+`yield*`, the record time comes from Effect's `Clock`, and a missing plan row
+is a typed `PlanMissing` failure instead of `Option.getOrThrow` throwing. The
+caller provides `store` together with `Crypto`.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { KeyMaterial, Plan } from "@smthrs/plan"
+import { Migrations, PlanStore } from "@smthrs/plan-store"
+
+/** Everything hashed about one node. `sealed` is the tier that may be reused across runs. */
+const material = (body: unknown, inputs: ReadonlyArray<KeyMaterial.InputRef> = []): KeyMaterial.KeyMaterial => ({
+  version: KeyMaterial.version,
+  kind: "sealed",
+  body,
+  inputs,
+  layers: [],
+  capabilities: []
+})
+
+/** Two steps: the second consumes the first's result and reads the file it wrote. */
+const drafts: ReadonlyArray<Plan.NodeDraft> = [
+  {
+    id: "read-pr",
+    material: material({ action: "read-pr", pr: 4821 }),
+    effects: { reads: [], writes: ["pr.json"], boundaryMode: "hard" }
+  },
+  {
+    id: "run-tests",
+    material: material({ action: "run-tests" }, [{ _tag: "Ref", from: "read-pr", path: [] }]),
+    effects: { reads: ["pr.json"], writes: ["report.json"], boundaryMode: "hard" }
+  }
+]
+
+/** The SQLite client, the durable writer, and the three plan tables under the store. */
+export const store = Layer.provideMerge(
+  PlanStore.layer,
+  Layer.provideMerge(
+    Migrations.layer,
+    Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: ":memory:" }))
+  )
+)
+
+/** A plan id the store has no row for. */
+export error PlanMissing {
+  planId: string
+}
+
+/** Compiles and records generation 0, appends generation 1, and reads the whole graph back. */
+export effect function recordAndGrow() {
+  const plan = try Plan.compile({ planId: "review-4821", flow: "example/Review", nodes: drafts })
+  const plans = try PlanStore.PlanStore
+
+  const outcome = try plans.record(plan, try Clock.currentTimeMillis)
+
+  const grown = try Plan.append(plan, [{
+    id: "post-comment",
+    material: material({ action: "post-comment" }, [{ _tag: "Pending", from: "run-tests" }]),
+    effects: { reads: ["report.json"], writes: [], boundaryMode: "hard" }
+  }])
+  try plans.append(grown)
+
+  const stored = try plans.get(plan.planId)
+  if (Option.isNone(stored)) throw new PlanMissing({ planId: plan.planId })
+  return { outcome, plan, stored: stored.value }
+}
+```
 
 ## Next steps
 

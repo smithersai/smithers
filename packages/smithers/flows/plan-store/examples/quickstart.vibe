@@ -1,0 +1,61 @@
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { KeyMaterial, Plan } from "@smthrs/plan"
+import { Migrations, PlanStore } from "@smthrs/plan-store"
+
+/** Everything hashed about one node. `sealed` is the tier that may be reused across runs. */
+const material = (body: unknown, inputs: ReadonlyArray<KeyMaterial.InputRef> = []): KeyMaterial.KeyMaterial => ({
+  version: KeyMaterial.version,
+  kind: "sealed",
+  body,
+  inputs,
+  layers: [],
+  capabilities: []
+})
+
+/** Two steps: the second consumes the first's result and reads the file it wrote. */
+const drafts: ReadonlyArray<Plan.NodeDraft> = [
+  {
+    id: "read-pr",
+    material: material({ action: "read-pr", pr: 4821 }),
+    effects: { reads: [], writes: ["pr.json"], boundaryMode: "hard" }
+  },
+  {
+    id: "run-tests",
+    material: material({ action: "run-tests" }, [{ _tag: "Ref", from: "read-pr", path: [] }]),
+    effects: { reads: ["pr.json"], writes: ["report.json"], boundaryMode: "hard" }
+  }
+]
+
+/** The SQLite client, the durable writer, and the three plan tables under the store. */
+export const store = Layer.provideMerge(
+  PlanStore.layer,
+  Layer.provideMerge(
+    Migrations.layer,
+    Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: ":memory:" }))
+  )
+)
+
+/** A plan id the store has no row for. */
+export error PlanMissing {
+  planId: string
+}
+
+/** Compiles and records generation 0, appends generation 1, and reads the whole graph back. */
+export effect function recordAndGrow() {
+  const plan = try Plan.compile({ planId: "review-4821", flow: "example/Review", nodes: drafts })
+  const plans = try PlanStore.PlanStore
+
+  const outcome = try plans.record(plan, try Clock.currentTimeMillis)
+
+  const grown = try Plan.append(plan, [{
+    id: "post-comment",
+    material: material({ action: "post-comment" }, [{ _tag: "Pending", from: "run-tests" }]),
+    effects: { reads: ["report.json"], writes: [], boundaryMode: "hard" }
+  }])
+  try plans.append(grown)
+
+  const stored = try plans.get(plan.planId)
+  if (Option.isNone(stored)) throw new PlanMissing({ planId: plan.planId })
+  return { outcome, plan, stored: stored.value }
+}
