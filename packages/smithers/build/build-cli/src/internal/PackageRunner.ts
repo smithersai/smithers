@@ -2491,16 +2491,18 @@ export const executeEffect = (
               return green("ran")
             }
             case "Clean": {
-              for (const outDir of node.cleanOutDirs) {
-                yield* joined(() => Fs.rm(NodePath.join(root, ...outDir.split("/")), { recursive: true, force: true }))
-              }
-              for (const declared of node.cleanPaths) {
-                let absolute: string
+              // Confine every path, outDirs included, through symlinks before
+              // removing any: a symlinked parent must not aim rm -rf outside
+              // the workspace, and a refusal must leave the tree untouched.
+              const absolutes: Array<string> = []
+              for (const declared of [...node.cleanOutDirs, ...node.cleanPaths]) {
                 try {
-                  absolute = Exec.resolveWorkspacePath(root, declared)
+                  absolutes.push(Exec.resolveWorkspacePath(root, declared))
                 } catch (cause) {
                   return fail(`clean path refused: ${Diagnostic.describe(cause)}`)
                 }
+              }
+              for (const absolute of absolutes) {
                 yield* joined(() => Fs.rm(absolute, { recursive: true, force: true }))
               }
               return green("ran")

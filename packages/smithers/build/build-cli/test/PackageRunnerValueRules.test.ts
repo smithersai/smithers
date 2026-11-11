@@ -26,8 +26,11 @@ export const Workspace = S.Workspace("runner-value-rules", {
 `
 
 const fixture = async (source: string): Promise<string> => {
-  const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-runner-value-")))
-  roots.push(root)
+  // The workspace sits one level below a private parent so a test can own the
+  // directory "outside" it.
+  const parent = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-runner-value-")))
+  roots.push(parent)
+  const root = NodePath.join(parent, "workspace")
   await write(root, "WORKSPACE.ts", workspace)
   await write(root, "PACKAGE.ts", source)
   await write(root, "package.json", "{\"name\":\"runner-value-rules\",\"private\":true}\n")
@@ -85,11 +88,43 @@ export const Package = S.Package({ targets: {
 export const Package = S.Package({ targets: { clean: S.Clean({ paths: ["../outside"] }) } })
 `)
     const outside = NodePath.join(NodePath.dirname(root), "outside")
+    await write(outside, "kept.txt", "kept")
     const refused = await run(root, "//:clean")
     expect(refused.ok).toBe(false)
     expect(refused.results).toMatchObject([{ label: "//:clean", status: "failed" }])
     expect(refused.results[0]?.error).toContain("clean path refused")
-    expect(await exists(outside)).toBe(false)
+    expect(await Fs.readFile(NodePath.join(outside, "kept.txt"), "utf8")).toBe("kept")
+  })
+
+  it("refuses an outDir behind a symlinked parent that leaves the workspace and removes nothing", async () => {
+    const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
+const build = S.Shell.Build({ shell: "true", outDirs: ["link/dist"] })
+export const Package = S.Package({ targets: {
+  build,
+  clean: S.Clean({ targets: [build], paths: ["scratch"] })
+} })
+`)
+    const outside = NodePath.join(NodePath.dirname(root), "outside")
+    await write(outside, "dist/kept.txt", "kept")
+    await Fs.symlink(outside, NodePath.join(root, "link"))
+    await write(root, "scratch/a.txt", "scratch")
+    const refused = await run(root, "//:clean")
+    expect(refused.ok).toBe(false)
+    expect(refused.results).toMatchObject([{ label: "//:clean", status: "failed" }])
+    expect(refused.results[0]?.error).toContain("clean path refused")
+    expect(await Fs.readFile(NodePath.join(outside, "dist", "kept.txt"), "utf8")).toBe("kept")
+    // Every path is checked before any is removed.
+    expect(await Fs.readFile(NodePath.join(root, "scratch", "a.txt"), "utf8")).toBe("scratch")
+  })
+
+  it("checks every scratch path before removing any", async () => {
+    const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { clean: S.Clean({ paths: ["scratch", "../outside"] }) } })
+`)
+    await write(root, "scratch/a.txt", "scratch")
+    const refused = await run(root, "//:clean")
+    expect(refused.results).toMatchObject([{ label: "//:clean", status: "failed" }])
+    expect(await Fs.readFile(NodePath.join(root, "scratch", "a.txt"), "utf8")).toBe("scratch")
   })
 })
 
