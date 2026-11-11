@@ -172,9 +172,14 @@ const runInProcess = <E>(
         })
     })
 
+    // `to` builds a plain object, as the QuickJS prelude's does: the outcome
+    // gate below re-derives the digest only after the text crossed the JSON
+    // boundary, so a text the digest refuses fails the same way in both
+    // bindings instead of throwing inside the script.
+    const to = (script: Script.Script): Outcome.To => ({ _tag: "To", script })
     // The factory body is `return (async () => {...})()`, so invoking it
     // never throws synchronously — every script error lands in the rejection.
-    Promise.resolve(factory(ctx, Outcome.done, Outcome.to, Outcome.park)).then(
+    Promise.resolve(factory(ctx, Outcome.done, to, Outcome.park)).then(
       (value) => {
         settled = { _tag: "value", value }
       },

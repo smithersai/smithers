@@ -183,6 +183,38 @@ describe.each(runners)("runner conformance: %s", (_name, layer) => {
     })
   })
 
+  it("rejects a call input or outcome carrying an unpaired surrogate identically", async () => {
+    const seen: Array<string> = []
+    const outcome = await runWith(
+      layer,
+      [
+        `const title = "release notes \\u{1F680} shipped".slice(0, 15)`,
+        `const inValue = await ctx.call("note", { title }).catch(function (error) { return error.message })`,
+        `const inKey = await ctx.call("note", { [title]: 1 }).catch(function (error) { return error.message })`,
+        `const paired = await ctx.call("note", { title: "\\u{1F680}" })`,
+        `return done([inValue, inKey, paired.payload.title])`
+      ].join("\n"),
+      (request) => {
+        seen.push(request.name)
+        return echo(request)
+      }
+    )
+    expect(outcome).toEqual({
+      _tag: "Done",
+      value: [JsonBoundary.unserializableInput, JsonBoundary.unserializableInput, "\u{1F680}"]
+    })
+    expect(seen).toEqual(["note"])
+    for (
+      const text of [
+        `return done("\\uD83D")`,
+        `try { return to({ text: "x\\uD83D", digest: "" }) } catch { return done("caught") }`
+      ]
+    ) {
+      const failure = await failWith(layer, text, echo) as ScriptRunner.ScriptFailure
+      expect(failure).toMatchObject({ code: "invalid_outcome", message: JsonBoundary.unserializableOutcome })
+    }
+  })
+
   it("rejects a non-serializable handler result identically", async () => {
     const outcome = await runWith(
       layer,

@@ -25,6 +25,7 @@ fix the cause and resume to re-enter the child's settled prefix.
 | `invalid_journal`   | A link settled an author call whose result is not a script.                                                                                                                                                 | The journal is not a valid chain history; inspect the settled payload.                                         |
 | `invalid_journal`   | The root chain id contains `/` or matches `<digits>.<digits>`.                                                                                                                                              | Use the empty root id or a name such as `root-a`; derived child scopes are reserved.                           |
 | `invalid_journal`   | `maxLinks` or `maxCallsPerLink` is `NaN`, negative, fractional, or infinite.                                                                                                                                | Pass a non-negative integer budget, or omit it for the default.                                                |
+| `invalid_journal`   | A journaled payload or envelope holds an unpaired UTF-16 surrogate, which canonical JSON refuses. Journals written before the boundary refused them can hold one.                                           | Start a new chain scope; current runs refuse such a value before journaling it.                                |
 
 ## JournalError
 

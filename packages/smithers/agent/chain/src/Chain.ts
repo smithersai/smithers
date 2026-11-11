@@ -20,6 +20,7 @@ import * as Catalog from "./Catalog.ts"
 import * as Event from "./Event.ts"
 import { childRun } from "./internal/childRun.ts"
 import { ChildRunError } from "./internal/ChildRunError.ts"
+import * as Unicode from "./internal/unicode.ts"
 import * as Journal from "./Journal.ts"
 import * as JsonBoundary from "./JsonBoundary.ts"
 import * as Observation from "./Observation.ts"
@@ -184,14 +185,22 @@ export const defaultMaxCallsPerLink = 64
 
 const decodeScript = Schema.decodeUnknownOption(Script.Script)
 
-const sameJson = (left: typeof Schema.Json.Type, right: typeof Schema.Json.Type): boolean =>
-  Digest.canonical(left) === Digest.canonical(right)
+// Total: a journal written before the boundary refused lone surrogates can
+// hold a value canonical JSON refuses, and that is a typed journal error,
+// never a defect.
+const canonicalJson = (value: typeof Schema.Json.Type): Effect.Effect<string, ChainError> =>
+  Effect.try({
+    try: () => Digest.canonical(value),
+    catch: (cause) =>
+      new ChainError({
+        code: "invalid_journal",
+        message: `the journal holds a value that is not canonical JSON: ${JsonBoundary.failureMessage(cause)}`
+      })
+  })
 
 // Excerpts start near the mismatch so a long shared prefix cannot hide the
 // changed value. JSON quoting keeps control characters out of diagnostics.
-const payloadDifference = (left: typeof Schema.Json.Type, right: typeof Schema.Json.Type): string => {
-  const journaled = Digest.canonical(left)
-  const live = Digest.canonical(right)
+const payloadDifference = (journaled: string, live: string): string => {
   let offset = 0
   while (journaled[offset] === live[offset]) offset++
   const start = Math.max(0, offset - 64)
@@ -207,7 +216,7 @@ const observationContext = (observations: ReadonlyArray<Observation.Observation>
   for (const observation of observations) {
     const line = Observation.render(observation)
     if (line.length >= remaining) {
-      lines.push(line.slice(0, Math.max(0, remaining - 1)) + marker)
+      lines.push(Unicode.prefix(line, Math.max(0, remaining - 1)) + marker)
       break
     }
     lines.push(line)
@@ -336,7 +345,10 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
     )
     if (started === undefined) {
       yield* append({ _tag: "ChainStarted", goal: options.goal, envelope: options.envelope ?? null })
-    } else if (started.goal !== options.goal || !sameJson(started.envelope, options.envelope ?? null)) {
+    } else if (
+      started.goal !== options.goal
+      || (yield* canonicalJson(started.envelope)) !== (yield* canonicalJson(options.envelope ?? null))
+    ) {
       return yield* new ChainError({
         code: "replay_divergence",
         message: `chain ${JSON.stringify(chainId)} was started with a different goal or envelope`
@@ -434,12 +446,14 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                   message: `link ${link} call ${ordinal} requested "${name}" but the journal settled "${prior.name}"`
                 })
               }
-              if (!sameJson(prior.payload, jsonPayload)) {
+              const journaledJson = yield* canonicalJson(prior.payload)
+              const liveJson = yield* canonicalJson(jsonPayload)
+              if (journaledJson !== liveJson) {
                 return yield* new ChainError({
                   code: "replay_divergence",
                   message:
                     `link ${link} call ${ordinal} ("${name}") received a different payload than the journaled call; ${
-                      payloadDifference(prior.payload, jsonPayload)
+                      payloadDifference(journaledJson, liveJson)
                     }${origin === "harness" ? "; check Options.context for this harness author payload" : ""}`
                 })
               }
@@ -495,7 +509,7 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                   link,
                   name,
                   payload: jsonPayload,
-                  result: { raw, rejected: true }
+                  result: { raw: Unicode.toWellFormed(raw), rejected: true }
                 })
                 return yield* new LinkAborted({ observation })
               }
@@ -626,7 +640,9 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
           }).pipe(Effect.catchTag("/chain/Chain/LinkAborted", () => Effect.succeed(undefined)))
           if (attempt === undefined) continue
           const decoded = decodeScript(attempt)
-          if (decoded._tag === "None") {
+          // Live author output with an unpaired surrogate is a shape
+          // rejection, so only a foreign journal can carry one here.
+          if (decoded._tag === "None" || !Unicode.isWellFormed(decoded.value.text)) {
             return yield* new ChainError({
               code: "invalid_journal",
               message: `link ${link} settled an author call whose result is not a script`

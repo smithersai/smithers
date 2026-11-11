@@ -527,6 +527,41 @@ describe("Chain", () => {
     expect(replay.events).toEqual(first.events)
   })
 
+  it.each([
+    ["call payload", 4, { payload: { pattern: "TODO\uD83D" } }],
+    ["chain envelope", 0, { envelope: { title: "\uD83D" } }]
+  ])(
+    "fails typed with invalid_journal when a journaled %s holds an unpaired surrogate",
+    async (_label, index, patch) => {
+      const { events } = await goldenRun()
+      const tampered = [...events.slice(0, 5)]
+      tampered[index] = { ...tampered[index], ...patch } as Event.Event
+      const error = await failChain({
+        author: Author.layerMock([]),
+        entries: [countingEntry("grep", grepResult).entry],
+        initial: tampered
+      }) as Chain.ChainError
+      expect(error._tag).toBe("/chain/ChainError")
+      expect(error.code).toBe("invalid_journal")
+      expect(error.message).toContain("canonical_lone_surrogate")
+    }
+  )
+
+  it.each([
+    ["in-process", ScriptRunner.layerInProcess],
+    ["quickjs", QuickJsRunner.layer()]
+  ])("refuses a sliced emoji inside the script before anything is journaled (%s)", async (_label, runner) => {
+    const note = countingEntry("note", null)
+    const script = flow(
+      `const title = "release notes \\u{1F680} shipped".slice(0, 15)`,
+      `return done(await ctx.call("note", { title }).catch((error) => error.message))`
+    )
+    const first = await runChain({ author: Author.layerMock([script]), entries: [note.entry], runner })
+    expect(first.outcome).toEqual({ _tag: "Done", value: "ctx.call input must be JSON-serializable" })
+    expect(note.count()).toBe(0)
+    expect(first.events.some((event) => event._tag === "CallSettled" && event.name === "note")).toBe(false)
+  })
+
   it("fails with replay_divergence when the journal disagrees with the script", async () => {
     const { events } = await goldenRun()
     const tampered = [...events.slice(0, 5)]
@@ -1107,6 +1142,44 @@ describe("Chain recovery bounds", () => {
     expect(block.join("\n").length).toBeLessThanOrEqual(32768)
     expect(block.join("\n")).toContain("[truncated]")
     expect(events.slice(0, initial.length)).toEqual(initial)
+  })
+
+  it("cuts the recovery block on a code point, never inside a surrogate pair", async () => {
+    // Four 8000-unit lines leave 721 units; the cut at 720 would split the emoji.
+    const messages = [..."abcd"].map((c) => c.repeat(8000)).concat(`${"y".repeat(711)}\u{1F680}${"z".repeat(100)}`)
+    const initial: Array<Event.Event> = [{ _tag: "ChainStarted", goal: "goal", envelope: null }]
+    messages.forEach((message, ordinal) =>
+      initial.push({ _tag: "GateRejected", link: 0, ordinal, observation: { kind: "shape", message } })
+    )
+    const seen: Array<Author.Input> = []
+    const author = Author.layerFn((input) => {
+      seen.push(input)
+      return doneScript
+    })
+    const { outcome } = await boundedRun({ goal: "goal" }, author, initial)
+    expect(outcome).toMatchObject({ _tag: "Done" })
+    expect(seen[0]!.context.at(-1) === `[shape] ${"y".repeat(711)}[truncated]`).toBe(true)
+  })
+
+  it("refuses to replay a journaled author result whose text holds an unpaired surrogate", async () => {
+    const { events } = await goldenRun()
+    const index = events.findIndex((event) => event._tag === "CallSettled" && event.name === "author")
+    const settled = events[index] as Event.CallSettled
+    const tampered = [...events.slice(0, index), { ...settled, result: { digest: "d", text: "x\uD83D" } }]
+    const error = await failChain({
+      author: Author.layerMock([]),
+      entries: [countingEntry("grep", grepResult).entry],
+      initial: tampered
+    }) as Chain.ChainError
+    expect(error.code).toBe("invalid_journal")
+  })
+
+  it("journals a rejected author output as well-formed text", async () => {
+    const { events } = await runChain({
+      author: Author.layerMock([flow(`return done("\uD83D")`), doneScript])
+    })
+    const rejected = events.find((event) => event._tag === "CallSettled" && event.name === "author")
+    expect(rejected).toMatchObject({ result: { raw: flow(`return done("\uFFFD")`), rejected: true } })
   })
 
   it("replays settled calls even when the resumed call budget is zero", async () => {

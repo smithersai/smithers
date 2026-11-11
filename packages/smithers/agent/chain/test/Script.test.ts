@@ -24,6 +24,13 @@ describe("Script", () => {
     }
   })
 
+  it("rejects a flow block holding an unpaired surrogate instead of digesting it", () => {
+    expect(Script.extract(flow(`return done("\uD83D")`))).toEqual({
+      _tag: "Rejected",
+      reason: "the ```flow block holds an unpaired UTF-16 surrogate, which is not text"
+    })
+  })
+
   it("rejects output with no flow block", () => {
     const extraction = Script.extract("just prose")
     expect(extraction).toEqual({ _tag: "Rejected", reason: "the author output contains no ```flow block" })

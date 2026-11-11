@@ -11,6 +11,7 @@
 
 import * as Digest from "@smthrs/core/Digest"
 import { Schema } from "effect"
+import { isWellFormed } from "./internal/unicode.ts"
 
 /**
  * A link's flow-script text paired with the content digest that keys every
@@ -66,7 +67,8 @@ const fence = /(?<!`)(`{3,})flow\n([\s\S]*?)\n\1`*[ \t]*(?=\n|$)/g
  * block, whose body becomes the script. The block opens with three or more
  * backticks followed by `flow` and closes on a line holding only at least
  * as many backticks, so a longer opening fence can carry inner fences.
- * CRLF line endings are read as LF, so the script text always uses LF.
+ * CRLF line endings are read as LF, so the script text always uses LF. A
+ * block holding an unpaired UTF-16 surrogate is rejected: it has no digest.
  *
  * @category gates
  * @since 0.1.0
@@ -86,5 +88,9 @@ export const extract = (raw: string): Extraction => {
     }
   }
   // The capture group always participates when the fence matches.
-  return { _tag: "Extracted", script: make(first[2] as string) }
+  const text = first[2] as string
+  if (!isWellFormed(text)) {
+    return { _tag: "Rejected", reason: "the ```flow block holds an unpaired UTF-16 surrogate, which is not text" }
+  }
+  return { _tag: "Extracted", script: make(text) }
 }

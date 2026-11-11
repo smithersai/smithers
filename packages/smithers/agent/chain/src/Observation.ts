@@ -9,6 +9,7 @@
  */
 
 import { Schema } from "effect"
+import { prefix, toWellFormed } from "./internal/unicode.ts"
 
 /**
  * Which gate produced the observation, or which stage failed.
@@ -58,16 +59,21 @@ export type Observation = typeof Observation.Type
 
 /**
  * Builds an observation, capping its message at 8192 UTF-16 code units
- * including a truncation marker.
+ * including a truncation marker. The cut never splits a surrogate pair, and
+ * an unpaired surrogate in the message becomes U+FFFD, so the message is
+ * always text the JSON boundary admits.
  *
  * @category constructors
  * @since 0.1.0
  * @slop
  */
-export const make = (kind: Kind, message: string): Observation => ({
-  kind,
-  message: message.length > 8192 ? `${message.slice(0, 8192 - "[truncated]".length)}[truncated]` : message
-})
+export const make = (kind: Kind, message: string): Observation => {
+  const text = toWellFormed(message)
+  return {
+    kind,
+    message: text.length > 8192 ? `${prefix(text, 8192 - "[truncated]".length)}[truncated]` : text
+  }
+}
 
 /**
  * Renders an observation as one context line for the next author call,

@@ -13,6 +13,7 @@
  */
 
 import { Option, Schema } from "effect"
+import { isWellFormed } from "./internal/unicode.ts"
 import * as Outcome from "./Outcome.ts"
 
 const decodeOutcomeShape = Schema.decodeUnknownOption(Outcome.Outcome)
@@ -76,6 +77,10 @@ const refused = { _tag: "Refused" } as const
  * `Refused`. A host handler returning something unserializable is a
  * rejected call the script can observe, never a defect.
  *
+ * A string or key holding an unpaired UTF-16 surrogate is refused: it is
+ * not Unicode text, so canonical JSON and the digest could never compare
+ * or key it on replay.
+ *
  * `undefined` is refused everywhere except as the whole value, where it
  * becomes `null`. Array holes read as `undefined` and are refused too:
  * `JSON.stringify` would silently rewrite them to `null`, and this
@@ -101,6 +106,7 @@ export const jsonBoundary = (
     if (candidate === null || typeof candidate === "boolean") return candidate
     if (typeof candidate === "string") {
       spend(candidate.length)
+      if (!isWellFormed(candidate)) throw refused
       return candidate
     }
     if (typeof candidate === "number") {
@@ -132,6 +138,7 @@ export const jsonBoundary = (
     const copied: Record<string, unknown> = {}
     for (const key of Object.keys(candidate)) {
       spend(key.length)
+      if (!isWellFormed(key)) throw refused
       // Defined, never assigned. `copied.__proto__ = x` invokes the setter
       // Object.prototype inherits: the key would silently vanish from the
       // copy and the copy's PROTOTYPE would become an object this walk

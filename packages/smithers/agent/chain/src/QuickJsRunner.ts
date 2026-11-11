@@ -146,6 +146,7 @@ const prelude = `(function () {
   var intrinsicStringify = JSON.stringify
   var intrinsicParse = JSON.parse
   var intrinsicFunctionToString = Function.prototype.toString
+  var intrinsicCharCodeAt = Function.prototype.call.bind(String.prototype.charCodeAt)
   var IntrinsicTypeError = TypeError
   var IntrinsicError = Error
   var IntrinsicPromise = Promise
@@ -163,9 +164,21 @@ const prelude = `(function () {
   // getter that changed its answer, or a toJSON hook, would decide what
   // actually crossed. Array holes are read by index and refused; JSON has
   // no hole and rewriting one to null would change an accepted value.
+  // A lone UTF-16 surrogate is refused, as the host refuses it: canonical
+  // JSON and the digest cannot compare or key it on replay.
+  var assertWellFormed = function (text) {
+    for (var unit = 0; unit < text.length; unit++) {
+      var code = intrinsicCharCodeAt(text, unit)
+      var next = intrinsicCharCodeAt(text, unit + 1)
+      if (code >= 0xd800 && code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) unit++
+      else if (code >= 0xd800 && code <= 0xdfff) throw new IntrinsicTypeError("not JSON-serializable")
+    }
+    return text
+  }
   var copyJson = function (value, depth, seen) {
     if (depth > maxDepth) throw new IntrinsicTypeError("not JSON-serializable")
-    if (value === null || typeof value === "string" || typeof value === "boolean") return value
+    if (typeof value === "string") return assertWellFormed(value)
+    if (value === null || typeof value === "boolean") return value
     if (typeof value === "number") {
       if (!intrinsicIsFinite(value)) throw new IntrinsicTypeError("not JSON-serializable")
       return value === 0 ? 0 : value
@@ -202,6 +215,7 @@ const prelude = `(function () {
         // Defined, not assigned. The prototype-less copy above already
         // denies "__proto__" its inherited setter, and defining rather than
         // assigning keeps that true of any container this walk ever builds.
+        assertWellFormed(keys[k])
         intrinsicDefineProperty(copied, keys[k], {
           configurable: true,
           enumerable: true,
