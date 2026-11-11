@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFile, readdir, writeFile } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
+import { gt } from "semver"
 
 import { isMain } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
@@ -163,7 +164,12 @@ export const publishCandidate = async (directory, candidate, options) => {
   for (const entry of [...candidate.packages.filter((entry) => entry.name !== "smthrs"), ...candidate.packages.filter((entry) => entry.name === "smthrs")]) {
     // Idempotent tag writes recover a partial promotion without trusting a
     // local receipt over the registry or publishing immutable versions twice.
-    await options.promote(entry)
+    // A resumed older train never moves a consumer tag back: a newer version
+    // keeps it, and npm-dist-tag.yml remains the deliberate way to move it.
+    const tag = entry.version.includes("-") ? "next" : "latest"
+    const current = await options.readTag(entry, tag)
+    if (current !== undefined && gt(current, entry.version)) continue
+    await options.promote(entry, tag)
     promoted.push(entry.name)
     await record()
   }
@@ -206,7 +212,12 @@ export const registryPublisher = ({ run = execFileSync, pause = (seconds) => exe
     },
     // The publish job supplies the same NODE_AUTH_TOKEN as npm-dist-tag.yml.
     // Use the same npm command and token path as npm-dist-tag.yml.
-    promote: (entry) => invoke(["dist-tag", "add", `${entry.name}@${entry.version}`, entry.version.includes("-") ? "next" : "latest"], false, undefined, "npm"),
+    // A new name answers 404 and a name without the tag prints nothing.
+    readTag: (entry, tag) => {
+      const output = invoke(["view", entry.name, `dist-tags.${tag}`, "--json"], true, undefined, "npm")
+      return output?.trim() ? JSON.parse(output) : undefined
+    },
+    promote: (entry, tag = entry.version.includes("-") ? "next" : "latest") => invoke(["dist-tag", "add", `${entry.name}@${entry.version}`, tag], false, undefined, "npm"),
     publish: (tarball, entry) =>
     invoke(["publish", tarball, "--provenance", "--access", "public", "--tag", "staging", "--no-git-checks"], false, () => {
       const existing = readRegistry(`${entry.name}@${entry.version}`)

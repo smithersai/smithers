@@ -685,13 +685,18 @@ export const operations = (
           throw error
         }
       },
-      promote: async (entry: { name: string; version: string }) => {
-        await run("npm", [
-          "dist-tag",
-          "add",
-          `${entry.name}@${entry.version}`,
-          entry.version.includes("-") ? "next" : "latest"
-        ], signal ? { signal } : {})
+      readTag: async (entry: { name: string }, tag: string): Promise<string | undefined> => {
+        let output: string
+        try {
+          output = await run("npm", ["view", entry.name, `dist-tags.${tag}`, "--json"], signal ? { signal } : {})
+        } catch (error) {
+          if (/\b(?:E404|ERR_PNPM_FETCH_404)\b/.test(String(error))) return undefined
+          throw error
+        }
+        return output.trim() ? json<string>(output) : undefined
+      },
+      promote: async (entry: { name: string; version: string }, tag: string) => {
+        await run("npm", ["dist-tag", "add", `${entry.name}@${entry.version}`, tag], signal ? { signal } : {})
       },
       publish: async (path: string, entry: { name: string; version: string; integrity: string }) => {
         try {

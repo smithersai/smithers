@@ -11,9 +11,12 @@ import { candidateIntegrity, integrity } from "../release/publish-release.mjs"
 import { releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
 import { releaseInput, repository } from "./fixtures.ts"
 
-const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = {}) => {
+const fixture = async (
+  test: TestContext,
+  options: { gates?: ReleaseGateSet; version?: string; tagRead?: () => string } = {}
+) => {
   const repo = await repository(test)
-  const version = repo.evidence.version
+  const version = options.version ?? repo.evidence.version
   await writeFile(join(repo.root, "pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n")
   for (const [index, name] of publishedPackages.entries()) {
     const directory = name === "@smthrs/cli" ? "smithers" : `package-${index}`
@@ -62,6 +65,8 @@ const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = 
   const publishes: string[][] = []
   const promotions: string[][] = []
   const versionViews = new Set<string>()
+  const tags = new Map<string, string>()
+  const tagRead = options.tagRead
   const ops = operations({
     root: repo.root,
     gates,
@@ -74,6 +79,12 @@ const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = 
         assert.equal(versionViews.size, packages.length)
         promotions.push([...args])
         return ""
+      }
+      if (args[0] === "view" && args[2]?.startsWith("dist-tags.")) {
+        assert.equal(command, "npm")
+        if (tagRead) return tagRead()
+        const current = tags.get(`${args[1]}:${args[2].slice("dist-tags.".length)}`)
+        return current === undefined ? "" : JSON.stringify(current)
       }
       if (args[0] === "view") {
         const value = registry.get(args[1]!)
@@ -97,7 +108,7 @@ const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = 
     { phase: "publish", dryRun: false, requireContentApproval: false, provenance: false },
     version
   )
-  return { ...repo, directory, candidate, packages, registry, publishes, promotions, ops, input }
+  return { ...repo, directory, candidate, packages, registry, publishes, promotions, tags, ops, input }
 }
 
 test("the publisher rechecks both runtime receipts and publishes only missing exact packages", async (test) => {
@@ -117,6 +128,43 @@ test("the publisher rechecks both runtime receipts and publishes only missing ex
   assert.deepEqual(state.promotions.at(-1), ["dist-tag", "add", `smthrs@${state.input.version}`, "next"])
   await state.ops.publish({ input: state.input, candidate: verified })
   assert.equal(state.publishes.length, 1)
+})
+
+for (const version of ["1.0.0", "1.0.0-rc.2"]) {
+  test(`a local release never moves a newer consumer tag back (${version})`, async (test) => {
+    const state = await fixture(test, { version })
+    const tag = version.includes("-") ? "next" : "latest"
+    const [first, ...rest] = state.packages
+    state.tags.set(`${first!.name}:${tag}`, version.includes("-") ? "1.0.0-rc.10" : "2.0.0")
+    const verified = await state.ops.verifyCandidate({ input: state.input, candidate: state.candidate })
+    const result = await state.ops.publish({ input: state.input, candidate: verified })
+    assert.deepEqual(result.published, [state.packages.at(-1)!.name])
+    assert.deepEqual(state.promotions, rest.map((entry) => ["dist-tag", "add", `${entry.name}@${version}`, tag]))
+  })
+}
+
+test("local publication accepts absent tags but refuses failed or invalid tag reads", async (test) => {
+  const absent = await fixture(test, {
+    tagRead: () => {
+      throw new Error("E404")
+    }
+  })
+  await absent.ops.publish({ input: absent.input, candidate: absent.candidate })
+  assert.equal(absent.promotions.length, absent.packages.length)
+  for (
+    const tagRead of [
+      () => {
+        throw new Error("E403")
+      },
+      () => "not-json",
+      () => "E404",
+      () => JSON.stringify("not-semver")
+    ]
+  ) {
+    const state = await fixture(test, { tagRead })
+    await assert.rejects(state.ops.publish({ input: state.input, candidate: state.candidate }))
+    assert.deepEqual(state.promotions, [])
+  }
 })
 
 test("verification reads the gate receipt into the approval prompt and refuses a candidate without one or with another inventory's", async (test) => {

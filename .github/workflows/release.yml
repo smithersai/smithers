@@ -108,6 +108,15 @@ jobs:
     # The reporting lane reports every gate, red or not, so the bound
     # leaves it room below GitHub's six-hour limit.
     timeout-minutes: 330
+    # Every release tag shares the npm consumer tags (latest, next), and the
+    # publisher reads a consumer tag before it moves it. Lanes that publish
+    # serialize across release tags so that read and write cannot interleave;
+    # the gates lane, rehearsals and dry runs publish nothing and keep their
+    # own group. GitHub holds one pending run per group and cancels an older
+    # pending one, so a third concurrent tag run must be re-run.
+    concurrency:
+      group: npm-publication${{ (matrix.lane == 'gates' || inputs.dryRun || inputs.sourceRef != '') && format('-{0}-{1}', github.run_id, matrix.lane) || '' }}
+      cancel-in-progress: false
     environment: npm-publish
     permissions:
       contents: read

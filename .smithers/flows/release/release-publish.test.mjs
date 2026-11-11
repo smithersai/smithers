@@ -148,3 +148,20 @@ test("version verification requires npm to serve the exact requested version", (
     assert.equal(adapter.verifyVersion({ name: "smthrs", version: "1.0.0-rc.0" }), response === "1.0.0-rc.0")
   }
 })
+
+test("consumer tag reads use npm and distinguish absent tags from failed reads", () => {
+  const entry = { name: "@smthrs/kernel" }
+  for (const output of ["", undefined, JSON.stringify("2.0.0")]) {
+    const adapter = registryPublisher({ run: (command, args) => {
+      assert.equal(command, "npm")
+      assert.deepEqual(args, ["view", entry.name, "dist-tags.latest", "--json"])
+      if (output === undefined) throw new Error("E404")
+      return output
+    } })
+    assert.equal(adapter.readTag(entry, "latest"), output ? "2.0.0" : undefined)
+  }
+  for (const error of [new Error("E403"), new Error("invalid registry response")]) {
+    const adapter = registryPublisher({ run: () => { throw error } })
+    assert.throws(() => adapter.readTag(entry, "next"), (cause) => cause === error)
+  }
+})

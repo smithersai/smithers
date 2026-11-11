@@ -1,9 +1,10 @@
-import * as Yaml from "yaml"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 import { pathToFileURL } from "node:url"
+import { runInNewContext } from "node:vm"
+import * as Yaml from "yaml"
 import { readWorkspaceInventory } from "./readWorkspaceInventory.ts"
 
 describe("publication conformance", () => {
@@ -118,6 +119,47 @@ describe("publication conformance", () => {
         .some((step) => step.uses === "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86")
     )
     assert.ok(release.includes("smthrs flow start release/publish --data \"$(jq -cn --arg directory \"$PACK_DIR\""))
+    // Release tags share the npm consumer tags, so every publishing lane joins
+    // one group across tags; lanes that publish nothing get a group of their own.
+    const workflow = Yaml.parse(release) as {
+      readonly jobs: {
+        readonly publish: { readonly concurrency: { readonly group: string; readonly "cancel-in-progress": boolean } }
+      }
+    }
+    assert.deepEqual(workflow.jobs.publish.concurrency, {
+      group:
+        "npm-publication${{ (matrix.lane == 'gates' || inputs.dryRun || inputs.sourceRef != '') && format('-{0}-{1}', github.run_id, matrix.lane) || '' }}",
+      "cancel-in-progress": false
+    })
+    // Evaluate the actual group's expression with push and dispatch contexts.
+    // Different versions must contend for the same slot even when their jobs
+    // reach promotion in the opposite order. Non-publish lanes cannot hold it.
+    const group = (runId: number, lane: string, inputs: Record<string, unknown> = {}) =>
+      workflow.jobs.publish.concurrency.group.replace(
+        /\$\{\{(.*?)\}\}/g,
+        (_, expression: string) =>
+          String(runInNewContext(expression, {
+            matrix: { lane },
+            github: { run_id: runId },
+            inputs: { sourceRef: "", dryRun: false, ...inputs },
+            format: (_: string, id: number, name: string) => `-${id}-${name}`
+          }))
+      )
+    const publishing = [
+      group(1, "candidate", { releaseTag: "v1.0.0-rc.2" }),
+      group(2, "candidate", { releaseTag: "v1.0.0-rc.10" }),
+      group(3, "release", { releaseTag: "v1.0.0" }),
+      group(4, "release", { releaseTag: "v2.0.0" })
+    ]
+    assert.equal(new Set(publishing).size, 1)
+    for (
+      const nonPublishing of [
+        group(1, "gates"),
+        group(1, "candidate", { dryRun: true }),
+        group(2, "release", { dryRun: true }),
+        group(3, "candidate", { sourceRef: "rehearsal" })
+      ]
+    ) assert.notEqual(nonPublishing, publishing[0])
     const restore = release.indexOf("Restore and verify archived release candidate")
     assert.ok(restore > smoke)
     assert.ok(publish > restore)
@@ -127,9 +169,18 @@ describe("publication conformance", () => {
     // pack-release.test.mjs` holds the rest of that conformance suite.
     assert.ok(release.includes("manifest.json"))
     assert.ok(!release.includes("publish_if_missing"))
-    const packScript = readFileSync(join(packagesDir, "..", ".smithers", "flows", "release", "pack-release.mjs"), "utf8")
-    const smokeScript = readFileSync(join(packagesDir, "..", ".smithers", "flows", "release", "smoke-release.mjs"), "utf8")
-    const publishScript = readFileSync(join(packagesDir, "..", ".smithers", "flows", "release", "publish-release.mjs"), "utf8")
+    const packScript = readFileSync(
+      join(packagesDir, "..", ".smithers", "flows", "release", "pack-release.mjs"),
+      "utf8"
+    )
+    const smokeScript = readFileSync(
+      join(packagesDir, "..", ".smithers", "flows", "release", "smoke-release.mjs"),
+      "utf8"
+    )
+    const publishScript = readFileSync(
+      join(packagesDir, "..", ".smithers", "flows", "release", "publish-release.mjs"),
+      "utf8"
+    )
     assert.ok(publishScript.includes("join(directory, \"release-manifest.json\")"))
     assert.ok(publishScript.includes("const pending = await preflight(directory, candidate, options)"))
     assert.ok(publishScript.includes("for (const [index, entry] of pending.entries())"))

@@ -14,7 +14,7 @@ const fixture = async (body) => {
     await writeFile(join(directory, "manifest.json"), JSON.stringify(packages))
     await writeFile(join(directory, "release-manifest.json"), JSON.stringify(candidate))
     await recordSmokeSuccess(directory, candidate)
-    const options = { sourceSha: "tested-sha", releaseTag: "v1.0.0-rc.0", promote: async () => {}, verifyVersion: async () => true }
+    const options = { sourceSha: "tested-sha", releaseTag: "v1.0.0-rc.0", readTag: async () => undefined, promote: async () => {}, verifyVersion: async () => true }
     await body(directory, candidate, options)
   } finally { await rm(directory, { recursive: true, force: true }) }
 }
@@ -296,6 +296,7 @@ for (const version of ["1.0.0-rc.0", "1.0.0"]) {
     let failPromotion = true
     const adapter = registryPublisher({ pause: () => {}, run: (command, args) => {
       calls.push([command, ...args])
+      if (args[0] === "view" && args[2].startsWith("dist-tags.")) return tags.has(`${args[1]}:${args[2].slice(10)}`) ? JSON.stringify(tags.get(`${args[1]}:${args[2].slice(10)}`)) : ""
       if (args[0] === "view") {
         const entry = candidate.packages.find((entry) => `${entry.name}@${version}` === args[1])
         if (!served.has(entry.name)) throw new Error("E404")
@@ -365,6 +366,43 @@ for (const eventuallyServed of [true, false]) {
   }))
 }
 
+// An older train resumed after a newer one became the consumer tag must not
+// hand new installs the older train. Only the npm boundary is recorded.
+for (const [version, tag, newer] of [["1.0.0", "latest", "2.0.0"], ["1.0.0-rc.2", "next", "1.0.0-rc.10"]]) {
+  test(`a resumed older train never moves ${tag} backwards`, () => fixture(async (directory, candidate, options) => {
+    candidate.packages = candidate.packages.map((entry) => ({ ...entry, version }))
+    candidate.source.tag = `v${version}`
+    await writeFile(join(directory, "manifest.json"), JSON.stringify(candidate.packages))
+    await writeFile(join(directory, "release-manifest.json"), JSON.stringify(candidate))
+    await recordSmokeSuccess(directory, candidate)
+    // a's tag has moved on to the newer train and b's still holds an older
+    // one, so only b is promoted.
+    const tags = new Map([[`a:${tag}`, newer], [`b:${tag}`, "0.9.0"]])
+    const writes = []
+    const adapter = registryPublisher({ pause: () => {}, run: (command, args) => {
+      assert.ok(command === "npm" || args[0] === "view")
+      if (args[0] === "view" && args[2] === `dist-tags.${tag}`) return tags.has(`${args[1]}:${tag}`) ? JSON.stringify(tags.get(`${args[1]}:${tag}`)) : ""
+      if (args[0] === "view") {
+        const entry = candidate.packages.find((entry) => `${entry.name}@${version}` === args[1])
+        return JSON.stringify(args[2] === "version" ? version : entry.integrity)
+      }
+      assert.deepEqual(args.slice(0, 2), ["dist-tag", "add"])
+      writes.push(args.slice(2))
+      tags.set(`${args[2].slice(0, args[2].lastIndexOf("@"))}:${args[3]}`, version)
+      return ""
+    } })
+    const result = await publishCandidate(directory, candidate, { ...options, releaseTag: candidate.source.tag, ...adapter, publish: () => assert.fail("resume cannot republish") })
+    assert.deepEqual(result, [])
+    assert.deepEqual(writes, [[`b@${version}`, tag]])
+    assert.equal(tags.get(`a:${tag}`), newer)
+    assert.equal(tags.get(`b:${tag}`), version)
+    // Re-resuming writes the tag it already holds, so a lost acknowledgement recovers.
+    await publishCandidate(directory, candidate, { ...options, releaseTag: candidate.source.tag, ...adapter })
+    assert.deepEqual(writes, [[`b@${version}`, tag], [`b@${version}`, tag]])
+    assert.deepEqual(JSON.parse(await readFile(join(directory, "publish-receipt.json"), "utf8")).promoted, ["b"])
+  }))
+}
+
 test("an integrity-verified resume still checks every version before promotion", () => fixture(async (directory, candidate, options) => {
   const versions = [], promotions = []
   await assert.rejects(publishCandidate(directory, candidate, { ...options,
@@ -375,4 +413,19 @@ test("an integrity-verified resume still checks every version before promotion",
   }), /Published version is not served: b@/)
   assert.equal(versions[0], "a")
   assert.deepEqual(promotions, [])
+}))
+
+test("unreadable consumer tags fail closed before promotion", () => fixture(async (directory, candidate, options) => {
+  for (const current of ["not-semver", null, {}, 42]) {
+    await assert.rejects(publishCandidate(directory, candidate, { ...options,
+      readRegistry: async (spec) => candidate.packages.find((entry) => spec === `${entry.name}@${entry.version}`).integrity,
+      readTag: async () => current,
+      promote: () => assert.fail("invalid tag must not be replaced")
+    }))
+  }
+  await assert.rejects(publishCandidate(directory, candidate, { ...options,
+    readRegistry: async (spec) => candidate.packages.find((entry) => spec === `${entry.name}@${entry.version}`).integrity,
+    readTag: async () => { throw new Error("tag read failed") },
+    promote: () => assert.fail("unreadable tag must not be replaced")
+  }), /tag read failed/)
 }))
