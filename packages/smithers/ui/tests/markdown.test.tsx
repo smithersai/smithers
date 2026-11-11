@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { act, type ReactElement } from "react";
+import { act, type ReactElement, type ReactNode } from "react";
+import fc from "fast-check";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Markdown, SMITHERS_UI_STYLE_ATTR } from "../src/index";
@@ -123,6 +124,86 @@ describe("Markdown (static markup)", () => {
       );
       expect(cached).toBe(uncached);
     }
+  });
+});
+
+describe("Markdown (inline parse bounds)", () => {
+  const paragraph = (children: ReactNode) => renderToStaticMarkup(
+    <div data-slot="markdown" className="sui-md"><p className="sui-md-p">{children}</p></div>,
+  );
+
+  for (const variant of ["chat", "document"] as const) {
+    test.each([
+      ["unmatched brackets", "[".repeat(200_000)],
+      ["unterminated destinations", "[a](".repeat(50_000)],
+      ["unterminated image labels", "![".repeat(100_000)],
+      ["unterminated image destinations", "![a](".repeat(40_000)],
+    ])(`${variant} renders 200,000 characters of %s within one second`, (_name, content) => {
+      const started = performance.now();
+      const html = renderToStaticMarkup(<Markdown content={content} variant={variant} />);
+      const elapsed = performance.now() - started;
+      expect(html).toBe(paragraph(content));
+      expect(elapsed).toBeLessThan(1_000);
+    }, 120_000);
+
+    test(`${variant} preserves long labels, destinations and opening delimiters`, () => {
+      const label = "[".repeat(2_000) + "label";
+      const href = "/docs/" + "segment (".repeat(1_000);
+      const content = `Before [${label}](${href}) after`;
+      expect(renderToStaticMarkup(<Markdown content={content} variant={variant} />)).toBe(
+        paragraph(<>Before <a className="sui-md-link" href={href}>{label}</a> after</>),
+      );
+    });
+
+    test(`${variant} keeps malformed links literal and still finds following emphasis`, () => {
+      fc.assert(fc.property(
+        fc.array(fc.constantFrom("[", "![", "[![", "[a](", "![a](", "x", "("), { maxLength: 200 }),
+        (parts) => {
+          const prefix = "Before " + parts.join("") + " ";
+          const visiblePrefix = variant === "document" ? prefix.replace(/ +/g, " ") : prefix;
+          expect(renderToStaticMarkup(<Markdown content={prefix + "**bold**"} variant={variant} />)).toBe(
+            paragraph(<>{visiblePrefix}<strong>bold</strong></>),
+          );
+        },
+      ), { numRuns: 200, seed: 5021 });
+    });
+
+    test(`${variant} preserves generated link labels and destinations`, () => {
+      const label = fc.array(fc.constantFrom("a", "[", "(", ")", "!", "*", "`", " ", "&"), { minLength: 1, maxLength: 100 }).map((parts) => parts.join(""));
+      const destination = fc.array(fc.constantFrom("a", "[", "]", "(", "!", "*", "`"), { maxLength: 100 }).map((parts) => "/docs/" + parts.join(""));
+      fc.assert(fc.property(label, destination, (label, href) => {
+        // Document flow collapses source whitespace before reading inline tokens.
+        const visibleLabel = variant === "document" ? label.replace(/ +/g, " ") : label;
+        expect(renderToStaticMarkup(<Markdown content={`Before [${label}](${href}) after`} variant={variant} />)).toBe(
+          paragraph(<>Before <a className="sui-md-link" href={href}>{visibleLabel}</a> after</>),
+        );
+        if (variant === "document") {
+          expect(renderToStaticMarkup(<Markdown content={`Before [![${label}]()](${href}) after`} variant={variant} />)).toBe(
+            paragraph(<>Before <a className="sui-md-link" href={href}>{visibleLabel}</a> after</>),
+          );
+          expect(renderToStaticMarkup(<Markdown content={`Before ![${label}]() after`} variant={variant} />)).toBe(
+            paragraph(`Before ${visibleLabel} after`),
+          );
+        }
+      }), { numRuns: 200, seed: 5021 });
+    });
+  }
+
+  test.each([
+    ["[](/empty-label)", "[](/empty-label)"],
+    ["[label]()", "[label]()"],
+    ["[![alt]()](/target)", <a className="sui-md-link" href="/target">alt</a>],
+    ["[![]()](/target)", ""],
+    ["[![alt]()]()", <>[alt]()</>],
+    ["[![alt](/image)]()", <><a className="sui-md-link" href="/image">![alt</a>]()</>],
+    ["![alt]() [ok](/target)", <>alt <a className="sui-md-link" href="/target">ok</a></>],
+    ["[![alt](/image)](/target) [ok](/next)", <><a className="sui-md-link" href="/target">alt</a> <a className="sui-md-link" href="/next">ok</a></>],
+    ["[![alt](/image)](missing **bold**", <><a className="sui-md-link" href="/image">![alt</a>](missing <strong>bold</strong></>],
+    ["`[![alt](/image)](/target)`", <code className="sui-md-inline-code">[![alt](/image)](/target)</code>],
+  ])("document preserves image priority and fallback for %s", (content, expected) => {
+    expect(renderToStaticMarkup(<Markdown content={`Before ${content} after`} variant="document" />)).toBe(
+      paragraph(<>Before {expected} after</>),
+    );
   });
 });
 

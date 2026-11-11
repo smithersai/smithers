@@ -8,18 +8,63 @@ import { safeHref } from "../internal/safeHref";
 import { useInjectUiCss } from "../styles";
 
 /**
- * Inline tokens, in match priority order: `code`, **bold**, *italic*, and
- * [links](href). Bold is matched before italic so `**x**` isn't eaten by the
- * single-asterisk rule; code is matched first so `*` inside a span stays
- * literal. Links start with `[`, so they never collide with the other rules.
+ * Code, bold and italic tokens, then link/image openers. The opener scan
+ * preserves token priority without searching every malformed label's suffix.
  */
-const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[[^\]]+\]\([^)]+\))/g;
+const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[)/g;
+const DOCUMENT_INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|!\[|\[)/g;
 const LINK = /^\[([^\]]+)\]\(([^)]+)\)$/;
+
 /**
- * Document mode also reads images, ahead of links: a linked image
- * `[![alt](src)](href)` (a README badge) and a bare `![alt](src)`.
+ * Each caller asks for closing delimiters in source order. Remember a missing
+ * delimiter too, so repeated openers never rescan the same unterminated suffix.
  */
-const DOCUMENT_INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[!\[[^\]]*\]\([^)]*\)\]\([^)]+\)|!\[[^\]]*\]\([^)]*\)|\[[^\]]+\]\([^)]+\))/g;
+const closingDelimiter = (text: string, delimiter: string) => {
+  let next = -1;
+  return (from: number): number => {
+    if (next < from) {
+      next = text.indexOf(delimiter, from);
+      if (next < 0) next = text.length;
+    }
+    return next;
+  };
+};
+
+/** Forward-only inline scanning, including document images and linked badges. */
+function* inlineTokens(text: string, document: boolean): Generator<{ index: number; token: string }> {
+  const pattern = new RegExp(document ? DOCUMENT_INLINE : INLINE);
+  const labelClose = closingDelimiter(text, "]");
+  const destinationClose = closingDelimiter(text, ")");
+  const outerDestinationClose = closingDelimiter(text, ")");
+  for (let match; (match = pattern.exec(text)) !== null;) {
+    const index = match.index;
+    let token = match[0];
+    if (token === "[" || token === "![") {
+      // For a linked image, the "![" prefix contains no closing bracket, so
+      // its first "]" is also the fallback link's first "]".
+      const labelEnd = labelClose(index + token.length);
+      if (!text.startsWith("(", labelEnd + 1)) continue;
+      const destinationEnd = destinationClose(labelEnd + 2);
+      if (destinationEnd === text.length) continue;
+
+      let end = destinationEnd + 1;
+      let linkedImage = false;
+      if (document && token === "[" && text.startsWith("![", index + 1) && text.startsWith("](", end)) {
+        const outerEnd = outerDestinationClose(end + 2);
+        if (outerEnd < text.length && outerEnd > end + 2) {
+          end = outerEnd + 1;
+          linkedImage = true;
+        }
+      }
+      // Links need a label and a destination; document images allow both empty.
+      if (!linkedImage && token === "[" && (labelEnd === index + 1 || destinationEnd === labelEnd + 2)) continue;
+      token = text.slice(index, end);
+      pattern.lastIndex = end;
+    }
+    yield { index, token };
+  }
+}
+
 const LINKED_IMAGE = /^\[!\[([^\]]*)\]\([^)]*\)\]\(([^)]+)\)$/;
 const IMAGE = /^!\[([^\]]*)\]\([^)]*\)$/;
 /** A whole line that is one image, `![alt](src)`: the image block a host may draw through `resolveImage`. */
@@ -106,12 +151,10 @@ function renderInline(
   const out: ReactNode[] = [];
   let last = 0;
   let i = 0;
-  for (const match of text.matchAll(document ? DOCUMENT_INLINE : INLINE)) {
-    const idx = match.index ?? 0;
+  for (const { index: idx, token } of inlineTokens(text, document)) {
     if (idx > last) {
       out.push(prose(text.slice(last, idx)));
     }
-    const token = match[0];
     const key = `${keyPrefix}.${i++}`;
     if (token.startsWith("`")) {
       out.push(
