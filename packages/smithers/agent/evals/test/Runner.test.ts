@@ -866,6 +866,40 @@ describe("Runner", () => {
     expect(result.observations).toEqual([])
   })
 
+  // Sampled-out attempts used to count as failed trials, so a suite whose every
+  // scored observation was 1 reported a pass@1 below 1.
+  it("leaves sampled-out attempts out of the trial statistics", async () => {
+    const skipped = { name: "skipped" } as const
+    const suite = await suiteOf("sampled-trials", [
+      binding,
+      Binding.make({ scorer: scorerFlow, appliesTo: skipped, sampling: "none" })
+    ], [
+      { name: "scored", input: 1, expected: 1 },
+      { name: "skipped", input: 2 },
+      { name: "alternating", input: 3, expected: 3 }
+    ])
+    let alternating = 0
+    const executor = executorFor((suiteCase) =>
+      Effect.sync(() => ({
+        output: suiteCase.input,
+        stepKey: `${suiteCase.name}-${suiteCase.name === "alternating" ? alternating : 0}`,
+        latencyMs: 0,
+        target: suiteCase.name === "skipped" || (suiteCase.name === "alternating" && alternating++ === 0)
+          ? skipped
+          : target
+      }))
+    )
+    const run = await Effect.runPromise(
+      Runner.run(suite, { ...runOptions, trials: 2, k: 2 }).pipe(Effect.provide(executor))
+    )
+    expect(run.trials).toMatchObject({ cases: 2, passAt1: 1, passAtK: 1, allPass: 1 })
+    expect(Object.keys(run.trials?.perCase ?? {})).toEqual(["scored", "alternating"])
+    expect(run.cases[1]?.observations).toEqual([])
+    expect(run.cases[1]?.trials).toBeUndefined()
+    expect(run.cases[2]?.trials).toMatchObject({ n: 1, passes: 1, passAtK: 1 })
+    expect(run.cases.map((result) => result.ungraded)).toEqual([undefined, "sampled_out", undefined])
+  })
+
   it("rejects a sampling policy the scorers package cannot decide", async () => {
     const suite = await suiteOf("bad-sampling", [
       Binding.make({ scorer: scorerFlow, appliesTo: target, sampling: { ratio: 2, seed: "s" } as Sampling.Sampling })

@@ -300,8 +300,16 @@ Deterministic suite execution and bound scorer evaluation.
 - `ScoreObservation`: a score result aligned with a `ScoreRequest`.
 - `BatchResult`: `{ identity, observation }`, a batch result tagged with the
   identity of the job that produced it.
-- `CaseResult`: `{ case, execution?, error?, observations }`, the per-case
-  result retained by the runner.
+- `CaseResult`: `{ case, execution?, error?, observations, ungraded?, trials? }`,
+  the per-case result retained by the runner. `ungraded` names why an attempt
+  that executed produced no observation: `unbound` when any attempt matched no
+  binding, `sampled_out` when every attempt was sampled out. `trials` is absent
+  in the second case.
+- `Ungraded`: `"unbound" | "sampled_out"`, why an executed case has no
+  observation. `unbound`: no binding applies to the execution's target, and a
+  gate reports it as an environment fault. `sampled_out`: a binding applied
+  but its sampling policy decided against the execution, so the attempt is
+  not a trial.
 - `RunResult`: `{ runId, suite, cases, observations }`, the stable result of a
   suite run.
 - `RunOptions`: `{ scorer?, runId, sampleId?, at }`.
@@ -324,7 +332,10 @@ run through the provided `CaseExecutor` at the suite's concurrency. Every
 execution is graded by the bindings whose `appliesTo` is the flow the
 execution reports as its target, matched by reference identity. A case whose
 target failed keeps its typed error and produces no observations; a scorer
-that failed produces an inconclusive observation. The run itself fails only
+that failed produces an inconclusive observation. A case with an attempt that
+executed but produced no observation carries `ungraded`. Trial statistics leave out
+sampled-out attempts, so a case whose every attempt was sampled out has no
+`trials` and is absent from the aggregate. The run itself fails only
 with `invalid_run_options` for a non-canonical run identity or timestamp,
 `invalid_suite` for an unusable sampling policy, `ambiguous_score_job` when an
 order-only runner cannot distinguish two jobs, or `scorer_protocol` for a
@@ -511,8 +522,9 @@ const check = (report: Regression.Report, options?: Options): Effect.Effect<Verd
 Checks thresholds through the shared ScoreGate arithmetic in
 [@smthrs/scorers/ScoreGate](/docs/reference/api/scorers/). The threshold gates always run: an
 unobserved case cannot excuse the cases that were observed. Regressions and
-nondeterminism are findings and force a `Failed` verdict; failed cases and
-missing observations are environment faults and travel beside the verdict. A
+nondeterminism are findings and force a `Failed` verdict; failed cases,
+executed cases no binding applies to, and missing observations are
+environment faults and travel beside the verdict. A
 threshold outside [0, 1] fails in the error channel with a `ScoreGateError`,
 code `invalid_threshold`.
 
@@ -587,6 +599,7 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
 | `Runner.ScoreObservation`       | models        | A score result aligned with a `ScoreRequest`.                                   |
 | `Runner.BatchResult`            | models        | A batch result tagged with the identity of the job that produced it.            |
 | `Runner.CaseResult`             | models        | Per-case result retained by the deterministic runner.                           |
+| `Runner.Ungraded`               | models        | Why a case that executed produced no observations.                              |
 | `Runner.RunResult`              | models        | Stable result of a suite run.                                                   |
 | `Runner.RunOptions`             | models        | Options for a deterministic suite run.                                          |
 | `Runner.Runner`                 | services      | Injectable batch-runner service used when a caller wants a reusable adapter.    |

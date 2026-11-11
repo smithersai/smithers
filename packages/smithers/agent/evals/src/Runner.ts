@@ -135,7 +135,26 @@ export interface BatchResult {
 }
 
 /**
+ * Why a case that executed produced no observations.
+ *
+ * `unbound` means no binding's `appliesTo` is the flow the execution reports
+ * as its target, so nothing could grade it: a gate treats it as an environment
+ * fault. `sampled_out` means a binding applied but its sampling policy decided
+ * against the execution, so the case was deliberately left unscored and is
+ * not a failed trial.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Ungraded = "unbound" | "sampled_out"
+
+/**
  * Per-case result retained by the deterministic runner.
+ *
+ * `ungraded` names why an attempt that executed produced no observation:
+ * `unbound` when any attempt matched no binding, `sampled_out` when every
+ * attempt was sampled out. `trials` is absent in the second case, because a
+ * case nothing scored has no pass rate.
  *
  * @category models
  * @since 0.1.0
@@ -145,6 +164,7 @@ export interface CaseResult {
   readonly execution?: Execution | undefined
   readonly error?: EvalError | undefined
   readonly observations: ReadonlyArray<Observation>
+  readonly ungraded?: Ungraded | undefined
   readonly trials?: Trials.Summary | undefined
 }
 
@@ -650,6 +670,19 @@ const scoreOrderOnly = (
     return results
   })
 
+// An execution with no observation was either matched by no binding or
+// matched and then sampled out: every matched, sampled request yields exactly
+// one observation, so those are the only two ways to end up with none.
+const markUngraded = (cases: ReadonlyArray<CaseResult>, suite: Suite): ReadonlyArray<CaseResult> =>
+  cases.map((caseResult) => {
+    const execution = caseResult.execution
+    if (execution === undefined || caseResult.observations.length > 0) return caseResult
+    const ungraded: Ungraded = suite.bindings.some((binding) => binding.appliesTo === execution.target)
+      ? "sampled_out"
+      : "unbound"
+    return { ...caseResult, ungraded }
+  })
+
 const score = (
   cases: ReadonlyArray<CaseResult>,
   suite: Suite,
@@ -658,7 +691,7 @@ const score = (
 ): Effect.Effect<ReadonlyArray<CaseResult>, EvalError> =>
   Effect.gen(function*() {
     const { requests, jobs } = yield* buildJobs(cases, suite, context)
-    if (requests.length === 0) return cases
+    if (requests.length === 0) return markUngraded(cases, suite)
     const runBatchCorrelated = scorer.runBatchCorrelated
     const protocol = runBatchCorrelated === undefined ? "runBatch" : "runBatchCorrelated"
     const results = yield* runBatchCorrelated === undefined
@@ -704,10 +737,13 @@ const score = (
       if (bucket === undefined) byCase.set(observation.case, [observation])
       else bucket.push(observation)
     }
-    return cases.map((caseResult) => ({
-      ...caseResult,
-      observations: byCase.get(caseResult.case) ?? []
-    }))
+    return markUngraded(
+      cases.map((caseResult) => ({
+        ...caseResult,
+        observations: byCase.get(caseResult.case) ?? []
+      })),
+      suite
+    )
   })
 
 /**
@@ -725,7 +761,11 @@ const score = (
  * {@link Runner} service when one is provided, and {@link makeInline}
  * otherwise. A case whose target failed keeps its typed error, locates itself
  * with the executor's own `path` or with `cases['<name>']`, and produces no
- * observations; a scorer that failed produces an inconclusive observation. The
+ * observations; a scorer that failed produces an inconclusive observation. A
+ * case with an attempt that executed but produced no observation carries
+ * `ungraded`. Trial
+ * statistics leave out sampled-out attempts, so a case every attempt of which
+ * was sampled out has no `trials` and is absent from the aggregate. The
  * run itself fails only with `invalid_run_options` for a non-canonical run
  * identity or timestamp, `invalid_suite` for an unusable sampling policy,
  * `ambiguous_score_job` when an order-only runner cannot distinguish two jobs,
@@ -803,16 +843,25 @@ export const run = (
       const attempts = batches.map((batch) =>
         batch[index]!
       )
-      const passed = attempts.map((attempt) =>
+      // A sampled-out attempt was deliberately not scored, so it is no trial
+      // at all; an unbound attempt stays a failed one.
+      const passed = attempts.filter((attempt) => attempt.ungraded !== "sampled_out").map((attempt) =>
         attempt.error === undefined && attempt.observations.length > 0 &&
         attempt.observations.every((observation) => observation.kind === "score" && observation.score === 1)
       )
-      outcomes.push([suiteCase.name, passed])
+      if (passed.length > 0) outcomes.push([suiteCase.name, passed])
+      const ungraded: Ungraded | undefined = attempts.some((attempt) => attempt.ungraded === "unbound")
+        ? "unbound"
+        : passed.length === 0
+        ? "sampled_out"
+        : undefined
+      const { ungraded: _ungraded, ...first } = attempts[0]!
       return {
-        ...attempts[0]!,
+        ...first,
         error: attempts.find((attempt) => attempt.error !== undefined)?.error,
         observations: attempts.flatMap((attempt) => attempt.observations),
-        trials: Trials.summarize(passed, k)
+        ...(ungraded === undefined ? {} : { ungraded }),
+        ...(passed.length === 0 ? {} : { trials: Trials.summarize(passed, Math.min(k, passed.length)) })
       }
     })
     return {

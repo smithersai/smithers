@@ -155,7 +155,8 @@ Two wiring mistakes fail outside the `EvalError` channel:
 - A binding graded nothing. The execution's `target` is not the exact flow
   value the binding's `appliesTo` holds (reference identity, not structure),
   the case failed before scoring, or the sampling policy decided against the
-  execution.
+  execution. The case's `ungraded` field says which: `unbound` makes the gate
+  exit 5, and `sampled_out` leaves the attempt out of the trial statistics.
 - The gate exits 5. The gate could not decide, or it passed with unresolved
   observations. The Markdown report's Case failures, Missing observations, and
   Inconclusive sections name what is missing. Exit 5 is an unusable harness to
