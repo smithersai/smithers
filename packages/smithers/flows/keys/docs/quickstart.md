@@ -8,7 +8,9 @@ sidebar:
 This quickstart builds the smallest thing keys are for: a cache that recognizes
 work it has already done. By the end you will have derived a key from
 structured input, hit the cache with a differently spelled but equivalent
-input, persisted the key, and validated it on the way back in.
+input, persisted the key, and validated it on the way back in. Each step below
+is TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs the
+same steps as Effect code.
 
 ## Prerequisites
 
@@ -134,6 +136,61 @@ fixed and frozen for this format version, so the key printed above is the same
 on any host and in any release that still writes `key1_`. Read
 [Key derivation](./concepts/key-derivation.md) for what those steps are and
 what the resulting identity does and does not promise.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) `compile` is an `effect`
+function, so `try` runs the derivation where the TypeScript wrote `yield*`.
+Validation decodes through `Schema.decodeUnknownEffect`, so a malformed key is
+a typed failure rather than an exception. `digest` runs in a plain helper,
+because effect code may not call a function that declares no `@throws`
+contract.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { deriveKey, digest, StoredKey } from "@smthrs/keys"
+
+/** One unit of work, as structured input. */
+export interface CompileRequest {
+  readonly target: string
+  readonly flags: ReadonlyArray<string>
+}
+
+/** The key of one compile, under this cache's own namespace. */
+export const compileKey = (request: CompileRequest) =>
+  deriveKey({ domain: "quickstart/compile", version: 1, target: request.target, flags: request.flags })
+
+/** A `Map` stands in for a real store. */
+export const cache = new Map<string, string>()
+
+/** Builds once per key: an equal request is a hit. */
+export effect function compile(request: CompileRequest) {
+  const key = try compileKey(request)
+  const cached = cache.get(key)
+  if (cached !== undefined) return { key, output: cached, hit: true }
+
+  const output = `built ${request.target} with ${request.flags.join(" ")}`
+  cache.set(key, output)
+  return { key, output, hit: false }
+}
+
+/** Two spellings of one document derive one key. */
+export effect function sameKeyAnySpelling() {
+  const a = try deriveKey({ domain: "quickstart/compile", version: 1, target: "web" })
+  const b = try deriveKey({ target: "web", version: 1, domain: "quickstart/compile" })
+  return a === b
+}
+
+/** A validated key and its SHA-256 payload. A plain function never throws. */
+const withPayload = (key: StoredKey) => ({ key, payload: digest(key) })
+
+/** Validates persisted key text without hashing it, so it needs no `Digest`. */
+export effect function fromStorage(text: unknown) {
+  return withPayload(try Schema.decodeUnknownEffect(StoredKey)(text))
+}
+```
 
 ## Next steps
 

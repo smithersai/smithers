@@ -1,0 +1,27 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { expect, it } from "@effect/vitest"
+import { compile, fromStorage, sameKeyAnySpelling } from "../examples/quickstart.vibe"
+
+const KEY = "key1_331f037bd10c4bc742f2d8b50028af9424ecde88572180536a0a17c12868cbb0"
+
+it.effect("misses once, then hits on the same structured input", effect () => {
+  provide NodeCrypto.layer {
+    const first = try compile({ target: "web", flags: ["--minify", "--sourcemap"] })
+    const second = try compile({ target: "web", flags: ["--minify", "--sourcemap"] })
+    expect(first).toEqual({ key: KEY, output: "built web with --minify --sourcemap", hit: false })
+    expect(second).toEqual({ ...first, hit: true })
+    expect((try compile({ target: "web", flags: ["--minify"] })).hit).toBe(false)
+  }
+})
+
+it.effect("derives one key from two property orders", effect () => {
+  provide NodeCrypto.layer {
+    expect(try sameKeyAnySpelling()).toBe(true)
+  }
+})
+
+it.effect("validates stored text and refuses anything else", effect () => {
+  expect(try fromStorage(KEY)).toEqual({ key: KEY, payload: KEY.slice("key1_".length) })
+  const refused = try exit(fromStorage(KEY.toUpperCase()))
+  expect(Exit.isFailure(refused)).toBe(true)
+})

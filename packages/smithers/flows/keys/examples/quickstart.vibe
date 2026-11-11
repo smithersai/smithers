@@ -1,0 +1,40 @@
+import { deriveKey, digest, StoredKey } from "@smthrs/keys"
+
+/** One unit of work, as structured input. */
+export interface CompileRequest {
+  readonly target: string
+  readonly flags: ReadonlyArray<string>
+}
+
+/** The key of one compile, under this cache's own namespace. */
+export const compileKey = (request: CompileRequest) =>
+  deriveKey({ domain: "quickstart/compile", version: 1, target: request.target, flags: request.flags })
+
+/** A `Map` stands in for a real store. */
+export const cache = new Map<string, string>()
+
+/** Builds once per key: an equal request is a hit. */
+export effect function compile(request: CompileRequest) {
+  const key = try compileKey(request)
+  const cached = cache.get(key)
+  if (cached !== undefined) return { key, output: cached, hit: true }
+
+  const output = `built ${request.target} with ${request.flags.join(" ")}`
+  cache.set(key, output)
+  return { key, output, hit: false }
+}
+
+/** Two spellings of one document derive one key. */
+export effect function sameKeyAnySpelling() {
+  const a = try deriveKey({ domain: "quickstart/compile", version: 1, target: "web" })
+  const b = try deriveKey({ target: "web", version: 1, domain: "quickstart/compile" })
+  return a === b
+}
+
+/** A validated key and its SHA-256 payload. A plain function never throws. */
+const withPayload = (key: StoredKey) => ({ key, payload: digest(key) })
+
+/** Validates persisted key text without hashing it, so it needs no `Digest`. */
+export effect function fromStorage(text: unknown) {
+  return withPayload(try Schema.decodeUnknownEffect(StoredKey)(text))
+}
