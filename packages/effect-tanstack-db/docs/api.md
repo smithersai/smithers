@@ -144,6 +144,7 @@ interface Collection<A extends object, K extends Key = Key, U extends UtilsRecor
   readonly toArray: Effect.Effect<ReadonlyArray<A>>
   readonly get: (key: K) => Effect.Effect<Option.Option<A>>
   readonly isSynced: (key: K) => Effect.Effect<boolean>
+  readonly pendingWrites: (key: K) => Effect.Effect<ReadonlyArray<Transaction>>
   readonly preload: Effect.Effect<void, LoadFailed>
   readonly restored: Effect.Effect<void, LoadFailed>
   readonly changes: (options?: { readonly initial?: boolean }) => Stream.Stream<ReadonlyArray<Change<A, K>>>
@@ -160,6 +161,7 @@ interface Collection<A extends object, K extends Key = Key, U extends UtilsRecor
 | `toArray`                    | The rows as they are now, optimistic writes included.                                                                                                                                                              |
 | `get`                        | One row as it is now.                                                                                                                                                                                              |
 | `isSynced`                   | Whether the row is there as the sync source has it: present, with no optimistic write of its own pending. A row a mutation inserted is not synced until its handler persists it and the source delivers it back.   |
+| `pendingWrites`              | Reads the unsettled transaction receipts affecting a key, including an optimistic deletion. Reading never retries a write.                                                                                         |
 | `preload`                    | Starts the sync and waits for the first rows: for a synced collection, the network's. Fails with `LoadFailed`.                                                                                                     |
 | `restored`                   | Starts the collection and waits until the rows kept on the device have loaded, whatever the network does. For a collection that keeps none, the same as `preload`. Fails with `LoadFailed` when the restore fails. |
 | `changes`                    | The change batches from when the stream starts. Without `initial`, every later change, including to rows that existed before; with `initial`, the current rows first.                                              |
@@ -245,7 +247,10 @@ All three are `Data.TaggedError`s, so `Effect.catchTag` narrows them.
 ```ts
 const make: <Q extends AnyQuery>(
   query: (q: InitialQueryBuilder) => Q,
-  options?: { readonly getKey?: (row: Row<Q>) => string | number }
+  options?: {
+    readonly getKey?: (row: Row<Q>) => string | number
+    readonly publication?: "settled" | "incremental"
+  }
 ) => Effect.Effect<LiveQuery<Q>, LoadFailed, Scope.Scope>
 ```
 
@@ -330,8 +335,8 @@ interface Options<D extends Database> {
     coordinator: PersistedCollectionCoordinator | undefined
   ) => PersistedCollectionPersistence
   readonly coordinator?: () => Coordinator
-  readonly registry?: Migrations.Registry
-  readonly lock?: Outbox.Lock
+  readonly registry?: Migrations.Registry | undefined
+  readonly lock?: Outbox.Lock | undefined
 }
 ```
 
@@ -404,23 +409,30 @@ const booted = Effect.gen(function*() {
 
 ### Models
 
-| Type          | Is                                                                                                                                                                                           |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Persistence` | The service: `{ readonly persistence: Option.Option<PersistedCollectionPersistence>; readonly registry?: Migrations.Registry; readonly lock?: Outbox.Lock }`, none when rows stay in memory. |
-| `Database`    | `{ readonly close?: () => Promise<void> \| void }`: whatever `open` returns and `make` builds on.                                                                                            |
-| `Coordinator` | TanStack DB's `PersistedCollectionCoordinator` with an optional `dispose`, run as the layer closes, before the database.                                                                     |
-| `Roles`       | `{ readonly writers: number; readonly watchers: number }`: how many of a program's persisted synced collections first took each role, as `reportRoles` answers.                              |
+| Type          | Is                                                                                                                                                                                                                                                                               |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Persistence` | The service: `{ readonly persistence: Option.Option<PersistedCollectionPersistence>; readonly registry?: Migrations.Registry; readonly lock?: Outbox.Lock; readonly collections?: Effect.Effect<ReadonlyArray<string>, CollectionsUnreadable> }`, none when rows stay in memory. |
+| `Database`    | `{ readonly close?: () => Promise<void> \| void }`: whatever `open` returns and `make` builds on.                                                                                                                                                                                |
+| `Coordinator` | TanStack DB's `PersistedCollectionCoordinator` with an optional `dispose`, run as the layer closes, before the database.                                                                                                                                                         |
+| `Roles`       | `{ readonly writers: number; readonly watchers: number }`: how many of a program's persisted synced collections first took each role, as `reportRoles` answers.                                                                                                                  |
+
+When present, `Persistence.collections` lists the ids stored by every program
+sharing the database, including unopened family members. An unreadable registry
+fails with `CollectionsUnreadable` rather than answering an empty list. The
+effect is absent when there is no database.
 
 ### Metrics and errors
 
-| Export                   | Is                                                                                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unavailable`            | Counter `persistence_unavailable`: times the database couldn't open, so rows stayed in memory.                                                 |
-| `restoreMs`              | Histogram `persistence_restore_ms`, by `collection` (its id): milliseconds from making a persisted collection to its rows restored.            |
-| `restoreFailures`        | Counter `persistence_restore_failures`, by `collection` (its kind, the id up to its first `:`): persisted collections whose restore failed.    |
-| `writeFailures`          | Counter `persistence_write_failures`, by `collection` and `operation`: writes to a persisted collection the device couldn't store.             |
-| `syncRoles`              | Counter `persistence_sync_roles`, by `collection` and `role` (`writer` or `watcher`): roles a synced collection's source took in this program. |
-| `PersistenceUnavailable` | `Data.TaggedError` with `cause: unknown`: the database couldn't be opened. `cause` is what the host reported.                                  |
+| Export                   | Is                                                                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unavailable`            | Counter `persistence_unavailable`: times the database couldn't open, so rows stayed in memory.                                                                    |
+| `restoreMs`              | Histogram `persistence_restore_ms`, by `collection` (its kind, the id up to its first `:`): milliseconds from making a persisted collection to its rows restored. |
+| `restoreFailures`        | Counter `persistence_restore_failures`, by `collection` (its kind, the id up to its first `:`): persisted collections whose restore failed.                       |
+| `writeFailures`          | Counter `persistence_write_failures`, by `collection` and `operation`: writes to a persisted collection the device couldn't store.                                |
+| `syncRoles`              | Counter `persistence_sync_roles`, by `collection` and `role` (`writer` or `watcher`): roles a synced collection's source took in this program.                    |
+| `LIST_COLLECTIONS`       | SQL statement `SELECT collection_id FROM collection_registry`, used by `Persistence.collections`.                                                                 |
+| `CollectionsUnreadable`  | `Data.TaggedError` with `cause: unknown`: the stored collection registry could not be read.                                                                       |
+| `PersistenceUnavailable` | `Data.TaggedError` with `cause: unknown`: the database couldn't be opened. `cause` is what the host reported.                                                     |
 
 When `Persistence.layer` cannot open a SQL connection, `persistence unavailable`
 records the SQL reason tag as `reason` and the underlying cause's tag or error
@@ -487,15 +499,20 @@ interface Options<R> {
   readonly start: (config: OfflineConfig) => OfflineExecutor
   readonly collections: Readonly<Record<string, Collection<any, any, any>>>
   readonly storage: StorageAdapter & {
-    readonly setMany: (rows: ReadonlyArray<readonly [string, string]>) => Promise<void>
+    readonly setMany: (entries: ReadonlyArray<readonly [string, string]>) => Promise<void>
     readonly withLock: <A>(name: string, action: () => Promise<A>) => Promise<A>
   }
   readonly leader?: Leader
   readonly online: Online
   readonly mutations: Readonly<Record<string, Mutation<R>>>
-  readonly upgrade?: Migrations.OutboxUpgrade
-  readonly parked?: Readonly<Record<string, (write: Parked) => Effect.Effect<boolean, never, R>>>
-  readonly principal?: Principal
+  readonly upgrade?: Migrations.OutboxUpgrade | undefined
+  readonly parked?: Readonly<Record<string, (write: Parked) => Effect.Effect<boolean, never, R>>> | undefined
+  readonly principal?: Principal | undefined
+  readonly orderingKeys?: Readonly<Record<string, (rows: ReadonlyArray<unknown>) => ReadonlyArray<string>>> | undefined
+  readonly changes?: {
+    readonly publish: () => void
+    readonly subscribe: (listener: () => void) => () => void
+  } | undefined
 }
 
 interface Principal {
@@ -509,17 +526,19 @@ type Mutation<R> = (params: {
 }) => Effect.Effect<void, Refused | Retry, R>
 ```
 
-| Option        | Is                                                                                                                                                                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start`       | The library's entry point: `startOfflineExecutor` from `@tanstack/offline-transactions`.                                                                                                                                                                |
-| `collections` | The collections writes may change, keyed by a name that never changes: a stored write names its collection by this key, so a write queued by one version of a program is restored into the same collection by the next.                                 |
-| `storage`     | The host storage adapter with atomic `setMany`. In a browser it commits both admission rows in one IndexedDB transaction. The library's own storage probe is skipped.                                                                                   |
-| `leader`      | Who leads: a `LeaderElection`, such as `lockLeader`'s. Without one, the library elects with its own `WebLocksLeader`, which never queues: when the leader closes, no other program takes over.                                                          |
-| `online`      | The network detector: the library's `WebOnlineDetector` in a browser, `Online.always()` elsewhere.                                                                                                                                                      |
-| `mutations`   | The named mutations, as Effects run with the services of the fiber that builds the layer.                                                                                                                                                               |
-| `upgrade`     | How writes cross builds: `Migrations.outbox(registry)`. Each write is stamped with its payloads' versions; before the library loads the stored writes, each one an older build made is upgraded, or parked. See [Migrations](migrations.md#the-outbox). |
-| `parked`      | What takes a parked write of each mutation name as the outbox starts, such as a feature showing it Not sent: `true` when it took the write, which the outbox then deletes; `false` leaves it parked.                                                    |
-| `principal`   | Who this program writes as, so a write is sent only as who queued it; see below. Without it, every stored write is this program's.                                                                                                                      |
+| Option         | Is                                                                                                                                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`        | The library's entry point: `startOfflineExecutor` from `@tanstack/offline-transactions`.                                                                                                                                                                |
+| `collections`  | The collections writes may change, keyed by a name that never changes: a stored write names its collection by this key, so a write queued by one version of a program is restored into the same collection by the next.                                 |
+| `storage`      | The host storage adapter with atomic `setMany`. In a browser it commits both admission rows in one IndexedDB transaction. The library's own storage probe is skipped.                                                                                   |
+| `leader`       | Who leads: a `LeaderElection`, such as `lockLeader`'s. Without one, the library elects with its own `WebLocksLeader`, which never queues: when the leader closes, no other program takes over.                                                          |
+| `online`       | The network detector: the library's `WebOnlineDetector` in a browser, `Online.always()` elsewhere.                                                                                                                                                      |
+| `mutations`    | The named mutations, as Effects run with the services of the fiber that builds the layer.                                                                                                                                                               |
+| `upgrade`      | How writes cross builds: `Migrations.outbox(registry)`. Each write is stamped with its payloads' versions; before the library loads the stored writes, each one an older build made is upgraded, or parked. See [Migrations](migrations.md#the-outbox). |
+| `parked`       | What takes a parked write of each mutation name as the outbox starts, such as a feature showing it Not sent: `true` when it took the write, which the outbox then deletes; `false` leaves it parked.                                                    |
+| `orderingKeys` | Stable dependency keys derived from stored payloads. Without keys, a write conservatively orders against every write.                                                                                                                                   |
+| `changes`      | Cross-context storage invalidations: `publish()` notifies subscribers, and `subscribe(listener)` returns its cleanup. Receivers reread storage; notifications contain no payloads or authority.                                                         |
+| `principal`    | Who this program writes as, so a write is sent only as who queued it; see below. Without it, every stored write is this program's.                                                                                                                      |
 
 With `principal`, read synchronously each time the outbox asks, each write is
 stamped with `now`, the principal this program writes as at that moment, such
@@ -558,9 +577,10 @@ a status in a message can't stop a write that should be sent again.
 
 ```ts
 interface Service {
+  readonly admission: (name: string, idempotencyKey: string) => Effect.Effect<Option.Option<Write>>
   readonly transact: (
     name: string,
-    ids: { readonly idempotencyKey: string },
+    ids: { readonly idempotencyKey: string; readonly joinExisting?: boolean },
     mutate: Effect.Effect<void, MutationRefused>
   ) => Effect.Effect<Write, NotAdmitted | MutationRefused>
   readonly status: Stream.Stream<Status>
@@ -585,18 +605,20 @@ interface Write {
 
 interface Status {
   readonly leader: boolean
+  readonly held: boolean
   readonly failing: null | "network" | "server"
 }
 ```
 
-| Field      | Does                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `transact` | Writes through mutation `name`. `mutate` runs at once, synchronously, inside the write, so its inserts, updates and deletes show as optimistic rows until the write settles. Fails with `NotAdmitted` when this program doesn't lead (it never takes the library's online-only path), and with `mutate`'s `MutationRefused`, after rolling the write back. The current span, if any, is stored with the write. |
-| `status`   | The outbox's state now, then each change: whether this program leads, and whether the last send failed on the `network` (no status) or at the `server`; null once a send gets through.                                                                                                                                                                                                                         |
-| `retryNow` | Sends every waiting write now instead of waiting out its backoff: the network detector's `notifyOnline`.                                                                                                                                                                                                                                                                                                       |
-| `withdraw` | Takes back a write not sent yet, by its idempotency key: deletes it from the storage, so it is never sent, and rolls back its optimistic rows. Fails with `NotWithdrawn` when it can't. See below.                                                                                                                                                                                                             |
-| `parked`   | The writes parked now: ones an older build stored that this build can't send as they were meant, with the mutation's `name`, the `reason` and the rows as stored, which no schema checked. A storage that can't be read reads as none, logged as `outbox couldn't read its parked writes` with `error`.                                                                                                        |
-| `discard`  | Deletes parked write `id`, logged as `outbox write discarded` at Info level with its `name`. One that isn't parked changes nothing; a storage that fails is logged as `outbox couldn't discard a parked write` with `error`.                                                                                                                                                                                   |
+| Field       | Does                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admission` | Reads this program's live receipt for a mutation and idempotency key. Restored writes are already durable and have no live receipt in this program.                                                                                                                                                                                                                                                            |
+| `transact`  | Writes through mutation `name`. `mutate` runs at once, synchronously, inside the write, so its inserts, updates and deletes show as optimistic rows until the write settles. Fails with `NotAdmitted` when this program doesn't lead (it never takes the library's online-only path), and with `mutate`'s `MutationRefused`, after rolling the write back. The current span, if any, is stored with the write. |
+| `status`    | The outbox's state now, then each change: whether this program leads, whether an owned stored write is held (`held`), and whether the last send failed on the `network` (no status) or at the `server`; null once a send gets through.                                                                                                                                                                         |
+| `retryNow`  | Sends every waiting write now instead of waiting out its backoff: the network detector's `notifyOnline`.                                                                                                                                                                                                                                                                                                       |
+| `withdraw`  | Takes back a write not sent yet, by its idempotency key: deletes it from the storage, so it is never sent, and rolls back its optimistic rows. Fails with `NotWithdrawn` when it can't. See below.                                                                                                                                                                                                             |
+| `parked`    | The writes parked now: ones an older build stored that this build can't send as they were meant, with the mutation's `name`, the `reason` and the rows as stored, which no schema checked. A storage that can't be read reads as none, logged as `outbox couldn't read its parked writes` with `error`.                                                                                                        |
+| `discard`   | Deletes parked write `id`, logged as `outbox write discarded` at Info level with its `name`. One that isn't parked changes nothing; a storage that fails is logged as `outbox couldn't discard a parked write` with `error`.                                                                                                                                                                                   |
 
 `Write.admitted` succeeds once the write is stored, and fails with
 `NotAdmitted` (`reason: "storage"`) when the storage refused it, or
@@ -721,10 +743,10 @@ offline.
 | `Leader`               | The library's `LeaderElection`.                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `Online`               | The library's `OnlineDetector`.                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `Refused`              | `Data.TaggedError` with `status?: number`: the server refused the write for good.                                                                                                                                                                                                                                                                                                                                                                 |
-| `Retry`                | `Data.TaggedError` with `status?: number`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline).                                                                                                                                                                                                                                                                                                          |
+| `Retry`                | `Data.TaggedError` with `status?: number` and `held?: boolean`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline). With `held: true`, it retains a durable hold, reported by `Status.held`; unrelated dependency keys may pass it.                                                                                                                                                                     |
 | `NotAdmitted`          | `Data.TaggedError` with `reason: "follower" \| "storage"`: another program leads, or the storage failed to store the write. Nothing was sent and the write's rows rolled back.                                                                                                                                                                                                                                                                    |
 | `NotWithdrawn`         | `Data.TaggedError` with `reason: "follower" \| "gone" \| "sending" \| "storage"`: `withdraw` didn't take the write back, and nothing changed. See [Taking a write back](#taking-a-write-back).                                                                                                                                                                                                                                                    |
-| `attempts`             | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `refused`, `defect`, `sent_elsewhere` (another program sent the write while this one followed), `withdrawn` (settled unsent after `withdraw`), or `sealed` (another principal queued it; kept, never sent).                                                                                                                                                                  |
+| `attempts`             | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `held` (a durable hold), `refused`, `defect`, `sent_elsewhere` (another program sent the write while this one followed), `withdrawn` (settled unsent after `withdraw`), or `sealed` (another principal queued it; kept, never sent).                                                                                                                                         |
 | `refused`              | Counter `outbox_refused`, by `name` and `status` (`none` without one).                                                                                                                                                                                                                                                                                                                                                                            |
 | `queuedMs`             | Histogram `outbox_queued_ms`, by `name`: milliseconds from a write to its mutation succeeding.                                                                                                                                                                                                                                                                                                                                                    |
 | `leaderChanges`        | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                                                                                                                                                                                                                                                                                                 |

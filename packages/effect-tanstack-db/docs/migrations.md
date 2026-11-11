@@ -138,13 +138,17 @@ change a fingerprint.
 ## Observability
 
 Each collection's outcome is a log line `device.migrate` (Info; Debug when
-`current`; Warn when a migration set rows aside or dropped them, since they no
+`current`; Warn whenever rows were set aside or dropped, including reset and retirement, since they no
 longer show) with `collection`, `store`, `outcome`, `from`, `to`, `migrated`,
 `kept` and `dropped`, and a count of `device_migrations` by `store` and
 `outcome`. Each row set aside counts in `device_rows_kept` by `store` and
 `reason`; the whole run is a span `device.migrate` and a `device_migrate_ms`
 sample. The outbox's pass counts `outbox_carried`. None carries a row's
 content.
+
+Each local collection's transaction rolls back if `apply` fails, dies or is
+interrupted. Rollback finishes before the interrupted fiber stops, so the host
+can reuse the same connection and retry without inheriting a partial migration.
 
 ## Limits
 
@@ -160,4 +164,4 @@ mutation names and omits the derived epoch. Both this snapshot and older locks
 with an epoch are accepted by `check` and `lock`. Runtime build comparison still
 uses `registry.epoch`; no device ledger or stored row changes.
 
-Schema fingerprints retain the union grouping used by deployed Effect `4.1.1` locks. Upgrading to Effect `4.1.1` does not change a lock solely because its JSON Schema emitter flattens equivalent `anyOf` alternatives. Keep recorded versions and their fingerprints; do not regenerate old lock entries for this dependency upgrade.
+Schema fingerprints retain the union grouping used by deployed Effect `4.0.5` locks. Upgrading to Effect `4.1.1` does not change a lock solely because its JSON Schema emitter flattens equivalent `anyOf` alternatives. Keep recorded versions and their fingerprints; do not regenerate old lock entries for this dependency upgrade.

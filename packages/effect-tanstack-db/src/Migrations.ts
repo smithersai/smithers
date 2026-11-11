@@ -658,18 +658,13 @@ const forward = (store: Local<any, any>, from: number, row: StoredRow): Forward 
   return { _tag: "Row", value: encodeStored(checked.value) }
 }
 
-/** Runs `body` in one transaction on `sql`, and rolls back if it fails. */
+/** Runs `body` in one transaction on `sql`, rolling back on failure or interruption. */
 const transaction = <A>(sql: Sql, collection: string, body: Effect.Effect<A, unknown>) =>
-  Effect.gen(function*() {
-    yield* sql.execute("BEGIN IMMEDIATE")
-    const exit = yield* Effect.exit(body)
-    if (Exit.isFailure(exit)) {
-      yield* Effect.ignore(sql.execute("ROLLBACK"))
-      return yield* Effect.failCause(exit.cause)
-    }
-    yield* sql.execute("COMMIT")
-    return exit.value
-  }).pipe(Effect.mapError((cause) => new MigrationFailed({ collection, cause })))
+  Effect.acquireUseRelease(
+    sql.execute("BEGIN IMMEDIATE"),
+    () => body.pipe(Effect.tap(() => sql.execute("COMMIT"))),
+    (_, exit) => Exit.isFailure(exit) ? Effect.ignore(sql.execute("ROLLBACK")) : Effect.void
+  ).pipe(Effect.mapError((cause) => new MigrationFailed({ collection, cause })))
 
 /**
  * Brings a local collection forward in one transaction: migrates each row to
@@ -782,8 +777,8 @@ const bring = (sql: Sql, registry: Registry, stored: StoredCollection) => {
 }
 
 /**
- * Logs and counts one collection's outcome, without its rows: at Warn when a migration couldn't bring rows forward,
- * so they were set aside or dropped and no longer show; Debug when it was current; Info otherwise.
+ * Logs and counts one collection's outcome, without its rows: at Warn whenever rows were set aside or dropped,
+ * since they no longer show; Debug when it was current; Info otherwise.
  */
 const record = (outcome: CollectionReport) =>
   Effect.all([
@@ -791,10 +786,10 @@ const record = (outcome: CollectionReport) =>
       Metric.withAttributes(migrations, { store: outcome.store ?? "undeclared", outcome: outcome.outcome }),
       1
     ),
-    (outcome.outcome === "current"
-      ? Effect.logDebug
-      : outcome.outcome === "migrated" && outcome.kept + outcome.dropped > 0
+    (outcome.kept + outcome.dropped > 0
       ? Effect.logWarning
+      : outcome.outcome === "current"
+      ? Effect.logDebug
       : Effect.logInfo)("device.migrate").pipe(
         Effect.annotateLogs({ ...outcome, store: outcome.store ?? "undeclared", to: outcome.to ?? "none" })
       )

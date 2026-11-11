@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Interrupted device migrations roll back before the connection is reused.
+  Resets and retirements warn whenever rows are set aside or dropped.
+  The API reference includes pending writes, query publication, outbox holds
+  and ordering, and stored collection discovery.
+
 - Outbox payload migrations preserve dates, Temporal values and marker-shaped
   user objects instead of parking valid rows or losing their value types.
 
