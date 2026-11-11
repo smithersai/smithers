@@ -1516,7 +1516,12 @@
       "kind": "ts",
       "path": ".smithers/flows/release/flow.ts",
       "capabilities": [
-        "*"
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*",
+        "net:get:registry.npmjs.org/**",
+        "net:post:registry.npmjs.org/**",
+        "model:call:*"
       ],
       "model": null,
       "modelInvocable": true,

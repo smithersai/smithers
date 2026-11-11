@@ -61,7 +61,8 @@ export const hostEvaluator = (
   jevHttp?: Layer.Layer<HttpClient.HttpClient>
 ): Layer.Layer<Evaluator.Evaluator> => evaluatorLayer(environment, jevHttp)
 
-export const agentLayers = (
+/** The agent services a release host supplies: the action host, seats, catalog, budget and judge. */
+export const agentHost = (
   seats: Layer.Layer<SeatResolver.SeatResolver>,
   maxTokens: number,
   evaluator: Layer.Layer<Evaluator.Evaluator> = hostEvaluator(process.env),
@@ -92,7 +93,22 @@ export const agentLayers = (
       }
     })
   ).pipe(Layer.provide(Registry.layerFromDescriptors([])), Layer.provide(NodeServices.layer))
-  return Layer.mergeAll(
+  return Layer.mergeAll(host, seats, catalog, Agent.layer).pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({ tokens: { max: maxTokens, onExceeded: "fail" } }))
+    ),
+    Layer.provideMerge(Agent.layerDefaults),
+    Layer.provideMerge(evaluator)
+  )
+}
+
+export const agentLayers = (
+  seats: Layer.Layer<SeatResolver.SeatResolver>,
+  maxTokens: number,
+  evaluator: Layer.Layer<Evaluator.Evaluator> = hostEvaluator(process.env),
+  options: Parameters<typeof agentHost>[3] = {}
+) =>
+  Layer.mergeAll(
     Content.Analyze.layer,
     Content.OutlineTemplate.layer,
     Content.DraftChangelog.layer,
@@ -102,15 +118,7 @@ export const agentLayers = (
     Content.Score.layer,
     Content.Revise.layer,
     Release.AuditDocs.layer
-  ).pipe(
-    Layer.provideMerge(Layer.mergeAll(host, seats, catalog, Agent.layer)),
-    Layer.provideMerge(
-      Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({ tokens: { max: maxTokens, onExceeded: "fail" } }))
-    ),
-    Layer.provideMerge(Agent.layerDefaults),
-    Layer.provideMerge(evaluator)
-  )
-}
+  ).pipe(Layer.provideMerge(agentHost(seats, maxTokens, evaluator, options)))
 
 export const runtime = (options: {
   readonly root: string
