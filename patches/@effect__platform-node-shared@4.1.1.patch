@@ -19,7 +19,7 @@ index e29eb7dae33882898922845f57a3ac21cbc41181..7e686f2ccc6dff421aa5285c6db4595b
   * @since 4.1.0
   */
  export * from "ws";
-+export { WebSocket, WebSocketServer, createWebSocketStream, Receiver, Sender } from "ws";
++export { createWebSocketStream, extension, PerMessageDeflate, Receiver, Sender, subprotocol, WebSocket, WebSocketServer } from "ws";
  //# sourceMappingURL=NodeWS.js.map
 \ No newline at end of file
 diff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
@@ -43,4 +43,4 @@ index 29ce62ea7842511c6873f4f599a5162e34231306..0165970714f69f83eec4bd082feb268c
   * @since 4.1.0
   */
  export * from "ws"
-+export { WebSocket, WebSocketServer, createWebSocketStream, Receiver, Sender } from "ws"
++export { createWebSocketStream, extension, PerMessageDeflate, Receiver, Sender, subprotocol, WebSocket, WebSocketServer } from "ws"

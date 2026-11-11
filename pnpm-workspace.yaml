@@ -113,8 +113,9 @@ patchedDependencies:
   # Audited 0.2.36 dist/esm/wa-sqlite-driver.js: driver has execute/transaction but no batch/transactionBatch.
   "@tanstack/browser-db-sqlite-persistence@0.2.36": patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch
   # platform-node-shared 4.1.1 assigns a child's env entries into {}, so an own __proto__ entry is lost
-  # (kernel/test/ChildProcessSpawner.integration.test.ts), and NodeWS's `export * from "ws"` hides WebSocket from
-  # esbuild's split bundles (smithers/test/TuiRuntimes.test.ts). Delete it when an Effect release fixes both.
+  # (kernel/test/ChildProcessSpawner.integration.test.ts), and NodeWS's `export * from "ws"` hides ws's named exports
+  # from esbuild's split bundles (smithers/test/TuiRuntimes.test.ts) and private adapters
+  # (repo-targets/contracts/private-effect-adapters.test.mjs). Delete it when an Effect release fixes both.
   '@effect/platform-node-shared@4.1.1': patches/@effect__platform-node-shared@4.1.1.patch
   # Schema.Json erases literal key flags; drop after an Effect release retains them through rebuilds (patches/README.md),
   # with build-library.mjs portableEffectDeclarations, which keeps the patched-only JsonValueSchema out of published types.

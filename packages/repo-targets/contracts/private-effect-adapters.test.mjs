@@ -187,6 +187,11 @@ test("real adapters share Effect across owners, CJS and ESM, and preserve typed 
     const esmSocket = await import(pathToFileURL(join(paths[0], "dist/vendor/node-shared/NodeWS.js")))
     const cjsSocket = fromOne(join(paths[0], "dist/vendor/cjs/node-shared/NodeWS.js"))
     assert.equal(cjsSocket, esmSocket)
+    // NodeWS declares `export * from "ws"`, so every named export of ws's ESM entry must exist at runtime too.
+    const wsRoot = dirname(fromOne.resolve("ws/package.json"))
+    const actualWs = await import(pathToFileURL(join(wsRoot, fromOne("ws/package.json").exports["."].import)))
+    const exported = Object.keys(actualWs).filter((name) => name !== "default").sort()
+    assert.deepEqual(Object.keys(esmSocket).sort(), exported)
     assert.equal(cjsSocket.WebSocket, fromOne("ws").WebSocket)
     const server = new esmSocket.WebSocketServer({ host: "127.0.0.1", port: 0 })
     let client
