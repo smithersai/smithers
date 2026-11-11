@@ -8,7 +8,7 @@ import { unansweredSpecificationReview, type SpecificationReviewer } from "../sr
 import { Spend } from "../worker/Reply.vibe"
 import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
 import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
-import { ledger, within, type Admission } from "./support/durableWriters.vibe"
+import { ledger, within, settlementFaultOnce, type Admission } from "./support/durableWriters.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 
 const REVIEWERS: ReadonlyArray<SpecificationReviewer> = ["astra", "sol", "fable", "opus"]
@@ -18,12 +18,31 @@ const verdict = (fields: Record<string, unknown>): Scripted => ({ kind: "stream"
 /** `reviewer`'s answer to revision 3 under deployment `config`, and the budget's log. */
 effect function review(reviewer: SpecificationReviewer, config: Record<string, string>, admission: Admission = "admit") {
   const { log, spend } = ledger(admission)
+  return { answer: try reviewWith(reviewer, config, spend), log }
+}
+
+/** `reviewer`'s answer to revision 3 under deployment `config`, charged to `spend`. */
+effect function reviewWith(reviewer: SpecificationReviewer, config: Record<string, string>, spend: Spend.Shape) {
   const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))))
   const answer = try within(layer, effect {
     const result = try Effect.result((try SpecificationReviewers).review(reviewer, spec(3)))
     return JSON.stringify(result._tag === "Success" ? result.success : { reason: result.failure.reason, unwritten: result.failure.unwritten ?? false })
   })
-  return { answer: (try Effect.orDie(Effect.try(() => JSON.parse(answer)))) as Record<string, unknown>, log }
+  return (try Effect.orDie(Effect.try(() => JSON.parse(answer)))) as Record<string, unknown>
+}
+
+/**
+ * A day's budget that admits each review's run, and for each model call either cannot record its charge
+ * (`unreachable`) or refuses it because the day is spent (`spent`). `failed` counts the unrecorded charges.
+ */
+function callBudgetFault(fault: "unreachable" | "spent") {
+  const day = ledger("admit")
+  const log = { failed: 0 }
+  const spend: Spend.Shape = {
+    admit: (name, key, ceiling) => fault === "spent" && key.startsWith("model/") ? succeed(false) : day.spend.admit(name, key, ceiling),
+    spend: (name, key, tokens, reported, ceiling) => key.startsWith("model/") ? effect { log.failed += 1; throw new Unreachable({ what: "budget" }) } : day.spend.spend(name, key, tokens, reported, ceiling),
+  }
+  return { log, spend }
 }
 
 /** Deployment config binding `reviewer` to a scripted model answering `scripts`. */
@@ -79,23 +98,30 @@ describe("a reviewer with a model", () => {
     }
   }))
 
-  it.live("retries a charge the ledger refuses once, and still answers the review", () => scoped(effect {
-    let charges = 0
-    const flaky: Spend.Shape = {
-      admit: () => succeed(true),
-      spend: () => effect {
-        charges += 1
-        if (charges === 1) throw new Unreachable({ what: "budget" })
-      },
-    }
-    const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, flaky)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(try bound("sol", [verdict({ verdict: "Changes requested", grade: "B", review: "Name the error." })])))))
+  it.live("retries the final settlement through the engine without reissuing a model call", () => scoped(effect {
+    const { log, spend } = settlementFaultOnce()
+    const scripted = try boundCounting("sol", [verdict({ verdict: "Changes requested", grade: "B", review: "Name the error." })])
+    const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(scripted.config))))
     const answer = try within(layer, effect {
       const result = try Effect.result((try SpecificationReviewers).review("sol", spec(2)))
       return result._tag === "Success" ? `${result.success.verdict}:${result.success.revision}` : result.failure.reason
     })
     expect(answer).toBe("Changes requested:2")
-    // Refused release, its retry, the call's charge, then the run's settlement.
-    expect(charges).toBe(4)
+    expect(log).toEqual({ charges: 4, runSpends: 3, physicalCharges: 1 })
+    expect(try scripted.requests).toBe(1)
+  }))
+
+  it.live("a model call the day's ledger cannot record or refuses is budget, not review; an unrecorded one is counted", () => scoped(effect {
+    const failures = effect () => (try Metric.value(Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft: "specification" }))).count
+    const before = try failures()
+    const unrecordable = try boundCounting("opus", [verdict({ verdict: "LGTM", grade: "A", review: "Consistent." })])
+    const outage = callBudgetFault("unreachable")
+    expect(try reviewWith("opus", unrecordable.config, outage.spend)).toEqual({ reason: "budget", unwritten: false })
+    // The answer is sealed before accounting: retrying the charge never asks the model again.
+    expect([try unrecordable.requests, outage.log.failed > 0, (try failures()) - before]).toEqual([1, true, 1])
+    const refusing = try boundCounting("opus", [verdict({ verdict: "LGTM", grade: "A", review: "Consistent." })])
+    expect(try reviewWith("opus", refusing.config, callBudgetFault("spent").spend)).toEqual({ reason: "budget", unwritten: false })
+    expect([try refusing.requests, (try failures()) - before]).toEqual([0, 1])
   }))
 
   it.live("asks no model when the day's budget refuses or cannot be reached", () => scoped(effect {

@@ -40,6 +40,25 @@ export function ledger(admission: Admission) {
   return { log, spend }
 }
 
+/** Only the final run-key settlement fails once; parent release and physical-call accounting remain healthy. */
+export function settlementFaultOnce() {
+  const day = ledger("admit")
+  const log = { charges: 0, runSpends: 0, physicalCharges: 0 }
+  const spend: Spend.Shape = {
+    admit: day.spend.admit,
+    spend: effect (name, key, tokens, reported, ceiling) => {
+      log.charges += 1
+      if (key.startsWith("model/")) log.physicalCharges += 1
+      else {
+        log.runSpends += 1
+        if (log.runSpends === 2) throw new Unreachable({ what: "budget" })
+      }
+      try day.spend.spend(name, key, tokens, reported, ceiling)
+    },
+  }
+  return { log, spend }
+}
+
 const Outcome = Flow.make("test/model-writers/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
 
 /** One durable execution of `program`, whose string answer says how it ended. */

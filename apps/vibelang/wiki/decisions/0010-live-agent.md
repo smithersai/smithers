@@ -95,3 +95,12 @@ asks the real model, and `E2E_LIVE_ANSWERS=1` makes the browser case require an 
 
 **Outside this decision.** Sign-in and per-person limits (brick 2); the agent's tools (0012 lists them; it answers from the skill
 alone); TLA+ of the object protocol (0005's "Outside the proof").
+
+## Physical-call budget classification (2026-11-11, lane vl-bench resume 8)
+
+The call meter's unreachable-ledger flag also governs replies and specification reviewers. An unreachable physical
+charge ends as `budget`, with the existing fixed spend log and failure counter incremented once. A reviewer whose
+next physical call is refused because the day is spent also reports `budget`. Other agent failures retain their
+existing reason. Each regression runs the real agent and memory flow engine with a faulty `Spend` Effect service;
+the scripted local HTTP model is asked once for an unrecordable charge, and never for a refused admission.
+The spec review still settles its own run key before reporting the physical-call failure.
