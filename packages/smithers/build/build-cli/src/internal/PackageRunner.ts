@@ -241,6 +241,7 @@ const laneDataFiles = (
  * The read set is what the content key covers: the node's expanded declared
  * inputs, the closure a rule planned for itself (`Go.*` names its work with
  * import patterns, so `go.mod` and the compiler inputs arrive that way), the
+ * closure of every `Go.Packages` selection it depends on, the
  * declared outputs of every transitive dependency, the `node_modules` trees
  * above the working directory, and the cache
  * directory's scratch and fetch store. The write set is the node's declared
@@ -294,6 +295,11 @@ export const sandboxRequest = (
         for (const file of input.files) reads.add(file.path)
       }
     }
+    // A Go.Packages selection has no outputs either: its closure (the module
+    // authority and every compiler input `go list` named) is what a consumer
+    // reads through it. Its key is that closure's digests, and the consumer
+    // keys on it, so the grant is exactly what the consumer's key covers.
+    if (dependency.rule === "Go.Packages") { for (const path of dependency.readSet) reads.add(path) }
     stack.push(...dependency.dependencies)
   }
   for (const directory of nodeModulesDirectories([node.cwd, node.packagePath])) reads.add(directory)

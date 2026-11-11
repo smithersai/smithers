@@ -126,6 +126,27 @@ const ran = async (root: string, args: ReadonlyArray<string>, environment = proc
   return { ...result, text: result.logs + result.output }
 }
 
+describe.runIf(launcher !== undefined && canConfine)("a Go module under confinement", () => {
+  it("admits a Go.Packages closure to a confined shell consumer that names it in data", async () => {
+    const root = await module(`const packages = S.Go.Packages({ pkgs: ["./"] })
+export const Package = S.Package({ targets: {
+  packages,
+  consumer: S.Shell.Test({ shell: "cat main.go main_test.go", tools: [S.Host.bin("cat")], data: [packages], sandbox: {} }),
+  undeclared: S.Shell.Test({ shell: "cat main.go", tools: [S.Host.bin("cat")], sandbox: {} })
+} })`)
+    const consumed = await ran(root, ["test", "//:consumer"])
+    expect(consumed.exitCode, consumed.text).toBe(0)
+    // The closure is the grant, not the package directory: a consumer that
+    // does not name it still cannot read the module.
+    const undeclared = await ran(root, ["test", "//:undeclared"])
+    expect(undeclared.exitCode).toBe(1)
+    expect(undeclared.text).toContain("main.go is outside the declared read set")
+    // The closure's files key the consumer.
+    await Fs.appendFile(NodePath.join(root, "main.go"), "// changed\n")
+    expect((await ran(root, ["test", "//:consumer"])).text).toContain("//:consumer  ran")
+  }, 240_000)
+})
+
 describe.runIf(launcher !== undefined && switchedVersion !== undefined && canConfine)(
   "S.Go.bin as a shell tool",
   () => {

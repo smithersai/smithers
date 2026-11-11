@@ -700,6 +700,50 @@ describe("service preflight failures", () => {
 })
 
 describe("planned sandbox authority", () => {
+  it("admits a Go.Packages closure on a data edge, at any depth, and no other node's read set", async () => {
+    const { options, node } = await fixture()
+    const packages = {
+      ...node,
+      label: "//:packages",
+      rule: "Go.Packages",
+      dependencies: [],
+      outDirs: [],
+      outFiles: [],
+      declaredInputs: [],
+      readSet: ["go.mod", "go.sum", "lib/lib.go", "lib/lib_test.go"]
+    } as unknown as PackageExec.PackageNode
+    const binary = {
+      ...node,
+      label: "//:binary",
+      rule: "Go.Binary",
+      dependencies: [packages.label],
+      outDirs: ["bin"],
+      outFiles: [],
+      declaredInputs: [],
+      readSet: ["go.mod", "go.sum", "cmd/main.go"]
+    } as unknown as PackageExec.PackageNode
+    const consumer = {
+      ...node,
+      declaredInputs: [],
+      readSet: [],
+      dependencies: [binary.label],
+      outDirs: [],
+      outFiles: [],
+      cleanOutDirs: [],
+      cleanPaths: [],
+      writeSet: []
+    } as unknown as PackageExec.PackageNode
+    const request = sandboxRequest(
+      consumer,
+      new Map([[packages.label, packages], [binary.label, binary]]),
+      options.index.workspace,
+      ".flows"
+    )
+    expect(request.reads).toEqual(expect.arrayContaining(["go.mod", "go.sum", "lib/lib.go", "lib/lib_test.go", "bin"]))
+    // A binary's own sources are its closure, not the consumer's: the consumer reads its output.
+    expect(request.reads).not.toContain("cmd/main.go")
+  })
+
   it("collects transitive products and file sources once while excluding diff snapshots", async () => {
     const { options, node } = await fixture()
     const filegroup = {

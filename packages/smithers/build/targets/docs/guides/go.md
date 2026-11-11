@@ -28,6 +28,15 @@ and binaries key on digests of the transitive Go files, test files, cgo files,
 and `go:embed` files that `go list -deps -json` reports, so an edit outside
 that closure stays a cache hit.
 
+A target that names a selection in `data` reads its closure: `go.mod`,
+`go.sum` and every file above, test files included. A confined shell that runs
+`go test` over the selection needs nothing else declared:
+
+```ts
+const packages = S.Go.Packages({ pkgs: ["./..."] })
+S.Shell.Test({ shell: "./scripts/go-test-shards.sh", tools: [S.Go.bin], data: [packages], sandbox: {} })
+```
+
 ## Compile cache
 
 Go targets do not use the host's `GOCACHE`. Every `go` a target or the planner
