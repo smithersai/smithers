@@ -1867,6 +1867,22 @@ describe("native step transcripts and metered dispatches", () => {
     })
   })
 
+  test("a replayed prefix of step and call facts counts once in a step's transcript", () => {
+    // A replay records the same facts again, with their sourceId and
+    // sourceSequence, under later control sequences.
+    const facts = journal.filter((row) => {
+      const eventType = (row.payload as { readonly eventType?: string }).eventType
+      return eventType === "flows.harness.step-fact.v1" || eventType === "flows.harness.call-fact.v1"
+    })
+    const replayed = [...journal, ...facts.map((row) => ({ ...row, sequence: row.sequence! + 1000 }))]
+    const clean = monitorFromJournal(run, journal)
+    const model = monitorFromJournal(run, replayed)
+    expect(model.attempts[0]!.steps[0]).toMatchObject({ model_calls: 1, tokens: 200 })
+    expect(model.attempts[0]!.phases[0]!.cells.map((cell) => cell.id)).toEqual(["cell:3", "cell:4", "cell:5", "cell:7"])
+    expect(model.tokens).toBe(clean.tokens)
+    expect(model.attempts).toEqual(clean.attempts)
+  })
+
   test("an agent step's input is its journaled task when its system text was too large", () => {
     const tasked = journal.map((row) =>
       row.sequence === 100

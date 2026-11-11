@@ -23,7 +23,13 @@ import { Schema } from "effect"
 import { callScope, openCallIndex } from "./Diagnosis.ts"
 import { engineExecutionEvidence, engineTraceFromJournal } from "./EngineTrace.ts"
 import { ACTION_RENDERINGS } from "./internal/actionRenderings.ts"
-import { type CallEventFilter, callEventFilter, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.ts"
+import {
+  type CallEventFilter,
+  callEventFilter,
+  callEventKey,
+  nativeStepEvent,
+  uniqueCallEvents
+} from "./internal/callEvents.ts"
 import { inspectLabel } from "./internal/inspectLabels.ts"
 
 export { inspectLabel } from "./internal/inspectLabels.ts"
@@ -2357,7 +2363,9 @@ const callFactOf = (record: JournalRecord) => {
  * The agent transcript of every native dispatch in `journal`: model replies,
  * cells with what they printed, and tool calls, in journal order. Keyed by the
  * dispatch's step key digest, which the engine's node settlement names in
- * `stepKeyDigests`. Pure over the records; no model call.
+ * `stepKeyDigests`. A replayed prefix records a fact again under a later
+ * control sequence; the transcript counts it once, like the trace. Pure over
+ * the records; no model call.
  */
 const stepTranscripts = (journal: ReadonlyArray<JournalRecord>): ReadonlyMap<string, StepTranscript> => {
   const transcripts = new Map<string, StepTranscript>()
@@ -2371,10 +2379,16 @@ const stepTranscripts = (journal: ReadonlyArray<JournalRecord>): ReadonlyMap<str
     string,
     { readonly cell: TranscriptCell; readonly started: Extract<CallFact.Fact, { phase: "invoked" }> }
   >()
+  // The first copy of a step fact wins, by the identity the trace keeps.
+  const seen = new Set<string>()
   for (const record of journal) {
     const sequence = record.sequence ?? 0
     const step = nativeStepEvent(record)
     if (step !== undefined) {
+      // callEventKey is total over native step facts.
+      const key = callEventKey(record)!
+      if (seen.has(key)) continue
+      seen.add(key)
       const payload = asRecord(step.payload)
       // nativeStepEvent has decoded StepFact.Scope, whose stepId is a 64-digit hex string.
       const stepId = asString(asRecord(payload.step).stepId)!
@@ -2423,6 +2437,8 @@ const stepTranscripts = (journal: ReadonlyArray<JournalRecord>): ReadonlyMap<str
     if (call === undefined) continue
     const handle = `${call.stepId}:${call.fact.callId}`
     if (call.fact.phase === "invoked") {
+      // A replayed invocation names a call the transcript already holds.
+      if (calls.has(handle)) continue
       const input = cellText(call.fact.input)
       const cell: TranscriptCell = {
         id: `cell:${sequence}`,
