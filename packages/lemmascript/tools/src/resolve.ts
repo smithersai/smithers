@@ -786,6 +786,11 @@ function resolveRecordMerge(base: RawExpr, override: RawExpr, ctx: Ctx): TExpr {
     fields: fields.map(f => {
       const ft = f.type!;
       if (patch && !overDecl!.fields!.some(o => o.name === f.name)) return { name: f.name, value: { kind: "field", obj: bv, field: f.name, ty: ft } };
+      // A patch's required field over the result's optional one (`step: string` over `step?: string`) is present:
+      // write it, wrapped. Reading it as the result's Option matched on a plain value.
+      const overField = patch ? overDecl!.fields!.find(o => o.name === f.name) : undefined;
+      if (ft.kind === "optional" && overField?.type && overField.type.kind !== "optional")
+        return { name: f.name, value: wrapSome({ kind: "field", obj: ov, field: f.name, ty: overField.type }, ft) };
       const ovf: TExpr = { kind: "field", obj: ov, field: f.name, ty: ft };
       if (ft.kind !== "optional") return { name: f.name, value: ovf };  // required: override always provides
       // optional: override field wins iff present, else base's field

@@ -60,6 +60,7 @@ cp tools/fixtures/optional-binder-collisions.ts "$fixture_dir/optional-binder-co
 cp tools/fixtures/unpaired-surrogate.ts "$fixture_dir/unpaired.ts"
 cp tools/fixtures/optional-guard-order.ts "$fixture_dir/optional-guard-order.ts"
 cp tools/fixtures/optional-comparison-order.ts "$fixture_dir/optional-comparison-order.ts"
+cp tools/fixtures/spread-required-into-optional.ts tools/fixtures/spread-required-into-optional-wrong.ts "$fixture_dir/"
 
 "$tsx" tools/src/lsc.ts gen --backend=dafny "$fixture_dir/impure.ts"
 if ! grep -Fq 'method {:axiom} rollDie' "$fixture_dir/impure.dfy.gen"; then
@@ -124,6 +125,12 @@ expect_proof_failure() {
     exit 1
   fi
 }
+
+# A spread's required field over an optional one writes the present value (`spread-required-into-optional.ts`).
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spread-required-into-optional.ts"
+expect_proof_failure \
+  "a wrong twin verified (spread-required-into-optional)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spread-required-into-optional-wrong.ts"
 for name in union-to-string string-union-subset generic-bound-array message-union sort-membership filter-index string-case flat-map spec-array-spread generic-optional-spread generic-return-interface generic-union-match declared-return-record index-signature-field local-record nonnullable-record computed-record-alias tagged-match-expression tagged-match-method literal-union-identity record-widening; do
   cp "tools/fixtures/$name.ts" "tools/fixtures/$name-wrong.ts" "$fixture_dir/"
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"

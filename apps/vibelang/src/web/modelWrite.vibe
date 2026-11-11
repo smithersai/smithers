@@ -2,7 +2,7 @@
 // decide a step in `modelDecision.vibe`; these state that the next Model is the old one with exactly that state written.
 import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
-import type { AccountScreen, ActionScreen } from "./modelDecision.vibe"
+import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
 import type { AfterUpdate, EscapeRoute, EscapeStep, WikiVisit } from "./updateDecision.vibe"
 import type { TourEnd, TourStarted } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
@@ -274,4 +274,21 @@ export function scopeWrite(model: Model, actions: ActionView, changed: boolean, 
   if (!changed) return { ...model, actions }
   const { sandbox: retired, ...kept } = model
   return { ...kept, actions: { ...actions, epoch: actionsEpoch, commands: [], slash: false, starting: false }, wikiEdit: undefined, wikiReview: undefined, wikiEditRequest, sandboxBusy: false, sandboxRequest }
+}
+
+/** The Model after the panel's list loads for the current epoch: its flows and commands, the merged runs (`runs`,
+ *  from `mergeRuns`), not loading and no error; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, entries: entries, commands: commands, runs: runs, loading: false, error: "" } }
+export function actionsLoadedWrite(model: Model, actions: ActionView, entries: ActionView["entries"], commands: ActionView["commands"], runs: ActionView["runs"]): Model {
+  return { ...model, actions: { ...actions, entries, commands, runs, loading: false, error: "" } }
+}
+
+/** The Model after a run starts for the current epoch: the chat with the stream open and the palette closed; the
+ *  panel follows the run as decided (`selection`, from `followedRun`), is no longer starting, holds the merged runs
+ *  and shows no error; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actions, step: selection.step, run: selection.run, selected: selection.selected, open: selection.open, maximized: selection.maximized, starting: false, runs: runs, error: "" } }
+export function actionStartedWrite(model: Model, actions: ActionView, selection: RunSelection, runs: ActionView["runs"]): Model {
+  return { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actions, ...selection, starting: false, runs, error: "" } }
 }
