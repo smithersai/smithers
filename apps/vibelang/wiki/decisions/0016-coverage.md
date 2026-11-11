@@ -97,6 +97,41 @@ statements and 43/43 functions in `historyView.vibe` (session 16: 73/81, 40/43);
 statements and 84/105 functions to 201/218 and 101/105. A full `pnpm e2e:coverage` after these commits is the next
 measurement.
 
+### Measurement, wiki edit, run step, mode and tour control journeys (session 18, 2026-11-11)
+
+Full `pnpm e2e:coverage` with the scoped roster, on main `2ed14ecf` plus session 17's range (box, all three
+projects): 351 passed, 12 opt-in skips, 0 unexpected, every check with evidence; exit 1 on thresholds only.
+
+| File (lines, branches, functions, statements) | Session 16 | Session 18 |
+| --- | --- | --- |
+| All roster files | 3930/5025, 3792/5875, 1649/2091, 4656/6420 (106 files) | 4019/5075, 3889/5937, 1704/2115, 4775/6481 (109 files) |
+| `src/web/main.vibe` | 637/663, 620/823, 362/402, 789/877 | 641/667, 618/815, 366/403, 797/878 |
+| `src/web/historyView.vibe` | 67/72, 116/145, 40/43, 73/81 | 72/72, 130/147, 43/43, 81/81 |
+| `src/web/historyApp.vibe` | not listed | 156/164, 45/54, 103/105, 204/218 |
+| `src/web/modelDecision.vibe` | 74/76, 95/112, 51/51, 89/93 | 74/76, 95/112, 51/51, 89/93 |
+
+Files below 100%: 89 of 109. New journeys after that run, each checked against the targeted lines in a focused run:
+
+| Journey | Reaches in `main.vibe` |
+| --- | --- |
+| `e2e/edit-paths.spec.ts`: saving an unchanged page, then Cancel | `CanceledWikiEdit`, the `no-changes` submit arm |
+| `e2e/edit-paths.spec.ts`: choosing each step of a run's trace | `SelectedActionStep` |
+| `e2e/edit-paths.spec.ts`: typing `/live`, and picking Live mode from the slash menu | `switchMode`, the `mode` submit kind, `PickedSlash` for `mode/`, `SwitchMode` |
+| `e2e/fault-paths.spec.ts` over `fault=wiki-edit` (the first save fails, unwritten) | `FailedWikiEdit` and its retry |
+| `e2e/fault-paths.spec.ts` over `fault=tour-control` (the first pause, resume or seek fails) | `FailedTourEvents` |
+
+Bug found and fixed, with a check that failed first: a pause, resume or seek the server refused set the tour's error
+to "Connection lost", which only the composer showed, as "Send failed", and the composer is hidden during the tour.
+The person saw nothing and the tour kept playing. The failure is now the reason `connection`, which the proved
+`postFailure` maps to "Connection lost"; the walkthrough bar shows the tour's failure as an alert, and the next
+control clears it. Regression: `e2e/fault-paths.spec.ts` (red: no "Connection lost" on the page),
+`test/mainUpdate.coverage.test.vibe`, `test/app.scene.test.vibe`; `pnpm verify src/web/viewDecision.vibe` and its 49
+mutations pass.
+
+`switchMode`'s `switchesMode` guard narrows a slash entry's name to the `mock | live` literals `SwitchMode` takes. No
+browser reaches its false arm: typed text reaches it only as `/mock` or `/live`, and the slash menu registers only
+`mode/mock` and `mode/live`.
+
 ## Landed behavior
 
 The new tests exercise sequencer replay, ordering and reply attempts; real loopback HTTP and product mock flows;
