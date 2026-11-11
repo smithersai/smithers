@@ -130,7 +130,11 @@ run with that allowance, for it alone. The day's cap is never raised there. Othe
 cap and restart, then resume the tab; a daily cap also clears at 00:00 UTC. Estimates use reported
 usage; an admitted call can consume more than its estimate. The daily total is
 the append-only `spend/<UTC day>.jsonl` under `~/.smithers/tui`
-(`SMITHERS_TUI_SESSION_DIR` moves it).
+(`SMITHERS_TUI_SESSION_DIR` moves it). After a crash, an incomplete final
+record is ignored on read and removed before the next append. Writers coordinate
+through a per-day SQLite lock so recovery preserves other processes’ charges;
+the lock is released when its connection closes or its process exits. Complete
+malformed records still fail budget accounting.
 
 ## Keys
 

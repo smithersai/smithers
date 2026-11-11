@@ -4,15 +4,27 @@
  * The journal `Budget` normally recovers from is per run, and this host runs on
  * the memory engine with none, so the per-day cap and a run's recovered spend
  * both read this file. Several `smithers-tui` processes on one machine append
- * to the same day file; one short `O_APPEND` line is atomic. An unreadable line
+ * to the same day file; a SQLite writer lock guards tail repair and append.
+ * Closing the connection (including process death) releases the lock. An unreadable line
  * fails the read (the budget then refuses, loudly) instead of counting as zero,
- * except a torn final line from a crash, which is skipped.
+ * except a torn final line from a crash, which is skipped and removed before
+ * the next append.
  */
 import type * as Budget from "@smthrs/agent/Budget"
 import * as Effect from "effect/Effect"
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs"
+import {
+  appendFileSync,
+  chmodSync,
+  closeSync,
+  existsSync,
+  ftruncateSync,
+  mkdirSync,
+  openSync,
+  readFileSync
+} from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 
 export const directory = (): string =>
   join(process.env.SMITHERS_TUI_SESSION_DIR ?? join(homedir(), ".smithers", "tui"), "spend")
@@ -58,8 +70,26 @@ export const ledger = (root: string = directory()): Budget.Ledger => ({
       // A retried record may append twice; `read` keeps the first.
       mkdirSync(root, { recursive: true, mode: 0o700 })
       const file = fileFor(root, entry.day)
-      appendFileSync(file, JSON.stringify(entry) + "\n", { mode: 0o600 })
-      chmodSync(file, 0o600)
+      // Use the host SQLite lock rather than a lockfile that survives a crash.
+      // Never unlink it: all writers must coordinate on the same inode.
+      const lockFile = `${file}.lock.sqlite`
+      const lock = new DatabaseSync(lockFile)
+      try {
+        chmodSync(lockFile, 0o600)
+        lock.exec("PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE")
+        const fd = openSync(file, "a+", 0o600)
+        try {
+          const bytes = readFileSync(fd)
+          const end = bytes.lastIndexOf(10) + 1
+          if (end < bytes.length) ftruncateSync(fd, end)
+          appendFileSync(fd, JSON.stringify(entry) + "\n")
+          chmodSync(file, 0o600)
+        } finally {
+          closeSync(fd)
+        }
+      } finally {
+        lock.close()
+      }
     }),
   // A run's steps sit in the day it started or the next; older days are never rescanned.
   run: (runId) =>
