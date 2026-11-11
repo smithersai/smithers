@@ -150,46 +150,53 @@ describe("a parent that fails", () => {
 })
 
 describe("a follower's wake", () => {
-  effect(
-    "wakes the follower once, then holds it to its backoff until an elapsed poll resumes the run",
-    () =>
-      Effect.gen(function*() {
-        const engine = yield* FlowRuntime.FlowRuntime
-        const Parks = Flow.make("memory-edges/parks", {
-          payload: {},
-          success: Schema.String,
-          body: () => Node.succeed("inert")
-        })
-        let ready = false
-        let drives = 0
-        yield* engine.register(Parks, () =>
-          Effect.gen(function*() {
-            drives++
-            if (ready) return "ready"
-            return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+  for (const completesOnResume of [false, true]) {
+    effect(
+      completesOnResume
+        ? "settles the follower on resume without waiting for its backoff"
+        : "wakes the follower once, then holds it to its backoff until an elapsed poll resumes the run",
+      () =>
+        Effect.gen(function*() {
+          const engine = yield* FlowRuntime.FlowRuntime
+          const Parks = Flow.make("memory-edges/parks", {
+            payload: {},
+            success: Schema.String,
+            body: () => Node.succeed("inert")
+          })
+          let ready = false
+          let drives = 0
+          yield* engine.register(Parks, () =>
+            Effect.gen(function*() {
+              drives++
+              if (ready) return "ready"
+              return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+            }))
+          const following = yield* Effect.forkChild(engine.execute(Parks, {
+            executionId: "parks",
+            payload: {},
+            suspendedRetryPolicy: RetryPolicy.make({ initialMs: 1000, factor: 1, maxMs: 1000 })
           }))
-        const following = yield* Effect.forkChild(engine.execute(Parks, {
-          executionId: "parks",
-          payload: {},
-          suspendedRetryPolicy: RetryPolicy.make({ initialMs: 1000, factor: 1, maxMs: 1000 })
-        }))
-        const parked = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
-        yield* pollUntil(pollOf(Parks.poll("parks")), parked, { turns: 200 })
-        for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
-        // An operator's resume re-drives the run, which parks again, and wakes
-        // the follower parked on its backoff.
-        yield* engine.resume(Parks, "parks")
-        for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
-        expect(drives).toBe(2)
+          const parked = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
+          yield* pollUntil(pollOf(Parks.poll("parks")), parked, { turns: 200 })
+          for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
+          expect(following.pollUnsafe()).toBeUndefined()
+          // A resume must wake the waiting follower even if its backoff never elapses.
+          ready = completesOnResume
+          yield* engine.resume(Parks, "parks")
+          for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
+          expect(drives).toBe(2)
 
-        ready = true
-        yield* TestClock.adjust(1000)
-        for (let turn = 0; turn < 200 && following.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
-        expect(following.pollUnsafe()).toBeDefined()
-        expect(yield* Fiber.join(following)).toBe("ready")
-        expect(drives).toBe(3)
-      }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
-  )
+          if (!completesOnResume) {
+            ready = true
+            yield* TestClock.adjust(1000)
+          }
+          for (let turn = 0; turn < 200 && following.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
+          expect(following.pollUnsafe()).toBeDefined()
+          expect(yield* Fiber.join(following)).toBe("ready")
+          expect(drives).toBe(completesOnResume ? 2 : 3)
+        }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
+    )
+  }
 })
 
 describe("a follower's poll of a run parked on its own timer", () => {

@@ -1,11 +1,9 @@
 /** Persisted outcomes rejected by this build fail with a safe typed diagnostic, without printing journal values. */
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, JournalDecode } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Logger, Metric, References, Schema } from "effect"
-import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
-import { withCrypto } from "./Crypto.ts"
 import { effect } from "./Harness.ts"
 import { scriptedEngine } from "./ScriptedEngine.ts"
 
@@ -52,7 +50,15 @@ describe("a recorded outcome that fails the action's exit schema", () => {
       )
       expect(reported.length).toBe(1)
       expect(reported[0]?.annotations["action"]).toBe("RecordedExitSchemaMismatch/undeclared-error")
-      expect(reported[0]?.annotations["exit"]).toBeUndefined()
+      expect(Object.keys(reported[0]!.annotations).sort()).toEqual([
+        "action",
+        "boundary",
+        "codeVersion",
+        "objectId",
+        "stepTag"
+      ])
+      expect(String(reported[0]!.message)).toBe("smithers.journal.decode.failed")
+      expect(JSON.stringify(reported)).not.toContain("42")
       expect(reported[0]?.annotations["objectId"]).toBe("unknown")
       expect(reported[0]?.annotations["codeVersion"]).toBe("unknown")
       expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
@@ -71,7 +77,7 @@ describe("a recorded outcome that fails the action's exit schema", () => {
     )
   })
 
-  effect("bounds a circular recorded action failure while preserving the schema-mismatch defect", () => {
+  effect("rejects a circular recorded action failure without logging it", () => {
     const logs: Array<
       { readonly message: unknown; readonly logLevel: string; readonly annotations: Readonly<Record<string, unknown>> }
     > = []
@@ -105,8 +111,16 @@ describe("a recorded outcome that fails the action's exit schema", () => {
       )
       expect(reported.length).toBe(1)
       expect(reported[0]?.annotations["action"]).toBe("RecordedExitSchemaMismatch/circular-error")
-      expect(reported[0]?.annotations["exit"]).toBeUndefined()
-      expect(String(reported[0]?.annotations["exit"])).not.toContain("self")
+      expect(Object.keys(reported[0]!.annotations).sort()).toEqual([
+        "action",
+        "boundary",
+        "codeVersion",
+        "objectId",
+        "stepTag"
+      ])
+      expect(String(reported[0]!.message)).toBe("smithers.journal.decode.failed")
+      expect(JSON.stringify(reported)).not.toContain("self")
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(JournalDecode.JournalDecodeError)
       expect(reported[0]?.annotations["objectId"]).toBe("fixture-object")
       expect(reported[0]?.annotations["codeVersion"]).toBe("rollback-build")
     }).pipe(

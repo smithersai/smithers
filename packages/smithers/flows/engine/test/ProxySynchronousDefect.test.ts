@@ -29,18 +29,20 @@ const httpServices = Layer.mergeAll(Path.layer, Etag.layerWeak, HttpPlatform.lay
   .pipe(Layer.provideMerge(FileSystem.layerNoop({})))
 
 describe("synchronous proxy callback defects", () => {
-  for (const operation of ["execute", "discard", "resume"] as const) {
+  for (const operation of ["execute", "discard", "resume", "interrupt"] as const) {
     effect(
       `redacts a synchronous identity callback throw during ${operation}`,
       () =>
         Effect.scoped(Effect.gen(function*() {
           const client = yield* RpcTest.makeClient(FlowProxy.toRpcGroup([flow]))
           const request = { payload: {}, executionId: "caller-id" }
-          const call = operation === "execute"
+          const call: Effect.Effect<void, unknown> = operation === "execute"
             ? client.ProxySynchronousDefect(request)
             : operation === "discard"
             ? client.ProxySynchronousDefectDiscard(request)
-            : client.ProxySynchronousDefectResume(request)
+            : operation === "resume"
+            ? client.ProxySynchronousDefectResume(request)
+            : client.ProxySynchronousDefectInterrupt({ executionId: request.executionId })
           assertRedacted(yield* Effect.exit(call))
         })).pipe(Effect.provide(
           FlowProxyServer.layerRpcHandlers([flow], { executionId: scope })
@@ -52,11 +54,13 @@ describe("synchronous proxy callback defects", () => {
       Effect.scoped(Effect.gen(function*() {
         const api = yield* HttpApiTest.groups(Api, ["flows"])
         const request = { payload: { payload: {}, executionId: "caller-id" } }
-        const call = operation === "execute"
+        const call: Effect.Effect<void, unknown> = operation === "execute"
           ? api.flows.ProxySynchronousDefect(request)
           : operation === "discard"
           ? api.flows.ProxySynchronousDefectDiscard(request)
-          : api.flows.ProxySynchronousDefectResume({ payload: { executionId: "caller-id" } })
+          : operation === "resume"
+          ? api.flows.ProxySynchronousDefectResume({ payload: { executionId: "caller-id" } })
+          : api.flows.ProxySynchronousDefectInterrupt({ payload: { executionId: "caller-id" } })
         assertRedacted(yield* Effect.exit(call))
       })).pipe(
         Effect.provide(
