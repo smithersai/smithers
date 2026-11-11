@@ -8,11 +8,26 @@
  * @private
  */
 
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as FileSet from "../FileSet.ts"
 import * as KeyMaterial from "../KeyMaterial.ts"
 import type * as Plan from "../Plan.ts"
 import * as EffectCandidates from "./EffectCandidates.ts"
+
+/**
+ * Candidate selection and exact overlap analysis. Tests can supply an
+ * exhaustive selector or count real comparisons without replacing modules.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const Analysis = Context.Reference<{
+  readonly candidates: typeof EffectCandidates.make
+  readonly overlaps: typeof FileSet.overlaps
+}>("@smthrs/plan/internal/ConflictAnnotation/Analysis", {
+  defaultValue: () => ({ candidates: EffectCandidates.make, overlaps: FileSet.overlaps })
+})
 
 /**
  * What {@link annotate} found, by node id and in discovery order: the conflict
@@ -82,11 +97,10 @@ const describe = (entry: FileSet.Entry): string =>
 /** @private */
 const overlap = (
   left: ReadonlyArray<FileSet.Entry>,
-  right: ReadonlyArray<FileSet.Entry>
+  right: ReadonlyArray<FileSet.Entry>,
+  overlaps: typeof FileSet.overlaps
 ): ReadonlyArray<string> =>
-  left.flatMap((leftEntry) =>
-    right.some((rightEntry) => FileSet.overlaps(leftEntry, rightEntry)) ? [describe(leftEntry)] : []
-  )
+  left.flatMap((leftEntry) => right.some((rightEntry) => overlaps(leftEntry, rightEntry)) ? [describe(leftEntry)] : [])
 
 /**
  * The read declarations of one node that a writer's produced set covers. The
@@ -98,9 +112,10 @@ const overlap = (
  */
 const readOverlap = (
   reads: ReadonlyArray<FileSet.ReadEntry>,
-  produced: ReadonlyArray<FileSet.Entry>
+  produced: ReadonlyArray<FileSet.Entry>,
+  overlaps: typeof FileSet.overlaps
 ): ReadonlyArray<string> =>
-  reads.flatMap((entry) => produced.some((output) => FileSet.overlaps(entry, output)) ? [describe(entry)] : [])
+  reads.flatMap((entry) => produced.some((output) => overlaps(entry, output)) ? [describe(entry)] : [])
 
 /**
  * Two passes over the graph.
@@ -138,11 +153,12 @@ export const annotate = (
   nodes: ReadonlyArray<Plan.PlanNode>
 ): Effect.Effect<Annotations, Refusal> =>
   Effect.gen(function*() {
+    const analysis = yield* Analysis
     const expanded = new Map(nodes.map((node) => [node.id, {
       produced: producedPaths(node.effects),
       reads: FileSet.expandReads(node.effects.reads)
     }]))
-    const candidates = EffectCandidates.make(nodes.map((node) => expanded.get(node.id)!.produced))
+    const candidates = analysis.candidates(nodes.map((node) => expanded.get(node.id)!.produced))
     const conflicts = new Map<string, Array<Plan.ConflictAnnotation>>()
     const ordering = new Map<string, Array<string>>()
     const edges = new Map(nodes.map((node) => [node.id, new Set(node.dependsOn)]))
@@ -287,7 +303,7 @@ export const annotate = (
           const earlierProduced = expanded.get(earlier.id)!.produced
           work += earlierProduced.length * laterProduced.length
           if (work >= nextYield) yield* checkpoint
-          const paths = overlap(earlierProduced, laterProduced)
+          const paths = overlap(earlierProduced, laterProduced, analysis.overlaps)
           if (paths.length === 0) continue
           if (yield* reaches(later.id, earlier.id)) continue
           const strategy = pairStrategy(earlier.strategy, later.strategy)
@@ -348,7 +364,7 @@ export const annotate = (
           const produced = expanded.get(writer.id)!.produced
           work += reads.length * produced.length
           if (work >= nextYield) yield* checkpoint
-          const paths = readOverlap(reads, produced)
+          const paths = readOverlap(reads, produced, analysis.overlaps)
           if (paths.length === 0) continue
           // Already ordered, by a material edge, a serialize edge, or a path
           // through either.
@@ -368,8 +384,8 @@ export const annotate = (
             // Charged here and checked at the next pair or refusal.
             work += produced.length * (reads.length + own.length)
             const unexplained = produced.some((output) =>
-              reads.some((entry) => FileSet.overlaps(entry, output)) &&
-              !own.some((mine) => FileSet.overlaps(mine, output))
+              reads.some((entry) => analysis.overlaps(entry, output)) &&
+              !own.some((mine) => analysis.overlaps(mine, output))
             )
             if (!unexplained) continue
             const contradiction = (yield* route(writer.id, reader.id))!
@@ -424,7 +440,7 @@ export const writerFences = (nodes: ReadonlyArray<Plan.PlanNode>): ReadonlyMap<s
     for (const index of readers(produced)) {
       const reader = nodes[index]!
       if (reader.generation >= writer.generation) continue
-      if (readOverlap(reads[index]!, produced).length > 0) waits.push(reader.id)
+      if (readOverlap(reads[index]!, produced, FileSet.overlaps).length > 0) waits.push(reader.id)
     }
     if (waits.length > 0) fences.set(writer.id, waits)
   }

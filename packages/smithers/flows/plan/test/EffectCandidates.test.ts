@@ -1,7 +1,8 @@
 import { Effect } from "effect"
 import * as FastCheck from "fast-check"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as FileSet from "../src/FileSet.ts"
+import { Analysis } from "../src/internal/ConflictAnnotation.ts"
 import * as EffectCandidates from "../src/internal/EffectCandidates.ts"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
@@ -132,21 +133,27 @@ describe("compiler file-effect candidates", () => {
       draft(`producer-${index}`, { writes: [`out/${index}.json`] }),
       draft(`reader-${index}`, { reads: [`out/${index}.json`] })
     ]).flat()
-    const overlap = vi.spyOn(FileSet, "overlaps")
-    try {
-      const plan = await Effect.runPromise(withCrypto(compile(nodes, "partitioned-2000")))
-      expect(plan.nodes.map((node) => ({ id: node.id, edges: node.dependsOn, conflicts: node.conflicts }))).toEqual(
-        Array.from({ length: 1_000 }, (_, index) => [
-          { id: `producer-${index}`, edges: [], conflicts: [] },
-          { id: `reader-${index}`, edges: [`producer-${index}`], conflicts: [] }
-        ]).flat()
+    let comparisons = 0
+    const plan = await Effect.runPromise(
+      withCrypto(compile(nodes, "partitioned-2000")).pipe(
+        Effect.provideService(Analysis, {
+          candidates: EffectCandidates.make,
+          overlaps: (left, right) => {
+            comparisons++
+            return FileSet.overlaps(left, right)
+          }
+        })
       )
-      expect(plan.nodes.every((node) => node.key.startsWith("key1_"))).toBe(true)
-      // Exhaustive passes perform 499,500 writer comparisons and 1,000,000
-      // reader comparisons here. Only the 1,000 real read edges need a check.
-      expect(overlap).toHaveBeenCalledTimes(1_000)
-    } finally {
-      overlap.mockRestore()
-    }
+    )
+    expect(plan.nodes.map((node) => ({ id: node.id, edges: node.dependsOn, conflicts: node.conflicts }))).toEqual(
+      Array.from({ length: 1_000 }, (_, index) => [
+        { id: `producer-${index}`, edges: [], conflicts: [] },
+        { id: `reader-${index}`, edges: [`producer-${index}`], conflicts: [] }
+      ]).flat()
+    )
+    expect(plan.nodes.every((node) => node.key.startsWith("key1_"))).toBe(true)
+    // Exhaustive passes perform 499,500 writer comparisons and 1,000,000
+    // reader comparisons here. Only the 1,000 real read edges need a check.
+    expect(comparisons).toBe(1_000)
   })
 })

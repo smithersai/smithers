@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import * as Plan from "../src/Plan.ts"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
@@ -41,62 +42,152 @@ describe("plan integrity", () => {
       })
     ))
 
-  it.effect("rejects forged keys, digests, topology, effects, material and generations", () =>
-    withCrypto(
-      Effect.gen(function*() {
-        const base = yield* compile([draft("a"), draft("b", { inputs: [{ _tag: "Ref", from: "a", path: [] }] })])
-        const node = base.nodes[0]!
-        const cases: ReadonlyArray<unknown> = [
+  it.effect("rejects malformed plan shapes with schema errors", () =>
+    withCrypto(Effect.gen(function*() {
+      const base = yield* compile([draft("a")])
+      for (
+        const candidate of [
           undefined,
           null,
           {},
           { nodes: [] },
-          { ...base, digest: key, baseDigest: key },
-          { ...base, nodes: [{ ...node, key }, base.nodes[1]!] },
-          { ...base, nodes: [{ ...node, material: { ...node.material, body: "forged" } }, base.nodes[1]!] },
-          {
-            ...base,
-            nodes: [
-              { ...node, material: { ...node.material, effects: { ...node.effects, writes: ["hidden"] } } },
-              base.nodes[1]!
-            ]
-          },
-          { ...base, nodes: [{ ...node, dependsOn: ["b"] }, base.nodes[1]!] },
-          { ...base, nodes: [{ ...node, effects: { ...node.effects, writes: ["new"] } }, base.nodes[1]!] },
-          { ...base, nodes: [{ ...node, priority: 10 }, base.nodes[1]!] },
-          { ...base, nodes: [node, node] },
-          ...[-1, 1.5, 3, Number.MAX_SAFE_INTEGER + 1].map((generation) => ({ ...base, generation })),
-          { ...base, generation: 1 },
-          { ...base, nodes: [{ ...node, generation: -1 }] },
-          { ...base, generation: 2, nodes: [{ ...node, generation: 2 }, base.nodes[1]!] },
-          { ...base, generation: 1, nodes: [{ ...node, generation: 1 }, base.nodes[1]!] },
-          {
-            ...base,
-            generation: 1,
-            nodes: [{ ...node, material: { ...node.material, inputs: [{ _tag: "Ref", from: "b", path: [] }] } }, {
-              ...base.nodes[1]!,
-              generation: 1
-            }]
-          },
-          {
-            ...base,
-            nodes: [{ ...node, material: { ...node.material, inputs: [{ _tag: "Ref", from: "missing", path: [] }] } }]
-          },
-          {
-            ...base,
-            nodes: [
-              { ...node, material: { ...node.material, inputs: [{ _tag: "Ref", from: "b", path: [] }] } },
-              base.nodes[1]!
-            ]
-          },
-          { nodes: Array.from({ length: Plan.maximumPlanNodes + 1 }, () => node) }
+          ...[1.5, Number.MAX_SAFE_INTEGER + 1].map((generation) => ({ ...base, generation }))
         ]
-        for (const candidate of cases) {
-          const result = yield* Effect.exit(Plan.verify(candidate))
-          expect(result._tag).toBe("Failure")
-        }
+      ) {
+        const error = yield* Effect.flip(Plan.verify(candidate))
+        expect(error).toBeInstanceOf(Schema.SchemaError)
+      }
+    })))
+
+  it.effect("rejects each forged field with its specific typed integrity error", () =>
+    withCrypto(Effect.gen(function*() {
+      const base = yield* compile([draft("a"), draft("b", { inputs: [{ _tag: "Ref", from: "a", path: [] }] })])
+      const grown = yield* Plan.append(base, [draft("c")])
+      const node = base.nodes[0]!
+      const replaceFirst = (changed: Plan.PlanNode): Plan.Plan => ({
+        ...base,
+        nodes: [changed, base.nodes[1]!]
       })
-    ))
+      const digestMessage = "Plan approval digest does not match its compiled content"
+      const nodesMessage = "Plan nodes do not match their compiled keys, effects, ordering, or generations"
+      const cases: ReadonlyArray<{
+        readonly field: string
+        readonly candidate: unknown
+        readonly code: Plan.PlanError["code"]
+        readonly message: string
+      }> = [
+        { field: "digest", candidate: { ...base, digest: key }, code: "invalid_plan", message: digestMessage },
+        { field: "baseDigest", candidate: { ...base, baseDigest: key }, code: "invalid_plan", message: digestMessage },
+        {
+          field: "node key",
+          candidate: replaceFirst({ ...node, key: key as typeof node.key }),
+          code: "invalid_plan",
+          message: nodesMessage
+        },
+        {
+          field: "material body",
+          candidate: replaceFirst({ ...node, material: { ...node.material, body: "forged" } }),
+          code: "invalid_plan",
+          message: digestMessage
+        },
+        {
+          field: "material effects",
+          candidate: replaceFirst({
+            ...node,
+            material: { ...node.material, effects: { ...node.effects, writes: ["hidden"] } }
+          }),
+          code: "invalid_plan",
+          message: nodesMessage
+        },
+        {
+          field: "dependsOn",
+          candidate: replaceFirst({ ...node, dependsOn: ["b"] }),
+          code: "invalid_plan",
+          message: nodesMessage
+        },
+        {
+          field: "effects",
+          candidate: replaceFirst({ ...node, effects: { ...node.effects, writes: ["new"] } }),
+          code: "invalid_plan",
+          message: digestMessage
+        },
+        {
+          field: "priority",
+          candidate: replaceFirst({ ...node, priority: 10 }),
+          code: "invalid_plan",
+          message: digestMessage
+        },
+        {
+          field: "duplicate id",
+          candidate: { ...base, nodes: [node, { ...base.nodes[1]!, id: "a" }] },
+          code: "duplicate_node",
+          message: "Node a is already in the plan"
+        },
+        ...[-1, 3].map((generation) => ({
+          field: `plan generation ${generation}`,
+          candidate: { ...base, generation },
+          code: "invalid_plan" as const,
+          message: "Plan generation must be a non-negative safe integer with a nonempty appended generation"
+        })),
+        {
+          field: "newest generation",
+          candidate: { ...base, generation: 1 },
+          code: "invalid_plan",
+          message: "Plan generation does not match its newest nodes"
+        },
+        ...[-1, 2].map((generation) => ({
+          field: `node generation ${generation}`,
+          candidate: replaceFirst({ ...node, generation }),
+          code: "invalid_plan" as const,
+          message: "Node a has an invalid or out-of-order generation"
+        })),
+        {
+          field: "future generation reference",
+          candidate: {
+            ...grown,
+            nodes: [
+              { ...node, material: { ...node.material, inputs: [{ _tag: "Ref", from: "c", path: [] }] } },
+              ...grown.nodes.slice(1)
+            ]
+          },
+          code: "invalid_plan",
+          message: "Node a refers to a future generation"
+        },
+        {
+          field: "unknown material reference",
+          candidate: replaceFirst({
+            ...node,
+            material: { ...node.material, inputs: [{ _tag: "Ref", from: "missing", path: [] }] }
+          }),
+          code: "unknown_dependency",
+          message: "Node a depends on unknown node missing"
+        },
+        {
+          field: "cyclic material reference",
+          candidate: replaceFirst({
+            ...node,
+            material: { ...node.material, inputs: [{ _tag: "Ref", from: "b", path: [] }] }
+          }),
+          code: "cycle",
+          message: "Plan cycle through node a"
+        },
+        {
+          field: "node count",
+          candidate: { ...base, nodes: Array.from({ length: Plan.maximumPlanNodes + 1 }, () => node) },
+          code: "graph_too_large",
+          message: `A plan may contain at most ${Plan.maximumPlanNodes} nodes, received ${Plan.maximumPlanNodes + 1}`
+        }
+      ]
+      // Every starting plan is valid. Each specimen alters one field and
+      // preserves all unrelated rows, so its diagnostic identifies that check.
+      expect(yield* Plan.verify(serialized(base))).toEqual(base)
+      expect(yield* Plan.verify(serialized(grown))).toEqual(grown)
+      for (const { field, candidate, code, message } of cases) {
+        const error = yield* Effect.flip(Plan.verify(candidate))
+        expect(error, field).toBeInstanceOf(Plan.PlanError)
+        expect(error, field).toMatchObject({ code, message })
+      }
+    })))
 
   it.effect("names the newest generation's nodes, and only those", () =>
     withCrypto(

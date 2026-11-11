@@ -8,11 +8,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { StoredKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import * as FastCheck from "fast-check"
-import { vi } from "vitest"
 import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
 import * as FileSet from "../src/FileSet.ts"
+import { Analysis } from "../src/internal/ConflictAnnotation.ts"
 import * as EffectCandidates from "../src/internal/EffectCandidates.ts"
 import * as KeyMaterial from "../src/KeyMaterial.ts"
 import * as Plan from "../src/Plan.ts"
@@ -52,24 +53,22 @@ describe("Plan.compile", () => {
 
   it("yields during dense writer inference so interruption can stop the pass", async () => {
     const controller = new AbortController()
-    const original = FileSet.overlaps
     let comparisons = 0
-    const overlap = vi.spyOn(FileSet, "overlaps").mockImplementation((left, right) => {
-      if (++comparisons === 1) queueMicrotask(() => controller.abort())
-      return original(left, right)
-    })
-    try {
-      await expect(Effect.runPromise(
-        withCrypto(compile(
-          Array.from({ length: 400 }, (_, index) => draft(`dense-${index}`, { writes: ["shared"] }))
-        )),
-        { signal: controller.signal }
-      )).rejects.toBeDefined()
-      expect(comparisons).toBeGreaterThan(0)
-      expect(comparisons).toBeLessThan(5_000)
-    } finally {
-      overlap.mockRestore()
-    }
+    const result = await Effect.runPromiseExit(
+      withCrypto(compile(
+        Array.from({ length: 400 }, (_, index) => draft(`dense-${index}`, { writes: ["shared"] }))
+      )).pipe(Effect.provideService(Analysis, {
+        candidates: EffectCandidates.make,
+        overlaps: (left, right) => {
+          if (++comparisons === 1) queueMicrotask(() => controller.abort())
+          return FileSet.overlaps(left, right)
+        }
+      })),
+      { signal: controller.signal }
+    )
+    expect(Exit.hasInterrupts(result)).toBe(true)
+    expect(comparisons).toBeGreaterThan(0)
+    expect(comparisons).toBeLessThan(5_000)
   })
 
   // The edge and conflict counts pin the work; the wall clock is only a hang
@@ -179,14 +178,16 @@ describe("Plan.compile", () => {
       imported.nodes.forEach((node: { generation: number }, index: number) => {
         node.generation = index
       })
-      const make = vi.spyOn(EffectCandidates, "make")
-      try {
-        const verified = yield* withCrypto(Plan.verify(imported))
-        expect(verified).toEqual(imported)
-        expect(make).toHaveBeenCalledTimes(1)
-      } finally {
-        make.mockRestore()
-      }
+      let indexes = 0
+      const verified = yield* withCrypto(Plan.verify(imported)).pipe(Effect.provideService(Analysis, {
+        candidates: (produced) => {
+          indexes++
+          return EffectCandidates.make(produced)
+        },
+        overlaps: FileSet.overlaps
+      }))
+      expect(verified).toEqual(imported)
+      expect(indexes).toBe(1)
     }))
 
   it.effect("orders topologically, keys every node, and defaults its annotations", () =>

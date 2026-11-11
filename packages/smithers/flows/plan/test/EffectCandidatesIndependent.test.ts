@@ -1,7 +1,8 @@
 /** Independent comparison with the compiler's former exhaustive owner walk. */
 import { Effect } from "effect"
-import { expect, it, vi } from "vitest"
+import { expect, it } from "vitest"
 import * as FileSet from "../src/FileSet.ts"
+import { Analysis } from "../src/internal/ConflictAnnotation.ts"
 import * as Candidates from "../src/internal/EffectCandidates.ts"
 import * as Plan from "../src/Plan.ts"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
@@ -25,14 +26,23 @@ const outcome = (program: ReturnType<typeof Plan.compile>) =>
   }))))
 const compare = async (program: () => ReturnType<typeof Plan.compile>) => {
   const actual = await outcome(program())
-  const exhaustive = vi.spyOn(Candidates, "make").mockImplementation((produced) => () =>
-    produced.map((_, index) => index)
+  let indexes = 0
+  let selections = 0
+  const expected = await outcome(
+    program().pipe(Effect.provideService(Analysis, {
+      candidates: (produced) => {
+        indexes++
+        return () => {
+          selections++
+          return produced.map((_, index) => index)
+        }
+      },
+      overlaps: FileSet.overlaps
+    }))
   )
-  try {
-    expect(actual).toEqual(await outcome(program()))
-  } finally {
-    exhaustive.mockRestore()
-  }
+  expect(indexes).toBeGreaterThan(0)
+  expect(selections).toBeGreaterThan(0)
+  expect(actual).toEqual(expected)
   return actual
 }
 
@@ -143,6 +153,8 @@ it("matches complete compiled results and errors for deterministic generated gra
     const nodes = Array.from({ length: count }, (_, index): Plan.NodeDraft => {
       const read = next() % 3 === 0 ? [reads[next() % reads.length]!] : []
       const write = next() % 3 === 0 ? [] : [outputs[next() % outputs.length]!]
+      // Include effect work even when the random graph would be all pure nodes.
+      if (index === 0 && write.length === 0) write.push(outputs[0]!)
       const remove = next() % 5 === 0 ? [paths[next() % paths.length]!] : []
       const material = index > 0 && next() % 4 === 0 ? [{ _tag: "Pending" as const, from: `n${next() % index}` }] : []
       return {
@@ -153,7 +165,9 @@ it("matches complete compiled results and errors for deterministic generated gra
         effects: {
           reads: read,
           writes: [{ _tag: "Filegroup", name: "generated", entries: write }],
-          removes: remove,
+          // A write/removal overlap is refused before candidate analysis.
+          // Keep generated declarations admissible so every trial runs the oracle.
+          removes: remove.filter((path) => !write.some((entry) => FileSet.overlaps(entry, path))),
           boundaryMode: "hard"
         }
       }
