@@ -1425,13 +1425,13 @@ Full observation, listing, lag, retention, and cursor contract:
 
 Hot backup, verification, restore, and restore-time fencing.
 
-| Export            | Signature                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `backup`          | `(options: BackupOptions<R, E>) => Effect<BackupManifest, DisasterRecoveryError \| E, SqlClient \| FileSystem \| Crypto \| R>`  |
-| `verify`          | `(backupDirectory: string, options?: FileSizeOptions) => Effect<BackupManifest, DisasterRecoveryError, FileSystem \| Crypto>`   |
-| `restore`         | `(options: RestoreOptions) => Effect<RestoredStore, DisasterRecoveryError, FileSystem \| Crypto>`                               |
-| `fence`           | `(manifest: BackupManifest) => Effect<FenceSummary, DisasterRecoveryError, SqlClient \| DurableWriter>`                         |
-| `restoreAndFence` | `(options: RestoreAndFenceOptions<R, E>) => Effect<FencedRestoredStore, DisasterRecoveryError \| E, FileSystem \| Crypto \| R>` |
+| Export            | Signature                                                                                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `backup`          | `(options: BackupOptions<R, E>) => Effect<BackupManifest, DisasterRecoveryError \| E, SqlClient \| FileSystem \| R>`  |
+| `verify`          | `(backupDirectory: string, options?: FileSizeOptions) => Effect<BackupManifest, DisasterRecoveryError, FileSystem>`   |
+| `restore`         | `(options: RestoreOptions) => Effect<RestoredStore, DisasterRecoveryError, FileSystem>`                               |
+| `fence`           | `(manifest: BackupManifest) => Effect<FenceSummary, DisasterRecoveryError, SqlClient \| DurableWriter>`               |
+| `restoreAndFence` | `(options: RestoreAndFenceOptions<R, E>) => Effect<FencedRestoredStore, DisasterRecoveryError \| E, FileSystem \| R>` |
 
 | Constant                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
@@ -1443,7 +1443,7 @@ Hot backup, verification, restore, and restore-time fencing.
 
 | Type                           | Fields                                                                                                                                                                                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `FileSizeOptions`              | `maxFileSizeBytes?`, a finite non-negative safe integer                                                                                                                                                            |
+| `FileSizeOptions`              | `maxFileSizeBytes?`, a finite non-negative safe integer; files are read in chunks, so it is a policy bound                                                                                                         |
 | `BackupOptions<R, E>`          | `directory`, `objectsDirectory?`, `snapshotDatabaseLayer`, plus `FileSizeOptions`                                                                                                                                  |
 | `RestoreOptions`               | `backupDirectory`, `targetDirectory`, plus `FileSizeOptions`                                                                                                                                                       |
 | `RestoreAndFenceOptions<R, E>` | `RestoreOptions` plus `databaseLayer`                                                                                                                                                                              |
@@ -1462,8 +1462,9 @@ capture holds the cross-process artifact backup lease; without one no lease is
 taken, and a frozen snapshot that references any artifact digest fails with
 `snapshot_incomplete` instead of reporting success.
 
-Host access arrives through Effect's `FileSystem` and `SqlClient` tags and
-hashing through the injected `Crypto` service, so the module carries no platform
+Host access arrives through Effect's `FileSystem` and `SqlClient` tags, and
+every file is hashed and copied in chunks with `@smthrs/crypto`'s
+`digestStream`, so no whole file is buffered and the module carries no platform
 binding. The SQL dialect is SQLite; a non-SQLite backend fails with the `sql`
 code rather than pretending to snapshot.
 

@@ -23,8 +23,9 @@ import * as Cause from "effect/Cause"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import type * as FileSystem from "effect/FileSystem"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as PlatformError from "effect/PlatformError"
 import * as SqlClient from "effect/sql/SqlClient"
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, normalize, sep } from "node:path"
@@ -46,6 +47,36 @@ type Environment =
 const environment = Layer.mergeAll(TestStores.databaseAt(":memory:"), NodeFileSystem.layer)
 
 const run = <A, E>(effect: Effect.Effect<A, E, Environment>) => withCrypto(Effect.provide(effect, environment))
+
+/** The largest file the whole-file-read-limited host below reads in one call. */
+const hostReadLimit = 1_024
+
+/**
+ * The real filesystem, except that a whole-file read refuses any file above
+ * {@link hostReadLimit}, as Node's `fs.readFile` refuses a file of 2 GiB or
+ * more whatever `maxFileSizeBytes` says.
+ */
+const wholeReadLimitedFileSystem = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    return FileSystem.FileSystem.of({
+      ...fs,
+      readFile: (path) =>
+        Effect.flatMap(fs.stat(path), (info) =>
+          info.size > BigInt(hostReadLimit)
+            ? Effect.fail(PlatformError.badArgument({
+              module: "FileSystem",
+              method: "readFile",
+              description: `${path} is larger than the host reads whole`
+            }))
+            : fs.readFile(path))
+    })
+  })
+).pipe(Layer.provide(NodeFileSystem.layer))
+
+const runOnWholeReadLimitedHost = <A, E>(effect: Effect.Effect<A, E, Environment>) =>
+  withCrypto(Effect.provide(effect, Layer.mergeAll(TestStores.databaseAt(":memory:"), wholeReadLimitedFileSystem)))
 
 const restoredDatabase = (databaseFile: string) =>
   Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: databaseFile }))
@@ -713,6 +744,40 @@ describe("restore", () => {
         readFileSync(join(base, "restored", DisasterRecovery.restoredMarkerFileName), "utf8")
       ) as { databaseSha256: string }
       expect(marker.databaseSha256).toBe(manifest.database.sha256)
+    }))
+})
+
+describe("files larger than the host reads whole", () => {
+  it.effect("back up, verify, and restore in chunks, never through a whole-file read", () =>
+    Effect.gen(function*() {
+      const base = yield* root()
+      const objects = join(base, "objects")
+      // Three 1 MiB read chunks and a ragged tail, all above the host limit.
+      const large = "large-artifact:".repeat(220_000)
+      const digest = plantBlob(objects, large)
+      const backupDirectory = join(base, "backup")
+
+      const manifest = yield* runOnWholeReadLimitedHost(
+        backup({ directory: backupDirectory, objectsDirectory: objects })
+      )
+      expect(manifest.database.sizeBytes).toBeGreaterThan(hostReadLimit)
+      const databaseBytes = readFileSync(join(backupDirectory, DisasterRecovery.databaseFileName))
+      expect(manifest.database.sha256).toBe(sha256(databaseBytes))
+      expect(manifest.database.sizeBytes).toBe(databaseBytes.length)
+      expect(manifest.artifacts).toEqual([{ digest, sizeBytes: large.length }])
+      const copied = readFileSync(
+        join(backupDirectory, DisasterRecovery.objectsDirectoryName, digest.slice(0, 2), digest),
+        "utf8"
+      )
+      expect(copied).toBe(large)
+
+      expect(yield* runOnWholeReadLimitedHost(DisasterRecovery.verify(backupDirectory))).toEqual(manifest)
+
+      const restored = yield* runOnWholeReadLimitedHost(
+        DisasterRecovery.restore({ backupDirectory, targetDirectory: join(base, "restored") })
+      )
+      expect(readFileSync(restored.databaseFile)).toEqual(databaseBytes)
+      expect(readFileSync(join(restored.objectsDirectory, digest.slice(0, 2), digest), "utf8")).toBe(large)
     }))
 })
 

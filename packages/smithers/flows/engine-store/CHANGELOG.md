@@ -32,6 +32,13 @@
 
 ### Fixed
 
+- `DisasterRecovery` backup, verify, and restore hash and copy every file in
+  1 MiB chunks instead of reading it whole, so a database or blob of 2 GiB or
+  more no longer fails with `io` whatever `maxFileSizeBytes` says.
+  `maxFileSizeBytes` is now a policy bound, and the operations no longer
+  require Effect's `Crypto` service.
+  ([#4754](https://github.com/smithersai/smithers/issues/4754)).
+
 - A wake no longer reverts files a settled step wrote. Replaying a succeeded
   attempt of the same run restores a recorded output only where its path is
   absent. It used to reproduce the recorded post-state on every drive: it
@@ -40,6 +47,7 @@
   under a recorded tree. `StepBoundary.replayOutputs` takes `ReplayOptions`
   (`{ restore: "missing" }`) for this; a cache hit keeps the default, `"all"`
   ([#4762](https://github.com/smithersai/smithers/issues/4762)).
+
 - An unrecordable step releases its durable run and returns the typed
   `FlowRuntime.StoreUnavailable` failure to outermost execute callers instead
   of interrupting their requests. Every joining caller receives the failure;

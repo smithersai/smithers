@@ -26,29 +26,30 @@
  * restored runs are claimable immediately instead of after the heartbeat
  * staleness cutoff.
  *
- * Host access arrives through Effect's `FileSystem` and `SqlClient` tags and
- * hashing through the injected `Crypto` service, so the module carries no
- * platform binding. The SQL dialect is SQLite — a non-SQLite backend fails
- * with the `sql` code rather than pretending to snapshot. Every file is
- * stat-checked before it is buffered for hashing or copying. The configurable
- * ceiling defaults to {@link defaultMaxFileSizeBytes}; an oversized file fails
- * with the typed `io` code instead of reaching the host's allocation limit.
+ * Host access arrives through Effect's `FileSystem` and `SqlClient` tags, and
+ * hashing is the streaming SHA-256 of `@smthrs/crypto`, so the module carries
+ * no platform binding. The SQL dialect is SQLite — a non-SQLite backend fails
+ * with the `sql` code rather than pretending to snapshot. The database and
+ * every blob are hashed and copied in chunks, so no whole file is buffered and
+ * a file larger than any host buffer still backs up, verifies, and restores.
+ * Every file is stat-checked first against a configurable ceiling, which
+ * defaults to {@link defaultMaxFileSizeBytes}; an oversized file fails with the
+ * typed `io` code.
  *
  * @since 0.1.0
  */
 
 import * as ArtifactBackupLease from "@smthrs/artifacts/ArtifactBackupLease"
-import { Sha256 } from "@smthrs/crypto"
+import { digestStream, Sha256 } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as Clock from "effect/Clock"
-import type * as EffectDigest from "effect/crypto/Digest"
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
+import * as Stream from "effect/Stream"
 import * as ArtifactRoots from "./internal/ArtifactRoots.ts"
 
 /**
@@ -88,7 +89,7 @@ export const objectsDirectoryName = "objects"
 export const restoredMarkerFileName = "restored.json"
 
 /**
- * Default ceiling for one backup file read into memory: 512 MiB.
+ * Default ceiling for one database or blob file in a backup: 512 MiB.
  *
  * @since 1.0.0
  * @category constants
@@ -212,15 +213,16 @@ export class DisasterRecoveryError extends Schema.TaggedError<DisasterRecoveryEr
 ) {}
 
 /**
- * Shared buffering limit for backup, verification, and restore operations.
+ * Shared file-size limit for backup, verification, and restore operations.
  *
  * @since 1.0.0
  * @category models
  */
 export interface FileSizeOptions {
   /**
-   * Largest file, in bytes, that backup, verification, or restore may buffer.
-   * The value must be a finite non-negative safe integer. Defaults to
+   * Largest file, in bytes, that backup, verification, or restore admits.
+   * Files are read in chunks, so the limit is a policy bound, not a host
+   * buffer limit. The value must be a finite non-negative safe integer. Defaults to
    * {@link defaultMaxFileSizeBytes}.
    */
   readonly maxFileSizeBytes?: number | undefined
@@ -349,13 +351,45 @@ const ioFailure = (method: string, subject: string) => (cause: unknown): Disaste
 const sqlFailure = (method: string, subject: string) => (cause: unknown): DisasterRecoveryError =>
   error(method, "sql", `the database refused ${subject}`, cause)
 
-/** Hashes bytes with the injected crypto service; a broken host is a defect. */
-const measure = (
-  bytes: Uint8Array
-): Effect.Effect<typeof Sha256.Digest.Type, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
+/** Bytes read per chunk while a file is hashed and copied. */
+const chunkSize = 1024 * 1024
 
-/** Resolves and validates the shared whole-file buffering ceiling. */
+interface StreamedFile {
+  readonly sha256: typeof Sha256.Digest.Type
+  readonly sizeBytes: number
+}
+
+/**
+ * Hashes a file chunk by chunk and, given a `target`, writes each chunk there,
+ * so no whole file is ever buffered. A failure can leave a partial target; the
+ * caller's cleanup removes it. Byte chunks are never refused by the hasher, so
+ * a refusal is a defect.
+ */
+const streamFile = (
+  fs: FileSystem.FileSystem,
+  method: string,
+  path: string,
+  target: string | undefined
+): Effect.Effect<StreamedFile, DisasterRecoveryError> =>
+  Effect.scoped(Effect.gen(function*() {
+    const copy = target === undefined ? undefined : yield* fs.open(target, { flag: "w" }).pipe(
+      Effect.mapError(ioFailure(method, `writing ${target}`))
+    )
+    let sizeBytes = 0
+    const chunks = fs.stream(path, { chunkSize }).pipe(
+      Stream.mapError(ioFailure(method, `reading ${path}`)),
+      Stream.tap((chunk) => {
+        sizeBytes += chunk.length
+        return copy === undefined
+          ? Effect.void
+          : copy.writeAll(chunk).pipe(Effect.mapError(ioFailure(method, `writing ${target}`)))
+      })
+    )
+    const sha256 = yield* digestStream(chunks).pipe(Effect.catchTag("@smthrs/crypto/Sha256Error", Effect.die))
+    return { sha256, sizeBytes }
+  }))
+
+/** Resolves and validates the shared file-size ceiling. */
 const fileSizeLimit = (
   method: string,
   options: FileSizeOptions
@@ -372,7 +406,7 @@ const fileSizeLimit = (
 }
 
 /**
- * Refuses an oversized file before a whole-file read allocates its buffer.
+ * Refuses a file larger than the admitted ceiling before reading it.
  * Every caller admits `limit` through `fileSizeLimit`, so `BigInt` cannot
  * reject it.
  */
@@ -513,7 +547,7 @@ const readManifest = (
   method: string,
   backupDirectory: string,
   maxFileSizeBytes: number
-): Effect.Effect<BackupManifest, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
+): Effect.Effect<BackupManifest, DisasterRecoveryError> =>
   Effect.gen(function*() {
     const path = `${backupDirectory}/${manifestFileName}`
     const present = yield* fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
@@ -531,28 +565,31 @@ const readManifest = (
     )
   })
 
-/** Reads a backup file and refuses bytes that no longer hash to the manifest. */
+/**
+ * Streams a backup file, copying it to `target` when given, and refuses bytes
+ * that no longer hash to the manifest. A refused copy is left for the
+ * caller's cleanup.
+ */
 const checkedFile = (
   fs: FileSystem.FileSystem,
   method: string,
   path: string,
   expected: string,
-  maxFileSizeBytes: number
-): Effect.Effect<Uint8Array, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
+  maxFileSizeBytes: number,
+  target?: string
+): Effect.Effect<void, DisasterRecoveryError> =>
   Effect.gen(function*() {
     const present = yield* fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
     if (!present) {
       return yield* Effect.fail(error(method, "missing_file", `${path} does not exist`, path))
     }
     yield* checkFileSize(fs, method, path, maxFileSizeBytes)
-    const bytes = yield* fs.readFile(path).pipe(Effect.mapError(ioFailure(method, `reading ${path}`)))
-    const measured = yield* measure(bytes)
+    const measured = (yield* streamFile(fs, method, path, target)).sha256
     if (measured !== expected) {
       return yield* Effect.fail(
         error(method, "digest_mismatch", `${path} hashes to ${measured}, the manifest records ${expected}`, path)
       )
     }
-    return bytes
   })
 
 /**
@@ -582,7 +619,7 @@ export const backup = <R = never, E = never>(
 ): Effect.Effect<
   BackupManifest,
   DisasterRecoveryError | E,
-  SqlClient.SqlClient | FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R
+  SqlClient.SqlClient | FileSystem.FileSystem | R
 > =>
   Effect.gen(function*() {
     const limit = fileSizeLimit("backup", options)
@@ -605,10 +642,7 @@ export const backup = <R = never, E = never>(
       // Opening the frozen file may normalize SQLite journal metadata, so its
       // manifest digest is measured only after the inspection connection closes.
       yield* checkFileSize(fs, "backup", databasePath, maxFileSizeBytes)
-      const databaseBytes = yield* fs.readFile(databasePath).pipe(
-        Effect.mapError(ioFailure("backup", `reading ${databasePath} back`))
-      )
-      const sha256 = yield* measure(databaseBytes)
+      const database = yield* streamFile(fs, "backup", databasePath, undefined)
 
       const artifacts: Array<ArtifactEntry> = []
       const captured = new Set<string>()
@@ -622,10 +656,14 @@ export const backup = <R = never, E = never>(
           if (digest === undefined) continue
           const source = blobPath(objectsDirectory, digest)
           yield* checkFileSize(fs, "backup", source, maxFileSizeBytes)
-          const bytes = yield* fs.readFile(source).pipe(
-            Effect.mapError(ioFailure("backup", `reading ${source}`))
-          )
-          const measured = yield* measure(bytes)
+          const target = blobPath(`${options.directory}/${objectsDirectoryName}`, digest)
+          yield* fs.makeDirectory(`${options.directory}/${objectsDirectoryName}/${digest.slice(0, 2)}`, {
+            recursive: true
+          }).pipe(Effect.mapError(ioFailure("backup", `creating the objects directory for ${digest}`)))
+          // The bytes are hashed as they are copied, so the copy is exactly
+          // what was verified; a refused copy is discarded with the capture.
+          const copied = yield* streamFile(fs, "backup", source, target)
+          const measured = copied.sha256
           if (measured !== digest) {
             return yield* Effect.fail(
               error(
@@ -636,12 +674,7 @@ export const backup = <R = never, E = never>(
               )
             )
           }
-          const target = blobPath(`${options.directory}/${objectsDirectoryName}`, digest)
-          yield* fs.makeDirectory(`${options.directory}/${objectsDirectoryName}/${digest.slice(0, 2)}`, {
-            recursive: true
-          }).pipe(Effect.mapError(ioFailure("backup", `creating the objects directory for ${digest}`)))
-          yield* fs.writeFile(target, bytes).pipe(Effect.mapError(ioFailure("backup", `writing ${target}`)))
-          artifacts.push({ digest: measured, sizeBytes: bytes.length })
+          artifacts.push({ digest: measured, sizeBytes: copied.sizeBytes })
           captured.add(measured)
         }
       }
@@ -663,8 +696,8 @@ export const backup = <R = never, E = never>(
         createdAtMs,
         database: {
           file: databaseFileName,
-          sha256,
-          sizeBytes: databaseBytes.length,
+          sha256: database.sha256,
+          sizeBytes: database.sizeBytes,
           migrations: snapshot.migrations
         },
         artifacts
@@ -740,34 +773,30 @@ const writeRestoredStore = (
   options: RestoreOptions,
   manifest: BackupManifest,
   maxFileSizeBytes: number
-): Effect.Effect<RestoredStore, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
+): Effect.Effect<RestoredStore, DisasterRecoveryError> =>
   Effect.gen(function*() {
-    const databaseBytes = yield* checkedFile(
+    const databaseFile = `${options.targetDirectory}/${databaseFileName}`
+    yield* checkedFile(
       fs,
       "restore",
       `${options.backupDirectory}/${manifest.database.file}`,
       manifest.database.sha256,
-      maxFileSizeBytes
-    )
-    const databaseFile = `${options.targetDirectory}/${databaseFileName}`
-    yield* fs.writeFile(databaseFile, databaseBytes).pipe(
-      Effect.mapError(ioFailure("restore", `writing ${databaseFile}`))
+      maxFileSizeBytes,
+      databaseFile
     )
 
     const objectsDirectory = `${options.targetDirectory}/${objectsDirectoryName}`
     for (const entry of manifest.artifacts) {
-      const bytes = yield* checkedFile(
+      yield* fs.makeDirectory(`${objectsDirectory}/${entry.digest.slice(0, 2)}`, { recursive: true }).pipe(
+        Effect.mapError(ioFailure("restore", `creating the objects directory for ${entry.digest}`))
+      )
+      yield* checkedFile(
         fs,
         "restore",
         blobPath(`${options.backupDirectory}/${objectsDirectoryName}`, entry.digest),
         entry.digest,
-        maxFileSizeBytes
-      )
-      yield* fs.makeDirectory(`${objectsDirectory}/${entry.digest.slice(0, 2)}`, { recursive: true }).pipe(
-        Effect.mapError(ioFailure("restore", `creating the objects directory for ${entry.digest}`))
-      )
-      yield* fs.writeFile(blobPath(objectsDirectory, entry.digest), bytes).pipe(
-        Effect.mapError(ioFailure("restore", `writing the blob for ${entry.digest}`))
+        maxFileSizeBytes,
+        blobPath(objectsDirectory, entry.digest)
       )
     }
 
@@ -925,7 +954,7 @@ export const restoreAndFence = <R = never, E = never>(
 ): Effect.Effect<
   FencedRestoredStore,
   DisasterRecoveryError | E,
-  FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R
+  FileSystem.FileSystem | R
 > =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem

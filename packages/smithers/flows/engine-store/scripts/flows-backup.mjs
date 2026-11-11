@@ -21,7 +21,7 @@ const usage = `usage:
   node packages/smithers/flows/engine-store/scripts/flows-backup.mjs verify <backup-directory> [--max-file-size <bytes>]
   node packages/smithers/flows/engine-store/scripts/flows-backup.mjs restore <backup-directory> <target-directory> [--max-file-size <bytes>]
 
---max-file-size raises the largest database or blob file hashed in memory (default 512 MiB).`
+--max-file-size raises the largest database or blob file admitted (default 512 MiB). Files are hashed and copied in chunks, so any size the disk holds works.`
 
 /**
  * Splits a trailing `--max-file-size <bytes>` off the positional arguments.

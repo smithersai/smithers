@@ -14695,6 +14695,7 @@ WebCrypto, and `Identity`, function identity.
 import {
   Digest,
   digest,
+  digestStream,
   digestSync,
   Identity,
   Sha256,
@@ -14759,6 +14760,22 @@ the explicit synchronous entry point, for pure plan and identity construction.
 | Export                | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `makeDigestPartsSync` | Direct package-root export: `() => (parts: ReadonlyArray<string>) => Digest`. Produces a reusable synchronous SHA-256 parts digester. It is not a method on the `Sha256` schema; it requires no Effect service. The result equals `digestSync(parts.join(""))`; fragment boundaries are not hashed. Every fragment must be well-formed UTF-8 text on its own; split surrogate pairs are refused. The returned function throws `Sha256Error` for invalid/unreadable input or encoding failure, retaining its last successful reusable prefixes. |
+
+### digestStream
+
+```ts
+const digestStream: <E, R>(chunks: Stream.Stream<Uint8Array, E, R>) => Effect.Effect<Digest, E | Sha256Error, R>
+```
+
+- Hashes a byte stream incrementally with the package-owned implementation
+  and requires no Effect service. Only the current chunk is held, so the input
+  may exceed any buffer the host can allocate.
+- The result equals `digestSync` over the concatenated chunks; chunk
+  boundaries are not hashed. Each run consumes the stream once from an empty
+  state.
+- **Fails** with the stream's own error, or with
+  [`Sha256Error`](#sha256error) code `invalid_input` for a chunk that is not a
+  `Uint8Array`.
 
 ## Schemas
 
@@ -14864,13 +14881,13 @@ const Sha256ErrorCode: Schema.Literals<
 type Sha256ErrorCode = typeof Sha256ErrorCode.Type
 ```
 
-| Code                   | Raised by              | Meaning                                                                    |
-| ---------------------- | ---------------------- | -------------------------------------------------------------------------- |
-| `invalid_input`        | `digest`, `digestSync` | The input is neither a string nor a copyable `Uint8Array`.                 |
-| `invalid_text`         | `digest`, `digestSync` | The string contains an unpaired UTF-16 surrogate.                          |
-| `text_encoding_failed` | `digest`, `digestSync` | The host `TextEncoder` threw.                                              |
-| `digest_failed`        | `digest`               | The injected host failed, threw, died, or returned a non-Effect operation. |
-| `invalid_digest`       | `digest`               | The host result is not a copyable 32-byte array.                           |
+| Code                   | Raised by                              | Meaning                                                                                          |
+| ---------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `invalid_input`        | `digest`, `digestSync`, `digestStream` | The input is neither a string nor a copyable `Uint8Array`; a stream chunk is not a `Uint8Array`. |
+| `invalid_text`         | `digest`, `digestSync`                 | The string contains an unpaired UTF-16 surrogate.                                                |
+| `text_encoding_failed` | `digest`, `digestSync`                 | The host `TextEncoder` threw.                                                                    |
+| `digest_failed`        | `digest`                               | The injected host failed, threw, died, or returned a non-Effect operation.                       |
+| `invalid_digest`       | `digest`                               | The host result is not a copyable 32-byte array.                                                 |
 
 A missing `Crypto` service is deliberately not a member. It remains an
 unsatisfied Effect context requirement, and therefore a configuration defect,
@@ -17385,13 +17402,13 @@ Full observation, listing, lag, retention, and cursor contract:
 
 Hot backup, verification, restore, and restore-time fencing.
 
-| Export            | Signature                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `backup`          | `(options: BackupOptions<R, E>) => Effect<BackupManifest, DisasterRecoveryError \| E, SqlClient \| FileSystem \| Crypto \| R>`  |
-| `verify`          | `(backupDirectory: string, options?: FileSizeOptions) => Effect<BackupManifest, DisasterRecoveryError, FileSystem \| Crypto>`   |
-| `restore`         | `(options: RestoreOptions) => Effect<RestoredStore, DisasterRecoveryError, FileSystem \| Crypto>`                               |
-| `fence`           | `(manifest: BackupManifest) => Effect<FenceSummary, DisasterRecoveryError, SqlClient \| DurableWriter>`                         |
-| `restoreAndFence` | `(options: RestoreAndFenceOptions<R, E>) => Effect<FencedRestoredStore, DisasterRecoveryError \| E, FileSystem \| Crypto \| R>` |
+| Export            | Signature                                                                                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `backup`          | `(options: BackupOptions<R, E>) => Effect<BackupManifest, DisasterRecoveryError \| E, SqlClient \| FileSystem \| R>`  |
+| `verify`          | `(backupDirectory: string, options?: FileSizeOptions) => Effect<BackupManifest, DisasterRecoveryError, FileSystem>`   |
+| `restore`         | `(options: RestoreOptions) => Effect<RestoredStore, DisasterRecoveryError, FileSystem>`                               |
+| `fence`           | `(manifest: BackupManifest) => Effect<FenceSummary, DisasterRecoveryError, SqlClient \| DurableWriter>`               |
+| `restoreAndFence` | `(options: RestoreAndFenceOptions<R, E>) => Effect<FencedRestoredStore, DisasterRecoveryError \| E, FileSystem \| R>` |
 
 | Constant                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
@@ -17403,7 +17420,7 @@ Hot backup, verification, restore, and restore-time fencing.
 
 | Type                           | Fields                                                                                                                                                                                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `FileSizeOptions`              | `maxFileSizeBytes?`, a finite non-negative safe integer                                                                                                                                                            |
+| `FileSizeOptions`              | `maxFileSizeBytes?`, a finite non-negative safe integer; files are read in chunks, so it is a policy bound                                                                                                         |
 | `BackupOptions<R, E>`          | `directory`, `objectsDirectory?`, `snapshotDatabaseLayer`, plus `FileSizeOptions`                                                                                                                                  |
 | `RestoreOptions`               | `backupDirectory`, `targetDirectory`, plus `FileSizeOptions`                                                                                                                                                       |
 | `RestoreAndFenceOptions<R, E>` | `RestoreOptions` plus `databaseLayer`                                                                                                                                                                              |
@@ -17422,8 +17439,9 @@ capture holds the cross-process artifact backup lease; without one no lease is
 taken, and a frozen snapshot that references any artifact digest fails with
 `snapshot_incomplete` instead of reporting success.
 
-Host access arrives through Effect's `FileSystem` and `SqlClient` tags and
-hashing through the injected `Crypto` service, so the module carries no platform
+Host access arrives through Effect's `FileSystem` and `SqlClient` tags, and
+every file is hashed and copied in chunks with `@smthrs/crypto`'s
+`digestStream`, so no whole file is buffered and the module carries no platform
 binding. The SQL dialect is SQLite; a non-SQLite backend fails with the `sql`
 code rather than pretending to snapshot.
 

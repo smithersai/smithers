@@ -72,12 +72,13 @@ carries no blobs, and a snapshot that references any artifact digest fails with
 `snapshot_incomplete` rather than reporting success. Pass the same directory you
 give `ArtifactStore.layerFileSystem`.
 
-`FileSizeOptions.maxFileSizeBytes` bounds what backup, verify, and restore may
-buffer for hashing or copying. It defaults to
+`FileSizeOptions.maxFileSizeBytes` bounds the largest database or blob file that
+backup, verify, and restore admit. It defaults to
 `DisasterRecovery.defaultMaxFileSizeBytes`, which is 512 MiB. An oversized file
-fails with the typed `io` code instead of reaching the host's allocation limit.
-Each file is read whole into memory, so set the limit above your largest
-database or blob and below the memory the host can spare.
+fails with the typed `io` code before it is read. Every file is hashed and
+copied in 1 MiB chunks, never read whole, so the limit is a policy bound: a
+database or blob of 2 GiB or more backs up, verifies, and restores once the
+limit admits it.
 
 ## Verify a backup without restoring it
 

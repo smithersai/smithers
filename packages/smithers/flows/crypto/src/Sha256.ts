@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
+import * as Stream from "effect/Stream"
 import { sha256, Sha256Prefix } from "./internal/sha256.ts"
 import { makeSnapshotSync } from "./internal/snapshot.ts"
 
@@ -247,6 +248,35 @@ export const digest = (input: string | Uint8Array): Effect.Effect<Digest, Sha256
     // Length is fixed above and encodeHex emits only lowercase hex, so this is
     // exactly the branded representation accepted by Digest.
     return encodeHex(output) as Digest
+  })
+
+/**
+ * Hashes a byte stream incrementally with the package-owned implementation.
+ *
+ * Only the current chunk is held, so the input may exceed any buffer the host
+ * can allocate. The result equals {@link digestSync} over the concatenated
+ * chunks; chunk boundaries are not hashed. It requires no Effect service.
+ *
+ * @param chunks - The bytes to hash, consumed once each time the Effect runs.
+ * @returns An Effect succeeding with the lowercase hexadecimal digest, failing
+ * with the stream's own error, or with `Sha256Error` code `invalid_input` for a
+ * chunk that is not a `Uint8Array`.
+ *
+ * @category hashing
+ * @since 1.0.0
+ */
+export const digestStream = <E, R>(
+  chunks: Stream.Stream<Uint8Array, E, R>
+): Effect.Effect<Digest, E | Sha256Error, R> =>
+  Effect.suspend(() => {
+    const state = new Sha256Prefix()
+    const absorb = (chunk: unknown): Effect.Effect<void, Sha256Error> =>
+      chunk instanceof Uint8Array
+        ? Effect.sync(() => {
+          state.update(chunk)
+        })
+        : Effect.fail(failure("invalid_input", "SHA-256 stream chunks must be Uint8Array"))
+    return Stream.runForEach(chunks, absorb).pipe(Effect.map(() => encodeHex(state.finish()) as Digest))
   })
 
 const schemaIssue = (error: Sha256Error): SchemaIssue.InvalidValue =>

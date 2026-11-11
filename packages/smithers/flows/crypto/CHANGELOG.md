@@ -4,6 +4,11 @@
 
 ### Added
 
+- `digestStream`: SHA-256 of a byte stream with the package-owned
+  implementation, holding only the current chunk, so the input may exceed any
+  host buffer. It requires no Effect service.
+  ([#4754](https://github.com/smithersai/smithers/issues/4754)).
+
 - `WebCrypto.make()` and `WebCrypto.layer`: Effect's `Crypto` over the global
   WebCrypto, for Node, Bun, browsers and Cloudflare Workers. `randomBytes`
   fills in chunks of at most 65,536 bytes and reads randomness only on demand.
