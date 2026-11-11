@@ -37,6 +37,14 @@ output, the files, or the queued effects. An accepted execution comes back as
 `Accepted`, carrying the `WorkflowResult`, the memo `CacheOutcome`, and, in
 expected mode, the violations the declaration did not predict.
 
+The filesystem host includes existing declared output paths in the copy-back
+diff without exposing their bytes to the body. A host output absent from the
+transaction is removed at copy-back, including stale tree members and glob
+matches. Declared reads remain available when they overlap the write set.
+A body that produces no declared literal output cannot reuse an earlier run's
+file to satisfy the hard boundary. Explicit deletes of unseeded files also
+carry a removal with the host's digest as their precondition.
+
 Seeding costs a copy of the declared reads. Re-rooting the body onto a bare
 host tree instead would leave every undeclared file readable and reduce
 enforcement to detection by diff after the fact, and the OS-level overlay that
@@ -167,7 +175,7 @@ Two hosts ship:
   the host `Path`, the kernel `Workspace` root, and the artifact store for products too large to
   carry inline.
 
-Because both are `makeHosted` over one `Host`, the transaction, the diff, the
+Because both use the same transaction implementation over a `Host`, the diff, the
 violation check, and the provenance cannot drift between them.
 
 ## It is a determinism boundary, not a security boundary

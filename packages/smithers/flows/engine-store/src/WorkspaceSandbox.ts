@@ -840,15 +840,16 @@ const transaction = (base: ReadonlyMap<string, Uint8Array>, trace: Trace, root: 
         Effect.mapError(refuse("readDirectory", path))
       )
   })
-  return { files, workspace, fileSystem }
+  return { files, produced, workspace, fileSystem }
 }
 
 const changes = Effect.fn("WorkspaceSandbox.changes")(function*(
   base: ReadonlyMap<string, Uint8Array>,
   current: ReadonlyMap<string, Uint8Array>,
+  touched: Iterable<string>,
   host: Host
 ) {
-  const paths = [...new Set([...base.keys(), ...current.keys()])].sort(compareText)
+  const paths = [...new Set([...base.keys(), ...current.keys(), ...touched])].sort(compareText)
   const result: Array<FileChange> = []
   for (const path of paths) {
     const before = base.get(path)
@@ -949,7 +950,13 @@ export const violations = (
  * @category constructors
  * @since 0.1.0
  */
-export const makeHosted = (host: Host): Service => {
+export const makeHosted = (host: Host): Service => makeHostedWithOutputs(host, () => Effect.succeed([]))
+
+/** The filesystem host also names unseeded outputs that copy-back must replace. */
+const makeHostedWithOutputs = (
+  host: Host,
+  outputPaths: (descriptor: FileBoundary) => Effect.Effect<ReadonlyArray<string>, WorkspaceError>
+): Service => {
   const memo = new Map<
     string,
     { readonly result: WorkflowResult<never>; readonly violations: ReadonlyArray<DeclarationViolation> }
@@ -1022,7 +1029,13 @@ export const makeHosted = (host: Host): Service => {
       return yield* Effect.failCause(outcome.cause)
     }
     const output = outcome.value
-    const files = yield* changes(base, isolated.files, host)
+    // Unseeded host outputs are absent from the transaction. Include them in
+    // the diff so copy-back removes stale products before boundary capture.
+    // Explicit deletes also survive even when neither map holds their path.
+    const files = yield* changes(base, isolated.files, [
+      ...isolated.produced,
+      ...yield* outputPaths(descriptor)
+    ], host)
     const provenance: Provenance = {
       baseRevision: yield* revisionOf(base),
       inputs,
@@ -1389,6 +1402,9 @@ export const makeFileSystem = (
     return `the workspace path ${spelling} may be a short-name alias of a reserved path`
   }
   const hostPath = (path: string) => root === "" ? path : `${root}/${path}`
+  const enumeration = {
+    resolve: (path: string) => path === "" ? (root === "" ? "." : root) : hostPath(path)
+  }
   // One host call, not two: the read reports an absent path itself. On the
   // confined host
   // the `exists` probe that used to precede every read was a second CPython
@@ -1540,7 +1556,7 @@ export const makeFileSystem = (
       Effect.uninterruptible
     )
   })
-  return makeHosted({
+  const transactionHost: Host = {
     root,
     snapshot: Effect.fn("WorkspaceSandbox.snapshot")(function*(descriptor) {
       yield* Effect.annotateCurrentSpan({
@@ -1553,9 +1569,7 @@ export const makeFileSystem = (
         // dotfiles, so a declared read glob covering one would seed a sandbox
         // that silently hides it from the body.
         const paths = FileSet.isGlob(entry)
-          ? yield* FileEnumeration.expandGlob(fs, entry, {
-            resolve: (path) => path === "" ? (root === "" ? "." : root) : hostPath(path)
-          }).pipe(Effect.mapError(hostFailure))
+          ? yield* FileEnumeration.expandGlob(fs, entry, enumeration).pipe(Effect.mapError(hostFailure))
           : [entry.path]
         for (const path of paths) {
           const normalized = normalizePath(root, path)
@@ -1588,7 +1602,21 @@ export const makeFileSystem = (
         ? Effect.succeed(bytes)
         : artifacts.put(bytes).pipe(Effect.mapError(artifactFailure), Effect.as(undefined)),
     commit: (changes) => withCommitLock(changes, (host) => commitWith(host, changes))
+  }
+  const outputPaths = Effect.fn("WorkspaceSandbox.outputs")(function*(descriptor: FileBoundary) {
+    const paths = new Set<string>()
+    for (const entry of descriptor.writeSet) {
+      if (typeof entry === "string") paths.add(entry)
+      else {
+        const expanded = yield* (FileSet.isGlob(entry)
+          ? FileEnumeration.expandGlob(fs, entry, enumeration)
+          : FileEnumeration.filesUnder(fs, entry.path, enumeration)).pipe(Effect.mapError(hostFailure))
+        for (const path of expanded) paths.add(path)
+      }
+    }
+    return [...paths]
   })
+  return makeHostedWithOutputs(transactionHost, outputPaths)
 }
 
 /**
