@@ -65,8 +65,10 @@ interface Prepared {
   input: unknown
 }
 
-// Admit and detach even when the typed value contains native Date leaves.
+// Admit and detach even when the typed value contains native Date leaves. A
+// top-level undefined (a Schema.Void value) is left for the schema to judge.
 effect function snapshotDecoded(value: unknown): unknown!FsError {
+  if (value === undefined) return undefined
   const admitted = try sync(() => Boundary.admitDecoded(value))
   if (!admitted.ok) {
     throw new FsError({

@@ -325,6 +325,24 @@ describe("Command.call decoded boundary", () => {
     }
   })
 
+  it.effect("accepts void input and void output once, and lets the schema refuse undefined", effect () => {
+    const surface = try surfaceFor(Schema.Void, Schema.Void)
+    const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect () => undefined)
+    provide FlowInvoker.layerNoop({ invoke }) {
+      expect(try surface.call("scalar", undefined as never)).toBeUndefined()
+    }
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ input: undefined }))
+    const numeric = try surfaceFor(Schema.Number, Schema.Number)
+    provide FlowInvoker.layerNoop({ invoke }) {
+      expect(try failureOf(numeric.call("scalar", undefined as never))).toMatchObject({
+        code: "decode_failed",
+        method: "Command.call"
+      })
+    }
+    expect(invoke).toHaveBeenCalledTimes(1)
+  })
+
   it.effect("rejects invalid decoded output with a sanitized typed error", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
     provide FlowInvoker.layerNoop({ invoke: effect () => "TOP-SECRET" }) {
