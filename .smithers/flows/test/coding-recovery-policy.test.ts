@@ -16,12 +16,14 @@ test("TODO shell and delivery actions explicitly declare recovery policy", () =>
     ["coding/queue-vibe-append", "irreversible"],
     ["coding/prepare-vibe-candidate", "irreversible"],
     ["coding/fast-forward-vibe", "irreversible"],
+    ["coding/advance-green-prefix", "irreversible"],
     ["coding/open-vibe-local-pull", "irreversible"],
     ["coding/merge-vibe-local-pull", "irreversible"]
   ])
   const reconciled = new Set([
     "coding/prepare-vibe-candidate",
     "coding/fast-forward-vibe",
+    "coding/advance-green-prefix",
     "coding/open-vibe-local-pull",
     "coding/merge-vibe-local-pull"
   ])
@@ -44,8 +46,9 @@ test("TODO shell and delivery actions explicitly declare recovery policy", () =>
               .map((property) => [property.name.getText(source), property.initializer.getText(source)])
           )
           assert.equal(fields.get("tier"), JSON.stringify(expected.get(name.text) ?? "sealed"), name.text)
-          // Only local lander writes reconcile before repeating; every other
-          // crossing stays keyless until its lookup provider is wired.
+          // Only local lander writes and the green-prefix advance reconcile
+          // before repeating; every other crossing stays keyless until its
+          // lookup provider is wired.
           assert.equal(fields.get("idempotencyKey") !== "undefined", reconciled.has(name.text), name.text)
           expected.delete(name.text)
         }
