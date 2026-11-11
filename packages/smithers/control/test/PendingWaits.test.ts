@@ -136,6 +136,20 @@ describe("answerableWait", () => {
     })).toEqual({ name: "coding-clarification#1", token: token("WaitFor/coding-clarification#1") })
   })
 
+  it("names the wait its token addresses, not the caller's request id", () => {
+    // Regression #4913: the name was the client's `requestId`, so a token for
+    // one wait carried a signal of any name.
+    expect(
+      ControlExecutor.answerableWait({
+        _tag: "Node",
+        runId: "run-1",
+        requestId: "deploy",
+        digest: token("WaitFor/coding-clarification#1"),
+        envelope
+      })?.name
+    ).toBe("coding-clarification#1")
+  })
+
   it("is not a question when the digest is an ordinary request digest", () => {
     // A capability gate: the run asked the control plane for permission, and a
     // registered approval token decides it.

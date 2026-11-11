@@ -2020,6 +2020,16 @@ export const layer: Layer.Layer<
           Effect.flatMap(snapshotSignal(submitted), (input) =>
             Effect.gen(function*() {
               const principal = yield* runtime.stampPrincipal(input.principal)
+              // An answer admitted through an approval mount is an approval:
+              // authority precedes admission and replay, as in `decideAs`.
+              if (submitted.answers !== undefined) {
+                yield* runtime.authorizeApproval({
+                  principal,
+                  target: submitted.answers,
+                  decision: "approved",
+                  scope: "once"
+                })
+              }
               const key = fingerprint("signal", principal, input)
               const durableKey = mutationKey("signal", input.idempotencyKey, principal)
               // Admission, payload and receipt commit together before any engine

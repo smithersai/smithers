@@ -130,8 +130,11 @@ A gate that asks a question needs the value, not the word: add `answer`.
 Shape the answer for the question's `kind`: prose for `ask`, a boolean for
 `confirm`, one of `options` for `select`, and the decoded JSON value for
 `json`. The mount routes it to `Control.signal`, addressed to `target.runId`
-and naming `target.requestId`, and the control plane finds the execution
-holding that wait. A denial carries no answer: it refuses the question rather
+and naming the wait the `digest` token addresses, and the control plane finds
+the execution holding that wait. A `requestId` that names a different wait
+fails `InvalidInput`. The answer is an approval: `ApprovalAuthority` must let
+the caller approve the target once, or the call fails `Unauthorized` and
+nothing is delivered. A denial carries no answer: it refuses the question rather
 than answering it, and an unanswered question re-parks or times out on the
 task's own budget.
 

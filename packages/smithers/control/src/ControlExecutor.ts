@@ -220,12 +220,17 @@ export const humanWaitReason = "approval"
 /** The engine's own decoder: tokens are UTF-8 JSON in base64url, which `atob` misreads. */
 const decodeToken = Schema.decodeUnknownOption(DurableDeferred.TokenParsed.FromString)
 
-const waitPointOf = (token: string): { readonly name?: string; readonly attempt?: number } => {
+/** The signal name a `WaitFor` token waits for: its deferred name after `WaitFor/`. */
+const signalNameOf = (token: string): string | undefined => {
   const decoded = decodeToken(token)
-  if (Option.isNone(decoded)) return {}
+  if (Option.isNone(decoded)) return undefined
   const deferredName = decoded.value.deferredName
-  if (!deferredName.startsWith("WaitFor/")) return {}
-  const point = deferredName.slice("WaitFor/".length)
+  return deferredName.startsWith("WaitFor/") ? deferredName.slice("WaitFor/".length) : undefined
+}
+
+const waitPointOf = (token: string): { readonly name?: string; readonly attempt?: number } => {
+  const point = signalNameOf(token)
+  if (point === undefined) return {}
   const marker = point.lastIndexOf("#")
   if (marker < 0) return { name: point }
   const attempt = Number(point.slice(marker + 1))
@@ -287,7 +292,8 @@ export const pendingWaitOf = (row: {
  * durable deferred token is self-describing: it decodes to a flow, an
  * execution, and a deferred name under `WaitFor/`. Nothing else produces one,
  * so a target carrying one is a question, and the name it answers is right
- * there.
+ * there. The name comes from the token, never from `requestId`: a caller
+ * chooses both fields, and only the token says which wait it addresses.
  *
  * @category constructors
  * @since 1.0.0
@@ -296,8 +302,8 @@ export const answerableWait = (
   target: ApprovalTarget
 ): { readonly name: string; readonly token: string } | undefined => {
   if (target._tag !== "Node") return undefined
-  const point = waitPointOf(target.digest)
-  return point.name === undefined ? undefined : { name: target.requestId, token: target.digest }
+  const name = signalNameOf(target.digest)
+  return name === undefined ? undefined : { name, token: target.digest }
 }
 
 /**

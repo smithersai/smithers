@@ -119,7 +119,7 @@ export const layerHandlers = GatewayRpcs.toLayer(
           // to the same operator, and a decision journaled under the
           // composition's default operator names the wrong one.
           const principal = yield* ControlPrincipal
-          // Answering a human wait uses signal rather than the approval policy.
+          // Answering a human wait uses signal rather than `Control.approve`.
           // Do not let that alternate mutation path bypass loopback authentication.
           if (principal.id === "loopback" && principal.kind === "anonymous") {
             return yield* new ControlError.Unauthorized({ message: "An operator credential is required" })
@@ -141,10 +141,20 @@ export const layerHandlers = GatewayRpcs.toLayer(
           // listed, rendered, and waiting (workspace 4bb93306, run-1).
           //
           // `target.runId` is the run the person opened and `wait.name` the
-          // wait point's own name; `Control.signal` routes the pair into the
-          // run tree, to whichever execution is holding it.
+          // wait point's own name, read from the token; `Control.signal`
+          // routes the pair into the run tree, to whichever execution is
+          // holding it.
           const wait = ControlExecutor.answerableWait(input.target)
           if (wait !== undefined && input.target._tag === "Node") {
+            // The request id is the caller's word for the wait and the token
+            // is the wait's own; an answer to one presented as the other is
+            // refused rather than delivered to either.
+            if (input.target.requestId !== wait.name) {
+              return yield* new ControlError.InvalidInput({
+                issue:
+                  `target.requestId: "${input.target.requestId}" is not the wait its digest addresses, "${wait.name}"`
+              })
+            }
             // Neither half of a grant answers a question. A denial has nowhere
             // to go — the run is parked on a value, and refusing to supply one
             // leaves it parked until its own attempt budget or deadline ends
@@ -159,11 +169,14 @@ export const layerHandlers = GatewayRpcs.toLayer(
                 issue: `answer: "${wait.name}" asks a question, so a decision alone does not answer it`
               })
             }
+            // An approval credential answers only what `ApprovalAuthority`
+            // lets its principal approve; `Signal` itself needs `write:runs`.
             const decision = yield* control.signal({
               runId: input.target.runId,
               signal: { name: wait.name, payload: input.answer },
               idempotencyKey: input.idempotencyKey,
-              principal
+              principal,
+              answers: input.target
             })
             return { decision }
           }

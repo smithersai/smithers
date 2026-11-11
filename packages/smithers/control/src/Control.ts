@@ -28,6 +28,7 @@ import type {
 import { Unavailable as UnavailableError } from "./ControlError.ts"
 import type {
   ApprovalPayload,
+  ApprovalTarget,
   ControlEvent,
   Envelope,
   FlowId,
@@ -164,6 +165,14 @@ export type SignalInput = typeof SignalInputSchema.Type & {
    * wire; an in-process caller that names no reader mutates any run.
    */
   readonly reader?: Principal | undefined
+  /**
+   * The approval target this signal answers, set by an approval mount that
+   * routes an answer here. The principal must be one `ApprovalAuthority` lets
+   * approve that target once, checked before admission or replay, so an
+   * approval credential cannot deliver a signal its holder could not approve.
+   * Not on the wire.
+   */
+  readonly answers?: ApprovalTarget | undefined
 }
 
 /**

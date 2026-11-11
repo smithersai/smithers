@@ -148,6 +148,45 @@ describe("approval mutations require independent authority", () => {
       )
     })
 
+    it(`${adapter}: a signal that answers an approval target is checked before admission`, async () => {
+      // Regression #4913: an approval mount answered a wait through `signal`
+      // with no authority check, so an approval credential the host never
+      // delegated delivered a signal. `answers` makes the signal an approval.
+      const seen: Array<ApprovalAuthority.Request> = []
+      const policy: ApprovalAuthority.Service = {
+        authorize: (request) =>
+          Effect.suspend(() => {
+            seen.push(request)
+            return Effect.fail(new Unauthorized({ message: "not delegated" }))
+          })
+      }
+      const answers = {
+        _tag: "Node" as const,
+        runId: "absent-run",
+        requestId: "deploy",
+        digest: "wait-token",
+        envelope: { capabilities: [], flows: [], budget: {} }
+      }
+      const reviewer = { id: "reviewer", kind: "user", stampedAt: 0 }
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const control = yield* Control
+          const signal = { name: "deploy", payload: "ship it" }
+          const input = { runId: "absent-run", signal, idempotencyKey: "answer-1", principal: reviewer }
+          expect(yield* Effect.flip(control.signal({ ...input, answers }))).toBeInstanceOf(Unauthorized)
+          expect(seen).toEqual([{
+            principal: expect.objectContaining({ id: "reviewer", kind: "user" }),
+            target: answers,
+            decision: "approved",
+            scope: "once"
+          }])
+          // A plain signal is not an approval: the policy is not consulted.
+          expect(yield* Effect.flip(control.signal(input))).not.toBeInstanceOf(Unauthorized)
+          expect(seen).toHaveLength(1)
+        }).pipe(Effect.provide(stack(adapter, policy)), Effect.scoped)
+      )
+    })
+
     it(`${adapter}: host delegation grants exactly its scope and is not an actor-supplied role`, async () => {
       const reviewer = { id: "delegated-reviewer", kind: "user", stampedAt: 0 }
       const policy = await Effect.runPromise(ApprovalAuthority.make([

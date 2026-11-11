@@ -531,7 +531,13 @@ describe("submitting an answer rather than a grant", () => {
     JSON.stringify(["coding/PreparePlan", "execution-1", "WaitFor/coding-clarification#1"])
   ).toString("base64")
 
-  const answerRequest = (runId: string, answer?: string, decision: "approve" | "deny" = "approve") =>
+  const answerRequest = (
+    runId: string,
+    answer?: string,
+    decision: "approve" | "deny" = "approve",
+    requestId = "coding-clarification#1",
+    digest = waitToken
+  ) =>
     JSON.stringify({
       _tag: "Request",
       id: 1,
@@ -540,8 +546,8 @@ describe("submitting an answer rather than a grant", () => {
         target: {
           _tag: "Node",
           runId,
-          requestId: "coding-clarification#1",
-          digest: waitToken,
+          requestId,
+          digest,
           envelope: { capabilities: [], flows: [], budget: {} }
         },
         scope: "once",
@@ -626,6 +632,57 @@ describe("submitting an answer rather than a grant", () => {
     }).pipe(Effect.provide(served(
       { host: "127.0.0.1", port: 0, credential: "edge-secret" },
       delegatedBearer
+    ))))
+  const submit = (url: string, body: string) =>
+    Effect.promise(async () => {
+      const response = await fetch(`${url}/projections`, {
+        method: "POST",
+        body,
+        headers: { authorization: "Bearer edge-secret", "content-type": "application/json" }
+      })
+      expect(response.status).toBe(200)
+      return response.text()
+    })
+
+  /**
+   * Regression #4913: the mount signalled the client's `requestId`, so an
+   * answer could carry one wait's token and deliver a signal of any name.
+   * The wait's name is the token's; a request id that names another wait is
+   * refused and nothing is delivered.
+   */
+  test("refuses an answer whose request id is not the wait its digest addresses", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const runId = yield* launched
+      const body = yield* submit(url, answerRequest(runId, "ship it", "approve", "deploy"))
+
+      expect(body).toContain("/control/InvalidInput")
+      expect(body).toContain("coding-clarification#1")
+      expect(yield* (yield* ControlRuntime).deliveredSignals(runId)).toEqual([])
+    }).pipe(Effect.provide(served(
+      { host: "127.0.0.1", port: 0, credential: "edge-secret" },
+      delegatedBearer
+    ))))
+
+  /**
+   * Regression #4913: an answer skipped `ApprovalAuthority`, so a credential
+   * the host never delegated approvals to (an `approve:runs`-only token
+   * reaches this procedure) delivered any `WaitFor` signal it could encode,
+   * the `write:runs` mutation `Signal` guards. A plain `WaitFor` gate is the
+   * sharp case: the engine checks the authority only for a HumanTask wait.
+   */
+  test("refuses an answer from a principal the approval authority does not delegate", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const runId = yield* launched
+      const forged = Buffer.from(JSON.stringify(["system/test", runId, "WaitFor/deploy"])).toString("base64")
+      const body = yield* submit(url, answerRequest(runId, "ship it", "approve", "deploy", forged))
+
+      expect(body).toContain("/control/Unauthorized")
+      expect(yield* (yield* ControlRuntime).deliveredSignals(runId)).toEqual([])
+    }).pipe(Effect.provide(served(
+      { host: "127.0.0.1", port: 0, credential: "edge-secret" },
+      ApprovalAuthority.local
     ))))
 })
 
