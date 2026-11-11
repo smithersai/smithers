@@ -1,0 +1,36 @@
+import { engineHooks, type FlowsHooks, Kernel, make, type WaterfallHook } from "@smthrs/plugin"
+
+declare module "@smthrs/plugin" {
+  interface FlowsHooks {
+    /** Contributes or rewrites the tool names the host offers. */
+    readonly tools: WaterfallHook<(tools: ReadonlyArray<string>) => (ReadonlyArray<string> | void)!!>
+  }
+}
+
+/** The runtime catalog: the kernel's two config hooks plus this host's one. */
+export const hooks = Object.freeze({ ...engineHooks, tools: "waterfall" } as const)
+
+/** Contributes a configuration namespace and two tools. */
+const editor = make<FlowsHooks>({
+  name: "flows-plugin-editor",
+  hooks: {
+    config: () => succeed({ editor: { readOnly: false } }),
+    tools: (tools) => succeed([...tools, "read", "write"])
+  }
+})
+
+/** Runs first and reads what the host resolved. */
+const audit = make<FlowsHooks>({
+  name: "flows-plugin-audit",
+  enforce: "pre",
+  hooks: {
+    configResolved: (config) => log(`resolved namespaces: ${Object.keys(config).join(", ")}`)
+  }
+})
+
+/** Runs the kernel, then dispatches the host's own waterfall hook. */
+export effect function runHost() {
+  const kernel = try Kernel.make([editor, audit], { host: { name: "quickstart" } }, { target: "harness", hooks })
+  const tools = try kernel.plugins.waterfall("tools", [] as ReadonlyArray<string>, (_previous, next) => next)
+  return { config: kernel.config, tools }
+}

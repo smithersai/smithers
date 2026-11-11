@@ -1,0 +1,13 @@
+import { expect, it } from "@effect/vitest"
+import { hooks, runHost } from "../examples/quickstart.vibe"
+
+it.effect("freezes the configuration every plugin agreed on", effect () => {
+  const { config } = try runHost()
+  expect(config).toEqual({ host: { name: "quickstart" }, editor: { readOnly: false } })
+  expect(Object.isFrozen(config)).toBe(true)
+})
+
+it.effect("dispatches the host's waterfall to the tools the editor contributed", effect () => {
+  expect((try runHost()).tools).toEqual(["read", "write"])
+  expect(hooks.tools).toBe("waterfall")
+})

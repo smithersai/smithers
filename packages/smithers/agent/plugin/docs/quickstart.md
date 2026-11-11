@@ -11,7 +11,9 @@ lifecycle. By the end you will have run the kernel, read a frozen configuration,
 and dispatched a hook whose result is typed by the declaration you wrote.
 
 The example uses two files: `host.ts` declares the hook catalog, and `main.ts`
-defines the plugins and runs the host. There are no services to provide.
+defines the plugins and runs the host. There are no services to provide. Each
+step below is TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang)
+runs the same host as Effect code in one file.
 
 ## Prerequisites
 
@@ -132,6 +134,56 @@ console.log(tools) // ["read", "write"]
 The literal `"tools"` is checked against the hook interface: a name that is not
 a waterfall in `FlowsHooks` does not compile, and `tools` is typed as the
 handler's argument type, not as `unknown`.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the hook's handler type is
+written `(ReadonlyArray<string> | void)!!`, an Effect that cannot fail, and the
+host is one `effect` function: `try` runs `Kernel.make` and the waterfall where
+the TypeScript awaits `Effect.runPromise` twice. The catalog and both plugins
+fit in the same file.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { engineHooks, type FlowsHooks, Kernel, make, type WaterfallHook } from "@smthrs/plugin"
+
+declare module "@smthrs/plugin" {
+  interface FlowsHooks {
+    /** Contributes or rewrites the tool names the host offers. */
+    readonly tools: WaterfallHook<(tools: ReadonlyArray<string>) => (ReadonlyArray<string> | void)!!>
+  }
+}
+
+/** The runtime catalog: the kernel's two config hooks plus this host's one. */
+export const hooks = Object.freeze({ ...engineHooks, tools: "waterfall" } as const)
+
+/** Contributes a configuration namespace and two tools. */
+const editor = make<FlowsHooks>({
+  name: "flows-plugin-editor",
+  hooks: {
+    config: () => succeed({ editor: { readOnly: false } }),
+    tools: (tools) => succeed([...tools, "read", "write"])
+  }
+})
+
+/** Runs first and reads what the host resolved. */
+const audit = make<FlowsHooks>({
+  name: "flows-plugin-audit",
+  enforce: "pre",
+  hooks: {
+    configResolved: (config) => log(`resolved namespaces: ${Object.keys(config).join(", ")}`)
+  }
+})
+
+/** Runs the kernel, then dispatches the host's own waterfall hook. */
+export effect function runHost() {
+  const kernel = try Kernel.make([editor, audit], { host: { name: "quickstart" } }, { target: "harness", hooks })
+  const tools = try kernel.plugins.waterfall("tools", [] as ReadonlyArray<string>, (_previous, next) => next)
+  return { config: kernel.config, tools }
+}
+```
 
 ## What you just built
 
