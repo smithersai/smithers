@@ -250,6 +250,13 @@ using the removed Core object-form constructor also receive this typed refusal.
 without evaluation during discovery and imported for real here, so a file whose
 metadata parses can still fail this check.
 
+The same code refuses a module whose `Flow.make` tag differs from its registry
+name and is a tag something else answers to: another entry's registry name, a
+delegate the host registered (including `agent`), a tag starting with
+`registry/`, or a tag another loaded entry already declared. The runtime runs a
+tag's newest registration, so registering the module would replace that flow.
+Rename the tag to the registry name or to a tag nothing else uses.
+
 ## The catalog reports instead of raising
 
 `Executable.catalog` and `Executable.layer` collect every `ExecutableError`

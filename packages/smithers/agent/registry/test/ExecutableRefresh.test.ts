@@ -192,6 +192,30 @@ describe("rebuilding one catalog entry without restarting the host", () => {
       }))
   }, 60_000)
 
+  it.effect("refuses a written flow that declares the tag a running entry declared", () => {
+    const registered: Array<string> = []
+    return withProject(registered, (root) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const catalog = yield* Executable.Catalog
+        const refresh = yield* Executable.Refresh
+        // `late` declares `refresh/early`. Registered, it would replace the body
+        // `early` runs, because the runtime runs a tag's newest registration.
+        yield* fs.makeDirectory(`${root}/.smithers/flows/late`, { recursive: true })
+        yield* fs.writeFileString(`${root}/.smithers/flows/late/flow.ts`, declaration("early", chained))
+        expect(yield* refresh.flow("late")).toMatchObject({
+          _tag: "Refused",
+          error: {
+            code: "invalid_module",
+            flow: "late",
+            message: "flow \"late\" declares Flow.make tag \"refresh/early\", which belongs to another loaded flow"
+          }
+        })
+        expect(registered.filter((tag) => tag === "refresh/early")).toHaveLength(1)
+        expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
+      }))
+  }, 60_000)
+
   it.effect("runs the body the edited bytes declare, past the module cache", () => {
     const registered: Array<string> = []
     return withProject(registered, (root) =>

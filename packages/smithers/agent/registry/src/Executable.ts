@@ -1541,6 +1541,17 @@ export const fromDescriptor = (
   descriptor: Descriptor.FlowDescriptor,
   options: Options
 ): Effect.Effect<Executable, ExecutableError, FileSystem.FileSystem | Path.Path> =>
+  build(descriptor, options, new Set())
+
+/**
+ * {@link fromDescriptor}, also refusing a module that declares a tag another
+ * loaded entry of the same catalog already declared.
+ */
+const build = (
+  descriptor: Descriptor.FlowDescriptor,
+  options: Options,
+  declared: ReadonlySet<string>
+): Effect.Effect<Executable, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.suspend(() => {
     let moduleScope: Scope.Closeable | undefined
     const loadEffect = Effect.gen(function*() {
@@ -1630,6 +1641,34 @@ export const fromDescriptor = (
         ? Effect.catch(load, () => Effect.fail(missing))
         : load)
       if (body.flow === undefined && registered === undefined) return yield* Effect.fail(missing)
+      // A module that is its own flow registers its declaration under the tag it
+      // declares, and the runtime runs the newest registration of a tag. A tag
+      // that is not this entry's registry name must therefore not be one that
+      // something else answers to, or this module takes that flow over: another
+      // entry's name (a pack would replace the project flow that shadows it), a
+      // host delegate (every prompt flow would run this module), the registry's
+      // own adapter and bridge tags, or a tag another loaded entry declared.
+      if (body.flow !== undefined && body.flow._tag !== descriptor.name) {
+        const tag = body.flow._tag
+        const registry = yield* Effect.serviceOption(Registry.Registry)
+        const owner = tag.startsWith("registry/")
+          ? "the registry's own adapters"
+          : tag === (options.agent ?? defaultAgent) || options.delegates.some((delegate) => delegate._tag === tag)
+          ? `the host delegate "${tag}"`
+          : Option.isSome(registry) && Option.isSome(yield* registry.value.getOption(tag))
+          ? `the flow "${tag}"`
+          : declared.has(tag)
+          ? "another loaded flow"
+          : undefined
+        if (owner !== undefined) {
+          return yield* Effect.fail(refuse({
+            code: "invalid_module",
+            flow: descriptor.name,
+            path: descriptor.body.path,
+            message: `flow "${descriptor.name}" declares Flow.make tag "${tag}", which belongs to ${owner}`
+          }))
+        }
+      }
       const delegate = body.flow === undefined ? registered! : selfDelegate(body.flow)
       const lowered = lower(descriptor, body.annotations)
       const invocation = (input: Schema.Json): Invocation => {
@@ -1932,6 +1971,7 @@ export const catalog = (
     const executables: Array<Executable> = []
     const refused: Array<ExecutableError> = []
     const deferred: Array<Descriptor.FlowDescriptor> = []
+    const declared = new Set<string>()
     const eager = options.initialFlows === undefined ? undefined : new Set(options.initialFlows)
     if (eager !== undefined) {
       // Set iteration also visits added names; cycles and repeated collaborators terminate.
@@ -1954,7 +1994,7 @@ export const catalog = (
       const startedAt = yield* Clock.currentTimeMillis
       yield* Effect.logDebug("Loading flow body", { flow: descriptor.name })
       const result = yield* Effect.result(
-        fromDescriptor(descriptor, options).pipe(
+        build(descriptor, options, declared).pipe(
           Effect.timeoutOrElse({
             duration: loadTimeoutMs,
             orElse: () =>
@@ -1975,6 +2015,7 @@ export const catalog = (
       })
       if (result._tag === "Success") {
         executables.push(result.success)
+        if (result.success.declaredTag !== undefined) declared.add(result.success.declaredTag)
         continue
       }
       const failure = result.failure
@@ -2232,7 +2273,15 @@ const makeRefresh = (
           let committed = false
           return yield* Effect.gen(function*() {
             const result = yield* Effect.result(restore(
-              fromDescriptor(descriptor, options).pipe(Effect.provideService(Scope.Scope, scope))
+              build(
+                descriptor,
+                options,
+                new Set(
+                  read().executables.flatMap((entry) =>
+                    entry.descriptor.name === name || entry.declaredTag === undefined ? [] : [entry.declaredTag]
+                  )
+                )
+              ).pipe(Effect.provideService(Scope.Scope, scope))
             ))
             if (result._tag === "Failure") {
               // The previous executable, if any, keeps serving with its scope
