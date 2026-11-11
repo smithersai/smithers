@@ -1,5 +1,6 @@
 /**
- * Cloudflare resource declarations for the hosted build cache.
+ * Cloudflare resource declarations for the hosted build cache and the hosted
+ * sandbox service.
  *
  * @since 0.1.0
  */
@@ -13,6 +14,7 @@ import {
   cacheStackOutputs,
   cacheWorkerOptions,
   type RateLimitDeclaration,
+  sandboxWorkerOptions,
   stackName
 } from "./deployment.ts"
 
@@ -40,11 +42,20 @@ const cacheWorker = Cloudflare.Worker(
   )
 )
 
+// The sandbox Worker shares nothing with the cache Worker but the stack: its
+// own entry, its own secret, and one container application per instance type.
+const sandboxWorker = Cloudflare.Worker(
+  "SandboxWorker",
+  sandboxWorkerOptions({ container: (id, props) => Cloudflare.Container(id, props) })
+)
+
 /**
- * Stage-isolated Cloudflare infrastructure for the hosted smithers build cache.
+ * Stage-isolated Cloudflare infrastructure for the hosted smithers build cache
+ * and the hosted sandbox service.
  *
- * Production owns `build.smithers.sh`; developer stages use isolated
- * `workers.dev` URLs and independently named D1 and R2 resources.
+ * Production's cache owns `build.smithers.sh`; developer stages use isolated
+ * `workers.dev` URLs and independently named D1 and R2 resources. The sandbox
+ * service answers on a `workers.dev` URL on every stage.
  *
  * @category infrastructure
  * @since 0.1.0
@@ -58,5 +69,11 @@ export default Alchemy.Stack(
     // afterwards, and the stack program refuses to run without that wrapper.
     state: Alchemy.localState()
   },
-  cacheStackOutputs({ stack: Alchemy.Stack, database: cacheDatabase, bucket: cacheBucket, worker: cacheWorker })
+  cacheStackOutputs({
+    stack: Alchemy.Stack,
+    database: cacheDatabase,
+    bucket: cacheBucket,
+    worker: cacheWorker,
+    sandboxWorker
+  })
 )

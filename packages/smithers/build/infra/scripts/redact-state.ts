@@ -1,5 +1,5 @@
 /**
- * Scrubs cache credentials from persisted deployment state.
+ * Scrubs cache and sandbox credentials from persisted deployment state.
  *
  * @since 0.1.0
  */
@@ -20,13 +20,14 @@ import { acquireStateOwnership, type StateOwnership } from "./state-ownership.ts
 const redacted = "__SMITHERS_CACHE_TOKEN_REDACTED__"
 
 /**
- * The Worker bindings that carry a cache credential.
+ * The Worker bindings that carry a credential.
  *
  * `CACHE_TOKEN` is the single-credential deployment this service had before
  * reads and writes were separated. Legacy state can still hold it, so it stays
- * on the list.
+ * on the list. `SANDBOX_TOKEN` is the sandbox Worker's bearer itself, never a
+ * verifier, so no configured value permits it and it is always replaced.
  */
-const credentialBindingNames = new Set(["CACHE_TOKEN", "CACHE_READ_TOKEN", "CACHE_WRITE_TOKEN"])
+const credentialBindingNames = new Set(["CACHE_TOKEN", "CACHE_READ_TOKEN", "CACHE_WRITE_TOKEN", "SANDBOX_TOKEN"])
 
 const credentialEnvironmentNames = [
   "SMITHERS_CACHE_TOKEN",

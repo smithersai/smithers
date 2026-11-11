@@ -25,7 +25,10 @@ export default defineConfig({
       // object and the stack program come from `deployment.ts`, so importing
       // the graph executes all of it and the suite can hold it to 100% too.
       include: ["worker/**/*.{ts,vibe}", "scripts/**/*.{ts,vibe}", "deployment.ts", "alchemy.run.ts"],
-      exclude: ["worker/test/**", "scripts/**/*.test.{ts,vibe}"],
+      // `SandboxWorker.ts` binds `@cloudflare/sandbox`, which loads only in the
+      // Workers runtime; the service it exports is `SandboxService.ts`, which
+      // the suite runs end to end against a fake of the same SDK slice.
+      exclude: ["worker/test/**", "scripts/**/*.test.{ts,vibe}", "worker/SandboxWorker.ts"],
       thresholds: {
         branches: 100,
         functions: 100,

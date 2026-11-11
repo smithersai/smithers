@@ -42,7 +42,9 @@ const stagingDirectory = ".smthrs-stdin"
  */
 const staged = (): string => {
   const bytes = new Uint8Array(16)
-  globalThis.crypto.getRandomValues(bytes)
+  // The `crypto` global, not `globalThis.crypto`: Cloudflare's Worker types
+  // declare it as a constant, which is no property of `globalThis`.
+  crypto.getRandomValues(bytes)
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 

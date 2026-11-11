@@ -1,5 +1,5 @@
 /**
- * Targets for the remote-cache infrastructure workspace.
+ * Targets for the remote-cache and sandbox-service infrastructure workspace.
  *
  * This directory is a workspace package (`packages/smithers/build/infra` in
  * `pnpm-workspace.yaml`) but not a `packages/*` directory, so the standard
@@ -17,7 +17,8 @@ const cwd = "packages/smithers/build/infra"
 const docsFiles = Smithers.Filegroup({ cwd, srcs: [Smithers.glob("**/*.md")] })
 
 /**
- * The worker, its migrations, and the operator scripts the gates read.
+ * The workers, the cache's migrations, the sandbox image, and the operator
+ * scripts the gates read.
  *
  * The migrations are declared inputs because they are the production D1
  * schema and `worker/test/migrations.test.ts` executes them: without them a
@@ -31,6 +32,9 @@ const sources = [
   Smithers.glob("//packages/smithers/build/infra/scripts/**/*.ts"),
   Smithers.file("alchemy.run.ts"),
   Smithers.file("deployment.ts"),
+  // The sandbox suite reads the image's pins and its base image tag.
+  Smithers.file("sandbox/Dockerfile"),
+  Smithers.file("package.json"),
   Smithers.file("PACKAGE.ts"),
   Smithers.file("vitest.config.ts"),
   Smithers.file("tsconfig.worker.json"),
@@ -188,6 +192,7 @@ const securityReview = Smithers.SecurityReview({
     "scripts/**/*.ts",
     "alchemy.run.ts",
     "deployment.ts",
+    "sandbox/Dockerfile",
     "CACHE-TRUST.md",
     "README.md"
   ],
@@ -282,6 +287,17 @@ const securityReview = Smithers.SecurityReview({
         "The Alchemy child spawned with arguments or env that echo secrets beyond the inherited process env."
       ],
       paths: ["scripts/remote-state.ts", "scripts/deploy.ts", "scripts/failure-message.ts", "worker/CacheWorker.ts", "worker/cache-failure.ts"]
+    },
+    {
+      id: "sandbox-service-credential",
+      title: "Only the sandbox token holder reaches a machine, and the token never persists",
+      threat: "Anyone who reaches the sandbox Worker, or reads Alchemy state, runs arbitrary commands on Cloudflare containers the account pays for.",
+      lookFor: [
+        "A request served by a machine without HttpSandbox.serve comparing the bearer, or a Worker that serves with an empty or missing SANDBOX_TOKEN.",
+        "SANDBOX_TOKEN missing from the redaction set, or the token reaching a log line, a response body, or a container's environment.",
+        "An instance type whose maxInstances is unbounded, or a size declared to CloudflareSandbox that differs from the deployed instanceType."
+      ],
+      paths: ["worker/SandboxService.ts", "worker/SandboxWorker.ts", "worker/sandbox-instances.ts", "deployment.ts", "scripts/redact-state.ts"]
     }
   ]
 })

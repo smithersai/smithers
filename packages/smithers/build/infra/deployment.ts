@@ -11,6 +11,7 @@ import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as SchemaIssue from "effect/SchemaIssue"
 import { createHash } from "node:crypto"
+import { type SandboxInstanceType, sandboxInstanceTypes } from "./worker/sandbox-instances.ts"
 
 /**
  * The Alchemy stack name, which is also the state directory redaction walks.
@@ -171,7 +172,15 @@ const characterClassCount = (value: string): number =>
 export type CacheTokenName = "SMITHERS_CACHE_READ_TOKEN" | "SMITHERS_CACHE_WRITE_TOKEN"
 
 /**
- * Names the rule one cache credential breaks, or `null` when it holds.
+ * The variable the sandbox service's bearer token is read from.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const sandboxTokenVariable = "SMITHERS_SANDBOX_TOKEN"
+
+/**
+ * Names the rule one credential breaks, or `null` when it holds.
  *
  * A credential is {@link minCacheTokenBytes} to {@link maxCacheTokenBytes}
  * printable ASCII bytes with no spaces, drawn from at least two of digits,
@@ -181,7 +190,10 @@ export type CacheTokenName = "SMITHERS_CACHE_READ_TOKEN" | "SMITHERS_CACHE_WRITE
  * @category utilities
  * @since 0.1.0
  */
-export const cacheTokenFault = (name: CacheTokenName, value: string): string | null => {
+export const cacheTokenFault = (
+  name: CacheTokenName | typeof sandboxTokenVariable,
+  value: string
+): string | null => {
   if (value.length < minCacheTokenBytes || value.length > maxCacheTokenBytes || !printableAscii.test(value)) {
     return `${name} must be ${minCacheTokenBytes}-${maxCacheTokenBytes} printable ASCII bytes with no spaces`
   }
@@ -284,6 +296,25 @@ export const cacheCredentialBindings = {
   CACHE_READ_TOKEN: Config.map(cacheCredentialVerifiers, (verifiers) => verifiers.read),
   CACHE_WRITE_TOKEN: Config.map(cacheCredentialVerifiers, (verifiers) => verifiers.write)
 } as const
+
+/**
+ * Reads the sandbox service's bearer token for the sandbox Worker's
+ * `SANDBOX_TOKEN` secret.
+ *
+ * `HttpSandbox.serve` compares the token a request presents with this value
+ * itself, so the Worker holds the bearer, not a digest. The deploy wrapper's
+ * redaction scrubs it from Alchemy state before the state is published. It
+ * follows the cache credentials' rule, {@link cacheTokenFault}.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const sandboxToken: Config.Config<Redacted.Redacted<string>> = Config.Redacted(sandboxTokenVariable).pipe(
+  Config.mapEffect((token) => {
+    const fault = cacheTokenFault(sandboxTokenVariable, Redacted.value(token))
+    return fault === null ? Effect.succeed(token) : Effect.fail(configError(fault))
+  })
+)
 
 /**
  * How many cache requests one credential may make per minute.
@@ -439,6 +470,100 @@ export const workerEntry = "./worker/CacheWorker.ts"
 export const workerCompatibilityDate = "2026-08-14"
 
 /**
+ * The sandbox Worker's entry module, relative to this directory.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const sandboxWorkerEntry = "./worker/SandboxWorker.ts"
+
+/**
+ * The Docker build context of the sandbox machine image, relative to this
+ * directory. Its `Dockerfile` extends the Cloudflare Sandbox SDK's image.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const sandboxImageContext = "./sandbox"
+
+/**
+ * The registry repository every instance type publishes the machine image
+ * to. One image serves every type, so a shared repository makes every build
+ * after the first a cache hit.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const sandboxImageRepository = "smithers-sandbox"
+
+/**
+ * How many containers of one instance type may run at once: the ceiling on
+ * what a runaway client can spend. Alchemy's default, declared here so it is
+ * visible and tested.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maxSandboxInstances = 20
+
+/**
+ * The container application behind one instance type.
+ *
+ * Each type is its own application on its own Durable Object class, built
+ * from {@link sandboxImageContext} and scheduled by Cloudflare's default
+ * policy, the one the Sandbox SDK's `Sandbox` class expects.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const sandboxContainerOptions = (instance: SandboxInstanceType) => ({
+  className: instance.className,
+  context: sandboxImageContext,
+  instanceType: instance.instanceType,
+  maxInstances: maxSandboxInstances,
+  publish: { repository: sandboxImageRepository }
+})
+
+/**
+ * Declares one container-backed Durable Object binding. `alchemy.run.ts`
+ * passes `Cloudflare.Container`; the suite passes a recorder.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface SandboxWorkerResources<Container> {
+  readonly container: (id: string, props: ReturnType<typeof sandboxContainerOptions>) => Container
+}
+
+/**
+ * Builds the sandbox Worker's configuration.
+ *
+ * One binding per {@link sandboxInstanceTypes} entry, named by its `binding`
+ * and backed by its container application, and the `SANDBOX_TOKEN` secret.
+ * The Sandbox SDK needs `nodejs_compat`, which this compatibility date no
+ * longer implies. Every stage, production included, answers on its own
+ * `workers.dev` URL: the service claims no custom domain.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const sandboxWorkerOptions = <Container>(resources: SandboxWorkerResources<Container>) => ({
+  main: sandboxWorkerEntry,
+  compatibility: { date: workerCompatibilityDate, flags: ["nodejs_compat"] },
+  env: {
+    SANDBOX_TOKEN: sandboxToken,
+    ...Object.fromEntries(
+      sandboxInstanceTypes.map((instance) => [
+        instance.binding,
+        resources.container(instance.className, sandboxContainerOptions(instance))
+      ])
+    )
+  },
+  observability: workerObservability,
+  workersDev: true
+})
+
+/**
  * The D1 and R2 resources, and the declarations for the Rate Limiting and
  * Analytics Engine bindings the Worker binds.
  *
@@ -519,6 +644,7 @@ export interface CacheStackResources<Stage, DatabaseName, BucketName, Url, E, R>
   readonly database: Effect.Effect<{ readonly databaseName: DatabaseName }, E, R>
   readonly bucket: Effect.Effect<{ readonly bucketName: BucketName }, E, R>
   readonly worker: Effect.Effect<{ readonly url: Url }, E, R>
+  readonly sandboxWorker: Effect.Effect<{ readonly url: Url }, E, R>
 }
 
 /**
@@ -532,15 +658,16 @@ export interface CacheStackOutputs<Stage, DatabaseName, BucketName, Url> {
   readonly url: Url
   readonly databaseName: DatabaseName
   readonly bucketName: BucketName
+  readonly sandboxUrl: Url
 }
 
 /**
  * The stack program: checks that the deploy wrapper synced state, reads the
- * credential pair, then reports the resources.
+ * cache credential pair and the sandbox token, then reports the resources.
  *
- * Both checks run before any resource is touched, so an equal pair fails the
- * deployment with nothing created or replaced, and a plan that reaches the
- * resources has already proven its credentials.
+ * Every check runs before any resource is touched, so an equal pair or a weak
+ * sandbox token fails the deployment with nothing created or replaced, and a
+ * plan that reaches the resources has already proven its credentials.
  *
  * @category constructors
  * @since 0.1.0
@@ -551,9 +678,17 @@ export const cacheStackOutputs = <Stage, DatabaseName, BucketName, Url, E, R>(
   Effect.gen(function*() {
     yield* stateSyncGuard
     yield* cacheCredentialVerifiers
+    yield* sandboxToken
     const { stage } = yield* resources.stack
     const database = yield* resources.database
     const bucket = yield* resources.bucket
     const worker = yield* resources.worker
-    return { stage, url: worker.url, databaseName: database.databaseName, bucketName: bucket.bucketName }
+    const sandboxWorker = yield* resources.sandboxWorker
+    return {
+      stage,
+      url: worker.url,
+      databaseName: database.databaseName,
+      bucketName: bucket.bucketName,
+      sandboxUrl: sandboxWorker.url
+    }
   })

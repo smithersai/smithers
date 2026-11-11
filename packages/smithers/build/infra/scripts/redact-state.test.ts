@@ -87,7 +87,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
    * `CACHE_READ_TOKEN` and `CACHE_WRITE_TOKEN`. Redaction that still looked
    * only for `CACHE_TOKEN` would silently stop scrubbing anything.
    */
-  it.each(["CACHE_READ_TOKEN", "CACHE_WRITE_TOKEN"])("redacts the %s binding too", async (name) => {
+  it.each(["CACHE_READ_TOKEN", "CACHE_WRITE_TOKEN", "SANDBOX_TOKEN"])("redacts the %s binding too", async (name) => {
     await withFixture(async (root) => {
       const file = NodePath.join(root, "CacheWorker.json")
       const token = "this-is-a-raw-secret-token"

@@ -31,6 +31,18 @@ expectTypeOf<AwsSandbox.AwsSandboxTaskDefinitionOptions>().toExtend<AwsSandbox.A
 expectTypeOf<AwsSandbox.AwsSandboxImageOptions>().toExtend<AwsSandbox.AwsSandboxCommonOptions>()
 expectTypeOf<Parameters<typeof CloudflareSandbox.make<Binding>>[0]>()
   .toEqualTypeOf<CloudflareSandbox.CloudflareSandboxOptions<Binding>>()
+// `@cloudflare/sandbox` declares `getSandbox`'s options without `| undefined`,
+// so under `exactOptionalPropertyTypes` the slice must accept that signature.
+declare const sdkGetSandbox: (
+  binding: Binding,
+  id: string,
+  options?: {
+    readonly enableDefaultSession?: boolean
+    readonly keepAlive?: boolean
+    readonly sleepAfter?: string | number
+  }
+) => ReturnType<CloudflareSandbox.Sdk<Binding>["getSandbox"]>
+expectTypeOf<{ readonly getSandbox: typeof sdkGetSandbox }>().toExtend<CloudflareSandbox.Sdk<Binding>>()
 expectTypeOf<Parameters<typeof ContainerSandbox.make>[0]>()
   .toEqualTypeOf<ContainerSandbox.ContainerSandboxOptions>()
 expectTypeOf<Parameters<typeof DaytonaSandbox.make>[0]>()

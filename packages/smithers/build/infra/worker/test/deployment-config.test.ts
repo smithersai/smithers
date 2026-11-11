@@ -25,6 +25,7 @@ import {
   metricsDataset,
   minCacheTokenBytes,
   retentionCron,
+  sandboxTokenVariable,
   stackName,
   stateSyncVariable,
   workerCompatibilityDate,
@@ -49,11 +50,21 @@ const configured = (value: string): Promise<string> =>
     )
   )
 
+/** A sandbox token the deployment accepts. */
+const sandboxBearer = "sandbox-credential-with-entropy-2026"
+
 /**
- * Runs `effect` against a deploying shell that exported the two credentials,
- * under the deploy wrapper unless `synced` is false.
+ * Runs `effect` against a deploying shell that exported the two cache
+ * credentials and the sandbox token, under the deploy wrapper unless `synced`
+ * is false.
  */
-const deployed = <A, E>(effect: Effect.Effect<A, E>, read: string, write: string, synced = true): Promise<A> =>
+const deployed = <A, E>(
+  effect: Effect.Effect<A, E>,
+  read: string,
+  write: string,
+  synced = true,
+  sandbox = sandboxBearer
+): Promise<A> =>
   Effect.runPromise(
     Effect.provide(
       effect,
@@ -61,6 +72,7 @@ const deployed = <A, E>(effect: Effect.Effect<A, E>, read: string, write: string
         ConfigProvider.fromUnknown({
           [readToken]: read,
           [writeToken]: write,
+          [sandboxTokenVariable]: sandbox,
           ...(synced ? { [stateSyncVariable]: "1" } : {})
         })
       )
@@ -416,7 +428,8 @@ describe("cache credential verification", () => {
       stack: resource("stack", { stage: "prod" }),
       database: resource("database", { databaseName: "cache-db" }),
       bucket: resource("bucket", { bucketName: "cache-bucket" }),
-      worker: resource("worker", { url: "https://build.smithers.sh" })
+      worker: resource("worker", { url: "https://build.smithers.sh" }),
+      sandboxWorker: resource("sandboxWorker", { url: "https://sandbox.workers.dev" })
     })
     const equal = "one-credential-wearing-two-names"
 
@@ -430,13 +443,20 @@ describe("cache credential verification", () => {
     )
     expect(touched).toEqual([])
 
+    // A weak sandbox token fails the deployment as early as an equal pair.
+    await expect(deployed(program, distinct.read, distinct.write, true, "short")).rejects.toThrow(
+      `${sandboxTokenVariable} must be`
+    )
+    expect(touched).toEqual([])
+
     await expect(deployed(program, distinct.read, distinct.write)).resolves.toEqual({
       stage: "prod",
       url: "https://build.smithers.sh",
       databaseName: "cache-db",
-      bucketName: "cache-bucket"
+      bucketName: "cache-bucket",
+      sandboxUrl: "https://sandbox.workers.dev"
     })
-    expect(touched).toEqual(["stack", "database", "bucket", "worker"])
+    expect(touched).toEqual(["stack", "database", "bucket", "worker", "sandboxWorker"])
   })
 
   it("declares the Cloudflare resource graph from those seams", () => {

@@ -18,6 +18,9 @@ provenance, which the self-hosted tier stores and this Worker refuses (see
 "Hosted arbitration contract"). Treat this file as the contract for the
 hosted service alone.
 
+The same stack deploys the hosted sandbox service, a second Worker that lends
+Cloudflare containers to other hosts over HTTP; see "Sandbox service".
+
 The service has two credentials: one that may read and one that may publish.
 [`CACHE-TRUST.md`](./CACHE-TRUST.md) states the trust model, which secret
 belongs in which CI job, and the order to roll the two out in.
@@ -50,6 +53,9 @@ Provide these credentials in the deploying shell:
   the write token to the current shared value and mint a new read token;
   [`CACHE-TRUST.md`](./CACHE-TRUST.md) gives the full order, including when
   to rotate the write token.
+- `SMITHERS_SANDBOX_TOKEN`: The sandbox service's bearer token, held to the
+  same length and character-class rule. The deployment fails before it applies
+  any resource when it is missing or weak. See "The sandbox token".
 - Cloudflare authentication: Set `CLOUDFLARE_API_TOKEN` and
   `CLOUDFLARE_ACCOUNT_ID` for non-interactive deployments, or authenticate
   interactively with Cloudflare OAuth. You can use `wrangler whoami` to check
@@ -235,6 +241,123 @@ lines, and statements, the workspace's contract for every default run.
 `alchemy.run.ts` only names the Cloudflare resources; every option object and
 the stack program live in `deployment.ts`, where the suite executes them, and
 importing the graph under the suite covers the wiring itself.
+
+## Sandbox service
+
+The same stack deploys a second Worker, `SandboxWorker`, that lends
+Cloudflare containers to other hosts. It serves
+[`HttpSandbox.serve`](../../flows/sandbox/docs/guides/reach-sandboxes-behind-an-http-service.md)
+over a retained `CloudflareSandbox`, so a build server or a laptop reaches a
+container with a URL and a bearer token through `HttpSandbox.make`. It shares
+nothing with the cache Worker but the stack: it has its own entry
+(`worker/SandboxWorker.ts`), its own secret, and its own container
+applications, and a deploy that adds it leaves the cache Worker unchanged.
+
+### Instance types
+
+Each instance type is a Cloudflare container application on a Durable Object
+class of its own, because Cloudflare allows one application per class. All of
+them run one image, built from [`sandbox/Dockerfile`](./sandbox/Dockerfile).
+
+| Name         | Cloudflare `instanceType` | vCPU | Memory | Disk  | Worker binding       | Class              |
+| ------------ | ------------------------- | ---- | ------ | ----- | -------------------- | ------------------ |
+| `standard-4` | `standard-4`              | 4    | 12 GiB | 20 GB | `SANDBOX_STANDARD_4` | `SandboxStandard4` |
+| `standard-3` | `standard-3`              | 2    | 8 GiB  | 16 GB | `SANDBOX_STANDARD_3` | `SandboxStandard3` |
+
+`worker/sandbox-instances.ts` declares them once; the deployment and the
+Worker both read it. A session without ceilings gets `standard-4`, the first.
+A session acquired with `limits` gets the smallest type that has at least its
+`cpus` and `memoryMib`; a session that asks for more than `standard-4` is
+refused with `400`. Each type runs at most 20 containers at once
+(`maxSandboxInstances`). A container that stays idle past the SDK's
+`sleepAfter` stops and loses its disk.
+
+The image extends `docker.io/cloudflare/sandbox`, whose tag must equal the
+`@cloudflare/sandbox` version in `package.json`, and adds the tools VibeLang's
+post-merge checks run: Node 26, pnpm 11.25.0, Bun 1.4.4, Go, git, jj, tar and
+base64. Every download is pinned by version and SHA-256, and the build fails
+if a tool reports another version. To move a tool, change its `ARG` pair: the
+version and the SHA-256 of the new download.
+
+### The sandbox token
+
+`SMITHERS_SANDBOX_TOKEN` is the bearer every request to the sandbox Worker
+carries. Its holder runs any command on containers the account pays for, so
+treat it like the cache write token. The deployment applies the cache
+credentials' rule to it: at least 32 random bytes, at most 4096 printable
+ASCII bytes, and two character classes. Unlike the cache tokens, the Worker
+holds the token itself in its `SANDBOX_TOKEN` secret, because
+`HttpSandbox.serve` compares the presented bearer in constant time. The deploy
+wrapper's redaction replaces it in Alchemy state before the state is
+published, so neither `.alchemy/` nor the R2 snapshot keeps it. A Worker
+without the secret answers every request `503`; a request without the token
+gets `401`.
+
+Mint it in the deploying shell, beside the cache pair:
+
+```sh
+export SMITHERS_SANDBOX_TOKEN="$(openssl rand -hex 32)"
+```
+
+A redeploy exports the same token, or rotates it: every host that holds the
+old token is refused from the moment the new Worker is live.
+
+### Deploy the sandbox service
+
+The deploy builds the image, so the deploying machine needs Docker with
+`linux/amd64` builds. The API token or OAuth grant also needs permission to
+manage Containers and Durable Objects. Then deploy as above: `pnpm run plan`
+lists `SandboxWorker` and one container application per instance type, and
+`pnpm run deploy` applies them. The stack's output `sandboxUrl` is the
+Worker's `workers.dev` URL; the sandbox service claims no custom domain on any
+stage.
+
+### Verify the sandbox service
+
+A request without the token is refused:
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$SANDBOX_URL/v1/sessions"
+```
+
+That prints `401`. With the token, acquire a machine, run a command in it,
+then destroy it:
+
+```sh
+auth="Authorization: Bearer $SMITHERS_SANDBOX_TOKEN"
+remote="$(curl --fail-with-body -X POST "$SANDBOX_URL/v1/sessions" -H "$auth" \
+  -H 'content-type: application/json' -d '{"key":"verify-1"}' | jq -r .remoteId)"
+curl --fail-with-body -X POST "$SANDBOX_URL/v1/sessions/$remote/commands" -H "$auth" \
+  -H 'content-type: application/json' \
+  -d '{"id":"verify-1","command":"node --version && go version && jj --version"}' |
+  jq -r .stdout | base64 --decode
+curl --fail-with-body -X DELETE "$SANDBOX_URL/v1/sessions/$remote?id=verify-1" -H "$auth"
+```
+
+The `remoteId` starts with `standard-4-`, the default instance type. The
+command prints the three versions the image pins. The first request after a
+deploy starts a container and can take a minute.
+
+### Point a host at it
+
+A host reaches the service with `HttpSandbox.make` from `@smthrs/sandbox`,
+given the Worker's URL, the token, and an Effect `HttpClient`; `limits` choose
+the instance type:
+
+```ts
+import { HttpSandbox } from "@smthrs/sandbox"
+
+const provider = HttpSandbox.make({
+  url: sandboxUrl,
+  token: sandboxToken,
+  client,
+  limits: { cpus: 4, memoryMib: 12288 }
+})
+```
+
+`smthrs ci --remote` runs a shard on a remote declared in the workspace's
+`S.Remotes`; a remote backed by this service names the same URL and token, and
+`ci --remote <name>` then runs each shard in a `standard-4` container.
 
 ## Protocol
 

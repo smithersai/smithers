@@ -35,10 +35,13 @@
     "typescript-eslint": "8.65.0",
     "dprint": "0.55.2",
     "aws4fetch": "1.0.20",
-    "@alchemy.run/cloudflare": "2.0.0-beta.85"
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@effect/platform-node": "4.1.1"
   },
   "dependencies": {
+    "@cloudflare/sandbox": "0.12.14",
     "@smthrs/canonical": "1.0.0-rc.17",
+    "@smthrs/sandbox": "1.0.0-rc.17",
     "@smthrs/targets": "1.0.0-rc.17"
   }
 }
