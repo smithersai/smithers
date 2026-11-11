@@ -236,14 +236,7 @@ test("the hosted agent reads and lists nothing outside the workspace", async (t)
 })
 
 /** The assembled host reads through the descriptor-relative helper a box ships. */
-const helperMissing = (() => {
-  try {
-    AtomicFileSystem.resolveHelper()
-    return false
-  } catch {
-    return "Build smithers-jj-export (cargo build --locked --release -p smithers-ffi --bin smithers-jj-export)"
-  }
-})()
+AtomicFileSystem.resolveHelper()
 
 const hostedOptions = (root: string): Options => ({
   repositoryPath: root,
@@ -293,7 +286,6 @@ const callOf = (flowName: string, input: unknown, session = "hosted-run", ordina
   })
 
 test("the hosted composition offers edits and no bash, tells the agent so, and writes the workspace", {
-  skip: helperMissing,
   timeout: 120_000
 }, async (t) => {
   const root = await workspace(t)
@@ -341,7 +333,6 @@ test("the hosted composition offers edits and no bash, tells the agent so, and w
 })
 
 test("a host without a mutation provider offers no edit tool and no teaching", {
-  skip: helperMissing,
   timeout: 120_000
 }, async (t) => {
   const root = await workspace(t)
@@ -469,7 +460,7 @@ test("the hosted wrappers keep the one precondition policy the mutation lock is 
 })
 
 test("parallel composed writes to one file never overlap and never lose an update", {
-  skip: helperMissing || anchored,
+  skip: anchored,
   timeout: 120_000
 }, async (t) => {
   const root = await workspace(t)
@@ -680,7 +671,6 @@ const helperFiles = (root: string) =>
 const canary = "CANARY-7f3a-hosted-instructions"
 
 test("a committed instruction link out of the tree never reaches the hosted agent", {
-  skip: helperMissing,
   timeout: 120_000
 }, async (t) => {
   const root = await workspace(t)
@@ -714,7 +704,6 @@ test("a committed instruction link out of the tree never reaches the hosted agen
 })
 
 test("an instruction file swapped for an outside link just before its read is refused", {
-  skip: helperMissing,
   timeout: 120_000
 }, async (t) => {
   const run = async (
@@ -761,7 +750,7 @@ test("an instruction file swapped for an outside link just before its read is re
 })
 
 test("hosted write and edit start no language server even with one on PATH", {
-  skip: helperMissing || anchored,
+  skip: anchored,
   timeout: 120_000
 }, async (t) => {
   const root = await workspace(t)
@@ -808,7 +797,6 @@ test("hosted write and edit start no language server even with one on PATH", {
 })
 
 test("a hosted host that would offer any tool beyond its allowlist does not start", {
-  skip: helperMissing,
   timeout: 120_000
 }, async (t) => {
   const root = await workspace(t)

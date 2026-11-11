@@ -99,6 +99,56 @@ test("every flows fixture belongs to a declared gate; native targets stay separa
   assert.ok(bunNativeTests.includes("coding-native.test.ts"))
 })
 
+test("Node-hosted security checks belong to the required native gate, never a cached ordinary runner", () => {
+  const fixture = "coding-hosted-tools.test.ts"
+  assert.ok(nativeTests.includes(fixture), "Node must run the assembled hosted security checks")
+  assert.ok(!bunNativeTests.includes(fixture), "the Node host fixture needs Node's synchronous module hooks")
+  const native = Target.metadata(Package.codingNative)
+  assert.equal(native.target, "Shell.Test")
+  assert.equal(native.cacheable, false)
+  const nativeAttrs = native.attrs as { args: string[]; tools: unknown[] }
+  assert.deepEqual(nativeAttrs.args.slice(0, 2), [".smithers/flows/test/coding-native-gate.mjs", "source"])
+  assert.deepEqual(nativeAttrs.tools, [
+    { _tag: "HostBin", name: "jj" },
+    { _tag: "HostBin", name: "smithers-jj-export", env: "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" }
+  ])
+  for (const target of Object.values(Package)) {
+    const metadata = Target.metadata(target)
+    if (metadata.target !== "NodeTest") continue
+    const attrs = metadata.attrs as { runner: { tests?: ReadonlyArray<{ path: string }> } }
+    assert.ok(!attrs.runner.tests?.some((file) => file.path.endsWith(`/${fixture}`)))
+  }
+  const missing = spawnSync(process.execPath, [
+    fileURLToPath(new URL("./coding-native-gate.mjs", import.meta.url)),
+    "source",
+    fixture
+  ], {
+    encoding: "utf8",
+    timeout: 15_000,
+    env: { PATH: process.env.PATH, SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/smithers-acceptance-does-not-exist/helper" }
+  })
+  assert.equal(missing.status, 1, missing.stderr)
+  assert.match(missing.stderr, /Native coding prerequisite is missing/)
+  assert.doesNotMatch(missing.stdout, /Native coding gate:/)
+})
+
+test("the hosted security fixture itself refuses a missing helper instead of skipping its composed checks", () => {
+  const result = spawnSync(process.execPath, [
+    "--import",
+    "vibelang/register",
+    "--test",
+    fileURLToPath(new URL("./coding-hosted-tools.test.ts", import.meta.url))
+  ], {
+    encoding: "utf8",
+    timeout: 60_000,
+    env: { PATH: process.env.PATH, SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/smithers-acceptance-does-not-exist/helper" }
+  })
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.match(result.stdout + result.stderr, /smithers-jj-export|SMITHERS_WORKSPACE_JJ_EXPORT_BINARY/)
+  assert.doesNotMatch(result.stdout, /# SKIP/)
+})
+
 test("native gate refuses absent prerequisites before an opt-in fixture can skip", () => {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("./coding-native-gate.mjs", import.meta.url))], {
     encoding: "utf8",

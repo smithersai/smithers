@@ -77,6 +77,14 @@ smithers-build test //.smithers/flows/...      # the same suite as a build targe
 Source checkouts run `packages/smithers/src/bin.ts` even beside `dist`.
 Installed packages run their compiled entry point.
 
+The hosted coding security checks run in `codingNative`, outside the cached
+ordinary runner. This Node host fixture uses Node's synchronous module hooks
+and is excluded from `codingNativeBun`. The gate requires JJ and the executable
+named by `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` (or `smithers-jj-export` on `PATH`)
+and declares their binary identities. The fixture also fails directly when its
+helper cannot be resolved; missing tools cannot turn its composed-host checks
+into skipped successes.
+
 ## Release packing
 
 `smthrs build //.smithers/flows:releasePack` builds every library dependency and

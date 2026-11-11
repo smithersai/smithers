@@ -365,7 +365,6 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/coding-vibe-landing.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-source-publication.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-dispatch.test.ts"),
-    Smithers.file("//.smithers/flows/test/coding-hosted-tools.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-binding-refusal.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-metered-steps.test.ts"),
     Smithers.file("//.smithers/flows/test/moved-off-agent-dispatch.test.ts")
@@ -414,9 +413,9 @@ const codingConfigBun = Smithers.NodeTest({
   cwd
 })
 
-// Explicit slow gates: preflight refuses missing native tools instead of letting
-// opt-in integration cases silently skip. Shell.Test caches a green verdict, so
-// the JJ and exporter bytes the gate spawns are key material through `tools`.
+// Explicit uncached slow gates: preflight refuses missing native tools instead
+// of letting integration cases silently skip. The JJ and exporter bytes the
+// gate spawns are declared through `tools`.
 const nativeTools = [
   Smithers.Host.bin("jj"),
   Smithers.Host.bin("smithers-jj-export", { env: "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" })
@@ -1125,7 +1124,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "SMITHERS_JJHUB_TOKEN read from process.env anywhere other than coding/landing-config.ts, or read before it is deleted there.",
         "A spawned process or check environment built from process.env instead of the PATH/HOME/proxy allowlist in coding/check-environment.ts.",
-        "SMITHERS_CACHE_TOKEN or SMITHERS_CACHE_URL left in process.env after coding/check-environment.ts consumes them, or given to any process.",
+        "SMITHERS_CACHE_URL, SMITHERS_CACHE_TOKEN, SMITHERS_CACHE_READ_TOKEN or SMITHERS_CACHE_WRITE_TOKEN left in process.env after coding/check-environment.ts consumes them, or given to any process.",
         "A token or credential passed to a model prompt, a run output, a receipt, an error message, or Redacted.value outside the HTTP bearer header.",
         "invoke/serve.ts rpc or serve paths that print or journal the credential file contents."
       ],

@@ -8,11 +8,12 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 
 export const nativeTests = [
   "coding-native.test.ts", "coding-workspace-helper.test.ts", "coding-filesystem-native.test.ts",
-  "coding-agent-terminal.test.ts",
+  "coding-agent-terminal.test.ts", "coding-hosted-tools.test.ts",
   "coding-checks.test.ts", "coding-wiki-check.test.ts", "coding-feedback.test.ts",
   "wiki-citation-uncertainty.test.ts", "moved-off-agent-dispatch.test.ts"
 ]
-const nodeOnly = ["wiki-citation-uncertainty.test.ts"]
+// The hosted fixture composes NodeControlHost and loads Node's synchronous module hooks.
+const nodeOnly = ["wiki-citation-uncertainty.test.ts", "coding-hosted-tools.test.ts"]
 export const bunNativeTests = nativeTests.filter(name => !nodeOnly.includes(name))
 
 const digest = async path => {
@@ -60,7 +61,7 @@ export const main = async (mode = "source", selected) => {
     for (const test of selected === undefined ? available : [selected]) {
       console.log(`Native coding gate: ${test}`)
       await run(process.versions.bun ? ["test", `.smithers/flows/test/${test}`]
-        : ["--experimental-strip-types", "--test", "--test-concurrency=1", `.smithers/flows/test/${test}`], env)
+        : ["--import", "vibelang/register", "--experimental-strip-types", "--test", "--test-concurrency=1", `.smithers/flows/test/${test}`], env)
     }
   }
 }

@@ -1,6 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
 import { Effect, FileSystem } from "effect"
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -52,10 +53,36 @@ test("a partial or empty cache provision reaches no process and still leaves the
 })
 
 test("no process inherits a caller-supplied split read or write token", () => {
-  assert.deepEqual(
-    consume({ SMITHERS_CACHE_READ_TOKEN: "ambient-read", SMITHERS_CACHE_WRITE_TOKEN: "ambient-write" }),
-    {}
-  )
+  for (
+    const provision of [
+      {},
+      { SMITHERS_CACHE_URL: cacheUrl },
+      { SMITHERS_CACHE_TOKEN: "provisioned-read" },
+      { SMITHERS_CACHE_URL: "", SMITHERS_CACHE_TOKEN: "provisioned-read" },
+      { SMITHERS_CACHE_URL: cacheUrl, SMITHERS_CACHE_TOKEN: "" },
+      { SMITHERS_CACHE_URL: cacheUrl, SMITHERS_CACHE_TOKEN: "provisioned-read" }
+    ]
+  ) {
+    for (
+      const split of [
+        { SMITHERS_CACHE_READ_TOKEN: "ambient-read" },
+        { SMITHERS_CACHE_WRITE_TOKEN: "ambient-write" },
+        { SMITHERS_CACHE_READ_TOKEN: "ambient-read", SMITHERS_CACHE_WRITE_TOKEN: "ambient-write" },
+        { SMITHERS_CACHE_READ_TOKEN: "", SMITHERS_CACHE_WRITE_TOKEN: "" }
+      ]
+    ) {
+      const kept = { PATH: process.env.PATH ?? "", SMITHERS_GATEWAY_ID: "hosted-test" }
+      const environment: Record<string, string | undefined> = { ...kept, ...provision, ...split }
+      assert.deepEqual(consume(environment), { PATH: kept.PATH })
+      // Model seats and login probes use the ambient object, not the allowlist.
+      const inherited = execFileSync(process.execPath, [
+        "-p",
+        "JSON.stringify(Object.keys(process.env).filter((name) => name.startsWith('SMITHERS_CACHE')))"
+      ], { env: environment, encoding: "utf8" })
+      assert.deepEqual(JSON.parse(inherited), [], "a child inherits no cache credential")
+      assert.deepEqual(environment, kept, "consumption removes cache credentials from the host itself")
+    }
+  }
 })
 
 test("a check's retained output never carries its cache credential", async () => {
