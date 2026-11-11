@@ -65,12 +65,12 @@ explains the reasoning.
 
 ## Verify the install
 
-Import the code table and print it. The five codes and their order are fixed,
+Import the code table and print it. The two codes and their order are fixed,
 so this output is the same on every install:
 
 ```ts
 import { smithersErrorCodes } from "@smthrs/errors"
 
 console.log(smithersErrorCodes)
-// [ "INVALID_INPUT", "INTEGRATION_ERROR", "TELEGRAM_API_ERROR", "TELEGRAM_INIT_DATA_INVALID", "UNSUPPORTED" ]
+// [ "INVALID_INPUT", "INTEGRATION_ERROR" ]
 ```

@@ -97,8 +97,8 @@ describe("IntegrationError", () => {
     expect(Effect.runSync(recover(new IntegrationError("poll-failed", "getUpdates failed")))).toBe(
       "integration:poll-failed"
     )
-    expect(Effect.runSync(recover(new SmithersError("UNSUPPORTED", "no Ed25519")))).toBe(
-      "base:UNSUPPORTED"
+    expect(Effect.runSync(recover(new SmithersError("INVALID_INPUT", "invalid signal name")))).toBe(
+      "base:INVALID_INPUT"
     )
   })
 

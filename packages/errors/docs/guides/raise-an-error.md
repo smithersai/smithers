@@ -18,11 +18,8 @@ what the caller must do, not by where the failure happened:
   `INVALID_INPUT`.
 - A call to the provider failed: `INTEGRATION_ERROR`, through the
   `IntegrationError` subclass so the failure carries a `reason`.
-- The runtime lacks a primitive you need: `UNSUPPORTED`.
 
-The two Telegram codes are retained for historical decoding. Do not use them
-for new adapters.
-If none of the five fits your failure, you are probably not writing an
+If neither code fits your failure, you are probably not writing an
 integration adapter. State the failure as a `Schema.TaggedError` on the effect
 that can fail, which is what every other Smithers package does. See
 [The closed code vocabulary](../concepts/error-codes.md).

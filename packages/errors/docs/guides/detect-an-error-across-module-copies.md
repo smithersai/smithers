@@ -62,7 +62,7 @@ point. Deduplicating installed versions does not remove this boundary.
 
 - be an `Error`,
 - carry a `code` that `isSmithersErrorCode` accepts, so a string outside the
-  five documented codes is refused,
+  two documented codes is refused,
 - carry `summary` and `docsUrl` as strings,
 - carry `details` that is either absent or a non-null, non-array object.
 

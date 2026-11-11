@@ -13,7 +13,7 @@ constructor enforces.
 
 | Field     | Type                                               | Guarantee                                                                                            |
 | --------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `code`    | `SmithersErrorCode`                                | One of five string literals, closed by the type. The classification a caller branches on.            |
+| `code`    | `SmithersErrorCode`                                | One of two string literals, closed by the type. The classification a caller branches on.             |
 | `summary` | `string`                                           | The message with every trailing documentation URL removed.                                           |
 | `docsUrl` | `string`                                           | Always `ERROR_REFERENCE_URL`.                                                                        |
 | `details` | `Readonly<Record<string, unknown>>` or `undefined` | An own property only when the constructor received one. Copied and frozen at the top level.          |

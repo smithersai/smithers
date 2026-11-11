@@ -66,7 +66,7 @@ describe("tagged failures", () => {
   })
 
   it("tags each subclass with its own name, which it reports and its stack starts with", () => {
-    const error = new AdapterError("UNSUPPORTED", "x")
+    const error = new AdapterError("INVALID_INPUT", "x")
     expect(error._tag).toBe("AdapterError")
     expect(error.name).toBe("AdapterError")
     expect(Object.hasOwn(error, "name")).toBe(false)
@@ -74,10 +74,10 @@ describe("tagged failures", () => {
   })
 
   it("keeps the tag enumerable and in JSON, as Data.TaggedError does", () => {
-    const error = new AdapterError("UNSUPPORTED", "x")
+    const error = new AdapterError("INVALID_INPUT", "x")
     expect(Object.keys(error)).toEqual(["code", "summary", "docsUrl", "_tag"])
     expect(JSON.stringify(error)).toBe(JSON.stringify({
-      code: "UNSUPPORTED",
+      code: "INVALID_INPUT",
       summary: "x",
       docsUrl: error.docsUrl,
       _tag: "AdapterError"
@@ -99,7 +99,7 @@ describe("tagged failures", () => {
     expect(base is SmithersError).toBe(true)
     expect(base is AdapterError).toBe(false)
     expect(base is IntegrationError).toBe(false)
-    expect(new AdapterError("UNSUPPORTED", "x") is IntegrationError).toBe(false)
+    expect(new AdapterError("INVALID_INPUT", "x") is IntegrationError).toBe(false)
     const routed = match (base) {
       when AdapterError: "adapter";
       when IntegrationError: "integration";

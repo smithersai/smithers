@@ -21,7 +21,7 @@ distinct constructors, even with one installed package version.
 **Fix.** Use `hasSmithersErrorShape` at the boundary where the value arrives.
 It validates the fields instead of the prototype, and still refuses a plain
 `Error`, an object that is not an `Error`, and a code outside the documented
-five. See
+two. See
 [Detect an error across module copies](./guides/detect-an-error-across-module-copies.md).
 
 If duplicate installations are in your own dependency tree, deduplicate them
@@ -132,4 +132,4 @@ and treating them as codes is how a prototype-pollution style input becomes a
 lookup hit.
 
 **Fix.** Nothing to fix. `undefined` and `false` are the correct answers for
-every value outside the five documented codes.
+every value outside the two documented codes.

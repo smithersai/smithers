@@ -1,28 +1,23 @@
 ---
 title: "Error code reference"
-description: "Current integration errors and retained historical codes."
+description: "The integration error codes, their raise sites, and caller actions."
 sidebar:
   order: 1
 ---
 
-The public `SmithersErrorCode` union keeps five codes. The GitHub adapter uses
-`INTEGRATION_ERROR`; the two Telegram codes remain readable in historical
-failures after the adapter's MVP retirement. They do not expose a current
-Telegram client.
+The public `SmithersErrorCode` union contains `INVALID_INPUT` and
+`INTEGRATION_ERROR`. These are the codes the current integration helpers and
+adapters raise.
 
 ## Summary
 
-| Code                         | Meaning                                                | Caller action                                           |
-| ---------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
-| `INVALID_INPUT`              | A helper cannot accept the argument.                   | Correct the argument before retrying.                   |
-| `INTEGRATION_ERROR`          | A provider call, webhook or listener operation failed. | Inspect `reason` and the delivery outcome.              |
-| `TELEGRAM_API_ERROR`         | Historical Telegram transport or API failure.          | Retain the receipt; the retired adapter is unavailable. |
-| `TELEGRAM_INIT_DATA_INVALID` | Historical Telegram authentication refusal.            | Treat it as an authentication refusal.                  |
-| `UNSUPPORTED`                | The runtime lacks a required primitive.                | Supply a compatible runtime.                            |
+| Code                | Meaning                                                                        | Caller action                              |
+| ------------------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
+| `INVALID_INPUT`     | A signal service or event segment is empty after trimming or contains a colon. | Correct the segment before retrying.       |
+| `INTEGRATION_ERROR` | A provider call, webhook or listener operation failed.                         | Inspect `reason` and the delivery outcome. |
 
 [`smithersErrorDefinitions`](../api.md#smitherserrordefinitions) exports the
-runtime definition table. Keeping an old code does not imply its original
-provider remains supported.
+runtime definition table.
 
 ## INVALID_INPUT
 
@@ -72,22 +67,3 @@ At a durable action boundary,
 available outcome details. `toIntegrationError` converts it back. An
 unrecognized value becomes a conservative non-retryable failure rather than a
 defect in the converter.
-
-## TELEGRAM_API_ERROR
-
-Retained for historical decoding. Old receipts may include `errorCode`,
-`retryAfterSeconds`, `deliveredMessageIds` and `outcomeUnknown`. Preserve that
-evidence: missing a response never proves a write did not happen. The current
-MVP has no Telegram client or conversion helper.
-
-## TELEGRAM_INIT_DATA_INVALID
-
-Retained for historical authentication failures. Do not reinterpret a stored
-refusal as success or retry it through another provider. The current MVP has
-no Telegram Mini App verifier.
-
-## UNSUPPORTED
-
-A required runtime primitive is unavailable. Correct the runtime or adapter
-configuration. The error code remains part of the public API even when a
-particular provider that used it has been retired.

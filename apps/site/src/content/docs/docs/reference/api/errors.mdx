@@ -68,12 +68,12 @@ field and no subclass (VibeLang VIP-13).
 
 Constructor parameters:
 
-| Parameter | Type                      | Meaning                                                                                               |
-| --------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `code`    | `SmithersErrorCode`       | The machine-readable classification. Required, and closed by its type over the five documented codes. |
-| `summary` | `string`                  | The message a person reads, without the documentation URL. Required.                                  |
-| `details` | `Record<string, unknown>` | Caller-supplied context. Optional. Omitting it leaves the instance with no own `details` property.    |
-| `options` | `SmithersErrorOptions`    | The cause and the documentation-URL switch. Optional.                                                 |
+| Parameter | Type                      | Meaning                                                                                              |
+| --------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `code`    | `SmithersErrorCode`       | The machine-readable classification. Required, and closed by its type over the two documented codes. |
+| `summary` | `string`                  | The message a person reads, without the documentation URL. Required.                                 |
+| `details` | `Record<string, unknown>` | Caller-supplied context. Optional. Omitting it leaves the instance with no own `details` property.   |
+| `options` | `SmithersErrorOptions`    | The cause and the documentation-URL switch. Optional.                                                |
 
 Fields:
 
@@ -156,7 +156,7 @@ Whether `value` has the structural fields of a `SmithersError`. Answers `true`
 when all four hold:
 
 1. `value instanceof Error`.
-2. `isSmithersErrorCode(value.code)`, so the code is one of the five documented
+2. `isSmithersErrorCode(value.code)`, so the code is one of the two documented
    codes.
 3. `value.summary` and `value.docsUrl` are both strings.
 4. `value.details` is absent, or is a non-null object that is not an array.
@@ -194,8 +194,7 @@ type SmithersErrorCode = keyof typeof smithersErrorDefinitions
 
 A code carried by a `SmithersError`. Derived from the keys of
 `smithersErrorDefinitions`, so the set is closed:
-`"INVALID_INPUT" | "INTEGRATION_ERROR" | "TELEGRAM_API_ERROR" |
-"TELEGRAM_INIT_DATA_INVALID" | "UNSUPPORTED"`.
+`"INVALID_INPUT" | "INTEGRATION_ERROR"`.
 
 ### SmithersErrorDefinition
 
@@ -217,9 +216,6 @@ nothing validates a constructed error against them.
 const smithersErrorDefinitions: {
   readonly INVALID_INPUT: { readonly when: string; readonly details: string }
   readonly INTEGRATION_ERROR: { readonly when: string; readonly details: string }
-  readonly TELEGRAM_API_ERROR: { readonly when: string; readonly details: string }
-  readonly TELEGRAM_INIT_DATA_INVALID: { readonly when: string; readonly details: string }
-  readonly UNSUPPORTED: { readonly when: string }
 }
 ```
 
@@ -236,8 +232,7 @@ const smithersErrorCodes: ReadonlyArray<SmithersErrorCode>
 ```
 
 Every documented code, in declaration order: `INVALID_INPUT`,
-`INTEGRATION_ERROR`, `TELEGRAM_API_ERROR`, `TELEGRAM_INIT_DATA_INVALID`,
-`UNSUPPORTED`. Frozen at module load.
+`INTEGRATION_ERROR`. Frozen at module load.
 
 ### isSmithersErrorCode
 

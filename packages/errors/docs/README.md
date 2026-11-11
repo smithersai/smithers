@@ -1,10 +1,10 @@
 ---
 title: "@smthrs/errors"
-description: "One error class and five closed codes for the Smithers integration adapters: classify a failure by code, show a person a summary, and log context that carries no credential."
+description: "One error class and two closed codes for the Smithers integration adapters: classify a failure by code, show a person a summary, and log context that carries no credential."
 ---
 
 `@smthrs/errors` is a single error class, `SmithersError`, and a closed
-vocabulary of five codes. Smithers is a durable-execution engine for agent
+vocabulary of two codes. Smithers is a durable-execution engine for agent
 workflows. Its GitHub adapter raises `SmithersError` when
 an integration call fails, and a caller decides what to do by reading
 `error.code` rather than by matching on message text.
@@ -88,12 +88,12 @@ try {
 }
 ```
 
-`error.code` narrows to the five documented literals. A switch can keep a
+`error.code` narrows to the two documented literals. A switch can keep a
 fallback or [check exhaustiveness explicitly](./quickstart.md#check-exhaustiveness-explicitly).
 [Quickstart](./quickstart.md) shows both forms and runs the same failure the
 whole way through, from the raise site to a log line.
 
-## The five codes
+## The two codes
 
 `smithersErrorDefinitions` is the runtime table every code is derived from, and
 nothing widens it at runtime:
@@ -101,10 +101,6 @@ nothing widens it at runtime:
 - `INVALID_INPUT`: the call is wrong, and no retry makes it right.
 - `INTEGRATION_ERROR`: a provider call, a webhook read, or a listener
   reconciliation failed. `details.reason` says which, and whether to retry.
-- `TELEGRAM_API_ERROR` and `TELEGRAM_INIT_DATA_INVALID`: retained for
-  historical failure decoding. The Telegram adapter is outside the MVP.
-- `UNSUPPORTED`: the runtime lacks a primitive the call needs, such as Web
-  Crypto.
 
 [Error code reference](./reference/error-codes.md) names current construction sites,
 the `details` they attach, and the caller's move.
@@ -119,7 +115,6 @@ system:
 
 - [`@smthrs/integrations`](/api/integrations) is the only package that depends
   on this one. Its `Core.IntegrationError` carries a classified `reason`.
-  Historical error codes remain readable after their adapters are retired.
 - Those adapters answer webhooks through the Smithers control plane,
   [`@smthrs/control`](/api/control), and expose their provider calls as durable
   actions built with [`@smthrs/flow`](/api/flow). A durable action is the
