@@ -182,6 +182,17 @@ subsequent ticks inspect the retained owner again. Restore Control access to
 resume completion detection. The default run poll interval is fifteen seconds.
 An inspection outage does not record a failed run or cancel it.
 
+## runner_unavailable
+
+**What happened.** A `Runner.start` failed with `runner_unavailable`: the
+runner could not start the run now, for example because a service it reads
+before starting did not answer.
+
+**What to change.** Nothing, if the outage passes. The occurrence stays
+pending, so the next tick retries it under the same `idempotencyKey`. A runner
+raises this code only for a failure it expects to pass; a start that will never
+succeed fails with `runner`, which records the occurrence `failed`.
+
 ## runner_timeout
 
 **What happened.** One `Runner.start`, `inspect`, or `cancel` call exceeded

@@ -38,6 +38,33 @@ describe("triggersOf", () => {
   })
 })
 
+describe("schedulesOf", () => {
+  test("reads cron rows on the package's Schedule, with its defaults, and skips what isn't one", () => {
+    expect(Triggers.schedulesOf(manifest([
+      { on: "cron", flow: "nightly", cron: "0 3 * * *", timezone: "Europe/Paris", title: "Nightly" },
+      { on: "cron", flow: "hourly", cron: "0 * * * *", overlap: "buffer-one", catchUp: "one", maxCatchUp: 3 },
+      { on: "github.push", flow: "ci" },
+      { on: "cron", flow: "../escape", cron: "0 * * * *" },
+      { on: "cron", flow: "empty", cron: "" },
+      { on: "cron", flow: "seconds", cron: "*/10 * * * * *" },
+      { on: "cron", flow: "policy", cron: "0 * * * *", overlap: "sometimes" },
+      { on: "cron", flow: "missing" },
+    ]))).toEqual([
+      { on: "cron", flow: "nightly", cron: "0 3 * * *", timezone: "Europe/Paris", title: "Nightly", overlap: "skip", catchUp: "none", maxCatchUp: 0 },
+      { on: "cron", flow: "hourly", cron: "0 * * * *", overlap: "buffer-one", catchUp: "one", maxCatchUp: 3 },
+    ])
+  })
+
+  test("cron rows are not events: triggersOf skips them, and schedulesOf reads nothing from what isn't a manifest", () => {
+    expect(Triggers.triggersOf(manifest([{ on: "cron", flow: "nightly", cron: "0 3 * * *" }]))).toEqual([])
+    expect(Triggers.schedulesOf("{")).toEqual([])
+    expect(Triggers.schedulesOf(JSON.stringify({ apiVersion: 2, contributes: { triggers: [{ on: "cron", flow: "n", cron: "0 * * * *" }] } })))
+      .toEqual([])
+    const rows = Array.from({ length: 70 }, (_, index) => ({ on: "cron", flow: `f${index}`, cron: "0 * * * *" }))
+    expect(Triggers.schedulesOf(manifest(rows))).toHaveLength(Triggers.MAX_TRIGGERS)
+  })
+})
+
 describe("matches", () => {
   test("a push trigger: every branch unless it names some, by glob; never a tag unless it names tags", () => {
     const all: Triggers.Trigger = { on: "github.push", flow: "ci" }

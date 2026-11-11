@@ -1,21 +1,23 @@
+import { Schedule } from "@smthrs/triggers"
 import { Option, Schema } from "effect"
 import { FLOW_NAME } from "./RepoFlow.ts"
 
 // When a repository's flows run (docs/features/ci.md#triggers): the trigger rows of the repository's plugin manifest,
 // `.smithers/factory.json` on its default branch (ruling FLOW-10: "a flow file never says when it runs"; decision 0017's
-// `Plugin.Manifest`, its `contributes.triggers`), and whether a GitHub event matches one. Pure: the manifest is data the
-// host reads, never a program it runs.
+// `Plugin.Manifest`, its `contributes.triggers`), whether a GitHub event matches one, and its schedules: the `cron` rows,
+// which `@smthrs/triggers` fires (worker/ci/Cron.ts). Pure: the manifest is data the host reads, never a program it runs.
 //
 //   { "apiVersion": 1, ..., "contributes": { "triggers": [
 //     { "on": "github.push", "flow": "ci", "branches": ["main"] },
-//     { "on": "github.pull_request", "flow": "ci" } ] } }
+//     { "on": "github.pull_request", "flow": "ci" },
+//     { "on": "cron", "flow": "nightly", "cron": "0 3 * * *", "timezone": "Europe/Paris" } ] } }
 
 /** Where a repository's manifest lives. */
 export const MANIFEST_PATH = ".smithers/factory.json"
 
 /**
- * The events this slice starts flows on, and `manual`: a person runs the flow by hand (docs/features/actions.md). A row
- * for another event (`cron`, `run.settled`, ...) is skipped.
+ * The events GitHub's deliveries start flows on, and `manual`: a person runs the flow by hand (docs/features/actions.md).
+ * `cron` rows are schedules (`schedulesOf`); a row for any other event (`run.settled`, ...) is skipped.
  */
 export const EVENTS = ["github.push", "github.pull_request", "manual"] as const
 
@@ -43,25 +45,55 @@ export const Trigger = Schema.Struct({
 })
 export type Trigger = typeof Trigger.Type
 
+/**
+ * A cron expression of five fields (minute, hour, day of month, month, day of week): schedules tick once a minute, so
+ * a seconds field would name occurrences no tick tells apart.
+ */
+export const FIVE_FIELDS = /^\S+( \S+){4}$/
+
+/**
+ * One schedule row: decision 0017's `Trigger` on `cron`, with `@smthrs/triggers`' `Schedule` fields (`cron`, `timezone`,
+ * `overlap`, `catchUp`, `maxCatchUp`) and the package's defaults for the policies; `cron` has five fields.
+ */
+export const CronTrigger = Schema.Struct({
+  on: Schema.Literal("cron"),
+  flow: Schema.String.check(Schema.isPattern(FLOW_NAME)),
+  title: Schema.optional(Schema.String),
+  ...Schedule.Schedule.fields,
+  cron: Schedule.Schedule.fields.cron.check(Schema.isPattern(FIVE_FIELDS)),
+})
+export type CronTrigger = typeof CronTrigger.Type
+
 const Manifest = Schema.Struct({
   apiVersion: Schema.Literal(1),
   contributes: Schema.optional(Schema.Struct({ triggers: Schema.optional(Schema.Array(Schema.Unknown)) })),
 })
 const decodeManifest = Schema.decodeUnknownOption(Schema.fromJsonString(Manifest))
 const decodeTrigger = Schema.decodeUnknownOption(Trigger)
+const decodeCron = Schema.decodeUnknownOption(CronTrigger)
+
+/** Manifest `text`'s trigger rows, at most `MAX_TRIGGERS`, each decoded by `decode`: what it can't read is skipped. */
+const rowsOf = <A>(text: string, decode: (row: unknown) => Option.Option<A>): ReadonlyArray<A> =>
+  Option.match(decodeManifest(text), {
+    onNone: () => [],
+    onSome: (manifest) =>
+      (manifest.contributes?.triggers ?? []).slice(0, MAX_TRIGGERS).flatMap((row) =>
+        Option.match(decode(row), { onNone: () => [], onSome: (trigger) => [trigger] })
+      ),
+  })
 
 /**
  * The trigger rows of manifest `text`: none when it isn't a `Plugin.Manifest` (`apiVersion: 1`), as `.smithers/factory.json`
  * written by `S.Factory` isn't. A row this slice can't read (another event, a bad flow name) is skipped; the rest stand.
  */
-export const triggersOf = (text: string): ReadonlyArray<Trigger> =>
-  Option.match(decodeManifest(text), {
-    onNone: () => [],
-    onSome: (manifest) =>
-      (manifest.contributes?.triggers ?? []).slice(0, MAX_TRIGGERS).flatMap((row) =>
-        Option.match(decodeTrigger(row), { onNone: () => [], onSome: (trigger) => [trigger] })
-      ),
-  })
+export const triggersOf = (text: string): ReadonlyArray<Trigger> => rowsOf(text, decodeTrigger)
+
+/**
+ * The schedule rows of manifest `text`, read as `triggersOf` reads the rest: none when it isn't a `Plugin.Manifest`, and
+ * a row that isn't a `cron` row, or whose shape the package's `Schedule` refuses, is skipped. Whether its expression
+ * parses is the package's to say when the row is registered (`Trigger.make`).
+ */
+export const schedulesOf = (text: string): ReadonlyArray<CronTrigger> => rowsOf(text, decodeCron)
 
 /** What a trigger is matched against: one GitHub event, as the webhook names it. */
 export interface Event {

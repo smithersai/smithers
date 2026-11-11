@@ -71,6 +71,7 @@
     "@smthrs/std": "workspace:*",
     "@smthrs/sync": "workspace:*",
     "@smthrs/terminal-frame": "workspace:*",
+    "@smthrs/triggers": "workspace:*",
     "@smthrs/ui": "workspace:*",
     "@smthrs/ui-css": "workspace:*",
     "@smthrs/views": "workspace:*",

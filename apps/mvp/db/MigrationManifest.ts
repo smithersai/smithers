@@ -115,6 +115,7 @@ import m0114 from "./migrations/0114_session_key_fingerprints.ts"
 import m0115 from "./migrations/0115_compromised_session_keys.ts"
 import m0116 from "./migrations/0116_session_seal_fingerprint.ts"
 import m0117 from "./migrations/0117_wait_address.ts"
+import m0118 from "./migrations/0118_scheduled_runs.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -234,4 +235,5 @@ export const migrations = {
   "0115_compromised_session_keys": m0115,
   "0116_session_seal_fingerprint": m0116,
   "0117_wait_address": m0117,
+  "0118_scheduled_runs": m0118,
 }

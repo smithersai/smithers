@@ -546,6 +546,9 @@ importers:
       '@smthrs/terminal-frame':
         specifier: workspace:*
         version: link:../../packages/smithers/ui/terminal-frame
+      '@smthrs/triggers':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/triggers
       '@smthrs/ui':
         specifier: workspace:*
         version: link:../../packages/smithers/ui

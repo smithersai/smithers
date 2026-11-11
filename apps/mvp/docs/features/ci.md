@@ -159,6 +159,7 @@ A repository says when its flows run in its plugin manifest, `.smithers/factory.
 | `on: "github.push"` | a push to a branch: every branch, or the `branches` globs; a tag only when `tags` names it; a trigger with only `tags` runs on no branch. A deleted ref never runs, nor a push that doesn't name its ref and both commits: `GitHub.Payload.pushSource` (`@smthrs/integrations`) admits a push, here and in the `smthrs` host's repository flows alike |
 | `on: "github.pull_request"` | `opened`, `synchronize` and `reopened`, or the `actions` it names; against every base branch, or the `branches` globs |
 | `on: "manual"` | no event: the flows a person may run by hand (`Triggers.manualFlows`), each once, with its `title` |
+| `on: "cron"` | no event: a schedule ([Schedules](#schedules)) |
 | `branches`, `tags` | globs: `*` is any run of characters but `/`, `**` any run at all; matched without regular expressions, so no pattern backtracks |
 
 - **The default branch decides.** Triggers and flows are read from the default branch when the event arrives, so a branch or a pull request can't add a trigger to itself; a flow is active once a person merges its `flow.ts`. The run then plans `flow.ts` at the event's commit (a pull request's head).
@@ -167,7 +168,48 @@ A repository says when its flows run in its plugin manifest, `.smithers/factory.
 - **Unreadable is not an outage.** A manifest or a `flow.ts` GitHub refuses, or won't give as text (a directory, over 1 MB, not UTF-8), is read as absent at once; only an outage is retried. One unreadable flow never holds back the others.
 - **Secrets.** A fork's pull request, or one whose author is below Member (`author_association` not `OWNER`, `MEMBER` or `COLLABORATOR`), runs with `secrets: false`. Jobs get no secrets yet in any case ([job secrets](../work/ci-parity-job-secrets.md)).
 - **Off unless `REPO_FLOWS=true`.** Only repositories in `REPO_FLOWS_REPOSITORIES` can start flows; the App must also have access.
-- Not yet: `trust: "base"` (`pull_request_target`), tags, issues, comments, labels and reviews as triggers; `concurrency`; path filters; a manifest written as `FACTORY.ts` with `Trigger.bind` (flows-as-code-api.md §5.7), which projects to the same JSON. `.smithers/factory.json` written by `S.Factory`, as smithersai/smithers' is today, has no `apiVersion` and starts nothing.
+- Not yet: `trust: "base"` (`pull_request_target`), issues, comments, labels and reviews as triggers; `concurrency`; path filters; a manifest written as `FACTORY.ts` with `Trigger.bind` (flows-as-code-api.md §5.7), which projects to the same JSON. `.smithers/factory.json` written by `S.Factory`, as smithersai/smithers' is today, has no `apiVersion` and starts nothing.
+
+## Schedules
+
+```
+GitHub ──push to the default branch──▶ POST /api/github/webhook (REPO_FLOWS on): triggers/Dispatch, and triggers/Sync (triggers/sync:<delivery>)
+triggers/Sync { delivery, repo, defaultBranch }
+  triggers/Register ── .smithers/factory.json at the default branch (App): its cron rows whose flow.ts is there
+                    └─ TriggerStore.register each; a stored trigger of the repository the manifest dropped, enabled: false
+
+any FlowExecution alarm ──▶ triggers/Tick { from, until }, once a minute window (triggers/tick:<from>)
+  triggers/Since ── TriggerStore.lastHeartbeat: the last tick's instant, or none
+  triggers/Fire  ── Scheduler.tick({ since, host: "cloudflare", startTimeout: 30 s }): each due occurrence ─▶ repo/Run
+  system/sleep   ── until the window's end; the alarm that ends it starts the next window's tick
+```
+
+A `cron` row starts its flow on a schedule, through `@smthrs/triggers` ([library catalog](../../../../docs/libraries.md): "Start flows on a cron"). Its fields are the package's `Schedule`, with the package's defaults:
+
+```json
+{ "on": "cron", "flow": "nightly", "cron": "0 3 * * *", "timezone": "Europe/Paris", "overlap": "skip", "catchUp": "none", "maxCatchUp": 0 }
+```
+
+| Field | Meaning |
+|---|---|
+| `cron` | five fields: minute, hour, day of month, month, day of week. A seconds field is refused: one tick a minute can't tell seconds apart |
+| `timezone` | an IANA name; UTC when absent |
+| `overlap` | `skip` (default): a minute whose last run is still working is skipped; `buffer-one`: one waits for it; `supersede`: the run is stopped and the new one starts |
+| `catchUp`, `maxCatchUp` | what a tick owes for minutes it missed: `none` (default) only the latest, `one`, or `all` up to `maxCatchUp` |
+
+- **What it starts.** `repo/Run` at the default branch's head as the App reads it then, `ref: refs/heads/<default branch>`, `event: "schedule"`, with secrets, and `{ schedule: "<cron>" }` as its input beside the run's fields, so a flow with two schedules can tell them apart. Its row's event is `schedule`, and the Runs list says so.
+- **One run per occurrence.** A run's execution id is `<flow>:cron-<16 hex of the trigger id's SHA-256>-<YYYYMMDDTHHMM>Z`. A tick that starts an occurrence again starts the same run at the commit its row recorded.
+- **The default branch decides.** Only a push to the default branch syncs, so a branch can't schedule itself. A trigger's id is `<owner/name>#<flow>#<cron>#<timezone>`; the store has no delete, so a row the manifest dropped (or the whole manifest) stays, disabled. A flow is scheduled once its `flow.ts` is on the default branch. A row the package refuses (`0 0 30 2 *` never happens) is skipped with `ci.schedule.refused` and its code; the rest stand.
+- **One tick a minute, no loop.** Every `FlowExecution` alarm starts the minute's `triggers/Tick` once (`Flows.startEachWindow`), as it starts the database sample. A tick sleeps to its window's end on a durable timer, and the alarm that ends the sleep starts the next window's. Nothing runs between ticks: `Scheduler.tick` takes the last tick's instant (the store's heartbeat) and answers once its launches are recorded, and the next tick settles the runs from their rows (`done`, `failed`, `stopped`).
+- **Retries.** A tick that left a trigger undispatched, or a store that didn't answer, fails `triggers/Fire` and tries again with the same `since`, up to five times within the minute; the claim protocol keeps each occurrence to one run. A start GitHub or the host couldn't make (`runner_unavailable`) stays pending for the next tick. A repository outside `REPO_FLOWS_REPOSITORIES`, or a branch the App can't read, fails that occurrence.
+- **The store.** `SqlTriggerStore` on the deployment's Postgres, in the schema `smithers_triggers`: its own tables and migrations, apart from the app's and the engine's `smithers_flows`. Every write goes through the durable writer.
+- **Off unless `REPO_FLOWS=true`** and the GitHub App is configured: without both, no alarm starts a tick.
+
+### When a schedule did not fire
+
+1. **Registered?** The default-branch push's `ci.schedule.register` line: `outcome` `registered` with counts, `not_allowed`, or `unreadable`; `ci.schedule.refused` names a row the package refused. A schedule changes only with a push to the default branch.
+2. **Ticking?** One `ci.schedule.tick` line a minute with `outcome: clean`; `smithers_ci_schedule_ticks{outcome}` counts `unclean`, `failed` and `not_started` (an alarm couldn't start the tick). No line at all: no alarm ran, or `REPO_FLOWS` is off.
+3. **Started?** `ci.schedule.start` with the run's `executionId`, or why not: `not_allowed`, `refused` (no input, no default branch, the App can't read it) or `unavailable`. The package's `flows_trigger_fires` ledger in `smithers_triggers` holds each occurrence's outcome: `launched`, `completed`, `skipped` (overlap), `failed`.
 
 ## Observability
 
@@ -181,11 +223,19 @@ A repository says when its flows run in its plugin manifest, `.smithers/factory.
 | `ci.dispatch` | log | `delivery`, `repo`, `event`, `sha`, `outcome` (`matched`, `none`, `no_manifest`, `unreadable`), `flows` |
 | `ci.start` | log | `delivery`, `repo`, `flow`, `executionId`, `outcome` (`started`, `not_started`), `errorCode` |
 | `ci.dispatch.match`, `ci.dispatch.start` | span | `smithers.ci.delivery` |
+| `ci.schedule.register` | log, span | `delivery`, `repo`, `outcome` (`registered`, `not_allowed`, `unreadable`), `registered`, `unchanged`, `disabled`, `refused` |
+| `ci.schedule.refused` | log | `delivery`, `repo`, `flow`, `errorCode` (the package's code) |
+| `ci.schedule.since`, `ci.schedule.fire` | log, span | `from` (`smithers.ci.window`), `since` |
+| `ci.schedule.tick` | log | `from`, `outcome` (`clean`, `unclean`, `failed`, `not_started`), `at`, `errorCode` |
+| `ci.schedule.start` | log, span | `repo`, `flow`, `executionId`, `outcome` (`started`, `not_allowed`, `refused`, `unavailable`), `errorCode` |
+| `ci.schedule.inspect`, `ci.schedule.cancel` | span | |
+| `smithers_ci_schedule_registrations{outcome}`, `smithers_ci_schedule_ticks{outcome}`, `smithers_ci_schedule_starts{outcome}` | counter | |
+| `Scheduler.runOnce`, `Scheduler.launch`, `smithers.triggers.*` | span, metric | the package's own ([api](../../../../packages/smithers/agent/triggers/docs/api.md#scheduleroptions-and-service)) |
 | `sandbox.artifact` | log, span | `method` (`GET`, `PUT`, `other`), `outcome` (`stored`, `read`, `absent`, `bad_name`, `no_scope`, `method`, `length_required`, `too_large`, `store_failed`), `bytes` |
 | `smithers_sandbox_artifacts{method,outcome}` | counter | |
 | `sandbox.machine` | log | `branchId`, `machine`, `outcome: undeclared` |
 | `smithers_ci_dispatches{event,outcome}`, `smithers_ci_starts{outcome}` | counter | |
-| `github.webhook` | log | gains `dispatched`: the repository a push or pull request dispatched for |
+| `github.webhook` | log | gains `dispatched`: the repository a push or pull request dispatched for; `synced`: the repository a default-branch push synced schedules for |
 | `smithers_repo_flow_plans{outcome}`, `smithers_repo_flow_statuses{state,outcome}` | counter | |
 
 No record carries a flow's source, a command, its output, an artifact's name or content, or a secret.
@@ -206,9 +256,10 @@ No record carries a flow's source, a command, its output, an artifact's name or 
 | `worker/ci/Realm.test.ts` | the realm in Node's QuickJS: a TypeScript flow's jobs; a body deciding from its payload; refused imports, used or not, static or aliased; a loop, a memory bomb and a runaway recursion stopped; syntax, throws, a forged `JSON.stringify`, bad or repeated jobs, a wrong tag; machines and needs planned, and a need on a later, undeclared or own job refused; a flow's inputs read as JSON Schema without running its body, and the fields, payloads and counts a form can't take refused; inputs reaching the body |
 | `worker/ci/Realm.workerd.test.ts` | the realm in local workerd, bundled as Alchemy bundles ChatApi: a flow planned, and a loop stopped by the step budget, since workerd holds its clock still while code runs |
 | `worker/ci/RepoFlow.test.ts` | `repo/Run` on the Node host against the scripted GitHub: flow.ts read at the commit, two jobs on two machines, `smithers/ci` pending then success or `Failed: lint`, a job after its need and skipped when it failed (`Failed: build, test`), no flow or a refused one running nothing, missing permissions, and GitHub's and Postgres' outages retried; a run by hand's inputs reaching the body; Retry failed's `only`; a run whose jobs failed settling its row `failed`, a passed one `done` |
-| `worker/ci/Triggers.test.ts` | the manifest's rows (a Plugin.Manifest only; rows this slice can't read skipped) and matching: branches, tags, tag-only triggers, pull request actions and base branches, globs; `manual` rows, which no event matches |
+| `worker/ci/Triggers.test.ts` | the manifest's rows (a Plugin.Manifest only; rows this slice can't read skipped) and matching: branches, tags, tag-only triggers, pull request actions and base branches, globs; `manual` rows, which no event matches; `cron` rows on the package's `Schedule` with its defaults, five fields only |
 | `worker/ci/Dispatch.test.ts` | a delivery as the webhook names it (push, tag, deleted, pull requests from the repository, a fork or below Member); `triggers/Dispatch` on the Node host: active flows started under `<flow>:<delivery>`, a fork without secrets, a trigger only the branch adds starting nothing, no manifest, unreadable, outages retried |
-| `worker/github/Api.test.ts` | with `REPO_FLOWS` on, a push of any installed repository starts its `triggers/Dispatch`; off, nothing |
+| `worker/ci/Cron.test.ts` | `triggers/Sync` on the Node host: active flows' cron rows registered, a refused row skipped, dropped rows disabled, unchanged rows left alone, another branch's rows ignored, not allowed, unreadable, outages retried; the tick's steps on the test clock: a first tick firing nothing, the passed minute started once as a `schedule` run at the default branch's head, overlap `skip` across ticks, allowlist and unreadable branch failures, GitHub or the host unavailable left pending and started next tick, a replay at the recorded commit, run states from the row, cancel, an unclean tick and a store outage retried; one tick a minute from the alarms; `triggers/Tick` on the Node host; end to end on the execution host's handlers: an alarm starts the minute's tick, whose alarm starts `repo/Run` with event `schedule` |
+| `worker/github/Api.test.ts` | with `REPO_FLOWS` on, a push of any installed repository starts its `triggers/Dispatch`, and a push to the default branch its `triggers/Sync`; off, nothing |
 | `e2e/ci.spec.ts` | a deployment's App installation pushes a real commit; its real GitHub delivery is found by SHA in ChatApi's tail. Local development pushes as a person and signs its own delivery. Both watch the repository run, each job on its own machine, and `smithers/ci` success on the commit as GitHub shows it |
 
 The deployment spec needs `E2E_REPO_FLOWS_REPOSITORY` (the scratch repository holding the fixture), `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` through the vault's environment wrapper, and `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` for ChatApi's tail (`E2E_CHATAPI_SCRIPT` may select its script). The target must enable and allow that repository's flows; the App must be installed with Contents and Commit statuses write. The spec declares `repoFlows`, `githubAppKey` and `localLogs` in `e2e/target.ts` and skips with a reason when credentials are absent. Its short-lived installation token is restricted to that repository, Contents write and Commit statuses read. The SDK keeps credentials redacted, including errors and their causes; authenticated GitHub requests stay outside Playwright so no request attachment contains the token, JWT or key. Local runs instead declare `githubPushToken` and `webhookSecret`, supplied by `E2E_GITHUB_TOKEN` and `E2E_GITHUB_WEBHOOK_SECRET`. The deployer runs production e2e and generates the CI and run-view recordings.

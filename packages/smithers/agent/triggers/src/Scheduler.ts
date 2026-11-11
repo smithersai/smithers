@@ -785,8 +785,10 @@ const build = (
                 // hold the run. Keep the occurrence pending exactly as when the
                 // launched result failed to persist, so the next tick retries
                 // under the same idempotency key and the runtime's durable
-                // deduplication answers with the same run.
-                if (runId !== undefined || error.code === "runner_timeout") {
+                // deduplication answers with the same run. A runner that could
+                // not start the run now (`runner_unavailable`) is retried the
+                // same way.
+                if (runId !== undefined || error.code === "runner_timeout" || error.code === "runner_unavailable") {
                   yield* isolate(
                     { triggerId: trigger.id },
                     "launch compensation",

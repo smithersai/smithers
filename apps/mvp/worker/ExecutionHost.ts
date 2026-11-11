@@ -8,6 +8,7 @@ import { CiJob } from "@smthrs/sandbox"
 import type { QuickJSVariant } from "@smthrs/harness"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
+import * as Cron from "./ci/Cron.ts"
 import * as Dispatch from "./ci/Dispatch.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as RepoRuns from "./RepoRuns.ts"
@@ -283,6 +284,19 @@ export const withTriggers = <ROut, E, R, SE, SR, DE, DR>(
 ) => ({
   flows: [...flows.flows, Dispatch.Dispatch],
   registration: Layer.mergeAll(flows.registration, Layer.unwrap(Effect.map(services, Dispatch.registration))),
+})
+
+/**
+ * `flows`, plus a repository's schedules: `triggers/Sync`, which registers the `cron` rows of its default branch's
+ * manifest, and `triggers/Tick`, one minute's tick that starts the flows due, over `services` (dispatching's, the
+ * trigger store and how a run is stopped), docs/features/ci.md#schedules.
+ */
+export const withSchedules = <ROut, E, R, SE, SR, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  services: Effect.Effect<Cron.Services<DE, DR>, SE, SR>,
+) => ({
+  flows: [...flows.flows, Cron.Sync, Cron.Tick],
+  registration: Layer.mergeAll(flows.registration, Layer.unwrap(Effect.map(services, Cron.registration))),
 })
 
 /**

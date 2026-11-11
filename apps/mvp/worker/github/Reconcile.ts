@@ -16,8 +16,8 @@ import * as Store from "./Store.ts"
 // under the newer-than guard. Webhooks are hints: GitHub doesn't redeliver a failed delivery, so this is what makes the
 // projection whole. Each page commits its cursor in `github_sync` before the next, so a run that dies resumes where it
 // stopped. A walk that runs out of its page budget is recorded `partial`, never complete. A read that finds the sync
-// older than 5 minutes starts it (worker/github/Api.ts); a cron replaces that trigger once `@smthrs/triggers` runs
-// on the Cloudflare host (decision 0012 W9). A walk that comes due after the window after its read's has also passed is
+// older than 5 minutes starts it (worker/github/Api.ts). `@smthrs/triggers` runs on the Cloudflare host now
+// (worker/ci/Cron.ts); moving this walk onto a cron there is its own change (decision 0012 W9). A walk that comes due after the window after its read's has also passed is
 // `superseded`: a newer read starts its own, so a backlog an outage left ends instead of walking all at once.
 
 /** GitHub or Postgres couldn't answer. Retried, after `retryAfterMillis`; the next attempt resumes from the cursor. */

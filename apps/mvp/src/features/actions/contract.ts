@@ -18,8 +18,8 @@ export const ACTION_COLUMNS = [
   "updated_at",
 ] as const
 
-/** What started a repository's run: a push, a pull request, or a person by hand. */
-export const RUN_EVENTS = ["push", "pull_request", "manual"] as const
+/** What started a repository's run: a push, a pull request, a person by hand, or a schedule (`cron` trigger). */
+export const RUN_EVENTS = ["push", "pull_request", "manual", "schedule"] as const
 export type RunEvent = (typeof RUN_EVENTS)[number]
 
 /** A repository run's states as its row holds them: settled from the engine's status when the run settles. */

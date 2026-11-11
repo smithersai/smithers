@@ -32,10 +32,10 @@ export const RunRow = Schema.Struct({
 export type RunRow = typeof RunRow.Type
 
 /**
- * What started a run on Cloudflare: a TODO's commit or retry, a repository's push, pull request or manual run, or the
- * deployment itself (`system`).
+ * What started a run on Cloudflare: a TODO's commit or retry, a repository's push, pull request, manual or scheduled
+ * run, or the deployment itself (`system`).
  */
-export const CloudTrigger = Schema.Literals(["commit", "retry", "push", "pull_request", "manual", "system"])
+export const CloudTrigger = Schema.Literals(["commit", "retry", "push", "pull_request", "manual", "schedule", "system"])
 export type CloudTrigger = typeof CloudTrigger.Type
 
 /**

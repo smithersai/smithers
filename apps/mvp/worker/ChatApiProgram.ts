@@ -659,6 +659,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     Effect.provide(GitHubConnection.live),
     Effect.provide(Executions.live(DatabaseRoutes.route(pools, "FlowExecution"), {
       repositories,
+      repoFlows,
       homeRepository,
       ...(options.dev === true ? { dev: true } : {}),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),

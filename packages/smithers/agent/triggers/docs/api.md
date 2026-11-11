@@ -640,6 +640,11 @@ The runner may have accepted a launch before the store persists its `launched`
 result. A crash, result-write failure, or expired reservation can cause another
 attempt with that key, even while the earlier attempt is in flight.
 
+A start that cannot launch now, for an outage it expects to pass, fails with
+`TriggerError` code `runner_unavailable`: the occurrence stays pending and the
+next tick retries it under the same key. Any other failure records the
+occurrence `failed`.
+
 ### Scheduler.Runner and its constructors
 
 ```ts
@@ -810,7 +815,8 @@ write failures never become failed run outcomes.
 
 A launch runs on its own fiber and compensates its own failures: a start that
 failed outright records `failed`, an ambiguous one (timed out, or answered but
-not persisted) re-arms the occurrence as pending, and a buffered occurrence is
+not persisted) or one that failed with `runner_unavailable` re-arms the
+occurrence as pending, and a buffered occurrence is
 re-armed. Every failure other than interruption is logged with the trigger id.
 Interrupting the fiber detaches it; the reservation lease re-arms the
 occurrence.
@@ -1112,6 +1118,7 @@ message.
 | `verification_failed`     | Webhook verification fails, including a signature mismatch or typed credential-resolution failure.                                                                         |
 | `catch_up_bound_exceeded` | `maxCatchUp` is invalid, catch-up exceeds its bound, or an unbounded interval exceeds the package cap.                                                                     |
 | `runner`                  | The scheduler cannot plan, launch, inspect, cancel, or finish approval retries for a run.                                                                                  |
+| `runner_unavailable`      | A `Runner.start` could not start the run now, for an outage it expects to pass. The occurrence stays pending and the next tick retries it under the same `idempotencyKey`. |
 | `runner_timeout`          | A `Runner.start`, `inspect`, or `cancel` call exceeded `startTimeout`, `inspectTimeout`, or `cancelTimeout`.                                                               |
 | `store`                   | A migration, persistence, or row-decoding operation fails, or a no-op store method is unavailable.                                                                         |
 

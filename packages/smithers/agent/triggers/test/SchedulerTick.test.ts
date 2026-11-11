@@ -176,6 +176,39 @@ describe("Scheduler.tick", () => {
     expect(seen.outcomes.at(-1)).toEqual([hour, "launched"])
   })
 
+  it("keeps the occurrence pending when a start fails runner_unavailable, and records failed for runner", async () => {
+    let unavailable = true
+    const runner = runs(() =>
+      unavailable
+        ? Effect.fail(new TriggerError({ code: "runner_unavailable", message: "GitHub is down" }))
+        : Effect.void
+    )
+    const refusing = runs(() => Effect.fail(new TriggerError({ code: "runner", message: "never" })))
+    const seen = await run(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      yield* store.register(hourly())
+      yield* TestClock.setTime(hour + 1_000)
+      const first = yield* tick(runner, { since: 30 * minute })
+      const pending = (yield* store.inspect("hourly")).pendingAt
+      unavailable = false
+      yield* TestClock.setTime(hour + minute)
+      yield* tick(runner, { since: first.watermark })
+      const retried = yield* outcomes(store)
+      yield* store.register(hourly({ id: "refused" }))
+      yield* TestClock.setTime(2 * hour + 1_000)
+      yield* tick(refusing, { since: hour + minute })
+      const refused = yield* store.history({ triggerId: "refused" })
+      return { pending, retried, refused: refused.items.map((fire) => fire.outcome) }
+    }))
+    expect(seen.pending).toBe(hour)
+    expect(runner.starts.map((start) => start.idempotencyKey)).toEqual([
+      "hourly:1970-01-01T01:00:00.000Z",
+      "hourly:1970-01-01T01:00:00.000Z"
+    ])
+    expect(seen.retried).toEqual([[hour, "launched"]])
+    expect(seen.refused).toEqual(["failed"])
+  })
+
   it("does not advance the watermark past a trigger whose dispatch failed", async () => {
     const runner = runs()
     let failing = true
