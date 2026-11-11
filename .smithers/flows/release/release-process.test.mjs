@@ -6,7 +6,7 @@ import { descendantsOf, processStates, processTable, selfReportedPid } from "./f
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { captureProcess } from "./release-process.mjs"
+import { captureProcess, consumerEnv, redactCredentials } from "./release-process.mjs"
 
 const node = (source, options) => captureProcess(process.execPath, ["--eval", source], process.cwd(), options)
 
@@ -171,4 +171,71 @@ test("a process's own view of its pid is the innermost NSpid entry on Linux and 
   assert.equal(selfReportedPid(4242, "linux", () => { throw new Error("ENOENT") }), undefined)
   assert.equal(selfReportedPid(4242, "darwin", () => { throw new Error("never read off Linux") }), 4242)
   assert.equal(selfReportedPid(process.pid), process.pid)
+})
+
+// Synthetic sentinels only: no real credential is read or printed (#5185).
+const sentinels = {
+  NPM_TOKEN: "synthetic-npm-token-5185",
+  GH_TOKEN: "synthetic-gh-token-5185",
+  NODE_AUTH_TOKEN: "synthetic-node-auth-5185",
+  SMITHERS_CACHE_READ_TOKEN: "synthetic-cache-read-5185",
+  SMITHERS_CACHE_WRITE_TOKEN: "synthetic-cache-write-5185",
+  AWS_SECRET_ACCESS_KEY: "synthetic-aws-secret-5185"
+}
+
+test("a release consumer keeps its toolchain, proxy and native helper and loses every credential", () => {
+  const env = {
+    ...sentinels,
+    Path: "/bin",
+    HOME: "/home/release",
+    LC_ALL: "C",
+    https_proxy: "http://proxy.invalid:3128",
+    npm_config_registry: "http://127.0.0.1:4873/",
+    "npm_config_//registry.npmjs.org/:_authToken": "synthetic-npmrc-token-5185",
+    NPM_CONFIG_USERCONFIG: "/runner/temp/.npmrc",
+    pnpm_config_registry: "http://127.0.0.1:4873/",
+    SMITHERS_NATIVE_HELPERS_DIR: "/helpers",
+    SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/helpers/smithers-jj-export",
+    SMITHERS_CACHE_URL: "https://cache.invalid",
+    GITHUB_REPOSITORY: "smithersai/smithers",
+    UNSET: undefined
+  }
+  const expected = {
+    Path: "/bin",
+    HOME: "/home/release",
+    LC_ALL: "C",
+    https_proxy: "http://proxy.invalid:3128",
+    npm_config_registry: "http://127.0.0.1:4873/",
+    pnpm_config_registry: "http://127.0.0.1:4873/",
+    SMITHERS_NATIVE_HELPERS_DIR: "/helpers",
+    SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/helpers/smithers-jj-export"
+  }
+  assert.deepEqual(consumerEnv(env), expected)
+  assert.deepEqual(consumerEnv(consumerEnv(env)), expected)
+})
+
+test("printed consumer diagnostics name a credential instead of showing it", () => {
+  const text = `token=${sentinels.NPM_TOKEN} cache=${sentinels.SMITHERS_CACHE_READ_TOKEN} via http://user:hunter22@proxy.invalid:3128/ CI=true`
+  assert.equal(
+    redactCredentials(text, { ...sentinels, CI: "true" }),
+    "token=[redacted NPM_TOKEN] cache=[redacted SMITHERS_CACHE_READ_TOKEN] via http://user:[redacted]@proxy.invalid:3128/ CI=true"
+  )
+})
+
+test("a probe's captured output never carries a credential the caller holds", async () => {
+  const saved = Object.fromEntries(Object.keys(sentinels).map((name) => [name, process.env[name]]))
+  Object.assign(process.env, sentinels)
+  try {
+    // The child rebuilds the value instead of reading it, as a consumer that
+    // found it in a file would; neither the argument nor the output holds it.
+    const result = await node('process.stdout.write(["synthetic", "npm", "token", "5185"].join("-")); process.exitCode = 1')
+    assert.equal(result.ok, false)
+    assert.ok(result.output.startsWith("[redacted NPM_TOKEN]"), result.output)
+    assert.ok(!result.output.includes(sentinels.NPM_TOKEN))
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
 })

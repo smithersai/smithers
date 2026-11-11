@@ -3,6 +3,52 @@ import { spawn } from "node:child_process"
 
 const posix = process.platform !== "win32"
 
+// What a disposable consumer needs to find its toolchain, reach the registry
+// and run the native helper under test. Names compare upper-cased: Windows
+// spells `Path`, and proxies are conventionally lower-case.
+const consumerNames = new Set([
+  "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "APPDATA", "LOCALAPPDATA", "USERPROFILE",
+  "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TMP", "TEMP", "TERM", "LANG", "TZ", "CI",
+  "PNPM_HOME", "BUN_INSTALL", "NODE_OPTIONS",
+  "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+  "SMITHERS_NATIVE_HELPERS_DIR", "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY", "SMITHERS_JJ_PATH"
+])
+const consumerPrefixes = ["LC_", "XDG_", "COREPACK_", "NPM_CONFIG_", "PNPM_CONFIG_"]
+// A kept prefix still never carries a credential or a file of them: npm reads
+// `npm_config_//host/:_authToken`, and `NPM_CONFIG_USERCONFIG` names the
+// .npmrc that setup-node fills with `${NODE_AUTH_TOKEN}`.
+const credentialName = /TOKEN|AUTH|PASSWORD|PASSWD|SECRET|CREDENTIAL|USERCONFIG|(?:^|_)KEY(?:$|_)/i
+
+/**
+ * The environment of every release consumer: installs, build scripts, imports,
+ * compilers and CLI probes run downloaded code, so they get an allowlist of the
+ * caller's environment and never its cache, registry or GitHub credentials.
+ * Applying it twice changes nothing.
+ */
+export const consumerEnv = (env = process.env) =>
+  Object.fromEntries(
+    Object.entries(env).filter(([name, value]) => {
+      const upper = name.toUpperCase()
+      return value !== undefined && !credentialName.test(name) &&
+        (consumerNames.has(upper) || consumerPrefixes.some((prefix) => upper.startsWith(prefix)))
+    })
+  )
+
+/**
+ * `text` with every credential the caller holds, and the password of any URL,
+ * replaced by a marker. A consumer never receives these values, but one can
+ * still read them from a file and print them into the release log.
+ */
+export const redactCredentials = (text, env = process.env) => {
+  let redacted = text
+  for (const [name, value] of Object.entries(env)) {
+    if (credentialName.test(name) && typeof value === "string" && value.length >= 8) {
+      redacted = redacted.split(value).join(`[redacted ${name}]`)
+    }
+  }
+  return redacted.replace(/(\/\/[^\s/:@]+):[^\s/@]+@/g, "$1:[redacted]@")
+}
+
 /**
  * Runs one owned process group until stdout and stderr close, a deadline
  * expires, or the caller stops it. Every settlement kills the whole group and
@@ -73,7 +119,7 @@ export const captureProcess = async (command, args, cwd, { timeoutMs = 120_000, 
       chunks[source].push(chunk)
     }
   })
-  const output = Buffer.concat([...chunks.stdout, ...chunks.stderr]).toString("utf8")
+  const output = redactCredentials(Buffer.concat([...chunks.stdout, ...chunks.stderr]).toString("utf8"))
   const error = failure?.message
     ?? (code === 0 ? undefined : `Command failed: ${[command, ...args].join(" ")} ${signal === null ? `exited with ${code}` : `was killed by ${signal}`}`)
   return error === undefined ? { ok: true, output } : { ok: false, output: `${output}\n${error}` }

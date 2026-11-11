@@ -61,7 +61,7 @@ import { verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
 import { assertNodeSupport } from "./release-node-support.mjs"
 import { assertSmokeNpmSupport } from "./release-npm-support.mjs"
 import { peerRangesOf } from "./release-peer-ranges.mjs"
-import { captureProcess } from "./release-process.mjs"
+import { captureProcess, consumerEnv } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
@@ -92,17 +92,19 @@ const phase = async (name, work) => {
     )
   }
 }
-const runQuietly = (command, args, cwd, options) =>
+// Every command below installs or runs candidate and third-party code, so it
+// gets the consumer allowlist, never the release job's credentials.
+const runQuietly = (command, args, cwd, { env = consumerEnv(), ...options } = {}) =>
   phase(
     `probe: ${[command, ...args].join(" ")}`,
-    () => captureProcess(command, args, cwd, options)
+    () => captureProcess(command, args, cwd, { ...options, env: consumerEnv(env) })
   )
 
 const run = (command, args, cwd) =>
   phase(`command: ${[command, ...args].join(" ")}`, () =>
     new Promise((resolveRun, reject) => {
       const started = Date.now()
-      const child = spawn(command, args, { cwd, stdio: "inherit" })
+      const child = spawn(command, args, { cwd, env: consumerEnv(), stdio: "inherit" })
       child.once("error", reject)
       child.once("exit", (code, signal) => {
         console.log(
@@ -349,7 +351,7 @@ try {
     nativePackage,
     Boolean(process.env.SMITHERS_NATIVE_HELPERS_DIR)
   )
-  const cliEnv = { ...process.env }
+  const cliEnv = consumerEnv()
   // Final packs must discover their own helper. The earlier script gate still
   // runs every CLI operation using the explicitly configured source helper.
   if (hasPackagedNativeHelpers) delete cliEnv.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY

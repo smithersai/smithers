@@ -17,7 +17,7 @@ import {
   UNSUPPORTED_EFFECT_VERSION
 } from "../../../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import { assertEffectFamilyAccepts, assertEffectFamilyInstalled, mcpInitialize } from "./release-mcp-handshake.mjs"
-import { captureProcess } from "./release-process.mjs"
+import { captureProcess, consumerEnv, redactCredentials } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 import { isMain, repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
@@ -239,7 +239,7 @@ export const onEffect = (profile, version, label = version) => ({
  * registry configuration, and it reads stdout alone: npm prints its notices on
  * stderr.
  */
-export const latestEffectVersion = async ({ env = process.env } = {}) => {
+export const latestEffectVersion = async ({ env = consumerEnv() } = {}) => {
   const { stdout } = await promisify(execFile)(
     "npm",
     ["view", "effect", "dist-tags.latest", "--prefer-online"],
@@ -323,12 +323,16 @@ export const assertConsumerTree = (consumer, profile) => {
   return { count: installed.length, effectFamily: family, effectCopies: copies.map(({ path }) => path), resolutions }
 }
 
-/** Record actual exit status and exact command, including expected install refusals. */
+/**
+ * Record actual exit status and exact command, including expected install
+ * refusals. The child gets `consumerEnv(options.env)`, and its output is
+ * redacted before it is printed or returned.
+ */
 export const consumerCommand = (command, args, cwd, options = {}) =>
   new Promise((resolveRun, reject) => {
     const started = Date.now()
     console.log(JSON.stringify({ command, args, cwd, event: "start", at: new Date(started).toISOString() }))
-    const child = spawn(command, args, { cwd, env: options.env ?? process.env, stdio: ["ignore", "pipe", "pipe"] })
+    const child = spawn(command, args, { cwd, env: consumerEnv(options.env), stdio: ["ignore", "pipe", "pipe"] })
     let output = ""
     child.stdout.on("data", (chunk) => {
       output += chunk
@@ -338,6 +342,7 @@ export const consumerCommand = (command, args, cwd, options = {}) =>
     })
     child.once("error", reject)
     child.once("close", (exit, signal) => {
+      output = redactCredentials(output)
       console.log(
         JSON.stringify({
           command,
@@ -365,7 +370,7 @@ const successful = async (command, args, cwd, options) => {
 }
 
 /** CLI alone, with fresh third-party resolution under each supported package manager. */
-export const runCliMcpConsumer = async (manager, registryUrl, cliVersion, { env = process.env } = {}) => {
+export const runCliMcpConsumer = async (manager, registryUrl, cliVersion, { env = consumerEnv() } = {}) => {
   assert.ok(manager === "npm" || manager === "pnpm", "Unsupported release package manager: " + manager)
   const consumer = await mkdtemp(join(tmpdir(), "smthrs-release-mcp-" + manager + "-"))
   try {
@@ -401,7 +406,7 @@ export const runCliMcpConsumer = async (manager, registryUrl, cliVersion, { env 
     })
     const serverInfo = await mcpInitialize(join(consumer, "node_modules/.bin/smthrs"), ["--mcp"], {
       cwd: consumer,
-      env: { ...env, HOME: consumer, XDG_CONFIG_HOME: consumer, XDG_DATA_HOME: consumer }
+      env: { ...consumerEnv(env), HOME: consumer, XDG_CONFIG_HOME: consumer, XDG_DATA_HOME: consumer }
     })
     assert.equal(serverInfo.version, cliVersion, "installed MCP version differs from candidate")
     // Follow the public CLI type through its internal composition to registry
@@ -630,7 +635,7 @@ export const pathWithoutJj = (path = "") =>
 export const runQuickstartConsumer = async (
   manager,
   registryUrl,
-  { quickstart = readQuickstart(), env = process.env, latestEffect } = {}
+  { quickstart = readQuickstart(), env = consumerEnv(), latestEffect } = {}
 ) => {
   assert.ok(manager === "npm" || manager === "pnpm", "Unsupported release package manager: " + manager)
   const consumer = await mkdtemp(join(tmpdir(), "smthrs-release-quickstart-" + manager + "-"))
@@ -690,7 +695,7 @@ export const runQuickstartConsumer = async (
     const [command, ...args] = quickstart.run
     assert.equal(command, "node", "the quickstart runs under node")
     const runs = []
-    const withoutJj = { ...env, PATH: pathWithoutJj(env.PATH) }
+    const withoutJj = { ...consumerEnv(env), PATH: pathWithoutJj(env.PATH) }
     delete withoutJj.SMITHERS_JJ_PATH
     for (const attempt of ["first run", "second run"]) {
       const result = await captureProcess(process.execPath, args, consumer, { timeoutMs: 120_000, env: withoutJj })
@@ -753,7 +758,7 @@ export const runConsumerMatrix = async (directory, entries, {
   runtime = false,
   // The published quickstart has its own fixed package/API contract (96628360).
   quickstart = runtime,
-  env = process.env
+  env = consumerEnv()
 } = {}) => {
   const registry = await releaseRegistry(directory, entries)
   const results = []

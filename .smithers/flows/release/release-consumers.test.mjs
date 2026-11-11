@@ -15,6 +15,7 @@ import {
   assertConsumerTree,
   candidateVersion,
   consumerCacheFlags,
+  consumerCommand,
   importedPackages,
   latestEffectVersion,
   migrationProfiles,
@@ -30,6 +31,53 @@ import {
 } from "./release-consumers.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
+
+// Synthetic credentials a release job could hold. No real credential is read (#5185).
+const sentinels = {
+  NPM_TOKEN: "synthetic-npm-token-5185",
+  GH_TOKEN: "synthetic-gh-token-5185",
+  NODE_AUTH_TOKEN: "synthetic-node-auth-5185",
+  SMITHERS_CACHE_READ_TOKEN: "synthetic-cache-read-5185"
+}
+/** Puts the sentinels into this process's environment and returns the undo. */
+const holdCredentials = () => {
+  const previous = Object.fromEntries(Object.keys(sentinels).map((name) => [name, process.env[name]]))
+  Object.assign(process.env, sentinels)
+  return () => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+}
+
+test("a consumer command runs without the caller's credentials and prints none of them", async () => {
+  const release = holdCredentials()
+  const printed = []
+  const log = console.log
+  console.log = (line) => printed.push(String(line))
+  try {
+    // The child reports what it inherited, then prints a value it rebuilt the
+    // way code that found it in a file would, and fails so its output prints.
+    const source = [
+      "const names = " + JSON.stringify(Object.keys(sentinels)),
+      "console.log(JSON.stringify(names.filter((name) => process.env[name] !== undefined)))",
+      'console.log(["synthetic", "gh", "token", "5185"].join("-"))',
+      "process.exitCode = 1"
+    ].join("\n")
+    for (const env of [undefined, { ...process.env }]) {
+      const result = await consumerCommand(process.execPath, ["--eval", source], tmpdir(), { env })
+      assert.equal(result.exit, 1)
+      assert.equal(result.output, "[]\n[redacted GH_TOKEN]\n")
+    }
+  } finally {
+    console.log = log
+    release()
+  }
+  const transcript = printed.join("\n")
+  assert.match(transcript, /\[redacted GH_TOKEN\]/)
+  for (const value of Object.values(sentinels)) assert.ok(!transcript.includes(value), "printed " + value)
+})
 
 /**
  * Makes `url` the default registry of both package managers and returns the
@@ -598,6 +646,8 @@ test("every Flows page states the manifest's Node floor and none says the packag
 
 test("the quickstart consumer passes only when the install line brings what the program imports", { timeout: 5 * 60_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-quickstart-gate-"))
+  // The release job's credentials must reach neither a build script nor the program.
+  const releaseCredentials = holdCredentials()
   let restoreRegistry = () => {}
   const registries = []
   try {
@@ -624,6 +674,9 @@ test("the quickstart consumer passes only when the install line brings what the 
             'export const read = (path) => {',
             '  // The gate runs the quickstart where no jj is reachable (#3894).',
             '  if (process.env.SMITHERS_JJ_PATH !== undefined) throw new Error("SMITHERS_JJ_PATH is set")',
+            '  for (const name of ' + JSON.stringify(Object.keys(sentinels)) + ') {',
+            '    if (process.env[name] !== undefined) throw new Error(name + " reached the quickstart")',
+            '  }',
             '  for (const entry of (process.env.PATH ?? "").split(":")) {',
             '    if (entry !== "" && existsSync(entry + "/jj") && statSync(entry + "/jj").isFile()) {',
             '      throw new Error("jj is on the quickstart PATH: " + entry)',
@@ -643,7 +696,10 @@ test("the quickstart consumer passes only when the install line brings what the 
         ...["esbuild", "native-thing"].map((script) =>
           pack(directory, script, {
             name: script, version: "1.0.0",
-            scripts: { postinstall: "node -e \"require('node:fs').writeFileSync('built', '')\"" }
+            scripts: {
+              postinstall:
+                "node -e \"if (process.env.NPM_TOKEN !== undefined) process.exit(7); require('node:fs').writeFileSync('built', '')\""
+            }
           }, {})
         )
       ].map((entry) => ({ ...entry, directory }))
@@ -729,6 +785,7 @@ test("the quickstart consumer passes only when the install line brings what the 
     }
   } finally {
     restoreRegistry()
+    releaseCredentials()
     for (const registry of registries) await registry.close()
     rmSync(root, { recursive: true, force: true })
   }
