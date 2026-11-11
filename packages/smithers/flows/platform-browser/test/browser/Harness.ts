@@ -16,6 +16,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type BrowserContext, chromium, type Page } from "playwright"
+import vibelang from "vibelang-unplugin/esbuild"
 
 const require = createRequire(import.meta.url)
 
@@ -29,6 +30,7 @@ const html = `<!doctype html><meta charset="utf-8"><script type="module" src="/p
 const bundle = (entries: Record<string, string>, conditions: Array<string> = [], treeShaking = true) =>
   build({
     bundle: true,
+    plugins: [vibelang({ root: fileURLToPath(new URL("../../", import.meta.url)) })],
     conditions,
     treeShaking,
     entryPoints: Object.fromEntries(

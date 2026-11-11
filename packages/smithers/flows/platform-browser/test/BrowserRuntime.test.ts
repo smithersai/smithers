@@ -273,10 +273,14 @@ describe("BrowserRuntime over OPFS", () => {
         })
         const engine = yield* Engines.tab(name)
         yield* engine.start(Steps, { executionId: "uncaught", payload: { prefix: "u" } })
-        listeners.get("error")!({ type: "error", error: new TypeError("SENTINEL someone's words") })
+        const error = Object.assign(new Event("error", { cancelable: true }), {
+          error: new TypeError("SENTINEL private words")
+        })
+        listeners.get("error")!(error)
         listeners.get("unhandledrejection")!({ type: "unhandledrejection", reason: { _tag: "Refused" } })
         listeners.get("unhandledrejection")!({ type: "unhandledrejection", reason: "SENTINEL a string" })
         yield* Fiber.interrupt(worker)
+        expect(error.defaultPrevented).toBe(true)
         expect(telemetry.lines("browser.runtime.uncaught").map(({ level, annotations }) => [level, annotations]))
           .toEqual([
             ["ERROR", expect.objectContaining({ kind: "error", "error.type": "TypeError" })],

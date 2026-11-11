@@ -5470,6 +5470,9 @@ importers:
       vibelang:
         specifier: 0.0.12
         version: 0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+      vibelang-unplugin:
+        specifier: 0.0.12
+        version: 0.0.12(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vibelang-vite:
         specifier: 0.0.12
         version: 0.0.12(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))

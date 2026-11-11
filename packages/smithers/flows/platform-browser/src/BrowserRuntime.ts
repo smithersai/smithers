@@ -346,8 +346,8 @@ const nameOf = (thrown: unknown): string =>
 
 /**
  * While the worker runs: an error nothing caught, or a rejection nothing handled, on the worker's global, logged as
- * `browser.runtime.uncaught` at Error with `kind` (`error` or `rejection`) and `error.type`, never its message. A tab
- * hears a worker's uncaught error as its `Worker`'s `error` event, but never its unhandled rejection.
+ * `browser.runtime.uncaught` at Error with `kind` (`error` or `rejection`) and `error.type`, never its message. Runtime
+ * errors are canceled here so they do not reach the tab as a worker load failure; the worker is still running.
  */
 const uncaught = Effect.gen(function*() {
   const target = globalThis as WorkerEvents
@@ -359,6 +359,7 @@ const uncaught = Effect.gen(function*() {
       readonly error?: unknown
       readonly reason?: unknown
     }
+    if (type === "error") (event as Event).preventDefault()
     log(
       Effect.logError("browser.runtime.uncaught").pipe(
         Effect.annotateLogs({

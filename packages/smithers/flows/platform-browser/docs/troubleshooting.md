@@ -378,12 +378,14 @@ through `BrowserRuntime.run` or `serve`, and close the tab of the other build.
 **Symptom.** `start`, `result`, `cancel` or `signal` fails with
 `EngineUnavailable`, and `browser.engine.unavailable` is logged.
 
-**Cause.** This tab's engine worker failed. `worker-failed`: it threw, most
-often while loading, as when a module it imports touches the DOM, which a
+**Cause.** This tab's engine worker failed. `worker-failed`: it failed to
+load, as when a module it imports touches the DOM, which a
 worker has none of; `error` names the error, or `ErrorEvent` when the browser
 hides it. `engine-failed`: the worker loaded but could not build the engine,
 as without OPFS; `error` is the failure's tag, the same `browser.runtime.stopped`
-logs in the worker.
+logs in the worker. Uncaught callback errors while `BrowserRuntime.run` is
+running are logged as `browser.runtime.uncaught` without marking the engine
+unavailable; the worker keeps serving requests.
 
 **Fix.** For `worker-failed`, open the worker's console: the load error is
 there. For `engine-failed`, follow the `browser.runtime.stopped` entry for its
