@@ -1,0 +1,406 @@
+// The wiki build's page decisions (scripts/wiki.vibe; 0018 third-lane batch 28): a page's id, which files are
+// decisions, a decision's label, a page's heading, its `Status:` and `Rulings:` fields, the rulings they name, the
+// status words, and its first date. Each stands in for one of the script's `replace`, `exec`, `match` and `i`-flag
+// regular expressions; patterns in LemmaScript's RegExp subset are decided by its proved `test`.
+//
+// Each scan is stated once as a recursive function, the specification contracts name, and run as a loop proved equal
+// to it: a recursion one call deep per character overflowed the stack on the 100 KB proofs page.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** A decimal digit's UTF-16 code unit. */
+//@ verify
+//@ ensures \result == (48 <= unit && unit <= 57)
+export function digitAt(unit: number): boolean {
+  return 48 <= unit && unit <= 57
+}
+
+/** A line terminator, as RegExp's `^`, `$` and `.` read them: `\n`, `\r`, U+2028 and U+2029. */
+//@ verify
+//@ ensures \result == (unit == 10 || unit == 13 || unit == 8232 || unit == 8233)
+export function terminatorUnit(unit: number): boolean {
+  return unit === 10 || unit === 13 || unit === 8232 || unit === 8233
+}
+
+/** A file's page id: the file without its `.md` ending. */
+//@ verify
+//@ ensures file.endsWith(".md") ==> \result == file.slice(0, file.length - 3)
+//@ ensures !file.endsWith(".md") ==> \result == file
+export function pageId(file: string): string {
+  return file.endsWith(".md") ? file.slice(0, file.length - 3) : file
+}
+
+/** A file in `decisions/` whose name starts with a digit: a numbered decision. */
+//@ verify
+//@ ensures \result == \matches("^decisions\\/[0-9]", file)
+export function decisionFile(file: string): boolean {
+  return /^decisions\/[0-9]/.test(file)
+}
+
+/** A page id of a numbered decision, `decisions/NNNN-…`. */
+//@ verify
+//@ ensures \result == \matches("^decisions\\/[0-9]{4}-", id)
+export function decisionId(id: string): boolean {
+  return /^decisions\/[0-9]{4}-/.test(id)
+}
+
+/** A decision's label: its id after `decisions/`, with the dash after a leading four-digit number made a space. */
+//@ verify
+//@ ensures id.length >= 15 && digitAt(id.charCodeAt(10)) && digitAt(id.charCodeAt(11)) && digitAt(id.charCodeAt(12)) && digitAt(id.charCodeAt(13)) && id.charCodeAt(14) == 45 ==> \result == id.slice(10, 14) + " " + id.slice(15)
+//@ ensures !(id.length >= 15 && digitAt(id.charCodeAt(10)) && digitAt(id.charCodeAt(11)) && digitAt(id.charCodeAt(12)) && digitAt(id.charCodeAt(13)) && id.charCodeAt(14) == 45) ==> \result == (id.length >= 10 ? id.slice(10) : "")
+export function decisionLabel(id: string): string {
+  if (id.length >= 15 && digitAt(id.charCodeAt(10)) && digitAt(id.charCodeAt(11)) && digitAt(id.charCodeAt(12)) && digitAt(id.charCodeAt(13)) && id.charCodeAt(14) === 45) {
+    return id.slice(10, 14) + " " + id.slice(15)
+  }
+  return id.length >= 10 ? id.slice(10) : ""
+}
+
+/** Where the line that holds `at` ends: the first line terminator from `at`, or the text's end. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+//@ ensures 0 <= at ==> forall(i, at <= i && i < \result ==> !terminatorUnit(text.charCodeAt(i)))
+//@ ensures \result < 0 || \result >= text.length || terminatorUnit(text.charCodeAt(\result))
+export function lineEnd(text: string, at: number): number {
+  if (at < 0 || at >= text.length || terminatorUnit(text.charCodeAt(at))) return at
+  return lineEnd(text, at + 1)
+}
+
+/** A line starts at `at`: the text's start, or just after a line terminator. */
+//@ verify
+//@ ensures \result == (at == 0 || (0 < at && at <= text.length && terminatorUnit(text.charCodeAt(at - 1))))
+export function lineStart(text: string, at: number): boolean {
+  return at === 0 || (0 < at && at <= text.length && terminatorUnit(text.charCodeAt(at - 1)))
+}
+
+/** A `# Title` line starts at `at`: `#`, a space, and at least one character before the line ends. */
+//@ verify
+//@ ensures \result == (0 <= at && at + 2 < text.length && text.charCodeAt(at) == 35 && text.charCodeAt(at + 1) == 32 && !terminatorUnit(text.charCodeAt(at + 2)))
+export function headingAt(text: string, at: number): boolean {
+  return 0 <= at && at + 2 < text.length && text.charCodeAt(at) === 35 && text.charCodeAt(at + 1) === 32 && !terminatorUnit(text.charCodeAt(at + 2))
+}
+
+/** The first line from line start `at` that is a heading, or -1: every line start before it is not one. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures \result == -1 || (at <= \result && \result < text.length && headingAt(text, \result) && lineStart(text, \result))
+//@ ensures 0 <= at && lineStart(text, at) ==> forall(i, at <= i && i < text.length && (\result == -1 || i < \result) && lineStart(text, i) ==> !headingAt(text, i))
+export function firstHeading(text: string, at: number): number {
+  if (at < 0 || at >= text.length) return -1
+  if (headingAt(text, at) && lineStart(text, at)) return at
+  const end = lineEnd(text, at)
+  if (end < at || end >= text.length) return -1
+  return firstHeading(text, end + 1)
+}
+
+/** A page's title, the text of its first `# ` line (`/^# (.+)$/m`), or `""` when it has none. */
+//@ verify
+//@ ensures firstHeading(text, 0) == -1 ==> \result == ""
+//@ ensures firstHeading(text, 0) >= 0 && firstHeading(text, 0) + 2 <= lineEnd(text, firstHeading(text, 0) + 2) && lineEnd(text, firstHeading(text, 0) + 2) <= text.length ==> \result == text.slice(firstHeading(text, 0) + 2, lineEnd(text, firstHeading(text, 0) + 2))
+export function headingTitle(text: string): string {
+  const at = findHeading(text)
+  if (at < 0 || at + 2 > text.length) return ""
+  const end = findLineEnd(text, at + 2)
+  if (end < at + 2 || end > text.length) return ""
+  return text.slice(at + 2, end)
+}
+
+/** `key` starts at `at`. */
+//@ verify
+//@ ensures \result == (0 <= at && at + key.length <= text.length && text.slice(at, at + key.length) == key)
+export function keyAt(text: string, at: number, key: string): boolean {
+  return 0 <= at && at + key.length <= text.length && text.slice(at, at + key.length) === key
+}
+
+/** The first index from `at` where `key` starts, or -1. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures \result == -1 || (0 <= at && at <= \result && keyAt(text, \result, key))
+//@ ensures 0 <= at ==> forall(i, at <= i && (\result == -1 || i < \result) ==> !keyAt(text, i, key))
+export function keyFrom(text: string, at: number, key: string): number {
+  if (at < 0 || at + key.length > text.length) return -1
+  if (keyAt(text, at, key)) return at
+  return keyFrom(text, at + 1, key)
+}
+
+/** Where a field's value starts after its key ends at `after`: past a closing `**`, if one follows. */
+//@ verify
+//@ ensures 0 <= after && after + 2 <= text.length && text.slice(after, after + 2) == "**" ==> \result == after + 2
+//@ ensures !(0 <= after && after + 2 <= text.length && text.slice(after, after + 2) == "**") ==> \result == after
+export function valueStart(text: string, after: number): number {
+  return 0 <= after && after + 2 <= text.length && text.slice(after, after + 2) === "**" ? after + 2 : after
+}
+
+/** Where the line feed after `at` is, or the text's end (`[^\n]*`). */
+//@ verify
+//@ decreases text.length - at
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+//@ ensures 0 <= at ==> forall(i, at <= i && i < \result ==> text.charCodeAt(i) != 10)
+//@ ensures \result < 0 || \result >= text.length || text.charCodeAt(\result) == 10
+export function feedFrom(text: string, at: number): number {
+  if (at < 0 || at >= text.length || text.charCodeAt(at) === 10) return at
+  return feedFrom(text, at + 1)
+}
+
+/**
+ * Where the value of a page's first `key` field starts (`(?:\*\*)?Key:(?:\*\*)?`), or -1. For `Rulings?:` the
+ * earlier of `Ruling:` and `Rulings:`; they never start at the same place.
+ */
+//@ verify
+//@ ensures keyFrom(text, 0, key) < 0 ==> \result == -1
+//@ ensures keyFrom(text, 0, key) >= 0 ==> \result == valueStart(text, keyFrom(text, 0, key) + key.length)
+export function fieldValue(text: string, key: string): number {
+  const at = findKey(text, key)
+  return at < 0 ? -1 : valueStart(text, at + key.length)
+}
+
+/** Where the value of a page's first `key` field starts, with nothing optional around the key; -1 when absent. */
+//@ verify
+//@ ensures keyFrom(text, 0, key) < 0 ==> \result == -1
+//@ ensures keyFrom(text, 0, key) >= 0 ==> \result == keyFrom(text, 0, key) + key.length
+export function keyValue(text: string, key: string): number {
+  const at = findKey(text, key)
+  return at < 0 ? -1 : at + key.length
+}
+
+/** The earlier of two field values that may be absent (-1). */
+//@ verify
+//@ ensures a < 0 ==> \result == b
+//@ ensures a >= 0 && (b < 0 || a <= b) ==> \result == a
+//@ ensures a >= 0 && b >= 0 && b < a ==> \result == b
+export function earlier(a: number, b: number): number {
+  if (a < 0) return b
+  return b < 0 || a <= b ? a : b
+}
+
+/** A field's value from `start` to its line feed; `""` for an absent field. */
+//@ verify
+//@ ensures start < 0 || start > text.length ==> \result == ""
+//@ ensures 0 <= start && start <= feedFrom(text, start) && feedFrom(text, start) <= text.length ==> \result == text.slice(start, feedFrom(text, start))
+export function fieldText(text: string, start: number): string {
+  if (start < 0 || start > text.length) return ""
+  const end = findFeed(text, start)
+  if (end < start || end > text.length) return ""
+  return text.slice(start, end)
+}
+
+/** Where a `VL-` number starting at `at` ends, or -1: `VL-` and at least one digit. */
+//@ verify
+//@ ensures \result == -1 || (0 <= at && at + 4 <= \result && \result <= text.length && text.slice(at, at + 3) == "VL-" && forall(i, at + 3 <= i && i < \result ==> digitAt(text.charCodeAt(i))) && (\result == text.length || !digitAt(text.charCodeAt(\result))))
+//@ ensures \result == -1 ==> !(0 <= at && at + 4 <= text.length && text.slice(at, at + 3) == "VL-" && digitAt(text.charCodeAt(at + 3)))
+export function rulingEnd(text: string, at: number): number {
+  if (at < 0 || at + 4 > text.length || text.slice(at, at + 3) !== "VL-" || !digitAt(text.charCodeAt(at + 3))) return -1
+  return digitsEnd(text, at + 3)
+}
+
+/** Where the digits from `at` end. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+//@ ensures 0 <= at ==> forall(i, at <= i && i < \result ==> digitAt(text.charCodeAt(i)))
+//@ ensures \result < 0 || \result >= text.length || !digitAt(text.charCodeAt(\result))
+export function digitsEnd(text: string, at: number): number {
+  if (at < 0 || at >= text.length || !digitAt(text.charCodeAt(at))) return at
+  return digitsEnd(text, at + 1)
+}
+
+/** Every `VL-` number from `at`, in order (`text.match(/VL-[0-9]+/g)` from there). */
+//@ verify
+//@ decreases text.length - at
+//@ ensures forall(k, 0 <= k && k < \result.length ==> \result[k].length >= 4 && \result[k].slice(0, 3) == "VL-" && forall(i, 3 <= i && i < \result[k].length ==> digitAt(\result[k].charCodeAt(i))))
+export function rulingsFrom(text: string, at: number): ReadonlyArray<string> {
+  if (at < 0 || at >= text.length) return []
+  const end = rulingEnd(text, at)
+  if (end < 0) return rulingsFrom(text, at + 1)
+  return [text.slice(at, end), ...rulingsFrom(text, end)]
+}
+
+/** An ASCII capital letter's unit as lower case; any other unit unchanged (`/i` without `u` folds only these here). */
+//@ verify
+//@ ensures 65 <= unit && unit <= 90 ==> \result == unit + 32
+//@ ensures !(65 <= unit && unit <= 90) ==> \result == unit
+export function foldedUnit(unit: number): number {
+  return 65 <= unit && unit <= 90 ? unit + 32 : unit
+}
+
+/** `word` (lower-case ASCII) appears at `at`, letter case aside. */
+//@ verify
+//@ decreases word.length - i
+//@ ensures 0 <= i ==> \result == (0 <= at && at + word.length <= text.length && forall(j, i <= j && j < word.length ==> foldedUnit(text.charCodeAt(at + j)) == word.charCodeAt(j)))
+export function foldedAt(text: string, at: number, word: string, i: number): boolean {
+  if (at < 0 || at + word.length > text.length) return false
+  if (i < 0 || i >= word.length) return true
+  if (foldedUnit(text.charCodeAt(at + i)) !== word.charCodeAt(i)) return false
+  return foldedAt(text, at, word, i + 1)
+}
+
+/** `word` (lower-case ASCII) appears anywhere from `at`, letter case aside (`/word/i.test`). */
+//@ verify
+//@ decreases text.length - at
+//@ ensures 0 <= at ==> \result == exists(k, at <= k && k + word.length <= text.length && foldedAt(text, k, word, 0))
+export function foldedIncludes(text: string, at: number, word: string): boolean {
+  if (at < 0 || at + word.length > text.length) return false
+  if (foldedAt(text, at, word, 0)) return true
+  return foldedIncludes(text, at + 1, word)
+}
+
+/** A `2026-MM-DD` date starts at `at`: `2026-`, two digits, `-`, two digits. */
+//@ verify
+//@ ensures \result == (0 <= at && at + 10 <= text.length && text.slice(at, at + 5) == "2026-" && digitAt(text.charCodeAt(at + 5)) && digitAt(text.charCodeAt(at + 6)) && text.charCodeAt(at + 7) == 45 && digitAt(text.charCodeAt(at + 8)) && digitAt(text.charCodeAt(at + 9)))
+export function dateAt(text: string, at: number): boolean {
+  return 0 <= at && at + 10 <= text.length && text.slice(at, at + 5) === "2026-" && digitAt(text.charCodeAt(at + 5)) &&
+    digitAt(text.charCodeAt(at + 6)) && text.charCodeAt(at + 7) === 45 && digitAt(text.charCodeAt(at + 8)) && digitAt(text.charCodeAt(at + 9))
+}
+
+/** The first `2026-MM-DD` date from `at`, or `""`. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures \result == "" || (\result.length == 10 && \result.slice(0, 5) == "2026-")
+//@ ensures 0 <= at && \result == "" ==> forall(k, at <= k && k < text.length ==> !dateAt(text, k))
+//@ ensures 0 <= at && \result != "" ==> exists(k, at <= k && k + 10 <= text.length && dateAt(text, k) && \result == text.slice(k, k + 10) && forall(j, at <= j && j < k ==> !dateAt(text, j)))
+export function firstDate(text: string, at: number): string {
+  if (at < 0 || at >= text.length) return ""
+  if (dateAt(text, at)) return text.slice(at, at + 10)
+  return firstDate(text, at + 1)
+}
+
+/** `lineEnd` as a loop. */
+//@ verify
+//@ ensures \result == lineEnd(text, at)
+export function findLineEnd(text: string, at: number): number {
+  if (at < 0) return at
+  let i = at
+  while (i < text.length && !terminatorUnit(text.charCodeAt(i))) {
+    //@ invariant at <= i
+    //@ invariant lineEnd(text, at) == lineEnd(text, i)
+    //@ decreases text.length - i
+    i = i + 1
+  }
+  return i
+}
+
+/** `firstHeading(text, 0)` as a loop over line starts. */
+//@ verify
+//@ ensures \result == firstHeading(text, 0)
+export function findHeading(text: string): number {
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i
+    //@ invariant firstHeading(text, 0) == firstHeading(text, i)
+    //@ decreases text.length - i
+    if (headingAt(text, i) && lineStart(text, i)) return i
+    const end = findLineEnd(text, i)
+    if (end < i || end >= text.length) return -1
+    i = end + 1
+  }
+  return -1
+}
+
+/** `keyFrom(text, 0, key)` as a loop. */
+//@ verify
+//@ ensures \result == keyFrom(text, 0, key)
+export function findKey(text: string, key: string): number {
+  let i = 0
+  while (i + key.length <= text.length) {
+    //@ invariant 0 <= i
+    //@ invariant keyFrom(text, 0, key) == keyFrom(text, i, key)
+    //@ decreases text.length - i
+    if (keyAt(text, i, key)) return i
+    i = i + 1
+  }
+  return -1
+}
+
+/** `feedFrom` as a loop. */
+//@ verify
+//@ ensures \result == feedFrom(text, at)
+export function findFeed(text: string, at: number): number {
+  if (at < 0) return at
+  let i = at
+  while (i < text.length && text.charCodeAt(i) !== 10) {
+    //@ invariant at <= i
+    //@ invariant feedFrom(text, at) == feedFrom(text, i)
+    //@ decreases text.length - i
+    i = i + 1
+  }
+  return i
+}
+
+/** `firstDate(text, 0)` as a loop. */
+//@ verify
+//@ ensures \result == firstDate(text, 0)
+export function findDate(text: string): string {
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i
+    //@ invariant firstDate(text, 0) == firstDate(text, i)
+    //@ decreases text.length - i
+    if (dateAt(text, i)) return text.slice(i, i + 10)
+    i = i + 1
+  }
+  return ""
+}
+
+/** `rulingsFrom(text, 0)` as a loop. */
+//@ verify
+//@ ensures \result == rulingsFrom(text, 0)
+export function findRulings(text: string): ReadonlyArray<string> {
+  const found: Array<string> = []
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i
+    //@ invariant found.concat(rulingsFrom(text, i)) == rulingsFrom(text, 0)
+    //@ decreases text.length - i
+    const end = findRulingEnd(text, i)
+    if (end < 0) {
+      i = i + 1
+    } else {
+      found.push(text.slice(i, end))
+      i = end
+    }
+  }
+  return found
+}
+
+/** `digitsEnd` as a loop, including very long ruling numbers. */
+//@ verify
+//@ ensures \result == digitsEnd(text, at)
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+//@ ensures 0 <= at && at < text.length && digitAt(text.charCodeAt(at)) ==> at < \result
+export function findDigitsEnd(text: string, at: number): number {
+  if (at < 0) return at
+  let i = at
+  while (i < text.length && digitAt(text.charCodeAt(i))) {
+    //@ invariant at <= i
+    //@ invariant digitsEnd(text, at) == digitsEnd(text, i)
+    //@ invariant i <= text.length || i == at
+    //@ decreases text.length - i
+    i = i + 1
+  }
+  return i
+}
+
+/** Case-insensitive containment as a loop, including very long status fields. */
+//@ verify
+//@ ensures \result == foldedIncludes(text, 0, word)
+export function findFolded(text: string, word: string): boolean {
+  let i = 0
+  while (i + word.length <= text.length) {
+    //@ invariant 0 <= i
+    //@ invariant foldedIncludes(text, 0, word) == foldedIncludes(text, i, word)
+    //@ decreases text.length - i
+    if (foldedAt(text, i, word, 0)) return true
+    i = i + 1
+  }
+  return false
+}
+
+/** The ruling endpoint with its digit scan executed as a loop. */
+//@ verify
+//@ ensures \result == rulingEnd(text, at)
+//@ ensures \result == -1 || (0 <= at && at + 4 <= \result && \result <= text.length)
+export function findRulingEnd(text: string, at: number): number {
+  if (at < 0 || at + 4 > text.length || text.slice(at, at + 3) !== "VL-" || !digitAt(text.charCodeAt(at + 3))) return -1
+  return findDigitsEnd(text, at + 3)
+}

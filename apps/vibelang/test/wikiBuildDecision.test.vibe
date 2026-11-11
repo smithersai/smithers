@@ -1,0 +1,64 @@
+// Batch 28 (0018): native RegExp captures remain the independent oracle for the wiki build's proved scans.
+import { describe, expect, it } from "@effect/vitest"
+import { pages } from "../src/assets/wiki.generated.vibe"
+import { decisionFile, pageFields, pageId, suiteState } from "../src/core/wikiPage.vibe"
+
+function before(file: string, markdown: string) {
+  const id = file.replace(/\.md$/, "")
+  const decision = /^decisions\/[0-9]{4}-/.test(id)
+  const title = /^# (.+)$/m.exec(markdown)?.[1] ?? id
+  const rulings = decision ? Array.from(new Set((/(?:\*\*)?Rulings?:(?:\*\*)?([^\n]*)/.exec(markdown)?.[1] ?? markdown.slice(0, 350)).match(/VL-[0-9]+/g) ?? [])) : []
+  return {
+    id, title, decision, rulings,
+    label: decision ? id.slice(10).replace(/^(\d{4})-/, "$1 ") : undefined,
+    status: /replaced|superseded/i.test(/(?:\*\*)?Status:(?:\*\*)?([^\n]*)/.exec(markdown)?.[1] ?? "") ? "Replaced" : "Accepted",
+    date: /2026-\d\d-\d\d/.exec(markdown)?.[0] ?? "",
+  }
+}
+
+function suiteBefore(markdown: string) {
+  const status = /\*\*Status:\*\*([^\n]*)/.exec(markdown)?.[1] ?? ""
+  return /in progress/i.test(status) ? "In progress" : status.trim()
+}
+
+describe("the wiki build's proved text decisions", () => {
+  it("keeps heading, fields, first date and ruling order on the current wiki", () => {
+    for (const page of pages) {
+      expect(pageFields(page.id + ".md", page.source)).toEqual(before(page.id + ".md", page.source))
+      expect(suiteState(page.source)).toBe(suiteBefore(page.source))
+    }
+  })
+  it("handles every line ending, optional stars, duplicate rulings and absent fields", () => {
+    const files = ["index.md", "decisions/0018-proofs.md", "decisions/7.md", "decisions/0018", "decisions/0000-x.md", "x.md\n", ""]
+    const texts = ["", "# ", "# A\r\n# B", "x\u2028# A\u2029# B", "**Rulings:** VL-3 VL-2 VL-3\n**Status:** SUPERSEDED\n2026-00-99",
+      "Ruling: VL-8\nRulings: VL-9", "Status:** replaced\rVL-1\n# T", "**Status:** in PROGRESS", "Status: accepted\nStatus: replaced",
+      "Rulings: none\nVL-3", "VL-003 VL-03 VL-003", "2026-1-02 2026-12-34", "# A\r# B", "***Ruling:*** VL-2"]
+    for (const file of files) {
+      expect(pageId(file)).toBe(file.replace(/\.md$/, ""))
+      expect(decisionFile(file)).toBe(/^decisions\/[0-9]/.test(file))
+      for (const text of texts) {
+        expect(pageFields(file, text)).toEqual(before(file, text))
+        expect(suiteState(text)).toBe(suiteBefore(text))
+      }
+    }
+  })
+  it("answers as the replaced expressions on mixed generated Markdown", () => {
+    const units = ["# ", "Title", "\r", "\n", "\u2028", "\u2029", "**", "Ruling:", "Rulings:", "Status:", "VL-", "7", "003",
+      "2026-", "12-", "34", "replaced", "SUPERSEDED", "in PROGRESS", " ", "x", "\ud800", "\u017f", "\u212a"]
+    let state = 28
+    const next = () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0)
+    for (let n = 0; n < 8000; n++) {
+      let text = ""
+      for (let i = next() % 25; i > 0; i--) text += units[next() % units.length]
+      expect(pageFields("decisions/0018-proofs.md", text)).toEqual(before("decisions/0018-proofs.md", text))
+      expect(suiteState(text)).toBe(suiteBefore(text))
+    }
+  })
+  it("scans large pages, status fields and digit runs without exhausting the call stack", () => {
+    for (const text of ["x".repeat(100000) + "\n# Title", "**Status:**" + "x".repeat(100000) + "in progress",
+      "Rulings: VL-" + "7".repeat(100000)]) {
+      expect(pageFields("decisions/0018-proofs.md", text)).toEqual(before("decisions/0018-proofs.md", text))
+      expect(suiteState(text)).toBe(suiteBefore(text))
+    }
+  })
+})

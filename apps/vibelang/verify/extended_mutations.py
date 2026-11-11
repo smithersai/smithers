@@ -5812,3 +5812,45 @@ cases.extend([
 ('src/history/mockMainDecision.vibe', 'mock-main-file', 'mainFile', 'sha + " " + title + "\\n"', 'sha + title + "\\n"', 'the id and title are separated by a space'),
 ('src/history/mockMainDecision.vibe', 'mock-made-message', 'madeMessage', 'title + "\\n"', 'title', 'the message ends its line'),
 ])
+
+# Lane vl-proveall3, batch 28: the wiki build's text decisions and terminating runtime scans.
+cases.extend([
+('src/core/wikiBuildDecision.vibe', 'wiki-build-digit', 'digitAt', 'unit <= 57', 'unit < 57', 'nine is a digit'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-line-unit', 'terminatorUnit', 'unit === 8233', 'unit === 8234', 'the paragraph separator ends a line'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-page-id', 'pageId', 'file.length - 3', 'file.length - 2', 'remove the whole markdown ending'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-file', 'decisionFile', '[0-9]', '[1-9]', 'zero starts a numbered decision'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-id', 'decisionId', '{4}', '{3}', 'a decision id has four digits'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-label', 'decisionLabel', '+ " " +', '+ "-" +', 'a decision label separates its number with a space'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-line-end', 'lineEnd', 'return lineEnd(text, at + 1)', 'return at', 'the whole line is scanned'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-line-start', 'lineStart', 'at === 0 ||', 'at === 1 ||', 'the first line starts at zero'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-heading-space', 'headingAt', '=== 32', '=== 9', 'a heading starts with hash-space'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-heading-next', 'firstHeading', 'return firstHeading(text, end + 1)', 'return -1', 'later lines are searched'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-title', 'headingTitle', 'text.slice(at + 2, end)', 'text.slice(at + 1, end)', 'the title starts after hash-space'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-key-at', 'keyAt', '=== key', '!== key', 'the field key matches'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-key-next', 'keyFrom', 'return keyFrom(text, at + 1, key)', 'return -1', 'search on for the field'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-value-start', 'valueStart', '? after + 2 : after', '? after + 1 : after', 'skip both closing stars'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-feed', 'feedFrom', '=== 10', '=== 13', 'the field ends on a line feed'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-field-value', 'fieldValue', 'at + key.length)', 'at + key.length + 1)', 'the value follows its key'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-key-value', 'keyValue', 'at + key.length', 'at + key.length + 1', 'an exact key ends at its length'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-earlier', 'earlier', 'a <= b', 'a >= b', 'the first field wins'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-field-text', 'fieldText', 'text.slice(start, end)', 'text.slice(start + 1, end)', 'keep the first value character'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-ruling-end', 'rulingEnd', 'return -1', 'return 0', 'an absent ruling has no endpoint'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-digits-next', 'digitsEnd', 'return digitsEnd(text, at + 1)', 'return at', 'read every digit'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-fold-unit', 'foldedUnit', 'unit + 32', 'unit + 31', 'ASCII capitals fold to lower case'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-fold-at', 'foldedAt', 'return foldedAt(text, at, word, i + 1)', 'return true', 'the whole word must match'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-fold-next', 'foldedIncludes', 'return foldedIncludes(text, at + 1, word)', 'return false', 'a later status word is found'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-date-at', 'dateAt', '=== "2026-"', '=== "2025-"', 'the build reads 2026 dates'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-first-date', 'firstDate', 'text.slice(at, at + 10)', '"2026-00-00"', 'return the first actual date'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-line', 'findLineEnd', 'return i', 'return at', 'the runtime loop scans the line'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-heading', 'findHeading', 'i = end + 1', 'i = text.length', 'the next line can be the heading'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-key', 'findKey', 'i + key.length <= text.length', 'i + key.length < text.length', 'a key can end at the text end'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-feed', 'findFeed', '!== 10', '!== 13', 'the runtime loop stops at line feed'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-date', 'findDate', 'return text.slice(i, i + 10)', 'return ""', 'the runtime loop returns its found date'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-rulings', 'findRulings', 'found.push(text.slice(i, end))', 'found.push(text.slice(i + 1, end))', 'the runtime loop retains the full ruling'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-digits', 'findDigitsEnd', 'return i', 'return at', 'the runtime loop counts the digit run'),
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-fold', 'findFolded', 'return true', 'return false', 'the runtime loop accepts a matching word'),
+])
+
+cases.extend([
+('src/core/wikiBuildDecision.vibe', 'wiki-build-find-ruling', 'findRulingEnd', '!== "VL-"', '!== "VL+"', 'the runtime scan recognizes a VL- ruling'),
+])

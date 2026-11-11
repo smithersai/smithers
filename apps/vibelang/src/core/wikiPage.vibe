@@ -1,0 +1,41 @@
+// A wiki page's fields as the build reads them (scripts/wiki.vibe): each field calls the proved decisions of
+// wikiBuildDecision.vibe (0018 third-lane batch 28). The set that keeps each ruling once, and trimming, are native.
+import { decisionFile, decisionId, decisionLabel, earlier, fieldText, fieldValue, findDate, findRulings, findFolded, headingTitle, keyValue, pageId } from "./wikiBuildDecision.vibe"
+
+export { decisionFile, pageId }
+
+/** What the wiki build reads from one page's Markdown. */
+export interface PageFields {
+  readonly id: string
+  readonly title: string
+  readonly decision: boolean
+  readonly rulings: ReadonlyArray<string>
+  readonly label: string | undefined
+  readonly status: "Accepted" | "Replaced"
+  readonly date: string
+}
+
+/** A page's fields: its id, heading, whether it is a decision, the rulings it names, its label, status and date. */
+export function pageFields(file: string, markdown: string): PageFields {
+  const id = pageId(file)
+  const heading = headingTitle(markdown)
+  const decision = decisionId(id)
+  const rulingsAt = earlier(fieldValue(markdown, "Ruling:"), fieldValue(markdown, "Rulings:"))
+  const rulingsText = rulingsAt < 0 ? markdown.slice(0, 350) : fieldText(markdown, rulingsAt)
+  const status = fieldText(markdown, fieldValue(markdown, "Status:"))
+  return {
+    id,
+    title: heading === "" ? id : heading,
+    decision,
+    rulings: decision ? Array.from(new Set(findRulings(rulingsText))) : [],
+    label: decision ? decisionLabel(id) : undefined,
+    status: findFolded(status, "replaced") || findFolded(status, "superseded") ? "Replaced" : "Accepted",
+    date: findDate(markdown),
+  }
+}
+
+/** A verification suite's state from its decision page: `**Status:**` naming work in progress, else that status. */
+export function suiteState(markdown: string): string {
+  const status = fieldText(markdown, keyValue(markdown, "**Status:**"))
+  return findFolded(status, "in progress") ? "In progress" : status.trim()
+}

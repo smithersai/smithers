@@ -169,3 +169,5 @@ brick                                   state         proof
   cache patience, health that waits briefly for startup, and a `Stale` mark with its confirmation time. The lead deploys.
 
 - VL-9 / VL-29: machine policy proof batch covers fourteen kernels and forty mutations; final gates pending, durable host boundaries remain in 0018.
+
+- Proofs, vl-proveall3 batches 25–28: history captures, seed text, mock commit reads and wiki build scans; [boundaries and receipts](decisions/0018-proofs.md#third-lane-batch-28-the-wiki-builds-text-decisions).
