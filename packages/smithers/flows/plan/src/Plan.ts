@@ -339,22 +339,19 @@ const topological = (drafts: ReadonlyArray<NodeDraft>, known: ReadonlySet<string
 }
 
 /**
- * Runs the conflict and reader-after-writer passes and records what they found
- * on every node outside `frozen`, whose rows an append never rewrites. A
- * refused graph fails as a `PlanError` carrying the pass's code and message.
+ * Runs the conflict and reader-after-writer passes over every generation and
+ * records what they found on each node. A refused graph fails as a
+ * `PlanError` carrying the pass's code and message.
  *
  * @private
  */
 const annotate = (
-  nodes: ReadonlyArray<PlanNode>,
-  frozen: ReadonlySet<string>,
-  replayGenerations = false
+  nodes: ReadonlyArray<PlanNode>
 ): Effect.Effect<ReadonlyArray<PlanNode>, PlanError> =>
-  Conflicts.annotate(nodes, frozen.size, replayGenerations).pipe(
+  Conflicts.annotate(nodes).pipe(
     Effect.mapError((refusal) => new PlanError(refusal)),
     Effect.map(({ conflicts, ordering }) =>
       nodes.map((node) => {
-        if (frozen.has(node.id)) return node
         const added = ordering.get(node.id) ?? []
         return freezeNode({
           ...node,
@@ -716,7 +713,7 @@ export const compile = (options: {
     if (captured.nodes.length > maximumPlanNodes) return yield* Effect.fail(graphSizeError(captured.nodes.length))
     const drafts = yield* validateDrafts(captured.nodes)
     const keyed = yield* keyNodes(drafts, [], 0)
-    const nodes = yield* annotate(keyed, new Set())
+    const nodes = yield* annotate(keyed)
     const digest = yield* digestOf(captured.planId, captured.flow, nodes)
     return freezePlan({
       planId: captured.planId,
@@ -744,9 +741,14 @@ export const compile = (options: {
  * @param plan - The plan to grow.
  * @param drafts - At least one new node. Ids must not repeat existing ones;
  *   `Ref` inputs may name existing nodes.
+ * Effect analysis covers every generation, as {@link verify} does when the
+ * plan is read back, so the work budget applies to the whole grown plan.
+ *
  * @returns The plan with one more generation and a new `digest`. Fails with
  * {@link PlanError} (`invalid_node` for an empty `drafts`, `invalid_plan` for a
- * plan that fails verification), `KeyMaterialError`, or `SchemaError`.
+ * plan that fails verification, `graph_too_large` when the grown plan exceeds
+ * the node ceiling or the effect-analysis work budget), `KeyMaterialError`, or
+ * `SchemaError`.
  * @since 0.1.0
  * @category constructors
  */
@@ -773,10 +775,16 @@ export const append = (
     }
     const generation = capturedPlan.generation + 1
     const keyed = yield* keyNodes(validated, capturedPlan.nodes, generation)
-    const nodes = yield* annotate(
-      [...capturedPlan.nodes, ...keyed],
-      new Set(capturedPlan.nodes.map((node) => node.id))
-    )
+    // Re-analyze every generation exactly as `verify` will when the plan is
+    // read back, so the effect-analysis budget covers the whole plan. The
+    // recorded rows are kept as they are; the analysis reproduces them.
+    const recorded = capturedPlan.nodes.map((node) => ({
+      ...node,
+      dependsOn: KeyMaterial.dependencies(node.material),
+      conflicts: []
+    }))
+    const annotated = yield* annotate([...recorded, ...keyed])
+    const nodes = [...capturedPlan.nodes, ...annotated.slice(capturedPlan.nodes.length)]
     const digest = yield* digestOf(capturedPlan.planId, capturedPlan.flow, nodes)
     return freezePlan({ ...capturedPlan, generation, digest, nodes })
   })
@@ -847,7 +855,7 @@ export const verify = (
     )
     // Replay boundaries within one annotation pass, retaining its expansion
     // map, candidate trie, inferred graph and reachability cache throughout.
-    const nodes = yield* annotate(keyed, new Set(), true)
+    const nodes = yield* annotate(keyed)
     const baseDigest = yield* digestOf(decoded.planId, decoded.flow, nodes.filter((node) => node.generation === 0))
     const digest = decoded.generation === 0 ? baseDigest : yield* digestOf(decoded.planId, decoded.flow, nodes)
     if (decoded.baseDigest !== baseDigest || decoded.digest !== digest) {

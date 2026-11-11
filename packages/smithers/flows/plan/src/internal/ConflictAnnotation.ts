@@ -119,21 +119,23 @@ const readOverlap = (
  * pair. Any other opposing inferred ordering still fails with `cycle`.
  *
  * Nodes are visited in plan order, so a `serialize` edge always points from
- * the earlier declaration to the later one and can never close a cycle. The
- * first `frozen` nodes were recorded by an earlier generation: append-only
- * means their rows are never rewritten, so a pair discovered during
- * elaboration is annotated on the NEW node only — which is also the node the
- * ordering edge lands on, and the annotation names the other side either way.
- * `replayGenerations` re-derives a recorded plan one generation at a time
- * under that same rule.
+ * the earlier declaration to the later one and can never close a cycle.
+ * Generations are analyzed one at a time, in order. Append-only means an
+ * earlier generation's rows are never rewritten, so a pair discovered by a
+ * later generation is annotated on the NEW node only — which is also the node
+ * the ordering edge lands on, and the annotation names the other side either
+ * way. `nodes` carry only their material dependencies: inferred edges are
+ * re-derived, so every generation's analysis sees the graph it was built on.
+ *
+ * One work budget covers every generation. `compile`, `append` and `verify`
+ * all analyze the whole plan, so a plan accepted when built is never refused
+ * with `graph_too_large` when it is read back.
  *
  * @since 0.1.0
  * @private
  */
 export const annotate = (
-  nodes: ReadonlyArray<Plan.PlanNode>,
-  frozen: number,
-  replayGenerations: boolean
+  nodes: ReadonlyArray<Plan.PlanNode>
 ): Effect.Effect<Annotations, Refusal> =>
   Effect.gen(function*() {
     const expanded = new Map(nodes.map((node) => [node.id, {
@@ -144,8 +146,7 @@ export const annotate = (
     const conflicts = new Map<string, Array<Plan.ConflictAnnotation>>()
     const ordering = new Map<string, Array<string>>()
     const edges = new Map(nodes.map((node) => [node.id, new Set(node.dependsOn)]))
-    // Keep declaration sequencing separate from inferred ordering, including
-    // for frozen generations whose `dependsOn` already contains inferred edges.
+    // Keep declaration sequencing separate from inferred ordering.
     const declaredEdges = new Map(nodes.map((node) => [node.id, KeyMaterial.dependencies(node.material)]))
     // One index and mutable graph serve every replayed generation. Future
     // producers are filtered at the generation boundary, never re-indexed.
@@ -262,9 +263,9 @@ export const annotate = (
         return undefined
       })
     const ranges: Array<{ start: number; end: number }> = []
-    let start = frozen
+    let start = 0
     for (let end = start + 1; end <= nodes.length; end++) {
-      if (end === nodes.length || (replayGenerations && nodes[end]!.generation !== nodes[start]!.generation)) {
+      if (end === nodes.length || nodes[end]!.generation !== nodes[start]!.generation) {
         ranges.push({ start, end })
         start = end
       }

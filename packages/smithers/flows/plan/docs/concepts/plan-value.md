@@ -157,8 +157,11 @@ One compiled plan holds at most `Plan.maximumPlanNodes` nodes, which is 10,000.
 A plan above the ceiling is refused with `graph_too_large` before effect
 analysis. Analysis also refuses more than 250,000 candidate pairs or 10,000,000
 work units, including overlap comparisons, bitset merges and graph traversal.
-This budget applies across all generations replayed by `verify`. Split plans
-that exceed either budget across flow boundaries.
+This budget covers the whole plan, every generation included. `append`
+analyzes all generations as `verify` does, so an append that would push the
+plan over the budget fails with `graph_too_large` instead of recording a plan
+that can no longer be read back. Split plans that exceed either budget across
+flow boundaries.
 
 Reachability is cached in bitsets and updated when ordering edges are inferred.
 Analysis yields periodically so cancellation and other fibers can run. Imported

@@ -253,7 +253,8 @@ A plan may contain at most 10000 nodes, received 12000
 
 **What to change.** Split the work across flow boundaries. The node ceiling is checked
 before effect analysis. A separate work budget bounds dense conflicts and
-reachability updates, and applies across generations during verification.
+reachability updates across every generation of the plan, so `Plan.append`
+fails here when the new generation would push the whole plan over it.
 
 ### invalid_plan
 

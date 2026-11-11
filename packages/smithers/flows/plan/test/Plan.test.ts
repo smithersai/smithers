@@ -721,6 +721,23 @@ describe("Plan.append", () => {
       expect(yield* withCrypto(Plan.verify(JSON.parse(JSON.stringify(grown))))).toEqual(grown)
     }))
 
+  it.effect("charges an append the effect-analysis budget of every generation verify replays", () =>
+    Effect.gen(function*() {
+      const paths = (count: number) => Array.from({ length: count }, (_, index) => `out/${index}`)
+      // Comparing two writers costs the product of their path counts:
+      // 2,800 * 2,800 = 7,840,000 work units for the first generation.
+      const base = yield* withCrypto(
+        compile([draft("a", { writes: paths(2_800) }), draft("b", { writes: paths(2_800) })])
+      )
+      // 2 * 2,800 * 600 = 3,360,000 more fits 10,000,000 alone; the plan
+      // `verify` replays, at 11,200,000, does not.
+      const failure = yield* withCryptoFailure(Plan.append(base, [draft("over", { writes: paths(600) })]))
+      expect(failure).toMatchObject({ code: "graph_too_large", message: expect.stringContaining("work budget") })
+      // 2 * 2,800 * 200 = 1,120,000 keeps the whole plan under the budget, so it reads back.
+      const grown = yield* withCrypto(Plan.append(base, [draft("under", { writes: paths(200) })]))
+      expect(yield* withCrypto(Plan.verify(JSON.parse(JSON.stringify(grown))))).toEqual(grown)
+    }))
+
   it.effect("counts a frozen generation's inferred edges toward reachability", () =>
     Effect.gen(function*() {
       const base = yield* withCrypto(compile([

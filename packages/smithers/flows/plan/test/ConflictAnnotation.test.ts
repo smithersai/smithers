@@ -51,9 +51,7 @@ describe("ConflictAnnotation.annotate", () => {
           node("a", { writes: ["shared", "a.out"] }),
           node("b", { writes: ["shared"] }),
           node("reader", { reads: ["a.out"] })
-        ],
-        0,
-        false
+        ]
       )
       expect([...found.conflicts]).toEqual([
         ["a", [serialized("b", ["shared"])]],
@@ -71,9 +69,7 @@ describe("ConflictAnnotation.annotate", () => {
           node("a", { writes: ["src/A.ts"] }),
           node("b", { writes: ["SRC/a.ts"] }),
           node("reader", { reads: ["Src/a.TS"] })
-        ],
-        0,
-        false
+        ]
       )
       expect([...found.conflicts]).toEqual([
         ["a", [serialized("b", ["src/A.ts"])]],
@@ -90,9 +86,7 @@ describe("ConflictAnnotation.annotate", () => {
           node("b", { writes: ["out/a.js"] }),
           node("gen", { writes: ["src/gen.ts"] }),
           node("reader", { reads: ["src/*.ts"] })
-        ],
-        0,
-        false
+        ]
       )
       // Execution captures and admits `out/*.js` as that one file name
       // (#2440), so it neither conflicts with `out/a.js` nor feeds the reader.
@@ -108,9 +102,7 @@ describe("ConflictAnnotation.annotate", () => {
           node("b", { writes: ["out/a.js"] }),
           node("gen", { writes: ["src/gen.ts"] }),
           node("reader", effects([], [{ _tag: "Glob", include: ["src/*.ts"] }]))
-        ],
-        0,
-        false
+        ]
       )
       expect([...globbed.conflicts].map(([id, notes]) => [id, notes.map((note) => note.with)])).toEqual([
         ["a", ["b"]],
@@ -120,16 +112,14 @@ describe("ConflictAnnotation.annotate", () => {
       expect([...globbed.ordering]).toEqual([["b", ["a"]], ["reader", ["a", "gen"]]])
     }))
 
-  it.effect("never annotates the frozen prefix, and lands every edge on a new node", () =>
+  it.effect("never annotates an earlier generation, and lands every edge on a new node", () =>
     Effect.gen(function*() {
       const found = yield* Conflicts.annotate(
         [
           node("a", { writes: ["shared", "a.out"] }),
           node("b", { writes: ["shared"] }, 1),
           node("reader", { reads: ["a.out"] }, 1)
-        ],
-        1,
-        false
+        ]
       )
       expect([...found.conflicts]).toEqual([["b", [serialized("a", ["shared"])]]])
       expect([...found.ordering]).toEqual([["b", ["a"]], ["reader", ["a"]]])
@@ -138,9 +128,9 @@ describe("ConflictAnnotation.annotate", () => {
   it.effect("replays each generation as its own append", () =>
     Effect.gen(function*() {
       const nodes = [node("a", { writes: ["shared"] }), node("b", { writes: ["shared"] }, 1)]
-      const replayed = yield* Conflicts.annotate(nodes, 0, true)
+      const replayed = yield* Conflicts.annotate(nodes)
       expect([...replayed.conflicts]).toEqual([["b", [serialized("a", ["shared"])]]])
-      const single = yield* Conflicts.annotate(nodes, 0, false)
+      const single = yield* Conflicts.annotate(nodes.map((recorded) => ({ ...recorded, generation: 0 })))
       expect([...single.conflicts.keys()]).toEqual(["a", "b"])
     }))
 
@@ -156,9 +146,7 @@ describe("ConflictAnnotation.annotate", () => {
             effects: { reads: [], writes: [{ _tag: "Glob", include: ["docs/**", "notes"] }], boundaryMode: "hard" }
           }),
           node("page", { writes: ["docs/index.md"] })
-        ],
-        0,
-        false
+        ]
       )
       expect(found.conflicts.get("file")).toEqual([serialized("tree", ["dist"])])
       expect(found.conflicts.get("page")).toEqual([serialized("glob", ["docs/**,notes"])])
@@ -170,18 +158,14 @@ describe("ConflictAnnotation.annotate", () => {
         [
           node("a", { writes: ["shared"] }),
           node("b", { writes: ["shared"], conflictStrategy: "fail" })
-        ],
-        0,
-        false
+        ]
       ))
       expect(forbidden).toEqual({ code: "overlap_forbidden", message: "Nodes a and b both write shared" })
       const cycle = yield* Effect.flip(Conflicts.annotate(
         [
           node("a", { reads: ["b.out"], writes: ["a.out"] }),
           node("b", { reads: ["a.out"], writes: ["b.out"] })
-        ],
-        0,
-        false
+        ]
       ))
       expect(cycle).toEqual({
         code: "cycle",
