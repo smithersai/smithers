@@ -123,6 +123,15 @@ describe("ProcessConfinement policy projection", () => {
       expect(whole.reads).toEqual(["."])
       expect(whole.writes).toEqual(["out"])
     }))
+  scoped("refusals disjoint from a tree leave it open", () =>
+    Effect.gen(function*() {
+      const grants = [rule("fs:read", "/ws/**"), rule("fs:write", "/ws"), rule("fs:write", "/ws/**")]
+      const disjoint = [rule("fs:write", "/etc/**", "deny"), rule("fs:read", "/etc/**", "ask")]
+      for (const rules of [[...grants, ...disjoint], [[...grants, ...disjoint], [rule("fs:write", "/ws/**")]]]) {
+        expect(yield* resolve({ rules })).toMatchObject({ reads: ["."], writes: ["."] })
+      }
+      expect((yield* resolve({ rules: [...grants, rule("fs:write", "/ws/*.lock", "deny")] })).writes).toEqual([])
+    }))
   scoped("configured denies veto later envelopes and remembered rules", () =>
     Effect.gen(function*() {
       const profile = yield* resolve({

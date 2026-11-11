@@ -268,6 +268,39 @@ describe("JournalGrantStore replay rejection", () => {
       })
     ))
 
+  const elsewhere = (resource: string) =>
+    new GrantEvent.RememberedGrant({
+      eventType: "flows.kernel.grant.remembered.v1",
+      requestId: "request",
+      runId: options.runId,
+      planDigest: options.planDigest,
+      capability: new Capability.Capability({ action: "fs:write", resource: "/projects/a/out.txt" }),
+      pattern: new Capability.CapabilityPattern({ action: "fs:write", resource }),
+      scope: "remembered",
+      tier: "compensable"
+    })
+
+  itEffect("skips a remembered grant recorded under another workspace root", () =>
+    run(
+      Effect.gen(function*() {
+        const grant = elsewhere("/projects/a/out.txt")
+        yield* emit(options.policyRunId, grant)
+        const original = yield* JournalGrantStore.make(options).pipe(Effect.provide(Workspace.layer("/projects/a")))
+        yield* original.check(grant.capability)
+        const moved = yield* JournalGrantStore.make(options)
+        expect(yield* Effect.flip(moved.check(grant.capability))).toBeInstanceOf(PermissionRequired)
+      })
+    ))
+
+  itEffect("rejects a remembered grant from another workspace root whose pattern misses its request", () =>
+    run(
+      Effect.gen(function*() {
+        yield* emit(options.policyRunId, elsewhere("/projects/b/**"))
+        const failure = yield* Effect.flip(JournalGrantStore.make(options))
+        expect(failure.message).toContain("unsafe remembered grant event in run policy at sequence 0")
+      })
+    ))
+
   itEffect("rejects a remembered envelope whose stored pattern now widens the effect tier", () =>
     run(
       Effect.gen(function*() {

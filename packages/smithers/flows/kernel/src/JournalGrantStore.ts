@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import { decode, type GrantEvent, GrantEventSchema } from "./GrantEvent.ts"
 import * as GrantStore from "./GrantStore.ts"
+import { fitsRequest } from "./internal/fitsRequest.ts"
 import { Workspace } from "./Workspace.ts"
 
 /**
@@ -196,6 +197,18 @@ const replayRememberedRules = (
           continue
         }
         if (event.eventType === "flows.kernel.grant.remembered.v1") {
+          // The tier was classified against the workspace root of the process
+          // that granted it. Under another root that classification no longer
+          // holds, so the grant authorizes nothing here and is skipped; only a
+          // pattern that exceeds its own request refuses construction.
+          if (Capability.tierOf(event.capability, { workspaceRoot }) !== event.tier) {
+            if (!fitsRequest(event.pattern, event.capability)) {
+              return yield* Effect.fail(
+                invalidReplay(`unsafe remembered grant event in run ${policyRunId} at sequence ${entry.seq}`)
+              )
+            }
+            continue
+          }
           if (!GrantStore.isValidGrantPattern(event.pattern, event.capability, event.tier, workspaceRoot)) {
             return yield* Effect.fail(
               invalidReplay(`unsafe remembered grant event in run ${policyRunId} at sequence ${entry.seq}`)

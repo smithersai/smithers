@@ -14,7 +14,6 @@ import {
   CapabilityPattern,
   type EffectTier,
   format,
-  matches,
   maxResourceLength,
   parsePattern,
   patternFromCapability,
@@ -34,6 +33,7 @@ import { digestSync } from "@smthrs/crypto/Sha256"
 import { Cause, Context, Deferred, Effect, Layer, Option, Schema, type Scope, Semaphore } from "effect"
 import { allows, type CapabilitySet, current, fromPatterns, intersect } from "./CapabilitySet.ts"
 import { DeniedGrant, EnvelopeGrant, type GrantEvent, OnceGrant, RememberedGrant, RunGrant } from "./GrantEvent.ts"
+import { fitsRequest, hasResourceWildcard } from "./internal/fitsRequest.ts"
 import { Workspace } from "./Workspace.ts"
 
 /**
@@ -417,8 +417,6 @@ const exactPattern = (capability: Capability): CapabilityPattern =>
     resource: capability.resource
   })
 
-const hasResourceWildcard = (resource: string): boolean => resource.includes("*") || resource.includes("?")
-
 const isResolution = (value: string): value is Resolution =>
   value === "once" || value === "run" || value === "remembered" || value === "deny"
 
@@ -516,10 +514,7 @@ export const isValidGrantPattern = (
   tier: EffectTier,
   workspaceRoot: string
 ): boolean => {
-  if (pattern.action !== capability.action || !matches(pattern, capability)) {
-    return false
-  }
-  if (hasResourceWildcard(pattern.resource) && pattern.resource === capability.resource) {
+  if (!fitsRequest(pattern, capability)) {
     return false
   }
   if (tierOf(capability, { workspaceRoot }) !== tier) {

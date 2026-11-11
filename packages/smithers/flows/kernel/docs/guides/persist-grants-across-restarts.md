@@ -20,7 +20,8 @@ const store = JournalGrantStore.layer({
   // The operational run. Run grants and run envelopes live here.
   runId: "run-2026-09-03-a",
   // The dedicated policy run. Remembered grants live here, and this id stays
-  // stable forever, because the journal has no global grant projection.
+  // stable forever for this workspace, because the journal has no global
+  // grant projection.
   policyRunId: "kernel-policy",
   // The producer id. Replay activates events from this source and no other.
   sourceId: "my-host/grants",
@@ -74,6 +75,12 @@ prove:
   `isValidGrantPattern`, and every envelope pattern with
   `isValidEnvelopePattern`. A pattern that would exceed its request refuses
   construction, so a tampered journal cannot widen authority.
+- **Only the current workspace.** A remembered grant records the effect tier
+  its write had under the workspace root that granted it. If the store's
+  `Workspace` root classifies that write differently, because the grant was
+  made for another root or the workspace moved, replay skips the grant: it
+  activates nothing and construction continues. A policy run belongs to one
+  workspace, so give each workspace root its own `policyRunId`.
 
 Once and denied events are **audit evidence only**. They record what happened;
 they activate nothing.

@@ -87,7 +87,7 @@ const securityReview = Smithers.SecurityReview({
         "Payload schema allowing excess properties, oversized patterns, or rule counts past maximumRules on replay.",
         "A replayed run grant activated without its captured ceiling."
       ],
-      paths: ["src/JournalGrantStore.ts", "src/GrantEvent.ts"]
+      paths: ["src/JournalGrantStore.ts", "src/GrantEvent.ts", "src/internal/fitsRequest.ts"]
     },
     {
       id: "process-ledger-reaping",

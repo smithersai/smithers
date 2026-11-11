@@ -8,6 +8,7 @@ import {
   CapabilityPattern,
   matches,
   maxResourceLength,
+  mayOverlap,
   subsumes,
   withinMatchBudget
 } from "@smthrs/capability/Capability"
@@ -74,6 +75,7 @@ const actionRelevant = (pattern: CapabilityPattern, action: Action): boolean =>
 // A covering rule resolves the complete region. A narrower/conditional refusal
 // makes it unknown until a later covering rule resolves it. Unknown configured
 // denial vetoes all later grant groups, just as evaluate's configured veto does.
+// A refusal provably disjoint from the region cannot select anything in it.
 const prove = (policy: Policy, target: CapabilityPattern): boolean => {
   if (!coversCeiling(policy.ceiling, target)) return false
   let decision: "allow" | "deny" | "ask" | "unknown" = "ask"
@@ -83,6 +85,7 @@ const prove = (policy: Policy, target: CapabilityPattern): boolean => {
       if (!decidable(rule.pattern, target.action as Action)) return false
       if (!actionRelevant(rule.pattern, target.action as Action)) continue
       if (target.action === "net:private" && rule.effect === "allow" && rule.pattern.action !== "net:private") continue
+      if (rule.effect !== "allow" && !mayOverlap(rule.pattern, target)) continue
       if (coversCeiling(ceiling, target) && subsumes(universal(rule.pattern), target)) decision = rule.effect
       else if (rule.effect !== "allow") decision = "unknown"
       if (index === 0) configured = decision
