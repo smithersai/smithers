@@ -315,7 +315,12 @@ rewind never needs a call the caller has to remember.
 
 An audit whose parent or planned child a live process still holds is declined.
 It keeps its `in_progress` status and remains in `pendingAudits` for a later
-build to retry unresolved work.
+build to retry unresolved work. A store failure (`unknown`) or a lost heartbeat
+(`fence_lost`) declines the audit the same way. Only a permanent condition
+closes it as failed: undecodable detail, a missing run row, a defect, a failed
+handler rollback, or a rollback that ran but could not be recorded. When a pass
+after the archive commit gives the run back, it restores the state at the
+frame.
 
 `Options.isAlive` is an [`Ownership.LivenessCheck`](/api/run-store) and decides
 what "still live" means. It defaults to `Ownership.leaseLiveness()`, the same
