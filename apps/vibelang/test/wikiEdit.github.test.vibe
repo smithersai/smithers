@@ -17,20 +17,26 @@ describe("wiki edits on real GitHub through smithers.sh's delegation", () => {
       expect(try journey(w)).toEqual(journeyResult)
       const writes = w.writes()
 
-      // A read observes the page's source and its blob revision on GitHub, and stores both.
-      const read = try succeeded(try w.perform({}))
+      // A read observes the page's source and its blob revision on GitHub, and stores both. One host serves the reads
+      // below; each later read replaces its observation of the page and advances the revision.
+      const perform = try w.reader
+      const read = try succeeded(try perform({}))
       expect(read.pages).toEqual([{ id: PAGE, source: SOURCE, revision: expect.stringMatching(/^[0-9a-f]{40}$/) }])
       expect(read.draft).toBeUndefined()
       expect(try promise(() => w.storage.get(`wiki/page/${PAGE}`))).toEqual(read.pages[0])
       expect(try promise(() => w.storage.get("wiki/revision"))).toBe(read.seq)
       // The reader's kept text comes back; a visitor has none, and a stored value that is not a draft is ignored.
       try promise(() => w.storage.put(w.draftKey, { page: PAGE, text: "Kept." }))
-      expect((try succeeded(try w.perform({}))).draft).toEqual({ page: PAGE, text: "Kept." })
+      expect((try succeeded(try perform({}))).draft).toEqual({ page: PAGE, text: "Kept." })
       try Ref.set(w.caller, undefined)
-      expect((try succeeded(try w.perform({}))).draft).toBeUndefined()
+      expect((try succeeded(try perform({}))).draft).toBeUndefined()
       try Ref.set(w.caller, { role: "maintainer" })
       try promise(() => w.storage.put(w.draftKey, { text: 1 }))
-      expect((try succeeded(try w.perform({}))).draft).toBeUndefined()
+      const reread = try succeeded(try perform({}))
+      expect(reread.draft).toBeUndefined()
+      expect(reread.pages).toEqual(read.pages)
+      expect(reread.seq).toBe(read.seq + 3)
+      expect(try promise(() => w.storage.get("wiki/revision"))).toBe(reread.seq)
       expect((try succeeded(try w.perform({}, false))).pages).toHaveLength(1)
 
       // A change refuses a moved base and an empty or unchanged text before any write.

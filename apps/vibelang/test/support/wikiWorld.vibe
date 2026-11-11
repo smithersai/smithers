@@ -77,6 +77,11 @@ export effect function wikiWorld(recording: string, mode?: HttpRecording.Mode) {
   }
   /** The host alone, off the engine, with object storage for drafts or (`stored: false`) without. */
   const perform = (request: Partial<WikiRequest>, stored = true) => Effect.exit(provided(Effect.flatMap(githubWikiHost(repo, stored ? storage : undefined), (host) => (host.perform as (request: WikiRequest) => State!unknown)({ ...blank, ...request }))))
+  /** One host kept across requests, as `perform` but without a fresh host for each. */
+  const reader = effect {
+    const host = try provided(githubWikiHost(repo, storage))
+    return (request: Partial<WikiRequest>) => Effect.exit(provided((host.perform as (request: WikiRequest) => State!unknown)({ ...blank, ...request })))
+  }
   /** Where the host keeps the person's reviewed text for the page. */
   const draftKey = `wiki/draft/${id}/${PAGE}`
   const kept = () => promise(() => storage.get(draftKey))
@@ -113,7 +118,7 @@ export effect function wikiWorld(recording: string, mode?: HttpRecording.Mode) {
   ], { discard: true }))
   try Effect.addFinalizer(() => Effect.logInfo("wiki recording world closed").pipe(Effect.annotateLogs({ recording, reviews: reviews.length })))
   return {
-    label: real.label, act, perform, kept, draftKey, caller, storage, seed, review, cleanup, client,
+    label: real.label, act, perform, reader, kept, draftKey, caller, storage, seed, review, cleanup, client,
     /** Writes GitHub accepted from smithers.sh for the person: the test's own seed and cleanup are not counted. */
     writes: () => counter.writes,
     check: (live: boolean) => { authority = live ? checked : unchecked },
