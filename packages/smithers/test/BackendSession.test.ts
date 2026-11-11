@@ -106,6 +106,18 @@ describe("native login stores", () => {
     expect(await readFile(session.configPath, "utf8")).not.toContain("legacy-secret")
     expect(await session.resolve()).toBeUndefined()
   })
+  it.each(["https://api.example.test/", "https://api.example.test/api/"])(
+    "removes a legacy config token bound to the noncanonical origin %s on logout",
+    async (origin) => {
+      const { session } = await fixture({ SMITHERS_DISABLE_SYSTEM_KEYRING: "1" })
+      await mkdir(join(session.configPath, ".."), { recursive: true })
+      await writeFile(session.configPath, `api_origin: ${origin}\ntoken: legacy-secret\n`)
+      expect((await session.require()).token).toBe("legacy-secret")
+      await session.clear()
+      expect(await readFile(session.configPath, "utf8")).not.toContain("legacy-secret")
+      expect(await session.resolve()).toBeUndefined()
+    }
+  )
   it.each(["", "a b", "a\nb", " padded", "x' -w y' ; delete-keychain", "x\"y", "x\\y", "x$(id)"])(
     "rejects invalid stored tokens %j before any keychain command",
     async (token) => {

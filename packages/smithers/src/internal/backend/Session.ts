@@ -601,7 +601,7 @@ export class Session {
       if (record || bound) await this.keyring("delete", target.api_url)
       if (this.legacyRecord(target.api_url, record)) await this.nativeKeyring("delete", target.host)
       if (record) rmSync(this.authPath, { force: true })
-      if (config.token && text(config.api_origin) === target.api_url) this.saveConfig({})
+      if (config.token && bound) this.saveConfig({})
       return {
         status: "logged_out",
         host: target.host,
