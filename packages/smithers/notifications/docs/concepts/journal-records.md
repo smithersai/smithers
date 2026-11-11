@@ -56,14 +56,15 @@ evicted and the reuse marks are cleared, so no fold holds a slot on one ancient
 read forever.
 
 A fold retains the run's pending state, the sequence it stopped at, and the
-identities it has seen: a notification id with the fingerprint and sequence of
-its admission, and a drain identity with the sequence of its record. It retains
+identities it has seen: a notification id with the fingerprint, the identity
+fingerprint, and the sequence of its admission, and a drain identity with the sequence of its record. It retains
 no admitted payload and no drain record, so a run's memory does not grow with
 the notifications it has already drained, and a queue of any capacity costs the
 same per event however long the run has been running. The two paths that must
 report an already committed notification, a replayed drain and the content
-comparison for a legacy admission with no fingerprint, read the record back at
-its sequence.
+or envelope comparison for a legacy admission with no fingerprint, read the
+record back at its sequence. A new admission reads its own row back once,
+inside its transaction, to confirm the journal kept its addressing fields.
 
 Eviction is always safe, and so is an interleaved fold: a fold reads the cached
 value, pages what has been committed since, and writes a fresh, self-consistent

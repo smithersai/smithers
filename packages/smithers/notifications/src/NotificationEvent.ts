@@ -73,6 +73,12 @@ export const Admitted = Schema.Struct({
   decision: AdmissionDecision,
   /** SHA-256 of canonical validated input, absent in legacy admission rows. */
   fingerprint: Schema.optional(Schema.String),
+  /**
+   * SHA-256 of the canonical validated input with its payload cleared, taken
+   * before the journal redacts it. An edit compares it to keep the owner and
+   * delivery binding fixed. Absent in rows written before it existed.
+   */
+  identityFingerprint: Schema.optional(Schema.String),
   version: Schema.optional(Schema.Number)
 })
 

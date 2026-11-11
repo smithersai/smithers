@@ -106,7 +106,8 @@ describe("the durable notification vocabulary", () => {
             payload: { kind: "Message", body: "look at the failing test" }
           },
           decision: "admitted",
-          fingerprint: "85fca33dbf4723a84614e47fad256f7c50a53064f77cc8ced348792d822ccec3"
+          fingerprint: "85fca33dbf4723a84614e47fad256f7c50a53064f77cc8ced348792d822ccec3",
+          identityFingerprint: "34d2e582eaa5a0ce98a7fa1e7b593980fac29be99e556c54669140bdc407fc7c"
         }
       },
       {
@@ -126,7 +127,8 @@ describe("the durable notification vocabulary", () => {
             payload: { kind: "Message", body: "when you get a moment" }
           },
           decision: "admitted",
-          fingerprint: "3c21cc48d8c8fca0b97fd2ece6fd494873d22d8d30ee459f7f906c0b2a2980e9"
+          fingerprint: "3c21cc48d8c8fca0b97fd2ece6fd494873d22d8d30ee459f7f906c0b2a2980e9",
+          identityFingerprint: "7f7a0007b0c97488ab6299e6e57468241b74f5f560547d6f69b6b3cb831183ab"
         }
       },
       {
@@ -147,7 +149,8 @@ describe("the durable notification vocabulary", () => {
             payload: { condition: "waiting-approval" }
           },
           decision: "admitted",
-          fingerprint: "978270e4ca46788eef4fd37b2cda8278a784a4721715906767097b55e59c9e78"
+          fingerprint: "978270e4ca46788eef4fd37b2cda8278a784a4721715906767097b55e59c9e78",
+          identityFingerprint: "49108b7863609129bb58820baf1a7497e0535386e4f7c26abc1b66d5aa550897"
         }
       },
       {

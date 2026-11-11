@@ -1496,7 +1496,6 @@ it("refuses an outside-change edit and retains the pending human input", async (
 it.each(["pending", "consumed"] as const)(
   "refuses an unreadable %s edit without changing the admission",
   async (state) => {
-    let exactReads = 0
     let hideExact = false
     const journal = Layer.effect(
       Journal.Journal,
@@ -1505,10 +1504,9 @@ it.each(["pending", "consumed"] as const)(
           ...underlying,
           entries: (options) =>
             underlying.entries(options).pipe(Effect.map((page) => {
-              if (!hideExact || options.limit !== 1) return page
-              exactReads++
-              // A consumed edit verifies identity first, then reads the consumed payload.
-              return exactReads >= (state === "pending" ? 1 : 2) ? { entries: [], hasMore: false } : page
+              // An edit settles identity on its fingerprint, so the one exact
+              // read is the consumed payload, or the pending edit's read-back.
+              return hideExact && options.limit === 1 ? { entries: [], hasMore: false } : page
             }))
         }))
     ).pipe(Layer.provide(TestJournal.layer()))

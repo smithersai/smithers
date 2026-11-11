@@ -76,6 +76,21 @@ match any member of the union closely enough to name one field, and
 `notificationId` is absent when the value carries no readable string `id`, which
 is the honest answer rather than an invented one.
 
+## notification_invalid: the journal redacts this field
+
+**Symptom.** `NotificationError` with `code: "notification_invalid"`, a `path`
+of `id`, `targetLineageId`, or `coalescingKey`, and a message saying the
+journal redacts the field.
+
+**Cause.** The value looks like a credential to the journal's redactor, such as
+`password=...`, `token=...`, or `Bearer ...`. The journal stores the rewritten
+text, and the queue keys ownership, drains, and coalescing on that stored
+text, so no caller could ever address the row. The admission is rolled back
+and nothing is journaled.
+
+**Fix.** Choose an id, lineage, or coalescing key that carries no secret.
+Credentials belong in the payload, where redaction is expected.
+
 ## notification_invalid: nests deeper than the 256 level bound
 
 **Symptom.** The message names a depth bound.

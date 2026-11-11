@@ -338,6 +338,19 @@ const canonical = (value: unknown): string => canonicalize(value, { loneSurrogat
 const fingerprint = (notification: NotificationModel.Notification): Effect.Effect<string> =>
   Effect.sync(() => digestSync(canonical(notification)))
 
+/** What an edit must keep: everything but the payload. */
+const identity = (notification: NotificationModel.Notification) => ({ ...notification, payload: null })
+
+/**
+ * The envelope fields the queue keys on after admission: ownership, the
+ * lineage a drain delivers to, and the coalescing match. The journal redacts
+ * the whole record, so a value it rewrites would be stored under a key no
+ * caller ever names.
+ */
+const addressFields = ["id", "targetLineageId", "coalescingKey"] as const
+
+const decodeAdmittedPayload = Schema.decodeUnknownOption(NotificationEvent.Admitted)
+
 /** Freeze the decoded JSON graph before any queue output can expose it. */
 const freeze = (value: unknown): void => {
   if (typeof value !== "object" || value === null) return
@@ -357,6 +370,7 @@ const freeze = (value: unknown): void => {
 interface Committed {
   readonly version: number | undefined
   readonly fingerprint: string | undefined
+  readonly identityFingerprint: string | undefined
   readonly decision: NotificationState.AdmissionDecision
   readonly seq: number
 }
@@ -517,6 +531,7 @@ export const layerWith = (
               admissions = HashMap.set(admissions, event.notification.id, {
                 version: event.version,
                 fingerprint: event.fingerprint,
+                identityFingerprint: event.identityFingerprint,
                 decision: event.decision,
                 seq: entry.seq
               })
@@ -556,6 +571,7 @@ export const layerWith = (
         runId: JournalEvent.RunId,
         admitted: NotificationModel.Notification,
         admittedFingerprint: string,
+        admittedIdentity: string,
         version?: number
       ): Effect.Effect<AdmissionReceipt, Journal.JournalError | NotificationError> =>
         Effect.gen(function*() {
@@ -563,16 +579,22 @@ export const layerWith = (
           const prior = Option.getOrUndefined(HashMap.get(loaded.admissions, admitted.id))
           const replacing = prior !== undefined && version !== undefined && version > (prior.version ?? 0)
           if (replacing) {
-            const original = yield* admittedAt(runId, prior.seq)
-            if (Option.isNone(original)) {
-              return yield* new NotificationError({
-                code: "notification_unavailable",
-                notificationId: admitted.id,
-                message: "Original steering input is unreadable"
-              })
+            // The journal redacts the envelope as well as the payload, so the
+            // stored copy cannot be compared with the caller's raw value. Rows
+            // that predate the identity fingerprint have only that copy.
+            let same = prior.identityFingerprint === admittedIdentity
+            if (prior.identityFingerprint === undefined) {
+              const original = yield* admittedAt(runId, prior.seq)
+              if (Option.isNone(original)) {
+                return yield* new NotificationError({
+                  code: "notification_unavailable",
+                  notificationId: admitted.id,
+                  message: "Original steering input is unreadable"
+                })
+              }
+              same = canonical(identity(original.value.notification)) === canonical(identity(admitted))
             }
-            const identity = (input: NotificationModel.Notification) => ({ ...input, payload: null })
-            if (canonical(identity(original.value.notification)) !== canonical(identity(admitted))) {
+            if (!same) {
               return yield* new NotificationError({
                 code: "notification_id_reused",
                 notificationId: admitted.id,
@@ -666,10 +688,43 @@ export const layerWith = (
                 notification: admitted,
                 decision: admission.decision,
                 fingerprint: admittedFingerprint,
+                identityFingerprint: admittedIdentity,
                 ...(version === undefined ? {} : { version })
               }
             })
           )
+          if (receipt._tag === "Accepted") {
+            // Checked on the committed row, inside the transaction, because
+            // the journal's redactor is configurable and only the row says
+            // what it did. Failing here rolls the admission back rather than
+            // acknowledging a notification no drain can address. Neither error
+            // names the notification: a field the redactor rewrote may be a
+            // credential, and the id is one of those fields.
+            const entry = yield* entryAt(runId, receipt.seq)
+            if (Option.isNone(entry)) {
+              return yield* new NotificationError({
+                code: "notification_unavailable",
+                message: "The admission just written is unreadable"
+              })
+            }
+            const stored = decodeAdmittedPayload(entry.value.payload)
+            if (Option.isNone(stored)) {
+              return yield* new NotificationError({
+                code: "notification_invalid",
+                message: "The journal stored this notification in a form the queue cannot read"
+              })
+            }
+            const storedFields: Partial<Record<string, unknown>> = stored.value.notification
+            const admittedFields: Partial<Record<string, unknown>> = admitted
+            const rewritten = addressFields.find((field) => storedFields[field] !== admittedFields[field])
+            if (rewritten !== undefined) {
+              return yield* new NotificationError({
+                code: "notification_invalid",
+                message: "The journal redacts this field, so the notification could not be addressed once stored",
+                path: rewritten
+              })
+            }
+          }
           const committed = Option.getOrUndefined(HashMap.get((yield* load(runId)).admissions, admitted.id))
           if (committed === undefined) {
             // Only reachable when the emit deduped against an entry this
@@ -714,9 +769,16 @@ export const layerWith = (
               })
             }
             const admittedFingerprint = yield* fingerprint(admitted)
+            const admittedIdentity = yield* fingerprint(identity(admitted))
             return yield* journal.transact(
               operations.withPermits(1)(
-                admitInTransaction(JournalEvent.RunId.make(rawRunId), admitted, admittedFingerprint, version)
+                admitInTransaction(
+                  JournalEvent.RunId.make(rawRunId),
+                  admitted,
+                  admittedFingerprint,
+                  admittedIdentity,
+                  version
+                )
               )
             )
           })

@@ -70,6 +70,16 @@ fails with `notification_id_reused`, including changes to redacted fields.
 Legacy admissions without a fingerprint compare against their persisted content;
 original values removed by redaction cannot be recovered.
 
+Redaction applies to the whole record, not only the payload. A versioned edit
+therefore compares a second fingerprint, of the notification with its payload
+cleared, so an attribution value the journal hides still pins the owner and
+delivery binding. Rows without that fingerprint compare their persisted
+envelope. After writing an admission, the queue reads the row back inside the
+same transaction. If the journal rewrote `id`, `targetLineageId`, or
+`coalescingKey`, no drain or coalescing match could address the row, so
+admission fails with `notification_invalid`, `path` names that field, and the
+write rolls back.
+
 The journal-backed layers deeply freeze decoded notifications, including nested
 payload objects and arrays, before `pending` or `drain` exposes them. Outputs
 carry the persisted, possibly redacted content. Consumer mutation cannot change
@@ -171,13 +181,13 @@ class NotificationError extends Schema.TaggedError<NotificationError>()(
 | `notificationId` | The notification the failure is about, when one was readable.                      |
 | `path`           | Dotted path of the offending field, for `notification_invalid`.                    |
 
-| Code                       | Means                                                                                                                                     |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `notification_unavailable` | The seam serves nothing, or the journal identity for a drain holds an event this queue did not write.                                     |
-| `notification_closed`      | New public refusal code: this receiver has finished. Start a new request; retrying this message at the closed receiver cannot deliver it. |
-| `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                     |
-| `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                           |
-| `notification_invalid`     | The value is not a notification, or a drain's `cutoffSeq` is not a non-negative integer. `path` names the field that failed.              |
+| Code                       | Means                                                                                                                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notification_unavailable` | The seam serves nothing, or the journal identity for a drain holds an event this queue did not write.                                                                               |
+| `notification_closed`      | New public refusal code: this receiver has finished. Start a new request; retrying this message at the closed receiver cannot deliver it.                                           |
+| `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                                                               |
+| `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                                                                     |
+| `notification_invalid`     | The value is not a notification, the journal redacts a field the queue addresses it by, or a drain's `cutoffSeq` is not a non-negative integer. `path` names the field that failed. |
 
 Storage failures surface as `Journal.JournalError` instead, so the two stay
 distinguishable.
@@ -303,17 +313,17 @@ The pure bounded queue: the same rules with no I/O and no journal. Import from
 The journal event types this package owns. Import from
 `@smthrs/notifications/NotificationEvent`.
 
-| Export              | Value or shape                                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `AdmittedEventType` | `"flows/notifications/Admitted"`. Frozen: the value is already durable in every journal this package has written to.    |
-| `PromotedEventType` | `"flows/notifications/Promoted"`. Frozen for the same reason.                                                           |
-| `AdmissionDecision` | `"admitted" \| "coalesced" \| "rejected-full"`. The one declaration of the admission vocabulary.                        |
-| `Admitted`          | `{ notification: Notification; decision: AdmissionDecision; fingerprint?: string }`.                                    |
-| `Promoted`          | `{ boundary: string; targetLineageId: string; ids: ReadonlyArray<string> }`.                                            |
-| `Event`             | `Admitted \| Promoted`.                                                                                                 |
-| `admissionSourceId` | `(notificationId: string) => JournalEvent.SourceId`. The source every admission of one notification is written under.   |
-| `drainKey`          | `(targetLineageId: string, boundary: string) => string`. One drain's identity, each component percent-encoded.          |
-| `drainSourceId`     | `(targetLineageId: string, boundary: string) => JournalEvent.SourceId`. The source one drain's record is written under. |
+| Export              | Value or shape                                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `AdmittedEventType` | `"flows/notifications/Admitted"`. Frozen: the value is already durable in every journal this package has written to.                 |
+| `PromotedEventType` | `"flows/notifications/Promoted"`. Frozen for the same reason.                                                                        |
+| `AdmissionDecision` | `"admitted" \| "coalesced" \| "rejected-full"`. The one declaration of the admission vocabulary.                                     |
+| `Admitted`          | `{ notification: Notification; decision: AdmissionDecision; fingerprint?: string; identityFingerprint?: string; version?: number }`. |
+| `Promoted`          | `{ boundary: string; targetLineageId: string; ids: ReadonlyArray<string> }`.                                                         |
+| `Event`             | `Admitted \| Promoted`.                                                                                                              |
+| `admissionSourceId` | `(notificationId: string) => JournalEvent.SourceId`. The source every admission of one notification is written under.                |
+| `drainKey`          | `(targetLineageId: string, boundary: string) => string`. One drain's identity, each component percent-encoded.                       |
+| `drainSourceId`     | `(targetLineageId: string, boundary: string) => JournalEvent.SourceId`. The source one drain's record is written under.              |
 
 A `rejected-full` decision is never written. The queue refuses a full queue in
 the receipt alone, so the notification id stays admissible once a boundary
