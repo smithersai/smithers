@@ -2,8 +2,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 import { Runtime } from "foldkit"
-import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
-import { ClosePlan, HistoryFlags, HistoryMessage, HistoryModel, init, ReadCommit, ReadEpic, ReadMatches, ReadOutline, ShowPlan, subscriptions, update } from "../src/web/historyApp.vibe"
+import { Mythical, Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
+import { ClosePlan, ExportCommand, HistoryFlags, HistoryMessage, HistoryModel, HistoryRead, init, ReadCommit, ReadEpic, ReadMatches, ReadOutline, ShowPlan, sameRead, subscriptions, update } from "../src/web/historyApp.vibe"
+import { historyModelCodec, historyUpdateCodec } from "../fuzz/history-corpus.vibe"
 import { view } from "../src/web/historyView.vibe"
 import { container, press, remove } from "./support/browser.ts"
 
@@ -61,13 +62,13 @@ describe("update", () => {
 describe("reads when the service is down", () => {
   const failed = { _tag: "FailedRead", reason: "unavailable" }
   it.each([
-    ["the outline", () => ReadOutline({})],
-    ["an epic", () => ReadEpic({ id: "a", from: 0 })],
-    ["a commit", () => ReadCommit({ id: "m1" })],
-    ["matches", () => ReadMatches({ query: "x" })],
-  ] as const)("%s reports the failure", (_label, make) => Effect.runPromise(effect {
+    ["the outline", () => ReadOutline({}), { kind: "outline", id: "", from: 0 }],
+    ["an epic", () => ReadEpic({ id: "a", from: 0 }), { kind: "epic", id: "a", from: 0 }],
+    ["a commit", () => ReadCommit({ id: "m1" }), { kind: "commit", id: "m1", from: 0 }],
+    ["matches", () => ReadMatches({ query: "x" }), { kind: "matches", id: "x", from: 0 }],
+  ] as const)("%s reports the failure", (_label, make, read) => Effect.runPromise(effect {
     const answer = try Effect.provideService(run<{ readonly _tag: string }, never, Mythical>(make), Mythical, faulty())
-    expect(answer).toEqual(failed)
+    expect(answer).toEqual({ ...failed, read })
   }))
   it.effect("matches answer when the service is up", () => effect {
     const matches = { seq: 1, query: "x", commits: [] }
@@ -103,4 +104,82 @@ describe("the running page", () => {
     try Effect.try(() => press({ key: "Escape" }))
     try promise(() => vi.waitFor(() => expect(seen.model.dialog).toBe(false), { timeout: 4000 }))
   }))
+})
+
+describe("individual failed reads", () => {
+  const requests: ReadonlyArray<HistoryRead> = [
+    { kind: "outline", id: "", from: 0 },
+    { kind: "epic", id: "e1", from: 0 },
+    { kind: "epic", id: "e1", from: 50 },
+    { kind: "commit", id: "m1", from: 0 },
+    { kind: "matches", id: "cache", from: 0 },
+  ]
+  it.each(requests)("retries $kind at $from without restarting the connection", (read) => {
+    let model = home
+    for (const request of requests) model = update(model, HistoryMessage.FailedRead({ reason: "unavailable", read: request })).model
+    const retry = update(model, HistoryMessage.RetriedRead({ read }))
+    expect(retry.model.readFailures).toEqual(model.readFailures.filter((failure) => !sameRead(failure.read, read)))
+    expect(retry.model.epoch).toBe(home.epoch)
+    expect(retry.model.status).toBe(home.status)
+    const expected = read.kind === "outline" ? ["ReadOutline", {}]
+      : read.kind === "epic" ? ["ReadEpic", { id: read.id, from: read.from }]
+      : read.kind === "commit" ? ["ReadCommit", { id: read.id }]
+      : ["ReadMatches", { query: read.id }]
+    expect(asked(retry)).toEqual([expected])
+  })
+  it("a successful page clears only that page's failure, including its offset", () => {
+    const first = requests[1]!
+    const more = requests[2]!
+    let model = update(home, HistoryMessage.FailedRead({ reason: "unavailable", read: first })).model
+    model = update(model, HistoryMessage.FailedRead({ reason: "unavailable", read: more })).model
+    model = update(model, HistoryMessage.GotEpic({ page: { ...page("e1"), from: 50 } })).model
+    expect(model.readFailures).toEqual([{ read: first, reason: "unavailable" }])
+  })
+  it("an unrelated failure does not replace the loading state for this address", () => {
+    const model = update({ ...home, status: "ready", hash: "m2" }, HistoryMessage.FailedRead({ reason: "unavailable", read: requests[3]! })).model
+    expect(model.error).toBe("")
+    expect(model.readFailures).toHaveLength(1)
+  })
+})
+
+it("successful commit, search and outline reads clear only their own errors", () => {
+  const failures: ReadonlyArray<HistoryRead> = [
+    { kind: "outline", id: "", from: 0 },
+    { kind: "commit", id: "m1", from: 0 },
+    { kind: "commit", id: "m2", from: 0 },
+    { kind: "matches", id: "cache", from: 0 },
+    { kind: "matches", id: "other", from: 0 },
+  ]
+  let model = { ...home, hash: "m1", filter: "cache" }
+  for (const read of failures) model = update(model, HistoryMessage.FailedRead({ read, reason: "unavailable" })).model
+  // Repeated failures of the same request keep one Retry.
+  model = update(model, HistoryMessage.FailedRead({ read: failures[1]!, reason: "unavailable" })).model
+  expect(model.readFailures).toHaveLength(5)
+  const stale = update(model, HistoryMessage.GotCommit({ id: "m2", page: home.commit }))
+  expect(stale.model).toBe(model)
+  model = update(model, HistoryMessage.GotCommit({ id: "m1", page: home.commit })).model
+  model = update(model, HistoryMessage.GotMatches({ matches: { seq: 1, query: "cache", commits: [] } })).model
+  model = update(model, HistoryMessage.GotOutline({ outline: home.outline })).model
+  expect(model.readFailures.map(({ read }) => read.id)).toEqual(["m2", "other"])
+})
+
+it("replays saved page models from before read and connection recovery", () => {
+  const { readFailures, disconnected, ...previous } = home
+  const restored = historyModelCodec.decode(JSON.stringify(previous))
+  expect(restored).toEqual(home)
+  const message = HistoryMessage.FailedRead({ reason: "unavailable" })
+  expect(historyUpdateCodec.decode(JSON.stringify({ model: previous, message }))).toEqual({ model: home, message })
+  expect(historyModelCodec.decode(historyModelCodec.encode(home))).toEqual(home)
+  expect(historyUpdateCodec.decode(historyUpdateCodec.encode({ model: home, message }))).toEqual({ model: home, message })
+})
+
+it.effect("export reports the published commit or its refusal without losing the transport failure", () => effect {
+  const success = try Effect.provideService(run(() => ExportCommand({})), Mythical, faulty({ publish: () => succeed({ mythical: "abc", written: 1 }) }))
+  const refused = try Effect.provideService(run(() => ExportCommand({})), Mythical, faulty({ publish: () => Effect.fail(new Refused({ refusal: "unsupported" })) }))
+  const unavailable = try Effect.provideService(run(() => ExportCommand({})), Mythical, faulty())
+  try Effect.try(() => {
+    expect(success).toEqual(HistoryMessage.Exported({ mythical: "abc" }))
+    expect(refused).toEqual(HistoryMessage.FailedWrite({ reason: "unsupported" }))
+    expect(unavailable).toEqual(HistoryMessage.FailedWrite({ reason: "unavailable" }))
+  })
 })

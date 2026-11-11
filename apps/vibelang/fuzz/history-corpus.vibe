@@ -1,7 +1,7 @@
 // Persisted counterexamples from historyApp.vibe at e39a2306, before history reads became pages.
 // Generation uses today's public Model; the public Fuzz codec alone upgrades old JSON without changing its file.
 import { SchemaGetter } from "effect"
-import { HistoryModel, init } from "../src/web/historyApp.vibe"
+import { HistoryModel, HistoryMessage, init } from "../src/web/historyApp.vibe"
 import { Commit, Epic, Real, Seq } from "../src/history/schemas.vibe"
 import { outlineOf, epicPageOf, commitPageOf, matchesOf } from "../src/history/pages.vibe"
 
@@ -13,10 +13,14 @@ const Legacy = Schema.Struct({
   full: Schema.Array(Schema.String), filter: f.filter, dialog: f.dialog, form: f.form, lane: f.lane,
   noteSection: f.noteSection, noteText: f.noteText, error: f.error, busy: f.busy, epoch: f.epoch,
 })
-const Saved = Schema.Union([HistoryModel, Legacy])
+// Page-shaped receipts predate per-read and connection recovery fields.
+const Paged = Schema.Struct({
+  ...f, readFailures: Schema.optionalKey(f.readFailures), disconnected: Schema.optionalKey(f.disconnected),
+})
+const Saved = Schema.Union([Paged, Legacy])
 const Compatible = Saved.pipe(Schema.decodeTo(HistoryModel, {
   decode: SchemaGetter.transform((model) => {
-    if (!("history" in model)) return model
+    if (!("history" in model)) return { ...model, readFailures: model.readFailures ?? [], disconnected: model.disconnected ?? false }
     return {
       ...init({ mode: model.mode, role: model.role, hash: model.hash }).model,
       ...model,
@@ -33,4 +37,13 @@ export const historyModelCodec = {
   id: "json",
   encode: Schema.encodeSync(Schema.fromJsonString(HistoryModel)),
   decode: Schema.decodeSync(Schema.fromJsonString(Compatible)),
+}
+
+const UpdateReceipt = Schema.Struct({ model: HistoryModel, message: HistoryMessage })
+const CompatibleUpdate = Schema.Struct({ model: Compatible, message: HistoryMessage })
+
+export const historyUpdateCodec = {
+  id: "json",
+  encode: Schema.encodeSync(Schema.fromJsonString(UpdateReceipt)),
+  decode: Schema.decodeSync(Schema.fromJsonString(CompatibleUpdate)),
 }

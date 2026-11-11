@@ -11,7 +11,7 @@ import { type CommitPage, type EpicCount, type Head, MAX_QUERY } from "../histor
 import { clipQuery } from "../history/pageDecision.vibe"
 import { BOOTSTRAP } from "../history/areas.vibe"
 import {
-  allowed, HistoryMessage, type HistoryMessage as Message, type HistoryModel, NEW_EPIC, pageOf, PLAN_ID, REPOSITORY_URL, shownCommit,
+  allowed, HistoryMessage, type HistoryMessage as Message, type HistoryModel, type HistoryRead, NEW_EPIC, pageOf, PLAN_ID, REPOSITORY_URL, shownCommit,
 } from "./historyApp.vibe"
 
 type H = HtmlBuilder<Message>
@@ -32,7 +32,7 @@ export function view(model: HistoryModel, h: H): Document {
           h.a([h.Class("vl-docs-toggle"), h.Href("/"), h.AriaLabel("Minimize")], ["−"]),
         ]),
         h.div([h.Class("mh-pane-body")], [
-          h.div([h.Class("sui-page-body"), h.DataAttribute("width", "wide")], body(model, shown, epic, h)),
+          h.div([h.Class("sui-page-body"), h.DataAttribute("width", "wide")], [...connection(model, h), ...body(model, shown, epic, h)]),
         ]),
       ]),
       // The dialog exists only for a role that may plan: an unauthorized control is absent, not hidden.
@@ -45,7 +45,7 @@ export function view(model: HistoryModel, h: H): Document {
 const COMMIT_HASH = /^m\d+$/
 
 function body(model: HistoryModel, shown: CommitPage | undefined, epic: EpicCount | undefined, h: H): ReadonlyArray<Html> {
-  const which = V.historyBody(model.status, model.outline.epics.length, shown?.commit != null, COMMIT_HASH.test(model.hash), shown !== undefined, epic !== undefined, model.error !== "")
+  const which = V.historyBody(model.status, model.outline.epics.length, shown?.commit != null, COMMIT_HASH.test(model.hash), shown !== undefined, epic !== undefined, model.error !== "" || model.readFailures.some(({ read }) => read.kind === "commit" && read.id === model.hash))
   if (which === "loading") return loading(h)
   if (which === "failed") {
     return [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [
@@ -133,7 +133,7 @@ function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
     ...failure(model, h),
     shown.filtering
       ? h.ul(
-        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(!shown.matchesShown)],
+        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(!shown.matchesShown && !model.readFailures.some(({ read }) => read.kind === "matches" && read.id === clipQuery(model.filter, MAX_QUERY)))],
         shown.matchesShown ? model.matches.commits.map((commit) => row(model, commit, h, true)) : [],
       )
       : h.div([h.Class("mh-epics")], [
@@ -153,8 +153,11 @@ function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
 /** An epic's commits read so far, and Show more while there are more. */
 function commitList(model: HistoryModel, epic: EpicCount, h: H): ReadonlyArray<Html> {
   const page = pageOf(model, epic.id)
-  if (page === undefined) return [h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title), h.AriaBusy(true)], [])]
+  const failures = model.readFailures.filter(({ read }) => read.kind === "epic" && read.id === epic.id)
+    .map(({ read, reason }) => readFailure(read, reason, h))
+  if (page === undefined) return [...failures, h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title), h.AriaBusy(!model.readFailures.some(({ read }) => read.kind === "epic" && read.id === epic.id))], [])]
   return [
+    ...failures,
     h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title)], page.commits.map((commit) => row(model, commit, h, false))),
     ...(V.showMore(page.commits.length, page.total)
       ? [h.button([h.Class("sui-button sui-button-sm mh-more"), h.Type("button"), h.OnClick(HistoryMessage.ClickedMore({ id: epic.id }))], ["Show more"])]
@@ -211,7 +214,28 @@ function badgeOf(state: Commit["state"]): string {
 }
 
 function failure(model: HistoryModel, h: H): ReadonlyArray<Html> {
-  return model.error === "" ? [] : [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [h.div([h.Class("sui-alert-title")], [refusalText(model.error)])])]
+  const visible = (read: HistoryRead) => read.kind === "outline"
+    || (read.kind === "commit" && read.id === model.hash)
+    || (read.kind === "matches" && read.id === clipQuery(model.filter, MAX_QUERY) && model.filter.trim() !== "")
+  return [
+    ...(model.error === "" ? [] : [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [h.div([h.Class("sui-alert-title")], [refusalText(model.error)])])]),
+    ...model.readFailures.filter(({ read }) => visible(read)).map(({ read, reason }) => readFailure(read, reason, h)),
+  ]
+}
+
+function readFailure(read: HistoryRead, reason: string, h: H): Html {
+  return h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [
+    h.div([h.Class("sui-alert-title")], [refusalText(reason)]),
+    h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.RetriedRead({ read }))], ["Retry"]),
+  ])
+}
+
+/** The connection belongs to the whole page, including empty and still-loading commit views. */
+function connection(model: HistoryModel, h: H): ReadonlyArray<Html> {
+  return model.disconnected ? [h.div([h.Class("sui-alert"), h.Role("status")], [
+    h.span([], ["Disconnected"]),
+    h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.ClickedReconnect())], ["Reconnect"]),
+  ])] : []
 }
 
 /** A refusal in the page's words. */

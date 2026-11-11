@@ -37,6 +37,18 @@ export schema PlanForm {
   readonly task: string
 }
 
+/** A read can be retried without restarting the page or its event connection. */
+export schema HistoryRead {
+  readonly kind: "outline" | "epic" | "commit" | "matches"
+  readonly id: string
+  readonly from: number
+}
+
+export schema HistoryReadFailure {
+  readonly read: HistoryRead
+  readonly reason: string
+}
+
 export schema HistoryModel {
   readonly mode: "mock" | "live" | "pending"
   readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
@@ -62,6 +74,8 @@ export schema HistoryModel {
   readonly noteText: string
   /** Why the last write or read failed, or `""`. */
   readonly error: string
+  readonly readFailures: ReadonlyArray<HistoryReadFailure>
+  readonly disconnected: boolean
   readonly busy: boolean
   /** Bumped to read the history and follow its events again. */
   readonly epoch: number
@@ -89,7 +103,10 @@ export const HistoryMessage = defineMessageUnion({
   GotCommit: { id: Schema.String, page: CommitPage },
   GotMatches: { matches: Matches },
   FailedLoad: { reason: Schema.String },
-  FailedRead: { reason: Schema.String },
+  FailedRead: { reason: Schema.String, read: Schema.optionalKey(HistoryRead) },
+  RetriedRead: { read: HistoryRead },
+  FailedEvents: {},
+  ClickedReconnect: {},
   ClickedRetry: {},
   Navigated: { hash: Schema.String },
   ToggledEpic: { id: Schema.String },
@@ -149,6 +166,8 @@ export function init(flags: HistoryFlags): Return {
       noteSection: "tried",
       noteText: "",
       error: "",
+      readFailures: [],
+      disconnected: false,
       busy: false,
       epoch: 1,
       latest: 0,
@@ -200,6 +219,24 @@ export function shownReads(model: HistoryModel): ReadonlyArray<Command.Command<H
   return reads
 }
 
+/** Identity includes the epic offset and the search text, so one result never clears another failed read. */
+export function sameRead(a: HistoryRead, b: HistoryRead): boolean {
+  return a.kind === b.kind && a.id === b.id && a.from === b.from
+}
+
+function withoutFailure(model: HistoryModel, read: HistoryRead): ReadonlyArray<HistoryReadFailure> {
+  return model.readFailures.filter((failure) => !sameRead(failure.read, read))
+}
+
+function readCommand(read: HistoryRead): Command.Command<HistoryMessage, never, Needs> {
+  switch (read.kind) {
+    case "outline": return ReadOutline({})
+    case "epic": return ReadEpic({ id: read.id, from: read.from })
+    case "commit": return ReadCommit({ id: read.id })
+    case "matches": return ReadMatches({ query: read.id })
+  }
+}
+
 // UPDATE
 
 /** The scalar fields the proved frames in historyDecision set; each arm spreads its frame back over the model. */
@@ -221,19 +258,29 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
     GotOutline: ({ outline }) => {
       const arrival = outlineArrival(model.status === "ready", model.outline.seq, outline.seq, model.latest)
       if (!arrival.accept) return { model }
-      const next = { ...model, ...outlineFrame(frameOf(model), arrival.latest), outline }
+      const next = { ...model, ...outlineFrame(frameOf(model), arrival.latest), outline, readFailures: withoutFailure(model, { kind: "outline", id: "", from: 0 }) }
       // Events that arrived while this read was under way read once more.
       return { model: next, commands: [...shownReads(next), ...(arrival.reread ? [ReadOutline({})] : [])] }
     },
-    GotEpic: ({ page }) => ({ model: { ...model, pages: merged(model.pages, page) } }),
+    GotEpic: ({ page }) => ({ model: { ...model, pages: merged(model.pages, page), readFailures: withoutFailure(model, { kind: "epic", id: page.epic, from: page.from }) } }),
     GotCommit: ({ id, page }) => {
       if (!commitApplies(id, model.hash, model.commitId, page.seq, model.commit.seq)) return { model }
-      return { model: { ...model, commit: page, commitId: id } }
+      return { model: { ...model, commit: page, commitId: id, readFailures: withoutFailure(model, { kind: "commit", id, from: 0 }) } }
     },
-    GotMatches: ({ matches }) => matchesApply(matches.query, clipQuery(model.filter, MAX_QUERY)) ? { model: { ...model, matches } } : { model },
+    GotMatches: ({ matches }) => matchesApply(matches.query, clipQuery(model.filter, MAX_QUERY)) ? { model: { ...model, matches, readFailures: withoutFailure(model, { kind: "matches", id: matches.query, from: 0 }) } } : { model },
     FailedLoad: () => ({ model: { ...model, ...failedLoadFrame(frameOf(model)) } }),
-    // The next event reads again.
-    FailedRead: ({ reason }) => ({ model: { ...model, ...failedReadFrame(frameOf(model), reason, model.outline.seq) } }),
+    // The next event may read again; a person can also retry precisely the failed read.
+    FailedRead: ({ reason, read }) => ({
+      model: read === undefined
+        ? { ...model, ...failedReadFrame(frameOf(model), reason, model.outline.seq) }
+        : { ...model, latest: model.outline.seq, readFailures: [...withoutFailure(model, read), { read, reason }] },
+    }),
+    RetriedRead: ({ read }) => ({
+      model: { ...model, readFailures: withoutFailure(model, read) },
+      commands: [readCommand(read)],
+    }),
+    FailedEvents: () => ({ model: { ...model, disconnected: true } }),
+    ClickedReconnect: () => ({ model: { ...model, ...retryFrame(frameOf(model)), disconnected: false } }),
     ClickedRetry: () => ({ model: { ...model, ...retryFrame(frameOf(model)) } }),
     Navigated: ({ hash }) => {
       const next = { ...model, ...navigatedFrame(frameOf(model), hash) }
@@ -307,8 +354,8 @@ function reasonOf(error: Refused | Unavailable): string {
 }
 
 /** A failed read in the page's words. */
-function failedRead() {
-  return HistoryMessage.FailedRead({ reason: "unavailable" })
+function failedRead(read: HistoryRead) {
+  return HistoryMessage.FailedRead({ reason: "unavailable", read })
 }
 
 export const ReadOutline = Command.define("ReadOutline", {
@@ -316,7 +363,7 @@ export const ReadOutline = Command.define("ReadOutline", {
   messages: [HistoryMessage.GotOutline, HistoryMessage.FailedRead],
   execute: effect () => {
     const outline = (try Mythical).outline() catch () => undefined
-    return try message(() => outline === undefined ? failedRead() : HistoryMessage.GotOutline({ outline }))
+    return try message(() => outline === undefined ? failedRead({ kind: "outline", id: "", from: 0 }) : HistoryMessage.GotOutline({ outline }))
   },
 })
 
@@ -325,7 +372,7 @@ export const ReadEpic = Command.define("ReadEpic", {
   messages: [HistoryMessage.GotEpic, HistoryMessage.FailedRead],
   execute: effect ({ id, from }) => {
     const page = (try Mythical).epic(id, from) catch () => undefined
-    return try message(() => page === undefined ? failedRead() : HistoryMessage.GotEpic({ page }))
+    return try message(() => page === undefined ? failedRead({ kind: "epic", id, from }) : HistoryMessage.GotEpic({ page }))
   },
 })
 
@@ -334,7 +381,7 @@ export const ReadCommit = Command.define("ReadCommit", {
   messages: [HistoryMessage.GotCommit, HistoryMessage.FailedRead],
   execute: effect ({ id }) => {
     const page = (try Mythical).commit(id) catch () => undefined
-    return try message(() => page === undefined ? failedRead() : HistoryMessage.GotCommit({ id, page }))
+    return try message(() => page === undefined ? failedRead({ kind: "commit", id, from: 0 }) : HistoryMessage.GotCommit({ id, page }))
   },
 })
 
@@ -343,7 +390,7 @@ export const ReadMatches = Command.define("ReadMatches", {
   messages: [HistoryMessage.GotMatches, HistoryMessage.FailedRead],
   execute: effect ({ query }) => {
     const matches = (try Mythical).search(query) catch () => undefined
-    return try message(() => matches === undefined ? failedRead() : HistoryMessage.GotMatches({ matches }))
+    return try message(() => matches === undefined ? failedRead({ kind: "matches", id: clipQuery(query, MAX_QUERY), from: 0 }) : HistoryMessage.GotMatches({ matches }))
   },
 })
 
@@ -492,16 +539,15 @@ export function subscriptions(window: Window) {
               return failed
             }
             const loaded = try message(() => HistoryMessage.GotOutline({ outline }))
-            // A lost stream follows again 2 seconds later, from the outline's `seq`; events it already delivered change nothing.
-            const follow = (): Stream.Stream<typeof HistoryEvent.Type> => mythical.events(outline.seq).pipe(
-              Stream.catchTag("Unavailable", () => Stream.concat(
-                Stream.fromEffect(Effect.andThen(Effect.logWarning("history events lost; following again"), Effect.sleep("2 seconds"))).pipe(Stream.drain),
-                Stream.suspend(follow),
-              )),
-            )
+            const ended = try message(() => HistoryMessage.FailedEvents())
+            const disconnected = Stream.fromEffect(Effect.as(Effect.logWarning("history event connection closed"), ended))
             const followed: Stream.Stream<HistoryMessage> = Stream.concat(
               Stream.make(loaded),
-              follow().pipe(Stream.map((event) => HistoryMessage.ReceivedEvent({ event }))),
+              mythical.events(outline.seq).pipe(
+                Stream.map((event) => HistoryMessage.ReceivedEvent({ event })),
+                Stream.concat(disconnected),
+                Stream.catchTag("Unavailable", () => disconnected),
+              ),
             )
             return followed
           }),

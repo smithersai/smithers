@@ -38,10 +38,10 @@ test.describe("the history page when the history fails", () => {
     // Spend the one failed search and commit read first.
     const filter = page.getByRole("searchbox", { name: "Filter commits" })
     await filter.fill("retry")
-    await expect(page.getByRole("alert")).toHaveText(UNREACHABLE)
+    await expect(page.getByRole("alert")).toContainText(UNREACHABLE)
     await filter.fill("register the computed-key match witness once")
     await page.getByRole("list", { name: "Matching commits" }).getByRole("link").first().click()
-    await expect(page.getByRole("alert")).toHaveText(UNREACHABLE)
+    await expect(page.getByRole("alert")).toContainText(UNREACHABLE)
     await page.getByRole("link", { name: "History", exact: true }).click()
 
     // The plan's event reads the outline, which fails: the outline doesn't hold the new epic.
@@ -73,22 +73,22 @@ test.describe("the history page when the history fails", () => {
     await open(page, "reads")
     const compiler = page.getByRole("button", { name: /The compiler/ })
     await compiler.click()
-    await expect(page.getByRole("alert")).toHaveText(UNREACHABLE)
-    await compiler.click()
-    await compiler.click()
+    await expect(page.getByRole("alert")).toContainText(UNREACHABLE)
+    await page.getByRole("alert").getByRole("button", { name: "Retry" }).click()
     const commits = page.getByRole("list", { name: "The compiler" }).getByRole("link")
     await expect(commits).toHaveCount(50)
 
     await commits.first().click()
-    await expect(page.getByRole("alert")).toHaveText(UNREACHABLE)
-    await page.getByRole("link", { name: "History", exact: true }).click()
-    await commits.first().click()
+    await expect(page.getByRole("alert")).toContainText(UNREACHABLE)
+    await page.getByRole("alert").getByRole("button", { name: "Retry" }).click()
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
 
     await page.getByRole("link", { name: "History", exact: true }).click()
     const filter = page.getByRole("searchbox", { name: "Filter commits" })
     await filter.fill("retry")
-    await expect(page.getByRole("alert")).toHaveText(UNREACHABLE)
+    await expect(page.getByRole("alert")).toContainText(UNREACHABLE)
+    await page.getByRole("alert").getByRole("button", { name: "Retry" }).click()
+    await expect(page.getByRole("alert")).toHaveCount(0)
     await filter.fill("register the computed-key match witness once")
     await expect(page.getByRole("list", { name: "Matching commits" }).getByRole("link").first()).toBeVisible()
 
@@ -141,8 +141,11 @@ test.describe("the history page when the history fails", () => {
     await expect(page.getByRole("list", { name: "Planned" })).toHaveCount(0)
   })
 
-  test("a lost event stream follows again, so the page shows its own writes", async ({ page }) => {
-    await open(page, "events")
+  for (const fault of ["events", "events-end"]) test(`a lost ${fault} stream offers Reconnect, so the page shows its own writes`, async ({ page }) => {
+    await open(page, fault)
+    await expect(page.getByRole("status")).toContainText("Disconnected")
+    await page.getByRole("button", { name: "Reconnect" }).click()
+    await expect(page.getByRole("button", { name: "Reconnect" })).toHaveCount(0)
     await page.getByRole("button", { name: "Plan work" }).click()
     const dialog = page.getByRole("dialog", { name: "Plan work" })
     await dialog.getByLabel("Commit").fill("fix(history): plan without events")

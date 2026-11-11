@@ -1,9 +1,9 @@
 import { it } from "@effect/vitest"
 import { scene, given, getAllByRole, type SceneSimulation } from "foldkit/scene"
 import { ROLES } from "../src/history/roles.vibe"
-import { HistoryModel, HistoryFlags, HistoryMessage, init, update } from "../src/web/historyApp.vibe"
+import { HistoryModel, HistoryFlags, HistoryMessage, HistoryRead, init, sameRead, update } from "../src/web/historyApp.vibe"
 import { view } from "../src/web/historyView.vibe"
-import { historyModelCodec } from "./history-corpus.vibe"
+import { historyModelCodec, historyUpdateCodec } from "./history-corpus.vibe"
 import { run } from "./run.vibe"
 
 it.live("history/view-models", () => run("history/view-models", HistoryModel, (model) => {
@@ -30,10 +30,7 @@ it.live("history/update-sequences", () => run("history/update-sequences", Schema
   return true
 }, undefined, { revision: "2" }))
 
-/**
- * Any message leaves a valid model; a live origin resolves every role to viewer until the session answers, then plays
- * the session's role; mock keeps the chosen one through both.
- */
+/** Any message leaves a valid model; a live origin resolves every role to viewer, and mock keeps the chosen one. */
 it.live("history/arbitrary-update", () => run("history/arbitrary-update", Schema.Struct({ model: HistoryModel, message: HistoryMessage }), ({ model, message }) => {
   const next = update(model, message).model
   if (!Schema.is(HistoryModel)(next)) return false
@@ -41,4 +38,21 @@ it.live("history/arbitrary-update", () => run("history/arbitrary-update", Schema
   const mock = update(model, HistoryMessage.ResolvedMode({ mode: "mock" })).model
   if (!(live.mode === "live" && live.role === "viewer" && mock.mode === "mock" && mock.role === model.role)) return false
   return ROLES.every((role) => update(live, HistoryMessage.ResolvedRole({ role })).model.role === role && update(mock, HistoryMessage.ResolvedRole({ role })).model.role === model.role)
-}, undefined, { revision: "2" }))
+}, undefined, { revision: "3", codec: historyUpdateCodec }))
+
+/** Read failures keep their own request identity; retrying any one leaves every other failure and the epoch intact. */
+it.live("history/read-recovery", () => run("history/read-recovery", Schema.Struct({
+  reads: Schema.Array(HistoryRead).check(Schema.isMaxLength(16)),
+  retry: HistoryRead,
+}), ({ reads, retry }) => {
+  let model = init({ mode: "mock", role: "viewer", hash: "" }).model
+  for (const read of reads) {
+    model = update(model, HistoryMessage.FailedRead({ read, reason: "unavailable" })).model
+  }
+  const after = update(model, HistoryMessage.RetriedRead({ read: retry }))
+  const retained = model.readFailures.filter(({ read }) => !sameRead(read, retry))
+  return after.model.epoch === model.epoch
+    && after.model.status === model.status
+    && JSON.stringify(after.model.readFailures) === JSON.stringify(retained)
+    && after.commands?.length === 1
+}, undefined, { revision: "1" }))

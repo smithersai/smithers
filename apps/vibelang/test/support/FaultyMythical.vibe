@@ -7,12 +7,12 @@ import { HistoryBackend } from "../../src/web/historyBackend.vibe"
  * A fault the history fault host injects. `outline` fails the page's first load; `empty` answers a history with no
  * epics; `unfolded` answers one nothing is folded into yet, as a read between the first fold's epic and its fold sees;
  * `reads` fails the first epic, commit and search read, and the first outline read after the load; `events`
- * ends the first event stream; `writes` fails the first plan, start, note, approve, fold and export as unreachable;
+ * fails the first event stream; `events-end` completes it cleanly; `writes` fails the first plan, start, note, approve, fold and export as unreachable;
  * `refused` refuses the first plan and the first export with the refusal `?refusal=` names.
  */
-export type HistoryFault = "outline" | "empty" | "unfolded" | "reads" | "events" | "writes" | "refused"
+export type HistoryFault = "outline" | "empty" | "unfolded" | "reads" | "events" | "events-end" | "writes" | "refused"
 
-const FAULTS: ReadonlyArray<HistoryFault> = ["outline", "empty", "unfolded", "reads", "events", "writes", "refused"]
+const FAULTS: ReadonlyArray<HistoryFault> = ["outline", "empty", "unfolded", "reads", "events", "events-end", "writes", "refused"]
 
 /** The faults a page's `?fault=` names, comma-separated; an unknown name is ignored. */
 export function historyFaults(search: string): ReadonlyArray<HistoryFault> {
@@ -60,7 +60,7 @@ export function faultyMythical<E>(faults: ReadonlyArray<HistoryFault>, layer: La
         if (first("reads", "search")) throw unreachable()
         return try real.search(query)
       },
-      events: (after) => Stream.suspend(() => first("events", "events") ? Stream.fail(unreachable()) : real.events(after)),
+      events: (after) => Stream.suspend(() => first("events", "events") ? Stream.fail(unreachable()) : first("events-end", "events-end") ? Stream.empty : real.events(after)),
       plan: effect (request, operation) => {
         if (first("writes", "plan")) throw unreachable()
         if (first("refused", "plan")) throw new Refused({ refusal })

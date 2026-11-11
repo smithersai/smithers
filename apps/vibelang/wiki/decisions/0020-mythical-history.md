@@ -454,3 +454,18 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 **Route regression (0017).** The production site Worker serves `/history` and `/history/…` through the same asset
 fallback as home, matching the browser entry. Its real loopback/file-backed benchmark failed with 404 before this
 allowlist fix; the Worker unit test also covers both paths. No other route is widened.
+
+## Read and connection recovery
+
+A failed outline refresh, epic page (including its offset), commit or search keeps its own error and Retry control.
+Retry repeats only that read; it keeps the current outline and event connection. A result clears only its matching
+failure, so an unrelated response cannot hide a read that still needs attention.
+
+An unavailable event stream or a clean stream end shows Disconnected and Reconnect on every History view.
+Reconnect refreshes the outline and starts following from that outline's cursor, catching up on changes made while
+disconnected. It uses Foldkit's existing subscription epoch rather than a separate retry loop.
+
+The app keeps Foldkit's update, command and subscription abstractions, Effect streams, and Smithers' shared
+`sui-*` components (the library catalog's UI policy); this introduces no runtime dependency.
+The native-DOM tests inject a faulty Effect service and use the real history service for recovery. Browser fault
+tests cover the read Retry and event Reconnect controls.

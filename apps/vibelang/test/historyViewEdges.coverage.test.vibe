@@ -7,7 +7,7 @@ import { apply, type History } from "../src/history/mythical.vibe"
 import { commitPageOf, epicPageOf, outlineOf } from "../src/history/pages.vibe"
 import { BOOTSTRAP } from "../src/history/areas.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
-import { HistoryMessage, HistoryModel, init, ReadEpic, ShowPlan, update } from "../src/web/historyApp.vibe"
+import { HistoryMessage, HistoryModel, init, ReadCommit, ReadEpic, ReadMatches, ReadOutline, ShowPlan, update } from "../src/web/historyApp.vibe"
 import { view } from "../src/web/historyView.vibe"
 
 const small: History = replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
@@ -100,5 +100,58 @@ describe("a commit's page", () => {
       expect(within(role("navigation", { name: "Breadcrumbs" }), role("link", { name: "History" }))).toExist(),
       expect(role("alert")).toExist(),
     )
+  })
+})
+
+describe("retrying the failed page", () => {
+  it("a commit offers Retry in place of its loading skeleton", () => {
+    const base = { ...loaded("viewer", "m1"), commitId: "" }
+    const read = { kind: "commit" as const, id: "m1", from: 0 }
+    const failed = update(base, HistoryMessage.FailedRead({ read, reason: "unavailable" })).model
+    scene(app, given(failed),
+      expect(role("alert")).toExist(),
+      click(role("button", { name: "Retry" })),
+      Command.resolve(ReadCommit, HistoryMessage.GotCommit({ id: "m1", page: commitPageOf(small, "m1") })),
+      expect(role("heading", { name: "fix(compiler): one" })).toExist(),
+      expect(role("alert")).toBeAbsent(),
+    )
+  })
+  it("an epic stops being busy after its failed first read and retries its own page", () => {
+    const epic = outlineOf(small).epics[0]!
+    const read = { kind: "epic" as const, id: epic.id, from: 0 }
+    const failed = update(loaded("viewer", epic.id), HistoryMessage.FailedRead({ read, reason: "unavailable" })).model
+    scene(app, given(failed),
+      expect(role("list", { name: epic.title })).toHaveAttr("aria-busy", "false"),
+      click(role("button", { name: "Retry" })),
+      Command.resolve(ReadEpic, HistoryMessage.GotEpic({ page: epicPageOf(small, epic.id, 0) })),
+      expect(role("alert")).toBeAbsent(),
+      expect(role("link", { name: "fix(compiler): one" })).toExist(),
+    )
+  })
+  it("search Retry rereads the failed search and clears its busy state", () => {
+    const read = { kind: "matches" as const, id: "cache", from: 0 }
+    const failed = update({ ...loaded("viewer"), filter: "cache" }, HistoryMessage.FailedRead({ read, reason: "unavailable" })).model
+    scene(app, given(failed),
+      expect(role("list", { name: "Matching commits" })).toHaveAttr("aria-busy", "false"),
+      click(role("button", { name: "Retry" })),
+      Command.resolve(ReadMatches, HistoryMessage.GotMatches({ matches: { seq: small.seq, query: "cache", commits: [] } })),
+      expect(role("alert")).toBeAbsent(),
+    )
+  })
+  it("a failed outline refresh can be retried while the existing page stays visible", () => {
+    const read = { kind: "outline" as const, id: "", from: 0 }
+    const base = loaded("viewer")
+    const failed = update(base, HistoryMessage.FailedRead({ read, reason: "unavailable" })).model
+    scene(app, given(failed),
+      expect(role("button", { name: /The compiler/ })).toExist(),
+      click(role("button", { name: "Retry" })),
+      Command.resolve(ReadOutline, HistoryMessage.GotOutline({ outline: base.outline })),
+      expect(role("alert")).toBeAbsent(),
+    )
+  })
+  it("an old address or search failure cannot replace the current commit's loading skeleton", () => {
+    const read = { kind: "commit" as const, id: "m2", from: 0 }
+    const model = update({ ...loaded("viewer", "m1"), commitId: "" }, HistoryMessage.FailedRead({ read, reason: "unavailable" })).model
+    scene(app, given(model), expect(role("alert")).toBeAbsent(), expect(role("button", { name: "Retry" })).toBeAbsent())
   })
 })

@@ -9,7 +9,7 @@ import { serveHistory } from "./support/historyHttpHost.vibe"
 import { Runtime } from "foldkit"
 import { ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { MockMythical } from "../src/history/MockMythical.vibe"
-import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 import type { Role } from "../src/history/roles.vibe"
 import { HistoryFlags, HistoryModel, init, subscriptions, update } from "../src/web/historyApp.vibe"
@@ -320,3 +320,69 @@ it.live("every unavailable write keeps its input and history unchanged, then rec
     })
   }
 }), 30_000)
+
+for (const [hash, path, selector] of [
+  ["m1", "commits", "h1"],
+  ["e1", "epics", ".mh-commits li"],
+] as const) {
+  it.live(`a failed initial ${path} read offers a targeted Retry`, () => scoped(effect {
+    provide NodeHttpServer.layerTest, page, MockMythical({ role: "maintainer", name: "Ada", agent: false }, seed) {
+      try scoped(effect {
+        try serveHistory()
+        const fault = try transportFault()
+        try sync(() => fault.fail(path))
+        provide Layer.provide(LiveMythical(""), fault.layer) {
+          const { node } = try mount("maintainer", hash)
+          try promise(() => vi.waitFor(() => expect(node.querySelector("[role=alert]")?.textContent).toContain("The history can't be reached.")))
+          try sync(() => fault.fail(""))
+          try click(node, "Retry")
+          try promise(() => vi.waitFor(() => {
+            expect(node.querySelector(selector)).not.toBeNull()
+            expect(node.querySelector("[role=alert]")).toBeNull()
+          }))
+          try Effect.try(() => expect(fault.failures()).toBe(1))
+        }
+      })
+    }
+  }))
+}
+
+for (const ending of ["ended", "failed"] as const) it.live(`an ${ending} history stream offers Reconnect and catches up from a fresh outline`, () => scoped(effect {
+  provide page, MockMythical({ role: "maintainer", name: "Ada", agent: false }, seed) {
+    const real = try Mythical
+    const cursors: Array<number> = []
+    let outlines = 0
+    const service: Mythical.Shape = {
+      mode: real.mode,
+      epic: (id, from) => real.epic(id, from),
+      commit: (id) => real.commit(id),
+      search: (query) => real.search(query),
+      plan: (request, operation) => real.plan(request, operation),
+      start: (id, lane, operation) => real.start(id, lane, operation),
+      note: (id, section, text, operation) => real.note(id, section, text, operation),
+      approve: (id) => real.approve(id),
+      fold: () => real.fold(),
+      publish: () => real.publish(),
+      outline: effect () => { outlines++; return try real.outline() },
+      events: (after) => {
+        cursors.push(after)
+        return cursors.length === 1 ? (ending === "ended" ? Stream.empty : Stream.fail(new Unavailable({ reason: "offline" }))) : real.events(after)
+      },
+    }
+    provide Mythical = service {
+      const { node } = try mount("maintainer")
+      try promise(() => vi.waitFor(() => expect(node.textContent).toContain("Disconnected")))
+      const id = try real.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "written while disconnected", task: "" })
+      try click(node, "Reconnect")
+      try promise(() => vi.waitFor(() => {
+        expect(node.textContent).toContain("written while disconnected")
+        expect(node.textContent).not.toContain("Disconnected")
+        expect(outlines).toBe(2)
+      }))
+      const fresh = try real.outline()
+      try Effect.try(() => expect(cursors).toEqual([fresh.seq - 1, fresh.seq]))
+      try real.start(id, "test")
+      try promise(() => vi.waitFor(() => expect(node.textContent).toContain("working")))
+    }
+  }
+}))
