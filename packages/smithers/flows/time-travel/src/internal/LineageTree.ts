@@ -18,7 +18,8 @@ import type { Frame, LineageEdge } from "../Frame.ts"
  * transitively; a detached child is reported but its own subtree is not, since
  * it no longer depends on the truncated history. One child is one descendant:
  * the edge union can name the same child twice (a fork edge plus a journaled
- * handoff), and reporting it twice made a caller cancel it twice.
+ * handoff), and reporting it twice made a caller cancel it twice. The root is
+ * never its own descendant, even if a self-loop or cycle points back to it.
  *
  * @since 0.1.0
  * @category combinators
@@ -39,6 +40,7 @@ export const descendants = (
   const queue: Array<string> = []
 
   const include = (edge: LineageEdge): void => {
+    if (edge.childRunId === runId) return
     if (edge.attached) {
       if (attachedRunIds.has(edge.childRunId)) return
       attached.push(edge)

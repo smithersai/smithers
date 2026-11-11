@@ -306,7 +306,7 @@ describe("SqlTimeTravelStore.descendants", () => {
       })
     }))
 
-  it.effect("deduplicates an attached cycle while preserving every reachable edge", () =>
+  it.effect("excludes the root from an attached cycle", () =>
     Effect.gen(function*() {
       const result = yield* run((store, sql) =>
         Effect.gen(function*() {
@@ -325,7 +325,7 @@ describe("SqlTimeTravelStore.descendants", () => {
         })
       )
 
-      expect(result.attached.map((edge) => edge.childRunId)).toEqual(["child", "parent"])
+      expect(result.attached.map((edge) => edge.childRunId)).toEqual(["child"])
       expect(result.detached).toEqual([])
     }))
   it.effect("derives a continuation edge from the round the parent handed off to", () =>

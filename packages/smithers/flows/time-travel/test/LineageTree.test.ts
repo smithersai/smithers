@@ -41,4 +41,20 @@ describe("LineageTree.descendants", () => {
     expect(result.attached.map((e) => e.childRunId)).toEqual(["c"])
     expect(result.detached.map((e) => e.childRunId)).toEqual(["f"])
   })
+
+  for (const attached of [true, false]) {
+    it(`excludes the root from ${attached ? "attached" : "detached"} self-loops and back edges`, () => {
+      const edges = [
+        edge("root", 1, "retained", true),
+        edge("root", 3, "child", true),
+        edge("root", 4, "root", attached),
+        edge("child", 0, "root", attached),
+        edge("child", 0, "child", true)
+      ]
+      const result = LineageTree.descendants(edges, "root", { lineageId: "l", seq: 2 })
+      expect(result.attached).toEqual([edges[1]])
+      expect(result.detached).toEqual([])
+      expect([...result.attachedRunIds]).toEqual(["child"])
+    })
+  }
 })

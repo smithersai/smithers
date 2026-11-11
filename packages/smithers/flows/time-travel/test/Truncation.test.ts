@@ -43,7 +43,7 @@ describe("truncation", () => {
         .toMatchObject({ changeId: "near" })
       expect(yield* (store.snapshotAt("parent", { lineageId: "other", seq: 5 }))).toBeUndefined()
       expect(yield* (store.descendants("parent", { lineageId: "parent/root", seq: 0 })))
-        .toEqual({ attached: [cyclic[0], cyclic[2]], detached: [cyclic[3]] })
+        .toEqual({ attached: [cyclic[0]], detached: [cyclic[3]] })
     }))
 
   it.effect("makes audit, receipt, fork, and layer operations transactional", () =>

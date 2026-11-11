@@ -19,7 +19,7 @@ const owner = { hostId: "owner-host", pid: 10, nonce: "owner-nonce" } as const
 const stranger = { hostId: "stranger-host", pid: 11, nonce: "stranger-nonce" } as const
 const frame = { lineageId: "run/root", seq: 1 } as const
 
-const memorySeed = () =>
+const memorySeed = (extraEdges: ReadonlyArray<LineageEdge> = []) =>
   MemoryTimeTravelStore.make({
     records: [
       {
@@ -54,7 +54,8 @@ const memorySeed = () =>
     edges: [
       { parentRunId: "run", parentSeq: 2, childRunId: "attached", kind: "child", attached: true },
       { parentRunId: "run", parentSeq: 2, childRunId: "detached", kind: "fork", attached: false },
-      { parentRunId: "run", parentSeq: 2, childRunId: "detached", kind: "continuation", attached: false }
+      { parentRunId: "run", parentSeq: 2, childRunId: "detached", kind: "continuation", attached: false },
+      ...extraEdges
     ],
     snapshots: [{ runId: "run", frame: { lineageId: "run/root", seq: 0 }, changeId: "change-0" }],
     runOwners: new Map([["run", owner]])
@@ -172,6 +173,64 @@ const withSql = <A>(
   }).pipe(Effect.provide(TestDatabase.layer))
 
 describe("TimeTravelStore conformance", () => {
+  for (const backend of ["memory", "sqlite"] as const) {
+    it.effect(`${backend} preserves the rewind prefix when an attached cycle points back to the run`, () =>
+      Effect.gen(function*() {
+        const backEdge: LineageEdge = {
+          parentRunId: "attached",
+          parentSeq: 0,
+          childRunId: "run",
+          kind: "continuation",
+          attached: true
+        }
+        const exercise = (store: TimeTravelStore.Service) =>
+          Effect.gen(function*() {
+            const result = yield* store.archiveAndTruncate("run", frame, [], owner)
+            return {
+              archived: result.archived,
+              orphaned: result.orphaned.map((edge) => edge.childRunId),
+              prefixArchived: [yield* store.archivedAt("run", 0, 0), yield* store.archivedAt("run", 1, 0)],
+              suffixArchived: yield* store.archivedAt("run", 2, 0),
+              childArchived: yield* store.archivedAt("attached", 0, 0),
+              snapshot: yield* store.snapshotAt("run", frame),
+              attempts: yield* store.attemptsAt("run", frame)
+            }
+          })
+        const memory = memorySeed([backEdge])
+        const actual = backend === "memory"
+          ? {
+            result: yield* exercise(memory),
+            survivors: memory.state().records.map((record) => record.eventId)
+          }
+          : yield* withSql((store, sql) =>
+            Effect.gen(function*() {
+              yield* seedSql(sql)
+              yield* sql`
+                INSERT INTO flows_time_travel_edges (parent_run_id, parent_seq, child_run_id, kind, attached)
+                VALUES ('attached', 0, 'run', 'continuation', 1)
+              `
+              const result = yield* exercise(store)
+              const rows = yield* sql<{ readonly event_id: string }>`
+                SELECT event_id FROM flows_journal_events ORDER BY run_id, seq
+              `
+              return { result, survivors: rows.map((row) => row.event_id) }
+            })
+          )
+        expect(actual).toEqual({
+          result: {
+            archived: 2,
+            orphaned: ["detached"],
+            prefixArchived: [false, false],
+            suffixArchived: true,
+            childArchived: true,
+            snapshot: { runId: "run", frame: { lineageId: "run/root", seq: 0 }, changeId: "change-0" },
+            attempts: [{ stepKeyDigest: "step", attempt: 1 }]
+          },
+          survivors: ["run-0", "run-1"]
+        })
+      }))
+  }
+
   it.effect("answers frame reads, descendants, archive evidence, and owner fences identically", () =>
     Effect.gen(function*() {
       const memory = yield* observe(memorySeed())
