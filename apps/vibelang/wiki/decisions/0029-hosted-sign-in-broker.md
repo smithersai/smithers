@@ -145,3 +145,15 @@ that error; any other GitHub error is refused as before. `HANDOFF_PAGE` now post
 `test/AuthBroker.test.vibe` covers the step (wrong cookie, other errors, a foreign state, replay, a late code, expiry)
 and its HTTP route through `screen()` and `serve()`. No redirect URL, secret or dependency is added. It takes effect
 when smithers.sh deploys.
+
+## Connection eviction in the workerd regression (2026-11-11, lane vl-authbroker-red)
+
+The eight sign-in/out cycles left the connection object idle. workerd evicts an idle object after ten seconds;
+the injected GitHub's in-memory issue list then reset, although the production connection remained in SQLite.
+A loaded run lost the first issue and reported only `["after"]`; fast runs kept both issues. The fixture had this
+lifetime mismatch when the eight-cycle test was introduced.
+
+The injected GitHub now keeps its issues and revocation count in the object's durable fixture storage. The
+eight-cycle test forces `DurableObjectState.abort` after its first write, checks that eviction request failed,
+then completes all cycles and verifies the connection, both writes and token cleanup. The same forced eviction
+failed against the old fixture. No sleep, timeout change, disabled eviction, dependency or product auth change.

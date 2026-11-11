@@ -8,7 +8,7 @@ import * as Connection from "../../../mvp/worker/GitHubConnectionHost.vibe"
 import type { Storage } from "../../worker/Objects.vibe"
 import type { ObjectDatabase } from "@smthrs/platform-cloudflare"
 
-interface State { readonly id: { toString(): string }; readonly storage: Storage }
+interface State { readonly id: { toString(): string }; readonly storage: Storage; abort(reason: string): void }
 const secret = Redacted.make("auth-broker-site-fixture-key-32-characters")
 const encryptionKey = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 function origins(request: Request) {
@@ -22,37 +22,43 @@ const missing = () => Effect.fail({ details: { status: 404 } })
 /** Every person's object this isolate constructed: the router must construct none for a call it refused. */
 const opened = new Set<string>()
 export class HostedConnection {
-  issues: Array<Record<string, unknown>> = []
-  revoked: Array<string> = []
   service: Promise<Effect.Success<ReturnType<typeof Connection.make>>> | undefined
   constructor(readonly state: State, readonly env: Env) { opened.add(state.id.toString()) }
   /** The connection's GitHub, answering 401 once the injected GitHub no longer holds `token`, as GitHub's API does. */
   client(token: Redacted.Redacted<string>, brokerOrigin: string): GitHub.GitHubClient.GitHubClient {
     const live = promise(() => (this.env.BROKER.getByName("auth") as unknown as { fetch(url: string, init: { method: string; body: string }): Promise<Response> }).fetch(brokerOrigin + "/__live", { method: "POST", body: Redacted.value(token) }).then((response) => response.json() as Promise<boolean>))
     const unauthorized = Effect.fail({ details: { status: 401 } })
-    const answer = (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => {
-      if (path === "/repos/smithersai/vibelang") return succeed({ id: 11, name: "vibelang", owner: { login: "smithersai" }, default_branch: "main" })
-      if (path.startsWith("/repos/smithersai/vibelang/issues?") || path === "/repos/smithersai/vibelang/issues" && method === "GET") return succeed(this.issues)
+    const answer = effect (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => {
+      if (path === "/repos/smithersai/vibelang") return { id: 11, name: "vibelang", owner: { login: "smithersai" }, default_branch: "main" }
+      // GitHub's state outlives this connection object's idle eviction, as the real provider's state does.
+      const issues = ((try promise(() => this.state.storage.get("fixture/issues"))) as Array<Record<string, unknown>> | undefined) ?? []
+      if (path.startsWith("/repos/smithersai/vibelang/issues?") || path === "/repos/smithersai/vibelang/issues" && method === "GET") return issues
       if (method === "POST" && path === "/repos/smithersai/vibelang/issues") {
-        const number = this.issues.length + 1
+        const number = issues.length + 1
         const issue = { id: 100 + number, node_id: "I_" + number, number, title: body?.title ?? "", body: body?.body ?? "", state: "open", created_at: "2026-11-09T00:00:00Z", updated_at: "2026-11-09T00:00:00Z", closed_at: null, user: { login: "ada", id: 7 }, labels: [], assignees: [], comments: 0, html_url: "" }
-        this.issues.push(issue)
-        return succeed(issue)
+        issues.push(issue)
+        try promise(() => this.state.storage.put("fixture/issues", issues))
+        return issue
       }
-      return missing()
+      return try missing()
     }
     const request = (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => Effect.flatMap(live, (held) => held ? answer(method, path, body) : unauthorized)
     return { request: request as GitHub.GitHubClient.GitHubClient["request"], paginate: (path) => Effect.flatMap(live, (held) => held ? answer("GET", path).pipe(Effect.map((items) => ({ items, truncated: false, next: null })), Effect.catch(() => succeed({ items: [], truncated: false, next: null }))) : unauthorized) as never, count: () => Effect.die("unused") }
   }
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    // Deterministic idle-eviction boundary: workerd discards this instance, preserving its real SQLite storage.
+    if (url.pathname === "/__connection/evict") this.state.abort("test.connection.evict")
     const brokerOrigin = "http://localhost:" + url.port
     const site = "http://127.0.0.1:" + url.port
     const die = () => Effect.die("unused")
     const github = GitHub.Auth.GitHubAuth.of({
       authorizeUrl: () => "", exchange: die, user: die, permission: die, deviceCode: die, deviceToken: die,
       refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
-      revoke: (token) => { this.revoked.push(Redacted.value(token)); return Effect.void },
+      revoke: effect () => {
+        const revoked = Number((try promise(() => this.state.storage.get("fixture/revoked"))) ?? 0)
+        try promise(() => this.state.storage.put("fixture/revoked", revoked + 1))
+      },
     })
     this.service ??= runPromise(Connection.make(7, this.state.id.toString(), this.state.storage as never, { origin: brokerOrigin, sites: [{ origin: site, secret, grants }], keyring: connectionKeys }, github, (token) => (program) => Effect.provideService(program, GitHub.GitHubClient.GitHubClient, this.client(token, brokerOrigin)) as never))
     const service = await this.service
@@ -61,7 +67,7 @@ export class HostedConnection {
       const input = await request.json() as { origin: string; login: string; access: string; refresh: string | null; expires: number | null }
       return answer(await runPromise(service.install({ origin: input.origin, login: input.login, tokens: { accessToken: Redacted.make(input.access), refreshToken: input.refresh === null ? null : Redacted.make(input.refresh), expiresAt: input.expires } })))
     }
-    if (url.pathname === "/__connection/state") return answer({ issues: this.issues, revoked: this.revoked.length, connections: await runPromise(service.connections()), journal: this.state.storage.sql.exec("SELECT * FROM flows_runs").toArray(), rows: this.state.storage.sql.exec("SELECT key, value FROM github_connection").toArray() })
+    if (url.pathname === "/__connection/state") return answer({ issues: await this.state.storage.get("fixture/issues") ?? [], revoked: await this.state.storage.get("fixture/revoked") ?? 0, connections: await runPromise(service.connections()), journal: this.state.storage.sql.exec("SELECT * FROM flows_runs").toArray(), rows: this.state.storage.sql.exec("SELECT key, value FROM github_connection").toArray() })
     if (url.pathname === "/__connection/end") { await runPromise(service.revokedAtGitHub()); return answer({}) }
     return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)))))
   }

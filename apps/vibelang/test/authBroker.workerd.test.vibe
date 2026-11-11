@@ -184,6 +184,9 @@ it.live("workerd: eight sign-in and sign-out cycles keep a person's connection",
     const first = try brokerSignIn(host.origin)
     const connected = try brokerConnect(host.origin, first.session)
     const before = try write(first.session, "before")
+    // Slow cycles used to let workerd evict the idle connection. Force the same boundary without waiting.
+    const evicted = try http.get(host.origin + "/__connection/evict")
+    try Effect.try(() => expect(evicted.status).toBe(500))
     let session = first.session
     const cycles: Array<{ readonly out: number; readonly ended: unknown; readonly page: string; readonly signedIn: number }> = []
     for (let cycle = 0; cycle < 8; cycle++) {
