@@ -16,6 +16,14 @@ const migratedFixture = Smithers.Filegroup({
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   cwd: "packages/smithers/agent/registry",
+  // The VibeLang example sits in its own directory: beside examples/quickstart.ts
+  // both files would emit examples/quickstart.js.
+  sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Smithers.file("docs/quickstart.md"),
+    example: Smithers.file("examples/vibe/quickstart.vibe"),
+    test: Smithers.file("test/quickstart.test.vibe")
+  }],
   // ModuleMetadata.test.ts projects migrate's emitted module; a change to it must rerun the test.
   deps: [migratedFixture]
 })

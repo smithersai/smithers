@@ -7,7 +7,9 @@ sidebar:
 
 This quickstart discovers a real directory. By the end you will have a registry
 that lists a flow it found, reports a diagnostic about one it refused, and
-renders the prompt an agent would run.
+renders the prompt an agent would run. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -119,6 +121,74 @@ Supporting skill resources are available relative to this skill directory but ar
 </skill_resources>
 
 the staged diff
+```
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the whole walkthrough is
+`effect` functions. A `.vibe` file reaches the disk only through Effect's
+`FileSystem` and `Path` services, so the example writes both flows into a
+scoped temporary directory instead of asking you to create them, a `provide`
+block supplies the registry, and `main` provides `NodeServices.layer` where the
+TypeScript merges the Node filesystem and path layers by hand.
+
+This is `examples/vibe/quickstart.vibe`. `test/quickstart.test.vibe` runs it,
+and the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Discovery, Registry } from "@smthrs/registry"
+
+/** A flow discovery accepts: its frontmatter has a description. */
+const review = `---
+description: Reviews a proposed change and reports concrete correctness and maintainability risks.
+capabilities: ["fs:read:**"]
+---
+
+Review the supplied change. Report only findings you can point at a line for.
+`
+
+/** A flow discovery refuses: the description is missing. */
+const draft = `---
+name: draft
+---
+
+This flow is missing the description discovery requires.
+`
+
+/** Writes each flow as `<root>/<name>/flow.mdx`. */
+effect function writeFlows(root: string, flows: Record<string, string>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  for (const [name, text] of Object.entries(flows)) {
+    try fs.makeDirectory(path.join(root, name), { recursive: true })
+    try fs.writeFileString(path.join(root, name, "flow.mdx"), text)
+  }
+}
+
+/** Discovers a temporary flows root, then reads the catalog and renders one prompt. */
+export effect function discover(args: string) {
+  return try scoped(effect {
+    const root = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    try writeFlows(root, { review, draft })
+    const registry = Registry.layer({ sources: [{ source: "project", root, naming: "path" }] }).pipe(
+      Layer.provide(Discovery.layer)
+    )
+    provide registry {
+      const catalog = try Registry.Registry
+      const entries = (try catalog.list()).map((entry) => `${entry.name} tier=${entry.effects.tier}`)
+      const warnings = (try catalog.warnings()).map((warning) => warning.code)
+      return { entries, warnings, prompt: try catalog.runPrompt("review", { args }) }
+    }
+  })
+}
+
+/** The walkthrough on Node's filesystem. */
+export effect function main() {
+  provide NodeServices.layer {
+    return try discover("the staged diff")
+  }
+}
 ```
 
 ## What just happened

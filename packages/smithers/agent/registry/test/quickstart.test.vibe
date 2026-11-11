@@ -1,0 +1,15 @@
+import { expect, it } from "@effect/vitest"
+import { main } from "../examples/vibe/quickstart.vibe"
+
+it.effect("lists the described flow and reports the refused one", effect () => {
+  const { entries, warnings } = try main()
+  expect(entries).toEqual(["review tier=sealed"])
+  expect(warnings).toEqual(["missing_description", "name_field_ignored"])
+})
+
+it.effect("renders the review prompt from its body and the arguments", effect () => {
+  const { prompt } = try main()
+  expect(prompt).toMatch(/^\s*Review the supplied change\./)
+  expect(prompt).toContain("<skill_resources>")
+  expect(prompt).toMatch(/the staged diff$/)
+})
