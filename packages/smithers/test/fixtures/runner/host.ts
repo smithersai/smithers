@@ -106,9 +106,10 @@ export const start = async (token: string) => {
   }
   /**
    * How long the claim route holds its answer after it marked a job claimed (a runner may die before it hears it),
-   * and how long the settle route holds its answer.
+   * how long the settle route holds its answer, and how long the git-credential route holds its answer (a runner
+   * asks for it while it holds the mirror).
    */
-  const hold = { claimMs: 0, settleMs: 0 }
+  const hold = { claimMs: 0, settleMs: 0, credentialMs: 0 }
   const server = createServer(async (request, response) => {
     const body = await read(request)
     if (request.headers.authorization !== `Bearer ${accepted.token}`) {
@@ -185,6 +186,7 @@ export const start = async (token: string) => {
     const holds = row !== undefined && row.state === "claimed" && row.claim === value.claim && row.held
     if (request.url === AgentRunner.ROUTES.gitCredential) {
       credential.asks++
+      if (hold.credentialMs > 0) await new Promise((done) => setTimeout(done, hold.credentialMs))
       const answer: {
         readonly status: number
         readonly retryAfter?: number

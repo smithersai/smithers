@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as RunnerCmd from "../src/commands/Runner.ts"
 import * as Config from "../src/runner/Config.ts"
 import * as Serve from "../src/runner/Serve.ts"
+import * as Session from "../src/runner/Session.ts"
 import * as Tree from "../src/runner/Tree.ts"
 import * as Workspace from "../src/runner/Workspace.ts"
 import * as Host from "./fixtures/runner/host.ts"
@@ -577,6 +578,26 @@ describe("smthrs runner serve", () => {
     serveInProcess()
     expect(await host.settled(unknown)).toEqual({ _tag: "Failed", reason: "workspace" })
     expect(await host.settled(large)).toEqual({ _tag: "Failed", reason: "too_large" })
+  }, 90_000)
+
+  // Issue #5145: once the turn was quiet, the change's wait for the mirror another job held ignored a Stop, and the job
+  // settled Done when the mirror came free.
+  test("a cancel while the change waits for the mirror another job holds settles Cancelled, not Done", async () => {
+    configure()
+    const row = host.enqueue(Host.task({ base: mirror.base, prompt: "add the line `x` to `x`" }))
+    serveInProcess()
+    await until(() => pids("agent-").length === 1)
+    // A second job asks for a credential while it holds the mirror, and the host takes 20 s to answer.
+    host.hold.credentialMs = 20_000
+    host.enqueue(Host.task({ base: "e".repeat(40), prompt: "refuse" }))
+    await until(() => host.credential.asks === 1)
+    await until(() => [...row.events.values()].some((event) => event.kind === Transcript.KINDS.turn))
+    // Past the quiet wait: the change is waiting for the mirror.
+    await sleep(Session.QUIET.afterMs + 2000)
+    const asked = Date.now()
+    row.cancel = true
+    expect(await host.settled(row)).toEqual({ _tag: "Cancelled", processTreeGone: true })
+    expect(Date.now() - asked).toBeLessThan(10_000)
   }, 90_000)
 
   test("a claim the host no longer holds stops the agent and settles nothing", async () => {

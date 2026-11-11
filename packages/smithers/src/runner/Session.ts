@@ -861,8 +861,18 @@ const session = (options: {
       if (settled !== "quiet") return yield* stopped(settled, sessionId, undefined)
       break
     }
-    yield* Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore)
-    const changes = yield* Effect.exit(Workspace.changes(checkout, job.task.base, job.task.limits, options.mirror))
+    // A Stop, the claim lost, a suspension, or the deadline still wins while the tree stops and the change is
+    // collected: the wait for the mirror can last through another job's fetch. Interrupted, the wait gives up its
+    // place and the diff's jj is killed.
+    const collected = yield* Effect.raceFirst(
+      Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(
+        Effect.ignore,
+        Effect.andThen(Effect.exit(Workspace.changes(checkout, job.task.base, job.task.limits, options.mirror)))
+      ),
+      signal
+    )
+    if (isSignal(collected)) return yield* stopped(collected, undefined, undefined)
+    const changes = collected
     if (Exit.isFailure(changes)) return ended(failed("workspace"), stop)
     if (changes.value === undefined) return ended(failed("too_large"), stop)
     const summary = options.scrub(current !== "" ? current : previous)
