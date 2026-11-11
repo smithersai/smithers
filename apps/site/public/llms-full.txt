@@ -38032,9 +38032,12 @@ refuses `conflict`. A
 `OwnedFlow` facts. `Loaded` is `{ contributions, refused }`.
 
 `load` never fails. It decodes each candidate, checks `requires.api`, refuses
-both plugins of a shared id, orders the rest by `requires.plugins` (ties by id),
+lower-tier holders of a shared id or owned flow tag (all holders if the highest
+tier ties), orders the rest by `requires.plugins` (ties by tier then id),
 then checks and folds each plugin against the host and the plugins before it.
-Refusals are ordered by plugin id. `maximumHeaderEntries` (6) bounds
+Tiers rank `built-in`, `repository`, then `personal`. A repository or personal
+plugin owns only flow tags starting with its `<id>/` prefix. Collision refusals
+name both plugins and their tiers. Refusals are ordered by plugin id. `maximumHeaderEntries` (6) bounds
 `shell.header` across all plugins. The checks and their reasons are listed in
 [Plugin manifests](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/manifests.md#what-the-loader-checks).
 

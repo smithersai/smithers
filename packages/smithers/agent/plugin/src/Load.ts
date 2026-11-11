@@ -173,14 +173,57 @@ interface Decoded {
   readonly manifest: Manifest.Manifest
 }
 
-/** Dependency order, ties by id, and the plugins left over: in a cycle, or behind one. */
+const tiers: Readonly<Record<Tier, number>> = { "built-in": 0, repository: 1, personal: 2 }
+
+const byTier = (left: Decoded, right: Decoded): number => tiers[left.candidate.tier] - tiers[right.candidate.tier]
+
+/** Refuse lower-tier holders, or every holder when the highest tier ties. */
+const withoutConflicts = (
+  plugins: ReadonlyArray<Decoded>,
+  keys: (plugin: Decoded) => ReadonlyArray<string>,
+  path: string,
+  refused: Array<Refusal>
+): ReadonlyArray<Decoded> => {
+  const holders = new Map<string, Array<Decoded>>()
+  for (const plugin of plugins) {
+    for (const key of new Set(keys(plugin))) {
+      const group = holders.get(key) ?? []
+      group.push(plugin)
+      holders.set(key, group)
+    }
+  }
+  const rejected = new Set<Decoded>()
+  for (const [key, group] of holders) {
+    if (group.length < 2) continue
+    group.sort(byTier)
+    const first = group[0]!
+    const second = group[1]!
+    const losers = byTier(first, second) === 0 ? group : group.slice(1)
+    for (const plugin of losers) {
+      if (rejected.has(plugin)) continue
+      const other = plugin === first ? second : first
+      refused.push(refusal(
+        plugin.manifest.id,
+        "conflict",
+        path,
+        `${plugin.candidate.tier} plugin ${plugin.manifest.id} and ${other.candidate.tier} plugin ${other.manifest.id} share ${key}`
+      ))
+      rejected.add(plugin)
+    }
+  }
+  return plugins.filter((plugin) => !rejected.has(plugin))
+}
+
+/** Dependency order, ties by tier then id, and the plugins in or behind a cycle. */
 const order = (plugins: ReadonlyArray<Decoded>) => {
   const byId = new Map(plugins.map((plugin) => [plugin.manifest.id, plugin]))
   const deps = (plugin: Decoded) => Object.keys(plugin.manifest.requires.plugins ?? {}).filter((id) => byId.has(id))
   const waiting = new Map(plugins.map((plugin) => [plugin.manifest.id, new Set(deps(plugin))]))
   const sorted: Array<Decoded> = []
   for (;;) {
-    const ready = [...waiting].filter(([, pending]) => pending.size === 0).map(([id]) => id).sort()
+    const ready = [...waiting].filter(([, pending]) => pending.size === 0).map(([id]) => id).sort((a, b) =>
+      byTier(byId.get(a)!, byId.get(b)!) || (a < b ? -1 : 1)
+    )
     const next = ready[0]
     if (next === undefined) break
     waiting.delete(next)
@@ -251,7 +294,7 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
       if (existing?.system === true) {
         return yield* fail("conflict", "flows", `${flow.tag} is a system flow, never owned by a plugin`)
       }
-      if (existing !== undefined || state.owned.has(flow.tag) || own.has(flow.tag)) {
+      if (existing !== undefined || own.has(flow.tag)) {
         return yield* fail("conflict", "flows", `${flow.tag} already has an owner`)
       }
       own.set(flow.tag, flow)
@@ -531,7 +574,8 @@ const bySlot = (left: Slot, right: Slot): number =>
 
 /**
  * Loads a set of candidates: decode each, check `requires.api`, refuse
- * duplicate ids, order by `requires.plugins` (ties by id), then check and fold
+ * id and owned-flow collisions by tier (equal tiers are refused), order by
+ * `requires.plugins` (ties by tier then id), then check and fold
  * each plugin against the host and the plugins before it.
  *
  * @category loading
@@ -557,13 +601,23 @@ export const load = (host: HostFacts, candidates: ReadonlyArray<Candidate>): Eff
       decoded.push({ candidate, manifest })
     }
 
-    const counts = new Map<string, number>()
-    for (const { manifest } of decoded) counts.set(manifest.id, (counts.get(manifest.id) ?? 0) + 1)
-    for (const { manifest } of decoded) {
-      if (counts.get(manifest.id)! > 1) refused.push(refusal(manifest.id, "conflict", "id", "two plugins share the id"))
-    }
-
-    const { left, sorted } = order(decoded.filter(({ manifest }) => counts.get(manifest.id) === 1))
+    const namespaced = decoded.filter(({ candidate, manifest }) => {
+      if (
+        candidate.tier === "built-in" || (candidate.flows ?? []).every(({ tag }) => tag.startsWith(`${manifest.id}/`))
+      ) {
+        return true
+      }
+      refused.push(refusal(manifest.id, "invalid", "flows", `an owned flow tag must start with ${manifest.id}/`))
+      return false
+    })
+    const uniqueIds = withoutConflicts(namespaced, ({ manifest }) => [manifest.id], "id", refused)
+    const uniqueFlows = withoutConflicts(
+      uniqueIds,
+      ({ candidate }) => (candidate.flows ?? []).map(({ tag }) => tag),
+      "flows",
+      refused
+    )
+    const { left, sorted } = order(uniqueFlows)
     for (const { cyclic, plugin } of left) {
       refused.push(
         cyclic

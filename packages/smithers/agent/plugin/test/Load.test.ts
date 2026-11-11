@@ -153,6 +153,225 @@ describe("load refuses a plugin and loads the rest", () => {
     ])
   })
 
+  describe("tier precedence", () => {
+    const tiers: ReadonlyArray<Contribution.Tier> = ["built-in", "repository", "personal"]
+    const flowsHost = host({ points: ["flows"] })
+
+    for (const higher of tiers) {
+      for (const lower of tiers.slice(tiers.indexOf(higher) + 1)) {
+        for (const reverse of [false, true]) {
+          it(`keeps ${higher} over ${lower} for a shared id (reverse=${reverse})`, async () => {
+            const candidates: Array<Load.Candidate> = [
+              { tier: higher, manifest: minimal("queue") },
+              { tier: lower, manifest: minimal("queue") }
+            ]
+            const { contributions, refused } = await load(reverse ? candidates.reverse() : candidates)
+            expect(contributions.plugins.map(({ id, tier }) => [id, tier])).toEqual([["queue", higher]])
+            expect(refused).toMatchObject([{
+              plugin: "queue",
+              reason: "conflict",
+              path: "id"
+            }])
+            expect(refused[0]!.detail).toContain(`${higher} plugin queue`)
+            expect(refused[0]!.detail).toContain(`${lower} plugin queue`)
+          })
+
+          it(`preserves the valid ${higher} owner against a ${lower} shared flow (reverse=${reverse})`, async () => {
+            const candidates: Array<Load.Candidate> = [
+              { tier: higher, manifest: minimal("zz"), flows: [owned("aa/decide")] },
+              { tier: lower, manifest: minimal("aa"), flows: [owned("aa/decide")] }
+            ]
+            // Repository owners must stay in their namespace too.
+            if (higher === "repository") {
+              candidates[0] = {
+                tier: higher,
+                manifest: minimal("aa"),
+                flows: [owned("aa/decide")]
+              }
+            }
+            if (higher === "repository") {
+              candidates[1] = {
+                tier: lower,
+                manifest: minimal("zz"),
+                flows: [owned("aa/decide")]
+              }
+            }
+            const { contributions, refused } = await load(reverse ? candidates.reverse() : candidates, flowsHost)
+            const winner = higher === "repository" ? "aa" : "zz"
+            const loser = higher === "repository" ? "zz" : "aa"
+            expect(contributions.plugins.map(({ id, tier, owns }) => [id, tier, owns]))
+              .toEqual([[winner, higher, ["aa/decide"]]])
+            expect(refused).toMatchObject([{
+              plugin: loser,
+              reason: higher === "repository" ? "invalid" : "conflict",
+              path: "flows"
+            }])
+            if (higher === "built-in") {
+              expect(refused[0]!.detail).toContain(`${higher} plugin ${winner}`)
+              expect(refused[0]!.detail).toContain(`${lower} plugin ${loser}`)
+            }
+          })
+        }
+      }
+
+      it(`refuses both ${higher} plugins sharing an id`, async () => {
+        const { contributions, refused } = await load([
+          { tier: higher, manifest: minimal("dup") },
+          { tier: higher, manifest: minimal("dup") }
+        ])
+        expect(contributions.plugins).toEqual([])
+        expect(refused.map(({ reason, path }) => [reason, path])).toEqual([
+          ["conflict", "id"],
+          ["conflict", "id"]
+        ])
+      })
+    }
+
+    it("does not let lower-tier duplicates displace a unique built-in or its dependent", async () => {
+      const { contributions, refused } = await load([
+        { tier: "personal", manifest: minimal("queue") },
+        { tier: "repository", manifest: minimal("queue") },
+        { tier: "repository", manifest: minimal("queue") },
+        builtIn(minimal("dependent", { requires: { api: "*", plugins: { queue: "*" } } })),
+        builtIn(minimal("queue"))
+      ])
+      expect(contributions.plugins.map(({ id }) => id)).toEqual(["queue", "dependent"])
+      expect(refused.map(({ reason, path }) => [reason, path])).toEqual([
+        ["conflict", "id"],
+        ["conflict", "id"],
+        ["conflict", "id"]
+      ])
+    })
+
+    it("refuses tied highest-tier ids and all lower-tier copies", async () => {
+      const { contributions, refused } = await load([
+        builtIn(minimal("dup")),
+        { tier: "personal", manifest: minimal("dup") },
+        builtIn(minimal("dup"))
+      ])
+      expect(contributions.plugins).toEqual([])
+      expect(refused.map(({ reason, path }) => [reason, path])).toEqual([
+        ["conflict", "id"],
+        ["conflict", "id"],
+        ["conflict", "id"]
+      ])
+    })
+
+    it("orders ready plugins by tier before id, preserving dependency order", async () => {
+      const { contributions, refused } = await load([
+        { tier: "personal", manifest: minimal("aa") },
+        { tier: "repository", manifest: minimal("bb") },
+        builtIn(minimal("zz")),
+        builtIn(minimal("cc", { requires: { api: "*", plugins: { bb: "*" } } }))
+      ])
+      expect(refused).toEqual([])
+      expect(contributions.plugins.map(({ id }) => id)).toEqual(["zz", "bb", "cc", "aa"])
+    })
+
+    it("protects a built-in flow even while its dependency is not ready", async () => {
+      const { contributions, refused } = await load([
+        { tier: "personal", manifest: minimal("aa"), flows: [owned("aa/decide")] },
+        builtIn(minimal("triage", { requires: { api: "*", plugins: { zz: "*" } } }), [owned("aa/decide")]),
+        builtIn(minimal("zz"))
+      ], flowsHost)
+      expect(contributions.plugins.map(({ id }) => id)).toEqual(["zz", "triage"])
+      expect(refused).toMatchObject([{ plugin: "aa", reason: "conflict", path: "flows" }])
+    })
+
+    for (const tier of ["repository", "personal"] as const) {
+      it(`requires a ${tier} owned flow to use its complete plugin namespace`, async () => {
+        for (const tag of ["other/decide", "aa", "aaa/decide"]) {
+          const { contributions, refused } = await load([
+            { tier, manifest: minimal("aa"), flows: [owned(tag)] }
+          ], flowsHost)
+          expect(contributions.plugins).toEqual([])
+          expect(refused).toMatchObject([{ plugin: "aa", reason: "invalid", path: "flows" }])
+        }
+        const { contributions, refused } = await load([
+          { tier, manifest: minimal("aa"), flows: [owned("aa/decide")] }
+        ], flowsHost)
+        expect(refused).toEqual([])
+        expect(contributions.plugins.map(({ owns }) => owns)).toEqual([["aa/decide"]])
+      })
+    }
+
+    it("keeps the built-in triage owner when a personal plugin claims its flow", async () => {
+      const { contributions, refused } = await load([
+        { tier: "personal", manifest: minimal("aa"), flows: [owned("triage/decide")] },
+        builtIn(minimal("triage"), [owned("triage/decide")])
+      ], flowsHost)
+      expect(contributions.plugins.map(({ id, owns }) => [id, owns])).toEqual([["triage", ["triage/decide"]]])
+      expect(refused).toMatchObject([{ plugin: "aa", reason: "invalid", path: "flows" }])
+    })
+
+    it("reports one refusal when a plugin collides on multiple owned tags", async () => {
+      const { contributions, refused } = await load([
+        builtIn(minimal("first"), [owned("shared/a"), owned("shared/b")]),
+        builtIn(minimal("second"), [owned("shared/a"), owned("shared/b")])
+      ], flowsHost)
+      expect(contributions.plugins).toEqual([])
+      expect(refused.map(({ plugin, reason, path }) => [plugin, reason, path])).toEqual([
+        ["first", "conflict", "flows"],
+        ["second", "conflict", "flows"]
+      ])
+    })
+
+    for (const invalidTier of ["repository", "personal"] as const) {
+      for (const validTier of ["repository", "personal"] as const) {
+        for (const reverse of [false, true]) {
+          it(`ignores a foreign ${invalidTier} claim against a valid ${validTier} owner (reverse=${reverse})`, async () => {
+            const candidates: Array<Load.Candidate> = [
+              { tier: invalidTier, manifest: minimal("evil"), flows: [owned("victim/run"), owned("other/run")] },
+              { tier: validTier, manifest: minimal("victim"), flows: [owned("victim/run")] }
+            ]
+            const { contributions, refused } = await load(reverse ? candidates.reverse() : candidates, flowsHost)
+            expect(contributions.plugins.map(({ id, tier, owns }) => [id, tier, owns]))
+              .toEqual([["victim", validTier, ["victim/run"]]])
+            expect(refused).toMatchObject([{ plugin: "evil", reason: "invalid", path: "flows" }])
+          })
+        }
+      }
+    }
+
+    it("checks flow namespaces before selecting a shared id", async () => {
+      const { contributions, refused } = await load([
+        { tier: "repository", manifest: minimal("victim"), flows: [owned("other/run")] },
+        { tier: "personal", manifest: minimal("victim"), flows: [owned("victim/run")] }
+      ], flowsHost)
+      expect(contributions.plugins.map(({ id, tier }) => [id, tier])).toEqual([["victim", "personal"]])
+      expect(refused).toMatchObject([{ plugin: "victim", reason: "invalid", path: "flows" }])
+    })
+
+    it("retains the built-in queue view when a repository plugin reuses its id", async () => {
+      const { contributions, refused } = await load([
+        { tier: "repository", manifest: minimal("queue") },
+        builtIn(queueManifest())
+      ])
+      expect(contributions.views.map(({ id }) => id)).toEqual(["queue/queue"])
+      expect(refused).toMatchObject([{ plugin: "queue", reason: "conflict", path: "id" }])
+    })
+
+    it("refuses both built-ins sharing a flow, retaining unrelated plugins", async () => {
+      const candidates = [
+        builtIn(minimal("first"), [owned("shared/decide")]),
+        builtIn(minimal("second"), [owned("shared/decide")]),
+        builtIn(minimal("unrelated"))
+      ]
+      for (const entries of [candidates, [...candidates].reverse()]) {
+        const { contributions, refused } = await load(entries, flowsHost)
+        expect(contributions.plugins.map(({ id }) => id)).toEqual(["unrelated"])
+        expect(refused).toMatchObject([
+          { plugin: "first", reason: "conflict", path: "flows" },
+          { plugin: "second", reason: "conflict", path: "flows" }
+        ])
+        for (const entry of refused) {
+          expect(entry.detail).toContain("built-in plugin first")
+          expect(entry.detail).toContain("built-in plugin second")
+        }
+      }
+    })
+  })
+
   it("orders by requires.plugins, ties by id, and refuses cycles and what waits on them", async () => {
     const requires = (plugins: Record<string, string>) => ({ requires: { api: "^1.0.0", plugins } })
     const { contributions, refused } = await load([
@@ -284,6 +503,7 @@ describe("load refuses a plugin and loads the rest", () => {
         )
       ).toEqual([
         ["catalogued", "conflict", "flows"],
+        ["first", "conflict", "flows"],
         ["reserves", "reserved", "flows"],
         ["second", "conflict", "flows"],
         ["systemic", "conflict", "flows"],
