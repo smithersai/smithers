@@ -6,7 +6,9 @@ description: "Scan a flows tree and run one command end to end with @smthrs/fs."
 This walkthrough builds the smallest real program: one flow on disk, one
 metadata-only scan, one parsed command, and one invocation through a stub
 boundary. By the end you have a command surface you can also serve to a
-shell or an HTTP client.
+shell or an HTTP client. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the scan and the command
+as Effect code.
 
 ## Prerequisites
 
@@ -117,6 +119,52 @@ Effect.runPromise(program).then(console.log)
 Two defining behaviors happened here: the flow module loaded only when the
 command dispatched, and the string `"42"` from the command line decoded to
 the number `42` through the flow's own schema before invocation.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the scan and the command
+are `effect` functions. The stub boundary's `invoke` is an `effect` arrow that
+returns the output directly, `provide FlowInvoker.FlowInvoker = invoker`
+replaces `Effect.provide(Layer.succeed(…))`, and `main` provides
+`NodeServices.layer` for the `FileSystem` and `Path` services the scan needs.
+The caller passes the flows root, because a `.vibe` file has no `process.cwd()`.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Command, FileRouter, FlowInvoker } from "@smthrs/fs"
+
+/** A stub boundary that accepts every review it is handed. */
+const invoker = FlowInvoker.make({
+  invoke: effect ({ input }) => ({ accepted: true, number: (input as { readonly number: number }).number })
+})
+
+/** Scans the flows tree under `root` without importing any flow module. */
+export effect function routeNames(root: string) {
+  const { routes } = try FileRouter.scan({ root })
+  return routes.map((route) => route.name)
+}
+
+/** Builds the command surface and executes one command string through the stub. */
+export effect function execute(root: string, commandString: string) {
+  provide FlowInvoker.FlowInvoker = invoker {
+    const { routes } = try FileRouter.scan({ root })
+    const commands = try Command.make(routes)
+    return { listed: commands.list(), output: try commands.execute(commandString) }
+  }
+}
+
+/** The walkthrough on Node's filesystem: scan, then run `review --number 42`. */
+export effect function main(root: string) {
+  provide NodeServices.layer {
+    const names = try routeNames(root)
+    const { listed, output } = try execute(root, "review --number 42")
+    return { names, listed, output }
+  }
+}
+```
 
 ## Serve the same routes
 

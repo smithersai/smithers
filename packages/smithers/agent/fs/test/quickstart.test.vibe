@@ -1,0 +1,19 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { flowsRoot } from "../examples/agent-command.platform.ts"
+import { execute, main } from "../examples/quickstart.vibe"
+import { failureOf } from "./helpers.vibe"
+
+it.effect("scans the review route, lists it, and decodes the command-line number", effect () => {
+  expect(try main(flowsRoot)).toEqual({
+    names: ["review"],
+    listed: [{ name: "review", description: "Review a pull request." }],
+    output: { accepted: true, number: 42 }
+  })
+})
+
+it.effect("refuses a command the flow's own schema rejects", effect () => {
+  provide NodeServices.layer {
+    expect(try failureOf(execute(flowsRoot, "review --number forty-two"))).toMatchObject({ code: "decode_failed" })
+  }
+})

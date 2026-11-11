@@ -1,0 +1,31 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Command, FileRouter, FlowInvoker } from "@smthrs/fs"
+
+/** A stub boundary that accepts every review it is handed. */
+const invoker = FlowInvoker.make({
+  invoke: effect ({ input }) => ({ accepted: true, number: (input as { readonly number: number }).number })
+})
+
+/** Scans the flows tree under `root` without importing any flow module. */
+export effect function routeNames(root: string) {
+  const { routes } = try FileRouter.scan({ root })
+  return routes.map((route) => route.name)
+}
+
+/** Builds the command surface and executes one command string through the stub. */
+export effect function execute(root: string, commandString: string) {
+  provide FlowInvoker.FlowInvoker = invoker {
+    const { routes } = try FileRouter.scan({ root })
+    const commands = try Command.make(routes)
+    return { listed: commands.list(), output: try commands.execute(commandString) }
+  }
+}
+
+/** The walkthrough on Node's filesystem: scan, then run `review --number 42`. */
+export effect function main(root: string) {
+  provide NodeServices.layer {
+    const names = try routeNames(root)
+    const { listed, output } = try execute(root, "review --number 42")
+    return { names, listed, output }
+  }
+}
