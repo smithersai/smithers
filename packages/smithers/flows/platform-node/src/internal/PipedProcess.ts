@@ -37,6 +37,36 @@ const promise = <A>() => {
   return { promise, resolve, reject }
 }
 
+const plain = (word: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(word) ? Redacted.value(word) : word
+
+/** Where a word holds a NUL character, named by position, never by value. */
+const nulPosition = (command: ChildProcess.StandardCommand): string | undefined => {
+  if (command.command.includes("\0")) return "The command"
+  const index = command.args.findIndex((arg) => plain(arg).includes("\0"))
+  if (index !== -1) return `Argument ${index + 1}`
+  for (const [name, value] of Object.entries(command.options.env ?? {})) {
+    if (value !== undefined && plain(value).includes("\0")) return `The environment variable ${name}`
+  }
+  return undefined
+}
+
+/**
+ * Refuses a NUL character before Node's own refusal copies the revealed word,
+ * a protected one included, into its error message.
+ * @private
+ * @since 1.0.0
+ */
+export const refuseNul = (command: ChildProcess.StandardCommand): Effect.Effect<void, PlatformError.PlatformError> =>
+  Effect.suspend(() => {
+    const position = nulPosition(command)
+    return position === undefined ? Effect.void : Effect.fail(PlatformError.badArgument({
+      module: "ChildProcess",
+      method: "spawn",
+      description: `${position} contains a NUL character`
+    }))
+  })
+
 /**
  * Converts native errors without losing their errno or signal.
  * @private
@@ -111,6 +141,7 @@ export const spawn = (
   owner = false
 ): Effect.Effect<ChildProcessHandle, PlatformError.PlatformError, Scope.Scope> =>
   Effect.gen(function*() {
+    yield* refuseNul(command)
     const descriptors = yield* Effect.try({
       try: () => descriptorConfig(command.options),
       catch: (cause) => failure("spawn", cause)
@@ -142,7 +173,7 @@ export const spawn = (
           const options = command.options
           const child = Native.spawn(
             command.command,
-            command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg),
+            command.args.map(plain),
             {
               cwd: options.cwd,
               env: options.env === undefined ? (options.extendEnv ? process.env : undefined) : {
@@ -175,6 +206,10 @@ export const spawn = (
             ready.resolve()
           })
           child.on("error", (error) => {
+            // Node copies the revealed argv into a spawn error; keep protected words hidden.
+            if ("spawnargs" in error && command.args.some(Redacted.isRedacted)) {
+              error.spawnargs = command.args.map((arg) => Redacted.isRedacted(arg) ? "<redacted>" : arg)
+            }
             state.error = error
             if (!state.started) {
               state.ended = true

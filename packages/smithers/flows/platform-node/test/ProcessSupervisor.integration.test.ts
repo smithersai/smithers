@@ -85,6 +85,41 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       expect(code).toBe(0)
     }).pipe(Effect.provide(layers), Effect.scoped))
 
+  it.live("keeps opaque words out of a prepared missing-executable error", () =>
+    Effect.gen(function*() {
+      const raw = yield* ChildProcessSpawner
+      const failure = yield* Effect.flip(Effect.gen(function*() {
+        const prepared = yield* ProcessReaper.processLifecycle(
+          ChildProcess.make("/smithers-missing-executable", ["public", Redacted.make("synthetic-private-argument")], {
+            env: { PRIVATE: Redacted.make("synthetic-private-environment") }
+          }),
+          raw.spawn
+        )
+        yield* prepared.activate
+        return yield* prepared.handle.exitCode
+      }))
+      expect(failure).toMatchObject({ reason: { _tag: "NotFound" } })
+      expect(JSON.stringify(failure)).not.toContain("synthetic-private")
+      expect(String(failure)).not.toContain("synthetic-private")
+    }).pipe(Effect.provide(layers), Effect.scoped))
+
+  it.live("keeps an opaque word holding NUL out of a prepared spawn refusal", () =>
+    Effect.gen(function*() {
+      const raw = yield* ChildProcessSpawner
+      const failure = yield* Effect.flip(Effect.gen(function*() {
+        const prepared = yield* ProcessReaper.processLifecycle(
+          ChildProcess.make(process.execPath, [Redacted.make("synthetic-private\0argument")]),
+          raw.spawn
+        )
+        yield* prepared.activate
+        return yield* prepared.handle.exitCode
+      }))
+      expect(failure).toMatchObject({
+        reason: { _tag: "BadArgument", method: "spawn", description: "Argument 1 contains a NUL character" }
+      })
+      expect(JSON.stringify(failure)).not.toContain("synthetic-private")
+    }).pipe(Effect.provide(layers), Effect.scoped))
+
   it.live("restores control instrumentation after its owning effect is interrupted", () =>
     Effect.gen(function*() {
       const original = Control.prototype.write

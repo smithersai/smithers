@@ -20,7 +20,7 @@ import { createConnection, createServer, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join, parse, resolve } from "node:path"
 import * as Tls from "node:tls"
-import { standardFdsOf } from "./PipedProcess.ts"
+import { refuseNul, standardFdsOf } from "./PipedProcess.ts"
 import type { Policy, Snapshot, System } from "./ProcessCleanup.ts"
 import { NativeProcessError, processFault } from "./ProcessFault.ts"
 import { source } from "./SupervisorProgram.ts"
@@ -510,6 +510,7 @@ export const prepare = (
 ): Lifecycle =>
 (command, spawn) =>
   Effect.gen(function*() {
+    yield* refuseNul(command)
     const initial = yield* policy(command.options)
     const bun = process.versions.bun !== undefined
     const sea = bun ? false : (yield* Effect.tryPromise({

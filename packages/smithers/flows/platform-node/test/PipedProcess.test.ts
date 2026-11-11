@@ -68,6 +68,38 @@ const fakeChild = () =>
   })
 
 describe("native pipe adapter", () => {
+  it("keeps opaque words out of a real missing-executable error", async () => {
+    const failure = await Effect.runPromise(Effect.scoped(Effect.flip(PipedProcess.spawn(
+      ChildProcess.make("/smithers-missing-executable", ["public", Redacted.make("synthetic-private-argument")]),
+      undefined
+    ))))
+    expect(failure).toMatchObject({ reason: { _tag: "NotFound" } })
+    expect(JSON.stringify(failure)).not.toContain("synthetic-private-argument")
+    expect(String(failure)).not.toContain("synthetic-private-argument")
+    expect(failure.reason.cause).toMatchObject({ spawnargs: ["public", "<redacted>"] })
+  })
+
+  it.each(
+    [
+      [ChildProcess.make("synthetic\0command"), "The command"],
+      [ChildProcess.make(process.execPath, ["public", Redacted.make("synthetic\0argument")]), "Argument 2"],
+      [
+        ChildProcess.make(process.execPath, [], {
+          env: { OMIT: undefined, PRIVATE: Redacted.make("synthetic\0environment") }
+        }),
+        "The environment variable PRIVATE"
+      ]
+    ] as const
+  )("keeps a word holding NUL out of a real spawn refusal", async (command, position) => {
+    const failure = await Effect.runPromise(Effect.scoped(Effect.flip(PipedProcess.spawn(command, undefined))))
+    expect(failure).toMatchObject({
+      reason: { _tag: "BadArgument", method: "spawn", description: `${position} contains a NUL character` }
+    })
+    expect(JSON.stringify(failure)).not.toContain("synthetic")
+    expect(String(failure)).not.toContain("synthetic")
+    expect(String(failure.reason.cause)).not.toContain("synthetic")
+  })
+
   it.skipIf(process.platform === "win32")(
     "carries both directions over a declared duplex descriptor",
     async () => {
