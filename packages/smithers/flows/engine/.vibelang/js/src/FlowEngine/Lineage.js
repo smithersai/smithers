@@ -34,5 +34,6 @@
  *
  * @since 0.1.0
  * @category constructors
+ * @throws {never}
  */
 export const root = (runId) => `smithers-journal-lineage/v1:${JSON.stringify([runId])}`;

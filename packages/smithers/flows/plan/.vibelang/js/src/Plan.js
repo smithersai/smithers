@@ -686,6 +686,7 @@ export const verify = (input) => Effect.gen(function* () {
  * @returns The nodes whose generation equals `plan.generation`, in order.
  * @since 0.1.0
  * @category accessors
+ * @throws {never}
  */
 export const generationNodes = (plan) => plan.nodes.filter((node) => node.generation === plan.generation);
 /**
@@ -719,6 +720,7 @@ export const writerFences = (nodes) => Conflicts.writerFences(nodes);
  * {@link append}, or {@link verify}; a structurally equal copy returns `false`.
  * @since 1.0.0
  * @category guards
+ * @throws {never}
  */
 export const isVerified = (input) => typeof input === "object" && input !== null && frozenPlans.has(input);
 /**

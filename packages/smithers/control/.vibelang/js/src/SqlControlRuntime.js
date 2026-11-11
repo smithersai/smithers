@@ -484,7 +484,7 @@ const makeRuntime = (options = {}) => {
          * What each parked run is waiting for, by run id.
          *
          * The engine writes `waiting_reason` on the run row when it parks a run
-         * (`packages/smithers/flows/engine-store/src/DurableEngineState.ts` `park`), and clears
+         * (`packages/smithers/flows/engine-store/src/DurableEngineState.vibe` `park`), and clears
          * it on the wake. The control plane reads it and never writes it: a park
          * belongs to whoever is holding the run, and the projection reports the
          * hold rather than deciding it.
