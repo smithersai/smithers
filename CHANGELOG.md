@@ -9,10 +9,11 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-3461 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+3465 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
+- **merge-queue:** CI as one process per check on the candidate commit; three jj target fixes ([8fbcf04271](https://github.com/smithersai/smithers/commit/8fbcf04271a165af3d66d2fe0d7b0a6afcb673fa))
 - **merge-queue:** the target as a jj bookmark, with candidates rebased on its tip ([4a5dd32d87](https://github.com/smithersai/smithers/commit/4a5dd32d876bb79147a72f0d70421d06155b6f7f))
 - **merge-queue:** the inbox as a JSON-lines file ([7e50506edf](https://github.com/smithersai/smithers/commit/7e50506edf206da0b4ac1cf9c4bd26fb948726e2))
 - **vibelang:** prove a spec function as VibeLang lowers it ([495bc84bce](https://github.com/smithersai/smithers/commit/495bc84bce2771ac77cf69db9d0c5e6aa15be55b))
@@ -431,6 +432,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **kernel:** type the globalThis default host for packages without Node types ([3cabe32cb7](https://github.com/smithersai/smithers/commit/3cabe32cb7e16c6710147d5b076550f9b8f9a083))
+- **vibelang:** refuse empty benchmark coverage reports ([23bdf913da](https://github.com/smithersai/smithers/commit/23bdf913da188094a10bbb6f7655779acab88113))
 - **mvp:** keep a pinned Retry's pin when its pinned child can't be read ([7546b75792](https://github.com/smithersai/smithers/commit/7546b757929aa87d2aaa117527758ad1af8fd18b))
 - **mvp:** keep comparison patches out of the HTTP cache ([d6d17cc276](https://github.com/smithersai/smithers/commit/d6d17cc276e70f8710def4346029a1b3d652aa60))
 - **lemmascript:** name a schema value type in a cross-module signature ([e8ffc55b89](https://github.com/smithersai/smithers/commit/e8ffc55b896c0f05cb08104c8ee2fff021db1f44))
@@ -2769,6 +2772,7 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(vibelang):** bench call ceilings, budget faults and run clock ([1ed41c906a](https://github.com/smithersai/smithers/commit/1ed41c906a5cae59439cad33e25e84ca023b2640))
 - **style(build):** format the remote CAS batch test ([bc696900f9](https://github.com/smithersai/smithers/commit/bc696900f9b0c5d6d00198ee78051b2343b5d477))
 - **test(engine):** pin follower wake, decode logs and retry recovery ([49197df985](https://github.com/smithersai/smithers/commit/49197df985ad77bfb3725278c3ef9672ae7aad86))
 - **proof(vibelang):** prove the screen read and written back ([506229caa2](https://github.com/smithersai/smithers/commit/506229caa241a68c1b422ecc5c2a86b58941d610))
