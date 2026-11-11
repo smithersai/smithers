@@ -136,6 +136,11 @@ describe("ActionPersistence", () => {
             const id = { runId, stepKeyDigest: sha256(key), attempt: 1 }
             yield* activate(runId)
             const attempts = yield* AttemptStore.AttemptStore
+            // The row the body saw is captured here and asserted only after the
+            // dispatch returns: an assertion that throws inside the body fails
+            // the body, which is the very exit the failed and interrupted cases
+            // demand, so it could never fail them.
+            let running: AttemptStore.Attempt | undefined
             const execute = ActionPersistence.make({
               runId,
               owner,
@@ -143,13 +148,7 @@ describe("ActionPersistence", () => {
               ...(keyed ? { idempotencyKey: "genuine-external-key" } : {}),
               execute: () =>
                 Effect.gen(function*() {
-                  const running = yield* attempts.get(id)
-                  expect(Option.isSome(running)).toBe(true)
-                  if (Option.isSome(running)) {
-                    expect(running.value.state).toBe("running")
-                    expect(running.value.meta).toMatchObject({ tier, ...(keyed ? { keyed: true } : {}) })
-                    expect((running.value.meta as { keyed?: boolean }).keyed).toBe(keyed ? true : undefined)
-                  }
+                  running = Option.getOrUndefined(yield* attempts.get(id))
                   if (outcome === "failed") return yield* Effect.fail("failed")
                   if (outcome === "interrupted") return yield* Effect.interrupt
                   return "result"
@@ -157,6 +156,9 @@ describe("ActionPersistence", () => {
             })
             const exit = yield* Effect.exit(execute({ action: {}, attempt: 1, key, tier }))
             expect(exit._tag).toBe(outcome === "succeeded" ? "Success" : "Failure")
+            expect(running?.state).toBe("running")
+            expect(running?.meta).toMatchObject({ tier, ...(keyed ? { keyed: true } : {}) })
+            expect((running?.meta as { keyed?: boolean }).keyed).toBe(keyed ? true : undefined)
             const recorded = yield* attempts.get(id)
             expect(Option.isSome(recorded)).toBe(true)
             if (Option.isSome(recorded)) {
@@ -300,7 +302,12 @@ describe("ActionPersistence", () => {
       )
 
       expect(dispatches).toBe(0)
-      expect(result.every(Exit.isFailure)).toBe(true)
+      // A live same-key row and a conflicting row are typed admission failures
+      // the retry ladder sees, never the silent park a lost fence earns.
+      expect(result.map((exit) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit)).toMatchObject([
+        { code: "attempt_admission_rejected", outcome: "ExistingSame" },
+        { code: "attempt_admission_rejected", outcome: "Conflict" }
+      ])
     }))
 
   it.effect("suppresses terminal and cache writes after every rejected attempt finish", () =>
@@ -345,8 +352,10 @@ describe("ActionPersistence", () => {
             ))
           const journal = yield* Journal.Journal
           yield* journal.flush
+          const cache = yield* CacheStore.CacheStore
           return {
             exits,
+            cached: yield* Effect.forEach(outcomes, (_, index) => cache.get(sha256(`finish-rejected/${index}`))),
             entries: yield* journal.entries({ runId: "finish-rejected" as never, limit: 20 })
           }
         }).pipe(Effect.provide(layer), Effect.scoped)
@@ -356,6 +365,10 @@ describe("ActionPersistence", () => {
       expect(
         result.exits.every((exit) => Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
       ).toBe(true)
+      // Every dispatch was cache-eligible with both proofs present, so only the
+      // rejected finish stands between its result and the shared cache: an
+      // owner that lost the fence publishes nothing other runs could serve.
+      expect(result.cached.map(Option.isNone)).toEqual([true, true, true])
       // A rejected finish still leaves the attempt's admission and its tier-2
       // frame anchor on the journal; what it must not leave is a terminal record.
       expect(result.entries.entries.map((entry) => entry.eventType)).toEqual([
@@ -437,6 +450,13 @@ describe("ActionPersistence", () => {
                   diffIdentity: "d"
                 }
               }
+            },
+            {
+              // The pre-sandbox shape another run may still hold: the write
+              // proof alone, without the hermetic read proof.
+              tier: "sealed",
+              boundary: { declaredOutputs: {}, diffIdentity: "d", wholeTreeWritesVerified: true },
+              readSetVerified: true
             }
           ]
           for (const [index, meta] of malformed.entries()) {
@@ -469,8 +489,8 @@ describe("ActionPersistence", () => {
         }).pipe(Effect.provide(tolerantLayer), Effect.scoped)
       )
 
-      expect(values).toEqual(["fresh-0", "fresh-1", "fresh-2", "fresh-3"])
-      expect(dispatches).toBe(4)
+      expect(values).toEqual(["fresh-0", "fresh-1", "fresh-2", "fresh-3", "fresh-4"])
+      expect(dispatches).toBe(5)
     }))
 
   it.effect("does not publish a hard-boundary result without whole-tree write proof", () =>
@@ -539,10 +559,10 @@ describe("ActionPersistence", () => {
       expect(Option.isNone(result.cached)).toBe(true)
     }))
 
-  it("decodes a persisted row carrying the write proof alone, and refuses to serve it", async () => {
+  it("decodes a persisted row carrying the write proof alone", async () => {
     // The pre-sandbox evidence shape: `wholeTreeWritesVerified` only. The row
-    // must keep decoding forever (the LegacyInlineOutput rule), and the hit
-    // gate must refuse it for want of the read proof.
+    // must keep decoding forever (the LegacyInlineOutput rule); the hit gate's
+    // refusal of such a row is the executor case above.
     const legacy = {
       declaredOutputs: { outputs: [{ path: "out.txt", digest: sha256("built") }] },
       diffIdentity: "legacy-diff",

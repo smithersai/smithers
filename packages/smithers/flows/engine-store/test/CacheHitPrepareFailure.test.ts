@@ -12,11 +12,14 @@
  * between the get and the evict is not deleted with the poison.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { RetryPolicy } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
@@ -113,8 +116,13 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
           return { executions, exit, entry, records, eventTypes }
         }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jjLayer)), Effect.scoped)
       )
-      // The attempt fails as an ordinary host error the retry ladder owns…
-      expect(outcome.exit._tag).toBe("Failure")
+      // The attempt fails as the host's own refusal, which the retry ladder
+      // owns: a typed failure, not an interrupt, and not a non-retryable tag…
+      const error = Exit.isFailure(outcome.exit) ? Cause.squash(outcome.exit.cause) : undefined
+      expect(RetryPolicy.errorTag(error)).toBe("@smthrs/engine-store/UnsupportedBoundary")
+      expect(
+        RetryPolicy.isNonRetryable(RetryPolicy.make({ initialMs: 1, factor: 2, maxMs: 10, maxAttempts: 10 }), error)
+      ).toBe(false)
       // …the body never ran under the broken host…
       expect(outcome.executions).toBe(1)
       // …the valid shared row survives for every other run…
@@ -263,6 +271,9 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
           return { exit, entry }
         }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jjLayer)), Effect.scoped)
       )
+      // The racing dispatch ran its own body to completion: the skipped evict
+      // neither failed it nor was mistaken for a hit.
+      expect(outcome.exit).toEqual(Exit.succeed("fresh"))
       // The concurrent run's fresh entry survives the racing evict.
       expect(Option.isSome(outcome.entry)).toBe(true)
       if (Option.isSome(outcome.entry)) {

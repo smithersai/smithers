@@ -124,9 +124,12 @@ describe("legacy quarantine flags", () => {
                   ).toBe("durable")
                   expect(yield* attempts.get(id)).toEqual(before)
                   expect(Option.getOrThrow(yield* cache.get(keyDigest)).meta).toEqual(meta)
-                  if (quarantined || !hasBoundary) {
-                    expect(replays).toBe(0)
-                  }
+                  // The run's own durably succeeded attempt restores its missing
+                  // outputs whenever its recorded evidence is neither quarantined
+                  // nor contradictory; the write and read proofs gate shared reuse
+                  // and publication above, not the replay of what this run already
+                  // recorded. Without evidence there is nothing to restore.
+                  expect(replays).toBe(!quarantined && hasBoundary ? 1 : 0)
                   if (!reusable) {
                     const page = yield* journal.entries({ runId: "legacy" as never, limit: 50 })
                     expect(page.entries.some((entry) =>

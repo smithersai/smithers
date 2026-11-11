@@ -284,18 +284,45 @@ describe("layers", () => {
     }))
 })
 
+/** A shared tier that records every publish it is asked for and never refuses one. */
+const recording = () => {
+  const calls: Array<ReadonlyArray<string>> = []
+  const sync: ArtifactSync.Service = {
+    publish: (digests) =>
+      Effect.sync(() => {
+        calls.push(digests)
+      }),
+    hydrate: (digests) => Effect.succeed(digests.length === 0)
+  }
+  return { calls, sync }
+}
+
 describe("CachePublication", () => {
   it.effect("publishes nothing for absent evidence and for evidence that references nothing", () =>
     Effect.gen(function*() {
-      yield* withCrypto(CachePublication.publishArtifacts(undefined))
-      yield* withCrypto(CachePublication.publishArtifacts(evidenceFor({ paths: [] })))
+      // A configured shared tier is never asked to publish an empty set: both
+      // early returns answer before the protocol is resolved, and neither is a
+      // refusal.
+      const { calls, sync } = recording()
+      const absent = yield* withCrypto(
+        CachePublication.publishArtifacts(undefined).pipe(Effect.provideService(ArtifactSync.ArtifactSync, sync))
+      )
+      const unreferenced = yield* withCrypto(
+        CachePublication.publishArtifacts(evidenceFor({ paths: [] })).pipe(
+          Effect.provideService(ArtifactSync.ArtifactSync, sync)
+        )
+      )
+      expect(absent).toBeUndefined()
+      expect(unreferenced).toBeUndefined()
+      expect(calls).toEqual([])
     }))
 
   it.effect("defaults to the single-tier protocol when no ArtifactSync is configured", () =>
     Effect.gen(function*() {
       // This is what keeps a purely local composition free of remote-cache
-      // machinery: publishing is a no-op and hydration reports nothing arrived.
-      yield* withCrypto(CachePublication.publishArtifacts(referenced))
+      // machinery: publishing is a no-op that refuses nothing, and hydration
+      // reports nothing arrived.
+      expect(yield* withCrypto(CachePublication.publishArtifacts(referenced))).toBeUndefined()
       expect(yield* withCrypto(CachePublication.hydrateArtifacts(referenced))).toBe(false)
     }))
 
