@@ -7,7 +7,8 @@
  * @since 1.0.0
  */
 
-import { NativeRuntime } from "@smthrs/platform-node"
+import * as Runtime from "@smthrs/flows/Runtime"
+import { NativeRuntime, NodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Host from "./BunHost.ts"
@@ -28,12 +29,20 @@ const runtime = NativeRuntime.make({
   // Loaded when a database opens: its driver imports `bun:sqlite`, which only
   // Bun resolves, and this package's root must still load wherever its other
   // modules are read.
+  // A fresh SQLite file is initialized privately and published whole, as on
+  // Node: a host killed during first start never leaves a partial store at
+  // the published name, and concurrent creators converge on one winner.
   database: (filename) =>
-    Layer.unwrap(
-      Effect.map(
-        Effect.promise(() => import("@smthrs/database/bun/BunDatabase")),
-        (Database) => Database.layer({ filename })
-      )
+    NodeRuntime.publishFreshDatabase(
+      filename,
+      (file) =>
+        Layer.unwrap(
+          Effect.map(
+            Effect.promise(() => import("@smthrs/database/bun/BunDatabase")),
+            (Database) => Database.layer({ filename: file })
+          )
+        ),
+      Runtime.storage
     ),
   host: Host,
   crypto: Host.BunCrypto.layer
