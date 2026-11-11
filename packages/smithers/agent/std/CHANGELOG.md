@@ -14,6 +14,12 @@
 
 ### Fixed
 
+- `Checkpoints.layerGit` no longer lets an agent redirect a host write through
+  the workspace's `.git/config`. It refuses with `permission_denied` when that
+  file is a symbolic link, a hard link, or not the regular file named there,
+  edits a host copy instead of the file itself, and links the edit back in
+  place, so host git never writes through a link (#4902).
+
 - A command whose arguments exceed the operating system's limit fails with
   `arguments_too_long` under Effect's raw Node spawner too, where Node's
   synchronous `E2BIG` throw used to end the whole run.

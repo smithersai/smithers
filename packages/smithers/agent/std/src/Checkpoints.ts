@@ -399,7 +399,7 @@ const gitStore = (
           // nothing, which is not an error and must not be read as one.
           return recorded.stdout.trim() === "" ? head : recorded.stdout.trim()
         }))
-      const named = yield* GitWorktree.config(repository, [keyOf(id), commit])
+      const named = yield* GitWorktree.writeConfig(repository, [keyOf(id), commit])
       if (named.exitCode !== 0) {
         return yield* Effect.fail(failed(`Could not name the checkpoint: ${named.stderr.trim()}`))
       }

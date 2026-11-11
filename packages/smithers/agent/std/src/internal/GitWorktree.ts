@@ -25,8 +25,10 @@
  *
  * - `rev-parse` in the workspace, which resolves refs and paths and runs no
  *   hook, filter, fsmonitor or other configured program;
- * - `git config --file <workspace config>`, which reads or writes that one file
- *   and follows no `include`;
+ * - the workspace's `config`, which is read through a descriptor checked
+ *   against the file and copied to the host's temporary directory, where git
+ *   reads or edits the copy and follows no `include`; an edit goes back by
+ *   linking a new file in place, so no write follows a link (#4902);
  * - a copy of the workspace index into the shadow, so the recorded tree holds
  *   what the agent staged without the harness writing the agent's index; and
  * - a handful of `core.*` settings that change how bytes are hashed
@@ -112,8 +114,71 @@ export interface Repository {
   readonly settings: ReadonlyArray<string>
 }
 
+const temporaryRoot = (): string => {
+  const env = ambientEnvironment()
+  const configured = [env.TMPDIR, env.TEMP, env.TMP].find((value) => value !== undefined && value !== "")
+  // Git for Windows and its shell have different /tmp roots. An absolute
+  // drive path with forward slashes names the same directory to both.
+  return configured === undefined ? "/tmp" : configured.replace(/\\/g, "/").replace(/\/+$/, "")
+}
+
+/** The exit status the config script refuses with; `git config` never uses it. */
+const refusedStatus = 77
+
 /**
- * Reads or writes the workspace's config file as a file, never as a repository.
+ * `$1` is the workspace's common git directory as the host opened it, `$2` the
+ * host's temporary directory, and `$3` `read` or `write`; the rest are
+ * `git config` arguments.
+ *
+ * The agent can replace `config` with a symbolic link to any host file, and
+ * git follows one both when it reads the file and when it renames its lock
+ * file over it (#4902). So host git never opens the workspace's `config`. The
+ * shell enters `$1` by its physical path and refuses unless that is still `$1`
+ * (in either spelling Git for Windows uses),
+ * opens `config` and refuses unless the open file is the one regular file
+ * named there with one link, and copies it to a file in `$2`. Git reads or
+ * edits that copy. An edit goes back as a new file beside `config`, linked
+ * over that name by `ln -nf`, which replaces the name and never writes
+ * through it. `stat -c` is GNU and BusyBox, `stat -f` is BSD, whose
+ * `/dev/fd` reports another device, so BSD compares inode and links only.
+ */
+const configScript = [
+  "set -eC",
+  "cd -P -- \"$1\"",
+  "here=$(pwd -P)",
+  // Git for Windows prints `C:/...` where its shell prints `/c/...`; `pwd -W` is its spelling.
+  `if [ "$here" != "$1" ] && [ "$(pwd -W 2>/dev/null)" != "$1" ]; then echo "$1 now resolves to $here, not the repository the host opened" >&2; exit ${refusedStatus}; fi`,
+  "copy=$(mktemp -- \"$2/smithers-git-config-XXXXXXXX\")",
+  "next=\"config.smithers-${copy##*-}\"",
+  "trap 'rm -f -- \"$copy\" \"$copy.lock\" \"$next\"' EXIT",
+  "ident() { stat -c '%d %i %h' \"$@\" 2>/dev/null || stat -f '%i %l' \"$@\"; }",
+  `if [ -L config ]; then echo "$1/config is a symbolic link, which host git never follows" >&2; exit ${refusedStatus}; fi`,
+  "if [ -e config ]; then",
+  `  if [ ! -f config ]; then echo "$1/config is not a regular file" >&2; exit ${refusedStatus}; fi`,
+  "  exec 3< config",
+  "  opened=$(ident -L /dev/fd/3)",
+  `  if [ -L config ] || [ "$opened" != "$(ident config)" ] || [ "\${opened##* }" != 1 ]; then echo "$1/config is linked elsewhere or was replaced while it was read" >&2; exit ${refusedStatus}; fi`,
+  "  cat <&3 >| \"$copy\"",
+  "  exec 3<&-",
+  "fi",
+  "mode=$3",
+  "shift 3",
+  "git --git-dir=/dev/null config --file \"$copy\" \"$@\"",
+  "if [ \"$mode\" = write ]; then cat -- \"$copy\" > \"$next\"; ln -nf -- \"$next\" config; fi"
+].join("\n")
+
+const configAccess = (repository: Pick<Repository, "common">, mode: "read" | "write", args: ReadonlyArray<string>) =>
+  run("sh", ["-c", configScript, "sh", repository.common, temporaryRoot(), mode, ...args], isolated).pipe(
+    Effect.flatMap((result) =>
+      result.exitCode === refusedStatus
+        ? Effect.fail(failed(result.stderr.trim(), "permission_denied"))
+        : Effect.succeed(result)
+    )
+  )
+
+/**
+ * Reads the workspace's config file as a file, never as a repository, through
+ * {@link configScript}.
  *
  * `--git-dir=/dev/null` stops git discovering any repository around the host's
  * working directory, and `--file` reads the one file without `include`s.
@@ -122,7 +187,17 @@ export interface Repository {
  * @since 1.0.0
  */
 const config = (repository: Pick<Repository, "common">, args: ReadonlyArray<string>) =>
-  run("git", ["--git-dir=/dev/null", "config", "--file", `${repository.common}/config`, ...args], isolated)
+  configAccess(repository, "read", args)
+
+/**
+ * Edits the workspace's config file as {@link config} reads it, and puts the
+ * edit back without writing through a link.
+ *
+ * @category utilities
+ * @since 1.0.0
+ */
+const writeConfig = (repository: Pick<Repository, "common">, args: ReadonlyArray<string>) =>
+  configAccess(repository, "write", args)
 
 const open = (root: string): Effect.Effect<Repository, StdError.StdError, ChildProcessSpawner> =>
   Effect.gen(function*() {
@@ -154,14 +229,6 @@ const open = (root: string): Effect.Effect<Repository, StdError.StdError, ChildP
       : []
     return { root: stripped, toplevel, common, index, objectFormat, settings }
   })
-
-const temporaryRoot = (): string => {
-  const env = ambientEnvironment()
-  const configured = [env.TMPDIR, env.TEMP, env.TMP].find((value) => value !== undefined && value !== "")
-  // Git for Windows and its shell have different /tmp roots. An absolute
-  // drive path with forward slashes names the same directory to both.
-  return configured === undefined ? "/tmp" : configured.replace(/\\/g, "/").replace(/\/+$/, "")
-}
 
 const remove = (path: string) =>
   run("rm", ["-rf", "--", path]).pipe(
@@ -490,4 +557,4 @@ const withDetachedWorktree = <A, E, R>(
  * @category utilities
  * @since 1.0.0
  */
-export const GitWorktree = { config, git, open, resolveCommit, withDetachedWorktree, withShadow }
+export const GitWorktree = { config, git, open, resolveCommit, withDetachedWorktree, withShadow, writeConfig }

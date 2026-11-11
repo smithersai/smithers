@@ -24,6 +24,7 @@ import {
   chmodSync,
   constants,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -694,6 +695,29 @@ describe("Checkpoints over a real repository", () => {
     expect(exit._tag).toBe("Failure")
     expect(JSON.stringify(exit)).toContain("permission_denied")
     expect(readFileSync(join(other, ".git", "config"), "utf8")).toBe(before)
+  }, 60_000)
+
+  it.each([
+    ["a symbolic link to", (target: string, config: string) => symlinkSync(target, config)],
+    ["a hard link of", (target: string, config: string) => linkSync(target, config)]
+  ])("refuses a config the agent made %s a host file, and leaves that file alone (#4902)", async (_, plant) => {
+    const root = repository()
+    const victim = realpathSync(mkdtempSync(join(tmpdir(), "flows-checkpoint-victim-")))
+    const credentials = join(victim, "credentials")
+    writeFileSync(credentials, "[default]\n\tkey = secret\n")
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(root)
+      // After the host opened the store, the agent replaces the repository's
+      // config with a link to an INI-shaped file the harness user can write.
+      rmSync(join(root, ".git", "config"))
+      plant(credentials, join(root, ".git", "config"))
+      yield* checkpoints.capture("cp-0-1")
+    })))
+
+    expect(exit._tag).toBe("Failure")
+    expect(JSON.stringify(exit)).toContain("permission_denied")
+    expect(readFileSync(credentials, "utf8")).toBe("[default]\n\tkey = secret\n")
+    expect(readdirSync(victim)).toEqual(["credentials"])
   }, 60_000)
 
   it("leaves a root that was not a repository when the host opened it without checkpoints", async () => {

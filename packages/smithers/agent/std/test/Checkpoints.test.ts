@@ -104,7 +104,39 @@ const checkoutPath = (spawns: ReadonlyArray<ReadonlyArray<string>>) => {
 const workspace = "git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C /work/repo"
 const shadow = "git --git-dir=<shadow>"
 const guarded = "-c core.hooksPath=/dev/null -c core.fsmonitor=false"
-const configFile = "git --git-dir=/dev/null config --file /work/repo/.git/config"
+/**
+ * Reads the workspace config through a descriptor checked against the one
+ * regular file named there, edits a host copy, and links an edit back in
+ * place, so no host write follows a link the agent planted (#4902).
+ */
+const configScript = [
+  "set -eC",
+  `cd -P -- "$1"`,
+  "here=$(pwd -P)",
+  // Git for Windows prints `C:/...` where its shell prints `/c/...`; `pwd -W` is its spelling.
+  `if [ "$here" != "$1" ] && [ "$(pwd -W 2>/dev/null)" != "$1" ]; then echo "$1 now resolves to $here, not the repository the host opened" >&2; exit 77; fi`,
+  `copy=$(mktemp -- "$2/smithers-git-config-XXXXXXXX")`,
+  `next="config.smithers-\${copy##*-}"`,
+  `trap 'rm -f -- "$copy" "$copy.lock" "$next"' EXIT`,
+  `ident() { stat -c '%d %i %h' "$@" 2>/dev/null || stat -f '%i %l' "$@"; }`,
+  `if [ -L config ]; then echo "$1/config is a symbolic link, which host git never follows" >&2; exit 77; fi`,
+  "if [ -e config ]; then",
+  `  if [ ! -f config ]; then echo "$1/config is not a regular file" >&2; exit 77; fi`,
+  "  exec 3< config",
+  "  opened=$(ident -L /dev/fd/3)",
+  `  if [ -L config ] || [ "$opened" != "$(ident config)" ] || [ "\${opened##* }" != 1 ]; then echo "$1/config is linked elsewhere or was replaced while it was read" >&2; exit 77; fi`,
+  `  cat <&3 >| "$copy"`,
+  "  exec 3<&-",
+  "fi",
+  "mode=$3",
+  "shift 3",
+  `git --git-dir=/dev/null config --file "$copy" "$@"`,
+  `if [ "$mode" = write ]; then cat -- "$copy" > "$next"; ln -nf -- "$next" config; fi`
+].join("\n")
+/** The host's temporary directory, which holds the config copy. */
+const hostTmp = "/host-tmp"
+const configFile = `sh -c ${configScript} sh /work/repo/.git ${hostTmp} read`
+const configWrite = `sh -c ${configScript} sh /work/repo/.git ${hostTmp} write`
 
 /** Opening the workspace: paths and hashing settings, as data. */
 const opened = [
@@ -137,6 +169,7 @@ const checkout = (path: string, commit: string) => {
 const cacheRoot = "/host-cache/smithers"
 beforeEach(() => {
   vi.stubEnv("XDG_CACHE_HOME", "/host-cache")
+  vi.stubEnv("TMPDIR", hostTmp)
 })
 afterEach(() => vi.unstubAllEnvs())
 
@@ -233,7 +266,7 @@ describe("Checkpoints.makeGit capture", () => {
       `${shadow} ${guarded} update-ref --no-deref HEAD head999`,
       `${shadow} --work-tree=/work/repo ${guarded} stash create flows checkpoint cp-0-1`,
       "rm -rf -- <shadow>",
-      `${configFile} flows-checkpoint.cp-0-1 abc123`
+      `${configWrite} flows-checkpoint.cp-0-1 abc123`
     ])
     // The shadow reads no host config file and writes the workspace's objects.
     const stash = spawns.findIndex((argv) => argv.includes("stash"))
@@ -257,7 +290,7 @@ describe("Checkpoints.makeGit capture", () => {
       return yield* checkpoints.capture("cp-1-0")
     }))
 
-    expect(lines(spawns).at(-1)).toBe(`${configFile} flows-checkpoint.cp-1-0 head999`)
+    expect(lines(spawns).at(-1)).toBe(`${configWrite} flows-checkpoint.cp-1-0 head999`)
     expect(snapshot.ref).toBe("head999")
   })
 
@@ -356,12 +389,29 @@ describe("Checkpoints.makeGit capture", () => {
       const checkpoints = yield* store(spawns, [
         ["stash create", { stdout: "abc123\n" }],
         ["HEAD^", { stdout: "head999\n" }],
-        ["config --file /work/repo/.git/config flows-checkpoint", { exitCode: 1 }]
+        ["write flows-checkpoint", { exitCode: 1 }]
       ])
       return yield* checkpoints.capture("cp-0-0")
     })))
 
     expect(failureOf(exit)?.message).toContain("Could not name the checkpoint")
+  })
+
+  it.each([
+    ["names", "write flows-checkpoint"],
+    ["opens", "--get-regexp"]
+  ])("refuses as permission_denied when the config it %s is not the workspace's own file", async (_, fragment) => {
+    const spawns: Array<ReadonlyArray<string>> = []
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(spawns, [
+        ["stash create", { stdout: "abc123\n" }],
+        ["HEAD^", { stdout: "head999\n" }],
+        [fragment, { exitCode: 77 }]
+      ])
+      return yield* checkpoints.capture("cp-0-0")
+    })))
+
+    expect(failureOf(exit)?.code).toBe("permission_denied")
   })
 })
 

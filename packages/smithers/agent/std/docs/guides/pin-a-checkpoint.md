@@ -107,6 +107,12 @@ containing its own edit and let it read that back as if it were upstream work.
 Under config the commit object stays unreferenced, a checkout by id works
 perfectly well, and no command that walks refs can reach it.
 
+Host git never opens that config file itself, because the agent can replace it
+with a link to a host file. The store refuses with `permission_denied` when
+`.git/config` is a symbolic link, a hard link, or not the regular file named
+there, reads and edits a copy in the host's temporary directory, and links an
+edit back in place.
+
 One command still sees it: `git fsck` reports it as a dangling commit, because
 that is what an unreferenced commit is. A checkout is a standalone repository
 rather than a worktree of the workspace, so `git log --all` in the workspace
