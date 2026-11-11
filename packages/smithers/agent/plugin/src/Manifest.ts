@@ -109,11 +109,15 @@ export const Qualified = Schema.String.check(Schema.isPattern(Patterns.qualified
 
 /**
  * A flow's tag, as `Flow.make`'s first argument: `app/navigate`, `run/answer`.
+ * At most 256 characters.
  *
  * @category schemas
  * @since 1.1.0
  */
-export const FlowTag = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*(\/[A-Za-z0-9][A-Za-z0-9.-]*){0,3}$/))
+export const FlowTag = Schema.String.check(
+  Schema.isMaxLength(256),
+  Schema.isPattern(/^[a-z][a-z0-9-]*(\/[A-Za-z0-9][A-Za-z0-9.-]*){0,3}$/)
+)
 
 /**
  * A release version, never a prerelease.

@@ -53,8 +53,8 @@ export type Reason = typeof Reason.Type
  *
  * `plugin` is the manifest's id when it could be read, `path` the failing
  * field (`contributes.keybindings[2].event`), and `detail` a short sentence.
- * A refusal never carries a manifest value other than an id, so it is safe to
- * log and show.
+ * A refusal never carries a manifest value other than an id, and a path keeps
+ * the first 64 characters of a key, so it is bounded and safe to log and show.
  *
  * @category errors
  * @since 1.1.0

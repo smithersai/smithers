@@ -546,7 +546,9 @@ runs and a proxy cannot change the value after admission. It then decodes with
 `onExcessProperty: "error"`: an unknown field refuses, and so does a union entry
 that carries both alternatives, such as a keybinding with `command` and
 `event`. `$defs` keys follow JSON Schema convention (`Option`, `Note`) and may
-start with a capital. A `RelativePath` (`flows`, `skills`, a `view` or `app`
+start with a capital. A `FlowTag` is at most 256 characters. A refusal's path
+keeps the first 64 characters of a key, then `...`, so a hostile key cannot
+make it long. A `RelativePath` (`flows`, `skills`, a `view` or `app`
 render's `module`) is portable and stays inside the plugin root: `/`-separated
 segments of letters, digits and `._@+-`, with no leading `/`, no empty, `.` or
 `..` segment, no scheme and no backslash.

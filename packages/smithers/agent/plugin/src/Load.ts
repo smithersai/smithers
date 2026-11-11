@@ -238,6 +238,9 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
     if (owning && !advertised.has("flows")) {
       return yield* fail("unsupported_point", "flows", "the host does not load plugin flows")
     }
+    if ((manifest.skills?.length ?? 0) > 0) {
+      return yield* fail("unsupported_point", "skills", "the host does not load plugin skills")
+    }
 
     const own = new Map<string, FlowFacts>()
     for (const flow of ownedFlows) {

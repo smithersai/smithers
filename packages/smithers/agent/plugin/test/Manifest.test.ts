@@ -115,11 +115,40 @@ describe("Manifest.decode", () => {
     })
   })
 
-  it("refuses an over-long key with a quoted path segment", async () => {
+  it("quotes a key that is not an identifier in the path", async () => {
     const refused = await refusal(
       Manifest.decode({ ...minimal("keys"), userOnly: { "not a tag": "Because." } })
     ) as { path: string }
     expect(refused.path).toBe(`userOnly["not a tag"]`)
+  })
+
+  it("bounds the path and detail of a refused over-long key or accessor", async () => {
+    const accessor = Object.defineProperty({ ...minimal("keys") }, "A".repeat(2_000_000), {
+      get: () => "x",
+      enumerable: true
+    })
+    for (
+      const input of [
+        { ...minimal("keys"), userOnly: { ["k".repeat(257)]: "Because." } },
+        { ...minimal("keys"), userOnly: { ["k".repeat(1_000_000)]: "Because." } },
+        { ...minimal("keys"), userOnly: { ["k".repeat(1_000_000)]: accessor } },
+        accessor
+      ]
+    ) {
+      const refused = await refusal(Manifest.decode(input)) as { reason: string; path: string; detail: string }
+      expect(refused.reason).toBe("invalid")
+      expect(refused.path.length).toBeLessThan(128)
+      expect(refused.detail.length).toBeLessThan(128)
+    }
+  })
+
+  it("refuses a flow tag past 256 characters", async () => {
+    expect(await refusal(Manifest.decode({ ...minimal("long"), uses: [`a/${"b".repeat(255)}`] }))).toMatchObject({
+      reason: "invalid",
+      path: "uses[0]"
+    })
+    expect((await Effect.runPromise(Manifest.decode({ ...minimal("long"), uses: [`a/${"b".repeat(254)}`] }))).uses)
+      .toHaveLength(1)
   })
 
   it("never echoes the refused value in the detail", async () => {

@@ -237,6 +237,29 @@ describe("load refuses a plugin and loads the rest", () => {
     ])
   })
 
+  it("refuses skills, which no host loads", async () => {
+    expect(
+      await refusals(
+        [builtIn(minimal("skilled", { skills: ["skills"] })), builtIn(minimal("none", { skills: [] }))],
+        host({ points: ["views", "slots", "commands", "keybindings", "flows"] })
+      )
+    ).toEqual([["skilled", "unsupported_point", "skills"]])
+  })
+
+  it("bounds the detail that names an unknown uses tag", async () => {
+    const long = `a/${"b".repeat(50_000)}`
+    const longest = `a/${"b".repeat(254)}`
+    const { refused } = await load([
+      { tier: "personal", manifest: minimal("echo", { uses: [long] }) },
+      { tier: "personal", manifest: minimal("most", { uses: [longest] }) }
+    ])
+    expect(refused.map((refusal) => [refusal.plugin, refusal.reason, refusal.path])).toEqual([
+      ["echo", "invalid", "uses[0]"],
+      ["most", "undeclared_use", "uses[0]"]
+    ])
+    for (const refusal of refused) expect(refusal.detail.length).toBeLessThan(512)
+  })
+
   describe("on a host that loads flows", () => {
     const flowsHost = (catalog: ReadonlyArray<readonly [string, Load.FlowFacts]> = []) =>
       host({
