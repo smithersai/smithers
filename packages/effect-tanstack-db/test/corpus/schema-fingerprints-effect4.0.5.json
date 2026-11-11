@@ -1,0 +1,474 @@
+{
+  "source": "https://registry.npmjs.org/effect/4.0.5",
+  "integrity": "sha512-BY4/28NlpOd99yzmV741xbVGmp+1U7tks4oB7F/Png64bTa5tm5eCA6W0RiXsnuLDDoJpjfVSo4Dnq4BZb/89Q==",
+  "cases": {
+    "payloadReference": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "$ref": "#/$defs/payload"
+        },
+        "definitions": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity",
+                          "-Infinity",
+                          "NaN"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "fingerprint": "88d57525c45b6877"
+    },
+    "annotationsReference": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "$ref": "#/$defs/annotations"
+        },
+        "definitions": {
+          "annotations": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity",
+                          "-Infinity",
+                          "NaN"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "fingerprint": "97d5d8b4c809de8b"
+    },
+    "number": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ]
+            }
+          ]
+        },
+        "definitions": {}
+      },
+      "fingerprint": "d10472d041d58808"
+    },
+    "nullable": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "Infinity",
+                    "-Infinity",
+                    "NaN"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "definitions": {}
+      },
+      "fingerprint": "b5eb359f0e164b4c"
+    },
+    "object": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "Infinity",
+                        "-Infinity",
+                        "NaN"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "fingerprint": "1c77ced1a348bbf1"
+    },
+    "array": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity",
+                      "-Infinity",
+                      "NaN"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "definitions": {}
+      },
+      "fingerprint": "e9e40d0169238635"
+    },
+    "enum": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ]
+        },
+        "definitions": {}
+      },
+      "fingerprint": "80e58c4a9d1c20aa"
+    },
+    "oneOf": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "Infinity",
+                    "-Infinity",
+                    "NaN"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "definitions": {}
+      },
+      "fingerprint": "f48c04547917cace"
+    },
+    "int": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "definitions": {}
+      },
+      "fingerprint": "9907a9adc995ac0f"
+    },
+    "date": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "string"
+        },
+        "definitions": {}
+      },
+      "fingerprint": "7baaac8cd4458ea1"
+    },
+    "bigint": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "string",
+          "pattern": "^-?\\d+$"
+        },
+        "definitions": {}
+      },
+      "fingerprint": "7097651aed69ab96"
+    },
+    "described": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "Infinity",
+                    "-Infinity",
+                    "NaN"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "kept by the author"
+        },
+        "definitions": {}
+      },
+      "fingerprint": "ab4c18a84cd3c6a3"
+    },
+    "named": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "$ref": "#/$defs/Named"
+        },
+        "definitions": {
+          "Named": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity",
+                          "-Infinity",
+                          "NaN"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "fingerprint": "c97492499bdf7fe7"
+    },
+    "marker": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "~smthrs/migrations/union": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "~smthrs/migrations/union"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "fingerprint": "9ca2153962ec051f"
+    },
+    "metadata": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string"
+                },
+                "payload": {
+                  "type": "object",
+                  "properties": {
+                    "types": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "types"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "_tag",
+                "payload"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": {
+            "_tag": "Union",
+            "payload": {
+              "types": "author data"
+            }
+          }
+        },
+        "definitions": {}
+      },
+      "fingerprint": "47a77afc825bb15f"
+    },
+    "recursive": {
+      "document": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "$ref": "#/$defs/Recursive"
+        },
+        "definitions": {
+          "Recursive": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity",
+                          "-Infinity",
+                          "NaN"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Recursive"
+                }
+              }
+            },
+            "required": [
+              "value",
+              "children"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "fingerprint": "8d6f0ca56d019e4c"
+    }
+  }
+}
