@@ -1,0 +1,15 @@
+import { expect, it } from "@effect/vitest"
+import { Bank } from "@smthrs/memory"
+import { main } from "../examples/quickstart.vibe"
+
+it.effect("recalls the fact it wrote and finds it in the store", effect () => {
+  const result = try main()
+  expect(result.keys).toEqual(["release"])
+  expect(result.rows).toHaveLength(1)
+  expect(result.rows[0]).toMatchObject({ bank: "global-notes", key: "release", text: "cut 0.1.0" })
+})
+
+it.effect("resolves prefixed and unprefixed bank names to different namespaces", effect () => {
+  expect(try Bank.parse("global-notes")).toEqual({ kind: "global", id: "notes" })
+  expect(try Bank.parse("notes")).toEqual({ kind: "flow", id: "notes" })
+})

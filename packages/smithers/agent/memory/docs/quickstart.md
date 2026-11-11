@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-This quickstart writes one fact, recalls it, and then moves the store from an in-memory database to a file so the fact survives the process. It takes about ten minutes.
+This quickstart writes one fact, recalls it, and then moves the store from an in-memory database to a file so the fact survives the process. It takes about ten minutes. Each step below is TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs step 1 as Effect code.
 
 ## Before you begin
 
@@ -86,6 +86,36 @@ const memory = Layer.provide(
 ```
 
 `MemoryStore.layer` applies the package's migrations when it builds, so `memory.db` gains the memory tables on first run. Provide this `memory` layer to the same `program` from step 1, run `node notebook.ts` twice, and the second run still recalls `release`: the fact outlived the process that wrote it.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the program is an `effect` function: `try` runs each flow handler and store read where TypeScript writes `yield*`, `Bank.parse` names the namespace a bank resolves to instead of spelling it out, and a `provide` block supplies the layer. Step 2 changes only the layer that block provides.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Bank, Flows, MemoryStore, RecallKeyword } from "@smthrs/memory"
+import * as TestMemory from "@smthrs/memory/test/TestMemory"
+
+/** The store over a fresh in-memory database, plus keyword recall over it. */
+export const memory = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
+
+/** Writes one fact, recalls it, and reads the store's authoritative copy. */
+export effect function notebook() {
+  try Flows.runRemember({ bank: "global-notes", key: "release", text: "cut 0.1.0" })
+  const rows = try Flows.runRecall({ banks: ["global-notes"], query: "release" })
+  const store = try MemoryStore.MemoryStore
+  const facts = try store.listFacts({ namespace: try Bank.parse("global-notes") })
+  return { rows, keys: facts.map((fact) => fact.key) }
+}
+
+/** Runs the notebook over the in-memory layer; step 2 swaps only this layer. */
+export effect function main() {
+  provide memory {
+    return try notebook()
+  }
+}
+```
 
 ## 3. Next steps
 

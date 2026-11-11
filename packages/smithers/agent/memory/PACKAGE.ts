@@ -11,7 +11,12 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
   cwd: "packages/smithers/agent/memory"
 })
 

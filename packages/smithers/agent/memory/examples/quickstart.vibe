@@ -1,0 +1,21 @@
+import { Bank, Flows, MemoryStore, RecallKeyword } from "@smthrs/memory"
+import * as TestMemory from "@smthrs/memory/test/TestMemory"
+
+/** The store over a fresh in-memory database, plus keyword recall over it. */
+export const memory = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
+
+/** Writes one fact, recalls it, and reads the store's authoritative copy. */
+export effect function notebook() {
+  try Flows.runRemember({ bank: "global-notes", key: "release", text: "cut 0.1.0" })
+  const rows = try Flows.runRecall({ banks: ["global-notes"], query: "release" })
+  const store = try MemoryStore.MemoryStore
+  const facts = try store.listFacts({ namespace: try Bank.parse("global-notes") })
+  return { rows, keys: facts.map((fact) => fact.key) }
+}
+
+/** Runs the notebook over the in-memory layer; step 2 swaps only this layer. */
+export effect function main() {
+  provide memory {
+    return try notebook()
+  }
+}
