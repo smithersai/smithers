@@ -602,8 +602,11 @@ Four rules the transport keeps:
   SSH transport and resolves public names, so "only `lo`" is not the test; a
   refused connection is. Measured 2026-09-26 in a `none` workspace: `eth0`,
   `dummy0` and `lo` present, `example.com` resolves, every connect refused.
-  A workspace whose record or probe says otherwise stops the run (and the
-  grading) before a token is spent.
+  The guest uses `python3`'s standard-library sockets and must return exactly
+  one refusal receipt for each target, `1.1.1.1:80` and `example.com:80`.
+  An open connection, missing executable, probe error, or missing, duplicate
+  or malformed receipt stops the run (and grading). Empty output never
+  verifies a seal.
 - **psf/requests is not graded on plue.** Its graded tests need an httpbin, and
   a sealed grading workspace has none; `evaluate.sh` refuses it unless
   `SWB_NO_HTTPBIN=1`. Both instances are already excluded by name.

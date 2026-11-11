@@ -50,9 +50,10 @@
 #
 # Under `SWB_TRANSPORT=plue` the testbed is a workspace, `<container>` is its
 # id, and `none` is the only value: `lib/plue.py` creates every workspace with
-# `--network none`, and plue has no bridge to offer. `observe` reads the guest's
-# own interface list (`lib/plue.py network`), so the recorded value is still a
-# fact about the live testbed: `none` when `lo` is all it has, else `unsealed`.
+# `--network none`, and plue has no bridge to offer. `observe` reads the
+# platform's network record and explicit guest TCP refusal receipts for both
+# targets (`lib/plue.py network`). Missing receipts or probe errors cannot
+# verify a seal.
 #
 # Spends nothing. `resolve` needs no docker; `observe` and `assert` do (or the
 # plue CLI).

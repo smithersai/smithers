@@ -84,9 +84,34 @@ DEFAULT_CPUS = 2
 SETUP = f"{plue_env.IMAGE_TMP}; {plue_env.BOOT_ID}"
 # Measured 2026-09-26 in a `--network none` workspace: `eth0` and `dummy0` are
 # present, `example.com` resolves, and every connect is refused.
-NET_PROBE = ("for target in 1.1.1.1/80 example.com/80; do "
-             "if timeout 5 bash -c \"exec 3<>/dev/tcp/$target\" 2>/dev/null; then echo \"open $target\"; fi; "
-             "done; true")
+# Python's socket errors distinguish a blocked connect from an unavailable
+# probe. Each target must produce its own receipt; silence proves nothing.
+NET_TARGETS = ("1.1.1.1/80", "example.com/80")
+NET_PROBE = "python3 -I -c " + shlex.quote(f"""
+import errno
+import socket
+import sys
+
+failed = False
+for target in {NET_TARGETS!r}:
+    host, port = target.rsplit("/", 1)
+    try:
+        with socket.create_connection((host, int(port)), timeout=5):
+            pass
+    except OSError as error:
+        if isinstance(error, TimeoutError) or error.errno in (
+            errno.ECONNREFUSED, errno.ENETUNREACH, errno.EHOSTUNREACH,
+            errno.EACCES, errno.EPERM, errno.ETIMEDOUT,
+        ):
+            print("refused " + target)
+        else:
+            print("error " + target)
+            print(str(error), file=sys.stderr)
+            failed = True
+    else:
+        print("open " + target)
+sys.exit(1 if failed else 0)
+""")
 RIG = Path(__file__).resolve().parents[1]
 GUEST_RIG = "/tmp/swb-rig"
 # Every path a guest command names goes through shlex.quote, constants included,
@@ -191,7 +216,7 @@ class Testbed(plue_env._PlueOps):
             raise PlueError(f"the guest's egress probe exited {code}: {err.strip()[-300:]}", "network")
         verdict = observed(mode, out)
         if verdict != "none":
-            sys.stderr.write(f"plue.py: workspace network mode {mode!r}; probe: {out.strip() or 'all refused'}\n")
+            sys.stderr.write(f"plue.py: workspace network mode {mode!r}; probe: {out.strip() or 'no probe receipts'}\n")
         return verdict
 
     def down(self, key: str = "") -> None:
@@ -322,7 +347,9 @@ def evaluator_cleanup(client, container, logger) -> None:
 
 def observed(mode: str, probe: str) -> str:
     """The platform's network mode and the guest's probe, to the rig's condition."""
-    return "none" if mode == "none" and "open " not in probe else "unsealed"
+    receipts = probe.splitlines()
+    expected = {f"refused {target}" for target in NET_TARGETS}
+    return "none" if mode == "none" and len(receipts) == len(expected) and set(receipts) == expected else "unsealed"
 
 
 def split_target(spec: str) -> tuple[str, str]:

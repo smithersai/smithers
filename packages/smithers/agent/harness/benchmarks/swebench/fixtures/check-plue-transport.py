@@ -12,7 +12,7 @@ capture scripts run against a real git testbed, as they do in a workspace.
   from the instance image with `--network none` and `--idle-timeout 0`, and
   `down` deletes it with `--yes` and frees the slot;
 - the network condition is read back twice, off plue's record and off the
-  guest: `none` only when the mode is `none` and no connection opens, and
+  guest: `none` only with a `none` record and a refusal receipt per target, and
   `testbed-network.sh assert` refuses anything else;
 - `snapshot` + `capture` report the agent's edit and nothing the image churned,
   list scratch as untracked, and leave no rig files in the guest;
@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -62,8 +64,8 @@ elif verb == "exec":
     command = re.sub(r"^.*?umask 022; export KMP_AFFINITY=\"\$\{KMP_AFFINITY:-disabled\}\"; ", "", command)
     if "boot_id" in command:
         out, err, code = "boot-1\n", "", 0
-    elif "/dev/tcp/" in command:
-        out, err, code = os.environ.get("FAKE_OPEN", ""), "", 0
+    elif "socket.create_connection" in command:
+        out, err, code = os.environ.get("FAKE_OPEN", "refused 1.1.1.1/80\nrefused example.com/80\n"), "", 0
     elif "sleep-forever" in command:
         out, err, code = "", "", 124
     else:
@@ -136,8 +138,69 @@ def check_up_and_down(env: dict, directory: Path) -> None:
         holder.wait()
 
 
+def check_probe() -> None:
+    """Run the actual guest command: broken executables are never a seal.
+
+    Loopback targets exercise real successful and refused TCP connections
+    without relying on public egress or a Cloud workspace.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        directory = Path(tmp)
+        env = {**os.environ, "PATH": str(directory)}
+        for executable in (None, "not-executable"):
+            if executable == "not-executable":
+                (directory / "python3").write_text("not an executable\n")
+            run = subprocess.run(["/bin/bash", "-c", plue.NET_PROBE], env=env,
+                                 capture_output=True, text=True, timeout=30)
+            assert run.returncode != 0, (executable, run)
+            assert plue.observed("none", run.stdout) == "unsealed", (executable, run)
+            assert run.stderr, "a broken probe explains its failure"
+            if executable == "not-executable":
+                assert "Permission denied" in run.stderr, run
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        targets = (f"127.0.0.1/{port}", f"localhost/{port}")
+        command = plue.NET_PROBE.replace("1.1.1.1/80", targets[0]).replace("example.com/80", targets[1])
+        # A bound, non-listening socket refuses connections and reserves the
+        # port so another test cannot turn these refusals into successes.
+        with tempfile.TemporaryDirectory() as tmp:
+            # Neither timeout nor a nested bash is required in the image.
+            (Path(tmp) / "python3").symlink_to(shutil.which("python3"))
+            refused = subprocess.run(["/bin/bash", "-c", command], env={**os.environ, "PATH": tmp},
+                                     capture_output=True, text=True, timeout=30)
+        assert refused.returncode == 0, refused
+        assert refused.stdout.splitlines() == [f"refused {target}" for target in targets], refused
+        assert not refused.stderr, refused
+        listener.listen(2)
+        opened = subprocess.run(["/bin/bash", "-c", command], capture_output=True, text=True, timeout=30)
+        assert opened.returncode == 0, opened
+        assert opened.stdout.splitlines() == [f"open {target}" for target in targets], opened
+        assert not opened.stderr, opened
+
+    # Invalid names are execution failures, not evidence of blocked egress.
+    invalid = plue.NET_PROBE.replace("example.com/80", "::invalid/80")
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        invalid = invalid.replace("1.1.1.1/80", f"127.0.0.1/{reserved.getsockname()[1]}")
+        run = subprocess.run(["/bin/bash", "-c", invalid], capture_output=True, text=True, timeout=30)
+    assert run.returncode != 0 and "error ::invalid/80" in run.stdout and run.stderr, run
+
+    sealed = "refused 1.1.1.1/80\nrefused example.com/80\n"
+    assert plue.observed("none", sealed) == "none"
+    assert plue.observed("none", "\n".join(reversed(sealed.splitlines()))) == "none"
+    for mode in ("", "proxy", "bridge", "unknown"):
+        assert plue.observed(mode, sealed) == "unsealed", mode
+    for probe in ("", "\n", "all refused", "refused 1.1.1.1/80\n", sealed + "refused example.com/80\n",
+                  sealed + "unexpected\n", sealed.replace("example.com", "other.example"),
+                  sealed.replace("refused", "open", 1), sealed.replace("refused", "error", 1),
+                  sealed.replace("refused", "timeout", 1)):
+        assert plue.observed("none", probe) == "unsealed", repr(probe)
+
+
 def check_network(env: dict) -> None:
-    assert plue.observed("none", "") == "none"
+    assert plue.observed("none", "") == "unsealed"
     assert plue.observed("none", "open 1.1.1.1/80\n") == "unsealed", "a connection that opens is a breach"
     assert plue.observed("proxy", "") == "unsealed", "the platform's record must say none"
     assert cli(env, "network", "ws-1").stdout.strip() == "none"
@@ -145,7 +208,9 @@ def check_network(env: dict) -> None:
     sealed = subprocess.run([str(RIG / "lib" / "testbed-network.sh"), "assert", "ws-1", "none"],
                             env=shell, capture_output=True, text=True)
     assert sealed.returncode == 0 and sealed.stdout.strip() == "none", sealed
-    for leak in ({"FAKE_OPEN": "open example.com/80\n"}, {"FAKE_MODE": "proxy"}):
+    for leak in ({"FAKE_OPEN": "open example.com/80\n"}, {"FAKE_MODE": "proxy"},
+                 {"FAKE_OPEN": ""}, {"FAKE_OPEN": "refused 1.1.1.1/80\n"},
+                 {"FAKE_OPEN": "error example.com/80\n"}):
         leaky = subprocess.run([str(RIG / "lib" / "testbed-network.sh"), "assert", "ws-1", "none"],
                                env={**shell, **leak}, capture_output=True, text=True)
         assert leaky.returncode == 1, (leak, "an unsealed guest stops the run")
@@ -211,17 +276,18 @@ def check_evaluator(env: dict) -> None:
     assert [c for c in calls(env) if c[1] == "delete"][-1][2] == container.id
     assert not json.loads(ledger.read_text())["holders"], "cleanup frees the grader's slot"
 
-    os.environ["FAKE_OPEN"] = "open 1.1.1.1/80\n"
-    try:
-        plue.evaluator_container(spec, None, "luna-plue", logger, False)
-    except plue.PlueError as error:
-        assert error.code == "network", error
-    else:
-        raise AssertionError("an unsealed grading workspace is refused")
-    finally:
-        os.environ.pop("FAKE_OPEN")
-    assert [c for c in calls(env) if c[1] == "delete"][-1][2] == f"ws-{len([c for c in calls(env) if c[1] == 'create'])}"
-    assert not json.loads(ledger.read_text())["holders"]
+    for probe in ("open 1.1.1.1/80\n", "", "refused 1.1.1.1/80\n", "error example.com/80\n"):
+        os.environ["FAKE_OPEN"] = probe
+        try:
+            plue.evaluator_container(spec, None, "luna-plue", logger, False)
+        except plue.PlueError as error:
+            assert error.code == "network", error
+        else:
+            raise AssertionError("an unverified grading workspace is refused")
+        finally:
+            os.environ.pop("FAKE_OPEN")
+        assert [c for c in calls(env) if c[1] == "delete"][-1][2] == f"ws-{len([c for c in calls(env) if c[1] == 'create'])}"
+        assert not json.loads(ledger.read_text())["holders"]
 
 
 def check_grade_wiring() -> None:
@@ -305,6 +371,7 @@ def check_prompt(directory: Path) -> None:
 
 
 def main() -> None:
+    check_probe()
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
         root = directory / "guest"
