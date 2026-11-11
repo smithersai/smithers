@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode, Crush and Amp honor absolute XDG credential directories; OpenCode
+  recognizes Cerebras and OpenRouter API keys consistently with model listing.
+- Claude profile overrides no longer inherit another profile's account.
+- Version probes preserve case-insensitive Windows `PATH` and use the selected
+  platform's separators and absolute-path rules.
+- Relative config overrides use the default directory, and Codex account claims
+  decode without Node's `Buffer` global.
+
 ### Security
 
 - `findBinary` and `probeEnv` skip relative `PATH` entries, so a binary or

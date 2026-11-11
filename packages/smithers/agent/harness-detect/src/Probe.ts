@@ -9,9 +9,9 @@
  * @since 0.1.0
  */
 
-import * as NodePath from "node:path"
 import { harnessModels } from "./Detectors.ts"
 import { sanitizeDisplayText } from "./DisplayText.ts"
+import { hostPath, isAbsoluteHostPath } from "./internal/Read.ts"
 
 /**
  * How long one `--version` may take before it is reported as null.
@@ -91,16 +91,29 @@ const copyKeys = (
 
 /**
  * The version-probe child environment: {@link PROBE_ENV_KEYS} from `source`,
- * plus `NO_COLOR`. `PATH` keeps only absolute entries, so a probed script's
+ * plus `NO_COLOR`. The optional platform defaults to the native path rules.
+ * On Windows, `PATH` is looked up case-insensitively and emitted as `PATH`.
+ * `PATH` keeps only absolute entries, so a probed script's
  * `#!/usr/bin/env node` cannot resolve an interpreter out of the cwd.
  *
  * @category probe
  * @since 0.1.0
  */
-export const probeEnv = (source: Readonly<Record<string, string | undefined>>): Record<string, string> => {
+export const probeEnv = (
+  source: Readonly<Record<string, string | undefined>>,
+  platform?: string
+): Record<string, string> => {
   const env = copyKeys({ NO_COLOR: "1" }, source, PROBE_ENV_KEYS)
+  const paths = hostPath({ platform })
+  if (paths.sep === "\\" && source.PATH === undefined) {
+    const key = Object.keys(source).find((key) => key.toUpperCase() === "PATH" && source[key] !== undefined)
+    if (key !== undefined) copyKeys(env, { PATH: source[key] }, ["PATH"])
+  }
   if (env.PATH !== undefined) {
-    const path = env.PATH.split(NodePath.delimiter).filter((dir) => NodePath.isAbsolute(dir)).join(NodePath.delimiter)
+    const { delimiter } = paths
+    const path = env.PATH.split(delimiter).filter((dir) =>
+      isAbsoluteHostPath({ platform: paths.sep === "\\" ? "win32" : "posix" }, dir)
+    ).join(delimiter)
     if (path === "") delete env.PATH
     else env.PATH = path
   }

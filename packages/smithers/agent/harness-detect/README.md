@@ -15,7 +15,10 @@ The package spawns nothing, reads no file, and knows no runtime. Every host
 fact arrives through an injected `HarnessHost`, which is what makes the whole
 table assertable over fixtures instead of over whatever happens to be
 installed on the developer's laptop.
-Path formatting and `PATH` separators follow `host.platform`.
+Path formatting and `PATH` separators follow `host.platform`. Config directory
+overrides must be absolute; relative and blank values use the default directory.
+Windows overrides must include a drive or a complete UNC share, so detection
+never resolves a credential path against the current directory.
 
 ## What it detects
 
@@ -36,11 +39,14 @@ Path formatting and `PATH` separators follow `host.platform`.
   control characters stripped and is at most `VERSION_MAX_LENGTH` (64)
   characters, so a hostile binary cannot drive the terminal that renders it.
   A probe that throws or rejects leaves that version `null`; other rows remain available.
-- **The account.** Per vendor, off this user's own files: `.claude.json`'s (in `CLAUDE_CONFIG_DIR` when set, then `~`)
+- **The account.** Per vendor, off this user's own files: `.claude.json`'s (only in an absolute `CLAUDE_CONFIG_DIR` when set, otherwise `~`)
   `oauthAccount` then `.credentials.json`, the Codex `auth.json` `id_token`'s
   `email` claim (decoded, never verified, never returned), the OpenCode
   `auth.json` providers, and so on, with the vendor's API-key environment
-  variable as the last signal. The status is one of `signed-in`, `api-key`,
+  variable as the last signal. OpenCode's three rows and Crush's `providers.json`
+  honor `XDG_DATA_HOME`; Crush's `crush.json` and Amp's `secrets.json` honor
+  `XDG_CONFIG_HOME`. OpenCode also recognizes `CEREBRAS_API_KEY` and
+  `OPENROUTER_API_KEY`, using the same credential keys as its model listing. The status is one of `signed-in`, `api-key`,
   `binary-only`, `unavailable`. When `home` is not absolute, no credential
   files are consulted; binaries from absolute search dirs and API-key
   environment variables still work. Emails, organization labels, provider names
@@ -142,7 +148,9 @@ Anything else — `SMITHERS_CLOUD_TOKEN`, `GITHUB_TOKEN`, every provider API
 key — is dropped, because a process that only prints its version has no
 business holding a credential. `probeEnv` also drops relative `PATH` entries,
 so a probed script's `#!/usr/bin/env node` cannot resolve an interpreter out
-of the cwd.
+of the cwd. `probeEnv(source, platform?)` defaults to the native platform;
+an explicit platform selects its path separators and absolute-path rules.
+On Windows, a copied `Path` (or any casing) is forwarded as `PATH`.
 
 A model-list probe uses `modelProbeEnv(id, source)` instead: `probeEnv` plus
 only the `listCredentials` of that harness's model table (`opencode models
@@ -152,24 +160,24 @@ allowlist is shared so every adapter drops the same things.
 
 ## Exports
 
-| Export                                       | What it is                                                          |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| `detectHarnessesWith(host)`                  | The whole table: one `Harness` row per contract id, in order        |
-| `HarnessHost`                                | The injected host interface                                         |
-| `HarnessId`                                  | One of `HARNESS_IDS`                                                |
-| `DETECTORS`                                  | The table itself: binary, launch argv, model table, sign-in signal  |
-| `Detector`, `Signal`, `HarnessModels`        | The table's types                                                   |
-| `harnessCandidateDirs(host)`                 | The dirs searched before `PATH`, in order                           |
-| `findBinary(name, host)`                     | The first candidate dir, then `PATH` entry, holding a binary        |
-| `harnessModels(id)` / `harnessModelSpec(id)` | The model flag, suggestions and list argv                           |
-| `decodeJwtClaims(token)`                     | A JWT payload, unverified, never throwing                           |
-| `parseVersionLine(output)`                   | The version out of a CLI banner                                     |
-| `probeEnv(source)` / `PROBE_ENV_KEYS`        | The environment a `--version` probe child gets                      |
-| `modelProbeEnv(id, source)`                  | The environment a model-list probe child gets                       |
-| `VERSION_TIMEOUT_MS`                         | The budget one `--version` gets                                     |
-| `ACCOUNT_MAX_LENGTH`                         | The longest email or label a harness account carries                |
-| `sanitizeDisplayText(value)`                 | Control-free, trimmed text before a display field applies its bound |
-| `VERSION_MAX_LENGTH`                         | The longest version string `parseVersionLine` returns               |
+| Export                                           | What it is                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------- |
+| `detectHarnessesWith(host)`                      | The whole table: one `Harness` row per contract id, in order        |
+| `HarnessHost`                                    | The injected host interface                                         |
+| `HarnessId`                                      | One of `HARNESS_IDS`                                                |
+| `DETECTORS`                                      | The table itself: binary, launch argv, model table, sign-in signal  |
+| `Detector`, `Signal`, `HarnessModels`            | The table's types                                                   |
+| `harnessCandidateDirs(host)`                     | The dirs searched before `PATH`, in order                           |
+| `findBinary(name, host)`                         | The first candidate dir, then `PATH` entry, holding a binary        |
+| `harnessModels(id)` / `harnessModelSpec(id)`     | The model flag, suggestions and list argv                           |
+| `decodeJwtClaims(token)`                         | A JWT payload, unverified, never throwing                           |
+| `parseVersionLine(output)`                       | The version out of a CLI banner                                     |
+| `probeEnv(source, platform?)` / `PROBE_ENV_KEYS` | The environment a `--version` probe child gets                      |
+| `modelProbeEnv(id, source)`                      | The environment a model-list probe child gets                       |
+| `VERSION_TIMEOUT_MS`                             | The budget one `--version` gets                                     |
+| `ACCOUNT_MAX_LENGTH`                             | The longest email or label a harness account carries                |
+| `sanitizeDisplayText(value)`                     | Control-free, trimmed text before a display field applies its bound |
+| `VERSION_MAX_LENGTH`                             | The longest version string `parseVersionLine` returns               |
 
 Account field lengths are also enforced by `HarnessSchema` at the RPC boundary.
 `sanitizeDisplayText` is shared by account readers and `parseVersionLine`; callers

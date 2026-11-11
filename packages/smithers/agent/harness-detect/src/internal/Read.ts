@@ -100,14 +100,14 @@ export const firstEnv = (env: HarnessHost["env"], names: ReadonlyArray<string>):
   names.find((name) => nonEmptyString(env[name]))
 
 /**
- * A directory an env var may override (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`), else the fallback.
+ * An absolute directory an env var may override (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`), else the fallback.
  *
  * @category internal
  * @since 0.1.0
  */
 export const envDir = (host: HarnessHost, name: string, fallback: string): string => {
   const value = host.env[name]
-  return nonEmptyString(value) ? hostPath(host).resolve(value) : fallback
+  return nonEmptyString(value) && isAbsoluteHostPath(host, value) ? hostPath(host).resolve(value) : fallback
 }
 
 /**

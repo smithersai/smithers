@@ -44,7 +44,8 @@ export const decodeJwtClaims = (token: unknown): Record<string, unknown> | null 
   const payload = token.split(".")[1]
   if (payload === undefined || payload === "") return null
   try {
-    const parsed: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))
+    const bytes = Uint8Array.from(atob(payload.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0))
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes))
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : null
@@ -100,6 +101,23 @@ const accountOf = (fields: { readonly email?: unknown; readonly label?: unknown 
 
 const apiKey = (name: string): Signal => ({ status: "api-key", account: accountOf({ label: name }) })
 
+const opencodeCredentials = [
+  "OPENCODE_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "KIMI_API_KEY",
+  "CEREBRAS_API_KEY",
+  "OPENROUTER_API_KEY"
+]
+
+const dataDir = (host: HarnessHost): string =>
+  envDir(host, "XDG_DATA_HOME", hostPath(host).join(host.home, ".local", "share"))
+
+const configDir = (host: HarnessHost): string =>
+  envDir(host, "XDG_CONFIG_HOME", hostPath(host).join(host.home, ".config"))
+
 /**
  * How a harness takes a model on its command line (docs/workbench-lanes/
  * custom-agents.md): the flag before the model id, the model ids the app has
@@ -154,9 +172,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const configDir = envDir(host, "CLAUDE_CONFIG_DIR", join(host.home, ".claude"))
       // With CLAUDE_CONFIG_DIR set, Claude Code keeps `.claude.json` inside
       // that directory rather than in home.
-      const state = (nonEmptyString(host.env.CLAUDE_CONFIG_DIR)
-        ? readJson(host, join(configDir, ".claude.json"))
-        : null) ?? readJson(host, join(host.home, ".claude.json"))
+      const state = readJson(host, join(envDir(host, "CLAUDE_CONFIG_DIR", host.home), ".claude.json"))
       const oauth = state?.oauthAccount
       if (typeof oauth === "object" && oauth !== null) {
         const { emailAddress, organizationName } = oauth as Record<string, unknown>
@@ -241,20 +257,11 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       suggestions: [OPENCODE_KIMI_MODEL, OPENCODE_CEREBRAS_MODEL],
       list: ["opencode", "models"],
       // `opencode models` lists a provider only when its credential is present.
-      listCredentials: [
-        "OPENCODE_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "GEMINI_API_KEY",
-        "GOOGLE_API_KEY",
-        "KIMI_API_KEY",
-        "CEREBRAS_API_KEY",
-        "OPENROUTER_API_KEY"
-      ]
+      listCredentials: opencodeCredentials
     },
     signal: (host) => {
       const { join } = hostPath(host)
-      const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
+      const auth = readJson(host, join(dataDir(host), "opencode", "auth.json"))
       const providers = auth === null ? [] : Object.keys(auth).filter((id) => hasNonEmptyStringDeep(auth[id]))
       if (providers.length > 0) {
         return {
@@ -262,14 +269,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
           account: accountOf({ label: providers.map(sanitizeDisplayText).filter((id) => id !== "").join(", ") })
         }
       }
-      const key = firstEnv(host.env, [
-        "OPENCODE_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "GEMINI_API_KEY",
-        "GOOGLE_API_KEY",
-        "KIMI_API_KEY"
-      ])
+      const key = firstEnv(host.env, opencodeCredentials)
       return key === undefined ? binaryOnly : apiKey(key)
     }
   },
@@ -294,7 +294,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     },
     signal: (host) => {
       const { join } = hostPath(host)
-      const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
+      const auth = readJson(host, join(dataDir(host), "opencode", "auth.json"))
       if (auth !== null && hasNonEmptyStringDeep(auth["kimi-for-coding"])) {
         return { status: "signed-in", account: accountOf({ label: "kimi-for-coding" }) }
       }
@@ -320,7 +320,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     },
     signal: (host) => {
       const { join } = hostPath(host)
-      const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
+      const auth = readJson(host, join(dataDir(host), "opencode", "auth.json"))
       if (auth !== null && hasNonEmptyStringDeep(auth["cerebras"])) {
         return { status: "signed-in", account: accountOf({ label: "cerebras" }) }
       }
@@ -338,8 +338,8 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const key = firstEnv(host.env, ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"])
       if (key !== undefined) return apiKey(key)
       const configs = [
-        join(host.home, ".local", "share", "crush", "providers.json"),
-        join(host.home, ".config", "crush", "crush.json")
+        join(dataDir(host), "crush", "providers.json"),
+        join(configDir(host), "crush", "crush.json")
       ]
       const found = configs.find((path) => hasNonEmptyStringDeep(readJsonAny(host, path)))
       return found === undefined
@@ -356,7 +356,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const { join } = hostPath(host)
       const key = firstEnv(host.env, ["AMP_API_KEY"])
       if (key !== undefined) return apiKey(key)
-      const secrets = join(host.home, ".config", "amp", "secrets.json")
+      const secrets = join(configDir(host), "amp", "secrets.json")
       return hasNonEmptyStringDeep(readJsonAny(host, secrets))
         ? { status: "signed-in", account: accountOf({ label: tilde(host, secrets) }) }
         : binaryOnly

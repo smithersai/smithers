@@ -1,5 +1,6 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS, HarnessSchema } from "@smthrs/rpc/LocalApp"
+import { execFileSync } from "node:child_process"
 import { delimiter, join, posix, win32 } from "node:path"
 import { describe, expect, test } from "vitest"
 import {
@@ -17,6 +18,7 @@ import {
   VERSION_TIMEOUT_MS
 } from "../src/index.ts"
 import type { HarnessHost } from "../src/index.ts"
+import { envDir } from "../src/internal/Read.ts"
 
 /*
  * The detection table over a fake host: files, binaries and env are data,
@@ -1000,5 +1002,226 @@ describe("helpers", () => {
 
   test("a version probe has a finite budget", () => {
     expect(VERSION_TIMEOUT_MS).toBeGreaterThan(0)
+  })
+})
+
+describe("credential directory overrides", () => {
+  const xdgCases = [
+    {
+      id: "opencode",
+      variable: "XDG_DATA_HOME",
+      file: "opencode/auth.json",
+      auth: { anthropic: { key: "fixture" } },
+      label: "anthropic"
+    },
+    {
+      id: "opencode-kimi",
+      variable: "XDG_DATA_HOME",
+      file: "opencode/auth.json",
+      auth: { "kimi-for-coding": { key: "fixture" } },
+      label: "kimi-for-coding"
+    },
+    {
+      id: "opencode-cerebras",
+      variable: "XDG_DATA_HOME",
+      file: "opencode/auth.json",
+      auth: { cerebras: { key: "fixture" } },
+      label: "cerebras"
+    },
+    { id: "crush", variable: "XDG_DATA_HOME", file: "crush/providers.json", auth: { key: "fixture" } },
+    { id: "crush", variable: "XDG_CONFIG_HOME", file: "crush/crush.json", auth: { key: "fixture" } },
+    { id: "amp", variable: "XDG_CONFIG_HOME", file: "amp/secrets.json", auth: { key: "fixture" } }
+  ]
+
+  test.each(["linux", "win32"].flatMap((platform) => xdgCases.map((row) => ({ ...row, platform }))))(
+    "$id reads $file under $variable on $platform",
+    async ({ id, variable, file, auth, label, platform }) => {
+      const paths = platform === "win32" ? win32 : posix
+      const root = platform === "win32" ? "D:\\fixture\\xdg" : "/fixture/xdg"
+      const home = platform === "win32" ? "C:\\fixture\\home" : HOME
+      const binary = paths.join(home, ".local", "bin", id.startsWith("opencode") ? "opencode" : id)
+        + (platform === "win32" ? ".exe" : "")
+      const credential = paths.join(root, ...file.split("/"))
+      const rows = await detectHarnessesWith(host({
+        platform,
+        home,
+        binaries: [binary],
+        env: { [variable]: root },
+        files: { [credential]: JSON.stringify(auth) }
+      }))
+      expect(rows.find((row) => row.id === id)).toMatchObject({
+        status: "signed-in",
+        account: { label: label ?? credential }
+      })
+      // An override never consults the default profile when it has no auth.
+      const fallback = paths.join(
+        home,
+        ...(variable === "XDG_DATA_HOME" ? [".local", "share"] : [".config"]),
+        ...file.split("/")
+      )
+      const signedOut = await detectHarnessesWith(host({
+        platform,
+        home,
+        binaries: [binary],
+        env: { [variable]: root },
+        files: { [fallback]: JSON.stringify(auth) }
+      }))
+      expect(signedOut.find((row) => row.id === id)).toMatchObject({ status: "binary-only", account: null })
+    }
+  )
+
+  test.each([undefined, "", "   ", "relative", "./relative", "../relative"])(
+    "ignores non-absolute config override %j",
+    async (override) => {
+      const reads: Array<string> = []
+      const h = host({
+        binaries: ["/usr/bin/codex"],
+        env: { CODEX_HOME: override },
+        files: { [join(HOME, ".codex", "auth.json")]: JSON.stringify({ OPENAI_API_KEY: "fixture" }) }
+      })
+      const rows = await detectHarnessesWith({
+        ...h,
+        readText: (path) => {
+          reads.push(path)
+          return h.readText(path)
+        }
+      })
+      expect(rows.find((row) => row.id === "codex")).toMatchObject({
+        status: "api-key",
+        account: { label: "auth.json OPENAI_API_KEY" }
+      })
+      expect(reads).toEqual([join(HOME, ".codex", "auth.json")])
+    }
+  )
+
+  test.each(
+    [
+      ["C:relative", false],
+      ["\\rooted", false],
+      ["/rooted", false],
+      ["\\\\server", false],
+      ["D:\\fixture\\config", true],
+      ["\\\\server\\share\\config", true]
+    ] as const
+  )("Windows config override %s must be fully qualified", (value, accepted) => {
+    const h = host({ platform: "win32", home: "C:\\fixture\\home", env: { CODEX_HOME: value } })
+    expect(envDir(h, "CODEX_HOME", "C:\\fixture\\home\\.codex")).toBe(
+      accepted ? win32.resolve(value) : "C:\\fixture\\home\\.codex"
+    )
+  })
+
+  test.each([undefined, "{ invalid", "[]", "{}"])(
+    "a signed-out Claude override does not inherit home state %j",
+    async (overrideState) => {
+      const files: Record<string, string> = {
+        [join(HOME, ".claude.json")]: JSON.stringify({ oauthAccount: { emailAddress: "default@example.test" } }),
+        [join(HOME, ".claude", ".credentials.json")]: "{}",
+        ...(overrideState === undefined ? {} : { "/fixture/profile/.claude.json": overrideState })
+      }
+      const h = host({ binaries: ["/usr/bin/claude"], env: { CLAUDE_CONFIG_DIR: "/fixture/profile" }, files })
+      expect((await detectHarnessesWith(h))[0]).toMatchObject({ status: "binary-only", account: null })
+      expect((await detectHarnessesWith({ ...h, env: { ...h.env, ANTHROPIC_API_KEY: "fixture" } }))[0])
+        .toMatchObject({ status: "api-key", account: { label: "ANTHROPIC_API_KEY" } })
+      expect(
+        (await detectHarnessesWith(host({
+          binaries: ["/usr/bin/claude"],
+          env: h.env,
+          files: { ...files, "/fixture/profile/.credentials.json": "{}" }
+        })))[0]
+      ).toMatchObject({ status: "signed-in", account: null })
+    }
+  )
+
+  test.each(["", "   ", "relative"])("Claude ignores invalid profile override %j", async (override) => {
+    const rows = await detectHarnessesWith(host({
+      binaries: ["/usr/bin/claude"],
+      env: { CLAUDE_CONFIG_DIR: override },
+      files: {
+        [join(HOME, ".claude.json")]: JSON.stringify({ oauthAccount: { emailAddress: "default@example.test" } })
+      }
+    }))
+    expect(rows[0]).toMatchObject({ status: "signed-in", account: { email: "default@example.test" } })
+  })
+})
+
+describe("OpenCode environment credentials", () => {
+  test.each([
+    "OPENCODE_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "KIMI_API_KEY",
+    "CEREBRAS_API_KEY",
+    "OPENROUTER_API_KEY"
+  ])("%s enables both detection and model listing without exposing the value", async (key) => {
+    const env = { [key]: "private-fixture" }
+    const rows = await detectHarnessesWith(host({ binaries: ["/usr/bin/opencode"], env }))
+    expect(rows.find((row) => row.id === "opencode")).toMatchObject({ status: "api-key", account: { label: key } })
+    expect(modelProbeEnv("opencode", env)).toEqual({ NO_COLOR: "1", [key]: "private-fixture" })
+    expect(probeEnv(env)).toEqual({ NO_COLOR: "1" })
+    expect(JSON.stringify(rows)).not.toContain("private-fixture")
+  })
+})
+
+describe("Windows probe paths", () => {
+  test("an exact PATH wins over an alias, and undefined aliases are skipped", () => {
+    expect(probeEnv({ Path: "D:\\alias", PATH: "D:\\exact" }, "win32"))
+      .toEqual({ NO_COLOR: "1", PATH: "D:\\exact" })
+    expect(probeEnv({ Path: "D:\\alias", PATH: "" }, "win32")).toEqual({ NO_COLOR: "1" })
+    expect(probeEnv({ PATH: undefined, path: undefined, GITHUB_TOKEN: "private-fixture", Path: "D:\\alias" }, "win32"))
+      .toEqual({ NO_COLOR: "1", PATH: "D:\\alias" })
+  })
+
+  test.each(["PATH", "Path", "path", "pAtH"])("copies %s as PATH and filters with Windows path rules", (key) => {
+    expect(probeEnv({
+      [key]: "D:\\tools;.;node_modules\\.bin;;C:relative;\\rooted;\\\\server;\\\\server\\share\\bin",
+      GITHUB_TOKEN: "private-fixture",
+      OPENAI_API_KEY: "private-fixture"
+    }, "win32")).toEqual({ NO_COLOR: "1", PATH: "D:\\tools;\\\\server\\share\\bin" })
+  })
+
+  test("a POSIX host does not accept Windows casing or delimiters", () => {
+    expect(probeEnv({ Path: "/fixture/bin", PATH: ".:/fixture/bin::/bin" }, "linux"))
+      .toEqual({ NO_COLOR: "1", PATH: "/fixture/bin:/bin" })
+    expect(probeEnv({ Path: "/fixture/bin" }, "linux")).toEqual({ NO_COLOR: "1" })
+    expect(probeEnv({ Path: ".;C:relative;\\rooted" }, "win32")).toEqual({ NO_COLOR: "1" })
+    expect(probeEnv({}, "win32")).toEqual({ NO_COLOR: "1" })
+  })
+})
+
+describe("portable JWT claims", () => {
+  test.each(["person@example.test", "é😀@example.test", "ÿÿ@example.test", "𐀾@example.test"])(
+    "decodes UTF-8 and unpadded base64url for %s",
+    (email) => {
+      expect(decodeJwtClaims(jwt({ email }))).toEqual({ email })
+    }
+  )
+
+  test("Codex labels survive in a runtime without Buffer", () => {
+    const email = "é😀@example.test"
+    const token = jwt({ email })
+    const moduleUrl = new URL("../src/Detectors.ts", import.meta.url).href
+    const output = execFileSync(process.execPath, [
+      "--input-type=module",
+      "--eval",
+      `
+      import { DETECTORS, decodeJwtClaims } from ${JSON.stringify(moduleUrl)}
+      Reflect.deleteProperty(globalThis, "Buffer")
+      const token = ${JSON.stringify(token)}
+      const signal = DETECTORS.find((row) => row.id === "codex").signal({
+        home: "/fixture/home", platform: "linux", env: {},
+        readText: (path) => path === "/fixture/home/.codex/auth.json"
+          ? JSON.stringify({ tokens: { id_token: token } }) : null,
+        isFile: () => false, listDir: () => [], version: async () => null
+      })
+      console.log(JSON.stringify({ hasBuffer: "Buffer" in globalThis, claims: decodeJwtClaims(token), signal }))
+    `
+    ], { encoding: "utf8" })
+    expect(JSON.parse(output)).toEqual({
+      hasBuffer: false,
+      claims: { email },
+      signal: { status: "signed-in", account: { email } }
+    })
   })
 })

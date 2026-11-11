@@ -168,7 +168,7 @@ passed while `@mdx-js/mdx`, through `@smthrs/registry`'s `Prompt`, loaded
 | Package | Root entry reaches | Through |
 | --- | --- | --- |
 | `@smthrs/testing` | `node:fs`, `node:crypto`, `node:path`, `node:sqlite`, `node:net`, `node:tls` | `src/FixtureStore.ts`; the `@smthrs/database` Node and Postgres test layers |
-| `@smthrs/harness-detect` (private) | `node:path` | `src/Probe.ts`, `src/internal/Read.ts` |
+| `@smthrs/harness-detect` (private) | `node:path` | `src/internal/Read.ts` |
 | `@smthrs/fs` (private) | `node:fs`, `node:child_process`, `node:async_hooks` and more | the `incur` CLI dependency; `@smthrs/build-cli` `src/Positionals.ts` |
 | `@smthrs/migrate` | `node:sqlite`, `node:crypto`, `node:fs`, `node:child_process` | `src/RunState.ts`, `src/Checks.ts`, `src/flow/*` |
 | `@smthrs/targets` | `node:fs`, `node:crypto`, `node:child_process`, `node:http` and more (32 source files) | `src/Package.ts`, `src/RemoteCache.ts`, `src/LlmLint.ts` and others |
