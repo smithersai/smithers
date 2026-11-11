@@ -297,6 +297,7 @@ class MutantTimeLimits(unittest.TestCase):
     def test_a_named_slow_mutant_gets_its_own_limit_and_others_keep_thirty_seconds(self):
         from mutation_targets import TIME_LIMITS, time_limit
         self.assertEqual(time_limit('replay-order', True), 120)
+        self.assertEqual(time_limit('receive-field-author', True), 120)
         self.assertEqual(time_limit('any-other-mutant', True), 30)
         self.assertEqual(time_limit('replay-order', False), 60)
         self.assertTrue(all(isinstance(v, int) and 30 < v <= 300 for v in TIME_LIMITS.values()))

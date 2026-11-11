@@ -669,6 +669,9 @@ def invariant_line(generated, function, contains):
 # and positive proofs default to 60 s (PROOF_TIME_LIMITS below).
 # receive-field-seq's one rejecting check (a run-append frame in `receive`) timed out at 30 s on a 2-core box (third lane, 2026-11-10).
 TIME_LIMITS = {'replay-order': 120, 'replay-skip': 120, 'receive-field-seq': 120,
+               # receive-field-author's one check (the second entry's author frame in `receive`) timed out the same way
+               # (vl-ghost-functions, 2026-11-11).
+               'receive-field-author': 120,
                # Quantified record-equality counterexamples need the same bounded headroom.
                'apply-drive-duration': 120, 'apply-drive-revision': 120, 'apply-seek-remaining': 120, 'receive-pending-filter': 120,
                'apply-drive-range': 120,
