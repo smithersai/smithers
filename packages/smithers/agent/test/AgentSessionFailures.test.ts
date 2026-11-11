@@ -1305,7 +1305,7 @@ describe("the executor's driver admission fence", () => {
   })
 
   for (const status of ["waiting-approval", "parked"] as const) {
-    it(`parks a background round held by another host (${status})`, async () => {
+    it.each([false, true])(`honors foreign-host round ownership (${status}, abandoned: %s)`, async (abandoned) => {
       const record = recorder()
       let registration: {
         readonly flow: Flow.Any
@@ -1315,8 +1315,30 @@ describe("the executor's driver admission fence", () => {
         ) => Effect.Effect<unknown, unknown, FlowRuntime.FlowInstance>
       } | undefined
       let bodies = 0
+      const cleared: Array<{ runId: string; sequence: number }> = []
+      const nowMs = 60_000
+      const cutoff = 10_000
       await withExecutor(record, {
-        runtime: { getRun: () => Effect.succeed({ ...launchInput.run, status, parkedBy: "foreign-host-fence" }) },
+        nowMs,
+        abandonedParkAfter: Duration.millis(cutoff),
+        runtime: {
+          getRun: () =>
+            Effect.succeed({
+              ...launchInput.run,
+              status,
+              pendingResume: 7,
+              parkedBy: "foreign-host-fence"
+            }),
+          pendingResumes: Effect.succeed([{
+            runId,
+            sequence: 7,
+            requestedAtMs: nowMs - cutoff + (abandoned ? 0 : 1)
+          }]),
+          clearResume: (runId, sequence) =>
+            Effect.sync(() => {
+              cleared.push({ runId, sequence })
+            })
+        },
         agent: Agent.makeNoop({
           run: () => {
             bodies++
@@ -1341,11 +1363,14 @@ describe("the executor's driver admission fence", () => {
             Effect.forkChild
           )
           const exit = yield* Fiber.await(child)
-          expect(Exit.isFailure(exit)).toBe(true)
-          expect(instance.suspended).toBe(true)
-          expect(instance.waiting?.reason).toBe(status === "waiting-approval" ? "approval" : "event")
-          expect(bodies).toBe(0)
-          expect(record.statuses).toEqual([])
+          expect(Exit.isFailure(exit)).toBe(!abandoned)
+          expect(instance.suspended).toBe(!abandoned)
+          expect(instance.waiting?.reason).toBe(
+            abandoned ? undefined : status === "waiting-approval" ? "approval" : "event"
+          )
+          expect(bodies).toBe(abandoned ? 1 : 0)
+          expect(cleared).toEqual(abandoned ? [{ runId, sequence: 7 }] : [])
+          expect(record.statuses).toEqual(abandoned ? ["completed"] : [])
         }))
     })
   }
@@ -3557,13 +3582,22 @@ describe("retained TODO checkpoint admission", () => {
     { name: "missing child", signals: [], checkpoints: 0 },
     { name: "unfinished child", signals: [], checkpoints: 0 },
     { name: "completed child", signals: [], checkpoints: 0 },
-    { name: "unreadable child", signals: [], checkpoints: 0 }
+    { name: "unreadable child", signals: [], checkpoints: 0 },
+    { name: "queued foreign child", signals: [], checkpoints: 0 },
+    { name: "queued unfinished child", signals: [], checkpoints: 0 },
+    { name: "queued completed child", signals: [], checkpoints: 0 }
   ]
 
   it.each(cases)(
     "re-enters only a hosted, pending, valid checkpoint: $name",
     async ({ name, signals, checkpoints }) => {
       const record = recorder()
+      const markerKind = name.replace("queued ", "")
+      const queued = name.startsWith("queued ")
+      const reentered = name === "queued completed child"
+      let agentRuns = 0
+      let waitingRequest: string | undefined
+      const childReads: Array<string> = []
       const descriptor = new Descriptor.FlowDescriptor({ ...seated, name: "todo" })
       const plan = {
         ...launchInput.plan,
@@ -3579,21 +3613,42 @@ describe("retained TODO checkpoint admission", () => {
         "completed child",
         "unreadable child"
       ]
-        .includes(name)
+        .includes(markerKind)
       const checked: Array<{ runId: string; flowId: string }> = []
       let entered = false
       let driven: never | undefined
       let observe: ((flow: never, executionId: string) => Effect.Effect<Option.Option<unknown>, unknown>) | undefined
       const result = await withExecutor(record, {
-        notifications: { pending: () => Effect.succeed([]) },
+        notifications: {
+          pending: () =>
+            Effect.succeed(
+              queued ?
+                [{
+                  _tag: "human-steer" as const,
+                  id: "steer-1",
+                  targetLineageId: runId,
+                  provenance: { sourceRunId: runId, sourceLineageId: runId, sourceTurn: 0, sourceActor: "operator" },
+                  payload: "continue",
+                  delivery: "steer" as const
+                }] :
+                []
+            )
+        },
         reenterModules: name === "not retained" ? [] : ["todo"],
-        reentryCheckpoint: name === "no checkpoint port" ? undefined : (runId, flowId) =>
-          Effect.gen(function*() {
-            checked.push({ runId, flowId })
-            yield* FlowRuntime.annotateWaiting({ reason: "event", request: JSON.stringify({ kind: "stack" }) })
-            return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
-          }),
-        agent: Agent.makeNoop({ run: () => Stream.die("A checkpoint must park before repository execution") }),
+        reentryCheckpoint: hasMarker || name === "no checkpoint port" ?
+          undefined :
+          (runId, flowId) =>
+            Effect.gen(function*() {
+              checked.push({ runId, flowId })
+              yield* FlowRuntime.annotateWaiting({ reason: "event", request: JSON.stringify({ kind: "stack" }) })
+              return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+            }),
+        agent: Agent.makeNoop({
+          run: () => {
+            agentRuns++
+            return completed
+          }
+        }),
         runtime: {
           getRun: () =>
             Effect.succeed({
@@ -3625,10 +3680,10 @@ describe("retained TODO checkpoint admission", () => {
                     emittedAtMs: 1,
                     eventType: "control.module.launched",
                     meta: {},
-                    payload: name === "malformed launch" ? null : {
+                    payload: markerKind === "malformed launch" ? null : {
                       ordinal: 0,
                       executionDigest: plan.card.executionDigest,
-                      executionId: name === "foreign child" ? "foreign" : moduleId
+                      executionId: markerKind === "foreign child" ? "foreign" : moduleId
                     }
                   })
                 ] :
@@ -3638,19 +3693,22 @@ describe("retained TODO checkpoint admission", () => {
         },
         runs: hasMarker ?
           {
-            get: () =>
-              name === "missing child" || name === "unreadable child" ?
+            get: (id) => {
+              childReads.push(id)
+              return markerKind === "missing child" || markerKind === "unreadable child" ?
                 Effect.fail(
                   new RunStore.RunStoreError({
-                    code: name === "unreadable child" ? "persistence_failed" : "not_found_row",
+                    code: markerKind === "unreadable child" ? "persistence_failed" : "not_found_row",
                     method: "get",
-                    message: name === "unreadable child" ? "checkpoint child read failed" : "checkpoint child is gone",
+                    message: markerKind === "unreadable child"
+                      ? "checkpoint child read failed"
+                      : "checkpoint child is gone",
                     cause: undefined
                   })
                 ) :
                 Effect.succeed({
                   runId: moduleId,
-                  status: name === "completed child" ? "completed" : "running",
+                  status: markerKind === "completed child" || markerKind === "foreign child" ? "completed" : "running",
                   owner: null,
                   heartbeatAtMs: null,
                   createdAtMs: 1,
@@ -3662,12 +3720,24 @@ describe("retained TODO checkpoint admission", () => {
                   cancelRequestedAtMs: null,
                   stateJson: "{}"
                 })
+            }
           } :
           undefined,
         engine: (engine) => {
           observe = (flow, executionId) => engine.poll(flow, executionId) as never
+          const register: EngineService["register"] = (flow, execute, options) =>
+            engine.register(flow, (payload, executionId) =>
+              Effect.gen(function*() {
+                const instance = yield* FlowRuntime.FlowInstance
+                return yield* execute(payload, executionId).pipe(
+                  Effect.ensuring(Effect.sync(() => {
+                    waitingRequest = instance.waiting?.request
+                  }))
+                )
+              }), options)
           return {
             ...engine,
+            register,
             execute: (flow: never, options: never) =>
               Effect.suspend(() => {
                 entered = true
@@ -3687,8 +3757,17 @@ describe("retained TODO checkpoint admission", () => {
           )
         }))
       expect(result).toEqual(
-        Option.some(expect.objectContaining({ _tag: name === "unreadable child" ? "Complete" : "Suspended" }))
+        Option.some(
+          expect.objectContaining({ _tag: markerKind === "unreadable child" || reentered ? "Complete" : "Suspended" })
+        )
       )
+      expect(agentRuns).toBe(reentered ? 1 : 0)
+      expect(waitingRequest).toBe(
+        !reentered && (markerKind === "completed child" || checkpoints > 0)
+          ? JSON.stringify({ kind: "stack" })
+          : undefined
+      )
+      if (markerKind === "foreign child" || markerKind === "malformed launch") expect(childReads).toEqual([])
       if (name === "unreadable child") expect(causeOf(record)).toContain("checkpoint child read failed")
       expect(checked).toEqual(Array.from({ length: checkpoints }, () => ({ runId, flowId: "todo" })))
       expect(record.journaled.some((entry) => entry.eventType === "control.module.launched")).toBe(false)
