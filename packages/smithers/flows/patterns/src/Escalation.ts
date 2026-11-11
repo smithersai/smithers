@@ -212,7 +212,8 @@ export const make = <R = never>(options: MakeOptions<R>): EscalationFlow<R> => {
   const { name, description } = Compose.label(
     "escalation",
     { rungs: rungs.length, fallback: fallback !== undefined },
-    options
+    options,
+    [...rungs.flatMap((rung) => [rung.flow, rung.escalateIf]), accept, fallback]
   )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const exhausted = (last: unknown, level: number): Node.Node<unknown, unknown, R> =>

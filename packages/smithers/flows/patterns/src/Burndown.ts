@@ -517,7 +517,8 @@ export const make = <E extends Schema.Top = typeof Schema.Unknown, I = unknown>(
   const { name, description } = Compose.label(
     "burndown",
     { maxRounds, capacity: capacity !== undefined },
-    options
+    options,
+    [discover, dispatcher, capacity]
   )
   const body = (payload: typeof Payload.Type): Node.Node<unknown, unknown, any> => {
     const round = payload.round ?? 0

@@ -170,7 +170,11 @@ export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
   }
   const stall = Stalling.resolve("ReviewLoop", options.stall)
   if (stall instanceof PatternError) throw stall
-  const { name, description } = Compose.label("reviewLoop", { maxRounds, stall: Stalling.labelOf(stall) }, options)
+  const { name, description } = Compose.label("reviewLoop", { maxRounds, stall: Stalling.labelOf(stall) }, options, [
+    stages.produce,
+    stages.review,
+    stages.revise
+  ])
   const captured = stall === undefined ? { maxRounds } : { maxRounds, stall }
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const visit = (output: unknown, round: number, streaks: unknown): Node.Node<unknown, unknown, R> => {

@@ -216,7 +216,11 @@ export const make = <R = never>(options: MakeOptions<R>): SidecarFlow<R> => {
   // these snapshots and never the caller's options again.
   const declared = { primary: options.primary, shadow: options.shadow }
   const score = options.score
-  const { name, description } = Compose.label("sidecar", { scores: score !== undefined }, options)
+  const { name, description } = Compose.label("sidecar", { scores: score !== undefined }, options, [
+    declared.primary,
+    declared.shadow,
+    score
+  ])
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const shadow: Node.Node<unknown, unknown, R> = Node.catch(
       Node.map(

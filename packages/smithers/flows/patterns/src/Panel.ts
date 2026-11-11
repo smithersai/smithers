@@ -131,11 +131,16 @@ export const make = <R = never>(options: MakeOptions<R>): PanelFlow<R> => {
   // A panelist name that could imitate the label's own separators is
   // JSON-quoted, so two different panels never share a label.
   const plain = names.every((panelist) => /^[^\s,=()"[\]]+$/.test(panelist))
-  const { name, description } = Compose.label("panel", {
-    ...material,
-    panelists: plain ? names : JSON.stringify(names),
-    ...(roles === undefined ? {} : { roles: JSON.stringify(material.roles) })
-  }, options)
+  const { name, description } = Compose.label(
+    "panel",
+    {
+      ...material,
+      panelists: plain ? names : JSON.stringify(names),
+      ...(roles === undefined ? {} : { roles: JSON.stringify(material.roles) })
+    },
+    options,
+    [...panelists.map(([, panelist]) => panelist), moderator]
+  )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const nodes = Object.fromEntries(
       panelists.map(([name, panelist]) => [name, callMember(panelist, payload(input, roles?.get(name)))])

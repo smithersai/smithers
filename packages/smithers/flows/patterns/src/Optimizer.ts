@@ -201,11 +201,16 @@ export const make = <R = never>(options: MakeOptions<R>): OptimizerFlow<R> => {
     maxIterations,
     onMaxReached
   }
-  const { name, description } = Compose.label("optimizer", {
-    maxIterations,
-    targetScore,
-    onMaxReached
-  }, options)
+  const { name, description } = Compose.label(
+    "optimizer",
+    {
+      maxIterations,
+      targetScore,
+      onMaxReached
+    },
+    options,
+    [stages.generate, stages.evaluate]
+  )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const visit = (previous: unknown, standing: unknown, iteration: number): Node.Node<unknown, unknown, R> =>
       Node.bindPlanned(

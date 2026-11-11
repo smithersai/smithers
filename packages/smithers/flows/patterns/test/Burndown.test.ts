@@ -1053,7 +1053,9 @@ describe("Burndown.make", () => {
     const { layers, tape } = scripted({ discover: (round) => backlog[round] ?? [] })
     const burndown = Burndown.make({ discover: Discover, dispatch: Dispatch, maxRounds: 10 })
 
-    expect(burndown._tag).toBe("burndown(maxRounds=10, capacity=false)")
+    expect(burndown._tag).toBe(
+      "burndown(maxRounds=10, capacity=false)[burndown-test/discover, burndown-test/dispatch, ]"
+    )
     expect(await settle(burndown, { input: { repo: "acme/app" } }, layers)).toEqual({
       rows: [
         { id: "a", status: "landed", detail: "" },

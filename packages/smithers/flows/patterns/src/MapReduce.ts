@@ -114,7 +114,10 @@ export const make = <R = never>(options: MakeOptions<R>): MapReduceFlow<R> => {
       message: "MapReduce concurrency must be a positive safe integer"
     })
   }
-  const { name, description } = Compose.label("mapReduce", { concurrency, onEmpty }, options)
+  const { name, description } = Compose.label("mapReduce", { concurrency, onEmpty }, options, [
+    stages.map,
+    stages.reduce
+  ])
   const body = (input: { readonly shards: unknown }): Node.Node<unknown, unknown, R> => {
     if (
       typeof input !== "object" ||

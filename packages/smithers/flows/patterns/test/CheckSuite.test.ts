@@ -753,7 +753,9 @@ describe("CheckSuite discovered checks", () => {
     const suite = CheckSuite.makeDiscovered({ ...settings, check: member })
     const named = CheckSuite.makeDiscovered({ ...settings, check: member, name: "ci", description: "Run each gate." })
 
-    expect(suite._tag).toBe("checkSuiteDiscovered(strategy=all-pass, concurrency=2, onEmpty=pass)")
+    expect(suite._tag).toBe(
+      "checkSuiteDiscovered(strategy=all-pass, concurrency=2, onEmpty=pass)[discovered-check]"
+    )
     expect(suite.description).toBeUndefined()
     expect(named._tag).toBe("ci")
     expect(named.description).toBe("Run each gate.")

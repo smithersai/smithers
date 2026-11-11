@@ -122,7 +122,11 @@ export const make = <R = never>(options: MakeOptions<R>): DebateFlow<R> => {
   const participants = { proponent: options.proponent, opponent: options.opponent, judge: options.judge }
   const rounds = options.rounds
   if (!Number.isSafeInteger(rounds) || rounds < 1) invalidRounds(rounds)
-  const { name, description } = Compose.label("debate", { rounds }, options)
+  const { name, description } = Compose.label("debate", { rounds }, options, [
+    participants.proponent,
+    participants.opponent,
+    participants.judge
+  ])
   // The transcript is a real array of planned references, assembled while the
   // graph builds. A planned value may be read by field and passed into a
   // payload but never computed on, so a round appends to the array the builder

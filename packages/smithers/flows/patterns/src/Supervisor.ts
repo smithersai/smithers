@@ -339,7 +339,8 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
   const { name, description } = Compose.label(
     "supervisor",
     { workers: names, maxRounds, concurrency, stall: Stalling.labelOf(stall) },
-    options
+    options,
+    [boss.plan, ...names.map((worker) => routes[worker]), boss.review, boss.finalize]
   )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const tasks = planned(input, maxTasks)

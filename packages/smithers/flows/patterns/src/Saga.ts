@@ -248,7 +248,8 @@ export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
   const { name, description } = Compose.label(
     "saga",
     { steps: steps.map((step) => step.id), onFailure: policy },
-    options
+    options,
+    steps.flatMap((step) => [step.action, step.compensation])
   )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const visit = (index: number, completed: Readonly<Record<string, unknown>>): Node.Node<unknown, unknown, R> => {

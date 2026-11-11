@@ -122,7 +122,11 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
   const maxIssues = options.maxIssues
   const concurrency = options.concurrency
   const captures = { maxRetries, maxIssues, concurrency }
-  const { name, description } = Compose.label("scanFixVerify", { maxRetries, maxIssues, concurrency }, options)
+  const { name, description } = Compose.label("scanFixVerify", { maxRetries, maxIssues, concurrency }, options, [
+    stages.scan,
+    stages.fix,
+    stages.verify
+  ])
   const clean = Node.capture({ ...captures, clean: true }, (issues: unknown) => issueCount(issues) === 0)
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const visit = (

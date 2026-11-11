@@ -308,7 +308,8 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
   const { name, description } = Compose.label(
     "mergeQueue",
     { members: captures.members, concurrency, failurePolicy },
-    options
+    options,
+    queue.map((entry) => entry.member.flow)
   )
   // Each landing settles to a tagged outcome, so the final fold can tell a
   // landed member from a quarantined one whatever the member returned.

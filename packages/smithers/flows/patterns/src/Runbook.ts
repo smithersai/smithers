@@ -230,7 +230,10 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
     const approval = Pattern.bind(Pattern.slot({ input: ApprovalInput, output: Pattern.Approved }), options.approval)
     return { step, approval: { flow: approval, reason: stepReason } }
   })
-  const { name, description } = Compose.label("runbook", { steps: ids }, options)
+  const { name, description } = Compose.label("runbook", { steps: ids }, options, [
+    ...steps.map((step) => step.flow),
+    options.approval
+  ])
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const envelope = (index: number, previous: unknown): unknown => ({
       step: declared[index]!.step.id,

@@ -304,7 +304,12 @@ export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
     concurrency,
     continueOnFail
   }
-  const { name, description } = Compose.label("checkSuite", { checks: ids, strategy, concurrency }, options)
+  const { name, description } = Compose.label(
+    "checkSuite",
+    { checks: ids, strategy, concurrency },
+    options,
+    declared.map(([, check]) => check)
+  )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
     joined(
       declared.map(([id, check]) => [id, callMember(check, { check: id, input })]),
@@ -514,7 +519,9 @@ export const makeDiscovered = <R = never>(options: DiscoveredMakeOptions<R>): Di
     })
   }
   const captures = { strategy, concurrency, continueOnFail, onEmpty }
-  const { name, description } = Compose.label("checkSuiteDiscovered", { strategy, concurrency, onEmpty }, options)
+  const { name, description } = Compose.label("checkSuiteDiscovered", { strategy, concurrency, onEmpty }, options, [
+    check
+  ])
   const body = (payload: { readonly checks: unknown; readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const ids = discoveredIds(payload.checks)
     // A declared failure, not a throw: a body that throws is reported as an

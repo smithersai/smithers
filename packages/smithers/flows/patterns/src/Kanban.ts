@@ -315,7 +315,10 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
     }
     return visit(0, {})
   }
-  const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options)
+  const { name, description } = Compose.label("kanban", { columns: names, items: ids.length, concurrency }, options, [
+    ...columns.map((column) => column.flow),
+    onComplete
+  ])
   const body = (): Node.Node<unknown, unknown, R> => {
     const walk = (
       index: number,

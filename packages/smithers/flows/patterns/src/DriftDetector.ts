@@ -149,7 +149,11 @@ export const make = <R = never>(options: MakeOptions<R>): DriftDetectorFlow<R> =
   const capture = options.capture
   const compare = options.compare
   const baseline = options.baseline
-  const { name, description } = Compose.label("driftDetector", { alerts: alert !== undefined }, options)
+  const { name, description } = Compose.label("driftDetector", { alerts: alert !== undefined }, options, [
+    capture,
+    compare,
+    alert
+  ])
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
     Node.bindPlanned(
       callMember(capture, { input, baseline }),

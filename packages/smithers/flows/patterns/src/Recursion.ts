@@ -111,11 +111,16 @@ export const recurse = <R = never>(options: RecurseOptions<R>): RecursionFlow<R>
       return boundError("Nested recursion may attenuate but cannot widen its parent envelope")
     }
   }
-  const { name, description } = Compose.label("recurse", {
-    fuel: envelope.fuel,
-    depth: envelope.depth,
-    fanout: envelope.fanout
-  }, options)
+  const { name, description } = Compose.label(
+    "recurse",
+    {
+      fuel: envelope.fuel,
+      depth: envelope.depth,
+      fanout: envelope.fanout
+    },
+    options,
+    [child]
+  )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     if (typeof input === "function") {
       return boundError("Recursion input must be a literal tree available while planning")
