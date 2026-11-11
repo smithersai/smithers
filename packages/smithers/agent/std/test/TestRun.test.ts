@@ -1,6 +1,9 @@
+import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Cause, Effect, Exit, Layer, Option, Sink, Stream } from "effect"
+import * as Path from "effect/Path"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import * as Redacted from "effect/Redacted"
@@ -294,6 +297,54 @@ describe("TestRun", () => {
     expect(TestRun.DEFAULT_TIMEOUT_MS).toBe(600_000)
     expect(exit).toBeDefined()
     if (exit !== undefined) expect(failureOf(exit)).toMatchObject({ code: "timeout", limitMillis: 600_000 })
+  })
+
+  /**
+   * A runner its timeout stops has still printed the cases it got through, and
+   * the one it hung on. These run real processes on this host.
+   */
+  describe.skipIf(process.platform === "win32")("past its time limit", () => {
+    const spawning = Layer.provide(NodeChildProcessSpawner.layer, Layer.merge(NodeFileSystem.layer, Path.layer))
+    const stopped = async (command: string) => {
+      const exit = await execute(
+        Effect.exit(TestRun.run({})).pipe(
+          Effect.provide(Layer.mergeAll(spawning, TestRunner.layer({ command, timeoutMs: 1_500 }), tree))
+        )
+      )
+      return failureOf(exit) as { readonly output?: Record<string, unknown> } | undefined
+    }
+
+    it("fails with code timeout and carries what the runner printed", async () => {
+      expect(
+        await stopped("printf 'test_a PASSED\\n'; printf 'test_b starting\\n' >&2; exec sleep 30")
+      ).toMatchObject({
+        code: "timeout",
+        limitMillis: 1_500,
+        output: {
+          stdout: "test_a PASSED\n",
+          stderr: "test_b starting\n",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          stdoutDroppedBytes: 0,
+          stderrDroppedBytes: 0
+        }
+      })
+    }, 30_000)
+
+    it("keeps the end of each stream past the output limit, and counts the rest", async () => {
+      const error = await stopped(
+        "printf 'HEAD\\n'; head -c 40000 /dev/zero | tr '\\0' x; printf '\\nTAIL\\n'; exec sleep 30"
+      )
+      const printed = `HEAD\n${"x".repeat(40_000)}\nTAIL\n`
+      expect(error?.output).toEqual({
+        stdout: printed.slice(-MAX_SHELL_OUTPUT_BYTES),
+        stderr: "",
+        stdoutTruncated: true,
+        stderrTruncated: false,
+        stdoutDroppedBytes: printed.length - MAX_SHELL_OUTPUT_BYTES,
+        stderrDroppedBytes: 0
+      })
+    }, 30_000)
   })
 
   it("runs the pristine base in a scratch worktree and attributes every failure", async () => {

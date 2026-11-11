@@ -251,7 +251,8 @@ const result = ShellCommand.run({ command: "ls -la", workdir: "/workspace" })
 ```
 
 The timeout defaults to 10 seconds, not ten minutes, and a timeout is a
-successful value with exit code `ShellCommand.TIMEOUT_EXIT_CODE`. Output is
+successful value with exit code `ShellCommand.TIMEOUT_EXIT_CODE`, whose output
+is what the command printed before it was stopped. Output is
 shaped to a 10,000-token budget by truncating the middle rather than the head.
 Codex's `sandbox_permissions`, `justification`, and `prefix_rule` approval
 parameters are deliberately absent: the permission kernel owns sandboxing and

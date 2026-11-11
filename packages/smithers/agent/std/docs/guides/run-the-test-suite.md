@@ -159,4 +159,5 @@ nor `cwd` fails with `invalid_input`.
 `TestRun.DEFAULT_TIMEOUT_MS` (ten minutes). The run holds at most
 `TestRun.MAX_CAPTURE_BYTES` of output in memory, and `tail` carries the last
 30,000 bytes of it, so `tail` holds the part of a long run that says what
-failed. A timeout is a `timeout` failure, not a result.
+failed. A timeout is a `timeout` failure, not a result; its `output` carries
+the last 30,000 bytes of each stream the runner printed before it was stopped.

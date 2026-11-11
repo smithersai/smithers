@@ -160,7 +160,8 @@ export const flow = { name, description, input: Input, output: Output, capabilit
  * renders the Codex model-facing output format.
  *
  * Non-zero exit codes and timeouts remain successful values, exactly as in
- * Codex; only host and permission failures use the typed error channel.
+ * Codex; only host and permission failures use the typed error channel. A
+ * timeout's output is what the command printed before it was stopped.
  *
  * @category handlers
  * @since 1.0.0
@@ -176,11 +177,12 @@ export const run = Effect.fn("ShellCommand.run")(function*(
     maxCaptureBytes: MAX_CAPTURE_BYTES
   }).pipe(
     Effect.map((value) => ({ timedOut: false, value })),
-    Effect.catch((error) =>
-      error.code === "timeout"
-        ? Effect.succeed({ timedOut: true, value: { exitCode: TIMEOUT_EXIT_CODE, stderr: "", stdout: "" } })
-        : Effect.fail(Exec.toStdError(input.command, error))
-    )
+    // A timeout always captures, so `captured` is present here.
+    Effect.catchIf(
+      (error) => error.code === "timeout",
+      (error) => Effect.succeed({ timedOut: true, value: { exitCode: TIMEOUT_EXIT_CODE, ...error.captured! } })
+    ),
+    Effect.mapError((error) => Exec.toStdError(input.command, error))
   )
   const durationSeconds = (Date.now() - startedAt) / 1_000
   const aggregated = result.value.stderr === ""

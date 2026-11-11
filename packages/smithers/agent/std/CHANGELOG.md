@@ -27,6 +27,11 @@
   containerised command measured on both sides. It used to carry nothing, so
   a test loop that printed a line per case and hung returned no lines at all.
   `Exec.exec` reports what a timed-out command printed as `ExecError.captured`.
+- A `shell_command` or `test` call past its time limit carries what the
+  command printed before it was stopped: `shell_command` after its
+  `command timed out after` line, as Codex prints it, and `test` as the
+  failure's `output`, the end of each stream. Both used to answer with no
+  output at all.
 - A containerised `bash` call's deadline is enforced inside the container, in
   the same transport call, by `TreeFingerprint.around`. The command, and its
   process group where the container has GNU `timeout` or `setsid`, gets

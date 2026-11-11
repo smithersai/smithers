@@ -249,6 +249,26 @@ const invocation = (
 const failed = (message: string, code: StdError.Code = "command_failed"): StdError.StdError =>
   new StdError.StdError({ code, message })
 
+/**
+ * What a runner printed before its timeout stopped it: the end of each
+ * stream, as a finished run's `tail` keeps the end, where the case it hung on
+ * is named.
+ */
+const printed = (captured: Exec.Captured): StdError.PartialOutput => {
+  const stdout = truncateBytes(captured.stdout, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
+  const stderr = truncateBytes(captured.stderr, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
+  const stdoutDroppedBytes = captured.stdoutDroppedBytes + stdout.droppedBytes
+  const stderrDroppedBytes = captured.stderrDroppedBytes + stderr.droppedBytes
+  return {
+    stdout: stdout.text,
+    stderr: stderr.text,
+    stdoutTruncated: stdoutDroppedBytes > 0,
+    stderrTruncated: stderrDroppedBytes > 0,
+    stdoutDroppedBytes,
+    stderrDroppedBytes
+  }
+}
+
 /** Runs one invocation, in the container when the declaration names one. */
 const execute = (
   runner: TestRunner.Runner,
@@ -290,7 +310,8 @@ const execute = (
         new StdError.StdError({
           code: Exec.toStdErrorCode(error),
           message: `The test runner did not run: ${error.message}`,
-          ...(error.limitMillis === undefined ? {} : { limitMillis: error.limitMillis })
+          ...(error.limitMillis === undefined ? {} : { limitMillis: error.limitMillis }),
+          ...(error.captured === undefined ? {} : { output: printed(error.captured) })
         })
       )
     )

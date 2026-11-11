@@ -147,6 +147,20 @@ describe("ShellCommand", () => {
     expect(result.output).toContain("command timed out after 20 milliseconds")
   })
 
+  it.skipIf(process.platform === "win32")("keeps what a timed-out process printed", async () => {
+    const result = await Effect.runPromise(
+      ShellCommand.run({
+        command: "printf 'case 1 ok\\n'; printf 'case 2 starting\\n' >&2; exec sleep 30",
+        timeout_ms: 1_000
+      }).pipe(Effect.provide(Layer.provide(
+        NodeChildProcessSpawner.layer,
+        Layer.merge(NodeFileSystem.layer, Path.layer)
+      )))
+    )
+    expect(result.exitCode).toBe(ShellCommand.TIMEOUT_EXIT_CODE)
+    expect(result.output).toContain("command timed out after 1000 milliseconds\ncase 1 ok\ncase 2 starting\n")
+  }, 30_000)
+
   it.skipIf(process.platform === "win32")("runs in the requested working directory", async () => {
     const workdir = realpathSync(resolve(process.cwd(), "test"))
     const result = await Effect.runPromise(
