@@ -72,7 +72,9 @@ export const AdmissionConfig = Schema.Struct({
 })
 
 /**
- * `runner.json`: the host's origin, the runner's registered name, how many
+ * `runner.json`: the host's origin (absent: the runner is its own host, and
+ * its lanes are control runs under `lanes.root`, the state directory unless
+ * set), the runner's registered name, how many
  * jobs it runs at once (4 unless set), where it keeps its state
  * (`~/.smithers/runner` unless set), how often it heartbeats a job (10 s) and
  * claims again after an empty claim (2 s), when it admits a job
@@ -86,7 +88,8 @@ export const AdmissionConfig = Schema.Struct({
  * @since 1.0.0
  */
 export const Config = Schema.Struct({
-  origin: NonEmpty,
+  origin: Schema.optional(NonEmpty),
+  lanes: Schema.optional(Schema.Struct({ root: Schema.optional(NonEmpty) })),
   name: AgentRunner.Name,
   capacity: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 64 }))),
   stateDir: Schema.optional(NonEmpty),
@@ -109,7 +112,8 @@ export type Config = typeof Config.Type
 
 /**
  * A checked configuration: the origin without a trailing slash, the defaults
- * filled in (the admission policy's too), and the state directory as an absolute path.
+ * filled in (the admission policy's too), and the state directory and the
+ * lanes' project root as absolute paths.
  *
  * @category models
  * @since 1.0.0
@@ -117,6 +121,7 @@ export type Config = typeof Config.Type
 export interface Checked extends Omit<Config, "admission"> {
   readonly capacity: number
   readonly stateDir: string
+  readonly lanesRoot: string
   readonly heartbeatSeconds: number
   readonly pollSeconds: number
   readonly admission: Admission.Policy
@@ -155,16 +160,42 @@ const expand = (path: string, home: string): string =>
 const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(Config))
 
 /**
- * Checks a decoded configuration: the origin is `https`, or `http` on this
- * machine only; every mirror is an absolute path.
+ * Checks a decoded configuration: the origin, when set, is `https`, or `http`
+ * on this machine only; every mirror is an absolute path.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const check = (config: Config, home: string = homedir()): Effect.Effect<Checked, RunnerConfigError> =>
   Effect.gen(function*() {
+    const origin = config.origin === undefined ? undefined : yield* checkOrigin(config.origin)
+    for (const [repository, { mirror }] of Object.entries(config.repositories)) {
+      if (!isAbsolute(mirror)) {
+        return yield* new RunnerConfigError({ message: `repositories.${repository}.mirror must be an absolute path` })
+      }
+    }
+    const stateDir = expand(config.stateDir ?? defaultStateDir(home), home)
+    return {
+      ...config,
+      ...(origin === undefined ? {} : { origin }),
+      capacity: config.capacity ?? 4,
+      heartbeatSeconds: config.heartbeatSeconds ?? 10,
+      pollSeconds: config.pollSeconds ?? 2,
+      admission: {
+        loadPerCpu: config.admission?.loadPerCpu ?? Admission.defaults.loadPerCpu,
+        diskFloorGb: config.admission?.diskFloorGb ?? Admission.defaults.diskFloorGb,
+        jobLoad: config.admission?.jobLoad ?? Admission.defaults.jobLoad
+      },
+      stateDir,
+      lanesRoot: config.lanes?.root === undefined ? stateDir : expand(config.lanes.root, home)
+    }
+  })
+
+/** An origin `https`, or `http` on this machine only, with no path: itself without a trailing slash. */
+const checkOrigin = (origin: string) =>
+  Effect.gen(function*() {
     const url = yield* Effect.try({
-      try: () => new URL(config.origin),
+      try: () => new URL(origin),
       catch: () => new RunnerConfigError({ message: "origin is not a URL" })
     })
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
@@ -174,24 +205,7 @@ export const check = (config: Config, home: string = homedir()): Effect.Effect<C
     if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
       return yield* new RunnerConfigError({ message: "origin must be an origin, with no path" })
     }
-    for (const [repository, { mirror }] of Object.entries(config.repositories)) {
-      if (!isAbsolute(mirror)) {
-        return yield* new RunnerConfigError({ message: `repositories.${repository}.mirror must be an absolute path` })
-      }
-    }
-    return {
-      ...config,
-      origin: url.origin,
-      capacity: config.capacity ?? 4,
-      heartbeatSeconds: config.heartbeatSeconds ?? 10,
-      pollSeconds: config.pollSeconds ?? 2,
-      admission: {
-        loadPerCpu: config.admission?.loadPerCpu ?? Admission.defaults.loadPerCpu,
-        diskFloorGb: config.admission?.diskFloorGb ?? Admission.defaults.diskFloorGb,
-        jobLoad: config.admission?.jobLoad ?? Admission.defaults.jobLoad
-      },
-      stateDir: expand(config.stateDir ?? defaultStateDir(home), home)
-    }
+    return url.origin
   })
 
 /**
