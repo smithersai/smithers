@@ -76,9 +76,15 @@ const runtimeRoots = (file: ts.SourceFile) => {
   return roots
 }
 
-const violations = (file: ts.SourceFile) => {
-  const found = new Set<string>()
+/**
+ * The Config reads reachable at run time from `sources`' runtime roots, each `file:line text` with the file of the first
+ * root that reached it, sorted. What a walk finds depends only on the node and whether it is captured, so one sweep
+ * shares a visited set per mode: a helper that many roots reach is walked once, not again for every file.
+ */
+const violations = (sources: ReadonlyArray<ts.SourceFile>) => {
+  const found = new Map<string, string>()
   const visited = [new Set<ts.Node>(), new Set<ts.Node>()]
+  let root = ""
   const walk = (node: ts.Node, captured = false) => {
     // A yield in a captured initializer already ran while the program built. A callback inside it is deferred.
     if (captured && ts.isYieldExpression(node)) return
@@ -90,7 +96,8 @@ const violations = (file: ts.SourceFile) => {
       const type = checker.typeToString(checker.getTypeAtLocation(node))
       if (/^Config(?:\.Config)?</.test(type)) {
         const source = node.getSourceFile()
-        found.add(`${source.fileName.slice(worker.length)}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${node.getText(source)}`)
+        const hit = `${source.fileName.slice(worker.length)}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${node.getText(source)}`
+        if (!found.has(hit)) found.set(hit, root)
         return
       }
       // Captured plain values stay captured. Only deferred effects, layers and functions run in the handler.
@@ -115,17 +122,20 @@ const violations = (file: ts.SourceFile) => {
     }
     ts.forEachChild(node, (child) => walk(child, functions(node) ? false : captured))
   }
-  runtimeRoots(file).forEach((root) => walk(root))
-  return [...found].sort()
+  for (const source of sources) {
+    root = source.fileName.slice(worker.length)
+    runtimeRoots(source).forEach((node) => walk(node))
+  }
+  return [...found].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
 }
 
 test("effect.config-at-build recognizes direct, aliased, imported and deferred reads while allowing captured values", () => {
-  const found = violations(program.getSourceFile(fixture)!)
-  expect(found.map((hit) => hit.slice(hit.indexOf(" ") + 1)).sort()).toEqual([
+  const found = violations([program.getSourceFile(fixture)!])
+  expect(found.map(([hit]) => hit.slice(hit.indexOf(" ") + 1)).sort()).toEqual([
     'Settings.String("DIRECT")', 'Settings.String("FACTORY")', 'Settings.String("NAMED")', 'configured', 'configured', 'configured', 'rollout',
   ])
 })
 
 test("effect.config-at-build: worker steps and request handlers use captured configuration", () => {
-  expect(files.flatMap((file) => violations(program.getSourceFile(file)!).map((hit) => `${file.slice(worker.length)} -> ${hit}`))).toEqual([])
+  expect(violations(files.map((file) => program.getSourceFile(file)!)).map(([hit, root]) => `${root} -> ${hit}`)).toEqual([])
 }, 180_000)
