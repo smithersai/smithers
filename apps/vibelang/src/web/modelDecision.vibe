@@ -596,6 +596,28 @@ export function newestFirst<R extends RunClock>(runs: ReadonlyArray<R>): Readonl
   return [...runs].sort((a, b) => b.started - a.started)
 }
 
+/** Applies each incoming snapshot through the proved `runIndex`/`mergeRunAt`, then orders newest first: no run is
+ * dropped, each incoming run adds at most one card, one snapshot of a listed run adds none, and the list is newest first. */
+//@ verify
+//@ ensures current.length <= \result.length && \result.length <= current.length + incoming.length
+//@ ensures incoming.length == 1 && exists(j, 0 <= j && j < current.length && current[j].id == incoming[0].id) ==> \result.length == current.length
+//@ ensures forall(i, 0 < i && i < \result.length ==> \result[i - 1].started >= \result[i].started)
+export function mergeRuns<R extends RunClock>(current: ReadonlyArray<R>, incoming: ReadonlyArray<R>): ReadonlyArray<R> {
+  let result = current
+  let k = 0
+  while (k < incoming.length) {
+    //@ invariant 0 <= k && k <= incoming.length
+    //@ invariant current.length <= result.length && result.length <= current.length + k
+    //@ invariant forall(j, 0 <= j && j < current.length ==> result[j].id == current[j].id)
+    //@ invariant k == 1 && exists(j, 0 <= j && j < current.length && current[j].id == incoming[0].id) ==> result.length == current.length
+    //@ decreases incoming.length - k
+    const index = runIndex(result, incoming[k]!.id)
+    result = mergeRunAt(result, index, incoming[k]!)
+    k++
+  }
+  return newestFirst(result)
+}
+
 /** What the slash menu needs of a command: the text a draft's first word is matched against. */
 export interface SlashCommand { readonly command: string }
 

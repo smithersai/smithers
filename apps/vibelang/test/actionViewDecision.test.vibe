@@ -1,0 +1,76 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as D from "../src/web/actionViewDecision.vibe"
+import { mergeRuns } from "../src/web/modelDecision.vibe"
+
+const step = (key: string, attempt: number, state: string) => ({ key, attempt, state })
+const run = (id: string, started: number, at: number, state = "running") => ({ id, state, started, at })
+
+describe("Actions pane decisions", () => {
+  it("names a flow by its last segment, and a blank one Action", () => {
+    expect(D.actionTitle("vibelang/Post")).toBe("Post")
+    expect(D.actionTitle("a/b/Tour")).toBe("Tour")
+    expect(D.actionTitle("Reply")).toBe("Reply")
+    expect(D.actionTitle("vibelang/")).toBe("Action")
+    expect(D.actionTitle("vibelang/  ")).toBe("Action")
+    expect(D.entryTitle("Start a tour", "vibelang/Tour")).toBe("Start a tour")
+    expect(D.entryTitle(" ", "vibelang/Tour")).toBe("Tour")
+  })
+  it("labels states, badges, dots and steps", () => {
+    expect(["passed", "failed", "cancelled", "queued", "running"].map(D.runStatus)).toEqual(["Passed", "Failed", "Cancelled", "Running", "Running"])
+    expect(["passed", "failed", "running"].map(D.runBadge)).toEqual(["success", "destructive", "secondary"])
+    expect(["passed", "failed", "running", "queued", "cancelled", ""].map(D.dotClass)).toEqual(["vl-dot-ok", "vl-dot-bad", "vl-dot-run", "vl-dot-run", "", ""])
+    expect(["passed", "failed", "running", "waiting"].map(D.stepClass)).toEqual(["ok", "bad", "run", "muted"])
+    expect(D.actorLabel("agent")).toBe("VibeLang agent")
+    expect(D.actorLabel("person")).toBe("You")
+  })
+  it("counts whole seconds, running a live clock to now and never backwards", () => {
+    expect(D.elapsedSeconds(1000, 3999)).toBe(2)
+    expect(D.elapsedSeconds(5000, 1000)).toBe(0)
+    expect(D.runSeconds("running", 0, 2000, 9000)).toBe(9)
+    expect(D.runSeconds("queued", 0, 9000, 2000)).toBe(9)
+    expect(D.runSeconds("passed", 0, 2000, 9000)).toBe(2)
+  })
+  it("opens the chosen step, else the first failed, else the first live, else the last", () => {
+    const steps = [step("a", 1, "passed"), step("b", 1, "running"), step("c", 2, "failed"), step("d", 1, "failed")]
+    expect(D.selectedStepIndex(steps, "a/1")).toBe(0)
+    expect(D.selectedStepIndex(steps, "")).toBe(2)
+    expect(D.selectedStepIndex([step("a", 1, "passed"), step("b", 1, "waiting")], "x")).toBe(1)
+    expect(D.selectedStepIndex([step("a", 1, "passed"), step("b", 1, "passed")], "")).toBe(1)
+    expect(D.selectedStepIndex([], "a/1")).toBe(-1)
+    expect(D.stepKey("build", 3)).toBe("build/3")
+  })
+  it("merges snapshots without rolling back and lists newest first", () => {
+    const merged = mergeRuns([run("1", 10, 20, "passed"), run("2", 30, 40)], [run("1", 10, 50), run("3", 60, 60), run("2", 30, 45)])
+    expect(merged.map((entry) => [entry.id, entry.at])).toEqual([["3", 60], ["2", 45], ["1", 20]])
+  })
+  it("chooses the pane's back link, bar, primary button, body, input and layout", () => {
+    const list = D.actionPane(false, "", "", "", false, "", false, false, false, "", "none", false)
+    expect(list).toEqual({ back: "", bar: "Actions", primary: "none", body: "list", input: "none", layout: "entries" })
+    const chosen = D.actionPane(false, "", "", "", true, "Post", true, true, false, "", "json", false)
+    expect(chosen).toEqual({ back: "Actions", bar: "Post", primary: "run", body: "list", input: "json", layout: "runs" })
+    const live = D.actionPane(true, "vibelang/Post", "7", "running", true, "Post", true, true, false, "", "text", true)
+    expect([live.back, live.bar, live.primary, live.body, live.layout]).toEqual(["Post", "Post #7", "cancel", "trace", "grid"])
+    expect(D.actionPane(true, "vibelang/Post", "7", "passed", true, "Post", true, true, false, "", "none", false).primary).toBe("rerun")
+    expect(D.actionPane(true, "vibelang/Reply", "c-reply", "queued", false, "", false, true, false, "", "none", false).primary).toBe("cancel")
+    expect(D.actionPane(true, "vibelang/Reply", "c-reply", "queued", false, "", false, false, false, "", "none", false).primary).toBe("none")
+    expect(D.actionPane(true, "vibelang/Reply", "c-reply", "passed", false, "", false, true, false, "", "none", false).primary).toBe("none")
+    expect(D.actionPane(false, "", "", "", true, "Post", true, true, true, "x", "text", false).body).toBe("loading")
+    expect(D.actionPane(false, "", "", "", true, "Post", true, true, false, "x", "text", false).body).toBe("error")
+    expect(D.actionPane(false, "", "", "", true, "Post", false, true, false, "", "text", false).input).toBe("none")
+  })
+  it("keeps the run trace visible after a cancellation denial", () => {
+    const pane = D.actionPane(true, "vibelang/Post", "7", "running", true, "Post", true, true, false, "Couldn't cancel action", "none", false)
+    expect(pane.body).toBe("trace")
+    expect(D.actionPane(false, "", "", "", true, "Post", true, true, false, "Couldn't start action", "none", false).body).toBe("list")
+    expect(D.actionPane(true, "vibelang/Post", "7", "running", true, "Post", true, true, false, "Couldn't load runs", "none", false).body).toBe("error")
+  })
+  it("offers the other mode's command, and none while the mode is pending", () => {
+    expect(D.modeCommandTarget("live")).toBe("mock")
+    expect(D.modeCommandTarget("mock")).toBe("live")
+    expect(D.modeCommandTarget("pending")).toBe("")
+    expect(D.modeCommandTitle("mock")).toBe("Mock mode")
+    expect(D.permittedAction(true, "vibelang/Post", [{ name: "vibelang/Post" }])).toBe(true)
+    expect(D.permittedAction(false, "vibelang/Post", [{ name: "vibelang/Post" }])).toBe(false)
+    expect(D.permittedAction(true, "vibelang/Tour", [{ name: "vibelang/Post" }])).toBe(false)
+  })
+})

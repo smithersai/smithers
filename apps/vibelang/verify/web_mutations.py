@@ -102,3 +102,38 @@ cases = [
 (S, 'touch-moved-records', 'touchMoved', 'touch: { id: touch.id, y }', 'touch', 'a move records the new position'),
 (S, 'touch-moved-direction', 'touchMoved', 'touchPauses(y, touch.y)', 'touchPauses(touch.y, y)', 'only a downward finger pauses'),
 ]
+
+# Web views batch (lane vl-proveall2, 2026-11-11): the Actions pane.
+A = 'src/web/actionViewDecision.vibe'
+M = 'src/web/modelDecision.vibe'
+cases += [
+(A, 'action-title-last', 'actionTitle', 'name.slice(name.lastIndexOf("/") + 1)', 'name.slice(name.indexOf("/") + 1)', 'a flow shows the name after its last slash'),
+(A, 'action-title-blank', 'actionTitle', 'last.trim() === "" ? "Action"', 'last === "" ? "Action"', 'a blank name shows Action'),
+(A, 'action-entry-blank', 'entryTitle', 'title.trim() === "" ? actionTitle(name)', 'title === "" ? actionTitle(name)', 'a blank title falls back to the name'),
+(A, 'action-live-queued', 'liveRun', 'state === "queued" || state === "running"', 'state === "running"', 'a queued run is live'),
+(A, 'action-status-cancelled', 'runStatus', 'state === "cancelled" ? "Cancelled"', 'state === "cancelled" ? "Running"', 'a cancelled run says so'),
+(A, 'action-badge-failed', 'runBadge', 'state === "failed" ? "destructive"', 'state === "failed" ? "secondary"', 'a failed run is destructive'),
+(A, 'action-dot-queued', 'dotClass', 'state === "running" || state === "queued" ? "vl-dot-run"', 'state === "running" ? "vl-dot-run"', 'a queued run shows the running dot'),
+(A, 'action-step-running', 'stepClass', 'state === "running" ? "run"', 'state === "waiting" ? "run"', 'only a running step is marked running'),
+(A, 'action-seconds-floor', 'elapsedSeconds', 'Math.max(0, Math.floor((end - started) / 1000))', 'Math.floor((end - started) / 1000)', 'elapsed time is never negative'),
+(A, 'action-seconds-now', 'runSeconds', 'liveRun(state) ? Math.max(now, at) : at', 'liveRun(state) ? now : at', 'a live clock never runs back before its snapshot'),
+(A, 'action-seconds-settled', 'runSeconds', 'liveRun(state) ? Math.max(now, at) : at', 'Math.max(now, at)', 'a settled run stops its clock'),
+(A, 'action-actor', 'actorLabel', 'actor === "agent"', 'actor !== "person"', 'only the agent is named the agent'),
+(A, 'action-step-chosen-first', 'selectedStepIndex', 'if (named >= 0) return named', 'if (named > 0) return named', 'the chosen step opens, even the first'),
+(A, 'action-step-failed', 'selectedStepIndex', 'if (failed >= 0) return failed', 'if (false) return failed', 'a failed step opens before a live one'),
+(A, 'action-step-waiting', 'selectedStepIndex', 'step.state === "running" || step.state === "waiting"', 'step.state === "running"', 'a parked step opens before the last'),
+(A, 'action-step-last', 'selectedStepIndex', 'return steps.length - 1', 'return 0', 'otherwise the last step opens'),
+(A, 'action-permitted-found', 'permittedAction', 'return found && commands.some', 'return commands.some', 'no selected action, no Run button'),
+(A, 'action-pane-reply-id', 'actionPane', 'runFlow === "vibelang/Reply" && runId.endsWith("-reply") && liveRun(runState)', 'runFlow === "vibelang/Reply" && liveRun(runState)', 'only a reply run can be cancelled from Reply'),
+(A, 'action-pane-reply-post', 'actionPane', 'liveRun(runState) && canPost', 'liveRun(runState)', 'cancelling a reply needs the Post command'),
+(A, 'action-pane-cancel', 'actionPane', ': hasRun && liveRun(runState) ? "cancel"', ': liveRun(runState) ? "cancel"', 'Cancel needs an open run'),
+(A, 'action-pane-rerun', 'actionPane', ': hasRun ? "rerun" : "run"', ': "run"', 'an open settled run offers Re-run'),
+(A, 'action-pane-body', 'actionPane', 'body: loading ? "loading" : error !== "" ? "error"', 'body: error !== "" ? "error" : loading ? "loading"', 'loading shows before a stale failure'),
+(A, 'action-pane-input', 'actionPane', '(input === "json" ? "json" : "text")', '"text"', 'JSON input is labelled JSON'),
+(A, 'action-pane-input-permitted', 'actionPane', 'input: selected && permitted && ', 'input: selected && ', 'no input without permission'),
+(A, 'action-pane-layout', 'actionPane', 'layout: maximized ? "grid" : selected ? "runs"', 'layout: selected ? "runs" : maximized ? "grid"', 'a maximized pane shows the grid'),
+(A, 'action-pane-back', 'actionPane', 'back: hasRun ? actionTitle(runFlow) : selected ? "Actions" : ""', 'back: hasRun ? actionTitle(runFlow) : "Actions"', 'the list has no back link'),
+(A, 'action-mode-pending', 'modeCommandTarget', 'mode === "mock" ? "live" : ""', 'mode === "mock" ? "live" : "mock"', 'a pending mode offers no switch'),
+(M, 'runs-merge-order', 'mergeRuns', 'return newestFirst(result)', 'return result', 'runs are listed newest first'),
+(M, 'runs-merge-known', 'mergeRuns', 'result = mergeRunAt(result, index, incoming[k]!)', 'result = [...result, incoming[k]!]', 'a snapshot of a listed run replaces it, never adds a card'),
+]

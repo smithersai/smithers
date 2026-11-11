@@ -1,4 +1,5 @@
 import * as ModelDecision from "./modelDecision.vibe"
+import { modeCommandTarget, modeCommandTitle, selectedStepIndex } from "./actionViewDecision.vibe"
 import { Registered, Run } from "../actions/Actions.vibe"
 import { historyRefusal } from "../history/flowMachine.vibe"
 import { HistoryAnswer } from "../history/flows.vibe"
@@ -29,8 +30,8 @@ export function resultText(result: string): string {
 export function actionsOf(model: { readonly actions?: ActionView }): ActionView { return model.actions ?? initial }
 /** The page's own commands: switching between the live agent and the mock (VL-13). Not flows: a page load. */
 export function modeCommands(mode: string | undefined): ReadonlyArray<Registered> {
-  const entry = (to: "mock" | "live"): Registered => ({ name: `mode/${to}`, title: to === "mock" ? "Mock mode" : "Live mode", detail: to === "mock" ? "Mock mode" : "Live mode", command: `/${to}`, runnable: true, least: "viewer", input: "none" })
-  return mode === "live" ? [entry("mock")] : mode === "mock" ? [entry("live")] : []
+  const to = modeCommandTarget(mode ?? "")
+  return to === "" ? [] : [{ name: `mode/${to}`, title: modeCommandTitle(to), detail: modeCommandTitle(to), command: `/${to}`, runnable: true, least: "viewer", input: "none" }]
 }
 
 export function completions(model: { readonly actions?: ActionView; readonly draft: string; readonly mode?: string }) {
@@ -41,15 +42,11 @@ export function completions(model: { readonly actions?: ActionView; readonly dra
 
 /** A slower list/read response cannot roll back a live card or a terminal receipt. */
 export function mergeRuns(current: ReadonlyArray<Run>, incoming: ReadonlyArray<Run>): ReadonlyArray<Run> {
-  let result = current
-  for (const next of incoming) result = ModelDecision.mergeRunAt(result, ModelDecision.runIndex(result, next.id), next)
-  return ModelDecision.newestFirst(result)
+  return ModelDecision.mergeRuns(current, incoming)
 }
 
 /** A failed step opens first; a running or parked step follows, then the last completed one. */
 export function selectedStep(run: Run, chosen = "") {
-  return run.steps.find(step => `${step.key}/${step.attempt}` === chosen)
-    ?? run.steps.find(step => step.state === "failed")
-    ?? run.steps.find(step => step.state === "running" || step.state === "waiting")
-    ?? run.steps.at(-1)
+  const index = selectedStepIndex(run.steps, chosen)
+  return index < 0 ? undefined : run.steps[index]
 }

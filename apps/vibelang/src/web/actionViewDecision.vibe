@@ -1,0 +1,173 @@
+// What the Actions pane, its run cards and its run trace show (actionView.vibe, actionModel.vibe). Rendering stays in
+// the views; every choice they draw is decided here and proved (0018, "Web views batch").
+
+/** A flow or step always shows a name: the part after its last `/`, or "Action" when that part is blank. */
+//@ verify
+//@ ensures name.slice(name.lastIndexOf("/") + 1).trim() == "" ==> \result == "Action"
+//@ ensures name.slice(name.lastIndexOf("/") + 1).trim() != "" ==> \result == name.slice(name.lastIndexOf("/") + 1)
+//@ ensures \result == "Action" || forall(i, 0 <= i && i < \result.length ==> \result.charCodeAt(i) != 47)
+export function actionTitle(name: string): string {
+  const last = name.slice(name.lastIndexOf("/") + 1)
+  return last.trim() === "" ? "Action" : last
+}
+
+/** A registered action's own title wins; a blank one falls back to its name. */
+//@ verify
+//@ ensures title.trim() == "" ==> \result == actionTitle(name)
+//@ ensures title.trim() != "" ==> \result == title
+export function entryTitle(title: string, name: string): string {
+  return title.trim() === "" ? actionTitle(name) : title
+}
+
+/** Queued and running runs are live: their clock still moves and they can be cancelled. */
+//@ verify
+//@ ensures \result == (state == "queued" || state == "running")
+export function liveRun(state: string): boolean {
+  return state === "queued" || state === "running"
+}
+
+//@ verify
+//@ ensures state == "passed" ==> \result == "Passed"
+//@ ensures state == "failed" ==> \result == "Failed"
+//@ ensures state == "cancelled" ==> \result == "Cancelled"
+//@ ensures state != "passed" && state != "failed" && state != "cancelled" ==> \result == "Running"
+export function runStatus(state: string): string {
+  return state === "passed" ? "Passed" : state === "failed" ? "Failed" : state === "cancelled" ? "Cancelled" : "Running"
+}
+
+//@ verify
+//@ ensures state == "passed" ==> \result == "success"
+//@ ensures state == "failed" ==> \result == "destructive"
+//@ ensures state != "passed" && state != "failed" ==> \result == "secondary"
+export function runBadge(state: string): "success" | "destructive" | "secondary" {
+  return state === "passed" ? "success" : state === "failed" ? "destructive" : "secondary"
+}
+
+/** The status dot of a run or step; no state (an action never run) has a plain dot. */
+//@ verify
+//@ ensures state == "passed" ==> \result == "vl-dot-ok"
+//@ ensures state == "failed" ==> \result == "vl-dot-bad"
+//@ ensures (state == "running" || state == "queued") ==> \result == "vl-dot-run"
+//@ ensures state != "passed" && state != "failed" && state != "running" && state != "queued" ==> \result == ""
+export function dotClass(state: string): string {
+  return state === "passed" ? "vl-dot-ok" : state === "failed" ? "vl-dot-bad" : state === "running" || state === "queued" ? "vl-dot-run" : ""
+}
+
+//@ verify
+//@ ensures state == "passed" ==> \result == "ok"
+//@ ensures state == "failed" ==> \result == "bad"
+//@ ensures state == "running" ==> \result == "run"
+//@ ensures state != "passed" && state != "failed" && state != "running" ==> \result == "muted"
+export function stepClass(state: string): "ok" | "bad" | "run" | "muted" {
+  return state === "passed" ? "ok" : state === "failed" ? "bad" : state === "running" ? "run" : "muted"
+}
+
+/** Whole seconds from `started` to `end`, never negative. */
+//@ verify
+//@ ensures \result >= 0
+//@ ensures end - started >= 0 ==> \result == Math.floor((end - started) / 1000)
+//@ ensures end - started < 0 ==> \result == 0
+export function elapsedSeconds(started: number, end: number): number {
+  return Math.max(0, Math.floor((end - started) / 1000))
+}
+
+/** A live run's clock runs to `now` (never back before its last snapshot); a settled run stops at its last one. */
+//@ verify
+//@ ensures \result >= 0
+//@ ensures liveRun(state) ==> \result == elapsedSeconds(started, Math.max(now, at))
+//@ ensures !liveRun(state) ==> \result == elapsedSeconds(started, at)
+export function runSeconds(state: string, started: number, at: number, now: number): number {
+  return elapsedSeconds(started, liveRun(state) ? Math.max(now, at) : at)
+}
+
+/** Who a run card says started it. */
+//@ verify
+//@ ensures actor == "agent" ==> \result == "VibeLang agent"
+//@ ensures actor != "agent" ==> \result == "You"
+export function actorLabel(actor: string): string {
+  return actor === "agent" ? "VibeLang agent" : "You"
+}
+
+/** A step's identity in the trace: its key and attempt. */
+//@ verify
+export function stepKey(key: string, attempt: number): string {
+  return `${key}/${attempt}`
+}
+
+export interface StepPick { readonly key: string; readonly attempt: number; readonly state: string }
+
+/** The trace opens the chosen step; else the first failed one; else the first running or parked one; else the
+ * last. -1 only when the run has no steps. */
+//@ verify
+//@ ensures -1 <= \result && \result < steps.length
+//@ ensures (\result == -1) == (steps.length == 0)
+//@ ensures \result >= 0 && stepKey(steps[\result].key, steps[\result].attempt) == chosen ==> forall(i, 0 <= i && i < \result ==> stepKey(steps[i].key, steps[i].attempt) != chosen)
+//@ ensures \result >= 0 && stepKey(steps[\result].key, steps[\result].attempt) != chosen ==> forall(i, 0 <= i && i < steps.length ==> stepKey(steps[i].key, steps[i].attempt) != chosen)
+//@ ensures \result >= 0 && stepKey(steps[\result].key, steps[\result].attempt) != chosen && steps[\result].state == "failed" ==> forall(i, 0 <= i && i < \result ==> steps[i].state != "failed")
+//@ ensures \result >= 0 && stepKey(steps[\result].key, steps[\result].attempt) != chosen && steps[\result].state != "failed" ==> forall(i, 0 <= i && i < steps.length ==> steps[i].state != "failed")
+//@ ensures \result >= 0 && stepKey(steps[\result].key, steps[\result].attempt) != chosen && steps[\result].state != "failed" && (steps[\result].state == "running" || steps[\result].state == "waiting") ==> forall(i, 0 <= i && i < \result ==> steps[i].state != "running" && steps[i].state != "waiting")
+//@ ensures \result >= 0 && stepKey(steps[\result].key, steps[\result].attempt) != chosen && steps[\result].state != "failed" && steps[\result].state != "running" && steps[\result].state != "waiting" ==> \result == steps.length - 1 && forall(i, 0 <= i && i < steps.length ==> steps[i].state != "running" && steps[i].state != "waiting")
+export function selectedStepIndex<S extends StepPick>(steps: ReadonlyArray<S>, chosen: string): number {
+  const named = steps.findIndex((step) => stepKey(step.key, step.attempt) === chosen)
+  if (named >= 0) return named
+  const failed = steps.findIndex((step) => step.state === "failed")
+  if (failed >= 0) return failed
+  const live = steps.findIndex((step) => step.state === "running" || step.state === "waiting")
+  if (live >= 0) return live
+  return steps.length - 1
+}
+
+export interface Named { readonly name: string }
+
+/** An action is runnable here only when the person's command list names it. */
+//@ verify
+//@ ensures \result == (found && exists(i, 0 <= i && i < commands.length && commands[i].name == name))
+export function permittedAction<C extends Named>(found: boolean, name: string, commands: ReadonlyArray<C>): boolean {
+  return found && commands.some((entry) => entry.name === name)
+}
+
+/** The pane's chrome for one state: what the back link and bar say, which primary button shows, the body and the
+ * list layout. */
+export interface ActionPane {
+  readonly back: string
+  readonly bar: string
+  readonly primary: "none" | "cancel" | "rerun" | "run"
+  readonly body: "loading" | "error" | "trace" | "list"
+  readonly input: "none" | "text" | "json"
+  readonly layout: "grid" | "runs" | "entries"
+}
+//@ verify
+//@ ensures \result.back == (hasRun ? actionTitle(runFlow) : selected ? "Actions" : "")
+//@ ensures \result.bar == (hasRun ? actionTitle(runFlow) + " #" + runId : selected ? selectedTitle : "Actions")
+//@ ensures !(permitted || (hasRun && runFlow == "vibelang/Reply" && runId.endsWith("-reply") && liveRun(runState) && canPost)) ==> \result.primary == "none"
+//@ ensures (permitted || (hasRun && runFlow == "vibelang/Reply" && runId.endsWith("-reply") && liveRun(runState) && canPost)) ==> \result.primary == (hasRun && liveRun(runState) ? "cancel" : hasRun ? "rerun" : "run")
+//@ ensures \result.body == (loading ? "loading" : error != "" ? "error" : hasRun ? "trace" : "list")
+//@ ensures \result.input == (selected && permitted && (input == "text" || input == "json") ? (input == "json" ? "json" : "text") : "none")
+//@ ensures \result.layout == (maximized ? "grid" : selected ? "runs" : "entries")
+export function actionPane(hasRun: boolean, runFlow: string, runId: string, runState: string, selected: boolean, selectedTitle: string, permitted: boolean, canPost: boolean, loading: boolean, error: string, input: string, maximized: boolean): ActionPane {
+  const cancellingReply = hasRun && runFlow === "vibelang/Reply" && runId.endsWith("-reply") && liveRun(runState) && canPost
+  return {
+    back: hasRun ? actionTitle(runFlow) : selected ? "Actions" : "",
+    bar: hasRun ? actionTitle(runFlow) + " #" + runId : selected ? selectedTitle : "Actions",
+    primary: !(permitted || cancellingReply) ? "none" : hasRun && liveRun(runState) ? "cancel" : hasRun ? "rerun" : "run",
+    body: loading ? "loading" : error !== "" ? "error" : hasRun ? "trace" : "list",
+    input: selected && permitted && (input === "text" || input === "json") ? (input === "json" ? "json" : "text") : "none",
+    layout: maximized ? "grid" : selected ? "runs" : "entries",
+  }
+}
+
+/** The page's own mode command switches to the other mode; a pending mode offers none. */
+//@ verify
+//@ ensures mode == "live" ==> \result == "mock"
+//@ ensures mode == "mock" ==> \result == "live"
+//@ ensures mode != "live" && mode != "mock" ==> \result == ""
+export function modeCommandTarget(mode: string): "" | "mock" | "live" {
+  return mode === "live" ? "mock" : mode === "mock" ? "live" : ""
+}
+
+//@ verify
+//@ ensures to == "mock" ==> \result == "Mock mode"
+//@ ensures to == "live" ==> \result == "Live mode"
+export function modeCommandTitle(to: "mock" | "live"): string {
+  return to === "mock" ? "Mock mode" : "Live mode"
+}
