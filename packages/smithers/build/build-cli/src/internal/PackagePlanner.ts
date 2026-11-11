@@ -957,6 +957,7 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
     const resolved = await GoExec.resolveGo({
       root: context.root,
       packagePath: "",
+      cacheDirectory: context.cacheDirectory,
       workspace: context.index.workspace,
       environment: context.environment
     })
@@ -2075,6 +2076,7 @@ const visit = async (
     const go = await GoExec.resolveGo({
       root: context.root,
       packagePath,
+      cacheDirectory: context.cacheDirectory,
       workspace: context.index.workspace,
       environment: toolContext.environment
     })
@@ -2102,6 +2104,7 @@ const visit = async (
           signal: context.signal,
           root: context.root,
           packagePath,
+          cacheDirectory: context.cacheDirectory,
           workspace: context.index.workspace,
           environment: toolContext.environment
         }, go.path)

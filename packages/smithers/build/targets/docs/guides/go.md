@@ -24,6 +24,14 @@ and binaries key on digests of the transitive Go files, test files, cgo files,
 and `go:embed` files that `go list -deps -json` reports, so an edit outside
 that closure stays a cache hit.
 
+## Compile cache
+
+Go targets do not use the host's `GOCACHE`. Every `go` a target or the planner
+starts runs with `GOCACHE` set to `go-build` inside the workspace's cache
+directory, `.flows/go-build` by default. `smthrs cache status` reports its
+size in `goBuild`. A shell target that runs `go` gets the same directory. To
+point one target somewhere else, declare `GOCACHE` in its `env`.
+
 ## Offline builds and key material
 
 `offline: true` adds `GOPROXY=off` and `GOFLAGS=-mod=readonly` to the run.

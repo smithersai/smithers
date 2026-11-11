@@ -57,6 +57,7 @@ import * as StampExec from "../StampExec.ts"
 import { runTarget } from "../TargetExecution.ts"
 import * as Workspace from "../Workspace.ts"
 import * as ApprovalBridge from "./ApprovalBridge.ts"
+import * as GoCache from "./GoCache.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
 import type { StoredResolve } from "./PackagePlanner.ts"
 import {
@@ -675,7 +676,9 @@ export const executeEffect = (
         const payload: Exec.Payload = {
           cwd: node.cwd,
           argv: resolved.argv,
-          env: resolved.env,
+          // The owned compile cache follows the tree the tool runs in, so a
+          // confined run in a scratch copy still writes inside its own binds.
+          env: GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory),
           secrets: resolved.secrets,
           expectedExitCodes: [0],
           timeoutMs: node.timeoutMs

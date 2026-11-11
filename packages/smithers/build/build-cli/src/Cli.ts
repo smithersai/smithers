@@ -31,6 +31,7 @@ import * as Executor from "./Executor.ts"
 import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
+import * as GoCache from "./internal/GoCache.ts"
 import * as Shards from "./internal/Shards.ts"
 import { requireRecorded } from "./internal/UnrecordedGates.ts"
 import * as KnownRed from "./KnownRed.ts"
@@ -1390,6 +1391,7 @@ const cacheCli = (config: RuntimeConfig) => {
             exists: await CacheAdmin.directory(index.root, cacheDirectory) !== undefined,
             entries: entries.length,
             bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
+            goBuild: await GoCache.status(index.root, cacheDirectory),
             remote: remote === undefined ? null : { endpoint: remote.endpoint, health: "not-probed" }
           }
         } catch (cause) {

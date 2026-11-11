@@ -570,7 +570,9 @@ state.
 | `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`                 |
 
 `cache status` reports the local action-result count and size plus the remote
-endpoint without exposing credentials. `cache prune` selects entries older
+endpoint without exposing credentials. Its `goBuild` field reports the
+workspace's Go compile cache: the directory, whether it exists, and the count
+and size of the compile results in it. `cache prune` selects entries older
 than 30 days by default; `cache clear` selects all entries. Deletion requires
 `--yes`, while `--dry-run` writes nothing. Only individual local action-result
 files are removed; durable runs, artifacts, stores, and directories remain.

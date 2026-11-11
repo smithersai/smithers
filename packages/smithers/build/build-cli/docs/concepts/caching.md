@@ -22,6 +22,14 @@ Precedence is the flag, then the `S.Cache({ directory })` of the workspace
 declaration, then `.flows`. An empty value, an absolute path, and any `..`
 segment fail the command.
 
+The directory also holds Go's compile cache, in `go-build`. Every tool a
+target spawns runs with `GOCACHE` set to that directory, and so does every
+`go` the planner starts, so compiled packages and Go's module index land where
+`cache status` measures them instead of in the host's `~/.cache/go-build`. A
+target that declares its own `GOCACHE` in `env` keeps it. The value is set
+when the tool starts and is not part of any key: a compile cache changes how
+long a build takes, not what it produces.
+
 Keep the directory out of version control. Nothing in it is an input to
 anything: discovery never lists a path inside it, so its contents cannot feed
 input discovery or a digest, and the directory's name never enters a key.

@@ -11,6 +11,7 @@ import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+import * as GoCache from "./internal/GoCache.ts"
 import * as Path from "./internal/Path.ts"
 import * as Text from "./internal/Text.ts"
 import type * as NixExec from "./NixExec.ts"
@@ -31,6 +32,11 @@ export interface Context {
   /** Per-probe override in milliseconds; go list defaults to 60000, Nix to 300000. */
   readonly timeoutMs?: number | undefined
   readonly packagePath: string
+  /**
+   * The workspace cache directory. When present, every `go` this plan starts
+   * uses the compile cache inside it rather than the host's.
+   */
+  readonly cacheDirectory?: string | undefined
   readonly workspace: WorkspaceDeclaration.WorkspaceDeclaration
   /** The target environment used to select the executable and switched SDK. */
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
@@ -105,8 +111,16 @@ const hostEnvironment = (context: Context): Record<string, string> => {
   const source = context.environment ?? process.env
   const env: Record<string, string> = {}
   for (const [name, value] of Object.entries(source)) if (typeof value === "string") env[name] = value
-  return env
+  return { ...env, ...ownedCache(context) }
 }
+
+/**
+ * `go list` and `go env` write the module index into `GOCACHE` even though
+ * they compile nothing, so a plan that left the host's value in place filled
+ * a directory the build system does not measure.
+ */
+const ownedCache = (context: Context): Record<string, string> =>
+  context.cacheDirectory === undefined ? {} : { GOCACHE: GoCache.directory(context.root, context.cacheDirectory) }
 
 const execFile = (
   file: string,
@@ -161,7 +175,12 @@ export const resolveGo = async (context: Context): Promise<
   // `go --version` is a usage error; `go version` is the subcommand that
   // reports the toolchain GOTOOLCHAIN actually switched to for this module,
   // which is the resolved version the key must record.
-  const env = { ...hostEnvironment(context), ...toolchainEnvironment(context), ...context.environment }
+  const env = {
+    ...hostEnvironment(context),
+    ...toolchainEnvironment(context),
+    ...context.environment,
+    ...ownedCache(context)
+  }
   const probe = await PackageTree.probeVersion(path, { cwd, args: ["version"], environment: env })
   // GOTOOLCHAIN can dispatch through an unchanged launcher to a different
   // SDK. Its version string does not identify compiler or linker bytes.
