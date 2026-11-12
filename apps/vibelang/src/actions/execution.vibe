@@ -9,30 +9,33 @@ import {
 import { type HistoryReader, note, plan, ReadShow, Show, show, start } from "../history/tools.vibe"
 import { Factory, Refused } from "../core/Factory.vibe"
 import { ActionFailure } from "./Actions.vibe"
+import { historyKind, invocationKind, outlineByDefault, refusedAnswer, type InvocationTags } from "./actionHostDecision.vibe"
 
 effect function decode<A, I>(schema: Schema.Codec<A, I>, input: unknown) {
   return try Effect.mapError(Schema.decodeUnknownEffect(schema)(input), () => new ActionFailure({ code: "input" }))
 }
+/** The tags of the flows an action can run (actionHostDecision invocationKind, proved). */
+const TAGS: InvocationTags = { post: Post._tag, tour: Tour._tag, show: Show._tag, plan: Plan._tag, start: Start._tag, note: Note._tag, sandboxStart: SandboxStart._tag, sandboxStop: SandboxStop._tag, sandboxCommand: SandboxCommand._tag }
 export effect function prepare(name: string, input: Schema.Json, id: string) {
   const raw: Readonly<Record<string, Schema.Json>> = input !== null && typeof input === "object" && !Array.isArray(input) ? input as Readonly<Record<string, Schema.Json>> : {}
-  switch (name) {
-    case Post._tag: return { kind: "post" as const, payload: try decode(Post.payloadSchema, { clientId: id, name: "Guest", text: raw.text ?? "" }) }
-    case Tour._tag: return { kind: "tour" as const, payload: { tour: id } }
-    case Show._tag: return { kind: "show" as const, payload: try decode(Show.payloadSchema, Object.keys(raw).length === 0 ? { what: "outline" } : input) }
-    case Plan._tag: return { kind: "plan" as const, payload: try decode(Plan.payloadSchema, input) }
-    case Start._tag: return { kind: "start" as const, payload: try decode(Start.payloadSchema, input) }
-    case Note._tag: return { kind: "note" as const, payload: try decode(Note.payloadSchema, input) }
-    case SandboxStart._tag: return { kind: "sandbox-start" as const, payload: try decode(SandboxStart.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
-    case SandboxStop._tag: return { kind: "sandbox-stop" as const, payload: try decode(SandboxStop.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
-    case SandboxCommand._tag: return { kind: "sandbox-command" as const, payload: try decode(SandboxCommand.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
-    default: throw new ActionFailure({ code: "not-found" })
+  switch (invocationKind(name, TAGS)) {
+    case "post": return { kind: "post" as const, payload: try decode(Post.payloadSchema, { clientId: id, name: "Guest", text: raw.text ?? "" }) }
+    case "tour": return { kind: "tour" as const, payload: { tour: id } }
+    case "show": return { kind: "show" as const, payload: try decode(Show.payloadSchema, outlineByDefault(Object.keys(raw).length) ? { what: "outline" } : input) }
+    case "plan": return { kind: "plan" as const, payload: try decode(Plan.payloadSchema, input) }
+    case "start": return { kind: "start" as const, payload: try decode(Start.payloadSchema, input) }
+    case "note": return { kind: "note" as const, payload: try decode(Note.payloadSchema, input) }
+    case "sandbox-start": return { kind: "sandbox-start" as const, payload: try decode(SandboxStart.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
+    case "sandbox-stop": return { kind: "sandbox-stop" as const, payload: try decode(SandboxStop.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
+    case "sandbox-command": return { kind: "sandbox-command" as const, payload: try decode(SandboxCommand.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
+    case "not-found": throw new ActionFailure({ code: "not-found" })
   }
 }
 export type Invocation = Effect.Success<ReturnType<typeof prepare>>
 /** A history or sandbox run: what worker/HistoryActions drives. Posts and tours run on the conversation's host. */
 export type HistoryInvocation = Exclude<Invocation, { readonly kind: "post" | "tour" }>
 export function isHistory(invocation: Invocation): invocation is HistoryInvocation {
-  return invocation.kind !== "post" && invocation.kind !== "tour"
+  return historyKind(invocation.kind)
 }
 /** `prepare` for a run worker/HistoryActions drives: a post or a tour isn't one (`not-found`). */
 export effect function prepareHistory(name: string, input: Schema.Json, id: string) {
@@ -43,7 +46,8 @@ export effect function prepareHistory(name: string, input: Schema.Json, id: stri
 
 /** A history write answers its refusal as a value, so its flow succeeds. The run still failed: nothing was written. */
 export function refused(answer: unknown): boolean {
-  return Schema.is(HistoryAnswer)(answer) && answer.refusal !== null
+  const decoded = Schema.is(HistoryAnswer)(answer)
+  return refusedAnswer(decoded, decoded && answer.refusal !== null)
 }
 
 /** The run's execution id: a history write's `operation`, so a re-driven run records once. */

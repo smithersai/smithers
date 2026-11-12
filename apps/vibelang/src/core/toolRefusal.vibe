@@ -2,16 +2,13 @@
 // FlowBinding's `publicError`, so the cell reads "Flow vibelang/wiki/draft failed: forbidden", not an opaque failure.
 // Only a product error's fixed refusal code crosses: a reason that is not code-shaped (an HTTP status, a transport
 // detail, user text) stays opaque, and `Unavailable` says only "unavailable".
-const CODE = /^[a-z][a-z0-9_-]{0,39}$/
+import { refusalCode, refusalField } from "./toolRefusalDecision.vibe"
 
 /** The refusal code `error` carries for the agent, or `undefined` to keep the failure opaque. */
 export function toolRefusal(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined
   const failure = error as { readonly _tag?: unknown; readonly reason?: unknown; readonly refusal?: unknown; readonly code?: unknown }
-  const code = failure._tag === "Unavailable" ? "unavailable"
-    : failure._tag === "WikiFailure" || failure._tag === "IssueFailure" ? failure.reason
-    : failure._tag === "Refused" ? failure.refusal
-    : failure._tag === "ActionFailure" ? failure.code
-    : undefined
-  return typeof code === "string" && CODE.test(code) ? code : undefined
+  const field = refusalField(typeof failure._tag === "string" ? failure._tag : "")
+  const code = field === "unavailable" ? "unavailable" : field === "reason" ? failure.reason : field === "refusal" ? failure.refusal : field === "code" ? failure.code : undefined
+  return typeof code === "string" && refusalCode(code) ? code : undefined
 }

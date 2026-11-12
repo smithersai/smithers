@@ -8,6 +8,7 @@
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
 import { admitsLine, pairCut } from "./stackDecision.vibe"
+import { bucketOrder, topological } from "./bucketDecision.vibe"
 import { areaOf, BOOTSTRAP } from "./areas.vibe"
 import { entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded } from "./seedDecision.vibe"
 import { evidenceStart, firstLine, regeneratedTitle, revertedTitle } from "./seedTextDecision.vibe"
@@ -30,36 +31,14 @@ export interface Bucketed {
 /**
  * Every commit reachable from main's tip, each with the first-parent step that introduced it (Sol's buckets): a
  * merge's side commits belong to the merge. Oldest step first; inside a step, its side commits (oldest first) and then
- * the step itself. `commits` is every reachable commit, the tip last, parents before children.
+ * the step itself. `commits` is every reachable commit, the tip last, parents before children; a list out of that
+ * order has no buckets. The grouping is the proved bucketOrder (bucketDecision.vibe); this turns shas into indexes.
  */
 export function bucketsOf(commits: ReadonlyArray<RawCommit>): ReadonlyArray<Bucketed> {
-  const tip = commits[commits.length - 1]
-  if (tip === undefined) return []
-  const bySha = new Map(commits.map((commit) => [commit.sha, commit]))
   const index = new Map(commits.map((commit, at) => [commit.sha, at]))
-  const spine: Array<RawCommit> = []
-  for (let at: RawCommit | undefined = tip; at !== undefined; at = bySha.get(at.parents[0] ?? "")) spine.push(at)
-  spine.reverse()
-  const seen = new Set<string>()
-  const buckets: Array<Bucketed> = []
-  for (const step of spine) {
-    // The commits this step brought in: its side ancestry not already reachable from an earlier step.
-    const side: Array<RawCommit> = []
-    const stack = step.parents.slice(1)
-    while (stack.length > 0) {
-      const sha = stack.pop()!
-      const commit = bySha.get(sha)
-      if (commit === undefined || seen.has(sha) || spine.includes(commit)) continue
-      seen.add(sha)
-      side.push(commit)
-      stack.push(...commit.parents)
-    }
-    side.sort((a, b) => index.get(a.sha)! - index.get(b.sha)!)
-    for (const commit of side) buckets.push({ commit, step: step.sha })
-    seen.add(step.sha)
-    buckets.push({ commit: step, step: step.sha })
-  }
-  return buckets
+  const parents = commits.map((commit) => commit.parents.map((sha) => index.get(sha) ?? -1))
+  if (!topological(parents)) return []
+  return bucketOrder(parents).map(({ commit, step }) => ({ commit: commits[commit]!, step: commits[step]!.sha }))
 }
 
 /**

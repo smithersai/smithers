@@ -13,7 +13,7 @@ import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
 import { Actions, ActionFailure, type Actor, type Door, Run, type Role, splitCommand } from "./Actions.vibe"
 import { allowed, bundled, registration } from "./catalog.vibe"
-import { actionActor, matchingFlow, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
+import { actionActor, cancelEndsTour, commandInput, guidedTourPassed, matchingFlow, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
 import { cancellable } from "../core/actionRunDecision.vibe"
 
 export interface Principal { readonly role?: Role; readonly actor: Actor; readonly conversation?: string }
@@ -104,7 +104,7 @@ export function MockActions(principal: Principal) {
           const end = Stream.runLast(factory.events(try conversationOfRun(), 0).pipe(Stream.takeUntil((event) => endsTour(event, tour))))
           const last = try orDie(end)
           // Passed only when the tour itself ended or finished; a stream that closes first, or a failed tour, fails the run.
-          if (!Option.isSome(last) || !endsTour(last.value, tour) || last.value.type === "ReplyFailed") return try Effect.die(new ActionFailure({ code: "failed" }))
+          if (!guidedTourPassed(Option.isSome(last), Option.isSome(last) && endsTour(last.value, tour), Option.isSome(last) && last.value.type === "ReplyFailed")) return try Effect.die(new ActionFailure({ code: "failed" }))
           return null
         }),
       )),
@@ -148,7 +148,7 @@ export function MockActions(principal: Principal) {
         const visible = []
         for (const flow of try catalog.list()) {
           const entry = registration(flow._tag)
-          if (entry.command === "") continue
+          if (!entry.runnable) continue
           const admitted = authorize(entry.name) catch () => undefined
           if (admitted !== undefined) visible.push(entry)
         }
@@ -171,7 +171,8 @@ export function MockActions(principal: Principal) {
         for (const flow of try catalog.list()) { const entry = registration(flow._tag); if (entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined) visible.push(entry) }
         const entry = visible[0]
         if (entry === undefined) throw new ActionFailure({ code: "unknown-command" })
-        const input = entry.input === "json" && rest !== "" ? try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(rest), () => new ActionFailure({ code: "input" })) : entry.input === "text" ? { text: rest } : {}
+        const kind = commandInput(entry.input, rest)
+        const input = kind === "parse" ? try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(rest), () => new ActionFailure({ code: "input" })) : kind === "text" ? { text: rest } : {}
         return try start(entry.name, input, door)
       },
       follow: (id: string) => Stream.unwrap(effect {
@@ -190,7 +191,7 @@ export function MockActions(principal: Principal) {
         try Fiber.interrupt(fibers.get(id)!)
         // The in-memory engine keeps no durable cancellation record, so its interrupt never fails.
         try Effect.orDie(engine.interrupt(flow, id))
-        if (invocation.flow === Tour._tag) factory.endTour(invocation.conversation) catch () => undefined
+        if (cancelEndsTour(invocation.flow, Tour._tag)) factory.endTour(invocation.conversation) catch () => undefined
         try record({ type: "SettleAction", id, state: "cancelled", result: "Cancelled", at: try Clock.currentTimeMillis })
       },
     }

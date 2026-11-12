@@ -1,0 +1,97 @@
+// Bucketing main's commits by first-parent step (src/history/bucketDecision.vibe, 0018 third-lane batch 36). The
+// depth-first walk `bucketsOf` used before is kept here as an oracle: on generated histories the proved sweep gives
+// exactly its output.
+import { describe, expect, it } from "@effect/vitest"
+import { bucketed, bucketOrder, chains, filled, takesOwner, firstParent, mainLine, noneMarked, owners, topological } from "../src/history/bucketDecision.vibe"
+import { bucketsOf, type RawCommit } from "../src/history/seed.vibe"
+
+/** The walk bucketsOf ran before batch 36, unchanged. */
+function walkOracle(commits: ReadonlyArray<RawCommit>): ReadonlyArray<string> {
+  const tip = commits[commits.length - 1]
+  if (tip === undefined) return []
+  const bySha = new Map(commits.map((commit) => [commit.sha, commit]))
+  const index = new Map(commits.map((commit, at) => [commit.sha, at]))
+  const spine: Array<RawCommit> = []
+  for (let at: RawCommit | undefined = tip; at !== undefined; at = bySha.get(at.parents[0] ?? "")) spine.push(at)
+  spine.reverse()
+  const seen = new Set<string>()
+  const out: Array<string> = []
+  for (const step of spine) {
+    const side: Array<RawCommit> = []
+    const stack = step.parents.slice(1)
+    while (stack.length > 0) {
+      const sha = stack.pop()!
+      const commit = bySha.get(sha)
+      if (commit === undefined || seen.has(sha) || spine.includes(commit)) continue
+      seen.add(sha)
+      side.push(commit)
+      stack.push(...commit.parents)
+    }
+    side.sort((a, b) => index.get(a.sha)! - index.get(b.sha)!)
+    for (const commit of side) out.push(`${commit.sha}<${step.sha}`)
+    seen.add(step.sha)
+    out.push(`${step.sha}<${step.sha}`)
+  }
+  return out
+}
+
+/** A deterministic history of `size` commits, parents before children, some merges and unknown parents. */
+function history(seed: number, size: number): ReadonlyArray<RawCommit> {
+  let state = seed
+  const next = (bound: number) => { state = (state * 1103515245 + 12345) % 2147483648; return state % bound }
+  const commits: Array<RawCommit> = []
+  for (let i = 0; i < size; i++) {
+    const parents: Array<string> = []
+    if (i > 0) parents.push(`c${next(i)}`)
+    const merges = i > 1 ? next(3) : 0
+    for (let m = 0; m < merges; m++) parents.push(next(10) === 0 ? "outside" : `c${next(i)}`)
+    commits.push({ sha: `c${i}`, change: "", description: "", parents })
+  }
+  return commits
+}
+
+describe("bucket decisions", () => {
+  it("accepts only parents before children", () => {
+    expect([topological([]), topological([[], [0], [0, 1, -1]]), topological([[0]]), topological([[], [2], []]), topological([[], [-2]])]).toEqual([true, true, false, false, false])
+  })
+  it("follows first parents from the tip", () => {
+    const parents = [[], [0], [0], [1, 2], [3]]
+    expect([firstParent(parents, 0), firstParent(parents, 3)]).toEqual([-1, 1])
+    expect(mainLine(parents)).toEqual({ main: [true, true, false, true, true], child: [1, 3, -1, 4, -1] })
+    expect(mainLine([])).toEqual({ main: [], child: [] })
+    expect(mainLine([[], [-1]]).main).toEqual([false, true])
+  })
+  it("owns each commit by the oldest main commit that reaches it off main", () => {
+    // main 0-1-4-5; 2 and 3 hang off 4, 3 also off 5; 6 is unreachable
+    const parents = [[], [0], [0], [2], [1, 3], [4, 3], [0]]
+    const main = [true, true, false, false, true, true, false]
+    expect(owners(parents, main).owner).toEqual([0, 1, 4, 4, 4, 5, -1])
+    expect(filled(3, 7)).toEqual([7, 7, 7])
+    expect([takesOwner(4, -1, false), takesOwner(4, 5, false), takesOwner(4, 3, false), takesOwner(4, -1, true)]).toEqual([true, true, false, false])
+    expect(noneMarked(2)).toEqual([false, false])
+  })
+  it("orders owned commits by owner, then commit", () => {
+    const { order, at } = bucketed([0, 3, 3, 3, -1, 5])
+    expect(order).toEqual([{ commit: 0, step: 0 }, { commit: 1, step: 3 }, { commit: 2, step: 3 }, { commit: 3, step: 3 }, { commit: 5, step: 5 }])
+    expect(at).toEqual([0, 1, 2, 3, -1, 4])
+    expect(chains([0, 3, 3, 3, -1, 5])).toEqual({ head: [0, -1, -1, 1, -1, 5], next: [-1, 2, 3, -1, -1, -1] })
+  })
+  it("buckets each commit once, steps oldest first", () => {
+    expect(bucketOrder([[], [0], [0], [2], [1, 3], [4]])).toEqual([
+      { commit: 0, step: 0 }, { commit: 1, step: 1 }, { commit: 2, step: 4 }, { commit: 3, step: 4 }, { commit: 4, step: 4 }, { commit: 5, step: 5 },
+    ])
+  })
+  it("gives exactly the depth-first walk's buckets on generated histories", () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const commits = history(seed, 1 + (seed % 40))
+      expect(bucketsOf(commits).map(({ commit, step }) => `${commit.sha}<${step}`)).toEqual(walkOracle(commits))
+    }
+  })
+  it("refuses a list whose parents do not come first", () => {
+    const commits: ReadonlyArray<RawCommit> = [
+      { sha: "b", change: "", description: "", parents: ["a"] },
+      { sha: "a", change: "", description: "", parents: [] },
+    ]
+    expect(bucketsOf(commits)).toEqual([])
+  })
+})

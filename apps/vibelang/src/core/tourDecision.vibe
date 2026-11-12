@@ -54,3 +54,13 @@ export function replyIdOf(post: string): string {
   return "r" + post.slice(1)
 }
 
+
+/** The tour stop a whole step selects: the nearest of the `count` stops, the first below it and the last above it. */
+//@ verify
+//@ requires count >= 1
+//@ ensures 0 <= \result && \result < count
+//@ ensures \result == (whole < 1 ? 0 : (whole > count ? count - 1 : whole - 1))
+export function stopIndex(whole: number, count: number): number {
+  if (whole < 1) return 0
+  return whole > count ? count - 1 : whole - 1
+}

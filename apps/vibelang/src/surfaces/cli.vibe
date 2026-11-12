@@ -2,6 +2,7 @@ import { Command, Flag, GlobalFlag } from "effect/cli"
 import { commands } from "./commands.vibe"
 import { backend } from "./backend.vibe"
 import { manifest } from "./manifest.vibe"
+import { exitStatus, needsSession, parseFailure } from "./processDecision.vibe"
 
 const Json = GlobalFlag.Setting("json")({ flag: Flag.Boolean("json").pipe(Flag.withDefault(false), Flag.withDescription("Print JSON.")) })
 const Mock = GlobalFlag.Setting("mock")({ flag: Flag.Boolean("mock").pipe(Flag.withDefault(false), Flag.withDescription("Use the mock Factory.")) })
@@ -14,7 +15,7 @@ function commandFor<D extends (typeof commands)[number]>(definition: D, environm
   return Command.make(definition.name, definition.parameters, effect (input) => {
     const json = try Json
     const mock = try Mock
-    provide backend(mock, environment, definition.name !== "login" && definition.name !== "logout") {
+    provide backend(mock, environment, needsSession(definition.name)) {
       try Console.log(try definition.render(input, json))
     }
   }).pipe(Command.withDescription(definition.description))
@@ -27,9 +28,9 @@ export effect function cli(args: ReadonlyArray<string>, environment: string | un
     Command.withGlobalFlags([Json, Mock, Llms]),
   )
   const result = Command.runWith(root, { version: "0.0.0", renderErrors: true })(args) catch effect (error) => {
-    if (error._tag === "ShowHelp" && error.errors.length === 0) return true
-    if (error._tag !== "ShowHelp") try Console.error(error.message)
-    return false
+    const failure = parseFailure(error._tag === "ShowHelp", error._tag === "ShowHelp" ? error.errors.length : 0)
+    if (failure === "printed") try Console.error(error.message)
+    return failure === "help"
   }
-  return result === false ? 1 : 0
+  return exitStatus(result !== false)
 }

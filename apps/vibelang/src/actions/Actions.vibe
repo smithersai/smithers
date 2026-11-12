@@ -1,4 +1,5 @@
 // The Factory core's registered workflows API. Person, slash and agent calls share this service and authorization.
+import { commandCut } from "./actionHostDecision.vibe"
 export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
 export type Door = "button" | "slash" | "agent"
 export type Actor = "person" | "agent"
@@ -38,8 +39,8 @@ export schema error ActionFailure { code: string }
  */
 export function splitCommand(text: string): { readonly command: string; readonly rest: string } {
   const trimmed = text.trim()
-  const end = trimmed.search(/\s/)
-  return end < 0 ? { command: trimmed, rest: "" } : { command: trimmed.slice(0, end), rest: trimmed.slice(end).trimStart() }
+  const cut = commandCut(trimmed, trimmed.search(/\s/))
+  return { command: cut.command, rest: cut.rest.trimStart() }
 }
 export service Actions {
   list(): ReadonlyArray<Registered>!ActionFailure

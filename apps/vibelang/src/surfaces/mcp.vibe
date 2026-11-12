@@ -4,6 +4,7 @@ import { Factory } from "../core/Factory.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import { commands, type CommandError } from "./commands.vibe"
 import { backend } from "./backend.vibe"
+import { causeReport } from "./processDecision.vibe"
 
 export const toolkit = Toolkit.make(...commands.map((command) => command.tool))
 type Handlers = { [C in (typeof commands)[number] as C["name"]]: (input: unknown) => C["output"]["Type"]!CommandError }
@@ -33,9 +34,10 @@ effect function serve(mock: boolean, environment: string | undefined) {
 export effect function mcp(mock: boolean, environment: string | undefined) {
   provide Logger.LogToStderr = true {
     try tapCause(serve(mock, environment), (cause) => {
-      if (Cause.hasInterruptsOnly(cause)) return Effect.void
       const failure = Cause.findFail(cause)
-      return Console.error(Result.isSuccess(failure) ? failure.success.error.message : Cause.pretty(cause))
+      const report = causeReport(Cause.hasInterruptsOnly(cause), Result.isSuccess(failure))
+      if (report === "none") return Effect.void
+      return Console.error(report === "message" && Result.isSuccess(failure) ? failure.success.error.message : Cause.pretty(cause))
     })
   }
 }

@@ -1,0 +1,299 @@
+// The sandbox host's own decisions (0018 third-lane batch 32): which request ids and conversations it admits, its
+// refusal order, how a receipt replays, which step a pending operation takes, when the alarm fires, a lease's share,
+// how a command settles and which transcript tail it keeps. `sandboxHost.vibe` calls each of these; storage, machines,
+// clocks, the semaphore, the Set of running commands, record lookups, `typeof` over unknown values and native
+// safe-integer checks stay outside the proof. The ledger itself is sandboxDecision.vibe's, proved there.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+export type PendingKind = "start" | "stop" | "command" | "cancel-start"
+
+/** A refused receipt's Unavailable reason: its refusal, then `:` and the cause when one was recorded. */
+//@ verify
+//@ ensures !hasReason ==> \result == refusal
+//@ ensures hasReason ==> \result == refusal + ":" + reason
+export function receiptCause(refusal: string, hasReason: boolean, reason: string): string {
+  return hasReason ? refusal + ":" + reason : refusal
+}
+
+/** A failure's content-free cause: an Unavailable's own string reason, else its string tag, else `defect`. */
+//@ verify
+//@ ensures hasTag && tag == "Unavailable" && hasReason ==> \result == reason
+//@ ensures hasTag && !(tag == "Unavailable" && hasReason) ==> \result == tag
+//@ ensures !hasTag ==> \result == "defect"
+export function causeOf(hasTag: boolean, tag: string, hasReason: boolean, reason: string): string {
+  if (hasTag && tag === "Unavailable" && hasReason) return reason
+  return hasTag ? tag : "defect"
+}
+
+/** A step's telemetry outcome: `refused` exactly when its answer names a refusal reason. */
+//@ verify
+//@ ensures \result == (reason == "" ? "done" : "refused")
+export function stepOutcome(reason: string): "done" | "refused" {
+  return reason === "" ? "done" : "refused"
+}
+
+/** A stored generation: the number kept for the conversation, else 0 (a missing or inherited key is not state). */
+//@ verify
+//@ ensures \result == (isNumber ? value : 0)
+export function storedNumber(isNumber: boolean, value: number): number {
+  return isNumber ? value : 0
+}
+
+/** A stored transcript: the text kept for the conversation, else empty. */
+//@ verify
+//@ ensures \result == (isText ? value : "")
+export function storedText(isText: boolean, value: string): string {
+  return isText ? value : ""
+}
+
+export type AlarmKind = "retry" | "meter" | "clear"
+
+/** The next alarm: a pending operation retries, else a running sandbox is metered, else none. */
+//@ verify
+//@ ensures pending ==> \result == "retry"
+//@ ensures !pending && running > 0 ==> \result == "meter"
+//@ ensures !pending && running <= 0 ==> \result == "clear"
+export function alarmKind(pending: boolean, running: number): AlarmKind {
+  if (pending) return "retry"
+  return running > 0 ? "meter" : "clear"
+}
+
+/** Whether a counter has room for one more step inside the native safe-integer range. Native integer checks precede this. */
+//@ verify
+//@ ensures \result == (0 <= n && n < 9007199254740991)
+export function safeRoom(n: number): boolean {
+  return 0 <= n && n < 9007199254740991
+}
+
+/** The ledger intent a pending operation records: a start starts; a stop, command or cancelled start stops. */
+//@ verify
+//@ ensures \result == (kind == "start" ? "start" : "stop")
+export function intentType(kind: PendingKind): "start" | "stop" {
+  return kind === "start" ? "start" : "stop"
+}
+
+/** Whether the saved ledger belongs to someone other than the caller. */
+//@ verify
+//@ ensures \result == (ledgerOwner != owner)
+export function foreignLedger(ledgerOwner: string, owner: string): boolean {
+  return ledgerOwner !== owner
+}
+
+export type CompletionStep = "start" | "cancel-start" | "stop"
+
+/** How a pending operation completes: a start provisions, a cancelled start stops its machine, anything else stops. */
+//@ verify
+//@ ensures kind == "start" ==> \result == "start"
+//@ ensures kind == "cancel-start" ==> \result == "cancel-start"
+//@ ensures kind != "start" && kind != "cancel-start" ==> \result == "stop"
+export function completionStep(kind: PendingKind): CompletionStep {
+  if (kind === "start") return "start"
+  return kind === "cancel-start" ? "cancel-start" : "stop"
+}
+
+/** A completed operation's refusal: a cancelled start failed; every other completion is accepted. */
+//@ verify
+//@ ensures \result == (kind == "cancel-start" ? "start-failed" : "")
+export function completionRefusal(kind: PendingKind): string {
+  return kind === "cancel-start" ? "start-failed" : ""
+}
+
+/** The request a receipt records: a cancelled start answers the start that was asked for. */
+//@ verify
+//@ ensures \result == (kind == "cancel-start" ? "start" : kind)
+export function receiptKind(kind: PendingKind): PendingKind {
+  return kind === "cancel-start" ? "start" : kind
+}
+
+/** Whether a start, metered after provisioning, has no minutes left and is cancelled. */
+//@ verify
+//@ ensures \result == (remaining == 0)
+export function outOfMinutes(remaining: number): boolean {
+  return remaining === 0
+}
+
+/** Whether metering stops every running sandbox: no minutes remain, or the role may no longer start one. */
+//@ verify
+//@ ensures \result == (remaining == 0 || !mayStart)
+export function mustStopAll(remaining: number, mayStart: boolean): boolean {
+  return remaining === 0 || !mayStart
+}
+
+/** Each running sandbox's lease: its share of the remaining allowance, rounded up to a whole millisecond. */
+//@ verify
+//@ requires running > 0
+//@ requires remaining >= 0
+//@ ensures \result >= remaining / running
+//@ ensures \result - 1 < remaining / running
+export function leaseShare(remaining: number, running: number): number {
+  return Math.ceil(remaining / running)
+}
+
+export type Recovery = "drop-start" | "settle-command" | "await-command" | "complete"
+
+/**
+ * What a read does with a pending operation it finds: a start the role may no longer make is dropped, a command whose
+ * fiber is gone settles as uncertain, a running command is left to its fiber, and anything else completes.
+ */
+//@ verify
+//@ ensures kind == "start" && !mayStart ==> \result == "drop-start"
+//@ ensures kind == "command" && !active ==> \result == "settle-command"
+//@ ensures kind == "command" && active ==> \result == "await-command"
+//@ ensures !(kind == "start" && !mayStart) && kind != "command" ==> \result == "complete"
+export function recoveryOf(kind: PendingKind, mayStart: boolean, active: boolean): Recovery {
+  if (kind === "start" && !mayStart) return "drop-start"
+  if (kind === "command") return active ? "await-command" : "settle-command"
+  return "complete"
+}
+
+/** Whether a UTF-16 code unit may appear in a conversation id: an ASCII letter, a digit, `.`, `_` or `-`. */
+//@ verify
+//@ ensures \result == ((65 <= unit && unit <= 90) || (97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit == 46 || unit == 95 || unit == 45)
+export function conversationUnit(unit: number): boolean {
+  return (65 <= unit && unit <= 90) || (97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit === 46 || unit === 95 || unit === 45
+}
+
+/** Whether a UTF-16 code unit may appear in an operation id: a conversation unit or `/`. */
+//@ verify
+//@ ensures \result == (conversationUnit(unit) || unit == 47)
+export function operationUnit(unit: number): boolean {
+  return conversationUnit(unit) || unit === 47
+}
+
+/** Whether `id` names an operation: 1 to 160 units, each an operation unit (`/^[a-zA-Z0-9._/-]{1,160}$/`). */
+//@ verify
+//@ ensures \result == (1 <= id.length && id.length <= 160 && forall(i, 0 <= i && i < id.length ==> operationUnit(id.charCodeAt(i))))
+export function operationKey(id: string): boolean {
+  if (id.length < 1 || id.length > 160) return false
+  for (let i = 0; i < id.length; i++) {
+    //@ invariant 0 <= i && i <= id.length
+    //@ invariant forall(j, 0 <= j && j < i ==> operationUnit(id.charCodeAt(j)))
+    //@ decreases id.length - i
+    if (!operationUnit(id.charCodeAt(i))) return false
+  }
+  return true
+}
+
+/** Whether `id` names a conversation: 1 to 120 units, each a conversation unit (`/^[a-zA-Z0-9._-]{1,120}$/`). */
+//@ verify
+//@ ensures \result == (1 <= id.length && id.length <= 120 && forall(i, 0 <= i && i < id.length ==> conversationUnit(id.charCodeAt(i))))
+export function sandboxConversation(id: string): boolean {
+  if (id.length < 1 || id.length > 120) return false
+  for (let i = 0; i < id.length; i++) {
+    //@ invariant 0 <= i && i <= id.length
+    //@ invariant forall(j, 0 <= j && j < i ==> conversationUnit(id.charCodeAt(j)))
+    //@ decreases id.length - i
+    if (!conversationUnit(id.charCodeAt(i))) return false
+  }
+  return true
+}
+
+/** Whether a caller is refused before anything is read: no owner, or a role that may not start a sandbox. */
+//@ verify
+//@ ensures \result == (owner == "" || !mayStart)
+export function forbiddenCaller(owner: string, mayStart: boolean): boolean {
+  return owner === "" || !mayStart
+}
+
+/**
+ * Whether a request reuses an operation id for a different request: another kind, conversation or command, or, for
+ * anything but a start (whose generation the host assigns), another generation.
+ */
+//@ verify
+//@ ensures \result == (oldKind != kind || oldConversation != conversation || oldCommand != command || (kind != "start" && oldGeneration != generation))
+export function replayConflict(oldKind: PendingKind, kind: PendingKind, oldConversation: string, conversation: string, oldCommand: string, command: string, oldGeneration: number, generation: number): boolean {
+  return oldKind !== kind || oldConversation !== conversation || oldCommand !== command || (kind !== "start" && oldGeneration !== generation)
+}
+
+export type Replay = "operation-conflict" | "replay-refused" | "replay"
+
+/** A recorded operation's answer to its request: a conflict is refused, then a refused receipt fails again, else it replays. */
+//@ verify
+//@ ensures conflict ==> \result == "operation-conflict"
+//@ ensures !conflict && refused ==> \result == "replay-refused"
+//@ ensures !conflict && !refused ==> \result == "replay"
+export function replayAnswer(conflict: boolean, refused: boolean): Replay {
+  if (conflict) return "operation-conflict"
+  return refused ? "replay-refused" : "replay"
+}
+
+export type Admission = "stale-generation" | "stopped" | "out-of-minutes" | "running" | "busy" | "generation-overflow" | "pending"
+
+/**
+ * A fresh request's admission, in the host's order: a stop or command needs the current generation and a running
+ * sandbox; a start needs minutes, and a start of a running sandbox answers it as it is; a request already running is
+ * busy; a start needs room for the next generation; else the request becomes pending.
+ */
+//@ verify
+//@ ensures kind != "start" && !generationMatches ==> \result == "stale-generation"
+//@ ensures kind != "start" && generationMatches && !running ==> \result == "stopped"
+//@ ensures kind == "start" && remaining == 0 ==> \result == "out-of-minutes"
+//@ ensures kind == "start" && remaining != 0 && running ==> \result == "running"
+//@ ensures (kind == "start" ? remaining != 0 && !running : generationMatches && running) && active ==> \result == "busy"
+//@ ensures (kind == "start" ? remaining != 0 && !running : generationMatches && running) && !active && !room ==> \result == "generation-overflow"
+//@ ensures (kind == "start" ? remaining != 0 && !running : generationMatches && running) && !active && room ==> \result == "pending"
+export function freshAdmission(kind: PendingKind, generationMatches: boolean, running: boolean, remaining: number, active: boolean, room: boolean): Admission {
+  if (kind !== "start" && !generationMatches) return "stale-generation"
+  if (kind !== "start" && !running) return "stopped"
+  if (kind === "start" && remaining === 0) return "out-of-minutes"
+  if (kind === "start" && running) return "running"
+  if (active) return "busy"
+  if (!room) return "generation-overflow"
+  return "pending"
+}
+
+/** A pending operation's generation: a start takes the next one; anything else keeps the request's. */
+//@ verify
+//@ ensures \result == (kind == "start" ? current + 1 : requested)
+export function pendingGeneration(kind: PendingKind, current: number, requested: number): number {
+  return kind === "start" ? current + 1 : requested
+}
+
+/** A finished command's refusal: a sandbox no longer at its generation or not running is stale, then a failure is uncertain. */
+//@ verify
+//@ ensures !(generationMatches && running) ==> \result == "stale-generation"
+//@ ensures generationMatches && running && failed ==> \result == "command-uncertain"
+//@ ensures generationMatches && running && !failed ==> \result == ""
+export function commandRefusal(generationMatches: boolean, running: boolean, failed: boolean): string {
+  if (!(generationMatches && running)) return "stale-generation"
+  return failed ? "command-uncertain" : ""
+}
+
+/** A command's recorded output: the machine's answer when the command was accepted, else nothing. */
+//@ verify
+//@ ensures \result == (refusal == "" ? success : "")
+export function commandOutput(refusal: string, success: string): string {
+  return refusal === "" ? success : ""
+}
+
+/** Whether settling command `id` clears the pending operation: only when that operation is the command itself. */
+//@ verify
+//@ ensures \result == (hasPending && pendingId == id)
+export function clearsPending(hasPending: boolean, pendingId: string, id: string): boolean {
+  return hasPending && pendingId === id
+}
+
+/** Whether a receipt is a refusal, which its caller receives as Unavailable. */
+//@ verify
+//@ ensures \result == (refusal != "")
+export function receiptRefused(refusal: string): boolean {
+  return refusal !== ""
+}
+
+/** Where a transcript of `length` units starts so that at most its last 32768 units are kept (`slice(-32768)`). */
+//@ verify
+//@ requires length >= 0
+//@ ensures \result == (length > 32768 ? length - 32768 : 0)
+//@ ensures 0 <= \result && \result <= length && length - \result <= 32768
+export function transcriptStart(length: number): number {
+  return length > 32768 ? length - 32768 : 0
+}
+
+/** Whether the next sandbox is the owner's first, which has its own name. */
+//@ verify
+//@ ensures \result == (count == 0)
+export function firstSandbox(count: number): boolean {
+  return count === 0
+}

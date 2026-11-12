@@ -1,6 +1,7 @@
 // A slash command splits at its first whitespace only (#5341): the rest reaches the flow as typed.
 import { describe, expect, it } from "@effect/vitest"
 import { splitCommand } from "../src/actions/Actions.vibe"
+import { commandCut } from "../src/actions/actionHostDecision.vibe"
 
 describe("splitCommand", () => {
   it("keeps a post's newlines, so a // comment stays on its own line", () => {
@@ -14,5 +15,8 @@ describe("splitCommand", () => {
   it("reads a bare command and blank text as no input", () => {
     expect(splitCommand("/tour")).toEqual({ command: "/tour", rest: "" })
     expect(splitCommand("   ")).toEqual({ command: "", rest: "" })
+  })
+  it("cuts at the first whitespace, keeping the separator in the rest", () => {
+    expect([commandCut("/a b", 2), commandCut("/a", -1), commandCut("", -1)]).toEqual([{ command: "/a", rest: " b" }, { command: "/a", rest: "" }, { command: "", rest: "" }])
   })
 })

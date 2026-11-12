@@ -1,0 +1,74 @@
+// The decisions batch 34 moved out of the core shells (0018 third-lane batch 34).
+import { describe, expect, it } from "@effect/vitest"
+import { codeHead, codeTail, refusalCode, refusalField } from "../src/core/toolRefusalDecision.vibe"
+import { absoluteHref, foldedPrefix, foldSegment, hashSuffix, lastSlash, linkPage, localLink, resolvedSegments } from "../src/core/wikiLinkDecision.vibe"
+import { stopIndex } from "../src/core/tourDecision.vibe"
+import { reviewSource, revisionEvent } from "../src/core/specificationDecision.vibe"
+import { carriesComment, fixtureLogin, fixtureRoute, proposes, stampsApproval } from "../src/core/issueFixtureDecision.vibe"
+import { anchorUnit, sectionAnchor } from "../src/core/wikiPageDecision.vibe"
+
+describe("tool refusal decisions", () => {
+  it("reads each product error's own refusal field", () => {
+    expect(["Unavailable", "WikiFailure", "IssueFailure", "Refused", "ActionFailure", "Other", ""].map(refusalField))
+      .toEqual(["unavailable", "reason", "reason", "refusal", "code", "none", "none"])
+  })
+  it("lets through only short lowercase codes", () => {
+    expect(["forbidden", "rate-limited", "a_1", "a".repeat(40), "a".repeat(41), "", "Forbidden", "1abc", "-a", "not found", "é"].map(refusalCode))
+      .toEqual([true, true, true, true, false, false, false, false, false, false, false])
+    expect([codeHead(97), codeHead(48), codeTail(48), codeTail(95), codeTail(45), codeTail(46)]).toEqual([true, false, true, true, true, false])
+  })
+})
+
+describe("wiki link decisions", () => {
+  it("keeps web URLs, sections and site paths as written", () => {
+    expect(["http://a", "https://a", "#x", "/wiki/a", "a.md", "httpx", "mailto:a"].map(absoluteHref)).toEqual([true, true, true, true, false, false, false])
+  })
+  it("finds a page's folder", () => {
+    expect([lastSlash("a/b/c"), lastSlash("abc"), lastSlash(""), lastSlash("/a")]).toEqual([3, -1, -1, 0])
+  })
+  it("folds dot segments and keeps leading parent segments", () => {
+    expect(resolvedSegments(["decisions", "..", "rulings.md"])).toEqual(["rulings.md"])
+    expect(resolvedSegments(["", ".", "a", "", "b"])).toEqual(["a", "b"])
+    expect(resolvedSegments(["..", "..", "a", ".."])).toEqual(["..", ".."])
+    expect(resolvedSegments(["a", "..", "..", "b"])).toEqual(["..", "b"])
+    expect(resolvedSegments([])).toEqual([])
+    expect([foldedPrefix(["a", "..", "b"], 0), foldedPrefix(["a", "..", "b"], 1), foldedPrefix(["a", "..", "b"], 2)]).toEqual([[], ["a"], []])
+    expect([foldSegment(["a"], "."), foldSegment(["a"], ".."), foldSegment([".."], ".."), foldSegment([], ".."), foldSegment(["a"], "b")]).toEqual([["a"], [], ["..", ".."], [".."], ["a", "b"]])
+  })
+  it("prefers the page, then its folder's index", () => {
+    expect([linkPage(true, true), linkPage(false, true), linkPage(false, false)]).toEqual(["target", "index", "target"])
+    expect([localLink(true, "x"), localLink(false, "decisions"), localLink(false, "designs"), localLink(false, "x")]).toEqual([true, true, true, false])
+    expect([hashSuffix(""), hashSuffix("a")]).toEqual(["", "#a"])
+  })
+  it("admits only lowercase section anchors", () => {
+    expect(["a-1", "", "A", "a b", "a_b"].map(sectionAnchor)).toEqual([true, false, false, false, false])
+    expect([anchorUnit(45), anchorUnit(95)]).toEqual([true, false])
+  })
+})
+
+describe("tour stop, specification and fixture decisions", () => {
+  it("clamps a whole step to the tour's stops", () => {
+    expect([stopIndex(-3, 10), stopIndex(0, 10), stopIndex(1, 10), stopIndex(5, 10), stopIndex(10, 10), stopIndex(11, 10), stopIndex(Infinity, 10), stopIndex(-Infinity, 10)])
+      .toEqual([0, 0, 0, 4, 9, 9, 9, 0])
+  })
+  it("records a reset or a revision, and asks the bound reviewer first", () => {
+    expect([revisionEvent(true), revisionEvent(false)]).toEqual(["reset", "revision"])
+    expect([reviewSource(true, false), reviewSource(true, true), reviewSource(false, true), reviewSource(false, false)]).toEqual(["provider", "provider", "scripted", "none"])
+  })
+  it("routes a fixture request in the host's order", () => {
+    expect(fixtureRoute(false, true, "read", false, false)).toBe("forbidden")
+    expect(fixtureRoute(true, false, "read", false, false)).toBe("forbidden")
+    expect(fixtureRoute(true, true, "read", true, true)).toBe("read")
+    expect(fixtureRoute(true, true, "accept", true, false)).toBe("forbidden")
+    expect(fixtureRoute(true, true, "spec-review", false, true)).toBe("specification")
+    expect(fixtureRoute(true, true, "spec-revise", false, true)).toBe("specification")
+    expect(fixtureRoute(true, true, "draft", false, true)).toBe("invalid")
+    expect(fixtureRoute(true, true, "draft", false, false)).toBe("draft")
+    expect(fixtureRoute(true, true, "new", false, false)).toBe("write")
+  })
+  it("names fixture logins and per-operation fields", () => {
+    expect([fixtureLogin("maintainer"), fixtureLogin("contributor")]).toEqual(["will", "jun"])
+    expect([proposes("propose"), proposes("new"), stampsApproval("accept"), stampsApproval("decline"), carriesComment("comment"), carriesComment("new")])
+      .toEqual([true, false, true, false, true, false])
+  })
+})

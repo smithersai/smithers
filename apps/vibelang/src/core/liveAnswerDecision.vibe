@@ -1,0 +1,43 @@
+// How the live clients read an HTTP answer's status (0018 third-lane batch 33): the actions client accepts any 2xx,
+// the accounts client tells a refusal (403) from an outage, and the issues, wiki, run-event and role-event clients
+// accept exactly 200. `src/actions/LiveActions.vibe`, `LiveAccounts.vibe`, `LiveIssues.vibe` and `LiveWiki.vibe` call
+// these; HTTP, JSON and Schema decoding stay outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+/** Whether an actions answer succeeded: any 2xx status. */
+//@ verify
+//@ ensures \result == (200 <= status && status <= 299)
+export function successStatus(status: number): boolean {
+  return 200 <= status && status <= 299
+}
+
+/** Whether an answer is exactly 200, the one status the issues, wiki and event-stream clients accept. */
+//@ verify
+//@ ensures \result == (status == 200)
+export function exactOk(status: number): boolean {
+  return status === 200
+}
+
+export type AccountAnswer = "denied" | "unavailable" | "ok"
+
+/** An accounts read: 403 is a refusal, 200 an answer, anything else an outage. */
+//@ verify
+//@ ensures status == 403 ==> \result == "denied"
+//@ ensures status == 200 ==> \result == "ok"
+//@ ensures status != 403 && status != 200 ==> \result == "unavailable"
+export function accountRead(status: number): AccountAnswer {
+  if (status === 403) return "denied"
+  return status === 200 ? "ok" : "unavailable"
+}
+
+/** An accounts write: 403 is a refusal, 200 or 204 success, anything else an outage. */
+//@ verify
+//@ ensures status == 403 ==> \result == "denied"
+//@ ensures (status == 200 || status == 204) ==> \result == "ok"
+//@ ensures status != 403 && status != 200 && status != 204 ==> \result == "unavailable"
+export function accountWrite(status: number): AccountAnswer {
+  if (status === 403) return "denied"
+  return status === 200 || status === 204 ? "ok" : "unavailable"
+}

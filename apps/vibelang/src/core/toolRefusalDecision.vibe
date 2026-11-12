@@ -1,0 +1,51 @@
+// What an agent's refused tool call is told (0018 third-lane batch 34): which field of a product error carries its
+// refusal, and which refusal codes cross to the agent (`/^[a-z][a-z0-9_-]{0,39}$/`). `toolRefusal.vibe` calls these;
+// reading fields off an unknown error stays outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+export type RefusalField = "unavailable" | "reason" | "refusal" | "code" | "none"
+
+/** Where a product error keeps its refusal: Unavailable says only `unavailable`; the others name their field. */
+//@ verify
+//@ ensures tag == "Unavailable" ==> \result == "unavailable"
+//@ ensures (tag == "WikiFailure" || tag == "IssueFailure") ==> \result == "reason"
+//@ ensures tag == "Refused" ==> \result == "refusal"
+//@ ensures tag == "ActionFailure" ==> \result == "code"
+//@ ensures tag != "Unavailable" && tag != "WikiFailure" && tag != "IssueFailure" && tag != "Refused" && tag != "ActionFailure" ==> \result == "none"
+export function refusalField(tag: string): RefusalField {
+  if (tag === "Unavailable") return "unavailable"
+  if (tag === "WikiFailure" || tag === "IssueFailure") return "reason"
+  if (tag === "Refused") return "refusal"
+  return tag === "ActionFailure" ? "code" : "none"
+}
+
+/** Whether a UTF-16 code unit is a lowercase ASCII letter, a code's first unit. */
+//@ verify
+//@ ensures \result == (97 <= unit && unit <= 122)
+export function codeHead(unit: number): boolean {
+  return 97 <= unit && unit <= 122
+}
+
+/** Whether a UTF-16 code unit may follow in a code: a lowercase letter, a digit, `_` or `-`. */
+//@ verify
+//@ ensures \result == (codeHead(unit) || (48 <= unit && unit <= 57) || unit == 95 || unit == 45)
+export function codeTail(unit: number): boolean {
+  return codeHead(unit) || (48 <= unit && unit <= 57) || unit === 95 || unit === 45
+}
+
+/** Whether `code` crosses to the agent: 1 to 40 units, a lowercase letter, then code units. */
+//@ verify
+//@ ensures \result == (1 <= code.length && code.length <= 40 && codeHead(code.charCodeAt(0)) && forall(i, 1 <= i && i < code.length ==> codeTail(code.charCodeAt(i))))
+export function refusalCode(code: string): boolean {
+  if (code.length < 1 || code.length > 40) return false
+  if (!codeHead(code.charCodeAt(0))) return false
+  for (let i = 1; i < code.length; i++) {
+    //@ invariant 1 <= i && i <= code.length
+    //@ invariant forall(j, 1 <= j && j < i ==> codeTail(code.charCodeAt(j)))
+    //@ decreases code.length - i
+    if (!codeTail(code.charCodeAt(i))) return false
+  }
+  return true
+}

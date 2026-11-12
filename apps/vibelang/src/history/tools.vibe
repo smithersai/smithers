@@ -13,6 +13,7 @@ import type { Mythical, Refused, Unavailable } from "./MythicalHistory.vibe"
 import type { CommitPage, EpicPage, Matches, Outline, PageRequest } from "./pages.vibe"
 import { CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, Matches as MatchesSchema, Outline as OutlineSchema } from "./schemas.vibe"
 import type { PlanRequest } from "./Sequencer.vibe"
+import { toolOutcome, writeRefusal } from "./toolDecision.vibe"
 
 /** The history's pages, as a reader asks for them. */
 export type HistoryPages = Pick<Mythical.Shape, "outline" | "epic" | "commit" | "search">
@@ -100,8 +101,8 @@ export effect function show(history: HistoryPages, input: ShowInput) {
 effect function answered(tool: string, write: string!(Refused | Unavailable)) {
   const answer: { readonly id: string; readonly refusal: string | null } = effect {
     return { id: try write, refusal: null }
-  } catch (error) => ({ id: "", refusal: error._tag === "Refused" ? error.refusal : "unavailable" })
-  try counted(tool, answer.refusal ?? "accepted")
+  } catch (error) => ({ id: "", refusal: writeRefusal(error._tag === "Refused", error._tag === "Refused" ? error.refusal : "") })
+  try counted(tool, toolOutcome(answer.refusal !== null, answer.refusal ?? ""))
   return answer
 }
 

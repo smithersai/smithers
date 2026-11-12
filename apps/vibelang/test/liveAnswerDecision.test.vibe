@@ -1,0 +1,15 @@
+import { describe, expect, it } from "@effect/vitest"
+import { accountRead, accountWrite, exactOk, successStatus } from "../src/core/liveAnswerDecision.vibe"
+
+describe("live clients' answer statuses", () => {
+  it("accepts any 2xx actions answer", () => {
+    expect([199, 200, 204, 299, 300, 404].map(successStatus)).toEqual([false, true, true, true, false, false])
+  })
+  it("accepts exactly 200 where a body is required", () => {
+    expect([200, 201, 204, 500].map(exactOk)).toEqual([true, false, false, false])
+  })
+  it("tells an accounts refusal from an outage", () => {
+    expect([403, 200, 204, 401, 500].map(accountRead)).toEqual(["denied", "ok", "unavailable", "unavailable", "unavailable"])
+    expect([403, 200, 204, 201, 500].map(accountWrite)).toEqual(["denied", "ok", "ok", "unavailable", "unavailable"])
+  })
+})

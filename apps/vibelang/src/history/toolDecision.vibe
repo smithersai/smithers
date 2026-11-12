@@ -1,0 +1,19 @@
+// The mythical history tools' own decisions (0018 third-lane batch 35): what a refused write answers and how a tool
+// call is counted. `tools.vibe` and `MythicalHistory.vibe` call these; the history service and telemetry stay outside.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+/** A failed write's refusal: a refusal names itself; any other failure is `unavailable`. */
+//@ verify
+//@ ensures \result == (refused ? refusal : "unavailable")
+export function writeRefusal(refused: boolean, refusal: string): string {
+  return refused ? refusal : "unavailable"
+}
+
+/** A tool call's counted outcome: its refusal, else `accepted`. */
+//@ verify
+//@ ensures \result == (hasRefusal ? refusal : "accepted")
+export function toolOutcome(hasRefusal: boolean, refusal: string): string {
+  return hasRefusal ? refusal : "accepted"
+}

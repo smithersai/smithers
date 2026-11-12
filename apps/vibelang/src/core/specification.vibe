@@ -3,7 +3,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Digest, SecureRandom } from "effect/crypto"
 import { unansweredSpecificationReview, reviseSpecificationUnder, recordSpecificationReview, type Specification, type SpecificationReviewer, type SpecRevisionPolicy, SPEC_REVISION_POLICY } from "./conversation.vibe"
 import { IssueFailure, type IssueRequest, IssuesState, SpecificationReview } from "./issueSchemas.vibe"
-import { reviewAnswerAccepted, scriptedGrade, specificationRefusal } from "./specificationDecision.vibe"
+import { reviewAnswerAccepted, reviewSource, revisionEvent, scriptedGrade, specificationRefusal } from "./specificationDecision.vibe"
 export const reviewers: ReadonlyArray<{ readonly id: SpecificationReviewer; readonly name: string }> = [
   { id: "astra", name: "Codex Astra" }, { id: "sol", name: "Codex Sol" }, { id: "fable", name: "Claude Fable" }, { id: "opus", name: "Claude Opus" },
 ]
@@ -27,8 +27,9 @@ export service SpecificationReviewers {
 export function revisedSpecificationState(before: typeof IssuesState.Type, text: string, at: string, policy: SpecRevisionPolicy = SPEC_REVISION_POLICY): typeof IssuesState.Type {
   const spec = before.specification ?? emptySpecification
   const next = reviseSpecificationUnder(spec, text, policy)
+  // reviseSpecificationUnder answers `spec` itself exactly when the text is unchanged (its proved contract).
   if (next === spec) return before
-  return { ...before, seq: before.seq + 1, specification: next, specificationHistory: [...(before.specificationHistory ?? []), { revision: next.revision, event: policy === "reset" ? "reset" as const : "revision" as const, reviewer: "", verdict: "", grade: "", link: "", at }] }
+  return { ...before, seq: before.seq + 1, specification: next, specificationHistory: [...(before.specificationHistory ?? []), { revision: next.revision, event: revisionEvent(policy === "reset"), reviewer: "", verdict: "", grade: "", link: "", at }] }
 }
 /** Scripted product mode. Unreviewed Opus first returns B+; later reviews use the accepted round-6 grades. No input can choose a verdict. */
 export effect function performSpecification(before: typeof IssuesState.Type, request: IssueRequest, scripted = true) {
@@ -42,7 +43,8 @@ export effect function performSpecification(before: typeof IssuesState.Type, req
   // specificationRefusal admits a review only with a reviewer.
   const reviewer = request.reviewer!
   const provider = try Effect.serviceOption(SpecificationReviewers)
-  const answer = Option.isSome(provider) ? try provider.value.review(reviewer, spec) : scripted
+  const source = reviewSource(Option.isSome(provider), scripted)
+  const answer = source === "provider" && Option.isSome(provider) ? try provider.value.review(reviewer, spec) : source === "scripted"
     ? { verdict: "LGTM" as const, grade: scriptedGrade(reviewer, spec.opus.verdict, fixtureSpecification[reviewer].grade), revision: spec.revision, link: `#spec-review-${history.length + 1}`, review: "Scripted review" }
     : undefined
   if (answer === undefined) throw new IssueFailure({ reason: "no-model", unwritten: true })

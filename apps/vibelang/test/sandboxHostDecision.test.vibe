@@ -1,0 +1,97 @@
+import { describe, expect, it } from "@effect/vitest"
+import {
+  alarmKind, causeOf, clearsPending, commandOutput, commandRefusal, completionRefusal, completionStep, firstSandbox,
+  forbiddenCaller, foreignLedger, freshAdmission, intentType, leaseShare, mustStopAll, operationKey, outOfMinutes,
+  pendingGeneration, receiptCause, receiptKind, receiptRefused, recoveryOf, replayAnswer, replayConflict, safeRoom,
+  sandboxConversation, stepOutcome, storedNumber, storedText, transcriptStart,
+} from "../src/core/sandboxHostDecision.vibe"
+
+describe("sandbox host decisions", () => {
+  it("names a refused receipt by its refusal, then its cause", () => {
+    expect([receiptCause("start-failed", true, "boom"), receiptCause("start-failed", false, "boom"), receiptCause("", true, "x")])
+      .toEqual(["start-failed:boom", "start-failed", ":x"])
+  })
+  it("gives an Unavailable's reason, else the tag, else defect", () => {
+    expect([causeOf(true, "Unavailable", true, "busy"), causeOf(true, "Unavailable", false, ""), causeOf(true, "Refused", true, "x"), causeOf(false, "", true, "x")])
+      .toEqual(["busy", "Unavailable", "Refused", "defect"])
+  })
+  it("reads a step as refused only when it names a reason", () => {
+    expect([stepOutcome(""), stepOutcome("stopped")]).toEqual(["done", "refused"])
+  })
+  it("ignores stored values of the wrong type", () => {
+    expect([storedNumber(true, 4), storedNumber(false, 4), storedText(true, "a"), storedText(false, "a")]).toEqual([4, 0, "a", ""])
+  })
+  it("retries a pending step, meters a running sandbox, else clears the alarm", () => {
+    expect([alarmKind(true, 0), alarmKind(true, 3), alarmKind(false, 1), alarmKind(false, 0)]).toEqual(["retry", "retry", "meter", "clear"])
+  })
+  it("keeps one more step inside the safe-integer range", () => {
+    expect([safeRoom(0), safeRoom(9007199254740990), safeRoom(9007199254740991), safeRoom(-1)]).toEqual([true, true, false, false])
+  })
+  it("starts only a start; every other kind stops", () => {
+    expect(["start", "stop", "command", "cancel-start"].map((kind) => intentType(kind as never))).toEqual(["start", "stop", "stop", "stop"])
+  })
+  it("refuses a ledger of another owner", () => {
+    expect([foreignLedger("a", "a"), foreignLedger("a", "b")]).toEqual([false, true])
+  })
+  it("completes by kind and records a cancelled start as a start that failed", () => {
+    expect(["start", "stop", "command", "cancel-start"].map((kind) => completionStep(kind as never))).toEqual(["start", "stop", "stop", "cancel-start"])
+    expect(["start", "cancel-start"].map((kind) => completionRefusal(kind as never))).toEqual(["", "start-failed"])
+    expect(["start", "stop", "command", "cancel-start"].map((kind) => receiptKind(kind as never))).toEqual(["start", "stop", "command", "start"])
+    expect([outOfMinutes(0), outOfMinutes(1)]).toEqual([true, false])
+  })
+  it("stops every box when minutes run out or the role may not start", () => {
+    expect([mustStopAll(0, true), mustStopAll(5, false), mustStopAll(5, true)]).toEqual([true, true, false])
+  })
+  it("leases each running box its whole share of the remaining minutes, rounded up", () => {
+    expect([leaseShare(10, 3), leaseShare(9, 3), leaseShare(0, 2), leaseShare(1, 4)]).toEqual([4, 3, 0, 1])
+  })
+  it("recovers a pending step by kind, role and whether its command still runs", () => {
+    expect([recoveryOf("start", false, false), recoveryOf("start", true, false), recoveryOf("command", true, false), recoveryOf("command", true, true), recoveryOf("stop", false, false), recoveryOf("cancel-start", false, true)])
+      .toEqual(["drop-start", "complete", "settle-command", "await-command", "complete", "complete"])
+  })
+  it("admits operation ids and conversations of the allowed units and lengths", () => {
+    expect([operationKey("start-home"), operationKey("exhaust/2026/x.y_z"), operationKey(""), operationKey("a".repeat(160)), operationKey("a".repeat(161)), operationKey("a b"), operationKey("é")])
+      .toEqual([true, true, false, true, false, false, false])
+    expect([sandboxConversation("home"), sandboxConversation("a/b"), sandboxConversation("a".repeat(120)), sandboxConversation("a".repeat(121)), sandboxConversation("x.y_z-1")])
+      .toEqual([true, false, true, false, true])
+  })
+  it("refuses a caller without an owner or a starting role", () => {
+    expect([forbiddenCaller("", true), forbiddenCaller("o", false), forbiddenCaller("o", true)]).toEqual([true, true, false])
+  })
+  it("replays a receipt only for the same request, generation counting except for a start", () => {
+    expect(replayConflict("stop", "stop", "c", "c", "", "", 2, 2)).toBe(false)
+    expect(replayConflict("start", "start", "c", "c", "", "", 2, 0)).toBe(false)
+    expect([replayConflict("stop", "start", "c", "c", "", "", 1, 1), replayConflict("stop", "stop", "c", "d", "", "", 1, 1), replayConflict("command", "command", "c", "c", "ls", "pwd", 1, 1), replayConflict("stop", "stop", "c", "c", "", "", 1, 2)])
+      .toEqual([true, true, true, true])
+    expect([replayAnswer(true, false), replayAnswer(false, true), replayAnswer(false, false)]).toEqual(["operation-conflict", "replay-refused", "replay"])
+  })
+  it("admits a fresh request in the host's refusal order", () => {
+    expect(freshAdmission("stop", false, true, 10, false, true)).toBe("stale-generation")
+    expect(freshAdmission("stop", true, false, 10, false, true)).toBe("stopped")
+    expect(freshAdmission("start", false, false, 0, false, true)).toBe("out-of-minutes")
+    expect(freshAdmission("start", false, true, 10, false, true)).toBe("running")
+    expect(freshAdmission("start", false, true, 0, false, true)).toBe("out-of-minutes")
+    expect(freshAdmission("command", true, true, 10, true, true)).toBe("busy")
+    expect(freshAdmission("start", false, false, 10, false, false)).toBe("generation-overflow")
+    expect(freshAdmission("command", true, true, 0, false, true)).toBe("pending")
+    expect(freshAdmission("start", false, false, 10, false, true)).toBe("pending")
+  })
+  it("gives a start the next generation and keeps every other request's", () => {
+    expect([pendingGeneration("start", 3, 0), pendingGeneration("stop", 3, 3), pendingGeneration("command", 3, 2)]).toEqual([4, 3, 2])
+  })
+  it("settles a command: stale first, then uncertain, else its output", () => {
+    expect([commandRefusal(false, true, false), commandRefusal(true, false, true), commandRefusal(true, true, true), commandRefusal(true, true, false)])
+      .toEqual(["stale-generation", "stale-generation", "command-uncertain", ""])
+    expect([commandOutput("", "out"), commandOutput("command-uncertain", "out")]).toEqual(["out", ""])
+    expect([clearsPending(true, "op", "op"), clearsPending(true, "other", "op"), clearsPending(false, "", "")]).toEqual([true, false, false])
+    expect([receiptRefused(""), receiptRefused("stopped")]).toEqual([false, true])
+  })
+  it("keeps the last 32768 units of a transcript", () => {
+    expect([transcriptStart(0), transcriptStart(32768), transcriptStart(32769), transcriptStart(40000)]).toEqual([0, 0, 1, 7232])
+    const text = "x".repeat(40000) + "end"
+    expect(text.slice(transcriptStart(text.length))).toBe(text.slice(-32768))
+  })
+  it("names the first sandbox apart", () => {
+    expect([firstSandbox(0), firstSandbox(1)]).toEqual([true, false])
+  })
+})

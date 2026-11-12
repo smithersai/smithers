@@ -1,0 +1,92 @@
+// How a wiki page's Markdown link resolves (0018 third-lane batch 34): which hrefs stay as written, where a page's
+// folder ends, how path segments fold (`.` and empty segments drop, `..` removes the previous segment or stays at the
+// front), which page id a target names and whether the link stays in the wiki. `wikiLinks.vibe` calls these; the
+// `.md` and trailing-slash regular expressions and string splitting stay outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** Whether an href stays as written: a web URL, a section of this page or a site path (`/^(?:https?:|#|\/)/`). */
+//@ verify
+//@ ensures \result == (href.startsWith("http:") || href.startsWith("https:") || href.startsWith("#") || href.startsWith("/"))
+export function absoluteHref(href: string): boolean {
+  return href.startsWith("http:") || href.startsWith("https:") || href.startsWith("#") || href.startsWith("/")
+}
+
+/** The last `/` in `id`, or -1. */
+//@ verify
+//@ ensures -1 <= \result && \result < id.length
+//@ ensures \result >= 0 ==> id.charCodeAt(\result) == 47 && forall(j, \result < j && j < id.length ==> id.charCodeAt(j) != 47)
+//@ ensures \result == -1 ==> forall(j, 0 <= j && j < id.length ==> id.charCodeAt(j) != 47)
+export function lastSlash(id: string): number {
+  for (let i = id.length - 1; i >= 0; i--) {
+    //@ invariant -1 <= i && i < id.length
+    //@ invariant forall(j, i < j && j < id.length ==> id.charCodeAt(j) != 47)
+    //@ decreases i + 1
+    if (id.charCodeAt(i) === 47) return i
+  }
+  return -1
+}
+
+/**
+ * One path segment folded onto the segments so far: an empty or `.` segment drops, `..` removes the previous segment
+ * unless that is itself `..` or there is none, and any other segment (a leading `..` too) is appended.
+ */
+//@ verify
+//@ ensures (part == "" || part == ".") ==> \result.length == out.length && forall(i, 0 <= i && i < out.length ==> \result[i] == out[i])
+//@ ensures (part == ".." && out.length > 0 && out[out.length - 1] != "..") ==> \result.length == out.length - 1 && forall(i, 0 <= i && i < out.length - 1 ==> \result[i] == out[i])
+//@ ensures (part != "" && part != "." && !(part == ".." && out.length > 0 && out[out.length - 1] != "..")) ==> \result.length == out.length + 1 && \result[out.length] == part && forall(i, 0 <= i && i < out.length ==> \result[i] == out[i])
+export function foldSegment(out: ReadonlyArray<string>, part: string): Array<string> {
+  if (part === "" || part === ".") return out.slice(0, out.length)
+  if (part === ".." && out.length > 0 && out[out.length - 1] !== "..") return out.slice(0, out.length - 1)
+  return [...out, part]
+}
+
+/**
+ * The first `count` segments of `parts`, folded in order with foldSegment: the exact meaning of a link's path. No
+ * segment of the result is empty or `.`, and a `..` follows only another `..`: it never climbs back down after it
+ * climbs up.
+ */
+//@ verify
+//@ requires 0 <= count && count <= parts.length
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i] != "" && \result[i] != ".")
+//@ ensures forall(i, 0 < i && i < \result.length && \result[i] == ".." ==> \result[i - 1] == "..")
+//@ decreases count
+export function foldedPrefix(parts: ReadonlyArray<string>, count: number): Array<string> {
+  return count === 0 ? [] : foldSegment(foldedPrefix(parts, count - 1), parts[count - 1]!)
+}
+
+/** Folds a link's path segments, all of them, without recursion: exactly foldedPrefix over every segment. */
+//@ verify
+//@ ensures \result == foldedPrefix(parts, parts.length)
+export function resolvedSegments(parts: ReadonlyArray<string>): Array<string> {
+  let out: Array<string> = []
+  for (let k = 0; k < parts.length; k++) {
+    //@ invariant 0 <= k && k <= parts.length
+    //@ invariant out == foldedPrefix(parts, k)
+    //@ decreases parts.length - k
+    out = foldSegment(out, parts[k]!)
+  }
+  return out
+}
+
+/** The page a link target names: the target itself when it is a page, else its folder's index when that is, else the target. */
+//@ verify
+//@ ensures \result == (hasTarget ? "target" : (hasIndex ? "index" : "target"))
+export function linkPage(hasTarget: boolean, hasIndex: boolean): "target" | "index" {
+  return !hasTarget && hasIndex ? "index" : "target"
+}
+
+/** Whether a link stays in the wiki: a known page, or the generated decisions and designs indexes. */
+//@ verify
+//@ ensures \result == (known || page == "decisions" || page == "designs")
+export function localLink(known: boolean, page: string): boolean {
+  return known || page === "decisions" || page === "designs"
+}
+
+/** A link's section suffix: nothing without a section, else `#` and the section. */
+//@ verify
+//@ ensures \result == (hash == "" ? "" : "#" + hash)
+export function hashSuffix(hash: string): string {
+  return hash === "" ? "" : "#" + hash
+}

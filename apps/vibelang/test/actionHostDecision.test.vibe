@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { actionActor, indexedRun, matchingFlow, mockState, ownerRefused, sameRun } from "../src/actions/actionHostDecision.vibe"
+import { actionActor, cancelEndsTour, commandInput, firstCommand, guidedTourPassed, historyKind, indexedRun, invocationKind, matchingFlow, mockState, outlineByDefault, ownerRefused, refusedAnswer, sameRun } from "../src/actions/actionHostDecision.vibe"
 
 describe("action hosts' decisions", () => {
   it("passes only a successful non-refusal; a refusal or an engine failure fails", () => {
@@ -20,5 +20,34 @@ describe("action hosts' decisions", () => {
   })
   it("reads and follows exactly the requested run", () => {
     expect([sameRun("a1", "a1"), sameRun("a2", "a1"), sameRun("", "")]).toEqual([true, false, true])
+  })
+  it("turns a slash command's words into its flow's input", () => {
+    expect([commandInput("json", "{}"), commandInput("json", ""), commandInput("text", ""), commandInput("text", "hi"), commandInput("none", "x"), commandInput("path", "a")])
+      .toEqual(["parse", "object", "text", "text", "object", "object"])
+  })
+  it("runs the first flow that answers to a command", () => {
+    expect([firstCommand(["/a", "/b", "/b"], "/b"), firstCommand(["/a"], "/c"), firstCommand([], "/a"), firstCommand(["", "/a"], "")]).toEqual([1, -1, -1, 0])
+  })
+  it("prepares each flow by its tag and nothing else", () => {
+    const tags = { post: "P", tour: "T", show: "S", plan: "Pl", start: "St", note: "N", sandboxStart: "SS", sandboxStop: "SP", sandboxCommand: "SC" }
+    expect(["P", "T", "S", "Pl", "St", "N", "SS", "SP", "SC", "X", ""].map((name) => invocationKind(name, tags)))
+      .toEqual(["post", "tour", "show", "plan", "start", "note", "sandbox-start", "sandbox-stop", "sandbox-command", "not-found", "not-found"])
+    expect(invocationKind("same", { ...tags, post: "same", tour: "same" })).toBe("post")
+  })
+  it("sends everything but posts and tours to the history host", () => {
+    expect((["post", "tour", "show", "plan", "start", "note", "sandbox-start", "sandbox-stop", "sandbox-command"] as const).map(historyKind))
+      .toEqual([false, false, true, true, true, true, true, true, true])
+  })
+  it("fails a run whose history answer is a refusal", () => {
+    expect([refusedAnswer(true, true), refusedAnswer(true, false), refusedAnswer(false, true)]).toEqual([true, false, false])
+  })
+  it("reads the outline when a history read names nothing", () => {
+    expect([outlineByDefault(0), outlineByDefault(1)]).toEqual([true, false])
+  })
+  it("passes a guided tour only on its own end without a failed reply", () => {
+    expect([guidedTourPassed(true, true, false), guidedTourPassed(false, true, false), guidedTourPassed(true, false, false), guidedTourPassed(true, true, true)]).toEqual([true, false, false, false])
+  })
+  it("ends the conversation's tour only when cancelling a tour", () => {
+    expect([cancelEndsTour("T", "T"), cancelEndsTour("P", "T")]).toEqual([true, false])
   })
 })

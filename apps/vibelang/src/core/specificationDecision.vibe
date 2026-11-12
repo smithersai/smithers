@@ -29,3 +29,22 @@ export function reviewAnswerAccepted(answered: number, current: number, verdict:
 export function scriptedGrade(reviewer: string, previousVerdict: string, accepted: string): string {
   return reviewer === "opus" && previousVerdict === "" ? "B+" : accepted
 }
+
+/** The history event a revision records: a reset of every review, or a revision that keeps them (0018 third-lane batch 34). */
+//@ verify
+//@ ensures \result == (reset ? "reset" : "revision")
+export function revisionEvent(reset: boolean): "reset" | "revision" {
+  return reset ? "reset" : "revision"
+}
+
+export type ReviewSource = "provider" | "scripted" | "none"
+
+/** Who answers a review: a deployment's reviewer when one is bound, else the scripted product mode when on, else no one. */
+//@ verify
+//@ ensures hasProvider ==> \result == "provider"
+//@ ensures !hasProvider && scripted ==> \result == "scripted"
+//@ ensures !hasProvider && !scripted ==> \result == "none"
+export function reviewSource(hasProvider: boolean, scripted: boolean): ReviewSource {
+  if (hasProvider) return "provider"
+  return scripted ? "scripted" : "none"
+}

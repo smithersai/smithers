@@ -4,13 +4,14 @@ import { ALLOWANCES, applySandbox, decideSandbox, emptySandboxLedger, leaseMilli
 import { Factory, Refused, Unavailable, type SandboxSnapshot } from "./Factory.vibe"
 import { meter, meterDelayMilliseconds, monthOf, nextMonth, millisecondOf, snapshotOf } from "./sandboxMeter.vibe"
 import { mayStart, SandboxPolicy } from "./sandboxPolicy.vibe"
+import { alarmKind, causeOf, clearsPending, commandOutput, commandRefusal, completionRefusal, completionStep, firstSandbox, forbiddenCaller, foreignLedger, freshAdmission, intentType, leaseShare, mustStopAll, operationKey, outOfMinutes, pendingGeneration, receiptCause, receiptKind, receiptRefused, recoveryOf, replayAnswer, replayConflict, safeRoom, sandboxConversation, stepOutcome, storedNumber, storedText, transcriptStart } from "./sandboxHostDecision.vibe"
 
 /** `reason`: a cancelled start's content-free cause (failureReason), kept so its receipt names it. */
 export interface Pending { readonly kind: "start" | "stop" | "command" | "cancel-start"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string; readonly reason?: string }
 export interface Receipt { readonly request: Pending; readonly snapshot: SandboxSnapshot; readonly output: string; readonly refusal: string; readonly reason?: string }
 /** A refused receipt's Unavailable reason: its refusal, then the cause when one was recorded. */
 export function receiptReason(receipt: Receipt): string {
-  return receipt.reason === undefined ? receipt.refusal : `${receipt.refusal}:${receipt.reason}`
+  return receiptCause(receipt.refusal, receipt.reason !== undefined, receipt.reason ?? "")
 }
 export interface SandboxState {
   readonly ledger: SandboxLedger
@@ -23,11 +24,11 @@ export interface SandboxState {
 /** Record keys arrive from a public conversation id; inherited prototype properties are never state. */
 function generationOf(state: SandboxState, conversation: string): number {
   const value = state.generations[conversation]
-  return typeof value === "number" ? value : 0
+  return storedNumber(typeof value === "number", typeof value === "number" ? value : 0)
 }
 function outputOf(state: SandboxState, conversation: string): string {
   const value = state.outputs[conversation]
-  return typeof value === "string" ? value : ""
+  return storedText(typeof value === "string", typeof value === "string" ? value : "")
 }
 
 export interface Store {
@@ -51,8 +52,9 @@ export const steps = Metric.counter("vibelang_sandbox_steps", { incremental: tru
 export function failureReason(error: unknown): string {
   if (typeof error !== "object" || error === null) return "defect"
   const tagged = error as { readonly _tag?: unknown; readonly reason?: unknown }
-  if (tagged._tag === "Unavailable" && typeof tagged.reason === "string") return tagged.reason
-  return typeof tagged._tag === "string" ? tagged._tag : "defect"
+  const tag = typeof tagged._tag === "string" ? tagged._tag : undefined
+  const reason = typeof tagged.reason === "string" ? tagged.reason : undefined
+  return causeOf(tag !== undefined, tag ?? "", reason !== undefined, reason ?? "")
 }
 /**
  * Logs, meters and spans one step. A failure carries its failureReason. `refusalOf` names a successful answer that is a
@@ -62,9 +64,10 @@ export effect function observed<A, E, R>(step: string, work: A!E!R, refusalOf: (
   return try work.pipe(
     Effect.tap((answer) => effect {
       const reason = refusalOf(answer)
-      const attributes: Record<string, string> = reason === "" ? { step, outcome: "done" } : { step, outcome: "refused", reason }
+      const outcome = stepOutcome(reason)
+      const attributes: Record<string, string> = outcome === "done" ? { step, outcome } : { step, outcome, reason }
       try Metric.update(Metric.withAttributes(steps, attributes), 1)
-      try (reason === "" ? Effect.logInfo("vibelang.sandbox") : Effect.logWarning("vibelang.sandbox")).pipe(Effect.annotateLogs(attributes))
+      try (outcome === "done" ? Effect.logInfo("vibelang.sandbox") : Effect.logWarning("vibelang.sandbox")).pipe(Effect.annotateLogs(attributes))
     }),
     Effect.tapError((error) => effect {
       const attributes = { step, outcome: "failed", reason: failureReason(error) }
@@ -89,7 +92,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
       throw error
     }
     const ledger = saved?.ledger ?? emptySandboxLedger(principal.owner, principal.role, ALLOWANCES[principal.role] * 60000, monthOf(now), now)
-    if (ledger.owner !== principal.owner) throw new Refused({ refusal: "forbidden" })
+    if (foreignLedger(ledger.owner, principal.owner)) throw new Refused({ refusal: "forbidden" })
     const state: SandboxState = saved ?? { ledger, months: {}, generations: {}, outputs: {}, pending: null }
     return { state, principal, now }
   }
@@ -102,13 +105,14 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     // A pending operation retries each second. A running sandbox is metered once a minute, or at its allowance's
     // exhaustion if sooner: one meter records the whole interval exactly, and a delayed alarm records all actual
     // running time, including overage, without saturation.
-    if (state.pending !== null) try store.alarm(now + 1000)
-    else if (count > 0) try store.alarm(now + meterDelayMilliseconds(remainingMilliseconds(state.ledger.allowanceMilliseconds, state.ledger.usedMilliseconds), count))
+    const kind = alarmKind(state.pending !== null, count)
+    if (kind === "retry") try store.alarm(now + 1000)
+    else if (kind === "meter") try store.alarm(now + meterDelayMilliseconds(remainingMilliseconds(state.ledger.allowanceMilliseconds, state.ledger.usedMilliseconds), count))
     else try store.alarm(null)
   }
   effect function transition(state: SandboxState, pending: Pending, now: number) {
-    if (!Number.isSafeInteger(state.ledger.sequence) || state.ledger.sequence < 0 || state.ledger.sequence >= Number.MAX_SAFE_INTEGER) throw new Unavailable({ reason: "sequence-overflow" })
-    const decision = decideSandbox(state.ledger, { type: pending.kind === "start" ? "start" : "stop", owner: state.ledger.owner, role: state.ledger.role, allowanceMilliseconds: state.ledger.allowanceMilliseconds, conversation: pending.conversation, sandboxId: state.ledger.sandboxes.length === 0 ? "sturdy-goggles" : `quiet-otter-${state.ledger.sandboxes.length}`, operationId: pending.operationId, now: state.ledger.lastMeteredAt, month: state.ledger.month })
+    if (!Number.isSafeInteger(state.ledger.sequence) || !safeRoom(state.ledger.sequence)) throw new Unavailable({ reason: "sequence-overflow" })
+    const decision = decideSandbox(state.ledger, { type: intentType(pending.kind), owner: state.ledger.owner, role: state.ledger.role, allowanceMilliseconds: state.ledger.allowanceMilliseconds, conversation: pending.conversation, sandboxId: firstSandbox(state.ledger.sandboxes.length) ? "sturdy-goggles" : `quiet-otter-${state.ledger.sandboxes.length}`, operationId: pending.operationId, now: state.ledger.lastMeteredAt, month: state.ledger.month })
     if (!decision.ok) return state
     return { ...state, ledger: applySandbox(state.ledger, decision.event) }
   }
@@ -117,8 +121,8 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     if (recorded !== undefined) return { ...state, pending: null }
     const id = `${state.ledger.owner}/${pending.conversation}`
     let next = state
-    let refusal = ""
-    if (pending.kind === "start") {
+    const step = completionStep(pending.kind)
+    if (step === "start") {
       const started = try Effect.result(observed("provision", machines.start(id, pending.generation)))
       if (started._tag === "Failure") {
         const cancelled: Pending = { ...pending, kind: "cancel-start", reason: failureReason(started.failure) }
@@ -128,7 +132,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
         return try complete(cancelling, cancelled, now)
       }
       const measured = try meter(state.ledger, state.months, try millisecondOf(try Clock.currentTimeMillis), state.ledger.allowanceMilliseconds)
-      if (remainingMilliseconds(measured.ledger.allowanceMilliseconds, measured.ledger.usedMilliseconds) === 0) {
+      if (outOfMinutes(remainingMilliseconds(measured.ledger.allowanceMilliseconds, measured.ledger.usedMilliseconds))) {
         const cancelled: Pending = { ...pending, kind: "cancel-start", reason: "out-of-minutes" }
         const cancelling = { ...state, ...measured, pending: cancelled }
         try store.write(cancelling)
@@ -136,9 +140,8 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
       }
       next = try transition({ ...state, ...measured }, pending, now)
       next = { ...next, generations: { ...next.generations, [pending.conversation]: pending.generation } }
-    } else if (pending.kind === "cancel-start") {
+    } else if (step === "cancel-start") {
       try observed("cancel-start", machines.stop(id, pending.generation))
-      refusal = "start-failed"
     } else {
       // A command never reaches here: its own fiber writes its receipt, and `current` settles an orphaned one.
       try observed("stop", machines.stop(id, pending.generation))
@@ -146,7 +149,8 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
       next = try transition({ ...state, ...measured }, pending, now)
     }
     const { reason, ...request } = pending
-    const receipt: Receipt = { request: pending.kind === "cancel-start" ? { ...request, kind: "start" } : pending, snapshot: view(next, pending.conversation), output: "", refusal, ...(pending.kind === "cancel-start" && reason !== undefined ? { reason } : {}) }
+    const refusal = completionRefusal(pending.kind)
+    const receipt: Receipt = { request: { ...request, kind: receiptKind(pending.kind) }, snapshot: view(next, pending.conversation), output: "", refusal, ...(step === "cancel-start" && reason !== undefined ? { reason } : {}) }
     next = { ...next, pending: null }
     try store.write(next, receipt)
     try arm(next)
@@ -156,7 +160,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     const measured = try observed("meter", meter(state.ledger, state.months, now, ALLOWANCES[role] * 60000))
     let next: SandboxState = { ...state, ...measured, ledger: { ...measured.ledger, role } }
     try store.write(next)
-    if (remainingMilliseconds(next.ledger.allowanceMilliseconds, next.ledger.usedMilliseconds) === 0 || !mayStart(role)) {
+    if (mustStopAll(remainingMilliseconds(next.ledger.allowanceMilliseconds, next.ledger.usedMilliseconds), mayStart(role))) {
       for (const box of next.ledger.sandboxes) {
         if (!box.running) continue
         const pending: Pending = { kind: "stop", conversation: box.conversation, operationId: `exhaust/${next.ledger.month}/${box.id}/${generationOf(next, box.conversation)}`, generation: generationOf(next, box.conversation), command: "" }
@@ -168,7 +172,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     }
     for (const box of next.ledger.sandboxes) {
       if (!box.running) continue
-      const alive = try observed("lease", machines.lease(`${next.ledger.owner}/${box.conversation}`, generationOf(next, box.conversation), leaseMilliseconds(Math.ceil(remainingMilliseconds(next.ledger.allowanceMilliseconds, next.ledger.usedMilliseconds) / runningCount(next.ledger.sandboxes)))))
+      const alive = try observed("lease", machines.lease(`${next.ledger.owner}/${box.conversation}`, generationOf(next, box.conversation), leaseMilliseconds(leaseShare(remainingMilliseconds(next.ledger.allowanceMilliseconds, next.ledger.usedMilliseconds), runningCount(next.ledger.sandboxes)))))
       if (!alive) {
         const pending: Pending = { kind: "stop", conversation: box.conversation, operationId: `ended/${box.id}/${generationOf(next, box.conversation)}`, generation: generationOf(next, box.conversation), command: "" }
         next = { ...next, pending }
@@ -205,43 +209,41 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     let next: SandboxState = { ...state, ...measured, ledger: { ...measured.ledger, role: principal.role } }
     try store.write(next)
     if (next.pending !== null) {
-      if (next.pending.kind === "start" && !mayStart(principal.role)) {
+      const recovery = recoveryOf(next.pending.kind, mayStart(principal.role), activeCommands.has(next.pending.operationId))
+      if (recovery === "drop-start") {
         try machines.stop(`${next.ledger.owner}/${next.pending.conversation}`, next.pending.generation)
         next = { ...next, pending: null }
         try store.write(next)
-      } else if (next.pending.kind === "command") {
-        if (!activeCommands.has(next.pending.operationId)) {
-          const receipt: Receipt = { request: next.pending, snapshot: view(next, next.pending.conversation), output: "", refusal: "command-uncertain" }
-          next = { ...next, pending: null }
-          try store.write(next, receipt)
-        }
-      } else next = try complete(next, next.pending, now)
+      } else if (recovery === "settle-command") {
+        const receipt: Receipt = { request: next.pending, snapshot: view(next, next.pending.conversation), output: "", refusal: "command-uncertain" }
+        next = { ...next, pending: null }
+        try store.write(next, receipt)
+      } else if (recovery === "complete") next = try complete(next, next.pending, now)
     }
     return { state: try metered(next, now, principal.role), principal, now }
   }
 
   effect function admit(request: Pending) {
-    if (!/^[a-zA-Z0-9._/-]{1,160}$/.test(request.operationId) || !/^[a-zA-Z0-9._-]{1,120}$/.test(request.conversation)) throw new Refused({ refusal: "invalid" })
+    if (!operationKey(request.operationId) || !sandboxConversation(request.conversation)) throw new Refused({ refusal: "invalid" })
     const { state, principal, now } = try current()
-    if (principal.owner === "" || !mayStart(principal.role)) throw new Refused({ refusal: "forbidden" })
+    if (forbiddenCaller(principal.owner, mayStart(principal.role))) throw new Refused({ refusal: "forbidden" })
     const old = try store.receipt(request.operationId)
     if (old !== undefined) {
-      if (old.request.kind !== request.kind || old.request.conversation !== request.conversation || old.request.command !== request.command || (request.kind !== "start" && old.request.generation !== request.generation)) throw new Refused({ refusal: "operation-conflict" })
-      if (old.refusal !== "") throw new Unavailable({ reason: receiptReason(old) })
+      const replay = replayAnswer(replayConflict(old.request.kind, request.kind, old.request.conversation, request.conversation, old.request.command, request.command, old.request.generation, request.generation), receiptRefused(old.refusal))
+      if (replay === "operation-conflict") throw new Refused({ refusal: "operation-conflict" })
+      if (replay === "replay-refused") throw new Unavailable({ reason: receiptReason(old) })
       return { type: "receipt" as const, receipt: old }
     }
     const snapshot = view(state, request.conversation)
-    if (request.kind !== "start" && request.generation !== snapshot.generation) throw new Refused({ refusal: "stale-generation" })
-    if (request.kind !== "start" && snapshot.status !== "running") throw new Refused({ refusal: "stopped" })
-    if (request.kind === "start" && snapshot.remaining === 0) throw new Refused({ refusal: "out-of-minutes" })
-    if (request.kind === "start" && snapshot.status === "running") {
+    const admission = freshAdmission(request.kind, request.generation === snapshot.generation, snapshot.status === "running", snapshot.remaining, activeCommands.has(request.operationId), Number.isSafeInteger(snapshot.generation) && safeRoom(snapshot.generation))
+    if (admission === "running") {
       const receipt: Receipt = { request, snapshot, output: "", refusal: "" }
       try store.write(state, receipt)
       return { type: "receipt" as const, receipt }
     }
-    if (activeCommands.has(request.operationId)) throw new Refused({ refusal: "busy" })
-    if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0 || snapshot.generation >= Number.MAX_SAFE_INTEGER) throw new Unavailable({ reason: "generation-overflow" })
-    const pending = { ...request, generation: request.kind === "start" ? snapshot.generation + 1 : request.generation }
+    if (admission === "generation-overflow") throw new Unavailable({ reason: "generation-overflow" })
+    if (admission !== "pending") throw new Refused({ refusal: admission })
+    const pending = { ...request, generation: pendingGeneration(request.kind, snapshot.generation, request.generation) }
     const next = { ...state, pending, generations: request.kind === "start" ? { ...state.generations, [request.conversation]: pending.generation } : state.generations }
     try store.write(next)
     try arm(next)
@@ -252,7 +254,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     if (admitted.type === "receipt") return admitted.receipt
     try complete(admitted.state, admitted.pending, admitted.now)
     const receipt = (try store.receipt(request.operationId))!
-    if (receipt.refusal !== "") throw new Unavailable({ reason: receiptReason(receipt) })
+    if (receiptRefused(receipt.refusal)) throw new Unavailable({ reason: receiptReason(receipt) })
     return receipt
   }
   effect function command(conversation: string, operationId: string, text: string, generation: number) {
@@ -268,19 +270,19 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
       return try locked(effect {
         const existing = try store.receipt(operationId)
         if (existing !== undefined) {
-          if (existing.refusal !== "") throw new Unavailable({ reason: existing.refusal })
+          if (receiptRefused(existing.refusal)) throw new Unavailable({ reason: existing.refusal })
           return existing.output
         }
         const { state } = try current()
         const snapshot = view(state, conversation)
-        const stale = snapshot.generation !== generation || snapshot.status !== "running"
-        const refusal = stale ? "stale-generation" : result._tag === "Failure" ? "command-uncertain" : ""
-        const output = result._tag === "Success" && !stale ? result.success : ""
-        const next = { ...state, pending: state.pending?.operationId === operationId ? null : state.pending, outputs: refusal === "" ? { ...state.outputs, [conversation]: `${outputOf(state, conversation)}$ ${text}\n${output}\n`.slice(-32768) } : state.outputs }
+        const refusal = commandRefusal(snapshot.generation === generation, snapshot.status === "running", result._tag === "Failure")
+        const output = commandOutput(refusal, result._tag === "Success" ? result.success : "")
+        const transcript = `${outputOf(state, conversation)}$ ${text}\n${output}\n`
+        const next = { ...state, pending: clearsPending(state.pending !== null, state.pending?.operationId ?? "", operationId) ? null : state.pending, outputs: refusal === "" ? { ...state.outputs, [conversation]: transcript.slice(transcriptStart(transcript.length)) } : state.outputs }
         const receipt: Receipt = { request, snapshot: view(next, conversation), output, refusal }
         try store.write(next, receipt)
         try arm(next)
-        if (refusal !== "") throw new Unavailable({ reason: refusal })
+        if (receiptRefused(refusal)) throw new Unavailable({ reason: refusal })
         return output
       })
     }

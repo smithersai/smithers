@@ -1,4 +1,5 @@
 // The designer's ten steps, shared by both flow hosts and the theatre view (VL-31).
+import { stopIndex } from "./tourDecision.vibe"
 export interface WalkthroughStep { readonly target: string; readonly subtitle: string; readonly voice: string; readonly duration: number }
 export const DEMO_QUESTION = "What makes VibeLang different from TypeScript?"
 export const WALKTHROUGH: ReadonlyArray<WalkthroughStep> = [
@@ -16,5 +17,5 @@ export const WALKTHROUGH: ReadonlyArray<WalkthroughStep> = [
 /** The nearest tour stop, clamped to the first or last; NaN selects the first. */
 export function walkthroughStop(step: number): WalkthroughStep {
   const whole = Number.isNaN(step) ? 1 : Math.round(step)
-  return WALKTHROUGH[Math.min(Math.max(whole, 1), WALKTHROUGH.length) - 1]!
+  return WALKTHROUGH[stopIndex(whole, WALKTHROUGH.length)]!
 }

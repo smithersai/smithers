@@ -165,3 +165,24 @@ export function wikiRefusalStatus(reason: string): number {
   if (reason === "empty" || reason === "invalid" || reason === "fork" || reason === "install") return 400
   return 503
 }
+
+/** Whether a UTF-16 code unit may appear in a section anchor: a lowercase ASCII letter, a digit or `-` (0018 third-lane batch 34). */
+//@ verify
+//@ ensures \result == ((97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit == 45)
+export function anchorUnit(unit: number): boolean {
+  return (97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit === 45
+}
+
+/** Whether `hash` names a section of a page: one or more anchor units (`/^[a-z0-9-]+$/`). */
+//@ verify
+//@ ensures \result == (1 <= hash.length && forall(i, 0 <= i && i < hash.length ==> anchorUnit(hash.charCodeAt(i))))
+export function sectionAnchor(hash: string): boolean {
+  if (hash.length < 1) return false
+  for (let i = 0; i < hash.length; i++) {
+    //@ invariant 0 <= i && i <= hash.length
+    //@ invariant forall(j, 0 <= j && j < i ==> anchorUnit(hash.charCodeAt(j)))
+    //@ decreases hash.length - i
+    if (!anchorUnit(hash.charCodeAt(i))) return false
+  }
+  return true
+}

@@ -39,3 +39,121 @@ export function indexedRun(id: string, source: string | undefined, indexed: bool
 export function sameRun(id: string, expected: string): boolean {
   return id === expected
 }
+
+export type CommandInput = "object" | "parse" | "text"
+
+/**
+ * What a slash command's words become as its flow's input (0018 third-lane batch 33), the same for the live and the
+ * mock host: a JSON flow parses its words, a text flow takes them as its text, and anything else, or a JSON flow
+ * without words, runs with an empty object.
+ */
+//@ verify
+//@ ensures kind == "json" && rest != "" ==> \result == "parse"
+//@ ensures kind == "text" ==> \result == "text"
+//@ ensures !(kind == "json" && rest != "") && kind != "text" ==> \result == "object"
+export function commandInput(kind: string, rest: string): CommandInput {
+  if (kind === "json" && rest !== "") return "parse"
+  return kind === "text" ? "text" : "object"
+}
+
+/**
+ * A slash command's text cut at its first whitespace `end` (-1 when it has none): the command before it and the text
+ * from it on, as typed. `Actions.splitCommand` trims the text, finds `end` and trims the separator off the rest.
+ */
+//@ verify
+//@ requires -1 <= end && end < text.length
+//@ ensures end < 0 ==> \result.command == text && \result.rest == ""
+//@ ensures end >= 0 ==> \result.command == text.slice(0, end) && \result.rest == text.slice(end)
+export function commandCut(text: string, end: number): { readonly command: string; readonly rest: string } {
+  return end < 0 ? { command: text, rest: "" } : { command: text.slice(0, end), rest: text.slice(end) }
+}
+
+/** The first command equal to `command`, or -1: a slash command runs the first registered flow that answers to it. */
+//@ verify
+//@ ensures -1 <= \result && \result < commands.length
+//@ ensures \result >= 0 ==> commands[\result] == command && forall(i, 0 <= i && i < \result ==> commands[i] != command)
+//@ ensures \result == -1 ==> forall(i, 0 <= i && i < commands.length ==> commands[i] != command)
+export function firstCommand(commands: ReadonlyArray<string>, command: string): number {
+  for (let i = 0; i < commands.length; i++) {
+    //@ invariant 0 <= i && i <= commands.length
+    //@ invariant forall(j, 0 <= j && j < i ==> commands[j] != command)
+    //@ decreases commands.length - i
+    if (commands[i] === command) return i
+  }
+  return -1
+}
+
+/** The tags of the flows an action can run. */
+export interface InvocationTags {
+  readonly post: string
+  readonly tour: string
+  readonly show: string
+  readonly plan: string
+  readonly start: string
+  readonly note: string
+  readonly sandboxStart: string
+  readonly sandboxStop: string
+  readonly sandboxCommand: string
+}
+
+export type InvocationKind = "post" | "tour" | "show" | "plan" | "start" | "note" | "sandbox-start" | "sandbox-stop" | "sandbox-command" | "not-found"
+
+/** Which invocation flow `name` prepares: the first tag it equals, in the order below, else `not-found`. */
+//@ verify
+//@ ensures name == tags.post ==> \result == "post"
+//@ ensures name != tags.post && name == tags.tour ==> \result == "tour"
+//@ ensures name != tags.post && name != tags.tour && name == tags.show ==> \result == "show"
+//@ ensures name != tags.post && name != tags.tour && name != tags.show && name == tags.plan ==> \result == "plan"
+//@ ensures name != tags.post && name != tags.tour && name != tags.show && name != tags.plan && name == tags.start ==> \result == "start"
+//@ ensures name != tags.post && name != tags.tour && name != tags.show && name != tags.plan && name != tags.start && name == tags.note ==> \result == "note"
+//@ ensures name != tags.post && name != tags.tour && name != tags.show && name != tags.plan && name != tags.start && name != tags.note && name == tags.sandboxStart ==> \result == "sandbox-start"
+//@ ensures name != tags.post && name != tags.tour && name != tags.show && name != tags.plan && name != tags.start && name != tags.note && name != tags.sandboxStart && name == tags.sandboxStop ==> \result == "sandbox-stop"
+//@ ensures name != tags.post && name != tags.tour && name != tags.show && name != tags.plan && name != tags.start && name != tags.note && name != tags.sandboxStart && name != tags.sandboxStop && name == tags.sandboxCommand ==> \result == "sandbox-command"
+//@ ensures name != tags.post && name != tags.tour && name != tags.show && name != tags.plan && name != tags.start && name != tags.note && name != tags.sandboxStart && name != tags.sandboxStop && name != tags.sandboxCommand ==> \result == "not-found"
+export function invocationKind(name: string, tags: InvocationTags): InvocationKind {
+  if (name === tags.post) return "post"
+  if (name === tags.tour) return "tour"
+  if (name === tags.show) return "show"
+  if (name === tags.plan) return "plan"
+  if (name === tags.start) return "start"
+  if (name === tags.note) return "note"
+  if (name === tags.sandboxStart) return "sandbox-start"
+  if (name === tags.sandboxStop) return "sandbox-stop"
+  if (name === tags.sandboxCommand) return "sandbox-command"
+  return "not-found"
+}
+
+/** Whether an invocation runs on the history host (worker/HistoryActions): everything but a post and a tour. */
+//@ verify
+//@ ensures \result == (kind != "post" && kind != "tour")
+export function historyKind(kind: InvocationKind): boolean {
+  return kind !== "post" && kind !== "tour"
+}
+
+/** Whether a history write's answer is a refusal: an answer that names one. Nothing was written, so the run failed. */
+//@ verify
+//@ ensures \result == (answer && hasRefusal)
+export function refusedAnswer(answer: boolean, hasRefusal: boolean): boolean {
+  return answer && hasRefusal
+}
+
+/** Whether a history read without fields reads the outline. */
+//@ verify
+//@ ensures \result == (keys == 0)
+export function outlineByDefault(keys: number): boolean {
+  return keys === 0
+}
+
+/** Whether a guided tour's run passed: its stream ended on this tour's own end, and that end is not a failed reply. */
+//@ verify
+//@ ensures \result == (hasLast && ended && !failed)
+export function guidedTourPassed(hasLast: boolean, ended: boolean, failed: boolean): boolean {
+  return hasLast && ended && !failed
+}
+
+/** Whether cancelling a run of `flow` also ends the conversation's tour: only a tour's own run does. */
+//@ verify
+//@ ensures \result == (flow == tour)
+export function cancelEndsTour(flow: string, tour: string): boolean {
+  return flow === tour
+}

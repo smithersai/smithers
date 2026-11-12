@@ -3,6 +3,7 @@
 // missing and the one install command, or exits 0.
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { preflightFails } from "./scriptDecision.vibe"
 
 /** The install that gives both the app and the fuzz flow their dependencies (apps/vibelang/AGENTS.md). */
 export const install = `pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..."`
@@ -24,7 +25,7 @@ export effect function preflight(root: string) {
     if (!(try fs.exists(path.join(root, ".smithers/flows/node_modules", name, "package.json")))) missing.push(name)
   }
   try logInfo("vibelang.fuzz.preflight").pipe(Effect.annotateLogs({ missing: missing.length }))
-  if (missing.length > 0) throw new FlowNotInstalled({ missing })
+  if (preflightFails(missing.length)) throw new FlowNotInstalled({ missing })
 }
 
 effect function main() {

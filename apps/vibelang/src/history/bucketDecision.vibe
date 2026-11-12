@@ -1,0 +1,261 @@
+// Which first-parent step of main brought in each reachable commit (0018 third-lane batch 36): `seed.vibe`'s
+// `bucketsOf` turns commits into indexes and calls these. A commit is its index in the generator's list, which lists
+// parents before children (`jj log --reversed`); a parent outside the list is -1. `topological` checks that order;
+// every other function requires it.
+//
+//   main:   s0 ── s1 ── s2 (tip)          a commit's owner: the oldest main commit that reaches it without passing
+//                 ╲    ╱                    through main. Buckets: owners oldest first, each owner's commits oldest
+//                  a ─ b                    first, so the step itself ends its bucket (a, b and s2 belong to s2)
+//
+// One sweep from the tip down gives every owner (children come after parents), and one pass emits the buckets, so
+// the work is linear in commits and parent links.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+/** One bucketed commit: its index and the index of the step that brought it in. */
+export interface Bucket {
+  readonly commit: number
+  readonly step: number
+}
+
+/** Whether every parent index lies before its child, or is -1 (a parent outside the list). */
+//@ verify
+//@ ensures \result == forall(i, 0 <= i && i < parents.length ==> forall(k, 0 <= k && k < parents[i].length ==> -1 <= parents[i][k] && parents[i][k] < i))
+export function topological(parents: ReadonlyArray<ReadonlyArray<number>>): boolean {
+  for (let i = 0; i < parents.length; i++) {
+    //@ invariant 0 <= i && i <= parents.length
+    //@ invariant forall(a, 0 <= a && a < i ==> forall(k, 0 <= k && k < parents[a].length ==> -1 <= parents[a][k] && parents[a][k] < a))
+    //@ decreases parents.length - i
+    const row = parents[i]!
+    for (let k = 0; k < row.length; k++) {
+      //@ invariant 0 <= k && k <= row.length
+      //@ invariant forall(b, 0 <= b && b < k ==> -1 <= row[b] && row[b] < i)
+      //@ decreases row.length - k
+      if (row[k]! < -1 || row[k]! >= i) return false
+    }
+  }
+  return true
+}
+
+/** A commit's first parent, or -1 when it has none. */
+//@ verify
+//@ requires 0 <= at && at < parents.length
+//@ ensures \result == (parents[at].length > 0 ? parents[at][0] : -1)
+export function firstParent(parents: ReadonlyArray<ReadonlyArray<number>>, at: number): number {
+  return parents[at]!.length > 0 ? parents[at]![0]! : -1
+}
+
+/** `count` copies of `value`. */
+//@ verify
+//@ requires count >= 0
+//@ ensures \result.length == count
+//@ ensures forall(i, 0 <= i && i < count ==> \result[i] == value)
+export function filled(count: number, value: number): Array<number> {
+  const out: Array<number> = []
+  while (out.length < count) {
+    //@ invariant out.length <= count
+    //@ invariant forall(i, 0 <= i && i < out.length ==> out[i] == value)
+    //@ decreases count - out.length
+    out.push(value)
+  }
+  return out
+}
+
+/** `count` falses. */
+//@ verify
+//@ requires count >= 0
+//@ ensures \result.length == count
+//@ ensures forall(i, 0 <= i && i < count ==> !\result[i])
+export function noneMarked(count: number): Array<boolean> {
+  const marks: Array<boolean> = []
+  while (marks.length < count) {
+    //@ invariant marks.length <= count
+    //@ invariant forall(i, 0 <= i && i < marks.length ==> !marks[i])
+    //@ decreases count - marks.length
+    marks.push(false)
+  }
+  return marks
+}
+
+/**
+ * Main: the tip (the last commit) and, from each main commit, its first parent. `child[i]` is the main commit whose
+ * first parent `i` is (-1 for the tip and off main), so every main commit but the tip is reached that way.
+ */
+//@ verify
+//@ requires forall(i, 0 <= i && i < parents.length ==> forall(k, 0 <= k && k < parents[i].length ==> -1 <= parents[i][k] && parents[i][k] < i))
+//@ ensures \result.main.length == parents.length && \result.child.length == parents.length
+//@ ensures parents.length > 0 ==> \result.main[parents.length - 1]
+//@ ensures forall(i, 0 <= i && i < parents.length && \result.main[i] && parents[i].length > 0 && parents[i][0] >= 0 ==> \result.main[parents[i][0]])
+//@ ensures forall(i, 0 <= i && i < parents.length && \result.main[i] && i != parents.length - 1 ==> i < \result.child[i] && \result.child[i] < parents.length && \result.main[\result.child[i]] && parents[\result.child[i]].length > 0 && parents[\result.child[i]][0] == i)
+export function mainLine(parents: ReadonlyArray<ReadonlyArray<number>>): { readonly main: Array<boolean>; readonly child: Array<number> } {
+  const main = noneMarked(parents.length)
+  const child = filled(parents.length, -1)
+  let at = parents.length - 1
+  while (at >= 0) {
+    //@ invariant -1 <= at && at < parents.length && main.length == parents.length && child.length == parents.length
+    //@ invariant forall(i, at < i && i < parents.length ==> !main[i] || i == parents.length - 1 || (i < child[i] && child[i] < parents.length && main[child[i]] && parents[child[i]].length > 0 && parents[child[i]][0] == i))
+    //@ invariant forall(i, 0 <= i && i <= at ==> !main[i])
+    //@ invariant at < parents.length - 1 ==> main[parents.length - 1]
+    //@ invariant forall(i, at < i && i < parents.length && main[i] && parents[i].length > 0 && parents[i][0] >= 0 ==> parents[i][0] == at || main[parents[i][0]])
+    //@ invariant at >= 0 && at < parents.length - 1 ==> at < child[at] && child[at] < parents.length && main[child[at]] && parents[child[at]].length > 0 && parents[child[at]][0] == at
+    //@ decreases at + 1
+    main[at] = true
+    const next = firstParent(parents, at)
+    if (next >= 0) child[next] = at
+    at = next
+  }
+  return { main, child }
+}
+
+/** Whether a parent takes owner `own`: it is off main, and has no owner yet or a larger (younger) one. */
+//@ verify
+//@ ensures \result == (!onMain && (current < 0 || own < current))
+export function takesOwner(own: number, current: number, onMain: boolean): boolean {
+  return !onMain && (current < 0 || own < current)
+}
+
+/**
+ * Each commit's owner: a main commit owns itself; any other commit is owned by the oldest main commit that reaches
+ * it through parents without passing through main, or -1 when none does. `via[i]` and `slot[i]` name the parent link
+ * that gave a non-main owned commit its owner: `parents[via[i]][slot[i]] == i`, and `via[i]` has the same owner.
+ * With the closure ensures (no parent link reaches a commit from a smaller owner), that makes the owner exact.
+ */
+//@ verify
+//@ requires forall(i, 0 <= i && i < parents.length ==> forall(k, 0 <= k && k < parents[i].length ==> -1 <= parents[i][k] && parents[i][k] < i))
+//@ requires main.length == parents.length
+//@ ensures \result.owner.length == parents.length && \result.via.length == parents.length && \result.slot.length == parents.length
+//@ ensures forall(i, 0 <= i && i < parents.length && main[i] ==> \result.owner[i] == i)
+//@ ensures forall(i, 0 <= i && i < parents.length ==> -1 <= \result.owner[i] && \result.owner[i] < parents.length && (\result.owner[i] >= 0 ==> i <= \result.owner[i] && main[\result.owner[i]]))
+//@ ensures forall(i, 0 <= i && i < parents.length && \result.owner[i] >= 0 ==> forall(k, 0 <= k && k < parents[i].length && parents[i][k] >= 0 && !main[parents[i][k]] ==> \result.owner[parents[i][k]] >= 0 && \result.owner[parents[i][k]] <= \result.owner[i]))
+//@ ensures forall(i, 0 <= i && i < parents.length && !main[i] && \result.owner[i] >= 0 ==> i < \result.via[i] && \result.via[i] < parents.length && \result.owner[\result.via[i]] == \result.owner[i] && 0 <= \result.slot[i] && \result.slot[i] < parents[\result.via[i]].length && parents[\result.via[i]][\result.slot[i]] == i)
+export function owners(parents: ReadonlyArray<ReadonlyArray<number>>, main: ReadonlyArray<boolean>): { readonly owner: Array<number>; readonly via: Array<number>; readonly slot: Array<number> } {
+  const n = parents.length
+  const owner = filled(n, -1)
+  const via = filled(n, -1)
+  const slot = filled(n, -1)
+  for (let x = 0; x < n; x++) {
+    //@ invariant 0 <= x && x <= n && owner.length == n
+    //@ invariant forall(i, 0 <= i && i < n ==> (i < x && main[i] ? owner[i] == i : owner[i] == -1))
+    //@ decreases n - x
+    if (main[x]!) owner[x] = x
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    //@ invariant -1 <= i && i < n && owner.length == n && via.length == n && slot.length == n
+    //@ invariant forall(x, 0 <= x && x < n && main[x] ==> owner[x] == x)
+    //@ invariant forall(x, 0 <= x && x < n ==> -1 <= owner[x] && owner[x] < n && (owner[x] >= 0 ==> x <= owner[x] && main[owner[x]]))
+    //@ invariant forall(x, 0 <= x && x < n && !main[x] && owner[x] >= 0 ==> i < via[x] && x < via[x] && via[x] < n && owner[via[x]] == owner[x] && 0 <= slot[x] && slot[x] < parents[via[x]].length && parents[via[x]][slot[x]] == x)
+    //@ invariant forall(x, i < x && x < n && owner[x] >= 0 ==> forall(k, 0 <= k && k < parents[x].length && parents[x][k] >= 0 && !main[parents[x][k]] ==> owner[parents[x][k]] >= 0 && owner[parents[x][k]] <= owner[x]))
+    //@ decreases i + 1
+    const own = owner[i]!
+    if (own >= 0) {
+      const row = parents[i]!
+      for (let k = 0; k < row.length; k++) {
+        //@ invariant 0 <= k && k <= row.length && owner.length == n && via.length == n && slot.length == n
+        //@ invariant owner[i] == own
+        //@ invariant forall(x, 0 <= x && x < n && main[x] ==> owner[x] == x)
+        //@ invariant forall(x, 0 <= x && x < n ==> -1 <= owner[x] && owner[x] < n && (owner[x] >= 0 ==> x <= owner[x] && main[owner[x]]))
+        //@ invariant forall(x, 0 <= x && x < n && !main[x] && owner[x] >= 0 ==> i <= via[x] && x < via[x] && via[x] < n && owner[via[x]] == owner[x] && 0 <= slot[x] && slot[x] < parents[via[x]].length && parents[via[x]][slot[x]] == x)
+        //@ invariant forall(x, i < x && x < n && owner[x] >= 0 ==> forall(b, 0 <= b && b < parents[x].length && parents[x][b] >= 0 && !main[parents[x][b]] ==> owner[parents[x][b]] >= 0 && owner[parents[x][b]] <= owner[x]))
+        //@ invariant forall(b, 0 <= b && b < k && row[b] >= 0 && !main[row[b]] ==> owner[row[b]] >= 0 && owner[row[b]] <= own)
+        //@ decreases row.length - k
+        const p = row[k]!
+        if (p >= 0 && takesOwner(own, owner[p]!, main[p]!)) {
+          owner[p] = own
+          via[p] = i
+          slot[p] = k
+        }
+      }
+    }
+  }
+  return { owner, via, slot }
+}
+
+/**
+ * Each owner's commits chained oldest first: `head[o]` is owner `o`'s oldest commit and `next[c]` the commit after
+ * `c` with the same owner, -1 at the end. Nothing is skipped: no commit of the same owner lies between `c` and
+ * `next[c]`, or below `head[o]`.
+ */
+//@ verify
+//@ requires forall(x, 0 <= x && x < owner.length ==> -1 <= owner[x] && owner[x] < owner.length)
+//@ ensures \result.head.length == owner.length && \result.next.length == owner.length
+//@ ensures forall(o, 0 <= o && o < owner.length ==> \result.head[o] == -1 || (0 <= \result.head[o] && \result.head[o] < owner.length && owner[\result.head[o]] == o))
+//@ ensures forall(x, 0 <= x && x < owner.length ==> \result.next[x] == -1 || (x < \result.next[x] && \result.next[x] < owner.length && owner[\result.next[x]] == owner[x]))
+//@ ensures forall(y, 0 <= y && y < owner.length && owner[y] >= 0 ==> \result.head[owner[y]] != -1 && \result.head[owner[y]] <= y)
+//@ ensures forall(x, forall(y, 0 <= x && x < y && y < owner.length && owner[x] >= 0 && owner[y] == owner[x] ==> \result.next[x] != -1 && \result.next[x] <= y))
+export function chains(owner: ReadonlyArray<number>): { readonly head: Array<number>; readonly next: Array<number> } {
+  const n = owner.length
+  const head = filled(n, -1)
+  const next = filled(n, -1)
+  for (let c = n - 1; c >= 0; c--) {
+    //@ invariant -1 <= c && c < n && head.length == n && next.length == n
+    //@ invariant forall(o, 0 <= o && o < n ==> head[o] == -1 || (c < head[o] && head[o] < n && owner[head[o]] == o))
+    //@ invariant forall(x, 0 <= x && x < n ==> next[x] == -1 || (x < next[x] && next[x] < n && owner[next[x]] == owner[x]))
+    //@ invariant forall(y, c < y && y < n && owner[y] >= 0 ==> head[owner[y]] != -1 && head[owner[y]] <= y)
+    //@ invariant forall(x, forall(y, c < x && x < y && y < n && owner[x] >= 0 && owner[y] == owner[x] ==> next[x] != -1 && next[x] <= y))
+    //@ decreases c + 1
+    const o = owner[c]!
+    if (o >= 0) {
+      next[c] = head[o]!
+      head[o] = c
+    }
+  }
+  return { head, next }
+}
+
+/**
+ * The owned commits in bucket order: by owner, then by commit, both ascending. `at[c]` is where an owned commit `c`
+ * stands. One pass over the owners walks each one's chain (chains).
+ */
+//@ verify
+//@ requires forall(x, 0 <= x && x < owner.length ==> -1 <= owner[x] && owner[x] < owner.length)
+//@ ensures \result.at.length == owner.length
+//@ ensures forall(a, 0 <= a && a < \result.order.length ==> 0 <= \result.order[a].commit && \result.order[a].commit < owner.length && 0 <= \result.order[a].step && \result.order[a].step == owner[\result.order[a].commit])
+//@ ensures forall(a, 0 <= a && a + 1 < \result.order.length ==> \result.order[a].step < \result.order[a + 1].step || (\result.order[a].step == \result.order[a + 1].step && \result.order[a].commit < \result.order[a + 1].commit))
+//@ ensures forall(x, 0 <= x && x < owner.length && owner[x] >= 0 ==> 0 <= \result.at[x] && \result.at[x] < \result.order.length && \result.order[\result.at[x]].commit == x)
+export function bucketed(owner: ReadonlyArray<number>): { readonly order: Array<Bucket>; readonly at: Array<number> } {
+  const n = owner.length
+  const chained = chains(owner)
+  const head = chained.head
+  const next = chained.next
+  const order: Array<Bucket> = []
+  const at = filled(n, -1)
+  for (let o = 0; o < n; o++) {
+    //@ invariant 0 <= o && o <= n && at.length == n
+    //@ invariant forall(a, 0 <= a && a < order.length ==> 0 <= order[a].commit && order[a].commit < n && 0 <= order[a].step && order[a].step == owner[order[a].commit])
+    //@ invariant forall(a, 0 <= a && a + 1 < order.length ==> order[a].step < order[a + 1].step || (order[a].step == order[a + 1].step && order[a].commit < order[a + 1].commit))
+    //@ invariant order.length > 0 ==> order[order.length - 1].step < o
+    //@ invariant forall(x, 0 <= x && x < n && 0 <= owner[x] && owner[x] < o ==> 0 <= at[x] && at[x] < order.length && order[at[x]].commit == x)
+    //@ decreases n - o
+    let c = head[o]!
+    while (c >= 0) {
+      //@ invariant -1 <= c && c < n && at.length == n
+      //@ invariant c >= 0 ==> owner[c] == o
+      //@ invariant forall(a, 0 <= a && a < order.length ==> 0 <= order[a].commit && order[a].commit < n && 0 <= order[a].step && order[a].step == owner[order[a].commit])
+      //@ invariant forall(a, 0 <= a && a + 1 < order.length ==> order[a].step < order[a + 1].step || (order[a].step == order[a + 1].step && order[a].commit < order[a + 1].commit))
+      //@ invariant order.length > 0 ==> order[order.length - 1].step <= o
+      //@ invariant c >= 0 && order.length > 0 ==> order[order.length - 1].step < o || order[order.length - 1].commit < c
+      //@ invariant forall(x, 0 <= x && x < n && 0 <= owner[x] && owner[x] < o ==> 0 <= at[x] && at[x] < order.length && order[at[x]].commit == x)
+      //@ invariant forall(x, 0 <= x && x < n && owner[x] == o && (c < 0 || x < c) ==> 0 <= at[x] && at[x] < order.length && order[at[x]].commit == x)
+      //@ decreases (c < 0 ? 0 : n - c)
+      at[c] = order.length
+      order.push({ commit: c, step: o })
+      c = next[c]!
+    }
+  }
+  return { order, at }
+}
+
+/**
+ * Every commit main's tip reaches, bucketed by the first-parent step that brought it in: steps oldest first, each
+ * step's side commits (oldest first) and then the step. A side commit belongs to the oldest step that reaches it.
+ */
+//@ verify
+//@ requires forall(i, 0 <= i && i < parents.length ==> forall(k, 0 <= k && k < parents[i].length ==> -1 <= parents[i][k] && parents[i][k] < i))
+//@ ensures forall(a, 0 <= a && a < \result.length ==> 0 <= \result[a].commit && \result[a].commit <= \result[a].step && \result[a].step < parents.length)
+//@ ensures forall(a, 0 <= a && a + 1 < \result.length ==> \result[a].step < \result[a + 1].step || (\result[a].step == \result[a + 1].step && \result[a].commit < \result[a + 1].commit))
+export function bucketOrder(parents: ReadonlyArray<ReadonlyArray<number>>): Array<Bucket> {
+  const line = mainLine(parents)
+  const owned = owners(parents, line.main)
+  return bucketed(owned.owner).order
+}

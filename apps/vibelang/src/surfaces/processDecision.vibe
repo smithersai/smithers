@@ -1,0 +1,47 @@
+// What the CLI and MCP processes decide about their own runs (0018 third-lane batch 35): which commands need a
+// session, what a failed parse prints, the exit status, and how the MCP server reports a cause. `cli.vibe`,
+// `cli-entry.vibe` and `mcp.vibe` call these; argument parsing, the console and the Effect runtime stay outside.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+/** Whether a command needs a stored session: every command but signing in and out. */
+//@ verify
+//@ ensures \result == (name != "login" && name != "logout")
+export function needsSession(name: string): boolean {
+  return name !== "login" && name !== "logout"
+}
+
+export type ParseFailure = "help" | "silent" | "printed"
+
+/**
+ * What a failed command line does: help asked for (help with no errors) succeeds; help shown for errors fails
+ * without printing again (the parser rendered them); any other failure prints its message and fails.
+ */
+//@ verify
+//@ ensures showHelp && errors == 0 ==> \result == "help"
+//@ ensures showHelp && errors != 0 ==> \result == "silent"
+//@ ensures !showHelp ==> \result == "printed"
+export function parseFailure(showHelp: boolean, errors: number): ParseFailure {
+  if (!showHelp) return "printed"
+  return errors === 0 ? "help" : "silent"
+}
+
+/** The process exit status: 0 for a command that succeeded, else 1. */
+//@ verify
+//@ ensures \result == (succeeded ? 0 : 1)
+export function exitStatus(succeeded: boolean): number {
+  return succeeded ? 0 : 1
+}
+
+export type CauseReport = "none" | "message" | "pretty"
+
+/** How the MCP server reports its end: an interruption says nothing, a typed failure its message, anything else the whole cause. */
+//@ verify
+//@ ensures interruptsOnly ==> \result == "none"
+//@ ensures !interruptsOnly && failed ==> \result == "message"
+//@ ensures !interruptsOnly && !failed ==> \result == "pretty"
+export function causeReport(interruptsOnly: boolean, failed: boolean): CauseReport {
+  if (interruptsOnly) return "none"
+  return failed ? "message" : "pretty"
+}

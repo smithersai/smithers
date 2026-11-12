@@ -1,0 +1,26 @@
+// The decisions batch 35 moved out of the history tools, the CLI and MCP processes and the build scripts.
+import { describe, expect, it } from "@effect/vitest"
+import { causeReport, exitStatus, needsSession, parseFailure } from "../src/surfaces/processDecision.vibe"
+import { toolOutcome, writeRefusal } from "../src/history/toolDecision.vibe"
+import { contextStep, preflightFails } from "../scripts/scriptDecision.vibe"
+
+describe("process, history tool and script decisions", () => {
+  it("needs a session for every command but login and logout", () => {
+    expect(["ask", "login", "logout", "history"].map(needsSession)).toEqual([true, false, false, true])
+  })
+  it("succeeds on asked-for help, stays silent on rendered errors, else prints", () => {
+    expect([parseFailure(true, 0), parseFailure(true, 2), parseFailure(false, 0)]).toEqual(["help", "silent", "printed"])
+    expect([exitStatus(true), exitStatus(false)]).toEqual([0, 1])
+  })
+  it("reports an MCP end by its cause", () => {
+    expect([causeReport(true, true), causeReport(false, true), causeReport(false, false)]).toEqual(["none", "message", "pretty"])
+  })
+  it("answers a refused history write with its refusal, else unavailable", () => {
+    expect([writeRefusal(true, "stale"), writeRefusal(false, "x")]).toEqual(["stale", "unavailable"])
+    expect([toolOutcome(true, "forbidden"), toolOutcome(false, "")]).toEqual(["forbidden", "accepted"])
+  })
+  it("writes, accepts or rejects the agent context, and fails preflight on a missing package", () => {
+    expect([contextStep(false, "a", "b"), contextStep(true, "a", "a"), contextStep(true, "a", "b")]).toEqual(["write", "current", "stale"])
+    expect([preflightFails(0), preflightFails(1)]).toEqual([false, true])
+  })
+})

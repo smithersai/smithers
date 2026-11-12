@@ -2,6 +2,7 @@ import * as Sse from "effect/encoding/Sse"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { EventSchema } from "./schemas.vibe"
 import { AccountUnavailable, Denied, Identity, Session, type Accounts } from "./roles.vibe"
+import { accountRead, accountWrite, exactOk } from "./liveAnswerDecision.vibe"
 
 export effect function make(origin: string) {
   const client = try HttpClient.HttpClient
@@ -11,8 +12,9 @@ export effect function make(origin: string) {
   const failed = () => new AccountUnavailable({ reason: "account unavailable" })
   effect function get<A>(path: string, decode: (value: unknown) => A!Schema.SchemaError) {
     const response = try Effect.mapError(client.get(origin + path), failed)
-    if (response.status === 403) throw new Denied({ action: "people", least: "new" })
-    if (response.status !== 200) throw failed()
+    const answer = accountRead(response.status)
+    if (answer === "denied") throw new Denied({ action: "people", least: "new" })
+    if (answer === "unavailable") throw failed()
     return try Effect.mapError(decode(try Effect.mapError(response.json, failed)), failed)
   }
   effect function post(path: string, body: unknown) {
@@ -20,8 +22,9 @@ export effect function make(origin: string) {
       HttpClientRequest.setHeader("origin", origin),
       HttpClientRequest.bodyJsonUnsafe(body),
     )), failed)
-    if (response.status === 403) throw new Denied({ action: "roles", least: "maintainer" })
-    if (response.status !== 200 && response.status !== 204) throw failed()
+    const answer = accountWrite(response.status)
+    if (answer === "denied") throw new Denied({ action: "roles", least: "maintainer" })
+    if (answer === "unavailable") throw failed()
   }
   const accounts: Accounts.Shape = {
     current: () => get("/api/auth/session", decodeSession).pipe(Effect.mapError(failed)),
@@ -33,7 +36,7 @@ export effect function make(origin: string) {
     participated: () => Effect.void,
     events: (after) => Stream.unwrap(effect {
       const response = try Effect.mapError(client.get(origin + "/api/roles/events?after=" + after), failed)
-      if (response.status !== 200) throw failed()
+      if (!exactOk(response.status)) throw failed()
       return response.stream.pipe(
         Stream.decodeText(), Stream.pipeThroughChannel(Sse.decode()),
         Stream.mapEffect(event => Effect.mapError(decodeEvent(event.data), failed)),

@@ -1,11 +1,12 @@
 import { DurableText } from "./wire.vibe"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { WikiFailure, WikiState, type WikiApi, type WikiRequest } from "./wikiSchemas.vibe"
+import { exactOk } from "./liveAnswerDecision.vibe"
 const reasons = ["forbidden", "connect", "fork", "install", "sign-in", "missing", "unknown", "conflict", "empty", "invalid", "unavailable", "rate-limited", "no-model", "draft", "budget", "partial", "failed"] as const
 export effect function liveWiki(origin: string): WikiApi!!HttpClient.HttpClient {
   const client = try HttpClient.HttpClient
   const answer = effect (response: import("effect/http").HttpClientResponse.HttpClientResponse) => {
-    if (response.status !== 200) {
+    if (!exactOk(response.status)) {
       const body = response.json catch () => undefined
       const failure = Schema.decodeUnknownOption(Schema.Struct({ unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.Literals(reasons) }))(body)
       throw new WikiFailure(Option.isSome(failure) ? failure.value : { reason: "unavailable" })

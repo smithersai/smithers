@@ -1,0 +1,26 @@
+// What the app's build scripts decide (0018 third-lane batch 35): whether the generated agent context is written,
+// current or stale, and whether the fuzz flow's preflight passes. `agent-context.vibe` and `fuzz-preflight.vibe` call
+// these; files, the installed packages and the console stay outside.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+export type ContextStep = "write" | "current" | "stale"
+
+/** The agent-context script's step: without `--check` it writes; with it, the file is current or stale. */
+//@ verify
+//@ ensures !check ==> \result == "write"
+//@ ensures check && current == generated ==> \result == "current"
+//@ ensures check && current != generated ==> \result == "stale"
+export function contextStep(check: boolean, current: string, generated: string): ContextStep {
+  if (!check) return "write"
+  return current === generated ? "current" : "stale"
+}
+
+/** Whether the fuzz flow's preflight fails: any of its packages is missing. */
+//@ verify
+//@ requires missing >= 0
+//@ ensures \result == (missing > 0)
+export function preflightFails(missing: number): boolean {
+  return missing > 0
+}

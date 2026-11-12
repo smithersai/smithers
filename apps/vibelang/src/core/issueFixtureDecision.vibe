@@ -67,3 +67,55 @@ export interface FixtureIds { readonly number: number; readonly githubId: number
 export function fixtureIdentity(issue: number): FixtureIds {
   return { number: issue, githubId: issue + 1000 }
 }
+
+/** A fixture role's GitHub login: the maintainer is will, everyone else jun (0018 third-lane batch 34). */
+//@ verify
+//@ ensures \result == (role == "maintainer" ? "will" : "jun")
+export function fixtureLogin(role: string): string {
+  return role === "maintainer" ? "will" : "jun"
+}
+
+export type FixtureRoute = "forbidden" | "read" | "specification" | "invalid" | "draft" | "write"
+
+/**
+ * How the fixture host handles a request, in order: another caller's execution or a role without the permission is
+ * forbidden; a read answers the state; an operation the agent may not take is forbidden; a specification request runs
+ * the specification flow; a request without a key is invalid; a draft answers a draft; anything else writes.
+ */
+//@ verify
+//@ ensures !(own && permitted) ==> \result == "forbidden"
+//@ ensures own && permitted && op == "read" ==> \result == "read"
+//@ ensures own && permitted && op != "read" && agentRefused ==> \result == "forbidden"
+//@ ensures own && permitted && op != "read" && !agentRefused && (op == "spec-revise" || op == "spec-review") ==> \result == "specification"
+//@ ensures own && permitted && op != "read" && !agentRefused && op != "spec-revise" && op != "spec-review" && keyless ==> \result == "invalid"
+//@ ensures own && permitted && op != "read" && !agentRefused && op != "spec-revise" && op != "spec-review" && !keyless && op == "draft" ==> \result == "draft"
+//@ ensures own && permitted && op != "read" && !agentRefused && op != "spec-revise" && op != "spec-review" && !keyless && op != "draft" ==> \result == "write"
+export function fixtureRoute(own: boolean, permitted: boolean, op: string, agentRefused: boolean, keyless: boolean): FixtureRoute {
+  if (!(own && permitted)) return "forbidden"
+  if (op === "read") return "read"
+  if (agentRefused) return "forbidden"
+  if (op === "spec-revise" || op === "spec-review") return "specification"
+  if (keyless) return "invalid"
+  return op === "draft" ? "draft" : "write"
+}
+
+/** Whether a write proposes a VIP: only `propose` makes its issue a VIP in review with a document and a pull request. */
+//@ verify
+//@ ensures \result == (op == "propose")
+export function proposes(op: string): boolean {
+  return op === "propose"
+}
+
+/** Whether a write stamps its approval time: only `accept`. */
+//@ verify
+//@ ensures \result == (op == "accept")
+export function stampsApproval(op: string): boolean {
+  return op === "accept"
+}
+
+/** Whether a write carries its text as a comment: only `comment`. */
+//@ verify
+//@ ensures \result == (op == "comment")
+export function carriesComment(op: string): boolean {
+  return op === "comment"
+}

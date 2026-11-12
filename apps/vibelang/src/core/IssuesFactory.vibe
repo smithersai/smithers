@@ -1,5 +1,5 @@
 import { agentRefused } from "./flowPolicyDecision.vibe"
-import { fixtureDraft, fixtureErrorReason, fixtureErrorUnwritten, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "./issueFixtureDecision.vibe"
+import { carriesComment, fixtureDraft, fixtureErrorReason, fixtureErrorUnwritten, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureLogin, fixtureParticipation, fixtureRoute, proposes, stampsApproval } from "./issueFixtureDecision.vibe"
 // Product mock mode (VL-13). The real issue flows and state machine over local fixtures; no backend or model.
 import { fixtureSpecification, fixtureSpecificationHistory, performSpecification } from "./specification.vibe"
 import { WebCrypto } from "@smthrs/crypto"
@@ -49,7 +49,7 @@ function noteOf(request: IssueRequest): string {
 export interface FixturePerson { readonly id: string; readonly login: string; readonly role: Role; readonly kind?: "person" | "agent" }
 export type FixtureIdentity = Role | (() => FixturePerson!!)
 effect function personOf(identity: FixtureIdentity): FixturePerson!! {
-  if (typeof identity === "string") return { id: "fixture-" + identity, login: identity === "maintainer" ? "will" : "jun", role: identity }
+  if (typeof identity === "string") return { id: "fixture-" + identity, login: fixtureLogin(identity), role: identity }
   return try identity()
 }
 
@@ -64,17 +64,17 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typ
     perform: (request) => lock.withPermit(effect {
       const person = try personOf(identity)
       const instance = try FlowRuntime.FlowInstance
-      if (!instance.executionId.startsWith(`issues/${person.id || "public"}/`) || !issuePermission(person.role, request.op)) throw new IssueFailure({ reason: "forbidden" })
+      const route = fixtureRoute(instance.executionId.startsWith(`issues/${person.id || "public"}/`), issuePermission(person.role, request.op), request.op, agentRefused(request.op, person.kind ?? "person"), request.key === "")
+      if (route === "forbidden") throw new IssueFailure({ reason: "forbidden" })
       const before = try Ref.get(state)
-      if (request.op === "read") return before
-      if (agentRefused(request.op, person.kind ?? "person")) throw new IssueFailure({ reason: "forbidden" })
-      if (request.op === "spec-revise" || request.op === "spec-review") {
+      if (route === "read") return before
+      if (route === "specification") {
         const next = try performSpecification(before, request)
         try Ref.set(state, next)
         return next
       }
-      if (request.key === "") throw new IssueFailure({ reason: "invalid", unwritten: true })
-      if (request.op === "draft") return { ...before, draft: fixtureDraft(request.title.trim(), request.text.trim(), request.example.trim(), request.prior.trim()) }
+      if (route === "invalid") throw new IssueFailure({ reason: "invalid", unwritten: true })
+      if (route === "draft") return { ...before, draft: fixtureDraft(request.title.trim(), request.text.trim(), request.example.trim(), request.prior.trim()) }
       const index = fixtureIssueIndex(before.items, request.number)
       const issue = index < 0 ? undefined : before.items[index]
       const creating = issueCreates(request.op)
@@ -87,9 +87,9 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typ
       const actor = person.login
       // The proved transition (issueGraphDecision.vibe): from a forest, these checked writes keep a forest.
       const selected = creating ? nextIssueNumber(before.items) : 0
-      const vip = request.op === "propose"
+      const vip = proposes(request.op)
       const created = creating ? item(selected, request.title.trim(), { body: vip ? vipIssueBody(request) : request.text, author: actor, age: "just now", vip: vip ? "In review" : "", path: vip ? `docs/design/vips/${selected}.md` : "", review: vip ? `https://github.com/smithersai/vibelang/pull/${selected}` : "" }) : issue!
-      const items = issuesAfter(before.items, created, { op: request.op, number: request.number, parent: request.parent, assignee: request.assignee, text: request.op === "comment" ? request.text.trim() : "", note: noteOf(request), actor, role: person.role, kind: person.kind ?? "person", at: request.op === "accept" ? new Date(now).toISOString() : "" })
+      const items = issuesAfter(before.items, created, { op: request.op, number: request.number, parent: request.parent, assignee: request.assignee, text: carriesComment(request.op) ? request.text.trim() : "", note: noteOf(request), actor, role: person.role, kind: person.kind ?? "person", at: stampsApproval(request.op) ? new Date(now).toISOString() : "" })
       const next = { ...before, ...applyIssues(before, { type: "IssuesObserved", seq: before.seq + 1, items }) }
       try Ref.set(state, next)
       return selected === 0 ? next : { ...next, selected }

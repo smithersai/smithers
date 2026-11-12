@@ -5,6 +5,7 @@
 //   pnpm agent-context --check   exit 1 when the file is stale
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { contextStep } from "./scriptDecision.vibe"
 
 /** The generated file differs from what the installed skill gives; the message is already on stderr. */
 error Stale {
@@ -37,15 +38,15 @@ export effect function main() {
   const fs = try FileSystem.FileSystem
   const source = try generated()
   const target = try (try Path.Path).fromFileUrl(new URL("../worker/agentContext.vibe", import.meta.url))
-  if ((try (try Stdio.Stdio).args).includes("--check")) {
-    const current = fs.readFileString(target) catch () => ""
-    if (current !== source) {
-      try Console.error("worker/agentContext.vibe is stale: run pnpm agent-context")
-      throw new Stale()
-    }
-  } else {
-    try fs.writeFileString(target, source)
+  const check = (try (try Stdio.Stdio).args).includes("--check")
+  let current = ""
+  if (check) current = fs.readFileString(target) catch () => ""
+  const step = contextStep(check, current, source)
+  if (step === "stale") {
+    try Console.error("worker/agentContext.vibe is stale: run pnpm agent-context")
+    throw new Stale()
   }
+  if (step === "write") try fs.writeFileString(target, source)
 }
 
 NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))
