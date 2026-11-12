@@ -301,6 +301,7 @@ describe("the unlisted aliases", () => {
         }
         const spelled = (yield* json(["--json", "run", "--resume", runId])) as {
           readonly _tag: string
+          readonly runId: string
           readonly receiptId: string
         }
         return { runId, aliased, spelled }
@@ -308,14 +309,18 @@ describe("the unlisted aliases", () => {
       testControl
     )
 
-    expect(receipts.aliased).toMatchObject({ _tag: "Accepted", runId: receipts.runId })
-    // One implementation behind two spellings: the alias mints the same
-    // idempotency key, so the spelled-out form replays the alias's receipt
-    // rather than resuming the run a second time.
-    expect(receipts.spelled).toMatchObject({
-      _tag: "AlreadyApplied",
-      receiptId: receipts.aliased.receiptId
-    })
+    // One implementation behind two spellings: each mints the key `runs resume`
+    // mints, the run's park scope plus a UUID of its own (4738de93), so the
+    // spelled-out form resumes again rather than replaying the alias's receipt.
+    const park = `cli:resume:${receipts.runId}:`
+    for (const receipt of [receipts.aliased, receipts.spelled]) {
+      expect(receipt).toMatchObject({ _tag: "Accepted", runId: receipts.runId })
+      expect(receipt.receiptId.slice(0, park.length)).toBe(park)
+      expect(receipt.receiptId.slice(park.length)).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      )
+    }
+    expect(receipts.spelled.receiptId).not.toBe(receipts.aliased.receiptId)
   })
 
   it("lists flows through `workflow list` exactly as `ls` does", async () => {
