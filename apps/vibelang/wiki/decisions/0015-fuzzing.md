@@ -1672,3 +1672,9 @@ outside the cursor's ancestry, has a parent that is neither listed nor in that a
 from the cursor counts as folded, as `ancestryShas` says. The first run refuted an oracle that left those ids out (the
 product was right: the tip's unlisted side parent was also an older merge's). Mutants caught: the cycle answering an
 empty list; the unlisted-parent check disabled.
+
+`src/core/MockAccounts.vibe` 130, the live half of the account event stream: `accounts/live-events` has a follower
+replay everything, then grants a new person a drawn role; the follower sees exactly the one grant, live, as a later
+replay records it, and a grant of `new` (no change) publishes nothing. Mutant caught: the live half dropped. Line 102
+(`signInAgent` with no maintainer) is unreachable: `grantPolicy` never demotes the last maintainer, and the fixture
+starts with one.

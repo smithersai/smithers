@@ -60,3 +60,28 @@ it.live("accounts/transport-refusal", () => run("accounts/transport-refusal", Sc
     return error._tag === "Success" && error.success instanceof AccountUnavailable && error.success.reason === "account unavailable"
   }
 }))
+
+/**
+ * A follower that has replayed everything sees the next grant live, once, and exactly as a later replay records it.
+ */
+it.live("accounts/live-events", () => run("accounts/live-events", Schema.Struct({ role: Schema.Literals(["new", "community", "contributor", "maintainer"]), id: Int }), ({ role, id }) => effect {
+  const accounts = try MockAccounts.make()
+  const signedIn = try accounts.choose("maintainer")
+  if (!("ledger" in signedIn)) return false
+  const last = signedIn.ledger.seq
+  const follower = fork Stream.runCollect(accounts.events(last).pipe(Stream.take(1)))
+  // Let the follower subscribe before the grant is published.
+  try sleep("20 millis")
+  // A person the fixture never had: any role but `new` is a change, and `new` is refused as no change.
+  const person = String(100 + id)
+  const refused = try exit(accounts.grant(person, role))
+  if (role === "new") {
+    try Fiber.interrupt(follower)
+    return refused._tag === "Failure" || (try Stream.runCollect(accounts.events(-1).pipe(Stream.take(last)))).length === last
+  }
+  if (refused._tag === "Failure") return false
+  const seen = Array.from(try join follower)
+  const replayed = Array.from(try Stream.runCollect(accounts.events(-1).pipe(Stream.take(last + 1))))
+  return seen.length === 1 && seen[0]!.seq === last + 1 && same(seen[0], replayed.at(-1))
+}))
+
