@@ -420,9 +420,13 @@ function emitExpr(e: Expr, parentPrec?: number): string {
       const childPrec = e.op === "↔" ? prec(e.op) + 1 : prec(e.op);
       // `-`, `/`, `%` are left-associative and non-associative, so an equal-
       // precedence right operand must be parenthesized: `a - (b - c)` would
-      // otherwise emit as `a - b - c`, i.e. `(a - b) - c`.
+      // otherwise emit as `a - b - c`, i.e. `(a - b) - c`. `*` associates with
+      // itself but not with integer `/` or `%`: `a * (b / c)` must not emit as
+      // `a * b / c`, i.e. `(a * b) / c`.
       const rightPrec = e.op === "↔" ? childPrec
-        : ["-", "/", "%"].includes(e.op) ? prec(e.op) + 1 : childPrec;
+        : ["-", "/", "%"].includes(e.op) ? prec(e.op) + 1
+        : e.op === "*" && e.right.kind === "binop" && ["/", "%"].includes(e.right.op) ? prec(e.op) + 1
+        : childPrec;
       const s = `${wrapOperand(e.left, childPrec)} ${op} ${wrapOperand(e.right, rightPrec)}`;
       return (parentPrec !== undefined && prec(e.op) < parentPrec) ? `(${s})` : s;
     }
