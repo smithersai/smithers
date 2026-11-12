@@ -1,5 +1,16 @@
 import { describe, expect, it } from "@effect/vitest"
-import { type Artifact, type Metric, slope, slopeBudgets, verify } from "./soakArtifact.ts"
+import { readFileSync } from "node:fs"
+import {
+  type Artifact,
+  isSupportedNode,
+  type Metric,
+  nodeReleases,
+  slope,
+  slopeBudgets,
+  verify
+} from "./soakArtifact.ts"
+
+const pinnedNode = readFileSync(new URL("../../../../../.node-version", import.meta.url), "utf8").trim()
 
 const fixture = (): Artifact => {
   const samples = Array.from({ length: 5 }, (_, index) => ({
@@ -35,61 +46,98 @@ const fixture = (): Artifact => {
 }
 describe("scheduled soak artifact contract", () => {
   it("accepts complete repeated steady samples and independently computes slope units per minute", () => {
-    verify(fixture(), 1)
+    verify(fixture(), { minimumMinutes: 1 })
     const samples = fixture().samples.map((sample) => ({ ...sample, handles: 2 * sample.elapsedMs / 60_000 + 7 }))
     expect(slope(samples, "handles")).toBeCloseTo(2, 12)
+  })
+  it("accepts a receipt from the repository's pinned Node and refuses any other runtime", () => {
+    expect(nodeReleases).toContain(pinnedNode)
+    expect(isSupportedNode(`v${pinnedNode}`)).toBe(true)
+    const artifact = fixture()
+    artifact.runtime.node = `v${pinnedNode}`
+    verify(artifact, { minimumMinutes: 1 })
+    for (const node of ["v26.11.0", "26.10.0", "v22.19.0", ""]) {
+      expect(isSupportedNode(node)).toBe(false)
+      artifact.runtime.node = node
+      expect(() => verify(artifact, { minimumMinutes: 1 })).toThrow(/not a supported Node runtime/)
+    }
+  })
+  it("holds the receipt to the schedule's row, seed and minutes when they are stated", () => {
+    verify(fixture(), { minimumMinutes: 1, seed: 20260904, node: "26.10.0" })
+    expect(() => verify(fixture(), { minimumMinutes: 1, node: "26.4.0" })).toThrow(/runtime mismatch/)
+    expect(() => verify(fixture(), { minimumMinutes: 1, seed: 8 })).toThrow(/seed mismatch/)
+    expect(() => verify(fixture(), { minimumMinutes: 4 })).toThrow(/minutes mismatch/)
+    expect(() => verify(fixture(), { minimumMinutes: 0 })).toThrow()
   })
   for (const metric of Object.keys(slopeBudgets) as Array<Metric>) {
     it(`refuses retained ${metric} growth even if the artifact claims success`, () => {
       const artifact = fixture()
+      // Counts stay whole: grow by at least twice the budget every sampling interval.
       artifact.samples = artifact.samples.map((sample) => ({
         ...sample,
-        [metric]: sample[metric] +
-          2 * slopeBudgets[metric] * sample.elapsedMs / 60_000
+        [metric]: sample[metric] + Math.ceil(2 * slopeBudgets[metric]) * (sample.elapsedMs / 10_000)
       }))
       artifact.slopes[metric] = slope(artifact.samples, metric)
-      expect(() => verify(artifact, 1)).toThrow(new RegExp(`^${metric} growth .* exceeds `))
+      expect(() => verify(artifact, { minimumMinutes: 1 })).toThrow(new RegExp(`^${metric} growth .* exceeds `))
     })
   }
   for (
-    const corrupt of [
-      (value: Artifact) => {
+    const [corrupt, reason] of [
+      [(value: Artifact) => {
         value.status = "failed"
-      },
-      (value: Artifact) => {
+      }, /./],
+      [(value: Artifact) => {
+        value.failure = "incomplete: workload has not finished"
+      }, /failure recorded/],
+      [(value: Artifact) => {
         value.samples.pop()
-      },
-      (value: Artifact) => {
+      }, /at least five post-warmup samples/],
+      [(value: Artifact) => {
         value.slopes.heapUsed = 1
-      },
-      (value: Artifact) => {
+      }, /incorrect heapUsed slope/],
+      [(value: Artifact) => {
         value.samples[1]!.rss = Number.NaN
-      },
-      (value: Artifact) => {
+      }, /invalid rss/],
+      [(value: Artifact) => {
+        value.samples[1]!.heapUsed = 10_000_000.5
+      }, /invalid heapUsed/],
+      [(value: Artifact) => {
+        value.samples[0]!.cycle = 0
+      }, /stopped cycling/],
+      [(value: Artifact) => {
+        value.samples[2]!.emitted = value.samples[1]!.emitted
+      }, /stopped publishing/],
+      [(value: Artifact) => {
+        value.samples[2]!.connections = 1
+      }, /no useful work/],
+      [(value: Artifact) => {
         value.cleanup.sockets = 1
-      },
-      (value: Artifact) => {
+      }, /leaked owned resources/],
+      [(value: Artifact) => {
         value.samples[2]!.slowSubscribers = 0
-      },
-      (value: Artifact) => {
+      }, /./],
+      [(value: Artifact) => {
         value.samples[2]!.pendingWrites = 1
-      },
-      (value: Artifact) => {
+      }, /pending work after quiescence/],
+      [(value: Artifact) => {
         value.samples[2]!.journalQueued = 1025
-      },
-      (value: Artifact) => {
+      }, /./],
+      [(value: Artifact) => {
         value.candidate.sourceSha256 = "missing"
-      },
-      (value: Artifact) => {
+      }, /./],
+      [(value: Artifact) => {
         value.workload.requestedMinutes = 60
-      }
-    ]
+      }, /truncated samples/],
+      [(value: Artifact) => {
+        value.workload.requestedMinutes = 721
+      }, /within 1\.\.720/]
+    ] as const
   ) {
     it("rejects missing, incomplete, forged or unclean evidence", () => {
       const artifact = fixture()
       corrupt(artifact)
-      expect(() => verify(artifact, 1)).toThrow()
-      expect(() => verify(fixture(), 60)).toThrow()
+      expect(() => verify(artifact, { minimumMinutes: 1 })).toThrow(reason)
+      expect(() => verify(fixture(), { minimumMinutes: 60 })).toThrow(/minutes mismatch/)
     })
   }
 })

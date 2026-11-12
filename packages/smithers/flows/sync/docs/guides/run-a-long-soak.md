@@ -14,8 +14,10 @@ node test/fixtures/verify-soak.ts /tmp/sync-soak/node26.json 60
 ```
 
 The focused timed tier does not replace the full package coverage gate. It
-spawns the same Node executable with `--expose-gc`. Supported pinned lane
-runtimes are Node 22.19.0 and 26.10.0. Minutes must be finite and within 1..720.
+spawns the same Node executable with `--expose-gc`. The workload runs only on
+the Node releases `test/soakArtifact.ts` lists (the repository's pinned
+`.node-version` and the scheduled matrix rows) and refuses any other runtime
+before its first cycle. Minutes must be finite and within 1..720.
 The artifact path is required. For a bounded local rehearsal use 3 minutes,
 and label the receipt as local bounded evidence.
 
@@ -31,9 +33,12 @@ checkpoints, not whole-run deletion or retention of externally stored blobs.
 
 ## Artifact verifier contract
 
-`test/soakArtifact.ts` defines schema version 1. CI must run the independent
-`verify-soak.ts` command and fail on missing, malformed, incomplete, or failed
-artifacts. The exit code of the workload is also required; a JSON file alone
+`test/soakArtifact.ts` defines schema version 1 and is the one verifier of a
+receipt: the workload runs it before it exits, `verify-soak.ts` runs it from the
+command line, and the repository's `bench/soak-campaign` flow runs it in CI,
+holding the receipt to the scheduled minutes, seed and Node row. CI must run it
+independently after the workload and fail on missing, malformed, incomplete, or
+failed artifacts. The exit code of the workload is also required; a JSON file alone
 is not a passing job. Preserve stdout/stderr and the JSON even on failure.
 
 Required top-level fields:

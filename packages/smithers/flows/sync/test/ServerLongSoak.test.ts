@@ -31,7 +31,7 @@ it.runIf(configured !== undefined)(
         child.once("error", reject)
       })
       expect(result).toEqual({ code: 0, signal: null })
-      verify(JSON.parse(await readFile(artifactPath, "utf8")) as Artifact, minutes)
+      verify(JSON.parse(await readFile(artifactPath, "utf8")) as Artifact, { minimumMinutes: minutes })
     } finally {
       clearTimeout(watchdog)
       clearTimeout(hardStop)

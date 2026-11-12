@@ -80,7 +80,7 @@ it.skipIf(process.platform === "win32")(
         expect(artifact.status).toBe("failed")
         expect(artifact.failure).toBeTruthy()
         expect(artifact.cleanup).toEqual({ activeReads: 0, pendingWrites: 0, slowSubscribers: 0, sockets: 0 })
-        expect(() => verify(artifact, 1)).toThrow()
+        expect(() => verify(artifact, { minimumMinutes: 1 })).toThrow()
         await expect(access(ready.directory)).rejects.toThrow()
       } finally {
         clearTimeout(watchdog)

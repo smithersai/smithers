@@ -85,7 +85,8 @@ prior failure, so stale partial results cannot enter a new run.
 CI uploads even on failure and retains results for 30 days. Temporary database
 directories are removed on both success and handled failure. Process termination
 can leave OS temporary files, but cannot write a completed result. The scheduled
-sync soak is a separate lifecycle/growth tier; its receipt verifier is
+sync soak is a separate lifecycle/growth tier; its receipt verifier is the sync
+package's `test/soakArtifact.ts`, which the `bench/soak-campaign` flow runs through
 `.smithers/flows/bench/soak-campaign/check-soak-campaign.mjs`.
 
 The upload-on-failure and 30-day retention policy above applies to the scheduled

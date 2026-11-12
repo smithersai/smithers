@@ -37,13 +37,27 @@ import * as Protocol from "../../src/SyncProtocol.ts"
 import * as SyncRpcs from "../../src/SyncRpcs.ts"
 import * as SyncServer from "../../src/SyncServer.ts"
 import * as TestSync from "../../src/test/TestSync.ts"
-import { type Artifact, type Metric, type Sample, slope, slopeBudgets, verify } from "../soakArtifact.ts"
+import {
+  type Artifact,
+  isSupportedNode,
+  type Metric,
+  nodeReleases,
+  type Sample,
+  slope,
+  slopeBudgets,
+  verify
+} from "../soakArtifact.ts"
 
 const minutes = Number(process.env.SMITHERS_SOAK_MINUTES)
 assert.ok(Number.isFinite(minutes) && minutes >= 1 && minutes <= 720, "SMITHERS_SOAK_MINUTES must be 1..720")
 const artifactPath = process.env.SMITHERS_SOAK_ARTIFACT
 assert.ok(artifactPath, "SMITHERS_SOAK_ARTIFACT must name the output JSON file")
 assert.ok(globalThis.gc, "Run the soak with --expose-gc")
+// The verifier accepts only these runtimes: refuse before the first cycle, not after the whole run.
+assert.ok(
+  isSupportedNode(process.version),
+  `Run the soak on Node v${nodeReleases.join(", v")}; this is ${process.version}`
+)
 const root = fileURLToPath(new URL("../../", import.meta.url))
 const digest = createHash("sha256")
 for (
@@ -286,7 +300,7 @@ try {
   }
   artifact.status = "complete"
   delete artifact.failure
-  verify(artifact, minutes)
+  verify(artifact, { minimumMinutes: minutes })
 } catch (cause) {
   artifact.status = "failed"
   artifact.failure = String(cause)

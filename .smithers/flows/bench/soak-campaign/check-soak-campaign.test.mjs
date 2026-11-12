@@ -4,7 +4,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { verifySoak } from "./check-soak-campaign.mjs"
+import { nodeReleases } from "../../../../packages/smithers/flows/sync/test/soakArtifact.ts"
+import { expectation } from "./check-soak-campaign.mjs"
 import { parseWorkflow } from "../../release/release-rehearsal.mjs"
 
 const artifact = () => ({ schemaVersion: 1, status: "complete",
@@ -16,43 +17,41 @@ const artifact = () => ({ schemaVersion: 1, status: "complete",
     retainedRows: 32, retainedCheckpoints: 1, slowSubscribers: 1, heapUsed: 1_000_000, rss: 2_000_000,
     handles: 2, sockets: 0, activeReads: 0, pendingWrites: 0, socketQueuedBytes: 0, journalQueued: 64,
     databaseBytes: 4096, walBytes: 8192 })),
-  slopes: { heapUsed: 0, rss: 0, handles: 0, sockets: 0, activeReads: 0, pendingWrites: 0,
+  slopes: { heapUsed: 0, rss: 0, handles: 0, sockets: 0, activeReads: 0,
     socketQueuedBytes: 0, journalQueued: 0, databaseBytes: 0, walBytes: 0 },
   cleanup: { activeReads: 0, pendingWrites: 0, slowSubscribers: 0, sockets: 0 } })
 
-test("soak evidence requires complete work, duration, seed, resources and post-warmup samples", () => {
-  assert.equal(verifySoak(artifact(), { minutes: 1, seed: 20260904 }).samples, 5)
-  for (const mutate of [
-    (x) => { delete x.status }, (x) => { x.status = "failed" }, (x) => { x.samples.pop() },
-    (x) => { x.samples[1].elapsedMs = x.samples[0].elapsedMs }, (x) => { x.samples[2].emitted-- },
-    (x) => { x.samples[2].cycle = x.samples[1].cycle; x.samples[2].emitted = x.samples[1].emitted },
-    (x) => { x.samples[2].pendingWrites = 1 }, (x) => { x.cleanup.activeReads = 1 },
-    (x) => { x.workload.requestedMinutes = 2 }, (x) => { delete x.samples[1].walBytes },
-    (x) => { x.samples[4].heapUsed += 10_000_000 }, (x) => { x.samples[4].rss += 20_000_000 },
-    (x) => { x.samples[4].handles++ }, (x) => { x.samples[4].sockets++ },
-    (x) => { delete x.slopes.walBytes }, (x) => { x.candidate.sourceSha256 = "missing" }
-  ]) { const value = artifact(); mutate(value); assert.throws(() => verifySoak(value)) }
-  assert.throws(() => verifySoak(artifact(), { minutes: 4 }))
-  assert.throws(() => verifySoak(artifact(), { seed: 8 }))
+const script = new URL("./check-soak-campaign.mjs", import.meta.url).pathname
+const check = (path, env = {}) => spawnSync(process.execPath, [script, path], { encoding: "utf8", env: { ...process.env,
+  SMITHERS_SOAK_MINUTES: undefined, SMITHERS_SOAK_SEED: undefined, SMITHERS_SOAK_NODE: undefined, ...env } })
+
+test("the schedule's environment states the expectation; unset variables leave only the one-minute floor", () => {
+  assert.deepEqual(expectation({}), { minimumMinutes: 1 })
+  assert.deepEqual(expectation({ SMITHERS_SOAK_MINUTES: "60", SMITHERS_SOAK_SEED: "20260904", SMITHERS_SOAK_NODE: "26.4.0" }),
+    { minimumMinutes: 60, seed: 20260904, node: "26.4.0" })
 })
 
-test("soak receipts must match the scheduled runtime row", () => {
-  verifySoak(artifact(), { node: "26.10.0" })
-  assert.throws(() => verifySoak(artifact(), { node: "26.4.0" }), /runtime mismatch/)
-  const floor = artifact()
-  floor.runtime.node = "v26.4.0"
-  verifySoak(floor, { node: "26.4.0" })
-  assert.throws(() => verifySoak(floor, { node: "26.10.0" }), /runtime mismatch/)
-})
-
-test("the soak CLI refuses absent and truncated JSON artifacts", () => {
+test("the soak CLI runs the package verifier against the scheduled row and prints the receipt summary", () => {
   const directory = mkdtempSync(join(tmpdir(), "smithers-soak-verifier-"))
   const path = join(directory, "soak.json")
   try {
+    writeFileSync(path, JSON.stringify(artifact()))
+    const passed = check(path, { SMITHERS_SOAK_MINUTES: "1", SMITHERS_SOAK_SEED: "20260904", SMITHERS_SOAK_NODE: "26.10.0" })
+    assert.equal(passed.status, 0, passed.stderr)
+    assert.deepEqual(JSON.parse(passed.stdout), { minutes: 1, seed: 20260904, samples: 5, growth: artifact().slopes })
+    for (const [env, reason] of [
+      [{ SMITHERS_SOAK_NODE: "26.4.0" }, /runtime mismatch/],
+      [{ SMITHERS_SOAK_MINUTES: "4" }, /minutes mismatch/],
+      [{ SMITHERS_SOAK_SEED: "8" }, /seed mismatch/]
+    ]) {
+      const refused = check(path, env)
+      assert.equal(refused.status, 1)
+      assert.match(refused.stderr, reason)
+    }
     for (const body of [undefined, '{"status":', JSON.stringify({ status: "failed" })]) {
+      rmSync(path, { force: true })
       if (body !== undefined) writeFileSync(path, body)
-      const result = spawnSync(process.execPath, [new URL("./check-soak-campaign.mjs", import.meta.url).pathname, path])
-      assert.equal(result.status, 1)
+      assert.equal(check(path).status, 1)
     }
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
@@ -62,6 +61,7 @@ test("scheduled soak executes the scaled producer, verifies even on failure and 
   assert.ok(workflow.on.schedule.length > 0)
   const job = workflow.jobs["sync-long-soak"]
   assert.deepEqual(job.strategy.matrix.node, ["26.4.0", "26.10.0"])
+  for (const row of job.strategy.matrix.node) assert.ok(nodeReleases.includes(row), `the verifier accepts the ${row} row`)
   assert.equal(job.strategy["fail-fast"], false)
   assert.equal(job.env.SMITHERS_SOAK_NODE, "${{ matrix.node }}")
   assert.equal(job.steps.find((step) => step.uses?.startsWith("actions/setup-node@")).with["node-version"], "${{ matrix.node }}")
