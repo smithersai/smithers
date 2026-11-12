@@ -190,6 +190,64 @@ describe("ContainerRecording", () => {
       )
     }))
 
+  it.effect("a replay with polled operations matches a run whose timer polled fewer or more times than the recorded run", () =>
+    Effect.gen(function*() {
+      // A slow live run: an alarm polled the box twice while it started. A replay answers at once, so its alarm
+      // polls before the write never happen, and it polls once more after the end.
+      const live = liveBox()
+      const recorder = ContainerRecording.record(live.container)
+      yield* recorder.container.running
+      yield* recorder.container.start()
+      yield* recorder.container.setInactivityTimeout(1000)
+      for (const _ of [1, 2]) {
+        yield* recorder.container.running
+        yield* recorder.container.setInactivityTimeout(1000)
+      }
+      yield* run(recorder.container, ["write", "keep", "x"])
+      yield* recorder.container.running
+      yield* recorder.container.destroy()
+      yield* recorder.container.running
+      const recording = { calls: recorder.calls() }
+      const polled = ["running", "setInactivityTimeout"] as const
+
+      const strict = ContainerRecording.replay<Box>(recording)
+      yield* strict.container.running
+      yield* strict.container.start()
+      yield* strict.container.setInactivityTimeout(1000)
+      const unpolled = defectOf(yield* Effect.exit(run(strict.container, ["write", "keep", "x"])))
+      expect(unpolled).toMatchObject({ index: 3, operation: "exec", recorded: "running" })
+
+      const hits = live.state.hits
+      const replayed = ContainerRecording.replay<Box>(recording, { polled })
+      const answers = [yield* replayed.container.running]
+      yield* replayed.container.start()
+      for (const _ of [1, 2, 3, 4]) yield* replayed.container.setInactivityTimeout(1000)
+      expect(replayed.remaining()).toBe(2)
+      yield* run(replayed.container, ["write", "keep", "x"])
+      answers.push(yield* replayed.container.running)
+      answers.push(yield* replayed.container.running)
+      yield* replayed.container.destroy()
+      answers.push(yield* replayed.container.running, yield* replayed.container.running)
+      expect(answers).toEqual([false, true, true, false, false])
+      expect(replayed.remaining()).toBe(0)
+      expect(live.state.hits).toBe(hits)
+
+      // A poll is answered only by a recorded poll since the last state-changing call: never across a start.
+      const stale = ContainerRecording.replay<Box>({
+        calls: recording.calls.filter((call) => call.operation !== "running" || call.output === false).slice(0, 3)
+      }, { polled })
+      yield* stale.container.start()
+      const across = defectOf(yield* Effect.exit(stale.container.running))
+      expect(across).toMatchObject({ index: 2, operation: "running", recorded: "setInactivityTimeout" })
+      // Nor does a poll skip a state-changing call: a write the replay never makes stays unclaimed.
+      const skipped = ContainerRecording.replay<Box>(recording, { polled })
+      yield* skipped.container.running
+      yield* skipped.container.start()
+      const past = defectOf(yield* Effect.exit(skipped.container.destroy()))
+      expect(past).toMatchObject({ index: 7, operation: "destroy", recorded: "exec" })
+      expect(skipped.remaining()).toBe(2)
+    }))
+
   it.effect("record hands destroy its error and leaves every member it does not record to the live handle", () =>
     Effect.gen(function*() {
       const live = liveBox()

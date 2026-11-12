@@ -403,13 +403,27 @@ export const record = <C extends Container<any, any>>(
  */
 export interface ReplayOptions {
   readonly normalize?: Normalize | undefined
+  /**
+   * Operations a timer may call more or fewer times than the recorded run
+   * did, such as a Durable Object alarm that polls `running` and re-arms
+   * `setInactivityTimeout` while a slow live call is in flight. A polled
+   * call claims the next recorded call of its operation and input when only
+   * polled calls come before it, and those skipped calls are passed. When
+   * the recording holds no such call before its next unpolled call, it is
+   * answered by a recorded one with the same operation and input since the
+   * last unpolled call claimed, so no answer crosses a start, a command or a
+   * destroy. Unpolled calls still claim every recorded unpolled call in
+   * order.
+   */
+  readonly polled?: ReadonlyArray<Operation> | undefined
 }
 
 /**
  * A container that answers from `recording` and reaches none. Each call
  * claims the recording's next call, which must have the same operation and
  * the same normalized input; anything else dies with
- * {@link UnrecordedCallError}. `remaining` counts the calls nothing claimed.
+ * {@link UnrecordedCallError}. `remaining` counts the calls nothing claimed,
+ * apart from `polled` calls (see {@link ReplayOptions}).
  *
  * @throws {never}
  * @category constructors
@@ -420,17 +434,35 @@ export const replay = <C extends Container<any, any>>(
   options: ReplayOptions = {}
 ): { readonly container: C; readonly remaining: () => number } => {
   let next = 0
+  // The index after the last unpolled call claimed: a polled call the recording lacks is answered from here on.
+  let since = 0
   const normalize = options.normalize ?? ((_operation: Operation, input: unknown) => input)
+  const polled = new Set<Operation>(options.polled ?? [])
+  const matches = (call: Call, operation: Operation, key: string) =>
+    call.operation === operation && canonical(call.input) === key
   const claim = (operation: Operation, input: unknown): Effect.Effect<Call> =>
     Effect.suspend(() => {
-      const index = next
-      const call = recording.calls[index]
-      if (call === undefined) return Effect.die(new UnrecordedCallError({ index, operation, recorded: "none" }))
-      if (call.operation !== operation || canonical(call.input) !== canonical(normalize(operation, data(input)))) {
-        return Effect.die(new UnrecordedCallError({ index, operation, recorded: call.operation }))
+      const key = canonical(normalize(operation, data(input)))
+      // Recorded polled calls before the next unpolled one may be passed over.
+      let stop = next
+      while (stop < recording.calls.length) {
+        const call = recording.calls[stop]!
+        if (matches(call, operation, key)) {
+          next = stop + 1
+          if (!polled.has(operation)) since = next
+          return Effect.succeed(call)
+        }
+        if (!polled.has(call.operation)) break
+        stop += 1
       }
-      next += 1
-      return Effect.succeed(call)
+      if (polled.has(operation)) {
+        for (let at = Math.min(stop, recording.calls.length) - 1; at >= since; at -= 1) {
+          if (matches(recording.calls[at]!, operation, key)) return Effect.succeed(recording.calls[at]!)
+        }
+      }
+      const index = polled.size === 0 ? next : polled.has(operation) ? next : stop
+      const call = recording.calls[index]
+      return Effect.die(new UnrecordedCallError({ index, operation, recorded: call?.operation ?? "none" }))
     })
   const answered = <A>(operation: Operation, input: unknown, read: (output: unknown) => A) =>
     Effect.flatMap(
@@ -469,7 +501,10 @@ export const replay = <C extends Container<any, any>>(
     destroy: (error?: unknown) => answered("destroy", destroyInput(error), none),
     exec
   } as unknown as C
-  return { container, remaining: () => recording.calls.length - next }
+  return {
+    container,
+    remaining: () => recording.calls.slice(next).filter((call) => !polled.has(call.operation)).length
+  }
 }
 
 /**

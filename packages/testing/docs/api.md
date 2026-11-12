@@ -1385,7 +1385,7 @@ const record: <C extends Container<any, any>>(
 ) => { readonly container: C; readonly calls: () => ReadonlyArray<Call> }
 const replay: <C extends Container<any, any>>(
   recording: Recording,
-  options?: { readonly normalize?: Normalize }
+  options?: { readonly normalize?: Normalize; readonly polled?: ReadonlyArray<Operation> }
 ) => { readonly container: C; readonly remaining: () => number }
 const make: <C extends Container<any, any>>(options: {
   readonly mode: Mode
@@ -1424,7 +1424,11 @@ and is recorded by its tag. Every member `record` does not record (`monitor`,
 `live`'s, unchanged. `replay` reaches no container:
 each call must match the recording's next call by operation and normalized
 input, or it dies with `UnrecordedCallError`; a recorded failure replays as a
-`ReplayedFailure` with the live failure's tag. `make` picks one by mode; a
+`ReplayedFailure` with the live failure's tag. Operations named in `polled`
+(calls a timer makes, such as an alarm's `running` polls) may be made more or
+fewer times than recorded: skipped calls are passed, an extra one is answered by
+a matching recorded call since the last unpolled call, and `remaining()` counts
+unpolled calls only. `make` picks one by mode; a
 `replay` without a recording or another mode without `live` is a defect.
 `encode` scrubs and scans as `HttpRecording.encode` does; `decode` throws on a
 malformed recording.

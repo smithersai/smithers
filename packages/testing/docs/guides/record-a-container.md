@@ -42,6 +42,26 @@ const box = ContainerRecording.make({
   operations, never an input. `remaining()` (from `replay`) counts the calls
   nothing claimed; a test checks it is 0.
 
+## Calls a timer makes
+
+A Durable Object alarm that polls `running` and re-arms the inactivity timeout
+fires on the wall clock. A real box takes seconds per call, so the alarm fires
+during slow calls and the recording holds more polls than a replay, which
+answers at once, ever makes. Name those operations in `replay`'s `polled`:
+
+```ts
+ContainerRecording.replay(recording, { normalize, polled: ["running", "setInactivityTimeout"] })
+```
+
+A polled call claims the next recorded call of its operation and input when
+only polled calls come before it; the polled calls it passes over are skipped.
+When the recording holds none before its next unpolled call, the replay answers
+with a recorded call of the same operation and input made since the last
+unpolled call it claimed, so a `running` answer never crosses a `start`, an
+`exec` or a `destroy`. Otherwise the call dies with `UnrecordedCallError`.
+Unpolled calls still claim every recorded unpolled call in order, and
+`remaining()` counts only unpolled calls.
+
 A replayed failure is a `ReplayedFailure` whose `_tag` is the tag the live call
 failed with, so code that branches on a failure's tag behaves as it did live.
 
