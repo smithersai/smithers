@@ -425,7 +425,7 @@ try {
   sealCases.push([
     "a structured container call's own refusal",
     JSON.stringify({ input: { container: "swb", command: "curl https://missing.invalid" }, output: hostRefusal })
-    + "\n" + laterEvents[0],
+    + "\n" + laterEvents[0] + hostRefusal,
     0
   ])
   sealCases.push([
@@ -484,6 +484,85 @@ try {
   assert.equal(connected.rows[0].unnetworked, false, "attaching a network withdraws the container-level reading")
   assert.equal(connected.totals.breaches, 1)
   assert.ok(connected.failures.some((failure) => failure.includes("fetched from inside the testbed")))
+
+  // -------------------------------------------------------------------------
+  // The host shell is outside the testbed. A `none` observation says nothing
+  // about it, so a host fetch fails the seal unless its own output shows it
+  // refused, and a refused one stays a diagnostic.
+  // -------------------------------------------------------------------------
+  const hostDirectory = join(temporary, "host")
+  mkdirSync(join(hostDirectory, "logs"), { recursive: true })
+  const hostLedger = jsonl(join(hostDirectory, "manifest.jsonl"), [
+    { kind: "instance", id: "a__a-1", state: "ran", at: 1, testbedNetwork: "none", testbedNetworkObserved: "none" }
+  ])
+  const hostFetch = "curl --noproxy \"*\" https://github.com/example/project/pull/1.patch"
+  const hostCases = [
+    ["a host fetch that printed the patch", `exec\n${hostFetch}\n succeeded in 100ms:\ndiff --git a/a b/a\n`, 1],
+    ["a host fetch with no recorded outcome", `exec\n${hostFetch}\n`, 1],
+    [
+      "a host fetch before an unrelated refusal",
+      `exec\n${hostFetch}\n succeeded in 100ms:\ndiff --git a/a b/a\nthinking\ncurl: (6) Could not resolve host: x\n`,
+      1
+    ],
+    ["a host fetch the network refused", `exec\n${hostFetch}\ncurl: (6) Could not resolve host: github.com\n`, 0],
+    [
+      "a host fetch the sealed proxy refused",
+      "exec\ncurl -sS https://api.github.com/repos/x/y\ncurl: (7) Failed to connect to 127.0.0.1 port 1 after 0 ms\n",
+      0
+    ]
+  ]
+  for (const [name, trace, expected] of hostCases) {
+    writeFileSync(join(hostDirectory, "logs", "a__a-1.run.log"), trace)
+    const result = scan({ ledger: hostLedger, logs: join(hostDirectory, "logs"), require: "none" })
+    assert.equal(result.totals.hostAttempts, 1, `${name}: attempts`)
+    assert.equal(result.totals.hostRefused, 1 - expected, `${name}: refused`)
+    assert.equal(result.totals.hostBreaches, expected, `${name}: host breaches`)
+    assert.equal(result.totals.breaches, 0, `${name}: not an in-container breach`)
+    assert.deepEqual(
+      result.failures,
+      expected === 0 ? [] : ["1 run(s) ran a host fetch the trace does not show refused"],
+      name
+    )
+    const report = render(result, { label: name, ledger: hostLedger })
+    assert.equal(report.includes("**Verdict: sealed.**"), expected === 0, `${name}: verdict`)
+    assert.equal(report.includes("Where the host shell was not shown refused"), expected === 1, `${name}: section`)
+    const cli = spawnSync(process.execPath, [
+      join(root, "breach-scan.mjs"),
+      "--ledger",
+      hostLedger,
+      "--logs",
+      join(hostDirectory, "logs"),
+      "--require",
+      "none",
+      "--json"
+    ], { encoding: "utf8", timeout: 30_000 })
+    assert.equal(cli.status, expected, `${name}: CLI exit\n${cli.stdout}${cli.stderr}`)
+  }
+
+  // The flows arm's host call names no container. Its output event follows it.
+  journal(join(hostDirectory, "journals", "a__a-1"), [
+    JSON.stringify({ flow: "bash", input: { mode: "unhermetic", command: hostFetch } }),
+    JSON.stringify({ output: "diff --git a/a b/a" }),
+    JSON.stringify({
+      flow: "bash",
+      input: { mode: "unhermetic", container: "swb", command: "curl https://x.invalid" }
+    }),
+    JSON.stringify({ output: "curl: (6) Could not resolve host: x.invalid" })
+  ])
+  const flowsHost = scan({ journals: join(hostDirectory, "journals"), ledger: hostLedger, require: "none" })
+  assert.equal(flowsHost.totals.hostAttempts, 1, "a structured container call is not a host fetch")
+  assert.equal(flowsHost.totals.hostBreaches, 1, "a structured host fetch that printed bytes fails the seal")
+  assert.equal(flowsHost.totals.breaches, 0)
+  assert.ok(flowsHost.failures.some((failure) => failure.includes("host fetch")))
+
+  // A lane that asserts nothing still reports the host fetch, and is not failed.
+  writeFileSync(join(hostDirectory, "logs", "a__a-1.run.log"), hostCases[0][1])
+  const hostBridgeLedger = jsonl(join(hostDirectory, "bridge.jsonl"), [
+    { kind: "instance", id: "a__a-1", state: "ran", at: 1, testbedNetwork: "bridge", testbedNetworkObserved: "bridge" }
+  ])
+  const hostBridge = scan({ ledger: hostBridgeLedger, logs: join(hostDirectory, "logs") })
+  assert.equal(hostBridge.totals.hostBreaches, 1)
+  assert.deepEqual(hostBridge.failures, [], "a bridge lane's report does not move")
 
   // -------------------------------------------------------------------------
   // The outcome reading applies only where the container was observed `none`.

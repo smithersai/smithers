@@ -441,6 +441,15 @@ must hold or the report exits non-zero:
   when the ledger recorded `none`. Unattempted population rows owe no trace.
 - **zero web-search tool lines.** Host-side web searches bypass the container's
   network setting and fail the seal independently of in-container fetches.
+- **zero host fetches the trace does not show refused.** The testbed
+  observation says nothing about the host shell: a flows host shell is
+  unconfined, and a codex child command can drop its proxy with
+  `curl --noproxy '*'`. Every fetch not on the far side of a `docker exec` is
+  read to its outcome in the same bounded window as an in-container fetch.
+  Only a refusal there (a testbed refusal or the dead proxy's
+  `127.0.0.1 port 1`) clears it; a refused host fetch stays a diagnostic. A
+  fetch that printed bytes, printed only an exit status, or matched in prose
+  fails the seal until the trace shows otherwise.
 
 `--require none` applies all assertions whatever the ledger claims, so an
 operator can gate a lane before reading a number out of it. Without the flag a
@@ -465,8 +474,9 @@ node breach-scan.mjs --ledger fullbench/rerun-r98/manifest.jsonl \
   --require none --out fullbench/rerun-r98
 ```
 
-It imports `egress`, `inContainerEgress`, `provedUnnetworked` and
-`countedBreaches` from `compare-codex-lanes.mjs` rather than restating them, so
+It imports `egress`, `inContainerEgress`, `provedUnnetworked`,
+`countedBreaches` and `hostEgress` from `compare-codex-lanes.mjs` rather than
+restating them, so
 the two reports cannot drift apart on what counts as an attempt or a breach. The
 comparison also uses `traceFailures` from `breach-scan.mjs` for the shared
 missing-trace and web-search obligations. A Sealed headline requires an empty

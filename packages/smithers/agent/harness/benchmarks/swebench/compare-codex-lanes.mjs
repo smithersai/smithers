@@ -87,13 +87,14 @@ export const readVerdict = (verdict) => {
  * @category conversions
  * @since 0.1.0
  */
+const fetchCommand =
+  /\b(?:curl|wget|git clone|git fetch|git ls-remote|pip install|pip download)(?!:)(?=[\s'"])[^\n'"]{0,120}/gu
+
 export const egress = (text) => {
   // `curl: (7) …` is the *refusal*, not another attempt, so the command forms
   // are matched with the diagnostic's colon excluded. Counting it would report
   // one blocked fetch as two.
-  const commands = text.match(
-    /\b(?:curl|wget|git clone|git fetch|git ls-remote|pip install|pip download)(?!:)(?=[\s'"])[^\n'"]{0,120}/gu
-  ) ?? []
+  const commands = text.match(fetchCommand) ?? []
   const refusals = text.match(/127\.0\.0\.1 port 1\b/gu) ?? []
   const proxied = text.match(/(?:proxy|Proxy)[^\n]{0,60}127\.0\.0\.1:1\b/gu) ?? []
   return {
@@ -174,12 +175,12 @@ const literalBreaches = (text) => {
 
 const containerIdentity = /^[\w][\w.-]*$/u
 
-/** Every command boundary in one parsed value, JSON strings included. */
-const containerCalls = (value, found) => {
+/** Every structured command call in one parsed value, JSON strings included. */
+const commandCalls = (value, found) => {
   if (typeof value === "string") {
     if (!/^\s*[[{]/u.test(value)) return found
     try {
-      return containerCalls(JSON.parse(value), found)
+      return commandCalls(JSON.parse(value), found)
     } catch {
       return found
     }
@@ -188,15 +189,21 @@ const containerCalls = (value, found) => {
   const program = typeof value.command === "string" ? value.command : typeof value.script === "string"
     ? [value.interpreter, value.script].filter((part) => typeof part === "string").join(" ")
     : undefined
-  if (typeof value.container === "string" && value.container !== "" && program !== undefined) {
-    const container = containerIdentity.test(value.container) ? value.container : JSON.stringify(value.container)
-    found.push(`docker exec ${container} ${program.replace(/\s+/gu, " ")}`)
-  } else if (program !== undefined) {
-    found.push("exec")
+  if (program !== undefined) {
+    found.push({
+      container: typeof value.container === "string" && value.container !== "" ? value.container : undefined,
+      program: program.replace(/\s+/gu, " ")
+    })
   }
-  for (const child of Object.values(value)) containerCalls(child, found)
+  for (const child of Object.values(value)) commandCalls(child, found)
   return found
 }
+
+/** A structured call as the boundary line it starts: its docker line, or `exec` on the host. */
+const callLine = ({ container, program }) =>
+  container === undefined
+    ? "exec"
+    : `docker exec ${containerIdentity.test(container) ? container : JSON.stringify(container)} ${program}`
 
 /**
  * The trace with each structured container call also written as its docker line.
@@ -213,7 +220,7 @@ const containerCalls = (value, found) => {
  */
 const withContainerLines = (text) =>
   text.split("\n").map((line) => {
-    const calls = containerCalls(line, [])
+    const calls = commandCalls(line, []).map(callLine)
     return calls.length === 0 ? line : [...calls, line].join("\n")
   }).join("\n")
 
@@ -271,6 +278,24 @@ const quietWindow = (window) =>
   window.split("\n").every((line) => /^\s*(?:exited [1-9]\d*(?: in [\d.]+m?s)?:?)?\s*$/u.test(line))
 
 /**
+ * Where the outcome of a command that ends at `start` stops: the next docker
+ * line, command or transcript event, capped at 4000 characters.
+ */
+const outcomeEnd = (text, start) => {
+  const next = text.indexOf("docker exec", start)
+  // Codex marks every command and assistant turn; older traces may instead
+  // use a shell prompt. Structured calls get these same boundaries
+  // from withContainerLines, including calls that run on the host.
+  const boundary = /\n(?:(?:exec|codex|thinking|user|tokens used)\r?(?:\n|$)|web search:|\$\s)/u
+    .exec(text.slice(start, start + 4000))
+  return Math.min(
+    next === -1 ? text.length : next,
+    boundary === null ? text.length : start + boundary.index + 1,
+    start + 4000
+  )
+}
+
+/**
  * Every in-container fetch in one trace, each read to its outcome.
  *
  * `breaches` supplies the attempts, so this cannot drift from it on *what counts
@@ -292,17 +317,7 @@ export const inContainerEgress = (trace) => {
     const at = text.indexOf(command, from)
     const start = at === -1 ? from : at + command.length
     if (at !== -1) from = start
-    const next = text.indexOf("docker exec", start)
-    // Codex marks every command and assistant turn; older traces may instead
-    // use a shell prompt. Structured calls get these same boundaries
-    // from withContainerLines, including calls that run on the host.
-    const boundary = /\n(?:(?:exec|codex|thinking|user|tokens used)\r?(?:\n|$)|web search:|\$\s)/u
-      .exec(text.slice(start, start + 4000))
-    const end = Math.min(
-      next === -1 ? text.length : next,
-      boundary === null ? text.length : start + boundary.index + 1,
-      start + 4000
-    )
+    const end = outcomeEnd(text, start)
     const window = text.slice(start, end)
     // Only literal identities can share evidence. An option or a shell
     // expression we cannot resolve gets only its own command's refusal.
@@ -377,6 +392,77 @@ export const countedBreaches = (text, observed) => {
   )
     .map((one) => one.command)
 }
+
+/**
+ * What a host fetch looks like when it did not leave the machine: any testbed
+ * refusal, or the sealed proxy's own address in the diagnostic.
+ *
+ * @category patterns
+ * @since 1.0.0
+ */
+export const HOST_REFUSALS = [
+  ...SEAL_REFUSALS,
+  /127\.0\.0\.1 port 1\b/u,
+  /(?:proxy|Proxy)[^\n]{0,60}127\.0\.0\.1:1\b/u
+]
+
+/**
+ * Every fetch in one trace that runs on the host, each read to its outcome.
+ *
+ * The testbed observation says nothing about the agent's host shell: a flows
+ * host shell is unconfined, and a codex child command can drop its proxy with
+ * `curl --noproxy '*'`. So every fetch `egress` counts that is not on the far
+ * side of a `docker exec` is a host fetch, and it is read to its outcome in the
+ * same bounded window an in-container fetch is. A structured call without a
+ * container is read as its own command line. Only a refusal in that window
+ * clears it; a fetch that printed bytes, or nothing, is not shown to have
+ * stayed on the machine.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const hostEgress = (trace) => {
+  const lines = []
+  const scanned = []
+  for (const line of trace.split("\n")) {
+    const calls = commandCalls(line, [])
+    for (const call of calls) {
+      lines.push(callLine(call))
+      scanned.push(false)
+      if (call.container === undefined) {
+        lines.push(call.program)
+        scanned.push(true)
+      }
+    }
+    // A line that carries structured calls is read through them, above.
+    lines.push(line)
+    scanned.push(calls.length === 0)
+  }
+  const text = lines.join("\n")
+  const read = []
+  let offset = 0
+  for (const [index, line] of lines.entries()) {
+    const docker = scanned[index] ? line.indexOf("docker exec") : -1
+    for (const match of scanned[index] ? line.matchAll(fetchCommand) : []) {
+      if (docker !== -1 && docker < match.index) continue
+      const start = offset + match.index + match[0].length
+      const window = text.slice(start, outcomeEnd(text, start))
+      read.push({ command: match[0].slice(0, 160), refused: HOST_REFUSALS.some((pattern) => pattern.test(window)) })
+    }
+    offset += line.length + 1
+  }
+  return read
+}
+
+/**
+ * The host fetches that count against a lane whose seal is asserted: every one
+ * the trace does not show refused.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const hostBreaches = (text) =>
+  text === undefined ? [] : hostEgress(text).filter((one) => !one.refused).map((one) => one.command)
 
 const readLog = (logsDirectory, id) => {
   const path = join(logsDirectory, `${id}.run.log`)
@@ -487,7 +573,9 @@ export const compareLanes = (
       egress: text === undefined ? undefined : egress(text),
       // The attempts above, read to their outcomes against the condition the
       // container was actually observed on.
-      countedBreaches: countedBreaches(text, sealedRow?.testbedNetworkObserved)
+      countedBreaches: countedBreaches(text, sealedRow?.testbedNetworkObserved),
+      // The host shell is outside the testbed, so its fetches are read apart.
+      hostBreaches: hostBreaches(text)
     }
   })
 
@@ -503,6 +591,7 @@ export const compareLanes = (
   const breachRows = rows.filter((row) => row.countedBreaches.length > 0)
   const failures = sealFailures({
     breaches: breachRows,
+    hostEgress: rows.filter((row) => row.hostBreaches.length > 0),
     required,
     testbedState: sealedTestbed,
     searched: rows.filter((row) => (row.egress?.webSearches.length ?? 0) > 0),
@@ -558,6 +647,14 @@ export const compareLanes = (
         breaches: row.countedBreaches.length,
         commands: row.countedBreaches.slice(0, 6)
       })),
+      // Host fetches the trace does not show refused. The testbed observation
+      // cannot speak for the host shell, so an asserted seal fails on any.
+      instancesWithHostBreaches: rows.filter((row) => row.hostBreaches.length > 0).map((row) => ({
+        id: row.id,
+        sealed: row.sealed.verdict,
+        breaches: row.hostBreaches.length,
+        commands: row.hostBreaches.slice(0, 6)
+      })),
       // The other surface of the seal, counted the same way and for the same
       // reason: the lane-wide total is the claim, and any instance behind a
       // non-zero total is named.
@@ -583,7 +680,8 @@ export const compareLanes = (
  * A `bridge` or `unrecorded` lane owes nothing new: those are the lanes read
  * back off their traces, reported with the hole they have, and nothing about
  * them is retroactively re-graded. A `none` lane owes observed isolation,
- * complete traces, and no container breaches or web searches. These are
+ * complete traces, and no container breaches, unrefused host fetches or web
+ * searches. These are
  * assertions rather than descriptions.
  *
  * `require` forces the `none` obligations whatever the ledger claims, which is
@@ -594,7 +692,9 @@ export const compareLanes = (
  * @category conversions
  * @since 0.1.0
  */
-export const sealFailures = ({ breaches, required, searched = [], testbedState, untraced = [] }) => {
+export const sealFailures = (
+  { breaches, hostEgress: hosts = [], required, searched = [], testbedState, untraced = [] }
+) => {
   const failures = []
   if (testbedState.claim === "mixed") {
     failures.push({
@@ -626,6 +726,12 @@ export const sealFailures = ({ breaches, required, searched = [], testbedState, 
     failures.push({
       kind: "in-container egress",
       detail: `${row.id} fetched from inside its testbed container, which a --network none container cannot do`
+    })
+  }
+  for (const row of hosts) {
+    failures.push({
+      kind: "host egress",
+      detail: `${row.id} ran a host fetch its transcript does not show refused, which no testbed network seals`
     })
   }
   failures.push(...traceFailures({ searched, untraced }))
@@ -718,7 +824,7 @@ export const render = (result) => {
     if (asserted) {
       lines.push(
         "**Sealed by construction.** Every attempted row observed `none` and has a transcript."
-          + " No transcript contains a counted in-container breach or a web search."
+          + " No transcript contains a counted in-container breach, an unrefused host fetch or a web search."
           + " The traces cross-check the observation: the breach count below has to be zero,"
           + " and a non-zero one would mean the constraint did not hold somewhere the ledger did not see."
       )
@@ -730,7 +836,7 @@ export const render = (result) => {
       `**${seal.failures.length} failed assertions.** ${
         required === "none" ? "`--require none` was passed, so" : "This lane's rows claim `none`, so"
       } every container had to be observed on \`none\`, every attempted run had to leave a transcript,`
-        + " and no transcript could contain a counted in-container breach or a web search."
+        + " and no transcript could contain a counted in-container breach, an unrefused host fetch or a web search."
         + " **No number in this report is a sealed number.**"
     )
     lines.push("")

@@ -23,7 +23,8 @@
  * - **zero successful egress, in every trace.** Under `none` this is redundant,
  *   which is the point: the breach column has to come out zero *by
  *   construction*, and a non-zero one means the constraint did not hold
- *   somewhere the ledger did not see.
+ *   somewhere the ledger did not see. The host shell is outside the testbed,
+ *   so a host fetch counts against the lane unless the trace shows it refused.
  *
  * **An attempt is not an outcome, and under `none` the difference is the whole
  * report.** `breaches` in `compare-codex-lanes.mjs` deliberately does not read a
@@ -44,7 +45,7 @@
  * container the old rule stands unchanged, so no `bridge` lane's report moves.
  *
  * None of that logic lives here. `egress`, `inContainerEgress`,
- * `provedUnnetworked` and `countedBreaches` are imported from
+ * `provedUnnetworked`, `countedBreaches` and `hostEgress` are imported from
  * `compare-codex-lanes.mjs`, beside the patterns they extend, so the one-lane
  * scan and the two-lane comparison cannot reach different verdicts about the
  * same trace.
@@ -65,7 +66,14 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { countedBreaches, egress, inContainerEgress, provedUnnetworked, TESTBED_MODES } from "./compare-codex-lanes.mjs"
+import {
+  countedBreaches,
+  egress,
+  hostEgress,
+  inContainerEgress,
+  provedUnnetworked,
+  TESTBED_MODES
+} from "./compare-codex-lanes.mjs"
 
 /**
  * Every ledger row for one instance, folded into the fields a seal is read off.
@@ -217,11 +225,18 @@ export const scan = ({ journals, ledger, logs, require: required }) => {
     const unnetworked = instance.observed === "none" && text !== undefined
       && provedUnnetworked(text, inContainer)
     const counted = countedBreaches(text, instance.observed)
+    // The host shell is outside the testbed: only its own refusal clears a
+    // host fetch, whatever the container was observed on.
+    const host = text === undefined ? [] : hostEgress(text)
+    const hostBreaches = host.filter((one) => !one.refused).map((one) => one.command)
     return {
       ...instance,
       attempts: found.attempts,
       breaches: counted,
       commands: found.commands,
+      hostAttempts: host.length,
+      hostBreaches,
+      hostRefused: host.length - hostBreaches.length,
       inContainerAttempts: inContainer.length,
       inContainerRefused: inContainer.length - counted.length,
       unnetworked,
@@ -244,6 +259,7 @@ export const scan = ({ journals, ledger, logs, require: required }) => {
 
   const notSealed = rows.filter((row) => row.observed !== "none")
   const breached = rows.filter((row) => row.breaches.length > 0)
+  const hostBreached = rows.filter((row) => row.hostBreaches.length > 0)
   const searched = rows.filter((row) => row.webSearches.length > 0)
   const untraced = rows.filter((row) => !row.traced)
   const missingAgentEvidence = rows.filter((row) => row.traceStatus === "missing-agent-evidence")
@@ -257,6 +273,9 @@ export const scan = ({ journals, ledger, logs, require: required }) => {
       failures.push(`${notSealed.length} container(s) were not observed \`none\``)
     }
     if (breached.length > 0) failures.push(`${breached.length} run(s) fetched from inside the testbed`)
+    if (hostBreached.length > 0) {
+      failures.push(`${hostBreached.length} run(s) ran a host fetch the trace does not show refused`)
+    }
     failures.push(...traceFailures({ searched, untraced }).map((failure) => failure.detail))
   }
   return {
@@ -264,6 +283,7 @@ export const scan = ({ journals, ledger, logs, require: required }) => {
     breached,
     claim,
     failures,
+    hostBreached,
     notSealed,
     missingAgentEvidence,
     observed: Object.fromEntries(observed),
@@ -272,6 +292,9 @@ export const scan = ({ journals, ledger, logs, require: required }) => {
     totals: {
       attempts: rows.reduce((sum, row) => sum + row.attempts, 0),
       breaches: rows.reduce((sum, row) => sum + row.breaches.length, 0),
+      hostAttempts: rows.reduce((sum, row) => sum + row.hostAttempts, 0),
+      hostBreaches: rows.reduce((sum, row) => sum + row.hostBreaches.length, 0),
+      hostRefused: rows.reduce((sum, row) => sum + row.hostRefused, 0),
       inContainerAttempts: rows.reduce((sum, row) => sum + row.inContainerAttempts, 0),
       inContainerRefused: rows.reduce((sum, row) => sum + row.inContainerRefused, 0),
       instances: rows.length,
@@ -305,6 +328,9 @@ export const render = (result, { label, ledger }) => {
   lines.push(`| in-container fetches attempted | ${result.totals.inContainerAttempts} |`)
   lines.push(`| of those, the trace shows failing | ${result.totals.inContainerRefused} |`)
   lines.push(`| **fetches counted against the lane (breaches)** | **${result.totals.breaches}** |`)
+  lines.push(`| host fetches attempted | ${result.totals.hostAttempts} |`)
+  lines.push(`| of those, the trace shows refused | ${result.totals.hostRefused} |`)
+  lines.push(`| **host fetches not shown refused** | **${result.totals.hostBreaches}** |`)
   lines.push(`| web-search tool lines | ${result.totals.webSearches} |`)
   lines.push("")
 
@@ -347,6 +373,18 @@ export const render = (result, { label, ledger }) => {
     }
     lines.push("")
   }
+  if (result.hostBreached.length > 0) {
+    lines.push("## Where the host shell was not shown refused", "")
+    lines.push(
+      "Each of these ran a fetch on the host that the trace does not show refused. No testbed network seals the"
+        + " host shell.",
+      ""
+    )
+    for (const row of result.hostBreached) {
+      for (const line of row.hostBreaches) lines.push(`- ${row.id} — \`${line}\``)
+    }
+    lines.push("")
+  }
   if (result.searched.length > 0) {
     lines.push("## Web-search lines", "")
     for (const row of result.searched) lines.push(`- ${row.id} — ${row.webSearches.length}`)
@@ -368,7 +406,7 @@ export const render = (result, { label, ledger }) => {
     ? `**Verdict: FAILED.** ${result.failures.join("; ")}.`
     : result.asserted
     ? "**Verdict: sealed.** Every container was observed `none`, and every fetch attempted inside one is shown "
-      + "failing in the run's own trace."
+      + "failing in the run's own trace, and so is every fetch attempted on the host."
     : `**Verdict: not asserted.** The lane's rows claim \`${result.claim}\`, so the counts above are a `
       + "reading of its traces and not a gate. Pass `--require none` to a lane that claims one."
   lines.push(verdict, "")

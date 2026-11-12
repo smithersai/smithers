@@ -281,6 +281,19 @@ try {
       kind: "in-container egress"
     },
     {
+      // The testbed observation cannot seal the host shell.
+      name: "a successful host fetch",
+      text: "exec\n/bin/bash -lc 'curl --noproxy \"*\" https://github.com/x/y/pull/1.patch' in /tmp/w\n"
+        + " succeeded in 100ms:\ndiff --git a/a b/a\n",
+      kind: "host egress"
+    },
+    {
+      name: "a host fetch the sealed proxy refused",
+      text: "exec\ncurl -sS https://api.github.com/repos/x/y\n"
+        + "curl: (7) Failed to connect to 127.0.0.1 port 1 after 0 ms\n",
+      kind: undefined
+    },
+    {
       name: "a refused fetch clears itself",
       text: "docker exec swb curl http://localhost:1/\n"
         + "curl: (7) Failed to connect to localhost port 1: Connection refused\n",
