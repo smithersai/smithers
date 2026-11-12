@@ -68,7 +68,12 @@ terminal transition:
 
 Whichever arrives first wins. It closes the connection once, fails every pending
 request with that one error, and rejects all later traffic with the same error,
-so a caller never waits on a reply that can no longer come. A clean child exit
+so a caller never waits on a reply that can no longer come. A transition other
+than scope closure also stops the child process, so a dead session does not
+keep the server running, with the credentials in its environment, until the
+scope closes. Nothing reconnects: connect again in a new scope to continue.
+`McpFlows.connected` is bound to one session, so its flows fail with the same
+error until the host rebuilds the source. A clean child exit
 is still a closed session: Node reports an ordinary exit by ending stdout
 successfully. When a healthy connection's scope closes, its terminal reason is
 recorded before I/O teardown, so cleanup does not report "stdin closed".

@@ -854,7 +854,10 @@ const snapshotArguments = (
  *
  * The tool catalog is a snapshot: a server that changes its tools after
  * connecting (a `notifications/tools/list_changed` push) is not re-polled.
- * {@link McpFlows} rebuilds by reconnecting to refresh.
+ * Nothing reconnects: after a terminal error (a malformed reply, an oversized
+ * frame, the server exiting) the session stops the server process and every
+ * later call fails with that error. Connect again in a new scope to refresh
+ * the catalog or to continue.
  * Catalog input schemas must declare `type: "object"`. A later tool result may
  * omit `content` when it carries `structuredContent`; a declared output schema
  * is enforced for the documented keyword subset.

@@ -25,6 +25,12 @@
 
 ### Fixed
 
+- A stdio session that ends without its scope closing (a malformed or oversized
+  frame, a closed stdin or stdout, a blocked server-response admission) now
+  stops the server process. It previously kept running, holding the
+  credentials in its environment, until the caller's scope closed. The
+  `McpClient.connect` reference no longer claims `McpFlows` reconnects: nothing
+  reconnects, so connect again in a new scope.
 - Stderr diagnostics are redacted one complete line at a time before the
   `maxStderrBytes` cap. Capping raw bytes first could cut a credential's
   recognizable prefix and hand its remainder to the private diagnostic observer

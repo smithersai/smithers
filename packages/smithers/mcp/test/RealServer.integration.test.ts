@@ -776,6 +776,35 @@ describe("McpClient against a real MCP server", () => {
     }
   })
 
+  it("stops the child process when a protocol error ends the session before its scope closes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "flows-mcp-terminal-"))
+    const marker = join(directory, "pid")
+    try {
+      const errors = await execute(Effect.scoped(Effect.gen(function*() {
+        const client = yield* connectNode("reply-without-result-linger", [marker])
+        const pid = Number(readFileSync(marker, "utf8"))
+        expect(Number.isSafeInteger(pid) && pid > 1).toBe(true)
+        const first = yield* Effect.flip(client.callTool("add", { a: 1, b: 2 }))
+        // The scope is still open: only the terminal transition can stop it.
+        yield* Effect.promise(() =>
+          vi.waitFor(() => {
+            expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
+          }, { timeout: 5_000 })
+        )
+        const later = yield* Effect.flip(client.callTool("add", { a: 1, b: 2 }))
+        return { first, later }
+      })))
+      expect(errors.first).toMatchObject({
+        code: "protocol_error",
+        server: "reply-without-result-linger",
+        message: expect.stringContaining("malformed JSON-RPC reply")
+      })
+      expect(errors.later).toBe(errors.first)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it("connects and projects tools through McpFlows.connected", async () => {
     const source = await execute(Effect.scoped(Effect.provide(
       McpFlows.connected({

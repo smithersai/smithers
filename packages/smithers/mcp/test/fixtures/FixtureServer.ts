@@ -22,7 +22,9 @@ const closeMarker = process.argv[2]
 const depth = Number(process.argv[3] || 0)
 const secret = process.env.MCP_DIAGNOSTIC_TEST_SECRET
 
-if (closeMarker && mode === "normal") fs.writeFileSync(closeMarker, String(process.pid))
+if (closeMarker && (mode === "normal" || mode === "reply-without-result-linger")) {
+  fs.writeFileSync(closeMarker, String(process.pid))
+}
 
 const startupDiagnostic = mode === "stderr-exit"
   ? { text: "distinctive startup diagnostic\ntoken=sk-ant-test-0123456789abcdef\n", code: 17 }
@@ -298,6 +300,12 @@ reader?.on("line", (line) => {
         reader.close()
         process.stdin.destroy()
       })
+      setInterval(() => {}, 1000)
+      return
+    }
+    if (mode === "reply-without-result-linger") {
+      // A malformed reply, then a server that outlives its stdin closing.
+      send({ jsonrpc: "2.0", id: request.id })
       setInterval(() => {}, 1000)
       return
     }

@@ -275,8 +275,12 @@ export const connect = (
         )
       )
 
-    /** Closes once, fails every waiter, and rejects all future traffic. */
-    const closeWith = (baseError: McpError, drainStderr = true) =>
+    /**
+     * Closes once, fails every waiter, rejects all future traffic, and stops
+     * the child. Scope closure skips the stderr drain and the kill: the scope
+     * already tears the child down.
+     */
+    const closeWith = (baseError: McpError, scopeClosing = false) =>
       Effect.uninterruptible(Effect.gen(function*() {
         const waiters = yield* Ref.modify(state, (current) =>
           current._tag === "Closed"
@@ -287,7 +291,7 @@ export const connect = (
         // share the terminal result, so none can tear down the stderr reader
         // merely because a different process signal won the close race.
         yield* Queue.shutdown(outbound)
-        yield* (drainStderr && diagnosticErrorCodes.has(baseError.code)
+        yield* (!scopeClosing && diagnosticErrorCodes.has(baseError.code)
           ? Fiber.await(stderrDrainer).pipe(
             Effect.asVoid,
             Effect.timeoutOrElse({ duration: terminalStderrDrainMs, orElse: () => Effect.void }),
@@ -302,6 +306,11 @@ export const connect = (
               discard: true
             })
           })))
+        // A dead session must not keep its server running, holding the
+        // credentials in its environment, until the caller's scope closes.
+        // Scope closure may interrupt a child slow to exit; its release then
+        // finishes the teardown.
+        if (!scopeClosing) yield* handle.kill().pipe(Effect.ignore, Effect.interruptible)
       }))
 
     // Writer: drains outbound frames into the process's stdin for the life of
@@ -319,7 +328,7 @@ export const connect = (
       }),
       Stream.map((record) => record.frame),
       Stream.run(handle.stdin),
-      Effect.onExit((exit) => closeWith(Transport.closed(options.server, "stdin closed"), !Exit.hasInterrupts(exit))),
+      Effect.onExit((exit) => closeWith(Transport.closed(options.server, "stdin closed"), Exit.hasInterrupts(exit))),
       Effect.forkScoped
     )
 
@@ -409,7 +418,7 @@ export const connect = (
     // Finalizers run in reverse order. Record scope closure before interrupting
     // the I/O fibers, whose cleanup must not replace it with "stdin closed".
     // Scope closure also tears down the child, so no cancellation is needed.
-    yield* Effect.addFinalizer(() => closeWith(Transport.closed(options.server, "connection scope closed"), false))
+    yield* Effect.addFinalizer(() => closeWith(Transport.closed(options.server, "connection scope closed"), true))
 
     const takePending = (id: number): Effect.Effect<boolean> =>
       Ref.modify(state, (current) => {
