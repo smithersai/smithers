@@ -6,8 +6,9 @@ import { it } from "@effect/vitest"
 import { RuntimeContext } from "alchemy"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { accountObject, gatewayOf } from "../worker/accountObject.vibe"
-import { machineObject, type MachineBox, type ObjectState } from "../worker/machineObject.vibe"
-import { deadlineOf, leaseClamped, OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeFetch, probeIdentity, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+import type { MachineBox, ObjectState } from "../worker/machineObject.vibe"
+import { DIRECT_CONVERSATION, deadlineOf, leaseClamped, OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeFetch, probeIdentity, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+import { probeMachine } from "../worker/sandboxProbeContainer.vibe"
 import { makeBox, namespaceOf, type BoxFault } from "./machine-box.ts"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, Int } from "./run.vibe"
@@ -17,8 +18,10 @@ const FAULTS = ["start", "stuck", "snapshot", "destroy", "running"] as const sat
 const Input = Schema.Struct({
   prefix: Schema.Boolean,
   configured: Schema.Boolean,
+  record: Schema.Boolean,
+  max: Int,
   steps: Schema.Array(Schema.Struct({
-    kind: Schema.Literals(["sweep", "start", "read", "stop", "alarm", "lease", "other"]),
+    kind: Schema.Literals(["sweep", "start", "read", "stop", "alarm", "lease", "other", "direct", "calls"]),
     get: Schema.Boolean,
     token: Schema.Literals(["right", "wrong", "blank", "none"]),
     owner: Schema.Literals(["live", "past", "beyond", "person", "none"]),
@@ -32,21 +35,52 @@ type Step = typeof Input.Type["steps"][number]
 function stateOf(storage: ReturnType<typeof objectStorage>, id: string) {
   return { raw: { storage }, id: { toString: () => id } } as unknown as ObjectState
 }
+/** A box that counts every Container call it runs, beneath the probe's recorder, failed ones included. */
+function counting(box: ReturnType<typeof makeBox>["box"]) {
+  const ran = { calls: 0, box: undefined as unknown }
+  const counted = <A, E, R>(call: () => A!E!R) => Effect.suspend(() => { ran.calls += 1; return call() })
+  ran.box = {
+    get running() { return counted(() => box.running) },
+    start: (options: never) => counted(() => box.start(options)),
+    setInactivityTimeout: () => counted(() => box.setInactivityTimeout()),
+    interceptOutboundHttp: () => counted(() => box.interceptOutboundHttp()),
+    interceptAllOutboundHttp: () => counted(() => box.interceptAllOutboundHttp()),
+    interceptOutboundHttps: () => counted(() => box.interceptOutboundHttps()),
+    snapshotContainer: () => counted(() => box.snapshotContainer()),
+    destroy: () => counted(() => box.destroy()),
+    exec: (argv: Array<string>, options: never) => counted(() => box.exec(argv, options)),
+  }
+  return ran
+}
 const provided = <A, E>(body: A!E!(RuntimeContext | Scope.Scope)) => Effect.provideService(body, RuntimeContext, {} as never)
 
-/** The probe answers 404 off its two routes, 403 without the token, 400 for a non-probe owner and 503 when an object is
+/** The probe answers 404 off its routes, 403 without the token, 400 for a non-probe owner and 503 when an object is
  * unreachable; a sweep that answers "not running" has stopped the container; only an admitted owner starts one, and
- * no lease outlives that owner's deadline. */
+ * no lease outlives that owner's deadline. A probe machine's recording holds every Container call, up to its limit. */
 it.live("sandbox/probe", () => run("sandbox/probe", Input, (input) => provided(effect {
   const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
   const machineStorage = try Effect.try(() => objectStorage())
-  const machine = try machineObject(local.box as unknown as MachineBox, stateOf(machineStorage, "m"))
+  const ran = counting(local.box)
+  const max = input.max % 8
+  const machine = try probeMachine(ran.box as unknown as MachineBox, stateOf(machineStorage, "m"), input.record ? "record" : "passthrough", max)
+  // The direct conversation's machine always records, up to the deployed limit, over its own box.
+  const directLocal = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+  const directRan = counting(directLocal.box)
+  const direct = try probeMachine(directRan.box as unknown as MachineBox, stateOf(try Effect.try(() => objectStorage()), "d"), "record")
   // A stage deployed without its token refuses every request as signed out.
   const token = input.configured ? TOKEN : ""
   const identity = probeIdentity(token)
   let healthy = true
-  // A local machine records nothing: only the deployed probe's Container records (worker/sandboxProbeContainer.vibe).
-  const machines = try Effect.try(() => namespaceOf(() => true, { ...machine, recording: () => succeed([]) }))
+  let reachable = true
+  // Each call runs in its own scope, as each Durable Object RPC does (test/workerd/sandbox-probe.vibe's runPromise): a
+  // recorded exec settles when its call's scope closes.
+  const rpc = (object: typeof machine) => ({ apply: (...args: Parameters<typeof machine.apply>) => Effect.scoped(object.apply(...args)), recording: object.recording })
+  // An unreachable machine binding throws, as a missing Durable Object namespace does.
+  const liveStub = rpc(machine)
+  const directStub = rpc(direct)
+  const liveNamespace = try Effect.try(() => namespaceOf(() => reachable, liveStub))
+  const directNamespace = try Effect.try(() => namespaceOf(() => reachable, directStub))
+  const machines = { getByName: (name: string) => (name.endsWith(`/${DIRECT_CONVERSATION}`) ? directNamespace : liveNamespace).getByName(name) }
   const account = try accountObject(stateOf(try Effect.try(() => objectStorage()), "a"), leaseClamped(machines) as never, identity)
   const accounts = try Effect.try(() => namespaceOf(() => healthy, account))
   const { gateway } = gatewayOf(accounts as never, identity)
@@ -60,9 +94,15 @@ it.live("sandbox/probe", () => run("sandbox/probe", Input, (input) => provided(e
     { ...clean, kind: "sweep", owner: "none" }, { ...clean, kind: "lease", owner: "person" },
     { ...clean, kind: "sweep", owner: "past" }, { ...clean, kind: "read", owner: "none" },
   ] : []
+  // Every execution: the direct machine's operations and the recording, as the probe's runner asks for them.
+  const probing: ReadonlyArray<Step> = [
+    ...[0, 3, 2, 4, 1, 6].map((fault): Step => ({ ...clean, kind: "direct", fault })), ...[0, 1, 2, 3].map((fault): Step => ({ ...clean, kind: "calls", fault })),
+    { ...clean, kind: "direct", binding: false }, { ...clean, kind: "calls", binding: false },
+    { ...clean, kind: "direct", owner: "past" }, { ...clean, kind: "calls", owner: "past" },
+  ]
   let generation = 0
   let operation = 0
-  for (const step of [...lifecycle, ...input.steps]) {
+  for (const step of [...lifecycle, ...probing, ...input.steps]) {
     healthy = step.binding
     local.faults.clear()
     if (step.faulty) local.faults.add(FAULTS[step.fault % FAULTS.length]!)
@@ -76,6 +116,54 @@ it.live("sandbox/probe", () => run("sandbox/probe", Input, (input) => provided(e
       try leaseClamped(machines as never).getByName(`${holder}/${PROBE_CONVERSATION}`).apply("lease", generation, `lease-${++operation}`, String((step.fault + 1) * 3_600_000))
       const leased = (machineStorage.kv.get("machine") as { readonly leaseUntil?: number } | undefined)?.leaseUntil
       if (leased !== undefined && leased > Math.max(deadlineOf(holder) ?? 0, deadline, Date.now() + 1000) + 50) return false
+      continue
+    }
+    if (step.kind === "direct" || step.kind === "calls") {
+      // The token-only routes: one operation on the owner's direct machine, and the Container calls it recorded.
+      const conversation = ["live", "direct", "elsewhere", undefined][step.fault % 4]
+      const kind = ["start", "stop", "command", "lease", "status"][step.fault % 5]!
+      const malformed = step.fault % 7 === 6
+      let ask = HttpClientRequest.make(step.get ? "GET" : "POST")(`https://probe.invalid/api/probe/${step.kind === "direct" ? "machine" : `container${conversation === undefined ? "" : `?conversation=${conversation}`}`}`)
+      if (step.token !== "none") ask = HttpClientRequest.setHeader(ask, "authorization", `Bearer ${step.token === "right" ? TOKEN : step.token === "wrong" ? "guess" : ""}`)
+      const holder = owners[step.owner]
+      reachable = step.binding
+      if (holder !== undefined) ask = HttpClientRequest.setHeader(ask, OWNER_HEADER, holder)
+      if (step.kind === "direct" && !step.get) ask = HttpClientRequest.bodyText(ask, malformed ? "[1]" : JSON.stringify([kind, `direct-${++operation}`, kind === "lease" ? "60000" : "echo hi"]), "application/json")
+      const web = try HttpClientRequest.toWeb(ask)
+      let answer: HttpServerResponse.HttpServerResponse
+      provide HttpServerRequest.HttpServerRequest = HttpServerRequest.fromWeb(web) {
+        answer = try fetch
+      }
+      reachable = true
+      const text = try promise(() => HttpServerResponse.toWeb(answer).text())
+      const body = try Effect.orDie(Effect.try(() => JSON.parse(text) as Record<string, unknown>))
+      const refused = step.get ? 404 : !input.configured || step.token !== "right" ? 403 : holder === undefined || step.owner === "person" ? 400 : undefined
+      if (refused !== undefined) {
+        if (answer.status !== refused) return false
+        continue
+      }
+      if (step.kind === "direct") {
+        // Only an owner before its deadline, within the window, reaches its machine; a body is a known operation.
+        const expected = step.owner !== "live" ? 403 : malformed ? 400 : !step.binding ? 503 : 200
+        if (answer.status !== expected || (expected === 200 && typeof body["ok"] !== "boolean")) return false
+        continue
+      }
+      // A recording is read for the probe's two conversations, before or after the deadline. It holds every call the
+      // box ran, in record mode up to the limit and in passthrough none; each inactivity timeout and the run script's
+      // timeout word are erased.
+      if (conversation === "elsewhere" || conversation === undefined || !step.binding) {
+        if (answer.status !== (conversation === "elsewhere" || conversation === undefined ? 400 : 503)) return false
+        continue
+      }
+      const calls = body["calls"] as ReadonlyArray<{ readonly operation: string; readonly input: unknown }>
+      const expected = conversation === DIRECT_CONVERSATION ? directRan.calls : input.record ? Math.min(max, ran.calls) : 0
+      if (answer.status !== 200 || !Array.isArray(calls) || calls.length !== expected) return false
+      for (const call of calls) {
+        if (call.operation === "setInactivityTimeout" && call.input !== "<duration>") return false
+        const script = call.operation === "exec" ? (call.input as { readonly argv: ReadonlyArray<string> }).argv[2] : undefined
+        const words = script === undefined ? [] : script.match(/'((?:[^']|'\\'')*)'/g) ?? []
+        if (words.length > 3 && words[3] !== "'<timeout>'") return false
+      }
       continue
     }
     const path = step.kind === "sweep" ? "/api/probe/sweep" : step.kind === "other" ? "/api/health"

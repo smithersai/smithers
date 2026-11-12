@@ -1508,3 +1508,14 @@ its specification and both to the regular expression the build used before (`/^#
 `/word/i`, `/2026-[0-9]{2}-[0-9]{2}/`, `indexOf`), and `decisionLabel` to its replace. Whole dates are single tokens:
 built from four, a draw almost never made one, and a `firstDate` stepping by two survived. Mutants caught:
 `findRulings` skipping the unit after a ruling; `firstDate` stepping by two.
+
+`worker/sandboxProbeContainer.vibe`, `sandboxProbeFetch.vibe`'s direct and recording routes: `sandbox/probe` builds its
+machines with `probeMachine` over a box that counts every Container call beneath the recorder. The live conversation's
+machine draws passthrough or record mode and a limit of 0 to 7; the direct conversation's always records at the
+deployed limit. Every execution drives the direct machine (start, lease, command, status, stop, a malformed body), reads
+both recordings, a third conversation and none, and both routes with the machine binding unreachable (503). A recording
+holds exactly the calls the box ran, up to its limit, none in passthrough, with every inactivity timeout and the run
+script's timeout word erased. Each machine call runs in its own scope, as a Durable Object RPC does: sharing the
+execution's scope left a command's exec unsettled, so unrecorded, until the execution ended (a harness artifact; the
+workerd host runs each call through its own `runPromise`). Mutants caught: `recordSlot` keeping one call past the
+limit; the erased word moved from the fourth to the third; the recording read's 503 answered as 502.
