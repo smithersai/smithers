@@ -12,6 +12,13 @@
 
 ### Fixed
 
+- `CommandSandbox` `acquire` fails with what the transport printed when the
+  transport could not run the guest probe, such as an `ssh` that cannot reach
+  the machine or cannot be started: `unavailable` with "`<name>` could not be
+  reached: it exited `<code>`: `<stderr>`". Since pidfiles moved to a
+  directory per user, `acquire` read the probe's empty output as a guest that
+  "reported no numeric user id" and dropped the transport's own error.
+
 - Two concurrent `Sandbox.job` starts with one key both return the handle.
   The start that lost the job directory asked whether the job had settled
   before whether its owner was alive; when the owner launched and exited in

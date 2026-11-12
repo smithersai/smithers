@@ -456,6 +456,23 @@ describe("CommandSandbox", () => {
       })
     }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
 
+  it.effect("fails acquire with what a transport that could not run the probe printed", () =>
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner
+      // Exits before any guest shell starts, as ssh does when it cannot reach the machine.
+      const unreachable = CommandSandbox.make({
+        spawner,
+        prefix: ["/bin/sh", "-c", "echo 'transport: no route to the machine' >&2; exit 255", "transport"],
+        name: "gateway",
+        workdir: join(root, "unreachable")
+      })
+      expect(yield* Effect.flip(unreachable.acquire(key("unreachable")))).toMatchObject({
+        code: "unavailable",
+        message: "gateway could not be reached: it exited 255: transport: no route to the machine"
+      })
+      expect(existsSync(join(root, "unreachable"))).toBe(false)
+    }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
+
   it.effect("serves the GNU metadata operations only to a Linux guest", () =>
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner

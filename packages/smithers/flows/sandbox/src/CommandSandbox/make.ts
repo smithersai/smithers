@@ -125,6 +125,13 @@ export const make = (options: CommandSandboxOptions): Provider => {
     acquire: (id) =>
       Effect.gen(function*() {
         const probed = yield* run(shell(`uname -s; id -u; ${bootProbe}`))
+        // The probe's last step cannot fail, so a non-zero exit is the
+        // transport's own, such as an ssh that cannot reach the machine.
+        if (probed.code !== 0) {
+          return yield* Effect.fail(
+            unreachable(`${name} could not be reached: it exited ${probed.code}: ${probed.stderr.trim()}`)
+          )
+        }
         const [kernel, uid = "", ...rest] = new TextDecoder().decode(probed.stdout).split("\n")
         let boot = rest.join("").trim()
         if (!/^[0-9]+$/.test(uid)) return yield* Effect.fail(unreachable(`${name} reported no numeric user id`))
