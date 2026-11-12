@@ -18,7 +18,12 @@ describe("Transcript", () => {
         "sk-abcdefgh1234",
         "sess-abcdefgh1234",
         "Bearer abc.def",
+        "Basic dXNlcjpwYXNzd29yZA==",
         "ghp_abcdefgh1234",
+        "gho_abcdefgh1234",
+        "ghu_abcdefgh1234",
+        "ghs_abcdefgh1234",
+        "ghr_abcdefgh1234",
         "github_pat_abcdefgh1234",
         "eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl",
         "a.person@example.org"

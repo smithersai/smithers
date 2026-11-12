@@ -25,7 +25,7 @@ ACP agent ─ session/update ─▶ scrub, bound, number
   when the session ends.
   Nothing but `session/update` is read, so an adapter's `_auth/*` notices, which carry the account, never leave.
 - **Scrubbed.** Every string is scrubbed before it is spooled: the profile's `secretEnv` values and its `prestart`
-  environment, then `sk-` and `sess-` keys, `Bearer` credentials, GitHub tokens, three-part JWTs and email addresses.
+  environment, then `sk-` and `sess-` keys, `Bearer` and `Basic` credentials, GitHub tokens of every kind (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), three-part JWTs and email addresses.
 - **Bounded.** An event is at most 16 KiB as JSON. A longer message is split into several chunks of the same message;
   any other long string is cut, ending `…[cut]`. A job's spool holds at most 64 MiB; past it, one
   `_smithers/truncated` event.

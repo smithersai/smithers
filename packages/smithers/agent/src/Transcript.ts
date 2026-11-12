@@ -92,9 +92,10 @@ export const REDACTED = "[redacted]"
 
 /**
  * The shapes scrubbed whatever a runner's profile says (OBS-5): API keys of
- * the `sk-` and `sess-` kinds, bearer credentials, GitHub tokens, three-part
- * JWTs, and email addresses (an agent can report the account it is signed in
- * as).
+ * the `sk-` and `sess-` kinds, `Bearer` and `Basic` credentials, GitHub
+ * tokens of every kind (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` and
+ * `github_pat_`), three-part JWTs, and email addresses (an agent can report
+ * the account it is signed in as).
  *
  * @category constants
  * @since 1.0.0
@@ -103,7 +104,8 @@ export const SHAPES: ReadonlyArray<RegExp> = [
   /\bsk-[A-Za-z0-9_-]{8,}/g,
   /\bsess-[A-Za-z0-9_-]{8,}/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]+/g,
-  /\bghp_[A-Za-z0-9]{8,}/g,
+  /\bBasic\s+[A-Za-z0-9+/=]{8,}/g,
+  /\bgh[pousr]_[A-Za-z0-9]{8,}/g,
   /\bgithub_pat_[A-Za-z0-9_]{8,}/g,
   /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g,
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g

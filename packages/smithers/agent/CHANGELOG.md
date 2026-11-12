@@ -47,6 +47,11 @@
 
 ### Fixed
 
+- The transcript scrubber redacts every GitHub token kind (`ghp_`, `gho_`,
+  `ghu_`, `ghs_`, `ghr_`, `github_pat_`) and `Basic` credentials. It used to
+  redact only `ghp_` and `github_pat_`, so an agent that printed an OAuth,
+  user-to-server, installation or refresh token sent it into the stored run
+  transcript (#4953).
 - `branch-doctor` runs a planned command only when the planner marks it safe
   and it is on the new `runnable` list of git status and abort commands. The
   planner's prompt carries repository text, so its `safe` flag alone let a
