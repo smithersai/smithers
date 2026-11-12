@@ -5,8 +5,8 @@
  * republished whatever credential the implementation error carried — to the
  * server log and to the remote caller — defeating the bounded, redacted
  * rendering the engine had already applied to the same value one layer down.
- * Both exits are pinned here, for the engine's own undeclared-failure defect
- * and for a defect raised inside a body.
+ * The caller's exit and every server log are pinned here, including a
+ * discarded execution whose follower outlives the RPC handler.
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Flow, FlowRuntime } from "@smthrs/flow"
@@ -39,6 +39,7 @@ const flows = [Leaky] as const
 
 interface Captured {
   readonly message: unknown
+  readonly cause: Cause.Cause<unknown>
   readonly annotations: Readonly<Record<string, unknown>>
 }
 
@@ -55,12 +56,13 @@ const render = (message: unknown): string =>
     .join(" ")
 
 /** Serves one flow over RPC and returns the caller's exit with the server's log. */
-const callOverRpc = (body: () => Effect.Effect<never, never>) =>
+const callOverRpc = (body: () => Effect.Effect<never, never>, operation: "execute" | "discard" = "execute") =>
   Effect.gen(function*() {
     const logs: Array<Captured> = []
     const capture = Logger.make((options) =>
       logs.push({
         message: options.message,
+        cause: options.cause,
         annotations: options.fiber.getRef(References.CurrentLogAnnotations)
       })
     )
@@ -68,15 +70,26 @@ const callOverRpc = (body: () => Effect.Effect<never, never>) =>
       const engine = yield* FlowRuntime.FlowRuntime
       yield* engine.register(Leaky, body)
       const client = yield* RpcTest.makeClient(FlowProxy.toRpcGroup(flows))
-      return yield* Effect.exit(
-        client["UndeclaredFailureRedaction/flow"]({ payload: {}, executionId: "redaction-1" })
+      const exit = yield* Effect.exit(
+        operation === "discard"
+          ? client["UndeclaredFailureRedaction/flowDiscard"]({ payload: {}, executionId: "redaction-1" })
+          : client["UndeclaredFailureRedaction/flow"]({ payload: {}, executionId: "redaction-1" })
       )
+      if (operation === "discard") {
+        const isFollowerLog = (entry: Captured) =>
+          entry.annotations["flow"] === Leaky._tag &&
+          entry.annotations["executionId"] === "redaction-1" &&
+          (entry.cause.reasons.length > 0 || render(entry.message).startsWith("A discarded flow failed"))
+        for (let turn = 0; turn < 100 && !logs.some(isFollowerLog); turn++) yield* Effect.yieldNow
+        expect(logs.some(isFollowerLog)).toBe(true)
+      }
+      return exit
     })).pipe(
       Effect.provide(FlowProxyServer.layerRpcHandlers(flows).pipe(Layer.provideMerge(FlowEngine.layerMemory))),
       Effect.provideService(Logger.CurrentLoggers, new Set([capture]))
     )
     const proxyLines = logs.filter((entry) => entry.annotations["module"] === "FlowProxyServer")
-    return { exit, proxyLines }
+    return { exit, proxyLines, logs }
   })
 
 /** The value the caller's exit died with. */
@@ -168,6 +181,32 @@ describe("a handler defect whose message spells a credential another way", () =>
         for (const line of proxyLines) {
           expect(render(line.message)).not.toContain(leaked)
         }
+      }))
+  }
+})
+
+describe("a served discarded flow whose handler dies carrying a credential", () => {
+  for (
+    const [name, body] of [
+      ["a body defect", () => Effect.die(upstream)],
+      ["an undeclared failure", () => Effect.fail(upstream as never)]
+    ] as const
+  ) {
+    effect("redacts every server log after discard returns for " + name, () =>
+      Effect.gen(function*() {
+        const { exit, logs } = yield* callOverRpc(body, "discard")
+
+        expect(exit).toEqual(Exit.succeed("redaction-1"))
+        expect(logs.some((line) =>
+          line.annotations["flow"] === Leaky._tag &&
+          line.annotations["executionId"] === "redaction-1"
+        )).toBe(true)
+        for (const line of logs) {
+          expect(render(line.message)).not.toContain(secret)
+          expect(Cause.pretty(line.cause)).not.toContain(secret)
+          expect(render(line.annotations)).not.toContain(secret)
+        }
+        expect(logs.some((line) => render(line.message).includes("[REDACTED]"))).toBe(true)
       }))
   }
 })

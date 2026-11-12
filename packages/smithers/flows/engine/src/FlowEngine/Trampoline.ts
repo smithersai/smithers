@@ -12,12 +12,14 @@
 
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
+import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import type { Encoded } from "./Encoded.ts"
 import * as Round from "./Round.ts"
 
@@ -315,7 +317,8 @@ const followLineage = Effect.fnUntraced(function*(follower: Follower, first: Dis
  * Admits a discarded execution, then follows its settlements in the
  * registration's scope so closing the submitting scope cannot truncate the
  * lineage. A low-level adapter without a local handler uses the caller's
- * scope instead.
+ * scope instead. Failures retain execution identity in the log, with redacted
+ * defect diagnostics and no declared failure payload.
  */
 const submit = Effect.fnUntraced(function*(follower: Follower, first: Dispatch) {
   const { executionId, lineage, origin } = follower
@@ -329,7 +332,18 @@ const submit = Effect.fnUntraced(function*(follower: Follower, first: Dispatch) 
   const scope = follower.declarations.get(origin._tag)?.at(-1)?.scope ?? (yield* Effect.scope)
   yield* Effect.forkIn(
     followLineage(follower, first).pipe(
-      Effect.ignoreCause({ log: "Error" }),
+      Effect.catchCause((cause) => {
+        const defect = cause.reasons.find(Cause.isDieReason)
+        // A dying finalizer promotes declared failures to defects, so a
+        // compound cause cannot safely identify a diagnostic's payload.
+        const log = defect === undefined || cause.reasons.length !== 1
+          ? Effect.logError("A discarded flow failed")
+          : Effect.logError("A discarded flow failed", renderDiagnostic(defect.defect))
+        return log.pipe(Effect.annotateLogs({
+          failureKind: Cause.hasInterruptsOnly(cause) ? "interruption" : defect === undefined ? "failure" : "defect",
+          reasonCount: cause.reasons.length
+        }))
+      }),
       Effect.annotateLogs({ flow: origin._tag, executionId })
     ),
     scope
