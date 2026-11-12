@@ -56,6 +56,8 @@ Named browser sites and status:
 | `src/core/conversation.vibe` `apply`: `event.seq !== conversation.seq + 1` | Every browser caller goes through `receive`, which drops a repeated event and marks a gap before calling `apply`. The Worker's sequencer reaches it; the unit gate measures it. |
 | `src/core/conversation.vibe` `apply`: a fractional or negative walkthrough `step`, `duration` or seek | The page decodes every event with `EventSchema`, whose `Seq` is a non-negative integer, so such an event fails decoding first (vl-coverage-core: the forged fault crashed Foldkit's schema check when it sent one). The contracts keep the checks because Dafny's numbers are not integers. |
 | `src/core/conversation.vibe` `hasClientId("")` | `apply` refuses an empty client id before calling it, and `post` before that. |
+| `src/core/wikiPageDecision.vibe` `fixtureVerdict`: `unchanged` | The page stops a save that changes nothing ("No changes.", `e2e/core-wiki.spec.ts`) before it reaches the fixture repository. |
+| `src/core/wikiPageDecision.vibe` `fixtureVerdict`: `stale` | A save's base is the page the editor read, and the mock never changes a page: its saves and proposals open reviews. The GitHub host's conflict reaches the browser through `fault=wiki-conflict`. |
 
 ### A backend that breaks the conversation's rules (vl-coverage-core, 2026-11-12)
 
