@@ -59,6 +59,7 @@ import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
 import * as SeatRouter from "../src/SeatRouter.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
+import * as DurableRun from "./DurableRun.ts"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -2127,20 +2128,9 @@ describe("AgentAction seat auto", () => {
           engine === undefined ? FlowEngine.layerMemory : Layer.succeed(FlowRuntime.FlowRuntime)(engine)
         )
       })
-    // Every wait below is a bounded count of scheduler turns, never a duration:
-    // each turn lets the engine's own I/O commit, and a loaded host spends
-    // more turns, not more milliseconds, before a correct run gets there.
-    const turns = 20_000
+    // The memory engine runs on the real clock; a durable run wakes when the test clock reaches its recorded wake.
     const settle = <A, E>(running: Fiber.Fiber<A, E>) =>
-      Effect.gen(function*() {
-        if (mode === "memory") return yield* Fiber.join(running)
-        for (let turn = 0; turn < turns; turn++) {
-          if (running.pollUnsafe() !== undefined) return yield* Fiber.join(running)
-          yield* Effect.yieldNow
-          yield* TestClock.adjust("1 second")
-        }
-        return yield* Effect.die(new Error("the routed run did not settle after its recorded wake"))
-      })
+      mode === "memory" ? Fiber.join(running) : DurableRun.settle(running, executionId)
     const observed = await Effect.runPromise(Effect.scoped(
       Effect.gen(function*() {
         const state = yield* DurableEngineState.DurableEngineState
@@ -2152,17 +2142,25 @@ describe("AgentAction seat auto", () => {
             Effect.forkChild({ startImmediately: true })
           )
           let parked = false
-          for (let turn = 0; turn < turns && !parked; turn++) {
-            if (mode === "memory") {
+          if (mode === "memory") {
+            // The memory engine journals nothing: read its park off the run each turn until it parks or ends.
+            while (!parked) {
               const result = yield* RoutedFlow.poll(executionId).pipe(Effect.provideContext(context))
               parked = Option.isSome(result) && result.value._tag === "Suspended"
-            } else {
-              const waiting = yield* state.waitingRuns({ reason: "quota" })
-              parked = waiting.some((row) => row.runId === executionId && row.reason === "quota")
+              const exit = running.pollUnsafe()
+              if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
+              if (exit !== undefined) break
+              yield* Effect.yieldNow
             }
-            const exit = running.pollUnsafe()
-            if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
-            yield* Effect.yieldNow
+          } else {
+            // Read at each journal commit, with the clock held before the recorded wake.
+            parked = yield* DurableRun.untilCommitted(
+              running,
+              Effect.map(
+                state.waitingRuns({ reason: "quota" }),
+                (waiting) => waiting.some((row) => row.runId === executionId && row.reason === "quota")
+              )
+            )
           }
           expect(parked).toBe(true)
           expect(calls).toEqual(["sonnet"])

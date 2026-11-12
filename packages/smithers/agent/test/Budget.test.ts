@@ -48,6 +48,7 @@ import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
+import * as DurableRun from "./DurableRun.ts"
 
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
@@ -1184,42 +1185,16 @@ const onTestClock = <A, E>(
   )
 
 /**
- * How many scheduler turns a wait below may take before it reports a hang.
- *
- * Every turn is one read plus a macrotask, which lets the database commit
- * without advancing the clock. A correct run on a loaded host spends turns,
- * not seconds, so the budget is generous and costs an unloaded run nothing.
- */
-const turns = 20_000
-
-/** Advances the test clock, one turn at a time, until one forked run settles, then joins it. */
-const settle = <A, E>(fiber: Fiber.Fiber<A, E>): Effect.Effect<A, E> =>
-  Effect.gen(function*() {
-    for (let turn = 0; turn < turns; turn++) {
-      if (fiber.pollUnsafe() !== undefined) return yield* Fiber.join(fiber)
-      yield* Effect.yieldNow
-      yield* TestClock.adjust("1 second")
-    }
-    return yield* Effect.die(new Error("the resumed run did not settle after its recorded wake"))
-  })
-
-/**
  * The timer waits, once the run has parked between its two steps.
  *
- * Scheduler turns let the database commit without advancing the clock and
- * waking the run this case means to kill.
+ * Read at each journal commit and never by moving the clock, which would wake
+ * the run this case means to kill.
  */
 const waitForTimer = (state: DurableEngineState.Service, running: Fiber.Fiber<unknown, unknown>) =>
-  Effect.gen(function*() {
-    for (let turn = 0; turn < turns; turn++) {
-      const exit = running.pollUnsafe()
-      if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
-      const rows = yield* state.waitingRuns({ reason: "timer" })
-      if (rows.length > 0) return rows
-      yield* Effect.yieldNow
-    }
-    return yield* Effect.die(new Error("the run never persisted its timer park"))
-  })
+  DurableRun.untilCommitted(running, Effect.map(state.waitingRuns({ reason: "timer" }), (rows) => rows.length > 0))
+    .pipe(
+      Effect.flatMap((parked) => parked ? Effect.void : Effect.die(new Error("the run settled before its timer park")))
+    )
 
 /**
  * One question the budget was asked, and the answer it gave.
@@ -1313,7 +1288,7 @@ describe("a budget refusing a resumed run", () => {
                   Effect.provide(wiring)
                 )
               ).pipe(Effect.forkChild({ startImmediately: true }))
-              return yield* settle(resuming)
+              return yield* DurableRun.settle(resuming, "budget-refusal")
             })
           )
           return { callsBefore, exit }
