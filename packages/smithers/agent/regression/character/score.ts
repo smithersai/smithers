@@ -124,7 +124,8 @@ const expectText = (sink: string, value: string, expect: Suite.TextExpect): Arra
  */
 const voiceChecks = (suite: Suite.Suite, emission: Emission, allow: ReadonlyArray<string>): Array<Check> => {
   const allowed = new Set(allow.map((term) => term.toLowerCase()))
-  const keep = (terms: ReadonlyArray<string>) => terms.filter((term) => !allowed.has(term.toLowerCase()))
+  const keep = (terms: ReadonlyArray<string | RegExp>) =>
+    terms.filter((term) => typeof term !== "string" || !allowed.has(term.toLowerCase()))
   // An allowed term is removed from the text too, so a regex entry that also matches it stays quiet.
   const scrubbed = allow.reduce(
     (text, term) => text.split(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu")).join(" "),

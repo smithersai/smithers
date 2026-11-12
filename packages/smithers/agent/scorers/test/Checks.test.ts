@@ -27,6 +27,29 @@ describe("Checks.length", () => {
 })
 
 describe("Checks.includes", () => {
+  it.each(["/etc/hosts", "/usr/local/bin", "/a/b", "/Ab+cD/", "/[/", "/a/gg", "/a/uv", "renew*"])(
+    "matches the string %s literally rather than compiling it",
+    (entry) => {
+      expect(Checks.includes(`see ${entry}`, [entry]).pass).toBe(true)
+      expect(Checks.includes("different text", [entry]).pass).toBe(false)
+      expect(Checks.excludes(`wrote to ${entry}`, [entry]).pass).toBe(false)
+      expect(Checks.excludes("different text", [entry]).pass).toBe(true)
+    }
+  )
+
+  it("supports RegExp values in any-of groups and prints missing patterns", () => {
+    expect(Checks.includes("Ready by Wed", [[/Thu/, /Wed/]])).toEqual({
+      id: "includes",
+      pass: true,
+      detail: "all present"
+    })
+    expect(Checks.includes("Ready by Fri", [[/Wed/, "Thursday"]])).toEqual({
+      id: "includes",
+      pass: false,
+      detail: "missing: /Wed/ | \"Thursday\""
+    })
+  })
+
   it("requires every entry case-insensitively, with any-of groups", () => {
     expect(Checks.includes("Merged the PR and deployed.", ["merged", ["deployed", "shipped"]])).toEqual({
       id: "includes",
@@ -55,18 +78,31 @@ describe("Checks.includes", () => {
     expect(Checks.includes("costs $120 per seat", ["$12"]).pass).toBe(false)
   })
 
-  it("accepts stems written word* and /pattern/flags entries", () => {
-    expect(Checks.includes("Sam's renewal is Oct 31", ["renew*"]).pass).toBe(true)
+  it("accepts explicit patterns for prefixes and alternatives", () => {
+    expect(Checks.includes("Sam's renewal is Oct 31", [/(?<![\p{L}\p{N}_])renew[\p{L}\p{N}_]*/iu]).pass).toBe(true)
     expect(Checks.includes("Sam's renewal is Oct 31", ["renew"]).pass).toBe(false)
-    expect(Checks.includes("takes 14 minutes", ["14 min*"]).pass).toBe(true)
-    expect(Checks.includes("unrenewed", ["renew*"]).pass).toBe(false)
+    expect(Checks.includes("takes 14 minutes", [/(?<![\p{L}\p{N}_])14\s+min[\p{L}\p{N}_]*/iu]).pass).toBe(true)
+    expect(Checks.includes("unrenewed", [/(?<![\p{L}\p{N}_])renew[\p{L}\p{N}_]*/iu]).pass).toBe(false)
     expect(Checks.includes("anything", ["*"]).pass).toBe(false)
-    expect(Checks.includes("Ready by Wed", ["/\\b(Wed|Wednesday)\\b/"]).pass).toBe(true)
-    expect(Checks.includes("Ready by Thu", ["/\\b(Wed|Wednesday)\\b/"]).pass).toBe(false)
+    expect(Checks.includes("literal *", ["*"]).pass).toBe(true)
+    expect(Checks.includes("Ready by Wed", [/\b(Wed|Wednesday)\b/]).pass).toBe(true)
+    expect(Checks.includes("Ready by Thu", [/\b(Wed|Wednesday)\b/]).pass).toBe(false)
   })
 })
 
 describe("Checks.excludes", () => {
+  it.each([/abc-\d+/, /abc-\d+/g, /abc-\d+/i, /abc-\d+/gi, /abc-\d+/y, /abc-\d+/gy])(
+    "preserves the flags and state of %s across repeated checks",
+    (pattern) => {
+      pattern.lastIndex = 4
+      for (let index = 0; index < 2; index++) {
+        expect(Checks.excludes("abc-12 abc-7", [pattern]).pass).toBe(false)
+        expect(Checks.includes("abc-12 abc-7", [pattern]).pass).toBe(true)
+        expect(pattern.lastIndex).toBe(4)
+      }
+    }
+  )
+
   it("matches whole words and phrases only", () => {
     expect(Checks.excludes("I will leverage this", ["leverage"]).pass).toBe(false)
     expect(Checks.excludes("Leveraged buyouts", ["leverage"]).pass).toBe(true)
@@ -84,8 +120,8 @@ describe("Checks.excludes", () => {
     expect(Checks.excludes("see --verbose", ["--verbose"]).pass).toBe(false)
   })
 
-  it("treats a trailing * as a stem", () => {
-    expect(Checks.excludes("three receipts", ["receipt*"])).toEqual({
+  it("uses explicit patterns for stems", () => {
+    expect(Checks.excludes("three receipts", [/(?<![\p{L}\p{N}_])receipt[\p{L}\p{N}_]*/iu])).toEqual({
       id: "excludes",
       pass: false,
       detail: "found: \"receipts\""
@@ -93,10 +129,10 @@ describe("Checks.excludes", () => {
     expect(Checks.excludes("three receipts", ["receipt"]).pass).toBe(true)
   })
 
-  it("treats /pattern/flags entries as regular expressions and lists every hit", () => {
-    const check = Checks.excludes("Ticket ABC-12 and abc-7, also ABC-12", ["/ABC-\\d+/", "/abc-\\d+/gi"], "jargon")
+  it("lists every hit of explicit regular expressions", () => {
+    const check = Checks.excludes("Ticket ABC-12 and abc-7, also ABC-12", [/ABC-\d+/, /abc-\d+/gi], "jargon")
     expect(check).toEqual({ id: "jargon", pass: false, detail: "found: \"ABC-12\", \"abc-7\"" })
-    expect(Checks.excludes("abc-12", ["/ABC-\\d+/"]).pass).toBe(true)
+    expect(Checks.excludes("abc-12", [/ABC-\d+/]).pass).toBe(true)
   })
 
   it("ignores empty entries and passes clean text", () => {
@@ -105,7 +141,7 @@ describe("Checks.excludes", () => {
 
   it("clips a long detail to 200 characters", () => {
     const text = Array.from({ length: 60 }, (_, index) => `word${index}`).join(" ")
-    const check = Checks.excludes(text, ["/word\\d+/"])
+    const check = Checks.excludes(text, [/word\d+/])
     expect(check.detail).toHaveLength(200)
     expect(check.detail.endsWith("…")).toBe(true)
   })
@@ -170,6 +206,48 @@ describe("Checks.truncated", () => {
 })
 
 describe("Checks.links", () => {
+  it.each([
+    ["`", "`"],
+    ["**", "**"],
+    ["_", "_"],
+    ["__", "__"],
+    ["{", "}"],
+    ["**`{", "}`**"],
+    ["**`", "` is live**"],
+    ["_`", "` (staging)_"],
+    ["{`", "`, other}"],
+    ["**Docs:**`", "`"]
+  ])(
+    "strips matched URL wrappers %s and %s",
+    (opening, closing) => {
+      const url = "https://example.com/docs/a"
+      const text = `Docs: ${opening}${url}${closing}`
+      expect(Checks.links(text)).toEqual([{ url }])
+      expect(Checks.requiredLinks(text, [url]).pass).toBe(true)
+      expect(Checks.requiredLinks(`see {${url}}`, [url]).pass).toBe(true)
+    }
+  )
+
+  it.each(["https://example.com/users/alice_", "https://example.com/search?q=foo*"])(
+    "keeps URL-owned trailing characters in %s",
+    (url) => {
+      for (const text of [url, `**${url}**`, `\`${url}\``, `{${url}}`]) {
+        expect(Checks.links(text)).toEqual([{ url }])
+        expect(Checks.requiredLinks(text, [url]).pass).toBe(true)
+      }
+    }
+  )
+
+  it("keeps balanced parentheses and labels in markdown link targets", () => {
+    const url = "https://en.wikipedia.org/wiki/Foo_(bar)"
+    const text = `[Foo](${url})`
+    expect(Checks.links(text)).toEqual([{ url, label: "Foo" }])
+    expect(Checks.requiredLinks(text, [url]).pass).toBe(true)
+    expect(Checks.words(`See ${text} now`)).toBe(3)
+    expect(Checks.questions(`[Ready?](${url}?q=1)`)).toBe(1)
+    expect(Checks.barePaths("[spec](./docs/Foo_(bar).md)").pass).toBe(true)
+  })
+
   it("extracts Slack, markdown, and bare links in order", () => {
     expect(
       Checks.links(
@@ -240,6 +318,14 @@ describe("Checks.linkedReferences", () => {
         refs
       )
     ).toEqual({ id: "linked-references", pass: true, detail: "all linked" })
+  })
+
+  it("recognizes a reference URL wrapped in backticks", () => {
+    expect(Checks.linkedReferences("Fixed #40 (`https://github.com/acme/app/issues/40`)", refs)).toEqual({
+      id: "linked-references",
+      pass: true,
+      detail: "all linked"
+    })
   })
 
   it("ignores references inside link URLs", () => {
@@ -335,6 +421,30 @@ describe("Checks.count", () => {
 })
 
 describe("Checks.leakage", () => {
+  it.each(["/Ab+cD/", "/etc/hosts", "/secret-\\d+/", "/[/", "/a/gg", "/a/uv", "renew*"])(
+    "detects the literal marker %s without publishing it",
+    (entry) => {
+      const check = Checks.leakage([{ sink: "log", text: `token=${entry}xyz` }], [entry])
+      expect(check).toEqual({ id: "leakage", pass: false, detail: "leaked: log: marker 1" })
+      expect(check.detail).not.toContain(entry)
+    }
+  )
+
+  it("requires RegExp values for intentional pattern matching", () => {
+    const texts = [{ sink: "log", text: "secret-123" }]
+    expect(Checks.leakage(texts, ["/secret-\\d+/"]).pass).toBe(true)
+    const pattern = /secret-\d+/g
+    pattern.lastIndex = 6
+    expect(Checks.leakage(texts, [pattern])).toEqual({
+      id: "leakage",
+      pass: false,
+      detail: "leaked: log: marker 1"
+    })
+    expect(pattern.lastIndex).toBe(6)
+    expect(Checks.leakage([{ sink: "log", text: "SECRET-123" }], [/secret-\d+/]).pass).toBe(true)
+    expect(Checks.leakage([{ sink: "log", text: "SECRET-123" }], [/secret-\d+/i]).pass).toBe(false)
+  })
+
   it("names the sink and marker, never the surrounding text", () => {
     const check = Checks.leakage(
       [
@@ -342,7 +452,7 @@ describe("Checks.leakage", () => {
         { sink: "log", text: "falconry is a hobby" },
         { sink: "dm", text: "codename: project falcon" }
       ],
-      ["project falcon", "/secret-\\d+/"]
+      ["project falcon", /secret-\d+/]
     )
     expect(check).toEqual({
       id: "leakage",
@@ -409,6 +519,7 @@ describe("Checks on adversarial output", () => {
     linear(() => Checks.links("<a:".repeat(n / 3)))
     linear(() => Checks.links("[".repeat(n)))
     linear(() => Checks.links("[](".repeat(n / 3)))
+    linear(() => Checks.links("[a](x(y[".repeat(n / 8)))
     linear(() => Checks.questions(`${"?".repeat(n)}a`))
     linear(() => Checks.barePaths(`${"!".repeat(n)}x`))
   })

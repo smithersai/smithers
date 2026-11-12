@@ -124,7 +124,7 @@ const clip = (detail: string): string => detail.length > maxDetail ? `${detail.s
 
 const check = (id: string, pass: boolean, detail: string): Check => ({ id, pass, detail: clip(detail) })
 
-const quote = (text: string): string => JSON.stringify(text)
+const quote = (text: string | RegExp): string => typeof text === "string" ? JSON.stringify(text) : text.toString()
 
 /**
  * Folds typographic quotes and apostrophes to their ASCII forms, so "hasn’t"
@@ -136,37 +136,31 @@ const wordChar = /[\p{L}\p{N}_]/u
 
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
-const literal = /^\/(.+)\/([a-z]*)$/su
-
 /**
- * Compiles one entry: `/source/flags` is a regular expression, `stem*` a
- * case-insensitive word or phrase that may continue into a longer last word
- * (`renew*` finds "renewal"), and anything else a case-insensitive whole word
- * or phrase.
+ * Clones patterns so global matching starts at zero without mutating the caller.
+ * String entries match case-insensitive whole words or phrases.
  */
-const phrase = (entry: string): RegExp => {
-  const regex = literal.exec(entry)
-  if (regex !== null) {
-    const flags = regex[2]!
-    return new RegExp(regex[1]!, flags.includes("g") ? flags : `${flags}g`)
-  }
-  const stem = entry.endsWith("*")
-  const word = stem ? entry.slice(0, -1) : entry
-  if (word.length === 0) return /(?!)/gu
-  const before = wordChar.test(word.charAt(0)) ? "(?<![\\p{L}\\p{N}_])" : ""
-  const after = stem ? "[\\p{L}\\p{N}_]*" : wordChar.test(word.charAt(word.length - 1)) ? "(?![\\p{L}\\p{N}_])" : ""
-  return new RegExp(`${before}${escape(word).replace(/\s+/g, "\\s+")}${after}`, "giu")
+const phrase = (entry: string | RegExp): RegExp => {
+  if (entry instanceof RegExp) return new RegExp(entry.source, entry.global ? entry.flags : `${entry.flags}g`)
+  const before = wordChar.test(entry.charAt(0)) ? "(?<![\\p{L}\\p{N}_])" : ""
+  const after = wordChar.test(entry.charAt(entry.length - 1)) ? "(?![\\p{L}\\p{N}_])" : ""
+  return new RegExp(`${before}${escape(entry).replace(/\s+/g, "\\s+")}${after}`, "giu")
 }
 
-const hits = (text: string, entry: string): ReadonlyArray<string> =>
-  entry.length === 0
+const hits = (text: string, entry: string | RegExp): ReadonlyArray<string> =>
+  entry === ""
     ? []
-    : [...new Set([...fold(text).matchAll(phrase(literal.test(entry) ? entry : fold(entry)))].map(([match]) => match))]
+    : [
+      ...new Set(
+        [...fold(text).matchAll(phrase(typeof entry === "string" ? fold(entry) : entry))].map(([match]) => match)
+      )
+    ]
 
 // Slack `<url|label>` / `<url>`, markdown `[label](url)`, then a bare URL. No
 // part may run past the next opening `<` or `[`, so a failed attempt stops
 // there and a scan of model output stays linear in its length.
-const linkSyntax = /<([a-z][a-z0-9+.-]*:[^|<>\s]+)(?:\|([^<>]*))?>|\[([^[\]]*)\]\(([^)[\s]+)\)|https?:\/\/[^\s<>]+/giu
+const linkSyntax =
+  /<([a-z][a-z0-9+.-]*:[^|<>\s]+)(?:\|([^<>]*))?>|\[([^[\]]*)\]\(((?:[^()[\s]|\([^()[\s]*\))+)\)|https?:\/\/[^\s<>]+/giu
 
 interface Found {
   readonly index: number
@@ -176,16 +170,24 @@ interface Found {
   readonly bare: boolean
 }
 
-const trimBare = (url: string): string => {
+const trimBare = (url: string, text: string, index: number): string => {
   // Parentheses the URL has not closed yet; counted once so trimming is linear.
   let open = 0
   for (const char of url) open += char === "(" ? 1 : char === ")" ? -1 : 0
   let end = url.length
+  // Peel only wrappers that were opened immediately before this URL.
+  let start = index
+  while (start > 0 && "`*_{".includes(text.charAt(start - 1))) start--
+  const wrappers = text.slice(start, index)
+  let wrapperAt = 0
   for (;;) {
     const last = url.charAt(end - 1)
+    const nextWrapper = "`*_}".includes(last) ? wrappers.indexOf(last === "}" ? "{" : last, wrapperAt) : -1
+    const wrapped = nextWrapper !== -1
     const unbalanced = last === ")" && open < 0
-    if (!".,;:!?'\"]".includes(last) && !unbalanced) return url.slice(0, end)
+    if (!".,;:!?'\"]".includes(last) && !unbalanced && !wrapped) return url.slice(0, end)
     if (last === ")") open++
+    if (wrapped) wrapperAt = nextWrapper + 1
     end--
   }
 }
@@ -203,7 +205,7 @@ const scan = (text: string): ReadonlyArray<Found> =>
         bare: false
       }
     }
-    const url = trimBare(raw)
+    const url = trimBare(raw, text, match.index)
     return { index: match.index, raw: url, url, label: undefined, bare: true }
   })
 
@@ -249,20 +251,23 @@ export const length = (
 }
 
 /**
- * Requires every entry, matched the way {@link excludes} matches: a
- * case-insensitive whole word or phrase (a boundary is required at each end
- * that is a letter, digit, or underscore, so "No" is not found in "not"), a
- * stem written `renew*` (the last word may continue, so "renewal" counts), or
- * a regular expression written `/source/flags`. An array entry is an any-of
- * group: one member present satisfies it. Typographic quotes and apostrophes
- * match their ASCII forms.
+ * Requires every entry, matched the way {@link excludes} matches: a string
+ * is a case-insensitive whole word or phrase, and a RegExp uses its own
+ * flags. A boundary is required at each string end that is a letter, digit,
+ * or underscore, so "No" is not found in "not". Strings are literal, including
+ * slashes and asterisks. An array entry is an any-of group: one member present
+ * satisfies it. Typographic quotes and apostrophes match their ASCII forms.
+ * Patterns are copied, leaving their `lastIndex` unchanged.
  *
  * @category checks
  * @since 0.1.0
  */
-export const includes = (text: string, required: ReadonlyArray<string | ReadonlyArray<string>>): Check => {
+export const includes = (
+  text: string,
+  required: ReadonlyArray<string | RegExp | ReadonlyArray<string | RegExp>>
+): Check => {
   const missing = required
-    .map((entry) => typeof entry === "string" ? [entry] : entry)
+    .map((entry) => typeof entry === "string" || entry instanceof RegExp ? [entry] : entry)
     .filter((group) => !group.some((member) => hits(text, member).length > 0))
     .map((group) => group.map(quote).join(" | "))
   return missing.length === 0
@@ -271,17 +276,17 @@ export const includes = (text: string, required: ReadonlyArray<string | Readonly
 }
 
 /**
- * Forbids words or phrases, matched case-insensitively as whole words: a
- * boundary is required at each end that is a letter, digit, or underscore.
- * Typographic quotes and apostrophes match their ASCII forms. An entry
- * written `receipt*` is a stem whose last word may continue ("receipts"). An
- * entry written `/source/flags` is a regular expression with its own flags;
- * an invalid one throws a `SyntaxError`. Empty entries are ignored.
+ * Forbids string words or phrases, matched case-insensitively as whole
+ * words: a boundary is required at each end that is a letter, digit, or
+ * underscore. Typographic quotes and apostrophes match their ASCII forms.
+ * Strings are literal, including slashes and asterisks; intentional patterns
+ * are RegExp values with their own flags. Patterns are copied, leaving their
+ * `lastIndex` unchanged. Empty string entries are ignored.
  *
  * @category checks
  * @since 0.1.0
  */
-export const excludes = (text: string, forbidden: ReadonlyArray<string>, id = "excludes"): Check => {
+export const excludes = (text: string, forbidden: ReadonlyArray<string | RegExp>, id = "excludes"): Check => {
   const found = [...new Set(forbidden.flatMap((entry) => hits(text, entry)))]
   return found.length === 0
     ? check(id, true, "none found")
@@ -520,31 +525,31 @@ export const count = (actions: ReadonlyArray<Action>, spec: CountSpec): Check =>
 }
 
 /**
- * A leakage marker: `/source/flags` is a regular expression, anything else a
- * substring. Surrounding whitespace is dropped, because a secret read from a
- * file carries its trailing newline and would otherwise only match where the
- * leaked copy is followed by whitespace too.
+ * A string marker is a substring. Surrounding whitespace is dropped,
+ * because a secret read from a file carries its trailing newline.
  */
-const marker = (entry: string): RegExp =>
-  literal.test(entry) ? phrase(entry) : new RegExp(escape(fold(entry.trim())).replace(/\s+/g, "\\s+"), "giu")
+const marker = (entry: string | RegExp): RegExp =>
+  entry instanceof RegExp ? phrase(entry) : new RegExp(escape(fold(entry.trim())).replace(/\s+/g, "\\s+"), "giu")
 
 /**
  * Fails when any marker appears in any sink. A marker is found anywhere in the
  * text, case-insensitively, even inside a longer word or token, because a
  * secret followed by more characters has still leaked; typographic quotes
  * match their ASCII forms, runs of whitespace match any whitespace, leading
- * and trailing whitespace is dropped, and `/source/flags` is a regular
- * expression. Blank markers are ignored. The detail names each sink and the
- * marker's 1-based position in `markers`, never the marker or the surrounding
- * text, so a failed check does not copy the secret into a score's reason.
+ * and trailing whitespace is dropped. Strings are literal, including slashes
+ * and asterisks; intentional patterns are RegExp values with their own flags,
+ * copied without changing their `lastIndex`. Blank string markers are ignored.
+ * The detail names each sink and the marker's 1-based position in `markers`,
+ * never the marker or the surrounding text, so a failed check does not copy
+ * the secret into a score's reason.
  *
  * @category checks
  * @since 0.1.0
  */
-export const leakage = (texts: ReadonlyArray<Emission>, markers: ReadonlyArray<string>): Check => {
+export const leakage = (texts: ReadonlyArray<Emission>, markers: ReadonlyArray<string | RegExp>): Check => {
   const patterns = markers.map((entry, index) => ({
     index,
-    pattern: entry.trim().length === 0 ? undefined : marker(entry)
+    pattern: typeof entry === "string" && entry.trim().length === 0 ? undefined : marker(entry)
   }))
   const leaked = texts.flatMap(({ sink, text }) =>
     patterns

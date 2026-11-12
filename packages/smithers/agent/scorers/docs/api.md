@@ -323,24 +323,38 @@ const style = Checks.scorer({
 
 Links are read in three forms: Slack `<url|label>` and `<url>`, markdown
 links (a bracketed label followed by the URL in parentheses), and bare
-`http(s)://` URLs. `words`, `questions`, `barePaths`,
-and `linkedReferences` read link labels as prose and skip link URLs.
-`includes` and `excludes` match whole words and phrases
-case-insensitively, so "No" is not found in "not"; an entry written `renew*`
-is a stem whose last word may continue ("renewal"), and one written
-`/source/flags` is a regular expression. `leakage` finds a marker anywhere,
+`http(s)://` URLs. Markdown targets can contain balanced parentheses, as in
+`[Foo](https://en.wikipedia.org/wiki/Foo_(bar))`. Bare URLs may be wrapped in
+backticks, bold, underscores or braces; trailing wrappers and punctuation are
+stripped while balanced URL parentheses are kept. `words`, `questions`,
+`barePaths` and `linkedReferences` read link labels as prose and skip link URLs.
+
+`includes` and `excludes` match string entries as literal whole words and
+phrases case-insensitively, so "No" is not found in "not". Slashes, asterisks and
+regex metacharacters in strings stay literal: `"/etc/hosts"` is a path and
+`"renew*"` requires an actual asterisk. Intentional patterns use `RegExp`
+values, such as `/renew\w*/i`. `includes` also accepts any-of groups containing
+strings and patterns. `leakage` finds a literal string marker anywhere,
 case-insensitively, even inside a longer token, so `token=SECRETabc123xyz`
-leaks `SECRETabc123`; its detail names the sink and the marker's 1-based
-position, never the marker text. `leakage` trims whitespace around each
-marker, so a secret read from a file with its trailing newline still matches.
-`opener` and `leakage` ignore blank entries. A `/source/flags` entry and a
-`linkedReferences` pattern run as given on the backtracking engine, so they
-must come from the suite author, never from model output or a payload; the
-built-in link, question, and path scans run in linear time on any output. `requiredLinks` ignores
-scheme and host case, a trailing slash, and a fragment, and accepts a found URL
-that extends the required one with a path or query. `linkedReferences` accepts
-`/pull/` for a template containing `/issues/`. `count` defaults to at least one
-call when no bound is set.
+leaks `SECRETabc123`. It trims surrounding whitespace, so a secret read from
+a file with its trailing newline still matches. Its detail names the sink and
+the marker's 1-based position, never the marker text. `opener` and `leakage`
+ignore blank strings.
+
+All three checks accept `RegExp` values with their own flags, adding global
+matching internally without changing the caller's `lastIndex`. String quotes
+and whitespace keep their existing normalization. For example,
+`Checks.leakage([{ sink: "log", text: "secret-123" }], ["/secret-\\d+/"])` now
+passes because the string is literal; pass `[/secret-\d+/]` to detect that pattern.
+Likewise, replace former `"renew*"` stem entries with an explicit pattern.
+Patterns and `linkedReferences` expressions run on the backtracking engine,
+so they must come from the suite author, never from model output or a payload.
+The built-in link, question and path scans run in linear time on any output.
+
+`requiredLinks` ignores scheme and host case, a trailing slash and a fragment,
+and accepts a found URL that extends the required one with a path or query.
+`linkedReferences` accepts `/pull/` for a template containing `/issues/`.
+`count` defaults to at least one call when no bound is set.
 
 ### Checks export index
 
@@ -356,8 +370,8 @@ call when no bound is set.
 | `Checks.ScorerOptions`    | interface | models       | Scorer id, version, name, config, and the checks function.                     |
 | `Checks.words`            | const     | measuring    | Counts words, reading link labels and skipping link URLs.                      |
 | `Checks.length`           | const     | checks       | Word count within inclusive `min` and `max`.                                   |
-| `Checks.includes`         | const     | checks       | Every whole word, phrase, or `/regex/flags` present; an array is any-of.       |
-| `Checks.excludes`         | const     | checks       | No forbidden whole word, phrase, or `/regex/flags` match.                      |
+| `Checks.includes`         | const     | checks       | Every literal word, phrase, or `RegExp` present; an array is any-of.           |
+| `Checks.excludes`         | const     | checks       | No forbidden literal word, phrase, or `RegExp` match.                          |
 | `Checks.opener`           | const     | checks       | The message does not open with a listed phrase.                                |
 | `Checks.truncated`        | const     | checks       | No cut-off word, trailing ellipsis, or unclosed code fence.                    |
 | `Checks.links`            | const     | extracting   | Slack, markdown, and bare links, deduplicated by URL.                          |

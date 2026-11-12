@@ -123,7 +123,7 @@ export interface Suite {
   readonly judgeSeat: string
   readonly voice: {
     readonly openers: ReadonlyArray<string>
-    readonly forbid: ReadonlyArray<string>
+    readonly forbid: ReadonlyArray<string | RegExp>
     readonly jargon: ReadonlyArray<string>
   }
   readonly references: ReadonlyArray<{ readonly pattern: string; readonly url: string }>
@@ -142,6 +142,16 @@ const readYaml = (path: string): Record<string, unknown> =>
   (parseYaml(readFileSync(path, "utf8")) ?? {}) as Record<string, unknown>
 
 const strings = (value: unknown): Array<string> => (Array.isArray(value) ? value.map(String) : [])
+
+/** String entries are literal; only explicit pattern objects compile to RegExp. */
+const patterns = (value: unknown): Array<string | RegExp> =>
+  Array.isArray(value)
+    ? value.map((entry) =>
+      typeof entry === "object" && entry !== null && typeof entry.pattern === "string"
+        ? new RegExp(entry.pattern, entry.flags)
+        : String(entry)
+    )
+    : []
 
 /** Loads a word list: a YAML list, or a YAML map whose values are lists. */
 const wordList = (path: string): Array<string> => {
@@ -209,7 +219,7 @@ export const load = (dir: string, only?: ReadonlyArray<string>): Suite => {
     judgeSeat: String(raw.judgeSeat ?? "openai:gpt-6-sol"),
     voice: {
       openers: strings(voice.openers),
-      forbid: strings(voice.forbid),
+      forbid: patterns(voice.forbid),
       jargon: jargonFiles.flatMap((path) => wordList(at(base, path))).concat(strings(voice.terms))
     },
     references: (raw.references ?? []) as Suite["references"],

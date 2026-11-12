@@ -244,3 +244,11 @@ profile behaves against this world, not that real integrations work. The
 judge shares a model family with most roles. The harness keys the provider's
 prompt cache on the whole system prompt including the task, so the first model
 call of every turn reads nothing from cache and dominates a pass's cost.
+
+### Character text patterns
+
+`Checks.includes`, `Checks.excludes` and `Checks.leakage` treat strings as
+literal text. Intentional patterns use `RegExp` values. In `suite.yaml`,
+`voice.forbid` accepts strings and explicit objects such as
+`{ pattern: "\\b[0-9a-f]{10,40}\\b", flags: "i" }`; the loader converts only
+those objects to `RegExp` values before scoring.

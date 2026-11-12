@@ -63,6 +63,14 @@ describe("Score.score voice rules", () => {
   const score = (trigger: Suite.Message, t: Subject.Turn, expect: Suite.Expect = {}) =>
     Score.score({ suite, world, trigger, expect, turn: t })
 
+  test("explicit YAML patterns still reject commit hashes, and allow scrubs their matches", () => {
+    const pattern = suite.voice.forbid.find((entry) => entry instanceof RegExp)
+    expect(pattern).toBeInstanceOf(RegExp)
+    expect(pattern?.toString()).toBe("/\\b[0-9a-f]{10,40}\\b/")
+    expect(failed(score(engineer, turn("Build abcdef123456 is ready.")))).toEqual(["reply to engineering: phrases"])
+    expect(failed(score(engineer, turn("Build abcdef123456 is ready."), { allow: ["abcdef123456"] }))).toEqual([])
+  })
+
   test("jargon and forbidden phrases fail in a handoff brief, a question, an issue comment and a reply to a role", () => {
     const checks = score(engineer, turn("The readback is attached; i hope this helps.", [
       { tool: "handoff", input: { to: "marketing", brief: "Ship the deliverable; status: blocked" } },

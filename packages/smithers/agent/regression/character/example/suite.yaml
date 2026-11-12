@@ -10,7 +10,7 @@ seat: openai:gpt-6.1-sol
 judgeSeat: openai:gpt-6-sol
 voice:
   openers: ["on it", "got it", "sure", "will do", "noted", "done:", "handoff"]
-  forbid: ["i hope this helps", "let me know if you have any", "status:", "/\\b[0-9a-f]{10,40}\\b/"]
+  forbid: ["i hope this helps", "let me know if you have any", "status:", { pattern: "\\b[0-9a-f]{10,40}\\b" }]
   terms: [receipt, readback, deliverable, outcomeUnknown]
 references:
   - { pattern: "(?<![\\w/&])#(\\d{1,4})\\b", url: "https://example.invalid/acme/issues/$1" }
