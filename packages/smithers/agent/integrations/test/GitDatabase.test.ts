@@ -24,7 +24,14 @@ interface FakeGitHub {
   /** The next write applies, then answers 502. */
   lose: boolean
   /** The next request whose path matches answers this status and body instead. */
-  canned: Array<{ readonly match: RegExp; readonly status: number; readonly body: unknown; readonly headers?: Record<string, string> }>
+  canned: Array<
+    {
+      readonly match: RegExp
+      readonly status: number
+      readonly body: unknown
+      readonly headers?: Record<string, string>
+    }
+  >
   readonly paths: () => ReadonlyArray<string>
 }
 
@@ -301,16 +308,28 @@ describe("GitDatabase objects", () => {
       body: { message: "API rate limit exceeded" },
       headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600) }
     })
-    const primary = await failure(repo.writeCommit({ tree: Repository.EMPTY_TREE, parents: [], author: who, committer: who, message: "x\n" }))
+    const primary = await failure(
+      repo.writeCommit({ tree: Repository.EMPTY_TREE, parents: [], author: who, committer: who, message: "x\n" })
+    )
     expect([primary.code, primary.retryAfterMillis]).toEqual(["unavailable", 60_000])
     // A 429 with Retry-After.
-    github!.canned.push({ match: /POST \/repos\/o\/r\/git\/trees/, status: 429, body: { message: "Too Many Requests" }, headers: { "retry-after": "5" } })
+    github!.canned.push({
+      match: /POST \/repos\/o\/r\/git\/trees/,
+      status: 429,
+      body: { message: "Too Many Requests" },
+      headers: { "retry-after": "5" }
+    })
     const tooMany = await failure(repo.writeTree([{ name: "a", mode: "100644", oid: "e".repeat(40) }]))
     expect([tooMany.code, tooMany.retryAfterMillis]).toEqual(["unavailable", 5_000])
     // No wait named: none carried; a refusal that is not unavailable never carries one.
     github!.canned.push({ match: /GET \/repos\/o\/r\/git\/trees/, status: 500, body: { message: "boom" } })
     expect(Object.hasOwn(await failure(repo.readTree("e".repeat(40))), "retryAfterMillis")).toBe(false)
-    github!.canned.push({ match: /GET \/repos\/o\/r\/git\/blobs/, status: 404, body: { message: "Not Found" }, headers: { "retry-after": "9" } })
+    github!.canned.push({
+      match: /GET \/repos\/o\/r\/git\/blobs/,
+      status: 404,
+      body: { message: "Not Found" },
+      headers: { "retry-after": "9" }
+    })
     const missing = await failure(repo.readBlob("e".repeat(40)))
     expect([missing.code, Object.hasOwn(missing, "retryAfterMillis")]).toEqual(["not_found", false])
   })

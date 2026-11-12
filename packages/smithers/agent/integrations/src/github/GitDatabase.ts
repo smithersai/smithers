@@ -103,7 +103,13 @@ const waitOf = (details: Readonly<Record<string, unknown>> | undefined): number 
 const fromIntegration = (method: string) => (error: IntegrationError): Repository.RepositoryError => {
   const status = error.details?.["status"]
   const code = status === 404 ? "not_found" : status === 422 ? "invalid" : "unavailable"
-  return Repository.repositoryError(code, method, error.message, undefined, code === "unavailable" ? waitOf(error.details) : undefined)
+  return Repository.repositoryError(
+    code,
+    method,
+    error.message,
+    undefined,
+    code === "unavailable" ? waitOf(error.details) : undefined
+  )
 }
 
 const MODES: ReadonlySet<string> = new Set(["100644", "100755", "120000", "040000", "160000"])

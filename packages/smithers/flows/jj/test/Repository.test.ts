@@ -68,7 +68,9 @@ describe("errors and validation", () => {
     expect(limited.retryAfterMillis).toBe(90_000)
     expect(Object.getOwnPropertyDescriptor(limited, "retryAfterMillis")?.value).toBe(90_000)
     for (const wait of [-1, Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
-      expect(Object.hasOwn(Repository.repositoryError("unavailable", "writeBlob", "x", undefined, wait), "retryAfterMillis")).toBe(false)
+      expect(
+        Object.hasOwn(Repository.repositoryError("unavailable", "writeBlob", "x", undefined, wait), "retryAfterMillis")
+      ).toBe(false)
     }
     const journaled = JSON.parse(JSON.stringify(Schema.encodeUnknownSync(Repository.RepositoryError)(limited)))
     expect(Schema.decodeUnknownSync(Repository.RepositoryError)(journaled).retryAfterMillis).toBe(90_000)
