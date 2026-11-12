@@ -510,7 +510,7 @@ Services a target depends on. From `@smthrs/build-cli/ServiceSupervisor`.
 | `outputTailLimit`           | `8 * 1024`                                                                       | Maximum captured output tail, in UTF-16 code units.           |
 
 `ServiceError.reason` is one of `invalid-spec`, `spec-drift`, `spawn-failed`,
-`exited`, `readiness-timeout`, `init-failed`, or `unhealthy`.
+`port-in-use`, `exited`, `readiness-timeout`, `init-failed`, or `unhealthy`.
 
 ## AgentSession
 

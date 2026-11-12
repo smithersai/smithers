@@ -320,6 +320,17 @@ readiness probe on an interval, and a declared number of consecutive misses
 signal (`SIGTERM` by default) and waits a declared grace period (5 seconds by
 default) before `SIGKILL`.
 
+A port or HTTP probe proves only that something listens at its
+address. The supervisor therefore refuses to start a service with
+`port-in-use` when that address already answers before the service is spawned,
+including a TCP listener that does not answer HTTP requests. Within one command,
+different service keys that declare the same address, including a candidate
+tree's instance of a `Serve` target, wait for the previous service and its
+consumer to stop before starting. This wait is bounded by the readiness
+timeout and fails with `port-in-use` if the address remains held. After readiness
+passes, the service must stay alive for one more poll (250 ms) before `init`
+runs.
+
 An interrupt or health failure waits for the consumer body and its write-set
 restoration before releasing the tree permit or deleting the shared stash.
 

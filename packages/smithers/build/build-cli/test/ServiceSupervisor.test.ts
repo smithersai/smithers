@@ -16,7 +16,9 @@ import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
  *    orphan survives).
  */
 import * as Secret from "@smthrs/targets/Secret"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import { execFile, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import * as Fs from "node:fs/promises"
@@ -575,6 +577,156 @@ describe("readiness", () => {
       )
     })))
     expect(body).toMatch(/^instance-/)
+  })
+
+  /**
+   * A port or HTTP probe answers for whichever process listens at its address.
+   * With the port already held, the first probe used to pass against that
+   * foreign listener before the service could even fail to bind, and `init`
+   * then ran against the other process's server.
+   */
+  it("refuses to spawn a port-readiness service while another process holds its port", async () => {
+    const port = await freePort()
+    const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-service-port-held-"))
+    const spawned = NodePath.join(directory, "spawned")
+    const initialized = NodePath.join(directory, "initialized")
+    const foreign = NodeNet.createServer((socket) => socket.resume())
+    await new Promise<void>((resolve) => foreign.listen(port, "127.0.0.1", resolve))
+    try {
+      const error = await acquireFlipped({
+        key: "//x:port-held",
+        cwd: directory,
+        argv: [
+          process.execPath,
+          "-e",
+          `require('node:fs').writeFileSync(${JSON.stringify(spawned)}, 'spawned'); setInterval(() => {}, 1000)`
+        ],
+        readiness: { port },
+        init: [[process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(initialized)}, 'ok')`]]
+      })
+      expect(error).toBeInstanceOf(ServiceSupervisor.ServiceError)
+      expect(error.reason).toBe("port-in-use")
+      expect(error.message).toContain(`127.0.0.1:${port}`)
+      expect(await Fs.access(spawned).then(() => true, () => false)).toBe(false)
+      expect(await Fs.access(initialized).then(() => true, () => false)).toBe(false)
+    } finally {
+      await new Promise<void>((resolve) => foreign.close(() => resolve()))
+      await Fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("refuses to spawn an http-readiness service while another process holds its URL's port", async () => {
+    const port = await freePort()
+    const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-service-url-held-"))
+    const spawned = NodePath.join(directory, "spawned")
+    const foreign = NodeNet.createServer((socket) => socket.resume())
+    await new Promise<void>((resolve) => foreign.listen(port, "127.0.0.1", resolve))
+    try {
+      const error = await acquireFlipped({
+        key: "//x:url-held",
+        cwd: directory,
+        argv: [
+          process.execPath,
+          "-e",
+          `require('node:fs').writeFileSync(${JSON.stringify(spawned)}, 'spawned'); setInterval(() => {}, 1000)`
+        ],
+        readiness: { http: `http://127.0.0.1:${port}/health`, timeout: "5s" }
+      })
+      expect(error.reason).toBe("port-in-use")
+      expect(error.message).toContain(`127.0.0.1:${port}`)
+      expect(await Fs.access(spawned).then(() => true, () => false)).toBe(false)
+    } finally {
+      await new Promise<void>((resolve) => foreign.close(() => resolve()))
+      await Fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("serializes candidate-tree services until the first service and its consumer release the address", async () => {
+    const port = await freePort()
+    const result = await run(Effect.scoped(Effect.gen(function*() {
+      const supervisor = yield* ServiceSupervisor.make
+      const ready = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      let firstPid = 0
+      const first = yield* Effect.scoped(Effect.gen(function*() {
+        const handle = yield* supervisor.acquire(serverSpec("//x:shared-port", port, [], { readiness: { port } }))
+        firstPid = handle.pid
+        yield* Deferred.succeed(ready, undefined)
+        yield* Deferred.await(release)
+        return yield* Effect.promise(() => getText(`http://127.0.0.1:${port}/instance`))
+      })).pipe(Effect.forkScoped)
+      yield* Deferred.await(ready)
+      const requested = yield* Deferred.make<void>()
+      const second = yield* Effect.scoped(Effect.gen(function*() {
+        yield* Deferred.succeed(requested, undefined)
+        const handle = yield* supervisor.acquire(
+          serverSpec("//x:shared-port @ candidate", port, [], {
+            readiness: { http: `http://127.0.0.1:${port}/instance`, timeout: "10s" }
+          })
+        )
+        expect(alive(firstPid)).toBe(false)
+        return yield* Effect.promise(() => getText(`http://127.0.0.1:${port}/instance`))
+      })).pipe(Effect.forkScoped)
+      yield* Deferred.await(requested)
+      // Hold the first consumer across two readiness polls: a second startup
+      // must remain pending rather than accept the first service's listener.
+      yield* Effect.sleep(ServiceSupervisor.readinessPollMs * 2)
+      expect(second.pollUnsafe()).toBeUndefined()
+      expect(alive(firstPid)).toBe(true)
+      yield* Deferred.succeed(release, undefined)
+      return { first: yield* Fiber.join(first), second: yield* Fiber.join(second) }
+    })))
+    expect(result.first).toMatch(/^instance-/)
+    expect(result.second).toMatch(/^instance-/)
+    expect(result.first).not.toBe(result.second)
+  })
+
+  it("bounds a wait for a held service address and leaves the first service healthy", async () => {
+    const port = await freePort()
+    const result = await run(Effect.scoped(Effect.gen(function*() {
+      const supervisor = yield* ServiceSupervisor.make
+      const first = yield* supervisor.acquire(serverSpec("//x:held-address", port, [], { readiness: { port } }))
+      const error = yield* Effect.flip(supervisor.acquire(serverSpec("//x:other-tree", port, [], {
+        readiness: { http: `http://127.0.0.1:${port}/instance`, timeout: "100ms" }
+      })))
+      return {
+        error,
+        body: yield* first.whileHealthy(Effect.promise(() => getText(`http://127.0.0.1:${port}/instance`)))
+      }
+    })))
+    expect(result.error.reason).toBe("port-in-use")
+    expect(result.error.message).toContain("waited 100ms")
+    expect(result.body).toMatch(/^instance-/)
+  })
+
+  /**
+   * A probe that passes proves a listener, not that it is this service: a
+   * service that loses its port exits a moment after the probe answers. The
+   * service has to outlive one more poll before `init` runs.
+   */
+  it("fails instead of running init when the service exits right after readiness passes", async () => {
+    const port = await freePort()
+    const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-service-exit-after-ready-"))
+    const initialized = NodePath.join(directory, "initialized")
+    try {
+      const error = await acquireFlipped({
+        key: "//x:exit-after-ready",
+        cwd: directory,
+        argv: [
+          process.execPath,
+          "-e",
+          // Answers the readiness connect, then dies before anything else.
+          `require('node:net').createServer((socket) => { socket.destroy(); process.exit(7) }).listen(${port}, '127.0.0.1')`
+        ],
+        readiness: { port },
+        init: [[process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(initialized)}, 'ok')`]]
+      })
+      expect(error.reason).toBe("exited")
+      expect(error.message).toContain("exited with code 7")
+      expect(await Fs.access(initialized).then(() => true, () => false)).toBe(false)
+    } finally {
+      await Fs.rm(directory, { recursive: true, force: true })
+    }
   })
 
   it("fails acquisition when readiness never comes, and still stops the child", async () => {

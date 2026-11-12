@@ -35,6 +35,7 @@ import * as Fiber from "effect/Fiber"
 import * as RcMap from "effect/RcMap"
 import * as Schedule from "effect/Schedule"
 import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import { randomUUID } from "node:crypto"
 import * as NodeHttp from "node:http"
@@ -161,6 +162,7 @@ export class ServiceError extends Data.TaggedError("smithers-build/ServiceError"
     | "invalid-spec"
     | "spec-drift"
     | "spawn-failed"
+    | "port-in-use"
     | "exited"
     | "readiness-timeout"
     | "init-failed"
@@ -863,9 +865,28 @@ const serviceCommand = (
 const runServiceCommand = (argv: ReadonlyArray<string>, context: ProbeContext, timeoutMs: number) =>
   serviceCommand(argv, context, timeoutMs).pipe(Effect.scoped)
 
-/** Runs one readiness probe attempt; never fails, reports the miss reason. */
+/** Where a TCP probe connects, and how a diagnostic names it. */
+interface ProbeAddress {
+  readonly host: string
+  readonly port: number
+  readonly where: string
+}
+
+/** The address a port or HTTP probe connects to; `undefined` for an exec probe. */
+const probeAddress = (readiness: Readiness): ProbeAddress | undefined => {
+  if ("port" in readiness) return { host: "127.0.0.1", port: readiness.port, where: `127.0.0.1:${readiness.port}` }
+  if ("exec" in readiness) return undefined
+  const url = new URL(readiness.http)
+  return {
+    host: url.hostname.replace(/^\[(.*)\]$/, "$1"),
+    port: Number(url.port || (url.protocol === "https:" ? 443 : 80)),
+    where: url.origin
+  }
+}
+
+/** Runs one probe attempt; never fails, reports the miss reason. */
 const probeOnce = (
-  readiness: Readiness,
+  readiness: Readiness | ProbeAddress,
   attemptTimeoutMs: number,
   context: ProbeContext
 ): Effect.Effect<Probe> =>
@@ -882,8 +903,8 @@ const probeOnce = (
         cleanup()
         resume(Effect.succeed(result))
       }
-      if ("port" in readiness) {
-        const socket = NodeNet.connect({ host: "127.0.0.1", port: readiness.port })
+      if (!("http" in readiness)) {
+        const socket = NodeNet.connect(readiness.port, "host" in readiness ? readiness.host : "127.0.0.1")
         cleanup = () => {
           socket.destroy()
         }
@@ -1014,6 +1035,35 @@ const serviceSecretBoundary = (
         catch: boundaryFailed("secret boundary could not bind a brokered origin")
       })
   )
+}
+
+/**
+ * Refuses to start a service whose port or HTTP probe already answers.
+ *
+ * A probe proves that something listens at its address, not that the
+ * listener is this service. With the address already held, the first probe
+ * passed against the other process long before the service could fail to
+ * bind, and `init` and every consumer then ran against that process.
+ */
+const refuseHeldAddress = (
+  parsed: ParsedSpec,
+  readiness: Readiness,
+  context: ProbeContext
+): Effect.Effect<void, ServiceError> => {
+  const address = probeAddress(readiness)
+  if (address === undefined) return Effect.void
+  return probeOnce(address, portProbeAttemptMs, context).pipe(Effect.flatMap((result) => {
+    if (!result.ok) return Effect.void
+    return Effect.fail(
+      new ServiceError({
+        key: parsed.spec.key,
+        reason: "port-in-use",
+        message: `service ${parsed.spec.key} cannot start: another process already listens on ${address.where}, ` +
+          `so its readiness probe would pass against that process`,
+        outputTail: ""
+      })
+    )
+  }))
 }
 
 /** Polls the readiness probe until it passes or the deadline expires. */
@@ -1291,6 +1341,7 @@ const startService = (
     // Cleanup hooks run after the owned process scope closes, including when
     // readiness or startup fails. They use the same bounded process adapter.
     yield* Effect.addFinalizer(() => runCleanup(parsed, environment))
+    if (parsed.spec.readiness !== undefined) yield* refuseHeldAddress(parsed, parsed.spec.readiness, probeContext)
     if (parsed.spec.docker !== undefined) {
       parsed = yield* createDockerService(
         { ...parsed, spec: { ...parsed.spec, argv: secretBoundary.argv } },
@@ -1375,6 +1426,9 @@ const startService = (
         awaitReadiness(parsed, parsed.spec.readiness, tail.read, probeContext),
         Deferred.await(unhealthy)
       )
+      // A passing probe proves a listener, not this service: one that lost its
+      // address exits just after. It has to outlive one more poll before init.
+      yield* Effect.raceFirst(Effect.sleep(readinessPollMs), Deferred.await(unhealthy))
     } else {
       // No probe: liveness is process liveness. A brief settle window lets an
       // immediate spawn failure (a missing executable) surface as the typed
@@ -1402,17 +1456,43 @@ const startService = (
  */
 export const make: Effect.Effect<ServiceSupervisor, never, Scope.Scope> = Effect.gen(function*() {
   const specs = new Map<string, ParsedSpec>()
+  const addresses = new Map<string, Semaphore.Semaphore>()
   // Registered before the services map, so it runs after every service scope
   // has closed and started its bounded late-container reap.
   const reaps = new Set<Fiber.Fiber<void>>()
   yield* Effect.addFinalizer(() => Fiber.awaitAll([...reaps]))
   const services = yield* RcMap.make({
-    lookup: (key: string): Effect.Effect<RunningService, ServiceError, Scope.Scope> => {
-      const parsed = specs.get(key)
-      return parsed === undefined
-        ? Effect.die(new Error(`service ${key} was looked up before its spec was registered`))
-        : startService(parsed, reaps)
-    }
+    lookup: (key: string): Effect.Effect<RunningService, ServiceError, Scope.Scope> =>
+      Effect.gen(function*() {
+        const parsed = specs.get(key)
+        if (parsed === undefined) {
+          return yield* Effect.die(new Error(`service ${key} was looked up before its spec was registered`))
+        }
+        const address = parsed.spec.readiness === undefined ? undefined : probeAddress(parsed.spec.readiness)
+        if (address !== undefined) {
+          // Different keys (including candidate trees) must never probe each
+          // other's service. Hold the address until process cleanup finishes.
+          const identity = `${address.host}:${address.port}`
+          let permit = addresses.get(identity)
+          if (permit === undefined) {
+            permit = Semaphore.makeUnsafe(1)
+            addresses.set(identity, permit)
+          }
+          yield* permit.takeScoped(1).pipe(Effect.timeoutOrElse({
+            duration: parsed.readinessTimeoutMs,
+            orElse: () =>
+              Effect.fail(
+                new ServiceError({
+                  key,
+                  reason: "port-in-use",
+                  message: `service ${key} waited ${parsed.readinessTimeoutMs}ms for ${address.where} to be released`,
+                  outputTail: ""
+                })
+              )
+          }))
+        }
+        return yield* startService(parsed, reaps)
+      })
   })
   const acquire = (spec: ServiceSpec): Effect.Effect<ServiceHandle, ServiceError, Scope.Scope> =>
     Effect.gen(function*() {
