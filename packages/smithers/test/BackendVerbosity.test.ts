@@ -108,7 +108,8 @@ describe("common command verbosity", () => {
           expect(result.code, result.output + result.error).toBe(1)
           expect(JSON.parse(result.output)).toMatchObject({
             code: "backend_unavailable",
-            message: expect.stringContaining("Check api_origin and your connection")
+            // The hint names where this origin came from: here the environment override.
+            message: expect.stringContaining("Check api_origin in SMITHERS_API_ORIGIN")
           })
           expect(result.output).not.toContain("ECONNREFUSED")
           expect(result.output + result.error).not.toContain("synthetic-verbose-secret")
