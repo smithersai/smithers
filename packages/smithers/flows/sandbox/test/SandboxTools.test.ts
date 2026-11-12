@@ -396,7 +396,7 @@ describe("SandboxTools read and write", () => {
   )
 
   it.effect(
-    "reads a file's exact bytes as base64, where its text would replace bytes that aren't UTF-8",
+    "reads a file's exact bytes as base64, where its text would replace bytes that aren't UTF-8 or drop a byte-order mark",
     () =>
       onMachine((session) =>
         Effect.gen(function*() {
@@ -415,6 +415,14 @@ describe("SandboxTools read and write", () => {
             typeof SandboxTools.ReadResult.Type
           >
           expect(Buffer.from(text.content, "utf8").equals(png)).toBe(false)
+          // A leading UTF-8 byte-order mark: text drops it, base64 keeps it.
+          const marked = Buffer.from([0xef, 0xbb, 0xbf, 0x61])
+          writeFileSync(join(session.workdir, "marked.txt"), marked)
+          expect(yield* exec(session, { tool: "read", path: "marked.txt", encoding: "base64" })).toMatchObject({
+            content: marked.toString("base64"),
+            bytes: marked.length
+          })
+          expect(yield* exec(session, { tool: "read", path: "marked.txt" })).toMatchObject({ content: "a" })
         })
       ),
     slow
