@@ -363,11 +363,11 @@ else
     if [ "$MEMORY" = "repo" ]; then
       export SMITHERS_MEMORY_DB="$S/memory/$REPO.db"
     fi
-    A=$("$S/flows.sh" --json plan fix | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).approval))}catch{process.exit(1)}})') || exit 1
-    "$S/flows.sh" --json approve "$A" --scope run >/dev/null 2>&1 || {
+    A=$("$S/flows.sh" --json flow plan fix | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).approval))}catch{process.exit(1)}})') || exit 1
+    "$S/flows.sh" --json approvals approve "$A" --scope run >/dev/null 2>&1 || {
       echo "[$RUN_ID] APPROVAL FAILED"; exit 1;
     }
-    timeout "$BUDGET" "$S/flows.sh" --json run "$A"
+    timeout "$BUDGET" "$S/flows.sh" --json flow execute "$A"
   ) > "$LOG_PREFIX.run.log" 2>&1
   RUN_STATUS=$?
   set -e

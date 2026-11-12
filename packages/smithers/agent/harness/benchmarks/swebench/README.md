@@ -166,9 +166,10 @@ export OPENAI_API_KEY=sk-...
 The script extracts the instance's testbed out of the official image, bind
 mounts it back at `/testbed` so the container's interpreter sees the same tree
 the agent edits, records the capture base (below), writes the fix flow with
-`lib/write-flow.mjs`, drives the CLI through `plan` → `approve` → `run` under a
-timeout, then captures the patch. It leaves `work/<id>/` (including the run's
-journal in `work/<id>/.flows/`), `journals/<id>/` (that journal, copied out
+`lib/write-flow.mjs`, drives the CLI through `flow plan` → `approvals approve`
+→ `flow execute` under a timeout, then captures the patch. It leaves
+`work/<id>/` (including the run's journal in `work/<id>/.flows/`),
+`journals/<id>/` (that journal, copied out
 so it survives the next wave), `patches/<id>.patch`,
 `patches/<id>.patch.untracked`, `timings/<id>.json`, and
 `logs-agent/<id>.run.log`.
@@ -2938,8 +2939,18 @@ under test](#the-subject-under-test)). The old rule was "build only when
 dependencies are loaded from the working tree, no rebuild rule could have
 pinned them anyway.
 
-Checked without spending tokens: `plan` renders the approval payload, `approve`
-accepts it, and `run` reaches the model boundary and refuses with
-`LaunchFailed: Set OPENAI_API_KEY to run the openai:gpt-5.6-sol seat` when no
-key is exported. Everything past that boundary needs a funded key and is what
+The rig calls the CLI's canonical commands: `flow plan`, `approvals approve` and
+`flow execute`. The root `plan`, `approve` and `run <payload>` spellings it used
+before are hidden transition aliases (`packages/smithers/src/cli/Compatibility.ts`)
+marked for removal in #3634 phase 2, and root `run` is the build-target runner.
+`fixtures/check-cli-commands.mjs` reads every `flows.sh` call out of
+`run-instance.sh` and `readonly-liveness.sh` and refuses one that the CLI would
+route through those aliases.
+
+Checked without spending tokens by `fixtures/check-cli-commands.mjs --real`, in
+the `:prerequisites` target: the same calls, run through `flows.sh` against the
+built CLI and the fix flow `lib/write-flow.mjs` writes, plan the flow, approve
+the payload, and reach the model boundary, where execution refuses with
+`LaunchFailed: Set OPENAI_API_KEY to run the <seat> seat` because no key is
+exported. Everything past that boundary needs a funded key and is what
 `run-instance.sh` exercises.

@@ -106,6 +106,7 @@ case "${1:---offline}" in
       exit 1
     fi
     node "$S/fixtures/check-subject.mjs"
+    node "$S/fixtures/check-cli-commands.mjs" --real
     node "$S/fixtures/check-prompt-bytes.mjs"
     "$S/.venv-swb/bin/python" "$S/fixtures/check-eval-exports.py"
     exit 0
@@ -153,6 +154,9 @@ node "$S/fixtures/check-agreement.mjs"
 
 echo "== the CLI flows.sh execs"
 node "$S/fixtures/check-cli-path.mjs"
+
+echo "== the commands the rig sends that CLI"
+node "$S/fixtures/check-cli-commands.mjs"
 
 echo "== the environment the lane hands that CLI"
 node "$S/fixtures/check-env-names.mjs"

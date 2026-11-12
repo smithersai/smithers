@@ -55,6 +55,7 @@ for (
     "check-lock.sh",
     "check-compare-codex-lanes.mjs",
     "check-cli-path.mjs",
+    "check-cli-commands.mjs",
     "check-plue-transport.py"
   ]
 ) {

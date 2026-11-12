@@ -53,9 +53,9 @@ node -e '
 echo "== running the probe ($SEAT, cap $CAP)"
 (
   cd "$WORK" || exit 1
-  A=$("$S/flows.sh" --json plan probe | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).approval))}catch{process.exit(1)}})') || exit 1
-  "$S/flows.sh" --json approve "$A" --scope run >/dev/null || exit 1
-  "$S/flows.sh" --json run "$A"
+  A=$("$S/flows.sh" --json flow plan probe | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).approval))}catch{process.exit(1)}})') || exit 1
+  "$S/flows.sh" --json approvals approve "$A" --scope run >/dev/null || exit 1
+  "$S/flows.sh" --json flow execute "$A"
 ) > "$WORK/probe.log" 2>&1 || echo "   (the run exited non-zero; the journal is still the evidence)"
 
 echo "== journal"
