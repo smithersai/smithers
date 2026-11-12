@@ -88,13 +88,27 @@ Named browser sites and status:
 ### A backend that breaks the conversation's rules (vl-coverage-core, 2026-11-12)
 
 `fault=forged` (`test/support/forgedEvents.vibe`) inserts schema-valid events that `apply` must ignore into the real
-mock's stream: 33 in the home conversation (8 while a reply streams: another reply or tour, pane and tour moves by the
-wrong id; 25 after it: repeated, empty and id-less posts, replies to nothing, moves of no reply, tour or run, refused
-grants) and 6 in a tour (a pause before any walkthrough, out-of-range steps, an empty target, out-of-range seeks).
+mock's stream: 34 in the home conversation (9 while a reply streams: a restart of the reply before it streamed
+anything, which clears nothing, then another reply or tour, pane and tour moves by the wrong id; 25 after it: repeated,
+empty and id-less posts, replies to nothing, moves of no reply, tour or run, refused grants) and 7 in a tour (a pause
+before any walkthrough, a settlement in a conversation that requested no run, out-of-range steps, an empty target,
+out-of-range seeks).
 Each takes the next sequence number, so the page applies it rather than replaying a gap; the real events after it are
 renumbered, and a subscription that resumes inside an insertion gets the rest of it first. `e2e/core-conversation.spec.ts`
 asserts the client's conversation equals the real one but for `seq`, one question and one answer show, no forged text
 shows, and the tour stays on its real step and still moves on.
+
+**A reply a reload interrupted** (`e2e/core-restore.spec.ts`, vl-coverage-core). The page journals the walkthrough's
+demo conversation in localStorage; the spec seeds the journal a page leaves when it closes mid-reply (a post, the
+reply's start, its first words) and loads the page with the tour active. The mock restores the conversation, fails
+the reply no execution can finish (`MockFactory` `openRoom`), and the page shows "The agent failed. Try again." under
+the partial reply (`apply`'s `ReplyFailed`, `viewDecision` `failureOf`, `view.vibe` 263). A new question is answered.
+Still open: a `ReplyFailed` with an empty reason, which no producer in the mock sends.
+
+**A clock the sandbox meter cannot read** (`fault=sandbox-clock`, `e2e/core-sandbox-clock.spec.ts`). After the first
+sandbox starts, the faulty factory's sandbox clock reads before 1970 for one sandbox call. `sandboxHost` `load` fails
+on it and `emergency` stops every running sandbox with real machine stops before the call fails; the page shows the
+sandbox stopped and the command wrote nothing.
 
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
@@ -242,7 +256,6 @@ in the same patch as its list: 12 of 12 focused #48 (`s25/diag2.log`), and 9 of 
 | --- | --- |
 | `view.vibe` `docsPane`, `viewDecision` `docsAddress` | Only the live model's docs tool (`worker/WikiTools.vibe`) opens a non-wiki page; the mock agent never does. Needs a recorded model reply (VL-36, `vl-record-replay`). |
 | `markdown.vibe` 114–145 (tables, lists, quotes) | No scripted mock reply holds them, and the wiki pages are compiled at build time. Needs a recorded model reply, or a wiki fixture whose repository copy holds them. |
-| `viewDecision` `failureOf`, `view.vibe` 263 | A failed reply. The mock fails a reply only when a reload interrupts it, and only tour and demo conversations persist across a reload. |
 | `emptyTitle` "No VIPs in review", "No … issues" | The fixture always has an open VIP (#44, accepted) and open and closed issues. |
 
 **`e2e/source-map.spec.ts` timed out in all three projects on `main`** (120 s). Its `measure` call compiled the

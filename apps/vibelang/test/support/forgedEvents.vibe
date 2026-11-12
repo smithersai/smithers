@@ -62,9 +62,14 @@ function shiftBefore(lane: Lane, seq: number): number {
   return shift
 }
 
-/** Events a streaming reply must ignore: another reply or tour while one works, and pane or tour moves by the wrong id. */
+/**
+ * Events a streaming reply must ignore: another reply or tour while one works, and pane or tour moves by the wrong id.
+ * First, a restart of the reply itself before it streamed anything, as a retried model call sends: the page clears
+ * the reply's text, which is still empty, so the conversation stays the real one.
+ */
 function whileStreaming(post: string, reply: string): ReadonlyArray<Event> {
   return [
+    { type: "ReplyRestarted", seq: 0, id: reply },
     { type: "ReplyStarted", seq: 0, id: "forged-reply", inReplyTo: post },
     { type: "TourStarted", seq: 0, id: "forged-tour" },
     { type: "ReplyDelta", seq: 0, id: "forged-reply", text: "forged" },
@@ -107,9 +112,12 @@ function afterSettled(post: string, clientId: string, reply: string): ReadonlyAr
   ]
 }
 
-/** A tour that shows no walkthrough yet must ignore a pause. */
+/** A tour that shows no walkthrough yet must ignore a pause, and a conversation that requested no run a settlement. */
 function beforeWalkthrough(tour: string): ReadonlyArray<Event> {
-  return [{ type: "TourPaused", seq: 0, id: tour, at: 0 }]
+  return [
+    { type: "TourPaused", seq: 0, id: tour, at: 0 },
+    { type: "ActionSettled", seq: 0, id: "forged-run", state: "passed", result: "", at: 0 },
+  ]
 }
 
 /**

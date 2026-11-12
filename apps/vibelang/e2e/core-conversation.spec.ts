@@ -23,16 +23,16 @@ test("rule-breaking events in a reply change nothing the page shows", async ({ p
   await prompt.press("Enter")
   const answers = page.locator(".sui-chat-message[data-role='assistant']")
   await expect(answers).toHaveAttribute("data-done", "true", { timeout: 15_000 })
-  // 8 forged while the reply streams and 25 after it finishes, then the reply's end again; the client applies each
+  // 9 forged while the reply streams and 25 after it finishes, then the reply's end again; the client applies each
   // forged event in order and drops the repeat.
-  await expect.poll(async () => (await read(page)).forged.home?.length).toBe(33)
+  await expect.poll(async () => (await read(page)).forged.home?.length).toBe(34)
   const last = (await read(page)).forged.home!.at(-1)!
   await expect.poll(async () => (await read(page)).client.conversation.seq).toBe(last)
   const snapshot = await read(page)
   const canonical = await page.evaluate(() => (window as unknown as { recovery: Recovery }).recovery.canonical())
   expect(snapshot.client.gap).toBe(false)
   expect(snapshot.client.pending).toEqual([])
-  expect(snapshot.client.conversation.seq).toBe(canonical.seq + 33)
+  expect(snapshot.client.conversation.seq).toBe(canonical.seq + 34)
   const { seq: _seen, runs: seenRuns, ...seen } = snapshot.client.conversation
   const { seq: _real, runs: realRuns, ...real } = canonical
   expect(seen).toEqual(real)
@@ -53,8 +53,8 @@ test("rule-breaking walkthrough events leave the tour on its real step", async (
   await page.getByRole("button", { name: "Learn more", exact: true }).click()
   const bar = page.getByRole("region", { name: "Walkthrough" })
   await expect(bar).toHaveAttribute("data-step", "1", { timeout: 15_000 })
-  // A pause before the first step, then three out-of-range steps and two out-of-range seeks after it.
-  await expect.poll(async () => Object.entries((await read(page)).forged).find(([conversation]) => conversation.startsWith("tour-"))?.[1].length).toBe(6)
+  // A pause and a settlement of no run before the first step, then three out-of-range steps and two out-of-range seeks after it.
+  await expect.poll(async () => Object.entries((await read(page)).forged).find(([conversation]) => conversation.startsWith("tour-"))?.[1].length).toBe(7)
   await expect(bar).toHaveAttribute("data-step", "1")
   // The real events after the forged ones still apply: the tour moves on when asked.
   await page.getByRole("button", { name: "Skip", exact: true }).click()
