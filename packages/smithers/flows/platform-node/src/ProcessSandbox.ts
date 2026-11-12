@@ -133,7 +133,8 @@ export interface Host {
   readonly isSymbolicLink?: ((path: string) => boolean) | undefined
   /**
    * The names of a directory's direct children, or undefined when the host
-   * cannot list it. Read grants remain exact regardless of this listing.
+   * cannot list it. Only the hidden-entry search uses it; read grants never
+   * depend on a listing.
    */
   readonly entries?: ((directory: string) => ReadonlyArray<string> | undefined) | undefined
   /**
@@ -249,9 +250,10 @@ export interface Plan {
    */
   readonly links?: ReadonlyArray<Link> | undefined
   /**
-   * Paths inside a granted directory that the declaration did not cover,
-   * re-closed after the grant. Only a mechanism with deny rules (seatbelt)
-   * folds; the others keep every declared file as its own entry.
+   * Paths re-closed after the read grants. {@link plan} never produces any:
+   * every declared file stays its own read, so nothing needs re-closing.
+   * Seatbelt renders paths a caller supplies as deny rules after the grants;
+   * the other mechanisms have no deny rules and ignore them.
    */
   readonly readDenies: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
