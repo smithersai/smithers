@@ -998,6 +998,33 @@ describe("WorkspaceSandbox filesystem host", () => {
       expect(yield* withCrypto(program)).toMatchObject({ code: "invalid_path" })
     }))
 
+  for (const path of ["../outside.txt", "/abs.txt"]) {
+    it.effect(`refuses a declared removal path that escapes the workspace (${path})`, () =>
+      Effect.gen(function*() {
+        const reads: Array<string> = []
+        const fs = isolated(FileSystem.makeNoop({
+          readFile: (path) =>
+            Effect.sync(() => {
+              reads.push(String(path))
+              return encoder.encode("outside")
+            })
+        }))
+        const sandbox = WorkspaceSandbox.makeFileSystem(fs, hostPath, ArtifactStore.makeNoop(), "/w")
+        let executed = false
+        const error = yield* withCrypto(Effect.flip(sandbox.execute({
+          descriptor: descriptor({ removes: [path] }),
+          workflow: Effect.sync(() => {
+            executed = true
+            return null
+          })
+        })))
+
+        expect(error).toMatchObject({ code: "invalid_path" })
+        expect(reads).toEqual([])
+        expect(executed).toBe(false)
+      }))
+  }
+
   it.effect("reports a refusing host honestly rather than as an empty read set", () =>
     Effect.gen(function*() {
       const fs = FileSystem.makeNoop({

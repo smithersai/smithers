@@ -1583,7 +1583,6 @@ export const makeFileSystem = (
       }
       for (const path of descriptor.removes ?? []) {
         const normalized = normalizePath(root, path)
-        /* v8 ignore next -- `FileBoundary.removes` is `FileSet.Pattern`-checked, so a decoded boundary cannot carry an upward or absolute removal; the branch guards hand-built descriptors */
         if (Result.isFailure(normalized)) return yield* Effect.fail(normalized.failure)
         const content = yield* readIfPresent(hostPath(normalized.success))
         if (content !== undefined) base.set(normalized.success, content)
