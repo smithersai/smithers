@@ -157,6 +157,21 @@ test.describe("the history page", () => {
     await expect(page.getByRole("button", { name: "Insert before…" })).toHaveCount(0)
   })
 
+  test("shows a new member and a community member only what a viewer sees", async ({ page }) => {
+    // Planning, starting and notes need a contributor (flowMachine.vibe `leastRole`); both roles rank below one.
+    for (const role of ["new", "community"]) {
+      await open(page, `&role=${role}`)
+      await expect(page.getByRole("button", { name: "Plan work" })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Fold" })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Export", exact: true })).toHaveCount(0)
+      await page.getByRole("button", { name: /The compiler/ }).click()
+      await page.getByRole("list", { name: "The compiler" }).getByRole("link").first().click()
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+      await expect(page.getByRole("button", { name: "Add note" })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Amend…" })).toHaveCount(0)
+    }
+  })
+
   test("amends a landed commit as a maintainer, and Escape closes the dialog", async ({ page }) => {
     await open(page)
     await page.getByRole("button", { name: /The compiler/ }).click()

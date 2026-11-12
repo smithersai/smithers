@@ -1,0 +1,39 @@
+// @vitest-environment node
+// A history action the agent requests runs as the agent, in mock mode as live (VL-13). Live, `worker/ActionsHttp.vibe`
+// starts an agent-door run with actor "agent" (`startActor`) and `ActionRuns.callerOf` hands the history that actor, so
+// the agent's note is signed "(agent)" and the agent never takes a person-only action. The browser's mock Actions world
+// is the person's (`src/web/backend.vibe`); a run the agent requests there must still run as the agent.
+import { expect, it } from "@effect/vitest"
+import { Actions, type Door } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+
+/** Runs slash command `text` through `door` and answers its settled run's decoded result. */
+effect function ran(text: string, door: Door) {
+  const actions = try Actions
+  const id = try actions.command(text, door)
+  const last = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil((run) => run.state !== "queued" && run.state !== "running")))
+  const run = Option.getOrThrow(last)
+  try Effect.try(() => expect(run.state).toBe("passed"))
+  return (try Effect.try(() => JSON.parse(run.result))) as any
+}
+
+/** Plans a commit on the first epic and notes it through `door`; answers the note as the history records it. */
+effect function noted(door: Door, title: string) {
+  const outline = try ran(`/history {"what":"outline"}`, "button")
+  const planned = try ran(`/plan ${JSON.stringify({ how: "append", epic: outline.epics[0].id, newEpic: "", target: "", title, task: "" })}`, door)
+  try ran(`/note ${JSON.stringify({ id: planned.id, section: "tried", text: "From the chat." })}`, door)
+  const page = try ran(`/history ${JSON.stringify({ what: "commit", id: planned.id })}`, "button")
+  return page.commit.notes as ReadonlyArray<{ readonly text: string; readonly by: string }>
+}
+
+it.live("a note the agent requests is signed as the agent's, and a person's as theirs", () => scoped(effect {
+  provide MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provide(MockFactory)) {
+    const agent = try noted("agent", "fix(history): the agent's note")
+    const person = try noted("slash", "fix(history): the person's note")
+    try Effect.try(() => {
+      expect(agent.map((note) => note.by)).toEqual([expect.stringMatching(/ \(agent\)$/)])
+      expect(person.map((note) => note.by)).toEqual([expect.not.stringMatching(/\(agent\)/)])
+    })
+  }
+}), 60_000)

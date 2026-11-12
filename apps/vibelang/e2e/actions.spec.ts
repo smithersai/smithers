@@ -58,6 +58,24 @@ test("a run the scripted agent requests appears as its live card", async ({ page
   await expect(card.getByText("VibeLang agent", { exact: true })).toBeVisible()
 })
 
+test("a history note the scripted agent requests is signed as the agent's", async ({ page }) => {
+  // Live starts an agent-door run as the agent (worker/actionsDecision.vibe `startActor`); the mock does the same.
+  await chat(page)
+  await page.getByRole("combobox", { name: "Visit as" }).selectOption("contributor")
+  const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
+  await input.fill('Run /note {"id":"m1","section":"tried","text":"From the chat."}')
+  await input.press("Enter")
+  await expect(page.getByRole("button", { name: /Open Note run/ })).toBeVisible()
+  await input.fill('Run /history {"what":"commit","id":"m1"}')
+  await input.press("Enter")
+  const show = page.getByRole("button", { name: /Open show run/ })
+  await expect(show).toBeVisible()
+  await show.click()
+  const result = page.getByRole("region", { name: "Actions", exact: true }).getByLabel("Result", { exact: true })
+  await expect(result).toContainText("From the chat.")
+  await expect(result).toContainText("(agent)")
+})
+
 test.describe("local real-engine action faults and role views", () => {
   test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_4511 ?? process.env.E2E_PORT ?? 4173}` })
   test("all five roles see only commands they may run", async ({ page }) => {

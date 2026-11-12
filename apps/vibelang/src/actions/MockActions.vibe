@@ -66,11 +66,13 @@ export function MockActions(principal: Principal) {
       emit: (event) => record({ type: "TraceAction", id: event.run, key: event.key, name: event.name, attempt: event.attempt, state: event.state, at: event.at }),
     }
     // Who runs a history action: this world's person now, as the action host's authorize steps and the history ask.
+    // A run the agent requests runs as the agent, as live's `startActor` makes it: its origin names the actor.
     const caller: Caller.Shape = {
       principal: { role: "viewer", name: "Guest", agent: principal.actor === "agent" },
       current: effect () => {
         const person = try Effect.orDie(current())
-        return { role: person.role, name: person.login || "Guest", agent: principal.actor === "agent" }
+        const origin = try RunMetrics.CurrentOrigin
+        return { role: person.role, name: person.login || "Guest", agent: principal.actor === "agent" || origin.actor === "agent" }
       },
     }
     const history = try Effect.cached(effect {
@@ -120,7 +122,7 @@ export function MockActions(principal: Principal) {
         if (ownerRefused(registration(name).least, owner, person.id)) throw new ActionFailure({ code: "forbidden" })
         return try execute(engine, try prepare(name, payload as Schema.Json, id), id)
       }
-      const origin = try orDie(Effect.try(() => RunMetrics.withOrigin({ door, actor: principal.actor })))
+      const origin = try orDie(Effect.try(() => RunMetrics.withOrigin({ door, actor: actionActor(door, principal.actor) })))
       const result = try exit(program.pipe(Effect.provideService(StepTrace.Sink, observer), Effect.provideService(ActionDevice, factory), origin))
       // A cancel interrupts this fiber before the engine's execution, so a run that gets here was not cancelled.
       const status = mockState(Exit.isSuccess(result), Exit.isSuccess(result) && refused(result.value))

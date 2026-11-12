@@ -2979,3 +2979,33 @@ The three cases now check that the draft's own key is admitted and settled once,
 tokens were charged, and that `calls` equals the model requests counted at the recording's `fetch`
 (`recordedModel(...).requests`). Waiting: `LEAD RUNS: cd apps/vibelang && pnpm record:model -t "charged once"` (only
 those three cases; the committed recordings are not opened).
+
+## All five model recordings, and the agent's history runs (vl-coverage, session 28, 2026-11-12)
+
+The lead's `pnpm record:model -t "charged once"` on main `24672a91f3ef` (exit 0, 3 passed) recorded `review`,
+`vip-draft` and `wiki-draft` (`test/recordings/model-review.json`, `model-vip-draft.json`, `model-wiki-draft.json`,
+committed unchanged). All five cases of `test/model.recorded.test.vibe` replay with no key; none skips.
+
+**Bug: an agent-requested history write ran as the person in mock mode.** Live, `worker/ActionsHttp.vibe` starts an
+agent-door run with actor `agent` (`startActor`), and `ActionRuns.callerOf` hands the history that actor, so the
+agent's note is signed `name (agent)` and the agent never takes a person-only action. The browser's mock Actions world
+is the person's (`src/web/backend.vibe`), and `MockActions`' history caller read only that world's actor, so a note
+the scripted agent requested (`Run /note …`) was signed as the person. The caller now also reads the run's origin
+(`RunMetrics.CurrentOrigin`), whose actor `run` sets with the proved `actionActor(door, actor)`; the run's usage
+records name the agent too, as live's do. Unit: `test/agentDoorHistory.test.vibe` (failed first: the agent's note was
+signed `rira`). Journey: `e2e/actions.spec.ts` "a history note the scripted agent requests is signed as the agent's".
+It is also the browser's only path to `may`'s agent operand, `peopleOnly` and `historySignature`'s agent arm, and
+`/history` reaches `leastRole("show")`.
+
+`e2e/history.spec.ts` "shows a new member and a community member only what a viewer sees" covers `standing`'s `new`
+and `community` arms: both rank below a contributor, so neither plans, notes, folds or exports.
+
+### `src/history/flowMachine.vibe` sites the browser does not reach
+
+| Site | Reason |
+| --- | --- |
+| `record`, `lawful`; `authorize`'s non-`begun` arm; `canRecord`'s repeated-fold operand | The proof's model of a run. Product code calls `begin`, `authorize` and `canRecord` once per run (`flows.vibe` `authorizer`) and journals its record steps itself. Proved (0018) and unit-tested (`test/flowMachine.test.vibe`); spec functions once the compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`). |
+| `authorize`'s `forbidden` arm; `may`'s person-only refusal | The mock history page plays a person, and the same role hides every action it may not take; the agent's door has no command for approve, fold or export (`src/actions/catalog.vibe`). A refusal reaches the page only as the History's answer (`fault=refused`, `e2e/history-faults.spec.ts`). |
+| `historyStatus`, `historyResponse`, `resolvedRole`'s and `signedRole`'s live arms | Live mode only: `historyStatus` runs in the Worker (`wire.vibe`), `historyResponse` in `LiveMythical`, which the browser gate has no host for yet. A live history host beside `test/workerd/live-issues.vibe` closes them in the browser; the unit and workerd gates measure them meanwhile. |
+| `initialEpic`'s `"new"` arm | A history with no epics. The mock always bootstraps the seed, and the page shows Plan only after the outline loads. Unit: `test/flowMachineEdges.coverage.test.vibe`. |
+| `validPlanField`'s operation checks | No view sends `UpdatedForm` with field `how` (`historyView.vibe` sends title, epic, newEpic and task); the guard refuses a forged message the fuzz lane found (0015). Dead in the browser: removing `how` from `UpdatedForm`'s field literals would delete it, a change to vl-fuzzpkg's fix that this lane proposes on the board rather than makes. |
