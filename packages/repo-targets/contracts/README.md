@@ -115,7 +115,7 @@ site's own gate, `//apps/site:smithersLinks`.
 | `package-contract.test.mjs` | One version across the release line, a declared publishable surface, the `next` dist-tag, the scripts every gate invokes, and no published dependency on a private package. |
 | `barrels.test.mjs` | `@smthrs/flows` re-exports exactly the namespaces it lists, declares every package it re-exports, and every published root export points at a file that exists. |
 | `public-export-maps.test.mjs` | Explicit development/publication allowlists retain reviewed entrypoints, deny internal migrations and future files, and resolve equivalently through Node's ESM and CommonJS resolvers. |
-| `packages/repo-targets/contracts/test-script-wiring.test.mjs` | Every workspace member with tests has a `test` script, and the pnpm workspace and the root manifest name the same members. |
+| `packages/repo-targets/contracts/test-script-wiring.test.mjs` | Every workspace member with tests owns a `test` target that a required `ci.yml` job selects, or a reasoned exemption; no required job is advisory in any spelling of `continue-on-error`; and the pnpm workspace and the root manifest name the same members. |
 | `reliability-workflow.test.mjs` | The scheduled `signal-state-machine` job in `reliability.yml` records its seed, preserves histories and results on failure, verifies the evidence and proves mutation sensitivity. |
 | `packages/repo-targets/contracts/ci-inventory.test.mjs` | The planned CI commands cover every package, app, script, eval and fault root, with a retained row per selected target and platform. |
 | `cli-verbs.test.mjs` | The CLI reference indexes every canonical command, retains the compatibility pages, and documents only flags the public parser accepts. |

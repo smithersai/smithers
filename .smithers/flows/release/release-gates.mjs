@@ -109,6 +109,7 @@ export const releaseGates = [
   { name: "TUI end-to-end suite", verb: "test", target: "//apps/tui:e2eTests" },
   { name: "Review flow", verb: "ci", target: "//.smithers/flows/review/..." },
   { name: "Bug worker", verb: "ci", target: "//apps/bug-worker/..." },
+  { name: "Maintainer site", verb: "ci", target: "//apps/maintainer-site/..." },
   { name: "Project copy drift", verb: "lint", target: "//:projectCopy" },
   { name: "Site", verb: "ci", target: "//apps/site/..." },
   { name: "Review eval suite (offline, baseline-gated)", verb: "test", target: "//.smithers/flows/review/seeded-bugs/..." },

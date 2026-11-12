@@ -222,30 +222,112 @@ const sources = faultPackages
   .map((path) => ({ relative: relative(root, path), text: readFileSync(path, "utf8") }))
   .sort((left, right) => left.relative.localeCompare(right.relative))
 
+/** The test APIs Vitest exports, whose chains and options mark a case. */
+const testApis = new Set(["it", "test", "describe", "suite"])
+
+/** Modifiers that focus, park or invert a case: refused anywhere. */
+const refusedModifiers = new Set(["only", "todo", "fails"])
+
+/** Modifiers that skip a case on a condition: allowed only where {@link allowedSkips} says so. */
+const skipModifiers = new Set(["skip", "skipIf", "runIf"])
+
+/**
+ * Every way `text` focuses, parks, inverts or skips a case, as
+ * `{ line, kind, spelling }` with `kind` one of `refused` or `skip`.
+ *
+ * The TypeScript parser reads the file, so the spelling does not matter: a
+ * chain rooted at a test API (`it`, `test`, `describe`, `suite`, or a local
+ * name one of them is imported as) is refused when any link is `only`, `todo`
+ * or `fails` (`it.concurrent.only`, `it.effect.fails`) and is a skip when any
+ * link is `skip`, `skipIf` or `runIf` (`describe.sequential.skip`). An options
+ * object written inline in such a call is read the same way by key
+ * (`{ only: true }` is refused, `{ skip: true }` is a skip), and any other
+ * `.skip(...)` call, such as `ctx.skip()` on a test context, is a skip.
+ *
+ * Known limit: options held in a variable (`it("x", options, fn)`) are not
+ * followed. Review catches that spelling; this audit does not.
+ */
+export const caseMarkers = (path, text) => {
+  const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const apis = new Set(testApis)
+  for (const statement of file.statements) {
+    const bindings = ts.isImportDeclaration(statement) ? statement.importClause?.namedBindings : undefined
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) {
+        if (testApis.has((element.propertyName ?? element.name).text)) apis.add(element.name.text)
+      }
+    }
+  }
+  const memberName = (node) =>
+    ts.isPropertyAccessExpression(node)
+      ? node.name.text
+      : ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)
+      ? node.argumentExpression.text
+      : undefined
+  // The links of a callee chain from its root outward, through calls such as `it.skipIf(c)(...)`.
+  const chain = (node) => {
+    if (ts.isIdentifier(node)) return [node.text]
+    if (ts.isCallExpression(node) || ts.isTaggedTemplateExpression(node)) {
+      return chain(ts.isCallExpression(node) ? node.expression : node.tag)
+    }
+    const name = memberName(node)
+    return name === undefined ? [] : [...chain(node.expression), name]
+  }
+  const found = []
+  const mark = (node, kind) =>
+    found.push({ line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1, kind, spelling: node.getText(file) })
+  const visit = (node) => {
+    const name = memberName(node)
+    if (name !== undefined) {
+      const links = chain(node)
+      if (apis.has(links[0])) {
+        if (refusedModifiers.has(name)) mark(node, "refused")
+        else if (skipModifiers.has(name)) mark(node, "skip")
+      } else if (name === "skip" && ts.isCallExpression(node.parent) && node.parent.expression === node) {
+        mark(node, "skip")
+      }
+    }
+    if (ts.isCallExpression(node) && apis.has(chain(node.expression)[0])) {
+      for (const argument of node.arguments) {
+        if (!ts.isObjectLiteralExpression(argument)) continue
+        for (const property of argument.properties) {
+          const key = property.name && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name))
+            ? property.name.text
+            : undefined
+          if (refusedModifiers.has(key)) mark(property, "refused")
+          else if (key === "skip") mark(property, "skip")
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return found
+}
+
 describe("the fault-suite skip audit", () => {
   it("has sources to audit", () => {
     assert.ok(faultPackages.includes("smithers"), "the CLI must carry the process-level fault scenarios")
     assert.ok(sources.length > 15, `expected the matrix to be populated, found ${sources.length} files`)
   })
 
-  it("refuses a focused test, which silently drops every other case in its file", () => {
+  it("refuses a focused, parked or inverted test", () => {
+    // `.only` silently drops every other case in its file, `.todo` reports as a
+    // pass, and `.fails` turns a failing required gate into a pass.
     for (const source of sources) {
-      const focused = [...source.text.matchAll(/\b(?:it|test|describe)\.only\b/g)]
-      assert.equal(focused.length, 0, `${source.relative} contains ${focused.length} focused test(s)`)
-    }
-  })
-
-  it("refuses a parked test, which reports as a pass", () => {
-    for (const source of sources) {
-      const parked = [...source.text.matchAll(/\b(?:it|test|describe)\.todo\b/g)]
-      assert.equal(parked.length, 0, `${source.relative} contains ${parked.length} todo test(s)`)
+      const refused = caseMarkers(source.relative, source.text).filter((marker) => marker.kind === "refused")
+      assert.deepEqual(
+        refused.map((marker) => `${marker.line} ${marker.spelling}`),
+        [],
+        `${source.relative} focuses, parks or inverts a case. State a known defect as a plain test that fails, cite `
+          + "its owner in the case file, and record the shipped limitation in packages/repo-targets/contracts/fault-gaps.md."
+      )
     }
   })
 
   it("allows a conditional skip only where one is declared", () => {
     for (const source of sources) {
-      const skips = [...source.text.matchAll(/\b(?:it|test|describe)\.(?:skip|skipIf|runIf)\b/g)]
-      if (skips.length === 0) continue
+      if (!caseMarkers(source.relative, source.text).some((marker) => marker.kind === "skip")) continue
       assert.ok(
         allowedSkips.has(source.relative),
         `${source.relative} skips conditionally without a row in allowedSkips. Add one with the condition it `
@@ -254,16 +336,47 @@ describe("the fault-suite skip audit", () => {
     }
   })
 
-  it("refuses an inverted expectation, which reports green over a known defect", () => {
-    for (const source of sources) {
-      const inverted = [...source.text.matchAll(/\b(?:it|test)\.fails\b/g)]
-      assert.equal(
-        inverted.length,
-        0,
-        `${source.relative} pins a defect with .fails, which turns a failing required gate into a pass. `
-          + "State the requirement as a plain test that fails, cite its owner in the case file, and record "
-          + "the shipped limitation in packages/repo-targets/contracts/fault-gaps.md."
-      )
+  it("reads every spelling Vitest accepts for a focused, parked, inverted or skipped case", () => {
+    const kinds = (text) => caseMarkers("case.test.ts", text).map((marker) => marker.kind)
+    for (const text of [
+      "it.only(\"x\", fn)",
+      "test.todo(\"x\")",
+      "describe.only(\"x\", fn)",
+      "it.fails(\"x\", fn)",
+      "it.concurrent.only(\"x\", fn)",
+      "it.concurrent.fails(\"x\", fn)",
+      "suite.only(\"x\", fn)",
+      "it.effect.only(\"x\", fn)",
+      "it[\"only\"](\"x\", fn)",
+      "it.only.each([1])(\"x\", fn)",
+      "it(\"x\", { only: true }, fn)",
+      "it(\"x\", { todo: true }, fn)",
+      "it(\"x\", { fails: true }, fn)",
+      "describe(\"x\", { \"only\": true }, fn)",
+      "import { it as check } from \"vitest\"\ncheck.only(\"x\", fn)"
+    ]) {
+      assert.deepEqual(kinds(text), ["refused"], text)
+    }
+    for (const text of [
+      "it.skip(\"x\", fn)",
+      "describe.sequential.skip(\"x\", fn)",
+      "it.skipIf(process.platform === \"win32\")(\"x\", fn)",
+      "test.runIf(ok)(\"x\", fn)",
+      "it(\"x\", { skip: true }, fn)",
+      "it(\"x\", (ctx) => { ctx.skip() })",
+      "it(\"x\", (context) => { context.skip(\"no jj\") })"
+    ]) {
+      assert.deepEqual(kinds(text), ["skip"], text)
+    }
+    for (const text of [
+      "it(\"x\", fn)",
+      "describe(\"only the journal\", () => { it(\"todo list\", fn) })",
+      "it(\"x\", { timeout: 5_000 }, fn)",
+      "const options = { only: true }",
+      "// it.only(\"x\", fn)",
+      "expect(result.fails).toBe(0)"
+    ]) {
+      assert.deepEqual(kinds(text), [], text)
     }
   })
 

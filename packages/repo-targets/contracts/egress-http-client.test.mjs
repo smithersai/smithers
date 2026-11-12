@@ -3,8 +3,11 @@
  * proxy its environment names.
  *
  * `@effect/platform-node` ships `NodeHttpClient.layerUndici`, whose dispatcher
- * is a bare Undici `Agent`. A bare `Agent` dials every origin directly: it does
- * not read `HTTP_PROXY`, `HTTPS_PROXY` or `NO_PROXY`. Provided under a layer
+ * is a bare Undici `Agent`, and a dozen siblings that build the same kind of
+ * pool (`layerUndiciOptions`, `layerDispatcher`, `makeDispatcherOptions`) or a
+ * bare `http.Agent` (`layerNodeHttp`, `makeAgent`). A bare agent dials every
+ * origin directly: it does not read `HTTP_PROXY`, `HTTPS_PROXY` or `NO_PROXY`.
+ * Provided under a layer
  * that takes `HttpClient` from context — a judge, a model transport, a fetch
  * rule, a host bundle — it also *shadows* whatever proxy-aware client the host
  * built, and the call site reads as correct either way. That is the whole
@@ -18,6 +21,10 @@
  * through the proxy the environment names and is exactly the plain Undici pool
  * when it names none — so an unproxied host is unchanged and there is no reason
  * for a composition to reach past it.
+ *
+ * So the ban is by module, not by name: outside the replacement, shipped source
+ * may name only the `NodeHttpClient` exports that take their dispatcher from
+ * context or configure it ({@link permitted}).
  *
  * Scope is shipped source. Test trees are deliberately outside: a test that
  * names `layerUndici` is pinning a transport it owns end to end, against a
@@ -128,6 +135,22 @@ const banned = [
   { pattern: /\bmakeDispatcher\b/, name: "NodeHttpClient.makeDispatcher" }
 ]
 
+/**
+ * The `NodeHttpClient` exports shipped source may name. `layerUndiciNoDispatcher`
+ * and `makeUndici` take their `Dispatcher` from context, which is how the
+ * replacement routes them through the proxy; `UndiciOptions` configures them.
+ * Every other export builds its own Undici `Agent` or `http.Agent`, reads the
+ * process-global dispatcher, or goes through `fetch`, and none of those read
+ * the environment's proxy.
+ */
+const permitted = new Set(["layerUndiciNoDispatcher", "makeUndici", "UndiciOptions", "Dispatcher"])
+
+/** The module specifier of the `NodeHttpClient` module itself. */
+const clientModule = /^@effect\/platform-node\/NodeHttpClient(?:\.js)?$/
+
+/** The package root, whose `NodeHttpClient` member is the same module. */
+const platformModule = /^@effect\/platform-node(?:\/index(?:\.js)?)?$/
+
 /** The name of a member an object literal, class or interface defines: a declaration, not a read. */
 const declaresMember = (node) =>
   (ts.isPropertyAssignment(node.parent)
@@ -148,15 +171,26 @@ const scriptKind = (path) =>
 /**
  * Every banned spelling in `content` outside a comment, as `line name` pairs.
  *
- * Comments are prose, which may name the banned spelling to explain why it is
- * banned, so they are exempt. The TypeScript parser decides what is a comment:
- * a line-prefix rule exempts code that follows a closing block comment or that
- * starts with `*` inside an expression. Identifiers and computed member names
- * are checked, so `NodeHttpClient["layerUndici"]` fails too, and so does any
- * string whose whole text is a banned name, the key of `NodeHttpClient[k]`. A
- * string that only describes the ban, such as a security-review prompt, is
- * prose like a comment. The raw-text pre-check also passes any file holding a
- * `\u` escape, so an escaped identifier reaches the parser.
+ * Two readings, both by the TypeScript parser, so a comment is never read.
+ *
+ * By module: a namespace bound to `NodeHttpClient` (`import * as N from
+ * "@effect/platform-node/NodeHttpClient"`, `import { NodeHttpClient as N }`
+ * from the package root or from a host package that re-exports it, or
+ * `P.NodeHttpClient` off `import * as P from "@effect/platform-node"`) may be
+ * read only for a {@link permitted} export: by member, string key, qualified
+ * type name or destructuring. A named import or re-export of any other export
+ * fails, and so do the forms whose name the gate cannot see: a computed key, an
+ * alias of the namespace, `export *`, and a dynamic `import()` or `require` of
+ * the module. Re-exporting the namespace under its own name passes, because
+ * every importer of that name is read the same way.
+ *
+ * By name, for the two spellings that predate this gate: an identifier or a
+ * computed member name is checked, so `NodeHttpClient["layerUndici"]` fails
+ * too, and so does any string whose whole text is a banned name, the key of
+ * `NodeHttpClient[k]`. A string that only describes the ban, such as a
+ * security-review prompt, is prose like a comment. The raw-text pre-check also
+ * passes any file holding a `\u` escape, so an escaped identifier reaches the
+ * parser.
  *
  * A name that declares a member is not a use: Effect's `Scheduler` interface
  * has its own `makeDispatcher`, and an object literal, class or interface that
@@ -164,27 +198,132 @@ const scriptKind = (path) =>
  * destructuring it or passing it on still fails.
  *
  * Known limit: the check reads single literals, not constant folding, so a key
- * assembled at runtime, `NodeHttpClient["layer" + "Undici"]` or a template with
- * a substitution, passes. Review catches that spelling; this gate does not.
+ * assembled at runtime and read off something that is not a known namespace,
+ * such as a function parameter, passes. Review catches that spelling; this
+ * gate does not.
  */
 export const bannedUses = (path, content) => {
-  if (!/layerUndici|makeDispatcher|\\u/.test(content)) return []
+  if (!/layerUndici|makeDispatcher|NodeHttpClient|platform-node|\\u/.test(content)) return []
   const file = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, scriptKind(path))
-  const found = []
+  const found = new Set()
+  const report = (node, name) => found.add(`${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1} ${name}`)
+  const exported = (name) => {
+    if (!permitted.has(name)) return `NodeHttpClient.${name}`
+  }
+
+  // Local names bound to the NodeHttpClient namespace, and to the package root.
+  const namespaces = new Set()
+  const roots = new Set()
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue
+    const from = statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : undefined
+    if (from === undefined) continue
+    const ofClient = clientModule.test(from)
+    if (ts.isImportDeclaration(statement)) {
+      const bindings = statement.importClause?.namedBindings
+      if (bindings && ts.isNamespaceImport(bindings)) {
+        if (ofClient) namespaces.add(bindings.name.text)
+        else if (platformModule.test(from)) roots.add(bindings.name.text)
+      } else if (bindings) {
+        for (const element of bindings.elements) {
+          const imported = (element.propertyName ?? element.name).text
+          if (ofClient) {
+            const banned = exported(imported)
+            if (banned) report(element, banned)
+          } else if (imported === "NodeHttpClient") {
+            namespaces.add(element.name.text)
+          }
+        }
+      }
+    } else if (ofClient) {
+      const clause = statement.exportClause
+      if (clause === undefined) report(statement, "NodeHttpClient.*")
+      else if (ts.isNamespaceExport(clause)) {
+        if (clause.name.text !== "NodeHttpClient") report(statement, `NodeHttpClient as ${clause.name.text}`)
+      } else {
+        for (const element of clause.elements) {
+          const banned = exported((element.propertyName ?? element.name).text)
+          if (banned) report(element, banned)
+        }
+      }
+    }
+  }
+
+  /** Whether `node` evaluates to the NodeHttpClient namespace. */
+  const isNamespace = (node) =>
+    (ts.isIdentifier(node) && namespaces.has(node.text))
+    || ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node))
+      && ts.isIdentifier(node.expression) && roots.has(node.expression.text)
+      && (ts.isPropertyAccessExpression(node)
+        ? node.name.text === "NodeHttpClient"
+        : ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === "NodeHttpClient"))
+
+  /** Whether an identifier is a binding's own declaration or a member name rather than a read of the binding. */
+  const notARead = (node) =>
+    ts.isImportSpecifier(node.parent)
+    || ts.isNamespaceImport(node.parent)
+    || ts.isImportClause(node.parent)
+    || declaresMember(node)
+    || (ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)
+    || (ts.isQualifiedName(node.parent) && node.parent.right === node)
+    || (ts.isBindingElement(node.parent) && node.parent.propertyName === node)
+
+  /** Checks one read of the namespace by what its parent does with it. */
+  const namespaceRead = (node) => {
+    const parent = node.parent
+    if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+      const banned = exported(parent.name.text)
+      if (banned) report(parent, banned)
+    } else if (ts.isQualifiedName(parent) && parent.left === node) {
+      const banned = exported(parent.right.text)
+      if (banned) report(parent, banned)
+    } else if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+      const key = parent.argumentExpression
+      if (ts.isStringLiteralLike(key)) {
+        const banned = exported(key.text)
+        if (banned) report(parent, banned)
+      } else {
+        report(parent, "NodeHttpClient[computed]")
+      }
+    } else if (ts.isVariableDeclaration(parent) && parent.initializer === node && ts.isObjectBindingPattern(parent.name)) {
+      for (const element of parent.name.elements) {
+        const key = element.propertyName ?? element.name
+        const name = ts.isIdentifier(key) || ts.isStringLiteralLike(key) ? key.text : undefined
+        const banned = name === undefined ? "NodeHttpClient[computed]" : exported(name)
+        if (banned) report(element, banned)
+      }
+    } else if (ts.isExportSpecifier(parent) && (parent.name.text === "NodeHttpClient")) {
+      // Re-exported under its own name: every importer of that name is read as a namespace too.
+    } else {
+      report(node, "NodeHttpClient as a value")
+    }
+  }
+
   const visit = (node) => {
+    if (ts.isIdentifier(node) && !notARead(node) && isNamespace(node)) namespaceRead(node)
+    else if ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) && isNamespace(node)) namespaceRead(node)
+    if (
+      ts.isCallExpression(node)
+      && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+      && node.arguments.length > 0
+      && ts.isStringLiteralLike(node.arguments[0])
+      && clientModule.test(node.arguments[0].text)
+    ) {
+      report(node, "NodeHttpClient loaded dynamically")
+    }
     const named = (ts.isIdentifier(node) && !declaresMember(node))
       || (ts.isStringLiteralLike(node) && ts.isElementAccessExpression(node.parent) && node.parent.argumentExpression === node)
     const key = ts.isStringLiteralLike(node) && !named
     if (named || key) {
       const text = ts.isIdentifier(node) ? ts.idText(node) : node.text
       for (const { pattern, name } of banned) {
-        if (key ? exact(pattern).test(text) : pattern.test(text)) found.push(`${file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1} ${name}`)
+        if (key ? exact(pattern).test(text) : pattern.test(text)) report(node, name)
       }
     }
     ts.forEachChild(node, visit)
   }
   visit(file)
-  return found
+  return [...found]
 }
 
 /**
@@ -280,6 +419,66 @@ describe("the egress gate's own reading", () => {
       bannedUses("a.ts", "const x = { makeDispatcher: NodeHttpClient.makeDispatcher }\n"),
       ["1 NodeHttpClient.makeDispatcher"]
     )
+  })
+
+  it("refuses every NodeHttpClient export but the context-taking ones, however the module is bound", () => {
+    const client = "import * as NodeHttpClient from \"@effect/platform-node/NodeHttpClient\"\n"
+    assert.deepEqual(bannedUses("a.ts", `${client}Layer.provide(NodeHttpClient.layerUndiciOptions({}))\n`), [
+      "2 NodeHttpClient.layerUndiciOptions"
+    ])
+    assert.deepEqual(
+      bannedUses("a.ts", `${client}NodeHttpClient.layerUndiciNoDispatcher.pipe(Layer.provide(NodeHttpClient.layerDispatcher))\n`),
+      ["2 NodeHttpClient.layerDispatcher"]
+    )
+    for (const name of ["makeDispatcherOptions", "layerDispatcherOptions", "dispatcherLayerGlobal", "layerNodeHttp",
+      "layerNodeHttpOptions", "layerAgent", "makeAgent", "layerFetch"]) {
+      assert.deepEqual(bannedUses("a.ts", `${client}const x = NodeHttpClient.${name}\n`), [`2 NodeHttpClient.${name}`], name)
+    }
+    assert.deepEqual(
+      bannedUses("a.ts", `${client}const c = NodeHttpClient.makeUndici.pipe(Effect.provideService(NodeHttpClient.Dispatcher, d))\n`
+        + "const o: NodeHttpClient.UndiciOptions = {}\nconst l = NodeHttpClient.layerUndiciNoDispatcher\n"),
+      []
+    )
+    // Every way of binding the module, and every way of reading the binding.
+    assert.deepEqual(bannedUses("a.ts", "import { NodeHttpClient as H } from \"@effect/platform-node\"\nH.layerAgent\n"), [
+      "2 NodeHttpClient.layerAgent"
+    ])
+    assert.deepEqual(bannedUses("a.ts", "import { NodeHttpClient } from \"@smthrs/platform-node/NodeHost\"\nNodeHttpClient.layerNodeHttp\n"), [
+      "2 NodeHttpClient.layerNodeHttp"
+    ])
+    assert.deepEqual(bannedUses("a.ts", "import * as P from \"@effect/platform-node\"\nP.NodeHttpClient.layerDispatcher\n"), [
+      "2 NodeHttpClient.layerDispatcher"
+    ])
+    assert.deepEqual(bannedUses("a.ts", 'import * as P from "@effect/platform-node"\nP["NodeHttpClient"].layerDispatcher\n'), [
+      "2 NodeHttpClient.layerDispatcher"
+    ])
+    assert.deepEqual(bannedUses("a.ts", 'import * as P from "@effect/platform-node"\nP["NodeHttpClient"].layerUndiciNoDispatcher\n'), [])
+    assert.deepEqual(bannedUses("a.ts", "import { layerDispatcher as d, makeUndici } from \"@effect/platform-node/NodeHttpClient\"\n"), [
+      "1 NodeHttpClient.layerDispatcher"
+    ])
+    assert.deepEqual(bannedUses("a.ts", `${client}NodeHttpClient["layerAgent"]\n`), ["2 NodeHttpClient.layerAgent"])
+    assert.deepEqual(bannedUses("a.ts", `${client}NodeHttpClient[k]\n`), ["2 NodeHttpClient[computed]"])
+    assert.deepEqual(bannedUses("a.ts", `${client}const { makeUndici, layerNodeHttp: l } = NodeHttpClient\n`), [
+      "2 NodeHttpClient.layerNodeHttp"
+    ])
+    assert.deepEqual(bannedUses("a.ts", `${client}const alias = NodeHttpClient\n`), ["2 NodeHttpClient as a value"])
+    assert.deepEqual(bannedUses("a.ts", `${client}use({ NodeHttpClient })\n`), ["2 NodeHttpClient as a value"])
+    assert.deepEqual(bannedUses("a.ts", "export * from \"@effect/platform-node/NodeHttpClient\"\n"), ["1 NodeHttpClient.*"])
+    assert.deepEqual(bannedUses("a.ts", "export { layerAgent } from \"@effect/platform-node/NodeHttpClient\"\n"), [
+      "1 NodeHttpClient.layerAgent"
+    ])
+    assert.deepEqual(bannedUses("a.ts", "const m = await import(\"@effect/platform-node/NodeHttpClient\")\n"), [
+      "1 NodeHttpClient loaded dynamically"
+    ])
+    assert.deepEqual(bannedUses("a.cjs", "const m = require(\"@effect/platform-node/NodeHttpClient\")\n"), [
+      "1 NodeHttpClient loaded dynamically"
+    ])
+    // A host re-exporting the namespace under its own name is read where it is imported.
+    assert.deepEqual(bannedUses("a.ts", `${client}export { NodeHttpClient }\n`), [])
+    assert.deepEqual(bannedUses("a.ts", `${client}export { NodeHttpClient as Http }\n`), ["2 NodeHttpClient as a value"])
+    // A member of another object that shares the name is not the module.
+    assert.deepEqual(bannedUses("a.ts", "WorkspaceSandbox.layerDispatcher(d)\nexport const layerDispatcher = 1\n"), [])
+    assert.deepEqual(bannedUses("a.ts", `${client}// NodeHttpClient.layerAgent is banned\n`), [])
   })
 
   it("reads a symlinked source file and a symlinked directory, and survives a link loop", () => {

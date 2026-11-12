@@ -327,7 +327,7 @@ test("the inventory keeps the gates the review found missing", () => {
   // candidate with far less evidence than a tag-driven one. These are the
   // gates that review named, so the fix cannot regress quietly.
   for (const target of [
-    "//apps/tui:e2eTests", "//.smithers/flows/review/...", "//apps/bug-worker/...",
+    "//apps/tui:e2eTests", "//.smithers/flows/review/...", "//apps/bug-worker/...", "//apps/maintainer-site/...",
     "//:projectCopy", "//packages/smithers/agent/regression:test", "//packages/smithers/agent/regression:check", "//evals/authoring:test",
     "//evals/authoring:check", "//packages/smithers/agent/harness/benchmarks/swebench:offline", "//packages/smithers/agent/harness/benchmarks/swebench:check", "//.smithers/flows/review/seeded-bugs/...",
     "//.smithers/flows/review/seeded-bugs:check", "//:ci", "//:factoryProjection",

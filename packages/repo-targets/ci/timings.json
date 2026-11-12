@@ -59,6 +59,16 @@
       "label": "//packages/smithers/flows/database:bunTest",
       "durationMs": 7669,
       "exitCode": 0
+    },
+    {
+      "revision": "2649581d7eac7db5d4d16680bc2d9b8a9e4525c3",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-13",
+      "command": "pnpm exec smthrs test '//packages/smithers/flows/platform-node:importRules' --jobs 8",
+      "label": "//packages/smithers/flows/platform-node:importRules",
+      "durationMs": 540,
+      "exitCode": 0
     }
   ],
   "method": "Maximum completed elapsed milliseconds per target, including failures, or an unfinished target's observed elapsed lower bound at cancellation. Service lifetimes are excluded from censored target costs. These observations are workload estimates, not upper wall-time bounds; no cache hits assumed.",
@@ -619,6 +629,7 @@
     "//packages/smithers/flows/platform-node:circular": 1700,
     "//packages/smithers/flows/platform-node:docs": 112,
     "//packages/smithers/flows/platform-node:fmt": 1513,
+    "//packages/smithers/flows/platform-node:importRules": 540,
     "//packages/smithers/flows/platform-node:lib": 18300,
     "//packages/smithers/flows/platform-node:lint": 9336,
     "//packages/smithers/flows/platform-node:test": 247700,

@@ -45684,6 +45684,53 @@
     }
   },
   {
+    "label": "//apps/maintainer-site:test",
+    "package": "apps/maintainer-site",
+    "name": "test",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/maintainer-site/*.mjs",
+        "exclude": [
+          "apps/maintainer-site/**/*.test.mjs"
+        ]
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/maintainer-site/client/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/maintainer-site/test/fixtures/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/maintainer-site/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/maintainer-site/markdown.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/maintainer-site/test/*.test.mjs",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/maintainer-site/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/mvp:deploymentSources",
     "package": "apps/mvp",
     "name": "deploymentSources",
@@ -55247,6 +55294,7 @@
       "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f7265766965772f7365656465642d62756773",
       "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f77696b69",
       "//packages/repo-targets:repositoryInputs_617070732f6275672d776f726b6572",
+      "//packages/repo-targets:repositoryInputs_617070732f6d61696e7461696e65722d73697465",
       "//packages/repo-targets:repositoryInputs_617070732f6d7670",
       "//packages/repo-targets:repositoryInputs_617070732f7061747465726e732d73697465",
       "//packages/repo-targets:repositoryInputs_617070732f73697465",
@@ -55455,6 +55503,26 @@
       {
         "kind": "glob",
         "pattern": "apps/bug-worker/**/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/repo-targets:repositoryInputs_617070732f6d61696e7461696e65722d73697465",
+    "package": "packages/repo-targets",
+    "name": "repositoryInputs_617070732f6d61696e7461696e65722d73697465",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/maintainer-site/**/*",
         "exclude": []
       }
     ],

@@ -14,6 +14,7 @@ import { it } from "node:test"
 
 import { evaluateExpression, interpolate, parseWorkflow } from "../../../.smithers/flows/release/release-rehearsal.mjs"
 import { repoRoot as root } from "../scripts/workspace-packages.mjs"
+import { advisoryFlags } from "./workflow-jobs.mjs"
 
 it("scheduled durable histories retain reproducible seeds and operation artifacts", () => {
   const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/reliability.yml"), "utf8"))
@@ -34,7 +35,7 @@ it("scheduled durable histories retain reproducible seeds and operation artifact
   assert.equal(artifact.with["if-no-files-found"], "error")
   assert.match(steps.find((step) => step.name === "Verify complete campaign evidence").run, /smthrs flow start bench\/signal-campaign --data '\{"directory":"reliability-artifacts"\}' --wait/)
   assert.match(steps.find((step) => step.name === "Prove signal transition mutation sensitivity").run, /check-signal-mutations\.mjs/)
-  assert.notEqual(job["continue-on-error"], true)
+  assert.deepEqual(advisoryFlags(job), [])
 })
 
 it("scheduled run lifecycle histories retain the rotating seed and shrunk case", () => {
@@ -54,7 +55,7 @@ it("scheduled run lifecycle histories retain the rotating seed and shrunk case",
   assert.equal(artifact.if, "always()")
   assert.match(artifact.with.path, /reliability-artifacts/)
   assert.equal(artifact.with["if-no-files-found"], "error")
-  assert.notEqual(job["continue-on-error"], true)
+  assert.deepEqual(advisoryFlags(job), [])
 })
 
 it('durability runs nightly and reference execution refuses before branch tools', () => {
@@ -123,5 +124,5 @@ it("manual Linux faults run only the existing fault job and keep nightly campaig
   assert.notEqual(group({ campaign: "faults-linux" }), group({}))
   assert.equal(workflow.concurrency["cancel-in-progress"], false)
   assert.equal(workflow.permissions.contents, "read")
-  assert.notEqual(workflow.jobs["e2e-faults"]["continue-on-error"], true)
+  assert.deepEqual(advisoryFlags(workflow.jobs["e2e-faults"]), [])
 })

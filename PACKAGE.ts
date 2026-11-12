@@ -532,6 +532,8 @@ const ci = Smithers.GithubCiGen({
         // Keep the review flow and its seeded-bug eval in the required gates.
         { name: "Review flow", verb: Smithers.Verb.Ci, pattern: "//.smithers/flows/review/..." },
         { name: "Bug worker", verb: Smithers.Verb.Ci, pattern: "//apps/bug-worker/..." },
+        // The maintainer site's suites; the revision suite reads jj history.
+        { name: "Maintainer site", verb: Smithers.Verb.Ci, pattern: "//apps/maintainer-site/..." },
         { name: "Project copy drift", verb: Smithers.Verb.Lint, pattern: "//:projectCopy" },
         // smithers.sh: the landing page and the Starlight docs. `astro check`
         // and `astro build` over apps/site/src/content/docs.
