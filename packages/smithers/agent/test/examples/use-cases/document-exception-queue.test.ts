@@ -155,6 +155,32 @@ it.live("exports a packet that reconciles on the first round without asking anyo
     })
   }), { timeout: 60_000 })
 
+it.live("processes every file of a packet whose names share a step id", () =>
+  Effect.gen(function*() {
+    // Two scans whose paths agree for 64 characters, and two names apart by case.
+    const scans = "/srv/document-intake/customers/acme-corp/2026-11/packet-0042/scans"
+    const alike = [
+      `${scans}/invoice-page-1.pdf`,
+      `${scans}/invoice-page-2.pdf`,
+      "packet/Invoice.pdf",
+      "packet/invoice.PDF"
+    ]
+    const { answer, turns } = script(["pass"])
+    const record = yield* Kit.run(DocumentExceptionQueue, { files: alike }, {
+      filename: join(directory, "alike.sqlite"),
+      executionId: "dxq-alike",
+      script: answer,
+      actions: layer
+    })
+
+    expect(turns.filter((t) => t.step === "classify").map((t) => (t.saw as { file: string }).file).sort()).toEqual(
+      [...alike].sort()
+    )
+    expect(turns.filter((t) => t.step === "extract")).toHaveLength(4)
+    expect(turns.find((t) => t.step === "reconcile")?.saw).toEqual(expect.objectContaining({ extractions: alike }))
+    expect(record.summary).toBe("4 extractions")
+  }), { timeout: 60_000 })
+
 it.live("re-extracts once, then exports without review when the second round passes", () =>
   Effect.gen(function*() {
     const { answer, turns } = script(["low", "pass"])

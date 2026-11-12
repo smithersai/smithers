@@ -32,6 +32,9 @@ const listed = (asked: string, heading: string): ReadonlyArray<string> => {
  * A triager that reports what it was handed, a banker that writes one lesson
  * per incident, a distiller whose rule counts the lessons it was handed, and a
  * person who answers `decision`. Every request is recorded in order.
+ *
+ * The banker's lesson never contains the topic word: a lesson belongs to the
+ * topic it was banked under, not to the words the banker chose.
  */
 const script = () => {
   const turns: Array<string> = []
@@ -50,7 +53,7 @@ const script = () => {
     if (asked.includes("You extract durable operational lessons from incidents.")) {
       const incident = /Incident just triaged: (.+)/.exec(asked)![1]!
       turns.push("bank")
-      return { lessons: [`Warm the cache tier before deploys after ${incident}`], summary: "one lesson" }
+      return { lessons: [`Warm the cache tier before a deploy after ${incident}`], summary: "one lesson" }
     }
     if (asked.includes("You distill repeated operational lessons")) {
       const lessons = listed(asked, "accumulated these lessons on \"deploys\":\n\n")
@@ -102,14 +105,16 @@ it.live("banks a lesson per incident and ratifies a rule once three have piled u
     const filename = join(directory, "ratified.sqlite")
     yield* seedOnCall(filename, "ada")
     const { answer, turns } = script()
-    const run = (n: number) =>
-      Kit.run(IncidentRunbookMemory, { incident: `scale-down ${n}`, topic: "deploys" }, {
+    const run = (n: number, topic = "deploys") =>
+      Kit.run(IncidentRunbookMemory, { incident: `scale-down ${n}`, topic }, {
         filename,
         executionId: `irm-${n}`,
         script: answer,
         actions: Layer.mergeAll(layer, approver(`irm-${n}`, "approve", turns))
       })
 
+    // A lesson on another topic is never recalled for deploys.
+    yield* run(0, "database")
     const first = yield* run(1)
     expect(first.triage.diagnosis).toBe("cold start")
     expect(first.bank.lessonIds).toEqual(["lesson/irm-1/0"])
@@ -138,7 +143,7 @@ it.live("banks a lesson per incident and ratifies a rule once three have piled u
     expect(turns[0]).toBe("triage on-call ada, 1 rules, 1 lessons")
     expect(fifth.recall).toEqual({
       rules: ["Warm the cache tier before deploys (3 incidents)"],
-      lessons: ["Warm the cache tier before deploys after scale-down 4"],
+      lessons: ["Warm the cache tier before a deploy after scale-down 4"],
       lessonIds: ["lesson/irm-4/0"],
       onCall: "ada",
       lessonCount: 1

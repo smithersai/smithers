@@ -288,17 +288,20 @@ const memorySteps = Layer.mergeAll(
   RecallKnowledge.toLayer(({ topic }) =>
     Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      // Idempotent; creates the FTS index on first use. Its index spans every
-      // namespace of the kind, so the namespace filter keeps recall to this team.
-      yield* store.enableFts("user")
       // Only live knowledge: accepted, and not superseded by an accepted note.
       const rules = yield* store.listNotes({ namespace, prefix: rulePrefix })
-      const lessons = yield* store.searchFts({ namespace, query: topic, prefix: lessonPrefix })
+      // The topic's lessons are the ones banked under its `scope:` tag, whatever
+      // words the banker chose.
+      const lessons = yield* store.listNotes({
+        namespace,
+        prefix: lessonPrefix,
+        tagGroups: [{ tags: [`scope:${topic}`] }]
+      })
       const onCall = yield* store.getFact({ namespace, key: "on-call" })
       return {
         rules: rules.map((note) => note.text),
-        lessons: lessons.map((row) => row.text),
-        lessonIds: lessons.map((row) => row.id),
+        lessons: lessons.map((note) => note.text),
+        lessonIds: lessons.map((note) => note.id),
         onCall: typeof onCall?.value === "string" ? onCall.value : "unassigned",
         lessonCount: lessons.length
       }

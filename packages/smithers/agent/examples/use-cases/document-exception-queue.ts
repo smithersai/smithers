@@ -217,13 +217,15 @@ interface Settings {
   readonly outputDir: string
 }
 
-/** 0.x's step id for a file. */
+/** 0.x's step id for a file: its slug, cut to 64 characters. */
 const nodeId = (file: string): string =>
   file.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "document"
 
 /**
  * Runs one step per file, at most `concurrency` at a time, and collects the
- * results in file order.
+ * results in file order. A member is keyed by the file's position and its
+ * step id: files whose step ids agree, by case or past the 64th character,
+ * are distinct members, so none is dropped from the packet.
  */
 const perFile = <A, Tag extends Tags>(
   files: ReadonlyArray<string>,
@@ -232,9 +234,9 @@ const perFile = <A, Tag extends Tags>(
   is: (value: unknown) => value is A
 ): Node.Node<ReadonlyArray<A>, AgentAction.AgentFailure, Action.Requirement<Tag>> => {
   if (files.length === 0) return Node.succeed([])
-  const members = Object.fromEntries(files.map((file) => [nodeId(file), step(file)]))
-  const joined = Bounded.all(members, { concurrency })
-  return Node.map(joined, Node.capture({}, (byFile) => Object.keys(members).map((key) => byFile[key]).filter(is)))
+  const keyed = files.map((file, index) => [`${index}-${nodeId(file)}`, step(file)] as const)
+  const joined = Bounded.all(Object.fromEntries(keyed), { concurrency })
+  return Node.map(joined, Node.capture({}, (byFile) => keyed.map(([key]) => byFile[key]).filter(is)))
 }
 
 /** Every extraction so far, plus the re-extraction. Pure, so it is a `Node.map`, not a step. */
