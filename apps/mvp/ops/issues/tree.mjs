@@ -4,12 +4,18 @@
 //
 // GitHub's limits (docs.github.com, checked 2026-11-02): 100 sub-issues per parent, eight levels, and a child of the
 // same owner in any repository. So smithersai/smithers items hang straight under these nodes as cross-repository
-// children, no mirrored parent; and a node with more than 100 children gets numbered part nodes beneath it.
+// children, no mirrored parent; and a node's items past its direct places go in numbered part nodes beneath it.
+//
+// GitHub cannot move a filed sub-issue (issues/file-tree reuses an issue by its key and refuses a different parent), so
+// a record never changes place between imports: each node keeps PART_SLOTS of its 100 places for part nodes from the
+// start, a new record only ever takes a free place, and the previous plan's places hold (`place`'s `previous`).
 import { MAX_DEPTH, MAX_SUB_ISSUES } from "./track.mjs"
 
 export const TREE_REPO = "smithersai/vibelang"
 export const ROOT = "tree:ship-vibelang"
 export const MIGRATED_REPOS = ["alchemy", "foldkit", "opencode", "t3code", "smithers"]
+/** The places each node keeps for part nodes: room for 1,000 more items once its direct places are taken. */
+export const PART_SLOTS = 10
 
 /** The release's six gates, as the 0.0.11 release audit names them. */
 const GATES = [
@@ -62,12 +68,15 @@ export const nodeOfParentText = (text) => {
 
 /**
  * Places `records` (each with `key`, `title` and `parent`, a node key) in the tree: the fixed nodes, area nodes the
- * records ask for (`areaNodes`: `[key, title, parent]`), and part nodes wherever a node would hold more than GitHub's
- * 100 sub-issues. Returns `{ nodes, records }`: every node and record with its final `parent` and `depth` (the root
- * is 1). A record with `asNode` naming a node becomes that node's issue. Throws for a record whose parent is not a
- * node, and when a depth would pass GitHub's eight levels.
+ * records ask for (`areaNodes`: `[key, title, parent]`), and part nodes beneath a node whose direct places are taken.
+ * `previous` maps a record key to its parent in the last plan (`import.mjs --previous`): a record whose node is
+ * unchanged keeps that place, so only new records take free places, in order: a direct place (all but PART_SLOTS of
+ * GitHub's 100 sub-issues, less the node's child nodes), then an open part, then a new part. Returns
+ * `{ nodes, records }`: every node and record with its final `parent` and `depth` (the root is 1). A record with
+ * `asNode` naming a node becomes that node's issue. Throws for a record whose parent is not a node, for a record
+ * with no free place, and when a depth would pass GitHub's eight levels.
  */
-export const place = (records, areaNodes = []) => {
+export const place = (records, areaNodes = [], previous = new Map()) => {
   const nodes = new Map()
   for (const [key, title, parent, about] of [...NODES, ...areaNodes.map(([k, t, p]) => [k, t, p, "An area of work, grouped to stay under GitHub's sub-issue limits."])]) {
     nodes.set(key, { key, kind: "node", repo: TREE_REPO, title, parent, about })
@@ -83,21 +92,40 @@ export const place = (records, areaNodes = []) => {
   const placed = records.filter((record) => record.asNode === undefined || !nodes.has(record.asNode)).map((record) => {
     // No silent placement: a record whose parent is not a node of the tree is refused, never dropped under a default.
     if (!nodes.has(record.parent)) throw new Error(`${record.key} names ${record.parent}, which is not a node of the tree`)
-    const parent = record.parent
-    const out = { ...record, parent }
-    childrenOf(parent).items.push(out)
+    const out = { ...record }
+    childrenOf(record.parent).items.push(out)
     return out
   })
-  for (const [key, group] of [...children.entries()]) {
-    if (group.nodes.length + group.items.length <= MAX_SUB_ISSUES) continue
-    const room = MAX_SUB_ISSUES - group.nodes.length
-    const parts = Math.ceil(group.items.length / MAX_SUB_ISSUES)
-    if (parts > room) throw new Error(`${key} needs ${parts} part nodes and has room for ${room}`)
+  for (const [key, group] of children) {
+    const room = MAX_SUB_ISSUES - PART_SLOTS - group.nodes.length
+    const parts = [] // the item count of each `${key}:part-<n>`
+    let direct = 0
+    const fresh = []
+    for (const item of group.items) {
+      const was = previous.get(item.key)
+      const part = was?.startsWith(`${key}:part-`) ? was.slice(key.length + 6) : ""
+      if (was === key) direct++
+      else if (/^[1-9]\d*$/.test(part)) {
+        while (parts.length < Number(part)) parts.push(0)
+        parts[Number(part) - 1]++
+        item.parent = was
+      } else fresh.push(item)
+    }
+    for (const item of fresh) {
+      const open = parts.findIndex((count) => count < MAX_SUB_ISSUES)
+      if (direct < room && group.nodes.length + direct + parts.length < MAX_SUB_ISSUES) direct++
+      else if (open !== -1) {
+        parts[open]++
+        item.parent = `${key}:part-${open + 1}`
+      } else if (group.nodes.length + direct + parts.length < MAX_SUB_ISSUES) {
+        parts.push(1)
+        item.parent = `${key}:part-${parts.length}`
+      } else throw new Error(`${item.key} has no place: ${key}'s ${MAX_SUB_ISSUES} sub-issues are filed, and GitHub cannot move a sub-issue under a part node`)
+    }
     const title = nodes.get(key).title
-    for (let index = 0; index < parts; index++) {
-      const part = { key: `${key}:part-${index + 1}`, kind: "node", repo: TREE_REPO, title: `${title}, part ${index + 1} of ${parts}`, parent: key, about: `Part ${index + 1} of ${title}'s items: GitHub holds at most ${MAX_SUB_ISSUES} sub-issues per issue.` }
+    for (let index = 0; index < parts.length; index++) {
+      const part = { key: `${key}:part-${index + 1}`, kind: "node", repo: TREE_REPO, title: `${title}, part ${index + 1} of ${parts.length}`, parent: key, about: `Part ${index + 1} of ${title}'s items: GitHub holds at most ${MAX_SUB_ISSUES} sub-issues per issue.` }
       nodes.set(part.key, part)
-      for (const item of group.items.slice(index * MAX_SUB_ISSUES, (index + 1) * MAX_SUB_ISSUES)) item.parent = part.key
     }
   }
   const depthOf = (key, seen = 0) => {

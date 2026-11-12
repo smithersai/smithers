@@ -156,11 +156,43 @@ describe("the issue tree", () => {
     expect(tree.nodes.filter((node: { parent?: string }) => node.parent === "tree:repos").map((node: { title: string }) => node.title))
       .toEqual(["Migrate alchemy", "Migrate foldkit", "Migrate opencode", "Migrate t3code", "Migrate smithers"])
     const parts = tree.nodes.filter((node: { parent?: string }) => node.parent === "tree:fuzz:data")
-    expect(parts.map((node: { title: string }) => node.title)).toEqual(["Fuzz findings: data, part 1 of 3", "Fuzz findings: data, part 2 of 3", "Fuzz findings: data, part 3 of 3"])
+    expect(parts.map((node: { title: string }) => node.title)).toEqual(["Fuzz findings: data, part 1 of 2", "Fuzz findings: data, part 2 of 2"])
+    expect(tree.records.filter((row: Row) => row.parent === "tree:fuzz:data")).toHaveLength(90)
     const counts = new Map<string, number>()
     for (const row of [...tree.nodes, ...tree.records]) if (row.parent !== undefined) counts.set(row.parent, (counts.get(row.parent) ?? 0) + 1)
     expect(Math.max(...counts.values())).toBeLessThanOrEqual(100)
     expect(tree.records.at(-1)).toMatchObject({ key: "x", parent: "tree:impl", depth: 3 })
     expect(Math.max(...tree.records.map((row: Row) => row.depth))).toBe(5)
+  })
+
+  // GitHub cannot move a filed sub-issue: the filing flow reuses an issue by its key and refuses a different parent.
+  // So a record keeps its place from one import to the next, whatever joins or leaves its node.
+  const impl = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => ({ key: `impl:${from + i}`, title: `t${from + i}`, parent: "tree:impl" }))
+  const parentsOf = (rows: Array<Row>) => new Map(rows.map((row) => [row.key, row.parent]))
+  test("a 101st child joins a part node and moves none of the first 100", () => {
+    const first = place(impl(0, 100)).records
+    expect(first.filter((row: Row) => row.parent === "tree:impl")).toHaveLength(90)
+    const next = place(impl(0, 101), [], parentsOf(first)).records
+    expect(parentsOf(next.slice(0, 100))).toEqual(parentsOf(first))
+    expect(next[100]).toMatchObject({ key: "impl:100", parent: "tree:impl:part-1", depth: 4 })
+  })
+
+  test("with the previous plan's places, a record that leaves moves no other", () => {
+    const first = place(impl(0, 120)).records
+    const next = place(impl(1, 125), [], parentsOf(first)).records
+    expect(parentsOf(next.slice(0, 119))).toEqual(new Map([...parentsOf(first)].slice(1)))
+    // The freed direct place takes the first new record; the rest fill the open part.
+    expect(next.slice(119).map((row: Row) => row.parent)).toEqual(["tree:impl", ...Array(4).fill("tree:impl:part-1")])
+  })
+
+  test("filed direct children past the reserve stay, a moved record takes its new node, and a full node refuses", () => {
+    const previous = new Map(impl(0, 100).map((row) => [row.key, "tree:impl"]))
+    const legacy = place(impl(0, 96), [], previous).records
+    expect(legacy.filter((row: Row) => row.parent === "tree:impl")).toHaveLength(96)
+    const full = [...impl(0, 100), { key: "impl:new", title: "new", parent: "tree:impl" }]
+    expect(() => place(full, [], new Map(impl(0, 100).map((row) => [row.key, "tree:impl"]))))
+      .toThrow("impl:new has no place: tree:impl's 100 sub-issues are filed, and GitHub cannot move a sub-issue under a part node")
+    const moved = place([{ key: "impl:5", title: "t5", parent: "tree:spec" }, ...impl(100, 101)], [], previous).records
+    expect(parentsOf(moved)).toEqual(new Map([["impl:5", "tree:spec"], ["impl:100", "tree:impl"]]))
   })
 })

@@ -115,6 +115,21 @@ describe("the importer's CLI", () => {
     expect(plan.at(-1)).toMatchObject({ type: "summary", issues: 2, bySource: { "draft:t3code": 2 }, laneReports: null, fuzzSource: null })
   })
 
+  test("--previous keeps each issue under the parent the last plan filed it under", () => {
+    const { file, run } = setup()
+    const drafts = file("t3code-drafts.json", DRAFTS)
+    const last = file("last-plan.jsonl", [
+      { type: "node", key: "tree:repos:t3code:part-1", parent: "tree:repos:t3code" },
+      { type: "issue", key: "draft:t3code:a", parent: "tree:repos:t3code:part-1" },
+      { type: "summary" },
+    ].map((row) => JSON.stringify(row)).join("\n") + "\n")
+    const { status, stderr, plan } = run(["--draft", `t3code=${drafts}`, "--previous", last], { FAKE_FAIL: "1" })
+    expect(stderr).toBe("")
+    expect(status).toBe(0)
+    expect(plan.filter((row) => row.type === "issue").map((row) => [row.key, row.parent])).toEqual([["draft:t3code:a", "tree:repos:t3code:part-1"], ["draft:t3code:b", "tree:tooling"]])
+    expect(plan.find((row) => row.key === "tree:repos:t3code:part-1")).toMatchObject({ type: "node", parent: "tree:repos:t3code", depth: 4 })
+  })
+
   test("counts every draft and plans only open rows, auditing skipped statuses and duplicate references privately", () => {
     const { file, run, privateRepos } = setup()
     const drafts = [

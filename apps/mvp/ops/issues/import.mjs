@@ -6,6 +6,8 @@
 //   node ops/issues/import.mjs --out <plan.jsonl> --draft <source>=<file>... --private-repos <file>
 //   node ops/issues/import.mjs --out <plan.jsonl> [--source lane-host|fuzz]... [--host <lane host>]
 //                              [--draft <source>=<file or host:path>]... [--replace-findings <repo>]... [--pending-ref main]
+//   Either form takes `--previous <plan.jsonl>`, the last plan filed: each of its issues keeps its parent, since a
+//   filed sub-issue cannot move (tree.mjs). Plan every import after the first with it.
 //
 // Draft mode, the first form: one or more `--draft` and no `--source`. It reads only the named local draft files, then
 // counts every normalized status and plans only open drafts, placing, scrubbing and deduplicating them with the tree.
@@ -96,6 +98,7 @@ const { values } = parseArgs({
   options: {
     host: { type: "string", default: "nyc-01" },
     out: { type: "string" },
+    previous: { type: "string" },
     draft: { type: "string", multiple: true, default: [] },
     "pending-ref": { type: "string", default: "main" },
     "replace-findings": { type: "string", multiple: true, default: [] },
@@ -277,7 +280,10 @@ for (const row of queue.links) {
   if (result.ok) queueLinks.push({ type: "queue-link", ...row, link: result.record.link })
   else drop(row, result.problems)
 }
-const placed = place(clean, fuzz.areas)
+/** The last plan's places, `key` to `parent`, from its issue rows. */
+const previous = new Map(values.previous === undefined ? [] : readFileSync(values.previous, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line))
+  .filter((row) => row.type === "issue").map((row) => [row.key, row.parent]))
+const placed = place(clean, fuzz.areas, previous)
 const nodes = new Map()
 for (const node of placed.nodes) {
   const result = cleanRecord(node, scrubOptions)
