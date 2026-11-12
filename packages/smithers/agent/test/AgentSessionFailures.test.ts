@@ -2208,6 +2208,98 @@ describe("the executor's resume bridge", () => {
     expect(record.statuses).toEqual([])
   })
 
+  /**
+   * The guard reads more than the approval requests before it re-parks: the
+   * resume delegations, the module markers, the code drift and the delivered
+   * signals. One busy control database or journal on any of them is still no
+   * answer, so the round re-parks instead of settling the run `failed`, which
+   * left the approval it waited on nothing to resume.
+   */
+  it.each([
+    { read: "resume delegations", flow: flowId, runtime: { pendingResumes: true } },
+    { read: "module markers", flow: flowId, journal: true },
+    { read: "code drift", flow: "todo", runtime: { codeDrift: true } },
+    { read: "delivered signals", flow: "todo", runtime: { deliveredSignals: true } }
+  ])("re-parks a parked round when its $read cannot be read", async (fault) => {
+    const record = recorder()
+    let entered = false
+    let agentRuns = 0
+    let failed = 0
+    const unreadable = () =>
+      Effect.suspend(() => {
+        failed++
+        return Effect.fail(new PersistenceError({ operation: "park-guard", message: "database is locked" }))
+      })
+    let observe: ((flow: never, executionId: string) => Effect.Effect<Option.Option<unknown>, unknown>) | undefined
+    let driven: never | undefined
+    const outcome = await withExecutor(
+      record,
+      {
+        agent: Agent.makeNoop({
+          run: () => {
+            agentRuns++
+            return completed
+          }
+        }),
+        reenterModules: [fault.flow],
+        reentryCheckpoint: () => Effect.void,
+        // Admitted as running; the round finds the run parked with no resume requested.
+        runtime: {
+          getRun: () =>
+            Effect.sync(
+              () => (entered ? { ...launchInput.run, flowId: fault.flow, status: "parked" } : launchInput.run)
+            ),
+          ...(fault.runtime?.pendingResumes === true
+            ? { pendingResumes: Effect.suspend(() => entered ? unreadable() : Effect.succeed([])) }
+            : {}),
+          ...(fault.runtime?.codeDrift === true
+            ? { codeDrift: () => entered ? unreadable() : Effect.succeed(undefined) }
+            : {}),
+          ...(fault.runtime?.deliveredSignals === true
+            ? { deliveredSignals: () => entered ? unreadable() : Effect.succeed([]) }
+            : {})
+        },
+        journal: fault.journal === true
+          ? {
+            entries: () =>
+              Effect.suspend(() => {
+                failed++
+                return Effect.fail(new Journal.JournalError({ code: "read_failed", message: "database is locked" }))
+              })
+          }
+          : {},
+        engine: (engine) => {
+          observe = (flow, executionId) => engine.poll(flow, executionId) as never
+          return ({
+            ...engine,
+            execute: (flow: never, options: never) =>
+              Effect.suspend(() => {
+                entered = true
+                driven = flow
+                return engine.execute(flow, options)
+              })
+          }) as unknown as EngineService
+        }
+      },
+      (executor) =>
+        Effect.gen(function*() {
+          yield* executor.launch(launchInput)
+          return yield* Effect.suspend(() =>
+            driven === undefined ? Effect.succeed(Option.none()) : observe!(driven, runId)
+          )
+            .pipe(
+              Effect.repeat({ until: Option.isSome, schedule: Schedule.spaced("10 millis") }),
+              Effect.timeout(Duration.seconds(10))
+            )
+        })
+    )
+
+    expect(outcome).toEqual(Option.some(expect.objectContaining({ _tag: "Suspended" })))
+    expect(failed).toBeGreaterThan(0)
+    expect(agentRuns).toBe(0)
+    expect(record.statuses).toEqual([])
+  })
+
   it("stops the bridge without stopping the executor when the journal subscription itself fails", async () => {
     const record = recorder()
     const result = await launched(record, { journal: { changes: Effect.die("the journal cannot publish changes") } })
@@ -3831,7 +3923,7 @@ describe("retained TODO checkpoint admission", () => {
         }))
       expect(result).toEqual(
         Option.some(
-          expect.objectContaining({ _tag: markerKind === "unreadable child" || reentered ? "Complete" : "Suspended" })
+          expect.objectContaining({ _tag: reentered ? "Complete" : "Suspended" })
         )
       )
       expect(agentRuns).toBe(reentered ? 1 : 0)
@@ -3841,7 +3933,9 @@ describe("retained TODO checkpoint admission", () => {
           : undefined
       )
       if (markerKind === "foreign child" || markerKind === "malformed launch") expect(childReads).toEqual([])
-      if (name === "unreadable child") expect(causeOf(record)).toContain("checkpoint child read failed")
+      // An unreadable child row is no answer: the run stays parked, not failed.
+      if (name === "unreadable child") expect(childReads).toEqual([moduleId])
+      if (name === "unreadable child") expect(record.statuses).toEqual([])
       expect(checked).toEqual(Array.from({ length: checkpoints }, () => ({ runId, flowId: "todo" })))
       expect(record.journaled.some((entry) => entry.eventType === "control.module.launched")).toBe(false)
     }

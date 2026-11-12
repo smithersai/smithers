@@ -1,6 +1,6 @@
 /** Pre-body control refusals must cross the same durable boundary as agent failures. */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { ClaimLost } from "@smthrs/control/ControlError"
+import { ClaimLost, PersistenceError } from "@smthrs/control/ControlError"
 import type * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -104,7 +104,19 @@ const seatLayer = SeatResolver.layer({
 
 const loss = new ClaimLost({ runId })
 
-const run = async (contention: boolean) => {
+const unreadable = new PersistenceError({ operation: "ControlRuntime.pendingResumes", message: "database is locked" })
+
+const unwritable = new PersistenceError({ operation: "ControlRuntime.resume", message: "disk I/O error" })
+
+/**
+ * - `contention`: a live peer holds the control fence when the round claims it.
+ * - `unreadable`: the round finds the run parked and cannot list its resume delegations.
+ * - `unclaimable`: the round takes up a delegation and the control claim cannot be written.
+ */
+type Fault = "contention" | "unreadable" | "unclaimable"
+
+const run = async (fault: Fault) => {
+  const contention = fault === "contention"
   let entered = false
   let agentRuns = 0
   let cancellations = 0
@@ -120,9 +132,15 @@ const run = async (contention: boolean) => {
         recordedCode: () => Effect.succeed({}),
         getPlan: () => Effect.succeed(launchInput.plan),
         registerFiber: () => Effect.void,
-        pendingResumes: Effect.suspend(() => entered && !contention ? Effect.fail(loss) : Effect.succeed([])),
+        pendingResumes: Effect.suspend(() =>
+          !entered || contention
+            ? Effect.succeed([])
+            : fault === "unreadable"
+            ? Effect.fail(unreadable)
+            : Effect.succeed([{ runId, sequence: 1, requestedAtMs: 0 }])
+        ),
         claimFence: () => contention && entered ? Effect.fail(loss) : Effect.succeed("fence-1"),
-        resume: () => Effect.fail(loss),
+        resume: () => Effect.fail(fault === "unclaimable" ? unwritable : loss),
         writeStatus: () => Effect.succeed(launchInput.run)
       } as unknown as ControlRuntime["Service"]
       const executor = yield* AgentSession.make({
@@ -202,18 +220,27 @@ const run = async (contention: boolean) => {
 }
 
 describe("AgentSession pre-body typed failure boundary", () => {
-  it("persists ClaimLost before starting the agent without replacing it with UnencodableResult", async () => {
-    const { result, agentRuns, cancellations } = await run(false)
+  it("persists a typed control failure before starting the agent without replacing it with UnencodableResult", async () => {
+    const { result, agentRuns, cancellations } = await run("unclaimable")
     expect(agentRuns).toBe(0)
     expect(cancellations).toBe(0)
     expect(result).toEqual(Option.some(expect.objectContaining({ _tag: "Complete" })))
     const encoded = JSON.stringify(result)
-    expect(encoded).toContain("/control/ClaimLost")
+    expect(encoded).toContain("/control/PersistenceError")
     expect(encoded).not.toContain("UnencodableResult")
   })
 
+  // A parked run that met one busy control database was settled `failed` in
+  // the engine, so the approval it waited on could never resume it.
+  it("keeps a parked run parked when its resume delegations cannot be read", async () => {
+    const { result, agentRuns, cancellations } = await run("unreadable")
+    expect(agentRuns).toBe(0)
+    expect(cancellations).toBe(0)
+    expect(result).toEqual(Option.some(expect.objectContaining({ _tag: "Suspended" })))
+  })
+
   it("releases engine ownership when a live peer refuses the control claim without cancelling children", async () => {
-    const { result, agentRuns, cancellations } = await run(true)
+    const { result, agentRuns, cancellations } = await run("contention")
     expect(agentRuns).toBe(0)
     expect(cancellations).toBe(0)
     expect(result).toEqual(Option.some(expect.objectContaining({ _tag: "Suspended" })))

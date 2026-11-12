@@ -4806,6 +4806,16 @@ export const make = (
         )
       )
 
+    /**
+     * Reads one fact the park guard needs. A control store or journal that
+     * cannot answer is no evidence that the run should be driven or failed:
+     * the round keeps the park it found, and a later round reads again.
+     */
+    const parkGuardRead = <A, E, R>(runId: string, read: Effect.Effect<A, E, R>, fallback: A) =>
+      read.pipe(
+        Effect.catchCause((cause) => recoverCause(cause, "A parked run's guard could not be read", fallback, { runId }))
+      )
+
     yield* engine.register(agentFlow, (input) =>
       Effect.suspend(() => {
         let registeredInstance: FlowRuntime.FlowInstance["Service"] | undefined
@@ -4895,7 +4905,11 @@ export const make = (
           if (controlRun !== undefined && parks(controlRun.status) && expired) {
             yield* reclaimControl
           } else if (controlRun !== undefined && parks(controlRun.status)) {
-            const pending = (yield* runtime.pendingResumes).find((entry) => entry.runId === payload.runId)
+            const pending = yield* parkGuardRead(
+              payload.runId,
+              Effect.map(runtime.pendingResumes, (entries) => entries.find((entry) => entry.runId === payload.runId)),
+              undefined
+            )
             if (
               pending === undefined ||
               !(yield* hostsPark(payload.runId, { _tag: "delegated", requestedAtMs: pending.requestedAtMs }))
@@ -4917,44 +4931,48 @@ export const make = (
                 annotation.reason === "event" && annotation.token === undefined && annotation.request === undefined &&
                 options.reenterModules?.includes(controlRun.flowId) === true
               ) {
-                let completedModule: string | undefined
-                yield* scanRun(journal, payload.runId, (entries) => {
-                  for (const entry of entries) {
-                    if (entry.eventType !== "control.module.launched") continue
-                    const marker = Schema.decodeUnknownOption(Schema.Struct({
-                      ordinal: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-                      executionDigest: Schema.String,
-                      executionId: Schema.String
-                    }))(entry.payload)
-                    if (Option.isSome(marker)) {
-                      const value = marker.value
-                      const expected = value.ordinal === 0
-                        ? moduleExecutionId(payload.runId, value.executionDigest)
-                        : Digest.digest(
-                          Digest.canonical([
-                            "control/module/reentry",
-                            payload.runId,
-                            value.executionDigest,
-                            value.ordinal
-                          ])
-                        )
-                      completedModule = value.executionId === expected ? expected : undefined
-                    } else completedModule = undefined
-                  }
-                })
-                if (completedModule !== undefined) {
-                  const module = yield* engineRuns.get(completedModule).pipe(
-                    Effect.map(Option.some),
-                    Effect.catch((error) =>
-                      error.code === "not_found_row"
-                        ? Effect.succeed(Option.none<RunStore.RunRow>())
-                        : Effect.fail(error)
+                const stackModule = yield* parkGuardRead(
+                  payload.runId,
+                  Effect.gen(function*() {
+                    let completedModule: string | undefined
+                    yield* scanRun(journal, payload.runId, (entries) => {
+                      for (const entry of entries) {
+                        if (entry.eventType !== "control.module.launched") continue
+                        const marker = Schema.decodeUnknownOption(Schema.Struct({
+                          ordinal: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+                          executionDigest: Schema.String,
+                          executionId: Schema.String
+                        }))(entry.payload)
+                        if (Option.isSome(marker)) {
+                          const value = marker.value
+                          const expected = value.ordinal === 0
+                            ? moduleExecutionId(payload.runId, value.executionDigest)
+                            : Digest.digest(
+                              Digest.canonical([
+                                "control/module/reentry",
+                                payload.runId,
+                                value.executionDigest,
+                                value.ordinal
+                              ])
+                            )
+                          completedModule = value.executionId === expected ? expected : undefined
+                        } else completedModule = undefined
+                      }
+                    })
+                    if (completedModule === undefined) return false
+                    const module = yield* engineRuns.get(completedModule).pipe(
+                      Effect.map(Option.some),
+                      Effect.catch((error) =>
+                        error.code === "not_found_row"
+                          ? Effect.succeed(Option.none<RunStore.RunRow>())
+                          : Effect.fail(error)
+                      )
                     )
-                  )
-                  if (Option.isSome(module) && module.value.status === "completed") {
-                    annotation = { reason: "event", request: JSON.stringify({ kind: "stack" }) }
-                  }
-                }
+                    return Option.isSome(module) && module.value.status === "completed"
+                  }),
+                  false
+                )
+                if (stackModule) annotation = { reason: "event", request: JSON.stringify({ kind: "stack" }) }
               }
               // A steer can arrive while a trampoline poll reports Running,
               // before it writes this park. Its courtesy wake then sees no park
@@ -4964,18 +4982,31 @@ export const make = (
               const queuedStack = annotation.reason === "event" && annotation.token === undefined &&
                 annotation.request === JSON.stringify({ kind: "stack" }) &&
                 options.reenterModules?.includes(controlRun.flowId) === true &&
-                (yield* runtime.codeDrift(payload.runId)) === undefined &&
-                (yield* hostsPark(payload.runId, { _tag: "delegated" })) &&
-                (yield* queue.pending(payload.runId)).length > 0
+                (yield* parkGuardRead(
+                  payload.runId,
+                  Effect.gen(function*() {
+                    return (yield* runtime.codeDrift(payload.runId)) === undefined &&
+                      (yield* hostsPark(payload.runId, { _tag: "delegated" })) &&
+                      (yield* queue.pending(payload.runId)).length > 0
+                  }),
+                  false
+                ))
               // Claiming a polling round clears its prior engine wait. A
               // still-admitted Bring in must rebuild its checkpoint even when
               // a child's question is the remaining observed wait.
               const signals =
                 controlRun.flowId === "todo" && options.reenterModules?.includes(controlRun.flowId) === true &&
-                  options.reentryCheckpoint !== undefined &&
-                  (yield* runtime.codeDrift(payload.runId)) === undefined &&
-                  (yield* hostsPark(payload.runId, { _tag: "delegated" }))
-                  ? yield* runtime.deliveredSignals(payload.runId)
+                  options.reentryCheckpoint !== undefined
+                  ? yield* parkGuardRead(
+                    payload.runId,
+                    Effect.gen(function*() {
+                      return (yield* runtime.codeDrift(payload.runId)) === undefined &&
+                          (yield* hostsPark(payload.runId, { _tag: "delegated" }))
+                        ? yield* runtime.deliveredSignals(payload.runId)
+                        : []
+                    }),
+                    []
+                  )
                   : []
               const queuedCheckpoint = signals.some((signal) =>
                 signal.name === "bring_in" &&
@@ -5145,15 +5176,15 @@ export const make = (
           if (uptake === "resuming") yield* runtime.clearResume(entry.runId, entry.sequence)
           return uptake
         }))
-      })).pipe(Effect.catchCause((cause) =>
-        recoverCause(cause, "A resume delegation could not be taken up", "unknown" as const, { runId: entry.runId })
-      ))
+      })).pipe(
+        Effect.catchCause((cause) =>
+          recoverCause(cause, "A resume delegation could not be taken up", "unknown" as const, { runId: entry.runId })
+        )
+      )
 
     const takeUpDelegations = (wanted: (entry: PendingResume) => boolean) =>
       runtime.pendingResumes.pipe(
-        Effect.flatMap((pending) =>
-          Effect.forEach(pending.filter(wanted), takeUpPendingResume, { discard: true })
-        ),
+        Effect.flatMap((pending) => Effect.forEach(pending.filter(wanted), takeUpPendingResume, { discard: true })),
         Effect.catchCause((cause) =>
           Effect.annotateLogs(
             Effect.logWarning("A pending resume delegation could not be taken up"),
