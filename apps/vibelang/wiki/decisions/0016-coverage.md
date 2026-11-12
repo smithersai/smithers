@@ -2501,8 +2501,8 @@ Which Container each test in `test/sandboxProbe.workerd.test.vibe` runs on:
 
 | Test | Container | Why |
 | --- | --- | --- |
-| lifecycle, `direct` steps, a box that stops mid-command | replay of the committed recording | happy paths (VL-36); they skip until the lead's recording is committed |
-| `unused`, `sweep-before`, `deadline` | replay when its recording is committed; memory until then | happy paths; the same test switches with no edit and then checks every call was claimed |
+| lifecycle, `direct` steps, a box that stops mid-command | replay of the committed recording | happy paths (VL-36), on the lead's second recording run |
+| `unused`, `sweep-before`, `deadline` | replay of the committed recording (memory only without one) | happy paths; each checks every unpolled call was claimed |
 | record, read through the probe, replay | memory recorded as the stage records, then replayed | proves the seam end to end in workerd before any real recording exists |
 | limit, empty replay | memory recorded with `max: 2`; an empty replay | the recorder's limit and a replay miss |
 | in-memory Container held to `sandboxes-live.json` | memory | `memoryContainer` serves the fuzz and benchmark hosts (VL-38), so it stays held to the real run |
@@ -2518,6 +2518,24 @@ had sent that call as a fetch, so it never saw the refusal. Now `AccountHost` (`
 extends workerd's `DurableObject` and the probe reaches it over native RPC through a stub built like Alchemy's
 `makeRpcStub`. On the old sweep the workerd `deadline` test fails with the live run's answer (`running: true, status:
 503`); the sweep now asks the account's `meter`, and it passes.
+
+**The second recording run** (2026-11-12, main `bc00e97f`, lead) passed all five scripts live, and its replay failed
+three workerd tests. Two causes, neither in the recordings:
+
+- *Timer polls.* `admit` arms the account's alarm one second out while an operation is pending, and a real box takes
+  seconds per call, so alarm meter passes (`running`, `running`, `setInactivityTimeout`: one lease) run during slow
+  live calls. The lifecycle recording holds two lease passes between `start-1` and the first command, where the script
+  makes one request. A replay answers at once, so those passes never happen, and the strict-order replay died at call
+  10 (`running` where the recording holds `setInactivityTimeout`). `@smthrs/testing`'s `ContainerRecording.replay`
+  now takes `polled` operations: they may be made more or fewer times than recorded, never answered across a start,
+  command or destroy, and every unpolled call is still claimed in order. The probe host polls `running` and
+  `setInactivityTimeout`.
+- *Eviction.* The `deadline` script idles its machine object 60 s; workerd evicts it, and the host kept the Container
+  in the instance, so the next instance started on memory and `remaining` read `undefined`. A real Container outlives
+  its object, so the host now keeps each machine's Container by object id (log `vibelang.probe-host.machine`, outcome
+  `restored`: one per run, the deadline machine).
+
+The recordings are committed unchanged from the lead's evidence folder.
 
 **`leaseFor`'s `?? now`** (`worker/sandboxProbeFetch.vibe:43`, a lease for a machine whose owner is no probe owner) is
 reached in workerd: the probe host's `/clamped/<name>` route sends a lease through `leaseClamped` for `person-1/live`,
@@ -2536,10 +2554,11 @@ thresholds of other files, 172 of 203 below 100%):
 The one branch was `probeBox`'s unused `max` default, removed after the measurement. `worker/SandboxProbe.vibe` is
 the Alchemy binding no workerd host loads (0% here, as before); the unit gate measures it. In the unit gate
 (`pnpm test:coverage`) the four files above are at 100% lines and statements; 10 of 203 files are below 100% there.
-The 0016 numbers hold until the lead's recording lands: the replay tests then run in place of the memory runs above
-and must keep these rows at 100%.
+These rows were measured on memory. Remeasured on the committed recordings (box `node26` job
+`1f24121639471f5da06b976a`, `pnpm test:workerd:coverage`: 22 files, 102 tests passed, 2 skipped), none of the four is
+below 100%; the suite exits 1 on the thresholds of other files (185 of 216 below 100%).
 
-**LEAD RUNS** (on the Mac, with Cloudflare credentials; the recording run this section waits on):
+**LEAD RUNS** (to record again: on the Mac, with Cloudflare credentials):
 
 ```sh
 cd apps/vibelang

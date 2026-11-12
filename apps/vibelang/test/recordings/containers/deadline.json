@@ -1,0 +1,15 @@
+{"label":"deadline","calls":[
+{"operation":"running","input":null,"output":false},
+{"operation":"start","input":{"enableInternet":false,"entrypoint":["sleep","infinity"],"instance":"lite"},"output":null},
+{"operation":"setInactivityTimeout","input":"<duration>","output":null},
+{"operation":"running","input":null,"output":true},
+{"operation":"exec","input":{"argv":["sh","-c","mkdir -p /workspace /var/lib/vibelang/calls && chown 1000:1000 /workspace /var/lib/vibelang/calls"],"options":{"stderr":"ignore","stdout":"ignore","user":"0:0"}},"output":{"stdout":"","stderr":"","exitCode":0}},
+{"operation":"running","input":null,"output":true},
+{"operation":"running","input":null,"output":true},
+{"operation":"setInactivityTimeout","input":"<duration>","output":null},
+{"operation":"running","input":null,"output":true},
+{"operation":"snapshotContainer","input":null,"output":{"id":"f6f01aed-bdff-4f9c-bc9b-ff2019cee565","size":3198}},
+{"operation":"destroy","input":null,"output":null},
+{"operation":"running","input":null,"output":false},
+{"operation":"running","input":null,"output":false}
+]}

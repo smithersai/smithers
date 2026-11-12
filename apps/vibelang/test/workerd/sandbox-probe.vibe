@@ -83,32 +83,65 @@ function dying(box: Box) {
   return { fault, container }
 }
 
-export class MachineHost {
-  readonly memory = memoryContainer()
+/** A machine's Container: memory, or the replay chosen for it, and the choice, which `probeMachine` is built over. */
+interface Held {
+  readonly memory: ReturnType<typeof memoryContainer>
+  choice: Choice
+  box: unknown
   replayed: { readonly remaining: () => number; readonly fault: { armed: boolean } } | undefined
+}
+/**
+ * Each machine's Container by object id. A real Container outlives its object: workerd evicts an idle object (the
+ * deadline script idles its machine 60 s), and the next instance reaches the same box, so the box lives here and not in
+ * the instance.
+ */
+const held = new Map<string, Held>()
+
+export class MachineHost {
+  readonly held: Held
   api: ReturnType<typeof this.build>
-  constructor(readonly state: State) { this.api = this.build({ mode: "memory" }) }
-  /** The deployed probe's machine (probeMachine) over the chosen Container: recorded only in `record` mode. */
-  build(choice: Choice) {
-    this.replayed = undefined
-    let box: unknown = this.memory.container
-    if (choice.mode === "replay") {
-      const replay = ContainerRecording.replay<Box>({ calls: choice.calls ?? [] }, { normalize: normalizeCall })
-      const { fault, container } = dying(replay.container)
-      this.replayed = { remaining: replay.remaining, fault }
-      box = container
+  constructor(readonly state: State) {
+    const kept = held.get(state.id.toString())
+    this.held = kept ?? { memory: memoryContainer(), choice: { mode: "memory" }, box: undefined, replayed: undefined }
+    if (kept === undefined) {
+      held.set(state.id.toString(), this.held)
+      this.choose({ mode: "memory" })
     }
+    void runPromise(Effect.logInfo("vibelang.probe-host.machine").pipe(Effect.annotateLogs({ outcome: kept === undefined ? "new" : "restored", mode: this.held.choice.mode })))
+    this.api = this.build()
+  }
+  /** The Container for `choice`: a replay of its calls, or memory (recorded by `probeMachine` in `record` mode). */
+  choose(choice: Choice) {
+    this.held.choice = choice
+    this.held.replayed = undefined
+    this.held.box = this.held.memory.container
+    if (choice.mode === "replay") {
+      // The account's alarm polls `running` and re-arms the box on the clock, so a slow real run holds more of these
+      // calls than a replay makes: they are polled. Every other call is claimed in order.
+      const replay = ContainerRecording.replay<Box>({ calls: choice.calls ?? [] }, { normalize: normalizeCall, polled: ["running", "setInactivityTimeout"] })
+      const { fault, container } = dying(replay.container)
+      this.held.replayed = { remaining: replay.remaining, fault }
+      this.held.box = container
+    }
+  }
+  /** The deployed probe's machine (probeMachine) over the chosen Container: recorded only in `record` mode. */
+  build() {
+    const { choice, box } = this.held
     return runPromise(Effect.provide(probeMachine(box as never, { raw: this.state } as never, choice.mode === "record" ? "record" : "passthrough", choice.max), runtime))
   }
   async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname
-    if (path === "/container") { this.api = this.build(await request.json() as Choice); return json({}) }
-    if (path === "/remaining") return json({ remaining: this.replayed?.remaining() })
+    if (path === "/container") {
+      this.choose(await request.json() as Choice)
+      this.api = this.build()
+      return json({})
+    }
+    if (path === "/remaining") return json({ remaining: this.held.replayed?.remaining() })
     if (path === "/recording") return json(await runPromise(Effect.provide((await this.api).recording(), runtime)))
     if (path === "/fault") {
       const fault = (await request.json() as { readonly fault: Fault }).fault
-      if (this.replayed !== undefined) this.replayed.fault.armed = fault === "dies"
-      else this.memory.box.fault = fault
+      if (this.held.replayed !== undefined) this.held.replayed.fault.armed = fault === "dies"
+      else this.held.memory.box.fault = fault
       return json({})
     }
     const args = await request.json() as ["start" | "stop" | "command" | "lease" | "status", number, string, string]
