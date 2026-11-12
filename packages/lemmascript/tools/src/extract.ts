@@ -988,10 +988,13 @@ function extractExpr(node: Expression): RawExpr {
     // field-wise merge (resolve expands it against the result type), a named field
     // is a record-update on the accumulator, a computed key is a map `.set`.
     let acc: RawExpr | null = null;
+    // A field written again (two conditional spreads that both set it) replaces the earlier entry, whose value the new
+    // one already holds as its fallback: one update per field, as JavaScript keeps the last (spread-same-field.ts).
     const update = (name: string, value: RawExpr) => {
-      acc = acc && acc.kind === "record"
-        ? { kind: "record", spread: acc.spread, fields: [...acc.fields, { name, value }] }
-        : { kind: "record", spread: acc, fields: [{ name, value }] };
+      if (acc && acc.kind === "record") {
+        const written = acc.fields.some(f => f.name === name);
+        acc = { kind: "record", spread: acc.spread, fields: written ? acc.fields.map(f => f.name === name ? { name, value } : f) : [...acc.fields, { name, value }] };
+      } else acc = { kind: "record", spread: acc, fields: [{ name, value }] };
     };
     for (const prop of node.getProperties()) {
       if (Node.isSpreadAssignment(prop)) {

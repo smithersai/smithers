@@ -3,8 +3,8 @@
 import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
-import type { AfterUpdate, EscapeRoute, EscapeStep, WikiVisit } from "./updateDecision.vibe"
-import type { TourEnd, TourStarted } from "./tourDecision.vibe"
+import type { AfterUpdate, EscapeRoute, EscapeStep, EventPlan, WikiVisit } from "./updateDecision.vibe"
+import type { SandboxPane, TourEnd, TourStarted } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen, WikiEditScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
 import { escapeScreen, screenOf } from "./screenRead.vibe"
@@ -401,4 +401,30 @@ export function wikiCompletedWrite(model: Model, pages: NonNullable<Model["wikiP
 //@ ensures \result == { ...model, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error, sandbox: snapshot, minuteNotice: notice, warnedMonth: warned }
 export function sandboxLoadedWrite(model: Model, result: SandboxResult, snapshot: NonNullable<Model["sandbox"]>, notice: string, warned: number): Model {
   return { ...sandboxResultWrite(model, result), sandbox: snapshot, minuteNotice: notice, warnedMonth: warned }
+}
+
+/** The Model after an event is applied (the plan `eventReceived` decided, without a replay): the screen step over the
+ *  Model, the client, the connection, the answer announced and the announced count; and as planned, the sandbox pane
+ *  minimized (`sandboxPane`), a plain page ready, a wiki page ready and followed no more (`wikiAfter`), the editor
+ *  closed, the People pane docked. Nothing else. */
+//@ verify
+//@ ensures \result.surface == screen.surface && \result.palette == screen.palette && \result.tour == screen.tour && \result.tourError == screen.tourError && \result.docs == screen.docs
+//@ ensures \result.following == (plan.wikiPane ? false : screen.following)
+//@ ensures \result.client == client && \result.connection == plan.connection && \result.answer == answer && \result.announced == plan.announced
+//@ ensures \result.sandboxPane == (plan.pane ? sandboxPane : model.sandboxPane)
+//@ ensures plan.wikiPane ==> \result.wikiStatus == "ready" && \result.wikiAfter == wikiAfter
+//@ ensures !plan.wikiPane && plan.plainPane ==> \result.wikiStatus == "ready" && \result.wikiAfter == ""
+//@ ensures !plan.wikiPane && !plan.plainPane ==> \result.wikiStatus == model.wikiStatus && \result.wikiAfter == model.wikiAfter
+//@ ensures \result.wikiEdit == (plan.closeEditor ? undefined : model.wikiEdit)
+//@ ensures \result.account == (plan.peoplePane ? { ...account, people: "pane" } : model.account)
+//@ ensures \result == { ...model, surface: \result.surface, palette: \result.palette, tour: \result.tour, tourError: \result.tourError, docs: \result.docs, following: \result.following, client: client, connection: plan.connection, answer: answer, announced: plan.announced, sandboxPane: \result.sandboxPane, wikiStatus: \result.wikiStatus, wikiAfter: \result.wikiAfter, wikiEdit: \result.wikiEdit, account: \result.account }
+export function eventWrite(model: Model, screen: ScreenState, client: Model["client"], answer: string, plan: EventPlan, sandboxPane: SandboxPane, wikiAfter: string, account: AccountState): Model {
+  return {
+    ...screenWrite(model, screen), client, connection: plan.connection, answer, announced: plan.announced,
+    ...(plan.pane ? { sandboxPane } : {}),
+    ...(plan.plainPane ? { wikiStatus: "ready" as const, wikiAfter: "" } : {}),
+    ...(plan.wikiPane ? { following: false, wikiStatus: "ready" as const, wikiAfter } : {}),
+    ...(plan.closeEditor ? { wikiEdit: undefined } : {}),
+    ...(plan.peoplePane ? { account: { ...account, people: "pane" as const } } : {}),
+  }
 }

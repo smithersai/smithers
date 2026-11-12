@@ -72,6 +72,7 @@ Dafny postcondition. Unknown, opaque and nullable types do not acquire a presenc
 | A match arm may bind the whole payload; `x === undefined \|\| rest ? a : b` matches on `x`; a field path a false absence check proves present is narrowed in the else-branch and after an early return; a constant read through a namespace import is copied; an extern's anonymous result is a record the structural merge matches (`update-shapes/`, `optional-path-else.ts`, each with a wrong twin) | Offered upstream later |
 | A record whose name another datatype uses as a constructor (`Issues` beside a string union's `Issues`) is built with its qualified constructor, as shared union constructors already were (`record-ctor-clash.ts`, with a wrong twin) | Offered upstream later |
 | A field read of a loop-backed function's result (`f(x).items`, `f(x).items.length`) binds the call first, as an argument does; under `&&` and `\|\|` the bind stays behind the left operand (`tests/field-lift.test.ts`) | Offered upstream later |
+| Two conditional spreads that write the same field (`...(a ? { f: x } : {}), ...(b ? { f: y } : {})`) make one update, the last one winning, as in JavaScript (`spread-same-field.ts`, with a wrong twin) | Offered upstream later |
 
 Safe-slice contracts expose both native past-end emptiness and equality to a bounded raw slice, so a checked
 callee consuming a suffix can retain its character relation (`safe-slice-suffix.ts`, `ownPost`). The native

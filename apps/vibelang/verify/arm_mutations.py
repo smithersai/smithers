@@ -216,4 +216,13 @@ cases = [
 (M, 'write-sandbox-loaded-snapshot', 'sandboxLoadedWrite', 'sandbox: snapshot, minuteNotice', 'minuteNotice', 'a sandbox answer writes its snapshot'),
 (M, 'write-sandbox-loaded-notice', 'sandboxLoadedWrite', 'minuteNotice: notice, warnedMonth', 'warnedMonth', 'a sandbox answer writes the minute notice'),
 (M, 'write-sandbox-loaded-warned', 'sandboxLoadedWrite', 'notice, warnedMonth: warned }', 'notice }', 'a sandbox answer writes the month warned'),
+(M, 'write-event-screen', 'eventWrite', '...screenWrite(model, screen), client', '...model, client', 'an applied event writes the screen step'),
+(M, 'write-event-client', 'eventWrite', 'screen), client, connection', 'screen), connection', 'an applied event writes the client'),
+(M, 'write-event-connection', 'eventWrite', 'connection: plan.connection, answer', 'answer', 'an applied event writes the connection'),
+(M, 'write-event-announced', 'eventWrite', 'announced: plan.announced,\n', '\n', 'an applied event writes the announced count'),
+(M, 'write-event-pane', 'eventWrite', 'plan.pane ? { sandboxPane } : {}', 'plan.pane ? {} : {}', 'a planned pane minimizes the sandbox'),
+(M, 'write-event-plain', 'eventWrite', 'wikiStatus: "ready" as const, wikiAfter: "" }', 'wikiStatus: "ready" as const }', 'a plain page clears the wiki follow-up'),
+(M, 'write-event-wiki-follow', 'eventWrite', '{ following: false, wikiStatus', '{ wikiStatus', 'a wiki page stops following'),
+(M, 'write-event-editor', 'eventWrite', 'plan.closeEditor ? { wikiEdit: undefined } : {}', 'plan.closeEditor ? {} : {}', 'a planned close closes the editor'),
+(M, 'write-event-people', 'eventWrite', 'plan.peoplePane ? { account: { ...account, people: "pane" as const } } : {}', 'plan.peoplePane ? {} : {}', 'a planned People pane docks it'),
 ]

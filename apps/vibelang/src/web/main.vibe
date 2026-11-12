@@ -560,21 +560,11 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const toured = completed && Machine.isTour(client.conversation.entries, event.id)
       const answer = announcedAnswer
       return {
-        model: {
-          ...model,
-          ...completeScreenTour(model, toured, event.type),
-          client,
-          connection: plan.connection,
-          answer: answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer),
-          announced: plan.announced,
-          ...(plan.pane ? { sandboxPane: TourDecision.minimizedSandbox(model.sandboxPane ?? "closed") } : {}),
-          ...(plan.plainPane ? { wikiStatus: "ready" as const, wikiAfter: "" } : {}),
-          ...(plan.wikiPane ? {
-            following: false, wikiStatus: "ready" as const, wikiAfter: UpdateDecision.wikiAfterEvent(event.id, model.wikiAfter !== undefined && client.conversation.entries.some(entry => entry.id === model.wikiAfter), model.wikiAfter ?? ""),
-          } : {}),
-          ...(plan.closeEditor ? { wikiEdit: undefined } : {}),
-          ...(plan.peoplePane ? { account: { ...accountOf(model), people: "pane" as const } } : {}),
-        },
+        model: ModelWrite.eventWrite(model, completeScreenTour(model, toured, event.type), client,
+          answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer), plan,
+          TourDecision.minimizedSandbox(model.sandboxPane ?? "closed"),
+          UpdateDecision.wikiAfterEvent(event.id, model.wikiAfter !== undefined && client.conversation.entries.some(entry => entry.id === model.wikiAfter), model.wikiAfter ?? ""),
+          accountOf(model)),
         commands: [
           ...(plan.refreshIssues ? [RefreshIssueProjection({})] : []),
           ...(plan.wikiPane ? [WikiLocation({ url: paneUrl })] : []),

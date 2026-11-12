@@ -215,6 +215,12 @@ cp tools/fixtures/record-ctor-clash.ts tools/fixtures/record-ctor-clash-wrong.ts
 expect_proof_failure \
   "a wrong twin verified (record-ctor-clash)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/record-ctor-clash-wrong.ts"
+# Two conditional spreads that write the same field make one update, the last one winning (spread-same-field).
+cp tools/fixtures/spread-same-field.ts tools/fixtures/spread-same-field-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spread-same-field.ts"
+expect_proof_failure \
+  "a wrong twin verified (spread-same-field)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spread-same-field-wrong.ts"
 # Unicode case mapping changes non-ASCII text and its length; the model must not prove otherwise.
 cp tools/fixtures/string-case-length-wrong.ts "$fixture_dir/"
 expect_proof_failure \
