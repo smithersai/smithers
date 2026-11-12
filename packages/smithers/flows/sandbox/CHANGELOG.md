@@ -12,6 +12,12 @@
 
 ### Fixed
 
+- Two concurrent `Sandbox.job` starts with one key both return the handle.
+  The start that lost the job directory asked whether the job had settled
+  before whether its owner was alive; when the owner launched and exited in
+  between, it took the job for abandoned and failed with `launcher failed
+  (125):`. It now asks about the owner first.
+
 - `Sandbox.job` starts a job on a loaded host. The launcher gave the detached
   worker 200 polls, about 2 s, to publish its pid and then abandoned the
   start, so a healthy start failed with `launcher failed (125):` and an empty

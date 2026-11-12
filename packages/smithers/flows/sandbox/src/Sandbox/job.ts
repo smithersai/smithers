@@ -188,6 +188,9 @@ launched=$!`
         // worker can run, and removes the directory, so a retry with this key
         // launches again. A tombstoned directory stays. A later start that finds
         // an unsettled directory whose owner is dead takes it over the same way.
+        // It asks whether the owner is alive before whether the job settled: the
+        // owner exits once its worker publishes the pid, so a dead owner seen
+        // first and then an unsettled job means the owner died without launching.
         // The launcher waits for the worker's pid while the detached launch
         // runs, for up to 6000 polls, however slowly a loaded host schedules
         // it; a cancel tombstone or a removed directory ends the wait. Once the launch has ended
@@ -223,7 +226,7 @@ i=0; while test -d ${q(directory)} && test ! -f ${
           at("owner")
         } && ! settled; do i=$((i+1)); test "$i" -lt 200 || break; sleep 0.01; done
 test -d ${q(directory)} || exit 125
-if ! settled && ! kill -0 "$(cat ${at("owner")} 2>/dev/null)" 2>/dev/null; then
+if ! kill -0 "$(cat ${at("owner")} 2>/dev/null)" 2>/dev/null && ! settled; then
 if mkdir ${at("worker")} 2>/dev/null && test ! -e ${at("cancelled")}; then
 rm -rf ${q(directory)} && mkdir ${q(directory)} || exit 125
 prepare

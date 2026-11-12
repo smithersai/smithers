@@ -58,8 +58,17 @@ afterAll(() => {
 //   PATH waits for 210 of them before it performs the real syscall and runs
 //   the launch once. It gives up, as the worker would, when the job
 //   directory is gone or another process holds the worker fence.
+// - ownerExitRace holds a losing start's read of `owner` until the winner's
+//   worker has published its pid and the winner has exited, and starts that
+//   worker only once the read has begun: the order in which a loser that
+//   asked "settled?" before "owner alive?" saw a dead owner of a live job.
 const fixture = (
-  mode: { readonly replayLaunch?: boolean; readonly withoutSetsid?: boolean; readonly delayLaunch?: boolean } = {}
+  mode: {
+    readonly replayLaunch?: boolean
+    readonly withoutSetsid?: boolean
+    readonly delayLaunch?: boolean
+    readonly ownerExitRace?: boolean
+  } = {}
 ) =>
   Effect.gen(function*() {
     const root = mkdtempSync(join(tmpdir(), "sandbox-job-test-"))
@@ -126,6 +135,34 @@ os.execvp(sys.argv[1],sys.argv[1:])
 `
       )
       chmodSync(join(bin, "sleep"), 0o755)
+      chmodSync(join(bin, "setsid"), 0o755)
+      path = `${bin}:${process.env.PATH}`
+    }
+    if (mode.ownerExitRace === true) {
+      const reading = join(root, "owner-read")
+      const cat = execFileSync("/bin/sh", ["-c", "command -v cat"], { encoding: "utf8" }).trim()
+      writeFileSync(
+        join(bin, "cat"),
+        `#!/bin/sh\ncase "$1" in */owner) : > ${CommandLine.quote(reading)}; d=\${1%/owner}; ` +
+          `while [ ! -f "$d/pid" ] || kill -0 "$(${
+            CommandLine.quote(cat)
+          } "$1")" 2>/dev/null; do sleep 0.01; done ;; esac\n` +
+          `exec ${CommandLine.quote(cat)} "$@"\n`
+      )
+      writeFileSync(
+        join(bin, "setsid"),
+        `#!/usr/bin/env python3
+import os,sys,time
+reading, directory = ${JSON.stringify(reading)}, ${JSON.stringify(join(root, "jobs", sessionSlug(key)))}
+while not os.path.exists(reading) and os.path.isdir(directory):
+    time.sleep(0.005)
+if not os.path.isdir(directory):
+    sys.exit(0)
+os.setsid()
+os.execvp(sys.argv[1],sys.argv[1:])
+`
+      )
+      chmodSync(join(bin, "cat"), 0o755)
       chmodSync(join(bin, "setsid"), 0o755)
       path = `${bin}:${process.env.PATH}`
     }
@@ -275,6 +312,19 @@ describe("retained directory process conformance", () => {
       expect(existsSync(join(f.directory, "worker"))).toBe(true)
       expect(existsSync(join(f.directory, "pid"))).toBe(false)
       expect(existsSync(join(f.checkout, "starts"))).toBe(false)
+    })))
+  it.live("a concurrent start that finds the owner gone after its worker launched returns the handle", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture({ ownerExitRace: true })
+      const job = Sandbox.job(f.provider, f.options)
+      const handles = yield* Effect.all([job.start(undefined, f.key), job.start(undefined, f.key)], {
+        concurrency: "unbounded"
+      })
+      expect(handles[0]).toEqual(handles[1])
+      expect(existsSync(join(f.root, "owner-read"))).toBe(true)
+      expect(yield* exited(job, handles[0]!, f.key)).toEqual({ _tag: "Exited", exitCode: 7 })
+      expect(readFileSync(join(f.checkout, "starts"), "utf8")).toBe("worker")
+      expect(readFileSync(join(handles[0]!.directory, "launches"), "utf8").trim().split("\n")).toHaveLength(1)
     })))
   it.live("concurrent starts launch once, survive their scopes, and replay collected work after destruction", () =>
     withPlatform(Effect.gen(function*() {
