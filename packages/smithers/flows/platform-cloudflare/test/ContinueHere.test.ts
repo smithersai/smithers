@@ -23,7 +23,9 @@ const unrouted: ExecutionObject.Router = {
   wake: (executionId) => Effect.sync(() => void routedTo.push(`wake ${executionId}`))
 }
 
-const object = (options: { readonly continueHere?: ExecutionObject.ContinueHere; readonly router?: ExecutionObject.Router } = {}) => {
+const object = (
+  options: { readonly continueHere?: ExecutionObject.ContinueHere; readonly router?: ExecutionObject.Router } = {}
+) => {
   const store = SqliteStorage.make()
   const memory = MemoryStorage.make()
   const steps: Array<string> = []
@@ -50,7 +52,10 @@ describe("ExecutionObject continueHere", () => {
     const o = object({ continueHere: (intent) => intent.flow === Counter._tag })
     routedTo.length = 0
     return Effect.gen(function*() {
-      const intent = yield* ExecutionObject.intent(Counter, { executionId: "lineage", payload: { value: 0, target: 3 } })
+      const intent = yield* ExecutionObject.intent(Counter, {
+        executionId: "lineage",
+        payload: { value: 0, target: 3 }
+      })
       yield* o.host.start(intent)
       const outcomes: Array<string> = []
       const held: Array<string> = []
@@ -81,7 +86,10 @@ describe("ExecutionObject continueHere", () => {
   it.effect("refuses a second start of the lineage while it runs: nothing runs twice", () => {
     const o = object({ continueHere: (intent) => intent.flow === Counter._tag })
     return Effect.gen(function*() {
-      const intent = yield* ExecutionObject.intent(Counter, { executionId: "lineage", payload: { value: 0, target: 5 } })
+      const intent = yield* ExecutionObject.intent(Counter, {
+        executionId: "lineage",
+        payload: { value: 0, target: 5 }
+      })
       yield* o.host.start(intent)
       expect((yield* o.host.alarm())._tag).toBe("Continued")
       const again = yield* Effect.flip(o.host.start(intent))
@@ -98,7 +106,10 @@ describe("ExecutionObject continueHere", () => {
     })
     return Effect.gen(function*() {
       yield* TestClock.setTime(Date.now())
-      const intent = yield* ExecutionObject.intent(Counter, { executionId: "lineage", payload: { value: 0, target: 3 } })
+      const intent = yield* ExecutionObject.intent(Counter, {
+        executionId: "lineage",
+        payload: { value: 0, target: 3 }
+      })
       yield* o.host.start(intent)
       expect((yield* o.host.alarm())._tag).toBe("Settled")
       expect(routed).toEqual([Counter._tag])
