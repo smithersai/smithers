@@ -384,8 +384,16 @@ describe.skipIf(!linuxUserland)("the std file flows on a real Linux userland", (
         return { committed, written, scripts }
       }).pipe(Effect.provide(rawPlatform))
       expect(outcome.committed).toEqual({ applied: 1 })
-      expect(outcome.written!.content).toMatchObject({ _tag: "Success", success: bytes })
-      expect(readFileSync(join(workdir, "bin", "blob"))).toEqual(Buffer.from(bytes))
+      // Exact byte equality, compared natively: the deep-equality matchers
+      // walked the mebibyte one element at a time, 10.9 s and 6.1 s on a
+      // loaded host, which alone outlasted the test's budget.
+      const content = outcome.written!.content
+      expect(content !== undefined && Result.isSuccess(content)).toBe(true)
+      const read = content !== undefined && Result.isSuccess(content) ? content.success : new Uint8Array()
+      expect(read).toBeInstanceOf(Uint8Array)
+      expect(read.length).toBe(bytes.length)
+      expect(Buffer.from(read).equals(Buffer.from(bytes))).toBe(true)
+      expect(readFileSync(join(workdir, "bin", "blob")).equals(Buffer.from(bytes))).toBe(true)
       expect(outcome.scripts.every((script) => script.length < 8192)).toBe(true)
     }))
 
