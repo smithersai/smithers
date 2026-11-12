@@ -204,26 +204,18 @@ pub fn write_file_content_to(
     file_id: &jj_lib::backend::FileId,
     dest: &std::path::Path,
 ) -> anyhow::Result<()> {
-    stream_file_content_to(store, path, file_id, dest, false)
+    let mut out = std::fs::File::create(dest).context("failed to create destination file")?;
+    copy_file_content(store, path, file_id, &mut out)
 }
 
-/// Snapshot output must be new: duplicate tree entries cannot follow or replace
-/// a previously materialized symlink. Keep the public writer's overwrite API.
-pub(crate) fn write_new_file_content_to(
+/// Copy a blob into an already-open file. Snapshot output opens `out`
+/// exclusively, so duplicate tree entries cannot follow or replace a previously
+/// materialized symlink.
+pub(crate) fn copy_file_content(
     store: &jj_lib::store::Store,
     path: &jj_lib::repo_path::RepoPath,
     file_id: &jj_lib::backend::FileId,
-    dest: &std::path::Path,
-) -> anyhow::Result<()> {
-    stream_file_content_to(store, path, file_id, dest, true)
-}
-
-fn stream_file_content_to(
-    store: &jj_lib::store::Store,
-    path: &jj_lib::repo_path::RepoPath,
-    file_id: &jj_lib::backend::FileId,
-    dest: &std::path::Path,
-    exclusive: bool,
+    out: &mut std::fs::File,
 ) -> anyhow::Result<()> {
     use futures::AsyncReadExt;
     use pollster::FutureExt as _;
@@ -233,13 +225,6 @@ fn stream_file_content_to(
         .read_file(path, file_id)
         .block_on()
         .context("failed to open file blob")?;
-    let mut out = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(!exclusive)
-        .create_new(exclusive)
-        .open(dest)
-        .context("failed to create destination file")?;
     let mut buf = vec![0u8; 64 * 1024];
     loop {
         let read = reader

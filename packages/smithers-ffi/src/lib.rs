@@ -56,6 +56,7 @@ mod document_core;
 pub mod jj_core;
 pub mod live_document;
 mod live_document_decode;
+mod snapshot_dir;
 pub mod tree_export;
 mod wiki_document;
 mod wiki_projection;
@@ -68,6 +69,7 @@ use jj_core::{
 };
 use pollster::FutureExt as _;
 use serde::{Deserialize, Serialize};
+use snapshot_dir::SnapshotDir;
 
 const PAGINATION_MAX_PER_PAGE: u32 = 100;
 
@@ -1852,16 +1854,22 @@ impl RepoHandle {
             JjError::Internal(format!("failed to load commit for snapshot: {err}"))
         })?;
 
-        let snapshot_root = self.repo_path.join(".smithers").join("snapshots");
-        std::fs::create_dir_all(&snapshot_root)
-            .map_err(|err| JjError::Internal(format!("failed to create snapshot root: {err}")))?;
-
-        let snapshot_path = snapshot_root.join(commit.change_id().reverse_hex());
-        reset_snapshot_dir(&snapshot_path)?;
-        let file_count = tree_export::materialize(&commit.tree(), &snapshot_path, false)?;
+        // The checkout is editable: `.smithers` or `snapshots` may be a link
+        // to elsewhere. Held no-follow handles refuse it before any removal.
+        let change_id = commit.change_id().reverse_hex();
+        let output = SnapshotDir::open(&self.repo_path)?
+            .child(".smithers".as_ref())?
+            .child("snapshots".as_ref())?
+            .reset_child(change_id.as_ref())?;
+        let file_count = tree_export::materialize(&commit.tree(), &output, false)?;
+        let snapshot_path = self
+            .repo_path
+            .join(".smithers")
+            .join("snapshots")
+            .join(&change_id);
 
         Ok(SnapshotResult {
-            change_id: commit.change_id().reverse_hex(),
+            change_id,
             snapshot_path: snapshot_path.display().to_string(),
             file_count,
         })
@@ -2698,16 +2706,6 @@ fn materialize_conflict_hunks(
         )
         .to_string(),
     )
-}
-
-fn reset_snapshot_dir(snapshot_path: &Path) -> Result<(), JjError> {
-    if snapshot_path.exists() {
-        std::fs::remove_dir_all(snapshot_path)
-            .map_err(|err| JjError::Internal(format!("failed to reset snapshot path: {err}")))?;
-    }
-    std::fs::create_dir_all(snapshot_path)
-        .map_err(|err| JjError::Internal(format!("failed to create snapshot path: {err}")))?;
-    Ok(())
 }
 
 fn commit_touches_path(
@@ -5890,6 +5888,71 @@ mod tests {
             unsafe { take_json(smithers_list_operations(repo_path_c.as_ptr(), 1, 30)) };
         assert!(operations["total_count"].as_u64().expect("total_count") >= 1);
         assert!(operations["items"][0].get("operation_id").is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_storage_links_never_reach_outside_the_repository() {
+        let tmp = TempDir::new().expect("tempdir");
+        let repo_path = repo_path(&tmp);
+        init_repo(&repo_path).expect("init");
+        let change_id = create_commit_with_files(&repo_path, "seed", &[("README.md", "hello\n")]);
+        let handle = RepoHandle::open(&repo_path).expect("open");
+        let outside = tmp.path().join("outside");
+        let sentinel = outside
+            .join("snapshots")
+            .join(&change_id)
+            .join("important.txt");
+        let reset = || {
+            let _ = std::fs::remove_dir_all(&outside);
+            let _ = std::fs::remove_file(repo_path.join(".smithers"));
+            let _ = std::fs::remove_dir_all(repo_path.join(".smithers"));
+            std::fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+            std::fs::write(&sentinel, "keep").unwrap();
+        };
+        // A link at `.smithers` or at `snapshots` is refused before any removal.
+        reset();
+        std::os::unix::fs::symlink(&outside, repo_path.join(".smithers")).unwrap();
+        assert!(matches!(
+            handle.create_snapshot(&change_id),
+            Err(JjError::BadRequest(_))
+        ));
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
+        reset();
+        std::fs::create_dir(repo_path.join(".smithers")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.join("snapshots"),
+            repo_path.join(".smithers/snapshots"),
+        )
+        .unwrap();
+        assert!(matches!(
+            handle.create_snapshot(&change_id),
+            Err(JjError::BadRequest(_))
+        ));
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
+        // A link at the snapshot itself, or inside an old one, is unlinked
+        // without touching its target.
+        reset();
+        let snapshots = repo_path.join(".smithers/snapshots");
+        std::fs::create_dir_all(snapshots.join(&change_id)).unwrap();
+        std::os::unix::fs::symlink(&outside, snapshots.join(&change_id).join("old-link")).unwrap();
+        handle
+            .create_snapshot(&change_id)
+            .expect("snapshot over old link");
+        std::fs::remove_dir_all(snapshots.join(&change_id)).unwrap();
+        std::os::unix::fs::symlink(sentinel.parent().unwrap(), snapshots.join(&change_id)).unwrap();
+        let snapshot = handle
+            .create_snapshot(&change_id)
+            .expect("snapshot over link");
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
+        let snapshot_path = Path::new(&snapshot.snapshot_path);
+        assert!(!std::fs::symlink_metadata(snapshot_path)
+            .unwrap()
+            .is_symlink());
+        assert_eq!(
+            std::fs::read(snapshot_path.join("README.md")).unwrap(),
+            b"hello\n"
+        );
     }
 
     #[test]

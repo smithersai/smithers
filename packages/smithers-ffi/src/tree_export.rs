@@ -12,7 +12,8 @@ use jj_lib::workspace::Workspace;
 use pollster::FutureExt as _;
 use serde::Serialize;
 
-use crate::jj_core::{create_settings, write_new_file_content_to, UserConfig};
+use crate::jj_core::{copy_file_content, create_settings, UserConfig};
+use crate::snapshot_dir::SnapshotDir;
 use crate::JjError;
 
 /// Guest-local export receipt. The caller owns removal of `path` after checks.
@@ -73,8 +74,9 @@ pub fn export_commit_tree(
     let directory = builder.tempdir_in(&parent)?;
     // Keep panic unwinding enabled: jj-lib can panic on malformed raw names,
     // and TempDir must still remove partial output while unwinding.
-    let file_count =
-        materialize(&tree, directory.path(), true).map_err(|err| anyhow::anyhow!("{err:?}"))?;
+    let file_count = SnapshotDir::open(directory.path())
+        .and_then(|output| materialize(&tree, &output, true))
+        .map_err(|err| anyhow::anyhow!("{err:?}"))?;
     let path = directory
         .path()
         .to_str()
@@ -92,20 +94,12 @@ pub fn export_commit_tree(
 
 /// Shared with the existing repository snapshot operation. Strict guest checks
 /// reject metadata and unsupported submodules instead of exporting a partial tree.
+/// Every write goes through `output`'s handle, so no link can redirect it.
 pub(crate) fn materialize(
     tree: &MergedTree,
-    output: &Path,
+    output: &SnapshotDir,
     strict: bool,
 ) -> Result<usize, JjError> {
-    if !std::fs::symlink_metadata(output)
-        .map_err(|err| JjError::Internal(format!("failed to inspect snapshot directory: {err}")))?
-        .file_type()
-        .is_dir()
-    {
-        return Err(JjError::BadRequest(
-            "snapshot output must be a real directory".into(),
-        ));
-    }
     let store = tree.store();
     let mut file_count = 0;
     for (path, value) in futures::executor::block_on_stream(tree.entries_stream()) {
@@ -128,55 +122,55 @@ pub(crate) fn materialize(
             )));
         };
         let target = path
-            .to_fs_path(output)
+            .to_fs_path(Path::new(""))
             .map_err(|err| JjError::BadRequest(format!("invalid source path: {err}")))?;
+        let components = target
+            .components()
+            .map(|component| match component {
+                std::path::Component::Normal(name) => Ok(name),
+                _ => Err(JjError::BadRequest(format!(
+                    "invalid source path: {relative}"
+                ))),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let Some((name, parents)) = components.split_last() else {
+            continue;
+        };
         // Raw Git trees may contain duplicate names. A symlink yielded before a
         // same-named subtree must never become an ancestor of a later write.
-        // Check the filesystem too, so case-folding aliases are covered.
-        let mut parent = output.to_path_buf();
-        let components: Vec<_> = target
-            .strip_prefix(output)
-            .map_err(|_| JjError::BadRequest("source path escaped snapshot output".into()))?
-            .components()
-            .collect();
-        for component in components.iter().take(components.len().saturating_sub(1)) {
-            parent.push(component);
-            match std::fs::symlink_metadata(&parent) {
-                Ok(metadata) if metadata.file_type().is_dir() => {}
-                Ok(_) => {
-                    return Err(JjError::BadRequest(format!(
-                        "source parent is not a real directory: {relative}"
-                    )))
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    std::fs::create_dir(&parent).map_err(|err| {
-                        JjError::Internal(format!("failed to create snapshot subdirectory: {err}"))
-                    })?;
-                }
-                Err(err) => {
-                    return Err(JjError::Internal(format!(
-                        "failed to inspect source parent: {err}"
-                    )))
-                }
-            }
+        // The handle walk refuses links, so case-folding aliases are covered.
+        let mut parent: Option<SnapshotDir> = None;
+        for component in parents {
+            let next = parent.as_ref().unwrap_or(output).child(component);
+            parent = Some(next.map_err(|err| match err {
+                JjError::BadRequest(_) => JjError::BadRequest(format!(
+                    "source parent is not a real directory: {relative}"
+                )),
+                err => err,
+            })?);
         }
+        let parent = parent.as_ref().unwrap_or(output);
         match resolved {
             Some(TreeValue::File { id, executable, .. }) => {
                 #[cfg(not(unix))]
                 let _ = executable;
-                write_new_file_content_to(store.as_ref(), &path, id, &target).map_err(|err| {
+                let mut file = parent.create_file(name).map_err(|err| {
+                    JjError::Internal(format!("failed to write snapshot file: {err}"))
+                })?;
+                copy_file_content(store.as_ref(), &path, id, &mut file).map_err(|err| {
                     JjError::Internal(format!("failed to write snapshot file: {err}"))
                 })?;
                 #[cfg(unix)]
                 if *executable {
                     use std::os::unix::fs::PermissionsExt;
-                    let mut permissions = std::fs::metadata(&target)
+                    let mut permissions = file
+                        .metadata()
                         .map_err(|err| {
                             JjError::Internal(format!("failed to stat snapshot file: {err}"))
                         })?
                         .permissions();
                     permissions.set_mode(permissions.mode() | 0o111);
-                    std::fs::set_permissions(&target, permissions).map_err(|err| {
+                    file.set_permissions(permissions).map_err(|err| {
                         JjError::Internal(format!("failed to set snapshot file mode: {err}"))
                     })?;
                 }
@@ -187,7 +181,7 @@ pub(crate) fn materialize(
                     JjError::Internal(format!("failed to read snapshot symlink target: {err}"))
                 })?;
                 #[cfg(unix)]
-                std::os::unix::fs::symlink(&link, &target).map_err(|err| {
+                parent.symlink(name, &link).map_err(|err| {
                     JjError::Internal(format!("failed to write snapshot symlink: {err}"))
                 })?;
                 #[cfg(not(unix))]
@@ -198,15 +192,9 @@ pub(crate) fn materialize(
                         ));
                     }
                     use std::io::Write as _;
-                    let mut file = std::fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(&target)
-                        .map_err(|err| {
-                            JjError::Internal(format!(
-                                "failed to create snapshot symlink file: {err}"
-                            ))
-                        })?;
+                    let mut file = parent.create_file(name).map_err(|err| {
+                        JjError::Internal(format!("failed to create snapshot symlink file: {err}"))
+                    })?;
                     file.write_all(link.as_bytes()).map_err(|err| {
                         JjError::Internal(format!("failed to write snapshot symlink: {err}"))
                     })?;
@@ -532,7 +520,7 @@ mod tests {
         let output = parent.join("legacy");
         std::fs::create_dir(&output).unwrap();
         assert!(matches!(
-            materialize(&bad.tree(), &output, false),
+            materialize(&bad.tree(), &SnapshotDir::open(&output).unwrap(), false),
             Err(JjError::BadRequest(_))
         ));
         assert!(!parent.join("escaped").exists());
@@ -555,7 +543,7 @@ mod tests {
             for path in ["parent/file", "file"] {
                 assert!(materialize(
                     &tree(&repo, &[(path, b"replacement", false)]),
-                    &output,
+                    &SnapshotDir::open(&output).unwrap(),
                     strict
                 )
                 .is_err());
