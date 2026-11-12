@@ -216,6 +216,37 @@ describe("Scan.scan refuses a selection it cannot honour", () => {
     }).pipe(Effect.provide(nodeLayer)))
 })
 
+describe("Scan.scan over a barrel of factory bindings", () => {
+  it.effect("inventories and blocks an unsafe task a workflow imports through a barrel", () =>
+    Effect.gen(function*() {
+      // One module destructures the factory, a barrel renames a binding, and
+      // the workflow imports only the barrel. The `<Step hijack>` is a 0.x
+      // `<Task hijack>` and has to block the unit as a direct import would.
+      const root = copyFixture("jsx-single")
+      mkdirSync(join(root, ".smithers", "workflows"), { recursive: true })
+      writeFileSync(
+        join(root, ".smithers", "runtime.ts"),
+        "import { createSmithers } from \"smthrs\"\nexport const { smithers, Workflow, Task } = createSmithers({})\n"
+      )
+      writeFileSync(join(root, ".smithers", "barrel.ts"), "export { Workflow, Task as Step } from \"./runtime\"\n")
+      writeFileSync(
+        join(root, ".smithers", "workflows", "takeover.tsx"),
+        "import { Workflow, Step } from \"../barrel\"\n" +
+          "export default () => <Workflow name=\"takeover\"><Step id=\"x\" hijack /></Workflow>\n"
+      )
+
+      const result = yield* Scan.scan(root)
+      const file = ".smithers/workflows/takeover.tsx"
+
+      expect(result.detection.workflowFiles.find((workflow) => workflow.path === file)?.api).toBe("smthrs")
+      expect(result.inventory.filter((hit) => hit.file === file).map((hit) => hit.construct).sort()).toEqual([
+        "Task",
+        "Workflow"
+      ])
+      expect(result.units.find((unit) => unit.id === "workflow:takeover")?.unsafe).toEqual(["Task"])
+    }).pipe(Effect.provide(nodeLayer)))
+})
+
 describe("Scan.decisions merges every occurrence of a construct", () => {
   const hit = (construct: string, props: ReadonlyArray<string>): Inventory.InventoryEntry => ({
     file: "flow.tsx",

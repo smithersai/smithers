@@ -911,6 +911,11 @@ const withoutExtension = (file: string): string => file.replace(/\.(?:[cm]?[jt]s
  * there. A scanner that only reads in-file destructuring records nothing for
  * such a pack.
  *
+ * A pack may also hand the bindings on through a barrel (`export { Task as
+ * Step } from "./runtime"`, `export * from "./runtime"`), so a module's
+ * bindings include every name its relative re-exports carry, followed through
+ * any depth and any cycle.
+ *
  * @category scanners
  * @since 1.0.0-rc.0
  */
@@ -919,12 +924,39 @@ export const factoryReexports = (
   factories: ReadonlySet<string>,
   parse: typeof Ts.parse = Ts.parse
 ): ReadonlyMap<string, ReadonlyMap<string, string>> => {
-  const modules = new Map<string, ReadonlyMap<string, string>>()
+  const modules = new Map<string, Map<string, string>>()
+  // Every relative `export ... from`: the barrel, the module it names, and the
+  // exported name to the source name. A star re-export carries no names.
+  const forwards: Array<{
+    readonly module: string
+    readonly from: string
+    readonly names: ReadonlyMap<string, string> | undefined
+  }> = []
   for (const [file, text] of sources) {
-    if (!/\bcreateSmithers\w*\s*\(/.test(text)) continue
+    const declares = /\bcreateSmithers\w*\s*\(/.test(text)
+    const forwardsNames = /\.[cm]?[jt]sx?$/.test(file) && /\bexport\s*[*{]/.test(text)
+    if (!declares && !forwardsNames) continue
     const source = parse(file, text)
     const bindings = new Map<string, string>()
     for (const statement of source.statements) {
+      if (ts.isExportDeclaration(statement)) {
+        const specifier = statement.moduleSpecifier
+        const clause = statement.exportClause
+        if (statement.isTypeOnly || specifier === undefined || !ts.isStringLiteral(specifier)) continue
+        // `export * as ns from` binds a namespace, which no workflow tag reads.
+        if (!specifier.text.startsWith(".") || (clause !== undefined && !ts.isNamedExports(clause))) continue
+        forwards.push({
+          module: withoutExtension(file),
+          from: withoutExtension(resolveRelative(file, specifier.text)),
+          names: clause === undefined ? undefined : new Map(
+            clause.elements.filter((element) => !element.isTypeOnly).map((element) => [
+              element.name.text,
+              element.propertyName?.text ?? element.name.text
+            ])
+          )
+        })
+        continue
+      }
       if (!ts.isVariableStatement(statement)) continue
       const exported = statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
       if (exported !== true) continue
@@ -938,6 +970,29 @@ export const factoryReexports = (
       }
     }
     if (bindings.size > 0) modules.set(withoutExtension(file), bindings)
+  }
+  // Each pass adds at least one name to one module or stops, so a barrel cycle
+  // ends once every name has reached every module it can.
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const forward of forwards) {
+      const from = modules.get(forward.from)
+      if (from === undefined) continue
+      const into = modules.get(forward.module) ?? new Map<string, string>()
+      const carried = forward.names === undefined
+        ? [...from]
+        : [...forward.names].flatMap(([exported, name]) => {
+          const binding = from.get(name)
+          return binding === undefined ? [] : [[exported, binding] as const]
+        })
+      for (const [exported, binding] of carried) {
+        if (into.has(exported)) continue
+        into.set(exported, binding)
+        modules.set(forward.module, into)
+        grew = true
+      }
+    }
   }
   return modules
 }

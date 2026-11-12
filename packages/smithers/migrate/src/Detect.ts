@@ -1169,8 +1169,10 @@ export const scan = (
       const fileImports = importsByFile.get(file) ?? []
       // A pack that calls `createSmithers` in one module and imports the
       // bindings everywhere else is authoring against the old facade in every
-      // one of those files, even though only the one module names it.
-      const throughRelative = fileImports.some((hit) => hit.kind === "relative" && oldImportFiles.has(hit.specifier))
+      // one of those files, even though only the one module names it. The
+      // bindings may arrive through a barrel, so any local module that reaches
+      // the facade counts.
+      const throughRelative = fileImports.some((hit) => hit.kind === "relative" && reachesFacade.has(hit.specifier))
       const api: WorkflowApi = fileImports.some((hit) =>
           hit.kind === "old" && hit.specifier.startsWith("smithers-orchestrator")
         )

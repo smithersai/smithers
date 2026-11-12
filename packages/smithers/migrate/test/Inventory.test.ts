@@ -170,6 +170,35 @@ describe("Inventory helpers", () => {
   })
 })
 
+describe("Inventory.factoryReexports", () => {
+  it("follows the bindings through named, aliased, star, and cyclic barrels", () => {
+    // A barrel names no factory, so a scan that reads only the module calling
+    // `createSmithers` loses every binding the barrel hands on.
+    const modules = Inventory.factoryReexports(
+      new Map([
+        [
+          "runtime.ts",
+          "import { createSmithers } from \"smthrs\"\nexport const { smithers, Workflow, Task } = createSmithers({})\n"
+        ],
+        [
+          "barrel.ts",
+          "export { Workflow, Task as Step, Missing } from \"./runtime\"\nexport * from \"./loop\"\n" +
+          "export { z } from \"zod\"\nconst local = 1\nexport { local }\n"
+        ],
+        ["loop.ts", "export * from \"./barrel\"\n"],
+        ["types.ts", "export type { Task } from \"./runtime.ts\"\nexport * as kit from \"./runtime\"\n"],
+        ["prompt.mdx", "export * from \"./runtime\"\n"]
+      ]),
+      new Set(["createSmithers"])
+    )
+
+    expect(Object.fromEntries(modules.get("barrel") ?? [])).toEqual({ Workflow: "Workflow", Step: "Task" })
+    expect(Object.fromEntries(modules.get("loop") ?? [])).toEqual({ Workflow: "Workflow", Step: "Task" })
+    expect(modules.has("types")).toBe(false)
+    expect(modules.has("prompt")).toBe(false)
+  })
+})
+
 describe("Inventory.scan over batch-issues", () => {
   it.effect("resolves the factory bindings a re-export module hands out", () =>
     Effect.gen(function*() {
