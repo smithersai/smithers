@@ -67,19 +67,19 @@ it.effect("runs the default checks after a ready setup and reports what they ret
       "check test: npm test in app within 120000",
       "check typecheck: npx tsc --noEmit in app within 120000"
     ])
-    // The check that could not run is dropped, not failed, as 0.x's continueOnFail did.
+    // The check that could not run fails its own row, with the host's reason.
     expect(report).toEqual({
-      totalChecks: 3,
+      totalChecks: 4,
       passed: 2,
-      failed: 1,
+      failed: 2,
       duration: "npx tsc --noEmit".length + "npx eslint .".length + "npm run build".length,
       verdict: "fail",
-      failures: ["lint: 2 problems"],
-      summary: "2/3 checks passed"
+      failures: ["lint: 2 problems", "test: ran past 120000ms"],
+      summary: "2/4 checks passed"
     })
   }))
 
-it.effect("runs no checks when setup is not ready, and the empty report passes as in 0.x", () =>
+it.effect("runs no checks when setup is not ready, and fails naming the setup", () =>
   Effect.gen(function*() {
     const { actions, log } = host(false)
     const report = yield* Kit.run(Smoketest, { directory: "app", setupCmd: "pnpm install" }, {
@@ -95,10 +95,42 @@ it.effect("runs no checks when setup is not ready, and the empty report passes a
       passed: 0,
       failed: 0,
       duration: 0,
-      verdict: "pass",
-      failures: [],
-      summary: "0/0 checks passed"
+      verdict: "fail",
+      failures: ["setup: registry unreachable"],
+      summary: "setup not ready: registry unreachable"
     })
+  }))
+
+it.effect("fails when every check timed out", () =>
+  Effect.gen(function*() {
+    const { actions } = host(true, { only: "cannot-run" })
+    const report = yield* Kit.run(Smoketest, { directory: "app", checks: [{ name: "only", cmd: "npm test" }] }, {
+      filename: join(directory, "timed-out.sqlite"),
+      executionId: "smoketest-timed-out",
+      script: noAgents,
+      actions
+    })
+
+    expect(report).toMatchObject({
+      totalChecks: 1,
+      passed: 0,
+      verdict: "fail",
+      failures: ["only: ran past 120000ms"]
+    })
+  }))
+
+it.effect("fails when there is no check to run", () =>
+  Effect.gen(function*() {
+    const { actions, log } = host(true)
+    const report = yield* Kit.run(Smoketest, { directory: "app", checks: [] }, {
+      filename: join(directory, "no-checks.sqlite"),
+      executionId: "smoketest-no-checks",
+      script: noAgents,
+      actions
+    })
+
+    expect(log).toEqual(["setup npm install in app"])
+    expect(report).toMatchObject({ totalChecks: 0, verdict: "fail", summary: "0/0 checks passed" })
   }))
 
 it.effect("runs the given checks one at a time and names a failure that carries no error", () =>

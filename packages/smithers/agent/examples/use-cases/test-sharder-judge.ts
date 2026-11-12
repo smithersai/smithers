@@ -5,8 +5,8 @@
  * diff, and a test selector agent picks the priority tests and the ones to
  * defer. A runner agent runs each priority test, four at a time by default,
  * and a failing or timed-out runner drops only its own result. An adjudicator
- * agent reads the results, the deferred tests and the risk level, and settles
- * on a verdict.
+ * agent reads the results, the selected tests that produced none, the deferred
+ * tests and the risk level, and settles on a verdict.
  *
  * 0.x re-rendered its tree once the selection landed; here the runners run in a `.child()` flow whose body plans over the real selection.
  * `MapReduce` does not fit: its reducer reads only the mapped rows, and 0.x's adjudicator also reads the selection's deferred tests and the analysis's risk level.
@@ -113,18 +113,27 @@ Capture the status, duration, and any error messages.`
 
 /** Judges the combined results. */
 export const Adjudicate = AgentAction.make("examples/TestSharderJudge/Adjudicate", {
-  payload: { results: Schema.Array(RunResult), deferredTests: Schema.Array(Schema.String), riskLevel: Risk },
+  payload: {
+    results: Schema.Array(RunResult),
+    selectedTests: Schema.Array(PriorityTest),
+    deferredTests: Schema.Array(Schema.String),
+    riskLevel: Risk
+  },
   output: Adjudication,
   seat,
   system: [
     `You are a result adjudicator. Analyze test results and decide whether
 the change is safe (green), uncertain and needs more tests (yellow), or broken (red).
+A selected test with no result failed or timed out before it reported; never call the change green while one is missing.
 If uncertainty remains, recommend expanding to deferred tests.`
   ],
-  prompt: ({ deferredTests, results, riskLevel }) =>
-    `Adjudicate the test results for this change.\n\nRisk level: ${riskLevel}\nResults: ${
+  prompt: ({ deferredTests, results, riskLevel, selectedTests }) => {
+    const reported = new Set(results.map((result) => result.testFile))
+    const missing = selectedTests.map((test) => test.file).filter((file) => !reported.has(file))
+    return `Adjudicate the test results for this change.\n\nRisk level: ${riskLevel}\nResults: ${
       JSON.stringify(results)
-    }\nDeferred tests: ${JSON.stringify(deferredTests)}`
+    }\nDeferred tests: ${JSON.stringify(deferredTests)}\nSelected tests with no result: ${JSON.stringify(missing)}`
+  }
 })
 
 /**
@@ -188,7 +197,12 @@ export const TestSharderJudge = Flow.make("examples/TestSharderJudge", {
             Node.bindPlanned(
               RunShards.child({ tests: selection.priorityTests, runner, timeoutMs, concurrency: maxConcurrency }),
               (results: Planned.Planned<ReadonlyArray<RunResult>>) =>
-                Adjudicate.call({ results, deferredTests: selection.deferredTests, riskLevel: analysis.riskLevel })
+                Adjudicate.call({
+                  results,
+                  selectedTests: selection.priorityTests,
+                  deferredTests: selection.deferredTests,
+                  riskLevel: analysis.riskLevel
+                })
             )
         )
     )

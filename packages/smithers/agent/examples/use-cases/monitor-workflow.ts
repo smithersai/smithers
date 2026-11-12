@@ -13,7 +13,7 @@
  *
  * 0.x's `<Loop maxIterations={120}>` is a trampoline here: each beat is one round that hands the next beat to itself with `.to()`, so 120 beats never sit in one plan.
  * 0.x's escalation `<HumanTask>` asked for the action row; here it is a JSON `HumanTask` with that row's schema.
- * 0.x's health schema had no `ownerActive`, so the monitor always treated the run as ownerless; kept.
+ * 0.x's health schema had no `ownerActive`, so its handlers never saw the ownership they were told to confirm; here the watcher reports it, and a stalled or wedged sample heals only when it reports `ownerActive: false`. Any other one escalates.
  * 0.x's prompts name 0.x CLI commands (`smthrs status`, `inspect`, `retry-task`, `up --resume`) that the 1.0 CLI does not have; kept verbatim.
  * 0.x gave the watcher `bash`, `read` and `grep`; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
@@ -61,6 +61,11 @@ export const Health = Schema.Struct({
   runStatus: Schema.String.annotate({
     description: "The watched run's status, as reported by `smithers status`/the Gateway."
   }),
+  ownerActive: Schema.optional(
+    Schema.Boolean.annotate({
+      description: "Whether the watched run's runtime owner is live: a pid with a fresh heartbeat. Omitted when unread."
+    })
+  ),
   targetNodeId: Schema.optional(
     Schema.NullOr(Schema.String).annotate({
       description: "The implicated node, when a single one is."
@@ -245,11 +250,19 @@ export type Then = { readonly _tag: "handle" } | { readonly _tag: "escalate"; re
 /** One row of the table: the condition it matches and what it does. */
 export interface Rule {
   readonly condition: Condition
+  /** Matches only a sample that reports `ownerActive: false`. */
+  readonly ownerless?: true
   readonly then: Then
 }
 
 const handle: Then = { _tag: "handle" }
 const escalate = (ask: string): Then => ({ _tag: "escalate", ask })
+
+/** The question a resume or a retry escalates with when the monitor may not run it. */
+const repairQuestion = {
+  stalled: "Should this run be resumed?",
+  "wedged-node": "Should this node be retried, or is the failure real?"
+} as const
 
 /** What each condition does under `autoHeal`, for an ownerless run. `null` is no rule: keep watching. */
 const thenFor = (condition: Condition, autoHeal: ReadonlyArray<Condition>): Then | null => {
@@ -257,11 +270,8 @@ const thenFor = (condition: Condition, autoHeal: ReadonlyArray<Condition>): Then
     case "healthy":
       return null
     case "stalled":
-      return autoHeal.includes("stalled") ? handle : escalate("Should this run be resumed?")
     case "wedged-node":
-      return autoHeal.includes("wedged-node")
-        ? handle
-        : escalate("Should this node be retried, or is the failure real?")
+      return autoHeal.includes(condition) ? handle : escalate(repairQuestion[condition])
     // Cancelling is destructive, so it heals only when `autoHeal` names it.
     case "runaway-loop":
       return autoHeal.includes("runaway-loop") ? handle : escalate(
@@ -276,10 +286,18 @@ const thenFor = (condition: Condition, autoHeal: ReadonlyArray<Condition>): Then
   }
 }
 
-/** The rule table, first match wins, in the order of {@link conditions}. */
-export const rules: ReadonlyArray<Rule> = conditions.flatMap((condition) => {
+/**
+ * The rule table, first match wins, in the order of {@link conditions}. A
+ * resume or a retry against a live owner races it, so a healing `stalled` or
+ * `wedged-node` rule matches only an ownerless sample, and the same condition
+ * with an active or unreported owner escalates.
+ */
+export const rules: ReadonlyArray<Rule> = conditions.flatMap((condition): ReadonlyArray<Rule> => {
   const then = thenFor(condition, settings.autoHeal)
-  return then === null ? [] : [{ condition, then }]
+  if (then === null) return []
+  return then._tag === "handle" && (condition === "stalled" || condition === "wedged-node")
+    ? [{ condition, ownerless: true, then }, { condition, then: escalate(repairQuestion[condition]) }]
+    : [{ condition, then }]
 })
 
 /** The question a person is asked when a condition escalates. Pure, so it runs in a `Node.map`. */
@@ -325,7 +343,7 @@ const act = (rule: Rule, health: Planned.Planned<Health | null>, watch: Watch): 
     : Node.bindPlanned(
       Node.map(
         Node.succeed({ condition: rule.condition, watchRunId: watch.watchRunId, ask: rule.then.ask, health }),
-        escalation
+        Node.capture({}, escalation)
       ),
       Node.capture({ rule }, (prompt: Planned.Planned<string>) =>
         HumanTask.decode(MonitorAction)(
@@ -347,8 +365,11 @@ const decide = (health: Planned.Planned<Health | null>, watch: Watch): Routed =>
   rules.reduceRight<Routed>(
     (otherwise, rule) =>
       Node.branch(Node.succeed(health), {
-        if: Node.capture({ condition: rule.condition }, function(sample: Health | null) {
-          return sample !== null && sample.condition === this.condition
+        if: Node.capture({ condition: rule.condition, ownerless: rule.ownerless === true }, function(
+          sample: Health | null
+        ) {
+          return sample !== null && sample.condition === this.condition &&
+            (!this.ownerless || sample.ownerActive === false)
         }),
         then: Node.capture({
           rule,

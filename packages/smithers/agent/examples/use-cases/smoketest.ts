@@ -4,18 +4,20 @@
  * Port of the 0.x `smoketest.jsx`. A setup step prepares the directory with
  * `setupCmd` (default `npm install`). When it reports the environment ready,
  * each smoke check (default typecheck, lint, test and build) runs, at most
- * `maxParallel` (default 4) at a time, and a check that could not run drops
- * only its own row. The report counts what the checks returned.
+ * `maxParallel` (default 4) at a time, and a check that could not run fails
+ * only its own row. The report passes only when at least one check ran and
+ * every check passed.
  *
  * 0.x's setup and check agents ran shell commands; here they are the deterministic `Setup` and `RunCheck` actions a host implements, so a test never runs a command.
  * 0.x's per-task `timeoutMs` is a declaration constant in 1.0 (`attemptTimeoutMs`), so the run's `timeoutMs` goes to the host, which fails the check with `CheckFailed` when the command outlives it.
- * `CheckSuite` does not fit: it counts a check that could not run as failed and keeps no durations; 0.x drops that check and sums durations.
+ * `CheckSuite` does not fit: it keeps no durations.
  * `Sandbox.run` acquires a machine per action, so it cannot keep one environment across the setup and the checks; the host owns the environment.
- * As in 0.x, an environment that is not ready runs no checks, and the empty report's verdict is `pass`.
+ * 0.x dropped a check that could not run and passed an empty report, so a setup that failed or checks that all timed out passed; here both fail.
  */
 import { Action, Flow } from "@smthrs/flow"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
+import type * as Planned from "@smthrs/plan/Planned"
 import type * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -79,7 +81,7 @@ export const RunCheck = Action.make("examples/Smoketest/RunCheck", {
   error: CheckFailed
 })
 
-/** 0.x's report task: counts and sums the checks that returned. Pure, so it is a `Node.map`. */
+/** 0.x's report task: counts and sums the checks. Pure, so it is a `Node.map`. No check run is a failure. */
 const report = (checks: ReadonlyArray<CheckResult>): typeof Report.Type => {
   const passed = checks.filter((c) => c.passed).length
   return {
@@ -87,13 +89,20 @@ const report = (checks: ReadonlyArray<CheckResult>): typeof Report.Type => {
     passed,
     failed: checks.filter((c) => !c.passed).length,
     duration: checks.reduce((sum, c) => sum + c.duration, 0),
-    verdict: checks.every((c) => c.passed) ? "pass" : "fail",
+    verdict: checks.length > 0 && passed === checks.length ? "pass" : "fail",
     failures: checks.filter((c) => !c.passed).map((c) => `${c.name}: ${c.error ?? "failed"}`),
     summary: `${passed}/${checks.length} checks passed`
   }
 }
 
-/** Runs every check, `maxParallel` at a time, keeping the rows of the checks that returned. */
+/** The report of a setup that left the environment not ready: no check ran, so it fails. */
+const notReady = (setup: typeof SetupResult.Type): typeof Report.Type => ({
+  ...report([]),
+  failures: [`setup: ${setup.details}`],
+  summary: `setup not ready: ${setup.details}`
+})
+
+/** Runs every check, `maxParallel` at a time. A check the host could not run is a failed row. */
 const runChecks = (
   checks: ReadonlyArray<typeof SmokeCheck.Type>,
   directory: string,
@@ -101,34 +110,55 @@ const runChecks = (
   maxParallel: number
 ): Node.Node<ReadonlyArray<CheckResult>, never, Action.Requirement<"examples/Smoketest/RunCheck">> => {
   if (checks.length === 0) return Node.succeed([])
-  // 0.x `continueOnFail`: a check that could not run settles as null instead of failing its siblings.
+  // 0.x `continueOnFail`: a check that could not run does not fail its siblings; it reports as failed.
   const members = Object.fromEntries(checks.map(({ cmd, name }) => [
     `check-${name}`,
-    Node.catch(RunCheck.call({ name, cmd, directory, timeoutMs }), { onFailure: () => Node.succeed(null) })
+    Node.catch(RunCheck.call({ name, cmd, directory, timeoutMs }), {
+      onFailure: Node.capture({}, (failed: Planned.Planned<CheckFailed>) =>
+        Node.map(
+          Node.succeed(failed),
+          Node.capture({}, ({ name, reason }: CheckFailed): CheckResult => ({
+            name,
+            passed: false,
+            duration: 0,
+            error: reason,
+            output: ""
+          }))
+        ))
+    })
   ]))
   const joined = Bounded.all(members, { concurrency: maxParallel })
-  return Node.map(joined, (rows) => Object.values(rows).filter(Schema.is(CheckResult)))
+  return Node.map(joined, Node.capture({}, (rows: Record<string, CheckResult>) => Object.values(rows)))
+}
+
+const payload = {
+  directory: Schema.String,
+  setupCmd: Schema.optional(Schema.String),
+  checks: Schema.optional(Schema.Array(SmokeCheck)),
+  maxParallel: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+  timeoutMs: Schema.optional(Schema.Number)
 }
 
 /** The flow: set up, run the checks when the environment is ready, report. */
 export const Smoketest = Flow.make("examples/Smoketest", {
-  payload: {
-    directory: Schema.String,
-    setupCmd: Schema.optional(Schema.String),
-    checks: Schema.optional(Schema.Array(SmokeCheck)),
-    maxParallel: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
-    timeoutMs: Schema.optional(Schema.Number)
-  },
+  payload,
   success: Report,
-  body: ({ checks = defaultChecks, directory, maxParallel = 4, setupCmd = "npm install", timeoutMs = 120_000 }) =>
-    Node.map(
-      Node.branch(Setup.call({ directory, setupCmd }), {
-        if: (setup) => setup.ready,
-        then: () => runChecks(checks, directory, timeoutMs, maxParallel),
-        else: () => Node.succeed([])
-      }),
-      report
-    )
+  body: Node.capture({}, ({
+    checks = defaultChecks,
+    directory,
+    maxParallel = 4,
+    setupCmd = "npm install",
+    timeoutMs = 120_000
+  }: Schema.Struct.Type<typeof payload>) =>
+    Node.branch(Setup.call({ directory, setupCmd }), {
+      if: Node.capture({}, (setup: typeof SetupResult.Type) => setup.ready),
+      then: Node.capture(
+        { checks, directory, timeoutMs, maxParallel },
+        () => Node.map(runChecks(checks, directory, timeoutMs, maxParallel), Node.capture({}, report))
+      ),
+      else: Node.capture({}, (setup: Planned.Planned<typeof SetupResult.Type>) =>
+        Node.map(Node.succeed(setup), Node.capture({}, notReady)))
+    }))
 })
 
 /** What a host supplies for the steps that run commands. */

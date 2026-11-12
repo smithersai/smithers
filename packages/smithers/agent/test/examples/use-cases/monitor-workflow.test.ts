@@ -42,9 +42,15 @@ const person = (executionId: string, answers: ReadonlyArray<typeof Schema.Json.T
     }).pipe(Effect.orDie)
   ))
 
-const health = (condition: Condition, runStatus: string, targetNodeId?: string): typeof Health.Type => ({
+const health = (
+  condition: Condition,
+  runStatus: string,
+  targetNodeId?: string,
+  ownerActive?: boolean
+): typeof Health.Type => ({
   condition,
   runStatus,
+  ...(ownerActive === undefined ? {} : { ownerActive }),
   ...(targetNodeId === undefined ? {} : { targetNodeId }),
   evidence: `${condition} evidence`,
   summary: `${condition} summary`
@@ -82,10 +88,12 @@ const script = (beats: ReadonlyArray<typeof Health.Type | "broken">) => {
   return { answer, handled, samples }
 }
 
-it("keeps the 0.x rule table: no rule for healthy, heal stalled and wedged nodes, escalate the rest", () => {
-  expect(rules.map((rule) => `${rule.condition}: ${rule.then._tag}`)).toEqual([
-    "stalled: handle",
-    "wedged-node: handle",
+it("keeps the 0.x rule table: no rule for healthy, heal ownerless stalled and wedged runs, escalate the rest", () => {
+  expect(rules.map((rule) => `${rule.condition}${rule.ownerless ? " (ownerless)" : ""}: ${rule.then._tag}`)).toEqual([
+    "stalled (ownerless): handle",
+    "stalled: escalate",
+    "wedged-node (ownerless): handle",
+    "wedged-node: escalate",
     "runaway-loop: escalate",
     "awaiting-human: handle",
     "failing: handle",
@@ -99,8 +107,8 @@ it("keeps the 0.x rule table: no rule for healthy, heal stalled and wedged nodes
 it.live("heals what the table routes, keeps watching a healthy run, and stops when it finishes", () =>
   Effect.gen(function*() {
     const { answer, handled, samples } = script([
-      health("stalled", "running"),
-      health("wedged-node", "running", "compile"),
+      health("stalled", "running", undefined, false),
+      health("wedged-node", "running", "compile", false),
       health("healthy", "running"),
       health("healthy", "finished")
     ])
@@ -165,7 +173,7 @@ it.live(
 
 it.live("survives a failed sample and refuses to resume without a workflow path", () =>
   Effect.gen(function*() {
-    const { answer, handled, samples } = script(["broken", health("stalled", "running")])
+    const { answer, handled, samples } = script(["broken", health("stalled", "running", undefined, false)])
     const last = yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1, maxChecks: 2 }, {
       filename: join(directory, "broken.sqlite"),
       executionId: "monitor-broken",
@@ -180,7 +188,49 @@ it.live("survives a failed sample and refuses to resume without a workflow path"
     ])
     expect(last).toEqual({
       beats: 2,
-      health: health("stalled", "running"),
+      health: health("stalled", "running", undefined, false),
       action: { action: "handled stalled", changed: false, summary: "acted on stalled evidence" }
     })
   }))
+
+// A resume or retry against a live owner races it, and an unread owner may be live.
+it.live(
+  "asks a person instead of healing a stalled or wedged run whose owner is active or unreported",
+  () =>
+    Effect.gen(function*() {
+      const { answer, handled, samples } = script([
+        health("stalled", "running", undefined, true),
+        health("wedged-node", "running", "compile")
+      ])
+      const questions: Array<string> = []
+      const executionId = "monitor-owned"
+      const decision = { action: "none", changed: false, summary: "owner is still working" }
+      const last = yield* Kit.run(MonitorWorkflow, {
+        watchRunId: "run-7",
+        watchWorkflowPath: "/repo/flows/build.ts",
+        intervalMs: 1,
+        maxChecks: 2
+      }, {
+        filename: join(directory, "owned.sqlite"),
+        executionId,
+        script: answer,
+        actions: Layer.mergeAll(layer, person(executionId, [decision, decision], questions))
+      })
+
+      expect(samples).toEqual(["stalled/running", "wedged-node/running"])
+      expect(handled).toEqual([])
+      expect(questions).toEqual([
+        "Run run-7 looks \"stalled\" and the monitor is not allowed to fix it on its own.\n" +
+        "Evidence: \"stalled evidence\"\n" +
+        "Watched run status: running\n" +
+        "Should this run be resumed?",
+        "Run run-7 looks \"wedged-node\" and the monitor is not allowed to fix it on its own.\n" +
+        "Evidence: \"wedged-node evidence\"\n" +
+        "Watched run status: running\n" +
+        "Implicated node: compile\n" +
+        "Should this node be retried, or is the failure real?"
+      ])
+      expect(last).toEqual({ beats: 2, health: health("wedged-node", "running", "compile"), action: decision })
+    }),
+  { timeout: 60_000 }
+)

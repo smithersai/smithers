@@ -21,14 +21,13 @@ const diff = [
  * An analyzer that lists the files the diff touches; a selector that picks one
  * test per changed file and defers `src/legacy.test.ts`; runners that fail the
  * tests in `failing` and answer off-schema for the ones in `broken`; and an
- * adjudicator that goes red on a failure, yellow when a selected test has no
- * result, else green. Each request is recorded in order of arrival.
+ * adjudicator that goes red on a failure, yellow when it is told a selected
+ * test has no result, else green. Each request is recorded in order of arrival.
  */
 const script = (
   options: { readonly failing?: ReadonlyArray<string>; readonly broken?: ReadonlyArray<string> } = {}
 ) => {
   const asked: Record<string, Array<string>> = { analyze: [], select: [], run: [], adjudicate: [] }
-  let selected = 0
   const answer: Kit.Script = (text) => {
     const analyze = /Analyze this change against (.+)\.\n\nDiff:\n/.exec(text)
     if (analyze !== null) {
@@ -43,7 +42,6 @@ const script = (
     if (select !== null) {
       asked.select!.push(`${select[1]} for ${select[2]}`)
       const changed: ReadonlyArray<string> = JSON.parse(select[2]!)
-      selected = changed.length
       return {
         priorityTests: changed.map((file) => ({
           file: file.replace(/\.ts$/, ".test.ts"),
@@ -63,13 +61,21 @@ const script = (
         ? { testFile: file, status: "fail", durationMs: 120, errorMessage: "expected 3 to equal 4" }
         : { testFile: file, status: "pass", durationMs: 80 }
     }
-    const adjudicate = /Risk level: (.+)\nResults: (.+)\nDeferred tests: (.+)/.exec(text)
+    const adjudicate = /Risk level: (.+)\nResults: (.+)\nDeferred tests: (.+)\nSelected tests with no result: (.+)/
+      .exec(
+        text
+      )
     if (adjudicate !== null && text.includes("Adjudicate the test results")) {
       const results: ReadonlyArray<{ readonly testFile: string; readonly status: string }> = JSON.parse(adjudicate[2]!)
       const deferred: ReadonlyArray<string> = JSON.parse(adjudicate[3]!)
-      asked.adjudicate!.push(`${adjudicate[1]}: ${results.map((r) => `${r.testFile}=${r.status}`).join(", ")}`)
+      const unreported: ReadonlyArray<string> = JSON.parse(adjudicate[4]!)
+      asked.adjudicate!.push(
+        `${adjudicate[1]}: ${results.map((r) => `${r.testFile}=${r.status}`).join(", ")}; no result: ${
+          unreported.join(", ")
+        }`
+      )
       const failed = results.filter((result) => result.status === "fail").map((result) => result.testFile)
-      const missing = results.length < selected
+      const missing = unreported.length > 0
       return {
         verdict: failed.length > 0 ? "red" : missing ? "yellow" : "green",
         failedTests: failed,
@@ -101,7 +107,7 @@ it.effect("runs one shard per selected test and adjudicates the combined results
       "src/price.test.ts with npx vitest run (covers src/price.ts)"
     ])
     // The adjudicator read every shard's result, in selection order, and the analyzer's risk.
-    expect(asked.adjudicate).toEqual(["medium: src/cart.test.ts=fail, src/price.test.ts=pass"])
+    expect(asked.adjudicate).toEqual(["medium: src/cart.test.ts=fail, src/price.test.ts=pass; no result: "])
     expect(verdict).toEqual({
       verdict: "red",
       failedTests: ["src/cart.test.ts"],
@@ -129,9 +135,10 @@ it.effect("drops a failed runner's result and adjudicates the rest", () =>
 
     expect(asked.analyze).toEqual(["release"])
     expect(asked.select![0]).toMatch(/^test\/\*\*\/\*\.spec\.ts for /)
-    // The broken runner was asked (and re-asked for a correction) and then dropped.
+    // The broken runner was asked (and re-asked for a correction) and then dropped,
+    // and the adjudicator was told which selected test produced no result.
     expect(asked.run).toContain("src/price.test.ts with pnpm vitest run (covers src/price.ts)")
-    expect(asked.adjudicate).toEqual(["medium: src/cart.test.ts=pass"])
+    expect(asked.adjudicate).toEqual(["medium: src/cart.test.ts=pass; no result: src/price.test.ts"])
     expect(verdict).toEqual({
       verdict: "yellow",
       failedTests: [],
@@ -153,6 +160,6 @@ it.effect("adjudicates with no shards when the selector picks nothing", () =>
 
     expect(asked.select).toEqual(["**/*.test.{ts,tsx} for []"])
     expect(asked.run).toEqual([])
-    expect(asked.adjudicate).toEqual(["medium: "])
+    expect(asked.adjudicate).toEqual(["medium: ; no result: "])
     expect(verdict.verdict).toBe("green")
   }))
