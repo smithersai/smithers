@@ -3,9 +3,9 @@ import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFile, readdir, writeFile } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
-import { gt } from "semver"
 
-import { isMain } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
+// The installer jobs run this module with no dependencies installed.
+import { isMain } from "../../../packages/repo-targets/scripts/workspace-root.mjs"
 
 export const integrity = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`
 
@@ -168,6 +168,9 @@ export const publishCandidate = async (directory, candidate, options) => {
     // keeps it, and npm-dist-tag.yml remains the deliberate way to move it.
     const tag = entry.version.includes("-") ? "next" : "latest"
     const current = await options.readTag(entry, tag)
+    // Loaded here, not at the top: the installer jobs import this module for
+    // its candidate checks with no dependencies installed, and never promote.
+    const { gt } = await import("semver")
     if (current !== undefined && gt(current, entry.version)) continue
     await options.promote(entry, tag)
     promoted.push(entry.name)

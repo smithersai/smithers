@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -160,6 +160,37 @@ test("the signing step's inline imports resolve from the checkout root and expor
     for (const name of names.split(",").map((part) => part.trim())) assert.equal(typeof module[name], "function", `${specifier} exports ${name}`)
   }
 })
+
+test("a release job that installs no dependencies loads its release scripts with none resolvable", () => temp(async (root) => {
+  // The installer jobs check out the repository and run these scripts without
+  // `pnpm install`. A scratch copy of the script directories has no
+  // `node_modules` above it, so any import outside Node fails to resolve.
+  for (const directory of [".smithers/flows/release", "packages/repo-targets/scripts"]) {
+    await mkdir(join(root, directory), { recursive: true })
+    for (const name of await readdir(join(repoRoot, directory))) {
+      if (name.endsWith(".mjs") && !name.endsWith(".test.mjs")) await copyFile(join(repoRoot, directory, name), join(root, directory, name))
+    }
+  }
+  const release = parseWorkflow(await readFile(join(repoRoot, ".github", "workflows", "release.yml"), "utf8"))
+  const loaded = new Set()
+  for (const job of Object.values(release.jobs)) {
+    const runs = job.steps.map((step) => step.run ?? "")
+    if (runs.some((run) => run.includes("pnpm install"))) continue
+    for (const run of runs) {
+      for (const [, script] of run.matchAll(/\bnode (\S+\.mjs)/g)) loaded.add(script)
+      for (const [, specifier] of run.matchAll(/ from "(\.[^"]+\.mjs)"/g)) loaded.add(join(specifier))
+    }
+  }
+  assert.deepEqual([...loaded].sort(), [".smithers/flows/release/installer-release.mjs", ".smithers/flows/release/publish-release.mjs"])
+  for (const script of loaded) {
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", "await import(process.argv[1])", pathToFileURL(join(root, script)).href], { cwd: root, encoding: "utf8" })
+    assert.equal(result.status, 0, `${script} loads without installed dependencies: ${result.stderr}`)
+  }
+  // The job's own invocation reaches the command, not a module resolution error.
+  const pack = spawnSync(process.execPath, [".smithers/flows/release/installer-release.mjs", "pack"], { cwd: root, encoding: "utf8" })
+  assert.notEqual(pack.status, 0)
+  assert.doesNotMatch(pack.stderr, /ERR_MODULE_NOT_FOUND/)
+}))
 
 test("signing requires the exact trusted GitHub tag context and all four archives", () => temp(async (root) => {
   await releaseFiles(root)

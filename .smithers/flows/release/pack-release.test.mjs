@@ -186,7 +186,7 @@ test("importing the release scripts reads no workspace tree", async () => {
   // roster error before the importer could call anything.
   const fixture = await mkdtemp(join(tmpdir(), "smithers-pack-release-import-"))
   try {
-    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", ...["pack-release.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
+    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", "packages/repo-targets/scripts/workspace-root.mjs", ...["pack-release.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `.smithers/flows/release/${name}`)]) {
       await mkdir(dirname(join(fixture, file)), { recursive: true })
       await cp(join(repoRoot, file), join(fixture, file))
     }
