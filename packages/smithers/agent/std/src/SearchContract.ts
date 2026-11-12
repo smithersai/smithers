@@ -316,6 +316,7 @@ export const canonicalGlob = (glob: string): string => {
 }
 
 interface CompiledGlob {
+  readonly directoryOnly: boolean
   readonly byPath: boolean
   readonly expression: RegExp
 }
@@ -335,9 +336,11 @@ const compileGlob = (pattern: string): ReadonlyArray<CompiledGlob> => {
   const cached = compiled.get(pattern)
   if (cached !== undefined) return cached
   const matchers = expandBraces(canonicalGlob(pattern)).map((expanded) => {
-    const rooted = expanded.startsWith("/")
-    const normalized = rooted ? expanded.slice(1) : expanded
-    return { byPath: rooted || normalized.includes("/"), expression: globExpression(normalized) }
+    const directoryOnly = expanded.endsWith("/")
+    const pattern = directoryOnly ? expanded.slice(0, -1) : expanded
+    const rooted = pattern.startsWith("/")
+    const normalized = rooted ? pattern.slice(1) : pattern
+    return { directoryOnly, byPath: rooted || normalized.includes("/"), expression: globExpression(normalized) }
   })
   if (compiled.size >= 256) compiled.clear()
   compiled.set(pattern, matchers)
@@ -355,10 +358,16 @@ const compileGlob = (pattern: string): ReadonlyArray<CompiledGlob> => {
  * @since 1.0.0
  */
 export const matchesGlob = (pattern: string, relative: string, basename: string): boolean =>
-  compileGlob(pattern).some((matcher) => matcher.expression.test(utf8ByteString(matcher.byPath ? relative : basename)))
+  compileGlob(pattern).some((matcher) =>
+    !matcher.directoryOnly && matcher.expression.test(utf8ByteString(matcher.byPath ? relative : basename))
+  )
 
 /**
  * Applies ripgrep `-g` ordering: positive globs include and `!` globs exclude.
+ *
+ * Exclusions also match ancestor directories. A trailing `/` limits an
+ * exclusion to directories, so `!vendor/` excludes their descendants but
+ * leaves a regular file named `vendor` alone.
  *
  * @category matching
  * @since 1.0.0
@@ -368,7 +377,19 @@ export const includedByGlobs = (globs: ReadonlyArray<string>, relative: string, 
   let included = positives.length === 0
   for (const glob of globs) {
     const excluded = glob.startsWith("!")
-    if (matchesGlob(excluded ? glob.slice(1) : glob, relative, basename)) included = !excluded
+    const pattern = excluded ? glob.slice(1) : glob
+    if (matchesGlob(pattern, relative, basename)) included = !excluded
+    else if (excluded) {
+      const matchers = compileGlob(pattern)
+      for (let end = relative.lastIndexOf("/"); end > 0; end = relative.lastIndexOf("/", end - 1)) {
+        const directory = relative.slice(0, end)
+        const name = directory.slice(directory.lastIndexOf("/") + 1)
+        if (matchers.some((matcher) => matcher.expression.test(utf8ByteString(matcher.byPath ? directory : name)))) {
+          included = false
+          break
+        }
+      }
+    }
   }
   return included
 }

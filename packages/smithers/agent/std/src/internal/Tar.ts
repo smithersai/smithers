@@ -31,27 +31,27 @@ const checksum = (header: Uint8Array): number => {
   return sum
 }
 
-/** The `path` record of a POSIX extended header: `<length> <key>=<value>\n` records. */
-const paxPath = (data: Uint8Array): string | undefined => {
+/** A named record of a POSIX extended header: `<length> <key>=<value>\n` records. */
+const paxValue = (data: Uint8Array, key: string): string | undefined => {
   let offset = 0
-  let path: string | undefined
+  let value: string | undefined
   while (offset < data.length) {
     const space = data.indexOf(32, offset)
     const length = space === -1 ? Number.NaN : Number(decoder.decode(data.subarray(offset, space)))
-    if (!Number.isSafeInteger(length) || length <= space - offset || offset + length > data.length) return path
+    if (!Number.isSafeInteger(length) || length <= space - offset || offset + length > data.length) return value
     const record = decoder.decode(data.subarray(space + 1, offset + length - 1))
-    if (record.startsWith("path=")) path = record.slice("path=".length)
+    if (record.startsWith(`${key}=`)) value = record.slice(key.length + 1)
     offset += length
   }
-  return path
+  return value
 }
 
 /**
  * Every regular file the stream holds, by member name, or `undefined` when
  * the stream is not whole tar archives: a header whose checksum does not
- * hold, a member cut short, or a last archive with no end. A `tar` that
- * stopped between two members wrote no end, so its missing files are not
- * mistaken for files it could not read.
+ * hold, a member cut short, a hard link with no preceding file, or a last
+ * archive with no end. A `tar` that stopped between two members wrote no end,
+ * so its missing files are not mistaken for files it could not read.
  *
  * @private
  * @since 1.0.0-rc.8
@@ -60,6 +60,8 @@ export const files = (stream: Uint8Array): ReadonlyMap<string, Uint8Array> | und
   const found = new Map<string, Uint8Array>()
   let longName: string | undefined
   let extended: string | undefined
+  let longLink: string | undefined
+  let extendedLink: string | undefined
   let ended = true
   for (let offset = 0; offset + 512 <= stream.length;) {
     const header = stream.subarray(offset, offset + 512)
@@ -78,18 +80,29 @@ export const files = (stream: Uint8Array): ReadonlyMap<string, Uint8Array> | und
       continue
     }
     if (type === "x") {
-      extended = paxPath(data) ?? extended
+      extended = paxValue(data, "path") ?? extended
+      extendedLink = paxValue(data, "linkpath") ?? extendedLink
       continue
     }
-    // A long link name and a global header describe no member of their own.
-    if (type === "K" || type === "g") continue
-    if (type === "0" || type === "\0" || type === "7") {
+    if (type === "K") {
+      longLink = text(data)
+      continue
+    }
+    // A global header describes no member of its own.
+    if (type === "g") continue
+    if (type === "0" || type === "\0" || type === "7" || type === "1") {
       const prefix = decoder.decode(header.subarray(257, 263)) === "ustar\0" ? text(header.subarray(345, 500)) : ""
       const short = text(header.subarray(0, 100))
-      found.set(extended ?? longName ?? (prefix === "" ? short : `${prefix}/${short}`), data.slice())
+      // Hard links share the captured bytes, so aliases cannot multiply the
+      // memory used by a bounded archive.
+      const bytes = type === "1" ? found.get(extendedLink ?? longLink ?? text(header.subarray(157, 257))) : data.slice()
+      if (bytes === undefined) return undefined
+      found.set(extended ?? longName ?? (prefix === "" ? short : `${prefix}/${short}`), bytes)
     }
     longName = undefined
     extended = undefined
+    longLink = undefined
+    extendedLink = undefined
   }
   return ended ? found : undefined
 }

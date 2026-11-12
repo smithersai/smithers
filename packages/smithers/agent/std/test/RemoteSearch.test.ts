@@ -16,7 +16,7 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as Rooted from "@smthrs/kernel/Rooted"
 import { Context, Effect, FileSystem, Layer, Path } from "effect"
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -57,6 +57,8 @@ beforeAll(() => {
   file(process.platform === "win32" ? "edge/line 'break.txt" : "edge/line\nbreak.txt", "needle in an odd name\n")
   file("edge/-leading.txt", "needle leading dash\n")
   file("edge/empty.txt", "")
+  file("hardlinks/a.txt", "needle hard link\n")
+  linkSync(join(tree, "hardlinks/a.txt"), join(tree, "hardlinks/b.txt"))
   file("edge/target.txt", "needle through a link\n")
   symlinkSync(join(tree, "edge/target.txt"), join(tree, "edge/link.txt"))
   symlinkSync(join(tree, "edge"), join(tree, "edge-link"), "dir")
@@ -155,6 +157,16 @@ describe("RemoteSearch against PortableSearch on the same tree", () => {
     })
     expect(SearchConformance.report(divergences)).toBe("")
   }, 60_000)
+
+  it("searches every hard-linked name from a real tar archive", async () => {
+    const divergences = await agree({
+      grep: [
+        grep({ pattern: "needle", root: "hardlinks" }),
+        grep({ pattern: "needle", root: "hardlinks", filesWithMatches: true })
+      ]
+    })
+    expect(SearchConformance.report(divergences)).toBe("")
+  })
 
   it.skipIf(isRoot)("skips an unreadable file and reports an unreadable root as the walk does", async () => {
     const divergences = await agree({

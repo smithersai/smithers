@@ -15,6 +15,7 @@ interface Header {
   readonly size?: number | undefined
   readonly type?: string | undefined
   readonly magic?: string | undefined
+  readonly link?: string | undefined
   readonly prefix?: string | undefined
   readonly sizeField?: string | undefined
   readonly corrupt?: boolean | undefined
@@ -31,6 +32,7 @@ const header = (spec: Header): Uint8Array => {
   put(block, 124, spec.sizeField ?? `${(spec.size ?? 0).toString(8).padStart(11, "0")}\0`)
   put(block, 136, "00000000000\0")
   put(block, 156, spec.type ?? "0")
+  if (spec.link !== undefined) put(block, 157, spec.link)
   put(block, 257, spec.magic ?? "ustar\0")
   put(block, 263, "00")
   if (spec.prefix !== undefined) put(block, 345, spec.prefix)
@@ -115,6 +117,57 @@ describe("Tar.files", () => {
       "pax-without-path.txt": "header name\n",
       "second.txt": "second archive\n"
     })
+  })
+
+  it("retains hard-linked names and chains, including empty files", () => {
+    const stream = concat(
+      entry({ name: "./a.txt" }, "needle\n"),
+      entry({ name: "./b.txt", type: "1", link: "./a.txt" }),
+      entry({ name: "c.txt", type: "1", link: "./b.txt" }),
+      entry({ name: "empty.txt" }),
+      entry({ name: "empty-link.txt", type: "1", link: "empty.txt" }),
+      end
+    )
+    expect(decoded(Tar.files(stream))).toEqual({
+      "./a.txt": "needle\n",
+      "./b.txt": "needle\n",
+      "c.txt": "needle\n",
+      "empty.txt": "",
+      "empty-link.txt": ""
+    })
+  })
+
+  it("reads GNU long link targets and POSIX linkpath records without leaking them to the next member", () => {
+    const target = `long/${"t".repeat(120)}.txt`
+    const alias = `aliases/${"a".repeat(120)}.txt`
+    const stream = concat(
+      entry({ name: "LongLink", type: "L" }, `${target}\0`),
+      entry({ name: "short" }, "long target\n"),
+      entry({ name: "LongLink", type: "K" }, `${target}\0`),
+      entry({ name: "LongLink", type: "L" }, `${alias}\0`),
+      entry({ name: "short-alias", type: "1", link: "truncated-target" }),
+      entry({ name: "pax", type: "x" }, pax([`path=pax/é.txt`, `linkpath=${target}`])),
+      entry({ name: "short-pax", type: "1", link: "truncated-target" }),
+      entry({ name: "normal.txt" }, "normal\n"),
+      entry({ name: "normal-link.txt", type: "1", link: "normal.txt" }),
+      end
+    )
+    expect(decoded(Tar.files(stream))).toEqual({
+      [target]: "long target\n",
+      [alias]: "long target\n",
+      "pax/é.txt": "long target\n",
+      "normal.txt": "normal\n",
+      "normal-link.txt": "normal\n"
+    })
+  })
+
+  it("uses the member prefix for a hard link's own name and refuses an unavailable target", () => {
+    expect(decoded(Tar.files(concat(
+      entry({ name: "target.txt" }, "target\n"),
+      entry({ name: "alias.txt", prefix: "nested", type: "1", link: "target.txt" }),
+      end
+    )))).toEqual({ "target.txt": "target\n", "nested/alias.txt": "target\n" })
+    expect(Tar.files(concat(entry({ name: "alias.txt", type: "1", link: "missing.txt" }), end))).toBeUndefined()
   })
 
   it("keeps the path a malformed extended record already gave and stops at the break", () => {

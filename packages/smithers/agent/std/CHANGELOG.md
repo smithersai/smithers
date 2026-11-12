@@ -20,6 +20,10 @@
 
 ### Fixed
 
+- Directory exclusions such as `!vendor` and `!dist/` now exclude their
+  descendants in native and in-process searches. Remote searches retain every
+  hard-linked filename instead of silently skipping later names for the same file.
+
 - `grep` skips and counts NUL-bearing UTF-16 files on every host and rejects
   them when named as the root. Bare CR boundaries now match the same way in
   native and in-process searches, including `^` and `$` anchors.

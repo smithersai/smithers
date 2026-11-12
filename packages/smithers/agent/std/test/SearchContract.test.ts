@@ -34,6 +34,32 @@ describe("SearchContract", () => {
     ])
   })
 
+  it.each([
+    { globs: ["!vendor"], relative: "vendor/a.ts", included: false },
+    { globs: ["!vendor/"], relative: "vendor/deep/a.ts", included: false },
+    { globs: ["!vendor/"], relative: "src/vendor/a.ts", included: false },
+    { globs: ["!vendor/"], relative: "src/vendor", included: true },
+    { globs: ["!vendor"], relative: "src/vendor", included: false },
+    { globs: ["!vendor/"], relative: "vendors/a.ts", included: true },
+    { globs: ["!dist/"], relative: "dist/a.ts", included: false },
+    { globs: ["!node_modules"], relative: "node_modules/pkg/index.ts", included: false },
+    { globs: ["!/vendor/"], relative: "vendor/a.ts", included: false },
+    { globs: ["!/vendor/"], relative: "src/vendor/a.ts", included: true },
+    { globs: ["!src/vendor/"], relative: "src/vendor/deep/a.ts", included: false },
+    { globs: ["!src/vendor/"], relative: "other/src/vendor/a.ts", included: true },
+    { globs: ["!./vendor/  "], relative: "vendor/a.ts", included: false },
+    { globs: ["!{vendor/,dist/}"], relative: "dist/a.ts", included: false },
+    { globs: ["!ven*/"], relative: "nested/vendor/a.ts", included: false },
+    { globs: ["!??/"], relative: "é/a.ts", included: false },
+    { globs: ["*.ts", "!vendor/"], relative: "vendor/a.ts", included: false },
+    { globs: ["!vendor/", "vendor/a.ts"], relative: "vendor/a.ts", included: true },
+    { globs: ["vendor/a.ts", "!vendor/"], relative: "vendor/a.ts", included: false },
+    { globs: ["vendor/"], relative: "vendor/a.ts", included: false },
+    { globs: ["!missing/"], relative: "a.ts", included: true }
+  ])("applies directory exclusions $globs to $relative", ({ globs, relative, included }) => {
+    expect(SearchContract.includedByGlobs(globs, relative, relative.split("/").at(-1)!)).toBe(included)
+  })
+
   it("compiles fixed strings as literal expressions", () => {
     const expression = SearchContract.expression("foo?", true, false)
     expect(expression.test("foo?")).toBe(true)

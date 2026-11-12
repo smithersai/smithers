@@ -110,7 +110,12 @@ pattern left blank by that is rejected rather than read as no filter at all.
 
 Ordered include and exclude globs work like ripgrep's: with no positive glob
 everything is included, and the last pattern to match a candidate decides, with
-`!` marking an exclusion.
+`!` marking an exclusion. Exclusions also match ancestor directories:
+`!vendor` excludes a file named `vendor` and files inside any `vendor`
+directory. A trailing `/` makes the exclusion directory-only, so `!vendor/`
+keeps a regular file named `vendor`. `!src/vendor/` excludes that directory
+relative to the root, while `!/vendor/` excludes only the root's `vendor`
+directory.
 
 So `/home/repo/tests/**` passed against a root of `/home/repo` is read as the
 root-relative path `home/repo/tests/**`, which nothing under that root can

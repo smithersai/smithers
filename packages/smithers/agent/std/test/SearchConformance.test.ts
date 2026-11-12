@@ -73,6 +73,16 @@ beforeAll(() => {
   file("max-count/one.txt", "needle one\nneedle two\n")
   file("max-count/two.txt", "needle three\nneedle four\n")
   for (const name of hostNames) file(`weird-names/${name}`, "")
+  for (
+    const relative of [
+      "vendor/a.ts",
+      "nested/vendor/a.ts",
+      "src/vendor/a.ts",
+      "dist/a.ts",
+      "src/b.ts",
+      "files/vendor"
+    ]
+  ) file(`directory-globs/${relative}`, "needle\n")
   file("brace-ceiling/a0wm.ts", "")
   file("globs/a.ts", "")
   file("globs/nested/a.ts", "")
@@ -186,6 +196,26 @@ for (const [peer, implementation] of peers) {
         skippedBinary: 0,
         truncated: false
       })
+    })
+
+    it.each([
+      { globs: ["!vendor"], kept: ["dist/a.ts", "src/b.ts"] },
+      { globs: ["!vendor/"], kept: ["dist/a.ts", "files/vendor", "src/b.ts"] },
+      { globs: ["!dist/"], kept: ["files/vendor", "nested/vendor/a.ts", "src/b.ts", "src/vendor/a.ts", "vendor/a.ts"] },
+      {
+        globs: ["!/vendor/"],
+        kept: ["dist/a.ts", "files/vendor", "nested/vendor/a.ts", "src/b.ts", "src/vendor/a.ts"]
+      },
+      { globs: ["!src/vendor/"], kept: ["dist/a.ts", "files/vendor", "nested/vendor/a.ts", "src/b.ts", "vendor/a.ts"] },
+      { globs: ["!{vendor/,dist/}"], kept: ["files/vendor", "src/b.ts"] },
+      { globs: ["!vendor/", "vendor/a.ts"], kept: ["vendor/a.ts"] },
+      { globs: ["vendor/a.ts", "!vendor/"], kept: [] }
+    ])("excludes directory descendants with $globs", async ({ globs, kept }) => {
+      const searchRoot = join(root, "directory-globs")
+      const result = await grep({ pattern: "needle", root: searchRoot, globs, filesWithMatches: true })
+      expect(result.files).toEqual(kept.map((relative) => join(searchRoot, relative)))
+      expect(result.filesSearched).toBe(kept.length)
+      expect(result.truncated).toBe(false)
     })
 
     it("returns sorted files for --files-with-matches and applies -i", async () => {
