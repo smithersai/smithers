@@ -51,8 +51,11 @@ export interface TodosActions {
   readonly attach: (owner: string, name: string, number: number, issue: number) => Promise<void>
   /** Make TODO on an issue: drafts a TODO from it; answers the stack's page, where the draft shows. */
   readonly fromIssue: (owner: string, name: string, number: number) => string
-  /** Edit on a commit that wasn't sent: the stack's page, where its draft is. */
-  readonly edit: (opId: string) => string | undefined
+  /**
+   * Edit on a commit that wasn't sent: resolves once the device kept its draft, with the stack's page, where the draft
+   * is; nothing while the device refuses the draft, and the commit stays Not sent.
+   */
+  readonly edit: (opId: string) => Promise<string | undefined>
   /** Discard on a change that wasn't sent. */
   readonly discard: (opId: string) => void
   readonly retryChange: (opId: string) => Promise<void>
@@ -95,7 +98,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           drop: (owner, name, number) => runAsync(drop(owner, name, number)),
           attach: (owner, name, number, issue) => runAsync(attach(owner, name, number, issue)),
           fromIssue: (owner, name, number) => run(fromIssue(owner, name, number)),
-          edit: (opId) => run(edit(opId)),
+          edit: (opId) => runAsync(edit(opId)),
           discard: (opId) => run(discard(opId)),
         },
       })

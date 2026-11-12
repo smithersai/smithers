@@ -202,6 +202,30 @@ const clearFailure = (id: string) => Effect.flatMap(TodosStore, store => store.v
 })).pipe(Effect.orDie)
 
 /**
+ * Keeps commit `change`'s text as a draft on the device, one draft per change: an Edit again, after a reload or a refused
+ * removal of the change, finds the draft an earlier Edit kept rather than making another. Answers whether the device
+ * kept it, and whether this Edit made it.
+ */
+const restoreDraft = (change: Requested) =>
+  Effect.gen(function* () {
+    const { drafts } = yield* TodosStore
+    const id = yield* Uuid.v5(OP_ID_NAMESPACE, `edit:${change.id}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    if (Option.isSome(yield* drafts.get(id))) return { id, kept: true, made: false }
+    const kept = yield* drafts.insert({
+      id,
+      repo: change.repo,
+      repoId: change.repoId,
+      title: change.title,
+      prompt: change.prompt,
+      acceptance: change.acceptance,
+      answerId: null,
+      createdAt: yield* Clock.currentTimeMillis,
+      ...(change.issue === undefined ? {} : { issue: change.issue }),
+    }).pipe(Effect.flatMap((inserted) => inserted.persisted), Effect.as(true), Effect.orElseSucceed(() => false))
+    return { id, kept, made: true }
+  })
+
+/**
  * Edit or Discard on a change that wasn't sent: Edit puts a commit's text back in a new draft first. The change goes
  * from the device. Answers the stack's page, or nothing for a change the device doesn't have.
  */
@@ -211,19 +235,17 @@ const handle = (opId: string, action: "edit" | "discard") =>
     const found = yield* recoveryRow(opId)
     if (Option.isNone(found)) return undefined
     const change = found.value
-    if (!(yield* forgetAdmission(OP_ID_NAMESPACE, change.id))) return undefined
-    if (action === "edit" && change.op === "commit") {
-      yield* Effect.orDie(drafts.insert({
-        id: crypto.randomUUID(),
-        repo: change.repo,
-        repoId: change.repoId,
-        title: change.title,
-        prompt: change.prompt,
-        acceptance: change.acceptance,
-        answerId: null,
-        createdAt: yield* Clock.currentTimeMillis,
-        ...(change.issue === undefined ? {} : { issue: change.issue }),
-      }))
+    // Edit keeps the commit's text in a draft on the device before the change goes: while the device refuses the draft,
+    // the change stays Not sent with its text.
+    const restored = action === "edit" && change.op === "commit" ? yield* restoreDraft(change) : undefined
+    if (restored?.kept === false) {
+      yield* Effect.logWarning("todos.pending").pipe(Effect.annotateLogs({ opId, op: change.op, action, outcome: "not_kept", feature: "todos" }))
+      return undefined
+    }
+    if (!(yield* forgetAdmission(OP_ID_NAMESPACE, change.id))) {
+      // An admission of the change is running in this tab: it decides, so this Edit leaves no draft of its own.
+      if (restored?.made === true) yield* Effect.ignore(drafts.delete(restored.id))
+      return undefined
     }
     if (Option.isSome(yield* requested.get(opId))) yield* Effect.ignore(requested.delete(opId))
     yield* clearFailure(opId)

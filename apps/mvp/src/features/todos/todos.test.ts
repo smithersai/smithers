@@ -47,6 +47,7 @@ import { issuesSynced } from "./tab"
 import { Todos } from "./todos"
 import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf, todosByIssue } from "./view"
 import { keep, StackWrites } from "./writes"
+import { whileAdmitting } from "../../writeAdmission"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -460,11 +461,57 @@ describe("refusals", () => {
     await until(() => expect(tab.view()?.committing).toEqual([]))
     expect(tab.drafts()).toEqual([])
 
-    expect(tab.actions.edit(tab.notSent()[0]!.id)).toBe(stackPath(OWNER, NAME))
+    expect(await tab.actions.edit(tab.notSent()[0]!.id)).toBe(stackPath(OWNER, NAME))
     expect(tab.notSent()).toEqual([])
     expect(tab.drafts()).toEqual([expect.objectContaining({ title: "One too many", prompt: "Over the limit." })])
-    expect(tab.actions.edit("no-such-change")).toBeUndefined()
+    expect(await tab.actions.edit("no-such-change")).toBeUndefined()
     expect(tab.count(pendingActions, { action: "edit" })).toBe(1)
+  }, WITHIN)
+
+  // Edit keeps the commit's text on the device before the commit goes (issue 5289): a refused draft leaves it Not sent.
+  test("Edit on a commit Not sent keeps it while the device refuses its draft, then keeps one draft", async () => {
+    const opened = await open()
+    const device = nodeDevice({ agent: opened.api })
+    const storage = refusingStorage(device)
+    const tab = await another(opened.api, { host: storage.host })
+    await tab.actions.open(OWNER, NAME)
+    await committed(tab, "Fills it", 1)
+    await sql(opened.api, `UPDATE stacks SET max_open = 1`)
+    await tab.actions.commit(drafted(tab, "One too many", "Over the limit."))
+    await until(() => expect(tab.notSent()).toEqual([expect.objectContaining({ op: "commit", reason: "Stack full" })]))
+    await until(() => expect(tab.view()?.committing).toEqual([]))
+    const id = tab.notSent()[0]!.id
+    const notSent = [expect.objectContaining({ id, label: "One too many", reason: "Stack full" })]
+
+    storage.refused.add("todo-drafts")
+    expect(await tab.actions.edit(id)).toBeUndefined()
+    expect(tab.drafts()).toEqual([])
+    expect(tab.notSent()).toEqual(notSent)
+    storage.refused.delete("todo-drafts")
+
+    // An admission of the commit running in this tab decides it: this Edit leaves no draft.
+    const admitting = await tab.runtime.runPromise(whileAdmitting(id, Effect.promise(() => tab.actions.edit(id))))
+    expect(admitting).toBeUndefined()
+    await until(() => expect(device.stored("todo-drafts")).toBe(0))
+    expect(tab.drafts()).toEqual([])
+    expect(tab.notSent()).toEqual(notSent)
+
+    // The device keeps the draft and refuses to forget the commit: an Edit again finds that draft.
+    storage.refused.add("todo-requested")
+    expect(await tab.actions.edit(id)).toBe(stackPath(OWNER, NAME))
+    await until(() => expect(tab.notSent()).toEqual(notSent))
+    storage.refused.delete("todo-requested")
+    expect(await tab.actions.edit(id)).toBe(stackPath(OWNER, NAME))
+    const kept = [expect.objectContaining({ title: "One too many", prompt: "Over the limit." })]
+    expect(tab.drafts()).toEqual(kept)
+    expect(tab.notSent()).toEqual([])
+
+    await tab.runtime.dispose()
+    runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+    const restored = await another(opened.api, { host: device })
+    await restored.actions.open(OWNER, NAME)
+    await until(() => expect(restored.drafts()).toEqual(kept))
+    expect(restored.notSent()).toEqual([])
   }, WITHIN)
 
   test("a Guest can't change a stack, or read one: Not found; signed out, sign in", async () => {
@@ -657,7 +704,7 @@ describe("from an issue", () => {
     await until(() => expect(tab.notSent()).toEqual([expect.objectContaining({ op: "commit", reason: "Stack full" })]))
     await until(() => expect(tab.view()?.committing).toEqual([]))
 
-    tab.actions.edit(tab.notSent()[0]!.id)
+    await tab.actions.edit(tab.notSent()[0]!.id)
     expect(tab.drafts()).toEqual([
       expect.objectContaining({ title: "Fix the footer", prompt: "The footer is wrong.", issue: 9 }),
     ])
@@ -797,6 +844,25 @@ describe("slash commands", () => {
     )
   }, WITHIN)
 })
+
+/** The device's real SQLite persistence, refusing writes to the collections in `refused`. */
+const refusingStorage = (device: ReturnType<typeof nodeDevice>) => {
+  const refused = new Set<string>()
+  const host = {
+    ...device,
+    persistence: {
+      ...device.persistence,
+      coordinator: () => {
+        const real = device.persistence.coordinator!()
+        const apply = real.requestApplyLocalMutations!.bind(real)
+        real.requestApplyLocalMutations = (collectionId, ...args) =>
+          refused.has(collectionId) ? Promise.reject(new Error("quota")) : apply(collectionId, ...args)
+        return real
+      },
+    },
+  }
+  return { host, refused }
+}
 
 /** The device's real SQLite persistence, with only TODO draft commits held or rejected. */
 const draftStorage = (device: ReturnType<typeof nodeDevice>, rejects: boolean) => {

@@ -22,7 +22,7 @@ export function NotSentChanges({ repoId, number }: { readonly repoId: string; re
               <Badge variant="destructive">{change.reason}</Badge>
               {change.reason === "Not sent" ? <Button variant="outline" size="sm" onClick={() => void actions.retryChange(change.id)}>Retry</Button> : null}
               {change.op === "commit" ? (
-                <Button variant="outline" size="sm" onClick={() => actions.edit(change.id)}>{EDIT}</Button>
+                <Button variant="outline" size="sm" onClick={() => void actions.edit(change.id)}>{EDIT}</Button>
               ) : null}
               <Button variant="ghost" size="sm" onClick={() => actions.discard(change.id)}>{DISCARD}</Button>
             </li>
