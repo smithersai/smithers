@@ -5,15 +5,16 @@
 import { it, expect } from "@effect/vitest"
 import { HttpRecording } from "@smthrs/testing"
 import { HttpClient } from "effect/http"
-import { expectLifecycle, lifecycle, normalize, RECORDING, REPLAY_ORIGIN } from "../test/support/sandboxesLive.vibe"
+import { expectLifecycle, normalize, RECORDING, REPLAY_ORIGIN } from "../test/support/sandboxesLive.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
+import { sandboxWorkload } from "./sandbox-workload.vibe"
 
 it("a recorded Container lifecycle replays through the product's sandbox client", { timeout: 120_000 }, async ({ bench }) => {
   const recording = await runPromise(HttpRecording.load(RECORDING))
   const remaining: Array<number> = []
   const result = await workload(bench, "sandbox-live-replay", "async", async () => {
     const client = HttpRecording.replay(recording, { normalize })
-    const run = await runPromise(scoped(Effect.provideService(lifecycle(REPLAY_ORIGIN, "replayed"), HttpClient.HttpClient, client)))
+    const run = await runPromise(scoped(Effect.provideService(sandboxWorkload(REPLAY_ORIGIN, "replayed", false), HttpClient.HttpClient, client)))
     expectLifecycle(run, false)
     remaining.push(client.remaining())
   }).run(slow)

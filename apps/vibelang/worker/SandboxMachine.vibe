@@ -2,13 +2,18 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { SandboxImage } from "../infra/SandboxImage.vibe"
 import { machineObject, type MachineShape } from "./machineObject.vibe"
+import { sandboxCounters, type SandboxCounters } from "../bench/sandbox-counters.ts"
 
 export { machineObject } from "./machineObject.vibe"
 export type { MachineBox, MachineShape, ObjectState } from "./machineObject.vibe"
-export class SandboxMachine extends Cloudflare.DurableObject<SandboxMachine, MachineShape>()("VibelangSandboxMachine") {}
+export interface MachineBindingShape extends MachineShape { benchmarkCoverage(): SandboxCounters!! }
+export class SandboxMachine extends Cloudflare.DurableObject<SandboxMachine, MachineBindingShape>()("VibelangSandboxMachine") {}
 
-export const machineLive = SandboxMachine.make(effect {
+/** The probe supplies its existing recording body; production supplies machineObject unchanged. */
+export const machineWithBody = (body: Effect.Effect<typeof machineObject>) => SandboxMachine.make(effect {
   const box = try SandboxImage
   const state = try Cloudflare.DurableObjectState
-  return machineObject(box, state)
+  const open = try body
+  return Effect.map(open(box, state), (machine) => ({ ...machine, benchmarkCoverage: () => Effect.sync(sandboxCounters) }))
 })
+export const machineLive = machineWithBody(Effect.succeed(machineObject))

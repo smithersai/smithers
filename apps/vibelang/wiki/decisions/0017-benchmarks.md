@@ -950,3 +950,52 @@ VibeLang's compilation or source maps, owns the fix; no source exclusion or cove
 `bench/merge-coverage.ts` refuses a report with no source file under the current checkout (empty, or written by
 another checkout) and exits 1 instead of certifying zero files at 100%. `test/benchmarkCoverageGate.test.vibe`
 runs the actual command on both inputs.
+
+### Deployed sandbox binding counters (resume 9, 2026-11-12)
+
+`pnpm bench:sandboxes-live` is opt in and runs exactly one lifecycle on `vl-test`: Start, write `saved`, Stop
+(checkpoint), Start (restore), read `saved`, Stop, then sweep checking the Container's own stopped status.
+The same body and oracle run against `test/recordings/sandboxes-live.json` in the ordinary replay benchmark.
+Replay supplies no server execution evidence.
+
+The test stage now uses `accountWithMachines(leaseClamped)` and `gatewayWithAccounts` from the product binding
+module. Production uses the same constructors with the unchanged namespace. The probe keeps its ten-minute lease
+clamp; its account and machine bodies are unchanged. Both binding shapes expose an internal counter RPC; only the
+probe mounts `/api/probe/coverage`, protected by the existing token and owner deadline. No production HTTP route
+exports counters. The ordinary production build has no instrumenter.
+
+The probe's deferred rolldown plugin reuses decision 0016's `instrumentRolldown`: each app module receives
+Istanbul counters with its own compiler map before bundling. The collector exports three snapshots, from the
+Worker, account and machine isolates, after teardown and two checked counter-endpoint refusals (bad token: 403;
+valid token with GET: 405). Neither refusal reaches an object RPC or starts compute. Transport failures are reduced
+to a content-free typed error before the reporter can print a request or token. It rejects empty isolates, missing binding modules, invalid
+counts and compiler source contents that differ from this checkout. Deploy paths may differ (Mac versus Linux);
+verified source paths are relocated before remapping. `bench/merge-coverage.ts` reads `bench/results/sandbox-raw/`
+and joins accepted evidence through the existing source-position merger. Thresholds and exclusions are unchanged.
+A recording or an old deployment's map cannot substitute for matching deployed execution.
+
+Spend: one lite Container at a time and two sequential generations under one owner deadline of ten minutes;
+the nine-minute client deadline, failure sweep, account meter and clamped Container inactivity timeout bound
+cleanup. No model or GitHub call. Snapshots and object storage persist until `pnpm run destroy:sandboxes-test --yes`.
+Instrumented elapsed time is retained as one observation with machine, versions, timestamp and method, never as
+an uninstrumented latency baseline or tail percentile. Deployment and live execution are performed by the lead
+on the Mac through the vault wrapper. Until those receipts arrive, binding coverage remains pending.
+
+Benchmark-only provenance: reserve vl-test, deploy immediately before the one benchmark, and run no other suite
+against it between deployment and export. A fresh random build id is embedded by the build-time plugin on each
+deploy process, forcing a new Worker version even when authored source is unchanged; the deferred plugin is
+memoized within that process so plan/build/apply see the same id. All three isolate snapshots must name that
+same build. The artifact records it. This prevents a no-op redeploy from reusing cumulative counters from a
+previous suite; startup caused by this fresh deployment is part of the measured setup.
+
+The Container recorder added on main is retained, using its existing probeMachine body through machineWithBody.
+Deploy this benchmark with VIBELANG_SANDBOX_CONTAINER_MODE=record. After the lifecycle, the collector reads the
+existing lifecycle Container recording and checks it is nonempty, then pulls counters. This read starts no compute
+and exercises the existing recording RPC; this lane writes none of the other lane's recording files. The recorder
+retains at most 2000 entries per object. Other suites may run after the benchmark snapshots have been saved.
+The timed interval is the full lifecycle including sweep/assertions; the separate metered window ends at Stop.
+
+A gate regression found during integration: an empty Node report plus runtime-only counters could certify the
+subset that runtime supplied. The guard now requires the canonical Node source roster even when runtime maps
+produce nonempty merged rows. benchmarkCoverageGate.test.vibe adds that actual-command case. The red command
+exited 0 over one runtime-only file; the fixed command exits 1. No threshold or exclusion changed.

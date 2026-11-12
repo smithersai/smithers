@@ -7,7 +7,7 @@ import { node, run } from "./support/processes.vibe"
 
 const command = new URL("../bench/merge-coverage.ts", import.meta.url)
 const foreign = "/another-checkout/src/example.vibe"
-for (const kind of ["empty", "foreign"] as const) {
+for (const kind of ["empty", "foreign", "evidence-only"] as const) {
   it.live(`refuses a ${kind} benchmark coverage report instead of certifying zero source files`, () => scoped(effect {
     provide NodeServices.layer, ExperimentalNodeServices.layer {
       const fs = try FileSystem.FileSystem
@@ -15,11 +15,21 @@ for (const kind of ["empty", "foreign"] as const) {
       const directory = try fs.makeTempDirectoryScoped({ prefix: "vibelang-bench-empty-" })
       const script = try path.fromFileUrl(command)
       try fs.makeDirectory(path.join(directory, "coverage/bench"), { recursive: true })
-      const data = kind === "empty" ? {} : {
+      const data = kind !== "foreign" ? {} : {
         [foreign]: { path: foreign, statementMap: { "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } } },
           s: { "0": 1 }, fnMap: {}, f: {}, branchMap: {}, b: {} },
       }
       try fs.writeFileString(path.join(directory, "coverage/bench/coverage-final.json"), JSON.stringify(data))
+      if (kind === "evidence-only") {
+        const file = path.join(directory, "src/example.vibe")
+        try fs.makeDirectory(path.join(directory, "src"))
+        try fs.writeFileString(file, "export const example = 1\n")
+        try fs.makeDirectory(path.join(directory, "coverage/bench/workerd-raw"))
+        const row = { path: file, statementMap: { "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 24 } } },
+          s: { "0": 1 }, fnMap: {}, f: {}, branchMap: {}, b: {} }
+        // Synthetic map fixture only: the real command used to certify this one runtime row over an empty Node run.
+        try fs.writeFileString(path.join(directory, "coverage/bench/workerd-raw/only.json"), JSON.stringify({ coverage: { [file]: row } }))
+      }
       const result = try run(try node(), [script], {}, directory)
       try Effect.try(() => {
         expect(result.status).not.toBe(0)

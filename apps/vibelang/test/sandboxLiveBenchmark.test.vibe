@@ -1,0 +1,134 @@
+// @vitest-environment node
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { expect, it } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { sandboxWorkload, counterRefusalRequests, exportSandboxCounters } from "../bench/sandbox-workload.vibe"
+import { sandboxSourceEvidence, SANDBOX_COUNTER_DIRECTORY } from "../bench/sandbox-evidence.ts"
+import { sandboxCounterFixture, markFixtureHits } from "./support/sandboxCounterFixture.ts"
+import { metrics, mergeByPosition } from "./support/coverageUnion.ts"
+import { RECORDING, REPLAY_ORIGIN, normalize } from "./support/sandboxesLive.vibe"
+import { benchmarkFetch } from "../worker/sandboxBenchmark.vibe"
+import { probeIdentity, probeOwner, OWNER_HEADER } from "../worker/sandboxProbeFetch.vibe"
+import { node, run } from "./support/processes.vibe"
+import { WorkerBundle } from "@alchemy.run/cloudflare/Workers/Sources/Rolldown"
+import { sandboxBenchmarkBuild } from "../bench/sandbox-build.ts"
+
+it.live("the live benchmark body checks the entire committed lifecycle recording", () => scoped(effect {
+  const recording = try HttpRecording.load(RECORDING)
+  const client = try Effect.try(() => HttpRecording.replay(recording, { normalize }))
+  const run = try Effect.provideService(sandboxWorkload(REPLAY_ORIGIN, "replayed", false), HttpClient.HttpClient, client)
+  try Effect.try(() => { expect(client.remaining()).toBe(0); expect(run.swept.running).toBe(false) })
+}))
+
+it.live("relocates compiled binding maps and joins synthetic hits by source position, without counting initialization as execution", () => effect {
+  provide NodeServices.layer {
+    const path = try Path.Path
+    const dump = try tryPromise(sandboxCounterFixture)
+    const fresh = try tryPromise(sandboxCounterFixture)
+    try Effect.try(() => expect(fresh.snapshots[0]!.buildId).not.toBe(dump.snapshots[0]!.buildId))
+    const zero = try tryPromise(() => sandboxSourceEvidence(dump, path.resolve(".")))
+    try Effect.try(() => {
+      expect(Object.keys(zero)).toHaveLength(3)
+      expect(Object.values(zero).every((file) => metrics(file).covered.statements === 0)).toBe(true)
+    })
+    const hit = try tryPromise(() => sandboxSourceEvidence(markFixtureHits(dump), path.resolve(".")))
+    const joined = try Effect.try(() => mergeByPosition(zero, [hit]))
+    try Effect.try(() => {
+      for (const file of Object.values(joined)) expect(metrics(file).covered.statements).toBe(metrics(file).total.statements)
+    })
+  }
+}, 120_000)
+
+for (const corruption of ["source", "empty", "missing-binding", "count", "build"] as const) {
+  it.live(`refuses ${corruption} counter evidence`, () => effect {
+    provide NodeServices.layer {
+      const path = try Path.Path
+      const dump = try tryPromise(sandboxCounterFixture)
+      const first = Object.values(dump.snapshots[0]!.coverage)[0] as { inputSourceMap: { sourcesContent: string[] }; s: Record<string, number> }
+      if (corruption === "source") first.inputSourceMap.sourcesContent[0] += "\nchanged"
+      if (corruption === "count") first.s[Object.keys(first.s)[0]!] = -1
+      if (corruption === "empty") for (const key of Object.keys(dump.snapshots[0]!.coverage)) delete dump.snapshots[0]!.coverage[key]
+      if (corruption === "missing-binding") for (const snapshot of dump.snapshots) for (const key of Object.keys(snapshot.coverage)) if (key.endsWith("/SandboxMachine.vibe")) delete snapshot.coverage[key]
+      const tested = corruption === "build" ? { ...dump, snapshots: [dump.snapshots[0]!, { ...dump.snapshots[1]!, buildId: "00000000-0000-0000-0000-000000000000" }, dump.snapshots[2]!] } : dump
+      const result = try Effect.exit(tryPromise(() => sandboxSourceEvidence(tested, path.resolve("."))))
+      try Effect.try(() => expect(result._tag).toBe("Failure"))
+    }
+  }, 120_000)
+}
+
+for (const [name, status] of [["no token", 403], ["wrong token", 403], ["wrong method", 405]] as const) {
+  it.live(`counter export refuses ${name} before any object counter RPC`, () => effect {
+    const owner = probeOwner((try Clock.currentTimeMillis) + 60_000)
+    const checks = counterRefusalRequests("https://probe.invalid", "local-test", owner)
+    const check = name === "wrong token" ? checks[0]! : name === "wrong method" ? checks[1]! : { request: HttpClientRequest.post("https://probe.invalid/api/probe/coverage").pipe(HttpClientRequest.setHeaders({ [OWNER_HEADER]: owner })), expected: 403 }
+    try Effect.try(() => expect(check.expected).toBe(status))
+    const request = try HttpClientRequest.toWeb(check.request)
+    const accounts = { getByName: (_name: string) => ({ run: () => Effect.die("unexpected run"), alarm: () => Effect.die("unexpected alarm"), benchmarkCoverage: () => Effect.die("unexpected account counters") }) }
+    const machines = { getByName: (_name: string) => ({ apply: () => Effect.die("unexpected apply"), benchmarkCoverage: () => Effect.die("unexpected machine counters") }) }
+    const response = try benchmarkFetch(Effect.die("unexpected fallback"), accounts, machines, probeIdentity("local-test")).pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
+      Effect.provideService(RuntimeContext, {} as never),
+    )
+    try Effect.try(() => expect(HttpServerResponse.toWeb(response).status).toBe(status))
+  })
+}
+
+it.live("a counter transport fault exposes no request or token to the test reporter", () => effect {
+  provide NodeServices.layer {
+    const token = "test-only-counter-token"
+    const broken = HttpClient.make(effect (request) => {
+      throw new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: token }) })
+    })
+    const result = try Effect.result(Effect.provideService(exportSandboxCounters("https://probe.invalid", token, probeOwner((try Clock.currentTimeMillis) + 60_000)), HttpClient.HttpClient, broken))
+    try Effect.try(() => {
+      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "SandboxCounterUnavailable", phase: "refusal-transport" } })
+      expect(JSON.stringify(result)).not.toContain(token)
+    })
+  }
+})
+
+it.live("the real merge command fails zero hits, accepts relocated binding hits, and refuses changed source", () => scoped(effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped({ prefix: "vibelang-sandbox-gate-" })
+    const dump = try tryPromise(sandboxCounterFixture)
+    try fs.makeDirectory(path.join(directory, "worker"))
+    try fs.makeDirectory(path.join(directory, SANDBOX_COUNTER_DIRECTORY), { recursive: true })
+    try fs.makeDirectory(path.join(directory, "coverage/bench"), { recursive: true })
+    for (const [key, value] of Object.entries(dump.snapshots[0]!.coverage)) {
+      const relative = key.split("/apps/vibelang/")[1]!
+      const entry = value as { inputSourceMap: { sourcesContent: string[] } }
+      try fs.writeFileString(path.join(directory, relative), entry.inputSourceMap.sourcesContent[0]!)
+    }
+    const base = try tryPromise(() => sandboxSourceEvidence(dump, directory))
+    try fs.writeFileString(path.join(directory, "coverage/bench/coverage-final.json"), JSON.stringify(base))
+    const script = try path.fromFileUrl(new URL("../bench/merge-coverage.ts", import.meta.url))
+    const executable = try node()
+    const red = try run(executable, [script], {}, directory)
+    try Effect.try(() => { expect(red.status).toBe(1); expect(red.stderr).toContain("Benchmark coverage gate failed") })
+    const hits = try Effect.try(() => markFixtureHits(dump))
+    try fs.writeFileString(path.join(directory, SANDBOX_COUNTER_DIRECTORY, "live.json"), JSON.stringify(hits))
+    const green = try run(executable, [script], {}, directory)
+    try Effect.try(() => { expect(green.status).toBe(0); expect(green.stdout).toContain("3 deployed sandbox-evidenced files") })
+    try fs.writeFileString(path.join(directory, "worker/SandboxMachine.vibe"), "changed source\n")
+    const stale = try run(executable, [script], {}, directory)
+    try Effect.try(() => { expect(stale.status).not.toBe(0); expect(stale.stderr).toContain("source mismatch") })
+  }
+}), 120_000)
+
+it.live("Alchemy builds the probe with its declared deferred counter plugin and no compiler in the Worker", () => effect {
+  provide NodeServices.layer {
+    const builder = try WorkerBundle
+    const output = try builder.build({ id: "sandbox-benchmark-build", main: "worker/SandboxProbe.vibe", compatibility: { date: "2026-10-01", flags: [] }, entry: { kind: "effect", exports: {} }, stack: { name: "smithers-vibelang", stage: "vl-test" }, extraOptions: sandboxBenchmarkBuild })
+    const javascript = try Effect.try(() => output.files.filter((file) => /\.m?js$/.test(file.path)).map((file) => typeof file.content === "string" ? file.content : new TextDecoder().decode(file.content)).join("\n"))
+    try Effect.try(() => {
+      for (const marker of ["__coverage__", "benchmarkCoverage", "/api/probe/coverage"]) expect(javascript.includes(marker), marker).toBe(true)
+      // The SDK's guarded platform adapters may mention Node modules; only the build-time backends must be absent.
+      for (const marker of ["createInstrumenter", "vibelang-unplugin/src/index"]) expect(javascript.includes(marker), marker).toBe(false)
+    })
+  }
+}, 120_000)

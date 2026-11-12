@@ -482,3 +482,9 @@ check each new decision's cases directly. No tool or dependency is added.
 (`test/accountsDecision.test.vibe`, `actionsDecision`, `sandboxWorkerDecision`, `draftDecision`, `workerDecision`); the
 account, Actions, sandbox, draft, start-up, site and issue tests pass unchanged over the refactored shells. No tool was
 added.
+
+Resume 9 adds `bench:sandboxes-live`: one opt-in, bounded real-Container lifecycle on `vl-test`, followed by
+source-checked per-module counter export. `sandboxLiveBenchmark.test.vibe` checks the committed lifecycle replay,
+counter relocation and rejection, the real merge command and probe authentication; its synthetic map fixtures
+are never benchmark execution evidence. The probe's declared Alchemy build is checked locally. See 0017.
+No dependency added; the existing Istanbul/rolldown tools are approved by VL-34.

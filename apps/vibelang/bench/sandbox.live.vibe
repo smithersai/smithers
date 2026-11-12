@@ -1,0 +1,19 @@
+// @vitest-environment node
+// Opt in: exactly one real lifecycle, including checkpoint/restore and verified teardown; no warmup or repetition.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { it } from "@effect/vitest"
+import { FetchHttpClient } from "effect/http"
+import { artifact } from "./artifact.vibe"
+import { sandboxWorkload, exportSandboxCounters } from "./sandbox-workload.vibe"
+
+it.live("one live sandbox lifecycle exports its binding counters after teardown", () => scoped(effect {
+  provide NodeServices.layer, FetchHttpClient.layer {
+    const origin = (try Config.String("VIBELANG_SANDBOX_PROBE_URL")).replace(/\/$/, "")
+    const token = Redacted.value(try Config.Redacted("VIBELANG_SANDBOX_PROBE_TOKEN"))
+    const began = try Clock.currentTimeMillis
+    const run = try sandboxWorkload(origin, token, true)
+    const elapsed = (try Clock.currentTimeMillis) - began
+    const counters = try exportSandboxCounters(origin, token, run.owner)
+    try artifact("sandbox-live", "One serial LiveFactory lifecycle against the freshly deployed vl-test probe: Start, write saved, Stop with checkpoint, Start restoring the checkpoint, read saved, Stop and sweep requiring the real Container to be stopped. Exactly one sample, no warmup; reserve the stage for this run after deploy. elapsedMs spans the full lifecycle, sweep and correctness assertions; meteredWindowMs ends at the second Stop. Both include HTTP, cold starts, commands, snapshots and metering. After timing: bad-token 403, valid-token GET 405, a nonempty read of the existing lifecycle Container recording, then the counter export. Per-module Istanbul counters from the Worker and both Durable Object isolates are source-checked before joining bench:coverage by source position.", ["Instrumented deployment: elapsed time is an observation, not a regression threshold or an uninstrumented latency comparison.", "At most one lite Container at a time, two sequential generations, within one ten-minute owner deadline. No model or GitHub call. Snapshots and object storage, including at most 2000 recorder entries, persist until the stage is destroyed.", "One sample establishes no tail percentile. WAN, Cloudflare placement, startup and snapshot latency vary."], { beganAtEpochMs: began, elapsedMs: elapsed, meteredWindowMs: run.elapsed, usedMinutes: run.ended.used, generations: [run.first.generation, run.second.generation], runningAfterSweep: run.swept.running, counterFiles: counters.files, counterBuild: counters.buildId, containerCalls: counters.containerCalls })
+  }
+}), 9 * 60_000)

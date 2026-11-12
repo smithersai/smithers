@@ -1,0 +1,56 @@
+// The local recording and the live benchmark use this exact lifecycle and oracle. Replay never supplies counters.
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { containerCalls, expectLifecycle, lifecycle, probeClient } from "../test/support/sandboxesLive.vibe"
+import { observed } from "../src/core/sandboxHost.vibe"
+import { expect } from "@effect/vitest"
+import { sandboxSourceEvidence, SANDBOX_COUNTER_DIRECTORY, type SandboxDump } from "./sandbox-evidence.ts"
+import { OWNER_HEADER } from "../worker/sandboxProbeFetch.vibe"
+
+export error SandboxCounterUnavailable { phase: string; status?: number }
+
+/** These refusals reach no object RPC and start no Container. Pull the counters after them to count both guards. */
+export function counterRefusalRequests(origin: string, token: string, owner: string) {
+  return [
+    { request: HttpClientRequest.post(`${origin}/api/probe/coverage`).pipe(HttpClientRequest.setHeaders({ authorization: `Bearer ${token}-invalid`, [OWNER_HEADER]: owner })), expected: 403 },
+    { request: HttpClientRequest.get(`${origin}/api/probe/coverage`).pipe(HttpClientRequest.setHeaders({ authorization: `Bearer ${token}`, [OWNER_HEADER]: owner })), expected: 405 },
+  ]
+}
+
+export effect function sandboxWorkload(origin: string, token: string, live: boolean) {
+  const run = try observed("benchmark-lifecycle", lifecycle(origin, token))
+  try Effect.try(() => {
+    expectLifecycle(run, live)
+    expect(run.first.id).not.toBe("")
+    expect([run.stopped.id, run.second.id, run.ended.id]).toEqual([run.first.id, run.first.id, run.first.id])
+  })
+  return run
+}
+
+/** Export after the final Stop and sweep, before this run's owner deadline. No secret is written to disk. */
+export effect function exportSandboxCounters(origin: string, token: string, owner: string) {
+  const base = try HttpClient.HttpClient
+  for (const check of counterRefusalRequests(origin, token, owner)) {
+    const refusal = try observed("benchmark-counter-refusal", timeout(base.execute(check.request).pipe(Effect.mapError(() => new SandboxCounterUnavailable({ phase: "refusal-transport" }))), "30 seconds"))
+    try Effect.try(() => expect(refusal.status).toBe(check.expected))
+  }
+  const recorded = try observed("benchmark-container-recording", timeout(containerCalls(origin, token, owner, "lifecycle").pipe(Effect.mapError(() => new SandboxCounterUnavailable({ phase: "container-recording" }))), "30 seconds"))
+  try Effect.try(() => {
+    expect(Array.isArray(recorded)).toBe(true)
+    expect(recorded.length, "deploy with VIBELANG_SANDBOX_CONTAINER_MODE=record").toBeGreaterThan(0)
+  })
+  const client = probeClient(base, token, owner)
+  // Strip transport errors' request objects before the test runner can print an Authorization header.
+  const response = try observed("benchmark-counter-export", timeout(client.execute(HttpClientRequest.post(`${origin}/api/probe/coverage`)).pipe(Effect.mapError(() => new SandboxCounterUnavailable({ phase: "transport" }))), "30 seconds"))
+  if (response.status !== 200) throw new SandboxCounterUnavailable({ phase: "status", status: response.status })
+  // The following source validator checks this untrusted JSON before any artifact is written.
+  const dump = (try timeout(response.json.pipe(Effect.mapError(() => new SandboxCounterUnavailable({ phase: "json" }))), "30 seconds")) as unknown as SandboxDump
+  const path = try Path.Path
+  const fs = try FileSystem.FileSystem
+  const evidence = try tryPromise(() => sandboxSourceEvidence(dump, path.resolve(".")))
+  try fs.makeDirectory(SANDBOX_COUNTER_DIRECTORY, { recursive: true })
+  const now = try Clock.currentTimeMillis
+  try fs.writeFileString(`${SANDBOX_COUNTER_DIRECTORY}/lifecycle-${now}.json`, JSON.stringify(dump) + "\n", { flag: "wx" })
+  try logInfo("vibelang.bench.sandbox-counters").pipe(Effect.annotateLogs({ files: Object.keys(evidence).length, isolates: dump.snapshots.length }))
+  try Metric.update(Metric.counter("vibelang_benchmark_sandbox_counter_exports"), 1)
+  return { files: Object.keys(evidence).length, buildId: dump.snapshots[0]!.buildId, containerCalls: recorded.length }
+}

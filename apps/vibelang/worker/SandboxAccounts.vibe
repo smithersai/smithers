@@ -1,26 +1,33 @@
 // Per-person allowance objects, bound only when the deployment supplies a container image. Policy resolution is a
 // server-only service (0019); until the roles lane supplies it, every live request remains Viewer.
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import { identity as unchanged } from "effect/Function"
 import { SandboxMachine, machineLive, type MachineShape } from "./SandboxMachine.vibe"
 import { accountObject, gatewayOf, noIdentity, SandboxGateway, SandboxIdentity, type AccountShape } from "./accountObject.vibe"
 import { signedOutGateway } from "./SandboxHttp.vibe"
+import { sandboxCounters, type SandboxCounters } from "../bench/sandbox-counters.ts"
 
 export { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxGateway, SandboxIdentity } from "./accountObject.vibe"
 export type { AccountShape } from "./accountObject.vibe"
-export class SandboxAccount extends Cloudflare.DurableObject<SandboxAccount, AccountShape>()("VibelangSandboxAccount") {}
-const accountLive = SandboxAccount.make(effect {
+export interface AccountBindingShape extends AccountShape { benchmarkCoverage(): SandboxCounters!! }
+export class SandboxAccount extends Cloudflare.DurableObject<SandboxAccount, AccountBindingShape>()("VibelangSandboxAccount") {}
+/** The probe supplies its lease clamp; every other binding uses the namespace unchanged. */
+export const accountWithMachines = (machines: (namespace: { getByName(name: string): MachineShape }) => { getByName(name: string): MachineShape }) => SandboxAccount.make(effect {
   const state = try Cloudflare.DurableObjectState
   const namespace = (try SandboxMachine) as Cloudflare.DurableObject<MachineShape>
   const identity = try SandboxIdentity
-  return accountObject(state, namespace, identity)
+  // accountObject calls only getByName(id).apply; the probe's clamped namespace needs no stub fetch.
+  return Effect.map(accountObject(state, machines(namespace) as typeof namespace, identity), (account) => ({ ...account, benchmarkCoverage: () => Effect.sync(sandboxCounters) }))
 })
+const accountLive = accountWithMachines(unchanged)
 
 /** Container bindings are absent entirely when no image digest was configured. */
-export const gatewayWithIdentity = Layer.unwrap(effect {
+export const gatewayWithAccounts = (accounts: typeof accountLive, machines: typeof machineLive = machineLive) => Layer.unwrap(effect {
   const image = try Effect.orDie(Config.option(Config.String("VIBELANG_SANDBOX_IMAGE")))
   if (Option.isNone(image)) return Layer.succeed(SandboxGateway, { gateway: signedOutGateway })
   return Layer.effect(SandboxGateway, effect {
     const namespace = (try SandboxAccount) as Cloudflare.DurableObject<AccountShape>
     return gatewayOf(namespace, try SandboxIdentity)
-  }).pipe(Layer.provide(accountLive), Layer.provide(machineLive))
+  }).pipe(Layer.provide(accounts), Layer.provide(machines))
 })
+export const gatewayWithIdentity = gatewayWithAccounts(accountLive)

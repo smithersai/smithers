@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url"
 import { parseAstAsync } from "vite"
 import astV8ToIstanbul from "ast-v8-to-istanbul"
 import { workerdEvidence } from "../test/support/workerdCoverage.ts"
+import { sandboxEvidence, SANDBOX_COUNTER_DIRECTORY } from "./sandbox-evidence.ts"
 import { mergeByPosition, metrics, normalizeEndColumns, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
 
 const require = createRequire(import.meta.url)
@@ -115,7 +116,8 @@ async function main() {
     if (!sourceFile(file)) continue
     vitest[file] = base.fileCoverageFor(file).toJSON()
   }
-  const combined = mergeByPosition(vitest, evidences.map((evidence) => evidence.toJSON() as unknown as Record<string, FileCoverageJSON>))
+  const deployed = await sandboxEvidence(SANDBOX_COUNTER_DIRECTORY, appRoot)
+  const combined = mergeByPosition(vitest, [...evidences.map((evidence) => evidence.toJSON() as unknown as Record<string, FileCoverageJSON>), deployed])
 
   const failures: Array<string> = []
   const rows: Array<{ file: string; lines: string; statements: string; functions: string; branches: string; uncovered: string }> = []
@@ -144,16 +146,17 @@ async function main() {
     }
   }
 
-  // A report from another checkout or an empty run has no source file to gate; it must never certify 100%.
-  if (rows.length === 0) {
-    console.error(`Benchmark coverage has no source files for this checkout (${appRoot}): rerun the suite here.`)
+  // Runtime hits cannot substitute for the canonical Node source roster. An empty or foreign Node report must
+  // fail even when a previous Worker/Chromium/deployed run left valid counters in the evidence directories.
+  if (Object.keys(vitest).length === 0 || rows.length === 0) {
+    console.error(`Benchmark coverage has no source files for this checkout's Node report (${appRoot}): rerun the suite here.`)
     process.exitCode = 1
     return
   }
   mkdirSync("coverage/bench/merged", { recursive: true })
   writeFileSync("coverage/bench/merged/coverage-final.json", JSON.stringify(finalMap, null, 1) + "\n")
   writeFileSync("coverage/bench/merged/per-file.json", JSON.stringify(rows, null, 1) + "\n")
-  console.log(`Merged benchmark coverage: ${rows.length} files; Vitest (Node and emitted subprocesses) evidence plus ${evidences[0]!.files().length} workerd-evidenced and ${evidences[1]!.files().length} Chromium-evidenced files.`)
+  console.log(`Merged benchmark coverage: ${rows.length} files; Vitest (Node and emitted subprocesses) evidence plus ${evidences[0]!.files().length} workerd-evidenced, ${evidences[1]!.files().length} Chromium-evidenced and ${Object.keys(deployed).length} deployed sandbox-evidenced files.`)
   for (const row of rows.filter((row) => row.lines !== "100" || row.statements !== "100" || row.functions !== "100" || row.branches !== "100")) {
     console.log(`${row.file}: lines ${row.lines}% statements ${row.statements}% functions ${row.functions}% branches ${row.branches}%${row.uncovered === "" ? "" : ` uncovered ${row.uncovered}`}`)
   }

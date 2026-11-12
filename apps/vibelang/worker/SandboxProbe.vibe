@@ -1,37 +1,30 @@
 // The vl-test stage's probe Worker (sandboxProbeFetch.vibe; decision 0024): the product's sandbox account and machine objects
 // and the offline image, reached with VIBELANG_SANDBOX_PROBE_TOKEN. Production never declares it (infra/Stack.vibe).
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { workerBuild } from "../infra/WorkerBuild.vibe"
-import { SandboxImage } from "../infra/SandboxImage.vibe"
-import { accountObject, gatewayOf, SandboxAccount, SandboxIdentity, type AccountShape } from "./SandboxAccounts.vibe"
-import { SandboxMachine, type MachineShape } from "./SandboxMachine.vibe"
+import { sandboxBenchmarkBuild } from "../bench/sandbox-build.ts"
+import { accountWithMachines, gatewayWithAccounts, SandboxAccount, SandboxGateway, SandboxIdentity } from "./SandboxAccounts.vibe"
+import { machineWithBody, SandboxMachine, type MachineBindingShape, type MachineBox, type ObjectState } from "./SandboxMachine.vibe"
 import { CONTAINER_MODE, ProbeContainerMode, probeMachine } from "./sandboxProbeContainer.vibe"
 import { leaseClamped, probeFetch, probeIdentity, type Recorded } from "./sandboxProbeFetch.vibe"
+import { benchmarkFetch } from "./sandboxBenchmark.vibe"
 
 const token = Effect.map(Effect.orDie(Config.Redacted("VIBELANG_SANDBOX_PROBE_TOKEN")), Redacted.value)
 const identity = Layer.effect(SandboxIdentity, Effect.map(token, probeIdentity))
+const accountsLive = accountWithMachines(leaseClamped)
 
-const accountsLive = SandboxAccount.make(effect {
-  const state = try Cloudflare.DurableObjectState
-  const machines = (try SandboxMachine) as Cloudflare.DurableObject<MachineShape>
-  // accountObject calls only getByName(id).apply, which the clamped namespace answers; it needs no stub's fetch.
-  return accountObject(state, leaseClamped(machines) as typeof machines, try SandboxIdentity)
-})
-
-// The product's machine object over the probe's Container, recorded when the stage is deployed with
-// VIBELANG_SANDBOX_CONTAINER_MODE=record (sandboxProbeContainer.vibe), and the calls it recorded.
+// Keep the existing Container recorder and its Init-time Config binding. The shared constructor adds counters
+// around this body as it does around production's machineObject, retaining the probe's recording RPC.
 const containerMode = Effect.orDie(Config.schema(ProbeContainerMode, CONTAINER_MODE).pipe(Config.withDefault("passthrough" as const)))
-const machinesLive = SandboxMachine.make(effect {
-  const box = try SandboxImage
-  const state = try Cloudflare.DurableObjectState
-  return probeMachine(box, state, try containerMode)
+const machinesLive = machineWithBody(effect {
+  const mode = try containerMode
+  return (box: MachineBox, state: ObjectState) => probeMachine(box, state, mode)
 })
 
 const program = effect {
-  const accounts = (try SandboxAccount) as Cloudflare.DurableObject<AccountShape>
-  const machines = (try SandboxMachine) as unknown as Cloudflare.DurableObject<MachineShape & Recorded>
-  const { gateway } = gatewayOf(accounts, try SandboxIdentity)
-  return { fetch: probeFetch(try token, gateway, accounts, machines) }
+  const accounts = try SandboxAccount
+  const machines = (try SandboxMachine) as unknown as Cloudflare.DurableObject<MachineBindingShape & Recorded>
+  const { gateway } = try SandboxGateway
+  return { fetch: benchmarkFetch(probeFetch(try token, gateway, accounts, machines), accounts, machines, try SandboxIdentity) }
 }
 
 export default class SandboxProbe extends Cloudflare.Worker<SandboxProbe>()(
@@ -40,7 +33,7 @@ export default class SandboxProbe extends Cloudflare.Worker<SandboxProbe>()(
     main: "worker/SandboxProbe.vibe",
     compatibility: { date: "2026-10-01" },
     observability: { enabled: true, logs: { enabled: true, invocationLogs: true, persist: true } },
-    build: workerBuild,
+    build: sandboxBenchmarkBuild,
   },
-  program.pipe(Effect.provide(accountsLive), Effect.provide(machinesLive), Effect.provide(identity)),
+  program.pipe(Effect.provide(Layer.mergeAll(gatewayWithAccounts(accountsLive, machinesLive), accountsLive.pipe(Layer.provideMerge(machinesLive)))), Effect.provide(identity)),
 ) {}

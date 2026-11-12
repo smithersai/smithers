@@ -4225,3 +4225,29 @@ mean 2617.99 ms, 2609.44–2629.23 ms, 3 samples. The production two-second foll
 The ceiling workload executes the path formerly at `CallBudget.vibe:45`. The requested `main.vibe:1119` line is now 1122 (action-follow reconnect); its separate `web-action-follow-recovery` workload injects one typed follow fault and requires the real running and cancellation snapshots after reconnect. The clock workload is additional coverage.
 No dependency, coverage exclusion, baseline or threshold changed. Live timings are not rerun for these injected
 faults; these observations describe the local test boundary, not production network or provider latency.
+
+### Sandbox binding collection (resume 9, 2026-11-12)
+
+`pnpm bench:sandboxes-live` measures one serial real-Container lifecycle on the `vl-test` stage, including
+checkpoint, restore and verified Stop/sweep. It exports source-checked per-module counters from all three
+isolates into `bench/results/sandbox-raw/` for `bench:coverage`. The committed recording exercises the identical
+client workload offline and establishes no deployed coverage or latency. No live number is published until the
+lead runs it on the Mac through the vault wrapper. One lite Container at a time, ten-minute owner deadline;
+no model or GitHub calls. The instrumented observation includes assertions and HTTP, is not a timing gate,
+and supports no tail percentile. See decision 0017 for cleanup, retained storage and source compatibility.
+
+#### Recorded sandbox client observation, 2026-11-12
+
+| Workload | Mean ms | Range ms | Samples | Artifact |
+| --- | ---: | ---: | ---: | --- |
+| sandbox-live-replay | 16.251 | 3.537–39.831 | 3 | 2026-11-12T09-59-11.034Z-sandbox-live-replay.json |
+
+At 09:59 UTC (01:59 PST), Node 26.5.0, four-vCPU Cloudflare Linux x86-64 box, AMD EPYC. Source
+`e8948886f7154071bf31991114083ff380a1fd84` on parent c3dddf27. Subsequent changes only harden the merge's
+empty-Node-report guard and document it; the measured callback is unchanged. The recording is loaded before timing.
+Each callback, with no deliberate warmup, creates a replay client and LiveFactory, runs the complete seven-exchange
+lifecycle, checks saved/restored bytes, one sandbox id, generations, role, metering and stopped sweep, and requires
+every exchange to be consumed. Setup, assertions and scope cleanup are included; compilation/import and recording
+file I/O are outside. Three variable samples establish no tail percentile or regression threshold. No network,
+Container, checkpoint latency or model inference is measured. The separate instrumented execution is a count-only
+receipt, not timing. Raw artifacts retain machine, versions, timestamp, source, method and limitations with the report.
