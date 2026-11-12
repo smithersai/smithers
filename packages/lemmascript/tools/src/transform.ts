@@ -449,8 +449,8 @@ function lowerBranch(e: TExpr, binds: Stmt[] | null): { body: Stmt[]; expr: Expr
  * When `binds` is non-null, embedded method calls are extracted into
  * `let ← ` binds (monadic lifting / selective ANF).  Lifting propagates
  * through binop, unop, and call arguments — the expression kinds where
- * a method call can appear inline in TS.  It does NOT propagate into
- * field, index, record, forall, or exists sub-expressions.
+ * a method call can appear inline in TS, and through a field read's object.
+ * It does NOT propagate into index, record, forall, or exists sub-expressions.
  */
 
 /** JS truthiness coercion for `if`/`while`/`?:` conditions.
@@ -869,12 +869,14 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
     }
 
     case "field":
+      // The object is evaluated before the read, unconditionally, so a method call in it lifts to a bind in order
+      // (`f(x).items`); short-circuit operands are scoped by the binop case.
       if (e.field === "length" && isArray(e.obj.ty))
-        return { kind: "field", obj: transformExpr(e.obj), field: "size" };
+        return { kind: "field", obj: lowerExpr(e.obj, binds), field: "size" };
       if (e.field === "length" && e.obj.ty.kind === "string")
-        return { kind: "field", obj: transformExpr(e.obj), field: "length" };
+        return { kind: "field", obj: lowerExpr(e.obj, binds), field: "length" };
       if (e.field === "size" && (e.obj.ty.kind === "map" || e.obj.ty.kind === "set"))
-        return { kind: "field", obj: transformExpr(e.obj), field: "collectionSize" };
+        return { kind: "field", obj: lowerExpr(e.obj, binds), field: "collectionSize" };
       // Boolean discriminant bare access: `result.ok` where Result has variants
       // {ok: true, ...} | {ok: false, ...}. String discriminants are always used via
       // comparison (x.kind === 'Foo' → x.Foo?), but boolean discriminants are used
@@ -883,7 +885,7 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       if (e.isDiscriminant && e.obj.ty.kind === "user") {
         const decl = unionDeclOfTy(_typeDecls, e.obj.ty);
         if (decl?.variants?.some(v => v.name === "true")) {
-          return { kind: "field", obj: transformExpr(e.obj), field: "true_?" };
+          return { kind: "field", obj: lowerExpr(e.obj, binds), field: "true_?" };
         }
         // Surviving string-discriminant read (`x.kind` used as a value —
         // compared against another union's tag, passed as an argument, …):
@@ -915,10 +917,10 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
           });
           const matching = differ ? owners.filter(v => { const t = ownerTy(v); return t && tyEqual(t, e.ty); }) : [];
           const ctor = e.ofVariant ?? (matching.length === 1 ? matching[0].name : undefined);
-          return { kind: "field", obj: transformExpr(e.obj), field: e.field, fromUnion: baseName, ctor, datatypeField: true };
+          return { kind: "field", obj: lowerExpr(e.obj, binds), field: e.field, fromUnion: baseName, ctor, datatypeField: true };
         }
       }
-      return { kind: "field", obj: transformExpr(e.obj), field: e.field, datatypeField: isRecordType(e.obj.ty) };
+      return { kind: "field", obj: lowerExpr(e.obj, binds), field: e.field, datatypeField: isRecordType(e.obj.ty) };
 
     case "index": {
       const idx = transformExpr(e.idx);
