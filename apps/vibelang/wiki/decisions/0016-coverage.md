@@ -2267,7 +2267,7 @@ binds them. The suite's other hosts keep running the same bodies as plain object
   fences, failed starts, stopped reads, persisted owner checks, and the actual storage alarm. The request path picks
   how the Container fails: a start that returns while the box never runs, a box whose setup command exits 1 and whose
   checkpoint fails, and a destroy that leaves it running (the machine reports `checkpoint-failed` once it stops).
-  No command ever succeeds; successful start, command and checkpoint paths still need the authorized Container binding.
+  No command ever succeeds there; the successful paths run against the recorded real Container (below).
 - Fuzz: `workerd/alchemy-api-requests` sends `workerd/api-requests`' generated requests to the Alchemy-built Worker,
   so `worker/Api.vibe` is back in the fuzz denominator (`fuzz.config.ts` and `fuzz/coverage.vibe` no longer exclude it).
 - `test/workerdCoverageShape.test.ts` third case: Alchemy's rolldown build of a measured module puts a namespace call
@@ -2305,6 +2305,39 @@ The fault modes (third session) raised `worker/machineObject.vibe` in the same c
 from 30/63 lines, 39/83 branches, 11/18 functions and 43/92 statements to 39/63, 47/83, 12/18 and 56/92: the start
 that never comes up, the failed setup, the failed checkpoint and the stuck destroy now run in workerd. 19 files / 81
 tests passed (1 file, 3 tests skipped); the gate exits 1 with 140 of 164 files below 100%.
+
+### Successful Container paths in workerd, held to the real run (2026-11-11)
+
+The vl-test stage's first passing real-Container run (2026-11-10 18:32) is committed as
+`test/recordings/sandboxes-live.json` (decision 0024). That makes the successful start, command, checkpoint and
+restore measurable in workerd without a live binding, by the VL-38 pattern the lead set for this lane: an injected
+Container Effect service, held to the real one by a conformance test. Nothing intercepts a request, and the Durable
+Object namespaces are real workerd bindings.
+
+```
+lifecycle (test/support/sandboxesLive.vibe) ── HTTP ──▶ probe Worker body (sandboxProbeFetch)      ┐ test/workerd/
+                                                        ├─ SandboxAccount body, workerd SQLite     │ sandbox-probe.vibe
+                                                        └─ SandboxMachine body, workerd SQLite     │
+                                                             └─ memoryContainer() (Effect service) ┘
+recorded exchanges ── compared with ──▶ test/recordings/sandboxes-live.json (real Cloudflare Container)
+```
+
+- `test/workerd/memoryContainer.vibe`: the in-memory Container the benchmark host already used (moved out of
+  `bench-sandbox.vibe`, unchanged in behaviour), plus `printf` writes, `&&` chains and a `dies` fault (the box stops
+  while a command runs).
+- `test/sandboxProbe.workerd.test.vibe`: runs the real-Container suite against the probe body in workerd, records the
+  exchanges and compares every one with the committed recording. Comparison erases only `id` (allocated per owner),
+  `used` and `resetAt` (wall clock); requests, statuses, outputs, generations, roles, allowance and `remaining`
+  compare exactly. A changed fake fails it: making `printf` write a trailing newline fails the comparison. The same
+  file asks the machine directly for a running status, refused lease durations, an expired lease, a receipt answer, a
+  receipt conflict, a failing command and a box that stops mid-command, and asks the probe for its signed-out,
+  sweep, deadline and broken-binding answers.
+- `test/sandboxGateway.workerd.test.vibe`: the gateway through the 0019 policy adapter on the benchmark host:
+  signed-out and Viewer reads, revoked grants, missing account and machine bindings, a stale generation, an account
+  asked directly, the default `noIdentity` deployment, and the alarm of an account with no owner.
+
+The fake answers only the commands the suite and these tests send; the real run is the authority for what they
+return. A new command form needs a new real recording first.
 
 ### Unit and fuzz results after the audit roster fixes
 

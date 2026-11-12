@@ -1,0 +1,79 @@
+// The vl-test stage's probe Worker body (worker/sandboxProbeFetch.vibe, as worker/SandboxProbe.vibe wires it) over the
+// production SandboxAccount and SandboxMachine bodies in real workerd SQLite, on the in-memory Container
+// (memoryContainer.vibe). test/sandboxProbe.workerd.test.vibe runs the real-Container suite against it and holds every
+// answer to the committed recording of the real run. `/machine/<name>` reaches a machine object directly; the `x-host-fault: account-binding` header breaks the
+// account binding.
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { machineObject } from "../../worker/machineObject.vibe"
+import { accountObject, gatewayOf } from "../../worker/accountObject.vibe"
+import { leaseClamped, probeFetch, probeIdentity } from "../../worker/sandboxProbeFetch.vibe"
+import { memoryContainer, type Fault } from "./memoryContainer.vibe"
+import { PROBE_TOKEN } from "./sandbox-probe-token.vibe"
+import { refuseBinding } from "../support/refuseBinding.ts"
+
+interface State { readonly id: { toString(): string }; readonly storage: unknown }
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(url: string, init?: RequestInit): Promise<Response> } }
+interface Env { readonly MACHINE: Namespace; readonly ACCOUNT: Namespace }
+
+const runtime = Layer.succeed(RuntimeContext, {} as never)
+const json = (body: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(body))
+const identity = probeIdentity(PROBE_TOKEN)
+const post = (namespace: Namespace, name: string, path: string, body: unknown) =>
+  promise(() => namespace.get(namespace.idFromName(name)).fetch(`https://object/${path}`, { method: "POST", body: JSON.stringify(body) }).then((response) => response.json()))
+
+/** Machine objects behind the RPC stub's shape: `apply` as the account and the probe's sweep call it. */
+function machines(env: Env) {
+  return { getByName: (name: string) => ({ apply: (...args: [string, number, string, string]) => post(env.MACHINE, name, "apply", args) }) }
+}
+/** `broken`: the account binding throws, as workerd's does when the binding is missing. */
+function accounts(env: Env, broken = false) {
+  return {
+    getByName: (owner: string) => broken ? refuseBinding() : ({
+      run: (...args: Array<unknown>) => post(env.ACCOUNT, owner, "run", args),
+      alarm: () => post(env.ACCOUNT, owner, "alarm", []),
+    }),
+  }
+}
+
+export class MachineHost {
+  readonly memory = memoryContainer()
+  readonly api: ReturnType<typeof this.build>
+  constructor(readonly state: State) { this.api = this.build() }
+  build() { return runPromise(Effect.provide(machineObject(this.memory.container as never, { raw: this.state } as never), runtime)) }
+  async fetch(request: Request): Promise<Response> {
+    const path = new URL(request.url).pathname
+    if (path === "/fault") { this.memory.box.fault = (await request.json() as { readonly fault: Fault }).fault; return json({}) }
+    const args = await request.json() as ["start" | "stop" | "command" | "lease" | "status", number, string, string]
+    return json(await runPromise(Effect.provide((await this.api).apply(...args), runtime)))
+  }
+}
+
+export class AccountHost {
+  readonly api: ReturnType<typeof this.build>
+  constructor(readonly state: State, readonly env: Env) { this.api = this.build() }
+  build() { return runPromise(Effect.provide(accountObject({ id: this.state.id, raw: this.state } as never, leaseClamped(machines(this.env) as never) as never, identity), runtime)) }
+  async alarm(): Promise<void> { await runPromise(Effect.provide((await this.api).alarm(), runtime)) }
+  async fetch(request: Request): Promise<Response> {
+    const api = await this.api
+    if (new URL(request.url).pathname === "/alarm") return json(await runPromise(Effect.provide(api.alarm(), runtime)) ?? null)
+    const args = await request.json() as [string, "read" | "start" | "stop" | "command", string, string, number, string]
+    return json(await runPromise(Effect.provide(api.run(...args), runtime)))
+  }
+}
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const url = new URL(request.url)
+    const [, area, name, operation] = url.pathname.split("/")
+    if (area === "machine") return env.MACHINE.get(env.MACHINE.idFromName(decodeURIComponent(name!))).fetch(`https://object/${operation ?? "apply"}`, { method: "POST", body: await request.text() })
+    // A test asks for a broken account binding with this header; a deployed probe has no such switch.
+    const named = accounts(env, request.headers.get("x-host-fault") === "account-binding")
+    const { gateway } = gatewayOf(named as never, identity)
+    const response = await runPromise(probeFetch(PROBE_TOKEN, gateway, named as never, machines(env) as never).pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
+      Effect.provide(runtime),
+    ))
+    return HttpServerResponse.toWeb(response)
+  },
+}

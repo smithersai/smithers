@@ -1,0 +1,68 @@
+// The sandbox gateway and account object in workerd, through the identity policy adapter (identityFromPolicy, 0019),
+// on the benchmark host (test/workerd/bench-sandbox.vibe): who may read and start, and what a broken binding answers.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { afterAll, beforeAll } from "vitest"
+import { deadline, serveSandboxObjects, type Served } from "./support/workerd.vibe"
+
+describe("the sandbox gateway in workerd", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveSandboxObjects()) }, deadline(120_000))
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("lets a signed-out person or a Viewer only read, refuses a revoked grant, and names a missing account or machine binding", () => effect {
+    provide FetchHttpClient.layer {
+      const client = try HttpClient.HttpClient
+      effect function post(path: string, headers: Readonly<Record<string, string>>, body: unknown) {
+        const response = try client.execute(HttpClientRequest.post(`${api!.origin}${path}`).pipe(HttpClientRequest.setHeaders(headers), HttpClientRequest.bodyJsonUnsafe(body)))
+        try Effect.try(() => expect(response.status).toBe(200))
+        return (try response.json) as unknown
+      }
+      const send = (owner: string, kind: string, operationId = "op", generation = 0, headers: Readonly<Record<string, string>> = {}) =>
+        post("/gateway", { ...headers, ...(owner === "" ? {} : { "x-owner": owner }) }, { kind, conversation: "home", operationId, generation, command: "cat keep" })
+      const answers = [
+        try send("", "read"), try send("", "start"),
+        try send("viewer-1", "read"), try send("viewer-1", "start"),
+        try send("revoked-1", "start"),
+        try send("unbound-1", "start"),
+        try send("no-binding-1", "start"),
+        try send("person-1", "start"),
+        try send("person-1", "command", "stale", 9),
+      ]
+      const stopped = { _tag: "Success", value: expect.objectContaining({ status: "stopped", generation: 0 }) }
+      const forbidden = { _tag: "Failure", refusal: "forbidden" }
+      try Effect.try(() => expect(answers).toEqual([
+        stopped, forbidden, stopped, forbidden, forbidden,
+        { _tag: "Failure", refusal: "sandbox-binding" },
+        { _tag: "Failure", refusal: "unavailable" },
+        { _tag: "Success", value: expect.objectContaining({ status: "running", generation: 1 }) },
+        { _tag: "Failure", refusal: expect.any(String) },
+      ]))
+    }
+  })
+
+  it.live("refuses an account asked directly for a revoked grant, and keeps a deployment with no identity adapter read-only, and leaves an unused account disarmed", () => effect {
+    provide FetchHttpClient.layer {
+      const client = try HttpClient.HttpClient
+      effect function post(path: string, headers: Readonly<Record<string, string>>, body: unknown) {
+        const response = try client.execute(HttpClientRequest.post(`${api!.origin}${path}`).pipe(HttpClientRequest.setHeaders(headers), HttpClientRequest.bodyJsonUnsafe(body)))
+        try Effect.try(() => expect(response.status).toBe(200))
+        return (try response.json) as unknown
+      }
+      const args = (owner: string) => ({ args: [owner, "start", "home", "op", 0, ""] })
+      const answers = [
+        try post("/account/revoked-2", {}, args("revoked-2")),
+        try post("/account-anonymous/anonymous-1", {}, args("anonymous-1")),
+        try post("/gateway", { "x-identity": "none", "x-owner": "person-2" }, { kind: "read", conversation: "home", operationId: "", generation: 0, command: "" }),
+        try post("/gateway", { "x-identity": "none", "x-owner": "person-2" }, { kind: "start", conversation: "home", operationId: "op", generation: 0, command: "" }),
+        try post("/alarm/never-used", {}, {}),
+      ]
+      try Effect.try(() => expect(answers).toEqual([
+        { ok: false, refusal: "forbidden" }, { ok: false, refusal: "forbidden" },
+        { _tag: "Success", value: expect.objectContaining({ status: "stopped", generation: 0 }) }, { _tag: "Failure", refusal: "forbidden" },
+        // Nothing runs, so the meter that the alarm ran leaves no retry armed.
+        { armed: null },
+      ]))
+    }
+  })
+})

@@ -1,0 +1,3 @@
+// The probe's bearer token in the workerd probe host (sandbox-probe.vibe) and its suite; a deployed probe reads its own
+// from a secret. A Worker's main module may export only handlers and classes, so the token lives here.
+export const PROBE_TOKEN = "probe-token-for-workerd"

@@ -1,79 +1,15 @@
 // Unshipped benchmark host: the production SandboxMachine and SandboxAccount bodies in real workerd SQLite, on an
-// in-memory Container. It measures object, ledger and fencing overhead; no Cloudflare Container runs here (0017).
+// in-memory Container (memoryContainer.vibe). It measures object, ledger and fencing overhead; no Cloudflare Container runs here (0017).
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { machineObject } from "../../worker/machineObject.vibe"
-import { accountObject, gatewayOf, identityFromPolicy, SandboxIdentity } from "../../worker/accountObject.vibe"
+import { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxIdentity } from "../../worker/accountObject.vibe"
 import { refuseBinding } from "../support/refuseBinding.ts"
 import type { Role } from "../../src/core/sandboxDecision.vibe"
+import { memoryContainer, type Fault } from "./memoryContainer.vibe"
 
-type Fault = "" | "checkpoint" | "no-start" | "setup" | "stuck"
 interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(url: string, init?: RequestInit): Promise<Response> } }
 interface Env { readonly MACHINE: Namespace; readonly ACCOUNT: Namespace }
-
-const encoder = new TextEncoder()
-/** The single-quoted arguments of a command built by SandboxTools' `script`. */
-function shellWords(command: string) {
-  const words: Array<string> = []
-  const quoted = /'((?:[^']|'\\'')*)'/g
-  for (const match of command.matchAll(quoted)) words.push(match[1]!.replaceAll("'\\''", "'"))
-  return words
-}
-
-/** The Container surface the machine object uses: a file map, snapshots of it, and the run tool's fence protocol. */
-function memoryContainer() {
-  const box = { up: false, fault: "" as Fault, disk: new Map<string, string>(), snapshots: new Map<string, Map<string, string>>(), fences: new Map<string, string>(), started: 0, executed: 0, destroyed: 0, timeouts: [] as Array<number> }
-  function evaluate(command: string) {
-    const write = /^echo (.*?) > ([a-zA-Z0-9._/-]+)$/.exec(command)
-    const read = /^cat ([a-zA-Z0-9._/-]+)$/.exec(command)
-    const failed = /^exit (\d+)$/.exec(command)
-    const big = /^big (\d+)$/.exec(command)
-    if (write) { box.disk.set(write[2]!, `${write[1]!}\n`); return { out: "", code: 0 } }
-    if (read) return box.disk.has(read[1]!) ? { out: box.disk.get(read[1]!)!, code: 0 } : { out: "", code: 1 }
-    if (failed) return { out: "", code: Number(failed[1]) }
-    if (big) return { out: "x".repeat(Number(big[1])), code: 0 }
-    return { out: "", code: 127 }
-  }
-  function process(stdout: string, code: number) {
-    return succeed({ stdin: undefined, stdout: Stream.make(encoder.encode(stdout)), stderr: Stream.empty, exitCode: succeed(code) })
-  }
-  const container = {
-    running: sync(() => box.up),
-    start: (options: { readonly containerSnapshot?: { readonly id: string } }) => sync(() => {
-      box.started += 1
-      if (box.fault === "no-start") return
-      box.up = true
-      const saved = options.containerSnapshot === undefined ? undefined : box.snapshots.get(options.containerSnapshot.id)
-      box.disk = new Map(saved ?? [])
-      box.fences = new Map()
-    }),
-    setInactivityTimeout: (duration: number) => sync(() => { box.timeouts.push(duration) }),
-    interceptOutboundHttp: () => Effect.void,
-    interceptAllOutboundHttp: () => Effect.void,
-    interceptOutboundHttps: () => Effect.void,
-    snapshotContainer: () => box.fault === "checkpoint" ? Effect.fail(new Error("checkpoint refused")) : sync(() => {
-      const id = `snapshot-${box.snapshots.size + 1}`
-      box.snapshots.set(id, new Map(box.disk))
-      return { id }
-    }),
-    destroy: () => sync(() => { box.destroyed += 1; if (box.fault !== "stuck") box.up = false }),
-    exec: (argv: Array<string>) => effect {
-      const command = argv[2]!
-      if (command.startsWith("mkdir -p /workspace")) return try process("", box.fault === "setup" ? 1 : 0)
-      const words = shellWords(command)
-      // [body, runner, fence, timeout, cwd, command, max, legacy, identity]: a fence runs its command only once.
-      const fence = words[2]!
-      if (!box.fences.has(fence)) {
-        box.executed += 1
-        const result = evaluate(words[5]!)
-        const max = Number(words[6])
-        box.fences.set(fence, `${result.code} 0 ${result.out.length} 0\n${result.out.slice(0, max)}`)
-      }
-      return try process(box.fences.get(fence)!, 0)
-    },
-  }
-  return { box, container }
-}
 
 const noRuntime = Layer.succeed(RuntimeContext, {} as never)
 const json = (body: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(body))
@@ -122,16 +58,24 @@ const identity = identityFromPolicy(
 )
 
 const identityShape = runSync(Effect.provide(effect { return try SandboxIdentity }, identity))
+/** The deployment default until 0019's adapter is wired (SandboxAccounts.vibe): every request is a Viewer. */
+const anonymousShape = runSync(Effect.provide(effect { return try SandboxIdentity }, noIdentity))
 
 export class AccountHost {
   /** The benchmark runs the production alarm body explicitly through /alarm, as SandboxLedger's suite does. */
   async alarm(): Promise<void> {}
   readonly api: Promise<{ run(...args: Array<unknown>): unknown; alarm(): unknown }>
-  constructor(readonly state: State, env: Env) {
-    this.api = runPromise(accountObject({ id: state.id, raw: state } as never, machines(env) as never, identityShape).pipe(Effect.provide(noRuntime))) as never
+  /** The same object body under the deployment's default identity, built for `/run-anonymous` only. */
+  anonymous: AccountHost["api"] | undefined
+  constructor(readonly state: State, readonly env: Env) {
+    this.api = this.build(identityShape) as never
+  }
+  build(shape: typeof identityShape) {
+    return runPromise(accountObject({ id: this.state.id, raw: this.state } as never, machines(this.env) as never, shape).pipe(Effect.provide(noRuntime)))
   }
   async fetch(request: Request): Promise<Response> {
-    const api = await this.api
+    if (new URL(request.url).pathname === "/run-anonymous") this.anonymous ??= this.build(anonymousShape) as never
+    const api = new URL(request.url).pathname === "/run-anonymous" ? await this.anonymous! : await this.api
     if (new URL(request.url).pathname === "/alarm") {
       await runPromise(Effect.provide(api.alarm() as Effect.Effect<void, never, RuntimeContext>, noRuntime))
       return json({ armed: await (this.state.storage as { getAlarm(): Promise<number | null> }).getAlarm() })
@@ -156,7 +100,11 @@ export default {
     const [, area, name] = url.pathname.split("/")
     if (area === "machine") return env.MACHINE.get(env.MACHINE.idFromName(name!)).fetch(`https://object/${url.pathname.split("/")[3]}`, { method: "POST", body: await request.text() })
     if (area === "alarm") return env.ACCOUNT.get(env.ACCOUNT.idFromName(name!)).fetch("https://object/alarm", { method: "POST" })
-    const { gateway } = gatewayOf(accounts(env) as never, identityShape)
+    // An account object asked directly, as the gateway asks it: `{ args }` are run's arguments.
+    if (area === "account") return env.ACCOUNT.get(env.ACCOUNT.idFromName(name!)).fetch("https://object/run", { method: "POST", body: await request.text() })
+    if (area === "account-anonymous") return env.ACCOUNT.get(env.ACCOUNT.idFromName(name!)).fetch("https://object/run-anonymous", { method: "POST", body: await request.text() })
+    // `x-identity: none` serves the gateway under the deployment's default identity instead of the policy adapter.
+    const { gateway } = gatewayOf(accounts(env) as never, request.headers.get("x-identity") === "none" ? anonymousShape : identityShape)
     const body = await request.json() as { readonly kind: string; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string }
     const answer = <A>(operation: A!unknown!(HttpServerRequest.HttpServerRequest | RuntimeContext)) =>
       outcome(operation.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(noRuntime))).then(json)

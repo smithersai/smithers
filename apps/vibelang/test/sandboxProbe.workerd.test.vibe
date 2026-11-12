@@ -1,0 +1,148 @@
+// The real-Container suite (test/support/sandboxesLive.vibe) in workerd: the probe Worker body over the production
+// SandboxAccount and SandboxMachine bodies in real workerd SQLite, on the in-memory Container (test/workerd/
+// memoryContainer.vibe). The in-memory Container is held to the real one (VL-36, the VL-38 pattern): every exchange of
+// the committed recording of a real Cloudflare Container run (test/recordings/sandboxes-live.json) must be answered
+// the same here, apart from values the clock or the allocator decides. The machine's own refusals of a running box
+// are asked directly.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { describe, expect, it } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { afterAll, beforeAll } from "vitest"
+import { deadline, serveSandboxProbe, type Served } from "./support/workerd.vibe"
+import { expectLifecycle, lifecycle, normalize, RECORDING } from "./support/sandboxesLive.vibe"
+import { OWNER_HEADER, PROBE_WINDOW_MS, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+import { PROBE_TOKEN } from "./workerd/sandbox-probe-token.vibe"
+
+/**
+ * The only response values comparison may erase: the sandbox's name is allocated per owner, and minutes and the
+ * allowance's reset are metered against the wall clock. Every other value, and each value's presence, compares exactly.
+ */
+const NON_SEMANTIC = { id: "allocated-identity", used: "wall-clock", resetAt: "wall-clock" } as const
+function semantic(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(semantic)
+  if (value === null || typeof value !== "object") return value
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, key in NON_SEMANTIC ? `<${NON_SEMANTIC[key as keyof typeof NON_SEMANTIC]}:${typeof item}>` : semantic(item)]))
+}
+type Exchanges = { readonly exchanges: ReadonlyArray<{ readonly request: unknown; readonly response: { readonly status: number; readonly body: unknown } }> }
+const comparable = (recording: Exchanges) => recording.exchanges.map(({ request, response }) => ({ request, status: response.status, body: semantic(response.body) }))
+
+describe("the real-Container suite in workerd", () => {
+  let probe: Served | undefined
+  beforeAll(async () => { probe = await runPromise(serveSandboxProbe()) }, deadline(120_000))
+  afterAll(async () => { await probe?.dispose() })
+
+  it.live("answers every exchange of the real Container run as it was recorded", () => scoped(effect {
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = `${try fs.makeTempDirectoryScoped()}/sandboxes-live.json`
+      const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+      const run = try scoped(effect {
+        const client = try HttpRecording.make({ mode: "record", path, live, secrets: [PROBE_TOKEN], normalize })
+        return try Effect.provideService(lifecycle(probe!.origin, PROBE_TOKEN), HttpClient.HttpClient, client)
+      })
+      const hereText = try fs.readFileString(path)
+      const here = try Effect.try(() => JSON.parse(hereText) as Exchanges)
+      const realText = try fs.readFileString(RECORDING)
+      const real = try Effect.try(() => JSON.parse(realText) as Exchanges)
+      try Effect.try(() => {
+        expectLifecycle(run, true)
+        expect(comparable(here)).toEqual(comparable(real))
+      })
+    }
+  }))
+
+  it.live("reports a running box, and refuses a bad lease, an expired lease, a changed or repeated command and a box that stops mid-command, on a running box", () => effect {
+    provide FetchHttpClient.layer {
+      const client = try HttpClient.HttpClient
+      effect function ask(machine: string, path: string, body: unknown) {
+        const response = try client.execute(HttpClientRequest.post(`${probe!.origin}/machine/${machine}/${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)))
+        try Effect.try(() => expect(response.status).toBe(200))
+        return (try response.json) as unknown
+      }
+      const call = (kind: string, operationId = "", command = "", generation = 1) => ask("direct", "apply", [kind, generation, operationId, command])
+      const answers = [
+        try call("start", "start-1"),
+        try call("status", "", "", 0),
+        try call("lease", "", "soon"),
+        try call("lease", "", "999"),
+        try call("command", "early", "cat keep.txt"),
+        try call("lease", "", "60000"),
+        try call("command", "write", "printf saved > keep.txt && cat keep.txt"),
+        try call("command", "write", "printf saved > keep.txt && cat keep.txt"),
+        try call("command", "write", "cat keep.txt"),
+        try call("command", "missing", "cat gone.txt"),
+        try ask("direct", "fault", { fault: "dies" }),
+        try call("command", "last", "cat keep.txt"),
+        try call("status"),
+      ]
+      const refused = (reason: string) => ({ ok: false, output: "", reason })
+      try Effect.try(() => expect(answers).toEqual([
+        { ok: true, output: "" }, { ok: true, output: "running" }, refused("lease-duration"), refused("lease-duration"), refused("lease-expired"), { ok: true, output: "running" },
+        { ok: true, output: "saved" }, { ok: true, output: "saved" }, { ok: false, output: "saved", reason: "receipt-conflict" },
+        { ok: true, output: expect.stringContaining("1") }, {}, refused("not-current"), { ok: true, output: "stopped" },
+      ]))
+    }
+  })
+
+  effect function probeAsk(path: string, headers: Readonly<Record<string, string>>, body?: unknown) {
+    const client = try HttpClient.HttpClient
+    const base = HttpClientRequest.post(`${probe!.origin}${path}`).pipe(HttpClientRequest.setHeaders(headers))
+    const response = try client.execute(body === undefined ? base : base.pipe(HttpClientRequest.bodyJsonUnsafe(body)))
+    return { status: response.status, body: (try response.json) as unknown }
+  }
+  const as = (owner: string | undefined, token = PROBE_TOKEN): Record<string, string> => ({ ...(token === "" ? {} : { authorization: `Bearer ${token}` }), ...(owner === undefined ? {} : { [OWNER_HEADER]: owner }) })
+
+  it.live("treats a wrong token, an expired owner, one beyond the window, a malformed one and none as signed out", () => effect {
+    provide FetchHttpClient.layer {
+      const now = Date.now()
+      const start = (headers: Record<string, string>) => probeAsk("/api/sandboxes/live/start", headers, { operationId: "op-1" })
+      const answers = [
+        try start(as(probeOwner(now - 1))), try start(as(probeOwner(now + PROBE_WINDOW_MS + 60_000))), try start(as("person-1")),
+        try start(as(probeOwner(now + 60_000), "wrong")), try start(as(probeOwner(now + 60_000), "")), try start(as(undefined)),
+      ]
+      try Effect.try(() => expect(answers).toEqual(Array.from({ length: 6 }, () => ({ status: 403, body: { refusal: "forbidden" } }))))
+    }
+  })
+
+  it.live("answers the sweep only with the token and a probe owner, names one it could not finish, and finds no other path", () => effect {
+    provide FetchHttpClient.layer {
+      const owner = probeOwner(Date.now() + 60_000)
+      const answers = [
+        try probeAsk("/api/probe/other", as(owner)),
+        try probeAsk("/api/probe/sweep", as(owner, "wrong")),
+        try probeAsk("/api/probe/sweep", as("person-1")),
+        try probeAsk("/api/probe/sweep", as(undefined)),
+        try probeAsk("/api/probe/sweep", { ...as(owner), "x-host-fault": "account-binding" }),
+        try probeAsk("/api/probe/sweep", as(owner)),
+      ]
+      try Effect.try(() => expect(answers).toEqual([
+        { status: 404, body: { error: "not found" } }, { status: 403, body: { error: "forbidden" } }, { status: 400, body: { error: "owner" } }, { status: 400, body: { error: "owner" } },
+        { status: 503, body: { error: "sandbox unavailable" } }, { status: 200, body: { running: false } },
+      ]))
+    }
+  })
+
+  it.live("a sweep before the deadline stops what the owner left running", () => effect {
+    provide FetchHttpClient.layer {
+      const owner = probeOwner(Date.now() + 60_000)
+      const started = try probeAsk("/api/sandboxes/live/start", as(owner), { operationId: "start-1" })
+      const swept = try probeAsk("/api/probe/sweep", as(owner))
+      try Effect.try(() => expect([started.status, swept]).toEqual([200, { status: 200, body: { running: false } }]))
+    }
+  })
+
+  it.live("tears a sandbox down at its owner's deadline: the sweep's meter stops it as a Viewer", () => effect {
+    provide FetchHttpClient.layer {
+      const deadline = Date.now() + 4000
+      const owner = probeOwner(deadline)
+      const started = try probeAsk("/api/sandboxes/live/start", as(owner), { operationId: "start-1" })
+      try Effect.sleep(Duration.millis(Math.max(0, deadline - Date.now() + 100)))
+      const swept = try probeAsk("/api/probe/sweep", as(owner))
+      try Effect.try(() => {
+        expect(started).toMatchObject({ status: 200, body: { status: "running", generation: 1 } })
+        expect(swept).toEqual({ status: 200, body: { running: false } })
+      })
+    }
+  }, deadline(60_000))
+})
