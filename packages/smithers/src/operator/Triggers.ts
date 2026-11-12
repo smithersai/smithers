@@ -109,7 +109,7 @@ export const layerTriggerScheduler = (root: string, pollIntervalMs = 1000, targe
   ).pipe(Layer.provide(store))
   return Scheduler.layer({ pollInterval: pollIntervalMs }).pipe(
     Layer.provide(TargetRuns.layer(root, targets)),
-    Layer.provide(targets.command ?? TargetRuns.layerCommand()),
+    Layer.provide(targets.command ?? TargetRuns.layerCommand().pipe(Layer.provide(TargetRuns.layerSpawner))),
     Layer.provide(TriggerPlans.layer(root)),
     Layer.provide(store),
     Layer.provide(declarations),

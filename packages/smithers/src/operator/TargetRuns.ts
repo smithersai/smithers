@@ -19,12 +19,16 @@
  */
 
 import { DurableWriter } from "@smthrs/database"
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 import { TriggerError } from "@smthrs/triggers/TriggerError"
-import { Clock, Context, Deferred, Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { Clock, Context, Deferred, Duration, Effect, Fiber, Layer, Predicate, Schema, Stream } from "effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as SqlClient from "effect/sql/SqlClient"
-import { spawn } from "node:child_process"
-import { closeSync, mkdirSync, openSync } from "node:fs"
+import { closeSync, mkdirSync, openSync, writeSync } from "node:fs"
+import { hostname } from "node:os"
 import { join } from "node:path"
 import * as Project from "../Project.ts"
 import { databaseLayer } from "./Store.ts"
@@ -107,6 +111,18 @@ interface Row {
 }
 
 const failure = (message: string, cause?: unknown) => new TriggerError({ code: "runner", message, cause })
+/**
+ * Why a command produced no exit code. A signal ends a process without one,
+ * and the spawner's error carries the signal's name.
+ */
+const stopped = (cause: unknown): string => {
+  const signal = Predicate.hasProperty(cause, "cause") && Predicate.hasProperty(cause.cause, "signal")
+    ? cause.cause.signal
+    : undefined
+  return typeof signal === "string"
+    ? `smthrs target was stopped by ${signal}`
+    : "smthrs target ended without an exit code"
+}
 const translated = <A, E, R>(operation: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.mapError((cause) => cause instanceof TriggerError ? cause : failure(operation, cause)))
 
@@ -158,45 +174,60 @@ export interface CommandOptions {
 }
 
 /**
- * Starts `smthrs target` as a child process group of this host.
+ * Starts `smthrs target` through the host's `ChildProcessSpawner`.
+ *
+ * The spawner owns the command's process group: interrupting the run stops
+ * the command and every process it started. The command's standard output
+ * and error are appended to the run's log as they arrive.
+ *
  * @category layers
  * @since 1.0.0
  */
-export const layerCommand = (options: CommandOptions = {}): Layer.Layer<TargetCommand> =>
-  Layer.succeed(TargetCommand)({
-    run: (request) =>
-      Effect.callback<number, TriggerError>((resume) => {
-        mkdirSync(Project.logDirectory(request.root), { recursive: true })
-        const descriptor = openSync(request.log, "a")
-        const child = spawn(
-          options.execPath ?? process.execPath,
-          [options.entry ?? process.argv[1]!, "target", ...request.labels, "--workspace", request.root],
-          {
-            cwd: request.root,
-            detached: true,
-            stdio: ["ignore", descriptor, descriptor],
-            env: options.environment ?? process.env
-          }
-        )
-        closeSync(descriptor)
-        child.once("error", (cause) => resume(Effect.fail(failure("Could not start smthrs target", cause))))
-        child.once(
-          "close",
-          (code, signal) =>
-            resume(
-              code === null ? Effect.fail(failure(`smthrs target was stopped by ${signal}`)) : Effect.succeed(code)
-            )
-        )
-        return Effect.sync(() => {
-          if (child.pid === undefined) return
-          try {
-            process.kill(-child.pid, "SIGTERM")
-          } catch {
-            // The command exited between its last check and this signal.
-          }
-        })
-      })
-  })
+export const layerCommand = (options: CommandOptions = {}): Layer.Layer<TargetCommand, never, ChildProcessSpawner> =>
+  Layer.effect(TargetCommand)(Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner
+    return {
+      run: (request) =>
+        Effect.gen(function*() {
+          const log = yield* Effect.acquireRelease(
+            Effect.try({
+              try: () => {
+                mkdirSync(Project.logDirectory(request.root), { recursive: true })
+                return openSync(request.log, "a")
+              },
+              catch: (cause) => failure("Could not open the run's log", cause)
+            }),
+            (descriptor) => Effect.sync(() => closeSync(descriptor))
+          )
+          const handle = yield* spawner.spawn(ChildProcess.make(
+            options.execPath ?? process.execPath,
+            [options.entry ?? process.argv[1]!, "target", ...request.labels, "--workspace", request.root],
+            { cwd: request.root, env: options.environment ?? process.env, extendEnv: false, stdin: "ignore" }
+          )).pipe(Effect.mapError((cause) => failure("Could not start smthrs target", cause)))
+          const [, code] = yield* Effect.all([
+            Stream.runForEach(handle.all, (chunk) => Effect.sync(() => writeSync(log, chunk))),
+            handle.exitCode
+          ], { concurrency: "unbounded" }).pipe(Effect.mapError((cause) => failure(stopped(cause), cause)))
+          return Number(code)
+        }).pipe(Effect.scoped)
+    }
+  }))
+
+/**
+ * The spawner a scheduler host starts `smthrs target` with.
+ *
+ * `ProcessReaper.layerSpawner` starts each command under a supervisor that
+ * leads its process group and ends the group when the run's scope closes or,
+ * on POSIX, when the host itself disappears, so a successor that takes the
+ * run over does not run the command beside an orphan. The ledger is in
+ * memory: a run's durable record is its lease row, not its process.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerSpawner: Layer.Layer<ChildProcessSpawner> = ProcessReaper.layerSpawner().pipe(
+  Layer.provide(ProcessLedger.layerMemory({ hostId: hostname(), ownerPid: process.pid }))
+)
 
 /**
  * Lease timing for build-target runs.

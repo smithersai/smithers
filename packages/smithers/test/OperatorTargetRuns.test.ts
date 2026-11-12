@@ -118,8 +118,14 @@ describe("scheduled target runs", () => {
     const killer = join(root, "killed.mjs")
     await writeFile(killer, "process.kill(process.pid, 'SIGKILL')\n")
     const cases = [
-      [TargetRuns.layerCommand({ execPath: join(root, "no-such-node") }), "Could not start smthrs target"],
-      [TargetRuns.layerCommand({ entry: killer }), "smthrs target was stopped by SIGKILL"],
+      [
+        TargetRuns.layerCommand({ execPath: join(root, "no-such-node") }).pipe(Layer.provide(TargetRuns.layerSpawner)),
+        "Could not start smthrs target"
+      ],
+      [
+        TargetRuns.layerCommand({ entry: killer }).pipe(Layer.provide(TargetRuns.layerSpawner)),
+        "smthrs target was stopped by SIGKILL"
+      ],
       [
         Layer.succeed(TargetRuns.TargetCommand)({
           run: () => Effect.fail(new TriggerError({ code: "runner", message: "no build on this host" }))

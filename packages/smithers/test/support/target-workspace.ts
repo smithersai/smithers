@@ -1,3 +1,4 @@
+import { Layer } from "effect"
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -59,7 +60,7 @@ export const command = (root: string) =>
   TargetRuns.layerCommand({
     entry: fileURLToPath(new URL("../../bin/smithers.mjs", import.meta.url)),
     environment: { PATH: process.env.PATH, HOME: root, NODE_OPTIONS: process.env.NODE_OPTIONS }
-  })
+  }).pipe(Layer.provide(TargetRuns.layerSpawner))
 
 /** Polls `read` until `done` accepts its value or the time runs out; answers the last value. */
 export const until = async <A>(
