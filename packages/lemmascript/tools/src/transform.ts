@@ -402,6 +402,14 @@ function scopedConditionalResult(binds: Stmt[], type: Ty, cond: Expr, thenBody: 
   return { kind: "var", name };
 }
 
+/** Lower an operand JavaScript evaluates only on one path. In a Dafny method its lifted calls stay in `body`,
+ *  for that path's block; elsewhere they join `binds`. */
+function lowerBranch(e: TExpr, binds: Stmt[] | null): { body: Stmt[]; expr: Expr } {
+  if (binds === null || _opts.backend !== "dafny") return { body: [], expr: lowerExpr(e, binds) };
+  const body: Stmt[] = [];
+  return { body, expr: lowerExpr(e, body) };
+}
+
 /**
  * Lower a typed expression to Backend IR.
  *
@@ -654,9 +662,29 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       // unwrap directly. Same gate as condition-facts' `canBeFalsy`.
       if (e.op === "||" && e.left.ty.kind === "optional") {
         const optExpr = lowerExpr(e.left, binds);
-        const defaultExpr = lowerExpr(e.right, binds);
+        const fallback = lowerBranch(e.right, binds);
         const bound = matchBinder("value");
         const truthy = valueTruthyCond({ kind: "var", name: bound }, e.left.ty.inner);
+        if (binds && fallback.body.length > 0) {
+          // The default's calls run only in the arms that select it; each arm lowers its own copy.
+          const name = freshName("_optional" + _liftCounter++);
+          const assign = (value: Expr): Stmt => ({ kind: "assign", target: name, value });
+          const someValue = assign({ kind: "var", name: bound });
+          let someArm: Stmt[] = [someValue];
+          if (truthy) {
+            const again = lowerBranch(e.right, binds);
+            someArm = [{ kind: "if", cond: truthy, then: [someValue], else: [...again.body, assign(again.expr)] }];
+          }
+          binds.push(
+            { kind: "let", name, type: e.ty, mutable: true, value: { kind: "havoc", type: e.ty } },
+            { kind: "match", scrutinee: optExpr, arms: [
+              { pattern: pCtor("some", bound), body: someArm },
+              { pattern: pCtor("none"), body: [...fallback.body, assign(fallback.expr)] },
+            ] },
+          );
+          return { kind: "var", name };
+        }
+        const defaultExpr = fallback.expr;
         const someBody: Expr = truthy
           ? { kind: "if", cond: truthy, then: { kind: "var", name: bound }, else: defaultExpr }
           : { kind: "var", name: bound };
@@ -675,14 +703,19 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       if (e.op === "||" && e.left.kind === "index" && e.left.obj.ty.kind === "map") {
         const map = lowerExpr(e.left.obj, binds);
         const key = lowerExpr(e.left.idx, binds);
-        const right = lowerExpr(e.right, binds);
+        const right = lowerBranch(e.right, binds);
         const got: Expr = { kind: "index", arr: map, idx: key };
         const truthy = valueTruthyCond(got, e.left.obj.ty.value);
+        const present: Expr = { kind: "binop", op: "in", left: key, right: map };
+        if (binds && right.body.length > 0) {
+          const useStored: Expr = truthy ? { kind: "binop", op: BOOL_OP_MAP["&&"] ?? "&&", left: present, right: truthy } : present;
+          return scopedConditionalResult(binds, e.ty, useStored, [], got, right.body, right.expr);
+        }
         return {
           kind: "if",
-          cond: { kind: "binop", op: "in", left: key, right: map },
-          then: truthy ? { kind: "if", cond: truthy, then: got, else: right } : got,
-          else: right,
+          cond: present,
+          then: truthy ? { kind: "if", cond: truthy, then: got, else: right.expr } : got,
+          else: right.expr,
         };
       }
       // || on non-optional array → `xs` itself: every array (even `[]`) is truthy
@@ -697,17 +730,15 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       if (e.op === "||" && (e.left.ty.kind === "string" ||
           (e.left.ty.kind === "user" && e.right.ty.kind === "string"))) {
         const left = lowerExpr(e.left, binds);
-        const right = lowerExpr(e.right, binds);
+        const right = lowerBranch(e.right, binds);
         // `s || undefined` produces `Option<string>` — wrap the truthy branch in Some.
         const rightIsUndef = e.right.kind === "var" && e.right.name === "undefined";
-        return {
-          kind: "if",
-          // strings carry the `length` marker — it renders to `|x|` in Dafny and
-          // `.length` in Lean (whose String has no `.size` field).
-          cond: { kind: "binop", op: ">", left: { kind: "field", obj: left, field: e.left.ty.kind === "string" ? "length" : "size" }, right: { kind: "num", value: 0 } },
-          then: rightIsUndef ? { kind: "app", fn: "Some", args: [left] } : left,
-          else: right,
-        };
+        // strings carry the `length` marker — it renders to `|x|` in Dafny and
+        // `.length` in Lean (whose String has no `.size` field).
+        const cond: Expr = { kind: "binop", op: ">", left: { kind: "field", obj: left, field: e.left.ty.kind === "string" ? "length" : "size" }, right: { kind: "num", value: 0 } };
+        const then: Expr = rightIsUndef ? { kind: "app", fn: "Some", args: [left] } : left;
+        if (binds && right.body.length > 0) return scopedConditionalResult(binds, e.ty, cond, [], then, right.body, right.expr);
+        return { kind: "if", cond, then, else: right.expr };
       }
       // `bool || undefined` → `if bool then Some(bool) else None`. Used in
       // optional-field initialization where the source assigns a truthy/false
@@ -726,9 +757,10 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       // || on a number → `if x != 0 then x else default` (0 the only falsy int).
       if (e.op === "||" && (e.left.ty.kind === "int" || e.left.ty.kind === "nat")) {
         const left = lowerExpr(e.left, binds);
-        const right = lowerExpr(e.right, binds);
+        const right = lowerBranch(e.right, binds);
         const truthy = valueTruthyCond(left, e.left.ty)!;
-        return { kind: "if", cond: truthy, then: left, else: right };
+        if (binds && right.body.length > 0) return scopedConditionalResult(binds, e.ty, truthy, [], left, right.body, right.expr);
+        return { kind: "if", cond: truthy, then: left, else: right.expr };
       }
       // String concatenation: `+` with a string operand. Stringify int/nat
       // operands (Dafny NatToString, Lean toString) and join with arrayConcat
@@ -1240,30 +1272,43 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       const varName = e.scrutinee.kind === "var" ? e.scrutinee.name : undefined;
       const pathHint = varName ?? scrutineeHint(e.scrutinee);
       const wrapOpt = e.ty.kind === "optional";
-      const arms: MatchArm[] = e.cases.map(c => {
+      // Each arm keeps its lifted calls; the binder substitution reaches them too.
+      const arms: { pattern: MatchPattern; body: Stmt[]; expr: Expr }[] = e.cases.map(c => {
         const variant = decl?.variants?.find(v => v.name === c.variant);
         const fields = variant?.fields ?? [];
-        let body = lowerExpr(c.body, binds);
+        let sub = (x: Expr): Expr => x;
         if (varName && fields.length > 0) {
-          body = replaceFieldAccess(body, varName, fields, c.variant, tyBaseName(e.typeName));
-          if (isSynthArrayUnion && fields.length === 1) {
-            body = replaceVarInExpr(body, varName, matchBinder(fields[0].name, varName));
-          }
+          const binder = isSynthArrayUnion && fields.length === 1 ? matchBinder(fields[0].name, varName) : undefined;
+          sub = x => {
+            const replaced = replaceFieldAccess(x, varName, fields, c.variant, tyBaseName(e.typeName));
+            return binder ? replaceVarInExpr(replaced, varName, binder) : replaced;
+          };
         } else if (!varName && isSynthArrayUnion && fields.length === 1) {
           // Path scrutinee (e.g. `m.content`): replace structural occurrences
           // with the binder var ref.
           const binderName = matchBinder(fields[0].name, pathHint);
-          body = replaceExprInExpr(body, scrutinee, { kind: "var", name: binderName });
+          sub = x => replaceExprInExpr(x, scrutinee, { kind: "var", name: binderName });
         }
-        if (wrapOpt) body = wrapOptionalBranch(body, c.body);
-        return { pattern: buildMatchPattern(c.variant, fields, pathHint), body };
+        const lowered = lowerBranch(c.body, binds);
+        let expr = sub(lowered.expr);
+        if (wrapOpt) expr = wrapOptionalBranch(expr, c.body);
+        return { pattern: buildMatchPattern(c.variant, fields, pathHint), body: lowered.body.map(st => mapStmt(st, sub)), expr };
       });
       if (e.fallthrough) {
-        let body = lowerExpr(e.fallthrough, binds);
-        if (wrapOpt) body = wrapOptionalBranch(body, e.fallthrough);
-        arms.push({ pattern: pWild(), body });
+        const lowered = lowerBranch(e.fallthrough, binds);
+        const expr = wrapOpt ? wrapOptionalBranch(lowered.expr, e.fallthrough) : lowered.expr;
+        arms.push({ pattern: pWild(), body: lowered.body, expr });
       }
-      return { kind: "match", scrutinee: varName !== undefined ? varE(varName) : scrutinee, arms };
+      const matched = varName !== undefined ? varE(varName) : scrutinee;
+      if (binds && arms.some(a => a.body.length > 0)) {
+        const name = freshName("_matchResult" + _liftCounter++);
+        binds.push(
+          { kind: "let", name, type: e.ty, mutable: true, value: { kind: "havoc", type: e.ty } },
+          { kind: "match", scrutinee: matched, arms: arms.map(a => ({ pattern: a.pattern, body: [...a.body, { kind: "assign", target: name, value: a.expr }] })) },
+        );
+        return { kind: "var", name };
+      }
+      return { kind: "match", scrutinee: matched, arms: arms.map(a => ({ pattern: a.pattern, body: a.expr })) };
     }
   }
 }
