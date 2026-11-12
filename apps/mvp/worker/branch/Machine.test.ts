@@ -6,7 +6,7 @@
 // root commands, provisioning a person's user and the idle probe, from the test, because they need root, tmux and
 // Linux's /proc; this host has none of them.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Effect, Exit, Fiber, Logger, Metric, Ref } from "effect"
+import { Deferred, Effect, Exit, Fiber, Logger, Metric, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
@@ -703,5 +703,72 @@ describe("sleepIfIdle", () => {
     expect(await Effect.runPromise(Machine.sleepIfIdle(typing.box, 3, 1_000))).toBe("busy")
     expect(probes).toBe(2)
     expect(typing.state).toEqual({ running: true, destroyed: 0 })
+  })
+
+  test("a call admitted while it probes the last time keeps the machine awake, and its write lands", async () => {
+    // The last probe scans the processes before the call starts, and answers idle after the call was admitted.
+    const result = await observed(Effect.gen(function* () {
+      const provisioning = yield* Deferred.make<void>()
+      const provisioned = yield* Deferred.make<void>()
+      let probes = 0
+      let late: Fiber.Fiber<unknown> | undefined
+      const machine = boxOf({
+        store: memory({ generation: 3, restored: 3 }),
+        root: (argv) =>
+          !isProbe(argv)
+            ? Effect.andThen(Deferred.succeed(provisioning, undefined), Effect.as(Deferred.await(provisioned), 0))
+            : ++probes < 2
+            ? Effect.succeed(0)
+            : Effect.gen(function* () {
+              late = yield* Effect.forkDetach(tool(machine.box, { tool: "write", path: "late.txt", content: "late\n" }, 3))
+              yield* Deferred.await(provisioning)
+              return 0
+            }),
+      })
+      const outcome = yield* Machine.sleepIfIdle(machine.box, 3, 1_000)
+      yield* Deferred.succeed(provisioned, undefined)
+      return { outcome, machine, call: yield* Fiber.join(late!) }
+    }))
+    expect(result.value.outcome).toBe("busy")
+    expect(result.decisions("busy", "use_during_probe")).toBe(1)
+    expect(result.value.machine.state).toEqual({ running: true, destroyed: 0 })
+    expect(result.value.call).toMatchObject({ _tag: "Done", generation: 3 })
+    expect(readFileSync(join(result.value.machine.workdir, "late.txt"), "utf8")).toBe("late\n")
+    expect(await Effect.runPromise(Ref.get(result.value.machine.box.uses))).toEqual(Machine.unused)
+  })
+
+  test("a call that answered while it probed the last time keeps the machine awake", async () => {
+    let probes = 0
+    const machine = boxOf({
+      store: memory({ generation: 3, restored: 3, activeAt: 1 }),
+      root: (argv) =>
+        isProbe(argv) && ++probes === 2
+          ? Effect.as(tool(machine.box, { tool: "read", path: "README.md" }, 3), 0)
+          : Effect.succeed(0),
+    })
+    const result = await observed(Machine.sleepIfIdle(machine.box, 3, 1_000))
+    expect(result.value).toBe("busy")
+    expect(result.decisions("busy", "use_during_probe")).toBe(1)
+    expect(machine.state).toEqual({ running: true, destroyed: 0 })
+  })
+
+  test("work that comes while it stops the machine never runs on it, and the machine takes work once stopped", async () => {
+    const machine = boxOf({ store: memory({ generation: 3, restored: 3 }) })
+    const during: Array<unknown> = []
+    const stopping: Machine.Box<never> = {
+      ...machine.box,
+      destroy: Effect.gen(function* () {
+        during.push(yield* tool(machine.box, { tool: "write", path: "lost.txt", content: "lost\n" }, 3))
+        // A second ask that comes now doesn't end the first one's stop.
+        during.push(yield* Machine.sleepIfIdle(machine.box, 3, 1_000))
+        yield* machine.box.destroy
+      }),
+    }
+    expect(await Effect.runPromise(Machine.sleepIfIdle(stopping, 3, 1_000))).toBe("slept")
+    expect(during).toEqual([{ _tag: "Unavailable" }, "busy"])
+    expect(machine.runs.some((run) => !isProbe(run.argv))).toBe(false)
+    expect(existsSync(join(machine.workdir, "lost.txt"))).toBe(false)
+    expect(machine.state).toEqual({ running: false, destroyed: 1 })
+    expect(await Effect.runPromise(Ref.get(machine.box.uses))).toEqual(Machine.unused)
   })
 })

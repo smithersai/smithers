@@ -97,6 +97,7 @@ export const boxAt = (options: BoxOptions) => {
   const state = { running: true, destroyed: 0 }
   const box: Machine.Box<never> = {
     writing: Ref.makeUnsafe(false),
+    uses: Ref.makeUnsafe(Machine.unused),
     sessionAs: (user) =>
       Effect.sync(() => {
         sessions.push(user)

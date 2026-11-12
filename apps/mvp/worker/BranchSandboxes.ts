@@ -732,6 +732,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
       // The machine as its tools and lifecycle use it (worker/branch/Machine.ts, docs/features/sandbox-tools.md).
       const machine: Machine.Box<RuntimeContext> = {
         writing: yield* Ref.make(false),
+        uses: yield* Ref.make(Machine.unused),
         sessionAs: (name) =>
           Effect.gen(function*() {
             const placeholders = yield* environmentNow
@@ -801,14 +802,19 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           )
         )
 
-      // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts). Opening one is use.
+      // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts). Opening one is use, which
+      // a sleep never stops under; one that comes while a sleep stops the machine isn't opened, and its terminal asks again.
       const session = (terminalId: string, ownerId: string) =>
-        sessionOn({
-          box: runBox,
-          start: startFor(ownerId),
-          touch: Machine.touch(machine),
-          ensureSession: (options) => ContainerTerminal.ensureSession(box, options)
-        })(terminalId, ownerId)
+        Machine.admit(
+          machine,
+          sessionOn({
+            box: runBox,
+            start: startFor(ownerId),
+            touch: Machine.touch(machine),
+            ensureSession: (options) => ContainerTerminal.ensureSession(box, options)
+          })(terminalId, ownerId),
+          false
+        )
 
       const alive = (terminalId: string, ownerId: string) =>
         Effect.gen(function*() {

@@ -36,6 +36,8 @@ export interface Store<R> {
 export interface Box<R> {
   /** Whether a write is running: the machine takes one at a time (`tool`). */
   readonly writing: Ref.Ref<boolean>
+  /** The work the machine admitted that hasn't answered yet, and whether a sleep is stopping it (`admit`). */
+  readonly uses: Ref.Ref<Uses>
   /** A session on the running container as `user`, in /workspace. */
   readonly sessionAs: (user: string) => Effect.Effect<Sandbox.Session, never, R>
   /** Runs `argv` as `user`: its exit code. */
@@ -45,6 +47,31 @@ export interface Box<R> {
   readonly destroy: Effect.Effect<void, unknown, R>
   readonly storage: Store<R>
 }
+
+/** How many of the machine's calls, commands and terminal opens are running, and whether a sleep is stopping it. */
+export interface Uses {
+  readonly open: number
+  readonly stopping: boolean
+}
+
+/** A machine nothing uses. */
+export const unused: Uses = { open: 0, stopping: false }
+
+/**
+ * Runs `work` as use of the machine, so a sleep never stops the machine under it (`sleepIfIdle`). Work that comes
+ * while a sleep is stopping the machine doesn't run: it answers `stopped`, and its caller asks again.
+ */
+export const admit = <A, E, R>(box: Box<R>, work: Effect.Effect<A, E, R>, stopped: A): Effect.Effect<A, E, R> =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.flatMap(
+      Ref.modify(box.uses, (uses): [boolean, Uses] =>
+        uses.stopping ? [false, uses] : [true, { ...uses, open: uses.open + 1 }]),
+      (admitted) =>
+        admitted
+          ? restore(work).pipe(Effect.ensuring(Ref.update(box.uses, (uses) => ({ ...uses, open: uses.open - 1 }))))
+          : Effect.succeed(stopped),
+    )
+  )
 
 /**
  * How long the object remembers which generation started a command (`run:<call id>`): far past `sandbox/Call`'s
@@ -304,6 +331,7 @@ export const tool = <R>(
       )
     ),
     (run: Effect.Effect<ToolOutcome, never, R>) => options.call.tool === "write" ? oneWriteAtATime(box, run) : run,
+    (run) => admit(box, run, { _tag: "Unavailable" } as const),
     Effect.withSpan("sandbox.object.tool", { attributes: { "smithers.sandbox.tool": options.call.tool } }),
   )
 
@@ -408,6 +436,7 @@ export const command = <R>(
           { _tag: "Unavailable" } as const,
         )
       ),
+      (run) => admit(box, run, { _tag: "Unavailable" } as const),
       // Each operation's line says what it answered and how long the box took, so a slow start or probe shows which.
       Effect.timed,
       Effect.flatMap(([took, outcome]) =>
@@ -472,7 +501,8 @@ export const sleepDecisions = Metric.counter("smithers_sandbox_sleep_decisions",
  * Puts generation `generation` to sleep when nothing happened in it for `idleMs`: it saves the working copy, then
  * stops the container. `gone` when that generation isn't running any more; `busy` when something happened, or the
  * checkpoint couldn't be saved. A call, a terminal or terminal input that came while it probed and saved makes it
- * `busy` too, so the machine never stops under new work: after saving it reads `activeAt` and probes again.
+ * `busy` too, so the machine never stops under new work: after saving it reads `activeAt` and probes again, and after
+ * that probe it stops only when no admitted work runs (`admit`) and `activeAt` still hasn't moved.
  */
 export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): Effect.Effect<SleepOutcome, unknown, R> =>
   Effect.gen(function* () {
@@ -503,6 +533,14 @@ export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number):
     if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return yield* decision("busy", "use_during_save")
     const after = yield* box.run(probe, "root")
     if (after !== 0) return yield* probed(after, "after_save")
-    yield* box.destroy
-    return yield* decision("slept", "idle", { inactiveMs })
+    // The probe can't see work that came while it ran. Work still running, or work that came and answered since the
+    // probe before it, keeps the machine awake; from here until it stops, no new work is admitted (`admit`).
+    const stopping = yield* Ref.modify(box.uses, (uses): [boolean, Uses] =>
+      uses.open === 0 && !uses.stopping ? [true, { ...uses, stopping: true }] : [false, uses])
+    if (!stopping) return yield* decision("busy", "use_during_probe")
+    return yield* Effect.gen(function* () {
+      if ((yield* box.storage.get<number>("activeAt")) !== activeAt) return yield* decision("busy", "use_during_probe")
+      yield* box.destroy
+      return yield* decision("slept", "idle", { inactiveMs })
+    }).pipe(Effect.ensuring(Ref.update(box.uses, (uses) => ({ ...uses, stopping: false }))))
   }).pipe(Effect.withSpan("sandbox.object.sleep", { attributes: { "smithers.sandbox.generation": generation } }))
