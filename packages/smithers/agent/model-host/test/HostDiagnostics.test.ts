@@ -1,10 +1,15 @@
 import { Model, type ModelEvent } from "@smthrs/model"
 import type { AgentTurnJournal, NativeAgent } from "@smthrs/rpc"
-import { Duration, Effect, Fiber, Stream } from "effect"
+import { Clock, Duration, Effect, Fiber, Scope, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, test, vi } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
 import type { CallbackTransportObserver } from "../src/CallbackTransport.ts"
-import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
+import {
+  createHostDiagnostics as createUnscoped,
+  HOST_DIAGNOSTIC_MARKER,
+  makeHostDiagnostics
+} from "../src/HostDiagnostics.ts"
 import { createHostDiagnostics } from "./diagnostics.ts"
 import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
 import { runModelTurn } from "./fixtures/durable.ts"
@@ -20,6 +25,25 @@ const collector = () => {
     },
     phase: (event: string, phase: string) => lines.filter((line) => line.event === event && line.phase === phase)
   }
+}
+
+/** An Effect clock that records every read and sleep and otherwise stands still. */
+const recordingClock = () => {
+  const uses: Array<string> = []
+  const read = <A>(name: string, value: A) => () => {
+    uses.push(name)
+    return value
+  }
+  const clock: Clock.Clock = {
+    currentTimeMillisUnsafe: read("currentTimeMillis", 0),
+    currentTimeMillis: Effect.sync(read("currentTimeMillis", 0)),
+    currentTimeNanosUnsafe: read("currentTimeNanos", 0n),
+    currentTimeNanos: Effect.sync(read("currentTimeNanos", 0n)),
+    monotonicTimeNanosUnsafe: read("monotonicTimeNanos", 0n),
+    monotonicTimeNanos: Effect.sync(read("monotonicTimeNanos", 0n)),
+    sleep: (duration) => Effect.sync(read(`sleep ${Duration.toMillis(duration)}`, undefined))
+  }
+  return { clock, uses }
 }
 
 /** Waits, on real timers, for the recorder to write a matching record. */
@@ -61,32 +85,27 @@ describe("createHostDiagnostics", () => {
     })
   })
 
-  test("reports an unfinished operation while it is still unfinished", async () => {
-    const sink = collector()
-    let now = 0
-    const diagnostics = createHostDiagnostics({ write: sink.write, clock: () => now, pendingMillis: 1_000 })
-    vi.useFakeTimers()
-    try {
-      const settle = Effect.runSync(diagnostics.begin("chat_callback", { step: "commit", batch: 1 }))
-      now = 1_000
-      await vi.advanceTimersByTimeAsync(1_000)
-      now = 2_000
-      await vi.advanceTimersByTimeAsync(1_000)
-      expect(sink.phase("chat_callback", "pending").map((line) => line.pendingMillis)).toEqual([1_000, 2_000])
-      now = 2_500
-      settle({ status: 200 })
-      await vi.advanceTimersByTimeAsync(5_000)
-      expect(sink.phase("chat_callback", "pending")).toHaveLength(2)
-      expect(sink.phase("chat_callback", "end")[0]).toMatchObject({
-        step: "commit",
-        batch: 1,
-        status: 200,
-        elapsedMillis: 2_500
-      })
-    } finally {
-      vi.useRealTimers()
-    }
-  })
+  test("reports an unfinished operation while it is still unfinished", () =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const sink = collector()
+        const diagnostics = yield* makeHostDiagnostics({ write: sink.write, pendingMillis: 1_000 })
+        const settle = yield* diagnostics.begin("chat_callback", { step: "commit", batch: 1 })
+        yield* TestClock.adjust(1_000)
+        yield* TestClock.adjust(1_000)
+        expect(sink.phase("chat_callback", "pending").map((line) => line.pendingMillis)).toEqual([1_000, 2_000])
+        yield* TestClock.adjust(500)
+        settle({ status: 200 })
+        yield* TestClock.adjust(5_000)
+        expect(sink.phase("chat_callback", "pending")).toHaveLength(2)
+        expect(sink.phase("chat_callback", "end")[0]).toMatchObject({
+          step: "commit",
+          batch: 1,
+          status: 200,
+          elapsedMillis: 2_500
+        })
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer()))
+    ))
 
   test("past the detail limit only a slow or pending operation is recorded", () => {
     const sink = collector()
@@ -123,27 +142,35 @@ describe("createHostDiagnostics", () => {
     })
   })
 
-  test("is inert without a sink: it writes nothing, starts no timer and reads no clock", () => {
-    // The package never writes to a console or stream on its own; records
-    // reach only the sink the host composition passes.
-    const consoleError = vi.spyOn(globalThis.console, "error")
-    const clock = vi.fn(() => 0)
-    vi.useFakeTimers()
-    try {
-      const diagnostics = createHostDiagnostics({ turnId: "turn", clock, pendingMillis: 1 })
-      diagnostics.record("model_stream", "first_event", { kind: "text-delta" })
-      const settle = Effect.runSync(diagnostics.begin("chat_callback", { step: "commit" }))
-      expect(vi.getTimerCount()).toBe(0)
-      vi.advanceTimersByTime(10)
-      settle({ status: 200 })
-      createHostDiagnostics().record("host_runtime", "start")
-      expect(clock).not.toHaveBeenCalled()
-      expect(consoleError).not.toHaveBeenCalled()
-    } finally {
-      vi.useRealTimers()
-      consoleError.mockRestore()
-    }
-  })
+  test("is inert without a sink: it writes nothing and never reads or sleeps on a clock", () =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        // The package never writes to a console or stream on its own; records
+        // reach only the sink the host composition passes.
+        const consoleError = vi.spyOn(globalThis.console, "error")
+        const clock = vi.fn(() => 0)
+        const host = recordingClock()
+        try {
+          const diagnostics = createUnscoped({
+            turnId: "turn",
+            clock,
+            pendingMillis: 1,
+            runtime: { clock: host.clock, scope: yield* Scope.Scope }
+          })
+          diagnostics.record("model_stream", "first_event", { kind: "text-delta" })
+          const settle = yield* diagnostics.begin("chat_callback", { step: "commit" })
+          // A forked observation would start here and ask the clock to sleep.
+          yield* Effect.yieldNow
+          settle({ status: 200 })
+          createUnscoped().record("host_runtime", "start")
+          expect(host.uses).toEqual([])
+          expect(clock).not.toHaveBeenCalled()
+          expect(consoleError).not.toHaveBeenCalled()
+        } finally {
+          consoleError.mockRestore()
+        }
+      }).pipe(Effect.scoped)
+    ))
 })
 
 const turn: NativeAgent.StartAgentTurnRequest = {
