@@ -375,7 +375,9 @@ describe("unified control dispatch", () => {
         quiet: false
       }),
       result.config,
-      ...(expected[0] === "plan" ? [{ plansFlows: true }] : [])
+      ...(expected[0] === "plan" ? [{ plansFlows: true }] : []),
+      // Flow start eagerly loads only the requested flow body (2f0a13df).
+      ...(expected[0] === "up" ? [[expected[1]]] : [])
     )
     expect(result.codes).toEqual([])
     expect(result.stdout + result.stderr).not.toContain("private-fixture")
