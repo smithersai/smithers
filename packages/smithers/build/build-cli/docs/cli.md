@@ -37,6 +37,19 @@ else fails the command. Precedence is the flag, then the `S.Cache({ directory })
 in the workspace declaration, then `.flows`. See
 [Caching](./concepts/caching.md).
 
+## Private dependencies
+
+Targets omitted from a `Package` map remain private: patterns and queries
+cannot select them as roots. Execution gives each private target a
+`__private_` label derived from its declaring package and a canonical
+position in the complete declaration graph. The label stays the same across
+build and test plans, root selections, and traversal orders, so `ci` can
+merge compatible execution views that share private dependencies. Distinct private
+declarations keep distinct labels even when their attrs are identical.
+
+Named labels remain the package path and map key. Private execution labels
+are internal identities, not names to use in declarations or CLI selectors.
+
 ## Test lifecycle
 
 Targets can declare `lifecycle: "artifact"` with a required one-line `summary`.

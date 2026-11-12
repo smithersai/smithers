@@ -1,0 +1,19 @@
+import { Smithers as S } from "@smthrs/targets"
+export const remoteCache = undefined
+const firstInput = S.Filegroup({ srcs: [S.file("input.txt")] })
+const input = S.Filegroup({ srcs: [S.glob("*.txt")] })
+const first = S.Shell.Build({
+  shell: "mkdir -p first; echo ready > first/ready",
+  outDirs: ["first"],
+  data: [firstInput],
+  sandbox: "none"
+})
+const prepared = S.Shell.Build({
+  shell: "mkdir -p prepared; echo ready > prepared/ready",
+  data: [input],
+  outDirs: ["prepared"],
+  tools: [S.Host.bin("node")],
+  sandbox: "none"
+})
+const check = S.Shell.Test({ shell: "test -f prepared/ready", data: [prepared, input], sandbox: "none" })
+export const Package = S.Package({ targets: { first, prepared, check, suite: S.Suite({ tests: [check] }) } })

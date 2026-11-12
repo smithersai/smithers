@@ -69,6 +69,7 @@ import * as WorkspaceToolchain from "../WorkspaceToolchain.ts"
 import * as ApprovalBridge from "./ApprovalBridge.ts"
 import { collectTargets } from "./Attrs.ts"
 import * as CoreRuleSelection from "./CoreRuleSelection.ts"
+import { declarationLabels } from "./DeclarationLabels.ts"
 import { gitPathspecBatches } from "./GitPathspecBatches.ts"
 import * as HostProbes from "./HostProbes.ts"
 import { inputPackage } from "./InputPackage.ts"
@@ -279,8 +280,7 @@ interface PlanContext {
    */
   readonly hostProbes: HostProbes.HostProbes
   readonly nodes: Map<string, PackageNode>
-  readonly privateLabels: WeakMap<Target.AnyTarget, string>
-  privateCounter: number
+  readonly privateLabels: ReturnType<typeof declarationLabels>
   readonly visiting: Set<Target.AnyTarget>
   readonly ambient: { readonly platform: NodeJS.Platform; readonly [key: string]: unknown }
   /**
@@ -1172,7 +1172,7 @@ const resolveBun = async (context: PlanContext): Promise<ToolOutcome> => {
   return outcome
 }
 
-const packagePathOf = (context: PlanContext, target: Target.AnyTarget): string => {
+const packagePathOf = (context: Pick<PlanContext, "root" | "index">, target: Target.AnyTarget): string => {
   const source = Target.metadata(target).sourceFile
   if (source !== undefined) {
     const relative = Path.containedRelative(context.root, NodePath.dirname(source))
@@ -1187,12 +1187,10 @@ const labelOf = (context: PlanContext, target: Target.AnyTarget): string => {
   if (labeled !== undefined) return labeled
   const known = context.privateLabels.get(target)
   if (known !== undefined) return known
-  context.privateCounter += 1
-  const label = `//${packagePathOf(context, target)}:__private_${
-    Target.metadata(target).target.replace(/[^A-Za-z0-9]/g, "_")
-  }_${context.privateCounter}`
-  context.privateLabels.set(target, label)
-  return label
+  throw new PackageError(
+    "invalid_target_value",
+    `no declaration position for private target ${Target.metadata(target).target}`
+  )
 }
 
 /** The tree inputs a plan reads once: everything declared but a git diff. */
@@ -3903,10 +3901,7 @@ const planWithServices = async (
     probes: new Map(),
     hostProbes: HostProbes.make(),
     nodes: new Map(),
-    privateLabels: new WeakMap(
-      refresh === undefined ? [] : [...refresh.nodes.values()].map((node) => [node.declaration, node.label])
-    ),
-    privateCounter: refresh?.nodes.size ?? 0,
+    privateLabels: declarationLabels(index, (target) => packagePathOf({ root: index.root, index }, target)),
     visiting: new Set(),
     rootModes,
     inputs: options.inputs ?? {},

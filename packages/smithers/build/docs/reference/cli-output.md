@@ -161,12 +161,12 @@ frames are omitted.
 
 ```text
 //src:srcs  ran  3ms
-//src:lint  failed  1.9s  command failed (exit 1): /usr/bin/sandbox-exec -p (version 1)(allow default)(deny network*)(allow network* (local unix-socket)) /Users/williamcory/artsy/force/node_modules/.bin/biome lint --no-errors-on-unmatched
+//src:lint  failed  1.9s  command failed (exit 1): /usr/bin/sandbox-exec -p (version 1)(allow default)(deny network*)(allow network* (local unix-socket)) <workspace>/node_modules/.bin/biome lint --no-errors-on-unmatched
 of consistent names through a code base.
 
   i Use a named export instead.
 
-/Users/williamcory/artsy/force/__mocks__/@loadable/component.tsx:4:3 lint/style/useConst  FIXABLE  ━━━━━━━━━━
+<workspace>/__mocks__/@loadable/component.tsx:4:3 lint/style/useConst  FIXABLE  ━━━━━━━━━━
 …
 2 targets: 0 hit, 1 ran, 1 failed, 0 skipped (1.9s)
 code: targets_failed
@@ -180,23 +180,24 @@ retryable: false
 ▸ //src:lint  2 targets · 16 jobs
 ✓ //src:srcs               3ms
 ✗ //src:lint  failed      1.4s
-    command failed (exit 1): /usr/bin/sandbox-exec -p (version 1)(allow default)(deny network*)(allow network* (local unix-socket)) /Users/williamcory/artsy/force/node_modules/.bin/biome lint --no-errors-on-unmatched
+    command failed (exit 1): /usr/bin/sandbox-exec -p (version 1)(allow default)(deny network*)(allow network* (local unix-socket)) <workspace>/node_modules/.bin/biome lint --no-errors-on-unmatched
     of consistent names through a code base.
       • i Use a named export instead.
-    /Users/williamcory/artsy/force/__mocks__/@loadable/component.tsx:4:3 lint/style/useConst  FIXABLE  ━━━━━━━━━━
+    <workspace>/__mocks__/@loadable/component.tsx:4:3 lint/style/useConst  FIXABLE  ━━━━━━━━━━
     …
 
 Tasks: 1 ran, 1 failed, 2 total · Time: 1.9s
 ✗ 1 of 2 targets failed: //src:lint
 ```
 
-`smithers-build //src/Server:test --ui tty`, second run, answered from the cache:
+`smithers-build //src/Server:test --ui tty`, second run, answered from the cache.
+The private label's declaration-position digest is abbreviated as `<digest>`:
 
 ```text
 ▸ //src/Server:test  3 targets · 16 jobs
 ✓ //src/Server:srcs                                    1ms
-  //src/Server:__private_ImportClosure_1  closure: 3061 files, 91 packages, 0 unresolved, 0 dynamic
-✓ //src/Server:__private_ImportClosure_1               0ms
+  //src/Server:__private_ImportClosure_<digest>  closure: 3061 files, 91 packages, 0 unresolved, 0 dynamic
+✓ //src/Server:__private_ImportClosure_<digest>               0ms
 ○ //src/Server:test                       cached       0ms
 
 Tasks: 2 ran, 1 cached, 3 total · Time: 4ms
