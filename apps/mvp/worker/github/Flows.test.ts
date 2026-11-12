@@ -729,8 +729,8 @@ describe("github/Reconcile", () => {
     github.open("One", "Body one")
     github.open("Two", "Body two", "sam")
     github.comment(2, "On two", "maya")
-    const pull = github.open("A pull request", "Body")
-    github.issues.set(pull.number, { ...pull, pull: true })
+    github.push("feature", { "A.md": "a\n" })
+    github.openPull("feature", "A pull request")
     const { services: value } = await services(runtime, github)
     const first = await reconcile(value)
     expect(first.exit).toEqual(Exit.succeed({ outcome: "complete", pages: 2, issues: 3, comments: 1, skipped: 0 }))
@@ -749,6 +749,31 @@ describe("github/Reconcile", () => {
     expect(second.count(Metrics.reconcileChanged, { kind: "issue" })).toBe(2)
     expect(second.count(Metrics.reconcileChanged, { kind: "comment" })).toBe(1)
     expect((await items(runtime)).map((item) => item.title)).toContain("Missed")
+  })
+
+  test("reads a pull request's draft and merge state no webhook delivered, and only when its row is behind", async () => {
+    const github = scriptedGitHub()
+    github.push("merged", { "A.md": "a\n" })
+    github.merge(github.openPull("merged", "Merged before the App came").number)
+    github.push("draft", { "B.md": "b\n" })
+    github.openPull("draft", "A draft").draft = true
+    github.push("missed", { "C.md": "c\n" })
+    const missed = github.openPull("missed", "Its merge webhook never comes")
+    const { services: value } = await services(runtime, github)
+    const pulls = () => sql(runtime, `SELECT number, draft, merged FROM pulls ORDER BY number`)
+    const reads = () => github.seen("GET", /\/pulls\/\d+$/).length
+    expect((await reconcile(value)).exit).toMatchObject({ value: { outcome: "complete" } })
+    expect(await pulls()).toEqual([
+      { number: 1, draft: false, merged: true },
+      { number: 2, draft: true, merged: false },
+      { number: 3, draft: false, merged: false },
+    ])
+    expect(reads()).toBe(3)
+    github.merge(missed.number)
+    expect((await reconcile(value)).exit).toMatchObject({ value: { outcome: "complete" } })
+    expect(await pulls()).toContainEqual({ number: 3, draft: false, merged: true })
+    // Only the merged one was behind: the listing's boundary second lists the others again, and nothing reads them.
+    expect(reads()).toBe(4)
   })
 
   test("records whether GitHub says the repository is private, and skips what it can't read", async () => {

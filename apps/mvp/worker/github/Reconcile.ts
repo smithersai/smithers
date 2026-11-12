@@ -9,13 +9,16 @@ import type { Services } from "./Apply.ts"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
+import { pullCurrent, readPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"
 
 // `github/Reconcile { repo }` (decision 0012 §3, docs/features/issues.md#reconcile): walks GitHub's change-time listing
 // of a repository's issues, then of their comments (`GitHub.Sync` from `@smthrs/integrations`), and upserts every row
 // under the newer-than guard. Webhooks are hints: GitHub doesn't redeliver a failed delivery, so this is what makes the
-// projection whole. Each page commits its cursor in `github_sync` before the next, so a run that dies resumes where it
-// stopped. A walk that runs out of its page budget is recorded `partial`, never complete. A read that finds the sync
+// projection whole. A pull request's draft and merge state live in `pulls`, which the listing doesn't carry: one whose
+// row is missing or older than the listing's `updated_at` is read in full (worker/github/Pulls.ts) before its page
+// commits. Each page commits its cursor in `github_sync` before the next, so a run that dies resumes where it stopped
+// and reads such a pull request again. A walk that runs out of its page budget is recorded `partial`, never complete. A read that finds the sync
 // older than 5 minutes starts it (worker/github/Api.ts). `@smthrs/triggers` runs on the Cloudflare host now
 // (worker/ci/Cron.ts); moving this walk onto a cron there is its own change (decision 0012 W9). A walk that comes due after the window after its read's has also passed is
 // `superseded`: a newer read starts its own, so a backlog an outage left ends instead of walking all at once.
@@ -63,10 +66,10 @@ export const Walk = Action.make("github/Reconcile/walk", {
   retryPolicy: RECONCILE_RETRY,
 })
 
-/** `github/Reconcile`: brings a repository's issues and comments up to date with GitHub. */
+/** `github/Reconcile`: brings a repository's issues, pull requests and comments up to date with GitHub. */
 export const Reconcile = Flow.make("github/Reconcile", {
-  description: "Walk a repository's issues and comments on GitHub by change time into items and comments.",
-  capabilities: ["db:write:items", "db:write:comments", "db:write:github_sync"],
+  description: "Walk a repository's issues and comments on GitHub by change time into items, comments and pulls.",
+  capabilities: ["db:write:items", "db:write:comments", "db:write:pulls", "db:write:github_sync"],
   modelInvocable: false,
   payload: ReconcileRequest,
   success: Reconciled,
@@ -112,7 +115,7 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
         ).pipe(Effect.annotateLogs({ repoId: repository.id, ...reconciled, ...(failure === null ? {} : { failure }) }))
         return reconciled
       })
-    const token = yield* services.tokens.forInstallation(repository, "read").pipe(Effect.result)
+    const token = yield* services.tokens.forInstallation(repository, "pulls").pipe(Effect.result)
     if (token._tag === "Failure") {
       if (token.failure.reason === "app_not_installed" || token.failure.reason === "not_allowed") {
         return yield* finished({ outcome: "not_installed", pages: 0, issues: 0, comments: 0, skipped: 0 }, token.failure.reason)
@@ -155,7 +158,12 @@ export const walk = <E, R>(services: Services<E, R>, pagesPerWalk: number = PAGE
           } else {
             const issue = decodeIssue(record.payload)
             if (Option.isNone(issue)) counts.skipped += 1
-            else if (yield* Store.upsertIssue(repository.id, issue.value, record.retrievedAtMs)) counts.issues += 1
+            else {
+              if (yield* Store.upsertIssue(repository.id, issue.value, record.retrievedAtMs)) counts.issues += 1
+              if (record.kind === "pull-request" && !(yield* pullCurrent(repository.id, issue.value))) {
+                yield* readPull(repository, issue.value.number)
+              }
+            }
           }
         }
         cursor = page.cursor

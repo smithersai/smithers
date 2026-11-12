@@ -207,6 +207,19 @@ export const projectPull = (repository: Repository, number: number, fetched: Fet
     }))
   })
 
+/**
+ * Whether `pulls` holds pull request `issue` of `repoId` as of the change the issues listing reports, its `updated_at`:
+ * Reconcile reads one that is missing or older again, so a merge or draft change no webhook delivered isn't left behind.
+ */
+export const pullCurrent = (repoId: string, issue: { readonly number: number; readonly updated_at: string }) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql`
+      SELECT item_id FROM pulls
+      WHERE item_id = ${itemId(repoId, issue.number)} AND source_updated_at >= ${issue.updated_at}::timestamptz`
+    return rows.length > 0
+  })
+
 /** Reads pull request `number` and projects it: `fetchPull`, then `projectPull`. */
 export const readPull = (repository: Repository, number: number) =>
   Effect.flatMap(fetchPull(repository, number), (fetched) => projectPull(repository, number, fetched))

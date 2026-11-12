@@ -119,6 +119,7 @@ import m0118 from "./migrations/0118_scheduled_runs.ts"
 import m0119 from "./migrations/0119_flow_revision_names.ts"
 import m0120 from "./migrations/0120_ephemeral_branch_requests.ts"
 import m0121 from "./migrations/0121_triage_label_writes.ts"
+import m0122 from "./migrations/0122_reconcile_pulls.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -242,4 +243,5 @@ export const migrations = {
   "0119_flow_revision_names": m0119,
   "0120_ephemeral_branch_requests": m0120,
   "0121_triage_label_writes": m0121,
+  "0122_reconcile_pulls": m0122,
 }
