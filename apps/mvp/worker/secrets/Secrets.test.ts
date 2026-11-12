@@ -4,7 +4,7 @@
 // also searches what was recorded and stored for the value, in every form an echo may take.
 import { Action } from "@smthrs/flow"
 import { Placeholder } from "@smthrs/secrets"
-import { ConfigProvider, Effect, Option, Redacted } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -25,6 +25,7 @@ import {
   dump,
   engine,
   events,
+  KEY,
   leaks,
   member,
   REPO,
@@ -203,8 +204,7 @@ describe("PUT and DELETE /api/repos/<owner>/<name>/secrets/<NAME>", () => {
     expect(await run(Store.remove(remove))).toBe("deleted")
     expect(await run(Store.remove(remove))).toBe("repeat")
     expect((await events(runtime)).map((event) => event.action)).toEqual(["set", "delete"])
-    expect(JSON.stringify(await runtime.runPromiseExit(Effect.provide(Store.sealed(REPO_ID, "K"), database))))
-      .toContain("@smthrs/mvp/secrets/Missing")
+    expect(await run(Store.secrets(REPO_ID))).toEqual([])
   })
 
   test("a step whose database can't be reached fails as StoreUnavailable, which the engine retries", async () => {
@@ -425,6 +425,50 @@ describe("the sandbox egress", () => {
     expect([answer.status, await answer.text()]).toEqual([503, "secret"])
     expect(seen).toEqual([])
     expect(leaks(h.recorded())).toEqual([])
+  })
+
+  test("a secret replaced while a request is in flight sends its old value to its old host, never its new value", async () => {
+    // The replacement lands once the request's policy is read: deriving its placeholders is the seam.
+    let midway = async () => {}
+    const keys = Layer.effect(
+      Keys.SecretKeys,
+      Effect.map(Keys.make(KEY), (made) =>
+        Option.some({
+          ...made,
+          minter: {
+            ...made.minter,
+            derive: (scope: string, name: string) =>
+              Effect.andThen(
+                Effect.promise(() => {
+                  const replace = midway
+                  midway = async () => {}
+                  return replace()
+                }),
+                made.minter.derive(scope, name),
+              ),
+          },
+        })),
+    )
+    const h = await open({ actor: admin, upstream, keys })
+    await h.fetch(path(), put({ value: VALUE, hosts: ["api.stripe.com"] }))
+    const placeholder = await placeholderOf(h)
+    midway = async () => {
+      expect((await h.fetch(path(), put({ value: `${VALUE}-2`, hosts: ["files.stripe.com"] }))).status).toBe(202)
+      expect(await rows(runtime)).toMatchObject([{ hosts: ["files.stripe.com"] }])
+    }
+    const request = () => new Request("https://api.stripe.com/", { headers: { authorization: `Bearer ${placeholder}` } })
+
+    const answer = await h.egress(guest)(request())
+    expect(answer.status).toBe(200)
+    await answer.text()
+    expect(seen.map((sent) => [new URL(sent.url).hostname, sent.headers.authorization])).toEqual([
+      ["api.stripe.com", `Bearer ${VALUE}`],
+    ])
+    // The next request reads the replacement's policy: its value goes to its own host only.
+    const after = await h.egress(guest)(request())
+    expect([after.status, await after.text()]).toEqual([403, "host_not_allowed"])
+    expect(seen).toHaveLength(1)
+    expect(leaks(h.recorded(), [VALUE, `${VALUE}-2`])).toEqual([])
   })
 })
 

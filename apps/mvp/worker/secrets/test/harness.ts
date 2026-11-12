@@ -76,8 +76,8 @@ export interface Options {
   readonly actor?: Actor.Actor | null
   /** Where flows start: the file's engine unless set. */
   readonly starter?: Flows.FlowStarter["Service"]
-  /** Secrets on, under `KEY`, unless `false`. */
-  readonly keys?: boolean
+  /** Secrets on, under `KEY`, unless `false` or another layer. */
+  readonly keys?: false | Layer.Layer<SecretKeys>
   /** The database: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   /** The hosts a box reaches, scripted. */
@@ -118,7 +118,7 @@ export const secretsHarness = async (runtime: Runtime, starter: Flows.FlowStarte
       Effect.provideService(Metric.MetricRegistry, registry),
       Effect.provideService(ConfigProvider.ConfigProvider, config),
     )
-  const keys = options.keys === false ? SecretKeys.off : SecretKeys.layer(KEY)
+  const keys = options.keys === false ? SecretKeys.off : options.keys ?? SecretKeys.layer(KEY)
   const sessions = options.sessions ?? (options.actor === undefined || options.actor === null ? Actor.signedOut : signedIn(options.actor))
   const api = await runtime.runPromise(observed(SecretsApi.make({ id: REPO_ID })))
   const handler = HttpEffect.toWebHandler(

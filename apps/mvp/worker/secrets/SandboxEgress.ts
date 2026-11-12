@@ -20,7 +20,8 @@ import * as Store from "./Store.ts"
 // and scrubs echoes from the answer.
 //
 // Placeholders are derived per guest, a repository's branch at one generation of its machine, so a new generation's box
-// gets new ones and the old ones are refused. Values are opened per request, in memory, from the sealed rows.
+// gets new ones and the old ones are refused. Values are opened per request, in memory, from the sealed rows read with
+// the request's policy.
 //
 // Wired by the branch's `SandboxObject` (worker/BranchSandboxes.ts) when SANDBOX_SECRETS is on, off by default: it routes
 // the box's outbound HTTP and HTTPS here and writes `environment` into the box when it wakes. Off, no box reaches a
@@ -94,18 +95,23 @@ export const allowHosts = Config.String("EGRESS_ALLOW_HOSTS").pipe(
   ]),
 )
 
-/** The guest's policy: every secret of its repository with the placeholder derived for it, and `allow`. */
+/**
+ * The guest's policy: every secret of its repository with the placeholder derived for it, and `allow`; and each
+ * secret's sealed value, read with its binding, which is the only value a request under this policy opens.
+ */
 export const policyFor = (guest: Guest, keys: Keys, allow: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const scope = scopeOf(guest)
-    const secrets = yield* Effect.forEach(yield* Store.bindings(guest.repoId), (binding) =>
+    const stored = yield* Store.secrets(guest.repoId)
+    const secrets = yield* Effect.forEach(stored, (binding) =>
       Effect.map(keys.minter.derive(scope, binding.name), (placeholder): Egress.Secret => ({
         name: binding.name,
         placeholder,
         hosts: binding.hosts,
         ...(binding.methods === null ? {} : { methods: binding.methods }),
       })))
-    return { secrets, allow } satisfies Egress.Policy
+    const sealed: ReadonlyMap<string, Store.Sealed> = new Map(stored.map((secret) => [secret.name, secret]))
+    return { policy: { secrets, allow } satisfies Egress.Policy, sealed }
   })
 
 /**
@@ -116,8 +122,8 @@ export const environment = (guest: Guest) =>
   Effect.gen(function* () {
     const keys = yield* SecretKeys
     if (Option.isNone(keys)) return ""
-    const { secrets } = yield* policyFor(guest, keys.value, [])
-    return secrets.map((secret) => `${secret.name}=${secret.placeholder}\n`).join("")
+    const { policy } = yield* policyFor(guest, keys.value, [])
+    return policy.secrets.map((secret) => `${secret.name}=${secret.placeholder}\n`).join("")
   })
 
 /** The name a person's subscription goes by in a box's policy and in `secret_events`: its connection, never a value. */
@@ -151,12 +157,12 @@ export const forwardSubscription = (
     )
     if (Option.isNone(repository)) return HttpServerResponse.text("unavailable", { status: 503 })
     const policy: Egress.Policy = {
-      secrets: [...repository.value.secrets, { name, placeholder, hosts: subscription.hosts }],
+      secrets: [...repository.value.policy.secrets, { name, placeholder, hosts: subscription.hosts }],
       allow,
     }
     const decision = Egress.decide({ method: request.method, url: request.originalUrl, headers: request.headers }, policy)
     const usedIt = decision._tag === "Allowed" && decision.used.some((secret) => secret.name === name)
-    const repositoryValue = revealer(guest, keys.value, sql)
+    const repositoryValue = revealer(guest, keys.value, repository.value.sealed)
     const opened = Layer.succeed(
       Egress.Vault,
       Egress.Vault.of({
@@ -247,19 +253,19 @@ export const forwardOverflow = (guest: Guest, overflow: OverflowCredentials, all
     return yield* Egress.forward(request, policy).pipe((effect) => withUserAgent(effect, true), Effect.provide(Layer.merge(vault, audit(guest, sql))))
   }).pipe(Effect.withSpan("secrets.egress.overflow", { attributes: { "smithers.branch.id": guest.branchId } }))
 
-/** Opens one of a guest's values from its sealed row, through `sql`. */
-const revealer = (guest: Guest, keys: Keys, sql: SqlClient.SqlClient) => (name: string) =>
-  Effect.gen(function* () {
-    const sealed = yield* Store.sealed(guest.repoId, name)
-    return yield* keys.cipher.open(sealed, { id: guest.repoId, name, version: sealed.keyVersion })
-  }).pipe(
-    Effect.provideService(SqlClient.SqlClient, sql),
+/**
+ * Opens one of a guest's values from the sealed row its policy read (`policyFor`), never a row read again: a secret
+ * replaced since sends its old value to its old binding's hosts, never its new value there.
+ */
+const revealer = (guest: Guest, keys: Keys, sealed: ReadonlyMap<string, Store.Sealed>) => (name: string) =>
+  Effect.fromNullishOr(sealed.get(name)).pipe(
+    Effect.flatMap((row) => keys.cipher.open(row, { id: guest.repoId, name, version: row.keyVersion })),
     Effect.catch(() => Effect.fail(new Egress.SecretUnavailable({ name }))),
   )
 
-/** Opens a guest's values from their sealed rows, one per request, through `sql`. */
-const vault = (guest: Guest, keys: Keys, sql: SqlClient.SqlClient) =>
-  Layer.succeed(Egress.Vault, Egress.Vault.of({ reveal: revealer(guest, keys, sql) }))
+/** Opens a guest's values from the sealed rows its policy read, one per request. */
+const vault = (guest: Guest, keys: Keys, sealed: ReadonlyMap<string, Store.Sealed>) =>
+  Layer.succeed(Egress.Vault, Egress.Vault.of({ reveal: revealer(guest, keys, sealed) }))
 
 /** Records a guest's decisions in `secret_events`, through `sql`. */
 const audit = (guest: Guest, sql: SqlClient.SqlClient) =>
@@ -290,16 +296,16 @@ export const forward = (guest: Guest, allow: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const keys = yield* SecretKeys
     if (Option.isNone(keys)) return HttpServerResponse.text("off", { status: 503 })
-    const policy = yield* policyFor(guest, keys.value, allow).pipe(Effect.option)
-    if (Option.isNone(policy)) {
+    const read = yield* policyFor(guest, keys.value, allow).pipe(Effect.option)
+    if (Option.isNone(read)) {
       yield* Effect.logWarning("secrets.egress").pipe(Effect.annotateLogs({ outcome: "unavailable", errorCode: "policy" }))
       return HttpServerResponse.text("unavailable", { status: 503 })
     }
     const request = yield* HttpServerRequest.HttpServerRequest
     const sql = yield* SqlClient.SqlClient
-    return yield* Egress.forward(request, policy.value).pipe(
+    return yield* Egress.forward(request, read.value.policy).pipe(
       (effect) => withUserAgent(effect, true),
-      Effect.provide(Layer.merge(vault(guest, keys.value, sql), audit(guest, sql))),
+      Effect.provide(Layer.merge(vault(guest, keys.value, read.value.sealed), audit(guest, sql))),
     )
   }).pipe(
     Effect.withSpan("secrets.egress", {

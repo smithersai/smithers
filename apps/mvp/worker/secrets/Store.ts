@@ -1,6 +1,6 @@
 import * as ProtectedAuthority from "../ProtectedAuthority.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
-import { Data, Effect } from "effect"
+import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 
 // The secrets tables (db/migrations/0021_secrets.ts, docs/features/secrets.md#tables): the sealed values, their bindings
@@ -91,22 +91,18 @@ export const remove = (write: {
     })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
   })
 
-/** A repository's bindings, by name: never a ciphertext. */
-export const bindings = (repoId: string): Effect.Effect<ReadonlyArray<Binding>, unknown, SqlClient.SqlClient> =>
-  Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql<Binding>`SELECT name, hosts, methods FROM secrets WHERE repo_id = ${repoId} ORDER BY name`)
+/** A secret's binding and its sealed value, read together. */
+export interface Stored extends Binding, Sealed {}
 
-/** There is no such secret: it was deleted after the request's policy was read. */
-export class Missing extends Data.TaggedError("@smthrs/mvp/secrets/Missing")<{}> {}
-
-/** One secret's sealed value; `Missing` when there is none. */
-export const sealed = (repoId: string, name: string): Effect.Effect<Sealed, unknown, SqlClient.SqlClient> =>
+/**
+ * A repository's secrets, by name: each binding with its sealed value, in one statement, so a value is never paired
+ * with a binding it was not stored with when a secret is replaced or deleted concurrently.
+ */
+export const secrets = (repoId: string): Effect.Effect<ReadonlyArray<Stored>, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    Effect.flatMap(
-      sql<Sealed>`
-        SELECT ciphertext, nonce, key_version AS "keyVersion" FROM secrets WHERE repo_id = ${repoId} AND name = ${name}`,
-      (rows) => (rows[0] === undefined ? Effect.fail(new Missing()) : Effect.succeed(rows[0])),
-    ))
+    sql<Stored>`
+      SELECT name, hosts, methods, ciphertext, nonce, key_version AS "keyVersion"
+      FROM secrets WHERE repo_id = ${repoId} ORDER BY name`)
 
 /** One egress decision, as the audit keeps it: the guest's scope, the host, the method, the outcome and the names. */
 export interface Use {
