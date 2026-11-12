@@ -1500,3 +1500,11 @@ role policy (403) before any flow runs. A connected write has no read deadline: 
 virtual time, by design (writes resume by key). Mutants caught: the queue deadline at an hour; the policy's refusal
 reported unavailable. Still unreached: the participation grant after a write GitHub accepts (437) and the
 local-development broker (123).
+
+`src/core/wikiBuildDecision.vibe` (32 lines in the eighth measurement): each scan is a recursive specification that
+only the proofs used and a loop the build runs. `decisions/wiki-build` draws pages from 21 tokens (line terminators,
+headings, `VL-` numbers, dates, field keys, status words) and a start from -2 past the text, and holds every loop to
+its specification and both to the regular expression the build used before (`/^# (.+)$/m`, `/VL-[0-9]+/g`,
+`/word/i`, `/2026-[0-9]{2}-[0-9]{2}/`, `indexOf`), and `decisionLabel` to its replace. Whole dates are single tokens:
+built from four, a draw almost never made one, and a `firstDate` stepping by two survived. Mutants caught:
+`findRulings` skipping the unit after a ruling; `firstDate` stepping by two.
