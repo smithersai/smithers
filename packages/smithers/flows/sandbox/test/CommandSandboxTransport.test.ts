@@ -150,7 +150,7 @@ describe("CommandSandbox stdin transport", () => {
             spawner,
             prefix: refusal === "denied" ? [ssh] : [ssh, "x".repeat(4097)],
             workdir: join(root, refusal)
-          }).acquire(`transport-${refusal}`)
+          }).acquire(`${basename(root)}-transport-${refusal}`)
         )
         expect(error).toMatchObject({ code: "unavailable", message: expect.stringContaining("PermissionDenied") })
         expect(error.cause).toBeUndefined()
@@ -207,7 +207,7 @@ describe("CommandSandbox stdin transport", () => {
         return local.spawn(command)
       })
       const workdir = join(root, "nul")
-      const session = yield* CommandSandbox.make({ spawner, prefix: [ssh], workdir }).acquire("nul")
+      const session = yield* CommandSandbox.make({ spawner, prefix: [ssh], workdir }).acquire(`${basename(root)}-nul`)
       const before = calls
       expect(yield* Effect.flip(session.spawn("touch nul-ran\0; touch after-nul", {}))).toMatchObject({
         code: "spawn_error"

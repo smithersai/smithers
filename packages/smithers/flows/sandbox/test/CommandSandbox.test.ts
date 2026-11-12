@@ -17,7 +17,7 @@ import {
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { afterAll } from "vitest"
 import * as CommandSandbox from "../src/CommandSandbox/index.ts"
 import { userPidDirectory } from "../src/internal/pidDirectory.ts"
@@ -27,6 +27,7 @@ import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-command-sandbox-")))
+const key = (name: string, runRoot = root) => `${basename(runRoot)}-${name}`
 const pidDirectory = userPidDirectory(String(process.getuid!()))
 afterAll(() => {
   rmSync(root, { recursive: true, force: true })
@@ -96,7 +97,7 @@ describe("CommandSandbox", () => {
       const spawner = yield* ChildProcessSpawner
       const provider = CommandSandbox.make({ spawner, prefix: [], workdir: join(root, "conformance") })
       const violations = yield* SandboxConformance.check(provider, {
-        session: `${root}-conformance`,
+        session: key("conformance"),
         provides: { kill: true, ping: true }
       })
       expect(violations).toEqual([])
@@ -114,7 +115,7 @@ describe("CommandSandbox", () => {
           workdir: join(root, "joined")
         })
         const violations = yield* SandboxConformance.check(provider, {
-          session: `${root}-joined`,
+          session: key("joined"),
           provides: { kill: true, ping: true }
         })
         expect(violations).toEqual([])
@@ -133,7 +134,7 @@ describe("CommandSandbox", () => {
           joinsArguments: true,
           workdir: join(root, "q")
         })
-        const session = yield* provider.acquire("quoted")
+        const session = yield* provider.acquire(key("quoted"))
         const process = yield* session.spawn("printf '%s|' \"a b\" 'c'\"'\"'d'", {})
         expect(yield* Stream.mkString(Stream.decodeText(process.stdout))).toBe("a b|c'd|")
         expect(yield* process.exitCode).toBe(0)
@@ -146,7 +147,7 @@ describe("CommandSandbox", () => {
       Effect.gen(function*() {
         const spawner = yield* ChildProcessSpawner
         const machine = switchable(spawner, state)
-        const session = yield* machine.provider.acquire(state)
+        const session = yield* machine.provider.acquire(key(state))
         const process = yield* session.spawn("sleep 30", {})
         // Added last, so it runs first: teardown then reaches a machine that answers.
         yield* machine.restore
@@ -167,12 +168,12 @@ describe("CommandSandbox", () => {
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner
       const machine = switchable(spawner, "restarted")
-      const session = yield* machine.provider.acquire("restarted")
+      const session = yield* machine.provider.acquire(key("restarted"))
       const first = yield* session.spawn("sleep 30", {})
       const second = yield* session.spawn("sleep 30", {})
       // Both record the boot they started on before the machine restarts.
-      yield* untilStarted("restarted", 0)
-      yield* untilStarted("restarted", 1)
+      yield* untilStarted(key("restarted"), 0)
+      yield* untilStarted(key("restarted"), 1)
       machine.restart()
       for (const lost of [first, second]) {
         expect(yield* Effect.flip(lost.exitCode)).toMatchObject({
@@ -191,7 +192,7 @@ describe("CommandSandbox", () => {
       Effect.gen(function*() {
         const spawner = yield* ChildProcessSpawner
         const machine = switchable(spawner, "read-restart")
-        const session = yield* machine.provider.acquire("read-restart")
+        const session = yield* machine.provider.acquire(key("read-restart"))
         // A read of a FIFO with no writer blocks, so the read outlives beats.
         spawnSync("mkfifo", [join(root, "read-restart", "blocked")])
         spawnSync("mkfifo", [join(root, "read-restart", "blocked-too")])
@@ -217,7 +218,7 @@ describe("CommandSandbox", () => {
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner
       const machine = switchable(spawner, "read-silent")
-      const session = yield* machine.provider.acquire("read-silent")
+      const session = yield* machine.provider.acquire(key("read-silent"))
       spawnSync("mkfifo", [join(root, "read-silent", "blocked")])
       const blocked = yield* Effect.forkChild(Effect.flip(session.readFile(join(root, "read-silent", "blocked"))))
       yield* wait(200)
@@ -233,10 +234,10 @@ describe("CommandSandbox", () => {
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner
       const machine = switchable(spawner, "wiped")
-      const session = yield* machine.provider.acquire("wiped")
+      const session = yield* machine.provider.acquire(key("wiped"))
       const lost = yield* session.spawn("sleep 30", {})
-      yield* untilStarted("wiped", 0)
-      rmSync(join(pidDirectory, sessionSlug("wiped"), "0.pid.boot"))
+      yield* untilStarted(key("wiped"), 0)
+      rmSync(join(pidDirectory, sessionSlug(key("wiped")), "0.pid.boot"))
       expect(yield* Effect.flip(lost.exitCode)).toMatchObject({
         code: "unavailable",
         message: "machine restarted; the command it was running is gone"
@@ -264,12 +265,12 @@ describe("CommandSandbox", () => {
       })
       yield* Effect.addFinalizer(() => Effect.sync(release))
       const machine = switchable(spawner, "starting-restart")
-      const session = yield* machine.provider.acquire("starting-restart")
+      const session = yield* machine.provider.acquire(key("starting-restart"))
       holdNext = true
       const lost = yield* session.spawn("sleep 30", {})
       // Beats on the unchanged boot keep the unstarted command waiting.
       yield* wait(1_200)
-      expect(existsSync(join(pidDirectory, sessionSlug("starting-restart"), "0.pid"))).toBe(false)
+      expect(existsSync(join(pidDirectory, sessionSlug(key("starting-restart")), "0.pid"))).toBe(false)
       machine.restart()
       expect(yield* Effect.flip(lost.exitCode)).toMatchObject({
         code: "unavailable",
@@ -283,12 +284,12 @@ describe("CommandSandbox", () => {
       Effect.gen(function*() {
         const spawner = yield* ChildProcessSpawner
         const machine = switchable(spawner, "records-wiped")
-        const session = yield* machine.provider.acquire("records-wiped")
+        const session = yield* machine.provider.acquire(key("records-wiped"))
         const lost = yield* session.spawn("sleep 30", {})
-        yield* untilStarted("records-wiped", 0)
+        yield* untilStarted(key("records-wiped"), 0)
         // A beat sees the command started before its records vanish.
         yield* wait(1_200)
-        const pidfile = join(pidDirectory, sessionSlug("records-wiped"), "0.pid")
+        const pidfile = join(pidDirectory, sessionSlug(key("records-wiped")), "0.pid")
         renameSync(pidfile, `${pidfile}.kept`)
         renameSync(`${pidfile}.boot`, `${pidfile}.boot.kept`)
         // Put the pid back as the scope closes, so teardown signals the command.
@@ -307,9 +308,9 @@ describe("CommandSandbox", () => {
       Effect.gen(function*() {
         const spawner = yield* ChildProcessSpawner
         const machine = switchable(spawner, "adopted")
-        const session = yield* machine.provider.acquire("adopted")
+        const session = yield* machine.provider.acquire(key("adopted"))
         const lost = yield* session.spawn("sleep 30", {})
-        yield* untilStarted("adopted", 0)
+        yield* untilStarted(key("adopted"), 0)
         machine.restart()
         yield* Effect.flip(lost.exitCode)
         const fifo = join(root, "adopted", "slow")
@@ -327,7 +328,7 @@ describe("CommandSandbox", () => {
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner
       const machine = switchable(spawner, "idle-restart")
-      const session = yield* machine.provider.acquire("idle-restart")
+      const session = yield* machine.provider.acquire(key("idle-restart"))
       machine.restart()
       const after = yield* session.spawn("sleep 1.5; echo on-the-new-boot", {})
       expect(yield* Stream.mkString(Stream.decodeText(after.stdout))).toBe("on-the-new-boot\n")
@@ -338,20 +339,56 @@ describe("CommandSandbox", () => {
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner
       const workdir = join(root, "missing-cwd")
-      const session = yield* CommandSandbox.make({ spawner, prefix: [], workdir }).acquire("missing-cwd")
+      const session = yield* CommandSandbox.make({ spawner, prefix: [], workdir }).acquire(key("missing-cwd"))
       const process = yield* session.spawn("touch ran", { cwd: "no-such-directory" })
       expect(yield* process.exitCode).not.toBe(0)
       expect(existsSync(join(workdir, "ran"))).toBe(false)
       expect(existsSync("ran")).toBe(false)
     }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
 
+  it.effect("keeps concurrent test runs from wiping each other's pid and boot records", () =>
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner
+      const otherRoot = mkdtempSync(join(root, "other-run-"))
+      const name = `parallel-${basename(root)}`
+      const firstScope = yield* Scope.make()
+      const secondScope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(firstScope, Exit.void))
+      yield* Effect.addFinalizer(() => Scope.close(secondScope, Exit.void))
+      const acquire = (runRoot: string) =>
+        CommandSandbox.make({ spawner, prefix: [], workdir: join(runRoot, "parallel") }).acquire(key(name, runRoot))
+      const first = yield* Scope.provide(acquire(root), firstScope)
+      const firstChild = yield* Scope.provide(first.spawn("printf ready; exec sleep 30", {}), firstScope)
+      expect(yield* Stream.mkString(Stream.decodeText(Stream.take(firstChild.stdout, 1)))).toBe("ready")
+      const firstPids = join(pidDirectory, sessionSlug(key(name)))
+      const firstPid = readFileSync(join(firstPids, "0.pid"), "utf8")
+      const firstBoot = readFileSync(join(firstPids, "0.pid.boot"), "utf8")
+
+      const second = yield* Scope.provide(acquire(otherRoot), secondScope)
+      expect(readFileSync(join(firstPids, "0.pid"), "utf8")).toBe(firstPid)
+      expect(readFileSync(join(firstPids, "0.pid.boot"), "utf8")).toBe(firstBoot)
+      const secondChild = yield* Scope.provide(second.spawn("printf ready; exec sleep 30", {}), secondScope)
+      expect(yield* Stream.mkString(Stream.decodeText(Stream.take(secondChild.stdout, 1)))).toBe("ready")
+      const secondPids = join(pidDirectory, sessionSlug(key(name, otherRoot)))
+      const secondPid = readFileSync(join(secondPids, "0.pid"), "utf8")
+      const secondBoot = readFileSync(join(secondPids, "0.pid.boot"), "utf8")
+
+      yield* Scope.close(firstScope, Exit.void)
+      expect(existsSync(firstPids)).toBe(false)
+      expect(readFileSync(join(secondPids, "0.pid"), "utf8")).toBe(secondPid)
+      expect(readFileSync(join(secondPids, "0.pid.boot"), "utf8")).toBe(secondBoot)
+      yield* second.ping!
+      yield* Scope.close(secondScope, Exit.void)
+      expect(existsSync(secondPids)).toBe(false)
+    }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
+
   it.effect("removes the session's pidfile directory when the session closes", () =>
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner
       const provider = CommandSandbox.make({ spawner, prefix: [], workdir: join(root, "pids") })
-      const pids = `${pidDirectory}/${sessionSlug("pids")}`
+      const pids = `${pidDirectory}/${sessionSlug(key("pids"))}`
       const scope = yield* Scope.make()
-      yield* Scope.provide(provider.acquire("pids"), scope)
+      yield* Scope.provide(provider.acquire(key("pids")), scope)
       expect(existsSync(pids)).toBe(true)
       yield* Scope.close(scope, Exit.void)
       expect(existsSync(pids)).toBe(false)
@@ -367,14 +404,14 @@ describe("CommandSandbox", () => {
           prefix: [join(root, "no-such", "ssh"), "vm+developer:grant-secret@host"],
           workdir: "/w"
         })
-        const unstarted = yield* Effect.flip(Effect.scoped(missing.acquire("missing")))
+        const unstarted = yield* Effect.flip(Effect.scoped(missing.acquire(key("missing"))))
         expect(unstarted).toBeInstanceOf(ProviderError)
         expect(unstarted.code).toBe("unavailable")
         expect(unstarted.cause).toBeUndefined()
         expect(unstarted.message).not.toContain("grant-secret")
         const refused = new ProviderError({ code: "unavailable", message: "the workspace grant expired" })
         const unbuilt = CommandSandbox.make({ spawner, prefix: Effect.fail(refused), workdir: "/w" })
-        expect(yield* Effect.flip(Effect.scoped(unbuilt.acquire("unbuilt")))).toBe(refused)
+        expect(yield* Effect.flip(Effect.scoped(unbuilt.acquire(key("unbuilt"))))).toBe(refused)
       }).pipe(Effect.provide(platform)),
     30_000
   )
@@ -385,7 +422,7 @@ describe("CommandSandbox", () => {
       mkdirSync(pidDirectory, { recursive: true })
       chmodSync(pidDirectory, 0o777)
       const session = yield* CommandSandbox.make({ spawner, prefix: [], workdir: join(root, "private") }).acquire(
-        "private"
+        key("private")
       )
       expect(statSync(pidDirectory).mode & 0o777).toBe(0o700)
       chmodSync(pidDirectory, 0o777)
@@ -406,14 +443,14 @@ describe("CommandSandbox", () => {
       const other = "4294967294"
       const planted = userPidDirectory(other)
       yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(planted, { recursive: true, force: true })))
-      const refused = yield* Effect.flip(user("foreign", other).acquire("foreign"))
+      const refused = yield* Effect.flip(user("foreign", other).acquire(key("foreign")))
       expect(refused).toMatchObject({
         code: "unavailable",
         message: `env's pidfile directory ${planted} is not private to user ${other}`
       })
       expect(readdirSync(planted)).toEqual([])
       expect(existsSync(join(root, "foreign"))).toBe(false)
-      expect(yield* Effect.flip(user("nameless", "nobody").acquire("nameless"))).toMatchObject({
+      expect(yield* Effect.flip(user("nameless", "nobody").acquire(key("nameless")))).toMatchObject({
         code: "unavailable",
         message: "env reported no numeric user id"
       })
@@ -428,7 +465,7 @@ describe("CommandSandbox", () => {
         writeFileSync(join(bin, "uname"), `#!/bin/sh\necho ${name}\n`, { mode: 0o755 })
         return CommandSandbox.make({ spawner, prefix: ["env", `PATH=${bin}:/usr/bin:/bin`], workdir: join(root, name) })
       }
-      expect((yield* kernel("Linux").acquire("linux")).files).toBeDefined()
-      expect((yield* kernel("Darwin").acquire("darwin")).files).toBeUndefined()
+      expect((yield* kernel("Linux").acquire(key("linux"))).files).toBeDefined()
+      expect((yield* kernel("Darwin").acquire(key("darwin"))).files).toBeUndefined()
     }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
 })
