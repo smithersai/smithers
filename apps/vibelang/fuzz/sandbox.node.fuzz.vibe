@@ -14,7 +14,7 @@ const ORIGIN = "https://sandbox.invalid"
 const HttpInput = Schema.Struct({
   method: Schema.Literals(["GET", "POST", "DELETE"]),
   route: Schema.Literals(["read", "start", "stop", "command", "other", "bad-id", "deep"]),
-  body: Schema.Literals(["none", "garbage", "valid", "bad-op", "no-generation", "negative-generation", "no-command", "long-command"]),
+  body: Schema.Literals(["none", "garbage", "valid", "bad-op", "no-generation", "negative-generation", "no-command", "long-command", "lost"]),
   length: Schema.Literals(["true", "absent", "nan", "zero", "over"]),
   gateway: Schema.Literals(["ok", "forbidden", "stale", "unavailable", "signed-out"]),
 })
@@ -32,7 +32,8 @@ const CONVERSATIONS = ["c-1", "c-2", "bad id"]
 const OPERATIONS = ["op-0", "op-1", "op-2", "op-3", "op-4", "op-5", "bad id"]
 
 function bodyOf(kind: typeof HttpInput.Type["body"]): string | undefined {
-  if (kind === "none") return undefined
+  // `lost`: a body the client promised (16 bytes) and never sent; its stream fails.
+  if (kind === "none" || kind === "lost") return undefined
   if (kind === "garbage") return "{"
   const valid = { operationId: "op-1", generation: 1, command: "ls" }
   if (kind === "bad-op") return JSON.stringify({ ...valid, operationId: "op id" })
@@ -49,9 +50,9 @@ function expected(input: typeof HttpInput.Type, text: string | undefined): numbe
   if (input.route === "other" || input.route === "bad-id" || input.route === "deep") return 404
   if (input.route === "read") return input.method === "GET" ? failing : 404
   if (input.method !== "POST") return 404
-  const length = input.length === "true" ? (text ?? "").length : input.length === "zero" ? 0 : input.length === "over" ? 20_001 : input.length === "nan" ? Number.NaN : 0
+  const length = input.length === "true" ? (input.body === "lost" ? 16 : (text ?? "").length) : input.length === "zero" ? 0 : input.length === "over" ? 20_001 : input.length === "nan" ? Number.NaN : 0
   if (!Number.isSafeInteger(length) || length < 1 || length > 20_000) return 413
-  if (input.body === "none" || input.body === "garbage" || input.body === "bad-op" || input.body === "negative-generation" || input.body === "long-command") return 400
+  if (input.body === "none" || input.body === "lost" || input.body === "garbage" || input.body === "bad-op" || input.body === "negative-generation" || input.body === "long-command") return 400
   const refused = input.gateway === "signed-out" ? 403 : failing
   if (input.route === "start") return refused
   if (input.body === "no-generation") return 400
@@ -83,10 +84,11 @@ it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (in
   const text = bodyOf(input.body)
   let request = HttpClientRequest.make(input.method)(`${ORIGIN}${path}`)
   if (text !== undefined && input.method !== "GET") request = HttpClientRequest.bodyText(request, text)
+  if (input.body === "lost" && input.method !== "GET") request = HttpClientRequest.bodyStream(request, Stream.die("connection lost"))
   const delivered = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
   const { "content-length": _, ...headers } = delivered.headers
   // A Web Request forbids this header, so it goes on the server request a real proxy would deliver.
-  const length = input.length === "true" ? String((text ?? "").length) : input.length === "nan" ? "many" : input.length === "zero" ? "0" : input.length === "over" ? "20001" : undefined
+  const length = input.length === "true" ? String(input.body === "lost" ? 16 : (text ?? "").length) : input.length === "nan" ? "many" : input.length === "zero" ? "0" : input.length === "over" ? "20001" : undefined
   const server = delivered.modify({ headers: { ...headers, ...(length === undefined ? {} : { "content-length": length }) } })
   const response = try Effect.provideService(sandboxRequest(input.gateway === "signed-out" ? signedOutGateway : recording), HttpServerRequest.HttpServerRequest, server)
   const body = text ?? ""

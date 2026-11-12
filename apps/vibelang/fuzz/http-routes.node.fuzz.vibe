@@ -53,7 +53,8 @@ function bodyOf(input: Case): { readonly text: string; readonly valid: boolean }
 function declared(input: Case, text: string): string | undefined {
   switch (input.length) {
     case "absent": return undefined
-    case "exact": return String(encoder.encode(text).length)
+    // A body the client promised and never sent: its length is declared, its stream fails.
+    case "exact": return input.body === "unreadable" ? "16" : String(encoder.encode(text).length)
     case "zero": return "0"
     case "negative": return "-1"
     case "not-a-number": return "NaN"
