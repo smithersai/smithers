@@ -1245,6 +1245,31 @@ Coverage of this target alone hits every listed arm at seeds 20261229 and 202612
 loading, and `superseded` filed as tried. `timelineAt` of a state outside `CommitState` is a contract arm (the type
 admits none); the target calls it directly.
 
+### `src/web/markdown.vibe` and `startup.vibe`: one document and one page, chosen (eighteenth session)
+
+`web/markdown-and-reasons` draws texts, so the two runs reached blockquotes, ordered lists, continued items, a marker
+change, rulings' ids, unsafe links, a label with no visible text, a table row on the last line and rendered code only
+by some draws. `web/markdown-arms` (`fuzz/markdown-arms.fuzz.vibe`) compiles one document holding every block kind and
+every kind of link, with drawn words, in every execution; renders it as Foldkit nodes (through a one-line scene view)
+and writes it as HTML. Oracle: the block sequence; prose stops at a heading; a continued item and a ruling's id; dashes
+then numbers are two lists; quotes join; a control character, a backslash or a scheme other than http(s) leaves the
+label as text; a link label with no visible text shows its target; `|` on the last line is prose; the HTML resolves
+links and drops `javascript:`; rendered links, ids and the code block's class.
+
+No fuzz target started the main page; the browser stage did, by its draws. `web/startup` (`fuzz/startup.fuzz.vibe`)
+runs `main` over the real happy-dom window in every execution, from the unit suite's hosts (`test/support/browser.ts`,
+`heldHealth`): the address's recovery, operation and key (drawn), issues, sign-in failure and wiki page as flags, and
+none on a plain address; `?agent=mock` saved, kept and cleared by `?agent=live`; a finished tour not toured again;
+refused storage (a faulty `Window`) starting a fresh session; the tour's journal kept, continued, unreadable (started
+afresh) and refused (read once, nothing stored, the tour goes on); and a chat post in the mock, a conversation that is
+not a tour, keeping no journal. One execution takes about eight seconds, so the target has a 30-second minimum.
+
+Coverage of each target alone hits every arm the two runs left in these files, at seeds 20261232 and 20261234
+(markdown) and 20261233 and 20261235 (startup). Mutations caught (20261236): control and backslash links allowed, a
+marker change kept in one list, rendered code without its class, `?agent=live` keeping the mock, and the resume key
+dropped. `toured ? "" : pathname` given the path always is an equivalent mutant: a finished tour turns the automatic
+tour off whatever the path.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

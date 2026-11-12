@@ -1,0 +1,75 @@
+// src/web/markdown.vibe's arms that only some drawn texts reach in `web/markdown-and-reasons`: one document holding every
+// block kind and every kind of link is compiled, rendered as Foldkit nodes and written as HTML in every execution, with
+// drawn text in its words (0015, eighteenth session).
+import { it } from "@effect/vitest"
+import { scene, given, findAll, textContent, type SceneSimulation } from "foldkit/scene"
+import { compile, render, safeLink, toHtml, type MarkdownNode } from "../src/web/markdown.vibe"
+import { run, same, Finding, Text } from "./run.vibe"
+
+
+/** A Finding named `name` unless `holds`. */
+effect function check(name: string, holds: boolean) {
+  if (!holds) throw new Finding({ report: `markdown ${name}` })
+}
+
+/** The document: prose that runs until a block starts, every block kind, a list marker change, every kind of link, and a
+ *  pipe on the last line, which is prose. */
+function document(word: string): string {
+  return [
+    `# Title ${word}`,
+    "Intro line",
+    `continued ${word}`,
+    "## Next",
+    "- one",
+    `  continued ${word}`,
+    "- **VL-7.** a ruling",
+    "1. first",
+    "2. second",
+    "- after numbers",
+    `> quoted ${word}`,
+    "> more",
+    "```",
+    `code ${word}`,
+    "```",
+    "| a | b |",
+    "|---|---|",
+    "| [ok](https://example.com) | [bad](javascript:alert) |",
+    "[control](a\u0001b) [slash](a\\b) [**bold** label](/wiki/p) [** **](/empty)",
+    "| a pipe on the last line",
+  ].join("\n")
+}
+
+/** The text of a node, its children's included. */
+function text(item: MarkdownNode | string): string {
+  return typeof item === "string" ? item : item.children.map(text).join("")
+}
+
+it.live("web/markdown-arms", () => run("web/markdown-arms", Schema.Struct({ drawn: Text }), ({ drawn }) => effect {
+  // Drawn letters and spaces only, so the words hold no Markdown syntax.
+  const word = drawn.replace(/[^a-z ]/gi, "").trim() || "word"
+  const source = document(word)
+  const nodes = try Effect.try(() => compile(source))
+  try check("blocks", same(nodes.map((each) => each.tag), ["h1", "p", "h2", "ul", "ol", "ul", "blockquote", "pre", "table", "p", "p"]))
+  try check("prose stops at a heading", text(nodes[1]!) === `Intro line\ncontinued ${word}`)
+  const [first, ruling] = nodes[3]!.children as ReadonlyArray<MarkdownNode>
+  try check("continued item", text(first!) === `one continued ${word}` && ruling!.id === "vl-7")
+  try check("marker change", nodes[4]!.children.length === 2 && nodes[5]!.children.length === 1)
+  try check("quote", text(nodes[6]!) === `quoted ${word} more`)
+  const links = nodes[9]!.children.filter((each): each is MarkdownNode => typeof each !== "string" && each.tag === "a")
+  try check("links", same(links.map((each) => each.href), ["/wiki/p", "/empty"]) && text(links[0]!) === "bold label" && text(links[1]!) === "/empty")
+  try check("unsafe labels", text(nodes[9]!).startsWith("control slash ") && text(nodes[10]!) === "| a pipe on the last line" && !safeLink("a\u0001b") && !safeLink("a\\b") && !safeLink("javascript:alert"))
+  const html = try Effect.try(() => toHtml(source, (href) => `resolved:${href}`))
+  try check("html", html.includes(`href="resolved:https://example.com"`) && !html.includes("javascript") && html.includes(`id="vl-7"`))
+  // As Foldkit nodes: links keep their href and headings and rulings their ids.
+  let anchors: ReadonlyArray<string> = []
+  let ids: ReadonlyArray<string> = []
+  let pres = 0
+  try Effect.try(() => scene({ update: (model: string, _message: string) => ({ model }), view: (model: string, h) => ({ title: "", body: h.div([], render(h, model)) }) }, given(source), (simulation: SceneSimulation<string, string>) => {
+    anchors = findAll(simulation.html!, "a").map((each) => textContent(each))
+    ids = findAll(simulation.html!, "[id]").map((each) => textContent(each))
+    pres = findAll(simulation.html!, "pre.vl-code").length
+    return simulation
+  }))
+  try check("rendered", same(anchors, ["ok", "bold label", "/empty"]) && ids.length === 3 && pres === 1)
+  return true
+}))

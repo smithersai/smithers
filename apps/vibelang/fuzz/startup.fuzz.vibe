@@ -1,0 +1,129 @@
+// src/web/startup.vibe: the main page's own startup over the real happy-dom window, each path chosen in every execution
+// (the browser stage reaches them only by its draws): the address's flags with drawn values, the saved agent choice set,
+// kept and cleared, a finished tour, storage the browser refuses, and the tour journal kept, continued, unreadable,
+// and refused, and a chat post that keeps none (0015, eighteenth session). The page's window is the
+// real one; the refusing ones are injected faulty Window services (test/support/browser.ts).
+import { it } from "@effect/vitest"
+import { Runtime } from "foldkit"
+import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery } from "vibelang-runtime/experimental/platform-browser"
+import { SecureRandom } from "effect/crypto"
+import { main, page } from "../src/web/startup.vibe"
+import { heldHealth } from "../test/support/heldHealth.vibe"
+import { activeId, commandK, container, forgetTours, hasAsk, fullLocation, journalKeys, refusingJournal, refusingStorage, remove, send, setLocation, storedJournal, textOf } from "../test/support/browser.ts"
+import { run, Finding, Text } from "./run.vibe"
+
+const KEYS = ["vibelang.agent", "vibelang:toured", "vibelang:tour-sound"]
+
+/** Polls `check` every 50 ms; a Finding named `what` after `ms`. */
+effect function until(what: string, check: () => boolean, ms = 15000) {
+  const deadline = (try Clock.currentTimeMillis) + ms
+  while (!(try Effect.try(check))) {
+    if ((try Clock.currentTimeMillis) > deadline) throw new Finding({ report: `${what} within ${ms} ms` })
+    try sleep("50 millis")
+  }
+}
+
+/** A Finding named `name` unless `holds`. */
+effect function check(name: string, holds: boolean) {
+  if (!holds) throw new Finding({ report: `startup ${name}` })
+}
+
+/** Runs `main` at `address` on the page, restoring the address and the stored keys when the scope closes. */
+effect function startedAt(address: string, host: typeof page = page) {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const before = try sync(() => ({ address: fullLocation(), stored: KEYS.map((key) => window.localStorage.getItem(key)) }))
+  try addFinalizer(() => sync(() => {
+    setLocation(before.address)
+    KEYS.forEach((key, index) => { const value = before.stored[index]; if (value === null || value === undefined) window.localStorage.removeItem(key); else window.localStorage.setItem(key, value) })
+  }))
+  try Effect.try(() => { const root = node.ownerDocument.createElement("div"); root.id = "root"; node.append(root); setLocation(address) })
+  const health = try heldHealth()
+  return try Effect.provide(main(), Layer.mergeAll(host, health.layer, Layer.succeed(Clock.Clock, health.deadlineClock)))
+}
+
+/** Runs the started page until `done` holds. */
+effect function running(address: string, what: string, done: () => boolean, host: typeof page = page) {
+  const { application, flags } = try startedAt(address, host)
+  try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+  try until(what, done)
+  return flags
+}
+
+/** A host whose window is `faulty` and whose document, media queries and randomness are the page's. */
+effect function hostOver(faulty: Window) {
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  return Layer.mergeAll(
+    Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => faulty, computedStyle: style })),
+    ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
+  )
+}
+
+const length = (key: string) => storedJournal(key)?.length ?? 0
+
+/**
+ * The address's recovery, operation, key, issues, sign-in failure and wiki page become flags, and a plain address has
+ * none; ?agent=mock saves the choice, a plain load keeps it and ?agent=live clears it; a finished tour does not tour
+ * again; refused storage starts a fresh tour session. A first visit's tour keeps its journal;
+ * the next load continues it; a chat post keeps none; an unreadable journal starts the tour afresh; a refused journal is read once,
+ * stores nothing and the tour goes on.
+ */
+it.live("web/startup", () => run("web/startup", Schema.Struct({ value: Text }), ({ value }) => effect {
+  const word = encodeURIComponent(value.replace(/[^a-z0-9]/gi, "") || "k1")
+  // The address.
+  const read = try scoped(startedAt(`/wiki/index?resume-recovery=r-${word}&resume-op=read&resume-key=${word}&issues=1&sign-in=failed#usage`))
+  try check("address", read.flags.resumeRecovery === `r-${word}` && read.flags.resumeOp === "read" && read.flags.resumeKey === word && read.flags.openIssues === true && read.flags.signInFailed === true && read.flags.wiki === "/wiki/index#usage")
+  const plain = try scoped(startedAt("/"))
+  try check("plain address", !plain.flags.openIssues && !plain.flags.signInFailed && !("resumeRecovery" in plain.flags) && !("resumeOp" in plain.flags) && !("resumeKey" in plain.flags) && !("wiki" in plain.flags))
+  // The agent choice, and a finished tour.
+  const agent = try scoped(effect {
+    try startedAt("/?agent=mock")
+    const saved = try sync(() => window.localStorage.getItem("vibelang.agent"))
+    try startedAt("/")
+    const kept = try sync(() => window.localStorage.getItem("vibelang.agent"))
+    try startedAt("/?agent=live")
+    return [saved, kept, try sync(() => window.localStorage.getItem("vibelang.agent"))]
+  })
+  try check("agent choice", agent[0] === "mock" && agent[1] === "mock" && agent[2] === null)
+  const toured = try scoped(effect {
+    try acquireRelease(sync(() => window.localStorage.setItem("vibelang:toured", "1")), () => sync(() => window.localStorage.removeItem("vibelang:toured")))
+    return (try startedAt("/")).flags
+  })
+  try check("toured", toured.autoTour === false)
+  const refused = try scoped(effect {
+    const host = try hostOver(try Effect.try(refusingStorage))
+    return [(try startedAt("/?agent=mock", host)).flags, (try startedAt("/", host)).flags]
+  })
+  for (const flags of refused) try check("refused storage", flags.tutorialSession === flags.session && !flags.tourSound && !flags.resumeTour && flags.autoTour === true)
+  // The tour's journal.
+  try scoped(effect {
+    try acquireRelease(sync(forgetTours), () => sync(forgetTours))
+    const first = try scoped(running("/?agent=mock", "the first journal", () => journalKeys().length === 1))
+    const key = try sync(() => journalKeys()[0]!)
+    try check("journal key", key === `vibelang:walkthrough:tour-${first.tutorialSession}`)
+    const kept = try sync(() => length(key))
+    try scoped(running("/?agent=mock", "the journal continued", () => length(key) > kept))
+    try sync(() => window.localStorage.setItem(key, "{not json"))
+    try scoped(running("/?agent=mock", "a fresh journal", () => length(key) > 0))
+    try check("fresh journal", (try sync(() => storedJournal(key)?.[0]?.seq)) === 1)
+  })
+  // A chat post is a conversation, not a tour: the mock records it and keeps no journal.
+  try scoped(effect {
+    try acquireRelease(sync(forgetTours), () => sync(forgetTours))
+    try acquireRelease(sync(() => window.localStorage.setItem("vibelang:toured", "1")), () => sync(() => window.localStorage.removeItem("vibelang:toured")))
+    try running("/?agent=mock", "the ask button", () => hasAsk())
+    try sync(commandK)
+    try until("the palette prompt", () => activeId() === "vl-palette-prompt")
+    try sync(() => send(`What is ${word}?`))
+    try until("the mock's answer", () => textOf("[data-role='assistant'][data-done='true']") !== undefined)
+    try check("a chat post keeps no journal", (try Effect.try(() => journalKeys().length)) === 0)
+  })
+  try scoped(effect {
+    try acquireRelease(sync(forgetTours), () => sync(forgetTours))
+    const { window: refusing, refused: calls } = try Effect.try(refusingJournal)
+    const host = try hostOver(refusing)
+    try running("/?agent=mock", "a refused journal's tour", () => calls.filter((call) => call === "write").length > 2, host)
+    try check("refused journal", calls[0] === "read" && (try Effect.try(() => journalKeys().length)) === 0)
+  })
+  return true
+// Nine page startups, four of them running a tour: several seconds per execution.
+}, undefined, { minimum: "30 seconds" }))
