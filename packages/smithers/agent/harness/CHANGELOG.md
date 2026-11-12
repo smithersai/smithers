@@ -22,6 +22,10 @@
 
 ### Fixed
 
+- A completion returned for unread calls presents their results as escaped
+  untrusted data, so flow output cannot close its boundary or pose as harness
+  instructions. Transcript replay preserves the same boundary.
+
 - `CellTurn` admits a flow's declared capability as the pattern the flow
   holds. It read a declaration such as `fs:read:/app/*.txt` as one exact
   resource, which the grant `fs:read:/app/?.txt` matches, and admitted

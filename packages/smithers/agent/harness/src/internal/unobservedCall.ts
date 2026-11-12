@@ -49,6 +49,7 @@
 
 import { parse } from "@babel/parser"
 import type * as Syntax from "@babel/types"
+import { untrustedData } from "./untrustedData.ts"
 
 /**
  * How many completions one run may have handed back for unread calls.
@@ -584,6 +585,13 @@ export const find = (calls: ReadonlyArray<Settled>, source: string): ReadonlyArr
  */
 export const demand = (calls: ReadonlyArray<Unobserved>): string =>
   `${heading}:
-${calls.map((call) => `- ${call.ordinal}. ${call.flow} -> ${call.ok ? "ok" : "FAILED"}: ${call.summary}`).join("\n")}
+${
+    untrustedData(
+      calls.map((call) => `- ${call.ordinal}. ${call.flow} -> ${call.ok ? "ok" : "FAILED"}: ${call.summary}`).join(
+        "\n"
+      ),
+      "results of this frame's calls"
+    )
+  }
 
 Answer after reading the calls' output, in a reply of its own.`
