@@ -18,6 +18,7 @@ import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as SqlTimeTravelStore from "../../flows/time-travel/src/SqlTimeTravelStore.ts"
 import * as TimeTravel from "../../flows/time-travel/src/TimeTravel.ts"
+import { childEnvironment } from "./fixtures/child-environment.ts"
 import {
   answer,
   cell,
@@ -185,7 +186,7 @@ describe("agent checkpoint process recovery", () => {
       filename,
       runId
     ], {
-      env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" },
+      env: childEnvironment(),
       stdio: ["ignore", "pipe", "pipe"]
     })
     let stderr = ""
@@ -252,7 +253,7 @@ describe("agent checkpoint process recovery", () => {
               filename,
               runId,
               "recover"
-            ], { env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }, timeout: 120_000 })
+            ], { env: childEnvironment(), timeout: 120_000 })
           )
           const receipt = JSON.parse(
             recovered.stdout.split("\n").find((line) => line.startsWith("{\"status\":\"recovered\""))!

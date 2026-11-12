@@ -10,6 +10,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
+import { childEnvironment } from "./fixtures/child-environment.ts"
 import { facts, stores } from "./fixtures/step-trace-stack.ts"
 
 describe("queued cell-call trace replay on SQLite", () => {
@@ -25,7 +26,7 @@ describe("queued cell-call trace replay on SQLite", () => {
         runId,
         partial ? "partial" : "complete"
       ], {
-        env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" },
+        env: childEnvironment(),
         stdio: ["ignore", "pipe", "pipe"]
       })
       let stderr = ""
@@ -96,7 +97,7 @@ describe("queued cell-call trace replay on SQLite", () => {
                 runId,
                 partial ? "partial" : "complete",
                 "recover"
-              ], { env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }, timeout: 120_000 })
+              ], { env: childEnvironment(), timeout: 120_000 })
             )
             const receipt = JSON.parse(
               recovered.stdout.split("\n").find((line) => line.startsWith("{\"status\":\"recovered\""))!

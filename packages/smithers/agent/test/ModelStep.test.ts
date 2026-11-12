@@ -43,6 +43,7 @@ import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import * as InternalModelStep from "../src/internal/ModelStep.ts"
 import * as ModelStep from "../src/ModelStep.ts"
+import { childEnvironment } from "./fixtures/child-environment.ts"
 import {
   ask,
   dropSchema,
@@ -59,12 +60,7 @@ import {
 } from "./fixtures/model-step-stack.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/model-step-child.ts", import.meta.url))
-const childEnv = {
-  PATH: process.env.PATH,
-  TMPDIR: process.env.TMPDIR,
-  LANG: "C.UTF-8",
-  SMITHERS_MODEL_STEP_TEST_PG_PORT: String(postgres.port)
-}
+const childEnv = childEnvironment({ SMITHERS_MODEL_STEP_TEST_PG_PORT: String(postgres.port) })
 
 const step = "agent/test/model-step/answer"
 
