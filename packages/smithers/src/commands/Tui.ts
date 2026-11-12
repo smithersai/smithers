@@ -186,6 +186,17 @@ export const entry = (packageRoot: URL, bun: boolean, machine: Host = host): str
   )
 
 /**
+ * Bun reads `bunfig.toml` only from its working directory, so a checkout
+ * launch from anywhere else would skip the `vibelang/bun` preload that
+ * `apps/tui/bunfig.toml` names, and Bun would import each `.vibe` module of the
+ * source as a file path. The launch names that plugin as apps/tui resolves it.
+ */
+const bunPreload = (packageRoot: URL, machine: Host): ReadonlyArray<string> =>
+  checkout(packageRoot, machine)
+    ? ["--preload", createRequire(new URL("../../apps/tui/package.json", packageRoot)).resolve("vibelang/bun")]
+    : []
+
+/**
  * A process to start: the executable and its arguments before the TUI's own.
  *
  * @category models
@@ -227,7 +238,11 @@ export const launch = (
   }
   const bun = environment["SMITHERS_BUN"] ?? (machine.versions.bun === undefined ? undefined : machine.execPath)
   if (bun !== undefined && bun !== "") {
-    return { command: bun, args: [entry(packageRoot, true, machine)], runtime: "bun" }
+    return {
+      command: bun,
+      args: [...bunPreload(packageRoot, machine), entry(packageRoot, true, machine)],
+      runtime: "bun"
+    }
   }
   if (ffi(machine.versions.node)) {
     return {

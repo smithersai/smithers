@@ -8,6 +8,7 @@
  * that its status becomes the command's, without starting a renderer.
  */
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -149,9 +150,15 @@ describe("smthrs tui runtime choice", () => {
     const workspace = new URL("../", import.meta.url)
     const here = machine({ packageDirectory: () => "/installed/tui", exists: () => true })
     expect(Tui.checkout(workspace)).toBe(true)
+    // Bun reads apps/tui/bunfig.toml only when started there, so the launch
+    // preloads VibeLang's Bun plugin itself, as apps/tui resolves it.
     expect(Tui.launch({ SMITHERS_BUN: "/opt/bun" }, workspace, here)).toMatchObject({
       runtime: "bun",
-      args: [expect.stringMatching(/apps\/tui\/src\/main\.tsx$/)]
+      args: [
+        "--preload",
+        createRequire(new URL("../../../apps/tui/package.json", import.meta.url)).resolve("vibelang/bun"),
+        expect.stringMatching(/apps\/tui\/src\/main\.tsx$/)
+      ]
     })
     expect(Tui.launch({}, workspace, here)).toMatchObject({
       runtime: "node",
