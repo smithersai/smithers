@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite"
 import { afterAll, describe, expect, it } from "vitest"
 import { appendHistoryCommands } from "../src/cli/HistoryCommands.ts"
 import * as History from "../src/history/History.ts"
+import * as HistoryMigrations from "../src/history/Migrations.ts"
 import * as Workspace from "../src/history/Workspace.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
@@ -426,9 +427,13 @@ describe("history boundaries and refusal postconditions", () => {
       db.prepare("SELECT name FROM flows_migrations WHERE name LIKE '%applied_audits'").all().map((row) => row.name)
     editDatabase(root, "control", (db) => {
       expect(ledger(db)).toHaveLength(1)
-      // A control.db written before the history rung: no table, no ledger row.
+      // A control.db written before the history rung: no table, no ledger row,
+      // and none of the rungs added above it since, such as trigger approvals.
       db.exec("DROP TABLE smthrs_history_applied")
-      db.exec("DELETE FROM flows_migrations WHERE name LIKE '%applied_audits'")
+      db.exec("DROP TABLE control_trigger_approval_uses")
+      db.exec("DROP TABLE control_trigger_plan_bindings")
+      db.exec("DROP TABLE control_trigger_approvals")
+      db.exec(`DELETE FROM flows_migrations WHERE migration_id >= ${HistoryMigrations.set.idOffset}`)
     })
     editDatabase(root, "engine", (db) => {
       db.exec("CREATE TABLE flows_time_travel_audits(id TEXT,run_id TEXT,status TEXT)")
