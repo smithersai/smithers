@@ -8,11 +8,11 @@ import { signedOutGateway } from "../worker/SandboxHttp.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { MAX_POST_BYTES, PostBody } from "../src/core/wire.vibe"
 import { validBodyLength } from "../src/core/protocolDecision.vibe"
-import { ApproveBody, FoldBody, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type Write } from "../src/history/wire.vibe"
+import { ApproveBody, ExportBody, FoldBody, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type Write } from "../src/history/wire.vibe"
 import { run, Int, TextOrBoundary } from "./run.vibe"
 
 const Input = Schema.Struct({
-  route: Schema.Literals(["wiki", "post", "tour-control", "tour", "end-tour", "read", "events", "plan", "start", "note", "approve", "fold", "history-events", "outline", "epic", "commit", "search"]),
+  route: Schema.Literals(["wiki", "post", "tour-control", "tour", "end-tour", "read", "events", "plan", "start", "note", "approve", "fold", "export", "history-events", "outline", "epic", "commit", "search"]),
   body: Schema.Literals(["valid", "garbage", "empty", "unreadable", "oversize"]),
   length: Schema.Literals(["absent", "exact", "zero", "negative", "not-a-number", "huge"]),
   after: Schema.Literals(["absent", "zero", "three", "padded", "negative"]),
@@ -26,7 +26,7 @@ type Case = typeof Input.Type
 
 const encoder = new TextEncoder()
 const failed = new Unreachable({ what: "route" })
-const WRITE_SCHEMAS = { plan: PlanBody, start: StartBody, note: NoteBody, approve: ApproveBody, fold: FoldBody } as const
+const WRITE_SCHEMAS = { plan: PlanBody, start: StartBody, note: NoteBody, approve: ApproveBody, fold: FoldBody, export: ExportBody } as const
 
 function bodyOf(input: Case): { readonly text: string; readonly valid: boolean } {
   // HTTP's declared length of zero means no body arrives, so none is attached.
@@ -38,7 +38,7 @@ function bodyOf(input: Case): { readonly text: string; readonly valid: boolean }
     case "wiki": return { text: JSON.stringify({ page: input.text }), valid: true }
     case "post": { const value = { clientId: "c", name: "Guest", text: input.text }; return { text: JSON.stringify(value), valid: Schema.is(PostBody)(value) } }
     case "tour-control": return { text: JSON.stringify({ action: "seek", step: input.step }), valid: input.step <= 11 }
-    case "plan": case "start": case "note": case "approve": case "fold": {
+    case "plan": case "start": case "note": case "approve": case "fold": case "export": {
       const value = input.route === "plan" ? { how: "append", epic: input.text, newEpic: "", target: "", title: "t", task: "t" }
         : input.route === "start" ? { id: input.text, lane: "l" }
         : input.route === "note" ? { id: "m1", section: "tried", text: input.text }
@@ -91,8 +91,8 @@ function expectedStatus(input: Case, text: string, valid: boolean): number {
     default: {
       if (!(length >= 0 && length <= MAX_WRITE_BYTES)) return 413
       if (text.length > MAX_WRITE_BYTES) return 413
-      // A body the Worker could not read, or an empty one, is the empty object: only `fold` accepts it.
-      const usable = valid || (text === "" && input.route === "fold")
+      // A body the Worker could not read, or an empty one, is the empty object: only `fold` and `export` accept it.
+      const usable = valid || (text === "" && (input.route === "fold" || input.route === "export"))
       if (!usable) return 400
       return input.answer === "fault" ? 503 : input.answer === "refused" ? statusOf(input.refusal) : 200
     }
@@ -154,7 +154,7 @@ it.live("http/every-route", () => run("http/every-route", Input, (input) => effe
   const { method, path } = pathOf(input)
   const request = try requestOf(method, path, text, input)
   const { conversations, histories } = servicesOf(input)
-  const conversational = !["plan", "start", "note", "approve", "fold", "history-events", "outline", "epic", "commit", "search"].includes(input.route)
+  const conversational = !["plan", "start", "note", "approve", "fold", "export", "history-events", "outline", "epic", "commit", "search"].includes(input.route)
   // Conversation routes answer the same through either door.
   const response = try Effect.provideService(input.step % 2 === 0 && conversational ? handleConversations(conversations) : handle(conversations, histories), HttpServerRequest.HttpServerRequest, request)
   return response.status === expectedStatus(input, text, valid)

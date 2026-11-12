@@ -1300,3 +1300,7 @@ branch) were never asked. `storage/history-write-flows` now reads through a read
 unreachable (`history unreachable`, both) and one whose page is not the protocol (`history is not the protocol`), and
 ends with an export: with the exporter off nothing is published (an agent `forbidden`, a person `unsupported`, no
 commit written, no tip). Mutants caught: the export's refusal dropped; a non-protocol page reported as unreachable.
+
+`worker/Http.vibe` 127 (the history `export` write's body) was never routed: `http-routes` drew every write but
+`export`. It is now a route like `fold`: an empty or unread body is the empty object and accepted, any other body
+must match `ExportBody`, and its answer maps as every write's does.
