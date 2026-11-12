@@ -57,7 +57,7 @@ every nested `*/index`. `@smthrs/control/package.json` is exported.
 
 | Requirement         | Package                                       | What it does here                                                                  |
 | ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `ControlRuntime`    | this package                                  | Stores plans, tokens, grants, idempotency records, and run rows.                   |
+| `ControlRuntime`    | this package                                  | Stores plans, tokens, idempotency records, and run rows.                           |
 | `Journal`           | [`@smthrs/journal`](/api/journal)             | Records every decision beside the state change it caused, and backs `watch`.       |
 | `NotificationQueue` | [`@smthrs/notifications`](/api/notifications) | Carries a steer to the turn boundary that delivers it, and counts what is pending. |
 | `Registry`          | [`@smthrs/registry`](/api/registry)           | Answers `list({ _tag: "flows" })` with the flows this host discovered.             |

@@ -18,7 +18,7 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Effect, Layer, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { CredentialConflict, Unavailable } from "./ControlError.ts"
+import { CredentialConflict, PersistenceError } from "./ControlError.ts"
 import * as CredentialStore from "./CredentialStore.ts"
 import { sealsMatch } from "./internal/sealsMatch.ts"
 import { initial } from "./migrations/0001_control_tables.ts"
@@ -41,11 +41,18 @@ const toRecord = (row: Row): CredentialStore.SealedRecord => ({
   updatedAtMs: Number(row.updated_at_ms)
 })
 
-const unavailable = (operation: string) => (): Unavailable =>
-  new Unavailable({
-    feature: `credential storage (${operation})`,
-    ticket: "control-credential-storage"
-  })
+/**
+ * A database failure, named by the credential operation that met it and
+ * carrying the driver's failure: a locked database, a missing table and a
+ * broken constraint each stay readable from the error alone.
+ */
+const persistence =
+  (operation: "list" | "read" | "write" | "remove" | "migrate") => (cause: unknown): PersistenceError =>
+    new PersistenceError({
+      operation: `credential.${operation}`,
+      message: `Credential storage failed to ${operation}`,
+      cause
+    })
 
 /**
  * Creates the credential table if it does not exist.
@@ -53,8 +60,8 @@ const unavailable = (operation: string) => (): Unavailable =>
  * @category migrations
  * @since 0.1.0
  */
-export const migrate: Effect.Effect<void, Unavailable, SqlClient.SqlClient> = initial.pipe(
-  Effect.mapError(unavailable("migrate"))
+export const migrate: Effect.Effect<void, PersistenceError, SqlClient.SqlClient> = initial.pipe(
+  Effect.mapError(persistence("migrate"))
 )
 
 /**
@@ -65,23 +72,23 @@ export const migrate: Effect.Effect<void, Unavailable, SqlClient.SqlClient> = in
  */
 export const make: Effect.Effect<
   CredentialStore.Service,
-  Unavailable,
+  PersistenceError,
   DurableWriter | SqlClient.SqlClient
 > = Effect.gen(function*() {
   const sql = yield* Effect.service(SqlClient.SqlClient)
   const writer = yield* DurableWriter
   yield* migrate
 
-  const list = (): Effect.Effect<ReadonlyArray<CredentialStore.SealedRecord>, Unavailable> =>
+  const list = (): Effect.Effect<ReadonlyArray<CredentialStore.SealedRecord>, PersistenceError> =>
     sql<Row>`SELECT * FROM control_credentials ORDER BY name`.pipe(
       Effect.map((rows) => rows.map(toRecord)),
-      Effect.mapError(unavailable("list"))
+      Effect.mapError(persistence("list"))
     )
 
-  const read = (id: string): Effect.Effect<Option.Option<CredentialStore.SealedRecord>, Unavailable> =>
+  const read = (id: string): Effect.Effect<Option.Option<CredentialStore.SealedRecord>, PersistenceError> =>
     sql<Row>`SELECT * FROM control_credentials WHERE id = ${id}`.pipe(
       Effect.map((rows) => Option.map(Option.fromNullishOr(rows[0]), toRecord)),
-      Effect.mapError(unavailable("read"))
+      Effect.mapError(persistence("read"))
     )
 
   // One write transaction, so the version and sealed secret this writer read
@@ -89,7 +96,7 @@ export const make: Effect.Effect<
   const write = (
     record: CredentialStore.SealedRecord,
     previous?: CredentialStore.SealedRecord | undefined
-  ): Effect.Effect<void, Unavailable | CredentialConflict> =>
+  ): Effect.Effect<void, PersistenceError | CredentialConflict> =>
     writer.write(Effect.gen(function*() {
       const rows = yield* sql<Pick<Row, "version" | "ciphertext" | "nonce">>`
         SELECT version, ciphertext, nonce FROM control_credentials WHERE id = ${record.id}
@@ -123,15 +130,17 @@ export const make: Effect.Effect<
           updated_at_ms = excluded.updated_at_ms
       `
     })).pipe(
-      Effect.mapError((cause): Unavailable | CredentialConflict =>
-        cause instanceof CredentialConflict ? cause : unavailable("write")()
+      Effect.mapError((cause): PersistenceError | CredentialConflict =>
+        cause instanceof CredentialConflict ? cause : persistence("write")(cause)
       )
     )
 
-  const remove = (id: string): Effect.Effect<void, Unavailable> =>
-    sql`DELETE FROM control_credentials WHERE id = ${id}`.pipe(
+  // Through the writer like `write`, so a removal is serialized with the
+  // other writes and retried under the same contention a rotation survives.
+  const remove = (id: string): Effect.Effect<void, PersistenceError> =>
+    writer.write(sql`DELETE FROM control_credentials WHERE id = ${id}`).pipe(
       Effect.asVoid,
-      Effect.mapError(unavailable("remove"))
+      Effect.mapError(persistence("remove"))
     )
 
   return CredentialStore.make({ list, read, write, remove })
@@ -145,6 +154,6 @@ export const make: Effect.Effect<
  */
 export const layer: Layer.Layer<
   CredentialStore.CredentialStore,
-  Unavailable,
+  PersistenceError,
   DurableWriter | SqlClient.SqlClient
 > = Layer.effect(CredentialStore.CredentialStore)(make)

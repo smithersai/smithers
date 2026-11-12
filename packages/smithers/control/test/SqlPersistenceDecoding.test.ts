@@ -27,7 +27,6 @@ const start = (runtime: Service) =>
   Effect.gen(function*() {
     const { card } = yield* plan(runtime)
     const token = yield* runtime.lookupApproval(card.approval.target)
-    yield* runtime.installBulkGrant(token, card.envelope, "run")
     yield* runtime.resolveApproval(token, "approved", principal)
     const launched = yield* runtime.launch(card.planId, card.digest, card.envelope)
     if (launched._tag !== "Started") return yield* Effect.die("expected a started run")
@@ -141,7 +140,8 @@ describe("SqlControlRuntime persisted JSON decoding", () => {
       const { run: summary } = yield* start(runtime)
       yield* sql`INSERT INTO control_run_messages (run_id, kind, payload_json)
         VALUES (${summary.runId}, 'steer', 'not json')`
-      yield* runtime.deliverSignal(summary.runId, { name: "legacy", payload: null })
+      yield* sql`INSERT INTO control_run_messages (run_id, kind, payload_json)
+        VALUES (${summary.runId}, 'signal', ${JSON.stringify({ name: "legacy", payload: null })})`
       return {
         signals: yield* runtime.deliveredSignals(summary.runId),
         remaining: yield* sql`SELECT kind FROM control_run_messages WHERE run_id = ${summary.runId} ORDER BY seq`
@@ -216,25 +216,6 @@ describe("SqlControlRuntime persisted JSON decoding", () => {
     }))
 
     expectPersistence(error, "decode control_mutations.receipt_json")
-  })
-
-  it("rejects a structurally invalid grant", async () => {
-    const error = await run(Effect.gen(function*() {
-      const runtime = yield* ControlRuntime
-      const sql = yield* SqlClient.SqlClient
-      yield* sql`
-        INSERT INTO control_grants (
-          target_tag, run_id, target_id, token_id, envelope_json, scope, installed_at_ms
-        )
-        VALUES (
-          'Node', 'run-corrupt', 'grant-corrupt', 'grant-corrupt',
-          ${JSON.stringify({ capabilities: raw, flows: [], budget: {} })}, 'run', 1
-        )
-      `.pipe(Effect.orDie)
-      return yield* Effect.flip(runtime.grants)
-    }))
-
-    expectPersistence(error, "decode control_grants.envelope_json")
   })
 
   it("rejects a structurally invalid fence as a lost claim", async () => {

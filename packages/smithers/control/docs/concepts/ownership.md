@@ -111,6 +111,8 @@ So the intent is recorded durably rather than published in process:
 
 1. `requestResume(runId)` writes the delegation and returns its sequence.
    `RunSummary.pendingResume` reports that sequence while it is outstanding.
+   A run that settles while it stands owes no restart: the delegation ends
+   with the run, however the run ended.
    An approval delegation carries no `consent`: it is background intent, and
    it keeps an operator's consent that no host has taken up yet.
 2. The plane offers it to its own executor through `ControlExecutor.resumeRun`.

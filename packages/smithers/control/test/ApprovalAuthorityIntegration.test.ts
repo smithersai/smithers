@@ -56,11 +56,9 @@ for (const [name, layer] of stacks) {
                 const control = yield* Control
                 const runtime = yield* ControlRuntime
                 const target = yield* prepare(kind)
-                const before = yield* runtime.grants
                 const request = { target, scope, idempotencyKey: "decide", principal: agent }
                 const error = yield* Effect.flip(control[decision](request))
                 expect(error).toMatchObject({ _tag: "/control/Unauthorized", code: "unauthorized" })
-                expect(yield* runtime.grants).toEqual(before)
                 expect((yield* runtime.lookupApproval(target))._tag).toBe("Pending")
                 if (target._tag === "Node") {
                   expect((yield* runtime.getRun(target.runId)).status).toBe("waiting-approval")
@@ -104,7 +102,7 @@ it("uses the runtime's agent principal when an approval omits attribution", asyn
       const card = yield* control.plan({ flowId: "system/test", input: {} })
       const error = yield* Effect.flip(control.approve(card.approval))
       expect(error).toMatchObject({ code: "unauthorized" })
-      expect(yield* runtime.grants).toEqual([])
+      expect((yield* runtime.lookupApproval(card.approval.target))._tag).toBe("Pending")
     }).pipe(Effect.provide(TestControl.layer({ principal: agent })), Effect.scoped)
   )
 })

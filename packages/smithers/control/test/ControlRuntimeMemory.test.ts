@@ -52,7 +52,6 @@ const start = (runtime: Service) =>
   Effect.gen(function*() {
     const { card } = yield* runtime.plan({ flowId: "system/test", input: { suite: "memory" } })
     const token = yield* runtime.lookupApproval(card.approval.target)
-    yield* runtime.installBulkGrant(token, card.envelope, "run")
     yield* runtime.resolveApproval(token, "approved", principal)
     const launched = yield* runtime.launch(card.planId, card.digest, card.envelope)
     if (launched._tag !== "Started") return yield* Effect.die("expected a started run")
@@ -506,21 +505,6 @@ describe("ControlRuntime.layerMemory", () => {
     )
 
     expect(error).toBeInstanceOf(PlanDigestMismatch)
-  })
-
-  it("installs one grant per token however often the same token is presented", async () => {
-    const grants = await withRuntime((runtime) =>
-      Effect.gen(function*() {
-        const { card } = yield* start(runtime)
-        const token = { tokenId: card.planId, target: card.approval.target, _tag: "Pending" as const }
-        // A retried decision presents the same token; a second grant would
-        // widen what one approval installed.
-        yield* runtime.installBulkGrant(token, { ...envelope, capabilities: ["fs:write"] }, "remembered")
-        return yield* runtime.grants
-      })
-    )
-
-    expect(grants).toMatchObject([{ scope: "run", envelope: { capabilities: [] } }])
   })
 
   it("resolves a token exactly once and refuses one it never issued", async () => {

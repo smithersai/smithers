@@ -74,19 +74,6 @@ for (const [name, layer] of backends) {
         }).pipe(Effect.provide(layer), Effect.scoped)
       ))
 
-    it("keeps legacy signal history readable without turning it into retryable inbox work", () =>
-      Effect.runPromise(
-        Effect.gen(function*() {
-          const runtime = yield* ControlRuntime
-          const runId = yield* start
-          const legacy = { name: "ready", payload: { legacy: true } }
-          yield* runtime.deliverSignal(runId, legacy)
-          legacy.payload.legacy = false
-          expect(yield* runtime.deliveredSignals(runId)).toEqual([{ name: "ready", payload: { legacy: true } }])
-          expect(yield* runtime.pendingSignals).toEqual([])
-        }).pipe(Effect.provide(layer), Effect.scoped)
-      ))
-
     it("a completed predecessor cannot remove the replacement drive", () =>
       Effect.runPromise(
         Effect.gen(function*() {
@@ -127,6 +114,21 @@ for (const [name, layer] of backends) {
       ))
   })
 }
+
+it("keeps legacy signal history readable without turning it into retryable inbox work", () =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const sql = yield* SqlClient.SqlClient
+      const runId = yield* start
+      // A row the retired `control_run_messages` writer left behind. Nothing
+      // writes the table any more; what is in it stays readable.
+      yield* sql`INSERT INTO control_run_messages (run_id, kind, payload_json)
+        VALUES (${runId}, 'signal', ${JSON.stringify({ name: "ready", payload: { legacy: true } })})`
+      expect(yield* runtime.deliveredSignals(runId)).toEqual([{ name: "ready", payload: { legacy: true } }])
+      expect(yield* runtime.pendingSignals).toEqual([])
+    }).pipe(Effect.provide(durable()), Effect.scoped)
+  ))
 
 it("quarantines malformed SQL inbox rows without blocking valid commands", () =>
   Effect.runPromise(

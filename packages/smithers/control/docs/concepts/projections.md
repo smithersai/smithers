@@ -157,7 +157,7 @@ producer boundaries does not establish event coverage.
 its token registration and `control.approval.requested` event together. A
 resolved token does not emit a new pending request. Decisions add
 `{factVersion: 1, tokenId, approvalTarget}` to their existing payload and commit
-with the decision, grant, idempotency receipt, and durable node-resume intent.
+with the decision, idempotency receipt, and durable node-resume intent.
 The pure fold joins current requests and decisions by run/request identity and
 digest. Repeated requests do not reopen a decision. Legacy records retain their
 historical read contract; only legacy requests are eligible for unnamed legacy

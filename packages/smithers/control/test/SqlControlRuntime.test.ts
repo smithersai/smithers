@@ -622,13 +622,12 @@ describe("SqlControlRuntime", () => {
         const run = yield* restarted.getRun(runId)
         const plan = yield* restarted.getPlan(card.planId)
         const runs = yield* Effect.map(restarted.queryRuns({ limit: 500 }), (page) => page.items)
-        const grants = yield* restarted.grants
         const replay = yield* restarted.lookupMutation(
           mutationKey("run", `run:${card.planId}`, yield* restarted.stampPrincipal()),
           "x"
         )
         const resumed = yield* restarted.resume(runId)
-        return { run, plan, runs, grants, replay, resumed }
+        return { run, plan, runs, replay, resumed }
       }).pipe(
         Effect.provide(durable({ database: shared })),
         Effect.scoped,
@@ -640,7 +639,6 @@ describe("SqlControlRuntime", () => {
     expect(observed.plan.decision).toBe("approved")
     expect(observed.plan.decodedInput).toEqual({ suite: "durable" })
     expect(observed.runs.map((run) => run.runId)).toEqual([observed.run.runId])
-    expect(observed.grants).toHaveLength(1)
     // A replay lookup under a different fingerprint is a conflict, not a hit.
     expect(observed.replay?._tag).toBe("Conflict")
     expect(observed.resumed.status).toBe("accepted")
@@ -1140,19 +1138,14 @@ describe("SqlControlRuntime", () => {
           yield* Effect.void.pipe(Effect.forkChild({ startImmediately: true }))
         ).pipe(Effect.flip)
         const missingSignal = yield* runtime.deliveredSignals("run-absent").pipe(Effect.flip)
-        const missingSignalWrite = yield* runtime.deliverSignal("run-absent", {
-          name: "missing",
-          payload: null
-        }).pipe(Effect.flip)
         const badFence = yield* runtime.writeStatus("run-absent", "not json", "running").pipe(Effect.flip)
-        return { missingFlow, missingRun, missingSignal, missingSignalWrite, badFence }
+        return { missingFlow, missingRun, missingSignal, badFence }
       }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
     )
 
     expect(observed.missingFlow._tag).toBe("/control/FlowNotFound")
     expect(observed.missingRun).toBeInstanceOf(RunNotFound)
     expect(observed.missingSignal).toBeInstanceOf(RunNotFound)
-    expect(observed.missingSignalWrite).toBeInstanceOf(RunNotFound)
     expect(observed.badFence).toBeInstanceOf(RunNotFound)
   })
 

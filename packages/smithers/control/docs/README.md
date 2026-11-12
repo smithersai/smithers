@@ -111,7 +111,7 @@ listing, and a watch, with no database and no engine.
 `Control` keeps its promises through four ports, and a host chooses an
 implementation of each:
 
-- `ControlRuntime` is the persistence port: plans, approval tokens, grants,
+- `ControlRuntime` is the persistence port: plans, approval tokens,
   idempotency records, and the fenced run rows. `ControlRuntime.layerMemory` is
   the deterministic in-memory one; `SqlControlRuntime.layer` is the durable one
   over a SQL database and the fenced run store.

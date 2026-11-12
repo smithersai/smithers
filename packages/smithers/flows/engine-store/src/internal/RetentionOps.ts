@@ -264,9 +264,9 @@ export const companionStreams: ReadonlyArray<string> = [RunStore.companionStream
  * `flows_journal_generations` is created by `SqlJournal.layer` and the
  * time-travel migrations rather than the ladder: a generation row left behind
  * makes `StepCacheFold.rebuild` read the file as rewound and clear the whole
- * step cache. The control tables hold every signal, approval token, grant and
- * resume request sent to a run, with their payloads and principals; plan-level
- * tokens and grants store `run_id = ''`, which never names a run.
+ * step cache. The control tables hold every signal, approval token and resume
+ * request sent to a run, with their payloads and principals; plan-level tokens
+ * store `run_id = ''`, which never names a run.
  * `flows_time_travel_receipts` is reached through its audit rather than listed
  * here because the upstream table has no run column: its `audit_id` points to
  * `flows_time_travel_audits.id`, whose row carries `run_id`.
@@ -290,7 +290,6 @@ export const runScopedTables: ReadonlyArray<RunScopedTable> = [
   { table: "flows_time_travel_edges", column: "child_run_id", ladder: false },
   { table: "control_signal_commands", column: "run_id", ladder: false },
   { table: "control_tokens", column: "run_id", ladder: false },
-  { table: "control_grants", column: "run_id", ladder: false },
   { table: "control_run_resumes", column: "run_id", ladder: false },
   { table: "control_run_messages", column: "run_id", ladder: false },
   { table: "control_runs", column: "run_id", ladder: false }

@@ -166,7 +166,7 @@ describe("deciding an in-run approval nobody here can drive", () => {
     expect(resumed).toBeGreaterThan(approved)
   })
 
-  it("records the same delegation for a denial, and installs no grant", async () => {
+  it("records the same delegation for a denial", async () => {
     const observed = await run(Effect.gen(function*() {
       const control = yield* Control
       const runtime = yield* ControlRuntime
@@ -176,14 +176,11 @@ describe("deciding an in-run approval nobody here can drive", () => {
       return {
         runId,
         after: yield* runtime.getRun(runId),
-        grants: yield* runtime.grants,
         kinds: yield* kinds(runId)
       }
     }))
 
-    // A denial installs no grant for the request it denied; the resumed
-    // attempt reads the resolved token and settles with the refusal.
-    expect(observed.grants.map((grant) => grant.tokenId)).not.toContain("ask:denied")
+    // The resumed attempt reads the resolved token and settles with the refusal.
     expect(observed.after.pendingResume).toBeGreaterThan(0)
     const denied = observed.kinds.indexOf("control.approval.denied")
     const resumed = observed.kinds.indexOf("control.run.resumed")
@@ -304,10 +301,14 @@ describe("deciding an in-run approval on a run that has already settled", () => 
       const fence = yield* runtime.claimFence(runId)
       yield* runtime.writeStatus(runId, fence, "completed")
       const again = yield* control.approve({ target, scope: "run", idempotencyKey: key })
-      return { runId, first, again }
+      return { runId, first, again, after: yield* runtime.getRun(runId), pending: yield* runtime.pendingResumes }
     }))
 
     expect(observed.first._tag).toBe("Accepted")
     expect(observed.again).toEqual({ _tag: "Terminal", runId: observed.runId, status: "completed" })
+    // The delegation the decision recorded ended with the run: a finished run
+    // owes no restart, however it finished, so nothing reports one.
+    expect(observed.after.pendingResume).toBeUndefined()
+    expect(observed.pending).toEqual([])
   })
 })

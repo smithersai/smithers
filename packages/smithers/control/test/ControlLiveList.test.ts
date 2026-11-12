@@ -813,13 +813,12 @@ describe("ControlLive mutations", () => {
     expect(observed.delivered.map((signal) => signal.payload)).toEqual([{ principal: "alice" }])
   })
 
-  it("denies a plan without installing a grant and refuses to start it afterwards", async () => {
+  it("denies a plan and refuses to start it afterwards", async () => {
     const observed = await run(Effect.gen(function*() {
       const control = yield* Control
       const runtime = yield* ControlRuntime
       const card = yield* control.plan({ flowId: "system/test", input: { suite: "denied" } })
       const receipt = yield* control.deny({ ...card.approval, idempotencyKey: "deny:one" })
-      const grants = yield* runtime.grants
       const stored = yield* runtime.getPlan(card.planId)
       const started = yield* Effect.flip(control.run({
         _tag: "Plan",
@@ -828,12 +827,10 @@ describe("ControlLive mutations", () => {
         envelope: card.envelope,
         idempotencyKey: "run:denied"
       }))
-      return { receipt, grants, stored, started }
+      return { receipt, stored, started }
     }))
 
     expect(observed.receipt).toEqual({ _tag: "Accepted", receiptId: "deny:one" })
-    // Only an approval installs an envelope; a denial installs nothing.
-    expect(observed.grants).toEqual([])
     expect(observed.stored.decision).toBe("denied")
     expect(observed.started).toBeInstanceOf(PlanDenied)
     expect((observed.started as PlanDenied).planId).toBe(observed.stored.card.planId)

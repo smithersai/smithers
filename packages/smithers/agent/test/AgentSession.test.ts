@@ -644,7 +644,7 @@ const yieldTimes = (times: number): Effect.Effect<void> =>
 interface Outcome {
   readonly runId: string
   readonly requestedQuestion: string
-  readonly grantTokens: ReadonlyArray<string>
+  readonly approvals: number
   readonly agentTrail: ReadonlyArray<JournalEvent.Entry>
   /**
    * How many times the run was claimed for resume, which is how many
@@ -745,13 +745,12 @@ const drive = (
       )
     }
 
-    const grants = yield* runtime.grants
     yield* journal.flush
     const page = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 10_000 })
     return {
       runId,
       requestedQuestion: requestedPayload.question,
-      grantTokens: grants.map((grant) => grant.tokenId),
+      approvals: page.entries.filter((entry) => entry.eventType === "control.approval.approved").length,
       agentTrail: page.entries.filter((entry) =>
         entry.eventType.startsWith("control.agent.") || entry.eventType === "control.run.failed"
       ),
@@ -1626,9 +1625,9 @@ describe("AgentSession", () => {
     // and its resumed attempt.
     expect(notes).toEqual(["frame zero note"])
     // The in-run approval was requested with the question the cell asked, and
-    // approving it installed the grant the resumed ask read.
+    // approving it resolved the token the resumed ask read.
     expect(outcome.requestedQuestion).toBe("publish the log?")
-    expect(outcome.grantTokens.some((token) => token.startsWith(`ask/${outcome.runId}/`))).toBe(true)
+    expect(outcome.approvals).toBe(1)
     expect(outcome.agentTrail.length).toBeGreaterThan(0)
     expect(outcome.agentTrail.every((entry) => typeof (entry.payload as { readonly at?: unknown }).at === "number"))
       .toBe(true)
@@ -1893,9 +1892,9 @@ describe("AgentSession", () => {
       }).pipe(Effect.scoped)
     )
 
-    // The denial resolved the token without installing a grant, so the
-    // resumed ask answered `denied` and the run still completed.
-    expect(outcome.grantTokens.some((token) => token.startsWith("ask/"))).toBe(false)
+    // The denial resolved the token without approving it, so the resumed ask
+    // answered `denied` and the run still completed.
+    expect(outcome.approvals).toBe(0)
     expect(notes).toEqual(["frame zero note"])
   })
 

@@ -139,6 +139,11 @@ Operation `watch` means a journal read failed while serving a watch.
 Operation `credential.open` means a stored credential did not open: its nonce
 is malformed, or its ciphertext failed authentication because the key is not
 the one that sealed it, its metadata changed, or its bytes were tampered with.
+Operations `credential.list`, `credential.read`, `credential.write`,
+`credential.remove` and `credential.migrate` mean `SqlCredentialStore` could
+not reach its table: the database is locked, the table is missing or
+half-migrated, or the row broke a constraint. `cause` carries the driver's
+failure.
 
 ### `TransportError` (`transport_error`)
 

@@ -5,7 +5,7 @@
  * The inventory lives in `@smthrs/engine-store`, which cannot see this
  * package's tables, so the guard that pins it against the catalog runs here.
  * A table that names a run and is in none of the sets below is a table
- * retention leaks forever: a collected run's signals, approval tokens, grants
+ * retention leaks forever: a collected run's signals, approval tokens
  * and resume requests stayed with their payloads and principals, and its
  * journal generation row made every later step-cache rebuild clear the cache.
  */
@@ -57,20 +57,16 @@ const seedRun = (runId: string, finishedAtMs: number) =>
         state: "delivered"
       })
     }`
-    for (const table of ["control_tokens", "control_grants"]) {
-      const columns = table === "control_tokens"
-        ? { target_json: "{}", resolved: 1 }
-        : { envelope_json: "{}", scope: "once", installed_at_ms: 0 }
-      yield* sql`INSERT INTO ${sql.unsafe(table)} ${
-        sql.insert({
-          target_tag: "Node",
-          run_id: runId,
-          target_id: `node-${runId}`,
-          token_id: `node-${runId}`,
-          ...columns
-        })
-      }`
-    }
+    yield* sql`INSERT INTO control_tokens ${
+      sql.insert({
+        target_tag: "Node",
+        run_id: runId,
+        target_id: `node-${runId}`,
+        token_id: `node-${runId}`,
+        target_json: "{}",
+        resolved: 1
+      })
+    }`
     yield* sql`INSERT INTO control_run_resumes ${sql.insert({ run_id: runId, requested_seq: 0, requested_at_ms: 0 })}`
     yield* sql`INSERT INTO flows_journal_generations ${sql.insert({ run_id: runId, generation: 1, after_seq: -1 })}`
   })
@@ -79,7 +75,6 @@ const runKeyed = [
   "control_runs",
   "control_signal_commands",
   "control_tokens",
-  "control_grants",
   "control_run_resumes",
   "flows_journal_generations"
 ] as const

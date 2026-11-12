@@ -375,15 +375,15 @@ terminal transition, and translates conflicts into typed failures.
 
 ### Service
 
-| Group             | Members                                                                                                                                                                                             |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                                                 |
-| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`, `installBulkGrant(token, envelope, scope)`, `grants` |
-| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                                                |
-| Signal history    | `deliverSignal(runId, signal)`, `deliveredSignals(runId)`                                                                                                                                           |
-| Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                                     |
-| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)`                     |
-| Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                                       |
+| Group             | Members                                                                                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                             |
+| Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`                                   |
+| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                            |
+| Signal history    | `deliveredSignals(runId)`                                                                                                                                                       |
+| Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                 |
+| Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)` |
+| Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                   |
 
 `queryRuns` accepts `RunQuery`: optional `flowId`, `status`, `terminal`,
 `parentRunId`, `lineageId`, `since` (inclusive creation epoch ms), `until`
@@ -444,21 +444,19 @@ Use `requireApproved` to enforce this distinction. A registration that disagrees
 with the stored digest or envelope is refused exactly as `lookupApproval`
 refuses it. Terminal decisions carry `decisionPrincipal` and `decidedAt`;
 `Approved` also carries `scope`. The low-level `resolveApproval` defaults scope
-to `once`; when installing a wider grant, pass that same scope explicitly.
+to `once`; when approving a wider scope, pass that scope explicitly.
 `Control.approve` does this automatically. Resolution checks the owning
-`ApprovalAuthority` again and may fail with `Unauthorized`; it does not install
-a grant. `installBulkGrant` is a trusted storage port, not an authorization API.
+`ApprovalAuthority` again and may fail with `Unauthorized`.
 
 For a new decision, authenticate the principal and call `authorizeApproval`
 before target reads or receipt replay. Then call `lookupApproval`,
-`resolveApproval` exactly once with an authority recheck, `installBulkGrant` only
-on approval, and journal the decision. Commit the decision, grant, journal entry,
-receipt, and any node resume delegation atomically. Resolution must not require
-an installed grant or a flushed journal decision.
+`resolveApproval` exactly once with an authority recheck, and journal the
+decision. Commit the decision, journal entry, receipt, and any node resume
+delegation atomically. Resolution must not require a flushed journal decision.
 
 Migration 6004 preserves legacy rows. Unknown old terminal decisions are
 refused with `PersistenceError`; pending rows remain pending. Preserve the old
-database and start a new run/request instead of inferring approval from a grant.
+database and start a new run/request instead of inferring approval.
 
 `requestResume` returns the durable sequence `clearResume` checks, so a resume
 requested while one is being taken up is not lost with it.
@@ -469,7 +467,6 @@ requested while one is being taken up is not lost with it.
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `StoredPlan`     | `{ card: PlanCard; decodedInput: unknown; decision: "pending" \| "approved" \| "denied" }`                                                                                                                                                                                |
 | `ApprovalToken`  | `{ tokenId: string; target: ApprovalTarget } & ApprovalDecision`; `_tag: "Pending"`, or `_tag: "Approved"` with principal/time/scope, or `_tag: "Denied"` with principal/time                                                                                             |
-| `BulkGrant`      | `{ tokenId: string; envelope: Envelope; scope: GrantScope; installedAt: number }`                                                                                                                                                                                         |
 | `LaunchResult`   | `{ _tag: "Started"; receipt; run }` or `{ _tag: "Parked"; receipt }`                                                                                                                                                                                                      |
 | `PlanOutcome`    | `{ card: PlanCard; created: boolean }`. `created` is what lets `plan` journal one creation per plan rather than one per retry.                                                                                                                                            |
 | `MutationRecord` | `{ fingerprint: string; receipt: Receipt }`                                                                                                                                                                                                                               |
@@ -912,14 +909,14 @@ The credential boundary. Only a `CredentialRef` crosses it. See
 | `makeNoop`      | function          | `() => Credential`. Every operation fails `Unavailable`.                                                                                 |
 | `layerNoop`     | layer             | `Layer<Credential>`                                                                                                                      |
 
-| Operation | Signature                                                                                                                                                                       |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list`    | `() => Effect<ReadonlyArray<CredentialRef>, Unavailable \| Unauthorized>`                                                                                                       |
-| `get`     | `(id: string) => Effect<CredentialRef, Unavailable \| Unauthorized>`                                                                                                            |
-| `create`  | `({ id, name, secret: Redacted<string> }) => Effect<CredentialRef, Unavailable \| Unauthorized \| CredentialConflict>`                                                          |
-| `resolve` | `(reference: CredentialRef) => Effect<Redacted<string>, Unavailable \| Unauthorized \| PersistenceError>`                                                                       |
-| `rotate`  | `(reference: CredentialRef, secret: Redacted<string>, options?: { expected? }) => Effect<CredentialRef, Unavailable \| Unauthorized \| CredentialConflict \| PersistenceError>` |
-| `revoke`  | `(reference: CredentialRef) => Effect<void, Unavailable \| Unauthorized>`                                                                                                       |
+| Operation | Signature                                                                                                                                                                                       |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list`    | `() => Effect<ReadonlyArray<CredentialRef>, Unavailable \| Unauthorized \| PersistenceError>`                                                                                                   |
+| `get`     | `(id: string) => Effect<CredentialRef, Unavailable \| Unauthorized \| PersistenceError>`                                                                                                        |
+| `create`  | `({ id, name, secret: Redacted<string> }) => Effect<CredentialRef, Unavailable \| Unauthorized \| CredentialConflict \| InvalidInput \| PersistenceError>`                                      |
+| `resolve` | `(reference: CredentialRef) => Effect<Redacted<string>, Unavailable \| Unauthorized \| PersistenceError>`                                                                                       |
+| `rotate`  | `(reference: CredentialRef, secret: Redacted<string>, options?: { expected? }) => Effect<CredentialRef, Unavailable \| Unauthorized \| CredentialConflict \| InvalidInput \| PersistenceError>` |
+| `revoke`  | `(reference: CredentialRef) => Effect<void, Unavailable \| Unauthorized \| PersistenceError>`                                                                                                   |
 
 `authorize` defaults to allowing every operation, which is correct for a
 single-principal local process. A reference is authenticated on every
@@ -936,6 +933,9 @@ operation, so a forged or stale one is refused.
 | `makeMemory`            | function        | `() => Service`. Process-local and browser-safe.               |
 | `layerMemory`           | layer           | `Layer<CredentialStore>`                                       |
 | `makeNoop`, `layerNoop` | function, layer | Every operation fails `Unavailable`. Accept partial overrides. |
+
+Every operation can fail `Unavailable` (no store) or `PersistenceError` (a
+store that failed); `write` can also fail `CredentialConflict`.
 
 `write` commits `record` only if the stored version is `record.version - 1`
 and, given `previous`, the stored ciphertext and nonce are still `previous`'s;
@@ -958,11 +958,11 @@ reopens that race. Plaintext never reaches this boundary.
 
 ## SqlCredentialStore
 
-| Export    | Kind   | Signature                                                                        |
-| --------- | ------ | -------------------------------------------------------------------------------- |
-| `migrate` | effect | `Effect<void, Unavailable, SqlClient>`. Creates `control_credentials` if absent. |
-| `make`    | effect | `Effect<CredentialStore.Service, Unavailable, DurableWriter \| SqlClient>`       |
-| `layer`   | layer  | `Layer<CredentialStore, Unavailable, DurableWriter \| SqlClient>`                |
+| Export    | Kind   | Signature                                                                             |
+| --------- | ------ | ------------------------------------------------------------------------------------- |
+| `migrate` | effect | `Effect<void, PersistenceError, SqlClient>`. Creates `control_credentials` if absent. |
+| `make`    | effect | `Effect<CredentialStore.Service, PersistenceError, DurableWriter \| SqlClient>`       |
+| `layer`   | layer  | `Layer<CredentialStore, PersistenceError, DurableWriter \| SqlClient>`                |
 
 The read and the compare-and-set write run in one transaction, so two
 concurrent rotations serialize.

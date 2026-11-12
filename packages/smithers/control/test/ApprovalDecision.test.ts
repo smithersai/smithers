@@ -249,15 +249,13 @@ describe("approval decisions are not merely resolutions", () => {
         const error = yield* Effect.flip(control.approve(input))
         expect(error._tag).toBe("/control/PersistenceError")
         expect(yield* runtime.registerApproval(target)).toEqual(token)
-        expect((yield* runtime.grants).filter((grant) => grant.tokenId === token.tokenId)).toEqual([])
         expect(yield* runtime.pendingResumes).toEqual([])
         yield* journal.flush
         expect((yield* journal.entries({ runId: JournalEvent.RunId.make(target.runId), limit: 100 })).entries
           .filter((entry) => entry.eventType.startsWith("control.approval."))).toEqual([])
         yield* TestDatabase.dropTrigger(sql, "refuse_node_decision")
         expect((yield* control.approve(input))._tag).toBe("Accepted")
-        expect((yield* runtime.registerApproval(target))._tag).toBe("Approved")
-        expect((yield* runtime.grants).filter((grant) => grant.tokenId === token.tokenId)).toHaveLength(1)
+        expect(yield* runtime.registerApproval(target)).toMatchObject({ _tag: "Approved", scope: "remembered" })
       }).pipe(Effect.provide(durable()), Effect.scoped)
     )
   })

@@ -122,7 +122,6 @@ const startControlFlow = (flowId: string) =>
     const runtime = yield* ControlRuntime
     const { card } = yield* runtime.plan({ flowId, input: { suite: "ports" } })
     const token = yield* runtime.lookupApproval(card.approval.target)
-    yield* runtime.installBulkGrant(token, card.envelope, "run")
     yield* runtime.resolveApproval(token, "approved", yield* runtime.stampPrincipal())
     const launched = yield* runtime.launch(card.planId, card.digest, card.envelope)
     if (launched._tag !== "Started") return yield* Effect.die("expected a started run")

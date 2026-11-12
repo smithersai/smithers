@@ -345,6 +345,30 @@ export const contract = (name: string, harness: Harness): void => {
         expect(pending[0]?.sequence).toBe(sequence)
       }))
 
+    test("ends a resume delegation with the run it was recorded for", () =>
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const cancelled = yield* start
+        const completed = yield* start
+        yield* runtime.requestResume(cancelled.runId)
+        yield* runtime.requestResume(completed.runId)
+        // Both settle while their delegation stands: a decision recorded where
+        // no host could drive the run, then the run ends by another path.
+        yield* runtime.interrupt(cancelled.runId)
+        yield* runtime.writeStatus(completed.runId, yield* runtime.claimFence(completed.runId), "completed")
+
+        const runs = yield* Effect.all([runtime.getRun(cancelled.runId), runtime.getRun(completed.runId)])
+        const listed = yield* runtime.queryRuns({ limit: 10 })
+
+        // A settled run owes no restart, so none is reported: not on the run,
+        // not in a listing, and not in any host's poll.
+        expect(runs.map((run) => run.status)).toEqual(["cancelled", "completed"])
+        expect(runs.map((run) => run.pendingResume)).toEqual([undefined, undefined])
+        expect(listed.items).toHaveLength(2)
+        expect(listed.items.map((run) => run.pendingResume)).toEqual([undefined, undefined])
+        expect(yield* runtime.pendingResumes).toEqual([])
+      }))
+
     test("rejects a digest mismatch", () =>
       Effect.gen(function*() {
         const control = yield* Control
@@ -363,14 +387,12 @@ export const contract = (name: string, harness: Harness): void => {
         const plan = yield* runtime.getPlan("missing").pipe(Effect.flip)
         const run = yield* runtime.getRun("missing").pipe(Effect.flip)
         const fence = yield* runtime.claimFence("missing").pipe(Effect.flip)
-        const signal = yield* runtime.deliverSignal("missing", { name: "missing", payload: null }).pipe(Effect.flip)
 
         expect(plan).toBeInstanceOf(PlanNotFound)
         expect((plan as PlanNotFound).code).toBe("plan_not_found")
         expect((plan as PlanNotFound).planId).toBe("missing")
         expect(run).toBeInstanceOf(RunNotFound)
         expect(fence).toBeInstanceOf(RunNotFound)
-        expect(signal).toBeInstanceOf(RunNotFound)
       }))
 
     test("distinguishes a denied plan from a lost run claim", () =>
@@ -412,15 +434,17 @@ export const contract = (name: string, harness: Harness): void => {
         expect(conflict).toBeInstanceOf(AlreadyResolved)
       }))
 
-    test("commits the whole envelope as one grant with the approved decision", () =>
+    test("journals the approved scope and envelope with the plan's decision", () =>
       Effect.gen(function*() {
         const control = yield* Control
         const runtime = yield* ControlRuntime
         const card = yield* control.plan({ flowId: "system/test", input: { suite: "grants" } })
         yield* control.approve(approval(card, "approve:grants"))
-        const grants = yield* runtime.grants
+        const events = yield* control.watch({ runId: `plan:${card.planId}`, follow: false }).pipe(Stream.runCollect)
 
-        expect(grants).toMatchObject([{ tokenId: card.planId, scope: "run", envelope: card.envelope }])
+        expect((yield* runtime.getPlan(card.planId)).decision).toBe("approved")
+        expect(events.filter((event) => event.kind === "control.approval.approved").map((event) => event.payload))
+          .toMatchObject([{ scope: "run", envelope: card.envelope }])
       }))
 
     test("bounds the runtime run query and isolates its returned summaries", () =>
@@ -516,7 +540,7 @@ export const contract = (name: string, harness: Harness): void => {
         expect(again.notifications).toEqual([])
       }))
 
-    test("registers an in-run approval token that approve turns into a grant", () =>
+    test("registers an in-run approval token that approve resolves", () =>
       Effect.gen(function*() {
         const control = yield* Control
         const runtime = yield* ControlRuntime
@@ -535,13 +559,11 @@ export const contract = (name: string, harness: Harness): void => {
         const mismatched = yield* Effect.flip(runtime.registerApproval({ ...target, digest: "other" }))
         expect(mismatched).toBeInstanceOf(PlanDigestMismatch)
 
-        // The public approve verb resolves the registered token and installs
-        // the grant a resumed attempt reads its decision from.
+        // The public approve verb resolves the registered token a resumed
+        // attempt reads its decision from.
         yield* control.approve({ target, scope: "run", idempotencyKey: "approve:ask-1" })
         const resolved = yield* runtime.registerApproval(target)
-        expect(resolved._tag).toBe("Approved")
-        const grants = yield* runtime.grants
-        expect(grants.some((grant) => grant.tokenId === "ask-1")).toBe(true)
+        expect(resolved).toMatchObject({ tokenId: "ask-1", _tag: "Approved", scope: "run" })
       }))
 
     test("refuses to register an in-run approval against an unknown run", () =>

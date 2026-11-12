@@ -17,7 +17,7 @@
  */
 
 import { Context, Effect, Layer, Option } from "effect"
-import { CredentialConflict, Unavailable } from "./ControlError.ts"
+import { CredentialConflict, type PersistenceError, Unavailable } from "./ControlError.ts"
 import { sealsMatch } from "./internal/sealsMatch.ts"
 
 /**
@@ -45,8 +45,8 @@ export interface SealedRecord {
  * @since 0.1.0
  */
 export interface Service {
-  readonly list: () => Effect.Effect<ReadonlyArray<SealedRecord>, Unavailable>
-  readonly read: (id: string) => Effect.Effect<Option.Option<SealedRecord>, Unavailable>
+  readonly list: () => Effect.Effect<ReadonlyArray<SealedRecord>, Unavailable | PersistenceError>
+  readonly read: (id: string) => Effect.Effect<Option.Option<SealedRecord>, Unavailable | PersistenceError>
   /**
    * Commits `record` only if the stored version is `record.version - 1` and,
    * with `previous`, the stored ciphertext and nonce are still `previous`'s.
@@ -56,8 +56,8 @@ export interface Service {
   readonly write: (
     record: SealedRecord,
     previous?: SealedRecord | undefined
-  ) => Effect.Effect<void, Unavailable | CredentialConflict>
-  readonly remove: (id: string) => Effect.Effect<void, Unavailable>
+  ) => Effect.Effect<void, Unavailable | CredentialConflict | PersistenceError>
+  readonly remove: (id: string) => Effect.Effect<void, Unavailable | PersistenceError>
 }
 
 /**

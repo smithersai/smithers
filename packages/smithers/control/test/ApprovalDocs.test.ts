@@ -23,10 +23,10 @@ describe("approval documentation", () => {
   ] as const
 
   for (const [name, contract] of contracts) {
-    it(`${name} documents resolution before grant installation and journaling`, () => {
+    it(`${name} documents resolution before journaling`, () => {
       const text = contract()
       expect(text).toMatch(
-        /authorizeApproval[\s\S]*lookupApproval[\s\S]*resolveApproval[\s\S]*installBulkGrant[\s\S]*journal/
+        /authorizeApproval[\s\S]*lookupApproval[\s\S]*resolveApproval[\s\S]*journal/
       )
       expect(text).toMatch(/recheck/i)
       expect(text).toMatch(/atomically/)

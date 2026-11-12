@@ -131,12 +131,12 @@ const securityReview = Smithers.SecurityReview({
     },
     {
       id: "approval-authority",
-      title: "Approval and denial decisions pass the host ApprovalAuthority before any grant, replay, or resume",
+      title: "Approval and denial decisions pass the host ApprovalAuthority before any decision, replay, or resume",
       threat:
         "An authenticated non-operator, agent, or gateway identity approves a plan or node gate and runs work the owner never authorized.",
       lookFor: [
-        "An approve/deny path that reads the target, replays a stored receipt, or installs a grant before authorizeApproval runs.",
-        "resolveApproval or installBulkGrant called without the authority recheck inside the same write transaction.",
+        "An approve/deny path that reads the target, replays a stored receipt, or records a decision before authorizeApproval runs.",
+        "resolveApproval called without the authority recheck inside the same write transaction.",
         "ApprovalAuthority.compile granting a scope or target the delegation did not list (cross product of targets and scopes, or hierarchical scope inference).",
         "answerableWait treating a caller-chosen Node digest as a HumanTask wait token so an approval for one wait answers another run's wait."
       ],

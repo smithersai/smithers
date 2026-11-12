@@ -739,13 +739,9 @@ export const layer: Layer.Layer<
             // resolved, and the run stays waiting for this decision.
             if (input.target._tag === "Node") yield* refuseCodeDrift(input.target.runId)
             const token = yield* runtime.lookupApproval(input.target)
-            // Resolve (and recheck authority) before installing any grant. The
-            // durable adapter commits all three writes in this transaction;
-            // the memory test adapter must also leave no grant on refusal.
+            // Resolve, rechecking authority, in this transaction: a refusal
+            // leaves no decision, journal entry or receipt behind.
             yield* runtime.resolveApproval(token, decision, principal, input.scope)
-            if (decision === "approved") {
-              yield* runtime.installBulkGrant(token, input.target.envelope, input.scope)
-            }
             yield* emit(
               input.target._tag === "Plan" ? `plan:${input.target.planId}` : input.target.runId,
               `control.approval.${decision}`,

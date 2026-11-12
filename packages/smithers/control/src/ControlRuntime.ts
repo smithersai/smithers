@@ -357,20 +357,6 @@ export const requireApproved = (
     : Effect.fail(new ApprovalDenied({ tokenId: token.tokenId, decisionPrincipal: token.decisionPrincipal }))
 
 /**
- * One bulk permission grant. The envelope is deliberately not split into
- * individual capabilities at this boundary.
- *
- * @category models
- * @since 0.1.0
- */
-export interface BulkGrant {
-  readonly tokenId: string
-  readonly envelope: Envelope
-  readonly scope: GrantScope
-  readonly installedAt: number
-}
-
-/**
  * Result of launching an approved plan.
  *
  * @category models
@@ -523,10 +509,10 @@ export interface PendingResume {
  * transition, and translate all conflicts into typed failures. For a new
  * approval decision, authenticate the principal and call `authorizeApproval`
  * before target reads or receipt replay. Then call `lookupApproval`,
- * `resolveApproval` exactly once with an authority recheck, `installBulkGrant`
- * only on approval, and journal the decision. Commit the decision, grant,
- * journal entry, receipt, and any node resume delegation atomically. Resolution
- * must not require an installed grant or a flushed journal decision.
+ * `resolveApproval` exactly once with an authority recheck, and journal the
+ * decision. Commit the decision, journal entry, receipt, and any node resume
+ * delegation atomically. Resolution must not require a flushed journal
+ * decision.
  *
  * @category models
  * @since 0.1.0
@@ -567,13 +553,8 @@ export interface Service {
     ApprovalToken,
     RunNotFound | PlanDigestMismatch | EnvelopeMismatch | PersistenceError
   >
-  readonly installBulkGrant: (
-    token: ApprovalToken,
-    envelope: Envelope,
-    scope: GrantScope
-  ) => Effect.Effect<void, PersistenceError>
   /** Records the decision exactly once. Approval scope defaults to once; the
-   * control boundary supplies the scope of the grant it installed. */
+   * control boundary supplies the scope the decision approved. */
   readonly resolveApproval: (
     token: ApprovalToken,
     decision: "approved" | "denied",
@@ -609,7 +590,6 @@ export interface Service {
     ReadonlyArray<{ readonly flowId: FlowId; readonly description: string }>,
     PersistenceError
   >
-  readonly deliverSignal: (runId: RunId, signal: SignalPayload) => Effect.Effect<void, RunNotFound | PersistenceError>
   /** Matching command retries preserve admission; a different intent fails InvalidInput. */
   readonly admitSignal: (
     commandId: string,
@@ -643,8 +623,9 @@ export interface Service {
    * a resume requested while one is being taken up is not lost with it.
    *
    * A terminal run is refused with `InvalidInput`: no host will ever take the
-   * delegation up, and recording it would leave an orphaned row every host's
-   * `pendingResumes` poll filters but nothing ever clears.
+   * delegation up. A delegation that stands when its run settles ends with
+   * the run: neither `pendingResumes` nor `RunSummary.pendingResume` reports
+   * it again.
    *
    * `consent` is the journal sequence of an operator's explicit resume (see
    * {@link PendingResume.consent}). A later delegation without one keeps the
@@ -793,7 +774,6 @@ export interface Service {
    * point) or fails and rolls the claim back with its transaction.
    */
   readonly releaseRunKey: (key: IdempotencyKey) => Effect.Effect<void, PersistenceError>
-  readonly grants: Effect.Effect<ReadonlyArray<BulkGrant>, PersistenceError>
 }
 
 /**
@@ -877,7 +857,6 @@ interface MutableRun {
   localFence?: string | undefined
   fiber?: Fiber.Fiber<unknown, unknown> | undefined
   readonly sequence: number
-  readonly signals: Array<SignalPayload>
   /** The sequence of the outstanding resume delegation, if there is one. */
   pendingResume?: number | undefined
   /** When that delegation was recorded. */
@@ -969,8 +948,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         })
       const mutations = new Map<IdempotencyKey, MutationRecord>()
       const runKeys = new Map<IdempotencyKey, { readonly fingerprint: string }>()
-      const installedGrants: Array<BulkGrant> = []
-      const installedGrantKeys = new Set<string>()
       // Inventory positions are assigned at publication, independently of
       // identities reserved before asynchronous planning.
       const planIds: Array<string> = []
@@ -986,7 +963,16 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         Effect.fromOption(Option.fromNullishOr(runs.get(runId)), () => new RunNotFound({ runId }))
 
       const updateSummary = (run: MutableRun, fields: Partial<RunSummary>): RunSummary => {
-        run.summary = snapshot({ ...run.summary, ...fields, updatedAt: now() })
+        const next = { ...run.summary, ...fields, updatedAt: now() }
+        // A settled run owes no restart: its resume delegation ends with it,
+        // however it settled.
+        if (next.status === "cancelled" || next.status === "completed" || next.status === "failed") {
+          run.pendingResume = undefined
+          run.pendingResumeAtMs = undefined
+          run.pendingConsent = undefined
+          next.pendingResume = undefined
+        }
+        run.summary = snapshot(next)
         return snapshot(run.summary)
       }
 
@@ -1216,20 +1202,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           }
           return approvalToken(existing)
         }),
-        installBulkGrant: Effect.fn("ControlRuntime.installBulkGrant")((token, envelope, scope) =>
-          Effect.sync(() => {
-            const storedToken = snapshot(token)
-            const key = approvalKey(storedToken.target)
-            if (installedGrantKeys.has(key)) return
-            installedGrantKeys.add(key)
-            installedGrants.push({
-              tokenId: storedToken.tokenId,
-              envelope: snapshot(envelope),
-              scope,
-              installedAt: now()
-            })
-          })
-        ),
         resolveApproval: Effect.fn("ControlRuntime.resolveApproval")(
           function*(token, decision, principal, scope = "once") {
             const requested = snapshot(token)
@@ -1321,8 +1293,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
               summary: snapshot(summary),
               fence,
               localFence: fence,
-              sequence: runSequence,
-              signals: []
+              sequence: runSequence
             })
             return {
               _tag: "Started",
@@ -1408,9 +1379,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             }))
           )
         )(),
-        deliverSignal: Effect.fn("ControlRuntime.deliverSignal")((runId, signal) =>
-          Effect.tap(requireRun(runId), (run) => Effect.sync(() => void run.signals.push(snapshot(signal))))
-        ),
         admitSignal: Effect.fn("ControlRuntime.admitSignal")(function*(commandId, runId, signal, principal) {
           yield* requireRun(runId)
           const existing = signalCommands.get(commandId)
@@ -1502,13 +1470,12 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         deliveredSignals: Effect.fn("ControlRuntime.deliveredSignals")((runId) =>
           Effect.map(
             requireRun(runId),
-            (run) =>
-              snapshot([
-                ...run.signals,
-                ...Array.from(signalCommands.values()).filter((command) =>
+            () =>
+              snapshot(
+                Array.from(signalCommands.values()).filter((command) =>
                   command.runId === runId && command.state !== "rejected"
                 ).map((command) => command.signal)
-              ])
+              )
           )
         ),
         requestResume: Effect.fn("ControlRuntime.requestResume")(function*(runId, options) {
@@ -1705,8 +1672,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           Effect.sync(() => {
             runKeys.delete(key)
           })
-        ),
-        grants: Effect.fn("ControlRuntime.grants")(() => Effect.sync(() => snapshot(installedGrants)))()
+        )
       })
       return service
     })

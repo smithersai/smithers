@@ -692,7 +692,6 @@ describe("Retention.collect", () => {
       "flows_time_travel_edges",
       "control_signal_commands",
       "control_tokens",
-      "control_grants",
       "control_run_resumes",
       "control_run_messages",
       "control_runs"

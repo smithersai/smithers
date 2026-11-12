@@ -74,7 +74,6 @@ import {
 import * as ControlExecutor from "./ControlExecutor.ts"
 import type {
   ApprovalToken,
-  BulkGrant,
   IdPage,
   IdPageRequest,
   LaunchResult,
@@ -93,8 +92,8 @@ import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } 
 import {
   ApprovalTarget,
   type Cancellation,
-  Envelope,
-  GrantScope,
+  type Envelope,
+  type GrantScope,
   type IdempotencyKey,
   type PendingWait,
   PlanCard,
@@ -1077,12 +1076,17 @@ const makeRuntime = (
      *
      * Read from `control_run_resumes` rather than from the journal because the
      * question is "what has not been taken up yet", which a log of what was
-     * asked cannot answer without a per-run cursor.
+     * asked cannot answer without a per-run cursor. A settled run's
+     * delegation is not outstanding: whatever settled the run (this plane's
+     * transition or the engine's own), no host will take it up, so it is read
+     * against the row's live status exactly as `pendingResumes` reads it.
      */
     const pendingResumeIndex = (scope: IndexScope): Effect.Effect<ReadonlyMap<string, number>, PersistenceError> =>
       sql<{ readonly runId: string; readonly requestedSeq: number }>`
-      SELECT run_id AS "runId", requested_seq AS "requestedSeq"
-      FROM control_run_resumes WHERE ${within("run_id", scope)}
+      SELECT resumes.run_id AS "runId", resumes.requested_seq AS "requestedSeq"
+      FROM control_run_resumes AS resumes
+      JOIN flows_runs AS runs ON runs.run_id = resumes.run_id
+      WHERE ${within("resumes.run_id", scope)} AND runs.status NOT IN ('completed', 'failed', 'cancelled')
     `.pipe(
         Effect.map((rows) =>
           new Map(rows.map((row) => [row.runId, Number(row.requestedSeq)] as const)) as ReadonlyMap<string, number>
@@ -1635,19 +1639,6 @@ const makeRuntime = (
         )
       )
 
-    const appendMessage = (
-      runId: RunId,
-      kind: "signal",
-      payload: unknown
-    ): Effect.Effect<void, RunNotFound | PersistenceError> =>
-      Effect.gen(function*() {
-        yield* requireRow(runId)
-        yield* sql`
-          INSERT INTO control_run_messages (run_id, kind, payload_json)
-          VALUES (${runId}, ${kind}, ${JSON.stringify(payload)})
-        `.pipe(Effect.mapError(persistence("append a run message")))
-      })
-
     const authorizeApproval: Service["authorizeApproval"] = (request) =>
       approvalAuthority.authorize(request, {
         flowId: Effect.gen(function*() {
@@ -1876,27 +1867,6 @@ const makeRuntime = (
         }
         return yield* tokenFromRow(row, stored)
       }),
-      installBulkGrant: Effect.fn("SqlControlRuntime.installBulkGrant")(function*(
-        token: ApprovalToken,
-        envelope: Envelope,
-        scope
-      ) {
-        const timestamp = yield* now
-        const identity = approvalIdentity(token.target)
-        // The envelope is installed whole. Splitting it into capabilities here
-        // would let a partial grant exist, which is exactly what the bulk-grant
-        // rule forbids.
-        yield* sql`
-          INSERT INTO control_grants (
-            target_tag, run_id, target_id, token_id, envelope_json, scope, installed_at_ms
-          )
-          VALUES (
-            ${identity.targetTag}, ${identity.runId}, ${identity.targetId}, ${token.tokenId},
-            ${JSON.stringify(envelope)}, ${scope}, ${timestamp}
-          )
-          ON CONFLICT (target_tag, run_id, target_id) DO NOTHING
-        `.pipe(Effect.mapError(persistence("install a grant")))
-      }),
       resolveApproval: Effect.fn("SqlControlRuntime.resolveApproval")(function*(
         token: ApprovalToken,
         decision: "approved" | "denied",
@@ -2069,11 +2039,6 @@ const makeRuntime = (
             description: flow.description
           })))
       )(),
-      deliverSignal: Effect.fn("SqlControlRuntime.deliverSignal")((runId: RunId, signal: SignalPayload) =>
-        // Durable delivery, and deliberately no resumption: a signal records a
-        // fact, it does not decide who runs next.
-        appendMessage(runId, "signal", signal)
-      ),
       admitSignal: Effect.fn("SqlControlRuntime.admitSignal")(function*(commandId, runId, signal, principal) {
         yield* requireRow(runId)
         const payloadJson = JSON.stringify(signal)
@@ -2230,8 +2195,7 @@ const makeRuntime = (
       ) {
         const summary = yield* summaryOf(yield* requireRow(runId))
         // A settled run has no host left to take the delegation up: recording
-        // one anyway leaves an orphaned row that `pendingResumes` filters out
-        // of every poll but nothing ever clears.
+        // one anyway leaves a row no host will ever clear.
         if (terminal(summary.status)) {
           return yield* new InvalidInput({
             issue: `run ${runId} is ${summary.status} and cannot take a resume`
@@ -2522,35 +2486,7 @@ const makeRuntime = (
           Effect.asVoid,
           Effect.mapError(persistence("release a run key"))
         )
-      ),
-      grants: Effect.fn("SqlControlRuntime.grants")(() =>
-        sql<{
-          readonly tokenId: string
-          readonly envelopeJson: string
-          readonly scope: string
-          readonly installedAtMs: number
-        }>`
-          SELECT token_id AS "tokenId", envelope_json AS "envelopeJson",
-                 scope, installed_at_ms AS "installedAtMs"
-          FROM control_grants ORDER BY installed_at_ms, target_tag, run_id, target_id
-        `.pipe(
-          query("list grants"),
-          Effect.flatMap((rows) =>
-            Effect.forEach(rows, (row): Effect.Effect<BulkGrant, PersistenceError> =>
-              Effect.all({
-                envelope: decodeStoredJson("control_grants.envelope_json", Envelope, row.envelopeJson),
-                scope: decodeStoredValue("control_grants.scope", GrantScope, row.scope)
-              }).pipe(
-                Effect.map(({ envelope, scope }) => ({
-                  tokenId: row.tokenId,
-                  envelope,
-                  scope,
-                  installedAt: Number(row.installedAtMs)
-                }))
-              ))
-          )
-        )
-      )()
+      )
     })
     return service
   })

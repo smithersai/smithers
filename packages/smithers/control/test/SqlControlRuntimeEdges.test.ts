@@ -1157,6 +1157,31 @@ describe("SqlControlRuntime when the tables are gone", () => {
     expect((failures.signals as PersistenceError).operation).toBe("read run messages")
   })
 
+  it("drops a resume delegation from the projection once the engine settles the run", async () => {
+    // The engine settles a run it owns in its own transaction, with no control
+    // transition to end the delegation. The projection reads the delegation
+    // against the row's live status, as every host's poll does.
+    const observed = await withRuntime((runtime, sql) =>
+      Effect.gen(function*() {
+        const { runId } = yield* start(runtime, "engine-settled")
+        const sequence = yield* runtime.requestResume(runId)
+        const before = yield* runtime.getRun(runId)
+        yield* sql`UPDATE flows_runs SET status = 'completed', owner_host_id = NULL, owner_pid = NULL,
+          owner_nonce = NULL, heartbeat_at_ms = NULL WHERE run_id = ${runId}`
+        return {
+          sequence,
+          before: before.pendingResume,
+          after: (yield* runtime.getRun(runId)).pendingResume,
+          pending: yield* runtime.pendingResumes
+        }
+      })
+    )
+
+    expect(observed.before).toBe(observed.sequence)
+    expect(observed.after).toBeUndefined()
+    expect(observed.pending).toEqual([])
+  })
+
   it("reports a claim on a row another process deleted", async () => {
     // The control row and the run row are two tables. A run row deleted under a
     // live control row is what a partial `gc` leaves, and every fenced write

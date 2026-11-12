@@ -9,7 +9,7 @@ sidebar:
 
 Every operation the service exposes either records an intent or reads back
 evidence. `plan` writes a reviewable card. `approve` resolves a durable token
-and installs a grant. `cancel` writes a request and an attribution. `watch`
+and records the approved scope. `cancel` writes a request and an attribution. `watch`
 replays a journal it did not write. Nothing in this package executes a flow,
 opens a step, or interprets a graph.
 
@@ -22,11 +22,11 @@ database it shares with an engine it never imports.
 A host chooses an implementation of each seam, and the seams are what make the
 plane portable.
 
-| Port              | Question it answers                                                     | Implementations here                                    |
-| ----------------- | ----------------------------------------------------------------------- | ------------------------------------------------------- |
-| `ControlRuntime`  | Where do plans, tokens, grants, idempotency records, and run rows live? | `ControlRuntime.layerMemory`, `SqlControlRuntime.layer` |
-| `ControlExecutor` | Who actually runs the work, and what did they do with my request?       | `ControlExecutor.makeNoop`, your own                    |
-| `Journal`         | Where is the evidence of what was decided?                              | [`@smthrs/journal`](/api/journal)                       |
+| Port              | Question it answers                                               | Implementations here                                    |
+| ----------------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
+| `ControlRuntime`  | Where do plans, tokens, idempotency records, and run rows live?   | `ControlRuntime.layerMemory`, `SqlControlRuntime.layer` |
+| `ControlExecutor` | Who actually runs the work, and what did they do with my request? | `ControlExecutor.makeNoop`, your own                    |
+| `Journal`         | Where is the evidence of what was decided?                        | [`@smthrs/journal`](/api/journal)                       |
 
 `ControlLive.layer` is the implementation over those three plus the
 [notification queue](/api/notifications) a steer travels through and the

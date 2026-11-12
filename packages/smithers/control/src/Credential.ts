@@ -88,11 +88,14 @@ export interface RotateOptions {
  * @since 0.1.0
  */
 export interface Credential {
-  readonly list: () => Effect.Effect<ReadonlyArray<CredentialRef>, Unavailable | Unauthorized>
-  readonly get: (id: string) => Effect.Effect<CredentialRef, Unavailable | Unauthorized>
+  readonly list: () => Effect.Effect<ReadonlyArray<CredentialRef>, Unavailable | Unauthorized | PersistenceError>
+  readonly get: (id: string) => Effect.Effect<CredentialRef, Unavailable | Unauthorized | PersistenceError>
   readonly create: (
     options: { readonly id: string; readonly name: string; readonly secret: Redacted.Redacted<string> }
-  ) => Effect.Effect<CredentialRef, Unavailable | Unauthorized | CredentialConflict | InvalidInput>
+  ) => Effect.Effect<
+    CredentialRef,
+    Unavailable | Unauthorized | CredentialConflict | InvalidInput | PersistenceError
+  >
   readonly resolve: (
     reference: CredentialRef
   ) => Effect.Effect<Redacted.Redacted<string>, Unavailable | Unauthorized | PersistenceError>
@@ -109,7 +112,7 @@ export interface Credential {
     CredentialRef,
     Unavailable | Unauthorized | CredentialConflict | InvalidInput | PersistenceError
   >
-  readonly revoke: (reference: CredentialRef) => Effect.Effect<void, Unavailable | Unauthorized>
+  readonly revoke: (reference: CredentialRef) => Effect.Effect<void, Unavailable | Unauthorized | PersistenceError>
 }
 
 /**
@@ -217,7 +220,7 @@ export const make = (options: Options): Credential => {
   const authenticate = (
     operation: Operation,
     reference: CredentialRef
-  ): Effect.Effect<CredentialStore.SealedRecord, Unavailable | Unauthorized> =>
+  ): Effect.Effect<CredentialStore.SealedRecord, Unavailable | Unauthorized | PersistenceError> =>
     Effect.gen(function*() {
       const snapshot = referenceOf(reference)
       yield* authorizeId(operation, snapshot)
@@ -231,7 +234,7 @@ export const make = (options: Options): Credential => {
     record: CredentialStore.SealedRecord,
     secret: Redacted.Redacted<string>,
     previous?: CredentialStore.SealedRecord
-  ): Effect.Effect<CredentialRef, Unavailable | CredentialConflict | InvalidInput> =>
+  ): Effect.Effect<CredentialRef, Unavailable | CredentialConflict | InvalidInput | PersistenceError> =>
     Effect.gen(function*() {
       if (!wellFormed(Redacted.value(secret))) {
         return yield* Effect.fail(new InvalidInput({ issue: "Credential secret must be well-formed Unicode" }))

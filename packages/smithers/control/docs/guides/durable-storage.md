@@ -101,9 +101,10 @@ control's high-offset migration first would make the later journal and
 run-store sets look skipped.
 
 The tables the set creates are `control_plans`, `control_plan_keys`,
-`control_tokens`, `control_grants`, `control_mutations`, `control_runs`,
-`control_run_resumes`, `control_run_messages`, `control_signal_commands`, `control_sequences`, and
-`control_credentials`.
+`control_tokens`, `control_mutations`, `control_runs`, `control_run_resumes`,
+`control_run_messages`, `control_signal_commands`, `control_sequences`, and
+`control_credentials`. `control_run_messages` holds signal history from before
+the signal inbox; it is read, never written.
 
 ## What the durable runtime adds
 

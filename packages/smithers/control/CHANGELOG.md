@@ -34,6 +34,24 @@
 
 ### Changed
 
+- **Breaking:** `ControlRuntime.deliverSignal` is removed. Signals reach a run
+  through `Control.signal` and the signal inbox (`admitSignal`); the legacy
+  `control_run_messages` rows it wrote stay readable through
+  `deliveredSignals` (#4867).
+
+- **Breaking:** `ControlRuntime.installBulkGrant`, `ControlRuntime.grants` and
+  the `BulkGrant` type are removed. Nothing read the grant rows an approval
+  wrote; the approved scope lives on the token's decision and in the
+  journaled `control.approval.approved` fact. Migration `0009_drop_grants`
+  drops `control_grants` (#4867).
+
+- **Breaking:** `SqlCredentialStore` reports a database failure as
+  `PersistenceError`, with `operation` naming the credential operation
+  (`credential.read`, `credential.write`, ...) and the driver's failure as
+  `cause`, instead of an `Unavailable` that dropped it. `CredentialStore` and `Credential` operations
+  can fail with `PersistenceError`; `remove` runs through the durable writer
+  like `write` (#4867).
+
 - **Breaking:** `JevSessionChecker` asks the host's `Evaluator` instead of
   calling the Vercel AI Gateway itself. `jevEvaluationUrl`, `jevModelId` and
   the `env`, `fetch` and `url` options are removed; `evaluator` replaces them.
@@ -84,6 +102,12 @@
   answers `Terminal` naming `cancelled`, and the monitor now records that as
   the remedy applied: it journals `control.monitor.healed` and the beat
   carries `healed: "cancel"`, where it recorded nothing healed before.
+
+- A run that settled while a resume delegation stood (an in-run approval
+  decided where no host could take it up, then completed or cancelled by
+  another path) reported `pendingResume` on `getRun` and `list` forever. The
+  delegation now ends with the run, and the projection reads delegations
+  against the row's live status (#4867).
 
 - A mutation that claims its run key and is stopped while it fails still
   reports a failed release of that claim (#3839). Effect 4.0.4 removes a

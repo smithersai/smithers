@@ -275,11 +275,39 @@ describe("SqlCredentialStore", () => {
     expect(Option.getOrThrow(persisted).version).toBe(2)
   })
 
-  it("reports every operation as unavailable storage when the table is gone", async () => {
+  it("removes through the durable writer, as it writes", async () => {
+    // A bare DELETE beside the writer is neither serialized with the other
+    // writes nor retried while another connection holds the database, so a
+    // revoke failed under contention a rotation survives.
+    let writes = 0
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const writer = yield* DurableWriter.DurableWriter
+        const store = yield* SqlCredentialStore.make.pipe(
+          Effect.provideService(DurableWriter.DurableWriter, {
+            ...writer,
+            write: (effect) => {
+              writes++
+              return writer.write(effect)
+            }
+          })
+        )
+        yield* store.write(record())
+        const before = writes
+        yield* store.remove("exa")
+        return { removals: writes - before, after: yield* store.read("exa") }
+      }).pipe(Effect.provide(TestDatabase.layer), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.removals).toBe(1)
+    expect(Option.isNone(observed.after)).toBe(true)
+  })
+
+  it("reports a storage failure as a persistence error that keeps its cause", async () => {
     // A dropped table is what a half-migrated database, a restored backup, or
     // a wrong `SMITHERS_HOME` looks like from here. Each operation names
-    // itself, so an operator reads which call could not reach storage rather
-    // than a driver sentence about SQL.
+    // itself and keeps the driver's failure, so an operator reads which call
+    // failed and why, rather than a feature reported as unavailable.
     const failures = await Effect.runPromise(
       Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
@@ -299,15 +327,15 @@ describe("SqlCredentialStore", () => {
       }).pipe(Effect.provide(TestDatabase.layer), Effect.scoped, Effect.orDie)
     )
 
-    expect(failures.map((failure) => failure.feature)).toEqual([
-      "credential storage (read)",
-      "credential storage (write)",
-      "credential storage (list)",
-      "credential storage (remove)"
+    expect(failures.map((failure) => failure.operation)).toEqual([
+      "credential.read",
+      "credential.write",
+      "credential.list",
+      "credential.remove"
     ])
     for (const failure of failures) {
-      expect(failure._tag).toBe("/control/Unavailable")
-      expect(failure.ticket).toBe("control-credential-storage")
+      expect(failure._tag).toBe("/control/PersistenceError")
+      expect(failure.cause).toBeDefined()
     }
   })
 

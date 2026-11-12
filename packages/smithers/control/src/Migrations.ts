@@ -18,6 +18,7 @@ import { signalPrincipals } from "./migrations/0005_signal_principals.ts"
 import { runPrincipals } from "./migrations/0006_run_principals.ts"
 import { resumeConsent } from "./migrations/0007_resume_consent.ts"
 import { signalRejection } from "./migrations/0008_signal_rejection.ts"
+import { dropGrants } from "./migrations/0009_drop_grants.ts"
 
 /**
  * The control package's namespaced migration set.
@@ -36,7 +37,8 @@ export const set: DatabaseMigrations.MigrationSet = {
     "0005_signal_principals": signalPrincipals,
     "0006_run_principals": runPrincipals,
     "0007_resume_consent": resumeConsent,
-    "0008_signal_rejection": signalRejection
+    "0008_signal_rejection": signalRejection,
+    "0009_drop_grants": dropGrants
   }
 }
 

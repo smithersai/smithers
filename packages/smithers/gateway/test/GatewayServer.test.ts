@@ -482,20 +482,16 @@ describe("approval authority across every served mutation mount", () => {
                 if (!allowed) {
                   expect(JSON.stringify(reply)).toContain("/control/Unauthorized")
                   expect(yield* runtime.lookupApproval(card.approval.target)).toEqual(before)
-                  expect(yield* runtime.grants).toEqual([])
                   expect((yield* runtime.getPlan(card.planId)).decision).toBe("pending")
                 } else {
                   expect((yield* runtime.getPlan(card.planId)).decision).toBe(
                     decision === "approve" ? "approved" : "denied"
                   )
-                  expect((yield* runtime.grants).map((grant) => grant.scope)).toEqual(
-                    decision === "approve" ? ["once"] : []
-                  )
                   const events = yield* Stream.runCollect(
                     control.watch({ runId: `plan:${card.planId}`, follow: false })
                   )
                   expect(events.find((event) => event.kind.startsWith("control.approval."))?.payload)
-                    .toMatchObject({ principal: { id: "gateway", kind: "bearer" } })
+                    .toMatchObject({ principal: { id: "gateway", kind: "bearer" }, scope })
                 }
               }).pipe(Effect.provide(served(
                 { host: "127.0.0.1", port: 0, credential: "edge-secret" },
@@ -558,7 +554,7 @@ describe("submitting an answer rather than a grant", () => {
       headers: []
     }) + "\n"
 
-  test("routes it to the signal command, not to the grant", () =>
+  test("routes it to the signal command, not to an approval", () =>
     Effect.gen(function*() {
       const url = yield* baseUrl
       const runId = yield* launched
@@ -578,9 +574,10 @@ describe("submitting an answer rather than a grant", () => {
       expect(yield* runtime.deliveredSignals(runId)).toEqual([
         { name: "coding-clarification#1", payload: "the scheduler owns it" }
       ])
-      // No grant was taken for the answer: the only one is the plan grant that
-      // launched the run, so an answer decided nothing about capabilities.
-      expect((yield* runtime.grants).map((grant) => grant.tokenId)).toEqual(["plan-1"])
+      // No approval was decided for the answer, so it decided nothing about
+      // capabilities.
+      const events = yield* Stream.runCollect((yield* Control).watch({ runId, follow: false }))
+      expect(events.filter((event) => event.kind.startsWith("control.approval."))).toEqual([])
     }).pipe(Effect.provide(served(
       { host: "127.0.0.1", port: 0, credential: "edge-secret" },
       delegatedBearer

@@ -53,9 +53,9 @@ const runtime = Effect.gen(function*() {
 Delegations bind an exact identity tuple, target kind, and approval scope. People
 approve and deny; `make` refuses a delegation to an `agent` identity with
 `InvalidInput`, whatever its scopes or targets. Scopes
-are not hierarchical. A delegated actor may deny its listed target kinds without
-installing any grant. Delegation is reusable: `scopes: ["once"]` permits
-once-scoped grants; it is not a single-use delegation. A custom host policy must
+are not hierarchical. A delegated actor may deny its listed target kinds.
+Delegation is reusable: `scopes: ["once"]` permits once-scoped approvals; it is
+not a single-use delegation. A custom host policy must
 enforce expiry, revocation, or one-use delegation when needed.
 A custom `ApprovalAuthority.Service` can additionally
 restrict specific runs, plans, or envelopes. Keep that policy bounded and safe
@@ -63,9 +63,8 @@ inside the writer transaction; never invoke Control recursively from it.
 
 Transport adapters must authenticate identities and overwrite caller-supplied
 principal fields. Direct Control/runtime references and database access are
-trusted host capabilities, not endpoints for untrusted input. In particular,
-`installBulkGrant` is a storage port, not an authorization API. Use Control for
-an atomic durable decision, grant, journal entry, and receipt.
+trusted host capabilities, not endpoints for untrusted input. Use Control for
+an atomic durable decision, journal entry, and receipt.
 
 Default MCP surfaces omit approval decisions and auto-approving starts. An MCP
 caller is the `mcp/agent` identity, which `make` cannot delegate. None of these checks sandboxes a caller that already
@@ -131,8 +130,8 @@ the budget, and the placement being granted.
 | `digest`                                    | `PlanDigestMismatch`, carrying `expected` and `actual`                |
 | `envelope`                                  | `EnvelopeMismatch`, compared by canonical bytes rather than key order |
 
-`GrantScope` says how long the grant lasts: `once`, `run`, or `remembered`. The
-card defaults to `run`.
+`GrantScope` says how long the approval lasts: `once`, `run`, or `remembered`.
+The card defaults to `run`.
 
 ## Gate a step: a node approval
 
@@ -197,7 +196,7 @@ answers the existing one afterwards. `requireApproved` succeeds only for
 `ApprovalPending` if no decision exists. Include these errors in the enclosing
 flow's error schema. Use `Node.andThen(clearance, next)` to gate all of `next`.
 Both terminal tags carry `decisionPrincipal` and `decidedAt`; `Approved` also
-carries the installed grant's `scope`. A denied token cannot be changed to
+carries the approved `scope`. A denied token cannot be changed to
 approved. A changed target digest or envelope is refused.
 
 The token describes a decision; it is not an authentication credential and
@@ -209,7 +208,7 @@ Keep approval authority separate from permission to execute a workflow.
 Migration 6004 adds explicit durable decisions. Old pending tokens remain
 pending. An old resolved token did not retain whether it was approved or
 denied, so reads fail with an actionable `PersistenceError` instead of guessing
-from grants or journal projections. Preserve the database for review and use a
+from journal projections. Preserve the database for review and use a
 new run with a new approval request. This is refusal, not automatic migration of
 unfinished executions. The action and flow error schema changes also require
 newly planned/approved work; they do not retrofit old cached action results.
@@ -234,18 +233,17 @@ mechanisms, and a run that was never planned still has steps worth gating.
 
 For a new decision, the adapter contract follows this order:
 
-| Step                           | Plan target                                                                    | Node target                                                 |
-| ------------------------------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| Authenticate and authorize     | Authenticate the principal; `authorizeApproval` before reads or receipt replay | same                                                        |
-| Look the token up              | `lookupApproval` refuses an unknown or already-resolved token                  | same                                                        |
-| Resolve the token              | `resolveApproval` exactly once, with an authority recheck                      | same                                                        |
-| Install the grant, on approval | `installBulkGrant` with the submitted envelope and scope                       | same                                                        |
-| Journal the decision           | `control.approval.approved` or `.denied` on `plan:<planId>`                    | the same kinds, on the run                                  |
-| Record the restart             | nothing to restart                                                             | records a resume delegation, journals `control.run.resumed` |
+| Step                       | Plan target                                                                    | Node target                                                 |
+| -------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Authenticate and authorize | Authenticate the principal; `authorizeApproval` before reads or receipt replay | same                                                        |
+| Look the token up          | `lookupApproval` refuses an unknown or already-resolved token                  | same                                                        |
+| Resolve the token          | `resolveApproval` exactly once, with an authority recheck                      | same                                                        |
+| Journal the decision       | `control.approval.approved` or `.denied` on `plan:<planId>`                    | the same kinds, on the run                                  |
+| Record the restart         | nothing to restart                                                             | records a resume delegation, journals `control.run.resumed` |
 
-Commit the decision, grant, journal entry, receipt, and any node resume delegation
-atomically. Resolution must not require an installed grant or a flushed journal
-decision. An authority refusal at resolution prevents grant installation.
+Commit the decision, journal entry, receipt, and any node resume delegation
+atomically. Resolution must not require a flushed journal decision. An authority
+refusal at resolution leaves no decision behind.
 
 A decision on a node target restarts the run the ask parked, in the same call.
 Nothing else wakes that run: without the restart it would sit at

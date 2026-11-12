@@ -154,6 +154,11 @@ stored nonce, or a failed authentication: the key is not the one that sealed
 the record, the record's id, name or version changed, or the ciphertext was
 tampered with.
 
+A database failure under `SqlCredentialStore` fails with `PersistenceError` on
+operation `credential.list`, `credential.read`, `credential.write` or
+`credential.remove`, with the driver's error as `cause`. `Unavailable` is a
+host with no credential store, never a store that failed.
+
 ## Durable storage
 
 ```ts

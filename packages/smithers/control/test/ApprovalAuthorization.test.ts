@@ -60,7 +60,6 @@ describe("approval mutations require independent authority", () => {
           }
           expect(yield* runtime.lookupApproval(card.approval.target)).toEqual(token)
           expect((yield* runtime.getPlan(card.planId)).decision).toBe("pending")
-          expect(yield* runtime.grants).toEqual([])
         }).pipe(Effect.provide(adapter === "memory" ? live() : durable()), Effect.scoped)
       )
     })
@@ -93,7 +92,6 @@ describe("approval mutations require independent authority", () => {
             expect(calls).toBe(2)
             expect(yield* runtime.lookupApproval(input.target)).toEqual(before)
             expect((yield* runtime.getPlan(card.planId)).decision).toBe("pending")
-            expect(yield* runtime.grants).toEqual([])
             const after = yield* Stream.runCollect(control.watch({ follow: false }))
             expect(after.slice(0, history.length)).toEqual(history)
             const added = after.slice(history.length)
@@ -202,7 +200,9 @@ describe("approval mutations require independent authority", () => {
             expect(yield* Effect.flip(control.approve({ ...input, scope }))).toBeInstanceOf(Unauthorized)
           }
           yield* control.approve({ ...input, scope: "once" })
-          expect((yield* runtime.grants).map((grant) => grant.scope)).toEqual(["once"])
+          const approved = (yield* Stream.runCollect(control.watch({ runId: `plan:${card.planId}`, follow: false })))
+            .filter((event) => event.kind === "control.approval.approved")
+          expect(approved.map((event) => event.payload)).toMatchObject([{ scope: "once" }])
           expect((yield* runtime.getPlan(card.planId)).decision).toBe("approved")
         }).pipe(Effect.provide(stack(adapter, policy)), Effect.scoped)
       )
@@ -272,7 +272,6 @@ describe("approval mutations require independent authority", () => {
                   yield* runtime.registerApproval(target)
                 }
                 const before = yield* runtime.lookupApproval(target)
-                const grants = yield* runtime.grants
                 const input = { target, scope, principal, idempotencyKey: "authority:decision" }
                 const result = yield* Effect.exit(
                   decision === "approved" ? control.approve(input) : control.deny(input)
@@ -282,7 +281,6 @@ describe("approval mutations require independent authority", () => {
                 const error = yield* Effect.flip(Effect.failCause(result.cause))
                 expect(error._tag).toBe("/control/Unauthorized")
                 expect(yield* runtime.lookupApproval(target)).toEqual(before)
-                expect(yield* runtime.grants).toEqual(grants)
                 const refusals = (yield* Stream.runCollect(control.watch({ follow: false })))
                   .filter((event) => event.kind === "control.approval.refused")
                 expect(refusals).toHaveLength(1)
