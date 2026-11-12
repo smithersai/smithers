@@ -6,6 +6,7 @@ This package declares `effect` as an exact `4.1.1` peer dependency.
 It bundles the private `@effect/platform-node` adapter pinned to `4.1.1` as a development dependency. `@effect/sql-sqlite-node` and `@effect/sql-pg` are direct
 dependencies at `4.1.1`, required by its supported backends and public declarations. Keep the application on that version so
 all Smithers packages share one Effect runtime. `@smthrs/platform-bun` is an optional peer for Bun hosts.
+`electrobun` is an optional peer that only `@smthrs/platform-bun`'s desktop layer loads.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/docs
 

@@ -101,7 +101,7 @@ describe("the CLI documentation contracts", () => {
     expect(readme).not.toContain("FLOWS_*")
   })
 
-  it("describes the manifest's shared Effect peer, private adapter and required SQL dependencies", () => {
+  it("describes the manifest's shared Effect peer, private adapter, required SQL dependencies and optional peers", () => {
     const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
     const introduction = readme.split("**Documentation:**")[0]!.replace(/\s+/g, " ")
 
@@ -113,12 +113,19 @@ describe("the CLI documentation contracts", () => {
       "@effect/sql-pg",
       "@effect/sql-sqlite-node",
       "@smthrs/platform-bun",
-      "effect"
+      "effect",
+      "electrobun"
     ])
     expect(manifest.dependencies["@effect/sql-sqlite-node"]).toBe(manifest.peerDependencies.effect)
     expect(manifest.dependencies["@effect/sql-pg"]).toBe(manifest.peerDependencies.effect)
     expect(manifest.peerDependenciesMeta["@effect/sql-pg"]?.optional).not.toBe(true)
-    expect(manifest.peerDependenciesMeta["@smthrs/platform-bun"].optional).toBe(true)
+    // The bundled TUI keeps a declared peer external, so the CLI declares the Electrobun that
+    // `@smthrs/platform-bun`'s desktop layer imports. The README names each optional peer as one.
+    const optional = Object.keys(manifest.peerDependencies).filter((name) =>
+      manifest.peerDependenciesMeta[name]?.optional === true
+    )
+    expect(optional.sort()).toEqual(["@smthrs/platform-bun", "electrobun"])
+    for (const name of optional) expect(introduction).toContain(`\`${name}\` is an optional peer`)
     expect(introduction).toContain(
       `\`effect\` as an exact \`${manifest.peerDependencies.effect}\` peer dependency`
     )
