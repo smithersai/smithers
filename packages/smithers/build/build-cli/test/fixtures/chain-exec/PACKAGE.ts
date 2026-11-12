@@ -11,7 +11,13 @@ const dockerBuild = S.Docker.Build({
   data: [S.file("hello.txt")]
 })
 
-const dockerBake = S.Docker.Bake({ config: S.file("docker-bake.hcl"), target: "fixture" })
+// The bake file's context reads the Dockerfile and the file it copies; a bake
+// replays its archive only when `data` declares what its contexts read.
+const dockerBake = S.Docker.Bake({
+  config: S.file("docker-bake.hcl"),
+  target: "fixture",
+  data: [S.file("Dockerfile"), S.file("hello.txt")]
+})
 
 const dockerService = S.Docker.Serve({
   image: "alpine:3",

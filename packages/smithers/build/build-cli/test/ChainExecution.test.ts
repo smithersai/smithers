@@ -7,6 +7,10 @@ import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as AnvilExec from "../src/AnvilExec.ts"
 import * as DockerExec from "../src/DockerExec.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { dockerAvailable } from "./helpers/DockerProbe.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
@@ -211,6 +215,42 @@ export const Package = S.Package({ targets: { artifacts, srcs } })
     expect(built.logs).toContain("//contracts:artifacts  ran")
     expect(await Fs.stat(NodePath.join(root, "contracts/out"))).toBeDefined()
   }, 120_000)
+})
+
+/**
+ * The cache-hit case below runs only where an engine answers, so a change to
+ * what makes a Docker rule cacheable never reached it on a host without one: a
+ * bake declared without `data` stopped caching (#5036) and the case went red
+ * only on runners with Docker. This plans the same fixture against a stub
+ * engine on every host.
+ */
+describe("Docker fixture cache identity", () => {
+  it("plans both archive rules as cacheable and keys neither on the archive it writes", async () => {
+    await withDockerStub({}, async () => {
+      const root = await workspace()
+      const plan = async () => {
+        const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root)
+        const planned = await PackageExec.plan({
+          index,
+          cacheDirectory: ".flows",
+          verb: "auto",
+          patterns: ["//:dockerBuild", "//:dockerBake"]
+        })
+        return (label: string) => planned.nodes.get(label)!
+      }
+      const before = await plan()
+      expect(before("//:dockerBuild").cacheable).toBe(true)
+      expect(before("//:dockerBake").cacheable).toBe(true)
+      for (const directory of ["docker-image", "docker-image-fixture"]) {
+        await Fs.mkdir(NodePath.join(root, directory), { recursive: true })
+        await Fs.writeFile(NodePath.join(root, directory, "image.tar"), "archive")
+      }
+      const after = await plan()
+      for (const label of ["//:dockerBuild", "//:dockerBake"]) {
+        expect(after(label).keyPreview, label).toBe(before(label).keyPreview)
+      }
+    })
+  })
 })
 
 /**
