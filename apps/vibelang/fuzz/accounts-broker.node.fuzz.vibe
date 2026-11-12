@@ -22,7 +22,7 @@ const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 const STATE = "__Host-vibelang-sign-in"
 
 const Op = Schema.Struct({
-  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost"]),
+  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost", "reads", "queued"]),
   person: Schema.Literals(["1", "2", "7", "0"]),
   tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired", "corrupt", "huge"]),
   query: Schema.Literals(["", "?wiki-page=index", "?wiki-page=../x", "?resume-op=new&resume-key=k1", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=r1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"]),
@@ -182,7 +182,8 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
   const base: Op = { kind: "session", person: "7", tamper: "none", query: "", answer: "connect", install: true, role: "community", body: "valid", n: 0 }
   const namedWalk: ReadonlyArray<Op> = [{ ...base, kind: "sign-in" }, { ...base, kind: "abandon" }, { ...base, kind: "refusals" }, { ...base, kind: "lost" }]
   const walk: ReadonlyArray<Op> = walking && named ? namedWalk : walking ? [
-    { ...base, kind: "sign-in" }, { ...base, kind: "connect" }, { ...base, kind: "disconnect" }, { ...base, kind: "connect", answer: "cancel" },
+    { ...base, kind: "sign-in" }, { ...base, kind: "connect" }, { ...base, kind: "queued" }, { ...base, kind: "disconnect" }, { ...base, kind: "reads" },
+    { ...base, kind: "connect", answer: "cancel" },
     { ...base, kind: "connect", install: false }, { ...base, kind: "connect", query: "?resume-op=new&resume-key=k1&resume-recovery=r1" },
     { ...base, kind: "sign-in", tamper: "code" }, { ...base, kind: "sign-in", tamper: "replay" }, { ...base, kind: "sign-in", tamper: "expired" },
     { ...base, kind: "device" }, { ...base, kind: "connect" }, { ...base, kind: "device", body: "malformed" }, { ...base, kind: "device", person: "0" },
@@ -431,6 +432,36 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         ]
         const wrong = answers.findIndex(([answer, status]) => answer.status !== status)
         if (wrong !== -1) return try refute(op.kind, 220 + wrong)
+        break
+      }
+      case "reads": {
+        // Signed in without a connection: issue and wiki reads from an unreachable GitHub are unavailable, an issue
+        // write passes its role check and is asked to connect, and a merge a community member cannot make is refused
+        // by the role policy before any flow runs. Virtual time.
+        const issue = (op2: string, key: string) => JSON.stringify({ op: op2, number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key })
+        const issues = try seen(try stepped(w.ask(SITE + "/api/issues"), 20))
+        const wiki = try seen(try stepped(w.ask(SITE + "/api/wiki?page=index"), 20))
+        const write = try seen(try stepped(w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body: issue("new", `r${op.n}`) }), 20))
+        const merge = try seen(try stepped(w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body: issue("spec-revise", `m${op.n}`) }), 20))
+        if (signedIn === undefined || issues.status !== 503 || wiki.status !== 503 || write.status !== 401 || !write.text.includes(`"connect"`) || merge.status !== 403) return try refute(op.kind, 240)
+        break
+      }
+      case "queued": {
+        // Connected, a write waits on an unreachable GitHub holding the issue lock; a read queued behind it is answered
+        // unavailable at its 13-second queue deadline, never left waiting. The write is then abandoned. Virtual time.
+        if (!brokered) break
+        const body = JSON.stringify({ op: "new", number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key: `q${op.n}` })
+        const { read, waited } = try stepped(effect {
+          const writer = fork w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body })
+          try sleep("1 second")
+          const began = try Clock.currentTimeMillis
+          const read = try w.ask(SITE + "/api/issues")
+          const waited = (try Clock.currentTimeMillis) - began
+          try Fiber.interrupt(writer)
+          return { read, waited }
+        }, 40)
+        try seen(read)
+        if (read.status !== 503 || waited < 13_000) return try refute(op.kind, 250)
         break
       }
       case "stall": {

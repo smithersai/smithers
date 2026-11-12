@@ -1431,3 +1431,12 @@ too narrow, not the product. Every execution now also runs that fresh-world step
 one execution walks three worlds, about 20 s on nyc-01 and over a minute on a 4-vCPU box, after the 30 s floor, and
 120 s timed out on a box. Mutants caught: the migration keeping the tokens; a failed sign-in returning unmarked. Still unreached: the read-queue deadline (217-220), issue and wiki writes that need
 a reachable GitHub (433-445) and the local-development broker (123).
+
+`worker/Accounts.vibe` 217-220 and the refusal arrow on 433: the brokered walk now holds the issue lock with a
+connected write that waits on an unreachable GitHub (`queued`); a read queued behind it answers 503 after at least 13
+virtual seconds, never left waiting. Signed in without a connection (`reads`), issue and wiki reads answer 503, an
+issue write is asked to connect (401), and a merge (`spec-revise`) a community member cannot make is refused by the
+role policy (403) before any flow runs. A connected write has no read deadline: it keeps retrying for over a minute of
+virtual time, by design (writes resume by key). Mutants caught: the queue deadline at an hour; the policy's refusal
+reported unavailable. Still unreached: the participation grant after a write GitHub accepts (437) and the
+local-development broker (123).
