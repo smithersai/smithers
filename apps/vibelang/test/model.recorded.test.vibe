@@ -4,7 +4,7 @@
 // e2e/chat-markdown.spec.ts, replays the same recording), each with smithers.sh's real agent inside one durable execution, over the
 // deployment's default model (DEFAULT_CHAT_MODEL) through test/support/model.vibe. Replayed from
 // test/recordings/model-*.json unless VIBE_MODEL says otherwise; a replay needs no key and reaches no network. Until
-// the recordings are committed (`pnpm record:model` with CEREBRAS_API_KEY, at most 40 model calls) the cases skip.
+// a case's recording is committed (`pnpm record:model` with CEREBRAS_API_KEY, at most 40 model calls) that case skips.
 // A real answer differs from run to run, so each case checks what the product promises of any answer, not its words.
 // Failures stay on the scripted model (fuzz/model-server.vibe) as injected faulty answers.
 import { describe, expect, it } from "@effect/vitest"
@@ -32,30 +32,44 @@ const VIP: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title:
 const PAGE = { page: "roadmap", source: "# Roadmap\n\nTuples, then records, then pattern guards.\n", ask: "Make it one sentence." }
 const nonEmpty = expect.stringMatching(/\S/)
 
+/**
+ * The draft's own key is admitted and settled once, and every model request is charged on its own receipt with the
+ * tokens the provider reported. An agent may take several frames (each a model call), so the count is the requests'.
+ */
+function chargedOnce(log: { admitted: number; spent: number; calls: number; tokens: number; unreported: number }, requests: number) {
+  expect(log).toMatchObject({ admitted: 1, spent: 1, unreported: 0 })
+  expect(requests).toBeGreaterThan(0)
+  expect(log.calls).toBe(requests)
+  expect(log.tokens).toBeGreaterThan(0)
+}
+
 effect function parsed(text: string) {
   return (try Effect.orDie(Effect.try(() => JSON.parse(text)))) as Record<string, unknown>
 }
 
-describe.skipIf(configured === "replay" && missing.length > 0)(`the real model's answers (record with CEREBRAS_API_KEY: pnpm record:model)`, () => {
-  it.live("the VIP agent drafts every field of the proposal, charged once", () => scoped(effect {
+/** A case replays only once its recording is committed; record and pass-through always run. */
+const whenRecorded = (name: (typeof CASES)[number]) => it.live.skipIf(configured === "replay" && missing.includes(name))
+
+describe(`the real model's answers (record with CEREBRAS_API_KEY: pnpm record:model)`, () => {
+  whenRecorded("vip-draft")("the VIP agent drafts every field of the proposal, charged once", () => scoped(effect {
     const recorded = try recordedModel("vip-draft")
     const { log, spend } = ledger("admit")
     const layer = writer.pipe(Layer.provide(agentLayer), Layer.provide(Layer.succeed(ChatModel, { model: recorded.model, unusable: "" })), Layer.provide(Layer.succeed(Spend, spend)))
     const draft = try parsed(try within(layer, Effect.orDie(effect { return JSON.stringify(try (try VipWriter).draft(VIP)) })))
     expect(draft).toEqual({ title: nonEmpty, summary: nonEmpty, example: nonEmpty, prior: nonEmpty })
-    expect(log).toEqual({ admitted: 1, spent: 1 })
+    chargedOnce(log, recorded.requests.count)
   }), 120_000)
 
-  it.live("the wiki agent drafts the asked page with text, charged once", () => scoped(effect {
+  whenRecorded("wiki-draft")("the wiki agent drafts the asked page with text, charged once", () => scoped(effect {
     const recorded = try recordedModel("wiki-draft")
     const { log, spend } = ledger("admit")
     const layer = wikiWriter.pipe(Layer.provide(wikiAgentLayer), Layer.provide(Layer.succeed(ChatModel, { model: recorded.model, unusable: "" })), Layer.provide(Layer.succeed(Spend, spend)))
     const draft = try parsed(try within(layer, Effect.orDie(effect { return JSON.stringify(try (try WikiWriter).draft(PAGE)) })))
     expect(draft).toEqual({ page: "roadmap", text: nonEmpty })
-    expect(log).toEqual({ admitted: 1, spent: 1 })
+    chargedOnce(log, recorded.requests.count)
   }), 120_000)
 
-  it.live("a specification reviewer answers a verdict and grade at the asked revision, charged once", () => scoped(effect {
+  whenRecorded("review")("a specification reviewer answers a verdict and grade at the asked revision, charged once", () => scoped(effect {
     const recorded = try recordedModel("review")
     const { log, spend } = ledger("admit")
     // The reviewer builds its model from the deployment's record; its provider calls go through the recorded fetch.
@@ -67,10 +81,10 @@ describe.skipIf(configured === "replay" && missing.length > 0)(`the real model's
       return JSON.stringify(result._tag === "Success" ? result.success : { reason: result.failure.reason })
     }).pipe(Effect.provideService(FetchHttpClient.Fetch, recorded.fetch)))
     expect(answer).toMatchObject({ verdict: nonEmpty, grade: expect.stringMatching(/^[A-F][+-]?$/), revision: 3, link: "#review" })
-    expect(log).toEqual({ admitted: 1, spent: 1 })
+    chargedOnce(log, recorded.requests.count)
   }), 120_000)
 
-  it.live("a reply answers a post with text, and charges what the provider counted within the ceiling", () => scoped(effect {
+  whenRecorded("reply")("a reply answers a post with text, and charges what the provider counted within the ceiling", () => scoped(effect {
     const recorded = try recordedModel("reply")
     const w = try replyWorld(recorded.model)
     const { entry, types, ledger: spent } = try w.answer("In one sentence: what is a tuple?")
@@ -81,7 +95,7 @@ describe.skipIf(configured === "replay" && missing.length > 0)(`the real model's
     expect(spent[Budget.RESERVED]).toBe(0)
   }), 120_000)
 
-  it.live("a reply in the live Worker answers in Markdown: a table, a list and a quote", () => scoped(effect {
+  whenRecorded("markdown")("a reply in the live Worker answers in Markdown: a table, a list and a quote", () => scoped(effect {
     const provider = try serveRecordedProvider("markdown")
     const api = try acquireRelease(serveApi(provider.bindings), (served) => promise(() => served.dispose()))
     const reply = try replyFrom(api.origin, MARKDOWN_PROMPT)

@@ -2943,3 +2943,17 @@ The lead's two calls on the browser gate's sites that mock mode could not reach:
    browser's post finds the recorded calls. Waiting: `LEAD RUNS: cd apps/vibelang && pnpm record:model` (at most 40
    model calls, all five cases).
 
+## The first model recordings (vl-coverage, session 27, 2026-11-12)
+
+The lead's `pnpm record:model` on main `b576a99ff7fa` recorded `reply` and `markdown`
+(`test/recordings/model-reply.json`, `model-markdown.json`, committed unchanged). Each recorded case now skips only
+while its own recording is missing, so these two replay while the other three wait.
+
+The VIP draft, wiki draft and specification reviewer cases failed in record mode only: they asserted the budget log
+`{ admitted: 1, spent: 1 }`, and the log has since gained `calls`, `tokens` and `unreported` (one entry per physical
+model call). The VIP draft logged `calls: 2, unreported: 0`. That is two agent frames (`VIP_FRAMES` is 8), not a
+retry: the agent package records a reissued call as unsettled, which the ledger counts as unreported. No metering bug.
+The three cases now check that the draft's own key is admitted and settled once, that nothing is unreported, that
+tokens were charged, and that `calls` equals the model requests counted at the recording's `fetch`
+(`recordedModel(...).requests`). Waiting: `LEAD RUNS: cd apps/vibelang && pnpm record:model -t "charged once"` (only
+those three cases; the committed recordings are not opened).

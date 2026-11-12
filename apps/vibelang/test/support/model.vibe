@@ -75,12 +75,18 @@ export effect function recordedClient(name: string, options: Options = {}) {
 
 /**
  * The deployment's default model (DEFAULT_CHAT_MODEL) for one test, over `recordedClient(name)`: the HostModel
- * service, the `fetch` its calls go through, and the record and configuration values it was built from.
+ * service, the `fetch` its calls go through, the record and configuration values it was built from, and `requests`:
+ * how many model requests went through that `fetch`, recorded or replayed.
  */
 export effect function recordedModel(name: string, options: Options = {}) {
   const { client, mode, record, values } = try recordedClient(name, options)
-  const fetch = try Effect.try(() => fetchOver(client))
+  const requests = { count: 0 }
+  const counted = HttpClient.make((request) => effect {
+    requests.count += 1
+    return try client.execute(request)
+  })
+  const fetch = try Effect.try(() => fetchOver(counted))
   const model = try HostModel.make(record, { fetch }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
   try Effect.logInfo("model test client").pipe(Effect.annotateLogs({ mode, recording: name }))
-  return { model, fetch, record, values }
+  return { model, fetch, record, values, requests }
 }
