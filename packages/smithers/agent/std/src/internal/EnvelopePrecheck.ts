@@ -112,8 +112,99 @@ const reservedWords = new Set([
   "until",
   "while"
 ])
-const writeCommands = new Set(["chmod", "chown", "mkdir", "rm", "rmdir", "tee", "touch", "truncate", "unlink"])
-const destinationCommands = new Set(["cp", "install", "mv"])
+/**
+ * What one option's value is: a path the command reads or writes, or text
+ * such as a mode, a size, or a script.
+ */
+type OptionValue = Access | "text"
+
+/**
+ * How a command's arguments touch the paths they name.
+ *
+ * A command absent from `syntaxes` reads every path-shaped operand. A written
+ * operand is a path whatever its shape, because `rm target` deletes
+ * `./target` exactly as `rm ./target` does.
+ */
+interface Syntax {
+  // `write`: every operand is written. `destination`: the last operand is
+  // written and the rest are read, unless a `write` option names the target.
+  readonly operands: "read" | "write" | "destination"
+  // Options that take a value, either as the next word or attached to the
+  // option (`-oFILE`, `--output=FILE`).
+  readonly options?: Readonly<Record<string, OptionValue>>
+  // Leading operands that are text, such as chmod's mode or sed's script,
+  // unless one of the `unless` options supplies that text instead.
+  readonly text?: { readonly count: number; readonly unless: ReadonlyArray<string> }
+  // An option that makes the operands written in place, such as `sed -i`.
+  readonly inPlace?: RegExp
+  // `key=value` operands whose value is written, such as `dd of=FILE`.
+  readonly writeKeys?: ReadonlySet<string>
+}
+
+const ownership: Syntax = {
+  operands: "write",
+  options: { "--reference": "read", "--from": "text" },
+  text: { count: 1, unless: ["--reference"] }
+}
+const destination = (options: Readonly<Record<string, OptionValue>>): Syntax => ({
+  operands: "destination",
+  options: { "-t": "write", "--target-directory": "write", "-S": "text", "--suffix": "text", ...options }
+})
+const syntaxes: Readonly<Record<string, Syntax>> = {
+  chgrp: ownership,
+  chmod: ownership,
+  chown: ownership,
+  cp: destination({}),
+  dd: { operands: "read", writeKeys: new Set(["of"]) },
+  install: destination({
+    "-m": "text",
+    "--mode": "text",
+    "-o": "text",
+    "--owner": "text",
+    "-g": "text",
+    "--group": "text"
+  }),
+  ln: destination({}),
+  mkdir: { operands: "write", options: { "-m": "text", "--mode": "text" } },
+  mv: destination({}),
+  rm: { operands: "write" },
+  rmdir: { operands: "write" },
+  sed: {
+    operands: "read",
+    options: {
+      "-e": "text",
+      "--expression": "text",
+      "-f": "read",
+      "--file": "read",
+      "-l": "text",
+      "--line-length": "text"
+    },
+    text: { count: 1, unless: ["-e", "--expression", "-f", "--file"] },
+    inPlace: /^(?:-[A-Za-z]*i|--in-place(?:=|$))/
+  },
+  sort: { operands: "read", options: { "-o": "write", "--output": "write" } },
+  tee: { operands: "write" },
+  touch: {
+    operands: "write",
+    options: { "-d": "text", "--date": "text", "-r": "read", "--reference": "read", "-t": "text" }
+  },
+  truncate: {
+    operands: "write",
+    options: { "-s": "text", "--size": "text", "-r": "read", "--reference": "read" }
+  },
+  unlink: { operands: "write" }
+}
+const readOperands: Syntax = { operands: "read" }
+const syntaxOf = (command: string): Syntax => Object.hasOwn(syntaxes, command) ? syntaxes[command]! : readOperands
+const isMutating = (command: string): boolean => syntaxOf(command).operands !== "read"
+// `>&2` and `<&0-` duplicate or move a file descriptor; `>&-` closes one.
+const descriptorTarget = /^(?:\d+-?|-)$/
+// `name=value`: an assignment, or a key such as dd's `of=`. A word whose text
+// before `=` holds a slash is a path that happens to contain `=`.
+const keyValue = /^([^=/]+)=([\s\S]*)$/
+// `-C/outside`: a path attached to a short option. The flag letters before it
+// are as few as possible, so `-xvf./a.tar` reads `./a.tar`.
+const attachedPath = /^-[A-Za-z0-9]+?([./~$][\s\S]*)$/
 const prefixWrappers = new Set(["env", "nice", "time", "sudo", "nohup", "xargs", "command", "exec"])
 // A shell runs the argument of its `-c` flag as shell text of its own.
 const shells = new Set(["ash", "bash", "dash", "fish", "ksh", "mksh", "sh", "zsh"])
@@ -304,6 +395,11 @@ const lex = (command: string, nesting: number): Lexed => {
 // and is part of the name; only a trailing comma is punctuation.
 const pathValue = (token: string): string => token.replace(/,+$/, "")
 
+// A shell expands a leading `~` or `$HOME` to the user's home directory,
+// which the scan does not know. Resolving `~/.ssh/id_rsa` under the working
+// directory checked a file nobody reads, so such a path is refused instead.
+const isHomePath = (token: string): boolean => /^(?:~|\$HOME(?![A-Za-z0-9_])|\$\{HOME\})/.test(token)
+
 const isPathToken = (path: Path.Path, token: string): boolean =>
   token === "." ||
   token === ".." ||
@@ -311,7 +407,8 @@ const isPathToken = (path: Path.Path, token: string): boolean =>
   token.startsWith("../") ||
   path.isAbsolute(token) ||
   /^[A-Za-z]:[\\/]/.test(token) ||
-  token.includes("/")
+  token.includes("/") ||
+  isHomePath(token)
 
 const segmentReferences = (
   path: Path.Path,
@@ -334,9 +431,7 @@ const segmentReferences = (
   if (hasWrapper) {
     // Wrapper options can carry their own values. Prefer a later known
     // mutating command so an option value cannot lend it a read classification.
-    const mutatingIndex = tokens.findIndex((_, index) =>
-      isWord(index) && (writeCommands.has(name(index)) || destinationCommands.has(name(index)))
-    )
+    const mutatingIndex = tokens.findIndex((_, index) => isWord(index) && isMutating(name(index)))
     if (mutatingIndex !== -1) commandIndex = mutatingIndex
   }
 
@@ -353,30 +448,98 @@ const segmentReferences = (
     )
     if (flag !== -1 && flag + 1 < tokens.length && isWord(flag + 1)) scripts.add(flag + 1)
   }
-  const candidates: Array<{ readonly index: number; readonly value: string }> = []
+  const syntax = syntaxOf(command)
+  const found: Array<{ readonly index: number; readonly reference: PathReference }> = []
+  // A path-shaped word is a reference wherever it stands. A written word and a
+  // redirection target are references whatever their shape: `rm target`
+  // deletes `./target` exactly as `rm ./target` does.
+  const add = (index: number, access: Access, text: string, anyShape: boolean): void => {
+    const value = pathValue(text)
+    if (value !== "" && (anyShape || isPathToken(path, value))) found.push({ index, reference: { access, value } })
+  }
+  // `of=/etc/x` and `FOO=/x` name the path after `=`, not a relative path
+  // whose first segment is `of=`.
+  const addRead = (index: number, text: string): void => {
+    const pair = keyValue.exec(text)
+    if (pair === null) add(index, "read", text, false)
+    else if (index > commandIndex && syntax.writeKeys?.has(pair[1]!) === true) add(index, "write", pair[2]!, true)
+    else add(index, "read", pair[2]!, false)
+  }
+  const operands: Array<number> = []
+  const optionWords: Array<string> = []
+  const given = new Set<string>()
+  let target = false
+  let endOfOptions = false
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!
     if (index === commandIndex || scripts.has(index) || token.operator) continue
-    if (!isTarget(index) && token.text.startsWith("-")) continue
-    if (isTarget(index) && textRedirections.has(tokens[index - 1]!.text)) continue
-    const value = pathValue(token.text)
-    if (value !== "" && isPathToken(path, value)) candidates.push({ index, value })
+    if (isTarget(index)) {
+      const redirection = tokens[index - 1]!.text
+      if (textRedirections.has(redirection)) continue
+      if ((redirection === ">&" || redirection === "<&") && descriptorTarget.test(token.text)) continue
+      add(index, writeRedirections.has(redirection) ? "write" : "read", token.text, true)
+      continue
+    }
+    const own = index > commandIndex ? syntax : readOperands
+    if (index > commandIndex && !endOfOptions && token.text === "--") {
+      endOfOptions = true
+    } else if (endOfOptions || !token.text.startsWith("-") || token.text === "-") {
+      if (index > commandIndex) operands.push(index)
+      else addRead(index, token.text)
+    } else {
+      optionWords.push(token.text)
+      // The option that takes a value, and the value attached to it: the rest
+      // of `--name=value`, or the letters after `o` in a cluster like `-fo`.
+      let option: string | undefined
+      let attached: string | undefined
+      if (token.text.startsWith("--")) {
+        const equals = token.text.indexOf("=")
+        const name = equals === -1 ? token.text : token.text.slice(0, equals)
+        if (own.options?.[name] !== undefined) option = name
+        attached = equals === -1 ? undefined : token.text.slice(equals + 1)
+      } else {
+        for (let letter = 1; letter < token.text.length && option === undefined; letter++) {
+          if (own.options?.[`-${token.text[letter]}`] !== undefined) {
+            option = `-${token.text[letter]}`
+            attached = token.text.slice(letter + 1) || undefined
+          }
+        }
+      }
+      if (option === undefined) {
+        // An option the scan does not know: a path in its value is read.
+        const value = attached ?? (token.text.startsWith("--") ? undefined : attachedPath.exec(token.text)?.[1])
+        if (value !== undefined) add(index, "read", value, false)
+        continue
+      }
+      given.add(option)
+      const access = own.options![option]!
+      let value = attached
+      if (value === undefined && index + 1 < tokens.length && isWord(index + 1)) value = tokens[++index]!.text
+      if (access !== "text" && value !== undefined) {
+        add(index, access, value, access === "write")
+        if (access === "write") target = true
+      }
+    }
   }
 
-  const destinationIndex = destinationCommands.has(command)
-    ? candidates.filter(({ index }) => !isTarget(index)).at(-1)?.index
-    : undefined
+  const textCount = syntax.text !== undefined && !syntax.text.unless.some((option) => given.has(option))
+    ? syntax.text.count
+    : 0
+  const files = operands.slice(textCount)
+  const written = syntax.operands === "write" ||
+    (syntax.inPlace !== undefined && optionWords.some((word) => syntax.inPlace!.test(word)))
+  for (const [position, index] of files.entries()) {
+    const text = tokens[index]!.text
+    if (written) add(index, "write", text, true)
+    else if (syntax.operands === "destination") {
+      if (!target && position === files.length - 1) add(index, "write", text, true)
+      else add(index, "read", text, false)
+    } else addRead(index, text)
+  }
 
   const script = [...scripts].map((index) => tokens[index]!.text).join(" ")
   const nested = script === "" ? [] : references(path, script, nesting + 1)
-  const named = candidates.map(({ index, value }): PathReference => {
-    const access: Access = isTarget(index)
-      ? writeRedirections.has(tokens[index - 1]!.text) ? "write" : "read"
-      : writeCommands.has(command) || destinationIndex === index
-      ? "write"
-      : "read"
-    return { access, value }
-  })
+  const named = found.sort((left, right) => left.index - right.index).map(({ reference }) => reference)
   return [...named, ...nested]
 }
 
@@ -470,6 +633,13 @@ export const outsideEnvelope = (
     return tooDeep()
   }
   for (const reference of named) {
+    if (isHomePath(reference.value)) {
+      return new StdError.StdError({
+        code: reference.access === "write" ? "outside_declared_writes" : "outside_declared_reads",
+        message: `Command path is under a home directory the pre-check cannot resolve: ${reference.value}`,
+        path: reference.value
+      })
+    }
     const resolved = resolvePath(path, cwd, reference.value)
     // /dev/* is the process plumbing every shell one-liner leans on:
     // `2>/dev/null`, `cat /dev/stdin`. Normalize first so a dot-dot segment

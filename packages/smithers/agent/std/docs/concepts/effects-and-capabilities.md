@@ -121,6 +121,15 @@ and every declaration to a canonical absolute path, and refuses the call with
 Paths under `/dev/` are exempt, because `2>/dev/null` is process plumbing rather
 than a filesystem access.
 
+A command's syntax decides what is a path. A redirection target and every
+operand of a writing command (`rm`, `tee`, `touch`, the destination of `cp`,
+`mv`, `ln` and `install`, the files of `sed -i`) are paths whatever their shape,
+so `rm target` is a write of `./target`. Option values count too: `-o FILE` and
+`--target-directory=DIR` are writes, `-C/outside` and `--files-from=/outside`
+are reads, and `dd of=FILE` writes `FILE`. A mode, size, date or `sed` script
+is text, not a path. A path that starts with `~` or `$HOME` is refused, because
+the check does not know the home directory it expands to.
+
 Then it starts an ordinary host process. Shell expansion, subprocesses, and
 paths computed at runtime are not observed. So the check bounds **what a caller
 declared it would do**, not what the process can do. A host that needs

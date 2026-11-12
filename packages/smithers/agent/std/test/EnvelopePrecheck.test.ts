@@ -25,6 +25,7 @@ interface Refusal {
 interface Case {
   readonly name: string
   readonly text: string
+  readonly cwd?: string
   readonly reads: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
   readonly refusal: Refusal | undefined
@@ -165,7 +166,56 @@ const refused: ReadonlyArray<Case> = [
     reads: ["/work/**"],
     writes: [],
     refusal: { code: "outside_declared_reads", path: "/outside/a b" }
-  }
+  },
+  // Issue #4889: a write names its target whatever the word's shape, an option
+  // value or `key=value` names a path, and `~` is not the working directory.
+  // Each of these spawned under `cwd: "/work"` with `writes: []`.
+  ...([
+    ["rm target", "/work/target"],
+    ["rm -rf notes.txt src", "/work/notes.txt"],
+    ["rm -- -target", "/work/-target"],
+    ["echo x > out.txt", "/work/out.txt"],
+    ["tee -a notes.txt", "/work/notes.txt"],
+    ["tee out.txt", "/work/out.txt"],
+    ["dd if=/work/a of=/etc/cron.d/x", "/etc/cron.d/x"],
+    ["dd if=/work/a of=/work/target", "/work/target"],
+    ["sed -i s/a/b/ /work/a", "/work/a"],
+    ["sed -n -e p --in-place=.bak target", "/work/target"],
+    ["sort -o/work/target /work/a", "/work/target"],
+    ["sort --output target /work/a", "/work/target"],
+    ["ln -sf /work/a /work/target", "/work/target"],
+    ["cp -t /work/dir /work/a", "/work/dir"],
+    ["install --target-directory=dir -m 644 /work/a", "/work/dir"],
+    ["chmod 644 target", "/work/target"],
+    ["truncate -s 0 target", "/work/target"],
+    ["xargs -I{} rm {}", "/work/{}"],
+    ["echo x > ~/.bashrc", "~/.bashrc"]
+  ] as const).map(([text, written]): Case => ({
+    name: `the write in ${text}`,
+    text,
+    cwd: "/work",
+    reads: ["/work/**", "/work"],
+    writes: [],
+    refusal: { code: "outside_declared_writes", path: written }
+  })),
+  ...([
+    ["cat ~/.ssh/id_rsa", "~/.ssh/id_rsa"],
+    ["cat ~", "~"],
+    ["cat $HOME/.ssh/id_rsa", "$HOME/.ssh/id_rsa"],
+    ["cat ${HOME}/.ssh/id_rsa", "${HOME}/.ssh/id_rsa"],
+    ["git -C/outside log", "/outside"],
+    ["cat --files-from=/outside/secret", "/outside/secret"],
+    ["env KEY=/outside/secret cat", "/outside/secret"],
+    ["sed -f /outside/script /work/a", "/outside/script"],
+    ["touch -r /outside/stamp /work/a", "/outside/stamp"]
+  ] as const).map(([text, read]): Case => ({
+    name: `the read in ${text}`,
+    text,
+    cwd: "/work",
+    reads: ["/work/**", "/work"],
+    writes: ["/work/**"],
+    refusal: { code: "outside_declared_reads", path: read }
+  }))
 ]
 
 const accepted: ReadonlyArray<Case> = [
@@ -224,7 +274,31 @@ const accepted: ReadonlyArray<Case> = [
     reads: ["/work/**"],
     writes: [],
     refusal: undefined
-  }
+  },
+  // An option's value and a mode are text, not paths the command writes.
+  ...([
+    ["chmod 644 /work/target", ["/work/target"]],
+    ["chown --from=root builder /work/target", ["/work/target"]],
+    ["truncate -s 0 /work/target", ["/work/target"]],
+    ["mkdir -m 755 /work/target", ["/work/target"]],
+    ["touch -d tomorrow /work/target", ["/work/target"]],
+    ["sed s/a/b/ /work/input", []],
+    ["sed -e s/a/b/ -i.bak /work/target", ["/work/target"]],
+    ["sort -k 2 -o /work/target /work/input", ["/work/target"]],
+    ["dd if=/work/input of=/work/target bs=1M", ["/work/target"]],
+    ["cp -rt /work/target /work/input", ["/work/target/**", "/work/target"]],
+    ["install -m 644 -o root /work/input /work/target", ["/work/target"]],
+    ["ln -s /work/input /work/target", ["/work/target"]],
+    ["mv --suffix .old /work/input /work/target", ["/work/target"]],
+    ["echo x 2>&1 >&2 <&0- >&-", []]
+  ] as const).map(([text, writes]): Case => ({
+    name: `the declared paths in ${text}`,
+    text,
+    cwd: "/work",
+    reads: ["/work/**", "/work"],
+    writes,
+    refusal: undefined
+  }))
 ]
 
 // Each nesting level costs the scan a pass and a stack frame; 50,000 levels
@@ -257,9 +331,9 @@ describe("nesting depth", () => {
 })
 
 describe("outsideEnvelope", () => {
-  for (const { name, reads, refusal, text, writes } of [...refused, ...accepted]) {
+  for (const { cwd, name, reads, refusal, text, writes } of [...refused, ...accepted]) {
     it(`${refusal === undefined ? "admits" : "refuses"} ${name}`, () => {
-      const violation = outsideEnvelope({ cwd: undefined, reads, writes }, text, path)
+      const violation = outsideEnvelope({ cwd, reads, writes }, text, path)
       if (refusal === undefined) {
         expect(violation).toBeUndefined()
         return
@@ -386,7 +460,11 @@ describe("commandReferences", () => {
     {
       name: "skips an escaped parenthesis and a quoted span inside a substitution",
       command: `x=$(rm "/work/a" \\) ')' )`,
-      expected: [{ access: "write", value: "/work/a" }]
+      expected: [
+        { access: "write", value: "/work/a" },
+        { access: "write", value: ")" },
+        { access: "write", value: ")" }
+      ]
     },
     {
       name: "reads a backtick substitution nested in a dollar substitution",
@@ -396,12 +474,16 @@ describe("commandReferences", () => {
     {
       name: "skips an escaped backtick inside a backtick substitution",
       command: "`rm /work/a \\` x`",
-      expected: [{ access: "write", value: "/work/a" }]
+      expected: [
+        { access: "write", value: "/work/a" },
+        { access: "write", value: "`" },
+        { access: "write", value: "x" }
+      ]
     },
     {
       name: "reads an unclosed quote inside a substitution to the end of the text",
       command: "echo $(rm /work/a 'x",
-      expected: [{ access: "write", value: "/work/a" }]
+      expected: [{ access: "write", value: "/work/a" }, { access: "write", value: "x" }]
     },
     {
       name: "joins a line continuation inside a word and inside double quotes",
@@ -456,6 +538,30 @@ describe("commandReferences", () => {
       name: "reads a -c flag with no argument as no command",
       command: "sh -c",
       expected: []
+    },
+    {
+      name: "reads a redirection target whatever its shape",
+      command: "cat < in.txt",
+      expected: [{ access: "read", value: "in.txt" }]
+    },
+    {
+      name: "reads dd's of= value as the written path and a bare if= value as no path",
+      command: "dd if=a of=b",
+      expected: [{ access: "write", value: "b" }]
+    },
+    {
+      name: "classifies a copy's -t directory as its destination and every operand as a source",
+      command: "cp -t /work/dir /work/a /work/b",
+      expected: [
+        { access: "write", value: "/work/dir" },
+        { access: "read", value: "/work/a" },
+        { access: "read", value: "/work/b" }
+      ]
+    },
+    {
+      name: "reads a file named after -- as an operand, not an option",
+      command: "rm -f -- -x",
+      expected: [{ access: "write", value: "-x" }]
     },
     {
       name: "reads no path from a command that names none",

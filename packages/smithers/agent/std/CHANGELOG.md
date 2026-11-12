@@ -20,6 +20,12 @@
 
 ### Fixed
 
+- The hermetic `bash` pre-check classifies arguments by command syntax rather
+  than path shape. `rm target`, `echo x > out.txt`, `tee -a notes.txt`,
+  `dd of=FILE`, `sed -i`, `ln`, `sort -o` and `cp -t` are writes; option values
+  such as `-C/outside` and `--files-from=/outside/x` are reads; a path under `~`
+  or `$HOME` is refused. These commands used to pass with `writes: []`.
+
 - Directory exclusions such as `!vendor` and `!dist/` now exclude their
   descendants in native and in-process searches. Remote searches retain every
   hard-linked filename instead of silently skipping later names for the same file.

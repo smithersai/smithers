@@ -149,6 +149,11 @@ not covered by its own `reads` or `writes`. The message names the resolved path.
 check is lexical and fail-closed: it reads the tokens in the command line, not
 what the process will actually touch.
 
+A bare name counts when the command writes it: `rm target`, `tee out.txt` and
+`echo x > out.txt` write a file in the working directory, which `writes` must
+cover. A path under `~` or `$HOME` is always refused, with the unexpanded path
+in the message; write the absolute path and declare it.
+
 ## invalid_input: a command nested deeper than 32 levels
 
 **What happened.** A hermetic `bash` call nested command substitutions, quotes,
