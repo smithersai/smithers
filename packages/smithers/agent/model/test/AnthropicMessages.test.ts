@@ -1313,6 +1313,14 @@ describe("AnthropicMessages generation budget and effort", () => {
     expect(body(request("claude-opus-5-5", { maxTokens: 512 })).max_tokens).toBe(512)
   })
 
+  it.each(["claude-opus-5-20260101", "claude-opus-5-5-20260101", "claude-sonnet-4-6-20260115"])(
+    "uses the family output ceiling for %s and preserves an explicit budget",
+    (modelId) => {
+      expect(body(request(modelId))).toMatchObject({ model: modelId, max_tokens: 128_000 })
+      expect(body(request(modelId, { maxTokens: 512 }))).toMatchObject({ model: modelId, max_tokens: 512 })
+    }
+  )
+
   it("lowers reasoningEffort to output_config.effort with adaptive thinking", () => {
     const lowered = body(request("claude-opus-5-5", { reasoningEffort: "xhigh" }))
     expect(lowered.output_config).toEqual({ effort: "xhigh" })

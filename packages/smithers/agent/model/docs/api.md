@@ -238,6 +238,12 @@ the error's schema and are non-enumerable, so a journal never copies a
 provider body into run state. An error a route raised also carries
 `error.timing`, the failed call's [wire timing](#wire-timing), the same way.
 
+Chat Completions reads object error envelopes and array-wrapped errors such
+as Gemini's. It preserves the provider's message and applies the same
+classification as an unwrapped error. An HTTP `400` message such as
+`Invalid API key provided` is `authentication`, allowing a refresh-capable
+`Auth` to recover once through the route's authentication recovery.
+
 The codes and their retryability:
 
 | Code                      | Meaning                                               | Retryable |
@@ -911,10 +917,11 @@ original state.
 
 Static facts about known provider models, read from a model id alone.
 
-| Export                              | Kind     | Behavior                                                                                                                                                                                                                                   |
-| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contextWindowTokensFor(modelId)`   | resolver | The context window in tokens, matched case-insensitively against the id. A million-token row is anchored to the bare id, so a cloud-prefixed or suffixed id falls through to the conservative row. Unknown ids answer 128,000, never zero. |
-| `knownContextWindowTokens(modelId)` | resolver | The same match, but `undefined` for an id no row names, so a caller that must not show an unmeasured window can omit it.                                                                                                                   |
+| Export                              | Kind     | Behavior                                                                                                                                                                                                                                     |
+| ----------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contextWindowTokensFor(modelId)`   | resolver | The context window in tokens, matched case-insensitively against the id. A trailing eight-digit snapshot date uses the family's window; cloud prefixes and other suffixes keep the conservative row. Unknown ids answer 128,000, never zero. |
+| `knownContextWindowTokens(modelId)` | resolver | The same match, but `undefined` for an id no row names, so a caller that must not show an unmeasured window can omit it.                                                                                                                     |
+| `maxOutputTokensFor(modelId)`       | resolver | The output ceiling in tokens, matched case-insensitively after removing a trailing eight-digit snapshot date. Unknown ids answer `undefined`; Anthropic Messages uses `4096` when no ceiling is known.                                       |
 
 `@smthrs/agent` re-exports this as `SeatResolver.contextWindowTokensFor`, and
 the built-in harness calls it for the compaction budget of a seat whose host

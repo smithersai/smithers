@@ -620,7 +620,46 @@ describe("OpenAIChatCompletions.protocol.classifyError", () => {
     )
     expect(error.httpStatus).toBe(429)
     expect(error.code).toBe("rate_limited")
+    expect(error.message).toBe("You exceeded your current quota")
   })
+
+  it.each([
+    { error: { code: 400, message: "Invalid API key provided", status: "INVALID_ARGUMENT" } },
+    [{ error: { code: 400, message: "Invalid API key provided", status: "INVALID_ARGUMENT" } }],
+    [null, {}, { error: { code: 400, message: "Invalid API key provided", status: "INVALID_ARGUMENT" } }],
+    [
+      { error: { message: "Invalid API key provided" } },
+      { error: { message: "You exceeded your current quota" } }
+    ]
+  ].map((body) => ({ body })))("classifies a Gemini 400 authentication envelope: %j", ({ body }) => {
+    const error = OpenAIChatCompletions.protocol.classifyError(400, JSON.stringify(body))
+    expect(error).toMatchObject({
+      code: "authentication",
+      message: "Invalid API key provided",
+      httpStatus: 400
+    })
+  })
+
+  it("reads a flat error inside a single-element array", () => {
+    expect(OpenAIChatCompletions.protocol.classifyError(
+      400,
+      "[{\"type\":\"invalid_api_key\",\"message\":\"Invalid API key provided\"}]"
+    )).toMatchObject({
+      code: "authentication",
+      providerCode: "invalid_api_key",
+      message: "Invalid API key provided"
+    })
+  })
+
+  it.each(["[]", "[null]", "[42]", "null", "true", "\"opaque\"", "{\"error\":null}"])(
+    "keeps the status fallback for a body without error fields: %s",
+    (body) => {
+      expect(OpenAIChatCompletions.protocol.classifyError(400, body)).toMatchObject({
+        code: "invalid_request",
+        message: "Chat Completions request failed with HTTP 400"
+      })
+    }
+  )
 
   it("classifies an authentication failure by status code", () => {
     const error = OpenAIChatCompletions.protocol.classifyError(401, "{\"error\":{\"message\":\"invalid api key\"}}")

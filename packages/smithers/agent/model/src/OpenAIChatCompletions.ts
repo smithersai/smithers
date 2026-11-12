@@ -503,7 +503,7 @@ const finalize = (state: State): ReadonlyArray<ModelEvent.ModelEvent> =>
     ModelEvent.ModelEvent.ToolCallEnd({ type: "tool-call-end", id: call.callId, arguments: call.arguments })
   )
 
-const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(JsonObject))
+const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 const string = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
 const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -529,7 +529,9 @@ const providerReason = (
 
 const classifyError = (status: number, body: string): ModelError => {
   const decoded = decodeErrorBody(body)
-  const parsed = Option.isSome(decoded) ? decoded.value : undefined
+  const value = Option.isSome(decoded) ? decoded.value : undefined
+  // Gemini's compatibility API can wrap the error envelope in an array.
+  const parsed = Array.isArray(value) ? value.find((entry) => record(entry)?.error !== undefined) ?? value[0] : value
   const error = record(record(parsed)?.error) ?? record(parsed)
   const code = string(error?.code) ?? string(error?.type)
   const message = string(error?.message) ?? `Chat Completions request failed with HTTP ${status}`

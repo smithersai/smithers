@@ -37,14 +37,16 @@ const contextWindows: ReadonlyArray<readonly [RegExp, number]> = [
  * The context window, in tokens, of a model id this catalog has met, or
  * `undefined` when no row matches. A display that must not invent a window
  * (a usage meter) reads this; a budget that needs a number reads
- * `contextWindowTokensFor`.
+ * `contextWindowTokensFor`. A trailing eight-digit snapshot date uses its
+ * family's window.
  *
  * @category resolvers
  * @since 1.0.0-rc.1
  */
 export const knownContextWindowTokens = (modelId: string): number | undefined => {
+  const family = modelId.replace(/-\d{8}$/, "")
   for (const [pattern, tokens] of contextWindows) {
-    if (pattern.test(modelId)) return tokens
+    if (pattern.test(family)) return tokens
   }
   return undefined
 }
@@ -74,14 +76,16 @@ const outputCeilings: ReadonlyArray<readonly [RegExp, number]> = [
  * The largest output budget, in tokens, a known model accepts, or `undefined`
  * for a model the catalog has not met. A protocol that must state a budget
  * (Anthropic Messages) sends this instead of a guess, so a turn is not cut off
- * below what the model can write.
+ * below what the model can write. A trailing eight-digit snapshot date uses
+ * its family's ceiling.
  *
  * @category resolvers
  * @since 1.0.0-rc.1
  */
 export const maxOutputTokensFor = (modelId: string): number | undefined => {
+  const family = modelId.replace(/-\d{8}$/, "")
   for (const [pattern, tokens] of outputCeilings) {
-    if (pattern.test(modelId)) return tokens
+    if (pattern.test(family)) return tokens
   }
   return undefined
 }

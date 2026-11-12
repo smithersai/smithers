@@ -1667,6 +1667,64 @@ describe("Route.stream refresh", () => {
     ])
   })
 
+  it.each([false, true])(
+    "recovers an array-wrapped Gemini 400 authentication failure (terminal %s)",
+    async (terminal) => {
+      const { auth, count } = refreshingAuth()
+      const seen: Array<string | undefined> = []
+      const route = Route.make({
+        ...Result.getOrThrow(Route.openaiChatCompatible({
+          id: "gemini",
+          providerName: "gemini",
+          baseUrl: "https://example.test",
+          apiKey: Redacted.make("")
+        })),
+        auth
+      })
+      const client = HttpClient.make((httpRequest) =>
+        Effect.sync(() => {
+          seen.push(httpRequest.headers.authorization)
+          const response = terminal || seen.length === 1
+            ? new Response(
+              "[{\"error\":{\"code\":400,\"message\":\"Invalid API key provided\",\"status\":\"INVALID_ARGUMENT\"}}]",
+              {
+                status: 400,
+                headers: { "content-type": "application/json" }
+              }
+            )
+            : sseResponse(["[DONE]"])
+          return HttpClientResponse.fromWeb(httpRequest, response)
+        })
+      )
+      const result = await Effect.runPromise(Effect.scoped(
+        Effect.gen(function*() {
+          const model = yield* Model.Model
+          return yield* model.stream(request).pipe(Stream.runCollect, Effect.result)
+        }).pipe(
+          Effect.provide(Route.layer(route)),
+          Effect.provide(RequestExecutor.layer),
+          Effect.provide(kernelHttpClientLayer(client)),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      ))
+
+      expect(count()).toBe(1)
+      expect(seen).toEqual(["Bearer stale-token", "Bearer fresh-token"])
+      if (terminal) {
+        expect(Result.isFailure(result)).toBe(true)
+        expect(Result.getFailure(result)).toMatchObject({
+          value: {
+            code: "authentication",
+            message: "Invalid API key provided",
+            httpStatus: 400
+          }
+        })
+      } else {
+        expect(Result.getOrThrow(result)).toEqual([])
+      }
+    }
+  )
+
   it("passes only the refused attempt's signed headers to request-specific recovery", async () => {
     let token = "refused"
     const auth: Auth.Auth = {
