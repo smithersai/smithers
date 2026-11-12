@@ -6,7 +6,7 @@ use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::{json, Value};
 
 use super::workspace_engine::{field, jj, Failure};
-use super::workspace_local::{jj_at, operation_args};
+use super::workspace_local::{change_in_operation, jj_at, operation_args};
 
 type Result<T> = std::result::Result<T, Failure>;
 
@@ -115,19 +115,22 @@ fn affected(repo: &Path, operation: &Value, request: &Value) -> Result<Vec<Strin
         ));
     }
     let kind = field(request, "operation")?;
-    let target_selector = if ["create", "snapshot", "apply_files"].contains(&kind) {
-        "@".to_owned()
+    // Resolve the target exactly as the mutation did: a divergent change is
+    // the one version on the working branch at the projected operation.
+    let target = if ["create", "snapshot", "apply_files"].contains(&kind) {
+        let mut head = rows(repo, current, "@")?;
+        if head.len() != 1 {
+            return Err(Failure::new(
+                "revision_conflict",
+                "projection target is unavailable",
+            ));
+        }
+        head.remove(0)
     } else {
-        format!("change_id(\"{target_change}\")")
+        change_in_operation(repo, target_change, current)?
     };
-    let target = rows(repo, current, &target_selector)?;
-    if target.len() != 1 {
-        return Err(Failure::new(
-            "revision_conflict",
-            "projection target is unavailable",
-        ));
-    }
-    let target_id = field(&target[0], "commit_id")?;
+    let target_id = field(&target, "commit_id")?;
+    let target_change = field(&target, "change_id")?;
     let mut selectors: Vec<_> = previous
         .keys()
         .filter(|id| valid_change(id))
@@ -135,16 +138,23 @@ fn affected(repo: &Path, operation: &Value, request: &Value) -> Result<Vec<Strin
         .collect();
     selectors.push(target_id.to_owned());
     let updated = rows(repo, current, &selectors.join(" | "))?;
-    Ok(updated
-        .into_iter()
-        .filter_map(|value| {
-            let change = value.get("change_id")?.as_str()?;
-            let commit = value.get("commit_id")?.as_str()?;
-            (previous.get(change).is_none_or(|old| old != commit)
-                || change == field(&target[0], "change_id").ok()?)
-            .then(|| change.to_owned())
-        })
-        .collect())
+    let mut changed: Vec<String> = Vec::new();
+    for value in &updated {
+        let (Some(change), Some(commit)) = (
+            value.get("change_id").and_then(Value::as_str),
+            value.get("commit_id").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        // Every version of a divergent change matches its selector; report
+        // the logical change once.
+        if (previous.get(change).is_none_or(|old| old != commit) || change == target_change)
+            && !changed.iter().any(|seen| seen == change)
+        {
+            changed.push(change.to_owned());
+        }
+    }
+    Ok(changed)
 }
 
 pub fn run(repo: &Path, workspace: &str, after: &str) -> Result<Value> {
@@ -171,7 +181,7 @@ pub fn run(repo: &Path, workspace: &str, after: &str) -> Result<Value> {
     let mut scanned = 0;
     for operation in operations.iter().skip(offset) {
         scanned += 1;
-        cursor = field(operation, "id")?.to_owned();
+        let previous = std::mem::replace(&mut cursor, field(operation, "id")?.to_owned());
         let Some(request) = projection(operation, workspace, repo) else {
             continue;
         };
@@ -187,9 +197,16 @@ pub fn run(repo: &Path, workspace: &str, after: &str) -> Result<Value> {
         if operation["is_snapshot"] == true && !["snapshot", "apply_files"].contains(&kind) {
             continue;
         }
+        // An accepted receipt that cannot be projected stops the page before
+        // it, so a retry delivers it instead of skipping the accepted edit.
         let changed = match affected(repo, operation, &request) {
             Ok(value) => value,
-            Err(_) => continue,
+            Err(error) if records.is_empty() => return Err(error),
+            Err(_) => {
+                cursor = previous;
+                scanned -= 1;
+                break;
+            }
         };
         records.push(json!({"operation":kind, "operationId":operation["id"],
             "parentOperationId":operation["parents"][0], "timestamp":operation["time"]["end"],
@@ -273,5 +290,147 @@ mod tests {
             records[0]["changeIds"],
             json!([result["revision"]["changeId"]])
         );
+    }
+
+    // Runs the helper as the local owner; returns its result and workspace ID.
+    fn helper(dir: &Path, request: Value) -> (Value, String) {
+        unsafe {
+            std::env::set_var("SMITHERS_CODING_LOCAL_OWNER", "1");
+        }
+        let result =
+            super::super::workspace_local::run(serde_json::to_string(&request).unwrap().as_bytes());
+        let owner = super::super::workspace_local::local_owner(dir);
+        unsafe {
+            std::env::remove_var("SMITHERS_CODING_LOCAL_OWNER");
+        }
+        (result.unwrap(), owner.unwrap().workspace_id)
+    }
+
+    fn invoke(dir: &Path, args: &[&str]) -> String {
+        let output = Command::new("jj")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn projects_an_accepted_edit_of_a_divergent_change_once() {
+        let _guard = super::super::workspace_local::LOCAL_OWNER_TEST_LOCK
+            .lock()
+            .unwrap();
+        let dir = tempdir().unwrap();
+        invoke(dir.path(), &["git", "init"]);
+        invoke(dir.path(), &["describe", "-m", "base"]);
+        let operation = invoke(
+            dir.path(),
+            &["op", "log", "--limit", "1", "--no-graph", "-T", "id"],
+        );
+        let change = invoke(
+            dir.path(),
+            &["log", "-r", "@", "--no-graph", "-T", "change_id"],
+        );
+        invoke(
+            dir.path(),
+            &["--at-op", &operation, "describe", "-m", "left"],
+        );
+        invoke(
+            dir.path(),
+            &["--at-op", &operation, "describe", "-m", "right"],
+        );
+        // Reconcile the concurrent operations; the other version stays visible.
+        invoke(
+            dir.path(),
+            &["log", "-r", "@", "--no-graph", "-T", "commit_id"],
+        );
+        let (read, _) = helper(
+            dir.path(),
+            json!({"operation":"read", "repositoryPath":dir.path(), "changeIds":[change]}),
+        );
+        let (described, workspace) = helper(
+            dir.path(),
+            json!({"operation":"describe", "repositoryPath":dir.path(),
+                "requestId":"12345678-1234-4234-8234-123456789abc",
+                "expectedOperationId":read["operationId"], "target":read["head"], "description":"final"}),
+        );
+        assert_eq!(described["revision"]["changeId"], change);
+        let both = invoke(
+            dir.path(),
+            &[
+                "log",
+                "-r",
+                &format!("change_id(\"{change}\")"),
+                "--no-graph",
+                "-T",
+                "commit_id ++ \"\\n\"",
+            ],
+        );
+        assert_eq!(both.lines().count(), 2, "the change stays divergent");
+        let projections = run(dir.path(), &workspace, "").unwrap();
+        let records = projections["coding_operations"].as_array().unwrap();
+        assert_eq!(records.len(), 1, "{projections}");
+        assert_eq!(records[0]["operationId"], described["operationId"]);
+        assert_eq!(records[0]["changeIds"], json!([change]));
+        assert_eq!(projections["cursor"], described["operationId"]);
+    }
+
+    #[test]
+    fn an_unprojectable_receipt_ends_the_page_without_consuming_its_cursor() {
+        let _guard = super::super::workspace_local::LOCAL_OWNER_TEST_LOCK
+            .lock()
+            .unwrap();
+        let dir = tempdir().unwrap();
+        invoke(dir.path(), &["git", "init"]);
+        let (base, _) = helper(
+            dir.path(),
+            json!({"operation":"read", "repositoryPath":dir.path()}),
+        );
+        let (described, workspace) = helper(
+            dir.path(),
+            json!({"operation":"describe", "repositoryPath":dir.path(),
+                "requestId":"23456789-2345-4345-8345-23456789abcd",
+                "expectedOperationId":base["operationId"], "target":base["head"], "description":"first"}),
+        );
+        // A receipt in the helper's exact form whose target commit cannot be
+        // resolved: projecting it fails on every attempt.
+        let encoded = BASE64_STANDARD.encode(
+            json!({"version":1, "workspaceId":workspace, "request":{"operation":"describe",
+                "expectedOperationId":described["operationId"],
+                "target":{"changeId":described["revision"]["changeId"], "commitId":"not-a-commit"}}})
+            .to_string(),
+        );
+        let marker = format!("smithers.coding-projection=\"{encoded}\"");
+        let status = Command::new("jj")
+            .arg("-R")
+            .arg(dir.path())
+            .args([
+                "--no-pager",
+                "--color=never",
+                "--config",
+                &marker,
+                "describe",
+                "-m",
+                "second",
+            ])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let page = run(dir.path(), &workspace, "").unwrap();
+        assert_eq!(
+            page["coding_operations"].as_array().unwrap().len(),
+            1,
+            "{page}"
+        );
+        assert_eq!(page["cursor"], described["operationId"]);
+        assert_eq!(page["more"], true);
+        let retry = run(dir.path(), &workspace, page["cursor"].as_str().unwrap()).unwrap_err();
+        assert_eq!(retry.code, "invalid_request");
     }
 }

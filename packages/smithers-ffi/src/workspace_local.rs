@@ -56,7 +56,7 @@ pub(super) fn revision(repo: &Path, value: &Value, operation: &str) -> Result<Va
 // Source import and crash reconciliation can retain another version of a
 // logical change. A divergent selector is identifiable only when exactly one
 // version belongs to this working branch, in the pinned operation's view.
-fn change_in_operation(repo: &Path, change_id: &str, operation: &str) -> Result<Value> {
+pub(super) fn change_in_operation(repo: &Path, change_id: &str, operation: &str) -> Result<Value> {
     let selector = format!("change_id(\"{change_id}\")");
     let evaluate = |selected: &str| {
         jj_at(
