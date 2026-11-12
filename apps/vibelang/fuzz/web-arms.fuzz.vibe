@@ -442,6 +442,7 @@ const UPDATES = [
   "sandbox-busy", "retry-run", "people-max", "tour-repeat", "tour-sought-end-fails", "draft-outside-build",
   "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted", "learn-more-palette", "control-clears-error",
   "pane-closes-editor", "scroll-stale", "tour-gap", "sandbox-polled-failure", "chat-from-splash",
+  "account-retries", "sign-in-unavailable", "action-failures",
 ] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
@@ -462,7 +463,9 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * its own page keeps it; a scroll older than the last one changes nothing and one as new applies; a tour event past a missed one replays the
  * tour from its start under the next epoch. A polled sandbox read that fails names its reason when no operation waits
  * and changes nothing while one does; Chat on the splash shrinks it and focuses the composer once the conversation
- * has a message, and does nothing before.
+ * has a message, and does nothing before. Retry repeats the failed account command (people, a grant, sign-out) and
+ * resumes a lost role stream under the next epoch, and each failure names its own words; live sign-in the server calls
+ * unavailable is refused without a command; a failed action names its input, permission or operation.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -596,6 +599,30 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const full = update({ ...posted, surface: "splash" }, Message.ClickedChat())
       // An active tour re-measures its stage after any message (tour-repeat); nothing else happens before a message.
       return valid(full.model) && full.model.surface === "chat" && names(full).includes("FocusComposer") && names(empty).every((name) => name === "MeasureTheatre") && empty.model.surface === "splash"
+    }
+    case "account-retries": {
+      const account = { ...accountOf(base), target: "7", targetRole: "community" as const, error: "x", pending: true }
+      const retried = (retry: "people" | "grant" | "sign-out" | "roles") => update({ ...base, account: { ...account, retry } }, Message.RetriedAccount())
+      const failed = (retry: "people" | "grant" | "sign-out" | "roles" | "sign-in") => accountOf(update({ ...base, account: { ...account, retry } }, Message.AccountFailed()).model).error
+      const others = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) => names(result).filter((name) => name !== "MeasureTheatre")
+      const roles = retried("roles")
+      const grant = retried("grant")
+      const grantArgs = (grant.commands ?? []).find((command) => command.name === "GrantRole")?.args as { id?: string; role?: string } | undefined
+      return valid(roles.model) && others(roles).length === 0 && accountOf(roles.model).epoch === account.epoch + 1 && accountOf(roles.model).error === ""
+        && same(others(retried("people")), ["LoadPeople"]) && same(others(grant), ["GrantRole"]) && grantArgs?.id === "7" && grantArgs?.role === "community"
+        && same(others(retried("sign-out")), ["SignOutAccount"])
+        && failed("grant") === "Role change failed." && failed("people") === "People couldn’t load." && failed("sign-out") === "Sign out failed." && failed("roles") === "Sign-in failed. GitHub didn’t answer."
+    }
+    case "sign-in-unavailable": {
+      const account = accountOf(base)
+      const live: Model = { ...base, mode: "live", account: { ...account, identity: { ...account.identity, available: false } } }
+      const next = update(live, Message.ClickedSignIn())
+      return valid(next.model) && !names(next).includes("SignInAccount") && accountOf(next.model).error === "Sign-in unavailable." && !accountOf(next.model).pending
+    }
+    case "action-failures": {
+      const text = (code: string, op?: "load" | "run" | "cancel") => actionsOf(update(base, Message.FailedActions({ code, ...(op === undefined ? {} : { op }) })).model).error
+      return text("input", "run") === "Input isn't valid." && text("forbidden", "cancel") === "Not allowed." && text("fault", "run") === "Couldn't start the run."
+        && text("fault", "cancel") === "Couldn't cancel the run." && text("fault") === "Couldn't load runs"
     }
     case "walkthrough-posted": {
       const seq = base.client.conversation.seq

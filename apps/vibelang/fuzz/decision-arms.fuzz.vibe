@@ -1,0 +1,113 @@
+// src/web's pure decisions with arms that no app path reaches in every run, or at all (screenKept is a proof lemma;
+// roleRank's unknown name is never asked, as roleDialog ranks only a found person): each is called in every execution
+// over fixed values that take every arm, with drawn text in the free strings, and must agree with its written contract
+// (0015, eighteenth session).
+import { it } from "@effect/vitest"
+import * as AccountView from "../src/web/accountViewDecision.vibe"
+import * as IssuesView from "../src/web/issuesViewDecision.vibe"
+import * as Markdown from "../src/web/markdownDecision.vibe"
+import * as ModelD from "../src/web/modelDecision.vibe"
+import * as Pane from "../src/web/paneDecision.vibe"
+import * as Screen from "../src/web/screenDecision.vibe"
+import * as Tour from "../src/web/tourDecision.vibe"
+import * as UpdateD from "../src/web/updateDecision.vibe"
+import * as ViewD from "../src/web/viewDecision.vibe"
+import * as WikiEditor from "../src/web/wikiEditorDecision.vibe"
+import * as WikiView from "../src/web/wikiViewDecision.vibe"
+import { run, same, Finding, Text } from "./run.vibe"
+
+const Input = Schema.Struct({ text: Text, other: Text, height: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1000000 })) })
+
+/** A Finding named `name` unless `holds`. */
+effect function check(name: string, holds: boolean) {
+  if (!holds) throw new Finding({ report: name })
+}
+
+const ROLES = ["viewer", "new", "community", "contributor", "maintainer"] as const
+const POST = [["empty", "Empty message"], ["too-long", "Message too long"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["full", "Conversation full"], ["connection", "Connection lost"]] as const
+const WIKI = [["forbidden", "Not allowed."], ["conflict", "The page changed. Reload the editor."], ["connect", "Connect GitHub."], ["sign-in", "Connect GitHub."], ["fork", "Fork on GitHub."], ["install", "Install Smithers on your fork."]] as const
+const RETRIES = [["grant", "Role change failed.", "command"], ["people", "People couldn’t load.", "command"], ["sign-out", "Sign out failed.", "command"], ["sign-in", "Sign-in failed. GitHub didn’t answer.", "sign-in"], ["roles", "Sign-in failed. GitHub didn’t answer.", "resume"]] as const
+const NUMBERS = ["", "0", "7", "07", "12", "1a", "a1", "3d", "12w", "d", "0w", "3x", "a3d", "3dd"]
+
+/** The text a contract names for `key`, else `otherwise`. */
+function named(table: ReadonlyArray<readonly [string, string]>, key: string, otherwise: string): string {
+  return table.find(([name]) => name === key)?.[1] ?? otherwise
+}
+
+it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, other, height }) => effect {
+  // Words: every named reason, and drawn text.
+  for (const reason of [...POST.map(([name]) => name), text]) try check(`postFailure ${reason}`, ViewD.postFailure(reason) === named(POST, reason, "Send failed"))
+  for (const reason of [...WIKI.map(([name]) => name), text]) try check(`wikiEditErrorText ${reason}`, Pane.wikiEditErrorText(reason) === named(WIKI, reason, "Couldn't save. Retry."))
+  for (const [retry, words, plan] of RETRIES) {
+    try check(`accountFailureText ${retry}`, ModelD.accountFailureText(retry) === words)
+    try check(`accountRetryPlan ${retry}`, ModelD.accountRetryPlan(retry) === plan)
+  }
+  for (const code of ["input", "forbidden", text]) for (const op of ["run", "cancel", "load"]) {
+    const expected = code === "input" ? "Input isn't valid." : code === "forbidden" ? "Not allowed." : op === "run" ? "Couldn't start the run." : op === "cancel" ? "Couldn't cancel the run." : "Couldn't load runs"
+    try check(`actionFailureText ${code} ${op}`, ModelD.actionFailureText(code, op) === expected)
+  }
+  for (const status of ["Accepted", "Proposed", text]) try check(`wikiStatusClass ${status}`, WikiView.wikiStatusClass(status) === (status === "Accepted" ? "sui-badge sui-badge-success" : "sui-badge sui-badge-outline"))
+  for (const query of ["", text]) for (const kind of ["Tasks", "VIPs", "All"]) for (const state of ["open", "closed"]) {
+    const expected = query !== "" ? "No matches" : kind === "Tasks" ? "No tasks committed" : kind === "VIPs" ? "No VIPs in review" : "No " + state + " issues"
+    try check(`emptyTitle ${kind} ${state}`, IssuesView.emptyTitle(query, kind, state) === expected)
+  }
+  for (const [rank, role] of ROLES.entries()) try check(`roleRank ${role}`, AccountView.roleRank(role) === rank)
+  for (const role of ["", text]) if (!(ROLES as ReadonlyArray<string>).includes(role)) try check("roleRank of an unknown name", AccountView.roleRank(role) === -1)
+  // Numbers and ages: the contracts' character classes.
+  for (const value of [...NUMBERS, text]) {
+    try check(`digits ${value}`, IssuesView.digits(value) === /^[0-9]+$/.test(value))
+    try check(`compactAge ${value}`, IssuesView.compactAge(value) === /^[0-9]+[dw]$/.test(value))
+    try check(`positiveDecimal ${value}`, ViewD.positiveDecimal(value) === /^[1-9][0-9]*$/.test(value))
+  }
+  for (const unit of ["&", "<", ">", "\"", "a", ...Array.from(text.slice(0, 4))]) {
+    const expected = unit === "&" ? "&amp;" : unit === "<" ? "&lt;" : unit === ">" ? "&gt;" : unit === "\"" ? "&quot;" : unit
+    if (unit.length === 1) try check(`escapedUnit ${unit.charCodeAt(0)}`, Markdown.escapedUnit(unit.charCodeAt(0), unit) === expected)
+  }
+  for (const page of [false, true]) for (const clientHeight of [0, 45, 46, 1000, height]) {
+    try check(`keyScrollTop ${page} ${clientHeight}`, Screen.keyScrollTop(page, clientHeight) === (page ? -Math.max(40, Math.floor(clientHeight * 0.875)) : -40))
+  }
+  for (const count of [1, 3]) for (let index = 0; index < count; index++) for (const key of ["j", "k", text === "j" || text === "k" ? "x" : text]) {
+    const expected = key === "j" ? Math.min(count - 1, index + 1) : key === "k" ? Math.max(0, index - 1) : -1
+    try check(`rowFocus ${index}/${count} ${key}`, IssuesView.rowFocus(index, count, key) === expected)
+  }
+  // Booleans: every combination.
+  for (const live of [false, true]) for (const unavailable of [false, true]) try check("signInRefused", ModelD.signInRefused(live, unavailable) === (live && unavailable))
+  for (const tour of [false, true]) for (const paused of [false, true]) {
+    try check("pauseTour", same(Tour.pauseTour(tour, paused), { action: !tour ? "none" : paused ? "resume" : "pause", step: 0 }))
+  }
+  for (const found of [false, true]) for (const error of ["", text || "x"]) {
+    try check("answerAnnouncement", Screen.answerAnnouncement(found, error, other, "before") === (found ? (error === "" ? other : "Answer failed") : "before"))
+  }
+  for (const id of ["", "e-1"]) for (const known of [false, true]) try check("wikiAfterEvent", UpdateD.wikiAfterEvent(id, known, other) === (id !== "" ? id : known ? other : ""))
+  // Screens: the tour's failure and completion keep everything they do not name.
+  const screen: Screen.ScreenState = { surface: "chat", palette: true, tour: true, tourError: "", docs: "max", following: true }
+  for (const reason of ["busy", text]) for (const touring of [false, true]) {
+    const keep = reason === "busy" && touring
+    try check("failedTourKeepsControl", Screen.failedTourKeepsControl(reason, touring) === keep)
+    try check("failScreenTour", same(Screen.failScreenTour(screen, reason, touring), { ...screen, tour: keep, tourError: reason, docs: keep ? "max" : "pane" }))
+  }
+  for (const toured of [false, true]) for (const kind of ["ReplyFinished", "WalkthroughDriven"]) {
+    try check("completeScreenTour", same(Screen.completeScreenTour(screen, toured, kind), { ...screen, tour: toured ? false : screen.tour, docs: toured && kind !== "ReplyFinished" ? "pane" : screen.docs }))
+  }
+  // Panes: a polled answer leaves a waiting operation alone; the editor keeps typed text, else the draft, else the source.
+  for (const operation of ["", "start"] as const) for (const opens of [false, true]) {
+    const state: Pane.SandboxResult = { pane: "closed", operation, busy: operation !== "", error: "e" }
+    const pane = opens ? "pane" : state.pane
+    try check(`polledSandbox ${operation} ${opens}`, same(Pane.polledSandbox(state, opens), operation === "" ? { ...state, pane, operation: "", busy: false, error: "" } : { ...state, pane }))
+    try check(`polledFailure ${operation}`, same(Pane.polledFailure(state, other), operation === "" ? { ...state, busy: false, error: other } : state))
+  }
+  for (const typed of [false, true]) for (const draft of ["", "# Draft"]) {
+    const editing: Pane.WikiEditScreen = { page: "p", base: "old", text: typed ? `old${text}!` : "old", busy: false, error: "" }
+    const expected = editing.text !== editing.base ? editing.text : draft === "" ? other : draft
+    try check(`beganWikiEdit ${typed} ${draft}`, same(Pane.beganWikiEdit(editing, other, draft), { ...editing, base: other, text: expected }))
+  }
+  // A started run follows the panel only while it shows a run.
+  for (const shown of ["", "run-1"]) {
+    const selection: ModelD.RunSelection = { step: "s", run: shown, selected: "a", open: true, maximized: false }
+    try check(`followedRun ${shown}`, same(ModelD.followedRun(selection, "run-2", other), shown === "" ? selection : { ...selection, step: "", run: "run-2", selected: other }))
+  }
+  // A saved page replaces what was known of it and comes last, once.
+  const pages: ReadonlyArray<WikiEditor.WikiPage> = [{ id: "a", source: "A", revision: "1" }, { id: "p", source: "P", revision: "1" }, { id: "b", source: text, revision: "2" }]
+  try check("savedWikiPages", same(WikiEditor.savedWikiPages(pages, "p", other, "3"), [pages[0], pages[2], { id: "p", source: other, revision: "3" }]))
+  return true
+}))

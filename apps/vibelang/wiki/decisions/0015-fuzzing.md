@@ -1204,6 +1204,25 @@ Coverage of the two files alone hits all seven at seeds 20261221 and 20261222. M
 the polled reason lost, a grant without accounts succeeding, a blank JSON input refused, a polled failure overwriting a
 waiting operation (20261223), an empty splash shrinking, and `spec-review` recovering to the issue.
 
+### `src/web`'s decisions: every arm, chosen (eighteenth session)
+
+The same two runs left 50 arms of `src/web`'s pure decisions (`accountViewDecision`, `issuesViewDecision`,
+`markdownDecision`, `modelDecision`, `paneDecision`, `screenDecision`, `tourDecision`, `updateDecision`,
+`viewDecision`, `wikiEditorDecision`, `wikiViewDecision`) reached by one seed or neither: `web/decision-contracts`
+draws their inputs from a union, so a short budget reaches some words and not others. `web/decision-arms`
+(`fuzz/decision-arms.fuzz.vibe`) calls each of them in every execution over fixed values that take every arm (every
+named reason, retry, code and operation; boundary numbers and ages; every boolean combination; a waiting and an idle
+operation; typed and untyped editors), with drawn text in the free strings, and checks each against its written
+contract. Two arms have no app path: `roleRank` of an unknown name (`roleDialog` ranks only a found person, whose role is
+typed) and `screenKept`, a proof lemma; both are contracts, as `issueKnownAction` is. Where the app does reach an arm,
+`web/update-arms` reaches it through `update`: `account-retries` (Retry repeats people, a grant and sign-out, and resumes
+a lost role stream under the next epoch; each failure's words), `sign-in-unavailable` (live sign-in the server calls
+unavailable sends nothing) and `action-failures` (input, permission, run, cancel and load). Coverage of the two files
+alone hits every listed arm at seeds 20261225 and 20261226. Mutations caught (seed 20261227): a roles retry keeping its
+epoch, sign-in refused only in mock, a maintainer ranked as a contributor, the connection reason unnamed, a page key
+below 40 pixels, and a saved wiki page kept twice. `compactAge` without its length check is an equivalent mutant: a
+lone `d` or `w` leaves no digits, and `digits("")` is false.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
