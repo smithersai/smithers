@@ -1294,3 +1294,9 @@ engine retries the charge through `draftSpend`'s 120 s, then the draft is `budge
 `vibelang_draft_spend_failures{draft}` counts one. Mutants caught: the wiki and review spend failures not counted;
 the wiki agent's own refusal as `draft`; an unusable reviewer record stopping the reviewers. Both files are reached
 except the unreadable-usage catch (VipDraft above).
+
+`worker/HistoryObject.vibe` 102-106 and 185-188 (the reader's unreachable and non-protocol answers; the export
+branch) were never asked. `storage/history-write-flows` now reads through a reader whose page and write are
+unreachable (`history unreachable`, both) and one whose page is not the protocol (`history is not the protocol`), and
+ends with an export: with the exporter off nothing is published (an agent `forbidden`, a person `unsupported`, no
+commit written, no tip). Mutants caught: the export's refusal dropped; a non-protocol page reported as unreachable.

@@ -85,6 +85,7 @@ it.live("storage/history-snapshot", () => run("storage/history-snapshot", Schema
 }))
 
 import { MainUnavailable } from "../src/history/flows.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
 import { pageOf } from "../src/history/pages.vibe"
 import { Outline } from "../src/history/schemas.vibe"
 import { WebCrypto } from "@smthrs/crypto"
@@ -101,6 +102,12 @@ it.live("storage/history-write-flows", () => run("storage/history-write-flows", 
       (name, body, caller, operation) => HistoryObject.write("fuzz-history", object, sequencer, main, caller, name, body, operation),
       principal,
     )
+    // An unreachable history, or one answering a page that is not the protocol, is unavailable with its reason.
+    const unreachable = HistoryObject.readerOver(() => fail(new Unreachable({ what: "history" })), () => fail(new Unreachable({ what: "history" })), principal)
+    const garbled = HistoryObject.readerOver(() => succeed({ garbled: text }), (name, body, caller, operation) => HistoryObject.write("fuzz-history", object, sequencer, main, caller, name, body, operation), principal)
+    const reasonOf = (outcome: Exit.Exit<unknown, unknown>) => outcome._tag === "Failure" ? (Cause.squash(outcome.cause) as { readonly reason?: unknown }).reason : "answered"
+    if (reasonOf(try exit(unreachable.outline())) !== "history unreachable" || reasonOf(try exit(unreachable.note("m1", "tried", text, "note"))) !== "history unreachable") return false
+    if (reasonOf(try exit(garbled.search(text))) !== "history is not the protocol") return false
     const before = try reader.outline()
     if (!Schema.is(Outline)(before)) return false
     const input = { how: "append" as const, epic: "", newEpic: "Fuzz epic", target: "", title: "Change " + text, task: "" }
@@ -119,6 +126,9 @@ it.live("storage/history-write-flows", () => run("storage/history-write-flows", 
     const search = try reader.search(id)
     const approved = try HistoryObject.write("fuzz-history", object, sequencer, main, principal, "approve", { id }, "approve")
     const folded = try HistoryObject.write("fuzz-history", object, sequencer, main, principal, "fold", {}, "fold")
+    const exported = try HistoryObject.write("fuzz-history", object, sequencer, main, principal, "export", {}, "export")
     return commit.commit?.state === "working" && commit.commit.notes.length === 1 && epic.commits.some((head) => head.id === id) && search.commits.some((head) => head.id === id) && approved.refusal === (agent ? "forbidden" : null) && folded.refusal === (agent ? "forbidden" : "unavailable")
+      // With the export off, nothing is published: an agent is forbidden, a person told it is unsupported.
+      && exported.refusal === (agent ? "forbidden" : "unsupported") && exported.folded === 0 && exported.id === ""
   }
 }))
