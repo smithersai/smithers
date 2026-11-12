@@ -202,8 +202,9 @@ the provider's host. Nothing saved is `404 none`; anyone signed in may test thei
 TODO on the scratch stack, checks the run took `todo/ImplementCli` and not `todo/Implement`, and reads the pull request's
 one-line `NOTES.md` change on GitHub. Claude needs `E2E_CLAUDE_SUBSCRIPTION_TOKEN` (what `claude setup-token` printed).
 Codex's device code needs a person signed in to ChatGPT, so a person links Codex once in Settings and the run sets
-`E2E_CODEX_SUBSCRIPTION=linked`; the spec Checks Access on it first. Run it with `--project=deployment`: each browser
-project opens its own pull request.
+`E2E_CODEX_SUBSCRIPTION=linked`; the spec Checks Access on it first. Restoring the test account's API key, in setup
+and after each test, keeps that Codex connection by its id and replaces every other one. Run it with
+`--project=deployment`: each browser project opens its own pull request.
 
 ## The Settings section
 

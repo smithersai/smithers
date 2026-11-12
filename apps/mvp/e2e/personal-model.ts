@@ -26,15 +26,51 @@ export const personalModelConfig = () => {
   }
 }
 
+/** A saved connection as Electric's shape serves it: snake_case columns, every value its text. Never the credential. */
+export type SavedRow = {
+  id: string
+  kind: string
+  position: string
+  active: string
+  protocol: string | null
+  base_url: string | null
+  fast_model: string | null
+  key_last4: string | null
+  updated_at: string
+}
+
+/** A boolean column's text, read as Electric's own client reads it. */
+const isTrue = (text: string) => text === "true" || text === "t"
+
+/** `rows` in the person's order. */
+const inOrder = (rows: ReadonlyArray<SavedRow>) => [...rows].sort((a, b) => Number(a.position) - Number(b.position))
+
+/**
+ * Whether `rows` are the fixture: the configured API key first, active, Fast on it, and after it nothing but the Codex
+ * subscription a person linked by hand (subscriptions.spec.ts), which no run can link again.
+ */
+export const isFixture = (rows: ReadonlyArray<SavedRow>, config: ReturnType<typeof personalModelConfig>, key: string) => {
+  const [row, ...rest] = inOrder(rows)
+  return row?.kind === "api_key" && isTrue(row.active) && row.protocol === config.protocol && row.base_url === baseUrlOf(config.baseUrl) &&
+    row.fast_model === config.modelId && row.key_last4 === [...key].slice(-4).join("") &&
+    rest.every((each) => each.kind === "codex_subscription")
+}
+
+/**
+ * The whole list a restore saves: the configured key, Fast on it, then each saved Codex subscription by its id and
+ * activity. A kept connection sends no key, so its sealed tokens stay where they are; any other connection goes.
+ */
+export const fixtureConnections = (rows: ReadonlyArray<SavedRow>, config: ReturnType<typeof personalModelConfig>, key: string) => [
+  { kind: "api_key", protocol: config.protocol, baseUrl: config.baseUrl, key, models: { fast: config.modelId } },
+  ...inOrder(rows).filter((row) => row.kind === "codex_subscription")
+    .map((row) => ({ id: row.id, kind: "codex_subscription", active: isTrue(row.active) })),
+]
+
 /** A read-only bootstrap check: readers never replace a connection that already matches their configured fixture. */
 export const personalModelReady = async (request: APIRequestContext) => {
   const key = process.env.E2E_PERSONAL_MODEL_KEY
   if (!key) return true
-  const config = personalModelConfig()
-  const rows = await shapeRows<{ kind: string; active: boolean; protocol: string; base_url: string; fast_model: string; key_last4: string }>(request, PERSONAL_MODEL_SHAPE_ROUTE)
-  const row = rows[0]
-  return rows.length === 1 && row?.kind === "api_key" && row.active === true && row.protocol === config.protocol && row.base_url === baseUrlOf(config.baseUrl) &&
-    row.fast_model === config.modelId && row.key_last4 === [...key].slice(-4).join("")
+  return isFixture(await shapeRows<SavedRow>(request, PERSONAL_MODEL_SHAPE_ROUTE), personalModelConfig(), key)
 }
 
 /** Opens Add's menu in Settings' Your model `section` and a kind's form: its dialog. */
@@ -86,8 +122,8 @@ export const removeConnections = async (section: Locator, within: number) => {
 }
 
 /**
- * Save and Test through the same product endpoints as Settings: the one API key, Fast named on it. Context must have
- * tracing disabled.
+ * Save and Test through the same product endpoints as Settings: the one API key, Fast named on it, and a linked Codex
+ * subscription kept as it is. Context must have tracing disabled.
  */
 export const restorePersonalModel = async (request: APIRequestContext) => {
   const key = process.env.E2E_PERSONAL_MODEL_KEY
@@ -95,28 +131,20 @@ export const restorePersonalModel = async (request: APIRequestContext) => {
   const headers = { origin: new URL(baseURL).origin, [DEVICE_PERSON_HEADER]: me().personId }
   // Transport diagnostics can contain request bodies. Drop them whole rather than risk printing the key.
   const config = personalModelConfig()
-  type Saved = { updated_at: string; kind: string; protocol: string | null; base_url: string | null; fast_model: string | null; key_last4: string }
-  const latest = (rows: ReadonlyArray<Saved>) => rows.map((row) => row.updated_at).sort().at(-1)
-  const before = latest(await shapeRows<Saved>(request, PERSONAL_MODEL_SHAPE_ROUTE))
-  // The whole list: this one key, Fast on it; a connection an earlier run left goes.
-  const data = {
-    connections: [{
-      kind: "api_key",
-      protocol: config.protocol,
-      baseUrl: config.baseUrl,
-      key,
-      models: { fast: config.modelId },
-    }],
-  }
-  const saved = await request.put(PERSONAL_MODEL_ROUTE, { headers, data })
+  const latest = (rows: ReadonlyArray<SavedRow>) => rows.map((row) => row.updated_at).sort().at(-1)
+  const saved = await shapeRows<SavedRow>(request, PERSONAL_MODEL_SHAPE_ROUTE)
+  const before = latest(saved)
+  // The whole list: this one key, Fast on it, then the Codex link a person made; a connection an earlier run left goes.
+  const connections = fixtureConnections(saved, config, key)
+  const kept = connections.flatMap((connection) => "id" in connection ? [connection.id] : [])
+  const put = await request.put(PERSONAL_MODEL_ROUTE, { headers, data: { connections } })
     .catch(() => { throw new Error("Personal model Save transport failed (details withheld)") })
-  expect(saved.status(), "personal model Save accepted").toBe(202)
+  expect(put.status(), "personal model Save accepted").toBe(202)
   // Acceptance is not completion: wait for the durable Put's row before testing the saved model.
   await expect.poll(async () => {
-    const rows = await shapeRows<Saved>(request, PERSONAL_MODEL_SHAPE_ROUTE)
-    const row = rows[0]
-    return rows.length === 1 && row !== undefined && latest(rows) !== before && row.kind === "api_key" && row.protocol === config.protocol &&
-      row.fast_model === config.modelId && row.key_last4 === [...key].slice(-4).join("")
+    const rows = await shapeRows<SavedRow>(request, PERSONAL_MODEL_SHAPE_ROUTE)
+    return latest(rows) !== before && isFixture(rows, config, key) && rows.length === kept.length + 1 &&
+      kept.every((id) => rows.some((row) => row.id === id))
   }, { timeout: 30_000, message: "personal model Save completed" }).toBe(true)
   const tested = await request.post(PERSONAL_MODEL_TEST_ROUTE, { headers, timeout: 60_000 })
     .catch(() => { throw new Error("Personal model Test transport failed (details withheld)") })

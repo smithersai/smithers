@@ -19,6 +19,7 @@ import { expectServerError } from "./watch"
 requires("member", "writableStack", "ownConversation")
 // A trace keeps what was typed, the token included.
 test.use({ trace: "off" })
+// Restoring the saved API key keeps the linked Codex subscription by its id (e2e/personal-model.ts).
 test.afterEach(async ({ request }) => {
   await restorePersonalModel(request)
 })
