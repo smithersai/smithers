@@ -22,7 +22,8 @@ import { attribution, contentProblem, escapeMarkdown, fitsGitHub, titleProblem }
 // `machine_writes` is the queue. One dispatcher per owner loops: a durable sleep, one tick, the next round. A tick looks
 // at the hold first, takes the oldest pending write, checks its authority again, and makes at most one mutation, so one
 // send runs at a time and the next waits 7.5 s from its end (under 480 an hour and 8 a minute; GitHub's limits are 500
-// and 80, checked 2026-11-02). A rate limit on any call, read or write, holds every call until the server's full wait or
+// and 80, checked 2026-11-02). A tick holds the owner's turn, a Postgres lock, from before it reads the queue until its
+// mutation has answered, so a dispatcher replaced mid-tick keeps its replacement out until it is done. A rate limit on any call, read or write, holds every call until the server's full wait or
 // the penalty, 60 s doubling to 30 minutes and back after a success; a limit on minting a token does too. A 403 is a rate limit only with
 // `x-ratelimit-remaining: 0`, `retry-after` or GitHub's message; any other is a refusal, never retried. A write that
 // can't finish settles `failed`, and `POST .../writes/<id>/retry` puts it back in the queue, its marker keeping it one
@@ -265,6 +266,9 @@ export const launch = (owner: string) =>
     return row!.epoch
   })
 
+/** What names an owner's turn, after the schema, in the Postgres lock a tick holds. */
+export const turnKey = (owner: string) => `:machine-dispatch:${owner}`
+
 /** The dispatcher's execution id for an epoch. */
 export const dispatchExecutionId = (owner: string, epoch: number) => `github-machine-dispatch:${owner}:${epoch}`
 
@@ -281,6 +285,14 @@ const noteLimited = (owner: string, hintMs: number | null) =>
         penalty_ms = LEAST(penalty_ms * 2, ${MAX_PENALTY_MS})
       WHERE owner = ${owner}`
   })
+
+/** Says when the dispatcher of `epoch` will wake, which is its lease. */
+const lease = (owner: string, epoch: number, waitMs: number) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.as(
+      sql`UPDATE machine_dispatch SET due_at = clock_timestamp() + make_interval(secs => ${waitMs / 1000}) WHERE owner = ${owner} AND epoch = ${epoch}`,
+      { stop: false, waitMs },
+    ))
 
 /** Holds the next call for at least `ms` from now. */
 const holdFor = (owner: string, ms: number) =>
@@ -447,8 +459,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )),
   )
 
-  /** The one write this tick handles. Every GitHub answer passes `observed`, so a limit on any call is heard. */
-  const work = (write: Row, owner: string) =>
+  /**
+   * The one write this tick handles. Every GitHub answer passes `observed`, so a limit on any call is heard. `turnHeld`
+   * fails once this tick's hold on the owner's turn is gone.
+   */
+  const work = (write: Row, owner: string, turnHeld: Effect.Effect<unknown, unknown>) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
       let limit: { readonly hintMs: number | null } | undefined
@@ -507,6 +522,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
       ) =>
         Effect.gen(function* () {
           yield* holdFor(owner, SPACING_MS)
+          // The fence: a tick whose turn was lost, with its connection, sends nothing; another may hold the turn by now.
+          yield* turnHeld
           const sent = yield* call(services, observed, as, method, url, body).pipe(Effect.result)
           yield* holdFor(owner, SPACING_MS)
           // The answer was lost, so GitHub may have done it: the next tick looks first.
@@ -686,15 +703,14 @@ export const steps = <E, R>(services: Services<E, R>) => {
       return done
     })
 
-  const tick = ({ owner, epoch }: typeof Tick.payloadSchema.Type) =>
+  /** One tick's work, by the dispatcher that holds the owner's turn. */
+  const turn = ({ owner, epoch }: typeof Tick.payloadSchema.Type, turnHeld: Effect.Effect<unknown, unknown>) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient
       const remaining = Effect.map(sql<{ readonly ms: string }>`
         SELECT GREATEST(0, ceil(extract(epoch FROM next_at - clock_timestamp()) * 1000))::bigint::text AS ms
         FROM machine_dispatch WHERE owner = ${owner} AND epoch = ${epoch}`, (rows) => (rows[0] === undefined ? undefined : Number(rows[0].ms)))
-      /** Says when this dispatcher will wake, which is its lease. */
-      const wake = (waitMs: number) =>
-        Effect.as(sql`UPDATE machine_dispatch SET due_at = clock_timestamp() + make_interval(secs => ${waitMs / 1000}) WHERE owner = ${owner} AND epoch = ${epoch}`, { stop: false, waitMs })
+      const wake = (waitMs: number) => lease(owner, epoch, waitMs)
       // The epoch fence: another took over. The hold comes before any read or token.
       const held = yield* remaining
       if (held === undefined) return { stop: true, waitMs: 0 }
@@ -732,7 +748,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         yield* refuse(write.id, "not_allowed", "allow_list")
         return yield* wake(0)
       }
-      yield* work(write, owner).pipe(
+      yield* work(write, owner, turnHeld).pipe(
         // A defect is this write's, not the queue's: it settles `failed`, and the dispatcher goes on.
         Effect.catchCause((cause) =>
           Cause.hasDies(cause) && !Cause.hasInterrupts(cause)
@@ -744,14 +760,35 @@ export const steps = <E, R>(services: Services<E, R>) => {
         ),
       )
       return yield* wake((yield* remaining) ?? 0)
+    })
+
+  /**
+   * One tick, alone. It takes the owner's turn first: a transaction-scoped Postgres lock on a connection of its own,
+   * held from before the epoch fence until the mutation has answered. An epoch's execution is one Durable Object, so two
+   * epochs are two processes, and only the database can keep one out while the other looks for its marker and sends. A
+   * dispatcher replaced mid-tick still holds the turn, so its replacement waits and then finds what it made; one that died
+   * dropped the turn with its connection. The turn's own statements run on another connection: they commit as they go.
+   */
+  const tick = (cursor: typeof Tick.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const lock = yield* SqlClient.SqlClient
+      const taken = yield* lock.withTransaction(Effect.gen(function* () {
+        // The schema is in the key because a lock is the database's, and the queue is the schema's.
+        const [row] = yield* lock<{ readonly held: boolean }>`
+          SELECT pg_try_advisory_xact_lock(hashtextextended(current_schema() || ${turnKey(cursor.owner)}, 0)) AS held`
+        if (!row!.held) return Option.none<typeof Outcome.Type>()
+        return Option.some(yield* turn(cursor, lock`SELECT 1`).pipe(Effect.provide(services.database)))
+      }))
+      // Another dispatcher is mid-tick: this one looks again after a send's spacing, its lease kept.
+      return Option.isSome(taken) ? taken.value : yield* lease(cursor.owner, cursor.epoch, SPACING_MS)
     }).pipe(
-      Effect.provide(services.database),
+      Effect.provide(Layer.fresh(services.database)),
       Effect.catch((error) =>
         Effect.logWarning("github.machine_write").pipe(
-          Effect.annotateLogs({ owner, outcome: "failed", errorCode: codeOf(error) }),
+          Effect.annotateLogs({ owner: cursor.owner, outcome: "failed", errorCode: codeOf(error) }),
           Effect.andThen(Effect.fail(new MachineUnavailable())),
         )),
-      Effect.withSpan("github.machine_dispatch", { attributes: { "smithers.github.owner": owner } }),
+      Effect.withSpan("github.machine_dispatch", { attributes: { "smithers.github.owner": cursor.owner } }),
     ) as Effect.Effect<typeof Outcome.Type, MachineUnavailable>
 
   return { tick }

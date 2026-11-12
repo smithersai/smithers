@@ -55,9 +55,9 @@ const row = async (id: string) =>
 const clear = () => sql(runtime, `UPDATE machine_dispatch SET next_at = now() - interval '1 second'`)
 const posting = (pattern: RegExp) => (method: string, path: string) => method === "POST" && pattern.test(path)
 /** The owner's dispatcher, as tests drive it: one tick at a time, on the epoch `launch` answers. */
-const dispatcher = async (github: ReturnType<typeof scriptedGitHub>) => {
+const dispatcher = async (github: ReturnType<typeof scriptedGitHub>, process: Pick<typeof MachineWrite, "steps"> = MachineWrite) => {
   const { services: value } = await services(runtime, github)
-  const { tick } = MachineWrite.steps(value)
+  const { tick } = process.steps(value)
   const epoch = await runtime.runPromise(MachineWrite.launch("acme"))
   let round = 0
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
@@ -1022,6 +1022,64 @@ describe("github/MachineDispatch", () => {
     expect(next).toBe(d.epoch + 1)
     expect(await d.tick()).toEqual({ stop: true, waitMs: 0 })
     expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
+  })
+
+  /** A create whose dispatcher has found no marker and is still at its label read: `release` lets the read answer. */
+  const midTick = async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    github.labels.set("bug", { name: "bug", color: "ededed", description: "" })
+    const write = create({ labels: ["bug"] }) as { writeId: string }
+    await admitAs(write)
+    const stalled = await dispatcher(github)
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const reading = new Promise<void>((resolve) => {
+      github.faults.push({ match: (method, path) => method === "GET" && path.endsWith("/labels/bug"), hold: () => { resolve(); return gate } })
+    })
+    const tick = stalled.tick()
+    await reading
+    return { github, write, stalled, tick, release }
+  }
+  const turnHolders = `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND objsubid = 1
+    AND ((classid::bigint << 32) | objid::bigint) = hashtextextended(current_schema() || '${MachineWrite.turnKey("acme")}', 0)`
+
+  test("a dispatcher replaced while it reads keeps its replacement out until its send is over: one issue (#5327)", async () => {
+    const { github, write, stalled, tick, release } = await midTick()
+    // The stalled tick's own statements are committed as it goes: only the turn is held.
+    expect(await row(write.writeId)).toMatchObject({ status: "pending", tries: 1 })
+    await sql(runtime, `UPDATE machine_dispatch SET due_at = now() - interval '11 minutes'`)
+    // Another epoch is another execution, a Durable Object of its own: the module is loaded again, so nothing in memory
+    // (`Action.once` serializes a key within one process) stands between the two, as nothing does in production.
+    vi.resetModules()
+    const replacement = await dispatcher(github, await import("./MachineWrite.ts"))
+    expect(replacement.epoch).toBe(stalled.epoch + 1)
+    // The replacement can't look for the marker while the first may still send.
+    const waiting = await replacement.tick()
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
+    expect(github.seen("GET", /\/labels\/bug$/)).toHaveLength(1)
+    expect(waiting).toEqual({ stop: false, waitMs: 7500 })
+    expect(await sql(runtime, `SELECT due_at > now() AS kept FROM machine_dispatch`)).toEqual([{ kept: true }])
+    release()
+    await tick
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(1)
+    for (let i = 0; i < 4 && (await row(write.writeId)).status === "pending"; i++) await replacement.next()
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(1)
+    expect([...github.issues.keys()]).toEqual([1])
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
+  })
+
+  test("a tick that lost its turn with its connection sends nothing (#5327)", async () => {
+    const { github, write, stalled, tick, release } = await midTick()
+    expect(await sql(runtime, `SELECT pg_terminate_backend(pid) AS ended FROM (${turnHolders}) holder`)).toEqual([{ ended: true }])
+    release()
+    await expect(tick).rejects.toThrow()
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
+    expect(await row(write.writeId)).toMatchObject({ status: "pending" })
+    // The tick runs again, as a cut-off one does, and makes the one issue.
+    for (let i = 0; i < 4 && (await row(write.writeId)).status === "pending"; i++) await stalled.next()
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(1)
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
   })
 })
 
