@@ -1678,3 +1678,7 @@ replay everything, then grants a new person a drawn role; the follower sees exac
 replay records it, and a grant of `new` (no change) publishes nothing. Mutant caught: the live half dropped. Line 102
 (`signInAgent` with no maintainer) is unreachable: `grantPolicy` never demotes the last maintainer, and the fixture
 starts with one.
+
+`src/core/MockFactory.vibe` 470: `mock/factory-edges` now opens a project wiki page (`index`, which must open) and a
+page the wiki doesn't have (refused as `empty`, never a defect) every execution. Mutant caught: the empty refusal
+removed.

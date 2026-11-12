@@ -1,7 +1,7 @@
 // The mock Factory's room edges (src/core/MockFactory.vibe) that the scripted targets reach only by chance: a journal
 // retained mid-reply or with an unanswered post, tour controls outside the protocol, with no tour and on a running one,
 // a post behind a running tour, a tour asked for right after a post, and calls after the Factory's scope closed.
-// Oracle: a reply cut off by a reload fails in words and the next post is answered; a retained post is answered; a
+// Oracle: a known wiki page opens and an unknown one is refused as empty; a reply cut off by a reload fails in words and the next post is answered; a retained post is answered; a
 // malformed control is Unavailable and a control with no tour is Refused, both writing nothing; every control on a
 // driven walkthrough answers; a post behind a tour, or contended by one, is answered once the tour ends; a closed
 // Factory answers Unavailable.
@@ -56,6 +56,11 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
     const factory = try Factory
     const controlTour = factory.controlTour
     if (controlTour === undefined) throw new Refuted({ check: 0 })
+    // A project wiki page opens in the room; a page the wiki doesn't have opens nothing and is refused as empty.
+    const known = try exit(factory.openWiki(`wiki-${step}`, "index"))
+    const unknown = try exit(factory.openWiki(`wiki-${step}`, "no-such-page"))
+    const refusal = unknown._tag === "Failure" ? Cause.squash(unknown.cause) : undefined
+    if (known._tag !== "Success" || !(refusal instanceof Refused) || refusal.refusal !== "empty") throw new Refuted({ check: 30 })
     // A reply the reload cut off fails in words, and the next post is answered.
     try factory.post("cut-off", "b", "Ada", "install")
     const next = (try factory.read("cut-off", 0)).entries.find((entry) => entry.clientId === "b")
