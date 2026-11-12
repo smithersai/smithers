@@ -4,11 +4,9 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import type { TestProject } from "vitest/node"
 
 export const bunRuntime = process.versions.bun !== undefined
-export const nativeSetupFile = fileURLToPath(import.meta.url)
 export interface NativeFixture {
   url: string
   resources: string
@@ -24,6 +22,13 @@ declare module "vitest" {
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
 
+/** Observe spawn failure before polling readiness, including a tool removed after preflight. */
+export const waitForNativeSpawn = (child: ChildProcess, stage: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    child.once("error", (cause) => reject(new Error(`Native fixture ${stage} failed to start`, { cause })))
+    child.once("spawn", () => resolve())
+  })
+
 export default async function setup(project: TestProject) {
   const directory = mkdtempSync(join(tmpdir(), "sdk-native-"))
   const cwd = join(process.cwd(), "test/native")
@@ -36,6 +41,7 @@ export default async function setup(project: TestProject) {
     if (stopped) return
     stopped = true
     for (const child of children.reverse()) {
+      if (child.pid === undefined) continue
       const signal = (name: NodeJS.Signals) => {
         try {
           process.kill(-child.pid!, name)
@@ -97,6 +103,7 @@ export default async function setup(project: TestProject) {
       stdio: "ignore"
     })
     children.push(x)
+    await waitForNativeSpawn(x, "Xvfb")
     const host = spawn("pnpm", ["exec", "electrobun", "dev"], {
       cwd,
       env,
@@ -104,6 +111,7 @@ export default async function setup(project: TestProject) {
       stdio: ["ignore", "pipe", "pipe"]
     })
     children.push(host)
+    await waitForNativeSpawn(host, "Electrobun")
     host.stdout?.on("data", (data) => {
       output += data
       if (!stopped) writeFileSync(join(directory, "native.log"), output)

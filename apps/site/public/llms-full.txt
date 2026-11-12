@@ -14039,16 +14039,19 @@ operation, so a forged or stale one is refused.
 | Export                  | Kind            | Signature                                                      |
 | ----------------------- | --------------- | -------------------------------------------------------------- |
 | `SealedRecord`          | interface       | `{ id; name; ciphertext; nonce; version; updatedAtMs }`        |
-| `Service`               | interface       | `{ list(); read(id); write(record); remove(id) }`              |
+| `Service`               | interface       | `{ list(); read(id); write(record, previous?); remove(id) }`   |
 | `CredentialStore`       | class           | Key `/control/CredentialStore`                                 |
 | `make`                  | function        | `(implementation: Service) => Service`                         |
 | `makeMemory`            | function        | `() => Service`. Process-local and browser-safe.               |
 | `layerMemory`           | layer           | `Layer<CredentialStore>`                                       |
 | `makeNoop`, `layerNoop` | function, layer | Every operation fails `Unavailable`. Accept partial overrides. |
 
-`write` commits `record` only if the stored version is `record.version - 1`,
-and fails `CredentialConflict` otherwise. Plaintext never reaches this
-boundary.
+`write` commits `record` only if the stored version is `record.version - 1`
+and, given `previous`, the stored ciphertext and nonce are still `previous`'s;
+it fails `CredentialConflict` otherwise. `Credential.rotate` passes the record
+it read, so a credential revoked and recreated at the same version refuses the
+rotation. An adapter or a wrapper around one must honor `previous`; dropping it
+reopens that race. Plaintext never reaches this boundary.
 
 ## CredentialCipher
 
@@ -35374,8 +35377,13 @@ any window if it is absent. Installing the unmodified optional peer does not sil
 native capability. Other Bun host services do not load Electrobun. Remove this patch and marker requirement when
 a tested upstream release provides equivalent callback decoding and private diagnostics.
 
-The native test collector runs the wrapper under Node/V8 against real Electrobun APIs hosted in a separate process.
-Linux needs Xvfb, GTK 3, WebKitGTK 4.1, Ayatana appindicator, curl, Python 3 and X11/XTest; the system opener uses the
+The `native` Vitest project runs the wrapper under Node/V8 against real Electrobun APIs hosted in a separate process.
+It is Linux-only and is collected only when `flock`, `Xvfb`, `bun`, `pnpm`, `curl`, `python3`, `xdg-open` and Playwright Chromium
+are installed and the native desktop shared libraries can load. The `portable` project runs the other tests without building or starting a native fixture; run it on
+its own with `pnpm test --run --project portable --coverage.enabled=false`. Missing native prerequisites are reported when loading the config.
+The native evidence does not establish desktop support or native coverage on macOS or Windows. Coverage still includes
+all package sources and retains its 100% thresholds; a portable-only run does not certify native wrapper coverage.
+The required shared libraries include GTK 3, WebKitGTK 4.1, Ayatana appindicator, X11/XTest and CEF's NSS, GBM and ALSA dependencies; the system opener uses the
 repository's Playwright Chromium as a real headless browser. The Bun compatibility worker does not start another
 native fixture. `BunDesktop.layerWith` injects the foreign `NativeLoader` port; successful tests use actual windows,
 GTK selection/cancellation and the OS browser opener. Faulty native dependencies cover typed failures. This measures

@@ -1,10 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
-import { nativeSetupFile } from "./test/native/config.ts"
+import { nativeUnavailableReason } from "./test/native/prerequisites.ts"
 
 // Each Node runner owns a private report directory. Keep it until reporting has
 // finished, including failed runs, then remove it when the runner exits.
@@ -16,17 +17,43 @@ const reportsDirectory = process.versions.bun ? undefined : (() => {
   return directory
 })()
 
+const schemaSetup = fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url))
+const nativeSetup = fileURLToPath(new URL("./test/native/config.ts", import.meta.url))
+const nativeReason = nativeUnavailableReason({
+  platform: process.platform,
+  bun: process.versions.bun !== undefined,
+  path: process.env.PATH ?? "",
+  browser: () => createRequire(import.meta.url)("playwright").chromium.executablePath()
+})
+if (nativeReason !== undefined && !process.versions.bun) console.warn(`Native desktop tests omitted: ${nativeReason}`)
+
+export const projects = (nativeAvailable: boolean) => [
+  {
+    extends: true as const,
+    test: {
+      name: "portable",
+      include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
+      globalSetup: [schemaSetup],
+      exclude: [...configDefaults.exclude, "test/native.test.vibe"]
+    }
+  },
+  ...(nativeAvailable
+    ? [{
+      extends: true as const,
+      test: {
+        name: "native",
+        include: ["test/native.test.vibe"],
+        globalSetup: [schemaSetup, nativeSetup]
+      }
+    }]
+    : [])
+]
+
 export default defineConfig({
   plugins: [vibelang({ project: "tsconfig.test.json", register: true })],
   test: {
-    globalSetup: [
-      fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url)),
-      ...process.versions.bun ? [] : [nativeSetupFile]
-    ],
-    include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
+    projects: projects(nativeReason === undefined),
     environment: "node",
-    // The V8 native transport is collected by Node; Bun compatibility workers do not own another native fixture.
-    exclude: [...configDefaults.exclude, ...(process.versions.bun ? ["test/native.test.vibe"] : [])],
     setupFiles: ["./test/BunRuntime.setup.ts"],
     // Like platform-node, these contracts exercise real filesystem operations,
     // child processes, jj, and loopback HTTP. The macOS runner exceeded
