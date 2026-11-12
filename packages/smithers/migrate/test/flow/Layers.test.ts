@@ -12,6 +12,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
 import { Capability, GrantStore, Workspace } from "@smthrs/kernel"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as Command from "@smthrs/migrate/flow/Command"
 import type * as Contract from "@smthrs/migrate/flow/Contract"
 import * as Layers from "@smthrs/migrate/flow/Layers"
@@ -19,10 +20,14 @@ import * as Transform from "@smthrs/migrate/flow/Transform"
 import * as Verify from "@smthrs/migrate/flow/Verify"
 import * as Scan from "@smthrs/migrate/Scan"
 import * as Units from "@smthrs/migrate/Units"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { copyFixture, nodeLayer } from "../fixtures/helpers.ts"
 
 const root = Effect.runSync(Layers.migrationRoot("/tmp/project"))
@@ -464,4 +469,52 @@ describe("Layers.rules over host-owned and secret paths", () => {
       expect(yield* probe(undefined, "fs:read", `${root}/src/environment.ts`)).toBe(true)
       expect(yield* probe(undefined, "fs:read", `${root}/.envrc.example.md`)).toBe(false)
     }))
+})
+
+describe("Layers.rules over a SQLite database's sidecars", () => {
+  it.effect("refuses the agent's filesystem a live WAL, its index, and a journal that does not exist yet", () =>
+    Effect.gen(function*() {
+      // A real project whose database is open in WAL mode: the committed run
+      // payload sits in `-wal` until a checkpoint copies it into the database.
+      const project = realpathSync(mkdtempSync(join(tmpdir(), "migrate-wal-")))
+      mkdirSync(join(project, ".smithers"))
+      const database = new DatabaseSync(join(project, ".smithers", "smithers.db"))
+      yield* Effect.addFinalizer(() => Effect.sync(() => database.close()))
+      database.exec("PRAGMA journal_mode = WAL")
+      database.exec("PRAGMA wal_autocheckpoint = 0")
+      database.exec("CREATE TABLE _smithers_runs (run_id TEXT PRIMARY KEY, status TEXT, input TEXT)")
+      database.prepare("INSERT INTO _smithers_runs VALUES (?, ?, ?)").run("run-1", "finished", "PRIVATE_RUN_PAYLOAD")
+      const wal = ".smithers/smithers.db-wal"
+      const journal = ".smithers/smithers.db-journal"
+      expect(readFileSync(join(project, wal), "latin1")).toContain("PRIVATE_RUN_PAYLOAD")
+      expect(existsSync(join(project, journal))).toBe(false)
+
+      const scanned = yield* Scan.scan(project, { flowsDir: "flows" }).pipe(Effect.provide(nodeLayer))
+      const migration = yield* Layers.migrationRoot(project)
+      const grants = GrantStore.layer({
+        attended: false,
+        rules: Layers.rules({ root: migration, runStatePaths: Transform.runStatePaths(scanned), commands })
+      }).pipe(Layer.provide(Workspace.layer(migration)), Layer.orDie)
+      // The kernel guard the rewrite agent's filesystem flows run behind.
+      const guarded = Layer.orDie(KernelFileSystem.layer).pipe(
+        Layer.provide([Workspace.layer(migration), grants]),
+        Layer.provideMerge(Layer.provideMerge(AtomicFileSystem.layer, NodeServices.layer))
+      )
+      const outcome = (use: (fs: FileSystem.FileSystem) => Effect.Effect<unknown, unknown>) =>
+        Effect.gen(function*() {
+          return yield* use(yield* FileSystem.FileSystem)
+        }).pipe(
+          Effect.as("allowed"),
+          Effect.catch((error) => Effect.succeed((error as { reason?: { _tag?: string } }).reason?._tag)),
+          Effect.provide(guarded)
+        )
+
+      for (const file of [wal, ".smithers/smithers.db-shm", ".smithers/smithers.db"]) {
+        expect([file, yield* outcome((fs) => fs.readFile(join(project, file)))]).toEqual([file, "PermissionDenied"])
+      }
+      expect(yield* outcome((fs) => fs.writeFileString(join(project, journal), ""))).toBe("PermissionDenied")
+      // The source beside the run state stays the agent's to read.
+      writeFileSync(join(project, ".smithers", "workflow.tsx"), "export {}\n")
+      expect(yield* outcome((fs) => fs.readFile(join(project, ".smithers", "workflow.tsx")))).toBe("allowed")
+    }).pipe(Effect.scoped))
 })

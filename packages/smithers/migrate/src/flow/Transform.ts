@@ -233,8 +233,18 @@ const hintRows = (
 ]
 
 /**
+ * The files SQLite keeps beside a database: the rollback journal, the
+ * shared-memory index, and the write-ahead log. WAL frames hold whole database
+ * pages, so each one is as private as the database it belongs to.
+ */
+const sqliteSidecars = ["-journal", "-shm", "-wal"] as const
+
+/**
  * Every path that holds 0.x run state, which no unit may read, write, move,
  * or resume.
+ *
+ * Each database brings its SQLite sidecars, whether or not they exist at scan
+ * time: a connection that opens during the run creates them.
  *
  * Project-relative, except the gateway state files, which live outside the
  * project and stay absolute on purpose: the deny rules and the run-state
@@ -246,7 +256,10 @@ const hintRows = (
  */
 export const runStatePaths = (result: Scan.ScanResult): ReadonlyArray<string> =>
   [
-    ...result.runState.databases.map((database) => database.path),
+    ...result.runState.databases.flatMap((database) => [
+      database.path,
+      ...sqliteSidecars.map((suffix) => `${database.path}${suffix}`)
+    ]),
     ...result.runState.stateDirs.map((entry) => entry.path),
     ...result.runState.gatewayState
   ].sort()
