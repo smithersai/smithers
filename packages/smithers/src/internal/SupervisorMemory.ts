@@ -16,12 +16,12 @@ import * as Memory from "@smthrs/agent/Memory"
 import * as MemoryCalibration from "@smthrs/agent/MemoryCalibration"
 import * as Capability from "@smthrs/capability/Capability"
 import type * as DurableWriter from "@smthrs/database/DurableWriter"
+import type { FlowRuntime } from "@smthrs/flow"
 import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
-import * as Maintenance from "@smthrs/memory/Maintenance"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
 import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, type Scope } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { SqlClient } from "effect/sql/SqlClient"
@@ -29,6 +29,7 @@ import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import * as CliError from "../CliError.ts"
 import * as Environment from "../Environment.ts"
+import * as MemoryTtlGc from "./MemoryTtlGc.ts"
 
 /**
  * How long a connection to a memory database waits for another writer's lock
@@ -136,8 +137,8 @@ export const memoryDatabase = (input: {
  * busy timeout so concurrent writers wait for each other instead of failing;
  * without it the store shares the workspace's `stores`. Recall is keyword
  * recall over the same store, so a note written by one run is what the next
- * one reads. Expired facts are deleted on the `Maintenance.layerTtlGc`
- * schedule while the layer is alive.
+ * one reads. The layer runs no maintenance of its own: the host that owns a
+ * flow engine deletes expired facts with {@link startTtlGc}.
  *
  * @since 1.0.0
  * @private
@@ -151,8 +152,45 @@ export const layer = (input: {
 }): Layer.Layer<MemoryStore.MemoryStore | Recall.Recall> => {
   const database = memoryDatabase(input)
   const store = MemoryStore.layer.pipe(Layer.provide(database), Layer.provide(input.crypto), Layer.orDie)
-  return Layer.provideMerge(Maintenance.layerTtlGc(), Layer.provideMerge(RecallKeyword.layer, store))
+  return Layer.provideMerge(RecallKeyword.layer, store)
 }
+
+/**
+ * Starts the host's durable TTL pass over every memory store of this
+ * workspace: the supervisor's store, and the workspace's own `stores` too when
+ * `SMITHERS_MEMORY_DB` moved the supervisor's store to another file. Without
+ * that variable the two are one database, swept once.
+ *
+ * The pass is a flow on the host's engine (see {@link module:MemoryTtlGc}),
+ * so expired facts and their FTS and vector projections are deleted, not only
+ * hidden from reads, and the schedule survives a restart.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const startTtlGc = (input: {
+  readonly environment: Environment.Source
+  readonly crypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)>
+  /** The workspace's own stores, as given to {@link layer}. */
+  readonly stores?: Layer.Layer<DurableWriter.DurableWriter | SqlClient> | undefined
+}): Effect.Effect<
+  void,
+  never,
+  | MemoryStore.MemoryStore
+  | Scope.Scope
+  | FlowRuntime.FlowRuntime
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+> =>
+  Effect.gen(function*() {
+    const supervisor = yield* MemoryStore.MemoryStore
+    if (Environment.read(input.environment, "SMITHERS_MEMORY_DB") === undefined || input.stores === undefined) {
+      return yield* MemoryTtlGc.start([supervisor])
+    }
+    const workspace = yield* Layer.build(
+      MemoryStore.layer.pipe(Layer.provide([input.stores, input.crypto]), Layer.orDie)
+    )
+    return yield* MemoryTtlGc.start([supervisor, Context.get(workspace, MemoryStore.MemoryStore)])
+  })
 
 /**
  * A run's opening memory: `memory({ task })` over the workspace, with the

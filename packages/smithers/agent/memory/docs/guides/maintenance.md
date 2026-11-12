@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-`Maintenance` exports three finite Effects that keep memory bounded. Each performs one pass and returns a count, so you schedule them yourself, on a cron, after a run, or wherever your host keeps periodic work. Each needs only `MemoryStore.MemoryStore` in context. One export does run on its own: `Maintenance.layerTtlGc` repeats the TTL pass while its scope is open, and the Smithers host composes it wherever it builds the memory store.
+`Maintenance` exports three finite Effects that keep memory bounded. Each performs one pass and returns a count, so you schedule them yourself, on a cron, after a run, or wherever your host keeps periodic work. Each needs only `MemoryStore.MemoryStore` in context. Where the host has a flow engine, run the pass as a step of a durable `@smthrs/flow` flow, so the engine owns the wait between passes and the schedule survives a restart. The Smithers host does this for `Maintenance.ttlGc`: a durable poll on its engine runs one pass when the host starts and one every ten minutes after.
 
 ## Collect expired facts
 
@@ -24,7 +24,7 @@ const collected = Effect.gen(function*() {
 
 Facts expire relative to their last update, and expired facts are already invisible to reads; this pass reclaims their storage and keeps recall projections honest.
 
-`Maintenance.layerTtlGc({ interval })` runs this pass once while the layer builds and then on every interval, ten minutes by default, until its scope closes. It keeps no record of a pass, so a restarted process starts again with the build-time pass. A pass that fails or dies logs the warning `memory TTL GC pass failed` and the next pass still runs.
+`Maintenance.layerTtlGc({ interval })` is deprecated and goes in the next breaking release. It runs this pass once while the layer builds and then on every interval, ten minutes by default, in a fiber forked into its scope. It keeps no record of a pass, so a restarted process starts again with the build-time pass. A pass that fails or dies logs the warning `memory TTL GC pass failed` and the next pass still runs. Schedule `Maintenance.ttlGc` from a durable flow instead.
 
 ## Limit history by approximate tokens
 

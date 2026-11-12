@@ -16,6 +16,13 @@
 - `Recall.BankName`, and `Flows.MAX_REMEMBER_KEY_BYTES` and
   `MAX_REMEMBER_TEXT_BYTES`.
 
+### Deprecated
+
+- `Maintenance.layerTtlGc` and `Maintenance.TtlGcScheduleOptions`. The layer
+  is a forked loop that no engine records. Run `Maintenance.ttlGc` as a step of
+  a durable `@smthrs/flow` flow on the host's engine instead, as the Smithers
+  host now does. Both exports are removed in the next breaking release (#4714).
+
 ### Fixed
 
 - `Maintenance.layerTtlGc` logs a pass that dies and runs the next one. It

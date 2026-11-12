@@ -197,7 +197,7 @@ export default Flow.make("aaa-unrelated", {
         [
           "engine.db",
           "SELECT COUNT(*) AS count FROM flows_runs " +
-          "WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery'"
+          "WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')"
         ]
       ] as const
     ) {

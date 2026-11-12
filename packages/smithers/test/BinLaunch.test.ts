@@ -175,7 +175,7 @@ describe("an attached launch's exit status", processBudget, () => {
       const engine = new DatabaseSync(join(cwd, ".flows", "engine.db"), { readOnly: true })
       try {
         const rows = engine.prepare(
-          "SELECT status FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery'"
+          "SELECT status FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')"
         ).all() as unknown as ReadonlyArray<
           { readonly status: string }
         >

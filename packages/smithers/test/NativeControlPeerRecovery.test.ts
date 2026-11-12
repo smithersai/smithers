@@ -54,7 +54,7 @@ const rows = (root: string, name = "engine") =>
     name,
     (db) =>
       db.prepare(
-        "SELECT run_id, status, owner_host_id, owner_nonce, owner_pid, cancel_requested_at_ms FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery' ORDER BY run_id"
+        "SELECT run_id, status, owner_host_id, owner_nonce, owner_pid, cancel_requested_at_ms FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc') ORDER BY run_id"
       )
         .all() as unknown as Row[]
   )

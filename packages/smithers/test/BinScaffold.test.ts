@@ -67,7 +67,7 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
     const handle = new DatabaseSync(file, { readOnly: true })
     try {
       return handle.prepare(
-        "SELECT run_id AS runId, status FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery' ORDER BY run_id"
+        "SELECT run_id AS runId, status FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc') ORDER BY run_id"
       )
         .all() as unknown as ReadonlyArray<{ runId: string; status: string }>
     } finally {

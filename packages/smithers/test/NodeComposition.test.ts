@@ -11,6 +11,7 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import { Control as ControlService, ControlRpcs } from "@smthrs/control"
 import * as TestControl from "@smthrs/control/test/TestControl"
+import { ReplayOnly } from "@smthrs/engine-store"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Path from "@smthrs/kernel/Path"
@@ -27,10 +28,12 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Application from "../src/Application.ts"
 import * as CliError from "../src/CliError.ts"
 import * as ExecutorOwnership from "../src/ExecutorOwnership.ts"
+import * as MemoryTtlGc from "../src/internal/MemoryTtlGc.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 import * as Output from "../src/Output.ts"
 
@@ -844,6 +847,87 @@ describe("NodeControl.layer", () => {
       process.exitCode = previousExit
     }
   }, 60_000)
+
+  // The host used to fork `Maintenance.layerTtlGc`, a loop no engine recorded.
+  it("deletes expired memory facts through a durable poll on its own engine", async () => {
+    const project = await mkdtemp(join(tmpdir(), "flows-cli-memory-ttl-"))
+    try {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const store = yield* MemoryStore.MemoryStore
+          const namespace = { kind: "user", id: "cli" } as const
+          yield* store.putFact({ namespace, key: "expired", value: 1, ttlMs: 1, provenance: {} })
+          yield* store.putFact({ namespace, key: "kept", value: 1, provenance: {} })
+          yield* Effect.sleep(20)
+        }).pipe(Effect.provide(NodeControl.layerMemory(project)), Effect.scoped, Effect.orDie)
+      )
+      const rows = <Row>(filename: string, query: string): ReadonlyArray<Row> => {
+        const database = new DatabaseSync(filename, { readOnly: true })
+        try {
+          return database.prepare(query).all() as unknown as ReadonlyArray<Row>
+        } finally {
+          database.close()
+        }
+      }
+      const facts = () =>
+        rows<{ readonly fact_key: string }>(
+          NodeControl.databasePath(project),
+          "SELECT fact_key FROM memory_facts ORDER BY fact_key"
+        ).map((row) => row.fact_key)
+      // The store alone runs no pass: the expired row is hidden, not deleted.
+      expect(facts()).toEqual(["expired", "kept"])
+
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          yield* ControlService.Control
+          while (facts().length !== 1) yield* Effect.sleep(50)
+        }).pipe(
+          Effect.provide(NodeControl.layer({ root: project, evaluator: ScriptedJudge.layer })),
+          Effect.scoped,
+          Effect.orDie
+        )
+      )
+
+      expect(facts()).toEqual(["kept"])
+      const lineage = () =>
+        rows<{ readonly run_id: string }>(
+          NodeControl.executionDatabasePath(project),
+          "SELECT run_id FROM flows_runs WHERE json_extract(state_json, '$.flowName') = 'smithers/memory/TtlGc'"
+            + " AND round_ordinal = 0"
+        ).map((row) => row.run_id)
+      expect(lineage()).toEqual([MemoryTtlGc.executionId])
+
+      // A replay-only engine executes nothing: `smthrs runs verify` builds
+      // one over a copy, and a pass there would die as a step that would
+      // execute.
+      const replayed = await mkdtemp(join(tmpdir(), "flows-cli-memory-ttl-replay-"))
+      try {
+        await Effect.runPromise(
+          Effect.gen(function*() {
+            yield* ControlService.Control
+          }).pipe(
+            Effect.provide(NodeControl.layer({
+              root: replayed,
+              evaluator: ScriptedJudge.layer,
+              replayOnly: ReplayOnly.layer(() => Effect.void)
+            })),
+            Effect.scoped,
+            Effect.orDie
+          )
+        )
+        expect(
+          rows<{ readonly run_id: string }>(
+            NodeControl.executionDatabasePath(replayed),
+            "SELECT run_id FROM flows_runs WHERE json_extract(state_json, '$.flowName') = 'smithers/memory/TtlGc'"
+          )
+        ).toEqual([])
+      } finally {
+        await rm(replayed, { recursive: true, force: true })
+      }
+    } finally {
+      await rm(project, { recursive: true, force: true })
+    }
+  }, 120_000)
 
   it("opens one control database connection for the complete local layer", async () => {
     const project = await mkdtemp(join(tmpdir(), "flows-cli-single-control-db-"))

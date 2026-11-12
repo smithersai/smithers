@@ -37,7 +37,7 @@ const rows = (root: string) => {
   const db = new DatabaseSync(NodeControl.executionDatabasePath(root), { readOnly: true })
   try {
     return db.prepare(
-      "SELECT run_id, status, waiting_reason, cancel_requested_at_ms FROM (SELECT * FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery') ORDER BY run_id"
+      "SELECT run_id, status, waiting_reason, cancel_requested_at_ms FROM (SELECT * FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')) ORDER BY run_id"
     )
       .all() as Array<
         { run_id: string; status: string; waiting_reason: string | null; cancel_requested_at_ms: number | null }

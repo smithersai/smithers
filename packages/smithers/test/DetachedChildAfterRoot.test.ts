@@ -29,7 +29,9 @@ export default Flow.make("detached", {
 const rows = (root: string) => {
   const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true })
   try {
-    return db.prepare("SELECT run_id, status FROM flows_runs").all() as unknown as Array<
+    return db.prepare(
+      "SELECT run_id, status FROM flows_runs WHERE COALESCE(json_extract(state_json, '$.flowName'), '') <> 'smithers/memory/TtlGc'"
+    ).all() as unknown as Array<
       { run_id: string; status: string }
     >
   } finally {

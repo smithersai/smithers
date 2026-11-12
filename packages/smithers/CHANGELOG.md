@@ -231,6 +231,12 @@
 
 ### Changed
 
+- The host deletes expired memory facts on a durable poll instead of a forked
+  loop. The executor starts, or joins, one `smithers/memory/TtlGc` lineage on
+  its flow engine: a pass at start and one every ten minutes, with the wait on
+  the engine's durable timer, so a restarted host resumes the schedule it
+  left. The lineage's id names the build of its plan, so a release that changes
+  the plan starts its own lineage. `NodeControl.layerMemory` is the store alone and runs no pass (#4714).
 - The Bun control host runs flows through `BunRuntime` from `@smthrs/platform-bun`,
   an optional peer, and the Node host through `NodeRuntime` from
   `@smthrs/platform-node`; both moved out of `@smthrs/flows`.

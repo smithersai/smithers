@@ -1,6 +1,7 @@
 /**
- * Finite memory maintenance Effects intended for explicit schedules, and
- * `layerTtlGc`, which repeats the TTL pass for as long as its scope is open.
+ * Finite memory maintenance Effects. Each performs one pass, and the host
+ * schedules it, as a step of a durable flow where it has a flow engine. The
+ * deprecated `layerTtlGc` is the one export that repeats a pass on its own.
  *
  * @since 0.1.0
  */
@@ -36,6 +37,7 @@ export const ttlGc: Effect.Effect<TtlGcResult, MemoryError, MemoryStore> = Effec
 /**
  * Options for {@link layerTtlGc}.
  *
+ * @deprecated Goes with {@link layerTtlGc} in the next breaking release.
  * @category models
  * @since 1.0.0
  */
@@ -55,9 +57,13 @@ export interface TtlGcScheduleOptions {
  * returns: the interval is measured from the built layer, whatever the
  * database's latency.
  *
- * Compose it in the host that owns the memory database, so expired facts and
- * their FTS and vector projections are deleted, not only hidden from reads.
+ * It is a forked loop: nothing records a pass, and a restarted process starts
+ * again with the build-time pass.
  *
+ * @deprecated Run {@link ttlGc} as a step of a durable `@smthrs/flow` flow on
+ * the host's engine, as the Smithers host does, so the engine owns the wait
+ * and the schedule survives a restart. This layer is removed in the next
+ * breaking release.
  * @category layers
  * @since 1.0.0
  */

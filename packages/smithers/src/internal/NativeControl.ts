@@ -58,7 +58,6 @@ import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import type * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
-import * as Maintenance from "@smthrs/memory/Maintenance"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -2251,6 +2250,15 @@ export const make = (
           Effect.provideService(RunInspection.RunInspection, yield* RunInspection.make())
         )
         yield* Effect.forkScoped(supervisor.recover)
+        // Expired memory facts are deleted by a durable poll on this engine,
+        // started once the executor above can run flows. A replay-only engine
+        // executes nothing, and that includes this pass.
+        if (engine.host.replayOnly !== true) {
+          yield* SupervisorMemory.startTtlGc({ environment, crypto: native.crypto, stores: engine.stores }).pipe(
+            Effect.provideContext(memoryServices),
+            Effect.provide(native.crypto)
+          )
+        }
         const observed = supervisor.wrap({ ...executor, readExecutions: yield* NativeExecutionRead.makeFromSql() })
         // The process's start-up clock: registered here, and handed its first run below.
         yield* Telemetry.startUp.mark("executor")
@@ -2517,11 +2525,10 @@ export const make = (
         })
       })
     ).pipe(Layer.provide([control, engine.journal]))
+  // The store alone. Its expired facts are deleted by the executor's durable
+  // TTL pass (`SupervisorMemory.startTtlGc`), which sweeps these same stores.
   const layerMemory = (root: string, engine: EngineDurable = engineDurable(root)) =>
-    Layer.provideMerge(
-      Maintenance.layerTtlGc(),
-      MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
-    )
+    MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
   const layerHost = (
     config:
       & Application.Config

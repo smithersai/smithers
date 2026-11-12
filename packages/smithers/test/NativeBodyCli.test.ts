@@ -27,7 +27,7 @@ const count = (cwd: string, file: string, table: string): number => {
     // 4fe3f0724117 starts durable health discovery during host construction;
     // no user plan or execution may be admitted by this refused invocation.
     const userRuns = table === "flows_runs"
-      ? " WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery'"
+      ? " WHERE COALESCE(json_extract(state_json, '$.flowName'), '') NOT IN ('smithers/health/Discovery', 'smithers/memory/TtlGc')"
       : ""
     return (database.prepare(`SELECT COUNT(*) AS count FROM ${table}${userRuns}`).get() as { count: number }).count
   } finally {
