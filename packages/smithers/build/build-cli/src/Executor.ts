@@ -25,7 +25,7 @@ import * as SchemaIssue from "effect/SchemaIssue"
 import type * as Scope from "effect/Scope"
 import * as Os from "node:os"
 import * as NodeUtil from "node:util/types"
-import { entryLimit } from "./Cache.ts"
+import { entryLimit, outputDepthLimit, outputMemberLimit } from "./Cache.ts"
 import * as Diagnostic from "./Diagnostic.ts"
 import { byCodeUnit } from "./internal/Text.ts"
 import type * as Planner from "./Planner.ts"
@@ -555,8 +555,10 @@ export const describeFailure = (value: unknown): string => {
  */
 const cacheUndefinedTag = "smithers-build/cache-output/undefined-v1"
 const cacheValueTag = "smithers-build/cache-output/value-v1"
-const maximumCacheOutputDepth = 256
-const maximumCacheOutputMembers = 500_000
+// The envelope holds the value one level down, beside its `_tag`, so the
+// value gets one level and one member less than the store accepts.
+const maximumCacheOutputDepth = outputDepthLimit - 1
+const maximumCacheOutputMembers = outputMemberLimit - 1
 
 /**
  * What one walk of a value may spend, and whether overspending refuses.

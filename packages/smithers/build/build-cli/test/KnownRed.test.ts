@@ -733,6 +733,21 @@ export const Package = S.Package({ targets: { good, bad, worse, consumer } })
     expect(served.envelope).toContain("cannot read the known-red list")
   })
 
+  it.each([
+    ["test", "an unreadable list", "absent.json", undefined, "cannot read the known-red list"],
+    ["ci", "a list that is not JSON", "broken.json", "{", "broken.json: not JSON"]
+  ])("%s refuses %s before any target runs", async (verb, _name, list, content, refusal) => {
+    const root = await fixture()
+    if (content !== undefined) await write(root, list, content)
+    const refused = await serve(root, [verb, "//:good", "--known-red", list])
+    expect(refused.exitCode).toBe(1)
+    expect(refused.envelope).toContain(refusal)
+    // //:good never ran, so it has no cache entry to hit.
+    const after = NodePath.join(root, "out", "after.json")
+    expect((await serve(root, ["test", "//:good", "--results-file", after])).exitCode).toBe(0)
+    expect(JSON.parse(await Fs.readFile(after, "utf8")).results).toMatchObject([{ label: "//:good", status: "ran" }])
+  })
+
   it("leaves a plan untouched", async () => {
     const root = await fixture()
     const served = await serve(root, ["test", "//:worse", "--plan", "--known-red", "absent.json"])

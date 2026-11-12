@@ -19,7 +19,7 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { ensureCacheDirectory } from "./Cache.ts"
+import { ensureCacheDirectory, entryLimit, outputMemberLimit } from "./Cache.ts"
 import * as Environment from "./Environment.ts"
 import * as Path from "./internal/Path.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
@@ -1793,6 +1793,11 @@ export interface OutDirLimits {
  * record every later run had to fetch. A crossed ceiling aborts the capture
  * before anything reaches the CAS, naming the path and the limit.
  *
+ * `entries` and `manifestBytes` are sized from the cache store's own
+ * ceilings, so one captured manifest is always storable: a manifest entry
+ * costs six stored members (the entry and its five fields), and the record
+ * around the manifest keeps one MiB of the store's byte limit.
+ *
  * @category artifacts
  * @since 0.1.0
  */
@@ -1800,7 +1805,7 @@ export const outDirLimits = {
   /** Directory nesting below the outDir root. */
   depth: 64,
   /** Files, directories, and symlinks visited. */
-  entries: 200_000,
+  entries: Math.floor(outputMemberLimit / 6) - 1_000,
   /** UTF-8 bytes in one entry's outDir-relative path. */
   pathBytes: 4_096,
   /** Bytes in one captured file. */
@@ -1808,7 +1813,7 @@ export const outDirLimits = {
   /** Bytes across every captured file in one outDir. */
   totalBytes: 16 * 1024 * 1024 * 1024,
   /** UTF-8 bytes in the encoded manifest entry array. */
-  manifestBytes: 64 * 1024 * 1024
+  manifestBytes: entryLimit - 1024 * 1024
 } as const satisfies OutDirLimits
 
 /**

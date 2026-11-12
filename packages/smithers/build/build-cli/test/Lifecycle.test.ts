@@ -181,6 +181,10 @@ it("refuses artifacts without summaries and artifact known-red entries", async (
   expect(refused.exitCode).toBe(1)
   expect(refused.stdout).toContain("artifact tests never block")
   expect(refused.stdout).toContain("need no known-red entry")
+  // The refusal came before execution: //:good never ran, so it has no cache entry to hit.
+  const after = Path.join(root, "out", "after.json")
+  expect((await serve(root, ["test", "//:good", "--results-file", after])).exitCode).toBe(0)
+  expect(JSON.parse(await Fs.readFile(after, "utf8")).results).toMatchObject([{ label: "//:good", status: "ran" }])
   const source = await Fs.readFile(Path.join(root, "PACKAGE.ts"), "utf8")
   await write(root, "PACKAGE.ts", source.replace(", summary: \"Captured failure on 2026-10-17\"", ""))
   const invalid = await serve(root, ["test", "//...", "--plan"])

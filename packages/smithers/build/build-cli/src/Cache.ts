@@ -82,6 +82,27 @@ export interface CacheStore {
 export const entryLimit = 16 * 1024 * 1024
 
 /**
+ * Members, array elements plus object keys, one stored output may hold.
+ *
+ * Every capture step sizes itself from this and {@link outputDepthLimit}:
+ * the result encoder in `Executor.ts` and the outDir capture ceilings in
+ * `PackageTree.ts`. A value either step accepts is therefore one the store
+ * accepts, instead of being captured and then refused at `put`.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const outputMemberLimit = 500_000
+
+/**
+ * Nesting levels below the root one stored output may hold.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const outputDepthLimit = 256
+
+/**
  * The action-cache publication ceiling shared by both remote backends.
  *
  * Local entries retain the larger {@link entryLimit}; a remote tier stores
@@ -342,6 +363,8 @@ const jsonStringBytes = (value: string): number => {
   return bytes
 }
 
+const tooManyMembers = (): TypeError => new TypeError(`cached JSON has more than ${outputMemberLimit} members`)
+
 const snapshotJson = (value: unknown): unknown => {
   const ancestors = new Set<object>()
   let members = 0
@@ -353,7 +376,7 @@ const snapshotJson = (value: unknown): unknown => {
     }
   }
   const visit = (current: unknown, depth: number): unknown => {
-    if (depth > 64) throw new TypeError("cached JSON is nested too deeply")
+    if (depth > outputDepthLimit) throw new TypeError(`cached JSON is nested deeper than ${outputDepthLimit} levels`)
     if (current === null) {
       addBytes(4)
       return null
@@ -388,7 +411,7 @@ const snapshotJson = (value: unknown): unknown => {
           lengthDescriptor.value < 0
         ) throw new TypeError("cached output contains an invalid array")
         const length = lengthDescriptor.value as number
-        if (length > 100_000 - members) throw new TypeError("cached JSON has too many members")
+        if (length > outputMemberLimit - members) throw tooManyMembers()
         const keys = Reflect.ownKeys(current).filter((key) => key !== "length")
         if (keys.length !== length) throw new TypeError("cached output contains a sparse or extended array")
         members += length
@@ -408,7 +431,7 @@ const snapshotJson = (value: unknown): unknown => {
       if (!keys.every((key) => typeof key === "string")) {
         throw new TypeError("cached output objects must not contain symbol properties")
       }
-      if (keys.length > 100_000 - members) throw new TypeError("cached JSON has too many members")
+      if (keys.length > outputMemberLimit - members) throw tooManyMembers()
       members += keys.length
       addBytes(2 + Math.max(0, keys.length - 1) + keys.length)
       const entries: Array<readonly [string, unknown]> = []

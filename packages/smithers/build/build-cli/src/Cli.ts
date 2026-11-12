@@ -725,19 +725,45 @@ const artifactLabels = (index: PackageIndex.PackageIndex): ReadonlySet<string> =
 const advisoryLabels = (index: PackageIndex.PackageIndex): ReadonlySet<string> =>
   index.factory?.factory.lifecycle?.tests.artifact.blocking === false ? artifactLabels(index) : new Set()
 
+/** The known-red list one execution is judged against. */
+interface KnownRedList {
+  readonly source: string
+  readonly entries: ReadonlyArray<KnownRed.Entry>
+}
+
+/**
+ * Reads and checks `--known-red` before any target runs, so a missing,
+ * malformed, or misdirected list refuses the run instead of discarding it.
+ * A plan runs nothing and reads no list.
+ */
+const knownRedOf = async (index: PackageIndex.PackageIndex, flags: ExecutionFlags): Promise<KnownRedList> => {
+  if (flags.knownRed === undefined || flags.plan) return { source: "", entries: [] }
+  const list = await KnownRed.read(flags.workspace, flags.knownRed)
+  const artifacts = artifactLabels(index)
+  for (const entry of list.entries) {
+    if (artifacts.has(entry.label)) {
+      throw new KnownRed.KnownRedError(
+        "invalid",
+        `${entry.label}: artifact tests never block, so they need no known-red entry; remove it from ${list.source}`
+      )
+    }
+  }
+  return list
+}
+
 /**
  * With `--fail-fast`, the rule that stops the run: the first report that
  * would turn the verdict red. A failure the known-red list or an advisory
  * lifecycle excuses keeps the run going, exactly as the verdict ignores it.
  */
-const failFastOf = async (
+const failFastOf = (
   index: PackageIndex.PackageIndex,
-  flags: ExecutionFlags
-): Promise<((report: Executor.TargetReport) => boolean) | undefined> => {
-  if (flags.failFast !== true) return undefined
-  const list = flags.knownRed === undefined ? { entries: [] } : await KnownRed.read(flags.workspace, flags.knownRed)
-  return KnownRed.blocks(list, { platform: process.platform, today: KnownRed.today(), advisory: advisoryLabels(index) })
-}
+  flags: ExecutionFlags,
+  list: KnownRedList
+): ((report: Executor.TargetReport) => boolean) | undefined =>
+  flags.failFast !== true ?
+    undefined :
+    KnownRed.blocks(list, { platform: process.platform, today: KnownRed.today(), advisory: advisoryLabels(index) })
 
 /**
  * Runs one execution verb through the build executor.
@@ -761,8 +787,10 @@ export const runPackageVerb = async (
     remoteCacheOf(index.workspace.cache.remote, config.cacheUrl),
     config
   )
+  const knownRed = await knownRedOf(index, flags)
   return rememberExecution(
     index,
+    knownRed,
     PackageExec.run({
       index,
       cacheDirectory,
@@ -777,7 +805,7 @@ export const runPackageVerb = async (
       jobs: flags.jobs,
       readCache: flags.cache,
       signal: config.signal,
-      failFast: await failFastOf(index, flags),
+      failFast: failFastOf(index, flags, knownRed),
       reporter,
       message: flags.message,
       sweep: flags.sweep,
@@ -909,6 +937,7 @@ const runCi = async (
   const index = await openPackageIndex(flags, config)
   const pattern = patterns.join(" ")
   const remote = flags.remote === undefined ? undefined : remoteOf(index, flags.remote)
+  const knownRed = await knownRedOf(index, flags)
   {
     const cacheDirectory = flags.cacheDir === undefined
       ? index.workspace.cache.directory
@@ -974,7 +1003,9 @@ const runCi = async (
       edges: plan.workList.flatMap((node) => node.dependencies.map((from) => ({ from, to: node.label }))),
       warnings: []
     })))
-    if (remote !== undefined) return runRemote(index, remote, whole, measured, pattern, flags, config, reporter)
+    if (remote !== undefined) {
+      return runRemote(index, knownRed, remote, whole, measured, pattern, flags, config, reporter)
+    }
     const merged = shard === undefined ? whole : Shards.select(whole, shard, measured)
     if (flags.plan) return { verb: "ci", pattern, ...merged, targets: merged.targets.map(plannedTarget) }
     // Services and key-only dependencies are planned but never scheduled.
@@ -984,6 +1015,7 @@ const runCi = async (
     const closures = new Map(packagePlans.flatMap(({ plan }) => [...plan.closures]))
     return rememberExecution(
       index,
+      knownRed,
       PackageExec.execute(
         {
           roots: merged.roots,
@@ -1000,7 +1032,7 @@ const runCi = async (
           jobs: flags.jobs,
           readCache: flags.cache,
           signal: config.signal,
-          failFast: await failFastOf(index, flags),
+          failFast: failFastOf(index, flags, knownRed),
           reporter,
           environment: config.environment
         }
@@ -1034,6 +1066,7 @@ const remoteOf = (
  */
 const runRemote = async (
   index: PackageIndex.PackageIndex,
+  knownRed: KnownRedList,
   remote: { readonly name: string; readonly declaration: WorkspaceDeclaration.RemoteDeclaration },
   whole: Executor.MergedPlan,
   measured: ReadonlyMap<string, number>,
@@ -1091,21 +1124,28 @@ const runRemote = async (
   const summary = RemoteCi.merge(whole.targets, rows, { pattern, jobs, durationMs: Date.now() - started })
   for (const report of summary.results) reporter.targetFinished(report)
   reporter.summary(summary)
-  return rememberExecution(index, Promise.resolve(summary))
+  return rememberExecution(index, knownRed, Promise.resolve(summary))
 }
 
 /** Every outcome an execution command can return before settling. */
 type Outcome = Planner.Plan | CiPlan | Executor.Summary | PackageExec.PlanReport
 
-/** Retain the exact declaration snapshot used by this execution, without serializing it. */
-const executionIndexes = new WeakMap<Executor.Summary, PackageIndex.PackageIndex>()
+/** What judges one execution: its exact declaration snapshot and the known-red list read before it ran. */
+interface ExecutionContext {
+  readonly index: PackageIndex.PackageIndex
+  readonly knownRed: KnownRedList
+}
+
+/** Retain each execution's context, without serializing it. */
+const executions = new WeakMap<Executor.Summary, ExecutionContext>()
 
 const rememberExecution = async <A extends Executor.Summary | PackageExec.PlanReport>(
   index: PackageIndex.PackageIndex,
+  knownRed: KnownRedList,
   pending: Promise<A>
 ): Promise<A> => {
   const outcome = await pending
-  if (isSummary(outcome)) executionIndexes.set(outcome, index)
+  if (isSummary(outcome)) executions.set(outcome, { index, knownRed })
   return outcome
 }
 
@@ -1292,29 +1332,12 @@ const executeWithResults = async <A extends Outcome>(
     reporter.close()
   }
   if (!isSummary(outcome)) return settle(context, config, outcome)
-  let judged: Executor.Summary = outcome
-  try {
-    // Every summary is registered by rememberExecution with its actual declaration snapshot.
-    const index = executionIndexes.get(outcome)!
-    const artifacts = artifactLabels(index)
-    const advisory = advisoryLabels(index)
-    const list = options.knownRed === undefined ?
-      { source: "", entries: [] } :
-      await KnownRed.read(options.workspace, options.knownRed)
-    for (const entry of list.entries) {
-      if (artifacts.has(entry.label)) {
-        throw new KnownRed.KnownRedError(
-          "invalid",
-          `${entry.label}: artifact tests never block, so they need no known-red entry; remove it from ${list.source}`
-        )
-      }
-    }
-    if (options.knownRed !== undefined || advisory.size > 0) {
-      judged = KnownRed.judge(outcome, list, { platform: process.platform, today: KnownRed.today(), advisory })
-    }
-  } catch (cause) {
-    return context.error({ code, exitCode: 1, message: failureText(context, cause) })
-  }
+  // Every summary is registered by rememberExecution with its declaration snapshot and known-red list.
+  const { index, knownRed } = executions.get(outcome)!
+  const advisory = advisoryLabels(index)
+  const judged: Executor.Summary = options.knownRed !== undefined || advisory.size > 0 ?
+    KnownRed.judge(outcome, knownRed, { platform: process.platform, today: KnownRed.today(), advisory }) :
+    outcome
   const lines = "knownRed" in judged ? KnownRed.describe((judged as KnownRed.JudgedSummary).knownRed) : []
   if (lines.length > 0) terminalsOf(config).stderr.write(`${lines.join("\n")}\n`)
   if (results !== undefined) {
@@ -1369,6 +1392,7 @@ const runSelected = async (
   config: RuntimeConfig,
   reporter: Reporter.Reporter
 ): Promise<Executor.Summary | PackageExec.PlanReport> => {
+  const knownRed = await knownRedOf(index, flags)
   const options = {
     index,
     cacheDirectory: cacheDirectoryOf(index, flags),
@@ -1376,7 +1400,7 @@ const runSelected = async (
     jobs: flags.jobs,
     readCache: flags.cache,
     signal: config.signal,
-    failFast: await failFastOf(index, flags),
+    failFast: failFastOf(index, flags, knownRed),
     reporter,
     environment: config.environment,
     plan: flags.plan,
@@ -1453,7 +1477,11 @@ const runSelected = async (
       }))
     }
   }
-  const summary = await rememberExecution(index, PackageExec.execute(combined, { ...options, verb, patterns }))
+  const summary = await rememberExecution(
+    index,
+    knownRed,
+    PackageExec.execute(combined, { ...options, verb, patterns })
+  )
   // A planned target the executor holds no record of never ran; that is red.
   requireRecorded(combined.workList.map((node) => node.label), summary, "Planned targets have no execution record")
   return summary
@@ -1775,7 +1803,7 @@ const makeCommands = (config: RuntimeConfig) =>
               // Every selected gate the planner was left to plan must have run or been recorded.
               requireRecorded(labels, outcome)
               const judged = Affected.unskipped(labels, outcome)
-              executionIndexes.set(judged, index)
+              executions.set(judged, executions.get(outcome)!)
               return judged
             })
           } finally {
