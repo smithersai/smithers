@@ -56,6 +56,34 @@ test("7: four follow-ups remain in the viewport; scrolling up pauses following u
   await expect(latest).toBeHidden()
 })
 
+test("Home and PageUp outside the composer stop following and scroll the page; a key while paused is the browser's", async ({ page }) => {
+  await page.goto("/")
+  await open(page)
+  for (let i = 0; i < 4; i++) {
+    await input(page).focus()
+    await type(page, "What is a service?")
+    await input(page).press("Enter")
+    await expect(answers(page).last()).toHaveAttribute("data-done", "true", { timeout: 15_000 })
+  }
+  await expect(answers(page)).toHaveCount(4)
+  await page.waitForFunction(() => !document.documentElement.matches(":active-view-transition"))
+  const latest = page.getByRole("button", { name: "Latest" })
+  const blur = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+  await blur()
+  await page.keyboard.press("Home")
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+  await expect(latest).toBeVisible()
+  await latest.click()
+  await expect(latest).toBeHidden()
+  const bottom = await page.evaluate(() => window.scrollY)
+  const step = await page.evaluate(() => Math.max(40, Math.floor(document.documentElement.clientHeight * 7 / 8)))
+  await blur()
+  await page.keyboard.press("PageUp")
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(Math.max(0, bottom - step))
+  await expect(latest).toBeVisible()
+})
+
 test("sending while scrolled up brings the new post and its answer into view (Fable review, finding 1)", async ({ page }) => {
   await page.goto("/")
   await open(page)
