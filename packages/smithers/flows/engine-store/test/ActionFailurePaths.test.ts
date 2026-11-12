@@ -2,7 +2,8 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Failure and hard-boundary-violation paths of the action executor
  * (issue #21): failed execute, prepare/settle boundary failures, suspended
- * attempt rows, and the fence guard on the failed-attempt finish path.
+ * attempt rows, the fence guard on the failed-attempt finish path, and a
+ * cache lease lost while the body runs.
  */
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
@@ -89,10 +90,13 @@ const takeover = (runs: RunStore.Service, runId: string, claimant: Ownership.Own
     const row = yield* runs.get(runId)
     const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
     const stealing = row.status === "running" && row.owner !== null
-    if (stealing) {
-      yield* TestClock.adjust(Duration.millis(Duration.toMillis(Ownership.heartbeatStaleAfter) + 1))
-    }
-    const now = yield* Clock.currentTimeMillis
+    // The thief's clock reads past the stale window; the ambient TestClock
+    // stays put. A steal hook runs inside the finish's write transaction, so
+    // advancing the clock there times out every cache-lease renewal queued
+    // behind that transaction, and the lease fails as unconfirmed for the
+    // write tolerance before the finish's fence is ever consulted.
+    const now = (yield* Clock.currentTimeMillis) +
+      (stealing ? Duration.toMillis(Ownership.heartbeatStaleAfter) + 1 : 0)
     const evidence: Ownership.LivenessEvidence | undefined = stealing
       ? { expectedOwner: row.owner!, checkedAtMs: now, kind: "cross-host-unreachable-stale" }
       : undefined
@@ -1013,6 +1017,54 @@ describe("action executor failure paths", () => {
       expect(Exit.isFailure(result.exit) && Cause.hasInterruptsOnly(result.exit.cause)).toBe(true)
       expect(Option.getOrThrow(result.row).state).toBe("running")
       expect(result.events.map((event) => event.eventType)).not.toContain("flows.engine.attempt-finished")
+    }))
+
+  it.effect("cache lease taken by a peer while the body runs: the dispatch self-interrupts and publishes nothing", () =>
+    Effect.gen(function*() {
+      // A sealed body runs under the durable lease on its cache address. A
+      // peer whose clock reads past the lease's stale window, as after this
+      // process paused, takes the lease the way any engine does. The holder's
+      // next renewal finds it gone, and the dispatch surfaces that as its own
+      // interruption, never as a typed failure of the action.
+      const runId = "cache-lease-lost"
+      const key = `failure/${runId}`
+      const result = yield* run(Effect.gen(function*() {
+        yield* activate(runId, ownerA)
+        const runs = yield* RunStore.RunStore
+        const leases: Array<string> = []
+        const observed = Notifying.wrap(runs, (op, order, args) =>
+          Effect.sync(() => {
+            if (op === "withPermit" && order === "before") leases.push(args[0] as string)
+          }))
+        const peer = Effect.gen(function*() {
+          const now = (yield* Clock.currentTimeMillis) + Duration.toMillis(Ownership.heartbeatStaleAfter) + 1
+          return yield* Clocks.at(
+            now,
+            runs.withPermit(leases[0]!, ownerB, Ownership.leaseLiveness(), Effect.succeed("peer held the lease"))
+          )
+        })
+        let peerResult: unknown
+        const exit = yield* executor({
+          runId,
+          execute: () =>
+            Effect.gen(function*() {
+              peerResult = yield* peer
+              yield* TestClock.adjust(Ownership.heartbeatInterval)
+              return yield* Effect.never
+            })
+        })(input(key)).pipe(
+          Effect.provideService(RunStore.RunStore, observed),
+          Effect.forkChild({ startImmediately: true }),
+          Effect.flatMap(Fiber.await)
+        )
+        const cached = yield* (yield* CacheStore.CacheStore).get(sha256(key))
+        return { exit, leases, peerResult, cached }
+      }))
+
+      expect(result.leases).toHaveLength(1)
+      expect(result.peerResult).toBe("peer held the lease")
+      expect(Exit.isFailure(result.exit) && Cause.hasInterruptsOnly(result.exit.cause)).toBe(true)
+      expect(Option.isNone(result.cached)).toBe(true)
     }))
 
   it.effect("preserves materialization conflict classification through durable failure replay", () =>
