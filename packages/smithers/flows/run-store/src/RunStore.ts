@@ -736,7 +736,17 @@ const invalidRunError = (
     typeof causeOrField === "string" ? { field: causeOrField, detail } : causeOrField
   )
 
-const stateAdmission = (value: unknown) => Boundary.admitJsonText(value, runJsonLimits)
+/** UTF-16 units of admitted run state remembered across every store in the process. */
+const maximumRememberedStateCharacters = 4 * 1024 * 1024
+
+// A run's state is read far more often than it changes: every poll, claim and
+// lifecycle check decodes the row. Whether a state text passes depends on the
+// text and `runJsonLimits` alone, so each distinct text is parsed and walked
+// once, when it is written or first read, and recognised after that.
+const stateAdmission = Boundary.rememberAdmittedText(
+  (value) => Boundary.admitJsonText(value, runJsonLimits),
+  maximumRememberedStateCharacters
+)
 
 const isJsonString = (value: unknown): value is string =>
   Schema.decodeUnknownResult(UnknownFromJsonString)(value)._tag === "Success"
@@ -836,10 +846,16 @@ const snapshotLeaseReading = (
     return nowMs
   })
 
+/**
+ * Admits state a caller wants stored. `cause` names the run for the refusal
+ * and is published to logs, spans, and telemetry; executable state may carry
+ * credentials, so the refusal adds the state's shape and never its text. The
+ * shape costs a second parse, so it is read only when the state is refused.
+ */
 const snapshotState = (
   method: string,
   input: unknown,
-  cause: unknown
+  cause: Readonly<Record<string, unknown>>
 ): Effect.Effect<string, RunStoreError> => {
   const admitted = stateAdmission(input)
   return admitted.ok
@@ -847,7 +863,11 @@ const snapshotState = (
     : Effect.fail(
       invalidRunError(
         method,
-        cause,
+        {
+          ...cause,
+          stateJsonLength: typeof input === "string" ? input.length : null,
+          stateJsonValid: isJsonString(input)
+        },
         admitted.complaint
       )
     )
@@ -1037,7 +1057,6 @@ const decodeRunRow = (method: string, runId: string, input: unknown): Effect.Eff
       const owner = ownerFromColumns(row.ownerHostId, row.ownerPid, row.ownerNonce)
       const claim = ownerFromColumns(row.claimHostId, row.claimPid, row.claimNonce)
       const admittedState = stateAdmission(row.stateJson)
-      const stateJsonValid = isJsonString(row.stateJson)
       const invalidOwner = owner === undefined ||
         (owner === null && row.heartbeatAtMs !== null) ||
         (owner !== null && row.heartbeatAtMs === null) ||
@@ -1056,7 +1075,7 @@ const decodeRunRow = (method: string, runId: string, input: unknown): Effect.Eff
             claimedAtMs: row.claimedAtMs,
             hasClaimColumns: row.claimHostId !== null || row.claimPid !== null || row.claimNonce !== null,
             hasOwnerColumns: row.ownerHostId !== null || row.ownerPid !== null || row.ownerNonce !== null,
-            stateJsonValid
+            stateJsonValid: isJsonString(row.stateJson)
           })
         )
       }
@@ -1376,15 +1395,11 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             return yield* Effect.fail(invalidRunError("create", "runId", "names a reserved journal companion stream"))
           }
           const { lineageId, parentRunId, roundOrdinal } = yield* snapshotCreateOptions(optionsInput)
-          // This cause is published to logs, spans, and telemetry. Executable
-          // state may carry credentials, so include its shape but never its text.
           const stateJson = yield* snapshotState("create", stateInput, {
             runId,
             parentRunId,
             lineageId,
-            roundOrdinal,
-            stateJsonLength: typeof stateInput === "string" ? stateInput.length : null,
-            stateJsonValid: isJsonString(stateInput)
+            roundOrdinal
           })
           yield* Effect.annotateCurrentSpan({ runId })
           const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
@@ -1974,11 +1989,7 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
         const toStatus = toStatusInput
         const state = stateInput === undefined
           ? null
-          : yield* snapshotState("transitionOwned", stateInput, {
-            runId,
-            stateJsonLength: typeof stateInput === "string" ? stateInput.length : null,
-            stateJsonValid: isJsonString(stateInput)
-          })
+          : yield* snapshotState("transitionOwned", stateInput, { runId })
         const guard = yield* snapshotGuard(guardInput)
         if (toStatus === "pending" && (guard?.restorePending !== true || state === null)) {
           return yield* Effect.fail(invalidRunError("transitionOwned", "toStatus"))

@@ -26,6 +26,21 @@
 
 ### Fixed
 
+- A read of a run whose state has not changed no longer parses and walks the
+  state again. `get`, `latestRound` and `lineage` validated `state_json` on
+  every call: two parses and one bounded walk of the whole tree, 8 to 12 ms for
+  a 65 KB state, which a driver that polls its runs paid many times a second.
+  The store now admits each distinct state text once, when it is written or
+  first read, and recognises the same text afterwards by comparing it; a text it
+  has not admitted is still checked in full, and a refusal is never remembered.
+  It remembers at most 4 Mi characters of state per process, least recently
+  read first out. Measured with `pnpm --filter @smthrs/run-store bench`
+  (`test/StateRead.bench.ts`, in-memory SQLite, Node 26, a 32-core Linux host
+  under load): `get` on a 65 KB state went from 85 to 123 reads a second to
+  12,845 to 18,172; on a 271 KB state from 24 to 31 to 7,684 to 8,108; on a 1 KB
+  state from about 2,900 to about 13,000. `create` and `transitionOwned` also
+  parse an accepted state once instead of twice.
+
 - `claim`, `claimAndOwn` and `steal` classify a grant the consensus strategy
   refused from the strategy's reason instead of the unchanged row: a held
   lease claim reports `AlreadyClaimed` and a held or live owner lease reports

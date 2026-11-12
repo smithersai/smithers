@@ -128,3 +128,55 @@ export const admitJsonText = (
   }
   return { ok: true, value: input, json: admitted.value }
 }
+
+/**
+ * Verdict on JSON text for a caller that keeps the text and not its tree.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export type JsonTextVerdict =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly complaint: string }
+
+/**
+ * Wraps a text admission so a text it already admitted is admitted again by
+ * one string lookup, with no parse and no walk.
+ *
+ * `admit` must decide from the text alone, as `admitJsonText` does under fixed
+ * limits: then a text that passed once passes every time, and skipping the
+ * walk changes no verdict. A text not remembered is admitted in full, and a
+ * refusal is never remembered. The memory holds at most `maximumCharacters`
+ * UTF-16 units, forgets the least recently admitted text first, and never
+ * holds a text longer than that.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const rememberAdmittedText = (
+  admit: (input: unknown) => JsonTextVerdict,
+  maximumCharacters: number
+): (input: unknown) => JsonTextVerdict => {
+  // A Set iterates in insertion order, so its first member is the least
+  // recently admitted once every hit is deleted and added again.
+  const remembered = new Set<string>()
+  let characters = 0
+  return (input) => {
+    if (typeof input === "string" && remembered.delete(input)) {
+      remembered.add(input)
+      return { ok: true, value: input }
+    }
+    const admitted = admit(input)
+    if (!admitted.ok) return { ok: false, complaint: admitted.complaint }
+    if (admitted.value.length <= maximumCharacters) {
+      remembered.add(admitted.value)
+      characters += admitted.value.length
+      for (const oldest of remembered) {
+        if (characters <= maximumCharacters) break
+        remembered.delete(oldest)
+        characters -= oldest.length
+      }
+    }
+    return { ok: true, value: admitted.value }
+  }
+}

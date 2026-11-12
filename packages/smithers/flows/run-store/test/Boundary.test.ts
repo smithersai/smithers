@@ -174,4 +174,68 @@ describe("run-store inert JSON boundary", () => {
       json: { a: 1 }
     })
   })
+
+  describe("rememberAdmittedText", () => {
+    const counted = (maximumCharacters: number) => {
+      const walked: Array<unknown> = []
+      const admit = Boundary.rememberAdmittedText((input) => {
+        walked.push(input)
+        return Boundary.admitJsonText(input, limits())
+      }, maximumCharacters)
+      return { admit, walked }
+    }
+
+    it("walks a text once and recognises the same characters in a different string afterwards", () => {
+      const { admit, walked } = counted(64)
+      const text = "{\"queue\":[1,2,3]}"
+      expect(admit(text)).toEqual({ ok: true, value: text })
+      // A row read back from the database is a new string with the same characters.
+      const readBack = ["{\"queue\"", ":[1,2,3]}"].join("")
+      expect(admit(readBack)).toEqual({ ok: true, value: text })
+      expect(admit(readBack)).toEqual({ ok: true, value: text })
+      expect(walked).toEqual([text])
+    })
+
+    it("walks every text it has not admitted, however close to a remembered one", () => {
+      const { admit, walked } = counted(64)
+      expect(admit("[1]").ok).toBe(true)
+      expect(admit("[1] ").ok).toBe(true)
+      expect(admit("[[[[[[[[[1]]]]]]]]]")).toMatchObject({ ok: false })
+      expect(walked).toEqual(["[1]", "[1] ", "[[[[[[[[[1]]]]]]]]]"])
+    })
+
+    it("never remembers a refusal or a value that is not text", () => {
+      const { admit, walked } = counted(64)
+      for (const refused of ["{", "{", 7, 7, null]) expect(admit(refused)).toMatchObject({ ok: false })
+      expect(walked).toEqual(["{", "{", 7, 7, null])
+      expect(admit("{")).toEqual({ ok: false, complaint: "must be valid JSON text" })
+    })
+
+    it("forgets the least recently admitted text first and keeps within its character budget", () => {
+      const { admit, walked } = counted(8)
+      for (const text of ["[11]", "[22]"]) admit(text)
+      // Reading "[11]" again makes "[22]" the least recently admitted.
+      admit("[11]")
+      admit("[33]")
+      expect(walked).toEqual(["[11]", "[22]", "[33]"])
+      admit("[11]")
+      admit("[33]")
+      expect(walked).toEqual(["[11]", "[22]", "[33]"])
+      admit("[22]")
+      expect(walked).toEqual(["[11]", "[22]", "[33]", "[22]"])
+      // "[22]" displaced "[11]"; one eight-character text then displaces both that remain.
+      admit("[123456]")
+      for (const text of ["[123456]", "[33]", "[22]"]) admit(text)
+      expect(walked).toEqual(["[11]", "[22]", "[33]", "[22]", "[123456]", "[33]", "[22]"])
+    })
+
+    it("admits a text longer than the budget every time without remembering it", () => {
+      const { admit, walked } = counted(3)
+      expect(admit("[1]").ok).toBe(true)
+      expect(admit("[12]")).toEqual({ ok: true, value: "[12]" })
+      expect(admit("[12]")).toEqual({ ok: true, value: "[12]" })
+      expect(admit("[1]").ok).toBe(true)
+      expect(walked).toEqual(["[1]", "[12]", "[12]"])
+    })
+  })
 })
