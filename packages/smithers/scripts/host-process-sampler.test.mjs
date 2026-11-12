@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { spawn, spawnSync } from "node:child_process"
-import { access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
@@ -161,6 +161,31 @@ test("samples a real launcher and child with exact open-file evidence and exclud
   assert.ok(processes.every((sample) => !sample.processes.some((row) => row.pid === sibling.child.pid)))
   const files = await readSamples(output, "lsof-samples.jsonl")
   assert.ok(files.every((sample) => sample.pid !== sibling.child.pid))
+})
+
+test("persists a real child's credential argument redacted, in files only the owner can read", async (t) => {
+  const { directory, file, launch } = await fixture(t)
+  const secret = `flw-sampler-secret-${randomUUID()}`
+  // Node stops reading its own options at `--`; the credential is the child's argument.
+  const root = launch(["-e", holder("launcher"), "--", `flw-sampler-credential-${randomUUID()}`, file, "--token", secret])
+  await ready(root, "launcher")
+  const output = join(directory, "redacted", "evidence")
+  const observed = await sample({ rootPid: root.child.pid, directory: output })
+  // Selection reads the real argument vector; the written evidence never does.
+  assert.ok(observed.processes.find((row) => row.pid === root.child.pid).command.includes(`--token ${secret}`))
+  for (const name of ["process-samples.jsonl", "lsof-samples.jsonl"]) {
+    const text = await readFile(join(output, name), "utf8")
+    assert.equal(text.includes(secret), false, name)
+    assert.ok(text.includes("--token [REDACTED]"), `${name}: ${text}`)
+    assert.equal(((await stat(join(output, name))).mode & 0o777).toString(8), "600", name)
+  }
+  const rows = await readSamples(output, "lsof-samples.jsonl")
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].pid, root.child.pid)
+  assert.ok(rows[0].command.endsWith("--token [REDACTED]"), rows[0].command)
+  // The directory and every parent the sampler created are private too.
+  assert.equal(((await stat(output)).mode & 0o777).toString(8), "700")
+  assert.equal(((await stat(join(directory, "redacted"))).mode & 0o777).toString(8), "700")
 })
 
 test("records a real lsof spawn failure instead of reporting empty successful evidence", async (t) => {

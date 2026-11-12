@@ -52,6 +52,7 @@ Automation: `packages/backend/internal/compose/flow_isolation_integration_test.g
 ## Evidence
 - Also retain production binding/refusal receipts, guest capture/check location, hostile config host-canary logs, trusted review prompt/hash and framed tool data, exec/write refusal log, generation-specific oversize wait/approval evidence and host-proxy reservation/dispatch journal. Redact credentials and provider keys.
 `.artifacts/checks/C-SEC-02/<UTC timestamp>/`: `process-samples.jsonl`, `lsof-samples.jsonl`, `canary-listener.log`, host and guest `ls` output for the marker path, the `flows` projection JSON, step 6 stderr and exit codes, `smthrs host status` output, and the commit and install version.
+- The sampler selects processes from the live argument vectors in memory, but writes `process-samples.jsonl` and `lsof-samples.jsonl` through the journal's diagnostic redaction, as mode `0600` files in a `0700` directory: a `--token` value or other credential on a sampled command line never reaches the retained evidence, and other local accounts cannot read it.
 
 Learning follow-up (T-FLW-06): `TestCSEC02LearningOverrideInstalledMicroVM`
 in `packages/backend/internal/compose/flow_isolation_integration_test.go`

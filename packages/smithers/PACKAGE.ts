@@ -281,14 +281,18 @@ const docsSources = Smithers.Filegroup({
 
 /**
  * C-SEC-02's host-process sampler: process-tree and open-file sampling with
- * real `ps`/`lsof` positive controls, and injected launchd resolution.
+ * real `ps`/`lsof` positive controls, injected launchd resolution, and
+ * evidence that carries redacted command lines in owner-only files.
  *
  * @since 1.0.0
  * @category test
  */
 const hostProcessSampler = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/host-process-sampler.test.mjs")]),
-  srcs: [Smithers.file("//packages/smithers/scripts/host-process-sampler.mjs")],
+  srcs: [
+    Smithers.file("//packages/smithers/scripts/host-process-sampler.mjs"),
+    Smithers.file("//packages/smithers/flows/journal/src/Redaction.ts")
+  ],
   deps: []
 })
 

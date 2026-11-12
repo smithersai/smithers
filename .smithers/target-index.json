@@ -90669,6 +90669,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/scripts/host-process-sampler.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/src/Redaction.ts"
       }
     ],
     "outputs": [],
