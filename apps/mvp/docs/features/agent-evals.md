@@ -52,7 +52,7 @@ EVAL_BASELINE=update pnpm eval              # record evals/baseline.json from th
 | `EVAL_ONLY` | every case | case names, comma-separated; a name no suite has fails the run |
 | `EVAL_K` | `1` | trials per case. With more than one, the artifact adds `Trials.aggregate`'s pass@1, pass@k and pass^k |
 | `EVAL_MAX_TOKENS` | `500000`, `2500000` for the flows suite | the most the run spends on the model endpoint, as the model reported it: about $0.50 at the default model's list price for the first suite (the lead's ruling, 2026-10-22; 350,000 from 2026-10-20, which a full run outgrew at about 455,000), and about $2.50 for the flows suite's 38 cases, whose full runs spent $1.68 to $1.89 (2026-10-22). A trial that would start once the run has spent it fails its case at once. The trial that takes the run past it fails its case and ends the run, the last trial too, and a run whose endpoint spent past the cap exits 6 (`capGate`), whatever its scores. The endpoint charges a call what it spent, and a call the provider refused before any output what the provider reported ([budget](model-endpoint.md#budget)), so the two agree |
-| `EVAL_BASELINE` | unset | `update` writes the suite's baseline instead of comparing, and only when the full suite ran successfully with no unsafe observations; filtered runs never replace the baseline |
+| `EVAL_BASELINE` | unset | `update` writes the suite's baseline instead of comparing, and only when the full suite ran successfully with no unsafe observations and every scorer measured every case (a judge that couldn't be reached leaves its scores unmeasured, and the committed baseline stays); filtered runs never replace the baseline |
 
 ## How a case runs
 
@@ -333,7 +333,7 @@ The deterministic harness rejects grading zero trials and resolves navigation pa
 checking their origin. Dispatch failures are observed immediately, including after a trial times out. Provider
 resources belong to a session scope closed at program teardown (or immediately if acquisition fails).
 
-`evals/baseline-update.test.ts` covers the complete, safe baseline-write guard. `evals/session-lifecycle.test.ts`
+`evals/baseline-update.test.ts` covers the complete, safe, fully scored baseline-write guard, with a judge that can't be reached through the real runner. `evals/session-lifecycle.test.ts`
 uses real Effect scopes and failing Effects to cover finalization, dispatch rejection during polling and after
 timeout, and poll failure. These run with the eval unit tests and require no model credentials.
 

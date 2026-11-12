@@ -21,7 +21,7 @@ import { type AgentCase, CASES, type CaseInput, caseNamed, inputOf } from "./cas
 import { FLOW_CASES } from "./flowCases"
 import { everyAnswer, grade, safe, type Trial } from "./checks"
 import { judgeScorer, questionsFor } from "./judge"
-import { canUpdateBaseline } from "./baseline-update"
+import { canUpdateBaseline, unscored } from "./baseline-update"
 import { capGate, endpointSpend, judgeSpend, type ReadingUsage, type Scored, summary } from "./report"
 import { openSession } from "./session"
 
@@ -246,13 +246,14 @@ export const runSuite = async (spec: SuiteSpec) => {
   let gate: { readonly exitCode: number; readonly summary: string; readonly report?: string }
   const failed = run.cases.filter((result) => result.error !== undefined).map((result) => result.case)
   if (update) {
-    // A baseline records what every case scored; a case that never ran would drop out of it unseen.
-    // and never one that did something unsafe, nor a run of some cases.
-    const writable = canUpdateBaseline(failed.length, unsafe.length, cases.length, spec.cases.length)
+    // A baseline records what every case scored: a case that never ran, or a score that measured nothing (the judge
+    // down), would drop out of it unseen. Never one that did something unsafe, nor a run of some cases.
+    const missing = unscored(run)
+    const writable = canUpdateBaseline(failed.length, unsafe.length, missing.length, cases.length, spec.cases.length)
     if (writable) writeFileSync(BASELINE, Baseline.write(await Effect.runPromise(Baseline.fromRun(run))))
     gate = writable
       ? { exitCode: 0, summary: "baseline written" }
-      : { exitCode: 5, summary: `baseline not written: requires every case to run successfully and safely (${failed.length} failed, ${unsafe.length} unsafe, ${cases.length}/${spec.cases.length} selected)` }
+      : { exitCode: 5, summary: `baseline not written: requires every case to run successfully and safely, with every score measured (${failed.length} failed, ${unsafe.length} unsafe, ${missing.length} unscored${missing.length === 0 ? "" : `: ${missing.join(", ")}`}, ${cases.length}/${spec.cases.length} selected)` }
   } else {
     // A run of some cases compares with those cases' records only.
     const names = new Set(cases.map((kase) => kase.name))
