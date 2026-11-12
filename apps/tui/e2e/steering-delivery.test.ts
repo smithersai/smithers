@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
-import { key, Tui, workerTab } from "./tmux.ts"
+import { bunCommand, key, Tui, workerTab } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
@@ -30,7 +30,7 @@ it(
         cwd: root,
         cols: 110,
         rows: 42,
-        command: `bun --preload ${quote(preload)} ${quote(join(app, "e2e/tabs-fixture.tsx"))}`,
+        command: `${bunCommand} --preload ${quote(preload)} ${quote(join(app, "e2e/tabs-fixture.tsx"))}`,
         env: {
           PATH: process.env.PATH ?? "",
           HOME: process.env.HOME ?? "",

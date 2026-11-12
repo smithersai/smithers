@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const altT = "\x1bt"
@@ -19,7 +19,7 @@ it(
         cwd: root,
         cols: 110,
         rows: 34,
-        command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+        command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
         env: {
           PATH: `${join(app, "test", "fixtures", "vendor")}:${process.env.PATH ?? ""}`,
           HOME: process.env.HOME ?? "",
@@ -67,7 +67,7 @@ it("continues a finished Claude worker from its composer on the same session", a
       cwd: root,
       cols: 110,
       rows: 34,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: {
         PATH: `${join(app, "test", "fixtures", "vendor")}:${process.env.PATH ?? ""}`,
         HOME: process.env.HOME ?? "",

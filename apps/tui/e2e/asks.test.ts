@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout } from "node:timers/promises"
 import * as Approvals from "../src/approvals.ts"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 type Snapshot = {
   now: number
@@ -52,7 +52,7 @@ for (const scenario of cases) {
     const socket = join(cwd, "control.sock")
     const events = join(cwd, "events.jsonl")
     const tui = await Tui.start({
-      command: `${quote(Bun.which("bun")!)} ${quote(join(import.meta.dir, "asks-fixture.tsx"))}`,
+      command: `${bunCommand} ${quote(join(import.meta.dir, "asks-fixture.tsx"))}`,
       cwd,
       env: {
         TUI_ASK_CONTROL: socket,

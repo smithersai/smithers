@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 
@@ -15,7 +15,7 @@ it.each([24, 12])("answers a wrapped question with keyboard choices at 80x%i", a
       cwd: root,
       cols: 80,
       rows,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -56,7 +56,7 @@ it("answers a worker's ask with a from the overview, and the worker finishes wit
       cwd: root,
       cols: 110,
       rows: 30,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: join(root, "s") }
     })
     await tui.until((screen) => screen.includes("Ask Smithers"), 20_000, "first draw")
@@ -95,7 +95,7 @@ it("raises a capped worker's token cap with a from the overview, and it resumes"
       cwd: root,
       cols: 110,
       rows: 30,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: join(root, "s") }
     })
     await tui.until((screen) => screen.includes("Ask Smithers"), 20_000, "first draw")

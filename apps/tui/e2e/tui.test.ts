@@ -26,7 +26,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Approvals from "../src/approvals.ts"
 import * as Session from "../src/session.ts"
-import { drawn, key, Tui, workerTab } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui, workerTab } from "./tmux.ts"
 
 /** What the screen says when the disk refuses a session record (`Failures` registry). */
 const unsavedSentence = "The conversation is not being saved; check the disk."
@@ -115,7 +115,7 @@ const start = async (
     cwd,
     cols: options.cols,
     rows: options.rows,
-    command: `bun ${join(app, "src", "main.tsx")} ${cwd} ${options.args ?? ""}`,
+    command: `${bunCommand} ${join(app, "src", "main.tsx")} ${cwd} ${options.args ?? ""}`,
     env: {
       PATH: process.env.PATH ?? "",
       HOME: options.home ?? process.env.HOME ?? "",
@@ -300,7 +300,7 @@ describe("startup", () => {
       const script = join(cwd, "launch.sh")
       writeFileSync(
         script,
-        `bun ${join(app, "src/main.tsx")} ${
+        `${bunCommand} ${join(app, "src/main.tsx")} ${
           stream === "stdin" ? "< /dev/null" : `> ${output}`
         }\nstatus=$?\nprintf 'child-exit-%s\\n' "$status"\ncat\n`
       )
@@ -1057,7 +1057,7 @@ describe("turns", () => {
     await first.tui.stop()
     tui = await Tui.start({
       cwd: first.cwd,
-      command: `bun ${join(app, "src", "main.tsx")} ${first.cwd} -c`,
+      command: `${bunCommand} ${join(app, "src", "main.tsx")} ${first.cwd} -c`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -1296,7 +1296,7 @@ describe("search palette", () => {
     await first.tui.stop()
     tui = await Tui.start({
       cwd: first.cwd,
-      command: `bun ${join(app, "src", "main.tsx")} ${first.cwd}`,
+      command: `${bunCommand} ${join(app, "src", "main.tsx")} ${first.cwd}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -1631,7 +1631,7 @@ console.log("reverted");`,
     await first.tui.stop()
     tui = await Tui.start({
       cwd: first.cwd,
-      command: `bun ${join(app, "src", "main.tsx")} ${first.cwd} -c`,
+      command: `${bunCommand} ${join(app, "src", "main.tsx")} ${first.cwd} -c`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -1661,7 +1661,7 @@ console.log("reverted");`,
     const cwd = repository()
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -1708,7 +1708,7 @@ console.log("reverted");`,
     const cwd = repository()
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -1746,7 +1746,7 @@ console.log("reverted");`,
     const sessions = mkdtempSync(join(tmpdir(), "tui-worker-undo-"))
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
     })
     await tui.until(drawn, 20_000, "first draw")
@@ -1800,7 +1800,7 @@ console.log("reverted");`,
     const cwd = repository()
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
     })
     await tui.until(drawn, 20_000)
@@ -1849,7 +1849,7 @@ console.log("reverted");`,
     const gate = join(sessions, "release-undo")
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "undo-hold-fixture.ts")}`,
+      command: `${bunCommand} ${join(app, "e2e", "undo-hold-fixture.ts")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -1922,7 +1922,7 @@ console.log("reverted");`,
     const launch = async (resume: boolean) => {
       tui = await Tui.start({
         cwd,
-        command: `bun ${join(app, "src", "main.tsx")} ${cwd} ${resume ? "-c" : ""}`,
+        command: `${bunCommand} ${join(app, "src", "main.tsx")} ${cwd} ${resume ? "-c" : ""}`,
         env: {
           PATH: process.env.PATH ?? "",
           HOME: process.env.HOME ?? "",
@@ -1970,7 +1970,7 @@ it(
     const sessions = mkdtempSync(join(tmpdir(), "tui-background-"))
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
     })
     await tui.until(drawn, 20_000, "first draw")
@@ -2062,7 +2062,7 @@ describe("worker tabs", () => {
   const launch = async () => {
     tui = await Tui.start({
       cwd: repository(),
-      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -2179,7 +2179,7 @@ describe("flows", () => {
     const sessions = mkdtempSync(join(tmpdir(), "tui-flows-"))
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
     })
     await tui.until(drawn, 20_000, "first draw")
@@ -2401,7 +2401,7 @@ describe("approvals", () => {
     const cwd = repository()
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "approval-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "approval-fixture.tsx")}`,
       env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
     })
     await tui.until(drawn, 20_000)
@@ -2426,7 +2426,7 @@ describe("approvals", () => {
       const cwd = repository()
       tui = await Tui.start({
         cwd,
-        command: `bun ${join(app, "e2e", "panel-action-fixture.tsx")}`,
+        command: `${bunCommand} ${join(app, "e2e", "panel-action-fixture.tsx")}`,
         env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
       })
       await tui.until(drawn, 20_000)
@@ -2676,7 +2676,7 @@ describe("monitors", () => {
       const cwd = repository()
       tui = await Tui.start({
         cwd,
-        command: `bun ${join(app, "e2e", "monitor-fixture.tsx")}`,
+        command: `${bunCommand} ${join(app, "e2e", "monitor-fixture.tsx")}`,
         env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
       })
       let pid: number | undefined
@@ -2718,7 +2718,7 @@ describe("monitors", () => {
     const sessions = join(cwd, "sessions")
     tui = await Tui.start({
       cwd,
-      command: `bun ${join(app, "e2e", "monitor-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "monitor-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH!,
         HOME: process.env.HOME!,
@@ -2796,7 +2796,7 @@ export default Flow.make("${tag}", {
         cwd,
         cols: 130,
         rows: 35,
-        command: `bun ${join(app, "src", "main.tsx")} ${cwd}`,
+        command: `${bunCommand} ${join(app, "src", "main.tsx")} ${cwd}`,
         env: {
           PATH: process.env.PATH ?? "",
           HOME: cwd,
@@ -2859,7 +2859,7 @@ export default Flow.make("${tag}", {
     tui = await Tui.start({
       cwd,
       cols: 120,
-      command: `bun ${join(app, "e2e", "extensions-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "extensions-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -2964,7 +2964,7 @@ export default Flow.make("${tag}", {
     tui = await Tui.start({
       cwd,
       cols: 120,
-      command: `bun ${join(app, "e2e", "real-flows-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "real-flows-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
@@ -3017,7 +3017,7 @@ describe("terminal recording evidence", () => {
     try {
       tui = await Tui.start({
         cwd,
-        command: `bun ${join(app, "src", "main.tsx")} ${cwd}`,
+        command: `${bunCommand} ${join(app, "src", "main.tsx")} ${cwd}`,
         env: {
           HOME: home,
           XDG_CONFIG_HOME: join(home, "config"),

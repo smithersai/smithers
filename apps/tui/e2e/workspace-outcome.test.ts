@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import type * as Session from "../src/session.ts"
-import { drawn, key, Tui, workerTab } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui, workerTab } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const quote = (text: string) => "'" + text.replaceAll("'", "'\\''") + "'"
@@ -51,9 +51,7 @@ const start = async () => {
   )
   tui = await Tui.start({
     cwd,
-    command: `${quote(process.execPath)} --preload ${quote(preload)} ${
-      quote(join(app, "e2e", "workspace-fixture.tsx"))
-    }`,
+    command: `${bunCommand} --preload ${quote(preload)} ${quote(join(app, "e2e", "workspace-fixture.tsx"))}`,
     env: {
       PATH: `${bin}:${process.env.PATH ?? ""}`,
       HOME: home,

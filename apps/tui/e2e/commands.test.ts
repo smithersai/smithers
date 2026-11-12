@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, bunPreload, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 let tui: Tui | undefined
@@ -82,7 +82,7 @@ const start = async (project: ReturnType<typeof setup>, args = "", ready: (scree
   if (!existsSync(project.replay)) replay(project, reply("ctx.done(\"pong\")"))
   tui = await Tui.start({
     cwd: project.cwd,
-    command: `bun ${join(app, "src/main.tsx")} ${args}`,
+    command: `${bunCommand} ${join(app, "src/main.tsx")} ${args}`,
     env: {
       HOME: project.home,
       PATH: `${project.bin}:${process.env.PATH ?? ""}`,
@@ -204,7 +204,15 @@ it("enforces the requested token ceiling before the next cell and leaves chat us
 it("print mode reports the token ceiling and usage without printing an answer", () => {
   const project = setup()
   replay(project, reply("const spent = 1", 500, 100), reply("ctx.done(\"budget breach\")"))
-  const result = spawnSync("bun", [join(app, "src/main.tsx"), "-p", "ping", "--budget-tokens", "1000"], {
+  const result = spawnSync(process.execPath, [
+    "--preload",
+    bunPreload,
+    join(app, "src/main.tsx"),
+    "-p",
+    "ping",
+    "--budget-tokens",
+    "1000"
+  ], {
     cwd: project.cwd,
     env: {
       HOME: project.home,

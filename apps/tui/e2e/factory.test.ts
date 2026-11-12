@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const at = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString()
@@ -68,7 +68,7 @@ it("reads the repository's stack from Cloud and lists its issues by group under 
       cwd: root,
       cols: 150,
       rows: 30,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: root,
@@ -124,7 +124,7 @@ for (const status of [401, 403]) {
         cwd: root,
         cols: 150,
         rows: 30,
-        command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+        command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
         env: {
           PATH: process.env.PATH ?? "",
           HOME: root,

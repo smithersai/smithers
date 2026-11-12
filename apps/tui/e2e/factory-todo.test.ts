@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const item = (id: string, number: number, state: string) => ({
@@ -42,7 +42,7 @@ it("TODO failures use safe status copy and retain diagnostics and request identi
       cwd: root,
       cols: 130,
       rows: 35,
-      command: `bun ${join(app, "src", "main.tsx")} ${root}`,
+      command: `${bunCommand} ${join(app, "src", "main.tsx")} ${root}`,
       env: {
         HOME: root,
         XDG_CONFIG_HOME: root,

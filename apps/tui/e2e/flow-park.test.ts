@@ -4,7 +4,7 @@ import { expect, it } from "bun:test"
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 it("shows a real durable park and question without claiming the run is still executing", async () => {
@@ -20,7 +20,7 @@ it("shows a real durable park and question without claiming the run is still exe
   try {
     tui = await Tui.start({
       cwd: project,
-      command: `bun ${join(app, "e2e/real-flows-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e/real-flows-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",

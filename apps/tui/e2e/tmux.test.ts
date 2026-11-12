@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { exitOf, nudge, Tui } from "./tmux.ts"
+import { join } from "node:path"
+import { bunCommand, exitOf, nudge, Tui } from "./tmux.ts"
 
 describe("exitOf", () => {
   it("reports a live pane as running", () => {
@@ -42,3 +44,40 @@ describe("a pane's liveness", () => {
     }
   }, 20_000)
 })
+
+it("loads migrated runtime exports from a project outside the repository", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tui-vibe project's-"))
+  const probe = join(directory, "runtime probe.mjs")
+  const receipt = join(directory, "runtime receipt.json")
+  const preload = join(directory, "fixture preload.mjs")
+  writeFileSync(preload, "globalThis.fixturePreload = true;")
+
+  const replacement =
+    new URL("../../../packages/smithers/flows/platform-bun/src/BunFileReplacement.vibe", import.meta.url).href
+  const trace = new URL("../../../packages/smithers/flows/engine/src/StepTrace.vibe", import.meta.url).href
+  writeFileSync(
+    probe,
+    [
+      "import { writeFileSync } from 'node:fs';",
+      "import { FileChanged } from " + JSON.stringify(replacement) + ";",
+      "import { observed } from " + JSON.stringify(trace) + ";",
+      "console.log('runtime exports', typeof FileChanged, typeof observed);",
+      "if (typeof FileChanged !== 'function' || typeof observed !== 'function' || globalThis.fixturePreload !== true) process.exit(3);",
+      "writeFileSync(" + JSON.stringify(receipt) +
+      ", JSON.stringify([typeof FileChanged, typeof observed, globalThis.fixturePreload]));"
+    ].join("\n")
+  )
+  const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
+  const tui = await Tui.start({
+    cwd: directory,
+    command: bunCommand + " --preload " + shellQuote(preload) + " " + shellQuote(probe)
+  })
+  try {
+    const exit = await tui.waitForExit(30_000)
+    expect(exit).toEqual({ code: 0 })
+    expect(JSON.parse(readFileSync(receipt, "utf8"))).toEqual(["function", "function", true])
+  } finally {
+    tui.dispose()
+    rmSync(directory, { recursive: true, force: true })
+  }
+}, 40_000)

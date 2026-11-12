@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 for (const [cols, rows, burst] of [[60, 20, false], [40, 12, false], [40, 12, true]] as const) {
@@ -33,7 +33,7 @@ for (const [cols, rows, burst] of [[60, 20, false], [40, 12, false], [40, 12, tr
         cwd: project,
         cols,
         rows,
-        command: `bun ${join(app, "e2e/real-flows-fixture.tsx")}`,
+        command: `${bunCommand} ${join(app, "e2e/real-flows-fixture.tsx")}`,
         env: {
           PATH: process.env.PATH ?? "",
           HOME: process.env.HOME ?? "",
@@ -106,7 +106,7 @@ it("lists a flow waiting for its form under Needs you; enter opens it and a answ
       cwd: project,
       cols: 100,
       rows: 24,
-      command: `bun ${join(app, "e2e/real-flows-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e/real-flows-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: join(root, "s") }
     })
     await tui.until(drawn, 20_000, "first draw")

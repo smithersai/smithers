@@ -712,3 +712,7 @@ Quoted `/flow` values retain spaces: `/flow echo text="hello world"`.
 A durably parked flow shows `parked`; its tab retains the question. `r` resumes
 the same run, `x` stops it, and chat stays usable. Routine tree diagnostics and
 their hashes appear only when expanded with Ctrl+O.
+
+The terminal test launcher explicitly preloads the VibeLang Bun runtime in child processes.
+This also applies when a test opens a project outside the repository, where the app's
+`bunfig.toml` does not apply. Additional `--preload` arguments remain active.

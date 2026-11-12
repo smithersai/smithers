@@ -2,7 +2,7 @@ import { expect, it } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { key, Tui, workerTab } from "./tmux.ts"
+import { bunCommand, key, Tui, workerTab } from "./tmux.ts"
 
 const altX = "\x1bx"
 
@@ -17,7 +17,7 @@ for (const status of ["done", "failed", "stopped"] as const) {
         cwd: root,
         cols: 110,
         rows: 34,
-        command: `bun ${fixture}`,
+        command: `${bunCommand} ${fixture}`,
         env: {
           PATH: process.env.PATH ?? "",
           HOME: process.env.HOME ?? "",

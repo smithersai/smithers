@@ -3,13 +3,13 @@ import { spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 for (const [cols, rows] of [[160, 50], [100, 40], [80, 30]] as const) {
   it(`renders a bound main tree and keeps typing at ${cols}x${rows}`, async () => {
     const cwd = mkdtempSync(join(tmpdir(), "tui-main-"))
     const tui = await Tui.start({
-      command: `${Bun.which("bun")!} ${join(import.meta.dir, "main-view-fixture.tsx")}`,
+      command: `${bunCommand} ${join(import.meta.dir, "main-view-fixture.tsx")}`,
       cwd,
       rows,
       cols
@@ -69,7 +69,7 @@ for (const [cols, rows] of [[160, 50], [100, 40], [80, 30]] as const) {
 it("lists Ctrl+S as Switch focus while a main view is open", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "tui-main-hint-"))
   const tui = await Tui.start({
-    command: `${Bun.which("bun")!} ${join(import.meta.dir, "main-view-fixture.tsx")}`,
+    command: `${bunCommand} ${join(import.meta.dir, "main-view-fixture.tsx")}`,
     cwd,
     rows: 40,
     cols: 240

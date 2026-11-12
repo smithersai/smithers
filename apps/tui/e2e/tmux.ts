@@ -10,6 +10,12 @@ import { join } from "node:path"
 import { stopDaemons } from "../test/scratch.ts"
 
 const quote = (value: string): string => "'" + value.replaceAll("'", "'\\''") + "'"
+
+/** The compiler module used by shell and array-form child launchers. */
+export const bunPreload = import.meta.resolve("vibelang/bun")
+
+/** The Bun executable and compiler preload, independent of the child's cwd. */
+export const bunCommand = `${quote(process.execPath)} --preload ${quote(bunPreload)}`
 const binary = (): string => process.env.TMUX_BIN ?? "tmux"
 const live = new Set<Tui>()
 process.once("exit", () => {

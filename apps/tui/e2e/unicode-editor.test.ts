@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 it("completes after Japanese/emoji and inserts palette mentions before an intact suffix", async () => {
@@ -23,7 +23,7 @@ it("completes after Japanese/emoji and inserts palette mentions before an intact
   try {
     tui = await Tui.start({
       cwd: project,
-      command: `bun ${join(app, "src/main.tsx")} ${project}`,
+      command: `${bunCommand} ${join(app, "src/main.tsx")} ${project}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",

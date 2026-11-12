@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 let tui: Tui | undefined
@@ -27,7 +27,7 @@ it("an invalid agent effort fails before execution, exposes its refusal, and ret
   writeFileSync(source, markdown("impossible"))
   tui = await Tui.start({
     cwd,
-    command: `bun ${join(app, "src", "main.tsx")} ${cwd}`,
+    command: `${bunCommand} ${join(app, "src", "main.tsx")} ${cwd}`,
     env: {
       HOME: home,
       PATH: process.env.PATH ?? "",

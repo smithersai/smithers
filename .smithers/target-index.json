@@ -49454,6 +49454,22 @@
       {
         "kind": "file",
         "path": "apps/tui/bunfig.toml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.base.json"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.json"
       }
     ],
     "outputs": [],

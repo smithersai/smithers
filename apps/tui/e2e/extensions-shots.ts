@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { claim } from "../test/scratch.ts"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const out = resolve(process.argv[2] ?? join(homedir(), "Desktop", "tui-custom-ui"))
 mkdirSync(out, { recursive: true })
@@ -43,7 +43,7 @@ const mdx = join(cwd, ".smithers", "flows", "review", "flow.mdx")
 writeFileSync(mdx, reviewFlow)
 const tui = await Tui.start({
   cwd,
-  command: `bun ${join(app, "e2e", "extensions-fixture.tsx")}`,
+  command: `${bunCommand} ${join(app, "e2e", "extensions-fixture.tsx")}`,
   cols: 110,
   rows: 32,
   env: {

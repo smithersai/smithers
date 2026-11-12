@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { key, Tui, workerTab } from "./tmux.ts"
+import { bunCommand, key, Tui, workerTab } from "./tmux.ts"
 
 const altT = "\x1bt"
 
@@ -17,7 +17,7 @@ it("takes over a worker with alt+t, drives a frame from the composer, and releas
       cwd: root,
       cols: 110,
       rows: 34,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: join(root, "s") }
     })
     await tui.until((screen) => screen.includes("Ask Smithers"), 20_000, "first draw")
@@ -75,7 +75,7 @@ it("takes over a worker with t from the Summary overview, where it waits under N
       cwd: root,
       cols: 110,
       rows: 34,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: join(root, "s") }
     })
     await tui.until((screen) => screen.includes("Ask Smithers"), 20_000, "first draw")

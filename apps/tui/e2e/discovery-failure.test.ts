@@ -16,7 +16,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const pong = join(app, "test", "fixtures", "pong.jsonl")
@@ -58,7 +58,7 @@ export default Flow.make("greet", {
   symlinkSync("flows", where.flows)
   tui = await Tui.start({
     cwd: where.cwd,
-    command: `bun ${join(app, "src", "main.tsx")} ${where.cwd}`,
+    command: `${bunCommand} ${join(app, "src", "main.tsx")} ${where.cwd}`,
     env: {
       HOME: join(root, "home"),
       PATH: process.env.PATH ?? "",

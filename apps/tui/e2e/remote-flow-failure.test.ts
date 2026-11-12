@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 it("remote causes stay safe on terminal cards, with Enter details and retry intact", async () => {
@@ -20,7 +20,7 @@ it("remote causes stay safe on terminal cards, with Enter details and retry inta
   try {
     tui = await Tui.start({
       cwd: project,
-      command: `bun ${join(app, "e2e/real-flows-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e/real-flows-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", SMITHERS_TUI_SESSION_DIR: join(root, "sessions") }
     })
     await tui.until(drawn, 20_000, "first draw")

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const fixture = fileURLToPath(new URL("./cells-scroll-fixture.tsx", import.meta.url))
 const quote = (text: string) => "'" + text.replaceAll("'", "'\\''") + "'"
@@ -32,7 +32,7 @@ test("Cells preserves older messages and the live tail through an 80x24 PTY", as
   const cwd = join(root, "workspace")
   mkdirSync(cwd)
   const tui = await Tui.start({
-    command: `${quote(process.execPath)} ${quote(fixture)}`,
+    command: `${bunCommand} ${quote(fixture)}`,
     cwd,
     rows: 24,
     cols: 80,
@@ -80,7 +80,7 @@ test.each(["\x1b[5~", "\x1b[6~"])(
     const cwd = join(root, "workspace")
     mkdirSync(cwd)
     const tui = await Tui.start({
-      command: `${quote(process.execPath)} ${quote(fixture)}`,
+      command: `${bunCommand} ${quote(fixture)}`,
       cwd,
       rows: 24,
       cols: 80,

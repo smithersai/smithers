@@ -4,6 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout as poll } from "node:timers/promises"
 
+import { bunPreload } from "./tmux.ts"
+
 interface State {
   readonly frame: string
   readonly composer: string
@@ -16,6 +18,8 @@ test("native PTY preserves Esc then u in one write after a card diff", async () 
   const output: Array<Uint8Array> = []
   const child = Bun.spawn([
     process.execPath,
+    "--preload",
+    bunPreload,
     "--preload",
     join(import.meta.dir, "../src/native.ts"),
     join(import.meta.dir, "diff-focus-fixture.tsx")

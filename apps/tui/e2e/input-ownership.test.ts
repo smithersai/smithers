@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
@@ -17,7 +17,7 @@ test("80x24 input survives concurrent flow discovery without listener warnings",
   writeFileSync(join(root, ".smithers", "flows", "review", "flow.mdx"), "---\ndescription: Review\n---\nAnswer only.\n")
   const nodeEntry = process.env.SMITHERS_TUI_INPUT_NODE_ENTRY
   const command = nodeEntry === undefined
-    ? `bun --preload ${quote(join(import.meta.dir, "input-ownership-preload.mjs"))} ${
+    ? `${bunCommand} --preload ${quote(join(import.meta.dir, "input-ownership-preload.mjs"))} ${
       quote(join(app, "src", "main.tsx"))
     }`
     : `node --experimental-ffi --import ${quote(join(import.meta.dir, "input-ownership-preload.mjs"))} ${

@@ -10,6 +10,8 @@
  */
 import { ImportRules } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
+import { readdirSync } from "node:fs"
+import { workspacePackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as cli } from "../../packages/smithers/PACKAGE.ts"
 
 const cwd = "apps/tui"
@@ -23,6 +25,43 @@ const sources = [
   // Preloads `test/preload.ts`, which gives each run a private TMPDIR it removes.
   Smithers.file("//apps/tui/bunfig.toml")
 ]
+
+// VibeLang compiles these runtime modules with their whole source project,
+// including erased type imports. Follow local dependencies without building libs.
+const workspaceMembers = workspacePackages()
+const membersByName = new Map(workspaceMembers.map((member) => [member.name, member] as const))
+const pendingRuntimeNames = ["@smthrs/platform-bun", "@smthrs/engine", "@smthrs/flow"]
+const runtimeNames = new Set<string>()
+const dependencyNames = (value: unknown): ReadonlyArray<string> =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? Object.keys(value) : []
+
+while (pendingRuntimeNames.length > 0) {
+  const name = pendingRuntimeNames.pop()!
+  if (runtimeNames.has(name)) continue
+  const member = membersByName.get(name)
+  if (member === undefined) continue
+  runtimeNames.add(name)
+  pendingRuntimeNames.push(
+    ...dependencyNames(member.manifest.dependencies),
+    ...dependencyNames(member.manifest.devDependencies),
+    ...dependencyNames(member.manifest.peerDependencies)
+  )
+}
+const runtimeSourceInputs = [...runtimeNames].sort().map((name) => {
+  const member = membersByName.get(name)!
+  const compilerConfigs = readdirSync(new URL("../../" + member.dir + "/", import.meta.url))
+    .filter((path) => /^tsconfig.*\.json$/.test(path))
+  return Smithers.Filegroup({
+    cwd: member.dir,
+    srcs: [
+      Smithers.glob("src/**"),
+      Smithers.glob("test/**"),
+      Smithers.glob("examples/**"),
+      Smithers.file("package.json"),
+      ...compilerConfigs.map((path) => Smithers.file(path))
+    ]
+  })
+})
 
 /**
  * Checks the app and its suite against the package tsconfig.
@@ -65,8 +104,14 @@ const e2eTests = Smithers.NodeTest({
   runner: Smithers.testSuite(["./e2e"]),
   timeout: "20m",
   exclusive: true,
-  srcs: sources,
-  deps: [cli.nativeSources],
+  srcs: [
+    ...sources,
+    Smithers.file("//pnpm-workspace.yaml"),
+    Smithers.file("//pnpm-lock.yaml"),
+    Smithers.file("//tsconfig.base.json"),
+    Smithers.file("//tsconfig.json")
+  ],
+  deps: [cli.nativeSources, ...runtimeSourceInputs],
   cwd
 })
 

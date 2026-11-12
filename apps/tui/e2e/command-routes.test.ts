@@ -3,7 +3,7 @@ import { afterEach, expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const pong = join(app, "test", "fixtures", "pong.jsonl")
@@ -79,7 +79,7 @@ const records = (file: string): ReadonlyArray<Record> =>
 
 it("Ctrl+K stop and resume settle and restart the named worker; the removed /retry keeps its line", async () => {
   const where = project()
-  await start(where, `bun ${join(app, "e2e", "workspace-fixture.tsx")}`)
+  await start(where, `${bunCommand} ${join(app, "e2e", "workspace-fixture.tsx")}`)
   await submit("/retry unknown-worker")
   await tui!.until(
     (screen) => screen.includes("Unknown command /retry") && screen.includes("/retry unknown-worker"),
@@ -116,7 +116,7 @@ it("Ctrl+K stop and resume settle and restart the named worker; the removed /ret
 
 it("/resume restores the named conversation; /chat and ? act locally", async () => {
   const where = project()
-  await start(where, `bun ${join(app, "src", "main.tsx")} ${where.cwd}`)
+  await start(where, `${bunCommand} ${join(app, "src", "main.tsx")} ${where.cwd}`)
   await submit("/name saved route")
   await submit("remember route")
   await tui!.until((screen) => screen.includes("pong") && !screen.includes("esc Interrupt"), 15_000, "first answer")

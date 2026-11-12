@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { claim } from "../test/scratch.ts"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const out = resolve(process.argv[2] ?? join(tmpdir(), "tui-shots"))
 mkdirSync(out, { recursive: true })
@@ -37,7 +37,7 @@ const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
 for (const cols of [120, 84]) {
   const tui = await Tui.start({
     cwd: mkdtempSync(join(tmpdir(), "tui-shots-repo-")),
-    command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+    command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
     cols,
     rows: 34,
     env: {

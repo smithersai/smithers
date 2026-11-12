@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 it("shows unknown then the authenticated person in an app-only directory, keeping the composer usable", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-identity-"))
@@ -35,7 +35,7 @@ it("shows unknown then the authenticated person in an app-only directory, keepin
       cwd: root,
       cols: 110,
       rows: 30,
-      command: `bun ${resolve(import.meta.dir, "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${resolve(import.meta.dir, "tabs-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: root,

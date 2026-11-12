@@ -7,7 +7,7 @@ import { expect, it } from "bun:test"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, key, Tui } from "./tmux.ts"
+import { bunCommand, drawn, key, Tui } from "./tmux.ts"
 
 const fixture = join(resolve(import.meta.dir, ".."), "e2e", "answer-frames-fixture.tsx")
 const available = "PTY available answer"
@@ -52,7 +52,7 @@ it("draws an available answer in every held native 80x24 frame", async () => {
       cwd: root,
       cols: 80,
       rows: 24,
-      command: `bun ${fixture}`,
+      command: `${bunCommand} ${fixture}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",

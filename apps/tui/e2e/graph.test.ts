@@ -3,7 +3,7 @@ import { it } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 
@@ -15,7 +15,7 @@ it("draws a worker and the agent it spawned as boxes joined by an edge, and togg
       cwd: root,
       cols: 110,
       rows: 30,
-      command: `bun ${join(app, "e2e", "tabs-fixture.tsx")}`,
+      command: `${bunCommand} ${join(app, "e2e", "tabs-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: join(root, "s") }
     })
     await tui.until((screen) => screen.includes("Ask Smithers"), 20_000, "first draw")

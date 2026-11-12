@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
-import { key, Tui } from "./tmux.ts"
+import { bunCommand, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 /** The oldest batch's own card: its glyph, title and duration. */
@@ -59,7 +59,7 @@ for (const control of ["ten", "keyboard", "mouse"] as const) {
           cwd: root,
           cols: 110,
           rows: 35,
-          command: `bun ${join(app, "src", "main.tsx")} ${root} --continue`,
+          command: `${bunCommand} ${join(app, "src", "main.tsx")} ${root} --continue`,
           env: {
             HOME: root,
             XDG_CONFIG_HOME: root,

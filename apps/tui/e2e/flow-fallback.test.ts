@@ -3,7 +3,7 @@ import { expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { drawn, Tui } from "./tmux.ts"
+import { bunCommand, drawn, Tui } from "./tmux.ts"
 
 it("runs the next declared model after context overflow", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-fallback-"))
@@ -19,7 +19,7 @@ it("runs the next declared model after context overflow", async () => {
   try {
     tui = await Tui.start({
       cwd: project,
-      command: `bun ${resolve(import.meta.dir, "real-flows-fixture.tsx")}`,
+      command: `${bunCommand} ${resolve(import.meta.dir, "real-flows-fixture.tsx")}`,
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
