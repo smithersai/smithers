@@ -10,7 +10,7 @@ import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 import {
   ApproveCommand, ClosePlan, ExportCommand, FoldCommand, HistoryMessage, init, NoteCommand, PlanCommand, ReadCommit, ReadEpic, ReadMatches, ReadOutline,
-  ShowPlan, StartCommand, subscriptions, update, type HistoryModel,
+  SetHash, ShowPlan, StartCommand, subscriptions, update, type HistoryModel,
 } from "../src/web/historyApp.vibe"
 import { run, stepped, Finding, Text } from "./run.vibe"
 
@@ -56,8 +56,9 @@ const Input = Schema.Struct({ refusal: Text, model: Schema.Literals(["viewer", "
 
 /**
  * Over a history that can't be reached every read answers FailedRead and every write FailedWrite "unavailable"; over
- * one that refuses every write names the refusal; the mock exports the history. The plan dialog opens and closes as a
- * no-op when its element is missing. Escape pressed on the window closes the dialog; an outline that can't be read
+ * one that refuses every write names the refusal; the mock plans, starts, notes, approves and folds a commit, and
+ * exports the history. The plan dialog opens and closes as a
+ * no-op when its element is missing; SetHash moves the address. Escape pressed on the window closes the dialog; an outline that can't be read
  * fails the load; a stream lost once follows again two seconds later and delivers its event; and a hash naming an
  * epic not read yet reads it.
  */
@@ -73,10 +74,20 @@ it.live("history/command-arms", () => run("history/command-arms", Input, (input)
     for (const write of WRITES) { const got = try answer(write); if (got._tag !== "FailedWrite" || got.reason !== refusal) throw new Finding({ report: `refused write ${got._tag}` }) }
   }
   provide MockMythical(MAINTAINER, small) {
+    // Every write over the working mock: plan a commit, then start, note and approve it, and fold.
+    const planned = try answer(() => PlanCommand({ how: "append", epic: "", newEpic: "Fuzz", target: "", title: "Fuzz", task: "" }))
+    if (planned._tag !== "Wrote" || planned.hash === "") throw new Finding({ report: `plan ${planned._tag}` })
+    for (const write of [() => StartCommand({ id: planned.hash, lane: "fuzz" }), () => NoteCommand({ id: planned.hash, section: "tried", text: refusal }), () => ApproveCommand({ id: planned.hash }), () => FoldCommand({})]) {
+      const got = try answer(write)
+      if (got._tag !== "Wrote") throw new Finding({ report: `mock write ${got._tag}` })
+    }
     const exported = try answer(() => ExportCommand({}))
     if (exported._tag !== "Exported" || exported.mythical === "") throw new Finding({ report: `export ${exported._tag}` })
     for (const dialog of [() => ShowPlan({}), () => ClosePlan({})]) if ((try answer(dialog))._tag !== "Settled") throw new Finding({ report: "plan dialog" })
     const window = try (try Experimental.Window.Window).current
+    // SetHash moves the address to the reader's place.
+    const hash = `m${refusal.length}`
+    if ((try answer(() => SetHash({ hash })))._tag !== "Settled" || (try Effect.try(() => window.location.hash)) !== `#${hash}`) throw new Finding({ report: "SetHash" })
     const entries = subscriptions(window) as unknown as Entries
     const keys = fork Stream.runHead(entries["keyboard"]!.dependenciesToStream(undefined, () => undefined))
     const escaped = try Effect.timeoutOption(effect {

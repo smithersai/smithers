@@ -62,7 +62,8 @@ effect function check(name: string, holds: boolean) {
  * byline), its real commits, the note form for a contributor and no timeline without a task; a commit outside the
  * outline's epics has no epic crumb; a maintainer may insert before any commit and amend a landed one; the timeline
  * marks each state's step and shows the task and lane; the Plan dialog names its target (the shown commit's title when
- * it is the target) and asks for a new epic's title; a viewer gets no note form and no dialog. Epic pages read in order extend the epic; an older or detached
+ * it is the target) and asks for a new epic's title; a viewer gets no note form and no dialog. Every field of a planned
+ * commit's page and the dialog takes typed text, and a newer outline reads again the epic pages the reader has. Epic pages read in order extend the epic; an older or detached
  * one changes nothing.
  */
 it.live("screens/history-states", () => run("screens/history-states", Input, ({ title, text }) => effect {
@@ -117,6 +118,20 @@ it.live("screens/history-states", () => run("screens/history-states", Input, ({ 
   const fresh = try render(loaded("contributor", { dialog: true, form: { how: "append", title: "", epic: NEW_EPIC, newEpic: text, target: "", task: "" } }), named)
   const typed = try Effect.try(() => HistoryMessage.UpdatedForm({ field: "newEpic", value: title }))
   try check("new epic", fresh.all("#mh-plan-new-epic").length === 1 && same(fresh.seen, [typed]))
+  // Every field of a planned commit's page and the Plan dialog takes typed text.
+  const planned: Commit = { id: "m6", epic: "e1", rank: 6, title: "Planned one", state: "planned", task: "", lane: "", notes: [] }
+  const fields = try Effect.try(() => [
+    typeInto("#mh-lane", title), typeInto("#mh-note", text), typeInto("#mh-plan-title", title), change("#mh-plan-epic", "e2"), typeInto("#mh-plan-task", text),
+  ])
+  const typing = try render(loaded("contributor", { ...read(planned), dialog: true, form: { how: "append", title: "", epic: "e1", newEpic: "", target: "", task: "" } }), ...fields)
+  const typedAll = try Effect.try(() => [
+    HistoryMessage.UpdatedLane({ value: title }), HistoryMessage.UpdatedNote({ value: text }), HistoryMessage.UpdatedForm({ field: "title", value: title }),
+    HistoryMessage.UpdatedForm({ field: "epic", value: "e2" }), HistoryMessage.UpdatedForm({ field: "task", value: text }),
+  ])
+  try check("typed fields", same(typing.seen, typedAll))
+  // A newer outline reads again every epic page the reader has.
+  const reread = try Effect.try(() => update(loaded("viewer", { pages }), HistoryMessage.GotOutline({ outline: { seq: 6, main: "abc1234def", epics: EPICS, open: [] } })))
+  try check("newer outline", (reread.commands ?? []).some((command) => command.name === "ReadEpic"))
   // Epic pages: in order, stale, detached.
   const base = loaded("viewer", { pages })
   const third = head("m4", "planned", "Third")

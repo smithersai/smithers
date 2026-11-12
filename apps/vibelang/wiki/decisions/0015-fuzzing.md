@@ -1307,6 +1307,14 @@ does: `escapeWritesIssues` is true exactly when the proved `escapeWrite` changes
 screens, every Escape route, with and without the wiki pane), and `screenKept` returns the Model unchanged. Seed
 20261248 reaches both; Escape over an open list not counted as a write is caught (20261249).
 
+The eighteenth session's final run (seed 20261251, `3372f524`) found the same draw-dependence in the browser stage:
+`historyApp.vibe`'s successful writes and `SetHash`, `shownReads` over open epic pages (`historyDecision.readOffsets`)
+and `historyView.vibe`'s input handlers had been reached at 20261219 only by `browser/history-navigation-and-work`'s
+draw. `history/command-arms` now plans, starts, notes, approves and folds a commit over the working mock (each answers
+`Wrote`) and moves the address with `SetHash`; `screens/history-states` types into the lane, note, plan title, epic
+and task fields (each Message named) and checks that a newer outline reads again every epic page the reader has. Seed
+20261254 reaches every one of those lines; a start that reports `busy` after writing is caught (20261255).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
