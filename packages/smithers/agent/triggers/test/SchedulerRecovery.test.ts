@@ -252,7 +252,7 @@ describe("Scheduler recovery", () => {
       const refuse = () => Effect.fail(new TriggerError({ code: "store", message: "disk full while rearming" }))
       const flaky = { ...store, setPending: refuse, restorePending: refuse }
       const failingRunner = runnerFixture({
-        start: () => Effect.fail(new TriggerError({ code: "runner", message: "launch failed" }))
+        start: () => Effect.fail(new TriggerError({ code: "runner_unavailable", message: "launch failed" }))
       })
       yield* TestClock.setTime(hour)
       yield* Effect.scoped(Effect.gen(function*() {
@@ -314,7 +314,7 @@ describe("Scheduler recovery", () => {
     ])
   })
 
-  it("re-arms committed buffered work when its launch fails", async () => {
+  it("re-arms committed buffered work when its runner is unavailable", async () => {
     const starts: Array<Scheduler.StartInput> = []
     let failures = 1
     const runner = runnerFixture({
@@ -323,7 +323,7 @@ describe("Scheduler recovery", () => {
           starts.push(input)
           if (failures > 0) {
             failures--
-            return Effect.fail(new TriggerError({ code: "runner", message: "launch failed" }))
+            return Effect.fail(new TriggerError({ code: "runner_unavailable", message: "launch failed" }))
           }
           return Effect.succeed("run-1")
         })

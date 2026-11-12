@@ -1,9 +1,12 @@
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
+import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Scheduler from "../src/Scheduler.ts"
+import * as SqlTriggerStore from "../src/SqlTriggerStore.ts"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
 import type { Trigger } from "../src/Trigger.ts"
 import { TriggerError } from "../src/TriggerError.ts"
@@ -208,6 +211,49 @@ describe("Scheduler.tick", () => {
     expect(seen.retried).toEqual([[hour, "launched"]])
     expect(seen.refused).toEqual(["failed"])
   })
+
+  // A re-armed occurrence reaches launch through the pending pointer. A refusal
+  // there used to re-arm it again, so it relaunched on every tick and its fire
+  // never recorded failed. The same refusal on a direct launch records failed.
+  it.each(
+    [
+      ["in memory", TestTriggers.layer],
+      ["in SQL", SqlTriggerStore.layer.pipe(Layer.provide(TestDatabase.layer))]
+    ] as const
+  )(
+    "records failed when the retry of a re-armed occurrence is refused, and stops launching it %s",
+    async (_name, stores) => {
+      let unavailable = true
+      const runner = runs(() =>
+        Effect.fail(
+          unavailable
+            ? new TriggerError({ code: "runner_unavailable", message: "GitHub is down" })
+            : new TriggerError({ code: "runner", message: "flow removed" })
+        )
+      )
+      const seen = await Effect.runPromise(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          yield* store.register(hourly())
+          yield* TestClock.setTime(hour + 1_000)
+          const first = yield* tick(runner, { since: 30 * minute })
+          unavailable = false
+          yield* TestClock.setTime(hour + minute)
+          const second = yield* tick(runner, { since: first.watermark })
+          const refused = { inspected: yield* store.inspect("hourly"), outcomes: yield* outcomes(store) }
+          yield* TestClock.setTime(hour + 2 * minute)
+          yield* tick(runner, { since: second.watermark })
+          return refused
+        }).pipe(Effect.provide(stores), Effect.provide(TestClock.layer()))
+      )
+      expect(runner.starts.map((start) => start.idempotencyKey)).toEqual([
+        "hourly:1970-01-01T01:00:00.000Z",
+        "hourly:1970-01-01T01:00:00.000Z"
+      ])
+      expect(seen.outcomes).toEqual([[hour, "failed"]])
+      expect(seen.inspected).toEqual({})
+    }
+  )
 
   it("does not advance the watermark past a trigger whose dispatch failed", async () => {
     const runner = runs()

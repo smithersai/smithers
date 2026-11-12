@@ -760,8 +760,7 @@ const build = (
     const launch = (
       trigger: Registered,
       occurrence: number,
-      reservation: string,
-      preserveBuffered: boolean
+      reservation: string
     ): Effect.Effect<void, TriggerError> =>
       Effect.gen(function*() {
         // The occurrence takes the entry under its reservation before the
@@ -836,36 +835,26 @@ const build = (
                 ).pipe(Effect.ignore)
                 return
               }
-              if (preserveBuffered) {
-                // A buffered occurrence was taken off the buffer by the claim
-                // that led here. Re-arm it under this reservation so the next
-                // tick retries it rather than losing it.
+              // A start that answered too late is ambiguous: the runtime may
+              // hold the run. Keep the occurrence pending exactly as when the
+              // launched result failed to persist, so the next tick retries
+              // under the same idempotency key and the runtime's durable
+              // deduplication answers with the same run. A runner that could
+              // not start the run now (`runner_unavailable`) is retried the
+              // same way. Any other refusal is final on every path: a launch
+              // that came from the pending pointer records `failed` too.
+              if (runId !== undefined || error.code === "runner_timeout" || error.code === "runner_unavailable") {
                 yield* isolate(
                   { triggerId: trigger.id },
-                  "buffered launch compensation",
-                  store.restorePending({ triggerId: trigger.id, occurrence, reservationId: reservation })
+                  "launch compensation",
+                  store.restorePending({
+                    triggerId: trigger.id,
+                    occurrence,
+                    reservationId: reservation
+                  })
                 ).pipe(Effect.ignore)
               } else {
-                // A start that answered too late is ambiguous: the runtime may
-                // hold the run. Keep the occurrence pending exactly as when the
-                // launched result failed to persist, so the next tick retries
-                // under the same idempotency key and the runtime's durable
-                // deduplication answers with the same run. A runner that could
-                // not start the run now (`runner_unavailable`) is retried the
-                // same way.
-                if (runId !== undefined || error.code === "runner_timeout" || error.code === "runner_unavailable") {
-                  yield* isolate(
-                    { triggerId: trigger.id },
-                    "launch compensation",
-                    store.restorePending({
-                      triggerId: trigger.id,
-                      occurrence,
-                      reservationId: reservation
-                    })
-                  ).pipe(Effect.ignore)
-                } else {
-                  yield* recordFailed(trigger, occurrence, error, reservation).pipe(Effect.ignore)
-                }
+                yield* recordFailed(trigger, occurrence, error, reservation).pipe(Effect.ignore)
               }
               yield* Effect.logWarning("A trigger launch failed", error).pipe(
                 Effect.annotateLogs({ triggerId: trigger.id, occurrence: String(occurrence) })
@@ -982,7 +971,7 @@ const build = (
       Effect.gen(function*() {
         switch (claim.action) {
           case "fire":
-            yield* launch(trigger, occurrence, claim.reservationId, resumeBuffered)
+            yield* launch(trigger, occurrence, claim.reservationId)
             return
           case "skip":
             yield* store.recordResult({
@@ -1015,7 +1004,7 @@ const build = (
                 !resumeBuffered
               )
             }
-            yield* launch(trigger, occurrence, claim.reservationId, resumeBuffered)
+            yield* launch(trigger, occurrence, claim.reservationId)
             return
           }
         }

@@ -92,6 +92,11 @@
 
 ### Fixed
 
+- A buffered or re-armed occurrence whose retry fails outright (#4906). A
+  start refused with any code other than `runner_timeout` or
+  `runner_unavailable` now records `failed` on every launch path. A launch from
+  the pending pointer used to re-arm the occurrence for every error, so it was
+  launched again on every tick and its fire never recorded an outcome.
 - Daylight saving (#1930). `Cron` now searches wall-clock times and resolves
   each one in the trigger's zone. A time that spring forward skips fires once,
   at the instant it would have had on the old offset (a daily 02:30 fires at

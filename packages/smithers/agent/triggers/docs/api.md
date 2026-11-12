@@ -884,10 +884,11 @@ reports the run stopped permits a completed result; inspection and completion
 write failures never become failed run outcomes.
 
 A launch runs on its own fiber and compensates its own failures: a start that
-failed outright records `failed`, an ambiguous one (timed out, or answered but
-not persisted) or one that failed with `runner_unavailable` re-arms the
-occurrence as pending, and a buffered occurrence is
-re-armed. Every failure other than interruption is logged with the trigger id.
+failed outright records `failed`, and an ambiguous one (timed out, or answered
+but not persisted) or one that failed with `runner_unavailable` re-arms the
+occurrence as pending. A launch of a buffered or re-armed occurrence follows
+the same rule, so a retry that fails outright records `failed` and is not
+launched again. Every failure other than interruption is logged with the trigger id.
 Interrupting the fiber detaches it; the reservation lease re-arms the
 occurrence.
 
@@ -1266,9 +1267,9 @@ claim rules as `claimFire`, and clears the buffer only when the decision
 consumes it, inside one transaction. A refused claim leaves the buffer intact,
 and a concurrent active run that buffers it again keeps it pending. If a
 process dies after claiming ordinary or buffered work but before launching it,
-expiration of that launch reservation restores the occurrence. After a failed
-buffered launch, `restorePending` restores the pointer and releases the matching
-reservation in one transaction. Compensation failures are logged and retain the
+expiration of that launch reservation restores the occurrence. After an ambiguous
+or `runner_unavailable` launch failure, `restorePending` restores the pointer and
+releases the matching reservation in one transaction. Compensation failures are logged and retain the
 lease for recovery. Cancellation failures use the same operation to restore a
 still-launched predecessor with its pending replacement.
 
