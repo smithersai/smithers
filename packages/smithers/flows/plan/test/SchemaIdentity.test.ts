@@ -55,10 +55,17 @@ const supportedSinceRc115: ReadonlySet<string> = new Set(["record/number-key"])
 
 /**
  * Corpus entries whose document departs from rc.115 on purpose: a JSON string
- * also states what it decodes to. rc.115 printed the media type alone, so two
- * declarations that decode different values shared an identity.
+ * also states what it decodes to, the properties listed here. rc.115 printed
+ * the media type alone, so two declarations that decode different values
+ * shared an identity.
  */
-const statesContentSchema: ReadonlySet<string> = new Set(["transform/fromJsonString"])
+const statesContentSchema: ReadonlyMap<
+  string,
+  { readonly properties: unknown; readonly required: ReadonlyArray<string> }
+> = new Map([
+  ["transform/fromJsonString", { properties: { a: { type: "integer" } }, required: ["a"] }],
+  ["transform/fromJsonString-string-field", { properties: { b: { type: "string" } }, required: ["b"] }]
+])
 
 /**
  * The key pattern `effect@4.1.1` gives a `Schema.Number` record key
@@ -105,21 +112,24 @@ describe("schema identity under an effect upgrade", () => {
     )
 
     // Compared as text: the decoded schema prints last, after what rc.115 printed.
-    it.each([...statesContentSchema])("prints %s as rc.115 printed it, then what the string decodes to", (name) => {
-      const recorded = JSON.parse(recording.documents[name]!) as internal.Document
-      expect(JSON.stringify(Node.schemaIdentity(schemas[name]!(), recording.options))).toBe(JSON.stringify({
-        ...recorded,
-        schema: {
-          ...recorded.schema,
-          contentSchema: {
-            type: "object",
-            properties: { a: { type: "integer" } },
-            required: ["a"],
-            additionalProperties: recording.options.onExcessProperty !== "error"
+    it.each([...statesContentSchema])(
+      "prints %s as rc.115 printed it, then what the string decodes to",
+      (name, decoded) => {
+        const recorded = JSON.parse(recording.documents[name]!) as internal.Document
+        expect(JSON.stringify(Node.schemaIdentity(schemas[name]!(), recording.options))).toBe(JSON.stringify({
+          ...recorded,
+          schema: {
+            ...recorded.schema,
+            contentSchema: {
+              type: "object",
+              properties: decoded.properties,
+              required: decoded.required,
+              additionalProperties: recording.options.onExcessProperty !== "error"
+            }
           }
-        }
-      }))
-    })
+        }))
+      }
+    )
 
     it.each(Object.entries(recording.failures).filter(([name]) => !supportedSinceRc115.has(name)))(
       "refuses %s as rc.115 refused it",

@@ -434,7 +434,8 @@ describe("StepKey", () => {
       const failure = yield* withCryptoFailure(
         Effect.asVoid(StepKey.content({ body: 1n, inputs: {}, layers: [], capabilities: {} }))
       )
-      expect(failure).toBeDefined()
+      expect(failure).toMatchObject({ _tag: "SchemaError" })
+      expect(failure.message).toContain("canonicalization_failed")
     }))
 })
 
@@ -940,7 +941,8 @@ describe("StepKey.dispatchIdentity", () => {
       const failure = yield* withCryptoFailure(
         Effect.asVoid(dispatch({ inputs: [{ _tag: "Ref", from: "u", path: [] }] }, { u: 1n }))
       )
-      expect(failure).toBeDefined()
+      expect(failure).toMatchObject({ _tag: "SchemaError" })
+      expect(failure.message).toContain("canonicalization_failed")
     }))
 })
 

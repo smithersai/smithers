@@ -989,11 +989,18 @@ export const corpus = (S: SchemaModule, E: EffectModule): Readonly<Record<string
   add("brand/number-from-string", () => S.NumberFromString.pipe(S.brand("Port")))
   add("brand/number-from-string-checked", () => S.NumberFromString.check(S.isInt()).pipe(S.brand("Port")))
   add("brand/codec-field", () => S.Struct({ slug: S.Trim.pipe(S.brand("Slug")), count: S.Int }))
+  add(
+    "brand/decode-to-checked",
+    () => S.String.pipe(S.decodeTo(S.Number)).check(S.isInt()).pipe(S.brand("Count"))
+  )
 
   // Codecs and declarations.
   add("transform/decodeTo", () => S.String.pipe(S.decodeTo(S.Number)))
   add("transform/struct-fields", () => S.Struct({ n: S.NumberFromString, d: S.Date }))
+  // Two JSON strings that decode to different shapes: rc.115 printed both as the media
+  // type alone, so they shared an identity until version 3.
   add("transform/fromJsonString", () => S.fromJsonString(S.Struct({ a: S.Int })))
+  add("transform/fromJsonString-string-field", () => S.fromJsonString(S.Struct({ b: S.String })))
   add("transform/option", () => S.Option(S.String))
   add("transform/option-struct", () => S.Struct({ a: S.Option(S.Int), b: S.Option(S.Int) }))
   add("transform/optionFromNullOr", () => S.OptionFromNullOr(S.String))

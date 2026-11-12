@@ -246,6 +246,10 @@ describe("what a JSON string decodes to", () => {
     JSON.stringify(Node.representationIdentity(schema, version))
 
   it("is no part of versions 2 and 1, which keep the identity recorded keys hashed", () => {
+    // rc.115 wrote one document for two declarations that decode different shapes.
+    expect(fixture.documents["transform/fromJsonString-string-field"]).toBe(
+      fixture.documents["transform/fromJsonString"]
+    )
     for (const version of [2, 1] as const) {
       for (const schema of [counts(), names(), identified()]) {
         expect(identity(schema, version)).toBe(fixture.documents["transform/fromJsonString"])
@@ -292,6 +296,6 @@ describe("what a JSON string decodes to", () => {
 
   it("is the one thing version 3 adds to version 2", () => {
     expect(Object.keys(fixture.documents).filter((name) => printed(name, 3) !== printed(name, 2)))
-      .toEqual(["transform/fromJsonString"])
+      .toEqual(["transform/fromJsonString", "transform/fromJsonString-string-field"])
   })
 })

@@ -1,7 +1,7 @@
 {
   "producer": {
     "source": {
-      "sha": "0e051052ef"
+      "sha": "cc198e131637"
     },
     "effect": "4.0.0-rc.115",
     "package": {
@@ -455,9 +455,11 @@
         "brand/number-from-string": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "brand/number-from-string-checked": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "brand/codec-field": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"slug\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"slug\",\"count\"],\"additionalProperties\":false},\"definitions\":{}}",
+        "brand/decode-to-checked": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "transform/decodeTo": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "transform/struct-fields": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"n\":{\"type\":\"string\"},\"d\":{\"type\":\"string\"}},\"required\":[\"n\",\"d\"],\"additionalProperties\":false},\"definitions\":{}}",
         "transform/fromJsonString": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"contentMediaType\":\"application/json\"},\"definitions\":{}}",
+        "transform/fromJsonString-string-field": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"contentMediaType\":\"application/json\"},\"definitions\":{}}",
         "transform/option": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"Some\"]},\"value\":{\"type\":\"string\"}},\"required\":[\"_tag\",\"value\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"None\"]}},\"required\":[\"_tag\"],\"additionalProperties\":false}]},\"definitions\":{}}",
         "transform/option-struct": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"a\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"Some\"]},\"value\":{\"type\":\"integer\"}},\"required\":[\"_tag\",\"value\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"None\"]}},\"required\":[\"_tag\"],\"additionalProperties\":false}]},\"b\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"Some\"]},\"value\":{\"type\":\"integer\"}},\"required\":[\"_tag\",\"value\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"None\"]}},\"required\":[\"_tag\"],\"additionalProperties\":false}]}},\"required\":[\"a\",\"b\"],\"additionalProperties\":false},\"definitions\":{}}",
         "transform/optionFromNullOr": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}]},\"definitions\":{}}",
@@ -992,9 +994,11 @@
         "brand/number-from-string": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "brand/number-from-string-checked": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "brand/codec-field": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"slug\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}},\"required\":[\"slug\",\"count\"],\"additionalProperties\":true},\"definitions\":{}}",
+        "brand/decode-to-checked": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "transform/decodeTo": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\"},\"definitions\":{}}",
         "transform/struct-fields": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"n\":{\"type\":\"string\"},\"d\":{\"type\":\"string\"}},\"required\":[\"n\",\"d\"],\"additionalProperties\":true},\"definitions\":{}}",
         "transform/fromJsonString": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"contentMediaType\":\"application/json\"},\"definitions\":{}}",
+        "transform/fromJsonString-string-field": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"string\",\"contentMediaType\":\"application/json\"},\"definitions\":{}}",
         "transform/option": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"Some\"]},\"value\":{\"type\":\"string\"}},\"required\":[\"_tag\",\"value\"],\"additionalProperties\":true},{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"None\"]}},\"required\":[\"_tag\"],\"additionalProperties\":true}]},\"definitions\":{}}",
         "transform/option-struct": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"type\":\"object\",\"properties\":{\"a\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"Some\"]},\"value\":{\"type\":\"integer\"}},\"required\":[\"_tag\",\"value\"],\"additionalProperties\":true},{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"None\"]}},\"required\":[\"_tag\"],\"additionalProperties\":true}]},\"b\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"Some\"]},\"value\":{\"type\":\"integer\"}},\"required\":[\"_tag\",\"value\"],\"additionalProperties\":true},{\"type\":\"object\",\"properties\":{\"_tag\":{\"type\":\"string\",\"enum\":[\"None\"]}},\"required\":[\"_tag\"],\"additionalProperties\":true}]}},\"required\":[\"a\",\"b\"],\"additionalProperties\":true},\"definitions\":{}}",
         "transform/optionFromNullOr": "{\"dialect\":\"draft-2020-12\",\"schema\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}]},\"definitions\":{}}",
