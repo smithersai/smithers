@@ -1618,3 +1618,10 @@ and holds the published refs to those a person's export of the same story publis
 answers `running`, a quiet round moves no ref, and a commit main gains is folded and published by the next round. The
 story generator moved to `fuzz/history-stories.vibe`, shared with `history/export-flow`. Mutants caught: the start's
 outcomes swapped; the publisher's next round not continued in its object.
+
+`worker/sandboxBenchmark.vibe` (8 lines, the test stage's counter export from the benchmarks lane):
+`sandbox/benchmark-coverage` drives `benchmarkFetch` over every path, method and an owner or none. Any other path is
+the probe's own response, untouched and asking no identity; at `/api/probe/coverage` a caller without an owner gets 403
+and any method but POST 405, both before any object is asked; a POST answers this Worker's, the owner's account's and
+the owner's probe machine's counters, in that order, asking exactly those two objects. Mutants caught: the owner check
+removed; the account and machine snapshots swapped.

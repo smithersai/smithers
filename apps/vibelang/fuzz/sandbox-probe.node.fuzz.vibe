@@ -9,9 +9,10 @@ import { accountObject, gatewayOf } from "../worker/accountObject.vibe"
 import type { MachineBox, ObjectState } from "../worker/machineObject.vibe"
 import { DIRECT_CONVERSATION, deadlineOf, leaseClamped, OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeFetch, probeIdentity, probeOwner } from "../worker/sandboxProbeFetch.vibe"
 import { probeMachine } from "../worker/sandboxProbeContainer.vibe"
+import { benchmarkFetch } from "../worker/sandboxBenchmark.vibe"
 import { makeBox, namespaceOf, type BoxFault } from "./machine-box.ts"
 import { objectStorage } from "../test/support/objectStorage.ts"
-import { run, Int } from "./run.vibe"
+import { run, Int, same } from "./run.vibe"
 
 const TOKEN = "probe-token-for-fuzz"
 const FAULTS = ["start", "stuck", "snapshot", "destroy", "running"] as const satisfies ReadonlyArray<BoxFault>
@@ -209,5 +210,38 @@ it.live("sandbox/probe", () => run("sandbox/probe", Input, (input) => provided(e
     if (leased !== undefined && leased > Math.max(deadline, Date.now() + 1000) + 50) return false
   }
   return true
+})))
+
+const BenchmarkInput = Schema.Struct({
+  path: Schema.Literals(["/api/probe/coverage", "/api/probe/sweep", "/api/sandboxes/live"]),
+  method: Schema.Literals(["POST", "GET", "DELETE"]),
+  owner: Schema.Literals(["", "probe-1700000000000"]),
+})
+
+/**
+ * The test stage's counter export (worker/sandboxBenchmark.vibe): any other path is the probe's own answer, untouched
+ * and asking no identity; at `/api/probe/coverage` a caller without an owner is refused and any method but POST is not
+ * allowed, both before any object is asked; a POST answers this Worker's, the owner's account's and the owner's probe
+ * machine's counters, in that order.
+ */
+it.live("sandbox/benchmark-coverage", () => run("sandbox/benchmark-coverage", BenchmarkInput, (input) => provided(effect {
+  const asked: Array<string> = []
+  const inner = HttpServerResponse.jsonUnsafe({ inner: true }, { status: 299 })
+  const counters = (who: string) => ({ buildId: who, coverage: {} })
+  const accounts = { getByName: (name: string) => ({ benchmarkCoverage: () => sync(() => { asked.push(`account ${name}`); return counters("account") }) }) }
+  const machines = { getByName: (name: string) => ({ benchmarkCoverage: () => sync(() => { asked.push(`machine ${name}`); return counters("machine") }) }) }
+  const identity = { request: () => sync(() => { asked.push("identity"); return { owner: input.owner, role: "viewer" as const } }), role: () => succeed("viewer" as const) }
+  const handler = benchmarkFetch(succeed(inner), accounts as never, machines as never, identity as never)
+  const web = try HttpClientRequest.toWeb(HttpClientRequest.make(input.method)(`https://probe.invalid${input.path}`))
+  let response: HttpServerResponse.HttpServerResponse
+  provide HttpServerRequest.HttpServerRequest = HttpServerRequest.fromWeb(web) {
+    response = try handler
+  }
+  if (input.path !== "/api/probe/coverage") return response === inner && asked.length === 0
+  if (input.owner === "") return response.status === 403 && same(asked, ["identity"])
+  if (input.method !== "POST") return response.status === 405 && same(asked, ["identity"])
+  const body = (try promise(() => HttpServerResponse.toWeb(response).json())) as { readonly schema: number; readonly snapshots: ReadonlyArray<{ readonly buildId: string | null }> }
+  return response.status === 200 && body.schema === 1 && body.snapshots.length === 3 && body.snapshots[1]!.buildId === "account" && body.snapshots[2]!.buildId === "machine"
+    && same(asked, ["identity", `account ${input.owner}`, `machine ${input.owner}/${PROBE_CONVERSATION}`])
 })))
 
