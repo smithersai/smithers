@@ -1639,3 +1639,8 @@ the probe's own response, untouched and asking no identity; at `/api/probe/cover
 and any method but POST 405, both before any object is asked; a POST answers this Worker's, the owner's account's and
 the owner's probe machine's counters, in that order, asking exactly those two objects. Mutants caught: the owner check
 removed; the account and machine snapshots swapped.
+
+`worker/accountsDecision.vibe` 110 and 153's arm: `decisions/account-tokens` holds `resumeToken` to
+`/^[A-Za-z0-9-]{1,100}$/` on drawn texts from empty to 220 characters (a 60- and a 40-character token make exactly 101),
+and `connectReturn` to its contract over every present or absent wiki page, operation, key and recovery. Mutants
+caught: a 101-character limit; the hyphen dropped.

@@ -8,6 +8,7 @@ import { historyReply } from "../src/core/mockReplies.vibe"
 import { canCharge, chargeKeyOf } from "../worker/budgetDecision.vibe"
 import { finishDispatch, probeDispatch } from "../worker/liveDispatchDecision.vibe"
 import { completion } from "../worker/replyProgressDecision.vibe"
+import { connectReturn, resumeToken } from "../worker/accountsDecision.vibe"
 import { run, Int } from "./run.vibe"
 
 const OPS = ["new", "propose", "split", "link", "commit", "comment", "accept", "decline", "uncommit"] as const
@@ -72,3 +73,24 @@ it.live("decisions/host-rules", () => run("decisions/host-rules", Input, (input)
   const outline = { main: "main", epics: [{ title: "Epic", commits: 2 }], open: open ? [{ id: "w1", title: "Work", state: "running" }] : [] } as unknown as Parameters<typeof historyReply>[0]
   return historyReply(outline).endsWith(open ? "Open work: `w1` Work (running)" : "No open work.")
 }))
+
+const AccountTokens = Schema.Struct({
+  token: Schema.Array(Schema.Literals(["a", "Z", "9", "-", "_", " ", "\u00e9", "x".repeat(40), "x".repeat(60)])).check(Schema.isMaxLength(4)),
+  wiki: Schema.UndefinedOr(Schema.Literals(["index", "decisions/0015-fuzzing"])),
+  op: Schema.UndefinedOr(Schema.Literals(["new", "comment"])),
+  key: Schema.UndefinedOr(Schema.Literals(["k1", "a-b"])),
+  recovery: Schema.UndefinedOr(Schema.Literals(["r1"])),
+})
+
+/**
+ * The accounts decisions a request's query reaches (worker/accountsDecision.vibe): a resume key or recovery is
+ * `/^[A-Za-z0-9-]{1,100}$/`, empty and 101 characters included, and Connect returns to the wiki page, the issues pane,
+ * or the issue operation to resume, as its contract says.
+ */
+it.live("decisions/account-tokens", () => run("decisions/account-tokens", AccountTokens, (input) => {
+  const token = input.token.join("")
+  if (resumeToken(token) !== /^[A-Za-z0-9-]{1,100}$/.test(token)) return false
+  const resume = input.op === undefined || input.key === undefined ? "/?issues=1" : `/?issues=1&resume-op=${input.op}&resume-key=${input.key}${input.recovery === undefined ? "" : `&resume-recovery=${input.recovery}`}`
+  return connectReturn(input.wiki, input.op, input.key, input.recovery) === (input.wiki !== undefined ? `/wiki/${input.wiki}` : resume)
+}))
+
