@@ -4,6 +4,7 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { TestProject } from "vitest/node"
 
 export const bunRuntime = process.versions.bun !== undefined
@@ -21,6 +22,12 @@ declare module "vitest" {
 }
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
+
+/**
+ * This package's Electrobun CLI. The fixture runs it in test/native, which holds no package.json, so `pnpm exec`
+ * there searches only that directory's and the workspace root's bins, and never finds it.
+ */
+export const electrobun = fileURLToPath(new URL("../../node_modules/.bin/electrobun", import.meta.url))
 
 /** Observe spawn failure before polling readiness, including a tool removed after preflight. */
 export const waitForNativeSpawn = (child: ChildProcess, stage: string): Promise<void> =>
@@ -96,7 +103,7 @@ export default async function setup(project: TestProject) {
       SMITHERS_NATIVE_PORT: "0"
     }
     execFileSync("bun", ["run", "build.vibe"], { cwd, env, stdio: "pipe", timeout: 120000 })
-    execFileSync("pnpm", ["exec", "electrobun", "build"], { cwd, env, stdio: "pipe", timeout: 120000 })
+    execFileSync(electrobun, ["build"], { cwd, env, stdio: "pipe", timeout: 120000 })
     const x = spawn("Xvfb", [display, "-screen", "0", "1280x900x24", "-nolisten", "tcp"], {
       env,
       detached: true,
@@ -104,7 +111,7 @@ export default async function setup(project: TestProject) {
     })
     children.push(x)
     await waitForNativeSpawn(x, "Xvfb")
-    const host = spawn("pnpm", ["exec", "electrobun", "dev"], {
+    const host = spawn(electrobun, ["dev"], {
       cwd,
       env,
       detached: true,

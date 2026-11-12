@@ -1,9 +1,9 @@
 import { execFileSync, spawn } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { isAbsolute, join, relative, sep } from "node:path"
+import { delimiter, isAbsolute, join, relative, sep } from "node:path"
 import { expect, it } from "vitest"
-import { waitForNativeSpawn } from "./native/config.ts"
+import { electrobun, waitForNativeSpawn } from "./native/config.ts"
 import { nativeLibrariesAvailable, nativeTools, nativeUnavailableReason } from "./native/prerequisites.ts"
 
 it("keeps transient coverage reports outside the workspace declaration walk", () => {
@@ -111,6 +111,23 @@ it("reports a real Xvfb spawn error without an unhandled child error", async () 
   const child = spawn(process.execPath, ["--eval", "process.exit(0)"])
   await expect(waitForNativeSpawn(child, "Node")).resolves.toBeUndefined()
   await new Promise((resolve) => child.once("close", resolve))
+})
+
+// The fixture is Linux-only, and Windows runs no sh launcher.
+it.skipIf(process.platform === "win32")("launches this package's Electrobun from the native fixture directory", () => {
+  // A `node` that prints what it is handed stands in for the one the launcher runs, so no CLI is downloaded or built.
+  const directory = mkdtempSync(join(tmpdir(), "native-electrobun-"))
+  try {
+    writeFileSync(join(directory, "node"), "#!/bin/sh\nprintf '%s\\n' \"$@\"\n", { mode: 0o700 })
+    const output = execFileSync(electrobun, ["build"], {
+      cwd: join(import.meta.dirname, "native"),
+      env: { ...process.env, PATH: `${directory}${delimiter}${process.env.PATH ?? ""}` },
+      encoding: "utf8"
+    })
+    expect(output.trim().split("\n")).toEqual([expect.stringMatching(/\/electrobun\/bin\/electrobun\.cjs$/), "build"])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 it("collects only the native consumer in the native project", () => {
