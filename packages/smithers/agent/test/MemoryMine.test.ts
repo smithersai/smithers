@@ -4,7 +4,8 @@
  *
  * The core cases run over the real `@smthrs/memory` store (`TestMemory`,
  * in-memory SQLite). The `Agent.run` cases drive the production agent on the
- * real durable engine; only the model and Jev are scripted.
+ * in-process engine (`FlowEngine.layerMemory`) over that same real store, and
+ * read each remembered fact back from it; only the model and Jev are scripted.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
@@ -395,22 +396,28 @@ const replies = (prose: string, calls: { count: number }): Model.Model =>
       })
   })
 
-/** A store that keeps notes by id, the way the durable one does. */
-const noteStore = () => {
-  const notes = new Map<string, MemoryStore.PutNoteInput>()
-  const note = (input: MemoryStore.PutNoteInput): MemoryStore.Note => ({
-    ...input,
-    namespace: { kind: "flow", id: bank },
-    status: "accepted",
-    createdAtMs: 1
-  })
-  const store = MemoryStore.makeNoop({
-    getNote: ({ id }) =>
-      Effect.sync(() => Option.getOrUndefined(Option.map(Option.fromNullishOr(notes.get(id)), note))),
-    putNote: (input) => Effect.sync(() => (notes.set(input.id, input), note(input)))
-  })
-  return { store, notes }
-}
+/** Runs `body` over one fresh real store (`TestMemory`, in-memory SQLite). */
+const withStore = <A>(body: (store: MemoryStore.Service) => Promise<A>): Promise<A> =>
+  Effect.flatMap(MemoryStore.MemoryStore, (store) => Effect.promise(() => body(store))).pipe(
+    Effect.provide(TestMemory.layer),
+    Effect.runPromise
+  )
+
+/** The notes the store holds in `namespace`, read back through `listNotes`. */
+const held = (store: MemoryStore.Service, namespace: string) =>
+  Effect.runPromise(
+    Effect.map(
+      store.listNotes({ namespace }),
+      (notes) =>
+        notes.map((note) => ({
+          id: note.id,
+          text: note.text,
+          runId: note.provenance.runId,
+          status: note.status,
+          tags: note.tags
+        }))
+    )
+  )
 
 const runFlow = Flow.make("agent/test/memory-mine", {
   payload: {},
@@ -430,6 +437,8 @@ type Outcome = { readonly _tag: "completed" } | { readonly _tag: "failed"; reado
 const agentRun = (input: {
   readonly remember: boolean
   readonly store: MemoryStore.Service
+  readonly bank?: string
+  readonly session?: string
   readonly evaluator: (request: Evaluator.Request) => Answers | Effect.Effect<Answers, Evaluator.EvaluatorError>
   readonly parkOnce?: boolean
 }) => {
@@ -441,7 +450,7 @@ const agentRun = (input: {
     const seen: Array<AgentEvent.AgentEvent> = []
     events.push(seen)
     yield* agent.run({
-      session: "session-1",
+      session: input.session ?? "session-1",
       seat: Seat.make({
         id: "anthropic:test-model",
         modelId: "test-model",
@@ -455,7 +464,7 @@ const agentRun = (input: {
         visible: () => Effect.succeed([]),
         getOption: () => Effect.succeed(Option.none())
       }),
-      supervisor: { banks: [bank], remember: input.remember },
+      supervisor: { banks: [input.bank ?? bank], remember: input.remember },
       maxFrames: 3
     }).pipe(
       Stream.runForEach((event) => Effect.sync(() => void seen.push(event))),
@@ -516,17 +525,18 @@ const mineRows = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
 describe("Agent.run mines its transcript at run end", () => {
   it("stores a durable sentence the model wrote once, after the run resolved", async () => {
     const asked: Array<ReadonlyArray<string>> = []
-    const { notes, store } = noteStore()
-    const { events, outcome } = await agentRun({ remember: true, store, evaluator: mining({ [build]: 0.9 }, asked) })
+    const { events, notes, outcome } = await withStore(async (store) => {
+      const run = await agentRun({ remember: true, store, evaluator: mining({ [build]: 0.9 }, asked) })
+      return { ...run, notes: await held(store, bank) }
+    })
     expect(outcome._tag).toBe("completed")
     expect(asked).toEqual([[build]])
-    expect([...notes.values()]).toEqual([{
-      namespace: { kind: "flow", id: bank },
+    expect(notes).toEqual([{
       id: MemoryMine.noteId(bank, build),
       text: build,
-      tags: ["source:transcript"],
-      provenance: { runId: "session-1" },
-      status: "accepted"
+      runId: "session-1",
+      status: "accepted",
+      tags: ["source:transcript"]
     }])
     const run = events[0]!
     const mined = run.indexOf(mineRows(run)[0]!)
@@ -536,24 +546,28 @@ describe("Agent.run mines its transcript at run end", () => {
 
   it("with remember off writes nothing and never asks Jev to mine", async () => {
     const asked: Array<ReadonlyArray<string>> = []
-    const { notes, store } = noteStore()
-    const { events, outcome } = await agentRun({ remember: false, store, evaluator: mining({ [build]: 0.9 }, asked) })
+    const { events, notes, outcome } = await withStore(async (store) => {
+      const run = await agentRun({ remember: false, store, evaluator: mining({ [build]: 0.9 }, asked) })
+      return { ...run, notes: await held(store, bank) }
+    })
     expect(outcome._tag).toBe("completed")
     expect(asked).toEqual([])
-    expect(notes.size).toBe(0)
+    expect(notes).toEqual([])
     expect(mineRows(events[0]!)).toEqual([])
   })
 
   it.each(["unreachable", "refused"] as const)(
     "a %s Jev at run end leaves the run's outcome unchanged",
     async (code) => {
-      const { notes, store } = noteStore()
-      const failed = await agentRun({ remember: true, store, evaluator: () => failing(code) })
-      const off = await agentRun({ remember: false, store: noteStore().store, evaluator: () => failing(code) })
+      const { failed, notes } = await withStore(async (store) => {
+        const failed = await agentRun({ remember: true, store, evaluator: () => failing(code) })
+        return { failed, notes: await held(store, bank) }
+      })
+      const off = await withStore((store) => agentRun({ remember: false, store, evaluator: () => failing(code) }))
       expect(failed.outcome).toEqual(off.outcome)
       expect(failed.outcome._tag).toBe("completed")
       expect(tags(failed.events[0]!).filter((tag) => tag === "resolved")).toEqual(["resolved"])
-      expect(notes.size).toBe(0)
+      expect(notes).toEqual([])
       expect(mineRows(failed.events[0]!)).toEqual([
         expect.objectContaining({ _tag: "decision-unjudged", reason: code, items: 1 })
       ])
@@ -562,18 +576,43 @@ describe("Agent.run mines its transcript at run end", () => {
 
   it("a replayed run is served the recorded reading and never asks Jev again", async () => {
     const asked: Array<ReadonlyArray<string>> = []
-    const { notes, store } = noteStore()
-    const { events, model, outcome } = await agentRun({
-      remember: true,
-      store,
-      evaluator: mining({ [build]: 0.9 }, asked),
-      parkOnce: true
+    const { events, model, notes, outcome } = await withStore(async (store) => {
+      const run = await agentRun({
+        remember: true,
+        store,
+        evaluator: mining({ [build]: 0.9 }, asked),
+        parkOnce: true
+      })
+      return { ...run, notes: await held(store, bank) }
     })
     expect(outcome._tag).toBe("completed")
     expect(events).toHaveLength(2)
     expect(model).toBe(2)
     expect(asked).toHaveLength(1)
     expect(mineRows(events[1]!)).toEqual(mineRows(events[0]!))
-    expect([...notes.keys()]).toEqual([MemoryMine.noteId(bank, build)])
+    expect(notes.map(({ id, runId }) => ({ id, runId }))).toEqual([
+      { id: MemoryMine.noteId(bank, build), runId: "session-1" }
+    ])
+  })
+
+  it("keeps each run's fact in its own bank when two runs learn the same sentence", async () => {
+    const other = "project-fedcba9876543210"
+    const { first, second } = await withStore(async (store) => {
+      await agentRun({ remember: true, store, evaluator: mining({ [build]: 0.9 }, []) })
+      await agentRun({
+        remember: true,
+        store,
+        bank: other,
+        session: "session-2",
+        evaluator: mining({ [build]: 0.9 }, [])
+      })
+      return { first: await held(store, bank), second: await held(store, other) }
+    })
+    expect(first.map(({ id, runId, text }) => ({ id, runId, text }))).toEqual([
+      { id: MemoryMine.noteId(bank, build), runId: "session-1", text: build }
+    ])
+    expect(second.map(({ id, runId, text }) => ({ id, runId, text }))).toEqual([
+      { id: MemoryMine.noteId(other, build), runId: "session-2", text: build }
+    ])
   })
 })

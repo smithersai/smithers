@@ -18,7 +18,9 @@ import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
 import { MemoryError } from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
+import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
 import * as MemorySource from "@smthrs/memory/Source"
+import * as TestMemory from "@smthrs/memory/test/TestMemory"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Registry from "@smthrs/registry/Registry"
 import { Context, Effect, Layer, Result, Schema } from "effect"
@@ -1104,6 +1106,48 @@ describe("the facts source", () => {
     await select({ task: "Anything", sources: ["wiki"] }, options, jev.layer)
     expect(recalls).toBe(1)
     expect(jev.requests).toEqual([])
+  })
+
+  it("recalls from the real store only the banks the host granted", async () => {
+    const root = plain({})
+    const granted = "Deploys go through the release train."
+    const foreign = "Ops deploys skip the release train on Fridays."
+    const jev = scripted(() => 0.1)
+    const { all, notes, ops } = await Effect.gen(function*() {
+      const services = yield* Layer.build(RecallKeyword.layer.pipe(Layer.provideMerge(TestMemory.layer)))
+      const store = Context.get(services, MemoryStore.MemoryStore)
+      for (const [bank, text] of [["notes", granted], ["ops", foreign]] as const) {
+        yield* store.putFact({
+          namespace: Recall.namespaceForBank(bank),
+          key: "deploy",
+          value: { content: text },
+          provenance: {}
+        })
+      }
+      const selectBanks = (banks: ReadonlyArray<string>) =>
+        Memory.select({ task: "How do deploys reach the release train?", sources: ["facts"] }, {
+          root,
+          facts: { banks, services }
+        })
+      return {
+        notes: yield* selectBanks(["notes"]),
+        ops: yield* selectBanks(["ops"]),
+        all: yield* selectBanks(["notes", "ops"])
+      }
+    }).pipe(Effect.scoped, Effect.provide(provided(jev.layer)), Effect.runPromise)
+    // Each bank's fact is in the store and recalled when that bank is granted.
+    expect(ids(ops.output.kept)).toEqual(["ops/deploy"])
+    expect(ids(all.output.kept).sort()).toEqual(["notes/deploy", "ops/deploy"])
+    // Granting one bank never reaches the other's fact: not packed, not kept, not shown to Jev.
+    expect(ids(notes.output.kept)).toEqual(["notes/deploy"])
+    expect(notes.output.omitted).toEqual([])
+    expect(notes.output.context).toContain(granted)
+    expect(notes.output.context).not.toContain(foreign)
+    expect(notes.kept.map((item) => item.text)).toEqual([granted])
+    const shown = jev.requests.slice(0, 1).flatMap((request) =>
+      (request.state as { readonly items: ReadonlyArray<Asked> }).items.map((item) => item.text)
+    )
+    expect(shown).toEqual([granted])
   })
 
   it("fails with facts_failed when recall fails", async () => {
