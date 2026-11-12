@@ -11,6 +11,6 @@ schedule
 signature "PropertyError:SchemaError"
 path 0.0.2.3.3.4.4.5.4.4.4.4
 codec "json"
-value "{\"seq\":0,\"query\":\"\",\"commits\":[{\"id\":\"\",\"epic\":\"\",\"rank\":\"NaN\",\"title\":\"\",\"state\":\"landed\",\"task\":\"\",\"lane\":\"\",\"notes\":0,\"folds\":0}]}"
+value "{\"seq\":0,\"query\":\"\",\"commits\":[{\"id\":\"blank-id\",\"epic\":\"\",\"rank\":\"NaN\",\"title\":\"Blank title\",\"state\":\"landed\",\"task\":\"\",\"lane\":\"\",\"notes\":0,\"folds\":0}]}"
 # PropertyError:SchemaError
-# {"seq":0,"query":"","commits":[{"id":"","epic":"","rank":"NaN","title":"","state":"landed","task":"","lane":"","notes":0,"folds":0}]}
+# {"seq":0,"query":"","commits":[{"id":"blank-id","epic":"","rank":"NaN","title":"Blank title","state":"landed","task":"","lane":"","notes":0,"folds":0}]}

@@ -11,6 +11,6 @@ schedule
 signature "PropertyError:SchemaError"
 path 0.0.0.0.0.0
 codec "json"
-value "{\"id\":\"\",\"epic\":\"\",\"rank\":0,\"title\":\"\",\"state\":\"working\",\"task\":\"\",\"lane\":\"\",\"notes\":0,\"folds\":\"Infinity\"}"
+value "{\"id\":\"blank-id\",\"epic\":\"\",\"rank\":0,\"title\":\"Blank title\",\"state\":\"working\",\"task\":\"\",\"lane\":\"\",\"notes\":0,\"folds\":\"Infinity\"}"
 # PropertyError:SchemaError
-# {"id":"","epic":"","rank":0,"title":"","state":"working","task":"","lane":"","notes":0,"folds":"Infinity"}
+# {"id":"blank-id","epic":"","rank":0,"title":"Blank title","state":"working","task":"","lane":"","notes":0,"folds":"Infinity"}

@@ -11,6 +11,6 @@ schedule
 signature "PropertyError:SchemaError"
 path 0.0
 codec "json"
-value "{\"id\":\"\",\"title\":\"\",\"commits\":\"-Infinity\",\"folds\":-9e-323}"
+value "{\"id\":\"blank-id\",\"title\":\"Blank title\",\"commits\":\"-Infinity\",\"folds\":-9e-323}"
 # PropertyError:SchemaError
-# {"id":"","title":"","commits":"-Infinity","folds":-9e-323}
+# {"id":"blank-id","title":"Blank title","commits":"-Infinity","folds":-9e-323}

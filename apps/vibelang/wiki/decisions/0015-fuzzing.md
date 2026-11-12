@@ -1322,3 +1322,12 @@ commit written, no tip). Mutants caught: the export's refusal dropped; a non-pro
 `worker/Http.vibe` 127 (the history `export` write's body) was never routed: `http-routes` drew every write but
 `export`. It is now a route like `fold`: an empty or unread body is the empty object and accepted, any other body
 must match `ExportBody`, and its answer maps as every write's does.
+
+The sixth full measurement (`efd13057`, `playwright` box) failed 7 targets in 3 files before its report:
+`history/codecs`, `history/view-models` and five `protocol/history-*-roundtrip` targets. `6e6b721d` (0016, session 23)
+made history ids, titles and SHAs a non-blank `Name`, and eight saved values from `bdf29302` held blank ones, so
+they no longer decoded (`the json codec cannot decode a saved value: Expected <filter>`). Each is a regression for
+another property (the head's, for one, is `folds: Infinity`); the blank names were incidental shrink results. Every
+blank `id`, `title` and `sha` in them (JavaScript `trim` semantics; 2 to 5 per value, 22 in all) is now a fixed
+non-blank name and nothing else changed. All 8 decode and replay as regressions: 3 files, 25 tests passed.
+A change that narrows a schema a fuzz target draws from should run `pnpm fuzz` over its saved values before it lands.

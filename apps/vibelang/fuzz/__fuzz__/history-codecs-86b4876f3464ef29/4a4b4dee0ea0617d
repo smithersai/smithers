@@ -11,6 +11,6 @@ schedule
 signature "PropertyError:SchemaError"
 path 0.0.1.3.4.67.4.4.4.4.1.0.0.0.0.0.0.0
 codec "json"
-value "{\"history\":{\"seq\":0,\"epics\":[],\"commits\":[{\"id\":\"\",\"epic\":\"\",\"rank\":\"-Infinity\",\"title\":\"\",\"state\":\"landed\",\"task\":\"\",\"lane\":\"\",\"notes\":[]}],\"real\":[],\"main\":\"\"},\"event\":{\"type\":\"Approved\",\"seq\":0,\"id\":\"\",\"by\":\"\"},\"seed\":{\"repository\":\"\",\"main\":\"\",\"epics\":[],\"real\":[]}}"
+value "{\"history\":{\"seq\":0,\"epics\":[],\"commits\":[{\"id\":\"blank-id\",\"epic\":\"\",\"rank\":\"-Infinity\",\"title\":\"Blank title\",\"state\":\"landed\",\"task\":\"\",\"lane\":\"\",\"notes\":[]}],\"real\":[],\"main\":\"\"},\"event\":{\"type\":\"Approved\",\"seq\":0,\"id\":\"blank-id\",\"by\":\"\"},\"seed\":{\"repository\":\"\",\"main\":\"\",\"epics\":[],\"real\":[]}}"
 # PropertyError:SchemaError
-# {"history":{"seq":0,"epics":[],"commits":[{"id":"","epic":"","rank":"-Infinity","title":"","state":"landed","task":"","lane":"","notes":[]}],"real":[],"main":""},"event":{"type":"Approved","seq":0,"id":"","by":""},"seed":{"repository":"","main":"","epics":[],"real":[]}}
+# {"history":{"seq":0,"epics":[],"commits":[{"id":"blank-id","epic":"","rank":"-Infinity","title":"Blank title","state":"landed","task":"","lane":"","notes":[]}],"real":[],"main":""},"event":{"type":"Approved","seq":0,"id":"blank-id","by":""},"seed":{"repository":"","main":"","epics":[],"real":[]}}
