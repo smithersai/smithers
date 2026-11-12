@@ -1,0 +1,33 @@
+// The API Worker's routing of the conversation API (wiki/decisions/0010-live-agent.md): the route a request's method
+// and path name. Only the Worker routes requests, so no browser code imports this file; the paths are in `wire.vibe`.
+import { routeKind, validConversationLength } from "./protocolDecision.vibe"
+import { CONVERSATIONS, MAX_CONVERSATION } from "./wire.vibe"
+
+/** A route of the conversation API: the conversation and what is asked of it. */
+export type Route =
+  | { readonly kind: "read"; readonly conversation: string }
+  | { readonly kind: "post"; readonly conversation: string }
+  | { readonly kind: "events"; readonly conversation: string }
+  | { readonly kind: "tour-control"; readonly conversation: string }
+  | { readonly kind: "wiki"; readonly conversation: string }
+  | { readonly kind: "tour"; readonly conversation: string }
+  | { readonly kind: "end-tour"; readonly conversation: string }
+
+/** The route a path names, or `undefined`. A conversation id is 1 to `MAX_CONVERSATION` characters. */
+export function routeOf(method: string, pathname: string): Route | undefined {
+  if (!pathname.startsWith(CONVERSATIONS)) return undefined
+  const parts = pathname.slice(CONVERSATIONS.length).split("/")
+  if (parts.length > 2) return undefined
+  const decoded = decodeSegment(parts[0]!)
+  if (decoded === undefined || !validConversationLength(decoded.length, MAX_CONVERSATION)) return undefined
+  const kind = routeKind(method, parts[1])
+  return kind === "" ? undefined : { kind, conversation: decoded }
+}
+
+function decodeSegment(segment: string): string | undefined {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return undefined
+  }
+}

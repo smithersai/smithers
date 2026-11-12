@@ -1,6 +1,6 @@
 // Third-lane batch 6 (0018): the issues host's decisions, proved in issueHostDecision as Issues and Wiki use them.
 import { describe, expect, it } from "@effect/vitest"
-import { agentRefused, choiceLabel, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
+import { choiceLabel, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
 import { issueFailureOf } from "../worker/Issues.vibe"
 
 describe("the issues host", () => {
@@ -22,9 +22,6 @@ describe("the issues host", () => {
   })
   it("marks unwritten only a first execution refused before any write", () => {
     expect([unwritten(true, false, "title"), unwritten(true, true, "title"), unwritten(false, false, "title"), unwritten(true, false, "invalid")]).toEqual([true, false, false, false])
-  })
-  it("refuses an agent's accept and decline only", () => {
-    expect([agentRefused("accept", "agent"), agentRefused("decline", "agent"), agentRefused("comment", "agent"), agentRefused("accept", "person")]).toEqual([true, true, false, false])
   })
   it("reads an issue as a task and a VIP", () => {
     expect([issueTask(true, true, true, true), issueTask(true, true, false, true), issueTask(true, true, false, false), issueTask(true, false, false, false), issueTask(false, true, true, true)]).toEqual(["Done", "Running", "Queued", "", ""])

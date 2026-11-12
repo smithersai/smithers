@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { issueModelInvocable, keyedOperation, operationTier, readDeadline, wikiModelInvocable } from "../src/core/flowPolicyDecision.vibe"
+import { agentRefused, issueModelInvocable, keyedOperation, operationTier, readDeadline, wikiModelInvocable } from "../src/core/flowPolicyDecision.vibe"
 
 const issueOps = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"]
 const wikiOps = ["read", "save", "propose", "draft"]
@@ -13,6 +13,9 @@ describe("issue and wiki flow policies", () => {
   })
   it("never offers the agent a VIP decision", () => {
     expect(issueOps.filter((op) => !issueModelInvocable(op))).toEqual(["accept", "decline"])
+  })
+  it("refuses an agent's accept and decline only", () => {
+    expect([agentRefused("accept", "agent"), agentRefused("decline", "agent"), agentRefused("comment", "agent"), agentRefused("accept", "person")]).toEqual([true, true, false, false])
   })
   it("offers the agent only wiki reads and drafts", () => {
     expect(wikiOps.filter(wikiModelInvocable)).toEqual(["read", "draft"])

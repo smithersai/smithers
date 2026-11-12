@@ -1,6 +1,7 @@
 import { validSessionCookie } from "../core/accountCookies.vibe"
 import { Factory } from "../core/Factory.vibe"
-import { liveHealth, prefersMock, sameOriginRequest, sessionCookie } from "../core/protocolDecision.vibe"
+import { liveHealth } from "../core/clientProtocolDecision.vibe"
+import { prefersMock, sameOriginRequest, sessionCookie } from "../core/protocolDecision.vibe"
 
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"

@@ -1,4 +1,5 @@
-// Pure decisions shared by the wire, HTTP handlers and command schemas. Parsing and encoding stay at the edge.
+// Pure decisions of the API Worker, its routes and the command hosts. Parsing and encoding stay at the edge. The
+// browser's own protocol decisions are in `clientProtocolDecision.vibe`, so no browser code imports this file.
 
 /** The wire's conversation length contract. */
 //@ verify
@@ -12,13 +13,6 @@ export function validConversationLength(length: number, maximum: number): boolea
 //@ ensures \result == (value.length >= 1)
 export function commandConversation(value: string): boolean {
   return value.length >= 1
-}
-
-/** Cursor validation after the shared integer schema has rejected fractional/unsafe values. */
-//@ verify
-//@ ensures \result == (value >= 0)
-export function nonnegativeCursor(value: number): boolean {
-  return value >= 0
 }
 
 /** Routing after URI decoding: a method and remaining segment identify exactly one operation. */
@@ -49,23 +43,6 @@ export function validBodyLength(length: number, maximum: number): boolean {
   return length > 0 && length <= maximum
 }
 
-/** A refusal has its own wire schema; all other non-2xx replies are unavailable. */
-//@ verify
-//@ ensures status == 409 ==> \result == "refused"
-//@ ensures status >= 200 && status <= 299 ==> \result == "accepted"
-//@ ensures status != 409 && (status < 200 || status > 299) ==> \result == "unavailable"
-export function responseKind(status: number): "refused" | "accepted" | "unavailable" {
-  if (status === 409) return "refused"
-  return status >= 200 && status <= 299 ? "accepted" : "unavailable"
-}
-
-/** A backend selects live only from a live health response; absent/failed health remains mock. */
-//@ verify
-//@ ensures \result == (agent == "live")
-export function liveHealth(agent: string): boolean {
-  return agent === "live"
-}
-
 /** Explicit mock choice wins over live lookup in every command host. */
 //@ verify
 //@ ensures \result == (flag || environment == "mock")
@@ -85,13 +62,6 @@ export function accountRoute(path: string): boolean {
 //@ ensures \result == (length >= 0 && length <= maximum)
 export function validWriteLength(length: number, maximum: number): boolean {
   return length >= 0 && length <= maximum
-}
-
-/** A tour control's step: 0 (pause and resume carry no step) to the tour's last, `last`. */
-//@ verify
-//@ ensures \result == (step >= 0 && step <= last)
-export function validTourStep(step: number, last: number): boolean {
-  return step >= 0 && step <= last
 }
 
 /** A write's HTTP status: 409 for a refusal, else 200. */

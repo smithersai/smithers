@@ -19,7 +19,7 @@ import {
 import { decide, type Intent, type Refusal } from "../src/core/decide.vibe"
 import { recordedConversation, replayLog } from "../src/core/replayDecision.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
-import { appends, startAnswer } from "../src/core/flowDecision.vibe"
+import { appends, startAnswer } from "../src/core/replyDecision.vibe"
 import { EventSchema, type ReadSnapshot } from "../src/core/schemas.vibe"
 import { followCut, fresh } from "../src/core/followDecision.vibe"
 import { attemptOf, entryIndex, finishPlan, restartCount, settleStep, spoken, tourSettles } from "../src/core/sequencerDecision.vibe"

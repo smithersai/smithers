@@ -1,6 +1,6 @@
 import { callBudget, INPUT_CEILING } from "./CallBudget.vibe"
 import { WikiDrafting } from "../src/core/WikiWriter.vibe"
-import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, recordReplySettlement } from "../src/core/flowDecision.vibe"
+import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, recordReplySettlement } from "../src/core/replyDecision.vibe"
 import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
 import { promptForm, promptWindow, speaker } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,

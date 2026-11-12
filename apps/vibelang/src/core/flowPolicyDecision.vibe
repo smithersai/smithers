@@ -24,6 +24,13 @@ export function issueModelInvocable(op: string): boolean {
   return op !== "accept" && op !== "decline"
 }
 
+/** A device sign-in never accepts or declines a VIP (decision 0028), on both issue hosts. */
+//@ verify
+//@ ensures \result == ((op == "accept" || op == "decline") && kind == "agent")
+export function agentRefused(op: string, kind: string): boolean {
+  return (op === "accept" || op === "decline") && kind === "agent"
+}
+
 /** The agent may only read the wiki and draft: it never saves or proposes a page itself. */
 //@ verify
 //@ ensures \result == (op == "read" || op == "draft")

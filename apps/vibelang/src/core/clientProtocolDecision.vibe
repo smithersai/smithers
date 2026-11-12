@@ -1,0 +1,34 @@
+// Pure protocol decisions a browser client makes, shared with the API Worker where both sides check the same value:
+// the cursor a read resumes from, a tour control's step, whether health chose live, and how a reply's status reads.
+// The Worker's and command hosts' own decisions are in `protocolDecision.vibe`. Parsing and encoding stay at the edge.
+
+/** Cursor validation after the shared integer schema has rejected fractional/unsafe values. */
+//@ verify
+//@ ensures \result == (value >= 0)
+export function nonnegativeCursor(value: number): boolean {
+  return value >= 0
+}
+
+/** A refusal has its own wire schema; all other non-2xx replies are unavailable. */
+//@ verify
+//@ ensures status == 409 ==> \result == "refused"
+//@ ensures status >= 200 && status <= 299 ==> \result == "accepted"
+//@ ensures status != 409 && (status < 200 || status > 299) ==> \result == "unavailable"
+export function responseKind(status: number): "refused" | "accepted" | "unavailable" {
+  if (status === 409) return "refused"
+  return status >= 200 && status <= 299 ? "accepted" : "unavailable"
+}
+
+/** A backend selects live only from a live health response; absent/failed health remains mock. */
+//@ verify
+//@ ensures \result == (agent == "live")
+export function liveHealth(agent: string): boolean {
+  return agent === "live"
+}
+
+/** A tour control's step: 0 (pause and resume carry no step) to the tour's last, `last`. */
+//@ verify
+//@ ensures \result == (step >= 0 && step <= last)
+export function validTourStep(step: number, last: number): boolean {
+  return step >= 0 && step <= last
+}

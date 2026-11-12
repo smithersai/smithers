@@ -1,4 +1,4 @@
-import { nonnegativeCursor } from "./protocolDecision.vibe"
+import { nonnegativeCursor } from "./clientProtocolDecision.vibe"
 
 // Schemas for the conversation machine's state (`conversation.vibe`), so a Foldkit Model, the wire and the tests can
 // decode and encode it. Each one matches the TypeScript type of the same name in `conversation.vibe`.

@@ -1,5 +1,6 @@
 import { sandboxRequest, signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
-import { validBodyLength, validTourStep, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
+import { validTourStep } from "../src/core/clientProtocolDecision.vibe"
+import { validBodyLength, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
 
 import * as ActionsHttp from "./ActionsHttp.vibe"
 // The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads,
@@ -9,7 +10,8 @@ import * as Sse from "effect/encoding/Sse"
 import { HttpIncomingMessage, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
-import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, WikiBody, TourControlBody, routeOf, type Route } from "../src/core/wire.vibe"
+import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, WikiBody, TourControlBody } from "../src/core/wire.vibe"
+import { routeOf, type Route } from "../src/core/routes.vibe"
 import { HistoryEvent as HistoryEventSchema } from "../src/history/schemas.vibe"
 import type { Event as HistoryEvent } from "../src/history/mythical.vibe"
 import type { PageRequest } from "../src/history/pages.vibe"

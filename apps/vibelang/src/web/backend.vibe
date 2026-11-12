@@ -1,5 +1,5 @@
 import { MockJournal } from "../core/MockJournal.vibe"
-import { liveHealth } from "../core/protocolDecision.vibe"
+import { liveHealth } from "../core/clientProtocolDecision.vibe"
 
 // The browser's Factory is available immediately. Only backend operations wait for the one scoped selection.
 import { HttpClient } from "effect/http"

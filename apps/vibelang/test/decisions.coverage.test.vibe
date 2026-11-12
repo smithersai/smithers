@@ -1,6 +1,7 @@
 // Every pure decision's unreached choices, at the exported function the shells call.
 import { describe, expect, it } from "@effect/vitest"
 import * as Flow from "../src/core/flowDecision.vibe"
+import * as Reply from "../src/core/replyDecision.vibe"
 import * as Theatre from "../src/web/theatreDecision.vibe"
 import * as Screen from "../src/web/screenDecision.vibe"
 import * as View from "../src/web/viewDecision.vibe"
@@ -21,19 +22,19 @@ describe("post dispatch", () => {
 })
 
 describe("reply run", () => {
-  const started = Flow.recordReplyStart(Flow.beginReply(), "done")
-  const composing = Flow.beginReplyComposition(started)
-  const ready = Flow.finishReplyComposition(composing)
-  const settled = Flow.recordReplySettlement(ready)
-  const refused = Flow.recordReplyStart(Flow.beginReply(), "busy")
+  const started = Reply.recordReplyStart(Reply.beginReply(), "done")
+  const composing = Reply.beginReplyComposition(started)
+  const ready = Reply.finishReplyComposition(composing)
+  const settled = Reply.recordReplySettlement(ready)
+  const refused = Reply.recordReplyStart(Reply.beginReply(), "busy")
 
   it("moves through its one path and ignores every out-of-order step", () => {
-    for (const run of [Flow.beginReply(), started, composing, ready, settled, refused]) expect(Flow.replyLawful(run)).toBe(true)
+    for (const run of [Reply.beginReply(), started, composing, ready, settled, refused]) expect(Reply.replyLawful(run)).toBe(true)
     expect(settled).toMatchObject({ phase: "settled", starts: 1, compositions: 1, settlements: 1 })
-    expect(Flow.recordReplyStart(started, "busy")).toBe(started)
-    expect(Flow.beginReplyComposition(refused)).toBe(refused)
-    expect(Flow.finishReplyComposition(started)).toBe(started)
-    expect(Flow.recordReplySettlement(composing)).toBe(composing)
+    expect(Reply.recordReplyStart(started, "busy")).toBe(started)
+    expect(Reply.beginReplyComposition(refused)).toBe(refused)
+    expect(Reply.finishReplyComposition(started)).toBe(started)
+    expect(Reply.recordReplySettlement(composing)).toBe(composing)
   })
 
   const zero = { starts: 0, compositions: 0, settlements: 0, answer: "" }
@@ -44,8 +45,8 @@ describe("reply run", () => {
     ...[{ starts: 0 }, { compositions: 1 }, { settlements: 1 }, { answer: "busy" }].map((bad) => ({ phase: "started", ...one, ...bad })),
     ...["composing", "ready"].flatMap((phase) => [{ starts: 0 }, { compositions: 0 }, { settlements: 1 }, { answer: "busy" }].map((bad) => ({ phase, ...one, compositions: 1, ...bad }))),
     ...[{ starts: 0 }, { compositions: 0 }, { settlements: 0 }, { answer: "busy" }].map((bad) => ({ phase: "settled", starts: 1, compositions: 1, settlements: 1, answer: "done", ...bad })),
-  ] as ReadonlyArray<Flow.ReplyRun>)("rejects inconsistent counters %j", (run) => {
-    expect(Flow.replyLawful(run)).toBe(false)
+  ] as ReadonlyArray<Reply.ReplyRun>)("rejects inconsistent counters %j", (run) => {
+    expect(Reply.replyLawful(run)).toBe(false)
   })
 })
 

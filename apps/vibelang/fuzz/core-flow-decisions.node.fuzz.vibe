@@ -1,13 +1,15 @@
-// The reply and tour state machines (src/core/flowDecision.vibe) on arbitrary runs, lawful or not, held to their
+// The reply and tour state machines (src/core/replyDecision.vibe, src/core/flowDecision.vibe) on arbitrary runs, lawful or not, held to their
 // verified contracts (the `//@ ensures` clauses beside each function): the emitted JavaScript must be the proved model.
 // Product flows call these only in lawful order, so only arbitrary runs reach the guards that leave a run unchanged.
 import { it } from "@effect/vitest"
 import {
-  appends, beginReply, beginReplyComposition, beginTourBody, canComposeReply, canSettleReply, canSpeakTour, endsTourEvent,
-  finishReplyComposition, finishTourSpeech, firstTourVisit, firstUndispatched, nextTourCounter, nextTourStep, observeTourActivity,
-  readingHold, recordReplySettlement, recordReplyStart, replyLawful, startAnswer, startTourSpeech, tourControlChoice, tourLawful,
-  tourWait, type ReplyRun, type TourRun,
+  beginTourBody, canSpeakTour, endsTourEvent, finishTourSpeech, firstTourVisit, firstUndispatched, nextTourCounter, nextTourStep,
+  observeTourActivity, readingHold, startTourSpeech, tourControlChoice, tourLawful, tourWait, type TourRun,
 } from "../src/core/flowDecision.vibe"
+import {
+  appends, beginReply, beginReplyComposition, canComposeReply, canSettleReply, finishReplyComposition, recordReplySettlement,
+  recordReplyStart, replyLawful, startAnswer, type ReplyRun,
+} from "../src/core/replyDecision.vibe"
 import { run, Int } from "./run.vibe"
 
 const Count = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 }))

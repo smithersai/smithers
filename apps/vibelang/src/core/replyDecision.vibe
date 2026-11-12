@@ -1,0 +1,105 @@
+// Decisions of the API Worker's durable Reply steps and its sequencer (worker/Reply.vibe, worker/Sequencer.vibe): which
+// piece advances a reply, when a durable start is done, and the Reply start/compose/settle model. Execution and storage
+// stay in their Effect shells. Only the Worker runs a reply, so no browser code imports this file.
+
+/** Only the current attempt's next nonempty piece advances the reply. */
+//@ verify
+//@ ensures \result == (attempt == currentAttempt && offset == length && text != "")
+export function appends(currentAttempt: number, attempt: number, length: number, offset: number, text: string): boolean {
+  return attempt === currentAttempt && offset === length && text !== ""
+}
+
+/** A durable start is done when newly accepted or already correlated to this post; busy remains retryable. */
+//@ verify
+//@ ensures (accepted || already) ==> \result == "done"
+//@ ensures !accepted && !already && refusal == "busy" ==> \result == "busy"
+//@ ensures !accepted && !already && refusal != "busy" ==> \result == "refused"
+export function startAnswer(accepted: boolean, already: boolean, refusal: string): "done" | "busy" | "refused" {
+  return accepted || already ? "done" : refusal === "busy" ? "busy" : "refused"
+}
+
+/** Reply body order per invocation. A receipt count of zero represents no observed answer; the raw string is retained once observed. Engine replay/idempotency remains the host contract. */
+export type ReplyPhase = "begun" | "started" | "refused" | "composing" | "ready" | "settled"
+export interface ReplyRun {
+  readonly phase: ReplyPhase
+  readonly starts: number
+  readonly compositions: number
+  readonly settlements: number
+  readonly answer: string
+}
+
+//@ verify
+//@ ensures replyLawful(\result)
+//@ ensures \result.phase == "begun" && \result.starts == 0 && \result.compositions == 0 && \result.settlements == 0 && \result.answer == ""
+export function beginReply(): ReplyRun {
+  const phase: ReplyPhase = "begun"
+  return { phase, starts: 0, compositions: 0, settlements: 0, answer: "" }
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures run.phase == "begun" ==> \result.starts == 1 && \result.compositions == 0 && \result.settlements == 0 && \result.answer == answer
+//@ ensures run.phase == "begun" && answer == "done" ==> \result.phase == "started"
+//@ ensures run.phase == "begun" && answer != "done" ==> \result.phase == "refused"
+export function recordReplyStart(run: ReplyRun, answer: string): ReplyRun {
+  if (run.phase !== "begun") return run
+  const phase: ReplyPhase = answer === "done" ? "started" : "refused"
+  return { phase, starts: 1, compositions: 0, settlements: 0, answer }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "started" && run.starts == 1 && run.compositions == 0 && run.settlements == 0 && run.answer == "done")
+export function canComposeReply(run: ReplyRun): boolean {
+  return run.phase === "started" && run.starts === 1 && run.compositions === 0 && run.settlements === 0 && run.answer === "done"
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures !canComposeReply(run) ==> \result == run
+//@ ensures canComposeReply(run) ==> \result.phase == "composing" && \result.compositions == 1
+//@ ensures \result.starts == run.starts && \result.settlements == run.settlements && \result.answer == run.answer
+export function beginReplyComposition(run: ReplyRun): ReplyRun {
+  if (!canComposeReply(run)) return run
+  const phase: ReplyPhase = "composing"
+  return { ...run, phase, compositions: 1 }
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures run.phase != "composing" ==> \result == run
+//@ ensures run.phase == "composing" ==> \result.phase == "ready"
+//@ ensures \result.starts == run.starts && \result.compositions == run.compositions && \result.settlements == run.settlements && \result.answer == run.answer
+export function finishReplyComposition(run: ReplyRun): ReplyRun {
+  if (run.phase !== "composing") return run
+  const phase: ReplyPhase = "ready"
+  return { ...run, phase }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "ready" && run.starts == 1 && run.compositions == 1 && run.settlements == 0 && run.answer == "done")
+export function canSettleReply(run: ReplyRun): boolean {
+  return run.phase === "ready" && run.starts === 1 && run.compositions === 1 && run.settlements === 0 && run.answer === "done"
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures !canSettleReply(run) ==> \result == run
+//@ ensures canSettleReply(run) ==> \result.phase == "settled" && \result.settlements == 1
+//@ ensures \result.starts == run.starts && \result.compositions == run.compositions && \result.answer == run.answer
+export function recordReplySettlement(run: ReplyRun): ReplyRun {
+  if (!canSettleReply(run)) return run
+  const phase: ReplyPhase = "settled"
+  return { ...run, phase, settlements: 1 }
+}
+
+//@ verify
+//@ ensures \result ==> 0 <= run.settlements && run.settlements <= run.compositions && run.compositions <= run.starts && run.starts <= 1
+//@ ensures \result == ((run.phase == "begun" && run.starts == 0 && run.compositions == 0 && run.settlements == 0 && run.answer == "") || (run.phase == "refused" && run.starts == 1 && run.compositions == 0 && run.settlements == 0 && run.answer != "done") || (run.phase == "started" && run.starts == 1 && run.compositions == 0 && run.settlements == 0 && run.answer == "done") || ((run.phase == "composing" || run.phase == "ready") && run.starts == 1 && run.compositions == 1 && run.settlements == 0 && run.answer == "done") || (run.phase == "settled" && run.starts == 1 && run.compositions == 1 && run.settlements == 1 && run.answer == "done"))
+export function replyLawful(run: ReplyRun): boolean {
+  if (run.phase === "begun") return run.starts === 0 && run.compositions === 0 && run.settlements === 0 && run.answer === ""
+  if (run.phase === "refused") return run.starts === 1 && run.compositions === 0 && run.settlements === 0 && run.answer !== "done"
+  if (run.phase === "started") return run.starts === 1 && run.compositions === 0 && run.settlements === 0 && run.answer === "done"
+  if (run.phase === "composing" || run.phase === "ready") return run.starts === 1 && run.compositions === 1 && run.settlements === 0 && run.answer === "done"
+  return run.starts === 1 && run.compositions === 1 && run.settlements === 1 && run.answer === "done"
+}

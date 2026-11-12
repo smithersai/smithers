@@ -4,7 +4,8 @@ import { it, expect } from "@effect/vitest"
 import { apply, empty } from "../src/core/conversation.vibe"
 import { decide } from "../src/core/decide.vibe"
 import { reserve, settle } from "../worker/budgetDecision.vibe"
-import { appends, endsTourEvent, startAnswer, readingHold } from "../src/core/flowDecision.vibe"
+import { endsTourEvent, readingHold } from "../src/core/flowDecision.vibe"
+import { appends, startAnswer } from "../src/core/replyDecision.vibe"
 import { failureCode, reasonCode } from "../worker/replyReasons.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
@@ -45,6 +46,7 @@ it("durable-flow and budget decisions", async ({ bench }) => {
 it("screen, protocol and scripted-agent decisions", async ({ bench }) => {
   const S = await import("../src/web/screenDecision.vibe")
   const P = await import("../src/core/protocolDecision.vibe")
+  const Client = await import("../src/core/clientProtocolDecision.vibe")
   const M = await import("../src/core/mockDecision.vibe")
   const result = await workload(bench, "screen-protocol-mock-policies", "sync", () => {
     expect(S.escapeAction(true, false, false, "splash", "pane")).toBe("tour")
@@ -105,12 +107,12 @@ it("screen, protocol and scripted-agent decisions", async ({ bench }) => {
     }
     expect(P.commandConversation("")).toBe(false)
     expect(P.commandConversation("λ")).toBe(true)
-    expect(P.nonnegativeCursor(0)).toBe(true)
-    expect(P.nonnegativeCursor(-1)).toBe(false)
-    for (const [status, kind] of [[199, "unavailable"], [200, "accepted"], [299, "accepted"], [300, "unavailable"], [409, "refused"], [500, "unavailable"]] as const) expect(P.responseKind(status)).toBe(kind)
+    expect(Client.nonnegativeCursor(0)).toBe(true)
+    expect(Client.nonnegativeCursor(-1)).toBe(false)
+    for (const [status, kind] of [[199, "unavailable"], [200, "accepted"], [299, "accepted"], [300, "unavailable"], [409, "refused"], [500, "unavailable"]] as const) expect(Client.responseKind(status)).toBe(kind)
     for (const [method, rest, kind] of [["GET", undefined, "read"], ["POST", "posts", "post"], ["GET", "events", "events"], ["POST", "tour", "tour"], ["DELETE", "tour", "end-tour"], ["GET", "other", ""]] as const) expect(P.routeKind(method, rest)).toBe(kind)
-    expect(P.liveHealth("live")).toBe(true)
-    expect(P.liveHealth("mock")).toBe(false)
+    expect(Client.liveHealth("live")).toBe(true)
+    expect(Client.liveHealth("mock")).toBe(false)
     expect(P.prefersMock(true, undefined)).toBe(true)
     expect(P.prefersMock(false, "mock")).toBe(true)
     expect(P.prefersMock(false, undefined)).toBe(false)

@@ -3,6 +3,7 @@ import { Fuzz } from "@smthrs/fuzz"
 import { EventSchema, Client, Conversation, ReadSnapshot } from "../src/core/schemas.vibe"
 import { Head, EpicCount, Outline, EpicPage, CommitPage, Matches } from "../src/history/schemas.vibe"
 import * as Wire from "../src/core/wire.vibe"
+import { routeOf } from "../src/core/routes.vibe"
 import { run, same, TextOrBoundary, Int } from "./run.vibe"
 
 // Preserve the original broad number domain for saved inputs; valid pages round-trip,
@@ -48,7 +49,7 @@ it.live("protocol/conversation-path", () => run("protocol/conversation-path", Te
   })
   if (id.length === 0 || id.length > Wire.MAX_CONVERSATION || malformed) return path === undefined
   if (path === undefined) return false
-  const route = Wire.routeOf("GET", path)
+  const route = routeOf("GET", path)
   return route?.kind === "read" && route.conversation === id
 }))
 
@@ -57,7 +58,7 @@ it.live("protocol/routes", () => run("protocol/routes", Schema.Struct({ text: Te
   const suffixes = ["", "/posts", "/events", "/tour", "/extra/more", "/"]
   const pathname = (kind % 3 === 0 ? "/not-api/" : "/api/conversations/") + text + suffixes[kind % suffixes.length]!
   const method = methods[kind % methods.length]!
-  const route = Wire.routeOf(method, pathname)
+  const route = routeOf(method, pathname)
   try Fuzz.observe(route?.kind ?? "refused")
   if (route === undefined) return true
   if (route.conversation.length === 0 || route.conversation.length > Wire.MAX_CONVERSATION) return false

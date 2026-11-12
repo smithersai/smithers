@@ -7,7 +7,6 @@
 //   GET  /api/conversations/<id>/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <EventSchema JSON>`
 //   POST   /api/conversations/<id>/tour                starts the agent's tour → 200 {} | 409 Refusal
 //   DELETE /api/conversations/<id>/tour                ends it → 200 {} | 409 Refusal
-import { routeKind, validConversationLength } from "./protocolDecision.vibe"
 import { MAX_TEXT } from "./decide.vibe"
 import { Seq } from "./schemas.vibe"
 
@@ -48,35 +47,6 @@ export function conversationPath(conversation: string): string | undefined {
   if (conversation.length === 0 || conversation.length > MAX_CONVERSATION) return undefined
   try {
     return CONVERSATIONS + encodeURIComponent(conversation)
-  } catch {
-    return undefined
-  }
-}
-
-/** A route of the conversation API: the conversation and what is asked of it. */
-export type Route =
-  | { readonly kind: "read"; readonly conversation: string }
-  | { readonly kind: "post"; readonly conversation: string }
-  | { readonly kind: "events"; readonly conversation: string }
-  | { readonly kind: "tour-control"; readonly conversation: string }
-  | { readonly kind: "wiki"; readonly conversation: string }
-  | { readonly kind: "tour"; readonly conversation: string }
-  | { readonly kind: "end-tour"; readonly conversation: string }
-
-/** The route a path names, or `undefined`. A conversation id is 1 to `MAX_CONVERSATION` characters. */
-export function routeOf(method: string, pathname: string): Route | undefined {
-  if (!pathname.startsWith(CONVERSATIONS)) return undefined
-  const parts = pathname.slice(CONVERSATIONS.length).split("/")
-  if (parts.length > 2) return undefined
-  const decoded = decodeSegment(parts[0]!)
-  if (decoded === undefined || !validConversationLength(decoded.length, MAX_CONVERSATION)) return undefined
-  const kind = routeKind(method, parts[1])
-  return kind === "" ? undefined : { kind, conversation: decoded }
-}
-
-function decodeSegment(segment: string): string | undefined {
-  try {
-    return decodeURIComponent(segment)
   } catch {
     return undefined
   }

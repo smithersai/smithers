@@ -5,7 +5,7 @@ import { handle, afterOf, eventStream, type Conversations, type Histories } from
 import { Unreachable } from "../worker/Unreachable.vibe"
 import * as Sequencer from "../worker/Sequencer.vibe"
 import { type Event } from "../src/core/conversation.vibe"
-import { routeOf } from "../src/core/wire.vibe"
+import { routeOf } from "../src/core/routes.vibe"
 import { MAX_WRITE_BYTES } from "../src/history/wire.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 

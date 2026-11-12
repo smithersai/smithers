@@ -1,4 +1,4 @@
-import { agentRefused } from "./issueHostDecision.vibe"
+import { agentRefused } from "./flowPolicyDecision.vibe"
 import { fixtureDraft, fixtureErrorReason, fixtureErrorUnwritten, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "./issueFixtureDecision.vibe"
 // Product mock mode (VL-13). The real issue flows and state machine over local fixtures; no backend or model.
 import { fixtureSpecification, fixtureSpecificationHistory, performSpecification } from "./specification.vibe"

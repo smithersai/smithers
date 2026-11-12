@@ -22,7 +22,7 @@ import { recordedConversation, replayLog } from "./replayDecision.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import { TourControlBody } from "./wire.vibe"
 import { actorKey, afterCursor, draftOutcome, liveEvent, replyKind, replayedTo, restoredCounter } from "./mockFactoryDecision.vibe"
-import { validTourStep } from "./protocolDecision.vibe"
+import { validTourStep } from "./clientProtocolDecision.vibe"
 import {
   PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
   Tours, unanswered, walkRegistration,

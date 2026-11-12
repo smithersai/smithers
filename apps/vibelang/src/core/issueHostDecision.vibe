@@ -2,7 +2,7 @@
 // keys are admitted, how a GitHub failure is classified and answered over HTTP, which refusals were decided before any
 // write, how a GitHub issue reads as a task and a VIP, what an observed timeline event says, how an outside approval is
 // projected without a local receipt, and how the stored revision advances. `worker/Issues.vibe` and `worker/Wiki.vibe`
-// call these; GitHub calls, schema decoding, dates and sorting stay outside the proof.
+// call these, and no browser code does; GitHub calls, schema decoding, dates and sorting stay outside the proof.
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
@@ -98,13 +98,6 @@ export function checkedBeforeWrite(reason: string): boolean {
 //@ ensures touched ==> !\result
 export function unwritten(fresh: boolean, touched: boolean, reason: string): boolean {
   return fresh && !touched && checkedBeforeWrite(reason)
-}
-
-/** A device sign-in never accepts or declines a VIP (decision 0028). */
-//@ verify
-//@ ensures \result == ((op == "accept" || op == "decline") && kind == "agent")
-export function agentRefused(op: string, kind: string): boolean {
-  return (op === "accept" || op === "decline") && kind === "agent"
 }
 
 /** What a GitHub issue reads as on the task board. */

@@ -1,4 +1,4 @@
-import { responseKind } from "./protocolDecision.vibe"
+import { responseKind } from "./clientProtocolDecision.vibe"
 import * as LiveAccounts from "./LiveAccounts.vibe"
 
 import { liveIssues } from "./LiveIssues.vibe"
