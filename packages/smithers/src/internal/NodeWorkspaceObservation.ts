@@ -24,7 +24,7 @@ import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import { Effect, Option, type Scope } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import { randomUUID } from "node:crypto"
-import { type Dirent, type FSWatcher, rmSync, watch } from "node:fs"
+import { type Dirent, type FSWatcher, lstatSync, readdirSync, rmSync, watch } from "node:fs"
 import { lstat, readdir, rm, writeFile } from "node:fs/promises"
 import { sep } from "node:path"
 
@@ -108,9 +108,127 @@ const unvouched: WorkspaceObservation.Changes = {
   settled: Effect.succeed(Option.none())
 }
 
+/** Takes one event's path relative to the root, or `undefined` when the host named no path. */
+type Deliver = (relative: string | undefined) => void
+
 /**
- * A change feed over one workspace root: a recursive `fs.watch` whose events
- * move the count, except those under a directory or name the walk skips.
+ * Whether this host's recursive `fs.watch` is its own: one FSEvents stream on
+ * macOS, one `ReadDirectoryChangesW` handle on Windows. On Linux Node builds a
+ * recursive watch out of one inotify watch per file and directory under the
+ * root, pruned or not, and adds one for every file written there later. On
+ * this repository's checkout that was 132,425 watches, nearly all under
+ * node_modules. A release job's flow process held one for two hours while its
+ * builds wrote under the root, and the runner's 655,360 ran out for every
+ * other process on it.
+ */
+const recursiveWatchIsNative = process.platform === "darwin" || process.platform === "win32"
+
+/** One recursive watch over the root, where the host provides one. */
+const watchRecursively = (base: string, deliver: Deliver, fail: () => void): () => void => {
+  const watcher = watch(base, { recursive: true, persistent: false }, (_event, filename) => {
+    deliver(filename === null ? undefined : String(filename).split(sep).join("/"))
+  }).on("error", fail)
+  return () => watcher.close()
+}
+
+/**
+ * One non-recursive watch per directory the walk measures, and one on `home`
+ * for its fences.
+ *
+ * A watch on a directory reports every entry created, written, renamed or
+ * removed in it, so one per directory sees every change a watch per file
+ * would. A directory that appears is watched, with everything under it,
+ * before its own event is counted, so a write that landed in it before its
+ * watch did still moves the count. A directory its parent names in a
+ * "rename" was created, removed or moved, so its watches are dropped and, if a
+ * directory is there now, opened again: a watch on a removed directory sees
+ * nothing more, even when a new directory takes its name and, as ext4 does, its
+ * inode. libuv holds every watch on the event loop's one inotify descriptor, so
+ * one root's events still arrive in order and a fence still vouches for every
+ * change made before it.
+ */
+const watchDirectories = (
+  base: string,
+  home: string,
+  skipped: (relative: string) => boolean,
+  deliver: Deliver,
+  fail: () => void
+): () => void => {
+  // By path relative to the root, which is "".
+  const watchers = new Map<string, FSWatcher>()
+  const absolute = (relative: string): string => relative === "" ? base : `${base}/${relative}`
+  const closeAll = (): void => {
+    for (const watcher of watchers.values()) watcher.close()
+    watchers.clear()
+  }
+  // A feed that cannot see part of the tree stops vouching and holds nothing.
+  const broke = (): void => {
+    closeAll()
+    fail()
+  }
+  const drop = (relative: string): void => {
+    for (const [key, watcher] of watchers) {
+      if (key !== relative && !key.startsWith(`${relative}/`)) continue
+      watcher.close()
+      watchers.delete(key)
+    }
+  }
+  const gone = (error: unknown): boolean => {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code
+    return code === "ENOENT" || code === "ENOTDIR"
+  }
+  const add = (relative: string): void => {
+    const path = absolute(relative)
+    let entries: ReadonlyArray<Dirent> = []
+    try {
+      const watcher = watch(path, { persistent: false }, (event, filename) => {
+        if (filename === null) return deliver(undefined)
+        const child = relative === "" ? String(filename) : `${relative}/${String(filename)}`
+        // A write is a "change"; only a "rename" creates, removes or moves an entry.
+        if (event === "rename" && relative !== home) follow(child)
+        deliver(child)
+      }).on("error", broke)
+      watchers.set(relative, watcher)
+      // The fence directory is watched for its own entries only.
+      if (relative !== home) entries = readdirSync(path, { withFileTypes: true })
+    } catch (error) {
+      // Removed since its parent listed it or named it in an event, which that
+      // event counts: nothing is left here to watch.
+      if (!gone(error)) throw error
+      return drop(relative)
+    }
+    for (const entry of entries) {
+      const child = relative === "" ? entry.name : `${relative}/${entry.name}`
+      if (entry.isDirectory() && !skipped(child)) add(child)
+    }
+  }
+  /** Reopens the watches at `child`, which its parent just named in a "rename". */
+  const follow = (child: string): void => {
+    if (child !== home && skipped(child)) return
+    try {
+      // Only a watched directory has watched descendants.
+      if (watchers.has(child)) drop(child)
+      if (lstatSync(absolute(child), { throwIfNoEntry: false })?.isDirectory() === true) add(child)
+    } catch (error) {
+      if (!gone(error)) broke()
+    }
+  }
+  try {
+    add("")
+    add(home)
+  } catch (error) {
+    closeAll()
+    throw error
+  }
+  return closeAll
+}
+
+/**
+ * A change feed over one workspace root: a watch whose events move the count,
+ * except those under a directory or name the walk skips. On macOS and Windows
+ * it is the host's recursive `fs.watch`; elsewhere it is one watch per
+ * directory the walk measures, which holds as many inotify watches as the
+ * workspace has measured directories however much sits under node_modules.
  *
  * An event arrives after the write that caused it, so the `delivered` count
  * can miss a write made just before the call. `settled` first writes a fence
@@ -169,33 +287,35 @@ export const changes = (
       for (const arrive of waiters.values()) arrive(false)
       waiters.clear()
     }
-    const watcher = yield* Effect.acquireRelease(
-      Effect.sync((): FSWatcher | undefined => {
+    const deliver: Deliver = (relative) => {
+      if (relative !== undefined) {
+        const arrive = waiters.get(relative)
+        if (arrive !== undefined) {
+          waiters.delete(relative)
+          return arrive(true)
+        }
+        if (relative.startsWith(`${home}/${fencePrefix}`) || skipped(relative)) return
+      }
+      generation++
+    }
+    const unwatch = yield* Effect.acquireRelease(
+      Effect.sync((): (() => void) | undefined => {
         try {
-          return watch(base, { recursive: true, persistent: false }, (_event, filename) => {
-            const relative = filename === null ? undefined : String(filename).split(sep).join("/")
-            if (relative !== undefined) {
-              const arrive = waiters.get(relative)
-              if (arrive !== undefined) {
-                waiters.delete(relative)
-                return arrive(true)
-              }
-              if (relative.startsWith(`${home}/${fencePrefix}`) || skipped(relative)) return
-            }
-            generation++
-          }).on("error", fail)
+          return recursiveWatchIsNative
+            ? watchRecursively(base, deliver, fail)
+            : watchDirectories(base, home, skipped, deliver, fail)
         } catch {
           return undefined
         }
       }),
-      (watcher) =>
+      (opened) =>
         Effect.sync(() => {
-          watcher?.close()
+          opened?.()
           fail()
           for (const path of outstanding) rmSync(path, { force: true })
         })
     )
-    if (watcher === undefined) return unvouched
+    if (unwatch === undefined) return unvouched
     const nonce = `${process.pid}-${randomUUID()}`
     let fences = 0
     const fence = async (): Promise<Option.Option<number>> => {

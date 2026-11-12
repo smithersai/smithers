@@ -6,6 +6,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
+  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -293,6 +295,87 @@ describe("NodeWorkspaceObservation.changes", () => {
       await close()
     }
   }, 120_000)
+
+  /** This process's inotify watches, as the kernel lists them under /proc. */
+  const inotifyWatches = (): number => {
+    let watches = 0
+    for (const descriptor of readdirSync("/proc/self/fd")) {
+      let target: string
+      try {
+        target = readlinkSync(`/proc/self/fd/${descriptor}`)
+      } catch {
+        // The descriptor the listing itself held, closed by now.
+        continue
+      }
+      if (target !== "anon_inode:inotify") continue
+      watches += readFileSync(`/proc/self/fdinfo/${descriptor}`, "utf8")
+        .split("\n")
+        .filter((line) => line.startsWith("inotify wd:")).length
+    }
+    return watches
+  }
+
+  it(
+    "holds one watch per measured directory, however many files sit or land under pruned ones",
+    patient,
+    async (context) => {
+      if (process.platform !== "linux") context.skip("inotify watches are counted from Linux's /proc")
+      const root = checkout()
+      write(root, "src/deep/b.ts", "b")
+      for (let index = 0; index < 300; index++) write(root, `node_modules/pkg${index % 10}/f${index}.js`, "x")
+      for (let index = 0; index < 100; index++) write(root, `target/debug/f${index}.o`, "x")
+      const before = inotifyWatches()
+      const { settled, close } = await feedOver(root)
+      try {
+        // The root, src, src/deep, and .git for the fences.
+        expect(inotifyWatches() - before).toBe(4)
+        for (let index = 0; index < 100; index++) write(root, `.flows/cache/f${index}`, "x")
+        write(root, "src/later/c.ts", "c")
+        expect(Option.isSome(await settled())).toBe(true)
+        // src/later joins; nothing under .flows does.
+        expect(inotifyWatches() - before).toBe(5)
+      } finally {
+        await close()
+      }
+      expect(inotifyWatches()).toBe(before)
+    }
+  )
+
+  it("counts writes in a directory made, renamed or replaced after the feed opened", patient, async (context) => {
+    needsLiveFeed(context)
+    const root = checkout()
+    const { feed, settled, close } = await feedOver(root)
+    try {
+      const cached = WorkspaceObservation.cached(WorkspaceObservation.observeHost(host, root), feed)
+      const steps: ReadonlyArray<(root: string) => void> = [
+        (root) => mkdirSync(join(root, "src/new")),
+        (root) => write(root, "src/new/file.ts", "one"),
+        (root) => write(root, "src/new/file.ts", "two!"),
+        (root) => renameSync(join(root, "src/new"), join(root, "src/moved")),
+        (root) => write(root, "src/moved/file.ts", "three"),
+        (root) => rmSync(join(root, "src/moved"), { recursive: true }),
+        (root) => mkdirSync(join(root, "src/moved")),
+        (root) => write(root, "src/moved/again.ts", "four"),
+        // Replaced before the feed hears of either half: the name is the same,
+        // the directory is not.
+        (root) => {
+          rmSync(join(root, "src/moved"), { recursive: true })
+          mkdirSync(join(root, "src/moved"))
+        },
+        (root) => write(root, "src/moved/replaced.ts", "five")
+      ]
+      let last = count(await settled())
+      for (const step of steps) {
+        step(root)
+        const next = count(await settled())
+        expect(next).toBeGreaterThan(last)
+        last = next
+        expect(await Effect.runPromise(cached)).toEqual(await native(root))
+      }
+    } finally {
+      await close()
+    }
+  })
 
   it("leaves no fence behind and stops vouching once its scope closes", patient, async () => {
     const root = checkout()
