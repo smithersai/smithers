@@ -1,6 +1,6 @@
 /** Copy real runtime packages into one dependency graph with an omitted package. */
 import { cp, mkdir, readFile, realpath, symlink } from "node:fs/promises"
-import { basename, dirname, join } from "node:path"
+import { basename, dirname, join, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 interface Manifest {
@@ -33,10 +33,16 @@ export const isolatedCli = async (destination: string, omitted: string): Promise
   const copy = async (source: string): Promise<string> => {
     const previous = copies.get(source)
     if (previous !== undefined) return previous
-    const target = source === cli ? destination : join(destination, ".packages", String(copies.size))
-    copies.set(source, target)
     const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8")) as Manifest
     if (manifest.name === omitted) throw new Error(`Omitted package entered the isolated graph: ${omitted}`)
+    // Keep the source layout: an installed package stays in node_modules/<name>,
+    // where VibeLang finds effect's modules by their directory name, and a
+    // workspace package stays outside node_modules, where Node strips its types.
+    const installed = source.split(sep).includes("node_modules")
+    const target = source === cli
+      ? destination
+      : join(destination, ".packages", String(copies.size), ...(installed ? ["node_modules", manifest.name] : []))
+    copies.set(source, target)
     await mkdir(target, { recursive: true })
     if (source === cli) {
       for (const path of ["src", "bin", "package.json"]) {
