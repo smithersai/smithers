@@ -14,6 +14,8 @@
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Flow, Interpreter } from "@smthrs/flow"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
@@ -21,6 +23,13 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 const seat = "anthropic:claude-sonnet-5-5"
+
+/**
+ * The failures one member may settle as null: its answer did not fit, or its
+ * model call failed. A seat the host cannot resolve, a spent budget or a plugin
+ * failure fails the run instead, because every sibling would fail the same way.
+ */
+const Recoverable = Schema.Union([StructuredOutput.StructuredOutputFailure, HarnessError])
 
 /** One file the analyzer found the pattern in. */
 export const Target = Schema.Struct({
@@ -133,9 +142,10 @@ the refactoring didn't break anything.`
 export const RefactorTargets = Flow.make("examples/Refactor/RefactorTargets", {
   payload: { targets: Schema.Array(Target), refactoring: Schema.String, example: Schema.NullOr(Example) },
   success: Schema.Array(Change),
+  error: AgentAction.AgentFailure,
   body: ({ example, refactoring, targets }) => {
     if (targets.length === 0) return Node.succeed([])
-    // 0.x `continueOnFail`: a failed refactor settles as null instead of failing its siblings.
+    // 0.x `continueOnFail`: a refactor that failed on its own settles as null instead of failing its siblings.
     const members = Object.fromEntries(targets.map((target, index) => [
       `${index}`,
       Node.catch(
@@ -146,7 +156,7 @@ export const RefactorTargets = Flow.make("examples/Refactor/RefactorTargets", {
           refactoring,
           example
         }),
-        { onFailure: () => Node.succeed(null) }
+        { error: Recoverable, onFailure: () => Node.succeed(null) }
       )
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })

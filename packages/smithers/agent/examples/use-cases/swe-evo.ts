@@ -9,12 +9,14 @@
  *
  * 0.x's `prepare`, `diff` and `score` were compute tasks over Docker and a Python scorer; here they are declared actions a host implements, and the scorer reloads the gold fields by instance id so no agent payload carries them.
  * 0.x drafted with Claude Opus and refined with Codex; both steps here take the examples' seat, and a host routes `Refine` to another seat to keep the mix.
- * 0.x's `retries={1}` is a `Node.catch` whose failure arm calls the step again.
+ * 0.x's `retries={1}` is a `Node.catch` whose failure arm calls the step again. It retries only a failure a second call can change: an unresolved seat, a spent or skipped budget and a plugin failure fail the run at once.
  * 0.x ran the agents with file-editing CLIs in the checkout; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  * The dataset loader, the suite runner and the panel variant (`swe-evo-panel.tsx`) are not ported.
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Action, Flow } from "@smthrs/flow"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Layer from "effect/Layer"
@@ -177,9 +179,12 @@ Apply any fixes directly to the files. When finished, report what you changed (o
 confirm the implementation was already correct and complete).`
 })
 
+/** The failures a second call can change: an answer that did not fit, or a failed model call. */
+const Retryable = Schema.Union([StructuredOutput.StructuredOutputFailure, HarnessError])
+
 /** One agent step with 0.x's single retry. */
 const retriedOnce = <E, R>(call: () => Node.Node<typeof EditSummary.Type, E, R>) =>
-  Node.catch(call(), { onFailure: () => call() })
+  Node.catch(call(), { error: Retryable, onFailure: () => call() })
 
 /** The five-step instance run. Each step waits for the one before it. */
 export const SweEvo = Flow.make("examples/SweEvo", {

@@ -15,6 +15,8 @@
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Flow, Interpreter } from "@smthrs/flow"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
@@ -22,6 +24,13 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 const seat = "anthropic:claude-sonnet-5-5"
+
+/**
+ * The failures one member may settle as null: its answer did not fit, or its
+ * model call failed. A seat the host cannot resolve, a spent budget or a plugin
+ * failure fails the run instead, because every sibling would fail the same way.
+ */
+const Recoverable = Schema.Union([StructuredOutput.StructuredOutputFailure, HarnessError])
 
 const Risk = Schema.Literals(["low", "medium", "high"])
 
@@ -149,12 +158,14 @@ export const RunShards = Flow.make("examples/TestSharderJudge/RunShards", {
     concurrency: Schema.Int.check(Schema.isGreaterThan(0))
   },
   success: Schema.Array(RunResult),
+  error: AgentAction.AgentFailure,
   body: ({ concurrency, runner, tests, timeoutMs }) => {
     if (tests.length === 0) return Node.succeed([])
-    // 0.x `continueOnFail`: a failed or timed-out runner settles as null instead of failing its siblings.
+    // 0.x `continueOnFail`: a runner that failed or timed out on its own settles as null instead of failing its siblings.
     const members = Object.fromEntries(tests.map((test, index) => [
       `${index}`,
       Node.catch(RunTest.call({ testFile: test.file, reason: test.reason, runner, timeoutMs }), {
+        error: Recoverable,
         onFailure: () => Node.succeed(null)
       })
     ]))

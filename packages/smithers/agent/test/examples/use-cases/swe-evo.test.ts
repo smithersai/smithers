@@ -7,9 +7,11 @@ import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import {
   CaptureDiff,
+  Implement,
   type Instance,
   layer,
   PrepareRepo,
+  Refine,
   ScoreCandidate,
   scoreTimeoutS,
   SweEvo
@@ -165,4 +167,26 @@ it.effect("fails the run when the draft fails twice, before anything is scored",
     expect(calls).toContain("implement")
     expect(calls).not.toContain("refine")
     expect(calls.some((call) => call.startsWith("score"))).toBe(false)
+  }))
+
+it.effect("does not retry a draft whose seat has no model, since a second call fails the same way", () =>
+  Effect.gen(function*() {
+    const calls: Array<string> = []
+    const edited: Array<string> = []
+    const seats: Array<string> = []
+    const error = yield* Effect.flip(Kit.run(SweEvo, instance, {
+      filename: join(directory, "unresolved.sqlite"),
+      executionId: "swe-evo-unresolved",
+      script: script(calls, edited),
+      actions: Layer.mergeAll(
+        Implement.layer.pipe(Layer.provide(Kit.refusingSeats(seats))),
+        Refine.layer,
+        host(calls, edited)
+      )
+    }))
+
+    // One draft attempt asked for its seat once; 0.x's retry did not run it again.
+    expect(seats).toEqual(["anthropic:claude-sonnet-5-5"])
+    expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
+    expect(calls).toEqual(["prepare iterative__dvc_1.6.3_1.6.4 from sweevo/dvc:1.6.3"])
   }))

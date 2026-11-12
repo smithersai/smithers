@@ -1,11 +1,13 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import { Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import type { Item } from "../../../examples/use-cases/triage.ts"
-import { layer, Triage } from "../../../examples/use-cases/triage.ts"
+import { Classify, HandleItems, handlers, layer, Triage } from "../../../examples/use-cases/triage.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "triage-"))
 
@@ -120,4 +122,28 @@ it.effect("asks no handler when every item is ignored", () =>
       byCategory: { ignore: 2 },
       summary: "Triaged 2 items: 0 handled, 0 escalated"
     })
+  }))
+
+it.effect("fails the run when a handler's seat has no model, instead of dropping its item", () =>
+  Effect.gen(function*() {
+    const { answer, handled } = script([item("BUG-1", "bug-fix"), item("FEAT-2", "feature")])
+    const seats: Array<string> = []
+    const error = yield* Effect.flip(Kit.run(Triage, {}, {
+      filename: join(directory, "unresolved.sqlite"),
+      executionId: "triage-unresolved",
+      script: answer,
+      actions: Layer.mergeAll(
+        Classify.layer,
+        handlers.security.layer,
+        handlers["bug-fix"].layer.pipe(Layer.provide(Kit.refusingSeats(seats))),
+        handlers.feature.layer,
+        handlers.docs.layer,
+        handlers.infra.layer,
+        Interpreter.layer(HandleItems)
+      )
+    }))
+
+    expect(seats).toContain("anthropic:claude-sonnet-5-5")
+    expect(handled).not.toContain("bug fix <- BUG-1")
+    expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
   }))

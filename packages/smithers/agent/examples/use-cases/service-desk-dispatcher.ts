@@ -14,6 +14,8 @@
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { type Action, Flow, Interpreter } from "@smthrs/flow"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
@@ -21,6 +23,13 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 const seat = "anthropic:claude-sonnet-5-5"
+
+/**
+ * The failures one member may settle as null: its answer did not fit, or its
+ * model call failed. A seat the host cannot resolve, a spent budget or a plugin
+ * failure fails the run instead, because every sibling would fail the same way.
+ */
+const Recoverable = Schema.Union([StructuredOutput.StructuredOutputFailure, HarnessError])
 
 /** One normalized ticket. */
 export const Ticket = Schema.Struct({
@@ -152,12 +161,13 @@ const route = (
 export const HandleTickets = Flow.make("examples/ServiceDeskDispatcher/HandleTickets", {
   payload: { tickets: Schema.Array(Classified) },
   success: Schema.Array(HandlerResult),
+  error: AgentAction.AgentFailure,
   body: ({ tickets }) => {
     if (tickets.length === 0) return Node.succeed([])
-    // 0.x `continueOnFail`: a failed handler settles as null instead of failing its siblings.
+    // 0.x `continueOnFail`: a handler that failed on its own settles as null instead of failing its siblings.
     const members = Object.fromEntries(tickets.map((ticket) => [
       ticket.id,
-      Node.catch(route(ticket), { onFailure: () => Node.succeed(null) })
+      Node.catch(route(ticket), { error: Recoverable, onFailure: () => Node.succeed(null) })
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })
     return Node.map(joined, (handled) => Object.values(handled).filter(Schema.is(HandlerResult)))

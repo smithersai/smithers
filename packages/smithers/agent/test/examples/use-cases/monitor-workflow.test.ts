@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import type { Condition, Health } from "../../../examples/use-cases/monitor-workflow.ts"
-import { layer, MonitorWorkflow, rules } from "../../../examples/use-cases/monitor-workflow.ts"
+import { Check, Handle, layer, MonitorWorkflow, rules, settings } from "../../../examples/use-cases/monitor-workflow.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "monitor-workflow-"))
 
@@ -234,3 +234,75 @@ it.live(
     }),
   { timeout: 60_000 }
 )
+
+it.live("fails at once when the watcher's seat has no model, instead of watching blind", () =>
+  Effect.gen(function*() {
+    const { answer, samples } = script([])
+    const seats: Array<string> = []
+    const error = yield* Effect.flip(Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1 }, {
+      filename: join(directory, "unresolved.sqlite"),
+      executionId: "monitor-unresolved",
+      script: answer,
+      actions: Layer.mergeAll(Check.layer.pipe(Layer.provide(Kit.refusingSeats(seats))), Handle.layer)
+    }))
+
+    expect(seats).toContain("anthropic:claude-sonnet-5-5")
+    expect(samples).toEqual([])
+    expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
+  }))
+
+it.live("fails after maxMisses beats in a row with no sample", () =>
+  Effect.gen(function*() {
+    const { answer, handled, samples } = script(["broken", "broken", "broken"])
+    const error = yield* Effect.flip(Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1 }, {
+      filename: join(directory, "blind.sqlite"),
+      executionId: "monitor-blind",
+      script: answer,
+      actions: layer
+    }))
+
+    expect(settings.maxMisses).toBe(3)
+    expect(samples).toEqual(["broken", "broken", "broken"])
+    expect(handled).toEqual([])
+    expect(error).toMatchObject({
+      _tag: "examples/MonitorWorkflow/SamplesMissed",
+      watchRunId: "run-7",
+      misses: 3,
+      message: "The monitor had no sample of run run-7 for 3 beats in a row."
+    })
+  }))
+
+it.live("counts only misses in a row: a sample between them resets the count", () =>
+  Effect.gen(function*() {
+    const { answer, samples } = script([
+      "broken",
+      "broken",
+      health("healthy", "running"),
+      "broken",
+      "broken",
+      health("healthy", "finished")
+    ])
+    const last = yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1 }, {
+      filename: join(directory, "reset.sqlite"),
+      executionId: "monitor-reset",
+      script: answer,
+      actions: layer
+    })
+
+    expect(samples).toEqual(["broken", "broken", "healthy/running", "broken", "broken", "healthy/finished"])
+    expect(last).toEqual({ beats: 6, health: health("healthy", "finished"), action: null })
+  }))
+
+it.live("settles at the bound when the last beat had no sample but the misses stay under maxMisses", () =>
+  Effect.gen(function*() {
+    const { answer, samples } = script([health("healthy", "running"), "broken"])
+    const last = yield* Kit.run(MonitorWorkflow, { watchRunId: "run-7", intervalMs: 1, maxChecks: 2 }, {
+      filename: join(directory, "bound-miss.sqlite"),
+      executionId: "monitor-bound-miss",
+      script: answer,
+      actions: layer
+    })
+
+    expect(samples).toEqual(["healthy/running", "broken"])
+    expect(last).toEqual({ beats: 2, health: null, action: null })
+  }))

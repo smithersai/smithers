@@ -112,6 +112,20 @@ export const agents = (script: Script) =>
     Layer.provideMerge(ScriptedJudge.layer)
   )
 
+/**
+ * A seat resolver that refuses every seat, as a host with no model for it
+ * does. Provide it to one step's layer and that step fails with
+ * `SeatUnresolved`; `asked` records every seat it was asked to resolve.
+ */
+export const refusingSeats = (asked: Array<string>) =>
+  SeatResolver.layer({
+    resolve: (id) =>
+      Effect.suspend(() => {
+        asked.push(id)
+        return Effect.fail(new Seat.SeatUnresolved({ seat: id, message: `This host has no model for ${id}.` }))
+      })
+  })
+
 /** What one {@link run} needs besides the flow and its payload. */
 export interface RunOptions<ROut, RIn> {
   /** The SQLite file the durable engine journals the run in. */

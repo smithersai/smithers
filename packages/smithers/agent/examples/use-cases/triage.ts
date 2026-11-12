@@ -11,6 +11,8 @@
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { type Action, Flow, Interpreter } from "@smthrs/flow"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
@@ -18,6 +20,13 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 const seat = "anthropic:claude-sonnet-5-5"
+
+/**
+ * The failures one member may settle as null: its answer did not fit, or its
+ * model call failed. A seat the host cannot resolve, a spent budget or a plugin
+ * failure fails the run instead, because every sibling would fail the same way.
+ */
+const Recoverable = Schema.Union([StructuredOutput.StructuredOutputFailure, HarnessError])
 
 /** One classified item and the handler it is routed to. */
 export const Item = Schema.Struct({
@@ -107,13 +116,14 @@ const route = (item: Actionable): Node.Node<HandlerResult, AgentAction.AgentFail
 export const HandleItems = Flow.make("examples/Triage/HandleItems", {
   payload: { items: Schema.Array(Item) },
   success: Schema.Array(HandlerResult),
+  error: AgentAction.AgentFailure,
   body: ({ items }) => {
     const actionable = items.filter((item): item is Actionable => item.assignTo !== "ignore")
     if (actionable.length === 0) return Node.succeed([])
-    // 0.x `continueOnFail`: a failed handler settles as null instead of failing its siblings.
+    // 0.x `continueOnFail`: a handler that failed on its own settles as null instead of failing its siblings.
     const members = Object.fromEntries(actionable.map((item) => [
       item.id,
-      Node.catch(route(item), { onFailure: () => Node.succeed(null) })
+      Node.catch(route(item), { error: Recoverable, onFailure: () => Node.succeed(null) })
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })
     return Node.map(joined, (handled) => Object.values(handled).filter(Schema.is(HandlerResult)))

@@ -1,11 +1,20 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import { Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import type { Classified } from "../../../examples/use-cases/service-desk-dispatcher.ts"
-import { layer, ServiceDeskDispatcher } from "../../../examples/use-cases/service-desk-dispatcher.ts"
+import {
+  Classify,
+  handlers,
+  HandleTickets,
+  Intake,
+  layer,
+  ServiceDeskDispatcher
+} from "../../../examples/use-cases/service-desk-dispatcher.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "service-desk-dispatcher-"))
 
@@ -130,4 +139,27 @@ it.effect("hands given tickets to intake and asks no specialist when none are cl
     expect(report.summary).toBe(
       "Dispatched 0 tickets: 0 incidents, 0 requests, 0 policy questions — 0 resolved, 0 escalated"
     )
+  }))
+
+it.effect("fails the run when a specialist's seat has no model, instead of dropping its ticket", () =>
+  Effect.gen(function*() {
+    const { answer, handled } = script(["INC-1", "POL-2"])
+    const seats: Array<string> = []
+    const error = yield* Effect.flip(Kit.run(ServiceDeskDispatcher, {}, {
+      filename: join(directory, "unresolved.sqlite"),
+      executionId: "service-desk-unresolved",
+      script: answer,
+      actions: Layer.mergeAll(
+        Intake.layer,
+        Classify.layer,
+        handlers.incident.layer.pipe(Layer.provide(Kit.refusingSeats(seats))),
+        handlers.request.layer,
+        handlers.policy.layer,
+        Interpreter.layer(HandleTickets)
+      )
+    }))
+
+    expect(seats).toContain("anthropic:claude-sonnet-5-5")
+    expect(handled).not.toContain("incident handler <- INC-1")
+    expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
   }))

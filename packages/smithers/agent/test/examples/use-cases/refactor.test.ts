@@ -1,10 +1,19 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import { Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, Refactor } from "../../../examples/use-cases/refactor.ts"
+import {
+  Analyze,
+  layer,
+  Refactor,
+  RefactorFile,
+  RefactorTargets,
+  Verify
+} from "../../../examples/use-cases/refactor.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "refactor-"))
 
@@ -145,4 +154,25 @@ it.effect("skips the verifier when the analyzer finds nothing", () =>
       verified: false,
       summary: "Refactored 0/0 files. Verification: pending/failed"
     })
+  }))
+
+it.effect("fails the run when a refactor's seat has no model, instead of counting it as dropped", () =>
+  Effect.gen(function*() {
+    const { answer, verified } = script({ files: ["src/a.ts", "src/b.ts"] })
+    const seats: Array<string> = []
+    const error = yield* Effect.flip(Kit.run(Refactor, payload, {
+      filename: join(directory, "unresolved.sqlite"),
+      executionId: "refactor-unresolved",
+      script: answer,
+      actions: Layer.mergeAll(
+        Analyze.layer,
+        RefactorFile.layer.pipe(Layer.provide(Kit.refusingSeats(seats))),
+        Verify.layer,
+        Interpreter.layer(RefactorTargets)
+      )
+    }))
+
+    expect(seats).toContain("anthropic:claude-sonnet-5-5")
+    expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
+    expect(verified).toEqual([])
   }))

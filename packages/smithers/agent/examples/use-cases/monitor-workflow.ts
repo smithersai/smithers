@@ -4,13 +4,15 @@
  * Port of the 0.x `monitor-workflow.jsx`, which mounted the 0.x `<Monitor>`.
  * Each beat, after a durable sleep of `intervalMs` (none before the first), a
  * watcher agent classifies the watched run into exactly one condition; a
- * failed sample settles as no sample. A rule table, kept as data and folded
- * first-match into `Node.branch` predicates as 0.x's `<DecisionTable>` did,
- * sends the condition to a healing agent, a reporting agent, or a person;
- * `healthy` has no rule, so it keeps watching. The monitor stops when a sample
- * reports a terminal run status or after `maxChecks` beats, settling with the
- * last beat.
+ * sample whose answer did not fit or whose model call failed settles as no
+ * sample, and `maxMisses` beats in a row with no sample fail the monitor. A
+ * rule table, kept as data and folded first-match into `Node.branch`
+ * predicates as 0.x's `<DecisionTable>` did, sends the condition to a healing
+ * agent, a reporting agent, or a person; `healthy` has no rule, so it keeps
+ * watching. The monitor stops when a sample reports a terminal run status or
+ * after `maxChecks` beats, settling with the last beat.
  *
+ * 0.x's `continueOnFail` caught every failure; here an unresolved seat, a spent budget or a plugin failure fails the monitor at once, because no later beat can sample past it.
  * 0.x's `<Loop maxIterations={120}>` is a trampoline here: each beat is one round that hands the next beat to itself with `.to()`, so 120 beats never sit in one plan.
  * 0.x's escalation `<HumanTask>` asked for the action row; here it is a JSON `HumanTask` with that row's schema.
  * 0.x's health schema had no `ownerActive`, so its handlers never saw the ownership they were told to confirm; here the watcher reports it, and a stalled or wedged sample heals only when it reports `ownerActive: false`. Any other one escalates.
@@ -19,12 +21,22 @@
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { type Action, Flow, HumanTask, Sleep } from "@smthrs/flow"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 const seat = "anthropic:claude-sonnet-5-5"
+
+/**
+ * The failures one agent call may settle as null: its answer did not fit, or
+ * its model call failed. A seat the host cannot resolve, a spent budget or a
+ * plugin failure fails the monitor instead, because every later call would
+ * fail the same way.
+ */
+const Recoverable = Schema.Union([StructuredOutput.StructuredOutputFailure, HarnessError])
 
 /** The closed set of conditions, in the order the rule table evaluates them. */
 export const conditions = [
@@ -48,6 +60,8 @@ export const settings = {
   intervalMs: 60_000,
   maxChecks: 120,
   stallBeats: 3,
+  /** Consecutive beats with no sample before the monitor fails rather than watch blind. */
+  maxMisses: 3,
   // Only these two heal without a human: resuming a run and retrying a node
   // are idempotent and reversible. Everything else escalates.
   autoHeal: ["stalled", "wedged-node"] as ReadonlyArray<Condition>,
@@ -82,6 +96,13 @@ export const MonitorAction = Schema.Struct({
   action: Schema.String.annotate({ description: "What the handler did, or `none` when it only observed." }),
   changed: Schema.optional(Schema.Boolean.annotate({ description: "Did the watched run's symptom change?" })),
   summary: Schema.String
+})
+
+/** The monitor failed to sample the watched run `misses` beats in a row. */
+export const SamplesMissed = Schema.TaggedStruct("examples/MonitorWorkflow/SamplesMissed", {
+  watchRunId: Schema.String,
+  misses: Schema.Number,
+  message: Schema.String
 })
 
 /** The last beat, which the flow settles with. */
@@ -326,9 +347,9 @@ interface Watch {
   readonly watchWorkflowPath: string | undefined
 }
 
-type Routed = Node.Node<MonitorAction | null, HumanTask.HumanTaskFailed, Requirements>
+type Routed = Node.Node<MonitorAction | null, HumanTask.HumanTaskFailed | AgentAction.AgentFailure, Requirements>
 
-/** What a matched rule runs. A handler that fails settles as null, as 0.x's `continueOnFail` did. */
+/** What a matched rule runs. A handler that fails on its own settles as null, as 0.x's `continueOnFail` did. */
 const act = (rule: Rule, health: Planned.Planned<Health | null>, watch: Watch): Routed =>
   rule.then._tag === "handle"
     ? Node.catch(
@@ -338,7 +359,7 @@ const act = (rule: Rule, health: Planned.Planned<Health | null>, watch: Watch): 
         watchWorkflowPath: watch.watchWorkflowPath,
         health
       }),
-      { onFailure: Node.capture({}, () => Node.succeed(null)) }
+      { error: Recoverable, onFailure: Node.capture({}, () => Node.succeed(null)) }
     )
     : Node.bindPlanned(
       Node.map(
@@ -389,10 +410,17 @@ const payload = {
   intervalMs: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   maxChecks: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: settings.maxChecks }))),
   /** The beat this round runs, counted from 0. The flow hands it to itself; a caller omits it. */
-  beat: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
+  beat: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  /** The beats in a row before this one that had no sample. The flow hands it to itself; a caller omits it. */
+  misses: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 }
 
-const Failure = Schema.Union([HumanTask.HumanTaskFailed, Sleep.SleepRequestInvalid])
+const Failure = Schema.Union([
+  HumanTask.HumanTaskFailed,
+  Sleep.SleepRequestInvalid,
+  SamplesMissed,
+  AgentAction.AgentFailure
+])
 
 /** The declaration shape the self-handoff names. */
 type MonitorFlow = Flow.Flow<
@@ -413,10 +441,11 @@ export const MonitorWorkflow: MonitorFlow = Flow.make("examples/MonitorWorkflow"
     beat = 0,
     intervalMs = settings.intervalMs,
     maxChecks = settings.maxChecks,
+    misses = 0,
     watchRunId,
     watchWorkflowPath
   }: Schema.Struct.Type<typeof payload>) => {
-    // A sampling beat that fails must not kill the monitor: the next beat re-samples.
+    // A sample that failed on its own must not kill the monitor: the next beat re-samples.
     const sample = Node.catch(
       Check.call({
         watchRunId,
@@ -425,42 +454,63 @@ export const MonitorWorkflow: MonitorFlow = Flow.make("examples/MonitorWorkflow"
         autoHeal: [...settings.autoHeal],
         guidance: settings.guidance
       }),
-      { onFailure: Node.capture({}, () => Node.succeed(null)) }
+      { error: Recoverable, onFailure: Node.capture({}, () => Node.succeed(null)) }
     )
     // Sample immediately on the first beat; pace every beat after it.
     const paced = beat === 0 ? sample : Node.andThen(Sleep.action.call({ millis: intervalMs }), sample)
+    const round = {
+      beat,
+      intervalMs,
+      maxChecks,
+      misses,
+      watchRunId: watchRunId ?? null,
+      watchWorkflowPath: watchWorkflowPath ?? null
+    }
+    // A beat with no sample routes nothing, so everything it settles or hands off is known now.
+    const missed = (): Node.Node<
+      Flow.Done<typeof Beat.Type> | Flow.To<Schema.Struct.Type<typeof payload>>,
+      typeof SamplesMissed.Type
+    > =>
+      misses + 1 >= settings.maxMisses
+        ? Node.fail({
+          _tag: "examples/MonitorWorkflow/SamplesMissed" as const,
+          watchRunId,
+          misses: misses + 1,
+          message: `The monitor had no sample of run ${watchRunId} for ${misses + 1} beats in a row.`
+        })
+        // Running out of beats is the monitor's job ending, not a failure.
+        : beat + 1 >= maxChecks
+        ? Flow.done({ beats: beat + 1, health: null, action: null })
+        : MonitorWorkflow.to({
+          watchRunId,
+          watchWorkflowPath,
+          intervalMs,
+          maxChecks,
+          beat: beat + 1,
+          misses: misses + 1
+        })
     return Node.bindPlanned(
       paced,
-      Node.capture({
-        beat,
-        intervalMs,
-        maxChecks,
-        watchRunId: watchRunId ?? null,
-        watchWorkflowPath: watchWorkflowPath ?? null
-      }, (health: Planned.Planned<Health | null>) =>
+      Node.capture(round, (health: Planned.Planned<Health | null>) =>
         Node.bindPlanned(
           decide(health, { watchRunId, watchWorkflowPath }),
-          Node.capture({
-            beat,
-            intervalMs,
-            maxChecks,
-            watchRunId: watchRunId ?? null,
-            watchWorkflowPath: watchWorkflowPath ?? null
-          }, (action: Planned.Planned<MonitorAction | null>) =>
+          Node.capture(round, (action: Planned.Planned<MonitorAction | null>) =>
             Node.branch(Node.succeed({ beats: beat + 1, health, action }), {
-              // Running out of beats is the monitor's job ending, not a failure.
-              if: Node.capture({ bound: beat + 1 >= maxChecks }, function(last: typeof Beat.Type) {
-                return this.bound || finished(last)
-              }),
-              then: Node.capture({}, (last) =>
-                Flow.done(last)),
-              else: Node.capture({
-                beat,
-                intervalMs,
-                maxChecks,
-                watchRunId: watchRunId ?? null,
-                watchWorkflowPath: watchWorkflowPath ?? null
-              }, () => MonitorWorkflow.to({ watchRunId, watchWorkflowPath, intervalMs, maxChecks, beat: beat + 1 }))
+              if: Node.capture({}, (last: typeof Beat.Type) =>
+                last.health === null),
+              then: Node.capture(round, missed),
+              else: Node.capture(round, () =>
+                Node.branch(Node.succeed({ beats: beat + 1, health, action }), {
+                  // Running out of beats is the monitor's job ending, not a failure.
+                  if: Node.capture({ bound: beat + 1 >= maxChecks }, function(last: typeof Beat.Type) {
+                    return this.bound || finished(last)
+                  }),
+                  then: Node.capture({}, (last) => Flow.done(last)),
+                  else: Node.capture(
+                    round,
+                    () => MonitorWorkflow.to({ watchRunId, watchWorkflowPath, intervalMs, maxChecks, beat: beat + 1 })
+                  )
+                }))
             }))
         ))
     )

@@ -1,10 +1,20 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import { Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, TestSharderJudge } from "../../../examples/use-cases/test-sharder-judge.ts"
+import {
+  Adjudicate,
+  AnalyzeChange,
+  layer,
+  RunShards,
+  RunTest,
+  SelectTests,
+  TestSharderJudge
+} from "../../../examples/use-cases/test-sharder-judge.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "test-sharder-judge-"))
 
@@ -162,4 +172,26 @@ it.effect("adjudicates with no shards when the selector picks nothing", () =>
     expect(asked.run).toEqual([])
     expect(asked.adjudicate).toEqual(["medium: ; no result: "])
     expect(verdict.verdict).toBe("green")
+  }))
+
+it.effect("fails the run when the runner's seat has no model, instead of adjudicating no shards", () =>
+  Effect.gen(function*() {
+    const { answer, asked } = script()
+    const seats: Array<string> = []
+    const error = yield* Effect.flip(Kit.run(TestSharderJudge, { diff }, {
+      filename: join(directory, "unresolved.sqlite"),
+      executionId: "test-sharder-judge-unresolved",
+      script: answer,
+      actions: Layer.mergeAll(
+        AnalyzeChange.layer,
+        SelectTests.layer,
+        RunTest.layer.pipe(Layer.provide(Kit.refusingSeats(seats))),
+        Adjudicate.layer,
+        Interpreter.layer(RunShards)
+      )
+    }))
+
+    expect(seats).toContain("anthropic:claude-sonnet-5-5")
+    expect(asked.adjudicate).toEqual([])
+    expect(error._tag).toBe("@smthrs/agent/Seat/SeatUnresolved")
   }))
