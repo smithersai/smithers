@@ -1144,6 +1144,19 @@ execution takes about two seconds, so the target has the replay floor. Coverage 
 statements, 15/15 arms, 38/38 functions at seeds 20261206 and 20261207. Mutations, both falsified at seed 20261208:
 a grant that forwards nothing, and a run read that forwards another id.
 
+### `src/web/historyApp.vibe`: every Command over a failing history
+
+The history page's Commands ran only over the working mock, so their failure arms (13 arms and 19 functions in the
+sixteenth session's final run) never did. `history/command-arms` (`fuzz/history-arms.fuzz.vibe`) runs in every
+execution: every read and write over a history that can't be reached (`FailedRead`, `FailedWrite` "unavailable") and
+every write over one that refuses (the refusal); the export over the product mock; the plan dialog opening and closing
+without its element; Escape on the window; the history subscription over an unreadable outline (`FailedLoad`) and over a
+stream lost once (the outline, then two seconds later the event); and a hash naming an epic not read yet (`ReadEpic`).
+The failing histories are the product mock with members replaced by failing ones. The mock runs over a two-commit seed,
+as `test/historyStartup.test.vibe` does: a whole export of the bootstrapped seed takes up to two minutes (its unit test
+allows 120 s). Coverage of this target alone reaches every arm and function the file had open, at seeds 20261210 and
+20261211.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

@@ -1,0 +1,105 @@
+// src/web/historyApp.vibe's arms that only a failing or particular history reaches, each chosen in every execution:
+// every Command over a history that can't be reached and one that refuses, the export over the mock, the plan dialog
+// without its element, Escape, an outline that can't be read, a lost event stream, and a hash naming an epic not yet
+// read (0015, seventeenth session).
+import { it } from "@effect/vitest"
+import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
+import { Refused, Unavailable } from "../src/core/Factory.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import {
+  ApproveCommand, ClosePlan, ExportCommand, FoldCommand, HistoryMessage, init, NoteCommand, PlanCommand, ReadCommit, ReadEpic, ReadMatches, ReadOutline,
+  ShowPlan, StartCommand, subscriptions, update, type HistoryModel,
+} from "../src/web/historyApp.vibe"
+import { run, stepped, Finding, Text } from "./run.vibe"
+
+const MAINTAINER = { role: "maintainer" as const, name: "Fuzz", agent: false }
+
+/** Two landed commits (compiler, then docs): a whole export of it takes milliseconds, not the seed's minutes. */
+const small = () => succeed(replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : ["000000000001"],
+})), []))).history)
+
+/** The product mock with every member failing as `fault` says: unreachable, or refused with `refusal`. */
+function failing(fault: "unavailable" | "refused", refusal: string) {
+  const error = () => fault === "unavailable" ? new Unavailable({ reason: "fault" }) : new Refused({ refusal })
+  return Layer.effect(Mythical, map(Mythical, (mythical) => Object.assign(Object.create(mythical) as Mythical.Shape, {
+    outline: () => fail(new Unavailable({ reason: "fault" })), epic: () => fail(new Unavailable({ reason: "fault" })),
+    commit: () => fail(new Unavailable({ reason: "fault" })), search: () => fail(new Unavailable({ reason: "fault" })),
+    plan: () => fail(error()), start: () => fail(error()), note: () => fail(error()), approve: () => fail(error()), fold: () => fail(error()), publish: () => fail(error()),
+  }))).pipe(Layer.provide(MockMythical(MAINTAINER, small)))
+}
+
+type AnyCommand = { readonly name: string; readonly effect: Effect.Effect<unknown, unknown, unknown> }
+
+effect function answer(make: () => AnyCommand) {
+  const command = try Effect.try(make)
+  const result = try exit(timeout(command.effect as Effect.Effect<unknown, unknown, never>, "5 seconds"))
+  if (result._tag === "Failure") throw new Finding({ report: `${command.name}: ${Cause.pretty(result.cause)}` })
+  if (!Schema.is(HistoryMessage)(result.value)) throw new Finding({ report: `${command.name}: answered with an undeclared Message` })
+  return result.value as HistoryMessage
+}
+
+const WRITES = [
+  () => PlanCommand({ how: "append", epic: "", newEpic: "Epic", target: "", title: "T", task: "" }), () => StartCommand({ id: "m1", lane: "lane" }),
+  () => ApproveCommand({ id: "m1" }), () => NoteCommand({ id: "m1", section: "tried", text: "t" }), () => FoldCommand({}), () => ExportCommand({}),
+] as const
+const READS = [() => ReadOutline({}), () => ReadEpic({ id: "e1", from: 0 }), () => ReadCommit({ id: "m1" }), () => ReadMatches({ query: "q" })] as const
+
+type Entries = Record<string, {
+  readonly modelToDependencies: (model: HistoryModel) => unknown
+  readonly dependenciesToStream: (dependencies: unknown, read: () => unknown) => Stream.Stream<HistoryMessage, never, Mythical>
+}>
+
+const Input = Schema.Struct({ refusal: Text, model: Schema.Literals(["viewer", "maintainer"]) })
+
+/**
+ * Over a history that can't be reached every read answers FailedRead and every write FailedWrite "unavailable"; over
+ * one that refuses every write names the refusal; the mock exports the history. The plan dialog opens and closes as a
+ * no-op when its element is missing. Escape pressed on the window closes the dialog; an outline that can't be read
+ * fails the load; a stream lost once follows again two seconds later and delivers its event; and a hash naming an
+ * epic not read yet reads it.
+ */
+it.live("history/command-arms", () => run("history/command-arms", Input, (input) => Effect.provide(effect {
+  const refusal = `r${input.refusal}`
+  provide failing("unavailable", refusal) {
+    for (const read of READS) { const got = try answer(read); if (got._tag !== "FailedRead" || got.reason !== "unavailable") throw new Finding({ report: `unreachable ${got._tag}` }) }
+    for (const write of WRITES) { const got = try answer(write); if (got._tag !== "FailedWrite" || got.reason !== "unavailable") throw new Finding({ report: `unreachable write ${got._tag}` }) }
+    const failed = try Stream.runHead(((subscriptions(try (try Experimental.Window.Window).current) as unknown as Entries)["history"]!).dependenciesToStream({ epoch: 0 }, () => ({ epoch: 0 })))
+    if (Option.isNone(failed) || failed.value._tag !== "FailedLoad") throw new Finding({ report: "an unreadable outline loads" })
+  }
+  provide failing("refused", refusal) {
+    for (const write of WRITES) { const got = try answer(write); if (got._tag !== "FailedWrite" || got.reason !== refusal) throw new Finding({ report: `refused write ${got._tag}` }) }
+  }
+  provide MockMythical(MAINTAINER, small) {
+    const exported = try answer(() => ExportCommand({}))
+    if (exported._tag !== "Exported" || exported.mythical === "") throw new Finding({ report: `export ${exported._tag}` })
+    for (const dialog of [() => ShowPlan({}), () => ClosePlan({})]) if ((try answer(dialog))._tag !== "Settled") throw new Finding({ report: "plan dialog" })
+    const window = try (try Experimental.Window.Window).current
+    const entries = subscriptions(window) as unknown as Entries
+    const keys = fork Stream.runHead(entries["keyboard"]!.dependenciesToStream(undefined, () => undefined))
+    const escaped = try Effect.timeoutOption(effect {
+      while (keys.pollUnsafe() === undefined) {
+        try sync(() => window.dispatchEvent(new (window as unknown as { KeyboardEvent: new (type: string, init: object) => Event }).KeyboardEvent("keydown", { key: "a" })))
+        try sync(() => window.dispatchEvent(new (window as unknown as { KeyboardEvent: new (type: string, init: object) => Event }).KeyboardEvent("keydown", { key: "Escape" })))
+        try sleep("1 millis")
+      }
+      return try Fiber.join(keys)
+    }, "5 seconds")
+    if (Option.isNone(escaped) || Option.isNone(escaped.value) || escaped.value.value._tag !== "PressedEscape") throw new Finding({ report: "Escape" })
+    // A stream lost once: the outline, then two seconds later the event.
+    const mythical = try Mythical
+    const outline = try mythical.outline()
+    let follows = 0
+    const event = { type: "Started" as const, seq: outline.seq + 1, id: "m1", lane: "fuzz" }
+    const lostOnce = Layer.succeed(Mythical, Object.assign(Object.create(mythical) as Mythical.Shape, { events: () => follows++ === 0 ? Stream.fail(new Unavailable({ reason: "fault" })) : Stream.make(event) }))
+    const got = try stepped(Effect.provide(Stream.runCollect(entries["history"]!.dependenciesToStream({ epoch: 0 }, () => ({ epoch: 0 })).pipe(Stream.take(2))), lostOnce), 5)
+    const delivered = Array.from(got)
+    if (follows !== 2 || delivered.length !== 2 || delivered[0]!._tag !== "GotOutline" || delivered[1]!._tag !== "ReceivedEvent") throw new Finding({ report: `a lost stream: ${follows} follows, ${delivered.map((m) => m._tag).join(",")}` })
+  }
+  const start = init({ mode: "mock", role: input.model, hash: "" }).model
+  const navigated = try Effect.try(() => update(start, HistoryMessage.Navigated({ hash: "e1" })))
+  if (!(navigated.commands ?? []).some((command) => command.name === "ReadEpic")) throw new Finding({ report: "an unread epic's hash reads nothing" })
+  return true
+}, Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)), undefined, { minimum: "15 seconds" }))
