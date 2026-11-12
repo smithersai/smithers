@@ -1,5 +1,6 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import { Notification, NotificationEvent, NotificationQueue } from "@smthrs/notifications"
 import { Deferred, Effect, Fiber, Stream } from "effect"
 import * as Clock from "effect/Clock"
 import { TestClock } from "effect/testing"
@@ -54,6 +55,86 @@ describe("configured Monitor over the durable control journal", () => {
       })
     }))
   })
+  it.each([
+    { eventType: NotificationEvent.AdmittedEventType, delivers: false },
+    { eventType: NotificationEvent.PromotedEventType, delivers: false },
+    { eventType: NotificationEvent.PromotedEventType, delivers: true }
+  ])(
+    "tracks execution progress across $eventType (delivery: $delivers)",
+    async ({ eventType, delivers }) => {
+      await run(Effect.gen(function*() {
+        const runId = yield* start
+        const queue = yield* NotificationQueue.NotificationQueue
+        const steer = (index: number) =>
+          Notification.humanSteer({
+            runId,
+            id: `steer-${index}`,
+            actor: "human:operator",
+            payload: { body: "continue" }
+          })
+        if (delivers) {
+          for (const index of [0, 1]) yield* queue.admit(runId, steer(index))
+        }
+        const contexts: Array<Health.ProbeContext> = []
+        const healthCheck = Health.makeRegistry({
+          checkers: [{
+            id: "idle",
+            probe: (context) =>
+              Effect.gen(function*() {
+                const index = contexts.length
+                contexts.push(context)
+                if (index < 2) {
+                  if (eventType === NotificationEvent.AdmittedEventType) {
+                    yield* queue.admit(runId, steer(index))
+                  } else {
+                    yield* queue.drain({
+                      runId,
+                      targetLineageId: runId,
+                      boundary: `beat-${index}`,
+                      wouldIdle: true,
+                      ids: [`steer-${index}`]
+                    })
+                  }
+                }
+                return { activity: "unknown" as const }
+              })
+          }],
+          bindings: { "system/test": { checkerId: "idle" } }
+        }).resolve("system/test")
+        const report = yield* Monitor.run({ runId, healthCheck, intervalMs: 0, maxChecks: 3, stallBeats: 1 })
+        const events = yield* (yield* Control).watch({ runId, follow: false }).pipe(Stream.runCollect)
+        expect(events.filter((event) => event.kind === eventType)).toHaveLength(2)
+        expect(
+          report.beats.map((beat) => beat.health),
+          JSON.stringify({
+            beats: report.beats,
+            events: events.map((event) => ({
+              kind: event.kind,
+              sequence: event.sequence,
+              bookkeeping: Monitor.isBookkeepingEvent(event.kind)
+            }))
+          })
+        ).toEqual(delivers ? ["healthy", "healthy", "healthy"] : ["healthy", "stalled", "stalled"])
+        expect(new Set(report.beats.map((beat) => beat.sequence)).size).toBe(delivers ? 3 : 1)
+        expect(
+          contexts.flatMap((context) => context.events).some((event) =>
+            event.kind === NotificationEvent.AdmittedEventType || event.kind === NotificationEvent.PromotedEventType
+          )
+        ).toBe(false)
+        const observations = events.filter((event) => event.kind === Health.statusObservedEventType)
+        expect(observations.length).toBeGreaterThan(0)
+        if (delivers) {
+          expect(observations.map((event) => (event.payload as Health.HealthObservation).evidenceSeq)).toEqual(
+            report.beats.map((beat) => beat.sequence)
+          )
+        } else {
+          for (const event of observations) {
+            expect(event.payload).toMatchObject({ evidenceSeq: report.beats[0]!.sequence })
+          }
+        }
+      }))
+    }
+  )
   it("coalesces unchanged checks and retains bounded reports in the production mode", async () => {
     await run(Effect.gen(function*() {
       const runId = yield* start

@@ -18,6 +18,7 @@
  */
 
 import { Journal, JournalEvent } from "@smthrs/journal"
+import { NotificationEvent } from "@smthrs/notifications"
 import { Duration, Effect, Random, Stream } from "effect"
 import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
@@ -629,4 +630,5 @@ export const run = (
  */
 export const isBookkeepingEvent = (kind: string): boolean =>
   kind.startsWith("control.monitor.") || kind.startsWith("control.status.") ||
-  kind.startsWith("flows.alerts.") || kind.startsWith("flows.notifications.") || kind.startsWith("flows.notification.")
+  kind.startsWith("flows.alerts.") || kind === NotificationEvent.AdmittedEventType ||
+  kind === NotificationEvent.PromotedEventType
