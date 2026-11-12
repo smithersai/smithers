@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Detect from "../src/Detect.ts"
 import * as Inventory from "../src/Inventory.ts"
+import * as Mapping from "../src/Mapping.ts"
 import { copyFixture, nodeLayer } from "./fixtures/helpers.ts"
 
 const inventory = (name: string) =>
@@ -290,5 +291,46 @@ describe("Inventory.scanFile over a namespace import", () => {
     ].join("\n")
 
     expect(Inventory.scanFile("w.tsx", source, { factories: new Set(["createSmithers"]) })).toEqual([])
+  })
+})
+
+describe("Inventory.scan over conditionally rendered steps", () => {
+  const group = (tag: string, body: string): Inventory.InventoryEntry => {
+    const source = [
+      "/** @jsxImportSource smthrs */",
+      `import { createSmithers, ${tag} } from "smthrs"`,
+      "const { Workflow, Task, smithers, outputs } = createSmithers({ result: z.string() })",
+      `const flow = smithers(() => <Workflow name="w"><${tag}>${body}</${tag}></Workflow>)`
+    ].join("\n")
+    const factories = Inventory.factoryNames(new Map([["w.tsx", source]]))
+    const hit = Inventory.scanFile("w.tsx", source, { factories }).find((entry) => entry.construct === tag)
+    if (hit === undefined) throw new Error(`no ${tag} hit`)
+    return hit
+  }
+  const a = "<Task id=\"a\" output={outputs.result}>x</Task>"
+  const b = "<Task id=\"b\" output={outputs.result}>y</Task>"
+
+  it("leaves a sequence with a step behind `false &&` to the agent", () => {
+    // The 0.x program never renders `a`. A rewrite calling it would run a
+    // step the source guarded off.
+    const hit = group("Sequence", `{false && ${a}}${b}`)
+
+    expect(hit.detail?.["childConstructs"]).toBe("Task:,Task:b")
+    expect(Mapping.snippet(hit)).toBeUndefined()
+    expect(Mapping.classify(hit)).toBe("guided")
+  })
+
+  it("leaves a parallel group with a ternary or a repeated step to the agent", () => {
+    expect(group("Parallel", `{ready ? ${a} : ${b}}`).detail?.["childConstructs"]).toBe("Task:,Task:")
+    const repeated = group("Parallel", `{items.map(() => ${a})}${b}`)
+    expect(repeated.detail?.["childConstructs"]).toBe("Task:,Task:b")
+    expect(Mapping.classify(repeated)).toBe("guided")
+  })
+
+  it("keeps naming steps every render reaches", () => {
+    const hit = group("Sequence", `<>{(${a})}</>{[${b}]}`)
+
+    expect(hit.detail?.["childConstructs"]).toBe("Task:a,Task:b")
+    expect(Mapping.classify(hit)).toBe("automatic")
   })
 })

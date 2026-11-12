@@ -552,12 +552,28 @@ export const scanFile = (
   }
 
   /**
+   * Whether a node renders every element it holds. JSX structure, braces,
+   * parentheses and an array literal do; a condition, a loop or a call decides
+   * at run time which of its elements render, if any.
+   */
+  const rendersEveryChild = (node: ts.Node): boolean =>
+    ts.isJsxElement(node) || ts.isJsxFragment(node) || ts.isJsxExpression(node) ||
+    ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxAttributes(node) ||
+    ts.isJsxAttribute(node) || ts.isParenthesizedExpression(node) || ts.isArrayLiteralExpression(node)
+
+  /**
    * The catalog components inside a list of nodes, as `Construct:id` pairs.
    *
    * The walk stops at the first component on each path, so a group records its
    * own steps and not their steps' steps, and it descends through whatever the
    * source wraps them in: a fragment, a conditional, an array, or a prop
    * value.
+   *
+   * A component that renders only when an expression says so, behind `&&`, a
+   * ternary, a `.map` or a call, is recorded without its id. The rewrite would
+   * otherwise call it every time, and a step `{false && <Task id="a" />}`
+   * guarded off would run. The empty id is how the rewrite is told to leave the
+   * group to the agent.
    */
   const componentsIn = (
     nodes: ReadonlyArray<ts.Node>
@@ -567,7 +583,7 @@ export const scanFile = (
     const found: Array<
       { construct: string; id: string; opening: ts.JsxOpeningLikeElement; children: ReadonlyArray<ts.JsxChild> }
     > = []
-    const visit = (node: ts.Node): void => {
+    const visit = (node: ts.Node, rendered: boolean): void => {
       const opening = ts.isJsxElement(node)
         ? node.openingElement
         : ts.isJsxSelfClosingElement(node)
@@ -580,7 +596,7 @@ export const scanFile = (
           // `id={`${id}:review-claude`}` — is not a name this tool may print,
           // and the empty string is how the rewrite is told so.
           const literal = Ts.attributeLiteral(opening, "id") ?? ""
-          const id = /[,:]/.test(literal) ? "" : literal
+          const id = !rendered || /[,:]/.test(literal) ? "" : literal
           found.push({
             construct,
             id,
@@ -590,9 +606,10 @@ export const scanFile = (
           return
         }
       }
-      node.forEachChild(visit)
+      const passes = rendered && rendersEveryChild(node)
+      node.forEachChild((child) => visit(child, passes))
     }
-    for (const node of nodes) visit(node)
+    for (const node of nodes) visit(node, true)
     return found
   }
 
