@@ -82,19 +82,20 @@ it.skipIf(!enabled)("public GitHub wiki bytes and revision agree while a private
           )
           const observed = first.pages.find(page => page.id === "index")
           const expected = Option.getOrUndefined(raw)
-          const stored = try promise(() => kv.get("wiki/page/index")) as { readonly source: string; readonly revision: string } | undefined
+          const stored = try promise(() => kv.get(`wiki/draft/${actor.id}/index`)) as { readonly page: string; readonly text: string } | undefined
           try Effect.try(() => {
             expect(expected !== undefined && observed !== undefined && observed.source === expected.text && observed.revision === expected.sha).toBe(true)
             expect(observed?.source.startsWith("# VibeLang factory wiki")).toBe(true)
             expect(first.draft).toEqual({ page: "index", text: "Benchmark retained draft" })
             expect(again.draft).toEqual(first.draft)
             expect(again.pages.filter(page => page.id === "index").length).toBe(1)
-            expect(stored !== undefined && stored.source === expected?.text && stored.revision === expected?.sha).toBe(true)
+            expect(again.pages.some(page => page.id === "index" && page.source === observed?.source && page.revision === observed?.revision)).toBe(true)
+            expect(stored !== undefined && stored.page === first.draft?.page && stored.text === first.draft?.text).toBe(true)
           })
           counts.push({ pages: first.pages.length, sourceUtf16Length: observed?.source.length, localDraft: first.draft !== undefined })
         }
       }
     }))
   }).run(once)
-  await runPromise(artifact("github-wiki-public-read", "Vitest built-in bench; one opt-in real GitHub public read journey through executeWiki, its durable read flow and real githubWikiHost, over local SQLite/KV and the product ETag cache. Two reads compare exact source bytes and revision with the provider, retain one page projection, persist its actual source/revision and restore a local draft. Initialization, network and assertions included; no page text retained in the artifact.", ["BENCH_GITHUB_READS=1 required. Actual anonymous GitHub GETs, no provider writes, real login or inference. Shipped product MockAccounts supplies a local contributor; the private draft is stored only in local test storage. Public data, rate limits, cache state and host load vary; one sample, no percentile."], { counts, result }))
+  await runPromise(artifact("github-wiki-public-read", "Vitest built-in bench; one opt-in real GitHub public read journey through executeWiki, its durable read flow and real githubWikiHost, over local SQLite/KV and the product ETag cache. Two reads compare exact source bytes and revision with the provider, retain one page projection, keep public source/revision in each response and preserve the person's stored private draft. Initialization, network and assertions included; no page text retained in the artifact.", ["BENCH_GITHUB_READS=1 required. Actual anonymous GitHub GETs, no provider writes, real login or inference. Shipped product MockAccounts supplies a local contributor; the private draft is stored only in local test storage. Public data, rate limits, cache state and host load vary; one sample, no percentile."], { counts, result }))
 }, 120_000)

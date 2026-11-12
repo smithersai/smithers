@@ -488,3 +488,14 @@ source-checked per-module counter export. `sandboxLiveBenchmark.test.vibe` check
 counter relocation and rejection, the real merge command and probe authentication; its synthetic map fixtures
 are never benchmark execution evidence. The probe's declared Alchemy build is checked locally. See 0017.
 No dependency added; the existing Istanbul/rolldown tools are approved by VL-34.
+
+Resume 10 records the lead's first `bench:sandboxes-live` pass (1/1), successful stage destroy and accepted
+70-module deployed counter export. The full benchmark-only recollection compares the same local counters with
+and without this export; the per-file report and raw maps are retained. The counter-refusal test's faulty account
+service now declares the current `meter` RPC and dies if it is called, preserving refusal-before-RPC checks. No tool
+or dependency was added. See [the live method and limits](../benchmarks.md#deployed-sandbox-observation-resume-10-2026-11-12).
+
+The resume 10 per-file receipt is 8,942/9,184 src/worker lines (97.36%), with all binding lines executed and
+242 positions still uncovered. The public-wiki read benchmark's removed page-KV assumption is corrected to the
+request-local response and actual private draft storage; 2/2 checks pass and a wrong-owner control fails. See
+0017 for source-identical cohort composition and the unchanged strict gate.

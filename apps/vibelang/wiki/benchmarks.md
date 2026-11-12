@@ -4231,8 +4231,8 @@ faults; these observations describe the local test boundary, not production netw
 `pnpm bench:sandboxes-live` measures one serial real-Container lifecycle on the `vl-test` stage, including
 checkpoint, restore and verified Stop/sweep. It exports source-checked per-module counters from all three
 isolates into `bench/results/sandbox-raw/` for `bench:coverage`. The committed recording exercises the identical
-client workload offline and establishes no deployed coverage or latency. No live number is published until the
-lead runs it on the Mac through the vault wrapper. One lite Container at a time, ten-minute owner deadline;
+client workload offline and establishes no deployed coverage or latency. The lead's first live observation is
+recorded below; deployment and execution used the Mac's vault wrapper. One lite Container at a time, ten-minute owner deadline;
 no model or GitHub calls. The instrumented observation includes assertions and HTTP, is not a timing gate,
 and supports no tail percentile. See decision 0017 for cleanup, retained storage and source compatibility.
 
@@ -4251,3 +4251,67 @@ every exchange to be consumed. Setup, assertions and scope cleanup are included;
 file I/O are outside. Three variable samples establish no tail percentile or regression threshold. No network,
 Container, checkpoint latency or model inference is measured. The separate instrumented execution is a count-only
 receipt, not timing. Raw artifacts retain machine, versions, timestamp, source, method and limitations with the report.
+
+### Deployed sandbox observation (resume 10, 2026-11-12)
+
+At **10:24 UTC (02:24 PST)** the lead ran one instrumented lifecycle on a freshly deployed, reserved `vl-test`
+stage from the Mac's vault wrapper. Deploy, benchmark (1/1) and destroy each exited 0; the stage is gone.
+
+| Measurement | Observed ms | Samples |
+| --- | ---: | ---: |
+| Full lifecycle, Stop/sweep and correctness assertions | 14,891 | 1 |
+| Lifecycle through the second Stop (metering window) | 14,230 | 1 |
+
+Method: `pnpm bench:sandboxes-live` runs the production LiveFactory against the real probe: Start, write/read
+`saved`, Stop/checkpoint, Start/restore, read `saved`, Stop and sweep. It checks one sandbox id, contributor role,
+generations 1 and 2, exact restored bytes, nondecreasing metered usage within wall time, remaining allowance and
+the Container's own stopped status. The two reported intervals include HTTP, cold starts, commands, checkpoints,
+restore and metering. After the timed interval it checks bad-token POST 403 and valid-token GET 405, reads the
+nonempty existing lifecycle recording, and exports Worker/account/machine counters. The separate **19.5 s** Vitest
+duration includes this later work and runner overhead; it is not the lifecycle measurement.
+
+Artifacts: `2026-11-12T10-24-28.655Z-sandbox-live.json`,
+`sandbox-raw/lifecycle-1794479068630.json` and `SOURCE-REVISION`, retained on nyc-01 under
+`~/vl/vl-bench-evidence/resume9/live/`. The revision sidecar names main `f9f2964ff3bc`; the JSON independently
+records working-copy revision `688c44f1af1eadc21f50904f4e1e979c803d9c1d`. Neither is relabeled.
+All three snapshots name build `0600abfe-86e9-47bc-ae53-aafa5ff6fc24`. The source-checked collector accepts
+all 70 modules against the measured checkout, relocating Mac paths only after byte-for-byte source checks.
+
+Client: Apple M3 Max, 16 logical CPUs, macOS Darwin 25.2.0 arm64, Node 26.10.0; Vitest 5.0.0, Vite 8.3.4,
+VibeLang 0.0.12, Effect 4.1.1. One lite Container at a time, two sequential generations, 60 recorded Container
+calls; the account reports 0.17776666666666666 used minutes. The ten-minute owner window and nine-minute client
+deadline bounded this run. Compute was stopped by the checked sweep; stage destruction removes retained stage
+resources. No model tokens or GitHub calls; no secret is retained in the results.
+
+Limits: **one instrumented sample**. WAN, Cloudflare placement, startup and checkpoint/restore vary. No warm/cold
+comparison, tail percentile, uninstrumented latency, speed-up or regression threshold follows from this run.
+The three-sample replay above measures a different, offline client workload and is not a Container comparison.
+
+#### Coverage from the deployed counters
+
+The same local benchmark evidence, merged without and with the accepted live dump:
+
+| Module | Without live counters | With live counters |
+| --- | ---: | ---: |
+| `worker/SandboxAccounts.vibe` | 6/13 | 13/13 |
+| `worker/SandboxMachine.vibe` | 2/6 | 6/6 |
+| `worker/SandboxProbe.vibe` | 6/12 | 12/12 |
+| `worker/sandboxBenchmark.vibe` | 0/9 | 9/9 |
+| `worker/sandboxProbeContainer.vibe` | 6/24 | 24/24 |
+| `worker/sandboxProbeFetch.vibe` | 10/57 | 49/57 |
+| `worker/sandboxWorkerDecision.vibe` | 14/35 | 34/35 |
+
+`src/` + `worker/`: **8,839/9,184 (96.24%) → 8,942/9,184 (97.36%)**, a gain of 103 executed
+statement-start lines. `src/` is 6,200/6,413 in both merges; `worker/` rises from 2,639/2,771 to 2,742/2,771.
+There are 207 source/worker files; the full gate includes 215 files, with 132 workerd-evidenced,
+123 Chromium-evidenced and 70 deployed-evidenced files.
+
+The measured production source is frozen at `e4e71142`, with the lane's benchmark/docs overlay; the source-checked live maps match all 70 bundled modules. Later publication rebases are not relabeled as measured. The local cohort contains only benchmarks: the full collection passed 230 checks and failed one obsolete public-wiki KV oracle (5 skipped); the corrected public-read file then passed 2/2 on identical production source. Its Node counters join the full Node report by source position. A wrong-owner control fails the corrected stored-draft assertion; coverage is disabled for that control and the passing Node JSON is byte-for-byte unchanged. All workerd and Chromium evidence comes from the full collection. No unit/fuzz/control hits or different production source snapshots join the map.
+
+**242 line positions remain uncovered (213 src, 29 worker), not only the previously reported 35.**
+This fresh roster includes additional proof helpers and ordinary runtime gaps, such as `main.vibe:330` and the
+probe's direct-machine route. The complete per-file table, exact missing positions, both merged maps and receipts
+are retained in `~/vl/vl-bench-evidence/resume10/results/` and the lane report. No inference classifies all new gaps
+as specification-only. Both merged gates exit 1; 141 files miss at least one strict metric after the live merge.
+No threshold, baseline or source exclusion changed. The full 100% goal remains open; VIP-43/release still owns the
+known specification-only prerequisite, and the additional listed gaps require separate benchmark work.

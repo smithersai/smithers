@@ -979,7 +979,7 @@ the nine-minute client deadline, failure sweep, account meter and clamped Contai
 cleanup. No model or GitHub call. Snapshots and object storage persist until `pnpm run destroy:sandboxes-test --yes`.
 Instrumented elapsed time is retained as one observation with machine, versions, timestamp and method, never as
 an uninstrumented latency baseline or tail percentile. Deployment and live execution are performed by the lead
-on the Mac through the vault wrapper. Until those receipts arrive, binding coverage remains pending.
+on the Mac through the vault wrapper. The resume 10 receipt below supplies the first matching live counters.
 
 Benchmark-only provenance: reserve vl-test, deploy immediately before the one benchmark, and run no other suite
 against it between deployment and export. A fresh random build id is embedded by the build-time plugin on each
@@ -999,3 +999,27 @@ A gate regression found during integration: an empty Node report plus runtime-on
 subset that runtime supplied. The guard now requires the canonical Node source roster even when runtime maps
 produce nonempty merged rows. benchmarkCoverageGate.test.vibe adds that actual-command case. The red command
 exited 0 over one runtime-only file; the fixed command exits 1. No threshold or exclusion changed.
+
+### Live receipt accepted (resume 10, 2026-11-12)
+
+The lead deployed main f9f2964ff3bc, ran one sandbox benchmark (1/1, 19.5 s runner duration), and destroyed the
+stage; all three commands exited 0. The raw lifecycle observed 14,891 ms including Stop/sweep and assertions,
+14,230 ms through second Stop. These are one instrumented observation, with no broader latency claim.
+[The measurement](../benchmarks.md#deployed-sandbox-observation-resume-10-2026-11-12) records method, client,
+artifacts, correctness checks, bounded spend, cleanup and limits.
+
+The unchanged collector accepts all 70 deployed modules and the single shared build id after checking embedded
+compiler source bytes. Mac paths are relocated only after verification. A fresh benchmark-only Node/workerd/
+Chromium collection is merged twice with its local evidence held constant, once without and once with these
+counters. No unit/fuzz counters, replayed responses, synthetic fixture hits or different deployed builds supply
+execution credit. Resume 10's report retains the complete per-file comparison and both raw merged maps.
+The strict four-metric gate, source roster and all specification-only lines remain counted.
+
+Resume 10's accepted live dump closes all binding lines: Accounts 6/13 → 13/13, Machine 2/6 → 6/6,
+Probe 6/12 → 12/12. Across the measured src/worker roster it adds 103 lines: 8,839/9,184 → 8,942/9,184.
+The fresh roster leaves 242 uncovered positions, so the earlier "only 35" expectation is not a certificate for this
+snapshot. The [coverage method and table](../benchmarks.md#coverage-from-the-deployed-counters) retain that limit.
+The public-wiki benchmark now checks actual owner-scoped draft persistence and both returned page observations;
+it no longer requires the removed `wiki/page/index` storage. The original failed oracle and corrected passing
+checks are separate receipts. Only source-identical benchmark Node maps join, by position; control coverage is
+disabled and the passing map is checked unchanged. The local evidence is held constant for the live comparison.
