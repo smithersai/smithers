@@ -1,0 +1,64 @@
+// The History object's publisher (worker/HistoryObject.vibe `publisher`, decision 0020, "Publishing and following
+// main") over random stories: the real engine in the object's SQLite, driven by the object's alarm in virtual time, on
+// the mock's repository, held to the refs a person's export of the same story publishes.
+import { it } from "@effect/vitest"
+import { REF_NAMES, type Pace } from "../src/history/export.vibe"
+import type { MainUnavailable } from "../src/history/flows.vibe"
+import { mockRepository } from "../src/history/MockMythical.vibe"
+import type { MainCommit } from "../src/history/Sequencer.vibe"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import type * as Objects from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { told, world as exportWorld } from "../test/support/exportFlow.vibe"
+import { StoryCommits, storyOf } from "./history-stories.vibe"
+import { run, same } from "./run.vibe"
+
+const Input = Schema.Struct({ commits: StoryCommits, writes: Schema.Literals([1, 3, 50]), follow: Schema.Boolean })
+
+/**
+ * The publisher starts once (the same start again before its first alarm, then `running`), publishes in paced rounds exactly the refs a person's
+ * export of the story publishes, moves nothing in a quiet round, and folds a commit main gains into the next round.
+ */
+it.live("history/publisher", () => run("history/publisher", Input, (input) => scoped(effect {
+  provide TestClock.layer() {
+    const story = storyOf(input.commits)
+    const kv = try Effect.try(() => objectStorage())
+    const storage = kv as unknown as Objects.Storage
+    const sequencer = try HistoryObject.history(storage)
+    const repository = mockRepository(sequencer)
+    const main: Array<MainCommit> = []
+    const log = { since: (sha: string): ReadonlyArray<MainCommit>!MainUnavailable => sync(() => main.slice(main.findIndex((commit) => commit.sha === sha) + 1)) }
+    const pace: Pace = { writes: input.writes, reads: 1, pauseMs: 120_000 }
+    const publishing = HistoryObject.publisher("history-publisher-fuzz", storage, sequencer, log, { repository, names: REF_NAMES, pace })
+    const refs = () => Effect.map(repository.readRefs([REF_NAMES.mythical, REF_NAMES.notes, REF_NAMES.manifest]), (each) => each.map((ref) => ref.oid))
+    // Alarms, each at the time the last one armed, until a round ends; false if 400 alarms end none.
+    const round = effect () => {
+      for (let n = 0; n < 400; n++) {
+        const armed = kv.alarmAt
+        if (armed !== undefined && armed > (try Clock.currentTimeMillis)) try TestClock.setTime(armed)
+        if ((try publishing.alarm())._tag === "Continued") return true
+      }
+      return false
+    }
+    try told(sequencer, story)
+    const once = try exportWorld()
+    try told(once.sequencer, story)
+    const answer = try once.run()
+    const expected = try once.refs()
+    const started = try publishing.start()
+    const again = try publishing.start()
+    if (started !== "started" || again !== "started" || answer.refusal !== null) return false
+    if (!(try round())) return false
+    const published = try refs()
+    if ((try publishing.start()) !== "running") return false
+    if (!same(published, expected)) return false
+    // A quiet round: nothing new on main, no ref moved.
+    if (!(try round()) || !same(try refs(), published)) return false
+    if (!input.follow) return true
+    // main gains a commit: the next round folds it and publishes a new mythical commit.
+    main.push({ sha: "c1c1c1c1c1c1", change: "", title: "docs: one more page", message: "docs: one more page" })
+    if (!(try round())) return false
+    const followed = try refs()
+    return (try sequencer.read()).real.some((real) => real.sha === "c1c1c1c1c1c1") && followed[0] !== published[0]
+  }
+})))

@@ -1,0 +1,25 @@
+// Random mythical-history stories, shared by the export and publisher targets (fuzz/history-export.fuzz.vibe,
+// fuzz/history-publisher.node.fuzz.vibe). A target file imports no other target file: its tests would run twice.
+import type { Intent } from "../src/history/mythical.vibe"
+
+/** Up to five commits over two epics, each left planned, worked, approved or landed by 1 to 3 folds. */
+export const StoryCommits = Schema.Array(Schema.Struct({ epic: Schema.Literals(["e1", "e2"]), state: Schema.Literals(["planned", "working", "approved", "landed"]), folds: Schema.Literals([1, 2, 3]), insert: Schema.Boolean })).check(Schema.isMinLength(1), Schema.isMaxLength(5))
+
+/** The intents that tell a story: each commit planned (before m1 when it asks to be), then started, approved and folded. */
+export function storyOf(commits: typeof StoryCommits.Type): ReadonlyArray<Intent> {
+  const intents: Array<Intent> = [{ type: "OpenEpic", id: "e1", title: "one" }, { type: "OpenEpic", id: "e2", title: "two" }]
+  let sha = 0
+  commits.forEach((commit, at) => {
+    const id = `m${at + 1}`
+    intents.push({ type: "Plan", id, epic: commit.epic, before: commit.insert && at > 0 && commits[0]!.epic === commit.epic ? "m1" : "", title: `commit ${at + 1}`, task: "" })
+    if (commit.state === "planned") return
+    intents.push({ type: "Start", id, lane: "fuzz" })
+    if (commit.state === "working") return
+    intents.push({ type: "Approve", id, by: "Fuzz" })
+    if (commit.state === "approved") return
+    for (let fold = 0; fold < commit.folds; fold++) {
+      intents.push({ type: "Fold", sha: (++sha).toString(16).padStart(12, "0"), change: "", title: `real ${sha}`, into: id })
+    }
+  })
+  return intents
+}

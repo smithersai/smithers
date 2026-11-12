@@ -1601,3 +1601,12 @@ for a read, an accept, a comment and a drawn request, each in a fresh fixture. A
 execution id names the admitted person), a viewer is forbidden what its role cannot do, an agent is forbidden to accept
 or decline, and a forbidden step writes nothing; the same person is never forbidden. Mutants caught: the execution id
 check removed; the agent check removed.
+
+`worker/HistoryObject.vibe`'s publisher (10 lines in the ninth measurement; decision 0020, "Publishing and following
+main"): `history/publisher` (new, `fuzz/history-publisher.node.fuzz.vibe`) tells a random story to a History object,
+starts its publisher twice (the same intent before its first alarm answers `started` again, as
+`test/historyPublish.test.vibe` pins), drives its alarms in virtual time at a drawn pace (1, 3 or 50 writes a batch),
+and holds the published refs to those a person's export of the same story publishes. After the first round a start
+answers `running`, a quiet round moves no ref, and a commit main gains is folded and published by the next round. The
+story generator moved to `fuzz/history-stories.vibe`, shared with `history/export-flow`. Mutants caught: the start's
+outcomes swapped; the publisher's next round not continued in its object.
