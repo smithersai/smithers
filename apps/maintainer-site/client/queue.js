@@ -46,7 +46,7 @@
   let linkIndex = -1
   let serverLast = null
   const inFlight = new Set() // answered here, not yet hidden by the server
-  const sent = [] // this session's answers, newest last, for undo
+  const sent = [] // this session's answers, newest last, for undo: { item, text, scope, saved, settled }
   const files = new Map() // [slice, commit, revision, path] -> Promise<{ ok, text, type }>
   let stats = { doneToday: 0, remaining: {}, total: 0, coverage: null }
   let missing = false
@@ -1199,30 +1199,47 @@
     const answer = { itemId: item.id, action, ...(action === "option" ? { option } : {}), ...(scope ? { scope: "all", kind: item.kind } : {}), text: bare(text) ? text.trim() : "", revision: item.revision ?? null, commit: item.commit ?? null, addedAt: item.addedAt ?? null, title: item.title }
     inFlight.add(item.id)
     items = items.filter((entry) => entry.id !== item.id)
-    sent.push({ item, text, scope })
+    // Its own record: an earlier answer that fails later removes only itself.
+    const { promise: settled, resolve: settle } = Promise.withResolvers()
+    const record = { item, text, scope, saved: false, settled }
+    sent.push(record)
     stats = { ...stats, doneToday: stats.doneToday + (action === "later" ? 0 : 1) }
     show(next(item.id), "up")
     try {
       await api("/api/answer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(answer) })
+      record.saved = true
       store.set(draftKey(item.id), "")
       store.set(scopeKey(item.id), "")
       if (scope) say(`Sent for ${allOf(item.kind)}`)
       setTimeout(updateBetweenItems, MOVE_MS + 60)
     } catch (error) {
-      // Not saved: put the item back under Will's hands with his text. If the curator replaced it, show the new version.
+      // Not saved: put the item back first in line with his text, and under his hands unless he has started on the
+      // card that replaced it. If the curator replaced the item, it comes back as the new version.
       const shown = error.status === 409 && error.body?.item?.id === item.id ? error.body.item : item
       inFlight.delete(item.id)
-      sent.pop()
+      sent.splice(sent.indexOf(record), 1)
       stats = { ...stats, doneToday: Math.max(0, stats.doneToday - (action === "later" ? 0 : 1)) }
       items = [shown, ...items.filter((entry) => entry.id !== item.id)]
       store.set(draftKey(item.id), text)
-      show(shown, "down")
-      say(shown === item ? `Not saved: ${error.message}` : "Not saved: the item changed since you opened it. This is the new version.", true)
+      const back = !current || !(hasDraft() || picked)
+      if (back) show(shown, "down")
+      else {
+        header()
+        footer()
+      }
+      say(shown === item ? `Not saved: ${error.message}` : `Not saved: the item changed since you opened it. ${back ? "This is" : "Next is"} the new version.`, true)
+    } finally {
+      settle()
     }
   }
 
   async function undo() {
-    const local = sent.at(-1)
+    // Undo follows the newest answer onto the server's stack: wait for one still sending, and skip it if it fails.
+    let local = sent.at(-1)
+    while (local && !local.saved) {
+      await local.settled
+      local = sent.at(-1)
+    }
     const itemId = local?.item.id ?? serverLast?.itemId
     if (!itemId) return say("Nothing to undo")
     try {
@@ -1231,7 +1248,7 @@
       return say(`Undo failed: ${error.message}`, true)
     }
     if (local) {
-      sent.pop()
+      sent.splice(sent.indexOf(local), 1)
       if (local.text && !store.get(draftKey(itemId))) store.set(draftKey(itemId), local.text)
       if (local.scope) store.set(scopeKey(itemId), "all")
     }
