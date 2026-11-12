@@ -326,6 +326,17 @@ function collectEarlyReturnNarrowings(cond: TExpr): { varName: string; innerTy: 
 /** Negated discriminant check (`path.kind !== "lit"`) on a var or field path.
  *  After `if (path.kind !== "lit") return`, the rest of the block knows the
  *  path is that variant. */
+/** The field paths a false `cond` proves present: `model.issues === undefined`, or each such disjunct of an `||` chain.
+ *  The else-branch of `cond ? a : b`, and the rest of a block after `if (cond) return`, read them narrowed
+ *  (fixtures/update-shapes, `found`). */
+function negatedPathPresences(cond: TExpr): NarrowedPath[] {
+  if (cond.kind === "binop" && cond.op === "||") return [...negatedPathPresences(cond.left), ...negatedPathPresences(cond.right)];
+  const f = presentFact(cond);
+  if (!f || !f.negated || f.scrutinee.kind === "var") return [];
+  const path = asTExprAccessPath(f.scrutinee);
+  return path ? [{ path, narrowedTy: f.innerTy }] : [];
+}
+
 function negatedVariantCheck(cond: TExpr): NarrowedPath | null {
   if (cond.kind === "binop" && cond.op === "!==" && cond.right.kind === "str" &&
       cond.left.kind === "field" && cond.left.isDiscriminant && cond.left.obj.ty.kind === "user") {
@@ -1470,6 +1481,8 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
           elseCtx = withEnv(elseCtx, extend(elseCtx.env, n.varName, n.innerTy));
         }
       }
+      const elsePaths = negatedPathPresences(cond);
+      if (elsePaths.length > 0) elseCtx = { ...elseCtx, narrowedPaths: [...elseCtx.narrowedPaths, ...elsePaths] };
       // Map-index narrowing: `k in m` in the cond narrows the then-branch; `!(k in m)`
       // narrows the else-branch. Parallel to the if-statement hook in resolveStmt.
       thenCtx = withInAtoms(thenCtx, extractInAtoms(cond));
@@ -1561,6 +1574,7 @@ function resolveBlock(stmts: RawStmt[], ctx: Ctx): TStmt[] {
         }
         const nv = negatedVariantCheck(typed.cond);
         if (nv) narrowedPaths = [...narrowedPaths, nv];
+        narrowedPaths = [...narrowedPaths, ...negatedPathPresences(typed.cond)];
       }
       // Map-index narrowing: `if (!(k in m)) return;` means `k in m` holds in rest.
       if (typed.kind === "if") {

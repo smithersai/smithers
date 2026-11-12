@@ -68,7 +68,7 @@ function walkExpr(e: TExpr, ctx: CondCtx): TExpr {
   const absent = ruleOrOptional(e, ctx);
   if (absent) return absent;
   const r = recurseExpr(e, ctx);
-  return ruleNullish(r, ctx) ?? ruleNullishIndex(r) ?? ruleOptChainIndex(r) ?? ruleOptChain(r, ctx) ?? ruleImplOptional(r, ctx) ?? (premise ? null : ruleAndOptional(r, ctx)) ?? ruleImplArrayIsArray(r, ctx) ?? ruleConditionalArrayIsArray(r, ctx) ?? ruleConditionalAndArrayIsArray(r, ctx) ?? ruleConditionalAndOptional(r, ctx) ?? ruleConditionalOptionalSimple(r, ctx) ?? ruleConditionalInMap(r, ctx) ?? ruleConditionalOptionalTruthy(r, ctx) ?? r;
+  return ruleNullish(r, ctx) ?? ruleNullishIndex(r) ?? ruleOptChainIndex(r) ?? ruleOptChain(r, ctx) ?? ruleImplOptional(r, ctx) ?? (premise ? null : ruleAndOptional(r, ctx)) ?? ruleImplArrayIsArray(r, ctx) ?? ruleConditionalArrayIsArray(r, ctx) ?? ruleConditionalAndArrayIsArray(r, ctx) ?? ruleConditionalAndOptional(r, ctx) ?? ruleConditionalOrAbsent(r, ctx) ?? ruleConditionalOptionalSimple(r, ctx) ?? ruleConditionalInMap(r, ctx) ?? ruleConditionalOptionalTruthy(r, ctx) ?? r;
 }
 
 function recurseExpr(e: TExpr, ctx: CondCtx): TExpr {
@@ -652,6 +652,22 @@ function containsMethodCall(e: TExpr): boolean {
       e.cases.some(c => containsMethodCall(c.body)) ||
       (e.fallthrough ? containsMethodCall(e.fallthrough) : false);
   }
+}
+
+/** Driver (expression): `x === undefined || rest ? a : b` — an absence fact leading an `||` guard, the mirror of
+ *  `ruleConditionalAndOptional`.
+ *  → `someMatch x { Some(_x_val) => if rest then a else b, None => a }` (fixtures/update-shapes, `closed`). */
+function ruleConditionalOrAbsent(e: TExpr, ctx: CondCtx): TExpr | null {
+  if (e.kind !== "conditional") return null;
+  const disjuncts = (c: TExpr): TExpr[] => c.kind === "binop" && c.op === "||" ? [...disjuncts(c.left), ...disjuncts(c.right)] : [c];
+  const parts = disjuncts(e.cond);
+  if (parts.length < 2) return null;
+  const check = presentFact(parts[0]!);
+  if (!check || !check.negated) return null;
+  const restCond = parts.slice(2).reduce<TExpr>((left, right) => ({ kind: "binop", op: "||", left, right, ty: { kind: "bool" } }), parts[1]!);
+  if (containsMethodCall(restCond)) return null;
+  const innerCond: TExpr = { kind: "conditional", cond: restCond, then: e.then, else: e.else, ty: e.ty };
+  return presentMatchExpr(check, walkExpr(innerCond, ctx), e.then, e.ty, ctx);
 }
 
 /** Driver (expression): `x !== undefined && rest ? a : b` — presence fact in

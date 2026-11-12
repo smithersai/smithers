@@ -187,6 +187,20 @@ for name in return constructor regex method role table spread names; do
     "a wrong twin verified (update-returns/wrong-$name)" \
     "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/update-returns/wrong-$name.ts"
 done
+# The shapes of a Foldkit `update` arm table (update-shapes): whole-payload and defaulted match bindings, an absence
+# check leading an `||` guard, a field path narrowed in a conditional's else-branch, a namespace constant, and a
+# declared projection's anonymous result.
+cp -R tools/fixtures/update-shapes "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/update-shapes/use.ts"
+expect_proof_failure \
+  "a defaulted binding verified as always the default (update-shapes)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/update-shapes/use-wrong.ts"
+# A field path a false absence check proves present is narrowed after an early return too (optional-path-else).
+cp tools/fixtures/optional-path-else.ts tools/fixtures/optional-path-else-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-path-else.ts"
+expect_proof_failure \
+  "an absent path verified as narrowed (optional-path-else)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-path-else-wrong.ts"
 # Unicode case mapping changes non-ASCII text and its length; the model must not prove otherwise.
 cp tools/fixtures/string-case-length-wrong.ts "$fixture_dir/"
 expect_proof_failure \

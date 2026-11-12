@@ -277,12 +277,15 @@ function detectCrossFileExtern(
   // type through the caller's namespace import (`Decide.Screen`); the declaration is extracted under its own name.
   const namespaces = sourceFile.getImportDeclarations().map(i => i.getNamespaceImport()?.getText()).filter((n): n is string => n !== undefined);
   const unqualified = (text: string) => namespaces.reduce((out, n) => out.replace(new RegExp(String.raw`\b${n}\.(?=[A-Za-z_])`, "g"), ""), text);
-  const externTypeText = (t: Type, written?: Node) => {
+  // An anonymous object type with no written name (a declared projection's result, `screenOf(model): { … }`) is a
+  // record synthesized from `hint`, which the structural merge matches to a declared one (fixtures/update-shapes).
+  const externTypeText = (t: Type, written?: Node, hint?: string) => {
     if (hostDeclared(withoutReadonly(t))) return HOST_TYPE;
     const printed = unqualified(t.getText(callee, ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope | ts.TypeFormatFlags.NoTruncation));
     if (!printed.includes("{")) return printed;
     if (written && Node.isTypeReference(written) && written.getTypeArguments().length === 0) return written.getTypeName().getText().replace(/^.*\./, "");
-    return typeToString(t);
+    const text = typeToString(t);
+    return hint !== undefined && /\b__(?:type|object)\b/.test(text) ? localTypeText(withoutReadonly(t), hint, callee) : text;
   };
   // A parameter of an anonymous object type, as a project declaration states a Foldkit command's arguments, is a
   // record named after the extern (`PingArgs`; `{}` is the record with no fields), so the call's object literal is
@@ -311,7 +314,7 @@ function detectCrossFileExtern(
     tsType: argsRecord(p.getTypeAtLocation(callee), index)
       ?? externTypeText(p.getTypeAtLocation(callee), (p.getDeclarations()[0] as { getTypeNode?: () => Node | undefined } | undefined)?.getTypeNode?.()),
   }));
-  const returnType = externTypeText(sig.getReturnType(), declaration?.getReturnTypeNode?.());
+  const returnType = externTypeText(sig.getReturnType(), declaration?.getReturnTypeNode?.(), declaredValue ? typeName(`${calleeName.charAt(0).toUpperCase()}${calleeName.slice(1)}Result`) : undefined);
   for (const p of sig.getParameters()) {
     sigTypesOut.push({ type: p.getTypeAtLocation(callee), node: callee });
   }
@@ -396,8 +399,16 @@ function taggedMatchStatement(node: Node, line: number, input?: RawExpr): RawStm
     const body: RawStmt[] = [];
     if (params.length === 1) {
       const pattern = params[0]!.getNameNode();
-      if (!Node.isObjectBindingPattern(pattern)) throw new Error(`Tagged match arm ${arm.getName()} at line ${line}: destructure the message in the parameter`);
-      for (const element of pattern.getElements()) {
+      // `Measured: (box) => …`: the whole payload, a record of the variant's fields; a declared record of the same
+      // structure (`Box`) is that record (fixtures/update-shapes).
+      if (Node.isIdentifier(pattern)) {
+        const payload = params[0]!.getType();
+        const fields = payload.getProperties().filter(f => f.getName() !== "_tag")
+          .map(f => ({ name: f.getName(), value: { kind: "field", obj: scrutinee, field: f.getName() } as RawExpr }));
+        body.push({ kind: "let", name: pattern.getText(), mutable: false,
+          tsType: localTypeText(payload, typeName(arm.getName(), pattern.getText()), params[0]!), init: { kind: "record", spread: null, fields }, line });
+      } else if (!Node.isObjectBindingPattern(pattern)) throw new Error(`Tagged match arm ${arm.getName()} at line ${line}: destructure the message in the parameter`);
+      else for (const element of pattern.getElements()) {
         if (element.getDotDotDotToken()) throw new Error(`Tagged match arm ${arm.getName()} at line ${line}: rest binding is not supported`);
         const field = element.getPropertyNameNode()?.getText() ?? element.getName();
         const read: RawExpr = { kind: "field", obj: scrutinee, field };
@@ -687,6 +698,18 @@ function extractExpr(node: Expression): RawExpr {
   // Non-`?` continuation of an existing optChain extends the chain (no new
   // short-circuit, just keep evaluating after the prior `?` succeeded).
   if (Node.isPropertyAccessExpression(node)) {
+    // `State.startIntent`: a constant another module exports, read through a namespace import, is that constant,
+    // copied here as `State_startIntent` (fixtures/update-shapes).
+    const namespace = node.getExpression();
+    if (_currentSourceFile && Node.isIdentifier(namespace) && !node.hasQuestionDotToken()
+        && (namespace.getSymbol()?.getDeclarations() ?? []).some(Node.isNamespaceImport)) {
+      const decl = crossFileConst(node.getNameNode(), _currentSourceFile.getFilePath());
+      if (decl) {
+        const flat = `${namespace.getText()}_${node.getName()}`;
+        _externContractConsts.set(flat, decl);
+        return { kind: "var", name: flat };
+      }
+    }
     const obj = extractExpr(node.getExpression());
     const field = node.getName();
     if (node.hasQuestionDotToken()) {
@@ -2927,6 +2950,14 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   _externs.clear();
   _externContractConsts.clear();
   _externSigTypes.length = 0;
+  // Per-module synthesis state, reset before anything synthesizes: a contract's externs below already do
+  // (`ScreenOfArgs`), and the structural merge must see those names (fixtures/update-shapes).
+  _anonNames = new Map();
+  _anonDecls = [];
+  _synthesizedNames = new Set();
+  _regexMethodNames = new Map();
+  _reservedTypeNames = new Set(sourceFile.getStatements().flatMap(st =>
+    Node.isTypeAliasDeclaration(st) || Node.isInterfaceDeclaration(st) || Node.isClassDeclaration(st) || Node.isEnumDeclaration(st) ? [st.getName() ?? ""] : []));
   // Activate the synthesized-type accumulator (see below) before the first extern is read: a contract may call an
   // extern whose argument record (`PingArgs`) is synthesized into `typeDecls`.
   _synthArrayUnions = typeDecls;
@@ -3023,12 +3054,6 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // TypeScript collapses `type X = | { kind: 'A'; ... }` to a plain object type, losing
   // the alias. We record a fingerprint (sorted property names) → alias name mapping.
   _collapsedUnionMap = new Map();
-  _anonNames = new Map();
-  _anonDecls = [];
-  _synthesizedNames = new Set();
-  _regexMethodNames = new Map();
-  _reservedTypeNames = new Set(sourceFile.getStatements().flatMap(st =>
-    Node.isTypeAliasDeclaration(st) || Node.isInterfaceDeclaration(st) || Node.isClassDeclaration(st) || Node.isEnumDeclaration(st) ? [st.getName() ?? ""] : []));
   for (const stmt of sourceFile.getStatements()) {
     if (Node.isTypeAliasDeclaration(stmt)) {
       const type = stmt.getType();
