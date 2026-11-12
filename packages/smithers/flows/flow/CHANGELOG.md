@@ -49,6 +49,9 @@
   so it is retried and then parked instead of stopping the run as a `bug`;
   `unsafe_interrupt_unsupported` stays `bug`.
 - Recovered flows could dispatch before their action handlers finished building and report `unresolved_action`. Interpreter registration now waits for its implementation layers.
+- Human questions with fully literal payloads given `NaN` or an infinite
+  `timeoutMs` or `maxAttempts` now fail with a `SchemaError` naming the field instead of an unrelated plan
+  identity error ([#4638](https://github.com/smithersai/smithers/issues/4638)).
 
 - Publish node outcomes only after their settlement records persist. Join journal
   reads isolate their waiting annotation, and joins request loser interruption

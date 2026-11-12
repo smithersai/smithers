@@ -139,11 +139,11 @@ so a restart between the park and the answer resumes on the same token.
 `HumanTask.HumanTaskFailed` carries `code`, `task`, `attempts`, the `rejections`
 it collected, and a message:
 
-| Code              | Meaning                                                                                                                                                                                                                                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `request_invalid` | The question was unanswerable before anyone was asked: a `select` with no options, an attempt budget below one or above `HumanTask.maxAttemptBudget`, a `timeoutMs` that is not a length of time or is above `Number.MAX_SAFE_INTEGER`, or a schema outside the subset or past its depth or node bound. |
-| `rejected`        | The attempt budget was spent on answers the task refused.                                                                                                                                                                                                                                               |
-| `timeout`         | The deadline passed with the question still open.                                                                                                                                                                                                                                                       |
+| Code              | Meaning                                                                                                                                                                                                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `request_invalid` | The question was unanswerable before anyone was asked: a `select` with no options, an attempt budget below one or above `HumanTask.maxAttemptBudget`, a negative `timeoutMs` or one whose due time is above `Number.MAX_SAFE_INTEGER`, or a schema outside the subset or past its depth or node bound. |
+| `rejected`        | The attempt budget was spent on answers the task refused.                                                                                                                                                                                                                                              |
+| `timeout`         | The deadline passed with the question still open.                                                                                                                                                                                                                                                      |
 
 `HumanTask.HumanAnswerInvalid` is the separate refusal an answer earns before it
 can consume durable storage, with `answer_invalid` for an answer outside the
@@ -162,6 +162,12 @@ deadline settles under the in-process engine and the SQLite engine store alike.
 
 A parked dispatch keeps its attempt row and its attempt number, so a question
 that waits out a person costs nothing against the action's retry budget.
+
+`timeoutMs` and `maxAttempts` are finite numbers in the payload schema. A
+fully literal payload that supplies `NaN` or an infinity fails as a
+`SchemaError` naming the field before the plan is written. Payloads containing
+earlier step results cannot be schema-checked until those values resolve; if
+their plan cannot be recorded first, the interpreter retains its plan refusal.
 
 ## Bounded by construction
 

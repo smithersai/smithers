@@ -42,7 +42,7 @@
  * @since 0.1.0
  */
 
-import { isRecord } from "@smthrs/canonical/Record"
+import { Canonical, isRecord } from "@smthrs/canonical"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DerivedKey, digest } from "@smthrs/keys"
 import { isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
@@ -500,14 +500,51 @@ const planIdentity = (
     inputs: {},
     layers: [],
     capabilities: {}
-  }).pipe(Effect.mapError((cause) =>
-    new InterpreterError({
-      code: "incomplete_graph",
-      flow,
-      node: "root",
-      message: `Cannot identify recorded plan: ${String(cause)}`
-    })
+  }).pipe(Effect.catch((cause) =>
+    Effect.flatMap(refusedLiteral(graph), (refused) =>
+      refused === undefined
+        ? Effect.fail(
+          new InterpreterError({
+            code: "incomplete_graph",
+            flow,
+            node: "root",
+            message: `Cannot identify recorded plan: ${String(cause)}`
+          })
+        )
+        : Effect.die(refused))
   ))
+
+/**
+ * The declared refusal behind a plan no key can record, when a declaration
+ * states one.
+ *
+ * RFC 8785 has no `NaN` or `Infinity`, so a literal payload carrying one is a
+ * plan the identity cannot take, and the key's refusal names the plan rather
+ * than the field. The declaration that was called is where the author reads
+ * what went wrong: its payload schema is run over the literal exactly as the
+ * implementation runs it at dispatch. A refused field raises a
+ * `SchemaError` before the plan is written. Recordable inputs are skipped
+ * so an unrelated invalid payload cannot mask the plan's own refusal. A call that reads another node's result is
+ * skipped, because its payload holds placeholders no payload schema admits,
+ * and a placeholder is canonical. A call whose declaration did not survive
+ * serialization has no schema to consult, and a declaration whose schema
+ * admits the literal leaves the plan's own refusal in place.
+ *
+ * @private
+ */
+const refusedLiteral = (graph: Graph.Graph): Effect.Effect<Schema.SchemaError | undefined> =>
+  Effect.gen(function*() {
+    for (const node of Graph.nodes(graph)) {
+      if (node.ast._tag !== "ActionCall" || node.draft.material.inputs.some((input) => input._tag === "Ref")) continue
+      const schema = ownDataProperty(Node.declaration(node.ast), "payloadSchema")
+      if (!Schema.isSchema(schema)) continue
+      const recordable = yield* Effect.isSuccess(Schema.decodeUnknownEffect(Canonical)(node.draft.material.inputs))
+      if (recordable) continue
+      const issue = yield* Effect.option(Effect.flip(schema.makeEffect(node.payload as never)))
+      if (Option.isSome(issue)) return new Schema.SchemaError(issue.value)
+    }
+    return undefined
+  })
 
 /** Appends `value` to the list `lists` keeps under `key`. @private */
 const append = <V>(lists: Map<string, Array<V>>, key: string, value: V): void => {

@@ -513,8 +513,11 @@ const payloadFields = {
     Schema.Array(option).check(Schema.isMaxLength(maxOptions))
   ),
   schema: Schema.optional(boundedSchema),
-  timeoutMs: Schema.optional(Schema.Number),
-  maxAttempts: Schema.optional(Schema.Number)
+  // Finite, because a recorded plan is canonical JSON and JSON has no `NaN`
+  // or `Infinity`: a payload carrying one could not be planned, so the
+  // declaration refuses it, naming the field.
+  timeoutMs: Schema.optional(Schema.Finite),
+  maxAttempts: Schema.optional(Schema.Finite)
 }
 
 /**
@@ -669,13 +672,14 @@ const budgetOf = (payload: Payload): Effect.Effect<number, HumanTaskFailed> => {
  * The deadline a payload asks for, refused when it is not a length of time.
  *
  * `Duration.millis` takes any number, so an unchecked deadline does not fail —
- * it changes what the question means. `NaN` is not a length of time at all, and
- * a negative is a due time before the question was asked. `Infinity` becomes
- * the infinite duration, so the race has a branch that can never win and a
- * question asked with a deadline has none. All three are the same authoring
- * mistake as a `select` with no options, and they are refused in the same
- * place, before the first park, rather than surfacing as a `timeout` nobody
- * waited for.
+ * it changes what the question means. A negative is a due time before the
+ * question was asked, and a due time past `Number.MAX_SAFE_INTEGER` is one no
+ * durable clock records. Both are the same authoring mistake as a `select`
+ * with no options, and they are refused in the same place, before the first
+ * park, rather than surfacing as a `timeout` nobody waited for. `NaN` and the
+ * infinities never get this far: the payload schema declares `timeoutMs`
+ * finite, so they are refused as a payload the declaration does not admit,
+ * naming the field.
  *
  * Zero is a length of time, the documented floor of `timeoutMs`, and is kept:
  * the question is asked and its deadline has already passed, so it settles as
@@ -690,7 +694,7 @@ const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefin
     if (timeoutMs === undefined) return undefined
     const now = yield* Clock.currentTimeMillis
     // Validate the absolute due time, as DurableClock.sleep does before parking.
-    if (Number.isFinite(timeoutMs) && timeoutMs >= 0 && now + timeoutMs <= Number.MAX_SAFE_INTEGER) {
+    if (timeoutMs >= 0 && now + timeoutMs <= Number.MAX_SAFE_INTEGER) {
       return Duration.millis(timeoutMs)
     }
     return yield* Effect.fail(
@@ -699,7 +703,7 @@ const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefin
         "request_invalid",
         0,
         [],
-        `${tag} was called with timeoutMs ${timeoutMs}. A deadline must be non-negative and finite, ` +
+        `${tag} was called with timeoutMs ${timeoutMs}. A deadline must be non-negative, ` +
           `with an absolute due time at most ${Number.MAX_SAFE_INTEGER}.`
       )
     )

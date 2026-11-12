@@ -15,7 +15,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * timeout does is asserted rather than waited out.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, FlowRuntime, Graph, HumanTask, Interpreter } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Graph, HumanTask, Interpreter, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
@@ -931,20 +931,24 @@ describe("HumanTask gives up", () => {
   })
 
   effect("refuses a deadline no clock can keep before it parks", () => {
-    // Each of these reaches `Duration.millis` unread today, and each fails a
-    // different way: a negative or NaN length is a deadline that has ALREADY
-    // passed, so the question times out on the first park without anyone being
-    // asked, and an infinite length is a deadline that never arrives, so a
-    // question that declares one has none. All three are the same authoring
-    // mistake, and it is refused where the other unanswerable questions are.
-    const refused = (timeoutMs: number, executionId: string) => {
+    // Each of these would reach `Duration.millis` unread, and each would fail
+    // a different way: a negative length is a deadline that has ALREADY
+    // passed, so the question would time out on the first park without anyone
+    // being asked, and a due time past the safe-integer range is one no
+    // durable clock records. Both are refused where the other unanswerable
+    // questions are, as `request_invalid`. A NaN or infinite length is not a
+    // payload the declaration admits at all: a recorded plan is canonical JSON,
+    // which has no such number, so the payload schema refuses it, naming the
+    // field, before the plan is written.
+    const refused = (timeoutMs: number, executionId: string, sequenced = false) => {
       const instance = makeInstance(Host, executionId)
+      const question = HumanTask.action.call({ name: "release", kind: "confirm", prompt: "Ship it?", timeoutMs })
       return drive(
         Effect.gen(function*() {
           yield* TestClock.adjust(1)
           const result = yield* Flow.intoResult(
             Interpreter.interpret(
-              HumanTask.action.call({ name: "release", kind: "confirm", prompt: "Ship it?", timeoutMs })
+              sequenced ? Node.succeed("ready").pipe(Node.bindPlanned(() => question)) : question
             )
           )
 
@@ -952,22 +956,23 @@ describe("HumanTask gives up", () => {
           if (result._tag === "Complete") {
             expect(Exit.isFailure(result.exit)).toBe(true)
             if (Exit.isFailure(result.exit)) {
-              expect(result.exit.cause.reasons[0]).toMatchObject({
-                error: {
-                  ...(Number.isFinite(timeoutMs) ?
-                    {
+              expect(result.exit.cause.reasons[0]).toMatchObject(
+                Number.isFinite(timeoutMs) ?
+                  {
+                    _tag: "Fail",
+                    error: {
                       _tag: "@smthrs/flow/HumanTaskFailed",
                       code: "request_invalid",
                       task: "release",
-                      attempts: 0
-                    } :
-                    {
-                      _tag: "@smthrs/flow/InterpreterError",
-                      code: "incomplete_graph",
-                      message: expect.stringContaining("Cannot identify recorded plan")
-                    })
-                }
-              })
+                      attempts: 0,
+                      message: expect.stringContaining(`timeoutMs ${timeoutMs}`)
+                    }
+                  } :
+                  {
+                    _tag: "Die",
+                    defect: { _tag: "SchemaError", message: expect.stringContaining("timeoutMs") }
+                  }
+              )
             }
           }
           expect(instance.suspended).toBe(false)
@@ -978,13 +983,122 @@ describe("HumanTask gives up", () => {
 
     return Effect.all([
       refused(Number.NaN, "human-deadline-nan"),
+      refused(Number.NaN, "human-deadline-nan-sequenced", true),
+      refused(Number.POSITIVE_INFINITY, "human-deadline-infinite-sequenced", true),
       refused(Number.POSITIVE_INFINITY, "human-deadline-infinite"),
+      refused(Number.NEGATIVE_INFINITY, "human-deadline-negative-infinite"),
       refused(-5, "human-deadline-negative"),
       // A durable store records the timeout clock's due time as a safe integer.
       refused(2 ** 53, "human-deadline-past-safe"),
       refused(Number.MAX_SAFE_INTEGER, "human-deadline-due-overflow"),
       refused(Number.MAX_VALUE, "human-deadline-max-value")
     ], { discard: true })
+  })
+
+  effect("refuses an invalid attempt budget before it parks", () => {
+    // `maxAttempts` is declared finite for the same reason `timeoutMs` is: a
+    // plan cannot record NaN or Infinity, so the declaration refuses them,
+    // naming the field. A fractional budget is a number the plan records, and
+    // the task refuses it as an attempt count, where it refuses zero.
+    const refused = (maxAttempts: number, executionId: string, sequenced = false) => {
+      const instance = makeInstance(Host, executionId)
+      const question = HumanTask.action.call({ name: "release", kind: "confirm", prompt: "Ship it?", maxAttempts })
+      return drive(
+        Effect.gen(function*() {
+          const result = yield* Flow.intoResult(
+            Interpreter.interpret(
+              sequenced ? Node.succeed("ready").pipe(Node.bindPlanned(() => question)) : question
+            )
+          )
+
+          expect(result._tag).toBe("Complete")
+          if (result._tag === "Complete") {
+            expect(Exit.isFailure(result.exit)).toBe(true)
+            if (Exit.isFailure(result.exit)) {
+              expect(result.exit.cause.reasons[0]).toMatchObject(
+                Number.isFinite(maxAttempts) ?
+                  {
+                    _tag: "Fail",
+                    error: {
+                      _tag: "@smthrs/flow/HumanTaskFailed",
+                      code: "request_invalid",
+                      task: "release",
+                      attempts: 0,
+                      message: expect.stringContaining(`maxAttempts ${maxAttempts}`)
+                    }
+                  } :
+                  {
+                    _tag: "Die",
+                    defect: { _tag: "SchemaError", message: expect.stringContaining("maxAttempts") }
+                  }
+              )
+            }
+          }
+          expect(instance.suspended).toBe(false)
+        }),
+        instance
+      )
+    }
+
+    return Effect.all([
+      refused(Number.NaN, "human-budget-nan"),
+      refused(Number.NaN, "human-budget-nan-sequenced", true),
+      refused(Number.POSITIVE_INFINITY, "human-budget-infinite-sequenced", true),
+      refused(Number.POSITIVE_INFINITY, "human-budget-infinite"),
+      refused(Number.NEGATIVE_INFINITY, "human-budget-negative-infinite"),
+      refused(1.5, "human-budget-fractional")
+    ], { discard: true })
+  })
+
+  effect("keeps the plan's own refusal when no declaration explains it", () => {
+    // The plan cannot be recorded because of a literal no declaration admitted:
+    // a `succeed` is not a call, the task that reads another node's result
+    // holds a placeholder rather than a literal, the task with a sound payload
+    // is recordable even if it fails its schema, the sleep admits its
+    // non-finite payload, and the task whose declaration did not survive
+    // serialization has no schema to consult. None explains the plan failure
+    // with a schema refusal, so the plan's own refusal stands.
+    const instance = makeInstance(Host, "human-plan-unexplained")
+    const asked = { name: "release", kind: "confirm", prompt: "Ship it?" } as const
+    const detached = <A, E, R>(built: Node.Node<A, E, R>): Node.Node<A, E, R> =>
+      Object.assign(Object.create(Object.getPrototypeOf(built) as object) as Node.Node<A, E, R>, {
+        ast: JSON.parse(JSON.stringify(built.ast)) as Node.Ast
+      })
+    return drive(
+      Effect.gen(function*() {
+        const result = yield* Flow.intoResult(
+          Interpreter.interpret(
+            Node.all({
+              unrecordable: Node.succeed(Number.NaN),
+              sound: HumanTask.action.call(asked),
+              unrelatedInvalid: HumanTask.action.call({ ...asked, name: "x".repeat(HumanTask.maxTaskNameBytes + 1) }),
+              admittedNonFinite: Sleep.action.call({ millis: Number.NaN }),
+              dependent: Node.succeed("Ship it?").pipe(
+                Node.bindPlanned((prompt) => HumanTask.action.call({ ...asked, name: "dependent", prompt }))
+              ),
+              rehydrated: detached(HumanTask.action.call({ ...asked, name: "rehydrated" }))
+            })
+          )
+        )
+
+        expect(result._tag).toBe("Complete")
+        if (result._tag === "Complete") {
+          expect(Exit.isFailure(result.exit)).toBe(true)
+          if (Exit.isFailure(result.exit)) {
+            expect(result.exit.cause.reasons[0]).toMatchObject({
+              _tag: "Fail",
+              error: {
+                _tag: "@smthrs/flow/InterpreterError",
+                code: "incomplete_graph",
+                message: expect.stringContaining("Cannot identify recorded plan")
+              }
+            })
+          }
+        }
+        expect(instance.suspended).toBe(false)
+      }),
+      instance
+    )
   })
 
   effect("keeps a deadline of no time at all, which is a deadline that has passed", () => {
