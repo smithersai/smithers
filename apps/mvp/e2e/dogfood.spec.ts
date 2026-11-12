@@ -93,7 +93,8 @@ test("dogfood 1, the issue: a Member opens it in the app, and it reaches GitHub 
       await page.getByLabel("Title").fill(ISSUE_TITLE)
       await page.getByLabel("Description").fill(ISSUE_BODY)
       await page.getByRole("button", { name: "Create issue" }).click()
-      await expect(page).toHaveURL(new RegExp(`/${REPO}/issues$`))
+      // Create opens the issue once GitHub numbers it, never the list.
+      await expect(page).toHaveURL(new RegExp(`/${REPO}/issues/\\d+$`), { timeout: 5 * 60_000 })
     })
   }
   const issue = await step("GitHub has it, opened by the person", async () => {

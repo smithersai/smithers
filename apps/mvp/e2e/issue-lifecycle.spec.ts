@@ -35,9 +35,9 @@ const openIssue = async (page: Page, title: string, body: string) => {
   await page.getByLabel("Title", { exact: true }).fill(title)
   await page.getByLabel("Description", { exact: true }).fill(body)
   await page.getByRole("button", { name: "Create issue", exact: true }).click()
-  const row = page.getByRole("listitem").filter({ hasText: title })
-  await expect(row).toContainText(/#\d+/, { timeout: 120_000 })
-  await row.getByRole("link", { name: title, exact: true }).click()
+  // Create stays on the queued write until GitHub numbers the issue, then opens it: never the list.
+  await expect(page).toHaveURL(new RegExp(`/${repo}/issues/\\d+$`), { timeout: 120_000 })
+  await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole("group", { name: "Triage", exact: true })).toBeVisible({ timeout: 60_000 })
   return Number(new URL(page.url()).pathname.split("/").at(-1))
 }

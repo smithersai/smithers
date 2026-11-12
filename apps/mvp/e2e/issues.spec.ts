@@ -234,14 +234,13 @@ test("triage: a Maintainer enables it, the flow labels a new issue, another devi
   if (await enable.isVisible({ timeout: 30_000 }).catch(() => false)) await enable.click()
   await expect(list.getByRole("button", { name: PAUSE_TRIAGE })).toBeVisible({ timeout: 60_000 })
 
-  // A opens an issue; once GitHub numbers it, it shows Proposed.
+  // A opens an issue; once GitHub numbers it, Create opens it, and it shows Proposed.
   await list.getByRole("link", { name: NEW_ISSUE }).click()
   await a.page.getByLabel("Title").fill(title)
   await a.page.getByLabel("Description").fill("Steps: open the issues page and press New issue with an empty title. It crashes.")
   await a.page.getByRole("button", { name: "Create issue" }).click()
-  const row = (page: Page) => page.getByRole("listitem").filter({ hasText: title })
-  await expect(row(a.page)).toContainText(/#\d+/, { timeout: 120_000 })
-  await row(a.page).getByRole("link", { name: title }).click()
+  await expect(a.page).toHaveURL(new RegExp(`/${scratch}/issues/\\d+$`), { timeout: 120_000 })
+  await expect(a.page.getByRole("heading", { name: title })).toBeVisible({ timeout: 60_000 })
 
   // Run triage again hands it to the flow: the judge decides, and the App's label comes back through the sync.
   await expect(triage(a.page)).toContainText("Proposed", { timeout: 60_000 })
