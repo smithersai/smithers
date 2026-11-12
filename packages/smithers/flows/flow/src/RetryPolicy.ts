@@ -526,8 +526,11 @@ export const isNonRetryable = (policy: RetryPolicy, error: unknown): boolean => 
  *
  * A failure that carries its own `retryAfterMillis`, a finite non-negative
  * number of milliseconds such as a provider's `Retry-After` on a
- * `ModelError`, retries after that delay instead of the policy's backoff,
- * capped by `maxMs` and by what remains of `expirationMs`.
+ * `ModelError`, waits at least that long: the hint raises the policy's
+ * backoff delay for the attempt and never lowers it, capped by `maxMs` and
+ * by what remains of `expirationMs`. A hint of zero on every attempt still
+ * backs off, so a server that keeps answering `Retry-After: 0` cannot make
+ * the engine re-dispatch in a tight loop.
  *
  * @category attempts
  * @since 0.1.0
@@ -558,7 +561,7 @@ export const decide = (
           ? giveUp("expired")
           : giveUp("exhausted"),
       onSome: (delay) => {
-        // A failure may supply a delay instead of the policy backoff, under
+        // A failure may lengthen the policy backoff with its own delay, under
         // the name `@smthrs/model`'s `ModelError` carries a provider's
         // Retry-After in. Inspect only an own data property: failure payloads
         // can be untrusted.
@@ -574,8 +577,11 @@ export const decide = (
         if (typeof hint !== "number" || !Number.isFinite(hint) || hint < 0) {
           return retryAfter(delay)
         }
+        // The hint is a floor under the backoff, never a replacement for it: a
+        // hint below the policy delay (such as `Retry-After: 0`) keeps the
+        // attempt's backoff, so repeated hints cannot busy-loop a worker.
         return retryAfter(Math.min(
-          hint,
+          Math.max(hint, delay),
           policy.maxMs,
           policy.expirationMs !== undefined && options.elapsedMs !== undefined
             ? Math.max(0, policy.expirationMs - options.elapsedMs)

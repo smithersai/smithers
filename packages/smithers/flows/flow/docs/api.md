@@ -451,7 +451,7 @@ A `RetryPolicy` is a plain value, so the next retry delay is derived from a pers
 
 `nextDelay` is total even for a policy that never went through `make`, which is what a policy decoded from a persisted row is: a non-finite attempt, elapsed time, bound, or computed delay answers `None` rather than handing the engine a negative or `NaN` duration to sleep for.
 
-A failure with its own `retryAfterMillis`, a finite non-negative number of milliseconds such as a provider's `Retry-After` on a `ModelError`, retries after that delay instead of the policy's backoff, capped by `maxMs` and by what remains of `expirationMs`.
+A failure with its own `retryAfterMillis`, a finite non-negative number of milliseconds such as a provider's `Retry-After` on a `ModelError`, waits at least that long: the hint raises the policy's backoff delay for the attempt and never lowers it, capped by `maxMs` and by what remains of `expirationMs`. A hint of zero on every attempt still backs off.
 
 `decide` classifies non-retryable errors here and nowhere else, by the policy's declared tags and by `defaultNonRetryable`, which lists the integrity verdicts that must reach the driver unretried under every policy. Exhaustion and expiration preserve the final declared failure. The older `RetryPolicyExpired` and `RetryAttemptsExhausted` schemas remain available for interpreting historical outcomes.
 

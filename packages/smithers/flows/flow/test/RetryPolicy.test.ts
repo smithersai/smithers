@@ -403,6 +403,30 @@ describe("decide", () => {
       .toEqual(RetryPolicy.retryAfter(100))
   })
 
+  it("keeps the policy backoff when the failure's hint is shorter, so a zero hint still backs off", () => {
+    // A server that keeps answering `Retry-After: 0` (or a date in the past)
+    // must not make the engine re-dispatch in a tight loop: the hint raises
+    // the delay and never lowers it below the attempt's backoff.
+    const zero = { _tag: "RateLimited", retryAfterMillis: 0 }
+    for (const policy of [RetryPolicy.defaultRetryPolicy, RetryPolicy.transient]) {
+      for (const attempt of [1, 2, 10, 1_000]) {
+        const backoff = RetryPolicy.nextDelay(policy, attempt, { random: 0, elapsedMs: 60_000 })
+        expect(Option.isSome(backoff) && backoff.value > 0).toBe(true)
+        expect(RetryPolicy.decide(policy, { attempt, error: zero, random: 0, elapsedMs: 60_000 }))
+          .toEqual(RetryPolicy.retryAfter(Option.getOrThrow(backoff)))
+      }
+    }
+    const policy = RetryPolicy.make({ initialMs: 100, factor: 2, maxMs: 2_000, expirationMs: 5_000 })
+    // Below the backoff the hint changes nothing; above it the hint wins.
+    expect(RetryPolicy.decide(policy, { attempt: 3, error: { retryAfterMillis: 50 }, elapsedMs: 0 }))
+      .toEqual(RetryPolicy.retryAfter(400))
+    expect(RetryPolicy.decide(policy, { attempt: 3, error: { retryAfterMillis: 450 }, elapsedMs: 0 }))
+      .toEqual(RetryPolicy.retryAfter(450))
+    // The caps still bound a hint that the backoff did not already exceed.
+    expect(RetryPolicy.decide(policy, { attempt: 3, error: { retryAfterMillis: 9_000 }, elapsedMs: 4_000 }))
+      .toEqual(RetryPolicy.retryAfter(1_000))
+  })
+
   it("keeps non-retryable integrity failures terminal across attempt and clock boundaries", () => {
     const policy = RetryPolicy.make({
       initialMs: 100,

@@ -1757,7 +1757,7 @@ Whether an error is classified non-retryable: by `defaultNonRetryable`, by the p
 - **Signature:** `decide(policy: RetryPolicy, options: { readonly attempt: number; readonly error: unknown; readonly random?: number | undefined; readonly elapsedMs?: number | undefined }): RetryDecision`
 - **Since:** `0.1.0`
 
-The pure core of the engine's single retry decision point. Non-retryable errors are classified here and nowhere else. A failure with its own `retryAfterMillis`, a finite non-negative number of milliseconds such as a provider's `Retry-After` on a `ModelError`, retries after that delay instead of the policy's backoff, capped by `maxMs` and by what remains of `expirationMs`.
+The pure core of the engine's single retry decision point. Non-retryable errors are classified here and nowhere else. A failure with its own `retryAfterMillis`, a finite non-negative number of milliseconds such as a provider's `Retry-After` on a `ModelError`, waits at least that long: the hint raises the policy's backoff delay for the attempt and never lowers it, capped by `maxMs` and by what remains of `expirationMs`. A hint of zero on every attempt still backs off.
 
 ### `RetryPolicy.decideEffect`
 

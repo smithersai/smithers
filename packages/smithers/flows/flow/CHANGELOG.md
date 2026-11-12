@@ -32,6 +32,12 @@
 
 ### Fixed
 
+- `RetryPolicy.decide` treats a failure's `retryAfterMillis` as a floor under
+  the policy's backoff instead of a replacement for it. A server that kept
+  answering `Retry-After: 0`, or a date in the past, made the engine re-dispatch
+  the step with no delay on every attempt, without end under the default
+  policy; the attempt now waits the longer of the hint and the backoff.
+  ([#4627](https://github.com/smithersai/smithers/issues/4627)).
 - `flow.start` and `flow.ensure` declare `FlowRuntime.StoreUnavailable` and
   `FlowRuntime.ExecutionIdentityConflict`, the failures they already raised as
   `execute` with `discard: true`: an `ensure` that reuses a key with a different
