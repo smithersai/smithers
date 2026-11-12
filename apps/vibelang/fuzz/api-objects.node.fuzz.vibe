@@ -297,7 +297,29 @@ const CEILING = 10
  * ceiling; a fresh incarnation agrees. A ledger whose total storage corrupted (an older writer) is a defect at once,
  * never a decision.
  */
+/**
+ * Ledger states only an older or interrupted writer leaves: a charged reply still holding its reservation is only
+ * released (the charge stands); a hold that is not a count is a defect, never a decision.
+ */
+effect function leftByOtherWriters() {
+  const store = try Effect.try(() => TestNodeRuntime.sqliteObjectStorage())
+  try Effect.addFinalizer(() => Effect.sync(() => store.close()))
+  const state = { id: { toString: () => "budget/left" }, raw: { storage: store }, exports: {} } as never
+  const budget = try budgetObject(state, 1000000)
+  const admitted = try budget.admit("r1", CEILING)
+  try budget.spend("r1", 3, true, CEILING)
+  const spent = (try promise(() => store.get("spent"))) as number
+  const receipt = try promise(() => store.get("reply/r1"))
+  try promise(() => store.put({ "hold/r1": CEILING, reserved: CEILING }))
+  try budget.spend("r1", 3, true, CEILING)
+  const released = (try promise(() => store.get("hold/r1"))) === 0 && (try promise(() => store.get("reserved"))) === 0 && (try promise(() => store.get("spent"))) === spent && same(try promise(() => store.get("reply/r1")), receipt)
+  try promise(() => store.put("hold/r2", -1))
+  const corrupt = try Effect.exit(budget.admit("r2", CEILING))
+  return admitted && spent === 3 && released && Exit.isFailure(corrupt) && Cause.hasDies(corrupt.cause)
+}
+
 it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (input) => effect {
+  if (!(try leftByOtherWriters())) return false
   const store = try Effect.try(() => TestNodeRuntime.sqliteObjectStorage())
   try Effect.addFinalizer(() => Effect.sync(() => store.close()))
   const state = { id: { toString: () => "budget/day" }, raw: { storage: store }, exports: {} } as never

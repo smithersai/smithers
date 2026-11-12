@@ -1361,3 +1361,9 @@ another property (the head's, for one, is `folds: Infinity`); the blank names we
 blank `id`, `title` and `sha` in them (JavaScript `trim` semantics; 2 to 5 per value, 22 in all) is now a fixed
 non-blank name and nothing else changed. All 8 decode and replay as regressions: 3 files, 25 tests passed.
 A change that narrows a schema a fuzz target draws from should run `pnpm fuzz` over its saved values before it lands.
+
+`worker/Budget.vibe` 61 and 90-92 are ledger states only an older or interrupted writer leaves. `api-objects/budget`
+now starts each execution by writing them: a charged reply that still holds its reservation is only released (hold
+and reservation 0, the day's charge and the reply's receipt unchanged), and a hold that is not a count makes the
+next admission a defect. Mutants caught: the release written as a full settlement (it rewrites the receipt; the
+totals alone did not show it); a negative hold admitted.
