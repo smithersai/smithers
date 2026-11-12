@@ -39,6 +39,14 @@ export default Instructions
 Missing or incorrectly typed props fail TypeScript checking. Expressions and
 imported components compile with the MDX compiler and render through a text JSX
 runtime. Headings, lists, links, emphasis, and fenced code produce Markdown text.
+Lists retain nested arrays of children, including mapped items beside static
+items or whitespace. Ordered lists keep their `start` value and number every
+rendered item in order:
+
+```mdx
+<ol start={3}><li>First</li>{props.items.map((item) => <li>{item}</li>)}</ol>
+```
+
 Escape literal braces and angle brackets according to MDX syntax.
 
 Discovery measures the prompt and its relative component imports without

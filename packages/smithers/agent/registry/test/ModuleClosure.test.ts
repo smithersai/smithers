@@ -690,6 +690,191 @@ describe("bare specifiers a loader maps onto project files", () => {
         .toEqual([["../../src/other.ts", true], ["helper.ts", true]])
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
+  it.effect("evaluates shared config diamonds once across specifiers and importer directories", () =>
+    Effect.gen(function*() {
+      const files: Record<string, string> = {
+        "flow.ts": `import "@one"; import "@two"`,
+        "sub/flow.ts": `import "@one"`,
+        "impl.ts": "export const value = 1",
+        "tsconfig.json": JSON.stringify({ extends: ["./a0.json", "./b0.json"] })
+      }
+      const depth = 12
+      for (let level = 0; level < depth; level++) {
+        for (const side of ["a", "b"]) {
+          files[`${side}${level}.json`] = JSON.stringify(
+            level === depth - 1
+              ? { compilerOptions: { paths: { "@one": ["./impl.ts"], "@two": ["./impl.ts"] } } }
+              : { extends: [`./a${level + 1}.json`, `./b${level + 1}.json`] }
+          )
+        }
+      }
+      const root = yield* tree(files)
+      const lookups: Array<string> = []
+      class Configs extends Map<string, Record<string, unknown> | "oversized" | undefined> {
+        override get(file: string) {
+          if (file.startsWith(root)) lookups.push(file)
+          return super.get(file)
+        }
+      }
+      const memo = { ...ModuleClosure.cache(), configs: new Configs() }
+      expect((yield* walk(root, "flow.ts", memo)).map(({ path }) => path)).toEqual(["impl.ts"])
+      const first = lookups.length
+      expect((yield* walk(root, "sub/flow.ts", memo)).map(({ path }) => path)).toEqual(["../impl.ts"])
+      expect(first).toBeLessThan(depth * 6)
+      expect(lookups.length - first).toBeLessThan(10)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("bounds cold and cached config inheritance without hiding a bare import", () =>
+    Effect.gen(function*() {
+      const files: Record<string, string> = {
+        "flow.ts": `import "@one"`,
+        "deeper/flow.ts": `import "@one"; import "@two"; import "@three"`,
+        "deeper/tsconfig.json": JSON.stringify({ extends: "../tsconfig.json" }),
+        "impl.ts": "export const value = 1"
+      }
+      for (let level = 0; level < ModuleClosure.configDepthLimit; level++) {
+        files[level === 0 ? "tsconfig.json" : `base${level}.json`] = JSON.stringify(
+          level === ModuleClosure.configDepthLimit - 1
+            ? { compilerOptions: { paths: { "@one": ["./impl.ts"] } } }
+            : { extends: `./base${level + 1}.json` }
+        )
+      }
+      const root = yield* tree(files)
+      const memo = ModuleClosure.cache()
+      expect((yield* walk(root, "flow.ts", memo)).map(({ path }) => path)).toEqual(["impl.ts"])
+      const cached = yield* walk(root, "deeper/flow.ts", memo)
+      const cold = yield* walk(root, "deeper/flow.ts")
+      expect(cached).toEqual(cold)
+      for (const found of [cached, cold]) {
+        const refusals = found.filter(({ contentDigest }) => contentDigest === undefined)
+        expect(refusals).toHaveLength(3)
+        expect(found.find(({ path }) => path === "../impl.ts")!.contentDigest).toBeDefined()
+        expect(found.some(({ path }) => path.includes("\"@two\""))).toBe(true)
+        expect(found.some(({ path }) => path.includes("\"@three\""))).toBe(true)
+        expect(refusals.every(({ path }) =>
+          path.includes(
+            `config inheritance exceeds ${ModuleClosure.configDepthLimit} files`
+          )
+        )).toBe(true)
+      }
+      // A new scan forgets the old inheritance graph after an edit.
+      const fs = yield* FileSystem.FileSystem
+      yield* fs.writeFileString(join(root, "deeper/tsconfig.json"), "{}")
+      expect((yield* walk(root, "deeper/flow.ts")).map(({ path }) => path)).toEqual(["../impl.ts"])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("replays inherited oversized-config refusals for every cached importer and specifier", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.ts": `import "@one"; import "@two"`,
+        "sub/flow.ts": `import "@three"`,
+        "tsconfig.json": JSON.stringify({ extends: "./large.json" }),
+        "large.json": " ".repeat(ModuleClosure.configByteLimit + 1)
+      })
+      const memo = ModuleClosure.cache()
+      const first = yield* walk(root, "flow.ts", memo)
+      const second = yield* walk(root, "sub/flow.ts", memo)
+      expect(first).toHaveLength(2)
+      expect(first[0]!.path).toContain("\"@one\", which \"large.json\" may map")
+      expect(first[1]!.path).toContain("\"@two\", which \"large.json\" may map")
+      expect(second).toHaveLength(1)
+      expect(second[0]!.path).toContain("\"@three\", which \"../large.json\" may map")
+      expect(
+        [...first, ...second].every(({ contentDigest, path }) =>
+          contentDigest === undefined && path.includes("that config is larger than")
+        )
+      ).toBe(true)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("keeps cycle-dependent options separate and caps their uncached work", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "one/flow.ts": `import "@impl"`,
+        "two/flow.ts": `import "@impl"`,
+        "one/tsconfig.json": JSON.stringify({ extends: "../a.json" }),
+        "two/tsconfig.json": JSON.stringify({ extends: "../b.json" }),
+        "a.json": JSON.stringify({
+          extends: "./b.json",
+          compilerOptions: { paths: { "@impl": ["./impl.ts"] } }
+        }),
+        "b.json": JSON.stringify({ extends: "./a.json" }),
+        "impl.ts": "export const value = 1"
+      })
+      const memo = ModuleClosure.cache()
+      const first = yield* walk(root, "one/flow.ts", memo)
+      const second = yield* walk(root, "two/flow.ts", memo)
+      expect(first.map(({ path }) => path)).toEqual(["../impl.ts"])
+      expect(second).toEqual(yield* walk(root, "two/flow.ts"))
+      expect(second.map(({ path }) => path)).toEqual(["../impl.ts"])
+      const fs = yield* FileSystem.FileSystem
+      yield* fs.writeFileString(
+        join(root, "two/flow.ts"),
+        Array.from({ length: 1500 }, (_, index) => `import "package-${index}"`).join("\n")
+      )
+      expect(yield* walk(root, "two/flow.ts", { ...memo, bare: new Map() })).toEqual([])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("keeps package-extends mappings and refusals tied to their importer search path", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "one/flow.ts": `import "@impl"`,
+        "two/flow.ts": `import "@impl"`,
+        "three/flow.ts": `import "@impl"`,
+        "four/flow.ts": `import "@impl"`,
+        "impl.ts": "export const value = 1",
+        "tsconfig.json": JSON.stringify({ extends: "./shared.json" }),
+        "shared.json": JSON.stringify({ extends: "preset" }),
+        "one/node_modules/preset/tsconfig.json": "{}",
+        "two/node_modules/preset/tsconfig.json": JSON.stringify({
+          compilerOptions: { paths: { "@impl": ["../../../impl.ts"] } }
+        }),
+        "three/node_modules/preset/tsconfig.json": " ".repeat(ModuleClosure.configByteLimit + 1)
+      })
+      const memo = ModuleClosure.cache()
+      expect(yield* walk(root, "one/flow.ts", memo)).toEqual([])
+      const mapped = yield* walk(root, "two/flow.ts", memo)
+      expect(mapped).toEqual(yield* walk(root, "two/flow.ts"))
+      expect(mapped.map(({ path }) => path)).toEqual(["../impl.ts"])
+      const refused = yield* walk(root, "three/flow.ts", memo)
+      expect(refused).toEqual(yield* walk(root, "three/flow.ts"))
+      expect(refused).toHaveLength(1)
+      expect(refused[0]!.contentDigest).toBeUndefined()
+      expect(refused[0]!.path).toContain("\"node_modules/preset/tsconfig.json\" may map: that config is larger than")
+      // A missing package must not reuse another directory's found preset.
+      expect(yield* walk(root, "four/flow.ts", memo)).toEqual([])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("bounds a cyclic diamond without exhausting the budget for an unrelated config", () =>
+    Effect.gen(function*() {
+      const files: Record<string, string> = {
+        "bad/flow.ts": `import "external"`,
+        "bad/sub/flow.ts": `import "external"`,
+        "other/flow.ts": `import "external"`,
+        "other/tsconfig.json": "{}",
+        "bad/tsconfig.json": JSON.stringify({ extends: ["./a0.json", "./b0.json"] })
+      }
+      for (let level = 0; level < 12; level++) {
+        for (const side of ["a", "b"]) {
+          files[`bad/${side}${level}.json`] = JSON.stringify({
+            extends: level === 11 ? "./tsconfig.json" : [`./a${level + 1}.json`, `./b${level + 1}.json`]
+          })
+        }
+      }
+      const root = yield* tree(files)
+      const memo = ModuleClosure.cache()
+      const exhausted = yield* walk(root, "bad/flow.ts", memo)
+      expect(exhausted).toHaveLength(1)
+      expect(exhausted[0]!.contentDigest).toBeUndefined()
+      expect(exhausted[0]!.path).toContain(
+        `config inheritance exceeds ${ModuleClosure.configEvaluationLimit} evaluations`
+      )
+      const cached = yield* walk(root, "bad/sub/flow.ts", memo)
+      expect(cached).toHaveLength(1)
+      expect(cached[0]!.path).toContain("\"../tsconfig.json\" may map")
+      // A separate config still gets its full work budget.
+      expect(yield* walk(root, "other/flow.ts", memo)).toEqual([])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
   it.effect("reads configs the way the loaders do: shared extends, cycles, arrays, and junk skipped", () =>
     Effect.gen(function*() {
       const root = yield* tree({

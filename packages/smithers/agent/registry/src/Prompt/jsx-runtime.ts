@@ -117,7 +117,8 @@ const contentText = (content: Content): string => {
     }
     case "ul":
     case "ol": {
-      const children = Array.isArray(props.children) ? props.children : [props.children]
+      const nested: ReadonlyArray<unknown> = [props.children]
+      const children = nested.flat(Infinity)
       let ordinal = typeof props.start === "number" ? props.start : 1
       return children.filter((child) => typeof child === "object" && child !== null && !Array.isArray(child)).map(
         (child) => {

@@ -89,6 +89,36 @@ export const closureByteLimit = 16 * 1024 * 1024
 export const configByteLimit = 1024 * 1024
 
 /**
+ * How many configs one inheritance chain may traverse.
+ * @category constants
+ * @since 1.0.0
+ * @private
+ */
+export const configDepthLimit = 64
+
+/**
+ * How many uncached evaluations one config inheritance resolution may perform.
+ * Cycles cannot share context-dependent partial options, so they also need a
+ * total work ceiling rather than only the inheritance-depth ceiling.
+ * @category constants
+ * @since 1.0.0
+ * @private
+ */
+export const configEvaluationLimit = 4096
+
+interface Effective {
+  readonly paths?: { readonly map: Record<string, unknown>; readonly base: string }
+  readonly baseUrl?: string
+  readonly depth: number
+  readonly truncated: boolean
+  readonly cyclic: boolean
+  readonly contextual: boolean
+  readonly exhausted: boolean
+  /** Config paths and refusal reasons, independent of the importer and specifier. */
+  readonly problems: ReadonlyMap<string, string>
+}
+
+/**
  * The directory a source's closure must stay inside: as the source spells it,
  * and with every symbolic link resolved.
  *
@@ -539,14 +569,20 @@ const bareTargets = (
   path: Path.Path,
   directory: string,
   specifier: string,
-  configs: Cache["configs"],
+  memo: Cache,
   reading: Reading
 ): Effect.Effect<BareTargets> =>
   Effect.gen(function*() {
     const files: Array<string> = []
     const unpinnable: Array<string> = []
+    const problems = new Map<string, string>()
+    const configs = memo.configs
+    const configRefusals = () =>
+      [...problems].map(([file, reason]) =>
+        `"${specifier}", which "${relativePath(path, directory, file)}" may map: ${reason}`
+      )
     // A config that is missing, unreadable or not a JSON object is no config.
-    const readConfig = (file: string) =>
+    const readConfig = (file: string, failures = problems) =>
       Effect.gen(function*() {
         if (!configs.has(file)) {
           const bytes = yield* Effect.result(readWithin(fs, file, configByteLimit, reading))
@@ -561,11 +597,7 @@ const bareTargets = (
         }
         const config = configs.get(file)
         if (config !== "oversized") return config
-        unpinnable.push(
-          `"${specifier}", which "${
-            relativePath(path, directory, file)
-          }" may map: that config is larger than ${configByteLimit} bytes`
-        )
+        failures.set(file, `that config is larger than ${configByteLimit} bytes`)
         return undefined
       })
     const ancestors: Array<string> = []
@@ -595,7 +627,7 @@ const bareTargets = (
         }
       }
       if (!matched) unpinnable.push(`"${specifier}" names no package.json "imports" entry the pin can follow`)
-      return { files, unpinnable }
+      return { files, unpinnable: [...unpinnable, ...configRefusals()] }
     }
 
     const name = nearestPackage?.json["name"]
@@ -607,40 +639,106 @@ const bareTargets = (
 
     // One config's effective `paths` and `baseUrl`, through `extends`. A
     // config that extends itself, however indirectly, stops at `seen`.
-    interface Effective {
-      readonly paths?: { readonly map: Record<string, unknown>; readonly base: string }
-      readonly baseUrl?: string
-    }
     const effective = (
       file: string,
       json: Record<string, unknown>,
-      seen: ReadonlySet<string>
+      seen: ReadonlySet<string>,
+      budget: { evaluated: number }
     ): Effect.Effect<Effective> =>
       Effect.gen(function*() {
+        if (seen.size > configDepthLimit) {
+          return { depth: 1, truncated: true, cyclic: false, contextual: false, exhausted: false, problems: new Map() }
+        }
+        // Truncated results depend on the remaining depth. Keep them separate
+        // so a later, shorter chain can still resolve this same config fully.
+        // Package-style extends uses this importer's ancestor search path.
+        // Relative-only inheritance can share its result across directories.
+        const contextKey = `${file}\0${directory}`
+        const depthKey = `${contextKey}\0${configDepthLimit - seen.size}`
+        const rootKey = `${file}\0root`
+        const contextRootKey = `${contextKey}\0root`
+        const root = seen.size === 1
+        const cached = (root ? memo.effective.get(rootKey) ?? memo.effective.get(contextRootKey) : undefined) ??
+          memo.effective.get(file) ?? memo.effective.get(contextKey) ?? memo.effective.get(depthKey)
+        if (cached !== undefined) {
+          return !cached.truncated && seen.size + cached.depth - 1 > configDepthLimit
+            ? { ...cached, truncated: true }
+            : cached
+        }
+        if (budget.evaluated >= configEvaluationLimit) {
+          return {
+            depth: 1,
+            truncated: true,
+            cyclic: false,
+            contextual: false,
+            exhausted: true,
+            problems: new Map()
+          }
+        }
+        budget.evaluated++
         const here = path.dirname(file)
-        let inherited: Effective = {}
+        let inherited: Effective = {
+          depth: 1,
+          truncated: false,
+          cyclic: false,
+          contextual: false,
+          exhausted: false,
+          problems: new Map()
+        }
+        const failures = new Map<string, string>()
+        let depth = 1
+        let truncated = false
+        let cyclic = false
+        let contextual = false
+        let exhausted = false
         const extended = json["extends"]
         for (const parent of Array.isArray(extended) ? extended : [extended]) {
-          if (typeof parent !== "string") continue
-          const bases = parent.startsWith(".") || path.isAbsolute(parent)
+          if (typeof parent !== "string") {
+            continue
+          }
+          const relative = parent.startsWith(".") || path.isAbsolute(parent)
+          contextual ||= !relative
+          const bases = relative
             ? [path.resolve(here, parent)]
             : ancestors.map((dir) => path.join(dir, "node_modules", parent))
           const candidates = bases.flatMap((base) => [base, `${base}.json`, path.join(base, "tsconfig.json")])
           for (const candidate of candidates) {
-            const parentJson = yield* readConfig(candidate)
-            if (parentJson === undefined || seen.has(candidate)) continue
-            inherited = { ...inherited, ...(yield* effective(candidate, parentJson, new Set([...seen, candidate]))) }
+            const parentJson = yield* readConfig(candidate, failures)
+            if (parentJson === undefined) continue
+            if (seen.has(candidate)) {
+              cyclic = true
+              continue
+            }
+            const resolved = yield* effective(candidate, parentJson, new Set([...seen, candidate]), budget)
+            depth = Math.max(depth, resolved.depth + 1)
+            truncated ||= resolved.truncated
+            cyclic ||= resolved.cyclic
+            contextual ||= resolved.contextual
+            exhausted ||= resolved.exhausted
+            for (const [config, reason] of resolved.problems) failures.set(config, reason)
+            inherited = { ...inherited, ...resolved }
             break
           }
         }
         const options = objectField(json, "compilerOptions")
         const map = objectField(options, "paths")
         const baseUrl = options?.["baseUrl"]
-        return {
+        const result: Effective = {
           ...inherited,
           ...(typeof baseUrl === "string" ? { baseUrl: path.resolve(here, baseUrl) } : {}),
-          ...(map === undefined ? {} : { paths: { map, base: here } })
+          ...(map === undefined ? {} : { paths: { map, base: here } }),
+          depth,
+          truncated,
+          cyclic,
+          contextual,
+          exhausted,
+          problems: failures
         }
+        // A cycle's partial options depend on which ancestor was skipped.
+        // Root evaluations always start with the same chain and work budget.
+        if (root) memo.effective.set(contextual ? contextRootKey : rootKey, result)
+        if (!cyclic && !exhausted) memo.effective.set(truncated ? depthKey : contextual ? contextKey : file, result)
+        return result
       })
 
     for (const candidate of ancestors) {
@@ -648,7 +746,18 @@ const bareTargets = (
         const file = path.join(candidate, configName)
         const json = yield* readConfig(file)
         if (json === undefined) continue
-        const { baseUrl, paths } = yield* effective(file, json, new Set([file]))
+        const resolved = yield* effective(file, json, new Set([file]), { evaluated: 0 })
+        for (const [config, reason] of resolved.problems) problems.set(config, reason)
+        if (resolved.truncated) {
+          problems.set(
+            file,
+            resolved.exhausted
+              ? `config inheritance exceeds ${configEvaluationLimit} evaluations`
+              : `config inheritance exceeds ${configDepthLimit} files`
+          )
+          continue
+        }
+        const { baseUrl, paths } = resolved
         if (paths !== undefined) {
           for (const [key, targets] of Object.entries(paths.map)) {
             const star = matchPattern(key, specifier)
@@ -663,7 +772,7 @@ const bareTargets = (
         if (baseUrl !== undefined) files.push(path.resolve(baseUrl, specifier))
       }
     }
-    return { files, unpinnable }
+    return { files, unpinnable: [...unpinnable, ...configRefusals()] }
   })
 
 /**
@@ -690,6 +799,8 @@ export interface Cache {
   }>
   /** Parsed package.json, tsconfig.json and jsconfig.json files, by path; `"oversized"` past the config ceiling. */
   readonly configs: Map<string, Record<string, unknown> | "oversized" | undefined>
+  /** Inherited compiler options and refusals, with importer context for package-style extends. */
+  readonly effective: Map<string, Effective>
   /** What each bare specifier came to, keyed by importer directory and specifier. */
   readonly bare: Map<string, BareTargets>
   /** Relative/alias resolution, including misses, by importer directory and specifier. */
@@ -712,6 +823,7 @@ export interface Cache {
 export const cache = (): Cache => ({
   files: new Map(),
   configs: new Map(),
+  effective: new Map(),
   bare: new Map(),
   resolutions: new Map(),
   isFile: new Map(),
@@ -861,7 +973,7 @@ const walk = (
         for (const specifier of specifiers) {
           const key = `${directory}\0${specifier}`
           const targets = memo.bare.get(key) ??
-            (yield* bareTargets(fs, path, directory, specifier, memo.configs, reading))
+            (yield* bareTargets(fs, path, directory, specifier, memo, reading))
           memo.bare.set(key, targets)
           for (const reason of targets.unpinnable) {
             const description = `${importer} imports ${reason}`

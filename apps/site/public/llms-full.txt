@@ -38580,7 +38580,12 @@ loads nothing beside itself, so such a module hashes exactly as it did before
 the field existed. A bare specifier that a loader maps onto project files is
 measured too: a package.json `imports` entry (`#impl`), and a tsconfig or
 jsconfig `paths` alias or `baseUrl` in any directory above the entry, followed
-through `extends`. The files they name are pinned like relative imports. Other
+through `extends`. Config inheritance shares completed options within each scan,
+so diamond-shaped `extends` graphs do not repeat work for every path. Inheritance
+is limited to 64 configs per chain and 4,096 uncached evaluations per root config,
+including cycle-dependent options. Exceeding either limit records the bare
+specifier as unpinnable with the config path and reason; loading refuses it.
+The files they name are pinned like relative imports. Other
 bare specifiers resolve into installed packages and are not measured. A
 `ModuleImport` with no `contentDigest` is a specifier discovery could not pin:
 one that resolves to no file, a module it could not read, an `import()` or

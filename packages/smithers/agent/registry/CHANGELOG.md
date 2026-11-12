@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Scanning flows with diamond-shaped `tsconfig` inheritance no longer repeats
+  shared parents exponentially. Inheritance depth and uncached work are bounded,
+  and imports whose mapping exceeds a limit remain visibly unpinnable (#4736).
+- MDX prompts retain mapped list items beside static children or whitespace,
+  including nested child arrays and ordered-list numbering (#4736).
+
 - Malformed `disable-model-invocation` values now hide a flow from models with
   a warning, while keeping it available to operators. Execution digests now
   agree for equivalent relative and absolute discovery roots and use portable

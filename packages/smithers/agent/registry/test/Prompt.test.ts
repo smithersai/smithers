@@ -4,13 +4,14 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import { Effect, FileSystem, Layer, Option } from "effect"
+import * as fc from "fast-check"
 import { execFile } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Prompt from "../src/Prompt.ts"
-import { Fragment, jsx, render } from "../src/Prompt/jsx-runtime.ts"
+import { Fragment, jsx, jsxs, render } from "../src/Prompt/jsx-runtime.ts"
 import * as Registry from "../src/Registry.ts"
 
 describe("typed MDX prompts", () => {
@@ -122,12 +123,18 @@ export default Flow.make("mdx", {
 })
 `
         )
+        const promptPath = `${root}/mdx/prompt.mdx`
+        yield* fs.writeFileString(
+          promptPath,
+          (yield* fs.readFileString(promptPath)) +
+            "\n\n<ul><li>static</li>{[props.name, \"Lin\"].map((name) => <li>{name}</li>)}</ul>"
+        )
         const discovery = yield* Discovery.Discovery
         const descriptor = (yield* discovery.scan({ root, source: "project", naming: "path" })).entries[0]!
         expect(Option.getOrNull(descriptor.model)).toBe("anthropic:test-model")
         const loaded = yield* Executable.fromDescriptor(descriptor, { delegates: [] })
         expect(loaded.prompt?.({ name: "Ada" })).toBe(
-          "# Hello Ada\n\nEvidence for Ada\n\n```json\n{\"verified\":true}\n```"
+          "# Hello Ada\n\nEvidence for Ada\n\n```json\n{\"verified\":true}\n```\n\n- static\n- Ada\n- Lin"
         )
       }).pipe(
         Effect.scoped,
@@ -186,6 +193,37 @@ export default Flow.make("mdx", {
       ]
     }))).toBe(
       "## Review\n\nUse **evidence** and *care*.\n\n3. Read\n4. Check\n\n```json\n{\"ok\":true}\n```\n\n[Source](https://example.com)"
+    )
+  })
+
+  it.each(["ul", "ol"])("keeps mapped items beside static and whitespace children in %s", (type) => {
+    const li = (children: string) => jsx("li", { children })
+    const items = ["a", "b"].map(li)
+    const markers = type === "ol" ? ["3. ", "4. ", "5. ", "6. "] : ["- ", "- ", "- ", "- "]
+    expect(render(jsxs(type, { start: 3, children: [li("first"), items, li("last")] })))
+      .toBe(["first", "a", "b", "last"].map((item, index) => markers[index] + item).join("\n"))
+    expect(render(jsxs(type, { start: 3, children: ["\n", [null, [false, items]], "\n"] })))
+      .toBe(markers[0] + "a\n" + markers[1] + "b")
+    expect(render(jsxs(type, { children: [[], [null, false, undefined]] }))).toBe("")
+  })
+
+  it("preserves list order and numbering under arbitrary array grouping", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.array(fc.integer()), { maxLength: 20 }),
+        fc.integer({ min: 1, max: 20 }),
+        (groups, start) => {
+          const li = (value: number) => jsx("li", { children: String(value) })
+          for (const type of ["ul", "ol"]) {
+            const children = [jsx("li", { children: "first" }), groups.map((group) => [null, group.map(li), false])]
+            const expected = ["first", ...groups.flat().map(String)].map((value, index) =>
+              (type === "ol" ? `${start + index}. ` : "- ") + value
+            ).join("\n")
+            expect(render(jsxs(type, { start, children }))).toBe(expected)
+          }
+        }
+      ),
+      { numRuns: 100 }
     )
   })
 
