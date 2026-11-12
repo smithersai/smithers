@@ -146,6 +146,7 @@ function mapTExpr(e: TExpr, f: (e: TExpr) => TExpr | null): TExpr {
         : s) };
     case "nullish": return { ...e, left: r(e.left), right: r(e.right) };
     case "someMatch": return { ...e, scrutinee: r(e.scrutinee), someBody: r(e.someBody), noneBody: r(e.noneBody) };
+    case "let": return { ...e, value: r(e.value), body: r(e.body) };
     case "tagMatch": return { ...e, scrutinee: r(e.scrutinee),
       cases: e.cases.map(c => ({ ...c, body: r(c.body) })),
       fallthrough: e.fallthrough ? r(e.fallthrough) : null };
@@ -1305,6 +1306,14 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
           { pattern: pCtor("none"), body: noneBody },
         ],
       };
+    }
+
+    case "let": {
+      // Statement context binds the value as a statement, so a method call in it stays a statement-level bind.
+      const value = lowerExpr(e.value, binds);
+      if (!binds) return { kind: "let", name: e.name, value, body: lowerExpr(e.body, null) };
+      binds.push({ kind: "let", name: e.name, type: e.value.ty, mutable: false, value });
+      return lowerExpr(e.body, binds);
     }
 
     case "tagMatch": {

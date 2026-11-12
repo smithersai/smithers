@@ -753,13 +753,21 @@ function lookupFieldTy(objTy: Ty, field: string, ctx: Ctx): { ty: Ty; isDiscrimi
 
 // ── Resolve expressions ──────────────────────────────────────
 
-// Fresh-binder counter for the someMatches synthesized by object-spread merge.
+// Fresh-binder counter for the lets and someMatches synthesized by object-spread merge.
 let mergeBinder = 0;
+
+/** A variable or a field path on one: reading it again evaluates nothing. */
+function isAccessPath(e: TExpr): boolean {
+  return e.kind === "var" || (e.kind === "field" && isAccessPath(e.obj));
+}
 
 /** Expand `{ ...base, ...override }` into a faithful field-wise merge. Driven by
  *  the result record type's fields: an override field wins when present, else the
  *  base's field shows through. Optional fields decide presence at runtime
- *  (`Some?`); an `Option`-typed override is the whole merge guarded by its tag. */
+ *  (`Some?`); an `Option`-typed override is the whole merge guarded by its tag.
+ *  JavaScript evaluates each operand once, base first, even when the override
+ *  replaces every base field, so an operand that is not an access path is bound
+ *  once, in that order, and its fields are read from the binding. */
 function resolveRecordMerge(base: RawExpr, override: RawExpr, ctx: Ctx): TExpr {
   const tbase = resolveExpr(base, ctx);
   const tover = resolveExpr(override, ctx);
@@ -817,15 +825,20 @@ function resolveRecordMerge(base: RawExpr, override: RawExpr, ctx: Ctx): TExpr {
       } };
     }),
   });
-  if (tover.ty.kind === "optional") {
+  const bound = (operand: TExpr, body: (value: TExpr) => TExpr): TExpr => {
+    if (isAccessPath(operand)) return body(operand);
+    const name = freshName(`_ms${mergeBinder++}`);
+    return { kind: "let", name, value: operand, body: body({ kind: "var", name, ty: operand.ty }), ty: userTy };
+  };
+  return bound(tbase, bv => bound(tover, ov => {
+    if (ov.ty.kind !== "optional") return merged(bv, ov);
     // override may be absent (undefined spreads nothing) → base unchanged
     const binder = freshName(`_mo${mergeBinder++}`);
     return {
-      kind: "someMatch", scrutinee: tover, binder, binderTy: userTy,
-      someBody: merged(tbase, { kind: "var", name: binder, ty: userTy }), noneBody: tbase, ty: userTy,
+      kind: "someMatch", scrutinee: ov, binder, binderTy: userTy,
+      someBody: merged(bv, { kind: "var", name: binder, ty: userTy }), noneBody: bv, ty: userTy,
     };
-  }
-  return merged(tbase, tover);
+  }));
 }
 
 /** `rec[k]` where `rec` is a record and `k` an enum of its field names. A *named*

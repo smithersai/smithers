@@ -87,6 +87,7 @@ function forEachChildExpr(e: TExpr, f: (c: TExpr) => void): void {
     case "nullish": f(e.left); f(e.right); return;
     case "forall": case "exists": f(e.body); return;
     case "someMatch": f(e.scrutinee); f(e.someBody); f(e.noneBody); return;
+    case "let": f(e.value); f(e.body); return;
     case "tagMatch": f(e.scrutinee); e.cases.forEach(c => f(c.body)); if (e.fallthrough) f(e.fallthrough); return;
     case "lambda": e.body.forEach(s => forEachChildExprInStmt(s, f)); return;
   }
@@ -280,6 +281,7 @@ function rewriteExpr(e: TExpr, hoisted: TStmt[]): TExpr {
     case "nullish": return { ...e, left: rewriteExpr(e.left, hoisted), right: rewriteExpr(e.right, hoisted) };
     case "forall": case "exists": return { ...e, body: rewriteExpr(e.body, hoisted) };
     case "someMatch": return { ...e, scrutinee: rewriteExpr(e.scrutinee, hoisted), someBody: rewriteExpr(e.someBody, hoisted), noneBody: rewriteExpr(e.noneBody, hoisted) };
+    case "let": return { ...e, value: rewriteExpr(e.value, hoisted), body: rewriteExpr(e.body, hoisted) };
     case "tagMatch": return { ...e, scrutinee: rewriteExpr(e.scrutinee, hoisted),
       cases: e.cases.map(c => ({ ...c, body: rewriteExpr(c.body, hoisted) })),
       fallthrough: e.fallthrough ? rewriteExpr(e.fallthrough, hoisted) : null };

@@ -95,6 +95,7 @@ function recurseExpr(e: TExpr, ctx: CondCtx): TExpr {
     case "forall": return { ...e, body: re(e.body) };
     case "exists": return { ...e, body: re(e.body) };
     case "someMatch": return { ...e, someBody: re(e.someBody), noneBody: re(e.noneBody) };
+    case "let": return { ...e, value: re(e.value), body: re(e.body) };
     case "tagMatch": return { ...e, scrutinee: re(e.scrutinee),
       cases: e.cases.map(c => ({ ...c, body: re(c.body) })),
       fallthrough: e.fallthrough ? re(e.fallthrough) : null };
@@ -642,6 +643,7 @@ function containsMethodCall(e: TExpr): boolean {
     case "optChain": return containsMethodCall(e.obj);
     case "nullish": return containsMethodCall(e.left) || containsMethodCall(e.right);
     case "forall": case "exists": return containsMethodCall(e.body);
+    case "let": return containsMethodCall(e.value) || containsMethodCall(e.body);
     case "someMatch": return containsMethodCall(e.scrutinee) ||
       containsMethodCall(e.someBody) || containsMethodCall(e.noneBody);
     case "tagMatch": return containsMethodCall(e.scrutinee) ||
