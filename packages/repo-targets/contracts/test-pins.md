@@ -178,6 +178,11 @@ only.
 | `smithers/agent/model-host` | `known broken: a completed selection replays after the answer fails` | `test.fails` |
 | `smithers/flows/platform-cloudflare` | `the command latency benchmark` | `describe.runIf` with `COMMAND_LATENCY_BENCH` and direct Postgres |
 | `smithers/flows/sandbox` | `a job runs a ${LONG_SECONDS}-second command past SandboxTools' 600 s to its result (SANDBOX_LONG_COMMAND_SECONDS)` | `it.runIf(LONG_SECONDS > 0)` |
+| `smithers/flows/canonical` | `orders elements whose data lives only behind accessors` | `it.fails` |
+| `smithers/flows/flow` | `runs a child whose payload holds a set, under one id whatever the insertion order` | `it.effect.fails` |
+| `smithers/flows/flow` | `hands off a set in sorted order, so the next round's payload is its identity snapshot` | `it.effect.fails` |
+| `smithers/flows/platform-cloudflare` | `ObjectDatabase in workerd (FLOWS_WORKERD_SMOKE=1)` | `describe.skipIf(FLOWS_WORKERD_SMOKE !== "1")` |
+| `smithers/flows/sync` | `holds post-warmup growth slopes through TCP reconnects, compaction, retention and a stalled subscriber` | `it.runIf(SMITHERS_SOAK_MINUTES !== undefined)` |
 
 **Configuration ownership and callback replay:** `16d282b8981a` retained the
 configuration writer race as known broken: another writer can replace the file
@@ -187,6 +192,23 @@ model host's completed-selection replay defect: its legacy callback host has no
 persistent replay port, so a failed answer can cause selection to run again.
 Use the durable agent host for recovery. Both tests remain executable expected
 failures; these rows record existing defects rather than introducing pins.
+
+**Collection identity (TEST-5):** three expected failures record known limits
+of VIP-44's payload identity. `sortCollections` ranks elements by their own
+data properties, so elements that differ only behind accessors or private
+fields rank equal and keep insertion order; ranking them needs the element's
+schema encoding. `@smthrs/plan` JSON-mirrors an authored node payload and
+refuses a Set before a `.child()` id is derived or a handoff is encoded; plan
+ASTs that carry collections wait for the task and workflow VIPs. Keep Sets and
+Maps out of child and handoff payloads until then. Each test turns red the day
+the limit is lifted.
+
+**Scheduled and smoke tiers:** the ObjectDatabase workerd suite runs a real
+Miniflare worker and is the same `FLOWS_WORKERD_SMOKE=1` tier as the
+platform-cloudflare workerd smoke above. The sync long soak runs only when
+`SMITHERS_SOAK_MINUTES` is set: `.github/workflows/reliability.yml` sets it to
+60 on its schedule, and the ordinary package gate keeps the bounded
+`ServerSoak` tests and the soak artifact verifier.
 
 **Source inventory:** `49b08081d1cc` made the fresh-clone test require real
 checkout metadata or `SMITHERS_TEST_TRACKED_SOURCE_FILE` in a source mirror.
