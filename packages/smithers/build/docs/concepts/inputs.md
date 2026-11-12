@@ -170,8 +170,9 @@ Only a missing file is missing. A permission error, an unreadable parent
 directory, and every other failure is reported rather than digested as absence,
 so a workspace never plans as though a file it could not read had been deleted.
 
-Content streams through a bounded buffer, so a large input costs a fixed amount
-of memory rather than its own size. The read happens through a descriptor that
+Content streams through a buffer of at most 256 KiB, and no larger than the file
+plus one byte, so a large input costs a fixed amount of memory rather than its
+own size, and a small one costs about its own size. The read happens through a descriptor that
 is checked to be the same regular file the path named, and checked again after
 the last byte: a file replaced or rewritten mid-digest fails rather than
 producing a digest of a file that never existed.

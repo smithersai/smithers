@@ -768,7 +768,9 @@ export const digestEntry = async (
       throw new Error(`${what} is larger than ${maximumBytes} bytes: ${entry.path}`)
     }
     const hash = createHash("sha256")
-    const buffer = new Uint8Array(chunkBytes)
+    // One byte past the size reads a file that is still that size in one call
+    // and sees the end of file in the next; growth still streams in chunks.
+    const buffer = new Uint8Array(Math.min(chunkBytes, Number(sizeOf(before)) + 1))
     let total = 0n
     while (true) {
       checkCancelled(options)

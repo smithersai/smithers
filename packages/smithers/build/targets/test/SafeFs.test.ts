@@ -234,6 +234,33 @@ describe("SafeFs.digestFile", () => {
     expect(Math.max(...sizes)).toBe(SafeFs.chunkBytes)
   })
 
+  /**
+   * A plan digests tens of thousands of small files. A chunk-sized buffer for
+   * each one allocated 68 GB on one 57,000-file workspace, a tenth of the
+   * plan's time in garbage collection.
+   */
+  it("reads a small file through a buffer one byte larger than the file", async () => {
+    const sizes: Array<number> = []
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      open: async (path) => {
+        const handle = await SafeFs.defaultIo.open(path)
+        return {
+          ...handle,
+          read: async (into) => {
+            sizes.push(into.byteLength)
+            return handle.read(into)
+          }
+        }
+      }
+    }
+    await write("small.ts", "small\n")
+    await write("empty.ts", "")
+    expect(await SafeFs.digestFile(at("small.ts"), { root: await canonical(), io })).toBe(sha256("small\n"))
+    expect(await SafeFs.digestFile(at("empty.ts"), { root: await canonical(), io })).toBe(sha256(""))
+    expect(sizes).toEqual([7, 7, 1])
+  })
+
   it("accepts ordinary numeric stat metadata without losing precision", async () => {
     await write("numeric.ts", "numeric stats\n")
     const io: SafeFs.Io = {
