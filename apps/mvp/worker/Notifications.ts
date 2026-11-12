@@ -850,6 +850,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
                   n.repo_id IS NOT NULL AND a.role IS NULL AS authority_unknown,
                   d.active AND (d.role IN ('member', 'maintainer', 'admin') OR n.mine = true)
                     AND (n.repo_id IS NULL OR a.readable = true AND a.role IN ('member', 'maintainer', 'admin'))
+                    -- A bug report names who filed it and where; only a current Admin reads it (worker/bugs/Api.ts).
+                    AND (n.kind <> 'bug' OR d.role = 'admin')
                     AND (n.kind <> 'fleet' OR ${FleetAudience.permits(sql, {
                       role: sql`a.role`, recipient: sql`n.recipient`, subject: sql`n.subject`, repoId: sql`n.repo_id`,
                     })}) AS permitted

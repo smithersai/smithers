@@ -69,14 +69,21 @@ const setChannel = (channel: "email" | "telegram", destinations: ReadonlyArray<s
     INSERT INTO alert_channels (channel, destinations, app_url, updated_by)
     VALUES ('${channel}', '${JSON.stringify(destinations)}'::jsonb, '${APP_URL}', 'person-admin')`)
 
+/**
+ * Another session for person `id` that recorded `role`: live unless `ended` says how it ended. Each session's role
+ * observation is newer than the ones before it.
+ */
+const session = (id: string, role: string, ended?: "revoked" | "expired") =>
+  sql(`
+    INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at, revoked_at)
+    VALUES ('${crypto.randomUUID()}', '${crypto.randomUUID()}', '${id}', '${role}', now(),
+      now() + interval '${ended === "expired" ? "-1 hour" : "1 day"}', ${ended === "revoked" ? "now()" : "NULL"})`)
+
 /** A person with a session of `role`: live unless `ended` says how it ended. */
 const person = async (role: string, ended?: "revoked" | "expired") => {
   const id = crypto.randomUUID()
   await sql(`INSERT INTO people (id, github_id, github_login) VALUES ('${id}', ${Math.floor(Math.random() * 1e9)}, 'p')`)
-  await sql(`
-    INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at, revoked_at)
-    VALUES ('${crypto.randomUUID()}', '${crypto.randomUUID()}', '${id}', '${role}', now(),
-      now() + interval '${ended === "expired" ? "-1 hour" : "1 day"}', ${ended === "revoked" ? "now()" : "NULL"})`)
+  await session(id, role, ended)
   return id
 }
 
@@ -192,6 +199,21 @@ describe("ops/BugReport on the Node host", () => {
       { alertId: `bug-report-${id}`, channel: "email", status: "sent", code: null },
       { alertId: `bug-report-${id}`, channel: "telegram", status: "sent", code: null },
     ])
+  })
+
+  test("the role a person's newest session recorded decides: a demoted Admin's older session rings no bell", async () => {
+    // Demoted: the older session still records Admin, the newer one the verified demotion.
+    const demoted = await person("admin")
+    await session(demoted, "member")
+    // Promoted, and an Admin signed in twice: one bell each.
+    const promoted = await person("member")
+    await session(promoted, "admin")
+    const twice = await person("admin")
+    await session(twice, "admin")
+    const id = await filed()
+
+    expect(await runtime.runPromise(BugReport.bell({ id }))).toEqual({ admins: 2 })
+    expect((await bellRows()).map((row) => row.recipient)).toEqual([promoted, twice].sort())
   })
 
   test("a report that isn't there rings no bell and sends nothing; a channel no Admin set is off", async () => {

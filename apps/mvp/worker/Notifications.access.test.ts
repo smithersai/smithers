@@ -985,6 +985,29 @@ test("deployment demotion without restoration removes buffered fleet rows from t
   expect(await sql(`SELECT subject FROM notifications WHERE recipient = $1 AND kind = 'fleet'`, f.id)).toEqual([])
 })
 
+test("a bug report in the feed reaches only a current Admin, never one demoted on a newer session", async () => {
+  const f = await emitFixture(true)
+  await sql(`INSERT INTO notifications (recipient, subject, kind, state, title, href)
+    VALUES ($1, 'bug:report', 'bug', 'update', '@reporter · /app/repos/acme/private', '/app/bugs')`, f.id)
+  const subjects = async () => {
+    const { h } = await proxy(f.actor, BranchRoles.layer(f.roles))
+    const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+    expect(response.status).toBe(200)
+    return (await values(response)).map(row => row.subject)
+  }
+  expect(await subjects()).toContain("bug:report")
+  // A newer session records the verified demotion; the older session the feed reads through still records Admin.
+  await runtime.runPromise(Effect.gen(function* () {
+    yield* SessionStore.createSession({ id: crypto.randomUUID(), tokenDigest: crypto.randomUUID(), personId: f.id,
+      role: "member", roleGeneration: yield* SessionStore.roleObservation,
+      access: { ciphertext: "unused", nonce: "unused" }, accessExpiresAt: null,
+      refresh: null, refreshDigest: null, maxAgeSeconds: 3600 })
+  }))
+  const demoted = await subjects()
+  expect(demoted).toContain("mine")
+  expect(demoted).not.toContain("bug:report")
+})
+
 test.each(["excluded", "app-none"] as const)("installed public-copy grants stay readable when %s without a repository permission receipt", async (configuration) => {
   const f = await emitFixture(true)
   const actor = { ...f.actor, role: "member" as const }

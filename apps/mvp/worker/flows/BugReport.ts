@@ -5,6 +5,7 @@ import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { BUG_INBOX_PATH, bugAlertId, bugSubject } from "../../src/features/bugs/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
+import { latestRole, sessionLive } from "../SessionStore.ts"
 import * as AlertDelivery from "./AlertDelivery.ts"
 
 // `ops/BugReport { id }` (docs/features/bugs.md#the-admins-hear): once a person files a report
@@ -135,8 +136,9 @@ export const filedOf = (id: string) =>
 
 /**
  * Puts report `id` in the bell of every Admin with a live session, against the `SqlClient` in context: one `bug`
- * notification each (`bug:<id>`), never twice. Answers how many Admins it reached this time; none for a report that
- * isn't there.
+ * notification each (`bug:<id>`), never twice. An Admin is a person whose newest role across all their sessions
+ * (`latestRole`) is Admin, so an older session's Admin role never outlives a later demotion. Answers how many Admins
+ * it reached this time; none for a report that isn't there.
  */
 export const bell = (report: typeof Bell.payloadSchema.Type) =>
   Effect.gen(function* () {
@@ -145,8 +147,9 @@ export const bell = (report: typeof Bell.payloadSchema.Type) =>
     if (Option.isNone(filed)) return { admins: 0 }
     const rows = yield* sql`
       INSERT INTO notifications (recipient, subject, kind, state, title, href)
-      SELECT DISTINCT person_id::text, ${bugSubject(report.id)}, 'bug', 'update', ${titleOf(filed.value)}, ${BUG_INBOX_PATH}
-      FROM sessions WHERE role = 'admin' AND revoked_at IS NULL AND expires_at > now()
+      SELECT p.id::text, ${bugSubject(report.id)}, 'bug', 'update', ${titleOf(filed.value)}, ${BUG_INBOX_PATH}
+      FROM people p WHERE ${latestRole(sql, sql`p.id`)} = 'admin' AND EXISTS (
+        SELECT 1 FROM sessions live WHERE live.person_id = p.id AND ${yield* sessionLive(sql, sql`live`)})
       ON CONFLICT (recipient, subject) DO NOTHING
       RETURNING recipient`
     return { admins: rows.length }
