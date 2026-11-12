@@ -47,9 +47,10 @@ describe("/devtools", () => {
     )
     const lines = text.split("\n")
     expect(lines[0]).toBe("run run-9 · review · completed · 2 spans · t = 600ms")
+    // The fixture's frame never closes (no turn-closed), so the finished run stops it (8b07e3f558).
     expect(lines.slice(1, 4)).toEqual([
       "> ● run run-9 · review                                          600ms   run:run-9",
-      "    ● frame 1 · openai:gpt-5.6-sol                              600ms   frame-1",
+      "    ○ frame 1 · openai:gpt-5.6-sol                   stopped    600ms   frame-1",
       "      ● files.read                                              500ms   call-1"
     ])
     expect(text).toContain("Frames 3")
