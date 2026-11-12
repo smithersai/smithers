@@ -209,6 +209,21 @@ describe("shell output", () => {
     expect(streamed.join("")).not.toContain("ghp_supersecretvalue")
   }, 20_000)
 
+  it("masks a bare *_KEY value in the output it shows, saves and sends", async () => {
+    const env = { PATH: process.env.PATH, SHELL: "/bin/bash", SESSION_KEY: "review-only-opaque-001" }
+    const streamed: Array<string> = []
+    const result = await Shell.run({
+      command: `printf "%s" "$SESSION_KEY"`,
+      cwd: tmpdir(),
+      env,
+      onOutput: (text) => streamed.push(text)
+    })
+      .done
+    expect(result.output).toBe("[redacted $SESSION_KEY]")
+    expect(streamed.join("")).toBe("[redacted $SESSION_KEY]")
+    expect(Shell.contextText(result)).not.toContain("review-only-opaque-001")
+  }, 20_000)
+
   it("keeps a !! command's output out of the session record", () => {
     const result = { command: "cat .env", output: "KEY=1", exitCode: 0, cancelled: false, fullOutputPath: "/tmp/x" }
     expect(Shell.persisted(result, true)).toEqual({ command: "cat .env", output: "", exitCode: 0, cancelled: false })

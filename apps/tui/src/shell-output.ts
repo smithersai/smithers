@@ -1,7 +1,8 @@
 /** Stateful shell output decoding, terminal cleanup, and environment-value redaction. */
 import { StringDecoder } from "node:string_decoder"
 
-const secretName = /TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL|AUTH/i
+// Any `*_KEY` name, such as SESSION_KEY or SUPABASE_SERVICE_ROLE_KEY, holds a credential.
+const secretName = /TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|(?:^|_)KEY$|CREDENTIAL|AUTH/i
 const secrets = (env: NodeJS.ProcessEnv): ReadonlyArray<readonly [string, string]> =>
   Object.entries(env)
     .flatMap(([name, value]) => {

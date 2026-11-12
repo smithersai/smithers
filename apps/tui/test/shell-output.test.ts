@@ -42,6 +42,24 @@ describe("incremental shell output", () => {
     expect(held.end()).toBe("")
   })
 
+  it("redacts split values of any *_KEY credential name and leaves other KEY names alone", () => {
+    const env = {
+      SESSION_KEY: "review-only-opaque-001",
+      SUPABASE_SERVICE_ROLE_KEY: "review-only-opaque-002",
+      key: "review-only-opaque-003",
+      KEYBOARD: "review-only-layout-04",
+      MONKEY: "review-only-animal-05"
+    }
+    const text =
+      "review-only-opaque-001 review-only-opaque-002 review-only-opaque-003 review-only-layout-04 review-only-animal-05"
+    const expected =
+      "[redacted $SESSION_KEY] [redacted $SUPABASE_SERVICE_ROLE_KEY] [redacted $key] review-only-layout-04 review-only-animal-05"
+    for (let split = 0; split <= text.length; split++) {
+      const stream = Output.redactor(env)
+      expect(stream.write(text.slice(0, split)) + stream.write(text.slice(split)) + stream.end()).toBe(expected)
+    }
+  })
+
   it("does not accumulate unfinished terminal control strings", () => {
     const stream = Output.decoder()
     expect(stream.write(Buffer.from("before\x1b]0;"))).toBe("before")
