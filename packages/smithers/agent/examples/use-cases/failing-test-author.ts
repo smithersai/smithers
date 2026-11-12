@@ -102,11 +102,13 @@ codebase. Do NOT attempt to fix the bug.`
 /**
  * Runs `testCmd` on the new test file and reports whether it failed. A host
  * implements it with the repository's test runner; the tests implement it
- * with a deterministic layer.
+ * with a deterministic layer. The test runner may write to the workspace, so
+ * it is compensable.
  */
 export const RunTest = Action.make("examples/FailingTestAuthor/Run", {
   payload: { testPath: Schema.String, testCmd: Schema.String },
-  success: RunResult
+  success: RunResult,
+  tier: "compensable"
 })
 
 /** The handoff. Pure, so it is a `Node.map`, not a step. */

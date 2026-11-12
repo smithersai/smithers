@@ -147,10 +147,15 @@ and inconsistencies between code examples and the real implementation. Report an
     }`
 })
 
-/** Opens the follow-up pull request. Deterministic: a host implements it with `git` and `gh`. */
+/**
+ * Opens the follow-up pull request. Deterministic: a host implements it with
+ * `git` and `gh`. Irreversible with no idempotency key, so the engine runs it
+ * at most once rather than open a second pull request on a retry.
+ */
 export const CreatePullRequest = Action.make("examples/DocsPatcher/CreatePullRequest", {
   payload: PullRequestRequest,
-  success: PullRequest
+  success: PullRequest,
+  tier: "irreversible"
 })
 
 /** The flow: detect, patch, then verify and open the follow-up pull request side by side. */

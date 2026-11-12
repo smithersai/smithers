@@ -171,16 +171,38 @@ type PolecatResult = typeof PolecatResult.Type
 type MergeRequest = typeof MergeRequest.Type
 type WitnessEvent = typeof WitnessEvent.Type
 
-/** Writes a convoy row to the beads tracker, at creation and at close. */
-export const WriteConvoy = Action.make("examples/Gastown/WriteConvoy", { payload: Convoy, success: Convoy })
+/**
+ * Writes a convoy row to the beads tracker, at creation and at close. The
+ * tracker stores rows by id, so a repeat of one status overwrites the row it
+ * wrote; the id and status are its idempotency key.
+ */
+export const WriteConvoy = Action.make("examples/Gastown/WriteConvoy", {
+  payload: Convoy,
+  success: Convoy,
+  tier: "irreversible",
+  idempotencyKey: ({ id, status }) => ({ convoy: id, status })
+})
 
-/** Writes a slung bead to the tracker, which stamps and returns it. */
-export const WriteBead = Action.make("examples/Gastown/WriteBead", { payload: Sling, success: Bead })
+/**
+ * Writes a slung bead to the tracker, which stamps and returns it. The tracker
+ * stores beads by id, so the id and status are its idempotency key.
+ */
+export const WriteBead = Action.make("examples/Gastown/WriteBead", {
+  payload: Sling,
+  success: Bead,
+  tier: "irreversible",
+  idempotencyKey: ({ id, status }) => ({ bead: id, status })
+})
 
-/** Writes a merge request to the tracker. */
+/**
+ * Writes a merge request to the tracker. The tracker stores merge requests by
+ * id, so the id and phase are its idempotency key.
+ */
 export const WriteMergeRequest = Action.make("examples/Gastown/WriteMergeRequest", {
   payload: MergeRequest,
-  success: MergeRequest
+  success: MergeRequest,
+  tier: "irreversible",
+  idempotencyKey: ({ id, phase }) => ({ mergeRequest: id, phase })
 })
 
 /** The mayor: decomposes the goal into a convoy of beads. */

@@ -142,12 +142,16 @@ export const ExtractLessons = AgentAction.make("examples/IncidentRunbookMemory/B
     }\n\nExtract 1-2 NEW durable lessons this incident teaches — reusable statements a\nfuture responder can act on without knowing this incident. Skip anything the\nexisting lessons already cover. If this incident teaches nothing new, return no\nlessons and say so in the summary.`
 })
 
-/** Saves the new lessons as notes. */
+/**
+ * Saves the new lessons as notes. Each save creates a note, so it is
+ * irreversible with no idempotency key and runs at most once.
+ */
 export const RecordLessons = Action.make("examples/IncidentRunbookMemory/RecordLessons", {
   payload: { topic: Schema.String, lessons: Lessons },
   success: Bank,
   error: MemoryError,
-  nondeterministic: true
+  nondeterministic: true,
+  tier: "irreversible"
 })
 
 /** Writes one rule that replaces the recurring lessons. */
@@ -164,20 +168,31 @@ export const DistillRule = AgentAction.make("examples/IncidentRunbookMemory/Dist
     }\n\nThey keep recurring — distill them into ONE runbook rule that replaces them all.\nThe rule must stand on its own for a responder who has read none of the lessons,\npreserve everything the lessons agree on, and invent no policy they don't support.\n\nThe rule is recorded as PENDING — a human approves or rejects it at the gate, so\nwrite it to survive that review. Return the rule and a one-paragraph rationale.`
 })
 
-/** Saves the rule as pending, superseding the lessons it replaces. */
+/**
+ * Saves the rule as pending, superseding the lessons it replaces. The save
+ * creates a note, so it is irreversible with no idempotency key and runs at
+ * most once.
+ */
 export const ProposeRule = Action.make("examples/IncidentRunbookMemory/ProposeRule", {
   payload: { topic: Schema.String, distilled: Distilled, lessonIds: Schema.Array(Schema.String) },
   success: Proposal,
   error: MemoryError,
-  nondeterministic: true
+  nondeterministic: true,
+  tier: "irreversible"
 })
 
-/** Accepts the rule, which takes the lessons it supersedes out of recall. */
+/**
+ * Accepts the rule, which takes the lessons it supersedes out of recall.
+ * Ratifying a note twice leaves it ratified, so the note id is its
+ * idempotency key.
+ */
 export const RatifyRule = Action.make("examples/IncidentRunbookMemory/Ratify", {
   payload: { ruleNoteId: Schema.String },
   success: Ratification,
   error: MemoryError,
-  nondeterministic: true
+  nondeterministic: true,
+  tier: "irreversible",
+  idempotencyKey: ({ ruleNoteId }) => ({ ratify: ruleNoteId })
 })
 
 /** The ratification a person must approve. */

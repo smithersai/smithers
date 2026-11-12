@@ -136,11 +136,12 @@ type Report = typeof Report.Type
 type Patch = typeof Patch.Type
 type Summary = typeof Summary.Type
 
-/** Compiles the target with ASAN into the run's throwaway copy. */
+/** Compiles the target with ASAN into the run's throwaway copy, so it is compensable. */
 export const BuildTarget = Action.make("examples/DefendingCode/Build", {
   payload: { source: Schema.String, work: Schema.String, binary: Schema.String },
   success: Build,
-  error: BuildFailed
+  error: BuildFailed,
+  tier: "compensable"
 })
 
 /** Proposes the subsystems to fuzz. */

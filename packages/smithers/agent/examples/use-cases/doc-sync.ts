@@ -101,10 +101,15 @@ for style. Make minimal, surgical edits.`
     `Fix this documentation discrepancy:\nFile: ${docFile}\nIssue: ${issue} - ${description}\nReference code: ${codeFile}\n\nMake minimal edits to fix the factual error.`
 })
 
-/** Opens the pull request. Deterministic: a host implements it with `git` and `gh`. */
+/**
+ * Opens the pull request. Deterministic: a host implements it with `git` and `gh`.
+ * Irreversible with no idempotency key, so the engine runs it at most once
+ * rather than open a second pull request on a retry.
+ */
 export const OpenPullRequest = Action.make("examples/DocSync/OpenPullRequest", {
   payload: PullRequestRequest,
-  success: PullRequest
+  success: PullRequest,
+  tier: "irreversible"
 })
 
 /**

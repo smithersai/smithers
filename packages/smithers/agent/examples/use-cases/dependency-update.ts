@@ -109,11 +109,13 @@ For major updates, check the changelog for breaking changes and apply necessary 
 /**
  * Runs the typecheck, test and build commands in the directory and reports
  * which passed. A host implements it with its shell; the tests implement it
- * with a deterministic layer.
+ * with a deterministic layer. The build writes to the directory, so it is
+ * compensable.
  */
 export const Verify = Action.make("examples/DependencyUpdate/Verify", {
   payload: { directory: Schema.String, typecheckCmd: Schema.String, testCmd: Schema.String, buildCmd: Schema.String },
-  success: Verification
+  success: Verification,
+  tier: "compensable"
 })
 
 /** 0.x updated only patch and minor updates that are not breaking. */

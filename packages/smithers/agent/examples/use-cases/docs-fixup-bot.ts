@@ -149,10 +149,15 @@ introduced by the repair step.`
     }`
 })
 
-/** Opens the pull request. Deterministic: a host implements it with `git` and `gh`. */
+/**
+ * Opens the pull request. Deterministic: a host implements it with `git` and `gh`.
+ * Irreversible with no idempotency key, so the engine runs it at most once
+ * rather than open a second pull request on a retry.
+ */
 export const OpenPullRequest = Action.make("examples/DocsFixupBot/OpenPullRequest", {
   payload: PullRequestRequest,
-  success: PullRequest
+  success: PullRequest,
+  tier: "irreversible"
 })
 
 /** The flow: scan, repair, then verify and open the pull request side by side. */

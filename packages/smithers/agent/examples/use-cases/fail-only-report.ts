@@ -91,11 +91,15 @@ export const defaultCommands: ReadonlyArray<typeof Command.Type> = [
 /** The exit code a timed-out command reports, as `timeout(1)` does. */
 export const timeoutExitCode = 124
 
-/** Runs one command. A failing exit code is a result, not a failure. */
+/**
+ * Runs one command. A failing exit code is a result, not a failure. The
+ * command may change the directory, so it is compensable.
+ */
 export const RunCommand = Action.make("examples/FailOnlyReport/Run", {
   payload: { command: Schema.String, directory: Schema.String, timeoutMs: Schema.Number },
   success: RunResult,
-  error: RunFailed
+  error: RunFailed,
+  tier: "compensable"
 })
 
 /**

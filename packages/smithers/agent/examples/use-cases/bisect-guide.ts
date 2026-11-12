@@ -62,7 +62,8 @@ type Output = typeof Output.Type
 /**
  * Checks out the commit at index `mid` and runs `testCommand`, reporting the
  * raw output and exit code without judging them. A host implements it over
- * its checkout; the tests implement it with a deterministic layer.
+ * its checkout; the tests implement it with a deterministic layer. The checkout
+ * changes the workspace, so it is compensable.
  */
 export const TestCommit = Action.make("examples/BisectGuide/BisectStep", {
   payload: {
@@ -72,7 +73,8 @@ export const TestCommit = Action.make("examples/BisectGuide/BisectStep", {
     high: Schema.Number,
     mid: Schema.Number
   },
-  success: BisectStep
+  success: BisectStep,
+  tier: "compensable"
 })
 
 /** Judges one test result and narrows the bounds. */

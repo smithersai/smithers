@@ -132,11 +132,14 @@ export const Executed = Schema.Struct({ command: Schema.String, exitCode: Schema
 /**
  * Runs `commands` in order in the repository and reports each one's exit code
  * and output. The flow hands it only the safe commands. A host implements it
- * with its shell; the tests implement it with a deterministic layer.
+ * with its shell; the tests implement it with a deterministic layer. It changes
+ * the repository, so it is compensable: a retry starts from the first attempt's
+ * workspace.
  */
 export const Execute = Action.make("examples/BranchDoctor/Execute", {
   payload: { commands: Schema.Array(Schema.String), repoPath: Schema.String },
-  success: Schema.Array(Executed)
+  success: Schema.Array(Executed),
+  tier: "compensable"
 })
 
 /** Splits the plan into the commands that may run and the ones 0.x skipped as unsafe. */
