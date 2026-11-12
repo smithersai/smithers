@@ -165,7 +165,7 @@ const settle = Effect.gen(function*() {
 
 const NOW = 1_700_000_000_000
 
-// One non-retryable exchange against a frozen clock, so every reset instant an
+// One exchange without retries against a frozen clock, so every reset instant an
 // assertion names is exact rather than wall-clock dependent.
 const errorFor = async (
   spec: ResponseSpec,
@@ -182,6 +182,7 @@ const errorFor = async (
       }).pipe(
         Effect.provide(layer),
         Effect.provide(TestClock.layer()),
+        Effect.provideService(RequestExecutor.Retries, 0),
         Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
       )
     )
@@ -1930,12 +1931,144 @@ describe("RequestExecutor", () => {
         "{\"reset_at\":\"1sX2m\"}",
         "{\"reset_at\":{\"nested\":1}}",
         "{\"reset_at\":true}",
+        "{\"retry_after\":null}",
+        "{\"retry_after\":\"\"}",
         "{\"retry_after\":\"Infinity\"}",
+        "{\"retry_after\":1e309}",
         "{\"retry_after\":1e308}"
       ]
     ) {
       expect((await errorFor({ status: 400, body })).resetAtEpochMillis).toBeUndefined()
     }
+  })
+
+  it.each(
+    [
+      ["null", null],
+      ["empty string", ""],
+      ["blank string", " \t\n"],
+      ["false", false],
+      ["true", true],
+      ["empty array", []],
+      ["numeric array", [0]],
+      ["string array", ["2"]],
+      ["object", {}]
+    ] as const
+  )("ignores a %s body retry delay", async (_, value) => {
+    for (const field of ["retry_after", "retry_after_ms", "reset_after", "reset_after_ms", "resets_in_seconds"]) {
+      const body = JSON.stringify({ error: { message: "Rate limit", [field]: value } })
+      expect(await errorFor({ status: 400, body })).toMatchObject({
+        retryAfterMillis: undefined,
+        resetAtEpochMillis: undefined,
+        resetSource: undefined
+      })
+      expect(
+        await errorFor({
+          status: 429,
+          body,
+          headers: {
+            "x-ratelimit-remaining-requests": "0",
+            "x-ratelimit-reset-requests": "60s"
+          }
+        })
+      ).toMatchObject({
+        code: "rate_limited",
+        retryAfterMillis: 60_000,
+        resetAtEpochMillis: NOW + 60_000,
+        resetSource: "x-ratelimit-reset-requests"
+      })
+    }
+  })
+
+  it.each([0, "0", 2, "2", " 2 ", -1, "-1"])("preserves a numeric body retry delay %j", async (value) => {
+    for (const field of ["retry_after", "retry_after_ms"]) {
+      const delay = Math.max(0, Number(value)) * (field.endsWith("_ms") ? 1 : 1_000)
+      expect(
+        await errorFor({
+          status: 429,
+          body: JSON.stringify({ error: { [field]: value } }),
+          headers: {
+            "x-ratelimit-remaining-requests": "0",
+            "x-ratelimit-reset-requests": "60s"
+          }
+        })
+      ).toMatchObject({
+        retryAfterMillis: delay,
+        resetAtEpochMillis: NOW + delay,
+        resetSource: `body.error.${field}`
+      })
+    }
+  })
+
+  it.each(["", " \t\n"])("ignores a blank reset instant %j", async (value) => {
+    expect(
+      await errorFor({
+        status: 400,
+        body: JSON.stringify({ reset_at: value })
+      })
+    ).toMatchObject({ resetAtEpochMillis: undefined, resetSource: undefined })
+    for (const header of ["x-ratelimit-reset-tokens", "anthropic-ratelimit-tokens-reset"]) {
+      expect(
+        await errorFor({
+          status: 400,
+          body: "bad",
+          headers: { [header]: value }
+        })
+      ).toMatchObject({ resetAtEpochMillis: undefined, resetSource: undefined })
+      expect(
+        await errorFor({
+          status: 429,
+          body: "Rate limit",
+          headers: {
+            [header]: value,
+            "x-ratelimit-remaining-tokens": "0",
+            "anthropic-ratelimit-tokens-remaining": "0",
+            "x-ratelimit-remaining-requests": "0",
+            "x-ratelimit-reset-requests": "60s"
+          }
+        })
+      ).toMatchObject({
+        retryAfterMillis: 60_000,
+        resetAtEpochMillis: NOW + 60_000,
+        resetSource: "x-ratelimit-reset-requests"
+      })
+    }
+  })
+
+  it("waits for the exhausted window when a body retry delay is null", async () => {
+    const requests: Array<HttpClientRequest.HttpClientRequest> = []
+    const layer = executorLayer([
+      {
+        status: 429,
+        body: JSON.stringify({ error: { message: "Rate limit", retry_after: null } }),
+        headers: {
+          "x-ratelimit-remaining-requests": "0",
+          "x-ratelimit-reset-requests": "60s"
+        }
+      },
+      { status: 200, body: "ok" }
+    ], requests)
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(NOW)
+          const executor = yield* RequestExecutor.RequestExecutor
+          const fiber = yield* execute(executor, request()).pipe(Effect.forkChild)
+          yield* TestClock.adjust(59_999)
+          expect(requests).toHaveLength(1)
+          yield* TestClock.adjust(1)
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+
+    expect(result.status).toBe(200)
+    expect(requests).toHaveLength(2)
   })
 
   it("ignores reset headers it cannot read and an unparseable Retry-After", async () => {
@@ -1944,7 +2077,7 @@ describe("RequestExecutor", () => {
         .resetAtEpochMillis
     ).toBeUndefined()
     expect(await errorFor({ status: 400, body: "bad", headers: { "x-ratelimit-reset-requests": "" } }))
-      .toMatchObject({ resetAtEpochMillis: NOW, resetSource: "x-ratelimit-reset-requests" })
+      .toMatchObject({ resetAtEpochMillis: undefined, resetSource: undefined })
     expect(await errorFor({ status: 400, body: "bad", headers: { "retry-after": "tomorrow" } })).toMatchObject({
       retryAfterMillis: undefined,
       resetAtEpochMillis: undefined

@@ -205,8 +205,8 @@ const timestampOrDuration = (value: unknown, now: number): number | undefined =>
   const duration = durationMillis(value)
   if (duration !== undefined) return now + duration
 
-  const numeric = Number(value)
-  if (Number.isFinite(numeric)) return timestampOrDuration(numeric, now)
+  const numeric = finiteNonNegative(value)
+  if (numeric !== undefined) return timestampOrDuration(numeric, now)
 
   const date = Date.parse(value)
   return Number.isNaN(date) ? undefined : date
@@ -305,11 +305,13 @@ const bodyResetCandidates = (
         })
       }
     } else if (/^(?:reset|retry)[-_]?after(?:[-_]?ms)?$|^resets?[-_]?in[-_]?seconds$/i.test(key)) {
-      const millis = typeof item === "number" ? item : Number(item)
-      if (Number.isFinite(millis)) {
+      const millis = typeof item === "number" || typeof item === "string"
+        ? finiteNonNegative(String(item))
+        : undefined
+      if (millis !== undefined) {
         const multiplier = /ms$/i.test(key) ? 1 : 1_000
         candidates.push({
-          at: now + Math.max(0, millis) * multiplier,
+          at: now + millis * multiplier,
           source: nextPath,
           relevance: "retry"
         })
