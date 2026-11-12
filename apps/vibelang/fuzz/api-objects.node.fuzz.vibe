@@ -13,7 +13,7 @@ import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
 const OPS = ["sign-in", "session", "post", "read", "events", "wiki", "tour", "tour-control", "end-tour", "history", "history-write",
   "history-events", "actions", "commands", "runs", "start", "run", "run-events", "alarm", "run-alarm", "rerun", "cancel", "orphan-alarm",
   "issues", "wiki-page", "roles", "sandbox", "health", "identity", "draft", "participation", "role", "object-events", "direct-post", "restart",
-  "fault"] as const
+  "health-objects", "fault"] as const
 const Step = Schema.Struct({
   op: Schema.Literals(OPS),
   room: Int, pick: Int, text: TextOrBoundary,
@@ -33,14 +33,14 @@ const ROLES = ["viewer", "new", "community", "contributor", "maintainer"]
 const step = (op: typeof OPS[number], fields: Partial<Step> = {}): Step =>
   ({ op, room: 0, pick: 0, text: "Hello", kind: "conversation", mode: "ok", trusted: "1", signed: true, crossOrigin: false, ...fields })
 /** Reads that answer 200 for anyone while every object is reachable; any other status there is a broken route. */
-const ALWAYS_OK: ReadonlySet<typeof OPS[number]> = new Set(["read", "events", "history", "history-events", "actions", "commands", "runs", "run-events", "health", "session", "sandbox"])
+const ALWAYS_OK: ReadonlySet<typeof OPS[number]> = new Set(["read", "events", "history", "history-events", "actions", "commands", "runs", "run-events", "health", "health-objects", "session", "sandbox"])
 /** Ops whose requests reach each namespace: the walk that a fault in it answers. */
 const REACHES: Record<Kind, ReadonlyArray<typeof OPS[number]>> = {
-  conversation: ["post", "read", "events", "wiki", "tour", "tour-control", "end-tour", "run", "run-events", "start"],
-  accounts: ["session", "post", "history-write", "start", "identity", "draft", "alarm", "run-alarm"],
-  budget: ["post", "alarm"],
-  history: ["history", "history-write", "history-events", "alarm"],
-  actions: ["runs", "start", "rerun", "cancel"],
+  conversation: ["post", "read", "events", "wiki", "tour", "tour-control", "end-tour", "run", "run-events", "start", "health-objects"],
+  accounts: ["session", "post", "history-write", "start", "identity", "draft", "alarm", "run-alarm", "health-objects"],
+  budget: ["post", "alarm", "health-objects"],
+  history: ["history", "history-write", "history-events", "alarm", "health-objects"],
+  actions: ["runs", "start", "rerun", "cancel", "health-objects"],
 }
 /**
  * Every execution first walks each route signed in and as a visitor, then each namespace unbound and unreachable, so
@@ -63,6 +63,9 @@ const WALK: ReadonlyArray<Step> = [
     step("fault", { kind, mode }), ...REACHES[kind].map((op) => step(op, { pick: 2 })), step("fault", { kind, mode: "ok" }),
   ])),
 ]
+
+/** The object class the health route names for each namespace. */
+const HEALTH_CLASS: Record<Kind, string> = { conversation: "Conversation", accounts: "ProjectAccounts", budget: "Budget", history: "History", actions: "ActionIndex" }
 
 function routeOf(step: Step): { readonly method: "GET" | "POST" | "DELETE"; readonly path: string; readonly body?: string } {
   const room = `/api/conversations/room${step.room % 3}`
@@ -207,6 +210,27 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
         // The maintainer's nonempty ask with a working agent and budget is drafted; a reused key with another ask is invalid.
         const drafts = input.signIn && healthy() && input.agent === "tools" && input.limit > 1 && step.trusted === "1" && step.text.trim() !== ""
         if (drafts && !(Exit.isSuccess(exit) && (exit.value === null || exit.value === "invalid"))) throw new Finding({ report: `draft: the maintainer's draft answered ${Exit.isSuccess(exit) ? String(exit.value) : "a failure"}` })
+        return
+      }
+      case "health-objects": {
+        // Each object's health is read on its own: the route answers 200 whatever is unreachable, and names exactly the
+        // unreachable objects `unreachable` (an object lost after N calls may be either, so it is not checked).
+        const query = step.pick % 2 === 0 ? "" : `?conversation=room${step.room % 3}`
+        const response = try ask(step, { method: "GET", path: `/api/health/objects${query}` })
+        if (response === undefined || response.status !== 200) throw new Finding({ report: `health-objects: ${response?.status ?? "failed"}` })
+        const body = try promise(() => HttpServerResponse.toWeb(response).json()) as { readonly commit: unknown; readonly objects: Record<string, { readonly startup: string }> }
+        if (body.commit !== "fuzz-commit") throw new Finding({ report: "health-objects: the deployment's commit not named" })
+        if (step.pick % 3 === 2) {
+          // A deployment built without a commit names none.
+          const unnamed = try w.fetchOf(try requestOf(step, "/api/health/objects", "GET", undefined, jar), {}, null)
+          if ((try promise(() => HttpServerResponse.toWeb(unnamed).json()) as { readonly commit: unknown }).commit !== null) throw new Finding({ report: "health-objects: a commit for a build without one" })
+        }
+        for (const kind of KINDS) {
+          const fault = w.faults[kind]
+          if (fault.endsWith("-later")) continue
+          const startup = body.objects[HEALTH_CLASS[kind]]?.startup
+          if (startup === undefined || (startup === "unreachable") !== (fault !== "ok")) throw new Finding({ report: `health-objects: ${HEALTH_CLASS[kind]} ${startup} while ${fault}` })
+        }
         return
       }
       case "sign-in": {

@@ -1231,3 +1231,10 @@ outage passed as the agent's failure; a refused admission ignored. Alone it reac
 the catch for a run whose usage can't be read. The writer builds its own memory meter, whose `usageOf` fails only when
 recovering the run's journal entries fails, so reaching it needs an engine whose journal reads alone fail. No target
 builds one; `WikiDraft.vibe` and `SpecificationReviewers.vibe` share the shape.
+
+`worker/apiObjects.vibe` 347-368 (11 lines, 10 arms) is the `/api/health/objects` route, added after `api-objects/world`
+was written; its `health` op asks `/api/health` only. A `health-objects` op joins the walk, signed in and as a visitor,
+and every namespace's unbound and faulty walk: the route answers 200 whatever is unreachable, names the deployment's
+commit (none for a build without one), and calls exactly the unreachable objects `unreachable` (an object lost after N
+calls may be either, so it is not checked). Mutants caught: an unreachable object reported `ready`; a build without a
+commit named `unknown`. From `api-objects` alone `apiObjects.vibe` is at 100%.
