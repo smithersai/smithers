@@ -219,12 +219,13 @@ function guardedCallIn(e: TExpr): string | null {
   return found;
 }
 
-/** Outermost contracted calls inside `e`'s subtree (excluding `e` itself, which
- *  is the havoc'd wrapper). A sink inside a lambda references the lambda's
- *  binder and can't be hoisted to the enclosing scope, and havocing the call
- *  that owns the lambda would erase its precondition, so generation fails. */
-function collectSinks(e: TExpr): TExpr[] {
-  const out: TExpr[] = [];
+/** Outermost contracted calls in `e`'s subtree, including `e` itself: a
+ *  contracted call whose own result is unknown is havoc'd too, and its call
+ *  must survive. A sink inside a lambda references the lambda's binder and
+ *  can't be hoisted to the enclosing scope, and havocing the call that owns
+ *  the lambda would erase its precondition, so generation fails. */
+function collectSinks(e: TExpr): Extract<TExpr, { kind: "call" }>[] {
+  const out: Extract<TExpr, { kind: "call" }>[] = [];
   const walk = (n: TExpr): void => {
     if (n.kind === "lambda") {
       const sink = guardedCallIn(n);
@@ -232,11 +233,22 @@ function collectSinks(e: TExpr): TExpr[] {
       return;
     }
     const name = calleeName(n);
-    if (name && _guarded.has(name)) { out.push(n); return; }  // outermost: don't descend
+    if (n.kind === "call" && name && _guarded.has(name)) { out.push(n); return; }  // outermost: don't descend
     forEachChildExpr(n, walk);
   };
-  forEachChildExpr(e, walk);
+  walk(e);
   return out;
+}
+
+/** Hoist each contracted call in `e` as a discard statement. The call itself
+ *  is kept even when its result is unknown (only that result is abstracted);
+ *  its callee and arguments are rewritten as usual. */
+function hoistSinks(e: TExpr, hoisted: TStmt[]): void {
+  for (const sink of collectSinks(e)) {
+    const fn = rewriteExpr(sink.fn, hoisted);
+    const args = sink.args.map(a => rewriteExpr(a, hoisted));
+    hoisted.push({ kind: "expr", expr: { ...sink, fn, args } });
+  }
 }
 
 // ── rewrite ──────────────────────────────────────────────────
@@ -248,9 +260,7 @@ function rewriteExpr(e: TExpr, hoisted: TStmt[]): TExpr {
     // Preserve any contracted call nested inside the discarded value so its
     // precondition is still checked. transform lowers the `expr` discard to
     // `var _ := call(...)` (and lifts any havoc'd args), so we lean on it.
-    for (const sink of collectSinks(e)) {
-      hoisted.push({ kind: "expr", expr: rewriteExpr(sink, hoisted) });
-    }
+    hoistSinks(e, hoisted);
     return { kind: "havoc", ty: e.ty };
   }
   switch (e.kind) {
@@ -285,9 +295,7 @@ function rewriteExpr(e: TExpr, hoisted: TStmt[]): TExpr {
  *  condition are still hoisted. */
 function rewriteCond(e: TExpr, hoisted: TStmt[]): TExpr {
   if (containsBad(e)) {
-    for (const sink of collectSinks(e)) {
-      hoisted.push({ kind: "expr", expr: rewriteExpr(sink, hoisted) });
-    }
+    hoistSinks(e, hoisted);
     return { kind: "havoc", ty: { kind: "bool" } };
   }
   return rewriteExpr(e, hoisted);
@@ -301,9 +309,7 @@ function rewriteStmts(stmts: TStmt[]): TStmt[] {
     // preserve any contracted call nested inside it.
     if (s.kind === "expr" && mustHavoc(s.expr)) {
       const h: TStmt[] = [];
-      for (const sink of collectSinks(s.expr)) {
-        h.push({ kind: "expr", expr: rewriteExpr(sink, h) });
-      }
+      hoistSinks(s.expr, h);
       out.push(...h);
       continue;
     }
