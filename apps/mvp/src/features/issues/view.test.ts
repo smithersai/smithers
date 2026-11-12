@@ -11,6 +11,7 @@ import {
   embeddedIssues,
   commentOf,
   conversationProps,
+  createdOf,
   draftOf,
   issueOf,
   listProps,
@@ -449,4 +450,18 @@ test("the list's sync line says Syncing until ChatApi says the App isn't install
   // repository the App can't act on goes to GitHub's list instead (`syncsHere`).
   expect(listSyncOf(true, true, { installed: false })).toBe("syncing")
   expect(listSyncOf(false, true, { installed: false })).toBe("syncing")
+})
+
+test("the new-issue page finds its Create write on a repository GitHub spells with capitals", () => {
+  const write = (status: "done" | "failed", itemNumber: number | null) => ({
+    id: "w1", repoId: "github/octocat/hello-world", op: "issue/create" as const, status, failure: null, itemNumber,
+    createdAt: "2026-11-12", settledAt: null, branchId: null, mergeFlow: null,
+  })
+  // A completed write opens the numbered issue; a failed one shows Not sent. Both on the route's canonical spelling.
+  expect(createdOf([write("done", 42)], "w1", "octocat", "Hello-World")).toMatchObject({ status: "done", itemNumber: 42 })
+  expect(createdOf([write("failed", null)], "w1", "octocat", "Hello-World")?.status).toBe("failed")
+  expect(createdOf([write("done", 42)], "w1", "octocat", "Other")).toBeUndefined()
+  expect(createdOf([{ ...write("done", 42), op: "issue/comment" as const }], "w1", "octocat", "Hello-World")).toBeUndefined()
+  expect(createdOf([write("done", 42)], "w2", "octocat", "Hello-World")).toBeUndefined()
+  expect(createdOf(undefined, "w1", "octocat", "Hello-World")).toBeUndefined()
 })

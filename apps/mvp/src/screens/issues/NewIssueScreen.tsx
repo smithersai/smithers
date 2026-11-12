@@ -7,7 +7,7 @@ import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
 import { issuePath, NEW_ISSUE } from "../../features/issues/contract"
-import { draftOf, mayWrite, syncsHere } from "../../features/issues/view"
+import { createdOf, draftOf, mayWrite, syncsHere } from "../../features/issues/view"
 import { NewIssueForm } from "../../features/issues/components/NewIssueForm"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
@@ -30,7 +30,7 @@ export function NewIssueScreen() {
   const { data: writes, isReady: writesReady } = useLiveQuery(queries.writes)
   const { data: rows, isReady: rowsReady } = useLiveQuery(queries.list)
   const writeId = search.write ?? view?.createdWriteId
-  const created = writes?.find((write) => write.id === writeId && write.repoId === `github/${owner}/${repo}` && write.op === "issue/create")
+  const created = createdOf(writes, writeId, owner, repo)
   const unknown = created === undefined && rows?.some((row) => row.id === writeId) !== true
   const restored = writesReady && rowsReady
   const retryable = rows?.some((row) => row.id === writeId && row.pending === "not_sent" && row.reason === "") === true

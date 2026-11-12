@@ -2,9 +2,16 @@ import { COMMITMENTS, COMMITMENT_COPY, type Commitment } from "./lifecycle"
 import type { IssuesViewIssue, IssuesViewTriage } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
 import { hereOf, type RepoAnswer, viewerOf } from "../auth/viewer"
-import { GITHUB_LIMIT } from "../repo/contract"
+import { GITHUB_LIMIT, repoId } from "../repo/contract"
 import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES, type TriageState } from "./contract"
-import type { Searched } from "./schema"
+import type { Searched, WriteRow } from "./schema"
+
+/**
+ * The person's write `writeId` that creates an issue on `owner/repo`, as the new-issue page's URL names them. The route
+ * keeps GitHub's spelling, which can carry capitals, while a write's repository id is lowercased (`repoId`).
+ */
+export const createdOf = (writes: ReadonlyArray<WriteRow> | undefined, writeId: string | undefined, owner: string, repo: string) =>
+  writes?.find((write) => write.id === writeId && write.repoId === repoId(owner, repo) && write.op === "issue/create")
 
 /** Only the exact issue read for this repository can stand in for its still-syncing summary. */
 export const earlySummaryOf = (read: Searched | undefined, repoId: string, number: number) => {
