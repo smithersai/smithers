@@ -894,6 +894,48 @@ describe("EngineChildren.await", () => {
       )
   )
 
+  it.each([undefined, "parent-dispatch"])(
+    "returns a child that settles during the last poll interval before the await deadline (dispatch=%s)",
+    (dispatch) =>
+      run(
+        Effect.gen(function*() {
+          const runtime = yield* engine("await-deadline-settled")
+          const store = yield* RunStore.RunStore
+          const parent = "await-deadline-settled-parent"
+          const child = EngineChildren.childExecutionId(parent, "worker")
+          yield* store.create(
+            child,
+            JSON.stringify({ version: 1, flowName: Worker._tag, payload: {}, capabilityCeilings: [[]] }),
+            { lineageId: child, roundOrdinal: 0 }
+          )
+          yield* runtime.register(Worker, () => Effect.succeed("finished"))
+          const port = yield* children({ pollInterval: "1 second", awaitTimeout: "2 seconds" }).pipe(
+            Effect.provideService(FlowRuntime.FlowRuntime, runtime)
+          )
+          yield* runtime.register(Parent, () =>
+            port.await({ child }).pipe(
+              Effect.provideService(Action.CurrentInvocationKey, dispatch),
+              Effect.map((value) => value.output),
+              Effect.catch((error) => Effect.succeed(error.code))
+            ))
+          yield* runtime.execute(Parent, { executionId: parent, payload: {}, discard: true })
+          yield* store.get(parent).pipe(Effect.repeat({ while: (row) => row.status !== "suspended" }))
+          // The second poll at 1 s still sees no child and sleeps until the
+          // 2 s deadline. The child settles inside that last interval, so the
+          // drive that wakes at the deadline has to read it before expiring.
+          yield* TestClock.adjust("1500 millis")
+          yield* runtime.execute(Worker, { executionId: child, payload: {} })
+          yield* TestClock.adjust("1500 millis")
+          yield* runtime.resume(Parent, parent)
+          const result = yield* runtime.poll(Parent, parent)
+          expect(result).toMatchObject({
+            _tag: "Some",
+            value: { _tag: "Complete", exit: { _tag: "Success", value: "finished" } }
+          })
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+  )
+
   it("returns the child's output to a second engine over the same database file", () =>
     withTempFile(async (filename) => {
       const child = await runOn(

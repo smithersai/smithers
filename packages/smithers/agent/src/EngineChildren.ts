@@ -517,7 +517,12 @@ export const make = (
         while (true) {
           const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
           const remaining = deadline - now
-          if (remaining <= 0) return yield* expired()
+          // A drive at or past the deadline still reads the child once: it may
+          // have settled during the last poll interval or while the host was down.
+          if (remaining <= 0) {
+            const last = yield* outcomeOf(input.child)
+            return Option.isSome(last) ? last.value : yield* expired()
+          }
           const outcome = yield* outcomeOf(input.child).pipe(
             Effect.timeoutOrElse({ duration: remaining, orElse: expired })
           )
