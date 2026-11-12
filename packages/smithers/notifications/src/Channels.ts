@@ -424,12 +424,18 @@ const telegram = (provider: TelegramProvider): Provider<TelegramDestination> => 
   }
 }
 
-/** A wait in whole seconds, as a header or a body says it, in milliseconds; anything else is no wait. */
+/**
+ * A wait in whole seconds, as a header or a body says it, in milliseconds; anything else is no wait. The provider's
+ * body is unbounded, so a count whose milliseconds are not a safe integer is no wait either, rather than a value
+ * {@link DeliveryFailed} cannot hold.
+ */
 const millisOf = (seconds: unknown): number | undefined => {
   const value = typeof seconds === "string" && /^\d{1,9}$/u.test(seconds.trim())
     ? Number(seconds.trim())
     : seconds
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value * 1_000 : undefined
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return undefined
+  const millis = value * 1_000
+  return Number.isSafeInteger(millis) ? millis : undefined
 }
 
 /** What one answer means: delivered (2xx), worth another attempt, or refused for good. */
@@ -551,27 +557,39 @@ export const layer = (options: Options): Layer.Layer<Channels> =>
 
       const send = (destination: Destination, message: Message): Effect.Effect<Receipt, DeliveryError> =>
         Effect.suspend(() => {
-          const channel = destination._tag
-          const decoded = Option.all([decodeDestination(destination), decodeMessage(message)])
-          if (Option.isNone(decoded)) {
-            return Effect.fail(new DeliveryRefused({ channel, code: "rejected", reason: "invalid_message" }))
-          }
-          const built = requestFor(...decoded.value)
-          if (built === undefined) return Effect.fail(new DeliveryRefused({ channel, code: "unconfigured" }))
-          return execute(channel, built.provider, built.request)
-        }).pipe(
-          Effect.tap(() => Effect.annotateCurrentSpan({ "smithers.channel.outcome": "sent" })),
-          Effect.tapError((error) =>
-            Effect.annotateCurrentSpan({
-              "smithers.channel.outcome": error._tag === "@smthrs/notifications/DeliveryFailed" ? "failed" : "refused",
-              "smithers.channel.code": error.code
+          const decodedDestination = decodeDestination(destination)
+          // Keep the error's channel vocabulary closed even for untyped callers.
+          // An unknown or absent tag uses email only to classify the refusal;
+          // invalid destinations never reach a provider or a channel span as data.
+          const channel = Option.isSome(decodedDestination)
+            ? decodedDestination.value._tag
+            : destination?._tag === "telegram"
+            ? "telegram"
+            : "email"
+          return Effect.suspend(() => {
+            const decoded = Option.all([decodedDestination, decodeMessage(message)])
+            if (Option.isNone(decoded)) {
+              return Effect.fail(new DeliveryRefused({ channel, code: "rejected", reason: "invalid_message" }))
+            }
+            const built = requestFor(...decoded.value)
+            if (built === undefined) return Effect.fail(new DeliveryRefused({ channel, code: "unconfigured" }))
+            return execute(channel, built.provider, built.request)
+          }).pipe(
+            Effect.tap(() => Effect.annotateCurrentSpan({ "smithers.channel.outcome": "sent" })),
+            Effect.tapError((error) =>
+              Effect.annotateCurrentSpan({
+                "smithers.channel.outcome": error._tag === "@smthrs/notifications/DeliveryFailed"
+                  ? "failed"
+                  : "refused",
+                "smithers.channel.code": error.code
+              })
+            ),
+            Effect.withSpan("notifications.channel.send", {
+              kind: "client",
+              attributes: { "smithers.channel": channel }
             })
-          ),
-          Effect.withSpan("notifications.channel.send", {
-            kind: "client",
-            attributes: { "smithers.channel": destination._tag }
-          })
-        )
+          )
+        })
 
       return Channels.of({ available, send })
     })

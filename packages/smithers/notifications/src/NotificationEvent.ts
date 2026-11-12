@@ -156,6 +156,18 @@ export const admissionSourceId = (notificationId: string): JournalEvent.SourceId
   JournalEvent.SourceId.make(`${admissionSourcePrefix}${notificationId}`)
 
 /**
+ * {@link admissionSourceId} as a total function: `None` when the id cannot be
+ * a journal identifier once prefixed, because it is longer than the journal's
+ * identifier bound allows, holds a NUL, or holds a lone UTF-16 surrogate.
+ *
+ * @param notificationId the notification's id
+ * @category constructors
+ * @since 1.0.0
+ */
+export const admissionSource = (notificationId: string): Option.Option<JournalEvent.SourceId> =>
+  decodeSourceId(`${admissionSourcePrefix}${notificationId}`)
+
+/**
  * The identity of one drain: the lineage and the boundary, each encoded so a
  * value containing a slash cannot forge another pair's identity.
  *
@@ -178,9 +190,28 @@ export const drainKey = (targetLineageId: string, boundary: string): string =>
 export const drainSourceId = (targetLineageId: string, boundary: string): JournalEvent.SourceId =>
   JournalEvent.SourceId.make(`${drainSourcePrefix}${drainKey(targetLineageId, boundary)}`)
 
+/**
+ * {@link drainSourceId} as a total function: `None` when the lineage or the
+ * boundary holds a lone UTF-16 surrogate, which cannot be percent-encoded, or
+ * when the two together make an identifier longer than the journal's bound.
+ *
+ * @param targetLineageId the lineage the boundary closed on
+ * @param boundary the boundary name
+ * @category constructors
+ * @since 1.0.0
+ */
+export const drainSource = (targetLineageId: string, boundary: string): Option.Option<JournalEvent.SourceId> =>
+  loneSurrogate.test(targetLineageId) || loneSurrogate.test(boundary)
+    ? Option.none()
+    : decodeSourceId(`${drainSourcePrefix}${drainKey(targetLineageId, boundary)}`)
+
 const admissionSourcePrefix = "/notifications/admission/"
 const drainSourcePrefix = "/notifications/drain/"
 
+/** A UTF-16 surrogate without its pair: `encodeURIComponent` throws on one, and the journal refuses it. */
+const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+const decodeSourceId = Schema.decodeUnknownOption(JournalEvent.SourceId)
 const decodeAdmitted = Schema.decodeUnknownOption(Admitted)
 const decodePromoted = Schema.decodeUnknownOption(Promoted)
 
@@ -207,9 +238,11 @@ const decodePromoted = Schema.decodeUnknownOption(Promoted)
  */
 export const fromEntry = (entry: JournalEvent.Entry): Option.Option<Event> => {
   if (entry.eventType === AdmittedEventType) {
+    // Compared as text: a stored id that no longer fits the identifier bound
+    // would make the branded constructor throw, and a reader must stay total.
     return Option.filter(
       decodeAdmitted(entry.payload),
-      (event) => entry.sourceId === admissionSourceId(event.notification.id)
+      (event) => entry.sourceId === `${admissionSourcePrefix}${event.notification.id}`
     )
   }
   if (entry.eventType === PromotedEventType && entry.sourceId.startsWith(drainSourcePrefix)) {

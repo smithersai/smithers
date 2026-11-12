@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Invalid notification, run, lineage, boundary and alert identifiers now return
+  typed refusals before journal access or delivery. Non-JSON payload objects
+  and primitive leaves beyond the journal's depth bound are refused before
+  admission. Unknown channel tags and oversized provider retry delays no longer
+  turn delivery failures into defects.
+
 ### Added
 
 - `Alerts.report` journals a probe result from a flow step into the run that

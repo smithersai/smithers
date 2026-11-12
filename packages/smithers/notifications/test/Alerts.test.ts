@@ -1709,3 +1709,106 @@ describe("Alerts commit ownership", () => {
     expect(sink.sent.map((alert) => alert.condition)).toEqual(["stalled"])
   })
 })
+
+describe("Alerts.layer refuses identities the journal cannot store", () => {
+  it.each([
+    ["an empty run id", ""],
+    ["a run id with a lone surrogate", "run-\uD800"],
+    ["a run id with a NUL", "run-\u0000"],
+    ["a run id past the identifier bound", "r".repeat(JournalEvent.maxIdentifierLength + 1)]
+  ])("fails a tick on %s with notification_invalid instead of a defect", async (_, badRunId) => {
+    const error = await Effect.runPromise(
+      Effect.flatMap(Alerts.AlertRuntime, (alerts) => alerts.tick(badRunId)).pipe(
+        Effect.flip,
+        Effect.provide(stack(Alerts.layerNoop)),
+        Effect.scoped
+      )
+    )
+
+    expect(error).toMatchObject({
+      _tag: "/notifications/NotificationError",
+      code: "notification_invalid",
+      path: "runId"
+    })
+  })
+
+  it("refuses an alert whose id the journal cannot store before admitting or paging it", async () => {
+    // The alert id carries the percent-encoded run id, six code units per
+    // `ü`, so a run id the journal accepts can still push the id past the
+    // bound every record of the alert is keyed under. This one still fits the
+    // admission source, so only the tick's own check keeps it out.
+    const longRunId = "ü".repeat(160)
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const alerts = yield* Alerts.AlertRuntime
+        const queue = yield* NotificationQueue.NotificationQueue
+        const journal = yield* Journal.Journal
+        yield* journal.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId: JournalEvent.RunId.make(longRunId),
+            sourceId: JournalEvent.SourceId.make("/control"),
+            eventType: "control.run.parked",
+            payload: { runId: longRunId, status: "waiting-approval" }
+          })
+        )
+        yield* TestClock.adjust("2 minutes")
+        const since = (yield* journal.entries({ runId: JournalEvent.RunId.make(longRunId), limit: 1 })).entries[0]!
+          .emittedAtMs
+        const id = Alerts.alertId({ coalescingKey: Alerts.coalescingKey(longRunId, "waiting-approval"), since })
+        const error = yield* Effect.flip(alerts.tick(longRunId))
+        const entries = (yield* journal.entries({ runId: JournalEvent.RunId.make(longRunId), limit: 512 })).entries
+        return { id, error, pending: yield* queue.pending(longRunId), eventTypes: entries.map((e) => e.eventType) }
+      }).pipe(Effect.provide(stack(Alerts.layerNoop)), Effect.scoped)
+    )
+
+    expect(`/notifications/admission/${observed.id}`.length).toBeLessThanOrEqual(JournalEvent.maxIdentifierLength)
+    expect(`/notifications/alerts/${observed.id}/failed/sink_misconfigured`.length).toBeGreaterThan(
+      JournalEvent.maxIdentifierLength
+    )
+    expect(observed.error).toMatchObject({ _tag: "/notifications/NotificationError", code: "notification_invalid" })
+    expect(observed.error.message).not.toContain("ü")
+    expect(observed.pending).toEqual([])
+    expect(observed.eventTypes).toEqual(["control.run.parked"])
+  })
+})
+
+describe("Alert condition identifier validation", () => {
+  it.each(["condition-\uD800", "condition-\uDC00", "c".repeat(1_100)])(
+    "refuses an unaddressable condition before deciding or delivering an alert",
+    async (condition) => {
+      const observed = await Effect.runPromise(
+        Effect.gen(function*() {
+          const alerts = yield* Alerts.AlertRuntime
+          const queue = yield* NotificationQueue.NotificationQueue
+          const journal = yield* Journal.Journal
+          yield* journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId: JournalEvent.RunId.make("run"),
+              sourceId: JournalEvent.SourceId.make("/control"),
+              eventType: "control.monitor.beat",
+              payload: { health: "stalled" }
+            })
+          )
+          const error = yield* alerts.tick("run").pipe(Effect.flip)
+          return { error, pending: yield* queue.pending("run") }
+        }).pipe(
+          Effect.provide(Alerts.layer({
+            rules: { [condition]: { afterMs: 0 } },
+            detectors: { [condition]: { field: "health", value: "stalled", eventTypes: ["control.monitor.beat"] } }
+          })),
+          Effect.provide(Layer.merge(
+            NotificationQueue.layer.pipe(Layer.provide(TestJournal.layer())),
+            Alerts.layerNoop
+          )),
+          Effect.provide(TestJournal.layer()),
+          Effect.scoped
+        )
+      )
+      expect(observed.error).toMatchObject({ code: "notification_invalid" })
+      expect("path" in observed.error ? observed.error.path : undefined).toBe(
+        condition.length > 1_024 ? undefined : "condition"
+      )
+      expect(observed.pending).toEqual([])
+    }
+  )
+})

@@ -128,6 +128,12 @@ stands, and a condition that clears and re-opens is a new alert nobody has
 acknowledged. `standing(runId)` lists every open condition past its delay as
 `raised`, `delivered` or `acknowledged`.
 
+A tick validates its run id and checks condition names for malformed UTF-16
+before deciding alerts. Invalid input fails with `notification_invalid` and
+`path` names `runId` or `condition`. An alert id that would exceed the journal's
+1,024-code-unit bound once prefixed and percent-encoded is also refused before
+admission or delivery. Shorten the run id or condition name before retrying.
+
 ## Four outcomes, and only one is a failure
 
 `Alerts.Tick` sorts every alert the tick considered:

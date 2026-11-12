@@ -58,14 +58,18 @@ durability boundary, before anything is journaled, because a structurally invali
 notification that reached the journal would be acknowledged at a real sequence
 and then skipped by every replay.
 
+Identifiers must also fit the journal's 1,024-code-unit bound, including source
+prefixes and percent-encoding. `runId` and a drain's `boundary` receive typed
+refusals with the same field paths.
+
 Common failures:
 
-| Field                   | What is wrong                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| `id`                    | Empty, or not a string. The id is the idempotency key and must be a non-empty string. |
-| `targetLineageId`       | Empty, or not a string.                                                               |
-| `provenance.sourceTurn` | Not an integer, or below zero. Reported as `path: "provenance.sourceTurn"`.           |
-| `payload`               | Not JSON. A function or a symbol anywhere inside it fails with `path: "payload"`.     |
+| Field                   | What is wrong                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `id`                    | Empty, malformed UTF-16, NUL, or too long with the admission source prefix.                                             |
+| `targetLineageId`       | Empty, malformed UTF-16, NUL, or too long once percent-encoded into the drain source.                                   |
+| `provenance.sourceTurn` | Not an integer, or below zero. Reported as `path: "provenance.sourceTurn"`.                                             |
+| `payload`               | Not JSON. Functions, symbols, `Date`, `Map`, `Set`, typed arrays and other class instances fail with `path: "payload"`. |
 
 **Fix.** Correct the field `path` names. Neither the message nor `path` carries
 the offending value, on purpose: a refusal is logged and journaled in places the
@@ -95,7 +99,9 @@ Credentials belong in the payload, where redaction is expected.
 
 **Symptom.** The message names a depth bound.
 
-**Cause.** The payload nests past 256 levels, or contains a cycle. A cycle has no
+**Cause.** A value reaches depth 256 measured from the notification envelope
+at depth 0, or contains a cycle. Primitive leaves and containers share the same
+bound; depth 255 is the deepest legal value. A cycle has no
 finite depth, so it trips the same bound rather than looping forever.
 
 **Fix.** Flatten the payload. The bound exists because the value is walked and

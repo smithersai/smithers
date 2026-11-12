@@ -104,9 +104,28 @@ for a warm queue. Deployments that compact active notification histories need
 a queue-aware retention or checkpoint policy; the current production
 compositions do not enable compaction.
 
-Admission refuses objects or arrays at depth 256 with `notification_invalid`
-and writes no row. The notification envelope is depth 0; its payload is
-at depth 1. Cyclic payloads receive the same typed refusal.
+Admission refuses any value at depth 256, including a primitive leaf, with
+`notification_invalid` and writes no row. The notification envelope is depth 0;
+its payload is at depth 1, and depth 255 is the deepest legal value. This leaves
+one level for the journal's admission record under its redaction depth bound.
+Cyclic payloads receive the same typed refusal. Payload objects must be plain
+records (including records with a null prototype or from another JavaScript
+realm) or arrays. Arrays are copied without subclass serialization hooks.
+A `Date`, `Map`, `Set`, typed array or other class instance is refused at
+`path: "payload"` rather
+than acknowledged with its content lost.
+
+The journal-backed queue validates identifiers before reading or writing.
+`runId`, `id`, `targetLineageId` and a drain's `boundary` must be non-empty,
+well-formed UTF-16 without NUL. A journal identifier is at most 1,024 code units:
+an `id` must fit with `/notifications/admission/`; a lineage and boundary must
+fit together, percent-encoded, with `/notifications/drain/` and their separator.
+Admission reserves room for at least one encoded code unit of a nonempty
+boundary, so every admitted lineage has an addressable drain.
+Invalid identifiers fail with `notification_invalid`; `path` names
+`runId`, `id`, `targetLineageId` or `boundary`. When a lineage and boundary
+only exceed the bound together, the refusal has no single-field `path`.
+Non-ASCII text and paired surrogates remain legal within these bounds.
 
 Admission also refuses a notification larger than 1,048,576 UTF-16 code units
 with `notification_invalid` and writes no row. Every string and object key
@@ -188,13 +207,13 @@ class NotificationError extends Schema.TaggedError<NotificationError>()(
 | `notificationId` | The notification the failure is about, when one was readable.                      |
 | `path`           | Dotted path of the offending field, for `notification_invalid`.                    |
 
-| Code                       | Means                                                                                                                                                                               |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `notification_unavailable` | The seam serves nothing, or the journal identity for a drain holds an event this queue did not write.                                                                               |
-| `notification_closed`      | New public refusal code: this receiver has finished. Start a new request; retrying this message at the closed receiver cannot deliver it.                                           |
-| `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                                                               |
-| `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                                                                     |
-| `notification_invalid`     | The value is not a notification, the journal redacts a field the queue addresses it by, or a drain's `cutoffSeq` is not a non-negative integer. `path` names the field that failed. |
+| Code                       | Means                                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `notification_unavailable` | The seam serves nothing, or the journal identity for a drain holds an event this queue did not write.                                                                    |
+| `notification_closed`      | New public refusal code: this receiver has finished. Start a new request; retrying this message at the closed receiver cannot deliver it.                                |
+| `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                                                    |
+| `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                                                          |
+| `notification_invalid`     | The value or an identifier is invalid, the journal redacts an address field, or a drain's `cutoffSeq` is not a non-negative integer. `path` names the field that failed. |
 
 Storage failures surface as `Journal.JournalError` instead, so the two stay
 distinguishable.
@@ -332,6 +351,12 @@ The journal event types this package owns. Import from
 | `drainKey`          | `(targetLineageId: string, boundary: string) => string`. One drain's identity, each component percent-encoded.                       |
 | `drainSourceId`     | `(targetLineageId: string, boundary: string) => JournalEvent.SourceId`. The source one drain's record is written under.              |
 
+The throwing identifier constructors remain available for trusted input.
+`admissionSource(notificationId)` returns `Option<JournalEvent.SourceId>`
+instead, with `None` for an invalid prefixed identifier.
+`drainSource(targetLineageId, boundary)` does the same for the combined,
+percent-encoded drain identity, including malformed UTF-16.
+
 A `rejected-full` decision is never written. The queue refuses a full queue in
 the receipt alone, so the notification id stays admissible once a boundary
 drains. The literal remains in `AdmissionDecision` because a reader must stay
@@ -463,6 +488,12 @@ error `name` (`validation_error`, `rate_limit_exceeded`, …) or the Bot API's
 429 named, from the `Retry-After` header in whole seconds or the Bot API's
 `parameters.retry_after`; it is an own property, which `@smthrs/flow`'s retry
 decision uses in place of the policy's backoff, and it survives the journal.
+A provider wait whose milliseconds are not a safe integer is ignored, leaving
+the flow's retry policy to choose its backoff.
+An unknown or absent destination tag is refused before any request, with
+`reason: "invalid_message"`. Its refusal uses `channel: "email"` as the fixed
+fallback; a recognized `"telegram"` tag keeps that channel even when its
+destination is invalid. No fallback sends a message.
 Neither failure holds the request, its url, a header or the destination.
 
 ### Service and layer

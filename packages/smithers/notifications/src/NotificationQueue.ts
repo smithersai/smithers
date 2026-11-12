@@ -237,6 +237,11 @@ const maximumIssueCodeUnits = 200
  * finite depth, so it trips the limit rather than looping forever. The size
  * count stops the walk as soon as it passes the bound, so an oversized value
  * costs the walk no more than the bound does.
+ *
+ * A leaf at the depth bound is refused like a container there. The journal
+ * stores the notification one level deeper, inside the admission record, and
+ * its redactor refuses every value past the same bound, leaf included; a
+ * notification admitted past it would fail as a storage error instead.
  */
 const exceededBound = (value: unknown): "depth" | "size" | undefined => {
   const pending: Array<{ readonly value: unknown; readonly depth: number }> = [{ value, depth: 0 }]
@@ -245,10 +250,12 @@ const exceededBound = (value: unknown): "depth" | "size" | undefined => {
     const next = pending.pop()!
     size += typeof next.value === "string" ? next.value.length : 1
     if (size > maximumNotificationCodeUnits) return "size"
-    if (typeof next.value !== "object" || next.value === null) continue
     if (next.depth >= maximumPayloadDepth) return "depth"
+    if (typeof next.value !== "object" || next.value === null) continue
     if (Array.isArray(next.value)) {
-      for (const child of next.value) pending.push({ value: child, depth: next.depth + 1 })
+      for (let index = 0; index < next.value.length; index++) {
+        pending.push({ value: next.value[index], depth: next.depth + 1 })
+      }
       continue
     }
     for (const [key, child] of Object.entries(next.value)) {
@@ -261,13 +268,28 @@ const exceededBound = (value: unknown): "depth" | "size" | undefined => {
 
 /**
  * A structural copy of the caller's value, so nothing the queue journals or
- * retains can be edited afterwards through a reference the caller kept. Values
- * that are not arrays or objects pass through, which is what leaves a function
- * or a symbol in place for the schema to reject.
+ * retains can be edited afterwards through a reference the caller kept. Only
+ * arrays and plain objects, including records from another realm, are rebuilt.
+ * Arrays are walked by index and rebuilt without caller iterators, subclass
+ * species or serialization hooks.
+ * Everything else passes through as it
+ * is, which leaves a function, a symbol, a `Date`, a `Map`, a `Set`, a typed
+ * array or another class instance in place for the schema to reject: rebuilt from
+ * its enumerable entries, such a value would become `{}` and be acknowledged.
  */
 const copied = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(copied)
+  if (Array.isArray(value)) {
+    const result = new Array<unknown>(value.length)
+    Array.prototype.forEach.call(value, (entry: unknown, index: number) => {
+      result[index] = copied(entry)
+    })
+    return result
+  }
   if (typeof value === "object" && value !== null) {
+    const prototype: unknown = Object.getPrototypeOf(value)
+    if (
+      prototype !== Object.prototype && prototype !== null && Object.getPrototypeOf(prototype) !== null
+    ) return value
     return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, copied(nested)]))
   }
   return value
@@ -285,6 +307,50 @@ const identifiedBy = (value: unknown): string | undefined => {
 }
 
 const decodeNotification = Schema.decodeUnknownEffect(NotificationModel.Notification)
+
+const decodeRunId = Schema.decodeUnknownOption(JournalEvent.RunId)
+const decodeSourceId = Schema.decodeUnknownOption(JournalEvent.SourceId)
+
+/** What every identifier the journal stores must be; a message names the rule, never the value. */
+const identifierRule =
+  `well-formed UTF-16, free of NUL, and at most ${JournalEvent.maxIdentifierLength} code units long`
+
+/** The rule for a component the queue percent-encodes into an identifier, where only the length and the encoding bind. */
+const encodedIdentifierRule =
+  `well-formed UTF-16, free of NUL, and at most ${JournalEvent.maxIdentifierLength} code units long once percent-encoded with the queue's source prefix`
+
+/**
+ * The caller's run id as the journal's, or `notification_invalid` naming
+ * `runId`. The branded constructor throws on an id the journal cannot store,
+ * which inside an Effect is a defect no caller can branch on.
+ */
+const runIdOf = (rawRunId: string): Effect.Effect<JournalEvent.RunId, NotificationError> =>
+  Option.match(decodeRunId(rawRunId), {
+    onNone: () =>
+      Effect.fail(
+        new NotificationError({
+          code: "notification_invalid",
+          message: `A run id must be a journal identifier: non-empty, ${identifierRule}`,
+          path: "runId"
+        })
+      ),
+    onSome: Effect.succeed
+  })
+
+/**
+ * The address field that cannot be journaled on its own: the admission source
+ * is built from `id`, and the drain source from `targetLineageId`. Absent when
+ * both can be.
+ */
+const unaddressableField = (notification: NotificationModel.Notification): "id" | "targetLineageId" | undefined => {
+  if (Option.isNone(NotificationEvent.admissionSource(notification.id))) return "id"
+  // A boundary is nonempty, so reserve its shortest possible encoded value.
+  if (
+    Option.isNone(decodeSourceId(notification.targetLineageId)) ||
+    Option.isNone(NotificationEvent.drainSource(notification.targetLineageId, "x"))
+  ) return "targetLineageId"
+  return undefined
+}
 
 /**
  * Decodes the caller's argument at the durability boundary and returns a value
@@ -311,7 +377,7 @@ const validated = (
         ...(notificationId === undefined ? {} : { notificationId })
       })
     }
-    return yield* decodeNotification(copied(notification)).pipe(
+    const decoded = yield* decodeNotification(copied(notification)).pipe(
       Effect.mapError((error) => {
         // The formatter reports at least one issue for a failure and gives
         // every issue a concrete path. Standard Schema's result type widens
@@ -329,6 +395,22 @@ const validated = (
         })
       })
     )
+    // The schema accepts any non-empty string, but the queue journals the id
+    // and drains the lineage under identifiers the journal bounds. Refused
+    // here, before anything is written: a lineage no drain can address would
+    // otherwise be admitted and hold its capacity slot forever.
+    const unaddressable = unaddressableField(decoded)
+    if (unaddressable !== undefined) {
+      return yield* new NotificationError({
+        code: "notification_invalid",
+        message: unaddressable === "id"
+          ? `A notification id must form a journal identifier with the queue's source prefix: ${identifierRule}`
+          : `A notification targetLineageId must form a drain identity: ${encodedIdentifierRule}`,
+        notificationId: decoded.id,
+        path: unaddressable
+      })
+    }
+    return decoded
   })
 
 // Persisted notification JSON predates RFC 8785's rejection of lone surrogates.
@@ -753,6 +835,7 @@ export const layerWith = (
                 message: "version must be a positive safe integer"
               })
             }
+            const runId = yield* runIdOf(rawRunId)
             const admitted = yield* validated(notification)
             // T-COL-12 stays dark: nothing yet authenticates a watcher burst, pins
             // its coding run or enforces fresh machine reads. Refusing here, before
@@ -773,7 +856,7 @@ export const layerWith = (
             return yield* journal.transact(
               operations.withPermits(1)(
                 admitInTransaction(
-                  JournalEvent.RunId.make(rawRunId),
+                  runId,
                   admitted,
                   admittedFingerprint,
                   admittedIdentity,
@@ -797,7 +880,34 @@ export const layerWith = (
                   path: "cutoffSeq"
                 })
               }
-              const runId = JournalEvent.RunId.make(input.runId)
+              const runId = yield* runIdOf(input.runId)
+              // The drain identity is a journal identifier built from the
+              // lineage and the boundary. A component that cannot be journaled
+              // by itself is named; a pair that only fits apart is not.
+              for (const path of ["targetLineageId", "boundary"] as const) {
+                if (Option.isNone(decodeSourceId(input[path]))) {
+                  return yield* new NotificationError({
+                    code: "notification_invalid",
+                    message: `A drain component must be a journal identifier: non-empty, ${identifierRule}`,
+                    path
+                  })
+                }
+              }
+              const source = NotificationEvent.drainSource(input.targetLineageId, input.boundary)
+              if (Option.isNone(source)) {
+                const path = Option.isNone(NotificationEvent.drainSource(input.targetLineageId, "x"))
+                  ? "targetLineageId"
+                  : Option.isNone(NotificationEvent.drainSource("x", input.boundary))
+                  ? "boundary"
+                  : undefined
+                return yield* new NotificationError({
+                  code: "notification_invalid",
+                  message: path === undefined
+                    ? `A drain's lineage and boundary together must form a drain identity: ${encodedIdentifierRule}`
+                    : `A drain ${path} must form a drain identity: ${encodedIdentifierRule}`,
+                  ...(path === undefined ? {} : { path })
+                })
+              }
               const key = NotificationEvent.drainKey(input.targetLineageId, input.boundary)
               const loaded = yield* load(runId)
               // A replay reports what the committed record delivered, read
@@ -873,7 +983,7 @@ export const layerWith = (
               const receipt = yield* journal.emitDurableUnfenced(
                 new JournalEvent.Input({
                   runId,
-                  sourceId: NotificationEvent.drainSourceId(input.targetLineageId, input.boundary),
+                  sourceId: source.value,
                   sourceSeq: JournalEvent.SourceSeq.make(0),
                   // The identity is the drain: this lineage closing this
                   // boundary. Two processes that both reach it have observed one
@@ -906,7 +1016,7 @@ export const layerWith = (
         ),
         pending: Effect.fn("NotificationQueue.pending")((rawRunId) =>
           Effect.map(
-            load(JournalEvent.RunId.make(rawRunId)),
+            Effect.flatMap(runIdOf(rawRunId), load),
             // The fold `load` already performs: admissions add, promotions
             // remove. Read outside the operations semaphore, because a count
             // taken while a boundary drains is a count taken at some instant

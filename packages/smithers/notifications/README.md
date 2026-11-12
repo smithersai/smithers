@@ -56,7 +56,9 @@ deliberately does not repeat it.
   next boundary.
 - `NotificationError.code` is the stable half to branch on:
   `notification_unavailable`, `notification_id_reused`, and
-  `notification_invalid`. Storage failures arrive as `Journal.JournalError`.
+  `notification_invalid`. Invalid journal identifiers, non-JSON payloads and
+  excessive payload depth fail with `notification_invalid` before admission.
+  Storage failures arrive as `Journal.JournalError`.
 - `admit` decodes and snapshots its argument, so nothing the caller mutates
   afterwards changes what was journaled.
 - An alert sink must be idempotent on `Alerts.alertId`, which the webhook sink

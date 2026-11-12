@@ -10,7 +10,7 @@
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Notification } from "../src/Notification.ts"
 import * as NotificationEvent from "../src/NotificationEvent.ts"
@@ -209,5 +209,22 @@ describe("the durable notification vocabulary", () => {
       "/notifications/admission/wire-steer:0",
       "/notifications/drain/run%2Froot/turn%20one:0"
     ])
+  })
+})
+
+describe("Total notification journal identities", () => {
+  it("refuses malformed UTF-16 on either drain component without throwing", () => {
+    for (const malformed of ["\uD800", "\uDC00"]) {
+      expect(Option.isNone(NotificationEvent.drainSource(malformed, "turn"))).toBe(true)
+      expect(Option.isNone(NotificationEvent.drainSource("lineage", malformed))).toBe(true)
+    }
+    expect(Option.isNone(NotificationEvent.admissionSource("id-\u0000"))).toBe(true)
+    expect(Option.isNone(NotificationEvent.admissionSource("i".repeat(1_024)))).toBe(true)
+    expect(Option.getOrThrow(NotificationEvent.admissionSource("café"))).toBe(
+      NotificationEvent.admissionSourceId("café")
+    )
+    expect(Option.getOrThrow(NotificationEvent.drainSource("lin/😀", "turn/日"))).toBe(
+      NotificationEvent.drainSourceId("lin/😀", "turn/日")
+    )
   })
 })

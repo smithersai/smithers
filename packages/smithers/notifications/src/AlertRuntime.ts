@@ -30,10 +30,10 @@ import {
   Policy,
   recordSourceId
 } from "./AlertPolicy.ts"
-import { Sink } from "./AlertSink.ts"
+import { FailureCode, Sink } from "./AlertSink.ts"
 import * as FoldCache from "./internal/foldCache.ts"
 import type * as NotificationModel from "./Notification.ts"
-import { type NotificationError, NotificationQueue } from "./NotificationQueue.ts"
+import { NotificationError, NotificationQueue } from "./NotificationQueue.ts"
 
 /**
  * What one tick decided.
@@ -123,6 +123,21 @@ export interface RuntimeService {
 export class AlertRuntime extends Context.Service<AlertRuntime, RuntimeService>()(
   "/notifications/AlertRuntime"
 ) {}
+
+const decodeRunId = Schema.decodeUnknownOption(JournalEvent.RunId)
+const decodeSourceId = Schema.decodeUnknownOption(JournalEvent.SourceId)
+const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+/** What every identifier the journal stores must be; a message names the rule, never the value. */
+const identifierRule =
+  `well-formed UTF-16, free of NUL, and at most ${JournalEvent.maxIdentifierLength} code units long`
+
+/**
+ * The longest outcome a tick records an alert under. An alert id that fits the
+ * journal's identifier bound with this outcome fits it with every other.
+ */
+const longestOutcome = ["delivered", "refused", ...FailureCode.literals.map((code) => `failed/${code}`)]
+  .reduce((longest, outcome) => outcome.length > longest.length ? outcome : longest)
 
 /**
  * One run's folded alert history: the conditions still open, the alerts
@@ -315,8 +330,8 @@ export const layer = (
         ).pipe(Effect.asVoid)
 
       /** One run's fold, and the alerts its open conditions raise now. */
-      const considered = Effect.fnUntraced(function*(runId: string) {
-        const history = yield* observed(JournalEvent.RunId.make(runId))
+      const considered = Effect.fnUntraced(function*(runId: JournalEvent.RunId) {
+        const history = yield* observed(runId)
         const now = yield* Clock.currentTimeMillis
         const open = Array.from(history.open, ([condition, opened]) => ({ runId, condition, ...opened }))
         return { history, raised: decide(checked, open, now) }
@@ -344,7 +359,7 @@ export const layer = (
           return true
         }),
         standing: Effect.fn("AlertRuntime.standing")(function*(runId: string) {
-          const { history, raised } = yield* considered(runId)
+          const { history, raised } = yield* considered(JournalEvent.RunId.make(runId))
           return raised.map((alert): Standing => {
             const id = firstId(alert)
             const by = HashMap.get(history.acknowledged, id)
@@ -352,7 +367,27 @@ export const layer = (
             return { alertId: id, alert, state: HashSet.has(history.paged, id) ? "delivered" : "raised" }
           })
         }),
-        tick: Effect.fn("AlertRuntime.tick")(function*(runId: string) {
+        tick: Effect.fn("AlertRuntime.tick")(function*(rawRunId: string) {
+          const runId = yield* Option.match(decodeRunId(rawRunId), {
+            onNone: () =>
+              new NotificationError({
+                code: "notification_invalid",
+                message: `A run id must be a journal identifier: non-empty, ${identifierRule}`,
+                path: "runId"
+              }),
+            onSome: Effect.succeed
+          })
+          // A condition reaches encodeURIComponent while deciding the alert.
+          // Validate before that walk so malformed UTF-16 is a typed refusal.
+          for (const condition of Object.keys(checked.rules)) {
+            if (loneSurrogate.test(condition)) {
+              return yield* new NotificationError({
+                code: "notification_invalid",
+                message: `An alert condition must be well-formed UTF-16`,
+                path: "condition"
+              })
+            }
+          }
           const { history, raised } = yield* considered(runId)
           const delivered: Array<Alert> = []
           const failed: Array<Alert> = []
@@ -364,6 +399,18 @@ export const layer = (
             ) {
               suppressed.push(alert)
               continue
+            }
+            // Every record this tick may write about the alert is keyed on its
+            // id, which the percent-encoded run id and condition name make as
+            // long as they like. An id the journal cannot store is refused
+            // before the alert is admitted or paged, as a failure the caller
+            // can read rather than a thrown constructor after the page went out.
+            if (Option.isNone(decodeSourceId(recordSourceId(alertId(alert), longestOutcome)))) {
+              return yield* new NotificationError({
+                code: "notification_invalid",
+                message:
+                  `An alert id, built from the run id and the condition name, must form a journal identifier with the alerter's source prefix: ${identifierRule}`
+              })
             }
             // Raised unchanged: a queue that rejects the admission outright is
             // not the journal failing, and calling it `sink_failed` would send

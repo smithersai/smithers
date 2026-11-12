@@ -1,6 +1,8 @@
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Fiber, Layer } from "effect"
+import * as FastCheck from "fast-check"
+import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
 import type { Notification } from "../src/Notification.ts"
 import * as NotificationQueue from "../src/NotificationQueue.ts"
@@ -1005,6 +1007,339 @@ describe("NotificationQueue", () => {
     })
   })
 
+  it("refuses a payload holding a Date, Map, Set, typed array or class instance instead of journaling it as {}", async () => {
+    class Body {
+      readonly text = "do the thing"
+    }
+    await run(Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue
+      const journal = yield* Journal.Journal
+      // An untyped producer forwarding an external body. Rebuilt from its
+      // enumerable entries, each of these became `{}` and was acknowledged,
+      // which is content loss the producer never heard about.
+      for (
+        const [id, payload] of [
+          ["date", { when: new Date(0) }],
+          ["map", { body: new Map([["text", "do the thing"]]) }],
+          ["set", { tags: new Set(["a"]) }],
+          ["bytes", { raw: new Uint8Array([1, 2, 3]) }],
+          ["instance", { body: new Body() }]
+        ] as const
+      ) {
+        const error = refusal(yield* queue.admit("run", untyped({ ...item(id, "steer"), payload })).pipe(Effect.flip))
+        expect(error).toMatchObject({ code: "notification_invalid", notificationId: id, path: "payload" })
+      }
+      expect((yield* journal.entries({ runId: JournalEvent.RunId.make("run"), limit: 512 })).entries).toEqual([])
+      expect(yield* queue.pending("run")).toEqual([])
+      // A record without a prototype is plain JSON and is admitted as it is.
+      const bare = Object.assign(Object.create(null) as Record<string, unknown>, { text: "do the thing" })
+      const receipt = yield* queue.admit("run", untyped({ ...item("bare", "steer"), payload: bare }))
+      expect(receipt.decision).toBe("admitted")
+      expect((yield* queue.pending("run"))[0]?.payload).toEqual({ text: "do the thing" })
+    }))
+  })
+
+  it("copies array elements without preserving a subclass serialization hook", async () => {
+    class PayloadArray extends Array<number> {
+      toJSON() {
+        return { rewritten: true }
+      }
+    }
+    await run(Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue
+      const payload = PayloadArray.of(1, 2, 3)
+      Object.defineProperty(payload, Symbol.iterator, {
+        value: function*() {
+          yield 99
+        }
+      })
+      expect(Array.from(payload)).toEqual([99])
+      expect((yield* queue.admit("run", { ...item("array-subclass", "steer"), payload })).decision).toBe("admitted")
+      expect((yield* queue.pending("run"))[0]?.payload).toEqual([1, 2, 3])
+    }))
+  })
+
+  it("bounds indexed array elements even when an iterator hides them", async () => {
+    await run(Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue
+      const journal = yield* Journal.Journal
+      const payload = [nested(400)]
+      Object.defineProperty(payload, Symbol.iterator, {
+        value: function*() {
+          yield 99
+        }
+      })
+      const error = refusal(
+        yield* queue.admit("run", untyped({ ...item("iterator-depth", "steer"), payload })).pipe(Effect.flip)
+      )
+      expect(error).toMatchObject({ code: "notification_invalid", notificationId: "iterator-depth" })
+      expect((yield* journal.entries({ runId: JournalEvent.RunId.make("run"), limit: 512 })).entries).toEqual([])
+    }))
+  })
+
+  it("snapshots plain payload records from another realm before journal admission", async () => {
+    const payload = runInNewContext("({ nested: { value: 1 } })") as { nested: { value: number } }
+    let observed = false
+    const storage = TestJournal.layer()
+    const inspecting = Layer.effect(
+      Journal.Journal,
+      Effect.map(Journal.Journal, (journal) =>
+        Journal.Journal.of({
+          ...journal,
+          emitDurableUnfenced: (input) => {
+            if (input.eventType === "flows/notifications/Admitted") {
+              observed = true
+              const stored = (input.payload as { notification: { payload: { nested: unknown } } }).notification.payload
+              expect(stored).not.toBe(payload)
+              expect(stored.nested).not.toBe(payload.nested)
+            }
+            return journal.emitDurableUnfenced(input)
+          }
+        }))
+    ).pipe(Layer.provide(storage))
+
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        expect((yield* queue.admit("run", { ...item("cross-realm", "steer"), payload })).decision).toBe("admitted")
+        expect(observed).toBe(true)
+        payload.nested.value = 2
+        expect((yield* queue.pending("run"))[0]?.payload).toEqual({ nested: { value: 1 } })
+      }).pipe(
+        Effect.provide(NotificationQueue.layer.pipe(Layer.provide(inspecting))),
+        Effect.scoped
+      )
+    )
+  })
+
+  describe("identifiers the journal cannot store", () => {
+    const loneSurrogate = "\uD800"
+    const nul = "\u0000"
+    const admissionPrefix = "/notifications/admission/"
+
+    it.each(
+      [
+        ["an id too long once prefixed", { id: "i".repeat(JournalEvent.maxIdentifierLength) }, "id"],
+        ["an id with a lone surrogate", { id: `id-${loneSurrogate}` }, "id"],
+        ["an id with a NUL", { id: `id-${nul}` }, "id"],
+        [
+          "a lineage too long once prefixed",
+          { targetLineageId: "l".repeat(JournalEvent.maxIdentifierLength) },
+          "targetLineageId"
+        ],
+        ["a lineage with a lone surrogate", { targetLineageId: `lin-${loneSurrogate}` }, "targetLineageId"],
+        ["a lineage with a NUL", { targetLineageId: `lin-${nul}` }, "targetLineageId"]
+      ] as const
+    )("admit refuses %s with notification_invalid and writes no row", async (_, fields, path) => {
+      await run(Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        const journal = yield* Journal.Journal
+        // The schema accepts any non-empty string; the journal identifier the
+        // queue builds from the field does not. Before, the branded constructor
+        // threw inside the admission, a defect no caller could branch on.
+        const error = refusal(
+          yield* queue.admit("run", { ...item("addressed", "steer"), ...fields }).pipe(Effect.flip)
+        )
+        expect(error).toMatchObject({ code: "notification_invalid", path })
+        expect(error.message).not.toContain(loneSurrogate)
+        expect((yield* journal.entries({ runId: JournalEvent.RunId.make("run"), limit: 512 })).entries).toEqual([])
+        expect(yield* queue.pending("run")).toEqual([])
+      }))
+    })
+
+    it("preserves valid identifier round trips and refuses malformed mutations without consuming capacity", async () => {
+      await FastCheck.assert(
+        FastCheck.asyncProperty(
+          FastCheck.array(FastCheck.constantFrom("a", "/", "%", "ü", "日", "😀"), { minLength: 1, maxLength: 12 }),
+          FastCheck.constantFrom("\u0000", "\uD800", "\uDC00"),
+          async (parts, invalid) => {
+            const text = parts.join("")
+            await runAt(
+              1,
+              Effect.gen(function*() {
+                const queue = yield* NotificationQueue.NotificationQueue
+                for (const field of ["id", "targetLineageId"] as const) {
+                  const error = refusal(
+                    yield* queue.admit("run", {
+                      ...item("valid", "steer", text),
+                      [field]: text + invalid
+                    }).pipe(Effect.flip)
+                  )
+                  expect(error).toMatchObject({ code: "notification_invalid", path: field })
+                }
+                const receipt = yield* queue.admit("run", item(text, "steer", text))
+                expect(receipt.decision).toBe("admitted")
+                const drained = yield* queue.drain({
+                  runId: "run",
+                  targetLineageId: text,
+                  boundary: text,
+                  wouldIdle: false
+                })
+                expect(drained.notifications.map(({ id }) => id)).toEqual([text])
+                expect(yield* queue.pending("run")).toEqual([])
+              })
+            )
+          }
+        ),
+        { numRuns: 40, seed: 4635 }
+      )
+    })
+
+    it.each(["ascii", "non-ASCII"])(
+      "reserves a nonempty boundary for an admitted lineage at the %s encoded length limit",
+      async (shape) => {
+        const maxEncodedLineage = JournalEvent.maxIdentifierLength - "/notifications/drain//x".length
+        const lineage = shape === "ascii"
+          ? "l".repeat(maxEncodedLineage)
+          : "ü".repeat(Math.floor(maxEncodedLineage / 6)) + "l".repeat(maxEncodedLineage % 6)
+        await runAt(
+          1,
+          Effect.gen(function*() {
+            const queue = yield* NotificationQueue.NotificationQueue
+            const journal = yield* Journal.Journal
+            // One more character left room only for an empty boundary, which
+            // drain refuses. It must not be acknowledged or hold capacity.
+            const error = refusal(
+              yield* queue.admit("run", item("undrainable", "steer", lineage + "l")).pipe(Effect.flip)
+            )
+            expect(error).toMatchObject({ code: "notification_invalid", path: "targetLineageId" })
+            expect((yield* journal.entries({ runId: JournalEvent.RunId.make("run"), limit: 512 })).entries).toEqual([])
+            expect((yield* queue.admit("run", item("deliverable", "steer", lineage))).decision).toBe("admitted")
+            const drained = yield* queue.drain({
+              runId: "run",
+              targetLineageId: lineage,
+              boundary: "x",
+              wouldIdle: false
+            })
+            expect(drained.notifications.map(({ id }) => id)).toEqual(["deliverable"])
+            expect(yield* queue.pending("run")).toEqual([])
+          })
+        )
+      }
+    )
+
+    it("admits an id that exactly fills the identifier bound once prefixed", async () => {
+      await run(Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        const longest = "i".repeat(JournalEvent.maxIdentifierLength - admissionPrefix.length)
+        const receipt = yield* queue.admit("run", item(longest, "steer"))
+        expect(receipt.decision).toBe("admitted")
+        const error = refusal(yield* queue.admit("run", item(`${longest}i`, "steer")).pipe(Effect.flip))
+        expect(error).toMatchObject({ code: "notification_invalid", path: "id" })
+        expect((yield* queue.pending("run")).map(({ id }) => id)).toEqual([longest])
+      }))
+    })
+
+    it.each(
+      [
+        ["an empty run id", ""],
+        ["a run id with a lone surrogate", `run-${loneSurrogate}`],
+        ["a run id with a NUL", `run-${nul}`],
+        ["a run id past the identifier bound", "r".repeat(JournalEvent.maxIdentifierLength + 1)]
+      ] as const
+    )("admit, drain and pending refuse %s with notification_invalid at runId", async (_, runId) => {
+      await run(Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        const admit = refusal(yield* queue.admit(runId, item("steer-1", "steer")).pipe(Effect.flip))
+        const drain = refusal(
+          yield* queue.drain({ runId, targetLineageId: "run/root", boundary: "turn", wouldIdle: false }).pipe(
+            Effect.flip
+          )
+        )
+        const pending = refusal(yield* queue.pending(runId).pipe(Effect.flip))
+        for (const error of [admit, drain, pending]) {
+          expect(error).toMatchObject({ code: "notification_invalid", path: "runId" })
+          expect(error.message).not.toContain(loneSurrogate)
+        }
+      }))
+    })
+
+    it.each(
+      [
+        ["a lineage with a lone surrogate", { targetLineageId: `lin-${loneSurrogate}` }, "targetLineageId"],
+        ["a lineage with a NUL", { targetLineageId: `lin-${nul}` }, "targetLineageId"],
+        [
+          "a lineage too long once prefixed",
+          { targetLineageId: "l".repeat(JournalEvent.maxIdentifierLength) },
+          "targetLineageId"
+        ],
+        ["a boundary with a lone surrogate", { boundary: `turn-${loneSurrogate}` }, "boundary"],
+        ["a boundary with a NUL", { boundary: `turn-${nul}` }, "boundary"],
+        ["an empty boundary", { boundary: "" }, "boundary"],
+        ["an empty lineage", { targetLineageId: "" }, "targetLineageId"],
+        ["a boundary too long once prefixed", { boundary: "b".repeat(JournalEvent.maxIdentifierLength) }, "boundary"],
+        [
+          "a lineage and a boundary that only fit apart",
+          { targetLineageId: "l".repeat(600), boundary: "b".repeat(600) },
+          undefined
+        ]
+      ] as const
+    )("drain refuses %s with notification_invalid and records nothing", async (_, fields, path) => {
+      await run(Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        const journal = yield* Journal.Journal
+        yield* queue.admit("run", item("held", "steer"))
+        // `encodeURIComponent` threw on the surrogate and the branded source
+        // constructor on the length, both as defects; a pair that fits apart
+        // but not together names no single field.
+        const error = refusal(
+          yield* queue.drain({
+            runId: "run",
+            targetLineageId: "run/root",
+            boundary: "turn",
+            wouldIdle: true,
+            ...fields
+          })
+            .pipe(Effect.flip)
+        )
+        expect(error.code).toBe("notification_invalid")
+        expect(error.path).toBe(path)
+        expect((yield* journal.entries({ runId: JournalEvent.RunId.make("run"), limit: 512 })).entries).toHaveLength(1)
+        expect((yield* queue.pending("run")).map(({ id }) => id)).toEqual(["held"])
+      }))
+    })
+
+    it("keeps a lineage no drain could address from holding a capacity slot", async () => {
+      await runAt(
+        1,
+        Effect.gen(function*() {
+          const queue = yield* NotificationQueue.NotificationQueue
+          // Before, this lineage was admitted, every drain of it died on the
+          // surrogate, and at capacity one the run refused every later steer.
+          const refused = refusal(
+            yield* queue.admit("run", item("stuck", "steer", `lin-${loneSurrogate}`)).pipe(Effect.flip)
+          )
+          expect(refused).toMatchObject({ code: "notification_invalid", path: "targetLineageId" })
+          const receipt = yield* queue.admit("run", item("next", "steer"))
+          expect(receipt.decision).toBe("admitted")
+          const drained = yield* queue.drain({
+            runId: "run",
+            targetLineageId: "run/root",
+            boundary: "turn",
+            wouldIdle: false
+          })
+          expect(drained.notifications.map(({ id }) => id)).toEqual(["next"])
+        })
+      )
+    })
+
+    it("admits and drains identifiers with non-ASCII text", async () => {
+      await run(Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        const receipt = yield* queue.admit("run-ü", item("café-✓", "steer", "lin-日本"))
+        expect(receipt.decision).toBe("admitted")
+        const drained = yield* queue.drain({
+          runId: "run-ü",
+          targetLineageId: "lin-日本",
+          boundary: "turn-✓",
+          wouldIdle: false
+        })
+        expect(drained.notifications.map(({ id }) => id)).toEqual(["café-✓"])
+        expect(yield* queue.pending("run-ü")).toEqual([])
+      }))
+    })
+  })
+
   it("refuses a value with no readable id without inventing one", async () => {
     const observed = await run(
       Effect.gen(function*() {
@@ -1053,8 +1388,9 @@ describe("NotificationQueue", () => {
     await run(Effect.gen(function*() {
       const queue = yield* NotificationQueue.NotificationQueue
       const journal = yield* Journal.Journal
-      // The notification envelope puts the payload root at depth 1. These
-      // leaves are therefore at depths 255 (legal) and 256 (refused).
+      // The notification envelope puts the payload root at depth 1. The
+      // innermost containers are therefore at depths 255 (legal) and 256
+      // (refused).
       const receipt = yield* queue.admit("run", untyped({ ...item("legal", "steer"), payload: payload(254) }))
       expect(receipt.decision).toBe("admitted")
       const error = refusal(
@@ -1071,6 +1407,36 @@ describe("NotificationQueue", () => {
       expect((yield* queue.pending("run")).map(({ id }) => id)).toEqual(["legal"])
     }))
   })
+
+  it.each(["objects", "arrays"])(
+    "refuses a leaf at depth 256, as the journal's redactor would, for %s",
+    async (shape) => {
+      /** `records` containers around the leaf `1`, which sits at notification depth `records + 1`. */
+      const around = (records: number): unknown => {
+        let value: unknown = 1
+        for (let level = 0; level < records; level += 1) value = shape === "objects" ? { nested: value } : [value]
+        return value
+      }
+      await run(Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        const journal = yield* Journal.Journal
+        // The journal stores the notification one level deeper, inside the
+        // admission record, and its redactor refuses any value past depth 256
+        // there, leaf included. A leaf at notification depth 255 is the deepest
+        // it stores; one at 256 used to pass admission and fail as a storage
+        // error a caller would retry forever.
+        const receipt = yield* queue.admit("run", untyped({ ...item("leaf-255", "steer"), payload: around(254) }))
+        expect(receipt.decision).toBe("admitted")
+        const error = refusal(
+          yield* queue.admit("run", untyped({ ...item("leaf-256", "steer"), payload: around(255) })).pipe(Effect.flip)
+        )
+        expect(error).toMatchObject({ code: "notification_invalid", notificationId: "leaf-256" })
+        expect(error.message).toContain("256")
+        expect((yield* journal.entries({ runId: JournalEvent.RunId.make("run"), limit: 512 })).entries).toHaveLength(1)
+        expect((yield* queue.pending("run")).map(({ id }) => id)).toEqual(["leaf-255"])
+      }))
+    }
+  )
 
   it("refuses an oversized payload before fingerprinting or journaling it", async () => {
     await run(Effect.gen(function*() {

@@ -313,10 +313,25 @@ describe("Channels.layer classifies each answer once", () => {
     expect(error).toMatchObject({ channel: "telegram", code: "rate_limited", retryAfterMillis: 3_000 })
   })
 
+  it.each([9_007_199_254_740, 9_007_199_254_741])(
+    "bounds the milliseconds of a Telegram retry_after at %s seconds",
+    async (seconds) => {
+      answers.push({ status: 429, json: { parameters: { retry_after: seconds } } })
+      const error = failure((await send(chat)).exit)
+      expect(error).toMatchObject({ channel: "telegram", code: "rate_limited", status: 429 })
+      expect(Object.getOwnPropertyDescriptor(error, "retryAfterMillis")?.value).toBe(
+        seconds === 9_007_199_254_740 ? seconds * 1_000 : undefined
+      )
+    }
+  )
+
   it.each(
     [
       ["an HTTP date", { "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT" }, {}],
       ["a negative wait", {}, { parameters: { retry_after: -1 } }],
+      // The body is the provider's: a count whose milliseconds are no safe
+      // integer is no wait, not a failure the error cannot hold.
+      ["a wait too large to count in milliseconds", {}, { parameters: { retry_after: 9_007_199_254_740_991 } }],
       ["no wait at all", {}, {}]
     ] as const
   )("a 429 with %s waits the engine's own backoff", async (_, headers, json) => {
@@ -439,8 +454,30 @@ describe("Channels.layer before any request", () => {
     expect(received).toEqual([])
   })
 
+  it("validates the destination when the send Effect runs", async () => {
+    const recipients: [string] = ["will@example.com"]
+    const destination: Channels.Destination = { _tag: "email", to: recipients }
+    answers.push({ status: 200, json: { id: "sent" } })
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function*() {
+        const channels = yield* Channels.Channels
+        const delivery = channels.send(destination, message)
+        recipients[0] = "not an address"
+        return yield* delivery
+      }).pipe(Effect.provide(Channels.layer(both())))
+    )
+
+    expect(failure(exit)).toMatchObject({ code: "rejected", reason: "invalid_message" })
+    expect(received).toEqual([])
+  })
+
   it.each(
     [
+      ["an unknown channel", { _tag: "sms", number: "1" }, message],
+      ["a missing channel", {}, message],
+      ["a null destination", null, message],
+      ["an absent destination", undefined, message],
+      ["a primitive destination", "sms", message],
       ["no recipients", { _tag: "email", to: [] }, message],
       [
         "too many recipients",
