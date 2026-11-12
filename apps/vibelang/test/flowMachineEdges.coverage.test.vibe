@@ -59,6 +59,7 @@ describe("the words for a history refusal", () => {
     ["state", "Not in that state."],
     ["full", "History full."],
     ["unavailable", "The history can't be reached."],
+    ["paced", "Publishing in the background."],
   ] as const)("%s reads %j", (refusal, words) => {
     expect(historyRefusal(refusal)).toBe(words)
   })

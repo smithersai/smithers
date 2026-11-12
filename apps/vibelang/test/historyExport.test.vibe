@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { HttpClient } from "effect/http"
 import { REF_NAMES } from "../src/history/export.vibe"
 import { exporterOf, OFF, off } from "../worker/HistoryExport.vibe"
+import { Repository } from "@smthrs/jj"
 
 /** A client that fails the test if the exporter reaches it: an off export makes no request. */
 const unreachable = HttpClient.make(() => Effect.die("an off export made a request"))
@@ -49,5 +50,45 @@ describe("the export setting", () => {
   it.effect("names VibeLang's own refs: the bookmark, its notes and the manifest bookmark", () => effect {
     const exporter = try exporterOf("github:smithersai/vibelang", token, unreachable)
     try Effect.try(() => expect(exporter.names).toEqual({ mythical: "refs/heads/mythical", notes: "refs/notes/mythical", manifest: "refs/heads/smithers/history" }))
+  })
+  // Will's grant (VL-39) is the export's three refs on smithersai/vibelang, never main and never the `vibe` branch: the
+  // exporter refuses any other ref before it sends a request, whatever it is told.
+  const tip = "a".repeat(40)
+  for (const ref of ["refs/heads/main", "refs/heads/vibe", "refs/heads/feature", "refs/tags/v1", "refs/notes/commits"]) {
+    it.effect(`refuses to move ${ref}, outside its three refs, before any request`, () => effect {
+      const exporter = try exporterOf("github:smithersai/vibelang", token, unreachable)
+      const refused = try Effect.flip(exporter.repository.updateRefs({ operation: "test", updates: [
+        { ref: REF_NAMES.mythical, before: null, after: tip },
+        { ref, before: null, after: tip },
+      ] }))
+      try Effect.try(() => expect([refused.code, refused.method, refused.refs]).toEqual(["invalid", "updateRefs", [ref]]))
+    })
+  }
+
+  for (const name of ["mythical", "notes", "manifest"] as const) {
+    it.effect(`is off when its ${name} ref is named main, and makes no request`, () => effect {
+      const names = { ...REF_NAMES, [name]: "refs/heads/main" }
+      const exporter = try exporterOf("github:smithersai/vibelang", token, unreachable, names)
+      const refused = try Effect.flip(exporter.repository.updateRefs({ operation: "test", updates: [{ ref: "refs/heads/main", before: null, after: tip }] }))
+      try Effect.try(() => {
+        expect(exporter.repository).not.toBe(off.repository)
+        expect([refused.code, refused.refs]).toEqual(["invalid", ["refs/heads/main"]])
+      })
+    })
+  }
+
+  it.effect("still moves its own three refs, in one request", () => effect {
+    const seen: Array<string> = []
+    const recording = HttpClient.make((request) => {
+      seen.push(`${request.method} ${request.url}`)
+      return Effect.die("stop here")
+    })
+    const exporter = try exporterOf("github:smithersai/vibelang", token, recording, REF_NAMES, "http://github.test")
+    try Effect.exit(exporter.repository.updateRefs({ operation: "test", updates: [
+      { ref: REF_NAMES.mythical, before: null, after: tip },
+      { ref: REF_NAMES.notes, before: null, after: tip },
+      { ref: REF_NAMES.manifest, before: null, after: tip },
+    ] }))
+    try Effect.try(() => expect(seen).toEqual(["POST http://github.test/graphql"]))
   })
 })

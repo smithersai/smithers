@@ -5,7 +5,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { Repository } from "@smthrs/jj"
 import { Digest } from "effect/crypto"
-import { REF_NAMES } from "../../src/history/export.vibe"
+import { type Pace, REF_NAMES } from "../../src/history/export.vibe"
 import type { RefNames } from "../../src/history/exportDecision.vibe"
 import { Export, exportRegistration, ExportTarget, Stack } from "../../src/history/flows.vibe"
 import { mockRepository } from "../../src/history/MockMythical.vibe"
@@ -35,6 +35,8 @@ export interface WorldOptions {
   readonly repository?: Repository.Repository
   readonly wrap?: (repository: Repository.Repository) => Repository.Repository
   readonly names?: RefNames
+  /** The repository's pace; unpaced when absent. */
+  readonly pace?: Pace
 }
 
 /** The Export flow for `principal`; each run its own execution unless named. Needs a scope. */
@@ -49,7 +51,7 @@ export effect function world(options: WorldOptions = {}) {
       Layer.succeed(Stack, stackOf(sequencer, () => Effect.succeed(empty))),
       Layer.succeed(Caller, { principal: options.principal ?? MAINTAINER }),
       Layer.succeed(Repository.Repository, repository),
-      Layer.succeed(ExportTarget, { names }),
+      Layer.succeed(ExportTarget, options.pace === undefined ? { names } : { names, pace: options.pace }),
     )),
     Layer.provide(Layer.succeed(Digest.Digest, try digestOf())),
   )

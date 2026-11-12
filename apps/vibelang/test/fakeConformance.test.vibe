@@ -64,6 +64,7 @@ function difference(expected: unknown, actual: unknown, field = "$"): string | u
  */
 const OTHER_CONTRACTS: Readonly<Record<string, string>> = {
   "history-export.json": "GitHub's Git database API and GraphQL updateRefs (0020). The export fuzzes @smthrs/jj's memory Repository, whose object ids GitHub.GitDatabase checks against every id GitHub answers.",
+  "history-publish.json": "The same Git database API and updateRefs, sent by the publisher's paced batches (0020, \"Publishing and following main\"); held by the same contract as history-export.json.",
 }
 
 schema Ref { ref: string; object: { sha: string; type: string } }

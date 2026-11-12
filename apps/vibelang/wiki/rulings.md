@@ -180,6 +180,13 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   saw and real GitHub allows 5,000 requests an hour. Every other happy path runs on recordings of real GitHub (VL-36),
   and fault cases inject a faulty service. The fake is held to GitHub: a test replays every committed recording of
   real GitHub through the fake and fails when the fake answers differently.
+- **VL-39. Publish the mythical history to smithersai/vibelang, and update it whenever main moves.** Will, 2026-11-12
+  01:10 PST (relayed by his recovery session; the question was "push the mythical branch to the real VibeLang
+  repository, yes or no"): "Yes everytime we update main we should update vibe too". The site may write the export's
+  three refs on `smithersai/vibelang` (`refs/heads/mythical`, `refs/notes/mythical`, `refs/heads/smithers/history`),
+  and nothing else: never `main`, and not the old `vibe` development branch, on which Will has not ruled. Every update
+  of main folds its new commits and re-exports what changed. See
+  [0020, "Publishing and following main"](decisions/0020-mythical-history.md#publishing-and-following-main).
 
 ## Process
 

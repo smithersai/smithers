@@ -5683,6 +5683,13 @@ cases.extend([('src/history/flowMachine.vibe', *case) for case in [
 ('flow-least-export', 'leastRole', 'case "export": return "maintainer"', 'case "export": return "contributor"', 'only a maintainer exports'),
 ('flow-refusal-export-off', 'historyRefusal', 'if (refusal === "unsupported") return "Export is off."', 'if (refusal === "unsupported") return refusal', 'an off export says so'),
 ('flow-refusal-export-check', 'historyRefusal', 'refusal === "tree" || refusal === "linear" || ', 'refusal === "tree" || ', 'every check refusal reads the same'),
+('flow-refusal-export-paced', 'historyRefusal', 'if (refusal === "paced") return "Publishing in the background."', 'if (refusal === "paced") return refusal', 'a paced export says it runs in the background'),
+]])
+# Lane vl-mythical-publish: the export never moves main, the `vibe` branch or a ref outside its three names.
+cases.extend([('src/history/exportDecision.vibe', *case) for case in [
+('export-writable-main', 'writable', '  if (ref === "refs/heads/main" || ref === "refs/heads/vibe") return false\n', '', 'a name pointed at main is still refused'),
+('export-writable-vibe', 'writable', 'ref === "refs/heads/main" || ref === "refs/heads/vibe"', 'ref === "refs/heads/main"', 'the vibe branch is refused'),
+('export-writable-names', 'writable', ' || ref === names.notes || ref === names.manifest', ' || ref === names.notes || ref === names.manifest || ref !== ""', 'a ref outside the three names is refused'),
 ]])
 
 # Lane vl-proveall3, batch 21: the API Worker's object-body decisions (worker/apiObjects.vibe).

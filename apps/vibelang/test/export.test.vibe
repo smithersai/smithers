@@ -38,6 +38,37 @@ function counting(counts: { writes: number; updates: number }) {
 const check = (body: () => void) => Effect.try(body)
 
 describe("the export", () => {
+  it.effect("leaves more than one batch of a paced repository to the publisher: refused paced, nothing read or written", () => scoped(effect {
+    const counts = { writes: 0, updates: 0 }
+    const { sequencer, run, refs } = try world({ wrap: counting(counts), pace: { writes: 4, reads: 10, pauseMs: 60_000 } })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const after = try refs()
+    // One batch is enough for a small change: the same story at a pace that holds it is published at once.
+    const roomy = try world({ pace: { writes: 100, reads: 10, pauseMs: 60_000 } })
+    try told(roomy.sequencer, STORY)
+    const fits = try roomy.run()
+    try check(() => {
+      expect(answer).toEqual({ mythical: "", written: 0, refusal: "paced" })
+      expect(counts).toEqual({ writes: 0, updates: 0 })
+      expect(after).toEqual([null, null, null])
+      expect([fits.refusal, fits.written]).toEqual([null, 3])
+    })
+  }))
+
+  it.effect("leaves more trees than one batch reads to the publisher too, reading none", () => scoped(effect {
+    const reads = { count: 0 }
+    const { sequencer, run, refs } = try world({ pace: { writes: 100, reads: 1, pauseMs: 60_000 }, wrap: (repository) => ({ ...repository, readCommit: (revision) => { reads.count++; return repository.readCommit(revision) } }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const after = try refs()
+    try check(() => {
+      expect(answer.refusal).toBe("paced")
+      expect(reads.count).toBe(0)
+      expect(after).toEqual([null, null, null])
+    })
+  }))
+
   it.effect("publishes a linear bookmark whose landed commits carry main's trees and whose reservations are empty", () => scoped(effect {
     const { sequencer, repository, run, refs } = try world()
     try told(sequencer, STORY)

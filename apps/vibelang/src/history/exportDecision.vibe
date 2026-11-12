@@ -6,6 +6,7 @@
 //   previous oids, planned oids ──kept──▶ how many leading commits are already written
 //   published, candidate ──moves──▶ one compare-and-swap of all three refs, each from its published value
 //   observed, published, candidate ──confirmed──▶ published | unchanged | conflict
+//   names, ref ──writable──▶ only the three names, and never main or the `vibe` branch
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Every function is total.
@@ -122,4 +123,16 @@ export function confirmed(observed: Refs, published: Refs, candidate: Refs): Out
   if (same(observed, candidate)) return "published"
   if (same(observed, published)) return "unchanged"
   return "conflict"
+}
+
+/**
+ * Whether an export may move `ref`: only one of its own three names, and never `main` or the `vibe` branch, even when
+ * a name is one of them (VL-39 grants the three refs, nothing else).
+ */
+//@ verify
+//@ ensures \result <==> ((ref == names.mythical || ref == names.notes || ref == names.manifest) && ref != "refs/heads/main" && ref != "refs/heads/vibe")
+//@ ensures \result ==> ref != "refs/heads/main"
+export function writable(names: RefNames, ref: string): boolean {
+  if (ref === "refs/heads/main" || ref === "refs/heads/vibe") return false
+  return ref === names.mythical || ref === names.notes || ref === names.manifest
 }

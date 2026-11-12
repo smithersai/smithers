@@ -4,7 +4,8 @@
 Smithers D-09a, D-20; repository rules FLOW-3, "people merge; agents never approve or merge". **Brings back** what
 `apps/mvp/docs/rulings.md` TODO-2 deferred, for this app only. **Designed twice:** Claude Opus
 (`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built:** the machine and its proofs, the bootstrap, the flows, the mock, the live History object
-and its routes, the agent's commands, the view, and the git export (switched off for VibeLang's own repository).
+and its routes, the agent's commands, the view, the git export, and its publisher, which follows main (VL-39: built, and
+on once the lead sets `HISTORY_EXPORT`; see "Publishing and following main").
 
 **Decision.** VibeLang's mythical history is a second state machine beside the conversation's (0003): one linear stack
 of mythical commits grouped into epics, written only by its sequencer in one Durable Object, `History`, bootstrapped
@@ -33,8 +34,8 @@ issue ─▶ task ─▶ Plan (append | insert | amend) ─▶ Start (lane) ─�
   `After` lines; a person's approval), `superseded`. The view shows a fourth section, `Folded`, derived from `real`,
   so it can't drift.
 - **The git export** (below) publishes this state as a strictly linear `mythical` bookmark, `refs/notes/mythical`
-  and a manifest bookmark, `smithers/history`, to Sol's conditions. Publishing to `smithersai/vibelang` is off until
-  Will grants the site that write.
+  and a manifest bookmark, `smithers/history`, to Sol's conditions. Will granted the write to `smithersai/vibelang`
+  (VL-39); the History object's publisher keeps it following main.
 
 ## The git export
 
@@ -82,10 +83,11 @@ authorize ─▶ prepare ──────────────────�
   4.4 s, bootstrap included (`bench/history-export.bench.vibe`).
 - **Live:** `POST /api/history/export` runs the flow in the History object. `HISTORY_EXPORT` (`off`, the default, or
   `github:<owner>/<repo>`) and `HISTORY_EXPORT_TOKEN` choose the repository (`worker/HistoryExport.vibe`); off, every
-  repository call answers `unsupported` and the export is refused before it reads anything. **Publishing to
-  `smithersai/vibelang` stays off until Will grants the site that write.**
-- **Refusals:** `forbidden`, `nothing` (no commits), `unsupported`, `conflict`, `unavailable`, and the check's
-  `linear`, `tree` and `notes`; a refused export moves no ref.
+  repository call answers `unsupported` and the export is refused before it reads anything. On a paced repository
+  (GitHub), a person's Export runs only when it fits one batch of the pace; more is refused `paced` ("Publishing in
+  the background.") and left to the publisher.
+- **Refusals:** `forbidden`, `nothing` (no commits), `unsupported`, `conflict`, `unavailable`, `paced`, `invalid` (a
+  ref outside the three), and the check's `linear`, `tree` and `notes`; a refused export moves no ref.
 
 **Evidence (nyc-01, 2026-11-10/11).** Probed on `codeplanesmithers/smithers-vibelang-e2e` before building: GitHub's
 blob, tree and commit ids equal local hashing byte for byte; a stale `beforeOid` refuses the whole `updateRefs` with
@@ -97,6 +99,64 @@ nothing, extends the bookmark by one, and deletes its refs. `test/export.test.vi
 answering another tree to the check, a broken parent, a missing note, a short manifest. Running it found and fixed a
 manifest that kept an extended bookmark's old tip as a second parent, and a memory repository that refused git's
 empty tree.
+
+## Publishing and following main
+
+Will, 2026-11-12 (VL-39): "Yes everytime we update main we should update vibe too". The site writes the export's three
+refs on `smithersai/vibelang`, never `main`, and not the old `vibe` branch (no ruling on it).
+
+```
+History object start ─▶ publisher.start (once; again answers running)
+alarm ─▶ vibelang/history/Publish round n
+          publish/fold/main ─▶ fold/read ─▶ fold/<sha>…          main's new commits, as Fold does
+          export/begin                                            the published refs, read once
+          export/batch/0 ─▶ pause/0 (9 min) ─▶ batch/1 ─▶ …       60 writes or 300 tree reads a batch
+          export/check ─▶ export/publish ─▶ export/confirm        one compare-and-swap, from begin's refs
+          system/sleep (10 min) ─▶ Publish.to({}) ─▶ round n+1, kept in this object
+```
+
+- **Never main.** Every exporter's `updateRefs` refuses `invalid`, naming the refs, before any request when a ref is
+  not one of its three names, or is `refs/heads/main` or `refs/heads/vibe` even when a name says so
+  (`exportDecision.vibe` `writable`, proved; `export.vibe` `guarded`). `test/historyExport.test.vibe` failed first: the
+  GitHub adapter sent the GraphQL `updateRefs` for `refs/heads/main`.
+- **Paced by the engine.** The first export of VibeLang's 5,703 commits is about 11,400 content-creating requests
+  (a commit and a note blob each) and 5,703 tree reads. GitHub documents 500 content-creating requests an hour, 80 a
+  minute, and no concurrent writes. `GITHUB_PACE` writes 60 objects one after another, then pauses 9 minutes in a
+  durable sleep (`DurableClock`): 400 an hour, so the first export takes about 29 hours, and the trees take
+  20 batches first (300 reads each, 2,000 an hour under the 5,000 primary limit). Each batch is a journaled step; a
+  crash or a deploy resumes at the next unwritten object, because objects are content-addressed and the batch's
+  answer lists what it wrote. A history that changes mid-run is planned again; only the objects it now needs are
+  written.
+- **Rate limits through the retry policy.** `@smthrs/integrations`' `GitDatabase` now answers a 429 or a rate-limit
+  403 as `unavailable` with GitHub's wait as `retryAfterMillis` (its `Retry-After` in full, else the client's capped
+  `x-ratelimit-reset`), the name `@smthrs/flow`'s retry policy reads. A batch step retries `unavailable` only
+  (`BATCH_RETRY`): at least as long as GitHub asked, doubling from one minute to five, for at most a day. Five minutes
+  is the cap because the engine waits a retry out inside the alarm that drives the step (ten minutes of drive budget);
+  a longer limit is tried again every five minutes until it lifts.
+- **Publishes nothing part way.** No ref moves before the round's one compare-and-swap, from the refs `export/begin`
+  read; another writer in between is `conflict`, and the next round starts over from what is published.
+- **Follows main with a durable schedule.** smithers.sh's App receives GitHub's push events but delivers none to this
+  site (`apps/mvp/worker/github/Api.ts`), so each round ends with a 10-minute durable sleep and hands off to the
+  next. `@smthrs/platform-cloudflare`'s `ExecutionObject` gained `continueHere`: the next round of a lineage stays in
+  the object that drove the one before it (`Continued`), so the History object, a singleton named by its repository,
+  drives one lineage forever on its own SQLite and alarm. A main that moves during a round is folded by the next one;
+  a second start while the lineage runs answers `running`; nothing runs twice.
+- **Token.** The site holds no GitHub App credentials (0031: `AUTH_BROKER_SITE_SECRET` only; smithers.sh holds
+  `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`), so it can't mint an installation token, and copying the App's key to
+  a second Worker would let it mint tokens for every installation. The one secret is `HISTORY_EXPORT_TOKEN`: a
+  fine-grained personal access token for the `smithersai` organization, repository `smithersai/vibelang` only,
+  permission Contents: read and write. It can write `main` as far as GitHub is concerned; the exporter's guard is
+  what refuses it.
+- **Observability.** `vibelang_history_steps{step}` with `export.begin`, `export.batch` (`read`, `wrote`, `done`,
+  `limited`, a code), `export.pause`, `publish`; `vibelang_history_export_objects{kind: write | read}`;
+  `vibelang_history_export_guard`; `vibelang_history_publisher_starts{outcome}`; `smithers_cloudflare_execution_routed`
+  with `route: here`; spans `vibelang.history.publish.run`, `vibelang.history.export.batch`,
+  `vibelang.history.publisher.start`. No title, note, name or token.
+- **Tests.** `test/historyPublish.test.vibe` runs the publisher on the engine in the object's SQLite, driven by its
+  alarm: the same refs a person's export publishes, at most 3 writes a batch and each batch a full pause after the
+  last, no ref before the last step, a quiet round writing nothing, a moved main exporting only its new commit, a
+  limited write retried no sooner than GitHub asked, a refusal moving no ref, one lineage. With `batch` ignoring the
+  pace, 2 of 8 fail. `platform-cloudflare` `test/ContinueHere.test.ts` (red first: the next round was routed away).
 
 ## Bootstrap
 
@@ -169,6 +229,7 @@ Roles come from `src/history/roles.vibe`: each flow reads its least role from th
 | `vibelang/history/Fold` | `fold/main`, `fold/read`, `fold/<sha>` per commit | maintainer | **never** |
 | `vibelang/history/Export` | `export/run`: `export/prepare`, `check`, `publish`, `confirm` | maintainer | **never** |
 | `vibelang/history/Bootstrap` | `bootstrap/load` | its host, on first start; no route | no |
+| `vibelang/history/Publish` | `publish/run`: fold's steps, `export/begin`, `batch/<n>`, `pause/<n>`, `check`, `publish`, `confirm`; `system/sleep`; next round | its host, while `HISTORY_EXPORT` is on; no route | no |
 | read: `history` | `GET /api/history`, `GET /api/history/events` | viewer | `vibelang/history/show` |
 
 Landing stays the merge queue's: Approve is the person's decision; the lane enqueues the approved commit with a
@@ -271,6 +332,7 @@ vibelang-factory note m5704 --section tried "A cache; it went stale."
     common prefix of the last and planned chains; `moves` is all three refs, each from its published value to its
     candidate value; `confirmed` is `published` exactly when the refs read are the candidate, `unchanged` exactly when
     they are still the published tuple, else `conflict`. Item 7's `may` now names `export` beside approve and fold.
+    `writable` is one of the three names and never `refs/heads/main` or `refs/heads/vibe`, whatever the names say.
 
 **"A fold never runs before its approval", precisely.** The property is about the Fold flow, which maps a commit of
 `main` onto the stack. A real commit whose message carries `Mythical: m<n>` folds into `m<n>` only if `m<n>` exists
@@ -376,15 +438,16 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 
 ## Not yet, and why
 
-- Publishing the export to `smithersai/vibelang`: off behind `HISTORY_EXPORT` until Will grants the site a write to
-  VibeLang's repository; then set `HISTORY_EXPORT=github:smithersai/vibelang` and `HISTORY_EXPORT_TOKEN`. A first
-  export of 5,703 commits is about 11,400 content-creating GitHub requests (a commit and a note blob each); GitHub's
-  documented secondary limit is 500 such requests an hour, so it needs pacing across about a day before it is
-  switched on. Later exports write only what changed.
+- Publishing to `smithersai/vibelang`: granted (VL-39) and built ("Publishing and following main"); on once the lead
+  sets `HISTORY_EXPORT=github:smithersai/vibelang` and `HISTORY_EXPORT_TOKEN` and deploys. The first export takes
+  about 29 hours at 400 writes an hour.
+- A push webhook instead of the 10-minute schedule: smithers.sh's App receives pushes but forwards none to this site.
+- A retry wait longer than five minutes: the engine sleeps a retry inside the alarm (`Dispatch`'s `Effect.sleep`), not
+  in a durable timer, so `BATCH_RETRY` caps it below the drive budget. Recorded for the SDK.
 - Live writes on production: 0019's sign-in is on `main` (`worker/apiObjects.vibe` builds the history principal from
   the session's role), but production predates it, so there every HTTP caller is a viewer and Plan, Start, Note,
   Approve and Fold answer `forbidden` until the lead deploys; reads and the mock work.
-- A push webhook for Fold, and lane reports as notes: the queue lives on a private server; both need tokens (0019).
+- Lane reports as notes: the queue lives on a private server; it needs a token (0019).
 - Moving or dropping a planned commit, splitting or reordering epics: no ruling asks; the log has room for them.
 - Diffs on a commit's page: the projection holds no trees; the page links each real commit on GitHub.
 

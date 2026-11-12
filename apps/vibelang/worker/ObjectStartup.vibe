@@ -5,7 +5,7 @@ import type { ObjectState } from "./apiObjects.vibe"
 import { memberOf, retriesStartup, startupAfter, startupErrorType, stepEnd } from "./workerDecision.vibe"
 
 /** A start-up step's fixed name: `initialize` and `begin` are the host's, the rest the bodies' (worker/apiObjects.vibe). */
-export type Step = "initialize" | "begin" | "storage" | "sequencer" | "bootstrap" | "accounts"
+export type Step = "initialize" | "begin" | "storage" | "sequencer" | "bootstrap" | "publish" | "accounts"
 type Outcome = "started" | "done" | "ready" | "failed" | "interrupted"
 export interface Status {
   readonly objectClass: string

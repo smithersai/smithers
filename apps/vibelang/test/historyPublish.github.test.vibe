@@ -1,0 +1,88 @@
+// The History object's publisher on real GitHub (decision 0020, "Publishing and following main"; 0032): one round of
+// `vibelang/history/Publish` on the engine in the object's SQLite, driven by its alarm, through the Worker's own
+// exporter (worker/HistoryExport.vibe) and `GitHub.GitDatabase` at a small pace, on the test repository, replayed
+// from test/recordings/history-publish.json unless VIBE_GITHUB says otherwise (test/support/github.vibe). A replay
+// runs on the test clock, which stands in for the pauses; a run on real GitHub waits them out (about three minutes).
+// The refs live under the run's label and are deleted at the end.
+import { expect, it } from "@effect/vitest"
+import { readManifest, type Pace } from "../src/history/export.vibe"
+import { githubMain } from "../worker/MainLog.vibe"
+import { exporterOf } from "../worker/HistoryExport.vibe"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import type * as Objects from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+import { chainOf, told } from "./support/exportFlow.vibe"
+import { configured, github, TEST_REPOSITORY } from "./support/github.vibe"
+
+/** Four writes a batch, a minute apart: the round's 11 objects (3 commits, 3 notes, the notes tree and commit, the manifest's 3) take three batches. */
+const PACE: Pace = { writes: 4, reads: 2, pauseMs: 60_000 }
+
+// Real GitHub never answers on the test clock: a request's deadline is a sleep only real time ends.
+const test = configured === "replay" ? it.effect : it.live
+
+test("publishes one paced round on GitHub: three batches of at most four writes, nothing moved until the last step, then all three refs", () => scoped(effect {
+  const real = try github("history-publish")
+  const names = {
+    mythical: `refs/heads/vibelang-publish/${real.label}/mythical`,
+    notes: `refs/notes/vibelang-publish-${real.label}`,
+    manifest: `refs/heads/vibelang-publish/${real.label}/history`,
+  }
+  const repository = `${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`
+  const exporter = try exporterOf(`github:${repository}`, real.token, real.client, names, undefined, PACE)
+  const main = try githubMain(repository, real.client).since("")
+  const [first, second, third] = main
+  if (first === undefined || second === undefined || third === undefined) return try Effect.die(new Error("the test repository needs three commits on main"))
+  const kv = try Effect.try(() => objectStorage())
+  const storage = kv as unknown as Objects.Storage
+  const sequencer = try HistoryObject.history(storage)
+  try told(sequencer, [
+    { type: "OpenEpic", id: "e1", title: "e2e" },
+    { type: "Plan", id: "m1", epic: "e1", before: "", title: "the first two commits", task: "" },
+    { type: "Plan", id: "m2", epic: "e1", before: "", title: "a reservation", task: "" },
+    { type: "Plan", id: "m3", epic: "e1", before: "", title: "the third commit", task: "" },
+    { type: "Start", id: "m1", lane: "e2e" },
+    { type: "Approve", id: "m1", by: "Ada" },
+    { type: "Fold", sha: first.sha, change: "", title: first.title, into: "m1" },
+    { type: "Fold", sha: second.sha, change: "", title: second.title, into: "m1" },
+    { type: "Start", id: "m3", lane: "e2e" },
+    { type: "Approve", id: "m3", by: "Ada" },
+    { type: "Fold", sha: third.sha, change: "", title: third.title, into: "m3" },
+  ])
+  // main as the round reads it: nothing after the history's own main, so the round folds nothing.
+  const quiet = { since: () => Effect.succeed([]) }
+  const publishing = HistoryObject.publisher("history-publish-e2e", storage, sequencer, quiet, exporter)
+  const refs = () => Effect.map(exporter.repository.readRefs([names.mythical, names.notes, names.manifest]), (each) => each.map((ref) => ref.oid))
+  try publishing.start()
+  const seen: Array<ReadonlyArray<string | null>> = []
+  for (let n = 0; n < 40; n++) {
+    const armed = kv.alarmAt
+    const now = try Clock.currentTimeMillis
+    if (armed !== undefined && armed > now) try (configured === "replay" ? TestClock.setTime(armed) : sleep(Duration.millis(armed - now)))
+    const outcome = try publishing.alarm()
+    if (outcome._tag !== "Parked") continue
+    const read = try refs()
+    seen.push(read)
+    // Published: the round now sleeps until it follows main again, which this test does not wait for.
+    if (read.every((oid) => oid !== null)) break
+  }
+  const [mythical, notes, manifest] = try refs()
+  const chain = try chainOf(exporter.repository, mythical!)
+  const trees = [(try exporter.repository.readCommit(second.sha)).tree, (try exporter.repository.readCommit(third.sha)).tree]
+  const shown = try readManifest(exporter.repository, manifest!)
+  try exporter.repository.updateRefs({ operation: "e2e-cleanup", updates: [
+    { ref: names.mythical, before: mythical!, after: null },
+    { ref: names.notes, before: notes!, after: null },
+    { ref: names.manifest, before: manifest!, after: null },
+  ] })
+  const gone = try refs()
+  try Effect.try(() => {
+    // Two pauses between three batches with nothing published, then the follow-main sleep after the publication.
+    expect(seen.slice(0, -1).every((each) => each.every((oid) => oid === null))).toBe(true)
+    expect(seen).toHaveLength(3)
+    expect(seen.at(-1)).toEqual([mythical, notes, manifest])
+    expect(chain.map((commit) => commit.parents.length)).toEqual([0, 1, 1])
+    expect(chain.map((commit) => commit.tree)).toEqual([trees[0], trees[0], trees[1]])
+    expect(shown.notes).toBe(notes)
+    expect(gone).toEqual([null, null, null])
+  })
+}), 300_000)

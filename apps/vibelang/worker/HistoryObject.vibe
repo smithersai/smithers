@@ -6,9 +6,9 @@
 //   storage   base/<n>   the bootstrapped history's JSON, in chunks; `base` holds their count once all are written
 //             event/<seq> every event after it
 import { FlowRuntime } from "@smthrs/flow"
-import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { Repository } from "@smthrs/jj"
-import { Approve, Bootstrap, Export, exportRegistration, ExportTarget, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "../src/history/flows.vibe"
+import { Approve, Bootstrap, Export, exportRegistration, ExportTarget, Fold, historyRegistration, MainLog, Note, Plan, Publish, publishRegistration, Stack, Start } from "../src/history/flows.vibe"
 import { type Exporter, off } from "./HistoryExport.vibe"
 import type { Event, History } from "../src/history/mythical.vibe"
 import { Caller, type Principal, VIEWER } from "../src/history/roles.vibe"
@@ -21,7 +21,7 @@ import {
 import type { HistoryReader } from "../src/history/tools.vibe"
 import { make, type Sequencer, stackOf, type Store } from "../src/history/Sequencer.vibe"
 import type { Write } from "../src/history/wire.vibe"
-import { EXECUTION_RETENTION, postExecutionId, type Storage } from "./Objects.vibe"
+import { EXECUTION_RETENTION, executionStorage, postExecutionId, type Storage } from "./Objects.vibe"
 import { eventKey, type KeyValue } from "./ObjectStorage.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 
@@ -135,9 +135,55 @@ function runtime(hostId: string, executionId: string, flow: string, storage: Sto
       Layer.succeed(MainLog, main),
       Layer.succeed(Caller, { principal }),
       Layer.succeed(Repository.Repository, exporter.repository),
-      Layer.succeed(ExportTarget, { names: exporter.names }),
+      Layer.succeed(ExportTarget, { names: exporter.names, pace: exporter.pace }),
     )),
   )
+}
+
+/** The publisher's lineage, one per History object: its first round's execution id. */
+export const PUBLISHER = "history-publish"
+
+/** The publisher's runs reach no other object: a round hands off only to its next round, which the object keeps. */
+export const unrouted: ExecutionObject.Router = {
+  start: (intent) => Effect.die(new Error(`vibelang/history/Publish routed a start of ${intent.flow}`)),
+  wake: () => Effect.die(new Error("vibelang/history/Publish routed a wake")),
+}
+
+/** Publisher starts, by outcome: `started` (the lineage begins), `running` (it already runs). */
+const publisherStarts = Metric.counter("vibelang_history_publisher_starts", { description: "Starts of the History object's publisher, by outcome", incremental: true })
+
+/**
+ * The History object's publisher (decision 0020, "Publishing and following main"): `vibelang/history/Publish` as one
+ * lineage on the engine in the object's SQLite, driven by the object's alarm through `ExecutionObject`, each next round
+ * kept in this object. `start` begins the lineage once; while it runs, a start answers `running`, so nothing runs twice.
+ */
+export function publisher(hostId: string, storage: Storage, sequencer: Sequencer, main: MainLog.Shape, exporter: Exporter) {
+  const services = Layer.mergeAll(
+    Layer.succeed(Stack, stackOf(sequencer, seeded)),
+    Layer.succeed(MainLog, main),
+    Layer.succeed(Repository.Repository, exporter.repository),
+    Layer.succeed(ExportTarget, { names: exporter.names, pace: exporter.pace }),
+  )
+  const host = ExecutionObject.make(executionStorage(storage), {
+    flows: [Publish],
+    runtime: (intent) => CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow, retention: EXECUTION_RETENTION }, publishRegistration).pipe(
+      Layer.provide(ObjectDatabase.layer(storage)),
+      Layer.provide(services),
+    ),
+    router: unrouted,
+    settledRetentionMs: 0,
+    continueHere: (intent) => intent.flow === Publish._tag,
+  })
+  return {
+    start: () => withSpan(effect {
+      const intent = try Effect.orDie(ExecutionObject.intent(Publish, { executionId: PUBLISHER, payload: {} }))
+      const outcome = try Effect.match(host.start(intent), { onFailure: () => "running", onSuccess: () => "started" })
+      try Metric.update(Metric.withAttributes(publisherStarts, { outcome }), 1)
+      try Effect.logInfo("vibelang.history.publisher").pipe(Effect.annotateLogs({ outcome }))
+      return outcome
+    }, "vibelang.history.publisher.start"),
+    alarm: host.alarm,
+  }
 }
 
 /** Loads the bootstrapped history on the object's first start: one `vibelang/history/Bootstrap` execution, ever. */

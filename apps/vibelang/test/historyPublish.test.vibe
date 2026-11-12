@@ -1,0 +1,327 @@
+// @vitest-environment node
+// The History object's publisher (worker/HistoryObject.vibe `publisher`, flows.vibe `vibelang/history/Publish`;
+// decision 0020, "Publishing and following main") on in-memory object storage: the real engine in the object's SQLite,
+// driven by the object's alarm through `ExecutionObject`, over the mock's repository. Every unhappy path wraps the real
+// repository in a faulty one; main is a list the test grows.
+import { describe, expect, it } from "@effect/vitest"
+import { Repository } from "@smthrs/jj"
+import { REF_NAMES, type Pace, UNPACED } from "../src/history/export.vibe"
+import { FOLLOW_MS, type MainUnavailable, MainUnavailable as MainUnavailableError } from "../src/history/flows.vibe"
+import { mockRepository } from "../src/history/MockMythical.vibe"
+import type { Intent } from "../src/history/mythical.vibe"
+import type { MainCommit } from "../src/history/Sequencer.vibe"
+import { PUBLISHER, publisher, unrouted } from "../worker/HistoryObject.vibe"
+import { historyObject } from "../worker/apiObjects.vibe"
+import { exporterOf } from "../worker/HistoryExport.vibe"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { HttpClient, HttpClientError } from "effect/http"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import type * as Objects from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+import { told, world as exportWorld } from "./support/exportFlow.vibe"
+
+const hostId = "history-publish"
+
+/** Two epics: m1 landed by two real commits, m2 a reservation with a note, m3 landed by one. */
+const STORY: ReadonlyArray<Intent> = [
+  { type: "OpenEpic", id: "e1", title: "compiler" },
+  { type: "OpenEpic", id: "e2", title: "docs" },
+  { type: "Plan", id: "m1", epic: "e1", before: "", title: "feat(compiler): parse effects", task: "issue 1" },
+  { type: "Plan", id: "m2", epic: "e1", before: "", title: "fix(compiler): spans", task: "issue 2" },
+  { type: "Plan", id: "m3", epic: "e2", before: "", title: "docs: the guide", task: "" },
+  { type: "Start", id: "m1", lane: "lane-a" },
+  { type: "Approve", id: "m1", by: "Ada" },
+  { type: "Fold", sha: "a1a1a1a1a1a1", change: "", title: "feat(compiler): parse effects", into: "m1" },
+  { type: "Fold", sha: "a2a2a2a2a2a2", change: "", title: "chore(docs): regenerate", into: "m1" },
+  { type: "AddNote", id: "m2", section: "tried", text: "A cache; it went stale.", by: "Ada" },
+  { type: "Start", id: "m3", lane: "lane-b" },
+  { type: "Approve", id: "m3", by: "Ada" },
+  { type: "Fold", sha: "b1b1b1b1b1b1", change: "", title: "docs: the guide", into: "m3" },
+]
+
+/** A small pace, so the story takes several batches: 3 writes and 1 tree read a batch, 2 minutes apart. */
+const SMALL: Pace = { writes: 3, reads: 1, pauseMs: 120_000 }
+
+/** What the repository saw: each object write and ref update, with the test clock's time. */
+interface Seen { readonly kind: "write" | "read" | "update"; readonly at: number }
+
+effect function now() { return try Clock.currentTimeMillis }
+
+/** Records every write, tree read and ref update with the time it was made. */
+function watching(seen: Array<Seen>) {
+  return (repository: Repository.Repository): Repository.Repository => ({
+    ...repository,
+    writeBlob: (text) => Effect.tap(now(), (at) => Effect.sync(() => void seen.push({ kind: "write", at }))).pipe(Effect.andThen(repository.writeBlob(text))),
+    writeTree: (entries) => Effect.tap(now(), (at) => Effect.sync(() => void seen.push({ kind: "write", at }))).pipe(Effect.andThen(repository.writeTree(entries))),
+    writeCommit: (commit) => Effect.tap(now(), (at) => Effect.sync(() => void seen.push({ kind: "write", at }))).pipe(Effect.andThen(repository.writeCommit(commit))),
+    updateRefs: (transaction) => Effect.tap(now(), (at) => Effect.sync(() => void seen.push({ kind: "update", at }))).pipe(Effect.andThen(repository.updateRefs(transaction))),
+  })
+}
+
+interface Options {
+  readonly pace?: Pace
+  readonly wrap?: (repository: Repository.Repository) => Repository.Repository
+  /** main can't be read. */
+  readonly mainDown?: boolean
+}
+
+/** A History object's storage, sequencer and publisher over the mock's repository; `main` is what a fold reads. */
+effect function world(options: Options = {}) {
+  const kv = try Effect.try(() => objectStorage())
+  const storage = kv as unknown as Objects.Storage
+  const sequencer = try HistoryObject.history(storage)
+  const base = mockRepository(sequencer)
+  const repository = (options.wrap ?? ((each) => each))(base)
+  const main: Array<MainCommit> = []
+  const reads: Array<string> = []
+  const log = {
+    since: (sha: string): ReadonlyArray<MainCommit>!MainUnavailable => options.mainDown === true
+      ? Effect.fail(new MainUnavailableError({ reason: "down" }))
+      : Effect.sync(() => {
+        reads.push(sha)
+        const at = main.findIndex((commit) => commit.sha === sha)
+        return main.slice(at + 1)
+      }),
+  }
+  const exporter = { repository, names: REF_NAMES, pace: options.pace ?? SMALL }
+  const publishing = publisher(hostId, storage, sequencer, log, exporter)
+  const refs = () => Effect.map(base.readRefs([REF_NAMES.mythical, REF_NAMES.notes, REF_NAMES.manifest]), (each) => each.map((ref) => ref.oid))
+  /**
+   * Runs alarms, each at the time the last one armed, until `done` says stop or 400 alarms ran. With `tick`, the clock
+   * moves on by it while an alarm runs: the engine waits out a step's retry inside the alarm.
+   */
+  const drive = effect (done: (outcome: { readonly _tag: string }) => boolean, tick?: Duration.Input) => {
+    const outcomes: Array<string> = []
+    for (let n = 0; n < 400; n++) {
+      const armed = kv.alarmAt
+      if (armed !== undefined && armed > (try now())) try TestClock.setTime(armed)
+      const running = try Effect.forkChild(publishing.alarm())
+      if (tick !== undefined) {
+        for (let polls = 0; polls < 10_000 && running.pollUnsafe() === undefined; polls++) try TestClock.adjust(tick)
+      }
+      const outcome = try Fiber.join(running)
+      outcomes.push(outcome._tag)
+      if (done(outcome)) return outcomes
+    }
+    return try Effect.die(new Error(`the publisher never stopped: ${outcomes.slice(-5).join(" ")}`))
+  }
+  return { kv, sequencer, base, main, reads, publishing, refs, drive }
+}
+
+const continued = (outcome: { readonly _tag: string }) => outcome._tag === "Continued"
+const check = (body: () => void) => Effect.try(body)
+
+describe("the publisher", () => {
+  it.effect("publishes the same refs a person's export does, in paced batches, moving no ref before the last step", () => effect {
+    const seen: Array<Seen> = []
+    const w = try world({ wrap: watching(seen) })
+    try told(w.sequencer, STORY)
+    // The same story exported at once, in one request, by the Export flow.
+    const once = try exportWorld()
+    try told(once.sequencer, STORY)
+    const answer = try once.run()
+    const expected = try once.refs()
+    const started = try w.publishing.start()
+    const outcomes = try w.drive(continued)
+    const published = try w.refs()
+    const writes = seen.filter((each) => each.kind === "write").map((each) => each.at)
+    const updates = seen.filter((each) => each.kind === "update").map((each) => each.at)
+    try check(() => {
+      expect(started).toBe("started")
+      expect(answer.refusal).toBe(null)
+      expect(published).toEqual(expected)
+      // One compare-and-swap, after every write.
+      expect(updates).toHaveLength(1)
+      expect(Math.max(...writes)).toBeLessThanOrEqual(updates[0]!)
+      // At most three writes at any one time, and each batch at least the pause after the one before.
+      const batches = [...new Set(writes)]
+      for (const at of batches) expect(writes.filter((each) => each === at).length).toBeLessThanOrEqual(3)
+      for (let i = 1; i < batches.length; i++) expect(batches[i]! - batches[i - 1]!).toBeGreaterThanOrEqual(SMALL.pauseMs)
+      expect(batches.length).toBeGreaterThan(2)
+      expect(outcomes.at(-1)).toBe("Continued")
+      expect(outcomes).toContain("Parked")
+    })
+  })
+
+  it.effect("moves no ref while a run is part way, so a reader sees the last publication or the next, never half", () => effect {
+    const w = try world()
+    try told(w.sequencer, STORY)
+    try w.publishing.start()
+    const seen: Array<ReadonlyArray<string | null>> = []
+    for (let n = 0; n < 100; n++) {
+      const outcomes = try w.drive((outcome) => outcome._tag === "Parked" || continued(outcome))
+      seen.push(try w.refs())
+      if (outcomes.at(-1) === "Continued") break
+    }
+    const published = seen.findIndex((refs) => refs.every((oid) => oid !== null))
+    try check(() => {
+      // Several pauses passed with nothing published, then all three refs at once, never one or two of them.
+      expect(published).toBeGreaterThan(2)
+      expect(seen.slice(0, published).every((refs) => refs.every((oid) => oid === null))).toBe(true)
+      expect(seen.slice(published).every((refs) => refs.every((oid) => oid !== null))).toBe(true)
+    })
+  })
+
+  it.effect("follows main: the next round folds its new commits and exports only what changed", () => effect {
+    const counts = { writes: 0, updates: 0 }
+    const w = try world({ wrap: (repository) => ({
+      ...repository,
+      writeBlob: (text) => { counts.writes++; return repository.writeBlob(text) },
+      writeTree: (entries) => { counts.writes++; return repository.writeTree(entries) },
+      writeCommit: (commit) => { counts.writes++; return repository.writeCommit(commit) },
+      updateRefs: (transaction) => { counts.updates++; return repository.updateRefs(transaction) },
+    }) })
+    try told(w.sequencer, STORY)
+    w.main.push({ sha: "b1b1b1b1b1b1", change: "", title: "docs: the guide", message: "docs: the guide" })
+    try w.publishing.start()
+    try w.drive(continued)
+    const first = { ...counts }
+    const before = try w.refs()
+    // A quiet round: nothing new on main, nothing written, no ref moved.
+    try w.drive(continued)
+    const quiet = { writes: counts.writes - first.writes, updates: counts.updates - first.updates }
+    // main moves: the next round folds the new commit into a new mythical commit and publishes it.
+    w.main.push({ sha: "c1c1c1c1c1c1", change: "", title: "docs(guide): one more page", message: "docs(guide): one more page" })
+    try w.drive(continued)
+    const after = try w.refs()
+    const history = try w.sequencer.read()
+    try check(() => {
+      expect(quiet).toEqual({ writes: 0, updates: 0 })
+      expect(history.real.map((real) => real.sha)).toContain("c1c1c1c1c1c1")
+      expect(after[0]).not.toBe(before[0])
+      // Only the new commit, its note, the notes tree and commit, and the manifest's three objects: far under the first export.
+      expect(counts.writes - first.writes - quiet.writes).toBeLessThanOrEqual(7)
+      expect(counts.updates - first.updates).toBe(1)
+      expect(w.reads.length).toBeGreaterThanOrEqual(3)
+    })
+  })
+
+  it.effect("waits at least as long as a rate limit asks before it tries a batch again, through the step's retry policy", () => effect {
+    const at: Array<number> = []
+    let refused = false
+    const w = try world({ pace: { ...SMALL, writes: 100, reads: 100 }, wrap: (repository) => ({
+      ...repository,
+      writeBlob: (text) => effect {
+        at.push(try now())
+        if (!refused) {
+          refused = true
+          return try Effect.fail(Repository.repositoryError("unavailable", "writeBlob", "secondary rate limit", undefined, 150_000))
+        }
+        return try repository.writeBlob(text)
+      },
+    }) })
+    try told(w.sequencer, STORY)
+    try w.publishing.start()
+    try w.drive(continued, "10 seconds")
+    const published = try w.refs()
+    try check(() => {
+      // GitHub asked for 150 s, more than the policy's first minute: the retry waited at least that long.
+      expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(150_000)
+      expect(published.every((oid) => oid !== null)).toBe(true)
+    })
+  })
+
+  it.effect("ends a round's export on a refusal, moving no ref, and the next round tries again", () => effect {
+    let refusals = 0
+    const w = try world({ wrap: (repository) => ({
+      ...repository,
+      writeCommit: (commit) => refusals++ === 0 ? Effect.fail(Repository.repositoryError("invalid", "writeCommit", "refused")) : repository.writeCommit(commit),
+    }) })
+    try told(w.sequencer, STORY)
+    try w.publishing.start()
+    try w.drive(continued)
+    const afterRefusal = try w.refs()
+    try w.drive(continued)
+    const afterRetry = try w.refs()
+    try check(() => {
+      expect(afterRefusal).toEqual([null, null, null])
+      expect(afterRetry.every((oid) => oid !== null)).toBe(true)
+    })
+  })
+
+  it.effect("runs once: a second start while the lineage runs answers running and starts nothing", () => effect {
+    const w = try world()
+    try told(w.sequencer, STORY)
+    const first = try w.publishing.start()
+    const again = try w.publishing.start()
+    try w.drive(continued)
+    const later = try w.publishing.start()
+    try check(() => {
+      expect([first, again, later]).toEqual(["started", "started", "running"])
+    })
+  })
+
+  it.effect("follows main again after FOLLOW_MS", () => effect {
+    const w = try world({ pace: UNPACED })
+    try told(w.sequencer, STORY)
+    try w.publishing.start()
+    try w.drive(continued)
+    const firstRound = try now()
+    try w.drive(continued)
+    const secondRound = try now()
+    try check(() => expect(secondRound - firstRound).toBeGreaterThanOrEqual(FOLLOW_MS))
+  })
+
+  it.effect("answers nothing for an empty history, and publishes nothing", () => effect {
+    const w = try world()
+    try w.publishing.start()
+    try w.drive(continued)
+    const refs = try w.refs()
+    try check(() => expect([refs, PUBLISHER]).toEqual([[null, null, null], "history-publish"]))
+  })
+
+  it.effect("still exports when main can't be read, and the next round folds it", () => effect {
+    const w = try world({ mainDown: true })
+    try told(w.sequencer, STORY)
+    try w.publishing.start()
+    try w.drive(continued)
+    const published = try w.refs()
+    try check(() => expect(published.every((oid) => oid !== null)).toBe(true))
+  })
+
+  it.effect("ends a round's export when the refs can't be read, and keeps following main", () => effect {
+    const w = try world({ wrap: () => Repository.makeUnsupported("off") })
+    try told(w.sequencer, STORY)
+    try w.publishing.start()
+    const outcomes = try w.drive(continued)
+    const again = try w.drive(continued)
+    try check(() => {
+      expect(outcomes.at(-1)).toBe("Continued")
+      expect(again.at(-1)).toBe("Continued")
+    })
+  })
+
+  it.effect("routes nothing to another object: a start or wake routed away dies", () => effect {
+    const intent: ExecutionObject.Intent = { flow: "vibelang/history/Publish", executionId: "elsewhere", payload: {} }
+    const started = try Effect.exit(unrouted.start(intent))
+    const woken = try Effect.exit(unrouted.wake("elsewhere"))
+    try check(() => expect([started._tag, woken._tag]).toEqual(["Failure", "Failure"]))
+  })
+})
+
+describe("the History object", () => {
+  const offline = HttpClient.make((request) => Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
+  const stateOf = (storage: unknown) => ({ id: { toString: () => "history/vibelang" }, raw: { storage }, exports: {} }) as never
+
+  it.effect("starts its publisher when publishing is on, and drives it from its alarm", () => scoped(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const exporter = try exporterOf("github:codeplanesmithers/smithers-vibelang-e2e", Redacted.make("token-for-tests"), offline)
+    const api = try historyObject(stateOf(kv), undefined, offline, exporter)
+    // A member call joins the object's start-up, which starts the publisher; the alarm then drives its first round.
+    const outcome = try api.alarm()
+    const intent = kv.kv.get(ExecutionObject.intentKey)
+    const flow = try Effect.try(() => JSON.parse(String(intent)).flow as string)
+    try check(() => {
+      expect(outcome).toBeUndefined()
+      expect(flow).toBe("vibelang/history/Publish")
+      expect(kv.alarmAt).not.toBeUndefined()
+    })
+  }), 120_000)
+
+  it.effect("starts no publisher when publishing is off", () => scoped(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const api = try historyObject(stateOf(kv), undefined, offline)
+    try api.page({ what: "outline" })
+    try check(() => expect(kv.kv.get(ExecutionObject.intentKey)).toBeUndefined())
+  }), 120_000)
+})

@@ -146,6 +146,11 @@ function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: H
     try ObjectStartup.step("bootstrap", effect {
       if (bootstrapsHistory((try sequencer.read()).seq)) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
     })
+    // Publishing on: the publisher follows main and exports what changed (0020, "Publishing and following main").
+    const publisher = HistoryObject.publisher(hostId, state.raw.storage, sequencer, main, exporter)
+    try ObjectStartup.step("publish", effect {
+      if (exporter !== off) try publisher.start()
+    })
     return {
       // Each page is computed here, beside the history, so a reader gets only what it shows.
       page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
@@ -157,6 +162,8 @@ function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: H
         const request = try HttpServerRequest.HttpServerRequest
         return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://history.invalid")) ?? 0))
       },
+      // The publisher's rounds and pauses: the object's only alarm.
+      alarm: () => Effect.asVoid(publisher.alarm()),
     }
   }
 }
@@ -461,7 +468,7 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
 
 
 export const budgetObject = (...args: Parameters<typeof budgetBody>) => ObjectStartup.make("Budget", args[0], budgetBody(...args), { admit: true, spend: true })
-export const historyObject = (...args: Parameters<typeof historyBody>) => ObjectStartup.make("History", args[0], historyBody(...args), { page: true, write: true, act: true, fetch: true })
+export const historyObject = (...args: Parameters<typeof historyBody>) => ObjectStartup.make("History", args[0], historyBody(...args), { page: true, write: true, act: true, fetch: true, alarm: true })
 export const accountsObject = (...args: Parameters<typeof accountsBody>) => ObjectStartup.make("ProjectAccounts", args[0], accountsBody(...args), { draftWiki: true, current: true, role: true, allowed: true, participation: true, fetch: true })
 export const conversationObject = (...args: Parameters<typeof conversationBody>) => ObjectStartup.make("Conversation", args[0], conversationBody(...args), { startAction: true, actionRequest: true, actionRuns: true, cancelAction: true, post: true, read: true, openWiki: true, controlTour: true, tour: true, endTour: true, fetch: true, alarm: true })
 export const actionIndexObject = (...args: Parameters<typeof actionIndexBody>) => ObjectStartup.make("ActionIndex", args[0], actionIndexBody(...args), { list: true, start: true, rerun: true, cancel: true })

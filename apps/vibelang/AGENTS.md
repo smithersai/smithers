@@ -1,7 +1,7 @@
 # apps/vibelang
 
 vibelang.smithers.sh, the VibeLang factory. Read [the wiki](wiki/index.md) first: [Will's rulings](wiki/rulings.md)
-(VL-1 to VL-33) are the source of truth for this app, and every decision lands in `wiki/decisions/` in the same change
+(VL-1 to VL-39) are the source of truth for this app, and every decision lands in `wiki/decisions/` in the same change
 as its code (VL-23).
 
 ## Rules

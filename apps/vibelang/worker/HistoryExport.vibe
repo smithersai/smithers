@@ -7,27 +7,29 @@
 import { GitHub } from "@smthrs/integrations"
 import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
-import { REF_NAMES } from "../src/history/export.vibe"
+import { GITHUB_PACE, guarded, type Pace, REF_NAMES, UNPACED } from "../src/history/export.vibe"
 import type { RefNames } from "../src/history/exportDecision.vibe"
 
-/** Where an export writes: the repository and its three refs. */
+/** Where an export writes: the repository, its three refs, and the pace the repository allows. */
 export interface Exporter {
   readonly repository: Repository.Repository
   readonly names: RefNames
+  readonly pace: Pace
 }
 
 /** Why the export is off, as every repository call answers it. */
 export const OFF = "publishing the history is off"
 
 /** The export switched off. */
-export const off: Exporter = { repository: Repository.makeUnsupported(OFF), names: REF_NAMES }
+export const off: Exporter = { repository: Repository.makeUnsupported(OFF), names: REF_NAMES, pace: UNPACED }
 
 const TARGET = /^github:([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})$/
 
 /**
  * The exporter `setting` names: off unless it is `github:<owner>/<repo>` and a token is given, then that repository on
  * GitHub through `GitHub.GitDatabase`, over `client`, at `api` (GitHub's own unless a test names another), with
- * VibeLang's ref names unless `names` says others.
+ * VibeLang's ref names unless `names` says others, at GitHub's pace (`GITHUB_PACE`) unless `pace` says another. Its `updateRefs` refuses any ref outside `names`, and `main` and the
+ * `vibe` branch always, before any request (`guarded`).
  */
 export effect function exporterOf(
   setting: string | undefined,
@@ -35,6 +37,7 @@ export effect function exporterOf(
   client: HttpClient.HttpClient,
   names: RefNames = REF_NAMES,
   api?: string,
+  pace: Pace = GITHUB_PACE,
 ) {
   const target = TARGET.exec(setting ?? "off")
   if (target === null || token === undefined) {
@@ -44,6 +47,7 @@ export effect function exporterOf(
   const github = try Effect.orDie(Effect.provideService(GitHub.GitHubClient.make({ token: Redacted.value(token), ...(api === undefined ? {} : { apiBaseUrl: api }) }, {}), HttpClient.HttpClient, client))
   const repository = try Effect.orDie(Effect.provideService(GitHub.GitDatabase.make(target[1]!, target[2]!), GitHub.GitHubClient.GitHubClient, github))
   try Effect.logInfo("vibelang.history.export.setting").pipe(Effect.annotateLogs({ outcome: "github" }))
-  const exporter: Exporter = { repository, names }
+  // Never main: whatever names it is given, the exporter moves only its own three refs, and never main or `vibe`.
+  const exporter: Exporter = { repository: guarded(repository, names), names, pace }
   return exporter
 }

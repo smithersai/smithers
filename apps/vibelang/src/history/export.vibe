@@ -14,7 +14,7 @@
 // parent's, so the bookmark's tree is always the tree of the last real commit it folds. The commits' author, committer
 // and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
 import { Repository } from "@smthrs/jj"
-import { kept, moves, type RefNames, type Refs, treeSource } from "./exportDecision.vibe"
+import { kept, moves, type RefNames, type Refs, treeSource, writable } from "./exportDecision.vibe"
 import type { Commit, History, Real } from "./mythical.vibe"
 import { stacked } from "./pages.vibe"
 
@@ -34,6 +34,26 @@ export const EXPORTER: Repository.Person = { name: "VibeLang mythical history", 
 
 /** The manifest's one file. */
 export const MANIFEST_FILE = "manifest.json"
+
+/**
+ * How an export spends a repository's write budget: at most `writes` objects and `reads` real commits' trees per batch,
+ * and `pauseMs` between batches. `UNPACED` is one batch; the History object paces GitHub with `GITHUB_PACE`.
+ */
+export interface Pace {
+  readonly writes: number
+  readonly reads: number
+  readonly pauseMs: number
+}
+
+/** Everything in one batch, with no pause: the memory repository's pace. */
+export const UNPACED: Pace = { writes: Number.POSITIVE_INFINITY, reads: Number.POSITIVE_INFINITY, pauseMs: 0 }
+
+/**
+ * GitHub's pace: 60 content-creating requests, then 9 minutes, is 400 an hour and 60 a minute, under the secondary
+ * limits GitHub documents (500 an hour, 80 a minute, no concurrent writes), leaving room for the token's other writes.
+ * 300 tree reads a batch is 2,000 an hour, under the 5,000 primary limit.
+ */
+export const GITHUB_PACE: Pace = { writes: 60, reads: 300, pauseMs: 9 * 60_000 }
 
 /** No ref: the value of a ref that does not exist. */
 export const NONE: Refs = { mythical: "", notes: "", manifest: "" }
@@ -104,27 +124,64 @@ export interface Prepared {
   readonly written: number
 }
 
+/** What an export reads of the last publication: its refs, its manifest, and the notes tree and the notes it holds. */
+export interface Published {
+  readonly refs: Refs
+  readonly previous: Manifest | undefined
+  readonly notesTree: string
+  readonly noted: ReadonlyMap<string, string>
+}
+
+/** The last publication, as the refs `refs` name it. */
+export effect function readPublished(repository: Repository.Repository, refs: Refs) {
+  const previous = refs.manifest === "" ? undefined : try readManifest(repository, refs.manifest)
+  const notesTree = refs.notes === "" ? "" : (try repository.readCommit(refs.notes)).tree
+  const noted = new Map((notesTree === "" ? [] : try repository.readTree(notesTree)).map((entry) => [entry.name, entry.oid]))
+  const published: Published = { refs, previous, notesTree, noted }
+  return published
+}
+
+/** One object an export writes, by the id git gives it, and the write that makes it, made only when it runs. */
+export interface Pending {
+  readonly oid: string
+  readonly write: () => string!Repository.RepositoryError
+}
+
 /**
- * Plans the export of `history` and writes every object it needs, moving no ref. A commit the last export already
- * wrote at the same place (`kept`, proved) is not written again; a real commit's tree is read from the repository
- * once and then taken from the manifest.
+ * An export of a history planned over the last publication. `needs` lists the real commits whose trees it must read
+ * first; when none, `pending` is every object to write, in an order that writes each object after the objects it
+ * names, and `candidate` the refs a publication sets.
  */
-export effect function prepare(history: History, names: RefNames) {
-  const repository = try Repository.Repository
-  const published = try readRefs(repository, names)
-  const previous = published.manifest === "" ? undefined : try readManifest(repository, published.manifest)
-  const trees = new Map<string, string>((previous?.commits ?? []).filter((entry) => entry[2] !== "").map((entry) => [entry[2], entry[3]]))
+export interface Planned {
+  readonly needs: ReadonlyArray<string>
+  readonly pending: ReadonlyArray<Pending>
+  readonly candidate: Refs
+  readonly written: number
+}
+
+/**
+ * Plans the export of `history` over `published`, writing nothing. A real commit's tree comes from `trees` or the last
+ * manifest; any other is in `needs`, and then nothing else is planned. A commit the last export already wrote at the
+ * same place (`kept`, proved) is not written again; a note blob, the notes commit and the manifest only when they
+ * changed.
+ */
+export effect function planned(repository: Repository.Repository, history: History, published: Published, trees: ReadonlyMap<string, string>) {
+  const { previous, notesTree, noted } = published
+  const known = new Map<string, string>((previous?.commits ?? []).filter((entry) => entry[2] !== "").map((entry) => [entry[2], entry[3]]))
+  for (const [source, tree] of trees) known.set(source, tree)
+  const commits = stacked(history)
+  const needs = [...new Set(commits.map((commit) => treeSource(history.real, commit.id)).filter((source) => source !== "" && !known.has(source)))]
+  if (needs.length > 0) {
+    const waiting: Planned = { needs, pending: [], candidate: NONE, written: 0 }
+    return waiting
+  }
   const chain: Array<Link> = []
   let parent = ""
   let parentTree = EMPTY_TREE
-  for (const commit of stacked(history)) {
+  for (const commit of commits) {
     const source = treeSource(history.real, commit.id)
-    let tree = parentTree
-    if (source !== "") {
-      const known = trees.get(source)
-      tree = known ?? (try repository.readCommit(source)).tree
-      trees.set(source, tree)
-    }
+    // `needs` is empty, so every source's tree is known.
+    const tree = source === "" ? parentTree : known.get(source) as string
     const object: Repository.CommitObject = { tree, parents: parent === "" ? [] : [parent], author: EXPORTER, committer: EXPORTER, message: messageOf(commit) }
     const oid = try Repository.hashCommit(object)
     chain.push({ commit, object, oid, source })
@@ -132,28 +189,24 @@ export effect function prepare(history: History, names: RefNames) {
     parentTree = tree
   }
   const keep = kept((previous?.commits ?? []).map((entry) => entry[1]), chain.map((link) => link.oid))
-  for (const link of chain.slice(keep)) {
-    try repository.writeCommit(link.object)
-  }
+  const pending: Array<Pending> = chain.slice(keep).map((link) => ({ oid: link.oid, write: () => repository.writeCommit(link.object) }))
 
   // Notes: a blob per commit, written only when the last notes tree lacks it; one tree; a commit only when it changed.
   const folds = new Map<string, Array<Real>>()
   for (const real of history.real) folds.set(real.mythical, [...(folds.get(real.mythical) ?? []), real])
-  const notesTree = published.notes === "" ? "" : (try repository.readCommit(published.notes)).tree
-  const noted = new Map((notesTree === "" ? [] : try repository.readTree(notesTree)).map((entry) => [entry.name, entry.oid]))
   const entries: Array<Repository.TreeEntry> = []
   for (const link of chain) {
     const text = noteOf(link.commit, folds.get(link.commit.id) ?? [])
     const blob = try Repository.hashBlob(text)
-    if (noted.get(link.oid) !== blob) {
-      try repository.writeBlob(text)
-    }
+    if (noted.get(link.oid) !== blob) pending.push({ oid: blob, write: () => repository.writeBlob(text) })
     entries.push({ name: link.oid, mode: "100644", oid: blob })
   }
-  let notes = published.notes
-  if ((try Repository.hashTree(entries)) !== notesTree) {
-    const tree = try repository.writeTree(entries)
-    notes = try repository.writeCommit({ tree, parents: published.notes === "" ? [] : [published.notes], author: EXPORTER, committer: EXPORTER, message: "Notes for the mythical history\n" })
+  let notes = published.refs.notes
+  const tree = try Repository.hashTree(entries)
+  if (tree !== notesTree) {
+    const object: Repository.CommitObject = { tree, parents: published.refs.notes === "" ? [] : [published.refs.notes], author: EXPORTER, committer: EXPORTER, message: "Notes for the mythical history\n" }
+    notes = try Repository.hashCommit(object)
+    pending.push({ oid: tree, write: () => repository.writeTree(entries) }, { oid: notes, write: () => repository.writeCommit(object) })
   }
 
   const mythical = parent
@@ -164,18 +217,98 @@ export effect function prepare(history: History, names: RefNames) {
     notes,
     commits: chain.map((link) => [link.commit.id, link.oid, link.source, link.object.tree] as const),
   }
-  let manifestTip = published.manifest
+  let manifestTip = published.refs.manifest
   if (previous === undefined || JSON.stringify(previous) !== JSON.stringify(manifest)) {
-    const blob = try repository.writeBlob(`${JSON.stringify(manifest)}\n`)
-    const tree = try repository.writeTree([{ name: MANIFEST_FILE, mode: "100644", oid: blob }])
+    const text = `${JSON.stringify(manifest)}\n`
+    const blob = try Repository.hashBlob(text)
+    const files: ReadonlyArray<Repository.TreeEntry> = [{ name: MANIFEST_FILE, mode: "100644", oid: blob }]
+    const filesTree = try Repository.hashTree(files)
     // The last manifest, and a bookmark the new one rewrote rather than extended, stay reachable from the new manifest:
     // a rewrite loses no commit.
-    const rewritten = published.mythical !== "" && !chain.some((link) => link.oid === published.mythical)
-    const parents = [published.manifest, rewritten ? published.mythical : ""].filter((oid) => oid !== "")
-    manifestTip = try repository.writeCommit({ tree, parents, author: EXPORTER, committer: EXPORTER, message: `Mythical history through ${history.main === "" ? "nothing" : history.main}\n` })
+    const rewritten = published.refs.mythical !== "" && !chain.some((link) => link.oid === published.refs.mythical)
+    const parents = [published.refs.manifest, rewritten ? published.refs.mythical : ""].filter((oid) => oid !== "")
+    const object: Repository.CommitObject = { tree: filesTree, parents, author: EXPORTER, committer: EXPORTER, message: `Mythical history through ${history.main === "" ? "nothing" : history.main}\n` }
+    manifestTip = try Repository.hashCommit(object)
+    pending.push({ oid: blob, write: () => repository.writeBlob(text) }, { oid: filesTree, write: () => repository.writeTree(files) }, { oid: manifestTip, write: () => repository.writeCommit(object) })
   }
-  const prepared: Prepared = { published, candidate: { mythical, notes, manifest: manifestTip }, written: chain.length - keep }
+  const plan: Planned = { needs: [], pending, candidate: { mythical, notes, manifest: manifestTip }, written: chain.length - keep }
+  return plan
+}
+
+/**
+ * Plans the export of `history` and writes every object it needs, moving no ref: `planned`, with each real commit's
+ * tree it needs read from the repository first, then every pending write in order.
+ */
+export effect function prepare(history: History, names: RefNames, pace: Pace = UNPACED) {
+  const repository = try Repository.Repository
+  const refs = try readRefs(repository, names)
+  const published = try readPublished(repository, refs)
+  const trees = new Map<string, string>()
+  let plan = try planned(repository, history, published, trees)
+  // More than one batch of `pace` is the publisher's work, paced across hours: nothing is read or written here.
+  if (plan.needs.length > pace.reads) return undefined
+  if (plan.needs.length > 0) {
+    for (const source of plan.needs) trees.set(source, (try repository.readCommit(source)).tree)
+    plan = try planned(repository, history, published, trees)
+  }
+  if (plan.pending.length > pace.writes) return undefined
+  for (const each of plan.pending) try each.write()
+  const prepared: Prepared = { published: refs, candidate: plan.candidate, written: plan.written }
   return prepared
+}
+
+/** One batch of a paced export: the trees it read, the objects it wrote, and what is left. */
+export interface Batch {
+  readonly trees: ReadonlyArray<readonly [string, string]>
+  readonly wrote: ReadonlyArray<string>
+  /** Real commits whose trees are still to read. */
+  readonly needs: number
+  /** Objects still to write once every tree is known. */
+  readonly remaining: number
+  readonly candidate: Refs
+  readonly written: number
+  /** The history has no commits: nothing to export. */
+  readonly empty: boolean
+}
+
+/**
+ * One batch of the export of `history` over the publication `refs` names, within `pace`: reads up to `pace.reads` trees
+ * `trees` lacks, then, once every tree is known, writes up to `pace.writes` of the objects not in `done`, in order. The
+ * same history planned again is the same objects, so a batch after a crash or a retry writes only what is missing;
+ * a history that changed between batches plans the objects it now needs.
+ */
+export effect function batch(history: History, refs: Refs, trees: ReadonlyArray<readonly [string, string]>, done: ReadonlyArray<string>, pace: Pace) {
+  const nothing: Batch = { trees: [], wrote: [], needs: 0, remaining: 0, candidate: NONE, written: 0, empty: true }
+  if (history.commits.length === 0) return nothing
+  const repository = try Repository.Repository
+  const published = try readPublished(repository, refs)
+  const known = new Map(trees)
+  let plan = try planned(repository, history, published, known)
+  const read: Array<readonly [string, string]> = []
+  for (const source of plan.needs.slice(0, pace.reads)) {
+    const tree = (try repository.readCommit(source)).tree
+    read.push([source, tree])
+    known.set(source, tree)
+  }
+  if (plan.needs.length > read.length) {
+    const reading: Batch = { ...nothing, trees: read, needs: plan.needs.length - read.length, empty: false }
+    return reading
+  }
+  if (read.length > 0) plan = try planned(repository, history, published, known)
+  const skip = new Set(done)
+  const todo: Array<Pending> = []
+  for (const each of plan.pending) {
+    if (skip.has(each.oid)) continue
+    skip.add(each.oid)
+    todo.push(each)
+  }
+  const wrote: Array<string> = []
+  for (const each of todo.slice(0, pace.writes)) {
+    try each.write()
+    wrote.push(each.oid)
+  }
+  const written: Batch = { trees: read, wrote, needs: 0, remaining: todo.length - wrote.length, candidate: plan.candidate, written: plan.written, empty: false }
+  return written
 }
 
 /** Why a check refused: a commit that is not the one before it's only child, a tree that is not main's, or a missing note. */
@@ -232,4 +365,27 @@ export effect function publish(names: RefNames, published: Refs, candidate: Refs
     after: move.after,
   }))
   try repository.updateRefs({ operation: `vibelang-history-export/${candidate.manifest.slice(0, 12)}`, updates })
+}
+
+/** Ref updates the guard refused before they reached the repository. */
+export const guardRefusals = Metric.counter("vibelang_history_export_guard", { description: "Ref updates the export refused outside its three refs", incremental: true })
+
+/**
+ * `repository` as an export may use it: `updateRefs` refuses `invalid`, naming the refs, before it reaches the
+ * repository when any ref is not one `names` names, or is `main` or the `vibe` branch (`writable`, proved). Every other
+ * call passes through.
+ */
+export function guarded(repository: Repository.Repository, names: RefNames): Repository.Repository {
+  return {
+    ...repository,
+    updateRefs: (transaction) => {
+      const refused = transaction.updates.map((update) => update.ref).filter((ref) => !writable(names, ref))
+      if (refused.length === 0) return repository.updateRefs(transaction)
+      return Effect.logWarning("vibelang.history.export.guard").pipe(
+        Effect.annotateLogs({ outcome: "refused", refs: refused.length }),
+        Effect.andThen(Metric.update(Metric.withAttributes(guardRefusals, { outcome: "refused" }), 1)),
+        Effect.andThen(Effect.fail(Repository.repositoryError("invalid", "updateRefs", "the export moves only its own three refs", refused))),
+      )
+    },
+  }
 }

@@ -253,7 +253,8 @@ export function historyBadge(state: string): string {
 //@ ensures refusal == "conflict" ==> \result == "The refs moved. Export again."
 //@ ensures refusal == "tree" || refusal == "linear" || refusal == "notes" ==> \result == "The export failed its check."
 //@ ensures refusal == "nothing" ==> \result == "Nothing to export."
-//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" && refusal != "unsupported" && refusal != "conflict" && refusal != "tree" && refusal != "linear" && refusal != "notes" && refusal != "nothing" ==> \result == refusal
+//@ ensures refusal == "paced" ==> \result == "Publishing in the background."
+//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" && refusal != "unsupported" && refusal != "conflict" && refusal != "tree" && refusal != "linear" && refusal != "notes" && refusal != "nothing" && refusal != "paced" ==> \result == refusal
 export function historyRefusal(refusal: string): string {
   if (refusal === "forbidden") return "Your role can't do that."
   if (refusal === "empty") return "Needs a title."
@@ -267,6 +268,7 @@ export function historyRefusal(refusal: string): string {
   if (refusal === "conflict") return "The refs moved. Export again."
   if (refusal === "tree" || refusal === "linear" || refusal === "notes") return "The export failed its check."
   if (refusal === "nothing") return "Nothing to export."
+  if (refusal === "paced") return "Publishing in the background."
   return refusal
 }
 
