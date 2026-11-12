@@ -230,7 +230,8 @@ effect function everyDelegate(room: string, text: string) {
  * The page's backend forwards every Factory and Actions member to the backend it selected. Over the mock (forced, as a
  * maintainer) each member answers as the mock does: members include the granted contributor, the issues and wiki
  * read, a started run reads and follows back as itself, and no member dies. Over a live backend whose server is
- * unreachable after health, the page selects live and every member fails with its typed failure, none dies. A second
+ * unreachable after health, the page selects live and every member fails with its typed failure, none dies, and the
+ * history page's export fails typed. A second
  * forced mock over the same journal restores the conversation; unforced with health unreachable, the mock is a viewer.
  */
 it.live("clients/browser-delegates", () => run("clients/browser-delegates", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => scoped(effect {
@@ -275,6 +276,12 @@ it.live("clients/browser-delegates", () => run("clients/browser-delegates", Sche
     const quiet = result._tag === "Success" && (name === "participated" || Option.isOption(result.value) && Option.isNone(result.value))
     if (!quiet && !typed(result)) throw new Finding({ report: `live ${name} did not fail typed` })
   }
+  // The history page's backend over the same live page: the export it forwards fails typed.
+  const published = try scoped(Effect.provide(effect {
+    const ready = try (try HistoryBackend).ready
+    return { ready, result: try exit((try Mythical).publish()) }
+  }, BrowserMythical("http://fault.invalid", false, { role: "maintainer", name: "Fuzz", agent: false }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, liveDown)))))
+  if (published.ready !== "live" || !typed(published.result)) throw new Finding({ report: `live publish selected ${published.ready} or did not fail typed` })
   return true
 // Four backends and every member of each: about two seconds per execution, hence the floor.
 }), undefined, { minimum: REPLAY_FLOOR }))

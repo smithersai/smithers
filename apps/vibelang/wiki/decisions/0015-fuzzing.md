@@ -1270,6 +1270,23 @@ marker change kept in one list, rendered code without its class, `?agent=live` k
 dropped. `toured ? "" : pathname` given the path always is an equivalent mutant: a finished tour turns the automatic
 tour off whatever the path.
 
+### The tour's voice and stage, and the history export's delegate (eighteenth session)
+
+`theatre.vibe`'s speech and stored audio and `theatreDecision.vibe`'s menu frame were reached only by the browser
+stage's draws. `web/theatre` (`fuzz/theatre.fuzz.vibe`) drives the real presentation service on an injected `Window`
+(the unit suite's `speakingWindow`) in every execution, at a drawn step: speak, keep, pause, resume and cancel in a
+tour's order; a browser without utterances only cancels; without a speech host nothing is called; stored audio that is
+not the tour's (this step, a sound that is not a boolean) is ignored and the line spoken afresh; the stage frames the
+composer, grows to its open completion menu, and frames the default box when the target is absent. Both seeds
+(20261237, 20261238) reach every listed arm. Mutations caught: resume never called, the menu not raising the frame, and
+foreign stored audio trusted (20261239; the first foreign value, a step out of range, spoke either way and did not
+catch it, so the case uses this step).
+
+`historyBackend.vibe`'s `publish` was the one `BrowserMythical` member no target called: the mock's export runs a whole
+export flow, too slow per execution. `clients/browser-delegates` now also starts the history page's backend over the
+page whose health says live and whose other requests fail: it selects live and the export fails typed. Mutation
+caught (20261241): `publish` answering without forwarding.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

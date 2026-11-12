@@ -1,0 +1,72 @@
+// src/web/theatre.vibe and theatreDecision.vibe's arms that the browser stage reaches only by its draws: the tour's voice
+// through the real presentation service on an injected Window (a recording speech host; one without utterances; one
+// without a speech host), a step remembered across presentations and foreign stored audio, and the stage measured with and without its target
+// and the composer's open menu, in every execution (0015, eighteenth session).
+import { it } from "@effect/vitest"
+import { ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { presentation, presentationFromHost, TourPresentation } from "../src/web/theatre.vibe"
+import { forgetTours, framed, speakingWindow } from "../test/support/browser.ts"
+import { run, same, Finding } from "./run.vibe"
+
+const KEYS = ["vibelang:tour-audio", "vibelang:tour-active"]
+const forget = sync(() => { forgetTours(); KEYS.forEach((key) => window.sessionStorage.removeItem(key)) })
+
+/** The real presentation service over `page`. */
+effect function presenting(page: Window) {
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  const host = Layer.merge(Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => page, computedStyle: style })), ExperimentalBrowserDocument.layer)
+  return try Effect.provide(TourPresentation, presentationFromHost.pipe(Layer.provide(host)))
+}
+
+/** A Finding named `name` unless `holds`. */
+effect function check(name: string, holds: boolean) {
+  if (!holds) throw new Finding({ report: `theatre ${name}` })
+}
+
+const Input = Schema.Struct({ step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: WALKTHROUGH.length })) })
+
+/**
+ * A step's line is spoken once (stored audio that is not the tour's is ignored), kept on a second presentation, paused, resumed, and cancelled when the tour ends; a
+ * browser without utterances only cancels; without a speech host nothing is called. The stage frames the composer, grows
+ * to its open completion menu, and frames a default box when the target is not on the page.
+ */
+it.live("web/theatre", () => run("web/theatre", Input, ({ step }) => effect {
+  try scoped(effect {
+    try acquireRelease(forget, () => forget)
+    const { window: page, calls } = try Effect.try(() => speakingWindow(true))
+    const presenter = try presenting(page)
+    const on = { step, sound: true, active: true, paused: false }
+    for (const state of [on, on, { ...on, paused: true }, on, { ...on, active: false }]) try presenter.present(state)
+    try check("voice", same(calls, ["cancel", `speak ${WALKTHROUGH[step - 1]!.voice}`, "pause", "resume", "cancel"]))
+  })
+  // Stored audio that is not the tour's (this step, with a sound that is not a boolean) is ignored: the line is spoken
+  // afresh, not kept as if this step were already sounding.
+  try scoped(effect {
+    try acquireRelease(forget, () => forget)
+    try sync(() => window.sessionStorage.setItem("vibelang:tour-audio", JSON.stringify({ step, sound: "on", active: true, paused: false })))
+    const { window: page, calls } = try Effect.try(() => speakingWindow(true))
+    try (try presenting(page)).present({ step, sound: true, active: true, paused: false })
+    try check("foreign audio", same(calls, ["cancel", `speak ${WALKTHROUGH[step - 1]!.voice}`]))
+  })
+  for (const [utterances, host, expected] of [[false, true, ["cancel"]], [true, false, []]] as const) {
+    try scoped(effect {
+      try acquireRelease(forget, () => forget)
+      const { window: page, calls } = try Effect.try(() => speakingWindow(utterances, host))
+      try (try presenting(page)).present({ step, sound: true, active: true, paused: false })
+      try check(`host ${utterances} ${host}`, same(calls, expected))
+    })
+  }
+  try scoped(effect {
+    const presenter = try Effect.provide(TourPresentation, presentation)
+    const missing = try presenter.measure("composer")
+    const composer = try acquireRelease(sync(() => framed("form", "sui-chat-composer", { top: 500, left: 20, right: 700, bottom: 540 })), (node) => sync(() => node.remove()))
+    try Effect.try(() => composer.setAttribute("data-docked", "true"))
+    const alone = try presenter.measure("composer")
+    try acquireRelease(sync(() => framed("ul", "sui-completion-list", { top: 300, left: 20, right: 700, bottom: 490 })), (node) => sync(() => node.remove()))
+    const withMenu = try presenter.measure("composer")
+    try check("composer", same(alone, { x: 20, y: 500, width: 680, height: 40 }) && same(withMenu, { x: 20, y: 300, width: 680, height: 240 }))
+    try check("missing target", missing.x === 16 && missing.y === 80 && missing.width >= 1 && missing.height >= 1)
+  })
+  return true
+}))
