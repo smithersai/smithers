@@ -239,27 +239,29 @@ it.live("?agent=mock starts the mock history even when storage refuses to rememb
   }
 }), 30_000)
 
+// The page is pending while health is unanswered; the held client and its deadline clock keep it so until the test
+// answers, so no assertion depends on catching a state before it changes (it once timed out at load 71).
 it.live("?agent=live forgets a stored mock choice and asks the server", () => scoped(effect {
   const { node, window } = try host()
   try sync(() => {
     window.localStorage.setItem("vibelang.agent", "mock")
     window.history.replaceState(null, "", "/history?agent=live")
   })
-  let probes = 0
-  const client = HttpClient.make((request) => {
-    probes++
-    return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
-  })
-  provide Layer.mergeAll(page, Layer.succeed(HttpClient.HttpClient, client)) {
+  const health = try heldHealth()
+  const mode = () => node.querySelector("[data-surface='history']")?.getAttribute("data-mode")
+  provide Layer.mergeAll(page, health.layer, Layer.succeed(Clock.Clock, health.deadlineClock)) {
     const { application, flags } = try historyMain()
     try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
     try promise(() => vi.waitFor(() => {
-      expect(node.querySelector("[data-surface='history']")?.getAttribute("data-mode")).not.toBe("mock")
-      expect(probes).toBeGreaterThan(0)
-    }, { timeout: 5000 }))
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: false })
+      expect(mode()).toBe("pending")
+    }, { timeout: 20_000 }))
     try Effect.try(() => expect(window.localStorage.getItem("vibelang.agent")).toBeNull())
+    try health.release("mock")
+    try promise(() => vi.waitFor(() => expect(mode()).toBe("mock"), { timeout: 20_000 }))
+    try Effect.try(() => expect(health.snapshot()).toEqual({ calls: 1, settled: true, cancelled: false }))
   }
-}), 30_000)
+}), 60_000)
 
 // ── live: the session decides who you are (decision 0019) ────────────────────────────────────────────────────────
 

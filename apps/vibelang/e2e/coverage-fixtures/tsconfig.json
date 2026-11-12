@@ -1,0 +1,7 @@
+{
+  // The source-map spec's own project: its three fixture sources with the app's compiler options, so seeding their
+  // structure compiles three files, not the whole app (decision 0016, session 24).
+  "extends": "../../tsconfig.json",
+  "include": ["*.vibe"],
+  "exclude": []
+}

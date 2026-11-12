@@ -2,7 +2,7 @@
 // counting anything, with the reason the host logs.
 import { describe, expect, it } from "@effect/vitest"
 import { emptySandboxLedger } from "../src/core/sandboxDecision.vibe"
-import { meter, monthOf } from "../src/core/sandboxMeter.vibe"
+import { meter, monthOf, nextMonth } from "../src/core/sandboxMeter.vibe"
 
 const at = Date.UTC(2026, 10, 10)
 const ledger = { ...emptySandboxLedger("u", "contributor", 36000, monthOf(at), at), sandboxes: [{ id: "a", conversation: "a", running: true }] }
@@ -38,5 +38,17 @@ describe("a ledger the next interval would overflow", () => {
   it.effect("a running sandbox on a ledger already at the largest safe count is refused, not counted", () => effect {
     const reason = try reasonOf(meter({ ...ledger, usedMilliseconds: Number.MAX_SAFE_INTEGER }, {}, at + 10, 36000))
     try Effect.try(() => expect(reason).toBe("meter-overflow"))
+  })
+})
+
+describe("a stored month bucket outside the meter's domain", () => {
+  const next = String(nextMonth(monthOf(at)))
+  it.effect.each([
+    ["a negative next-month bucket", -1],
+    ["a fractional next-month bucket", 0.5],
+    ["an unsafe next-month bucket", 2 ** 53],
+  ] as const)("%s is refused before counting", ([_name, bucket]) => effect {
+    const reason = try reasonOf(meter(ledger, { [next]: bucket }, at + 10, 36000))
+    try Effect.try(() => expect(reason).toBe("meter-domain"))
   })
 })

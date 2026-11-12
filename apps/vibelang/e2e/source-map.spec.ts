@@ -4,7 +4,6 @@ import { measure, readBuild, sourcesIn } from "./coverage-reporter"
 import { resolve } from "node:path"
 
 test("Chromium remapping retains a tree-shaken export and an unvisited nested Effect branch, and credits what Rolldown leaves unmapped", async ({ context }, info) => {
-  // Cold compiler startup and bundle remapping exceed the UI deadline on the shared lane host.
   test.skip(process.env.E2E_BASE_URL !== undefined, "it remaps the local build's source maps, which a deployment does not serve")
   test.setTimeout(120_000)
   const page = await context.newPage()
@@ -28,7 +27,9 @@ test("Chromium remapping retains a tree-shaken export and an unvisited nested Ef
       if (sourceMap) entries.push({ ...script, sourceMap })
     }
     await info.attach("chromium-map-control", { body: JSON.stringify(entries), contentType: "application/json" })
-    const coverage = await measure(entries, await sourcesIn(["e2e/coverage-fixtures"]), await readBuild())
+    // The fixtures' own project: compiling the whole app to seed three sources took 36 s on a box and, under
+    // the gate's load, more than the 120 s budget (decision 0016, session 24).
+    const coverage = await measure(entries, await sourcesIn(["e2e/coverage-fixtures"]), await readBuild(), resolve("e2e/coverage-fixtures/tsconfig.json"))
     const file = coverage.fileCoverageFor(resolve("e2e/coverage-fixtures/fixture.vibe"))
     const misses = Object.entries(file.s).filter(([, count]) => count === 0).map(([id]) => file.statementMap[id].start.line)
     expect(misses).toContain(9)

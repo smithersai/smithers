@@ -11,6 +11,10 @@ const origins: Record<string, string> = JSON.parse(process.env.LIVE_ISSUES_TEST_
 // Playwright runs this file in order per project; each project owns its host and starts every case with no fault set.
 test.beforeEach(async ({ page }, info) => { await page.request.post(origins[info.project.name]! + "/__fault?writes=0") })
 
+// A retried or recovered write clears the resume address once the Worker's write settles over recorded GitHub; the
+// address never returns, so each wait is bounded by the write, which took longer than 5 s under the gate's load (0016).
+const settled = { timeout: 20_000 }
+
 async function open(page: Page, origin: string, query: string) {
   await page.addInitScript(() => localStorage.setItem("vibelang:toured", "yes"))
   await page.goto(origin + "/?" + query)
@@ -40,7 +44,7 @@ test("a new issue whose save was lost comes back after a reload, and Retry saves
   await expect(page.locator(".sui-issue-form-error")).toContainText("Couldn't save. Retry.")
   await page.screenshot({ path: info.outputPath("recovered-new.png"), fullPage: true })
   await page.locator(".sui-issue-form-error").getByRole("button", { name: "Retry", exact: true }).click()
-  await expect(page).toHaveURL(origin + "/?issues=1")
+  await expect(page).toHaveURL(origin + "/?issues=1", settled)
   await expect(page.locator(".sui-issue-form-error")).toHaveCount(0)
   const listed = await (await page.request.get(origin + "/api/issues")).json() as { items: Array<{ title: string }> }
   expect(listed.items.filter(item => item.title === title)).toHaveLength(1)
@@ -52,7 +56,7 @@ test("a comment that finished while the page was away opens its issue and leaves
   const text = "Thanks"
   expect((await write(page, origin, { op: "comment", key, number: 124, text })).status()).toBe(200)
   await open(page, origin, `issues=1&resume-op=comment&resume-key=${key}`)
-  await expect(page).toHaveURL(origin + "/?issues=1")
+  await expect(page).toHaveURL(origin + "/?issues=1", settled)
   await expect(page.locator(".sui-item-conv-comments").getByText(text, { exact: true })).toBeVisible()
   await expect(page.locator(".sui-issue-form-error")).toHaveCount(0)
 })
@@ -81,7 +85,7 @@ test("a VIP whose save was lost reopens at its review step with Retry", async ({
   await expect(page.locator(".sui-issue-form-error")).toContainText("Couldn't save. Retry.")
   await expect(page.getByRole("button", { name: "Submit VIP", exact: true })).toBeDisabled()
   await page.locator(".sui-issue-form-error").getByRole("button", { name: "Retry", exact: true }).click()
-  await expect(page).toHaveURL(origin + "/?issues=1")
+  await expect(page).toHaveURL(origin + "/?issues=1", settled)
   await expect(page.locator(".sui-item-conv-header")).toContainText("VIP · In review")
 })
 

@@ -6,6 +6,10 @@ import { init, Message, Model, Flags, subscriptions, update } from "../src/web/m
 import { view } from "../src/web/view.vibe"
 import { scrollHost } from "./support/scrollHost.ts"
 
+// Each wait below polls a state only this test changes (a requested frame stays until host.frame() runs it), so it
+// cannot be missed, only reached late: the first render took over vi.waitFor's 1 s default on a loaded host.
+const settle = { timeout: 20_000 }
+
 for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {
   for (const ordering of ["commit-first", "intent-first", "delta-first"] as const) {
     it.live(`${input}, ${ordering}: upward intent vetoes pending follow and deltas until Latest or bottom`, () => scoped(effect {
@@ -26,7 +30,7 @@ for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {
         sync(() => Runtime.embed(program, { flags: succeed({ session: "scroll", name: "Ada", mode: "mock" as const }) })),
         (handle) => sync(() => handle.dispose()),
       )
-      try promise(() => vi.waitFor(() => expect(host.pending()).toBeGreaterThan(0)))
+      try promise(() => vi.waitFor(() => expect(host.pending()).toBeGreaterThan(0), settle))
       // Vary the host ordering without yielding between intent, commit and delta. The old follow's scroll event
       // still reports the bottom before the native upward movement; it must not undo the reader's intent.
       try sync(() => {
@@ -50,7 +54,7 @@ for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {
         host.frame()
         expect(latest.following).toBe(false)
         expect(latest.client.conversation.seq).toBe(3)
-      }))
+      }, settle))
       try Effect.try(() => expect(host.scrollsAfterIntent()).toBe(0))
       // Further deltas cannot follow. Going back through the splash cannot resume either.
       try sync(() => {
@@ -63,7 +67,7 @@ for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {
         host.frame()
         expect(latest.client.conversation.seq).toBe(4)
         expect(latest.following).toBe(false)
-      }))
+      }, settle))
       try Effect.try(() => expect(host.scrollsAfterIntent()).toBe(0))
       // Actual downward travel into the bottom resumes following, including a duplicate scroll notification.
       try sync(() => { host.moveTo(600); host.scrolled() })
@@ -71,17 +75,17 @@ for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {
         host.frame()
         expect(latest.following).toBe(true)
         expect(host.scrollsAfterIntent()).toBeGreaterThan(0)
-      }))
+      }, settle))
       // Latest is the other explicit resumption, even before the upward default action changes the position.
       try sync(() => { host.up(input); host.scrolled() })
-      try promise(() => vi.waitFor(() => { host.frame(); expect(latest.following).toBe(false) }))
+      try promise(() => vi.waitFor(() => { host.frame(); expect(latest.following).toBe(false) }, settle))
       const beforeLatest = try sync(host.scrollsAfterIntent)
       try sync(host.latest)
       try promise(() => vi.waitFor(() => {
         host.frame()
         expect(latest.following).toBe(true)
         expect(host.scrollsAfterIntent()).toBeGreaterThan(beforeLatest)
-      }))
+      }, settle))
     }))
   }
 }

@@ -28,8 +28,9 @@ const root = fileURLToPath(new URL("../", import.meta.url))
  * ternary), and Istanbul's `merge` unions what it cannot match, so a merged file counted both shapes. Executed bundles
  * credit the structure by identical source start only, the fuzz and bench gates' rule (test/support/coverageUnion.ts,
  * decisions 0015 and 0016). Without `build` (a deployment's run), the compiler's structure is the denominator.
+ * `project` is the tsconfig that compiles the roster and must include every rostered source; the gate uses the app's.
  */
-export async function measure(entries: Iterable<any> | AsyncIterable<any>, sources: ReadonlyArray<string>, build: Iterable<BuiltScript> = []) {
+export async function measure(entries: Iterable<any> | AsyncIterable<any>, sources: ReadonlyArray<string>, build: Iterable<BuiltScript> = [], project = resolve(root, "tsconfig.json")) {
   const roster = new Set(sources)
   const included = (file: string) => roster.has(file)
   /** A bundle's Istanbul structure per included source, after its source map; undefined when it has none. */
@@ -84,7 +85,7 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, sourc
     }
     const seed = createCoverageMap({})
     // Seed every full source, including loaded files: bundling may tree-shake an uncalled export from a loaded file.
-    const compiler = projects({ root, project: resolve(root, "tsconfig.json"), compiler: findCompiler(root) })
+    const compiler = projects({ root, project, compiler: findCompiler(root) })
     try {
       for (const file of roster) {
         const result = await compiler.load(file)
