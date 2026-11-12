@@ -9,7 +9,7 @@
  *
  *   MQ_REPO           the jj repository
  *   MQ_BOOKMARK       the bookmark the queue lands on (default `main`)
- *   MQ_STATE          a directory for the inbox, the ledger and fix briefs
+ *   MQ_STATE          a directory for the inbox, the ledger, fix briefs and the record of endings
  *   MQ_CHECK_COMMAND  run as `sh -c "$MQ_CHECK_COMMAND" sh <check> <commit>`; exit 0 passes the check
  *   MQ_RUN_COMMAND    instead of MQ_CHECK_COMMAND: one process per CI run, as
  *                     `sh -c "$MQ_RUN_COMMAND" sh <commit> <check>...`, printing `<check> pass|fail [seconds]`
@@ -23,10 +23,21 @@
  * Hand a change in by appending a line to `$MQ_STATE/inbox.jsonl`:
  *
  *   {"_tag":"enqueue","id":42,"priority":0,"commit":"<commit id>"}
+ *
+ * Read how each change ended from `$MQ_STATE/endings.jsonl`: one line per change, merged (with the run and
+ * results that landed it), unmergeable (with the reason for its author) or withdrawn.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Flow, Interpreter } from "@smthrs/flow"
-import { CommandCi, CommandFixer, FileInbox, JjRepository, QueueFlow, QueueSchema } from "@smthrs/merge-queue"
+import {
+  CommandCi,
+  CommandFixer,
+  FileEndings,
+  FileInbox,
+  JjRepository,
+  QueueFlow,
+  QueueSchema
+} from "@smthrs/merge-queue"
 import { Config, Effect, Layer, Option } from "effect"
 
 const services = Layer.unwrap(
@@ -61,6 +72,7 @@ const services = Layer.unwrap(
         poll,
         register: (id, commit) => repository.register({ id, rev: 0 }, commit)
       }),
+      FileEndings.layer({ path: `${state}/endings.jsonl` }),
       JjRepository.target(repository, poll),
       Option.match(run, {
         onNone: () =>

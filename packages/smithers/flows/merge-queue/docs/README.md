@@ -97,10 +97,12 @@ policy can waste CI time and cannot land an untested tree.
 ## The driver
 
 `Driver.round(config, position)` is one round of the queue against the world,
-through four services a host provides: `Inbox` (changes handed in and taken
-back), `Ci`, `Fixer` (fix agents) and `Target` (the branch).
+through five services a host provides: `Inbox` (changes handed in and taken
+back), `Ci`, `Fixer` (fix agents), `Target` (the branch) and `Endings` (the
+record of how each change ended).
 
 ```text
+record   write the changes the round before ended into the record of endings
 sync     make the world match the state: fast-forward the target onto the
          tree being pushed (compare-and-swap from the tip it was tested on),
          keep exactly the wanted CI runs and fix agents going
@@ -110,6 +112,12 @@ gather   read the target's tip, new letters, every finished check, lost
 fold     apply those events and let the policy settle
 check    the state's tree must be exactly the tip that was read
 ```
+
+A round returns the changes it ended (`Outcome.ended`), and the next round
+records them. The record therefore holds only a decision the host kept: a
+round that runs twice after a crash may decide differently the second time,
+and only the outcome that became the next position is written. The queue is
+not `done` until the last endings are recorded.
 
 Every command is derived from the state alone and is a reconciliation, so a
 host records the position between rounds and repeats a round after a crash.
@@ -134,12 +142,12 @@ import { Action, Interpreter } from "@smthrs/flow"
 import { empty, QueueFlow } from "@smthrs/merge-queue"
 
 const layer = Layer.mergeAll(QueueFlow.layer, Interpreter.layer(QueueFlow.Queue)).pipe(
-  Layer.provideMerge(services), // Inbox, Ci, Fixer, Target
+  Layer.provideMerge(services), // Inbox, Ci, Fixer, Target, Endings
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(engine)
 )
 QueueFlow.Queue.execute(
-  { config, state: empty, cursor: 0, closed: false, round: 0 },
+  { config, state: empty, cursor: 0, closed: false, ended: [], round: 0 },
   { executionId: "main" }
 )
 ```
@@ -147,11 +155,11 @@ QueueFlow.Queue.execute(
 ## Running it for a repository
 
 `.smithers/flows/merge-queue/flow.ts` is the host: a file flow that provides
-the four services from the environment and starts the queue.
+the five services from the environment and starts the queue.
 
 ```sh
 export MQ_REPO=/srv/repo            # the jj repository
-export MQ_STATE=/srv/queue          # inbox, ledger and fix briefs
+export MQ_STATE=/srv/queue          # inbox, ledger, fix briefs and the record of endings
 export MQ_CHECK_COMMAND='...'       # sh -c "$MQ_CHECK_COMMAND" sh <check> <commit>; exit 0 passes
 export MQ_RUN_COMMAND='...'         # instead: one process per run, sh -c "$MQ_RUN_COMMAND" sh <commit> <check>...
                                     # prints "<check> pass" or "<check> fail" as each check finishes
@@ -162,7 +170,7 @@ smthrs flow start merge-queue --data @start.json
 ```
 
 `start.json` is `{ "config": {...}, "state": <the empty state>, "cursor": 0,
-"closed": false, "round": 0 }`. Hand a change in by appending one line to
+"closed": false, "ended": [], "round": 0 }`. Hand a change in by appending one line to
 `$MQ_STATE/inbox.jsonl`:
 
 ```json
@@ -179,6 +187,26 @@ prints the commit that now stands for the change. That commit is the one tested 
 `{"_tag":"withdraw","id":42}` takes it back and `{"_tag":"close"}` lets the
 run finish once every change has ended. After a host dies, `smthrs runs resume
 <run id>` continues from the last recorded round.
+
+## How each change ended
+
+The host appends one line to `$MQ_STATE/endings.jsonl` for every change that
+ended. The file is the record an author, a dashboard or an audit reads; it is
+kept outside the queue's state, so it outlives whatever the queue forgets.
+
+```json
+{"id":42,"rev":1,"attempts":1,"status":{"_tag":"merged"},"landing":{"run":17,"results":[{"check":1,"verdict":"pass"}],"foreign":false},"at":1794480000000}
+{"id":43,"rev":0,"attempts":2,"status":{"_tag":"unmergeable","reason":{"kind":"agentVerdict","detail":"written against the old parser; redo it","failures":[2],"attempts":2}},"landing":null,"at":1794480000000}
+{"id":44,"rev":0,"attempts":0,"status":{"_tag":"withdrawn"},"landing":null,"at":1794480000000}
+```
+
+`rev` is the revision that ended and `attempts` the fix attempts it used. A
+merged change carries the run that tested the tree it landed in and that
+run's results. A commit someone else put on the target is recorded as merged
+with `"foreign": true` and no results: the queue adopted it untested. `at` is
+when the line was written, in milliseconds since the epoch. A change has one
+line: `FileEndings.record` skips a change the file already holds, and a line
+cut short by a crash is passed over and written again.
 
 ## When a change is unmergeable
 

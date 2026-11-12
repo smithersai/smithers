@@ -1,11 +1,11 @@
 /**
  * The world the queue acts on.
  *
- * The kernel decides; these four services are how a decision reaches CI, fix
- * agents and the target branch, and how their answers come back. Every
- * command is a reconciliation ("make it so"), derived from the queue's durable
- * state alone, so the driver repeats it after a crash and asking twice is
- * asking once.
+ * The kernel decides; these services are how a decision reaches CI, fix
+ * agents, the target branch and the record of endings, and how their answers
+ * come back. Every command is a reconciliation ("make it so"), derived from
+ * the queue's durable state alone, so the driver repeats it after a crash and
+ * asking twice is asking once.
  *
  * A host provides the real implementations (CI on `smthrs ci`, fix agents on
  * `@smthrs/agent`, the target on a repository). Tests provide in-memory ones,
@@ -17,7 +17,7 @@
 import * as Context from "effect/Context"
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type { Event, Tree, Verdict } from "./Basic.ts"
+import type { Event, Reason, Result, Tree, Verdict } from "./Basic.ts"
 import type { FixBrief } from "./Policy.ts"
 import { Part } from "./Schema.ts"
 
@@ -29,7 +29,7 @@ import { Part } from "./Schema.ts"
  * @since 0.1.0
  */
 export class Unavailable extends Schema.TaggedError<Unavailable>()("@smthrs/merge-queue/Unavailable", {
-  service: Schema.Literals(["inbox", "ci", "fixer", "target"]),
+  service: Schema.Literals(["inbox", "ci", "fixer", "target", "endings"]),
   detail: Schema.String
 }) {}
 
@@ -189,3 +189,48 @@ export class Target extends Context.Service<
     readonly wait: (tree: Tree) => Effect.Effect<void>
   }
 >()("@smthrs/merge-queue/Target") {}
+
+/**
+ * How one change ended: the revision that ended, the fix attempts it used, and
+ * its final status. A merged change carries the landing that put it on the
+ * target; an unmergeable one carries the written reason its author is owed.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Ending {
+  readonly id: number
+  readonly rev: number
+  readonly attempts: number
+  readonly status:
+    | { readonly _tag: "merged" }
+    | { readonly _tag: "unmergeable"; readonly reason: Reason }
+    | { readonly _tag: "withdrawn" }
+  /**
+   * For a merged change: the run that tested the tree it landed in and the
+   * results that justified it, or `foreign` when someone else put the commit
+   * on the target and the queue adopted it untested. `null` otherwise.
+   */
+  readonly landing:
+    | { readonly run: number; readonly results: ReadonlyArray<Result>; readonly foreign: boolean }
+    | null
+}
+
+/**
+ * The record of how every change ended. It is kept outside the queue's state,
+ * so a verdict and its reason outlive whatever the queue later forgets.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export class Endings extends Context.Service<
+  Endings,
+  {
+    /**
+     * Makes the record hold these endings. A change ends once, so an ending
+     * for a change the record already holds is left as it was recorded:
+     * recording twice is recording once.
+     */
+    readonly record: (endings: ReadonlyArray<Ending>) => Effect.Effect<void, Unavailable>
+  }
+>()("@smthrs/merge-queue/Endings") {}

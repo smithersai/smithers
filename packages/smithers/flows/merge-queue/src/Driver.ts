@@ -1,11 +1,17 @@
 /**
  * The driver: one round of the queue against the world.
  *
- * A round does three things in order. It makes the world match the queue's
+ * A round does four things in order. It writes the changes the round before
+ * ended into the record of endings. It makes the world match the queue's
  * state (`sync`): fast-forward the target onto the tree being pushed, keep
  * exactly the wanted CI runs and fix agents going. It reads what the world has
  * to say (`gather`), waiting when there is nothing new and nothing to decide.
  * It folds that into the state and lets the policy settle.
+ *
+ * A round returns the changes it ended and the next round records them, so
+ * the record only ever holds an ending the host had already recorded as the
+ * queue's decision. A round that ran twice after a crash may decide
+ * differently the second time; only the decision that was kept is written.
  *
  * Every command is derived from the state alone, and a host records the state
  * between rounds (the flow in `QueueFlow.ts` does). So the target only ever
@@ -26,8 +32,8 @@ import { isTerminal, sameTree, tree } from "./Basic.ts"
 import type { FixBrief } from "./Policy.ts"
 import { fixBriefs, plan, settle, wantsCi } from "./Policy.ts"
 import { eta, remaining } from "./Predict.ts"
-import type { Job, Unavailable } from "./Services.ts"
-import { Ci, Fixer, Inbox, Target, TargetDiverged } from "./Services.ts"
+import type { Ending, Job, Unavailable } from "./Services.ts"
+import { Ci, Endings, Fixer, Inbox, Target, TargetDiverged } from "./Services.ts"
 import { answered, pushingRun, run, strip } from "./Step.ts"
 
 /**
@@ -42,6 +48,8 @@ export interface Position {
   readonly cursor: number
   /** Whether the inbox asked the queue to finish once every change has ended. */
   readonly closed: boolean
+  /** The changes the round before ended. This round writes them into the record. */
+  readonly ended: ReadonlyArray<Ending>
 }
 
 /**
@@ -120,6 +128,38 @@ export const advance = (config: Config, state: State, events: ReadonlyArray<Even
  */
 export const drained = (state: State): boolean =>
   state.runs.length === 0 && state.changes.every((change) => isTerminal(change.status))
+
+/**
+ * The changes that ended between two states of one queue, in the order the
+ * queue holds them: every change that has ended in `after` and had not in
+ * `before`. A merged change is given the landing that holds its revision.
+ *
+ * @category observation
+ * @since 0.1.0
+ */
+export const ended = (before: State, after: State): ReadonlyArray<Ending> => {
+  const open = new Set(before.changes.filter((change) => !isTerminal(change.status)).map((change) => change.id))
+  const known = new Set(before.changes.map((change) => change.id))
+  const landings = after.landed.slice(before.landed.length)
+  return after.changes.flatMap((change): ReadonlyArray<Ending> => {
+    const status = change.status
+    if (status._tag === "queued" || status._tag === "fixing" || (known.has(change.id) && !open.has(change.id))) {
+      return []
+    }
+    const landing = status._tag !== "merged"
+      ? undefined
+      : landings.find((entry) => entry.batch.some((part) => part.id === change.id && part.rev === change.rev))
+    return [{
+      id: change.id,
+      rev: change.rev,
+      attempts: change.attempts,
+      status,
+      landing: landing === undefined
+        ? null
+        : { run: landing.run, results: landing.results, foreign: landing.foreign }
+    }]
+  })
+}
 
 /**
  * What the tip of the target says, as events: the landing of the tree the
@@ -260,13 +300,18 @@ export const sync = (issued: Commands): Effect.Effect<void, Unavailable, Ci | Fi
  * @since 0.1.0
  */
 export interface Outcome extends Position {
-  /** Whether the queue is finished: closed, every change ended, no run left. */
+  /**
+   * Whether the queue is finished: closed, every change ended, no run left,
+   * and every ending in the record. A round that ends a change is never the
+   * last one: the round after it records the ending.
+   */
   readonly done: boolean
 }
 
 /**
- * One round: sync the world to the state, read the world (waiting when there
- * is nothing new and nothing to decide), fold and settle.
+ * One round: record the endings of the round before, sync the world to the
+ * state, read the world (waiting when there is nothing new and nothing to
+ * decide), fold and settle.
  *
  * The round ends by checking the queue is on the target's tip: the state's
  * tree must be exactly the tree the target was read on. A round that cannot
@@ -278,8 +323,9 @@ export interface Outcome extends Position {
 export const round = (
   config: Config,
   position: Position
-): Effect.Effect<Outcome, Unavailable | TargetDiverged, Inbox | Ci | Fixer | Target> =>
+): Effect.Effect<Outcome, Unavailable | TargetDiverged, Inbox | Ci | Fixer | Target | Endings> =>
   Effect.gen(function*() {
+    if (position.ended.length > 0) yield* (yield* Endings).record(position.ended)
     yield* sync(commands(config, position.state))
     let news = yield* gather(config, position)
     const idle = news.events.length === 0 && news.closed === position.closed
@@ -290,14 +336,22 @@ export const round = (
     }
     const state = advance(config, position.state, news.events)
     if (!sameTree(state.main, news.tip)) return yield* new TargetDiverged({ known: state.main, found: news.tip })
+    const finished = ended(position.state, state)
     yield* Effect.logInfo("merge queue round").pipe(
       Effect.annotateLogs({
         events: news.events.length,
         landings: state.landed.length - position.state.landed.length,
+        ended: finished.length,
         runs: state.runs.length,
         fixing: fixBriefs(state).length,
         main: state.main.length
       })
     )
-    return { state, cursor: news.cursor, closed: news.closed, done: news.closed && drained(state) }
+    return {
+      state,
+      cursor: news.cursor,
+      closed: news.closed,
+      ended: finished,
+      done: news.closed && drained(state) && finished.length === 0
+    }
   }).pipe(Effect.withSpan("merge-queue.round"))

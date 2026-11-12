@@ -17,7 +17,7 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 import * as Driver from "./Driver.ts"
-import { Config, State } from "./Schema.ts"
+import { Config, Ending, State } from "./Schema.ts"
 import { TargetDiverged, Unavailable } from "./Services.ts"
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -34,6 +34,8 @@ export const Payload = Schema.Struct({
   state: State,
   cursor: Natural,
   closed: Schema.Boolean,
+  /** The changes the round before ended, for this round to record. Start with none. */
+  ended: Schema.Array(Ending),
   round: Natural
 })
 
@@ -47,6 +49,7 @@ export const Outcome = Schema.Struct({
   state: State,
   cursor: Natural,
   closed: Schema.Boolean,
+  ended: Schema.Array(Ending),
   done: Schema.Boolean
 })
 
@@ -85,13 +88,13 @@ export const Round = Action.make("@smthrs/merge-queue/Round", {
 
 /**
  * The implementation of {@link Round}: one `Driver.round` over the host's
- * `Inbox`, `Ci`, `Fixer` and `Target`.
+ * `Inbox`, `Ci`, `Fixer`, `Target` and `Endings`.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer = Round.toLayer(({ closed, config, cursor, state }) =>
-  Driver.round(config, { state, cursor, closed })
+export const layer = Round.toLayer(({ closed, config, cursor, ended, state }) =>
+  Driver.round(config, { state, cursor, closed, ended })
 )
 
 /**
@@ -119,8 +122,8 @@ export type QueueFlow<Tag extends string = "@smthrs/merge-queue/Queue"> = Flow.F
 
 /**
  * The queue. Start it with `{ config, state: empty, cursor: 0, closed: false,
- * round: 0 }`; it succeeds with the final state once the inbox is closed and
- * every change has ended.
+ * ended: [], round: 0 }`; it succeeds with the final state once the inbox is
+ * closed, every change has ended and every ending is in the record.
  *
  * @category flows
  * @since 0.1.0
@@ -144,6 +147,7 @@ export const Queue: QueueFlow = Flow.make("@smthrs/merge-queue/Queue", {
             state: outcome.state,
             cursor: outcome.cursor,
             closed: outcome.closed,
+            ended: outcome.ended,
             round: payload.round + 1
           })
       })

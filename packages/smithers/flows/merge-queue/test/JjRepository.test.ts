@@ -404,7 +404,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     world.enqueue(2)
     world.close()
     const layer = Layer.merge(world.layer, JjRepository.target(queue, "5 millis"))
-    let position: Driver.Position = { state: empty, cursor: 0, closed: false }
+    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
     const heads = [repo.head()]
     for (let rounds = 0; rounds < 60; rounds++) {
       if (rounds === 1) repo.jj("bookmark", "set", "main", "-r", repo.change("other.txt", "theirs\n"))

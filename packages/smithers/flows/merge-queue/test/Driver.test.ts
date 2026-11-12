@@ -3,7 +3,7 @@ import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import type { Config, Part, State, Tree } from "../src/index.ts"
-import { Driver, empty, QueueSchema, sameTree, strip, TargetDiverged, Unavailable } from "../src/index.ts"
+import { Driver, empty, QueueSchema, run, sameTree, strip, TargetDiverged, Unavailable } from "../src/index.ts"
 import { random } from "./support/Generate.ts"
 import { steps } from "./support/Theorems.ts"
 import type { Script, World } from "./support/World.ts"
@@ -11,7 +11,7 @@ import { makeWorld } from "./support/World.ts"
 
 const config: Config = { required: [1, 2], maxAttempts: 2, maxBatch: 4, maxRuns: 2, window: 5, defaultDuration: 60 }
 
-const start: Driver.Position = { state: empty, cursor: 0, closed: false }
+const start: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
 
 const statuses = (state: State): Readonly<Record<number, string>> =>
   Object.fromEntries(state.changes.map((change) => [change.id, change.status._tag]))
@@ -72,6 +72,29 @@ const expectSound = (world: World, settings: Config = config): void => {
       )
     ).toBe(true)
     expect(world.passes(tree)).toBe(true)
+  }
+}
+
+/**
+ * The record holds every change that ended, once, as the queue's final state
+ * has it: the revision, the attempts, the status with its reason, and for a
+ * merged change the landing that holds that revision.
+ */
+const expectRecorded = (world: World, state: State, context = ""): void => {
+  const over = state.changes.filter((change) => !["queued", "fixing"].includes(change.status._tag))
+  expect(world.endings.map((ending) => ending.id).sort(), context).toEqual(over.map((change) => change.id).sort())
+  for (const change of over) {
+    const ending = world.endings.find((entry) => entry.id === change.id)!
+    expect({ rev: ending.rev, attempts: ending.attempts, status: ending.status }, context)
+      .toEqual({ rev: change.rev, attempts: change.attempts, status: change.status })
+    const landing = state.landed.find((entry) =>
+      entry.batch.some((part) => part.id === change.id && part.rev === change.rev)
+    )
+    expect(ending.landing, context).toEqual(
+      change.status._tag === "merged"
+        ? { run: landing!.run, results: landing!.results, foreign: landing!.foreign }
+        : null
+    )
   }
 }
 
@@ -365,10 +388,122 @@ describe("everything is rebased on the tip of the target", () => {
         )
           .toBe(true)
         expectSound(world, settings)
+        expectRecorded(world, end!.state, `seed ${seed}`)
       }
     },
     240_000
   )
+})
+
+describe("the record of endings", () => {
+  const oneIsHopeless: Script = {
+    failing: (entry) => entry.id === 1 ? [1] : [],
+    fix: () => ({ _tag: "gaveUp", detail: "conflicts with the new parser; redo it" })
+  }
+
+  it("holds every ended change once: merged with its landing, unmergeable with its reason, withdrawn", async () => {
+    const world = makeWorld(config, oneIsHopeless)
+    world.foreign(900)
+    world.enqueue(1)
+    world.enqueue(2)
+    world.enqueue(3)
+    world.withdraw(3)
+    world.close()
+    const end = await drain(world)
+    expect(statuses(end.state)).toEqual({ 900: "merged", 1: "unmergeable", 2: "merged", 3: "withdrawn" })
+    expectRecorded(world, end.state)
+    const byId = Object.fromEntries(world.endings.map((ending) => [ending.id, ending]))
+    expect(byId[900]).toEqual({
+      id: 900,
+      rev: 0,
+      attempts: 0,
+      status: { _tag: "merged" },
+      landing: { run: 0, results: [], foreign: true }
+    })
+    expect(byId[1]).toMatchObject({
+      attempts: 1,
+      status: {
+        _tag: "unmergeable",
+        reason: { kind: "agentVerdict", detail: "conflicts with the new parser; redo it", failures: [1], attempts: 1 }
+      },
+      landing: null
+    })
+    expect(byId[2]!.landing).toMatchObject({
+      foreign: false,
+      results: [{ check: 1, verdict: "pass" }, { check: 2, verdict: "pass" }]
+    })
+    expect(byId[3]).toEqual({ id: 3, rev: 0, attempts: 0, status: { _tag: "withdrawn" }, landing: null })
+    expectSound(world)
+  })
+
+  it("is written the round after the change ended, and the queue is not done before it is", async () => {
+    const world = makeWorld(config)
+    world.enqueue(1)
+    world.close()
+    const landed = await until(world, start, (outcome) => statuses(outcome.state)[1] === "merged")
+    expect(landed.ended.map((ending) => [ending.id, ending.status._tag])).toEqual([[1, "merged"]])
+    expect(landed.done).toBe(false)
+    expect(world.endings).toEqual([])
+    const after = await round(config, world, landed)
+    expect(world.endings).toEqual(landed.ended)
+    expect(after).toMatchObject({ ended: [], done: true })
+    expect(after.state).toEqual(landed.state)
+  })
+
+  it("fails the round while the record cannot be written, and writes it at the next try", async () => {
+    const world = makeWorld(config)
+    world.enqueue(1)
+    world.close()
+    const landed = await until(world, start, (outcome) => outcome.ended.length > 0)
+    world.failNext("endings", 1)
+    const failure = await Effect.runPromise(Effect.flip(Driver.round(config, landed)).pipe(Effect.provide(world.layer)))
+    expect(failure).toMatchObject({ _tag: "@smthrs/merge-queue/Unavailable", service: "endings" })
+    expect(world.endings).toEqual([])
+    expect((await round(config, world, landed)).done).toBe(true)
+    expect(world.endings).toEqual(landed.ended)
+    // The same round again, as after a crash: recorded once.
+    await round(config, world, landed)
+    expect(world.endings).toEqual(landed.ended)
+  })
+
+  it("holds only the decision that was kept when a round ran twice and decided differently", async () => {
+    const world = makeWorld(config, { failing: (entry) => entry.id === 1 ? [1] : [] })
+    world.enqueue(1)
+    const fixing = await until(world, start, (outcome) => statuses(outcome.state)[1] === "fixing")
+    world.answer(1, 1, { _tag: "gaveUp", detail: "redo it" })
+    // The host dies before it keeps this round's outcome.
+    const dropped = await round(config, world, fixing)
+    expect(dropped.ended.map((ending) => ending.status._tag)).toEqual(["unmergeable"])
+    // The author takes the change back before the host is up again; the round runs again.
+    world.withdraw(1)
+    world.close()
+    const kept = await round(config, world, fixing)
+    expect(kept.ended.map((ending) => ending.status._tag)).toEqual(["withdrawn"])
+    expect(world.endings).toEqual([])
+    const end = await drain(world, kept)
+    expect(world.endings).toEqual([{ id: 1, rev: 0, attempts: 1, status: { _tag: "withdrawn" }, landing: null }])
+    expectRecorded(world, end.state)
+  })
+
+  it("names what ended between two states and nothing that had ended before", () => {
+    const one = run(config, empty, [
+      { _tag: "enqueue", id: 1, priority: 0 },
+      { _tag: "enqueue", id: 2, priority: 0 },
+      { _tag: "withdraw", id: 1 }
+    ])
+    const two = run(config, one, [
+      { _tag: "foreign", id: 7 },
+      { _tag: "enqueue", id: 3, priority: 0 },
+      { _tag: "withdraw", id: 3 }
+    ])
+    expect(Driver.ended(empty, one).map((ending) => ending.id)).toEqual([1])
+    expect(Driver.ended(one, one)).toEqual([])
+    expect(Driver.ended(one, two)).toEqual([
+      { id: 7, rev: 0, attempts: 0, status: { _tag: "merged" }, landing: { run: 0, results: [], foreign: true } },
+      { id: 3, rev: 0, attempts: 0, status: { _tag: "withdrawn" }, landing: null }
+    ])
+    expect(Driver.ended(empty, two).map((ending) => ending.id)).toEqual([1, 7, 3])
+  })
 })
 
 describe("waiting", () => {
@@ -487,6 +622,8 @@ describe("crash and restart", () => {
       expect(statuses(end!.state)).toEqual(statuses(expected.state))
       expect(world.targets.at(-1)).toEqual(calm.targets.at(-1))
       expectSound(world)
+      expectRecorded(world, end!.state, `crash at call ${crashAt}`)
+      expect(world.endings).toEqual(calm.endings)
     }
   }, 240_000)
 })

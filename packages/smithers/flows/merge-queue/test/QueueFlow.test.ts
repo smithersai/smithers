@@ -16,7 +16,7 @@ import { makeWorld } from "./support/World.ts"
 
 const config: Config = { required: [1, 2], maxAttempts: 2, maxBatch: 4, maxRuns: 2, window: 5, defaultDuration: 60 }
 
-const start = { config, state: empty, cursor: 0, closed: false, round: 0 }
+const start = { config, state: empty, cursor: 0, closed: false, ended: [], round: 0 }
 
 const threeIsBroken: Script = {
   failing: (entry) => entry.id === 3 && entry.rev === 0 ? [2] : [],
@@ -68,6 +68,12 @@ describe("the queue as a durable flow", () => {
     const state = Exit.isSuccess(exit) ? exit.value : empty
     expect(statuses(state)).toEqual({ 1: "merged", 2: "merged", 3: "merged", 4: "merged" })
     expect(sameTree(state.main, world.targets.at(-1)!)).toBe(true)
+    expect(world.endings.map((ending) => [ending.id, ending.rev, ending.status._tag]).sort()).toEqual([
+      [1, 0, "merged"],
+      [2, 0, "merged"],
+      [3, 1, "merged"],
+      [4, 0, "merged"]
+    ])
     expectSound(world)
   })
 
@@ -108,6 +114,7 @@ describe("the queue as a durable flow", () => {
     const state = Exit.isSuccess(second) ? second.value : empty
     expect(statuses(state)).toEqual({ 1: "merged", 2: "merged", 3: "merged" })
     expect(new Set(world.pushed.map((tree) => JSON.stringify(tree))).size).toBe(world.pushed.length)
+    expect(world.endings.map((ending) => ending.id).sort()).toEqual([1, 2, 3])
     expectSound(world)
   })
 })

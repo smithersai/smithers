@@ -151,7 +151,7 @@ describe("the inbox as a file", () => {
       path,
       "{\"_tag\":\"enqueue\",\"id\":1,\"priority\":0}\ngarbage\n{\"_tag\":\"enqueue\",\"id\":2,\"priority\":0}\n{\"_tag\":\"close\"}\n"
     )
-    let position: Driver.Position = { state: empty, cursor: 0, closed: false }
+    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
     for (let rounds = 0; rounds < 50; rounds++) {
       const outcome = await Effect.runPromise(Driver.round(config, position).pipe(Effect.provide(layer)))
       position = outcome

@@ -11,10 +11,10 @@
 
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import type { Answer, Config, Finished, FixBrief, Job, Letter, Part, Tree } from "../../src/index.ts"
-import { Ci, Fixer, Inbox, sameTree, Target, Unavailable } from "../../src/index.ts"
+import type { Answer, Config, Ending, Finished, FixBrief, Job, Letter, Part, Tree } from "../../src/index.ts"
+import { Ci, Endings, Fixer, Inbox, sameTree, Target, Unavailable } from "../../src/index.ts"
 
-type Service = "inbox" | "ci" | "fixer" | "target"
+type Service = "inbox" | "ci" | "fixer" | "target" | "endings"
 
 /** What decides the world's behaviour. */
 export interface Script {
@@ -39,9 +39,11 @@ interface RunRecord {
 
 /** The world, its services and what tests read from it. */
 export interface World {
-  readonly layer: Layer.Layer<Inbox | Ci | Fixer | Target>
-  /** Only the inbox and the fix agents, for tests whose CI and target are real. */
-  readonly people: Layer.Layer<Inbox | Fixer>
+  readonly layer: Layer.Layer<Inbox | Ci | Fixer | Target | Endings>
+  /** Only the inbox, the fix agents and the record, for tests whose CI and target are real. */
+  readonly people: Layer.Layer<Inbox | Fixer | Endings>
+  /** The record of endings, oldest first. */
+  readonly endings: Array<Ending>
   /** Every command that changed something, in order. */
   readonly log: Array<string>
   /** Every tree the target has been on, in order, starting empty. */
@@ -86,7 +88,8 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
   const log: Array<string> = []
   const targets: Array<Tree> = [[]]
   const pushed: Array<Tree> = []
-  const faults: Record<Service, number> = { inbox: 0, ci: 0, fixer: 0, target: 0 }
+  const recorded: Array<Ending> = []
+  const faults: Record<Service, number> = { inbox: 0, ci: 0, fixer: 0, target: 0, endings: 0 }
   let calls = 0
   let failAt = -1
   let waiters: Array<() => void> = []
@@ -202,6 +205,16 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
     wait: (tree) => until(() => !sameTree(current(), tree))
   })
 
+  const endings = Endings.of({
+    record: (given) =>
+      call("endings", () => {
+        for (const ending of given) {
+          if (recorded.some((held) => held.id === ending.id)) continue
+          recorded.push(ending)
+        }
+      })
+  })
+
   const send = (letter: Letter): void => {
     letters.push(letter)
     bump()
@@ -212,9 +225,11 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
       Layer.succeed(Inbox, inbox),
       Layer.succeed(Ci, ci),
       Layer.succeed(Fixer, fixer),
-      Layer.succeed(Target, target)
+      Layer.succeed(Target, target),
+      Layer.succeed(Endings, endings)
     ),
-    people: Layer.merge(Layer.succeed(Inbox, inbox), Layer.succeed(Fixer, fixer)),
+    people: Layer.mergeAll(Layer.succeed(Inbox, inbox), Layer.succeed(Fixer, fixer), Layer.succeed(Endings, endings)),
+    endings: recorded,
     log,
     targets,
     pushed,

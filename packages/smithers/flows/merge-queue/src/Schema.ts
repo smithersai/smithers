@@ -105,6 +105,24 @@ export const Landing = Schema.Struct({
 })
 
 /**
+ * How one change ended.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Ending = Schema.Struct({
+  id: Natural,
+  rev: Natural,
+  attempts: Natural,
+  status: Schema.Union([
+    Schema.Struct({ _tag: Schema.Literal("merged") }),
+    Schema.Struct({ _tag: Schema.Literal("unmergeable"), reason: Reason }),
+    Schema.Struct({ _tag: Schema.Literal("withdrawn") })
+  ]),
+  landing: Schema.NullOr(Schema.Struct({ run: Natural, results: Schema.Array(Result), foreign: Schema.Boolean }))
+})
+
+/**
  * One remembered check duration.
  *
  * @category schemas

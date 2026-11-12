@@ -3,8 +3,8 @@
  *
  * `step` is the queue and `plan` is its policy; both mirror the reference in
  * this package's `lean/` directory definition for definition. `Driver` runs
- * the queue against the world through the `Inbox`, `Ci`, `Fixer` and `Target`
- * services.
+ * the queue against the world through the `Inbox`, `Ci`, `Fixer`, `Target` and
+ * `Endings` services.
  *
  * @since 0.1.0
  */
@@ -12,6 +12,7 @@
 export * as CommandCi from "./CommandCi.ts"
 export * as CommandFixer from "./CommandFixer.ts"
 export * as Driver from "./Driver.ts"
+export * as FileEndings from "./FileEndings.ts"
 export * as FileInbox from "./FileInbox.ts"
 export * as JjRepository from "./JjRepository.ts"
 export * from "./Kernel.ts"

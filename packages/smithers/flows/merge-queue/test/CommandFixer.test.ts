@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Config, FixBrief } from "../src/index.ts"
-import { CommandCi, CommandFixer, Driver, empty, FileInbox, Fixer, JjRepository } from "../src/index.ts"
+import { CommandCi, CommandFixer, Driver, empty, FileEndings, FileInbox, Fixer, JjRepository } from "../src/index.ts"
 
 const jjInstalled = (() => {
   try {
@@ -196,6 +196,7 @@ describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, ()
       JSON.stringify({ _tag: "fixed", commit: world.change({ "two.txt": "two\n" }) })
     )
     const inbox = join(world.path, ".jj", "inbox.jsonl")
+    const endings = join(world.path, ".jj", "endings.jsonl")
     writeFileSync(
       inbox,
       [1, 2, 3].map((id) => JSON.stringify({ _tag: "enqueue", id, priority: 0 })).join("\n") +
@@ -204,6 +205,7 @@ describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, ()
     const layer = Layer.provideMerge(
       Layer.mergeAll(
         FileInbox.layer({ path: inbox, poll: "5 millis" }),
+        FileEndings.layer({ path: endings }),
         JjRepository.target(world.repository, "5 millis"),
         CommandCi.layer({
           repository: world.repository,
@@ -224,7 +226,7 @@ describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, ()
     )
     const runtime = ManagedRuntime.make(layer)
     runtimes.push(runtime)
-    let position: Driver.Position = { state: empty, cursor: 0, closed: false }
+    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
     for (let rounds = 0; rounds < 300; rounds++) {
       const outcome = await runtime.runPromise(Driver.round(config, position))
       position = outcome
@@ -239,5 +241,9 @@ describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, ()
       id: 2,
       failures: [2]
     })
+    const recorded = readFileSync(endings, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    expect(recorded.map((line) => [line.id, line.rev, line.attempts, line.status._tag, line.landing.foreign]).sort())
+      .toEqual([[1, 0, 0, "merged", false], [2, 1, 1, "merged", false], [3, 0, 0, "merged", false]])
+    expect(recorded.every((line) => Number.isInteger(line.at) && line.at > 1_700_000_000_000)).toBe(true)
   }, 120_000)
 })
