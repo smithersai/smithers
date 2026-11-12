@@ -2354,6 +2354,7 @@ const callHandler = (
   cell: Cell.Source,
   descriptors: ReadonlyMap<string, Descriptor.FlowDescriptor>,
   engine: EngineLike.EngineLike,
+  minted: ReadonlyArray<string>,
   ledger: Array<TruncatedOutput.Capture>,
   performed: Set<number>,
   restored: Set<string>,
@@ -2428,8 +2429,8 @@ const callHandler = (
     // handed back, so it is a *reading* position and nothing else: the whole
     // promise the surface makes is that taking a reading against one leaves the
     // work alone, and a flow that declared a write would break that promise
-    // whichever tree the host materialized. Both refusals below are fail-soft,
-    // because both are things a cell fixes on its next line.
+    // whichever tree the host materialized. These refusals are fail-soft,
+    // because they are things a cell fixes on its next line.
     let at: string | undefined
     if (invocation.at !== undefined) {
       at = Cell.checkpointOf(invocation.at)
@@ -2439,6 +2440,12 @@ const callHandler = (
           `The at option takes a checkpoint, which is what ctx.checkpoint() resolves with and what ctx.base is. It was given ${
             elide.head(CanonicalJson.stringify(invocation.at), 120, "the rest is the same shape")
           }.`
+        )
+      }
+      if (at !== Cell.baseCheckpoint && !state.checkpointIds.includes(at) && !minted.includes(at)) {
+        return refusal(
+          "checkpoint_unavailable",
+          "This run has not pinned that checkpoint. Nothing was run. Use ctx.base or a checkpoint returned by ctx.checkpoint() in this run."
         )
       }
       if (changes) {
@@ -3310,6 +3317,7 @@ const evaluate = (
     // Seeded from what earlier frames were handed, appended to as this frame's
     // calls settle, and carried out through every exit that continues the run.
     const captures: Array<TruncatedOutput.Capture> = [...state.truncatedOutputs]
+    const minted: Array<string> = []
     const calls: Array<Frame.ObservedCall> = []
     /** Ordinals of the invocations that reached the engine this frame. */
     const performed = new Set<number>()
@@ -3333,6 +3341,7 @@ const evaluate = (
         cell,
         descriptors,
         engine,
+        minted,
         captures,
         performed,
         restored,
@@ -3427,7 +3436,6 @@ const evaluate = (
     // One realm per run. It is the caller's scoped resource, so the loop hands
     // it the cell and the call handler and nothing else about how a frame runs
     // depends on where the realm came from.
-    const minted: Array<string> = []
     const mint = minter(state, cell, engine, minted, callMs, emit)
     // The script the model may promote into a saved flow. It is recorded before
     // the realm evaluates the cell, so a cell that raises is still part of what

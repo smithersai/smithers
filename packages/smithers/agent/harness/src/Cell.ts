@@ -723,9 +723,8 @@ export const checkpoint = (id: string): Schema.Json => ({ checkpoint: id })
  *
  * `undefined` means "that was not a checkpoint", which the boundary answers as
  * an ordinary `invalid_input` failure rather than by guessing. It is
- * deliberately strict: a handle is the only thing that names a tree, and a
- * string that happens to look like an id would let a cell address a snapshot
- * the run never took.
+ * deliberately strict about the handle's shape. The call boundary separately
+ * checks that the id is `base` or names a checkpoint this run minted.
  *
  * @category conversions
  * @since 0.1.0

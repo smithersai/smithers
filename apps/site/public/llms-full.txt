@@ -21252,7 +21252,10 @@ for the retained algorithm and composition versions.
 run opened on, pinned for free and always present. `Cell.checkpoint(id)`
 builds the opaque handle a cell holds; `Cell.checkpointOf(value)` reads the id
 back strictly, returning `undefined` for anything that is not a handle, which
-the boundary answers as an ordinary `invalid_input`.
+the boundary answers as an ordinary `invalid_input`. The call boundary also
+requires `at` to name `ctx.base` or a checkpoint this run successfully minted,
+including in an earlier frame. A handle naming any other checkpoint resolves
+with `checkpoint_unavailable` without dispatching the flow.
 
 ## EngineLike
 

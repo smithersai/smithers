@@ -430,6 +430,82 @@ describe("CellTurn checkpoints", () => {
     expect(settled).toContain("ctx.base")
   })
 
+  it.each(["cp-3-0", "cp-99-0", "unknown"])("refuses an unminted checkpoint handle %s", async (id) => {
+    const { engine, events } = await drive({
+      cells: [
+        `const answer = await ctx.call("read", { path: "a.py" }, { at: { checkpoint: ${JSON.stringify(id)} } })
+         ctx.done(JSON.stringify(answer))`
+      ]
+    })
+
+    expect(engine.recorder.calls).toEqual([])
+    expect(settledText(events)).toContain("checkpoint_unavailable")
+    expect(settledText(events)).toContain("This run has not pinned that checkpoint")
+    expect(of(events, "resolved")).toHaveLength(1)
+  })
+
+  it("refuses a checkpoint handle from an earlier run", async () => {
+    const earlier = await drive({ cells: [`await ctx.checkpoint(); ctx.done("done")`] })
+    const id = of(earlier.events, "checkpoint-minted")[0]!.id
+    const { engine, events } = await drive({
+      cells: [
+        `const answer = await ctx.call("read", { path: "a.py" }, { at: { checkpoint: ${JSON.stringify(id)} } })
+         ctx.done(JSON.stringify(answer))`
+      ]
+    })
+
+    expect(engine.recorder.calls).toEqual([])
+    expect(settledText(events)).toContain("checkpoint_unavailable")
+    expect(settledText(events)).toContain("This run has not pinned that checkpoint")
+    expect(of(events, "resolved")).toHaveLength(1)
+  })
+
+  it("does not authorize a checkpoint when pinning failed", async () => {
+    const { engine, events } = await drive({
+      pins: false,
+      cells: [
+        `await ctx.checkpoint()
+         const answer = await ctx.call("read", { path: "a.py" }, { at: { checkpoint: "cp-0-0" } })
+         ctx.done(JSON.stringify(answer))`
+      ]
+    })
+
+    expect(of(events, "checkpoint-minted")).toEqual([])
+    expect(engine.recorder.calls).toEqual([])
+    expect(settledText(events)).toContain("checkpoint_unavailable")
+    expect(settledText(events)).toContain("This run has not pinned that checkpoint")
+    expect(of(events, "resolved")).toHaveLength(1)
+  })
+
+  it("accepts a checkpoint the same run minted in an earlier frame", async () => {
+    const { engine } = await drive({
+      cells: [
+        `const held = await ctx.checkpoint()
+         console.log(held.checkpoint)`,
+        `await ctx.call("read", { path: "a.py" }, { at: held })
+         ctx.done("done")`
+      ]
+    })
+
+    expect(engine.recorder.captures.map((capture) => capture.id)).toEqual(["cp-0-0"])
+    expect(engine.recorder.calls.map((call) => call.at)).toEqual(["cp-0-0"])
+  })
+
+  it("keeps a successful checkpoint from a frame that later raises", async () => {
+    const { engine, events } = await drive({
+      cells: [
+        `const held = await ctx.checkpoint()
+         throw new Error("after pin")`,
+        `await ctx.call("read", { path: "a.py" }, { at: held })
+         ctx.done("done")`
+      ]
+    })
+
+    expect(of(events, "checkpoint-minted")).toHaveLength(1)
+    expect(engine.recorder.calls.map((call) => call.at)).toEqual(["cp-0-0"])
+    expect(of(events, "resolved")).toHaveLength(1)
+  })
+
   it("tells a cell the host pins nothing, catchably, and lets the run carry on", async () => {
     const { events } = await drive({
       pins: false,
