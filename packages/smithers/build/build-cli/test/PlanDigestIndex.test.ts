@@ -148,6 +148,46 @@ describe("plans remember file digests between invocations", () => {
     await DigestIndexFile.save(root, ".flows", digests)
   })
 
+  it("leaves the saved index as it was when a plan remembers nothing new", async () => {
+    const root = await workspace()
+    const first = later()
+    await planned(root, first)
+    await DigestIndexFile.save(root, ".flows", first)
+    const file = DigestIndexFile.path(root, ".flows")
+    const before = await Fs.stat(file, { bigint: true })
+
+    const unchanged = await DigestIndexFile.load(root, ".flows")
+    expect((await planned(root, unchanged)).opened).toEqual([])
+    await DigestIndexFile.save(root, ".flows", unchanged)
+    const after = await Fs.stat(file, { bigint: true })
+    expect([after.ino, after.mtimeNs, after.size]).toEqual([before.ino, before.mtimeNs, before.size])
+
+    // One edited file is one replaced row, and the index is written again.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await Fs.writeFile(Path.join(root, "src/a/two.txt"), "a 2!\n")
+    const edited = await DigestIndexFile.load(root, ".flows")
+    expect((await planned(root, edited)).opened).toEqual(["src/a/two.txt"])
+    await DigestIndexFile.save(root, ".flows", edited)
+    const rewritten = await Fs.stat(file, { bigint: true })
+    expect(rewritten.ino).not.toBe(before.ino)
+    // The edit is too recent to be remembered, and the old digest is gone.
+    const saved = await DigestIndexFile.load(root, ".flows")
+    expect(saved.rows.has(Path.join(root, "src/a/two.txt"))).toBe(false)
+    expect(saved.rows.has(Path.join(root, "src/a/one.txt"))).toBe(true)
+  })
+
+  it("writes the index again after a plan forgets a row", async () => {
+    const root = await workspace()
+    const first = later()
+    await planned(root, first)
+    await DigestIndexFile.save(root, ".flows", first)
+    await Fs.rm(Path.join(root, "src/a/two.txt"))
+    const loaded = await DigestIndexFile.load(root, ".flows")
+    loaded.rows.delete(Path.join(root, "src/a/two.txt"))
+    await DigestIndexFile.save(root, ".flows", loaded)
+    expect((await DigestIndexFile.load(root, ".flows")).rows.has(Path.join(root, "src/a/two.txt"))).toBe(false)
+  })
+
   it("saves only settled rows, the ones a plan used first", async () => {
     const root = await workspace()
     const digest = "a".repeat(64)

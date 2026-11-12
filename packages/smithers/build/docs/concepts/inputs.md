@@ -215,7 +215,8 @@ plan leaves no untracked file in a checkout that does not ignore the cache
 directory. The index is a cache, not key material: keys are the same with or
 without it.
 A missing, malformed or corrupt index, or one of another format, is ignored and
-every file is read. Deleting the file is always safe.
+every file is read. Deleting the file is always safe. A plan that remembers no
+new digest and forgets none leaves the file as it was.
 
 ### Symbolic links
 

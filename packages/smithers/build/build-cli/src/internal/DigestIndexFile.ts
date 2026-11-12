@@ -53,6 +53,31 @@ const digestPattern = /^[0-9a-f]{64}$/
 export const path = (root: string, cacheDirectory: string): string =>
   NodePath.join(root, ...cacheDirectory.split("/"), "plan", "file-digests.json")
 
+/**
+ * The rows of an index loaded from disk, noting whether a plan remembered or
+ * forgot any row since: an index nothing changed is not written again.
+ */
+class LoadedRows extends Map<string, SafeFs.DigestRow> {
+  changed = false
+  constructor(rows: ReadonlyArray<readonly [string, SafeFs.DigestRow]>) {
+    super()
+    for (const [file, row] of rows) super.set(file, row)
+  }
+  override set(file: string, row: SafeFs.DigestRow): this {
+    this.changed = true
+    return super.set(file, row)
+  }
+  override delete(file: string): boolean {
+    const had = super.delete(file)
+    if (had) this.changed = true
+    return had
+  }
+  override clear(): void {
+    if (this.size > 0) this.changed = true
+    super.clear()
+  }
+}
+
 const checksum = (rows: string): string => createHash("sha256").update(rows).digest("hex")
 
 const rowsOf = (value: unknown): Array<readonly [string, SafeFs.DigestRow]> | undefined => {
@@ -119,13 +144,15 @@ export const load = async (
   }
   const rows = rowsOf(decoded)
   if (rows === undefined) return ignored("malformed row")
-  return SafeFs.makeDigestIndex(rows)
+  return { ...SafeFs.makeDigestIndex(), rows: new LoadedRows(rows) }
 }
 
 /**
  * Saves an index's settled rows for the next invocation: the rows this one
  * used first, then the remembered rest, up to {@link maximumRows}. A failure
- * to save is logged, never thrown: the next plan reads the files again.
+ * to save is logged, never thrown: the next plan reads the files again. An
+ * index {@link load} read whose rows no plan changed is already on disk and
+ * is not written again.
  *
  * @category io
  * @since 1.0.0
@@ -136,6 +163,7 @@ export const save = async (
   index: SafeFs.DigestIndex,
   log?: (line: string) => void
 ): Promise<void> => {
+  if (index.rows instanceof LoadedRows && !index.rows.changed) return
   const kept: Array<readonly [string, string, string]> = []
   for (const file of index.used) {
     const row = index.rows.get(file)
