@@ -27,3 +27,26 @@ it("a repeated Tour press joins its accepted run", async ({ bench }) => {
   }).run(slow)
   await runPromise(artifact("action-tour-repeat", "Vitest built-in bench; the production action index and per-run hosts over node:sqlite object storage with product MockAccounts, a fresh world per sample. A maintainer starts Tour, then starts the same request again before the alarm: the second answer joins the accepted run. Checks both answers, one running Tour run, one open guide entry.", ["Node SQLite/KV/alarm adapter, not workerd scheduling.", "The tour itself does not run: no alarm fires in this workload."], result))
 })
+
+it("an older index without explicit routes still resolves a Post's reply to its Post", async ({ bench }) => {
+  const result = await workload(bench, "action-legacy-routes", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      const post = request("apost", "vibelang/Post", { text: "Question" }, w.person.id)
+      const tour = request("atour", "vibelang/Tour", null, w.person.id)
+      const started = [try w.directory.start(post, "maintainer"), try w.directory.start(tour, "maintainer")]
+      // Objects written before explicit routes have requests and an index, but no action-root/ keys.
+      for (const key of (try promise(() => w.budgetStorage.list({ prefix: "action-root/" }))).keys()) try promise(() => w.budgetStorage.delete(key))
+      const routes = (try promise(() => w.budgetStorage.list({ prefix: "action-root/" }))).size
+      const roots = [try w.directory.root("apost-reply"), try w.directory.root("atour-reply"), try w.directory.root("apost")]
+      const collision = try w.directory.start(request("apost-reply", "vibelang/Tour", null, w.person.id), "maintainer")
+      try Effect.try(() => {
+        expect(started).toEqual([null, null])
+        expect(routes).toBe(0)
+        expect(roots).toEqual(["apost", "atour-reply", "apost"])
+        expect(collision).toBe("conflict")
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("action-legacy-routes", "Vitest built-in bench; the production action index and per-run hosts over node:sqlite object storage with product MockAccounts, a fresh world per sample. A maintainer starts a Post and a Tour; every action-root/ route is then removed, as on an index written before explicit routes. Require the Post's reply id to resolve to its Post from the stored request, a Tour's -reply id to stay its own, and a Tour claiming the Post's reply id to be refused as a conflict. Setup and assertions included.", ["node:sqlite object storage under Node, not workerd; no reply runs (no alarm), so this measures route resolution and admission only."], result))
+})

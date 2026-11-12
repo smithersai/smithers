@@ -205,7 +205,8 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           for (const [name, status] of Object.entries(report.objects)) {
             expect(status).toMatchObject({ objectClass: name, startup: "ready", codeVersion: "unknown" })
             expect(status.objectId.length).toBeGreaterThan(0)
-            expect(["initialize", "begin", "storage", "sequencer", "bootstrap", "accounts"]).toContain(status.step)
+            if (name === "History") expect(status.step).toBe("publish")
+            else expect(["initialize", "begin", "storage", "sequencer", "bootstrap", "accounts"]).toContain(status.step)
           }
           const again = await call(api.origin, "/api/health/objects?conversation=bench-api-1")
           expect(again.status).toBe(200)

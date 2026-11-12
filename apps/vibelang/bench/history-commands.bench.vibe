@@ -3,7 +3,7 @@ import { it, expect } from "@effect/vitest"
 import { MockMythical } from "../src/history/MockMythical.vibe"
 import { Mythical, Unavailable, Refused } from "../src/history/MythicalHistory.vibe"
 import { empty } from "../src/history/mythical.vibe"
-import { ReadOutline, ReadEpic, ReadCommit, ReadMatches, PlanCommand, StartCommand, NoteCommand, ApproveCommand, FoldCommand } from "../src/web/historyApp.vibe"
+import { ReadOutline, ReadEpic, ReadCommit, ReadMatches, PlanCommand, StartCommand, NoteCommand, ApproveCommand, FoldCommand, ExportCommand, HistoryMessage, init, update } from "../src/web/historyApp.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 effect function execute<A, E, R>(make: () => { readonly effect: A!E!R }) { return try (try Effect.try(make)).effect }
@@ -25,7 +25,13 @@ it("History browser commands plan, start, retain evidence, approve and fold the 
       const detailed = try execute(() => ReadCommit({ id: "m1" }))
       const absent = try execute(() => ReadCommit({ id: "absent" }))
       const after = try api.outline()
+      const exported = try execute(() => ExportCommand({}))
       try Effect.try(() => {
+        expect(exported).toMatchObject({ _tag: "Exported", mythical: expect.stringMatching(/^[0-9a-f]{40}$/) })
+        const exporting = update(init({ mode: "mock", role: "maintainer", hash: "" }).model, HistoryMessage.ClickedExport())
+        expect(exporting.model.busy).toBe(true)
+        expect(exporting.commands?.map(command => command.name)).toEqual(["Export"])
+        if (exported._tag === "Exported") expect(update(exporting.model, exported).model).toMatchObject({ busy: false, exported: exported.mythical })
         expect(before).toEqual({ _tag: "GotOutline", outline: { seq: 0, main: "", epics: [], open: [] } })
         expect(planned).toEqual({ _tag: "Wrote", hash: "m1" })
         expect(page).toMatchObject({ _tag: "GotEpic", page: { epic: "e1", from: 0, total: 1, commits: [{ id: "m1", title: "Measured commit", task: "Kept task", state: "planned" }] } })
@@ -38,7 +44,7 @@ it("History browser commands plan, start, retain evidence, approve and fold the 
       })
     }
   }))).run(slow)
-  await runPromise(artifact("history-browser-commands", "Vitest built-in bench; actual History Command effects over MockMythical's memory engine from empty history. Outline, Plan, epic/search, Start/Note/Approve/Fold and commit/missing detail; exact command messages, retained fields, notes, fold SHA and final six-event outline checked. Three fresh scoped engines, assertions included.", ["Shipped product mock main, no GitHub mutation, network, OAuth or actual repository fold. Command Effects without browser layout/DOM focus."], result))
+  await runPromise(artifact("history-browser-commands", "Vitest built-in bench; actual History Command effects over MockMythical's memory engine from empty history. Outline, Plan, epic/search, Start/Note/Approve/Fold, commit/missing detail and Export; exact messages, retained fields, notes, fold SHA, six-event outline, exported git identity and export reducer busy/settled state checked. Three fresh scoped engines, assertions included.", ["Shipped product mock main and memory git exporter, no GitHub mutation, network, OAuth or actual repository fold. Command Effects without browser layout/DOM focus."], result))
 })
 
 it("History browser commands return safe read outages and exact write refusals", async ({ bench }) => {
@@ -49,14 +55,14 @@ it("History browser commands return safe read outages and exact write refusals",
       const faulty: Mythical.Shape = { mode: "live", outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, events: () => Stream.fail(new Unavailable({ reason: "Synthetic transport detail" })), plan: write, start: write, note: write, approve: write, fold: write, publish: write }
       provide Mythical = faulty {
         const reads = try all([execute(() => ReadOutline({})), execute(() => ReadEpic({ id: "e1", from: 0 })), execute(() => ReadCommit({ id: "m1" })), execute(() => ReadMatches({ query: "Measured" }))])
-        const writes = try all([execute(() => PlanCommand(plan)), execute(() => StartCommand({ id: "m1", lane: "bench" })), execute(() => NoteCommand({ id: "m1", section: "tried", text: "Evidence" })), execute(() => ApproveCommand({ id: "m1" })), execute(() => FoldCommand({}))])
+        const writes = try all([execute(() => PlanCommand(plan)), execute(() => StartCommand({ id: "m1", lane: "bench" })), execute(() => NoteCommand({ id: "m1", section: "tried", text: "Evidence" })), execute(() => ApproveCommand({ id: "m1" })), execute(() => FoldCommand({})), execute(() => ExportCommand({}))])
         try Effect.try(() => {
-          expect(reads).toEqual(Array(4).fill({ _tag: "FailedRead", reason: "unavailable" }))
-          expect(writes).toEqual(Array(5).fill({ _tag: "FailedWrite", reason }))
+          expect(reads).toEqual([{ kind: "outline", id: "", from: 0 }, { kind: "epic", id: "e1", from: 0 }, { kind: "commit", id: "m1", from: 0 }, { kind: "matches", id: "Measured", from: 0 }].map(read => ({ _tag: "FailedRead", reason: "unavailable", read })))
+          expect(writes).toEqual(Array(6).fill({ _tag: "FailedWrite", reason }))
           expect(JSON.stringify([reads, writes])).not.toContain("Synthetic")
         })
       }
     }
   }))).run(slow)
-  await runPromise(artifact("history-browser-command-faults", "Vitest built-in bench; typed faulty Effect Mythical service, four browser reads and five writes under both permission and transport failures. All exact message/reason projections and redaction checked. Three full corpora, setup/assertions included.", ["Deliberate service failures, no request interception or successful provider simulation; no network, repository writes or model."], result))
+  await runPromise(artifact("history-browser-command-faults", "Vitest built-in bench; typed faulty Effect Mythical service, four browser reads and six writes including Export under both permission and transport failures. All exact message/reason projections and redaction checked. Three full corpora, setup/assertions included.", ["Deliberate service failures, no request interception or successful provider simulation; no network, repository writes or model."], result))
 })

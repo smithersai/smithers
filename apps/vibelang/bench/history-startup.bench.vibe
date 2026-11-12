@@ -1,0 +1,68 @@
+// Mounted History startup, independently of unit/fuzz collection. Faults are injected HttpClient/Window services.
+import { it, expect } from "@effect/vitest"
+import { vi } from "vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpClient, HttpClientError } from "effect/http"
+import { Runtime } from "foldkit"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { historyMain } from "../src/web/historyStartup.vibe"
+import { page } from "../src/web/startup.vibe"
+import { host, pageClient, serveApi, small, withoutStorage } from "../test/support/historyApi.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("History follows a signed-in role through two transport faults and exports over the live client", { timeout: 120_000 }, async ({ bench }) => {
+  const result = await workload(bench, "history-signed-startup-export", "async", () => runPromise(scoped(effect {
+    const { node, window } = try host()
+    try sync(() => window.history.replaceState(null, "", "/history?agent=live"))
+    provide NodeHttpServer.layerTest, MockMythical({ role: "maintainer", name: "Bench", agent: false }, small) {
+      try scoped(effect {
+      const api = try serveApi()
+      try api.maintainer.grant("7", "contributor")
+      const client = pageClient(api.native, api.origin, api.ada, ["/api/auth/session", "/api/roles/events"])
+      provide Layer.merge(page, client.layer) {
+        const { application, flags } = try historyMain()
+        try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), handle => sync(() => handle.dispose()))
+        const role = () => node.querySelector("[data-surface='history']")?.getAttribute("data-role")
+        try promise(() => vi.waitFor(() => { expect(client.asked("/api/auth/session")).toBe(1); expect(role()).toBe("viewer") }, { timeout: 5000 }))
+        try promise(() => vi.waitFor(() => { expect(role()).toBe("contributor"); expect(client.asked("/api/roles/events")).toBe(2) }, { timeout: 10000 }))
+        try (try Mythical).plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "Measured stream event", task: "" })
+        try promise(() => vi.waitFor(() => expect(node.textContent).toContain("Measured stream event"), { timeout: 5000 }))
+        try api.maintainer.grant("8", "community")
+        try api.maintainer.grant("7", "maintainer")
+        try promise(() => vi.waitFor(() => expect(role()).toBe("maintainer"), { timeout: 5000 }))
+        try Effect.try(() => expect(client.faults).toEqual([]))
+        try sync(() => Array.from(node.querySelectorAll("button")).find(button => button.textContent === "Export")!.click())
+        try promise(() => vi.waitFor(() => expect(node.querySelector("[title='Exported']")?.textContent).toMatch(/^mythical [0-9a-f]{7}$/), { timeout: 10000 }))
+      }
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("history-signed-startup-export", "Vitest built-in bench; mounted happy-dom History startup, real loopback Accounts and History API over SQLite and the product MockMythical. Session and grant stream each fail once in the injected client, recover after the production two-second waits, then grants change contributor to maintainer without reload. Click Export and require the returned git identity in the page. Three fresh scoped hosts; waits, DOM observation and assertions included.", ["No layout/paint, OAuth or GitHub write. Memory git exporter and shipped mock history, real local HTTP. Full recovery journey timing includes two retry waits."], result))
+})
+
+it("fault coverage: History starts when private-window storage is unavailable", { timeout: 60_000 }, async () => {
+  const reads = await runPromise(scoped(effect {
+    let total = 0
+    for (const query of ["", "?agent=mock"]) {
+      try scoped(effect {
+        const { node, window } = try host()
+        try sync(() => window.history.replaceState(null, "", "/history" + query))
+        const faulty = try withoutStorage(window)
+        const offline = HttpClient.make(request => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
+        provide Layer.mergeAll(page, faulty.layer, Layer.succeed(HttpClient.HttpClient, offline)) {
+          const { application, flags } = try historyMain()
+          try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), handle => sync(() => handle.dispose()))
+          try promise(() => vi.waitFor(() => {
+            expect(node.querySelector("[data-surface='history']")?.getAttribute("data-mode")).toBe("mock")
+            expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull()
+          }, { timeout: 10000 }))
+          try Effect.try(() => expect(faulty.reads()).toBeGreaterThan(0))
+          total += faulty.reads()
+        }
+      })
+    }
+    return total
+  }))
+  await runPromise(artifact("fault-coverage-history-storage", "Counts only; actual History startup and mounted runtime, faulty Window storage and unavailable health transport. Default query and forced mock both render a usable history; storage access failures observed.", ["happy-dom test host, no timing observation or browser paint."], { reads }))
+})

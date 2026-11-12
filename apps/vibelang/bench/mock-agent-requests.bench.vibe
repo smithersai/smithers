@@ -161,3 +161,37 @@ it("the mock agent starts its signed-in owner's sandbox", async ({ bench }) => {
   }
   await runPromise(artifact("mock-agent-sandbox-start", "Vitest built-in bench; real BrowserFactory forced to product mock mode as a maintainer, with the shipped scripted agent and mock sandbox host. Each fresh backend posts 'start a sandbox', waits for the settled reply, reads the conversation's sandbox, runs a command the mock does not know and stops it. Checked: the reply names the sandbox it started, which is running, the command answers that it is unavailable in mock mode, and Stop leaves it stopped. Three whole journeys; initialization and assertions included.", ["Mock sandbox host: no Container, network or model. The ownerless refusal is the separate mock-agent-retained-journal workload.", "The first callback also loads the backend's lazily imported modules, so its sample is not comparable to the others."], { seen, result }))
 })
+
+it("a restored journal with a repeated event number keeps only the events its replay applied", async ({ bench }) => {
+  const result = await workload(bench, "mock-journal-trimmed", "async", () => runPromise(scoped(effect {
+    const { mockFactoryFor } = try promise(() => import("../src/core/MockFactory.vibe"))
+    // A previous host retained the second event twice: the copy reuses seq 2.
+    const journals = try Ref.make(new Map<string, ReadonlyArray<Event>>([["demo-trimmed", [
+      { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Benchmark", text: "first" },
+      { type: "Posted", seq: 2, id: "m2", clientId: "b", name: "Benchmark", text: "second" },
+      { type: "Posted", seq: 2, id: "m2-copy", clientId: "c", name: "Benchmark", text: "second again" },
+      { type: "Posted", seq: 3, id: "m3", clientId: "d", name: "Benchmark", text: "third" },
+    ]]]))
+    const journal: MockJournal.Shape = {
+      read: room => Ref.get(journals).pipe(Effect.map(all => all.get(room) ?? [])),
+      write: (room, events) => Ref.update(journals, all => new Map(all).set(room, events)),
+    }
+    provide mockFactoryFor("contributor").pipe(Layer.provide(Layer.succeed(MockJournal, journal))) {
+      const factory = try Factory
+      // Following the conversation opens and restores it, as the page does; a bare read opens nothing.
+      const replayed = Array.from(try Stream.runCollect(factory.events("demo-trimmed", 0).pipe(Stream.takeUntil(event => event.seq === 3), Stream.timeout("15 seconds"))))
+      const restored = try factory.read("demo-trimmed", 0)
+      try factory.post("demo-trimmed", "fresh", "Benchmark", "fourth")
+      const written = (try Ref.get(journals)).get("demo-trimmed") ?? []
+      try Effect.try(() => {
+        expect(restored.seq).toBe(3)
+        expect(restored.entries.map(entry => entry.id)).toEqual(["m1", "m2", "m3"])
+        expect(replayed.map(event => [event.seq, "id" in event ? event.id : ""])).toEqual([[1, "m1"], [2, "m2"], [3, "m3"]])
+        expect(written.map(event => event.seq)).toEqual(written.map((_, index) => index + 1))
+        expect(written.some(event => "id" in event && event.id === "m2-copy")).toBe(false)
+        expect(written.find(event => event.type === "Posted" && event.clientId === "fresh")?.seq).toBe(4)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("mock-journal-trimmed", "Vitest built-in bench; the product MockFactory over a healthy in-memory MockJournal adapter seeded with four retained events whose second is repeated at seq 2. A reader follows the conversation, which opens it. Require the reader replaying from 0 to receive exactly seqs 1-3 without the copy, the restored conversation to hold m1, m2 and m3 at seq 3, and the journal written after the next post to number its events consecutively from 1 with the new post at seq 4. Setup and all assertions included.", ["In-process mock product, no workerd or network; measures restore, replay and one post, not a deployed journal."], result))
+})

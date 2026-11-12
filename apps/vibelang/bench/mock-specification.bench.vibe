@@ -34,3 +34,22 @@ it("the mock agent requests each named specification reviewer with the poster's 
   }).run(slow)
   await runPromise(artifact("mock-agent-specification", "Vitest built-in bench; three fresh product MockFactory journeys ask the shipped mock agent for all four named specification reviews. Its poster-bound read supplies the current revision and registered review flows produce each literal LGTM/grade reply and matching journal entry. Require unchanged specification text, revision two, four sequence advances and exactly four new review records; initialization, scripted chunk delays and assertions included.", ["Shipped product mock mode, deterministic fixture reviewers, no actual Codex/Claude run, provider, backend or GitHub write. Whole four-review journey, not actual model review latency; three unwarmed callbacks."], result))
 })
+
+it("the mock agent answers a viewer's specification review refusal without changing the specification", async ({ bench }) => {
+  const result = await workload(bench, "mock-agent-specification-refused", "async", () => runPromise(scoped(effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.accounts!.choose("viewer")
+      const before = try factory.issues!.read()
+      try factory.post("review-refused", "one", "Guest", "Codex Astra, review the specification.")
+      try Stream.runDrain(factory.events("review-refused", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("15 seconds")))
+      const after = try factory.issues!.read()
+      const reply = (try factory.read("review-refused", 0)).entries.find(entry => entry.author === "agent")
+      try Effect.try(() => {
+        expect(reply).toMatchObject({ text: "Only contributors can request a specification review.", done: true, error: "" })
+        expect(after).toEqual(before)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("mock-agent-specification-refused", "Vitest built-in bench; actual mock agent and specification flows as a viewer. A named review request returns the exact permission explanation in a settled reply; complete issue state remains unchanged. Three fresh engines; scripted reply delays and assertions included.", ["Product mock mode, no model or GitHub operation."], result))
+})

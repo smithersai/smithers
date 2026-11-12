@@ -1,0 +1,135 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { githubMain } from "../worker/MainLog.vibe"
+import { storeOver } from "../worker/PublicReads.vibe"
+import { sandboxRole, writeActor } from "../worker/apiObjectDecision.vibe"
+import { serveWiki, WikiAuthority } from "../worker/Wiki.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, quick } from "./artifact.vibe"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import { make } from "../src/history/Sequencer.vibe"
+import { MainUnavailable } from "../src/history/flows.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { HttpRecording } from "@smthrs/testing"
+import { recordingPath } from "../test/support/github.vibe"
+import { submissionBase } from "../worker/SubmissionBase.vibe"
+
+error ObservationUnavailable
+
+it("a submission keeps its observed base across recovery and never binds a failed observation", async ({ bench }) => {
+  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("wiki"))))
+  const head = await runPromise(Schema.decodeUnknownEffect(Schema.Struct({ object: Schema.Struct({ sha: Schema.String }) }))(recording.exchanges[0]!.response.body))
+  const base = { repository: "codeplanesmithers/smithers-vibelang-e2e", branch: "main", sha: head.object.sha }
+  const result = await workload(bench, "submission-base-recovery", "async", () => runPromise(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const storage = kv as unknown as Storage
+    let observations = 0
+    const observe = () => sync(() => { observations++; return base })
+    const first = try submissionBase(storage, "one", observe)
+    const recovered = try submissionBase(storage, "one", () => die("an immutable base was observed twice"))
+    const ephemeral = try submissionBase(undefined, "ephemeral", observe)
+    const before = kv.kv.size
+    const failed = try Effect.result(submissionBase(storage, "retry", () => fail(new ObservationUnavailable())))
+    const afterFailure = kv.kv.size
+    const retried = try submissionBase(storage, "retry", observe)
+    try Effect.try(() => {
+      expect([first, recovered, ephemeral, retried]).toEqual(Array(4).fill(base))
+      expect(failed).toMatchObject({ _tag: "Failure", failure: { _tag: "ObservationUnavailable" } })
+      expect([observations, before, afterFailure, kv.kv.size]).toEqual([3, 1, 1, 2])
+    })
+  })).run(quick)
+  await runPromise(artifact("submission-base-recovery", "Vitest built-in bench; immutable submission-base storage over the real Node object KV adapter. Source metadata comes from wiki.json's recorded GitHub main ref. Bind once, recover without re-observing, observe without storage, fail an injected observer without writing, then retry and bind. Exact metadata, observer count and store sizes checked.", ["Recorded source metadata and a local observer callback; no provider request, write, network or repository latency. Setup/assertions included."], result))
+})
+
+it("cache eviction deletes the actual stored entry and signed callers keep their authority", async ({ bench }) => {
+  const result = await workload(bench, "worker-cache-and-authority", "async", () => runPromise(effect {
+    const storage = try Effect.try(() => objectStorage())
+    const cache = storeOver(storage)
+    try promise(() => storage.put("kept", { value: 1 }))
+    try cache.remove("kept")
+    const read = try cache.get("kept")
+    try Effect.try(() => {
+      expect(read).toBeUndefined()
+      expect(storage.kv.has("kept")).toBe(false)
+      expect(writeActor("7", "maintainer", "Ada", true)).toEqual({ role: "maintainer", name: "Ada", agent: true })
+      expect(writeActor("7", "contributor", "Ada", undefined)).toEqual({ role: "contributor", name: "Ada", agent: false })
+      expect(sandboxRole(true, "contributor")).toBe("contributor")
+    })
+  })).run(quick)
+  await runPromise(artifact("worker-cache-and-authority", "Vitest built-in bench; actual cache storage adapter deletes a present KV entry, readback verifies absence; signed human/agent role projection and admitted sandbox role retain exact authority.", ["Node KV host, no network, RPC or Cloudflare eviction latency."], result))
+})
+
+it("fault coverage: an unexpected History HTTP status becomes unavailable", async () => {
+  const reason = await runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      try HttpServer.serveEffect(succeed(HttpServerResponse.empty({ status: 500 })))
+      const address = (try HttpServer.HttpServer).address
+      const origin = address._tag === "UnixPathAddress" ? "" : `http://127.0.0.1:${address.port}`
+      provide LiveMythical(origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+        const error = try Effect.flip((try Mythical).publish())
+        try Effect.try(() => expect(error).toMatchObject({ _tag: "Unavailable", reason: "export answered 500" }))
+        return error._tag
+      }
+    }
+  }))
+  await runPromise(artifact("fault-coverage-history-status", "Counts only; LiveMythical export reaches a faulty loopback server that answers unexpected HTTP 500. Exact safe unavailable error checked.", ["Fault server, no successful backend simulation or timing observation."], { reason }))
+})
+
+it("History object refuses a disabled export and an unreadable main through its durable flows", async ({ bench }) => {
+  const result = await workload(bench, "history-object-export-and-fold-refusals", "async", () => runPromise(scoped(effect {
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+    const sequencer = try make(HistoryObject.storeOver(storage))
+    try sequencer.bootstrap(empty)
+    const main = { since: () => fail(new MainUnavailable({ reason: "offline" })) }
+    const principal = { role: "maintainer" as const, name: "Bench", agent: false }
+    const planned = try HistoryObject.write("retained-history", storage, sequencer, main, principal, "plan", { how: "append", epic: "", newEpic: "Measured", target: "", title: "Kept", task: "" })
+    const before = try sequencer.read()
+    const exported = try HistoryObject.write("retained-history", storage, sequencer, main, principal, "export", {})
+    const folded = try HistoryObject.write("retained-history", storage, sequencer, main, principal, "fold", {})
+    const after = try sequencer.read()
+    try Effect.try(() => {
+      expect(planned).toEqual({ id: "m1", folded: 0, refusal: null })
+      expect(exported).toEqual({ id: "", folded: 0, refusal: "unsupported" })
+      expect(folded).toEqual({ id: "", folded: 0, refusal: "unavailable" })
+      expect(after).toEqual(before)
+    })
+  }))).run(quick)
+  await runPromise(artifact("history-object-export-and-fold-refusals", "Vitest built-in bench; actual History object write host, engine and SQLite storage. A human maintainer asks Export while its repository is off and Fold while injected MainLog is unavailable. Exact refusal receipts and unchanged history checked.", ["Node SQLite; no live repository, model or Cloudflare scheduling. Refusal journey cost with setup included."], result))
+})
+
+it("fault coverage: an unaccounted first commit page and a lost next page refuse the fold", async () => {
+  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("main-log"))))
+  const counts = await runPromise(effect {
+    const pages: Array<string> = []
+    const recorded = try Effect.try(() => HttpRecording.replay(recording))
+    const client = HttpClient.make(request => {
+      pages.push(request.url)
+      if (pages.length > 1) return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+      return recorded.execute(request)
+    })
+    const answer = try Effect.flip(githubMain("smithersai/effect", client).since("missing-cursor"))
+    try Effect.try(() => {
+      expect(answer.reason).toBe("GitHub unreachable")
+      expect(pages).toHaveLength(2)
+      expect(pages[1]).toContain("page=2")
+    })
+    return { pages: pages.length }
+  })
+  await runPromise(artifact("fault-coverage-main-pagination", "Counts only; the recorded real 100-commit first page from main-log.json does not contain the supplied folded cursor, and the faulty HttpClient fails page two. The actual main reader advances once and refuses GitHub unreachable.", ["Recorded first page and injected transport failure, no network or timing observation."], counts))
+})
+
+it("fault coverage: malformed wiki JSON is rejected before provider access", async () => {
+  const status = await runPromise(effect {
+    const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.post("http://wiki.invalid/api/wiki").pipe(HttpClientRequest.bodyText("{", "application/json"))))
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+    const answer = try serveWiki("body-refusal", storage).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provideService(WikiAuthority, { current: () => succeed(undefined) }), Effect.provide(FetchHttpClient.layer))
+    try Effect.try(() => expect(answer.status).toBe(400))
+    return answer.status
+  })
+  await runPromise(artifact("fault-coverage-wiki-body", "Counts only; real HTTP request body decoder rejects malformed JSON before a provider operation, exact 400 checked.", ["Node request adapter, no network or timing observation."], { status }))
+})

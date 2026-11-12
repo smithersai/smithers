@@ -15,6 +15,7 @@ import { view } from "../src/web/view.vibe"
 import { container, remove } from "../test/support/browser.ts"
 import { click, focusedId, focusedIndex, hrefs, keyOn, press, steps } from "./dom-input.ts"
 import { artifact, workload, slow } from "./artifact.vibe"
+import { faultyFactory, trace, type Fault } from "../test/support/FaultyFactory.vibe"
 
 const flags = { session: "links", name: "Ada", mode: "mock" as const }
 const ROADMAP_DRAFT = "Draft an edit to the roadmap wiki page."
@@ -23,7 +24,7 @@ const REVIEW_LINK = ".sui-chat-bubble a[href='#wiki-draft-roadmap']"
 const drafted = `${(pages.find(entry => entry.id === "roadmap")?.source ?? "").trimEnd()}\n\n${ROADMAP_DRAFT}\n`
 
 /** The real app embedded in a fresh container; `latest` is the model as update leaves it, `send` the test channel. */
-effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" })) {
+effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), factory: Layer.Layer<Factory> = MockFactory) {
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
   const input = try Effect.try(() => steps<Message>())
   let latest: Model = init(flags).model
@@ -33,7 +34,7 @@ effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions(
     update: (model, message) => { const next = update(model, message); latest = next.model; return next },
     subscriptions: Subscription.aggregate(subscriptions(node.ownerDocument, node.ownerDocument), Subscription.make<Model, Message>()(() => ({
       steps: Subscription.persistentEntry(Dom.streamFromEvent({ target: input.target, type: "step", mapEvent: input.read })),
-    }))), resources: actions.pipe(Layer.provideMerge(MockFactory)), container: node,
+    }))), resources: actions.pipe(Layer.provideMerge(factory)), container: node,
   }))
   try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
   const send = (make: () => Message) => Effect.try(() => input.send(make()))
@@ -45,6 +46,49 @@ effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions(
 }
 
 const wait = (check: () => void) => promise(() => vi.waitFor(check, { timeout: 15000, interval: 5 }))
+
+it("fault coverage: mounted subscriptions deliver sandbox, role, event and tour failures", { timeout: 120_000 }, async () => {
+  const passed: Array<string> = []
+  for (const fault of ["sandbox-read", "roles", "disconnect", "end-tour-unavailable", "tour-refuse", "refuse"] as const satisfies ReadonlyArray<Fault>) {
+    await runPromise(scoped(effect {
+      const observation = trace()
+      const { latest: current, send } = try app(undefined, faultyFactory(fault, observation))
+      if (fault === "roles") {
+        try send(() => Message.ChoseIdentity({ role: "contributor" }))
+        try wait(() => expect(accountOf(current()).error).toContain("Connection lost"))
+      } else if (fault === "sandbox-read") {
+        try send(() => Message.ChoseIdentity({ role: "contributor" }))
+        try wait(() => expect(accountOf(current()).identity.role).toBe("contributor"))
+        try send(() => Message.ClickedAsk())
+        try send(() => Message.UpdatedDraft({ value: "hello" }))
+        try send(() => Message.SubmittedDraft())
+        try wait(() => expect(current().client.conversation.entries.some(entry => entry.author === "agent" && entry.done)).toBe(true))
+        try send(() => Message.ClickedSandboxes())
+        try wait(() => expect(current().sandboxError).toBe("sandbox unavailable"))
+      } else if (fault === "end-tour-unavailable") {
+        try send(() => Message.ClickedLearnMore())
+        try wait(() => expect(current().tourClient?.conversation.walkthrough?.step ?? 0).toBeGreaterThan(0))
+        try send(() => Message.ClickedPauseTour())
+        try wait(() => expect(current().theatre.paused).toBe(true))
+        const before = current().theatre.step
+        try send(() => Message.ClickedEndTour())
+        try wait(() => { expect(observation.faulted).toBe(true); expect(current().tour).toBe(true); expect(current().theatre.step).toBe(before); expect(current().theatre.paused).toBe(true); expect(current().docs).toBe("pane") })
+        try send(() => Message.ClickedEndTour())
+        try wait(() => { expect(observation.delivered.some(event => event.type === "TourEnded")).toBe(true); expect(current().tour).toBe(false) })
+      } else if (fault === "tour-refuse") {
+        try send(() => Message.ClickedLearnMore())
+        try wait(() => expect(current().tourError).toBe("busy"))
+      } else {
+        try send(() => Message.UpdatedDraft({ value: "install" }))
+        try send(() => Message.SubmittedDraft())
+        if (fault === "refuse") try wait(() => expect(current().client.pending[0]?.error).toBe("Factory closed"))
+        else try wait(() => expect(current().stream).toBe("failed"))
+      }
+      passed.push(fault)
+    }))
+  }
+  await runPromise(artifact("fault-coverage-mounted-chat", "Counts only; actual mounted Foldkit runtime, subscriptions, Commands and update over the test build's existing faulty Factory Effect services. Sandbox read, role stream, conversation stream, tour-end recovery, refused tour and refused post must reach their exact visible model failure. No intercepted request.", ["happy-dom test host, no timing observation or paint claim."], { passed }))
+})
 
 it("a person follows a wiki link and opens the agent's drafted edit from its answer", async ({ bench }) => {
   const runs: Array<{ followed: string; ignored: boolean; opened: string; editor: string; draft: string }> = []
@@ -230,8 +274,16 @@ it("a lost action follow reconnects and delivers the current run and its cancell
     try wait(() => expect(current().actions?.loading).toBe(false))
     try send(() => Message.ClickedRunAction())
     try wait(() => {
+      expect(counts.follows).toBe(1)
+      expect(current().actions?.disconnected).toEqual([current().actions?.runs[0]?.id])
+      expect(page.textContent).toContain("Connection lost")
+      expect(page.textContent).toContain("Disconnected")
+    })
+    try Effect.try(() => Array.from(page.querySelectorAll("button")).find(button => button.textContent === "Reconnect")!.click())
+    try wait(() => {
       expect(counts.follows).toBe(2)
       expect(counts.emissions).toBeGreaterThanOrEqual(1)
+      expect(current().actions?.disconnected).toEqual([])
       expect(current().actions?.runs[0]?.state).toBe("running")
     })
     const { id, flow } = current().actions!.runs[0]!
@@ -245,5 +297,5 @@ it("a lost action follow reconnects and delivers the current run and its cancell
     })
     try Effect.try(() => expect(counts.follows).toBe(2))
   }))).run(slow)
-  await runPromise(artifact("web-action-follow-recovery", "Vitest built-in bench: the actual Foldkit app/view/update/subscriptions over product MockFactory and MockActions. A typed faulty Actions service delegates all operations to MockActions, fails only the first follow, then follows the real run. Start Tour; require exactly two subscriptions and a delivered current running snapshot after the production two-second reconnect; open the run card, cancel, and require a second delivered snapshot and the Cancelled card. No message or HTTP request is intercepted. Three fresh scoped apps; setup, reconnect wait and all assertions included.", ["happy-dom execution, no browser layout/paint or network latency. The existing two-second stream reconnect dominates this observation; this is not throughput."], result))
+  await runPromise(artifact("web-action-follow-recovery", "Vitest built-in bench: the actual Foldkit app/view/update/subscriptions over product MockFactory and MockActions. A typed faulty Actions service delegates all operations to MockActions, fails only the first follow, then follows the real run. Start Tour; require one failed subscription, the run shown Disconnected with the Connection lost alert, then the person clicks Reconnect; require exactly two subscriptions and a delivered current running snapshot; open the run card, cancel, and require a second delivered snapshot and the Cancelled card. No message or HTTP request is intercepted. Three fresh scoped apps; setup, reconnect click and all assertions included.", ["happy-dom execution, no browser layout/paint or network latency. Reconnect is a click by the person, not a timed retry; this is not throughput."], result))
 })

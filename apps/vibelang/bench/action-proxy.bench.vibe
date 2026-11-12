@@ -4,6 +4,9 @@ import { deferredActions } from "../src/actions/agent.vibe"
 import { ActionDevice } from "../src/actions/execution.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { Cell, FlowBinding } from "@smthrs/harness"
+import { actionTools } from "../src/actions/tools.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 const settled = (actions: Actions.Shape, id: string) => Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state !== "running" && run.state !== "queued"), Stream.timeout("15 seconds")))
@@ -48,6 +51,33 @@ it("deferred action binding forwards product runs and cancels unbound calls", as
     }))
   }).run(slow)
   await runPromise(artifact("action-deferred-binding", "Vitest built-in bench; fresh deferred selection proxy over real product MockActions/MockFactory each callback. Cancel a command and follow before binding, bind, list commands/catalog, post and await settlement, read, rerun and inspect exact run order, start/cancel a tour and refuse a missing run. Three unwarmed callbacks; exact outputs asserted inside timing.", ["Product memory host, no provider/network/real inference. Includes two intentional 20 ms cancellation deadlines, scripted reply delays and service initialization; this is a whole binding/recovery journey, not per-call proxy CPU cost."], result))
+})
+
+it("an agent tool starts a tour without an announcement sink and its end settles the run", async ({ bench }) => {
+  const result = await workload(bench, "action-tool-tour-end", "async", () => runPromise(scoped(effect {
+    provide MockActions({ role: "contributor", actor: "agent", conversation: "tool-tour" }).pipe(Layer.provideMerge(MockFactory)) {
+      const actions = try Actions
+      const factory = try Factory
+      const catalog = try FlowBinding.catalog([actionTools(actions)])
+      const start = catalog.bindings.get("vibelang/actions/Start")!
+      const call = try Effect.try(() => new Cell.Call({
+        flowName: "vibelang/actions/Start", input: { flow: "vibelang/Tour", input: {} }, capabilities: [],
+        effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }, placement: Option.none(),
+        identity: new Cell.CallIdentity({ session: "bench", frame: 0, cell: "tour", ordinal: 0, declaration: Cell.declarationDigest(start.descriptor), layers: [] }),
+      }))
+      const answer = try start.run(call)
+      const runs = try actions.runs("vibelang/Tour")
+      try Stream.runDrain(factory.events("tool-tour", 0).pipe(Stream.takeUntil(event => event.type === "TourStarted"), Stream.timeout("10 seconds")))
+      try factory.endTour("tool-tour")
+      const end = try settled(actions, runs[0]!.id)
+      try Effect.try(() => {
+        expect(answer.outcome).toBe("success")
+        expect(runs).toHaveLength(1)
+        expect(Option.isSome(end) && end.value.state).toBe("passed")
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("action-tool-tour-end", "Vitest built-in bench; actual agent Start tool binding without an announcement sink, product MockActions/Factory and durable Tour. Follow TourStarted, explicitly end the tour and require the action passed. Three fresh engines; scripted waits and assertions included.", ["Product mock mode; no provider or real model. No browser layout."], result))
 })
 
 it("an embedded action host without a device refuses every sandbox operation", async ({ bench }) => {

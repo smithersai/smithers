@@ -4328,3 +4328,390 @@ are retained in `~/vl/vl-bench-evidence/resume10/results/` and the lane report. 
 as specification-only. Both merged gates exit 1; 141 files miss at least one strict metric after the live merge.
 No threshold, baseline or source exclusion changed. The full 100% goal remains open; VIP-43/release still owns the
 known specification-only prerequisite, and the additional listed gaps require separate benchmark work.
+
+
+## Resume 11: retained runtime paths (2026-11-12)
+
+The frozen first collection on production base `680039b8`, overlay `b13c3afffb184fc13b482d234b44d9de6f2b54b7`, covers **9,185/9,354** src/worker lines (98.19%). It passes 253 checks and fails one obsolete workerd health assertion (five skips): History now finishes startup at `publish`. Its corrected workload passes separately. This is a complete diagnostic map, not a fully passing suite. The strict four-metric gate remains unchanged and exits 1. No unit/fuzz counters or mismatching old deployment counters join it. Exact source, generated assets, maps, logs and artifacts are retained in `~/vl/vl-bench-evidence/resume11/full-attempt9/`.
+
+The original 242-position inventory has 132 proof-only positions, 108 reachable runtime gaps and two engine traps. Every one of those 108 runtime gaps is closed in this map. Its 169 open positions are 132 proof-only, four invariant traps, 26 requiring the actual deployed bindings/counter handler, and seven new local guard/sweep paths. Their source positions and reasons are in [0017](decisions/0017-benchmarks.md). New workloads close the guard/sweep paths before the final full collection; the deployed collection awaits the lead on matching source. Nothing is excluded.
+
+### Uninstrumented observations
+
+A separate Node26 timing run passed 13 files / 46 checks before this collection. Observations below are from 2026-11-12 14:32–14:36 UTC (06:32–06:36 PST), Linux Cloudflare box, AMD EPYC, four logical CPUs, Node 26.5.0, Vitest 5.0.0, Vite 8.3.4, VibeLang 0.0.12, Effect 4.1.1 and Playwright 1.62.1. Browser timing artifacts identify the minified timing build; e2e fault artifacts contain counts only. Values are milliseconds per complete validated callback or named browser action. p50 and max summarize only these retained samples; no tail or regression claim. TestClock pauses are simulated, and replayed providers/Containers do not measure remote latency.
+
+| Workload / metric | Samples | p50 ms | Max ms | Artifact |
+| --- | ---: | ---: | ---: | --- |
+| `stale-empty-issue-view` | 32 | 2.760 | 8.229 | `2026-11-12T14-32-57.026Z-stale-empty-issue-view.json` |
+| `history-view-matrix` | 5 | 21.613 | 22.883 | `2026-11-12T14-32-57.282Z-history-view-matrix.json` |
+| `issues-reducer` | 365 | 0.264 | 0.915 | `2026-11-12T14-32-57.474Z-issues-reducer.json` |
+| `issues-view-matrix` | 5 | 34.842 | 38.543 | `2026-11-12T14-32-57.797Z-issues-view-matrix.json` |
+| `wiki-view-matrix` | 10 | 10.260 | 11.756 | `2026-11-12T14-32-58.003Z-wiki-view-matrix.json` |
+| `actions-view-matrix` | 15 | 7.127 | 8.861 | `2026-11-12T14-32-58.205Z-actions-view-matrix.json` |
+| `main-reducer-boundaries` | 337 | 0.253 | 3.188 | `2026-11-12T14-32-58.397Z-main-reducer-boundaries.json` |
+| `issue-chat-cards` | 18 | 5.601 | 8.069 | `2026-11-12T14-32-58.594Z-issue-chat-cards.json` |
+| `docs-pane-view` | 20 | 4.554 | 7.127 | `2026-11-12T14-32-58.787Z-docs-pane-view.json` |
+| `web-wiki-links/result` | 3 | 844.403 | 872.040 | `2026-11-12T14-33-08.316Z-web-wiki-links.json` |
+| `web-account-menu-keys/result` | 3 | 640.359 | 651.459 | `2026-11-12T14-33-10.309Z-web-account-menu-keys.json` |
+| `web-tour-keys/result` | 3 | 604.124 | 605.395 | `2026-11-12T14-33-12.186Z-web-tour-keys.json` |
+| `web-tour-pause` | 3 | 651.026 | 653.219 | `2026-11-12T14-33-14.209Z-web-tour-pause.json` |
+| `web-action-clock` | 3 | 1611.786 | 1621.258 | `2026-11-12T14-33-19.119Z-web-action-clock.json` |
+| `web-action-follow-recovery` | 3 | 2610.361 | 2615.575 | `2026-11-12T14-33-27.015Z-web-action-follow-recovery.json` |
+| `provider-host-unsupported-operation` | 3 | 114.030 | 252.372 | `2026-11-12T14-33-34.171Z-provider-host-unsupported-operation.json` |
+| `provider-guards` | 154 | 0.603 | 3.837 | `2026-11-12T14-33-34.369Z-provider-guards.json` |
+| `provider-host-refusals` | 3 | 2.572 | 7.838 | `2026-11-12T14-33-34.436Z-provider-host-refusals.json` |
+| `history-publisher-paced` | 5 | 1190.269 | 1303.002 | `2026-11-12T14-33-48.895Z-history-publisher-paced.json` |
+| `main-ancestry-boundary` | 4388 | 0.018 | 1.796 | `2026-11-12T14-33-53.716Z-main-ancestry-boundary.json` |
+| `history-outside-seed` | 3 | 123.706 | 732.431 | `2026-11-12T14-33-54.735Z-history-outside-seed.json` |
+| `bootstrap-retained-inputs` | 1621 | 0.047 | 7.373 | `2026-11-12T14-33-54.931Z-bootstrap-retained-inputs.json` |
+| `retained-reducer-failures` | 697 | 0.127 | 1.196 | `2026-11-12T14-33-55.131Z-retained-reducer-failures.json` |
+| `retained-text-decisions` | 1630 | 0.054 | 0.815 | `2026-11-12T14-33-55.328Z-retained-text-decisions.json` |
+| `submission-base-recovery` | 566 | 0.155 | 5.813 | `2026-11-12T14-33-57.184Z-submission-base-recovery.json` |
+| `worker-cache-and-authority` | 872 | 0.109 | 3.855 | `2026-11-12T14-33-57.390Z-worker-cache-and-authority.json` |
+| `history-object-export-and-fold-refusals` | 5 | 261.353 | 277.079 | `2026-11-12T14-33-59.700Z-history-object-export-and-fold-refusals.json` |
+| `action-deferred-binding` | 3 | 98.062 | 171.435 | `2026-11-12T14-34-03.160Z-action-deferred-binding.json` |
+| `action-tool-tour-end` | 3 | 28.887 | 36.006 | `2026-11-12T14-34-03.320Z-action-tool-tour-end.json` |
+| `action-device-unbound` | 3 | 0.243 | 0.666 | `2026-11-12T14-34-03.385Z-action-device-unbound.json` |
+| `history-browser-commands` | 3 | 34.222 | 110.243 | `2026-11-12T14-34-04.649Z-history-browser-commands.json` |
+| `history-browser-command-faults` | 3 | 1.371 | 3.663 | `2026-11-12T14-34-04.723Z-history-browser-command-faults.json` |
+| `history-signed-startup-export` | 3 | 5011.944 | 5299.915 | `2026-11-12T14-34-27.123Z-history-signed-startup-export.json` |
+| `probe-direct-and-expiry` | 3 | 1791.754 | 1890.773 | `2026-11-12T14-35-22.204Z-probe-direct-and-expiry.json` |
+| `delegated-read-fallback` | 3 | 873.372 | 1180.839 | `2026-11-12T14-35-26.647Z-delegated-read-fallback.json` |
+| `mock-agent-specification` | 3 | 311.817 | 400.166 | `2026-11-12T14-35-28.942Z-mock-agent-specification.json` |
+| `mock-agent-specification-refused` | 3 | 115.415 | 118.202 | `2026-11-12T14-35-29.363Z-mock-agent-specification-refused.json` |
+| `local-browser/samples.commandKMs` | 3 | 61.843 | 62.823 | `2026-11-12T14-36-22.347Z-local-browser.json` |
+| `local-browser/samples.firstRenderMs` | 3 | 395.892 | 411.801 | `2026-11-12T14-36-22.347Z-local-browser.json` |
+| `local-browser/samples.keystrokeMs` | 3 | 44.299 | 45.205 | `2026-11-12T14-36-22.347Z-local-browser.json` |
+
+Methods and limits are retained per artifact:
+
+**stale-empty-issue-view** — Vitest built-in bench; actual view over an empty stale issue projection, once with a representable timestamp and once beyond Date's range. Requires Stale and the open-issue empty state; invalid Date must render safely. Limits: Foldkit DOM scene; no layout, network or cache revalidation timing.
+
+**history-view-matrix** — Vitest built-in bench; Foldkit scenes render the history list, epic, commit and plan pages across roles, states, filters, errors and dialog variants with exact control presence/absence assertions; refusal wording table included. Limits: Scene rendering without layout/paint; the same journeys with real events run in Chromium and workerd benchmarks.
+
+**issues-reducer** — Vitest built-in bench; the full issues control table: navigation, filters, wizard steps with each validation, per-role forms and dialogs, saved-action retry identity and recovery keys, and request construction. Limits: Pure reducer; the durable flows and views are benchmarked separately.
+
+**issues-view-matrix** — Vitest built-in bench; Foldkit scenes over the real app update/view render the issues pane list kinds, state and query filters, detail with notes and VIP review, commit/split/link dialogs, new and VIP wizard steps, the role matrix, connect gating, loading, failure and inline errors. Limits: Scene rendering without layout/paint or a GitHub call; the write boundary runs in the issues fixture and workerd benchmarks.
+
+**wiki-view-matrix** — Vitest built-in bench; Foldkit scenes over the real update/view render the wiki pane's index, decision chrome, loading skeleton, error with retry, filtered and empty navigation and tour-maximized state. Limits: Scene rendering without layout/paint; the durable open flow is benchmarked through the mock factory and workerd.
+
+**actions-view-matrix** — Vitest built-in bench; Foldkit scenes render the actions pane collapsed with its latest badge, open and empty, the failed-run trace, per-selection run control and maximized state; merge/selection/completion decisions checked against slower or terminal snapshots. Limits: Scene rendering and pure decisions; live runs stream through the mock and workerd action benchmarks.
+
+**main-reducer-boundaries** — Vitest built-in bench; issue connection state with resume links, durable wiki visits with pane/people restoration and epoch reuse, action dispatch gating by selection and in-flight starts, slash dispatch clearing the draft, and sandbox start/stop/terminal controls with busy and blank-command refusals; exact emitted commands checked. Limits: Reducer and command construction; the commands' durable execution is benchmarked through the mock factory.
+
+**issue-chat-cards** — Vitest built-in bench; four DOM scenes through the real web view render a settled reply's issue card with one and two children, a closed leaf and a blank link label. Assert child counts, linked identities and accessible open controls every callback; event reduction and fixture creation occur before timing. Limits: Happy DOM and Foldkit scene overhead, not Chromium layout or paint. No network/provider writes; issue records are product fixture data. The timed corpus renders fixed small cards.
+
+**docs-pane-view** — Vitest built-in bench; Foldkit scenes over the real update/view. The model is the chat after a PaneOpened event for docsPage('/setup'), the event vibelang/docs/open records. Renders the docs pane, maximized, and maximized during a tour; checks the page label, the toggle's name and the tour's driving mark. Limits: Scene rendering without layout, paint or the iframe's network load. Only a live model calls vibelang/docs/open (the mock agent and people do not), so this starts from the recorded event rather than a reply.
+
+**web-wiki-links** — Vitest built-in bench, happy-dom with the actual app: Foldkit runtime, update, view and the shipped subscriptions over the product MockFactory. A maintainer opens /wiki/index, Ctrl-clicks a page link (ignored), clicks it (the pane follows), asks the mock agent to open the designs wiki (the pane opens designs/index), asks it to draft an edit to the roadmap, and clicks the answer's Review link: the editor opens on the roadmap with the drafted text (the page with the request appended). Identity, the wiki location and the post enter through one test message channel. New scoped runtime each sample; 3 samples. Limits: DOM runtime, no layout or paint. The mock agent's 25 ms scripted chunk delays are included. A synthetic MouseEvent stands in for a pointer; no browser default action runs.
+
+**web-account-menu-keys** — Vitest built-in bench, happy-dom with the actual app over the product MockFactory: a maintainer opens the account menu with a click, then ArrowDown, ArrowUp, ArrowUp and ArrowDown move focus between People and Sign out, and Enter leaves it. Focused element after each key checked, menu still open. New scoped runtime each sample; 3 samples. Limits: DOM runtime, no layout or paint. Synthetic KeyboardEvents stand in for a keyboard. Each arrow step includes the wait for its focus (5 ms polling); the non-arrow step includes a 50 ms settle.
+
+**web-tour-keys** — Vitest built-in bench, happy-dom with the actual app over the product MockFactory: Learn more starts the tour and its event stream delivers events; Tab focuses the first theatre control and Shift+Tab wraps to the last. The tour's events, its first stop and the focused control are checked. New scoped runtime each sample; 3 samples. Limits: DOM runtime, no layout, paint or speech. Synthetic KeyboardEvents stand in for a keyboard. Each step includes the wait for its result (5 ms polling).
+
+**web-tour-pause** — Vitest built-in bench, happy-dom with the actual app over the product MockFactory: Learn more, Space as soon as the tour's first event arrives (before the walkthrough's first step, which the sequencer refuses), then Space once the walkthrough runs. Checked every sample: the early press shows no error and leaves the tour playing; the second pauses it. Limits: happy-dom: no layout, paint or speech; a synthetic keydown stands in for the keyboard. The early press must land before the mock drives step 1 (about 50 ms after the first event on nyc-01); a sample where it lands later fails rather than passing silently.
+
+**web-action-clock** — Vitest built-in bench, real Foldkit runtime/update/view/subscriptions in happy-dom over product MockFactory and MockActions. A maintainer opens Actions, selects and starts Tour, waits for the running card's actual clock subscription to advance elapsed time by at least one second, then cancels and checks the terminal card. No clock message is injected. Three fresh scoped apps; setup, real one-second tick wait, assertions and cancellation included. Limits: DOM execution without browser layout/paint. The tour and ledger are in memory, the agent scripted. This measures end-to-end card feedback with a deliberate timer wait; it is not clock processing throughput.
+
+**web-action-follow-recovery** — Vitest built-in bench: the actual Foldkit app/view/update/subscriptions over product MockFactory and MockActions. A typed faulty Actions service delegates all operations to MockActions, fails only the first follow, then follows the real run. Start Tour; require exactly two subscriptions and a delivered current running snapshot after the production two-second reconnect; open the run card, cancel, and require a second delivered snapshot and the Cancelled card. No message or HTTP request is intercepted. Three fresh scoped apps; setup, reconnect wait and all assertions included. Limits: happy-dom execution, no browser layout/paint or network latency. The existing two-second stream reconnect dominates this observation; this is not throughput.
+
+**provider-host-unsupported-operation** — Vitest built-in bench; production GitHub issue host behind its real delegation connection, reading the committed native issue-123 observation from issues.json. A local specification operation at this boundary is refused unsupported. Every GET in the read window must be consumed; no recorded write exists in that window. Three fresh scoped hosts and engines, setup/assertions included. Limits: Replayed provider data, no GitHub request, write or inference. This is a host-boundary refusal; the app routes specification operations to its local specification flows.
+
+**provider-guards** — Vitest built-in bench; exact safe issue/wiki error classification (precedence, retry interval, no provider detail), malformed/mismatched/noncanonical/unsafe VIP markers and invalid author, configured wiki file path and traversal/generated-index refusal. Every callback checks its outputs. Limits: Pure guards and no-request early returns; no successful GitHub review validation, network, credentials or writes.
+
+**provider-host-refusals** — Vitest built-in bench; actual GitHub issue/wiki host closures with an injected unavailable Effect HttpClient and changing principal. Missing key, credential connection, unavailable draft, unknown page, empty draft and anonymous write failures asserted. Wiki text persists before Connect. All writes make zero requests; one public read reaches the failing transport exactly once. Three fresh SQLite/KV worlds, setup/assertions included. Limits: No request interception, external request, real credential, OAuth or GitHub mutation. Deliberate transport failure establishes refusal behavior only; successful provider paths remain unmeasured.
+
+**history-publisher-paced** — Vitest built-in bench; actual History publisher, durable execution host and SQLite storage over the product mock repository. Two folded commits, one-tree/two-object batches, atomic publication, a quiet round and a new main commit. Exact refs, unchanged quiet writes, folded SHA and batch bounds checked. TestClock advances durable alarms. Limits: In-memory repository and SQLite host adapter; no GitHub, Cloudflare scheduling or wall-clock pacing claim. Simulated pauses; setup and correctness checks included.
+
+**main-ancestry-boundary** — Vitest built-in bench; first-parent cursor plus a merge side branch. An unlisted parent already in the cursor's ancestry is accepted in exact side-before-head order; an unlisted new parent refuses the delta; a cursor at head yields none. Literal id/order assertions included. Limits: Pure commit-graph policy; no provider, repository process or network.
+
+**history-outside-seed** — Vitest built-in bench; actual default MockMythical seed and the three real outside commits retained in AFTER_SEED. Fold twice, search each native title and read its mythical detail. Require three folds then zero, the exact final main, each native SHA and landed state. Three fresh engines; seed loading, projections and assertions included. Limits: Shipped mock history over memory storage; fixed native commit metadata, no GitHub read or repository mutation.
+
+**bootstrap-retained-inputs** — Vitest built-in bench; a four-commit bootstrap with repeated titles, a revert, regenerated documentation, continued evidence, and a running queue entry; exact fold ownership and notes. A malformed fold is refused on replay. Limits: Synthetic commit metadata; no repository process or GitHub operation. Assertions included.
+
+**retained-reducer-failures** — Vitest built-in bench; actual update arms for retained media failures, lost tour events, current/stale sandbox reads and writes, and Actions run/cancel/load failures and Retry. Exact state and emitted command names checked. Limits: Reducer cost only; injected service faults and Chromium execution are collected separately.
+
+**retained-text-decisions** — Vitest built-in bench; runtime wiki labels/field ordering, bare conventional scopes, punctuation trimming, surrogate-safe title truncation, absent trailer/paragraph, role/timeline sentinels and decimal validation. Literal answers checked inside each callback. Limits: Pure runtime policy functions; recursive specification counterparts are deliberately not executed.
+
+**submission-base-recovery** — Vitest built-in bench; immutable submission-base storage over the real Node object KV adapter. Source metadata comes from wiki.json's recorded GitHub main ref. Bind once, recover without re-observing, observe without storage, fail an injected observer without writing, then retry and bind. Exact metadata, observer count and store sizes checked. Limits: Recorded source metadata and a local observer callback; no provider request, write, network or repository latency. Setup/assertions included.
+
+**worker-cache-and-authority** — Vitest built-in bench; actual cache storage adapter deletes a present KV entry, readback verifies absence; signed human/agent role projection and admitted sandbox role retain exact authority. Limits: Node KV host, no network, RPC or Cloudflare eviction latency.
+
+**history-object-export-and-fold-refusals** — Vitest built-in bench; actual History object write host, engine and SQLite storage. A human maintainer asks Export while its repository is off and Fold while injected MainLog is unavailable. Exact refusal receipts and unchanged history checked. Limits: Node SQLite; no live repository, model or Cloudflare scheduling. Refusal journey cost with setup included.
+
+**action-deferred-binding** — Vitest built-in bench; fresh deferred selection proxy over real product MockActions/MockFactory each callback. Cancel a command and follow before binding, bind, list commands/catalog, post and await settlement, read, rerun and inspect exact run order, start/cancel a tour and refuse a missing run. Three unwarmed callbacks; exact outputs asserted inside timing. Limits: Product memory host, no provider/network/real inference. Includes two intentional 20 ms cancellation deadlines, scripted reply delays and service initialization; this is a whole binding/recovery journey, not per-call proxy CPU cost.
+
+**action-tool-tour-end** — Vitest built-in bench; actual agent Start tool binding without an announcement sink, product MockActions/Factory and durable Tour. Follow TourStarted, explicitly end the tour and require the action passed. Three fresh engines; scripted waits and assertions included. Limits: Product mock mode; no provider or real model. No browser layout.
+
+**action-device-unbound** — Vitest built-in bench; resolve the product's default embedded ActionDevice and call start, stop and command, checking all three exact typed forbidden refusals every callback. Three unwarmed callbacks. Limits: Default service refusal overhead only; no device binding, durable engine, container, network or request interception. Bound-device workflows are benchmarked separately.
+
+**history-browser-commands** — Vitest built-in bench; actual History Command effects over MockMythical's memory engine from empty history. Outline, Plan, epic/search, Start/Note/Approve/Fold, commit/missing detail and Export; exact messages, retained fields, notes, fold SHA, six-event outline, exported git identity and export reducer busy/settled state checked. Three fresh scoped engines, assertions included. Limits: Shipped product mock main and memory git exporter, no GitHub mutation, network, OAuth or actual repository fold. Command Effects without browser layout/DOM focus.
+
+**history-browser-command-faults** — Vitest built-in bench; typed faulty Effect Mythical service, four browser reads and six writes including Export under both permission and transport failures. All exact message/reason projections and redaction checked. Three full corpora, setup/assertions included. Limits: Deliberate service failures, no request interception or successful provider simulation; no network, repository writes or model.
+
+**history-signed-startup-export** — Vitest built-in bench; mounted happy-dom History startup, real loopback Accounts and History API over SQLite and the product MockMythical. Session and grant stream each fail once in the injected client, recover after the production two-second waits, then grants change contributor to maintainer without reload. Click Export and require the returned git identity in the page. Three fresh scoped hosts; waits, DOM observation and assertions included. Limits: No layout/paint, OAuth or GitHub write. Memory git exporter and shipped mock history, real local HTTP. Full recovery journey timing includes two retry waits.
+
+**probe-direct-and-expiry** — Vitest built-in bench; existing workerd probe host, direct start/command/lease/status/checkpoint/restore/stop script recorded through the Container seam, then replayed on another machine with every call consumed. A sandbox whose 1.5-second owner expires is swept through account.meter. Exact script answers, zero replay remainder and stopped compute checked. Host startup outside timing; owner deadline wait included. Limits: Real local workerd and SQLite, product in-memory Container, whose calls are recorded/replayed here; no Cloudflare Container or network latency claim.
+
+**delegated-read-fallback** — Vitest built-in bench; production HTTP/durable issue and wiki reads over SQLite and the real smithers.sh connection host. Provider GET bytes come from issues.json/wiki.json. A current delegation reads successfully; an ended id is refused by the connection host, forgotten once, and falls back to the identical anonymous projection. Three fresh four-read corpora, setup/assertions included. Limits: Strict replayed GitHub answers, no network, provider write or GitHub latency. Fixture-only local connection authority; no OAuth claim.
+
+**mock-agent-specification** — Vitest built-in bench; three fresh product MockFactory journeys ask the shipped mock agent for all four named specification reviews. Its poster-bound read supplies the current revision and registered review flows produce each literal LGTM/grade reply and matching journal entry. Require unchanged specification text, revision two, four sequence advances and exactly four new review records; initialization, scripted chunk delays and assertions included. Limits: Shipped product mock mode, deterministic fixture reviewers, no actual Codex/Claude run, provider, backend or GitHub write. Whole four-review journey, not actual model review latency; three unwarmed callbacks.
+
+**mock-agent-specification-refused** — Vitest built-in bench; actual mock agent and specification flows as a viewer. A named review request returns the exact permission explanation in a settled reply; complete issue state remains unchanged. Three fresh engines; scripted reply delays and assertions included. Limits: Product mock mode, no model or GitHub operation.
+
+**local-browser** — Serial Chromium desktop runs from nyc-01. First render: fresh context navigation to visible heading. Command-K: key dispatch to visible modal and focused textbox. Keystroke: key dispatch to input value. API: wall time at client; first event/visible answer delta and settlement from numbered SSE events. All raw samples retained; assertions included; no tail percentile claimed. Limits: Product mock mode, fresh browser context marked as a returning visitor to suppress the automatic tour, shared browser/OS caches and automation overhead; no forced cold cache.
+
+The delegated-read callback also includes two invalid-signature refusals along with four reads; all six requests are included in that timing. Its artifact description is clarified in the final workload. Mounted History recovery includes two production two-second reconnect waits; that is an intentional recovery journey, not throughput.
+
+### Per-file diagnostic comparison
+
+Resume 10 includes its source-matching deployed counters; this newer local cohort does not. Different source denominators and evidence cohorts remain explicit.
+
+| File | Resume 10 lines | Resume 11 lines | Statements | Functions | Branches | Uncovered positions |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `src/actions/Actions.vibe` | 4/4 | 7/7 | 7/7 | 1/1 | 2/2 | — |
+| `src/actions/LiveActions.vibe` | 43/43 | 42/42 | 48/53 | 21/25 | 16/21 | — |
+| `src/actions/MockActions.vibe` | 111/113 | 112/112 | 140/148 | 36/39 | 57/67 | — |
+| `src/actions/actionHostDecision.vibe` | 6/6 | 6/6 | 6/6 | 6/6 | 11/12 | — |
+| `src/actions/agent.vibe` | 11/11 | 11/11 | 17/17 | 12/12 | 0/0 | — |
+| `src/actions/catalog.vibe` | 9/9 | 9/9 | 9/9 | 2/2 | 26/26 | — |
+| `src/actions/catalogDecision.vibe` | 3/3 | 3/3 | 4/4 | 2/2 | 12/12 | — |
+| `src/actions/execution.vibe` | 42/42 | 42/42 | 45/46 | 20/20 | 38/40 | — |
+| `src/actions/tools.vibe` | 12/13 | 13/13 | 14/14 | 7/7 | 1/1 | — |
+| `src/actions/wire.vibe` | 6/6 | 6/6 | 6/6 | 0/0 | 0/0 | — |
+| `src/assets/wiki.generated.vibe` | 2/2 | 2/2 | 2/2 | 0/0 | 0/0 | — |
+| `src/assets/wikiIndex.generated.vibe` | 1/1 | 1/1 | 1/1 | 0/0 | 0/0 | — |
+| `src/core/Factory.vibe` | 3/3 | 3/3 | 3/3 | 0/0 | 0/0 | — |
+| `src/core/IssuesFactory.vibe` | 62/62 | 62/62 | 70/73 | 12/12 | 71/78 | — |
+| `src/core/LiveAccounts.vibe` | 26/26 | 26/26 | 32/32 | 13/13 | 12/12 | — |
+| `src/core/LiveFactory.vibe` | 77/77 | 77/77 | 88/89 | 20/20 | 30/32 | — |
+| `src/core/LiveIssues.vibe` | 11/11 | 11/11 | 12/16 | 3/7 | 5/6 | — |
+| `src/core/LiveWiki.vibe` | 15/15 | 15/15 | 16/21 | 5/10 | 3/4 | — |
+| `src/core/MockAccounts.vibe` | 76/76 | 76/76 | 98/101 | 25/26 | 28/30 | — |
+| `src/core/MockFactory.vibe` | 267/268 | 268/268 | 321/324 | 82/82 | 125/136 | — |
+| `src/core/MockJournal.vibe` | 1/1 | 1/1 | 4/4 | 3/3 | 0/0 | — |
+| `src/core/VipWriter.vibe` | 1/1 | 1/1 | 1/1 | 0/0 | 0/0 | — |
+| `src/core/WikiFactory.vibe` | 60/60 | 60/60 | 73/77 | 17/19 | 58/68 | — |
+| `src/core/WikiWriter.vibe` | 1/1 | 1/1 | 1/1 | 0/0 | 0/0 | — |
+| `src/core/accountCookieDecision.vibe` | 8/8 | 8/8 | 11/11 | 5/5 | 21/21 | — |
+| `src/core/accountCookies.vibe` | 7/7 | 7/7 | 8/8 | 2/2 | 0/0 | — |
+| `src/core/actionRunDecision.vibe` | 9/9 | 9/9 | 9/9 | 9/9 | 19/19 | — |
+| `src/core/conversation.vibe` | 235/235 | 235/235 | 306/320 | 76/76 | 381/400 | — |
+| `src/core/decide.vibe` | 55/55 | 55/55 | 79/84 | 3/3 | 92/97 | — |
+| `src/core/flowDecision.vibe` | 44/53 | 44/53 | 45/68 | 22/24 | 49/105 | 135,136,137,138,139,203,204,205,206 |
+| `src/core/flowPolicyDecision.vibe` | 5/5 | 5/5 | 5/5 | 5/5 | 10/10 | — |
+| `src/core/flows.vibe` | 195/195 | 195/195 | 203/204 | 72/72 | 43/60 | — |
+| `src/core/followDecision.vibe` | 2/2 | 2/2 | 2/2 | 2/2 | 2/2 | — |
+| `src/core/identityDecision.vibe` | 2/2 | 2/2 | 3/3 | 1/1 | 4/4 | — |
+| `src/core/issueFixtureDecision.vibe` | 19/19 | 19/19 | 27/28 | 7/7 | 48/50 | — |
+| `src/core/issueFlows.vibe` | 34/34 | 34/34 | 40/40 | 11/11 | 12/12 | — |
+| `src/core/issueGraphDecision.vibe` | 26/46 | 27/46 | 41/64 | 9/24 | 35/57 | 25,26,27,28,29,30,149,157,166,175,185,196,205,216,227,238,250,266,279 |
+| `src/core/issueHostDecision.vibe` | 46/46 | 46/46 | 68/72 | 20/20 | 110/126 | — |
+| `src/core/issueSchemas.vibe` | 12/12 | 12/12 | 12/12 | 2/2 | 0/0 | — |
+| `src/core/machineDecision.vibe` | 15/15 | 15/15 | 16/16 | 14/14 | 24/25 | — |
+| `src/core/mockDecision.vibe` | 17/17 | 17/17 | 19/19 | 4/4 | 6/6 | — |
+| `src/core/mockFactoryDecision.vibe` | 15/15 | 15/15 | 20/20 | 10/10 | 23/26 | — |
+| `src/core/mockReplies.vibe` | 17/17 | 17/17 | 18/19 | 5/6 | 3/4 | — |
+| `src/core/protocolDecision.vibe` | 22/22 | 22/22 | 30/30 | 14/14 | 54/54 | — |
+| `src/core/replayDecision.vibe` | 9/12 | 9/12 | 10/13 | 2/5 | 2/10 | 22,30,40 |
+| `src/core/roles.vibe` | 9/9 | 9/9 | 9/9 | 1/1 | 1/1 | — |
+| `src/core/sandboxDecision.vibe` | 62/62 | 62/62 | 75/84 | 17/17 | 69/80 | — |
+| `src/core/sandboxHost.vibe` | 186/186 | 186/186 | 212/224 | 30/30 | 140/158 | — |
+| `src/core/sandboxMeter.vibe` | 35/35 | 35/35 | 39/42 | 7/7 | 34/37 | — |
+| `src/core/sandboxMock.vibe` | 48/48 | 48/48 | 69/73 | 22/23 | 35/52 | — |
+| `src/core/sandboxMockDecision.vibe` | 7/7 | 7/7 | 10/12 | 2/2 | 11/14 | — |
+| `src/core/sandboxPolicy.vibe` | 2/2 | 2/2 | 4/4 | 3/3 | 0/0 | — |
+| `src/core/schemas.vibe` | 30/30 | 30/30 | 30/30 | 0/0 | 0/0 | — |
+| `src/core/sequenceDecision.vibe` | 23/23 | 23/23 | 27/27 | 10/10 | 18/18 | — |
+| `src/core/sequencerDecision.vibe` | 14/16 | 14/16 | 20/23 | 7/8 | 21/28 | 19,20 |
+| `src/core/specification.vibe` | 33/33 | 33/33 | 43/44 | 6/6 | 30/42 | — |
+| `src/core/specificationDecision.vibe` | 5/5 | 5/5 | 7/7 | 3/3 | 19/21 | — |
+| `src/core/toolRefusal.vibe` | 5/5 | 5/5 | 5/6 | 1/1 | 12/18 | — |
+| `src/core/tourDecision.vibe` | 9/9 | 9/9 | 13/14 | 4/4 | 22/23 | — |
+| `src/core/walkthroughSteps.vibe` | 4/4 | 4/4 | 4/4 | 1/1 | 1/2 | — |
+| `src/core/wiki.vibe` | 3/3 | 3/3 | 3/3 | 1/1 | 3/4 | — |
+| `src/core/wikiBuildDecision.vibe` | 77/105 | 79/105 | 89/135 | 27/36 | 95/160 | 66,67,90,91,92,93,94,121,122,123,141,142,191,192,202,203,211,212,213,214,241,242,243,261,262,263 |
+| `src/core/wikiDecision.vibe` | 1/1 | 1/1 | 1/1 | 1/1 | 3/3 | — |
+| `src/core/wikiFlows.vibe` | 34/34 | 34/34 | 40/40 | 11/11 | 15/15 | — |
+| `src/core/wikiIndex.vibe` | 17/17 | 17/17 | 21/21 | 5/5 | 16/17 | — |
+| `src/core/wikiLinks.vibe` | 15/15 | 15/15 | 18/18 | 1/1 | 28/29 | — |
+| `src/core/wikiPage.vibe` | 9/9 | 9/9 | 9/9 | 2/2 | 14/14 | — |
+| `src/core/wikiPageDecision.vibe` | 33/33 | 33/33 | 51/54 | 11/11 | 57/62 | — |
+| `src/core/wikiSchemas.vibe` | 5/5 | 5/5 | 5/5 | 0/0 | 0/0 | — |
+| `src/core/wire.vibe` | 27/27 | 27/27 | 30/31 | 3/3 | 13/14 | — |
+| `src/history/LiveMythical.vibe` | 39/43 | 43/43 | 47/49 | 17/17 | 10/12 | — |
+| `src/history/MockMythical.vibe` | 53/53 | 54/54 | 64/64 | 29/29 | 23/23 | — |
+| `src/history/MythicalHistory.vibe` | 2/2 | 2/2 | 3/3 | 1/1 | 2/2 | — |
+| `src/history/Sequencer.vibe` | 94/94 | 94/94 | 106/111 | 34/36 | 37/42 | — |
+| `src/history/areaDecision.vibe` | 32/48 | 34/48 | 38/62 | 7/11 | 27/58 | 49,50,59,60,61,71,72,73,74,82,83,84,85,86 |
+| `src/history/areas.vibe` | 6/6 | 6/6 | 6/6 | 2/2 | 2/2 | — |
+| `src/history/export.vibe` | 93/93 | 145/148 | 189/195 | 43/46 | 95/97 | 382,383,384 |
+| `src/history/exportDecision.vibe` | 14/14 | 14/16 | 18/21 | 6/7 | 14/21 | 136,137 |
+| `src/history/flowMachine.vibe` | 54/56 | 57/57 | 75/80 | 22/22 | 99/108 | — |
+| `src/history/flows.vibe` | 142/144 | 195/195 | 229/231 | 83/84 | 64/71 | — |
+| `src/history/mockMainDecision.vibe` | 16/16 | 16/16 | 19/19 | 8/8 | 10/10 | — |
+| `src/history/mythical.vibe` | 136/136 | 136/136 | 163/190 | 29/29 | 164/191 | — |
+| `src/history/pageDecision.vibe` | 15/17 | 15/17 | 18/22 | 9/10 | 20/25 | 56,57 |
+| `src/history/pages.vibe` | 35/35 | 35/35 | 48/48 | 25/25 | 10/12 | — |
+| `src/history/replayDecision.vibe` | 9/13 | 9/13 | 10/14 | 2/6 | 2/12 | 20,28,86,101 |
+| `src/history/roles.vibe` | 4/4 | 4/4 | 4/4 | 1/1 | 0/0 | — |
+| `src/history/schemas.vibe` | 32/32 | 32/32 | 33/34 | 2/3 | 0/0 | — |
+| `src/history/seed.vibe` | 138/142 | 142/142 | 163/165 | 21/22 | 71/75 | — |
+| `src/history/seed/vibelang.vibe` | 2/2 | 2/2 | 2/2 | 0/0 | 0/0 | — |
+| `src/history/seedDecision.vibe` | 20/21 | 21/21 | 31/32 | 8/8 | 34/36 | — |
+| `src/history/seedInputDecision.vibe` | 8/13 | 8/13 | 12/19 | 10/12 | 8/16 | 58,59,77,78,79 |
+| `src/history/seedSanitizeDecision.vibe` | 58/83 | 59/83 | 69/112 | 13/19 | 97/175 | 34,35,81,82,83,84,85,86,87,88,111,112,113,145,146,190,191,192,193,194,195,218,219,220 |
+| `src/history/seedTextDecision.vibe` | 18/24 | 20/24 | 23/30 | 8/10 | 34/51 | 59,60,102,103 |
+| `src/history/stackDecision.vibe` | 13/15 | 15/15 | 23/23 | 7/7 | 25/25 | — |
+| `src/history/tools.vibe` | 29/29 | 29/29 | 36/36 | 9/9 | 46/47 | — |
+| `src/history/trailerDecision.vibe` | 35/55 | 39/55 | 44/72 | 11/18 | 36/77 | 43,44,57,58,59,60,71,72,84,85,86,95,96,97,104,112 |
+| `src/history/wire.vibe` | 35/35 | 35/35 | 38/38 | 4/4 | 23/24 | — |
+| `src/history/wireDecision.vibe` | 23/23 | 23/23 | 39/40 | 6/6 | 48/50 | — |
+| `src/surfaces/backend.vibe` | 45/45 | 45/45 | 54/58 | 13/15 | 25/31 | — |
+| `src/surfaces/cli-entry.vibe` | 8/8 | 8/8 | 9/9 | 2/2 | 2/2 | — |
+| `src/surfaces/cli.vibe` | 16/16 | 16/16 | 17/18 | 6/6 | 9/10 | — |
+| `src/surfaces/commandDecision.vibe` | 22/22 | 22/22 | 23/23 | 17/17 | 56/64 | — |
+| `src/surfaces/commands.vibe` | 171/171 | 171/171 | 190/207 | 63/73 | 83/112 | — |
+| `src/surfaces/manifest.vibe` | 4/4 | 4/4 | 5/5 | 2/2 | 0/0 | — |
+| `src/surfaces/mcp-entry.vibe` | 6/6 | 6/6 | 6/6 | 1/1 | 0/0 | — |
+| `src/surfaces/mcp.vibe` | 17/17 | 17/17 | 19/20 | 6/6 | 2/4 | — |
+| `src/surfaces/session.vibe` | 63/63 | 63/63 | 75/75 | 22/22 | 24/24 | — |
+| `src/surfaces/sessionFlow.vibe` | 40/40 | 40/40 | 50/50 | 20/20 | 2/2 | — |
+| `src/surfaces/signin.vibe` | 115/115 | 115/115 | 137/153 | 20/30 | 96/110 | — |
+| `src/web/accountViewDecision.vibe` | 16/17 | 17/17 | 21/22 | 11/11 | 37/40 | — |
+| `src/web/actionModel.vibe` | 13/13 | 13/13 | 13/13 | 6/6 | 11/13 | — |
+| `src/web/actionView.vibe` | 27/27 | 27/27 | 36/36 | 24/24 | 72/77 | — |
+| `src/web/actionViewDecision.vibe` | 24/24 | 24/24 | 31/31 | 20/20 | 84/94 | — |
+| `src/web/armDecision.vibe` | 2/3 | 3/3 | 3/3 | 3/3 | 2/2 | — |
+| `src/web/backend.vibe` | 64/64 | 64/64 | 71/72 | 37/38 | 10/15 | — |
+| `src/web/entry.vibe` | 8/8 | 8/8 | 8/8 | 2/2 | 2/2 | — |
+| `src/web/historyApp.vibe` | 153/161 | 161/161 | 198/203 | 101/103 | 50/56 | — |
+| `src/web/historyBackend.vibe` | 26/27 | 27/27 | 31/31 | 18/18 | 6/6 | — |
+| `src/web/historyDecision.vibe` | 42/42 | 42/42 | 47/48 | 29/29 | 29/31 | — |
+| `src/web/historyStartup.vibe` | 36/51 | 49/49 | 61/62 | 18/18 | 24/25 | — |
+| `src/web/historyView.vibe` | 78/78 | 78/78 | 86/87 | 43/43 | 104/108 | — |
+| `src/web/historyViewDecision.vibe` | 21/22 | 22/22 | 30/30 | 14/14 | 57/60 | — |
+| `src/web/issueDecision.vibe` | 90/91 | 90/91 | 141/142 | 21/22 | 228/257 | 208 |
+| `src/web/issues.vibe` | 23/23 | 23/23 | 28/28 | 6/6 | 32/34 | — |
+| `src/web/issuesView.vibe` | 91/93 | 93/93 | 123/128 | 79/83 | 251/285 | — |
+| `src/web/issuesViewDecision.vibe` | 52/53 | 53/53 | 60/66 | 33/33 | 175/198 | — |
+| `src/web/main.vibe` | 643/655 | 655/655 | 818/868 | 351/372 | 576/722 | — |
+| `src/web/markdown.vibe` | 100/100 | 100/100 | 137/138 | 23/23 | 79/82 | — |
+| `src/web/markdownDecision.vibe` | 20/20 | 20/20 | 26/26 | 4/4 | 27/30 | — |
+| `src/web/media.vibe` | 6/6 | 6/6 | 7/7 | 2/2 | 0/0 | — |
+| `src/web/modeSwitch.vibe` | 2/2 | 2/2 | 2/2 | 1/1 | 0/0 | — |
+| `src/web/modelDecision.vibe` | 87/90 | 90/90 | 110/111 | 53/53 | 115/118 | — |
+| `src/web/modelWrite.vibe` | 49/53 | 50/53 | 51/54 | 28/30 | 29/33 | 70,71,139 |
+| `src/web/paneDecision.vibe` | 18/20 | 20/20 | 21/22 | 17/17 | 40/48 | — |
+| `src/web/roleView.vibe` | 23/23 | 23/23 | 26/26 | 14/14 | 39/40 | — |
+| `src/web/sandboxView.vibe` | 14/14 | 14/14 | 16/16 | 6/6 | 62/68 | — |
+| `src/web/screenDecision.vibe` | 51/51 | 51/51 | 63/64 | 34/34 | 107/113 | — |
+| `src/web/screenRead.vibe` | 18/18 | 18/18 | 19/19 | 13/13 | 38/38 | — |
+| `src/web/startup.vibe` | 50/50 | 50/50 | 61/64 | 12/13 | 17/22 | — |
+| `src/web/startupDecision.vibe` | 13/13 | 13/13 | 16/16 | 10/10 | 28/28 | — |
+| `src/web/styles.vibe` | 1/1 | 1/1 | 2/2 | 2/2 | 0/0 | — |
+| `src/web/theatre.vibe` | 42/42 | 42/42 | 46/48 | 7/7 | 20/26 | — |
+| `src/web/theatreDecision.vibe` | 24/24 | 24/24 | 37/37 | 7/7 | 68/72 | — |
+| `src/web/tourDecision.vibe` | 27/27 | 27/27 | 28/33 | 19/19 | 47/54 | — |
+| `src/web/updateDecision.vibe` | 42/42 | 42/42 | 61/62 | 14/14 | 97/105 | — |
+| `src/web/view.vibe` | 59/59 | 59/59 | 64/64 | 34/34 | 124/127 | — |
+| `src/web/viewDecision.vibe` | 46/48 | 48/48 | 62/64 | 27/27 | 138/150 | — |
+| `src/web/viewport.vibe` | 37/37 | 37/37 | 44/44 | 14/14 | 29/40 | — |
+| `src/web/wikiEditorDecision.vibe` | 21/21 | 21/21 | 22/27 | 7/7 | 17/22 | — |
+| `src/web/wikiView.vibe` | 26/26 | 26/26 | 35/37 | 16/18 | 76/82 | — |
+| `src/web/wikiViewDecision.vibe` | 16/16 | 16/16 | 21/21 | 10/10 | 50/54 | — |
+| `worker/Accounts.vibe` | 315/315 | 315/315 | 386/429 | 58/72 | 217/265 | — |
+| `worker/ActionDirectory.vibe` | 40/40 | 40/40 | 52/55 | 21/22 | 16/23 | — |
+| `worker/ActionIdentity.vibe` | 14/14 | 14/14 | 15/18 | 4/7 | 15/18 | — |
+| `worker/ActionRuns.vibe` | 121/121 | 121/121 | 152/164 | 33/36 | 131/153 | — |
+| `worker/ActionsHttp.vibe` | 43/43 | 43/43 | 55/63 | 7/10 | 49/59 | — |
+| `worker/AgentModel.vibe` | 9/9 | 9/9 | 9/9 | 3/3 | 0/0 | — |
+| `worker/Api.vibe` | 61/61 | 61/61 | 62/63 | 1/2 | 0/0 | — |
+| `worker/Budget.vibe` | 49/49 | 49/49 | 55/55 | 7/7 | 56/56 | — |
+| `worker/CallBudget.vibe` | 25/25 | 25/25 | 30/30 | 11/11 | 12/12 | — |
+| `worker/GitHubDelegate.vibe` | 4/4 | 4/4 | 5/6 | 3/3 | 10/11 | — |
+| `worker/HistoryActions.vibe` | 28/28 | 28/28 | 30/31 | 9/10 | 14/14 | — |
+| `worker/HistoryExport.vibe` | 14/14 | 14/14 | 14/14 | 2/2 | 10/10 | — |
+| `worker/HistoryObject.vibe` | 66/69 | 83/85 | 98/103 | 37/42 | 19/19 | 148,149 |
+| `worker/HistoryTools.vibe` | 8/8 | 8/8 | 8/8 | 6/6 | 0/0 | — |
+| `worker/Http.vibe` | 93/94 | 94/94 | 115/127 | 17/23 | 88/101 | — |
+| `worker/Issues.vibe` | 302/307 | 309/309 | 378/417 | 64/69 | 330/402 | — |
+| `worker/MainLog.vibe` | 21/22 | 22/22 | 31/31 | 10/10 | 6/6 | — |
+| `worker/ObjectStartup.vibe` | 63/63 | 63/63 | 77/79 | 15/16 | 24/26 | — |
+| `worker/ObjectStorage.vibe` | 10/10 | 10/10 | 14/14 | 11/11 | 6/6 | — |
+| `worker/Objects.vibe` | 108/110 | 108/110 | 134/139 | 55/58 | 39/46 | 255,256 |
+| `worker/PublicReads.vibe` | 12/13 | 13/13 | 17/20 | 9/12 | 6/6 | — |
+| `worker/Reply.vibe` | 148/148 | 148/148 | 165/169 | 21/21 | 94/102 | — |
+| `worker/SandboxAccounts.vibe` | 13/13 | 6/13 | 9/18 | 2/4 | 2/3 | 16,17,18,20,28,29,30 |
+| `worker/SandboxHttp.vibe` | 32/32 | 32/32 | 40/44 | 9/10 | 29/35 | — |
+| `worker/SandboxMachine.vibe` | 6/6 | 2/6 | 3/9 | 1/3 | 0/0 | 14,15,16,17 |
+| `worker/SandboxProbe.vibe` | 12/12 | 6/12 | 6/13 | 0/1 | 0/0 | 19,20,24,25,26,27 |
+| `worker/SandboxTools.vibe` | 11/11 | 11/11 | 12/12 | 10/10 | 0/0 | — |
+| `worker/Sandboxes.vibe` | 22/22 | 22/22 | 37/37 | 17/17 | 21/21 | — |
+| `worker/Sequencer.vibe` | 119/119 | 119/119 | 140/141 | 44/44 | 54/62 | — |
+| `worker/SpecificationReviewers.vibe` | 40/40 | 40/40 | 43/49 | 5/9 | 8/10 | — |
+| `worker/SubmissionBase.vibe` | new | 8/8 | 12/12 | 3/3 | 4/4 | — |
+| `worker/Tour.vibe` | 1/1 | 1/1 | 1/1 | 0/0 | 0/0 | — |
+| `worker/Unreachable.vibe` | 1/1 | 1/1 | 1/1 | 0/0 | 0/0 | — |
+| `worker/VipDraft.vibe` | 39/39 | 39/39 | 42/48 | 5/8 | 9/12 | — |
+| `worker/Wiki.vibe` | 166/171 | 173/173 | 217/234 | 42/46 | 168/203 | — |
+| `worker/WikiDraft.vibe` | 41/41 | 41/41 | 44/51 | 5/8 | 10/14 | — |
+| `worker/WikiTools.vibe` | 9/9 | 9/9 | 12/13 | 6/6 | 3/4 | — |
+| `worker/accountObject.vibe` | 49/49 | 49/49 | 73/80 | 34/38 | 23/30 | — |
+| `worker/accountsDecision.vibe` | 53/53 | 53/53 | 72/77 | 26/26 | 142/163 | — |
+| `worker/actionsDecision.vibe` | 20/20 | 20/20 | 29/29 | 10/10 | 51/54 | — |
+| `worker/agentContext.vibe` | 1/1 | 1/1 | 1/1 | 0/0 | 0/0 | — |
+| `worker/apiObjectDecision.vibe` | 22/24 | 24/24 | 32/32 | 15/15 | 32/34 | — |
+| `worker/apiObjects.vibe` | 216/216 | 220/220 | 248/256 | 86/90 | 45/57 | — |
+| `worker/apiRuntime.vibe` | 0/0 | 0/0 | 0/0 | 0/0 | 0/0 | — |
+| `worker/budgetDecision.vibe` | 10/10 | 10/10 | 14/14 | 4/4 | 15/15 | — |
+| `worker/draftDecision.vibe` | 4/4 | 4/4 | 4/4 | 4/4 | 8/8 | — |
+| `worker/index.vibe` | 9/9 | 9/9 | 13/13 | 2/2 | 12/12 | — |
+| `worker/liveDispatchDecision.vibe` | 7/7 | 7/7 | 11/11 | 3/3 | 8/8 | — |
+| `worker/machineObject.vibe` | 67/67 | 67/67 | 93/97 | 19/20 | 59/64 | — |
+| `worker/mainLogDecision.vibe` | 59/59 | 88/88 | 94/95 | 9/9 | 43/46 | — |
+| `worker/replyProgressDecision.vibe` | 17/17 | 17/17 | 22/22 | 10/10 | 33/33 | — |
+| `worker/replyReasons.vibe` | 7/7 | 7/7 | 12/12 | 2/2 | 12/12 | — |
+| `worker/sandboxBenchmark.vibe` | 9/9 | 0/9 | 0/12 | 0/1 | 0/6 | 13,14,15,16,17,18,19,20,21 |
+| `worker/sandboxProbeContainer.vibe` | 24/24 | 24/24 | 36/36 | 14/14 | 12/13 | — |
+| `worker/sandboxProbeFetch.vibe` | 49/57 | 55/57 | 73/79 | 27/28 | 32/45 | 100,101 |
+| `worker/sandboxWorkerDecision.vibe` | 34/35 | 35/35 | 45/48 | 19/19 | 46/53 | — |
+| `worker/workerDecision.vibe` | 19/19 | 19/19 | 24/24 | 10/10 | 37/38 | — |
+
+## Resume 11: final collection on main 02315e2b (2026-11-13)
+
+**Coverage.** Full `pnpm bench:coverage` (job `vl-bench:final19`, Cloudflare box, Node 26.5.0, 4 vCPU, Chromium
+151 for Playwright 1.62.1), revision `952289ce` on main `02315e2b`, 09:13–09:49 UTC (01:13–01:49 PST): 118 files
+passed, 1 skipped; 258 checks passed, 5 skipped, none failed. Merged statement-start lines over `src/`, `worker/`,
+`infra/` and `scripts/`: **9,692/9,864 (98.26%)**, 229 files, 172 positions open:
+
+| Open positions | Count | Why |
+| --- | ---: | --- |
+| Specification-only bodies (0017 inventory) | 133 | Proof contracts and recursive models; runtime callers use the iterative forms. Wait on VIP-43. |
+| Invariant traps | 4 | `HistoryObject` 148–149 and `Objects` 256–257 (`unrouted.start`/`wake`). |
+| Deployed-only | 33 | `SandboxAccounts` 7, `SandboxMachine` 4, `SandboxProbe` 6, `sandboxBenchmark` 10, `sandboxWorkerDecision` 192, 203–205, `infra/SandboxImage` 4–5. Wait on the lead's source-matching live run. |
+| Main code after this run (`MockFactory` 310–311) | 2 | Closed by `mock-journal-trimmed`, confirmed in a focused map (1/1 each); not in this full map. |
+
+The merge's four-metric 100% gate stays red on those positions and on branches; no threshold or exclusion changed.
+
+**Timings.** Uninstrumented `vitest bench` on the same box type and revision at 08:17–08:18 UTC (00:17 PST); three
+unwarmed samples, setup included. Three samples give a mean and range, not a percentile.
+
+| Workload | Mean ms | Min ms | Max ms | Samples |
+| --- | ---: | ---: | ---: | ---: |
+| `reply-accounting-recovery` | 678.8 | 546.5 | 855.8 | 3 |
+| `action-tools` (with the refused Read) | 13.0 | 9.9 | 17.8 | 3 |
+| `web-action-follow-recovery` | 631.8 | 630.8 | 633.4 | 3 |
+| `history-browser-command-faults` | 2.2 | 1.4 | 3.6 | 3 |
+| `history-stream-faults` | 735.5 | 719.1 | 765.2 | 3 |
+| `history-read-retry` | 1,474.6 | 1,451.9 | 1,495.4 | 3 |
+| `action-tour-repeat` | 297.7 | 236.4 | 407.5 | 3 |
+| `action-legacy-routes` | 400.5 | 397.3 | 403.8 | 3 |
+| `fuzz-preflight-installed` | 271.2 | 257.8 | 286.6 | 3 |
+| `fuzz-preflight-missing` | 265.3 | 248.8 | 284.0 | 3 |
+| `mock-journal-trimmed` (nyc-01, 32 cores, 10:00 UTC, revision `c2e49e57`) | 9.6 | 9.2 | 10.2 | 3 |
+
+`web-action-follow-recovery` was 2,610 ms on the earlier base: it waited for an automatic two-second reconnect.
+Reconnect is now the person's click, so the workload no longer contains that wait. That is a changed journey, not a
+speedup. Happy DOM rows measure the mounted Foldkit runtime without browser layout or paint. Mock and in-memory
+storage rows measure product code in process, not workerd or network latency.

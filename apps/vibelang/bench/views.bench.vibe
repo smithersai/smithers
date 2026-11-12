@@ -19,6 +19,16 @@ import { artifact, workload, quick } from "./artifact.vibe"
 
 const home = init({ session: "bench", mode: "mock", name: "Guest" }).model
 
+it("an empty stale issue projection keeps its timestamp and empty-state wording", async ({ bench }) => {
+  const result = await workload(bench, "stale-empty-issue-view", "sync", () => {
+    for (const stale of [Date.UTC(2026, 10, 10, 13, 40), Number.MAX_SAFE_INTEGER]) {
+      const model = { ...home, surface: "chat" as const, issues: { ...initialIssues, open: true, status: "ready" as const, data: { seq: 1, items: [], stale } } }
+      scene({ update, view }, given(model), expect(text("Stale")).toExist(), expect(text("No open issues")).toExist())
+    }
+  }).run(quick)
+  await runPromise(artifact("stale-empty-issue-view", "Vitest built-in bench; actual view over an empty stale issue projection, once with a representable timestamp and once beyond Date's range. Requires Stale and the open-issue empty state; invalid Date must render safely.", ["Foldkit DOM scene; no layout, network or cache revalidation timing."], result))
+})
+
 it("history view renders every page, state and role control", async ({ bench }) => {
   const history = plannedHistory(3)
   const outline = P.outlineOf(history)

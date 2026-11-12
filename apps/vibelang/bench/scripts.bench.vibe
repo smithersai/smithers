@@ -28,6 +28,8 @@ interface Fixture {
   readonly seedTarget: string
   readonly context: string
   readonly contextTarget: string
+  readonly preflight: string
+  readonly repositoryRoot: string
   readonly env: Record<string, string>
   readonly first: string
   readonly second: string
@@ -68,6 +70,8 @@ effect function build() {
     seedTarget: path.join(emitted, "src/history/seed/vibelang.vibe"),
     context: path.join(emitted, "scripts/agent-context.js"),
     contextTarget: path.join(emitted, "worker/agentContext.vibe"),
+    preflight: path.join(emitted, "scripts/fuzz-preflight.js"),
+    repositoryRoot: try path.fromFileUrl(new URL("../../../", import.meta.url)),
     env: { VIBELANG_REPO: repository, VIBELANG_QUEUE: queue, VIBELANES: "", VIBELANG_LANES: remote },
     first,
     second,
@@ -144,9 +148,22 @@ it("emitted maintenance scripts", async ({ bench }) => {
       expect(stale.stderr).toContain("worker/agentContext.vibe is stale")
       await runPromise(Effect.provide(effect { return try (try FileSystem.FileSystem).writeFileString(fixture.contextTarget, original) }, platform))
     }).run(slow))
+    const runPreflight = (root: string) => runPromise(Effect.provide(run(fixture.executable, [fixture.preflight], { FUZZ_REPOSITORY_ROOT: root }), platform))
+    results.push(await workload(bench, "fuzz-preflight-installed", "async", async () => {
+      const installed = await runPreflight(fixture.repositoryRoot)
+      expect(installed.status, installed.stderr).toBe(0)
+      expect(installed.stdout + installed.stderr).not.toContain("not installed")
+    }).run(slow))
+    results.push(await workload(bench, "fuzz-preflight-missing", "async", async () => {
+      const missing = await runPreflight(fixture.directory)
+      expect(missing.status).toBe(1)
+      const said = missing.stdout + missing.stderr
+      expect(said).toContain("the fuzz flow's dependencies are not installed (vibelang-runtime, vibelang, effect")
+      expect(said).toContain(`from the repository root run: pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..."`)
+    }).run(slow))
     await runPromise(artifact(
       "maintenance-scripts",
-      "Vitest built-in bench; spawn each emitted script to exit over a real fixture jj repository and merge queue (seed) or the real installed vibelang skill (agent context); three samples each, no warmup. Fixture repository/queue construction is untimed setup. Write determinism, failed-read preservation and stale rejection are checked inside timed callbacks; the seed's parsed history content is fully asserted.",
+      "Vitest built-in bench; spawn each emitted script to exit over a real fixture jj repository and merge queue (seed) or the real installed vibelang skill (agent context), and the fuzz preflight over this repository's installed flow and over the fixture directory, which has no flow dependencies; three samples each, no warmup. Fixture repository/queue construction is untimed setup. Write determinism, failed-read preservation and stale rejection are checked inside timed callbacks; the seed's parsed history content is fully asserted.",
       ["Fixture jj repositories, not VibeLang's real history; the full-history run's cost is dominated by its repository, not this fixture. Scripts write only inside the ignored dist-script-tests tree. Process/loader startup included; build excluded."],
       results,
     ))

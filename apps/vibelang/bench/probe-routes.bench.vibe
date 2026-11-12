@@ -1,0 +1,56 @@
+// @vitest-environment node
+// The existing workerd test host supplies real object storage and the product in-memory Container (VL-38).
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveSandboxProbe } from "../test/support/workerd.vibe"
+import { containerCalls, deadline, direct, expectDirect, sweepBefore } from "../test/support/sandboxesLive.vibe"
+import { PROBE_TOKEN } from "../test/workerd/sandbox-probe-token.vibe"
+import { OWNER_HEADER, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("probe direct machine lifecycle and expired-owner metering run through workerd", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const server = try acquireRelease(serveSandboxProbe(), served => promise(served.dispose))
+    provide FetchHttpClient.layer {
+      const result = try tryPromise(() => workload(bench, "probe-direct-and-expiry", "async", () => runPromise(scoped(effect {
+        const client = try HttpClient.HttpClient
+        const choose = effect (owner: string, choice: unknown) => {
+          const answer = try client.execute(HttpClientRequest.post(`${server.origin}/machine/${encodeURIComponent(owner + "/direct")}/container`).pipe(HttpClientRequest.bodyJsonUnsafe(choice)))
+          try Effect.try(() => expect(answer.status).toBe(200))
+        }
+        const run = try direct(server.origin, PROBE_TOKEN, owner => choose(owner, { mode: "record" }))
+        try Effect.try(() => expectDirect(run))
+        const calls = try containerCalls(server.origin, PROBE_TOKEN, run.owner, "direct")
+        const replayed = try direct(server.origin, PROBE_TOKEN, owner => choose(owner, { mode: "replay", calls }))
+        const remaining = try client.execute(HttpClientRequest.post(`${server.origin}/machine/${encodeURIComponent(replayed.owner + "/direct")}/remaining`).pipe(HttpClientRequest.bodyJsonUnsafe({})))
+        const rest = try remaining.json
+        try Effect.try(() => { expect(calls.length).toBeGreaterThan(0); expectDirect(replayed); expect(rest).toEqual({ remaining: 0 }) })
+        const expired = try deadline(server.origin, PROBE_TOKEN, 1500)
+        try Effect.try(() => expect([expired.started.status, expired.swept]).toEqual(["running", { running: false, status: 200 }]))
+        const early = try sweepBefore(server.origin, PROBE_TOKEN)
+        try Effect.try(() => expect([early.started.status, early.swept]).toEqual(["running", { running: false, status: 200 }]))
+      }).pipe(Effect.provide(FetchHttpClient.layer)))).run(slow))
+      try artifact("probe-direct-and-expiry", "Vitest built-in bench; existing workerd probe host, direct start/command/lease/status/checkpoint/restore/stop script recorded through the Container seam, then replayed on another machine with every call consumed. A sandbox whose 1.5-second owner expires is swept through account.meter; a second is swept before expiry through its Stop flow. Exact script answers, zero replay remainder and stopped compute checked. Host startup outside timing; owner deadline wait included.", ["Real local workerd and SQLite, product in-memory Container (VL-38), whose calls are recorded/replayed here; no Cloudflare Container or network latency claim."], result)
+      const counts = try effect {
+        const client = try HttpClient.HttpClient
+        const owner = probeOwner(Date.now() + 60_000)
+        const cases = [
+          ["/api/probe/machine", probeOwner(Date.now() - 1), ["status", "", ""], false, 403],
+          ["/api/probe/machine", owner, ["reboot", "", ""], false, 400],
+          ["/api/probe/machine", owner, ["status", "", ""], true, 503],
+          ["/api/probe/container?conversation=other", owner, [], false, 400],
+          ["/api/probe/container?conversation=live", owner, [], true, 503],
+          ["/unknown", owner, [], false, 404],
+        ] as const
+        const statuses: Array<number> = []
+        for (const [path, identity, body, faulty, expected] of cases) {
+          const response = try client.execute(HttpClientRequest.post(server.origin + path).pipe(HttpClientRequest.setHeaders({ authorization: `Bearer ${PROBE_TOKEN}`, [OWNER_HEADER]: identity, ...(faulty ? { "x-host-fault": "machine-binding" } : {}) }), HttpClientRequest.bodyJsonUnsafe(body)))
+          statuses.push(response.status)
+          try Effect.try(() => expect(response.status).toBe(expected))
+        }
+        return statuses
+      }
+      try artifact("fault-coverage-probe-routes", "Counts only; real workerd probe on its test host. Expired direct request, invalid tuple, faulty machine namespace, invalid recording conversation, failed recording namespace, and unknown path; exact HTTP statuses checked.", ["Test host fault injection; no timing observation and no live Container."], { statuses: counts })
+    }
+  }))
+})

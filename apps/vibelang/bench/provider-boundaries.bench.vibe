@@ -14,6 +14,10 @@ import { objectStorage } from "../test/support/objectStorage.ts"
 import type { Storage } from "../worker/Objects.vibe"
 import type { IssueRequest } from "../src/core/issueSchemas.vibe"
 import type { WikiRequest } from "../src/core/wikiSchemas.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
+import { HttpRecording } from "@smthrs/testing"
+import { recordingPath } from "../test/support/github.vibe"
+import { recordedClient, recordedConnection, recordedPerson, REPOSITORY } from "../test/support/recordedIssues.vibe"
 import { artifact, workload, quick, slow } from "./artifact.vibe"
 
 const Guards = Flow.make("bench/ProviderGuards", { payload: {}, success: Schema.Void, error: Schema.Unknown, body: () => Node.succeed(undefined) })
@@ -25,6 +29,25 @@ effect function guarded(program: void!unknown!(FlowRuntime.FlowRuntime | FlowRun
   const context = try Layer.build(registration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
   try Context.get(context, FlowRuntime.FlowRuntime).execute(Guards, { executionId: "provider-guards", payload: {} })
 }
+
+it("the GitHub issue host refuses local specification operations without writing to GitHub", async ({ bench }) => {
+  const recording = await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))))
+  const result = await workload(bench, "provider-host-unsupported-operation", "async", () => runPromise(scoped(guarded(effect {
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+    const replay = recordedClient(recording, "read", "new")
+    const site = try recordedConnection(storage, replay)
+    provide HttpClient.HttpClient = site.http, GitHubDelegate = site.delegate, Issues.IssueAuthority = { current: () => succeed({ ...recordedPerson, connection: site.connection }) } {
+      const host = try Issues.githubHost(REPOSITORY)
+      // This recorded read window is the native observation of issue 123, after New. It contains only GETs.
+      const refused = try Effect.result(host.perform({ op: "spec-revise", number: 123, parent: 0, title: "", text: "", example: "", prior: "", assignee: "", key: "unsupported" }))
+      try Effect.try(() => {
+        expect(refused).toMatchObject({ _tag: "Failure", failure: { reason: "unsupported" } })
+        expect(replay.remaining()).toBe(0)
+      })
+    }
+  })))).run(slow)
+  await runPromise(artifact("provider-host-unsupported-operation", "Vitest built-in bench; production GitHub issue host behind its real delegation connection, reading the committed native issue-123 observation from issues.json. A local specification operation at this boundary is refused unsupported. Every GET in the read window must be consumed; no recorded write exists in that window. Three fresh scoped hosts and engines, setup/assertions included.", ["Replayed provider data, no GitHub request, write or inference. This is a host-boundary refusal; the app routes specification operations to its local specification flows."], result))
+})
 
 it("provider diagnostics are bounded and malformed VIP claims never request authority", async ({ bench }) => {
   const result = await workload(bench, "provider-guards", "async", async () => {
@@ -71,6 +94,18 @@ it("GitHub hosts refuse unauthorized and unconnected writes before transport", a
       const wikiDraft = try Effect.result(pages.perform({ ...wiki, op: "draft" }))
       const wikiConnect = try Effect.result(pages.perform(wiki))
       const retained = try promise(() => kv.get("wiki/draft/1/roadmap"))
+      const delegate = try GitHub.Delegation.site({ origin: "https://site.invalid", brokerOrigin: "https://broker.invalid", secret: Redacted.make("fixture-only-site-secret-32-chars") })
+      let asks = 0
+      provide GitHubDelegate = delegate, Wiki.WikiAuthority = { current: () => sync(() => ++asks === 1 ? { id: "1", login: "fixture", role: "maintainer" as const, connection: { person: 1, delegation: "ended" } } : { id: "1", login: "fixture", role: "maintainer" as const }) } {
+        const changing = try Wiki.githubWikiHost(Wiki.wikiRepository, kv as unknown as Storage, () => true)
+        const lost = try Effect.result(changing.perform({ ...wiki, text: "retained after disconnection" }))
+        const saved = try promise(() => kv.get("wiki/draft/1/roadmap"))
+        try Effect.try(() => {
+          expect(lost).toMatchObject({ _tag: "Failure", failure: { reason: "connect" } })
+          expect(saved).toEqual({ page: "roadmap", text: "retained after disconnection" })
+          expect(asks).toBe(2)
+        })
+      }
       try Ref.set(actor, undefined)
       const anonymous = try Effect.result(issues.perform({ ...issue, op: "new" }))
       const denied = try Effect.result(pages.perform(wiki))

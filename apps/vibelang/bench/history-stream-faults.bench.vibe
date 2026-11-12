@@ -6,7 +6,7 @@ import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
 import { MockMythical } from "../src/history/MockMythical.vibe"
 import { HistoryFlags, HistoryModel, init, subscriptions, update } from "../src/web/historyApp.vibe"
 import { view } from "../src/web/historyView.vibe"
-import { container, remove } from "../test/support/browser.ts"
+import { container, fire, remove } from "../test/support/browser.ts"
 import { plannedHistory } from "./fixtures.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
@@ -56,8 +56,11 @@ it("history page: outline outage, Retry, then a lost event stream", async ({ ben
       try Effect.try(() => (Array.from(page.querySelectorAll("button")).find((button) => button.textContent === "Retry") as HTMLButtonElement).click())
       try promise(() => vi.waitFor(() => { expect(seen.model.status).toBe("ready"); expect(counts.follows).toBe(1) }, { timeout: 10000 }))
       try sleep("50 millis")
+      try promise(() => vi.waitFor(() => expect(seen.model.disconnected).toBe(true), { timeout: 10000 }))
+      try Effect.try(() => (Array.from(page.querySelectorAll("button")).find((button) => button.textContent === "Reconnect") as HTMLButtonElement).click())
+      try promise(() => vi.waitFor(() => expect(counts.follows).toBe(2), { timeout: 10000 }))
       try Effect.try(() => {
-        expect(counts.outlines).toBe(2)
+        expect(counts.outlines).toBe(3)
         expect(seen.model.status).toBe("ready")
         expect(seen.model.outline.epics.length).toBeGreaterThan(0)
         expect(page.querySelector("[role='alert']")).toBeNull()
@@ -67,6 +70,108 @@ it("history page: outline outage, Retry, then a lost event stream", async ({ ben
     runs.push({ ...counts, failedScreen, recovered: seen.model.status === "ready" })
   }).run(slow)
   expect(runs.length).toBeGreaterThan(0)
-  for (const run of runs) expect(run).toEqual({ outlines: 2, follows: 1, failedScreen: true, recovered: true })
+  for (const run of runs) expect(run).toEqual({ outlines: 3, follows: 2, failedScreen: true, recovered: true })
   await runPromise(artifact("history-stream-faults", "Vitest built-in bench, happy-dom with the actual history page: Foldkit runtime, update, view and subscriptions over the product MockMythical seeded with a 10-commit planned history. A typed faulty Mythical layer fails the first outline read and every event stream with Unavailable. Each sample waits for the failed screen, presses Retry, and waits until the outline is shown and the event stream has failed once. Checked: two outline reads, one followed stream, the failed screen first, then the list with no alert. New scoped runtime each sample; 3 samples.", ["DOM runtime, no layout or paint. The outage is an injected Effect service, not a dropped connection; observer polling and a 50 ms settle are included."], { runs, result }))
+})
+
+/** The product mock history, whose first commit, epic and search reads each fail as an outage does, and whose next
+ * outline read fails once `other.failOutline` is set. `other.real` is the same history, for another maintainer's write. */
+function failingReads(counts: { commits: number; epics: number; searches: number; outlines: number }, other: { real?: Mythical.Shape; failOutline: boolean }) {
+  return Layer.effect(Mythical, effect {
+    const real = try Mythical
+    other.real = real
+    const service: Mythical.Shape = {
+      mode: real.mode,
+      outline: () => {
+        if (!other.failOutline) return real.outline()
+        other.failOutline = false
+        counts.outlines += 1
+        return Effect.fail(outage)
+      },
+      epic: (id, from) => { counts.epics += 1; return counts.epics === 1 ? Effect.fail(outage) : real.epic(id, from) },
+      commit: (id) => { counts.commits += 1; return counts.commits === 1 ? Effect.fail(outage) : real.commit(id) },
+      search: (query) => { counts.searches += 1; return counts.searches === 1 ? Effect.fail(outage) : real.search(query) },
+      events: (after) => real.events(after),
+      plan: (request, operation) => real.plan(request, operation),
+      start: (id, lane, operation) => real.start(id, lane, operation),
+      note: (id, section, text, operation) => real.note(id, section, text, operation),
+      approve: (id) => real.approve(id),
+      fold: () => real.fold(),
+      publish: () => real.publish(),
+    }
+    return service
+  }).pipe(Layer.provide(MockMythical({ role: "maintainer", name: "Benchmark", agent: false }, () => succeed(plannedHistory(10)))))
+}
+
+/** The actual history page at `hash`, embedded in a fresh container for the current scope; `seen` is its last model. */
+effect function historyPage(hash: string, resources: ReturnType<typeof failingReads>) {
+  const seen: { model: HistoryModel } = { model: init({ ...flags, hash }).model }
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const program = try Effect.try(() => Runtime.makeApplication({
+    Model: HistoryModel, Flags: HistoryFlags, init, update,
+    view: (model, h) => { seen.model = model; return view(model, h) },
+    subscriptions: subscriptions(node.ownerDocument.defaultView!), resources, container: node,
+  }))
+  try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed({ ...flags, hash }) })), (handle) => sync(() => handle.dispose()))
+  return { seen, page: node.ownerDocument.body }
+}
+
+it("history page: a failed commit, epic or search read shows its own Retry, which reads exactly that again", async ({ bench }) => {
+  const runs: Array<{ commits: number; epics: number; searches: number; outlines: number; alerts: ReadonlyArray<number> }> = []
+  const result = await workload(bench, "history-read-retry", "async", async () => {
+    const counts = { commits: 0, epics: 0, searches: 0, outlines: 0 }
+    const other: { real?: Mythical.Shape; failOutline: boolean } = { failOutline: false }
+    const alerts: Array<number> = []
+    const resources = failingReads(counts, other)
+    const retry = (page: HTMLElement) => Effect.try(() => {
+      const buttons = Array.from(page.querySelectorAll("button")).filter((button) => button.textContent === "Retry" && button.closest("dialog[data-state=closed]") === null)
+      alerts.push(buttons.length)
+      ;(buttons[0] as HTMLButtonElement).click()
+    })
+    const failed = (seen: { model: HistoryModel }, kind: string) => promise(() => vi.waitFor(() => expect(seen.model.readFailures.map(({ read }) => read.kind)).toEqual([kind]), { timeout: 10000 }))
+    const cleared = (seen: { model: HistoryModel }, page: HTMLElement) => promise(() => vi.waitFor(() => { expect(seen.model.readFailures).toEqual([]); expect(page.querySelector("[role='alert']")).toBeNull() }, { timeout: 10000 }))
+    let commit = ""
+    // A commit opened from its link.
+    await runPromise(scoped(effect {
+      const { seen, page } = try historyPage("m3", resources)
+      try failed(seen, "commit")
+      try retry(page)
+      try cleared(seen, page)
+      commit = seen.model.hash
+    }))
+    // The outline: an epic opened, then a search.
+    await runPromise(scoped(effect {
+      const { seen, page } = try historyPage("", resources)
+      try promise(() => vi.waitFor(() => expect(page.querySelector("[aria-expanded]")).not.toBeNull(), { timeout: 10000 }))
+      try Effect.try(() => (page.querySelector("[aria-expanded]") as HTMLElement).click())
+      try failed(seen, "epic")
+      try retry(page)
+      try cleared(seen, page)
+      try Effect.try(() => {
+        const input = page.querySelector("input[type='search']") as HTMLInputElement
+        input.value = "Commit"
+        fire(input, "input")
+      })
+      try failed(seen, "matches")
+      try retry(page)
+      try cleared(seen, page)
+      // Another maintainer plans a commit; the page's event reads the outline again, and that read fails once.
+      other.failOutline = true
+      try other.real!.plan({ how: "append", epic: "", newEpic: "Measured epic", target: "", title: "Another maintainer's commit", task: "Task" })
+      try failed(seen, "outline")
+      try retry(page)
+      try cleared(seen, page)
+      try promise(() => vi.waitFor(() => expect(seen.model.outline.epics.some((epic) => epic.title === "Measured epic")).toBe(true), { timeout: 10000 }))
+      try Effect.try(() => {
+        expect(commit).toBe("m3")
+        expect(seen.model.matches.query).toBe("Commit")
+        expect(seen.model.pages.some((epic) => epic.epic === "e1")).toBe(true)
+      })
+    }))
+    runs.push({ ...counts, alerts })
+    counts.commits = 0; counts.epics = 0; counts.searches = 0; counts.outlines = 0
+  }).run(slow)
+  expect(runs.length).toBeGreaterThan(0)
+  for (const run of runs) expect(run).toEqual({ commits: 2, epics: 3, searches: 3, outlines: 1, alerts: [1, 1, 1, 1] })
+  await runPromise(artifact("history-read-retry", "Vitest built-in bench, happy-dom with the actual history page: Foldkit runtime, update, view and subscriptions over the product MockMythical seeded with a 10-commit planned history. A typed faulty Mythical layer fails the first commit, epic and search read, and the outline read that follows another maintainer's write. One page opens commit m3; a second opens the outline, opens epic e1, filters for Commit, then receives the other write's event; the new outline reads the open epic and the search once more. For each read, require exactly that one failure in the model and one Retry on the page outside the closed plan dialog; the person clicks it; require the read again, the failure and alert gone, and the commit, epic page, matches and the other write's new epic present. Two fresh pages per sample; setup, waits and assertions included.", ["happy-dom execution, no browser layout or paint; the mock history answers in process, so this is page work, not network latency."], result))
 })

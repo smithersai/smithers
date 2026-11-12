@@ -1,0 +1,115 @@
+// Retained runtime decisions missed after the proof modules split. No specification-only helper is invoked.
+import { it, expect } from "@effect/vitest"
+import { decisionLabel, earlier } from "../src/core/wikiBuildDecision.vibe"
+import { titleScope } from "../src/history/areaDecision.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { entryUse } from "../src/history/seedDecision.vibe"
+import { sentenceTail } from "../src/history/seedSanitizeDecision.vibe"
+import { foldTitle } from "../src/history/stackDecision.vibe"
+import { findFirstNamed, findParagraphStart } from "../src/history/trailerDecision.vibe"
+import { roleRank } from "../src/web/accountViewDecision.vibe"
+import { timelineAt } from "../src/web/historyViewDecision.vibe"
+import { positiveDecimal } from "../src/web/viewDecision.vibe"
+import { init, Message, update } from "../src/web/main.vibe"
+import { actionFailureText } from "../src/web/modelDecision.vibe"
+import { editedIssue } from "../src/core/issueGraphDecision.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { newCommits } from "../worker/MainLog.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+it("incremental main accepts unlisted folded ancestry and refuses an unlisted new ancestor", async ({ bench }) => {
+  const result = await workload(bench, "main-ancestry-boundary", "sync", () => {
+    const id = (unit: string) => unit.repeat(12)
+    const commit = (sha: string, parents: ReadonlyArray<string>) => ({ sha, parents: parents.map(sha => ({ sha })), commit: { message: "Measured ancestry" } })
+    const fetched = [commit(id("d"), [id("b"), id("c")]), commit(id("c"), [id("a")]), commit(id("b"), [id("a")])]
+    expect(newCommits(fetched, id("b"))?.map(item => item.sha)).toEqual([id("c"), id("d")])
+    const missingNew = [fetched[0]!, commit(id("c"), [id("e")]), fetched[2]!]
+    expect(newCommits(missingNew, id("b"))).toBeUndefined()
+    expect(newCommits(fetched, id("d"))).toEqual([])
+  }).run(quick)
+  await runPromise(artifact("main-ancestry-boundary", "Vitest built-in bench; first-parent cursor plus a merge side branch. An unlisted parent already in the cursor's ancestry is accepted in exact side-before-head order; an unlisted new parent refuses the delta; a cursor at head yields none. Literal id/order assertions included.", ["Pure commit-graph policy; no provider, repository process or network."], result))
+})
+
+it("the default mock folds actual outside commits once and keeps their native identities", async ({ bench }) => {
+  const result = await workload(bench, "history-outside-seed", "async", () => runPromise(scoped(effect {
+    provide MockMythical({ role: "maintainer", name: "Bench", agent: false }) {
+      const history = try Mythical
+      const first = try history.fold()
+      const again = try history.fold()
+      const outline = try history.outline()
+      const compiler = try history.search("preserve reverse-mapped declaration cycle structure")
+      const terminal = try history.search("distinguish line input from raw key events")
+      const specification = try history.search("VIP-43, theorem and spec")
+      const pages = try all([compiler, terminal, specification].map(result => history.commit(result.commits[0]!.id)))
+      try Effect.try(() => {
+        expect([first, again]).toEqual([3, 0])
+        expect(outline.main).toBe("0c6cea2cde78")
+        expect(pages.map(page => page.real.map(item => item.sha))).toEqual([["301689a33565"], ["0c40c2c6e9a0"], ["0c6cea2cde78"]])
+        expect(pages.map(page => page.commit?.state)).toEqual(["landed", "landed", "landed"])
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("history-outside-seed", "Vitest built-in bench; actual default MockMythical seed and the three real outside commits retained in AFTER_SEED. Fold twice, search each native title and read its mythical detail. Require three folds then zero, the exact final main, each native SHA and landed state. Three fresh engines; seed loading, projections and assertions included.", ["Shipped mock history over memory storage; fixed native commit metadata, no GitHub read or repository mutation."], result))
+})
+
+it("bootstrap handles a repeated title, revert, continued evidence and malformed fold", async ({ bench }) => {
+  const result = await workload(bench, "bootstrap-retained-inputs", "sync", () => {
+    const descriptions = ["docs: a page\n\nValidation: first line\ncontinued evidence", "docs: a page", 'Revert "docs: a page"', "chore(docs): regenerate site"]
+    const commits = descriptions.map((description, i) => ({ sha: String(i + 1).padStart(12, "a"), change: `c${i}`, description, parents: i === 0 ? [] : [String(i).padStart(12, "a")] }))
+    const seed = seedOf("o/r", commits, [{ id: "running", lane: "bench", state: "running", reason: "", gate: "", titles: ["docs: a page"] }])
+    expect(seed.real.map(item => item.into)).toEqual(["m1", "m2", "m1", "m2"])
+    expect(seed.epics.flatMap(epic => epic.commits)[0]!.notes).toEqual([
+      { section: "tried", text: "Reverted in aaaaaaaaaaa3." },
+      { section: "evidence", text: "Validation: first line continued evidence." },
+    ])
+    expect(replay(intentsOf(seed)).refused).toEqual([])
+    const broken = intentsOf({ repository: "o/r", main: "", epics: [], real: [{ sha: "a".repeat(12), change: "c", title: "", into: "missing" }] })
+    expect(replay(broken).refused).toEqual(broken)
+    expect(entryUse(false, "running")).toBe("skip")
+  }).run(quick)
+  await runPromise(artifact("bootstrap-retained-inputs", "Vitest built-in bench; a four-commit bootstrap with repeated titles, a revert, regenerated documentation, continued evidence, and a running queue entry; exact fold ownership and notes. A malformed fold is refused on replay.", ["Synthetic commit metadata; no repository process or GitHub operation. Assertions included."], result))
+})
+
+it("browser reducers retain media failures and fence sandbox and action failures", async ({ bench }) => {
+  const result = await workload(bench, "retained-reducer-failures", "sync", () => {
+    const home = init({ session: "retained", mode: "mock", name: "Guest" }).model
+    const failed = update(home, Message.FailedMedia({ src: "/bad.png", kind: "image" }))
+    expect(failed.model.failedMedia).toEqual(["/bad.png"])
+    expect(failed.commands?.map(command => command.name)).toEqual(["ObserveMedia"])
+    expect(update(failed.model, Message.FailedMedia({ src: "/bad.png", kind: "image" })).model.failedMedia).toEqual(["/bad.png", "/bad.png"])
+    expect(update(home, Message.FailedTourEvents()).model.tourError).toBe("connection")
+    const waiting = { ...home, sandboxPane: "pane" as const, sandboxRequest: 2, sandboxBusy: true }
+    for (const polled of [false, true]) {
+      expect(update(waiting, Message.FailedSandbox({ conversation: home.conversation, request: 2, reason: "offline", polled })).model).toMatchObject({ sandboxBusy: false, sandboxError: "offline", sandboxPane: "pane" })
+      expect(update(waiting, Message.FailedSandbox({ conversation: "stale", request: 2, reason: "offline", polled })).model).toBe(waiting)
+    }
+    for (const [op, label] of [["run", "Couldn't start the run."], ["cancel", "Couldn't cancel the run."], ["load", "Couldn't load runs"]] as const) {
+      expect(actionFailureText("unavailable", op)).toBe(label)
+      const failure = update(home, Message.FailedActions({ code: "unavailable", op }))
+      expect(failure.model.actions?.error).toBe(label)
+      const retried = update(failure.model, Message.RetriedActions())
+      expect(retried.model.actions).toMatchObject({ loading: true, error: "" })
+      expect(retried.commands?.map(command => command.name)).toEqual(["LoadActions"])
+    }
+  }).run(quick)
+  await runPromise(artifact("retained-reducer-failures", "Vitest built-in bench; actual update arms for retained media failures, lost tour events, current/stale sandbox reads and writes, and Actions run/cancel/load failures and Retry. Exact state and emitted command names checked.", ["Reducer cost only; injected service faults and Chromium execution are collected separately."], result))
+})
+
+it("runtime text walks preserve public labels, UTF-16 boundaries and malformed inputs", async ({ bench }) => {
+  const result = await workload(bench, "retained-text-decisions", "sync", () => {
+    expect([decisionLabel("short"), decisionLabel("decisions/free")]).toEqual(["", "free"])
+    expect([earlier(3, 7), earlier(7, 3), earlier(3, -1)]).toEqual([3, 3, 3])
+    expect([titleScope("Compiler: repair"), titleScope("src/Parser: repair")]).toEqual(["compiler", "src/parser"])
+    expect(sentenceTail("word  ,;: ")).toBe("word")
+    expect([foldTitle("ab😀cd", 4), foldTitle("abcde", 4)]).toEqual(["ab…", "abc…"])
+    expect(findParagraphStart(["title", "body", "still body"], 2)).toBe(-1)
+    expect(findFirstNamed(["Signed-off-by: A", "Other: B"], 0, 2)).toBe(-1)
+    expect([roleRank("unknown"), timelineAt("landed"), timelineAt("unknown")]).toEqual([-1, 3, -1])
+    expect([positiveDecimal("1234"), positiveDecimal("12x"), positiveDecimal("012")]).toEqual([true, false, false])
+    // Read/draft operations edit no existing issue. Keep its identity and all fields.
+    for (const op of ["read", "draft"] as const) expect(editedIssue(fixtureIssues[0]!, { op, number: fixtureIssues[0]!.number, parent: 0, assignee: "", text: "", note: "", actor: "Bench", role: "maintainer", kind: "person", at: "" })).toBe(fixtureIssues[0])
+  }).run(quick)
+  await runPromise(artifact("retained-text-decisions", "Vitest built-in bench; runtime wiki labels/field ordering, bare conventional scopes, punctuation trimming, surrogate-safe title truncation, absent trailer/paragraph, role/timeline sentinels and decimal validation. Literal answers checked inside each callback.", ["Pure runtime policy functions; recursive specification counterparts are deliberately not executed."], result))
+})

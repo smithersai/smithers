@@ -1,0 +1,196 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { Repository } from "@smthrs/jj"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { HttpClient, HttpClientError } from "effect/http"
+import { EXPORTER, REF_NAMES, guarded, prepare, type Pace } from "../src/history/export.vibe"
+import { MainUnavailable } from "../src/history/flows.vibe"
+import { mockRepository } from "../src/history/MockMythical.vibe"
+import type { MainCommit } from "../src/history/Sequencer.vibe"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import { historyObject } from "../worker/apiObjects.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { told } from "../test/support/exportFlow.vibe"
+import { artifact, quick, workload } from "./artifact.vibe"
+
+const STORY = [
+  { type: "OpenEpic", id: "e1", title: "compiler" },
+  { type: "Plan", id: "m1", epic: "e1", before: "", title: "feat(compiler): one", task: "" },
+  { type: "Plan", id: "m2", epic: "e1", before: "", title: "docs: two", task: "" },
+  { type: "Fold", sha: "a1a1a1a1a1a1", change: "", title: "feat(compiler): one", into: "m1" },
+  { type: "Fold", sha: "b1b1b1b1b1b1", change: "", title: "docs: two", into: "m2" },
+] as const
+// Longer than EngineStore.defaultHoldMs (5 s): an alarm parks, then this driver advances its durable timer.
+const PACE: Pace = { writes: 2, reads: 1, pauseMs: 120_000 }
+
+it("an export moves its own refs and refuses protected or unrelated refs atomically", async ({ bench }) => {
+  const result = await workload(bench, "history-export-ref-guard", "async", () => runPromise(scoped(effect {
+    const w = try world()
+    const tree = try w.repository.writeTree([])
+    const tip = try w.repository.writeCommit({ tree, parents: [], author: EXPORTER, committer: EXPORTER, message: "Guarded export\n" })
+    const own = [REF_NAMES.mythical, REF_NAMES.notes, REF_NAMES.manifest]
+    const safe = guarded(w.repository, REF_NAMES)
+    try safe.updateRefs({ operation: "bench", updates: own.map(ref => ({ ref, before: null, after: tip })) })
+    const forbidden = ["refs/heads/main", "refs/heads/vibe", "refs/heads/other", "refs/tags/v1", "refs/notes/commits"]
+    for (const ref of forbidden) {
+      const answer = try Effect.flip(safe.updateRefs({ operation: "bench", updates: [{ ref: REF_NAMES.mythical, before: tip, after: null }, { ref, before: null, after: tip }] }))
+      try Effect.try(() => expect([answer.code, answer.method, answer.refs]).toEqual(["invalid", "updateRefs", [ref]]))
+    }
+    for (const slot of ["mythical", "notes", "manifest"] as const) for (const ref of ["refs/heads/main", "refs/heads/vibe"]) {
+      const aliased = guarded(w.repository, { ...REF_NAMES, [slot]: ref })
+      const answer = try Effect.flip(aliased.updateRefs({ operation: "bench", updates: [{ ref, before: null, after: tip }] }))
+      try Effect.try(() => expect([answer.code, answer.refs]).toEqual(["invalid", [ref]]))
+    }
+    const after = try w.repository.readRefs([...own, ...forbidden])
+    try Effect.try(() => expect(after.map(ref => ref.oid)).toEqual([...own.map(() => tip), ...forbidden.map(() => null)]))
+  }))).run(quick)
+  await runPromise(artifact("history-export-ref-guard", "Vitest built-in bench; actual guarded export repository over the product memory git repository. Publish all three own refs, then reject mixed transactions containing protected/unrelated refs and every configuration alias of main/vibe. Exact error refs and unchanged allowed/forbidden refs checked, proving no partial transaction reached the repository.", ["Memory git repository; no network or GitHub write. Setup, hashing, successful publication and all refusal checks included."], result))
+})
+
+effect function world(fault: "none" | "invalid" | "limited" | "main" | "off" = "none") {
+  const kv = try Effect.try(() => objectStorage())
+  const storage = kv as unknown as Storage
+  const sequencer = try HistoryObject.history(storage)
+  const base = mockRepository(sequencer)
+  const seen: Array<readonly [number, string]> = []
+  let failed = false
+  const repository: Repository.Repository = fault === "off" ? (try Effect.try(() => Repository.makeUnsupported("off"))) : {
+    ...base,
+    writeCommit: (commit) => effect {
+      if (fault === "invalid" && !failed) {
+        failed = true
+        return try fail(Repository.repositoryError("invalid", "writeCommit", "refused"))
+      }
+      seen.push([try Clock.currentTimeMillis, "commit"])
+      return try base.writeCommit(commit)
+    },
+    writeBlob: (text) => effect {
+      seen.push([try Clock.currentTimeMillis, "blob"])
+      if (fault === "limited" && !failed) {
+        failed = true
+        return try fail(Repository.repositoryError("unavailable", "writeBlob", "limited", undefined, 150_000))
+      }
+      return try base.writeBlob(text)
+    },
+    writeTree: (entries) => effect { seen.push([try Clock.currentTimeMillis, "tree"]); return try base.writeTree(entries) },
+  }
+  const main: Array<MainCommit> = []
+  const log = { since: (sha: string) => fault === "main" ? fail(new MainUnavailable({ reason: "offline" })) : succeed(main.slice(main.findIndex(commit => commit.sha === sha) + 1)) }
+  const publishing = HistoryObject.publisher("bench-publisher", storage, sequencer, log, { repository, names: REF_NAMES, pace: PACE })
+  const refs = () => Effect.map(base.readRefs([REF_NAMES.mythical, REF_NAMES.notes, REF_NAMES.manifest]), each => each.map(ref => ref.oid))
+  const drive = effect (tick = false) => {
+    const snapshots: Array<ReadonlyArray<string | null>> = []
+    for (let alarm = 0; alarm < 100; alarm++) {
+      if (kv.alarmAt !== undefined && kv.alarmAt > (try Clock.currentTimeMillis)) try TestClock.setTime(kv.alarmAt)
+      const running = try Effect.forkChild(publishing.alarm())
+      if (tick) {
+        for (let poll = 0; poll < 1000 && running.pollUnsafe() === undefined; poll++) try TestClock.adjust("10 seconds")
+        if (running.pollUnsafe() === undefined) return try die("publisher retry exceeded 1000 clock advances")
+      }
+      const outcome = try TestClock.withLive(Effect.timeout(Fiber.join(running), "15 seconds"))
+      snapshots.push(try refs())
+      if (outcome._tag === "Continued") return snapshots
+    }
+    return try die("publisher exceeded 100 alarms")
+  }
+  return { sequencer, repository, publishing, refs, drive, seen, main }
+}
+
+it("publishes in bounded batches, keeps publication atomic and follows the next main commit", async ({ bench }) => {
+  const program = effect {
+    const w = try world()
+    try told(w.sequencer, STORY)
+    const history = try w.sequencer.read()
+    const readLimited = try prepare(history, REF_NAMES, { ...PACE, reads: 0 }).pipe(Effect.provideService(Repository.Repository, w.repository))
+    const writeLimited = try prepare(history, REF_NAMES, { ...PACE, reads: 10, writes: 0 }).pipe(Effect.provideService(Repository.Repository, w.repository))
+    const first = try w.publishing.start()
+    const repeated = try w.publishing.start()
+    const snapshots = try w.drive()
+    const before = try w.refs()
+    const written = w.seen.length
+    const quiet = try w.drive()
+    const afterQuiet = w.seen.length
+    w.main.push({ sha: "c1c1c1c1c1c1", change: "", title: "docs: another page", message: "docs: another page" })
+    try w.drive()
+    const after = try w.refs()
+    const followed = try w.sequencer.read()
+    const running = try w.publishing.start()
+    try Effect.try(() => {
+      expect([readLimited, writeLimited]).toEqual([undefined, undefined])
+      expect([first, repeated, running]).toEqual(["started", "started", "running"])
+      expect(snapshots.length).toBeGreaterThan(2)
+      expect(snapshots.every(refs => refs.every(oid => oid === null) || refs.every(oid => oid !== null))).toBe(true)
+      expect(before.every(oid => oid !== null)).toBe(true)
+      expect(afterQuiet).toBe(written)
+      expect(quiet.at(-1)).toEqual(before)
+      expect(after[0]).not.toBe(before[0])
+      expect(followed.real.map(real => real.sha)).toContain("c1c1c1c1c1c1")
+      const batches = [...new Set(w.seen.slice(0, written).map(([at]) => at))]
+      for (const at of batches) expect(w.seen.slice(0, written).filter(([time]) => time === at).length).toBeLessThanOrEqual(PACE.writes)
+      for (let i = 1; i < batches.length; i++) expect(batches[i]! - batches[i - 1]!).toBeGreaterThanOrEqual(PACE.pauseMs)
+    })
+  }
+  const result = await workload(bench, "history-publisher-paced", "async", () => runPromise(scoped(program).pipe(Effect.provide(TestClock.layer())))).run(quick)
+  await runPromise(artifact("history-publisher-paced", "Vitest built-in bench; actual History publisher, durable execution host and SQLite storage over the product mock repository. Two folded commits, one-tree/two-object batches, atomic publication, a quiet round and a new main commit. Exact refs, unchanged quiet writes, folded SHA and batch bounds checked. TestClock advances durable alarms.", ["In-memory repository and SQLite host adapter; no GitHub, Cloudflare scheduling or wall-clock pacing claim. Simulated pauses; setup and correctness checks included."], result))
+})
+
+it("fault coverage: publisher refuses safely, retries a limited batch and continues following main", async () => {
+  const passed: Array<string> = []
+  for (const fault of ["invalid", "limited", "main", "off", "empty"] as const) {
+    const program = effect {
+      const w = try world(fault === "empty" ? "none" : fault)
+      if (fault !== "empty") try told(w.sequencer, STORY)
+      try w.publishing.start()
+      try w.drive(fault === "limited")
+      const first = try w.refs()
+      if (fault === "invalid") try w.drive()
+      const after = try w.refs()
+      try Effect.try(() => {
+        if (fault === "invalid") { expect(first).toEqual([null, null, null]); expect(after.every(oid => oid !== null)).toBe(true) }
+        else if (fault === "off" || fault === "empty") expect(after).toEqual([null, null, null])
+        else expect(after.every(oid => oid !== null)).toBe(true)
+        if (fault === "limited") {
+          const blobs = w.seen.filter(([, kind]) => kind === "blob")
+          expect(blobs[1]![0] - blobs[0]![0]).toBeGreaterThanOrEqual(150_000)
+        }
+      })
+      passed.push(fault)
+    }
+    await runPromise(scoped(program).pipe(Effect.provide(TestClock.layer())))
+  }
+  await runPromise(artifact("fault-coverage-history-publisher", "Counts only; actual publisher and durable host over faulty Repository/MainLog Effect services. Invalid write leaves refs unchanged then recovers next round; a limited write waits its retry-after through the engine; unavailable main still exports; disabled repository and empty history publish nothing.", ["TestClock and product memory repository; no live provider, intercepted request or timing observation."], { passed }))
+})
+
+it("fault coverage: the object starts and drives publishing only when enabled", async () => {
+  const program = effect {
+    const offline = HttpClient.make(request => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
+    const results: Array<boolean> = []
+    for (const enabled of [false, true]) {
+      const kv = try Effect.try(() => objectStorage())
+      const sequencer = try HistoryObject.history(kv as unknown as Storage)
+      try told(sequencer, STORY)
+      const state = { id: { toString: () => "history/bench-publisher" }, raw: { storage: kv }, exports: {} } as never
+      const exporter = { repository: mockRepository(sequencer), names: REF_NAMES, pace: PACE }
+      const api = try historyObject(state, undefined, offline, enabled ? exporter : undefined)
+      if (enabled) {
+        const answer = try api.alarm()
+        const stored = try Effect.try(() => JSON.parse(String(kv.kv.get(ExecutionObject.intentKey))) as { flow: string })
+        const now = try Clock.currentTimeMillis
+        try Effect.try(() => {
+          expect(answer).toBeUndefined()
+          expect(stored.flow).toBe("vibelang/history/Publish")
+          expect(kv.alarmAt).toBeGreaterThan(now)
+        })
+      } else {
+        try api.page({ what: "outline" })
+        try Effect.try(() => expect(kv.kv.get(ExecutionObject.intentKey)).toBeUndefined())
+      }
+      results.push(enabled)
+    }
+    return results
+  }
+  const passed = await runPromise(scoped(program).pipe(Effect.provide(TestClock.layer())))
+  await runPromise(artifact("fault-coverage-history-publisher-startup", "Counts only; actual History object startup and public alarm member over SQLite, the product mock repository and a faulty HTTP service. Publishing off stores no intent; enabled startup installs Publish and its alarm parks at the next paced batch despite unavailable main.", ["Node object adapter and TestClock; no GitHub write, Cloudflare scheduling or timing observation."], { passed }))
+})

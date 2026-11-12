@@ -212,7 +212,12 @@ it("action agent bindings through the real harness boundary", async ({ bench }) 
           answers.push(answer)
           if (ordinal === 1) started = (answer.value as { id: string }).id
         }
+        const reader = bindings[2]!
+        const refused = try reader.run(try Effect.try(() => Cell.callOf(reader.descriptor, { input: { id: "missing-run" }, identity: new Cell.CallIdentity({
+          session: "benchmark", frame: 0, cell: "benchmark", ordinal: 4, declaration: Cell.declarationDigest(reader.descriptor), layers: [],
+        }) })))
         try Effect.try(() => {
+          expect([refused.outcome, refused.code, refused.message]).toEqual(["failure", "flow_failed", "Flow vibelang/actions/Read failed: not-found"])
           expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["vibelang/actions/List", "vibelang/actions/Start", "vibelang/actions/Read", "vibelang/actions/Cancel"])
           expect(started).not.toBe("")
           expect(announced).toHaveLength(1)
@@ -222,7 +227,7 @@ it("action agent bindings through the real harness boundary", async ({ bench }) 
       }
     }))
   }).run(slow)
-  await runPromise(artifact("action-tools", "Vitest built-in bench; all four actual action FlowBinding handlers invoked with real harness call identities and declaration digests over the product mock actions service; start announces its first run snapshot, read returns it and cancel acknowledges.", ["Binding/handler boundary without model selection or QuickJS; the same declarations serve CLI and MCP surfaces."], result))
+  await runPromise(artifact("action-tools", "Vitest built-in bench; all four actual action FlowBinding handlers invoked with real harness call identities and declaration digests over the product mock actions service; start announces its first run snapshot, read returns it and cancel acknowledges; a read of an unknown run is refused with only its not-found code.", ["Binding/handler boundary without model selection or QuickJS; the same declarations serve CLI and MCP surfaces."], result))
 })
 
 it("markdown, wiki and small shared decisions", async ({ bench }) => {

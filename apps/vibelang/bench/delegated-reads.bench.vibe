@@ -1,0 +1,47 @@
+// @vitest-environment node
+// Reads use real provider bytes from the committed recordings and the production delegation host.
+import { it, expect } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import { WebCrypto } from "@smthrs/crypto"
+import { recordingPath } from "../test/support/github.vibe"
+import { recordedClient, recordedConnection, recordedPerson, REPOSITORY } from "../test/support/recordedIssues.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { IssueAuthority, serveIssues } from "../worker/Issues.vibe"
+import { WikiAuthority, serveWiki } from "../worker/Wiki.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("recorded public issue and wiki reads survive an ended delegation", { timeout: 120_000 }, async ({ bench }) => {
+  const issues = await runPromise(HttpRecording.load(await runPromise(recordingPath("issues"))))
+  const wiki = await runPromise(HttpRecording.load(await runPromise(recordingPath("wiki"))))
+  const result = await workload(bench, "delegated-read-fallback", "async", () => runPromise(scoped(effect {
+    const answers: Array<{ status: number; body: unknown }> = []
+    for (const kind of ["issues", "wiki"] as const) for (const mode of ["valid", "expired", "forbidden"] as const) {
+      try scoped(effect {
+        const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+        const replay = kind === "issues" ? recordedClient(issues, "read", "") : try Effect.try(() => HttpRecording.replay({ label: wiki.label, exchanges: wiki.exchanges.slice(3, 5) }))
+        const site = try recordedConnection(storage, replay)
+        let lost = 0
+        const actor = { ...recordedPerson, connection: mode === "expired" ? { ...site.connection, delegation: "ended-delegation" } : site.connection }
+        const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get(`http://read.invalid/api/${kind}${kind === "wiki" ? "?page=benchmarks" : ""}`)))
+        const delegate = mode === "forbidden" ? try GitHub.Delegation.site({ origin: "https://vibelang.invalid", brokerOrigin: "https://smithers.invalid", secret: Redacted.make("wrong-fixture-signing-secret-32-chars") }) : site.delegate
+        const provided = Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, site.http), Layer.succeed(GitHubDelegate, delegate), WebCrypto.layer)
+        const response = kind === "issues"
+          ? try serveIssues("retained-issues", storage, REPOSITORY).pipe(Effect.provideService(IssueAuthority, { current: () => succeed(actor), lost: () => sync(() => { lost++ }) }), Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provide(provided))
+          : try serveWiki("retained-wiki", storage, { ...REPOSITORY, root: "wiki", branch: `vibelang/wiki-base-${wiki.label}` }).pipe(Effect.provideService(WikiAuthority, { current: () => succeed(actor), lost: () => sync(() => { lost++ }) }), Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provide(provided))
+        const body = try promise(() => HttpServerResponse.toWeb(response).json())
+        try Effect.try(() => { expect(response.status).toBe(mode === "forbidden" ? 403 : 200); expect(lost).toBe(mode === "expired" ? 1 : 0) })
+        if (mode !== "forbidden") answers.push({ status: response.status, body })
+      })
+    }
+    try Effect.try(() => {
+      // Identity is unchanged; the projection must be identical after the credential is forgotten.
+      expect(JSON.stringify(answers[0]) === JSON.stringify(answers[1])).toBe(true)
+      expect(JSON.stringify(answers[2]) === JSON.stringify(answers[3])).toBe(true)
+    })
+  }))).run(slow)
+  await runPromise(artifact("delegated-read-fallback", "Vitest built-in bench; production HTTP/durable issue and wiki reads over SQLite and the real smithers.sh connection host. Provider GET bytes come from issues.json/wiki.json. A current delegation reads successfully; an ended id is refused by the connection host, forgotten once, and falls back to the identical anonymous projection. Invalid signatures return 403 without forgetting a valid connection. Three fresh six-request corpora (four reads, two refusals), setup/assertions included.", ["Strict replayed GitHub answers, no network, provider write or GitHub latency. Fixture-only local connection authority; no OAuth claim."], result))
+})

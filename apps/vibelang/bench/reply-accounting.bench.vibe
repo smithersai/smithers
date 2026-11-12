@@ -1,0 +1,94 @@
+// @vitest-environment node
+// A reply that ends with an outstanding token reservation: real reply hosts, the real daily ledger and the separate
+// accounting flow (worker/ReplyAccounting.vibe). The Budget transport is a typed faulty Effect service that loses
+// responses or interrupts, then recovers; nothing intercepts a request.
+import { it, expect } from "@effect/vitest"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import * as Daily from "../worker/Budget.vibe"
+import * as Accounting from "../worker/ReplyAccounting.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import type * as Sequencer from "../worker/Sequencer.vibe"
+import type { Spend } from "../worker/Reply.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const history = readerOver(() => Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" })))
+const model = { model: undefined, unusable: "unset" }
+
+/** Ledger totals and what accounting still holds, after `turns` more alarms. */
+effect function settle(host: string, storage: Objects.Storage, sequencer: Sequencer.Sequencer, transport: Spend.Shape, turns: number) {
+  for (let turn = 0; turn < turns; turn++) try Objects.alarm(host, storage, sequencer, transport, model, history)
+  return {
+    reserved: (try promise(() => storage.get(Daily.RESERVED))) ?? 0,
+    spent: (try promise(() => storage.get(Daily.SPENT))) ?? 0,
+    pending: (try promise(() => storage.list({ prefix: "reply-accounting/" }))).size,
+  }
+}
+
+it("a terminal reply settles its outstanding reservation once, after a lost or interrupted Budget recovers", async ({ bench }) => {
+  const result = await workload(bench, "reply-accounting-recovery", "async", () => runPromise(scoped(effect {
+    // Refused admission: no room in the ledger, so accounting keeps no receipt.
+    const refusedStorage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+    const empty = try Objects.budget(refusedStorage, 0)
+    const refusedTracked = Accounting.tracked(refusedStorage, "reply/m1", { admit: (_day, key, ceiling) => empty.admit(key, ceiling), spend: (_day, key, tokens, reported, ceiling) => empty.spend(key, tokens, reported, ceiling) })
+    const refused = try refusedTracked.admit("day", "model/one", 20)
+    const refusedPending = (try promise(() => refusedStorage.list({ prefix: "reply-accounting/" }))).size
+
+    // Unfinished call: admitted, then every Budget response is lost until the reply is terminal.
+    const lostStorage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+    const daily = try Objects.budget(lostStorage, 100)
+    let lost = true
+    const lossy = {
+      admit: (_day: string, key: string, ceiling: number) => daily.admit(key, ceiling),
+      spend: effect (_day: string, key: string, tokens: number, reported: boolean, ceiling: number) => {
+        if (lost) throw new Unreachable({ what: "budget" })
+        try daily.spend(key, tokens, reported, ceiling)
+      },
+    }
+    const admitted = try Accounting.tracked(lostStorage, "reply/m1", lossy).admit("day", "model/one", 20)
+    const lostSequencer = try Objects.conversation(lostStorage)
+    try Objects.post("accounting", lostStorage, lostSequencer, "a1", "Ada", "Question")
+    try Objects.alarm("accounting", lostStorage, lostSequencer, lossy, model, history)
+    const answered = (try lostSequencer.read(0)).entries.find(entry => entry.author === "agent")?.done
+    const whileLost = try settle("accounting", lostStorage, lostSequencer, lossy, 0)
+    lost = false
+    const recovered = try settle("accounting", lostStorage, lostSequencer, lossy, 5)
+
+    // Interrupted cleanup: the settlement flow retries and keeps its receipt and the parent intent until it succeeds.
+    const retryStorage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+    const ledger = try Objects.budget(retryStorage, 100)
+    let interrupted = true
+    const stalling = {
+      admit: (_day: string, key: string, ceiling: number) => ledger.admit(key, ceiling),
+      spend: effect (_day: string, key: string, tokens: number, reported: boolean, ceiling: number) => {
+        if (interrupted) return try Effect.interrupt
+        try ledger.spend(key, tokens, reported, ceiling)
+      },
+    }
+    const tracked = Accounting.tracked(retryStorage, "reply/m1", stalling)
+    const held = try tracked.admit("day", "model/one", 20)
+    try tracked.checkpoint!("day", "model/one", 3, true, 20)
+    const retrySequencer = try Objects.conversation(retryStorage)
+    try Objects.post("retrying-accounting", retryStorage, retrySequencer, "a1", "Ada", "Question")
+    const outcomes: Array<string> = []
+    for (let turn = 0; turn < 3; turn++) outcomes.push((try Objects.alarm("retrying-accounting", retryStorage, retrySequencer, stalling, model, history))._tag)
+    const retrying = try settle("retrying-accounting", retryStorage, retrySequencer, stalling, 0)
+    const cleanupKeys = (try promise(() => retryStorage.list({ prefix: "reply-settlement/" }))).size
+    interrupted = false
+    const retried = try settle("retrying-accounting", retryStorage, retrySequencer, stalling, 5)
+
+    try Effect.try(() => {
+      expect([refused, refusedPending]).toEqual([false, 0])
+      expect([admitted, answered]).toEqual([true, true])
+      expect(whileLost).toEqual({ reserved: 20, spent: 0, pending: 1 })
+      expect(recovered).toEqual({ reserved: 0, spent: 20, pending: 0 })
+      expect(held).toBe(true)
+      expect(outcomes).toEqual(["Settled", "Retrying", "Retrying"])
+      expect(retrying).toEqual({ reserved: 20, spent: 0, pending: 1 })
+      expect(cleanupKeys).toBeGreaterThan(0)
+      expect(retried).toEqual({ reserved: 0, spent: 3, pending: 0 })
+    })
+  }))).run(slow)
+  await runPromise(artifact("reply-accounting-recovery", "Vitest built-in bench; three fresh in-memory object stores with the real reply host, sequencer, daily Budget ledger and ReplyAccounting flow. A typed faulty Budget transport refuses at a zero cap, loses every settlement response until the reply is terminal, or interrupts settlement until it recovers. Checks the refused admission keeps no receipt, an unfinished call holds 20 tokens until recovery and then charges exactly 20 once, and an interrupted cleanup retries, keeps its receipt and parent intent, then charges its 3 checkpointed tokens once. Setup and all alarms included.", ["In-memory object storage under Node, not workerd SQLite; no model call (the reply has no model). TestClock is not used: retry alarms run back to back, so this measures the accounting work, not the 500 ms to 30 s retry schedule."], result))
+})

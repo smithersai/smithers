@@ -1038,3 +1038,124 @@ unchanged stored-session count and no exchange on replay. Assert the failure red
 absent new session cookie, anonymous readback and preservation of the prior session. This measures neither the
 hosted broker nor Connect. Correct artifact methods describe these distinct paths; earlier receipts do not
 establish the claimed exchange-failure or actions-refusal behavior.
+
+## Resume 11: exact non-runtime inventory (2026-11-12)
+
+| File | Statement-start positions on resume 10's frozen source | Why a product benchmark cannot reach them |
+| --- | --- | --- |
+| `src/core/flowDecision.vibe` | 135,136,137,138,139,203,204,205,206 (9) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/core/issueGraphDecision.vibe` | 25,26,27,28,29,30,149,157,166,175,185,196,205,216,227,238,250,266,279 (19) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/core/replayDecision.vibe` | 22,30,40 (3) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/core/sequencerDecision.vibe` | 19,20 (2) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/core/wikiBuildDecision.vibe` | 66,67,90,91,92,93,94,121,122,123,141,142,191,192,202,203,211,212,213,214,241,242,243,261,262,263 (26) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/history/areaDecision.vibe` | 49,50,59,60,61,71,72,73,74,82,83,84,85,86 (14) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/history/pageDecision.vibe` | 56,57 (2) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/history/replayDecision.vibe` | 20,28,86,101 (4) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/history/seedInputDecision.vibe` | 58,59,77,78,79 (5) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/history/seedSanitizeDecision.vibe` | 34,35,81,82,83,84,85,86,87,88,111,112,113,145,146,190,191,192,193,194,195,218,219,220 (24) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/history/seedTextDecision.vibe` | 59,60,102,103 (4) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/history/trailerDecision.vibe` | 43,44,57,58,59,60,71,72,84,85,86,95,96,97,104,112 (16) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/web/issueDecision.vibe` | 208 (1) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `src/web/modelWrite.vibe` | 70,71,139 (3) | Proof-contract model or lemma only. Runtime callers use the iterative implementation; invoking this body just to raise a counter would measure a different algorithm. VIP-43 must provide the specification-only form. |
+| `worker/Objects.vibe` | 255,256 (2) | `unrouted.start` and `unrouted.wake` are engine invariant traps. The fixed Reply and Tour graphs declare no child-flow start or round handoff. A valid execution cannot call these callbacks; directly invoking a trap would not benchmark that graph. |
+
+The earlier 35-position estimate predates recursive proof specifications introduced alongside the iterative text
+walks. Resume 11's source audit identifies **132** specification-only statement-start positions, including the three
+in `modelWrite` (`escapeWritesIssues`, `screenKept`; its own unit test explicitly calls them proof-only). The initial
+242-position audit classified those three as runtime until their callers were checked; corrected totals are 132
+specification positions, 40 new runtime positions and 70 existing runtime positions not reached in that collection.
+The initial file/position table and exact source text remain in the lane report/evidence, including that correction.
+No source exclusion or threshold change is made. These positions stay in every denominator.
+
+The newly counted recursive specifications include wiki scans, scope parsing, seed input selection, redaction and
+sentence boundaries, whitespace capture and trailer parsing. Their iterative counterparts run in the actual app.
+The fixed workloads now supply boundary inputs directly, so runtime coverage no longer depends only on whichever
+wiki pages or history happened to be loaded. Fault browser workloads continue on the e2e build with counts only;
+production browser timings use the optimized build. Replayed provider/Container bytes are labeled replay, never live.
+
+Current-main live evidence must be re-collected: the resume9 dump matches 69 of its 70 source modules on the initial
+resume11 base 892446d8, but `src/actions/Actions.vibe` changed. The source-checked collector remains unchanged and
+refuses that whole dump. The 31/31 deployed binding receipt remains qualified to resume10's frozen cohort; it is not
+silently credited to this revision. The lead-only deploy/one bounded lifecycle/destroy commands and limits are in
+the report and platform board. No deployment was made by this lane.
+
+### Retained runtime workloads
+
+The resume 11 corpus exercises runtime boundaries through their actual callers: repeated-title and regenerated
+history folds, native outside commits, main ancestry with an unknown parent, Export dispatch, history session and
+role-stream recovery in a mounted app, sandbox and tour subscriptions, delegated issue/wiki read fallback, immutable
+submission-base recovery, and the probe's machine/container record/replay routes and expired-lease sweep. Recorded
+GitHub reads use the committed native HTTP recordings; provider failures inject faulty Effect services. No request
+is intercepted. Every workload asserts the returned state, receipt, output or refusal; a counter alone is no oracle.
+
+The newly landed history publisher is measured through its real durable execution host, SQLite adapter and the
+product mock repository. Small one-tree/two-object batches make the pauses observable; the workload checks no
+partial publication, no writes in a quiet round and folding of the next main commit. Fault workloads verify a failed
+batch publishes nothing and recovers next round, a secondary limit's retry-after goes through the engine policy,
+and unavailable main, disabled publishing and empty history have the specified outcomes. TestClock advances the
+alarms and retries; those simulated intervals are never reported as wall-clock latency. The production optimized
+browser build supplies timings; e2e/fault builds supply counts only. Happy DOM timings include the actual mounted
+runtime but cannot measure browser layout or paint.
+
+The publisher's `worker/HistoryObject.vibe` `unrouted.start` and `unrouted.wake` are two additional invariant traps
+introduced after the frozen 242-position audit. Its Publish graph routes no child start or external wake; next rounds
+continue in the same object. Valid publisher executions cannot reach either trap. Like Objects' two Reply/Tour
+traps, they remain counted and are named here rather than directly called to manufacture execution credit.
+
+### Fresh local receipt and deployed-only paths
+
+The first complete resume 11 collection on production base `680039b8` covers **9,185/9,354** src/worker lines
+(98.19%), with 169 positions open. Its one failed workload has an obsolete warm-health oracle: History's final
+startup step is now `publish`. The corrected workerd workload passes separately; the final full collection includes
+that exact assertion. The original failed receipt is retained and is not described as a fully passing suite.
+
+The remaining local runtime gaps from that map are the export repository's protected-ref guard and the probe's
+sweep before the owner expires. New result-checked workloads publish the three allowed refs in a real product
+memory repository, reject mixed/aliased protected-ref transactions without partial writes, and sweep a running
+local workerd sandbox through its Stop flow before expiry. Production timings include these journeys; simulated
+publisher pauses remain identified as TestClock time.
+
+These 26 positions await the source-matching deployed run; they are not exclusions:
+
+| File | Positions | Required execution |
+| --- | --- | --- |
+| `worker/SandboxAccounts.vibe` | 16,17,18,20,28,29,30 (7) | Alchemy account binding against the deployed real machine/Container and its counter RPC. |
+| `worker/SandboxMachine.vibe` | 14,15,16,17 (4) | Deployed machine binding and the real Container protocol. |
+| `worker/SandboxProbe.vibe` | 19,20,24,25,26,27 (6) | Deployed probe Worker context, binding routes and instrumented export. |
+| `worker/sandboxBenchmark.vibe` | 13,14,15,16,17,18,19,20,21 (9) | Test-stage authenticated counter handler over those actual bindings and the instrumenter's global counters. |
+
+The last handler is not mounted by production. Supplying invented isolate snapshots or replaying an old dump
+through replacement bindings would not establish execution in the deployed build. Its real test-stage workload
+already exists; the lead-only run and unchanged source checker supply the execution evidence. The old live receipt
+remains qualified to its earlier source, never copied into this cohort to hide the pending deployment.
+
+### Base 5e577601: new code and moved oracles
+
+Main moved 238 commits between the resume 11 base 1b8ba47b and 5e577601. The full collection on that base
+(final17) failed three checks and left new code without a workload. Each moved oracle follows the product change
+that moved it, and no threshold changed:
+
+| Benchmark | Product change | New oracle |
+| --- | --- | --- |
+| `specification.bench.vibe` | c5a2f3f9 retains a passing panel across revisions | All four seats stay accepted; each state keeps the revised specification's `accepted` receipt. |
+| `history-commands.bench.vibe` | A failed History read names the read (`kind`, `id`, `from`) so the person can retry it | The four reads return their exact `read`. |
+| `web-dom.bench.vibe` | A lost action follow shows the run Disconnected until the person reconnects | One failed follow, the Connection lost alert, the person's Reconnect click, then two follows. |
+
+New workloads, each asserting results: `reply-accounting.bench.vibe` (refused admission, a reservation held while
+Budget is lost and charged once after recovery, an interrupted cleanup that retries), the refused agent Read in
+`actions.bench.vibe`, `history-read-retry` and the Reconnect step in `history-stream-faults.bench.vibe`,
+`action-legacy-routes` in `action-tour-repeat.bench.vibe`, and the fuzz preflight in `scripts.bench.vibe`.
+
+These positions on 5e577601 are specification-only or invariant traps and stay counted:
+
+| File | Positions | Why no benchmark runs them |
+| --- | --- | --- |
+| `src/core/replyDecision.vibe` | 100–104 (`replyLawful`) | Proof-contract predicate; no runtime caller. |
+| `src/core/flowDecision.vibe` | 107–110 (`tourLawful`) | Proof-contract predicate; no runtime caller. |
+| `src/core/wikiLinkDecision.vibe` | 56 (`foldedPrefix`) | Recursive specification of the iterative fold; called only by itself and contracts. |
+| `worker/Objects.vibe` | 256, 257 | Reply's `unrouted.start` and `unrouted.wake` traps (the Reply/Tour traps above, moved by new lines). |
+
+The final collection on main 02315e2b found two more groups. `src/core/MockFactory.vibe` 310–311 (a restored
+journal with a repeated or skipped event number is trimmed) has `mock-journal-trimmed`. The counter export's
+decisions `benchmarkPath` and `benchmarkAnswer` (`worker/sandboxWorkerDecision.vibe` 192, 203–205) have one
+caller, the test-stage handler `worker/sandboxBenchmark.vibe`, so they join its deployed-only row.
