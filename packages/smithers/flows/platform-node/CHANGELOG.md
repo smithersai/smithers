@@ -4,6 +4,15 @@
 
 ### Added
 
+- `ProcessConfinement` takes `verification`, a mode for a project's own
+  install, typecheck, and test commands, which execute files an agent edited.
+  It binds the toolchain read-only (`ProcessSandbox.toolchainReads`: every
+  `PATH` entry and the install root of each runtime and package manager on
+  it), admits the `SOCK_SEQPACKET` socketpair pnpm starts scripts through,
+  hides entries by name prefix (`ProcessSandbox.hiddenEntries`, the `hidden`
+  field of a `Plan`), and opens the operator's `reads`. An agent command is
+  confined exactly as before.
+
 - The durable flow runtime on Node, moved from `@smthrs/flows`: `NodeRuntime`,
   `NativeRuntime` (the lifecycle `@smthrs/platform-bun`'s `BunRuntime` shares),
   `SandboxedFlow` and `TestNodeRuntime`, each exported from the root with no

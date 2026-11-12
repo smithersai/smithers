@@ -762,6 +762,168 @@ describe("target environment isolation", () => {
   })
 })
 
+describe("verification confinement (#5436)", () => {
+  const linuxHost = (f: ReturnType<typeof fixture>): ProcessSandbox.Host => ({
+    ...f.host,
+    platform: "linux",
+    executable: (name) => name === "bwrap" ? "/usr/bin/bwrap" : undefined
+  })
+  const open = (f: ReturnType<typeof fixture>): KernelConfinement.Profile => ({
+    ...f.profile,
+    reads: ["."],
+    writes: ["."],
+    network: "open"
+  })
+
+  it.each(
+    [
+      ["x64", 0xc000003e, 41, 53],
+      ["arm64", 0xc00000b7, 198, 199]
+    ] as const
+  )("admits the sequenced socketpair on %s and still refuses every host Unix socket", async (
+    architecture,
+    audit,
+    socket,
+    socketpair
+  ) => {
+    const f = fixture()
+    const descriptor = Object.getOwnPropertyDescriptor(process, "arch")!
+    try {
+      Object.defineProperty(process, "arch", { ...descriptor, value: architecture })
+      const filterOf = (verification: ProcessConfinement.Verification | undefined, network: "none" | "open") =>
+        run(Effect.gen(function*() {
+          const service = ProcessConfinement.make({ ...f, host: linuxHost(f), verification })
+          const wrapped = yield* service.confine(ChildProcess.make("fixture"), { ...f.profile, network })
+          return new Uint8Array(NodeFs.readFileSync(wrapped.args.map(plainWord)[3]!))
+        }))
+      for (const network of ["none", "open"] as const) {
+        const bytes = await filterOf({}, network)
+        for (const type of [1, 5, 1 | 0x80800, 5 | 0x800, 5 | 0x80000]) {
+          expect(evaluateFilter(bytes, audit, socketpair, 1, type)).toBe(0x7fff0000)
+        }
+        // A datagram or raw pair can address a host endpoint by name.
+        for (const type of [2, 3, 0, 4, 2 | 0x80800, 3 | 0x800]) {
+          expect(evaluateFilter(bytes, audit, socketpair, 1, type)).toBe(0x00050001)
+        }
+        expect(evaluateFilter(bytes, audit, socketpair, 2, 2)).toBe(0x7fff0000)
+        expect(evaluateFilter(bytes, audit, socket, 1)).toBe(0x00050001)
+        expect(evaluateFilter(bytes, audit, socket, 2)).toBe(network === "open" ? 0x7fff0000 : 0x00050001)
+        expect(evaluateFilter(bytes, audit, 425, 1)).toBe(0x00050001)
+        expect(evaluateFilter(bytes, audit ^ 1, socket, 1)).toBe(0x80000000)
+        // An agent command keeps the stream pair alone.
+        expect(evaluateFilter(await filterOf(undefined, network), audit, socketpair, 1, 5)).toBe(0x00050001)
+      }
+    } finally {
+      Object.defineProperty(process, "arch", descriptor)
+    }
+  })
+
+  it("binds the toolchain and the operator's reads, masks hidden entries, and reopens the ones named", async () => {
+    const f = fixture()
+    const tools = NodePath.join(f.base, "tools/bin")
+    const shared = NodePath.join(f.base, "shared")
+    const absent = NodePath.join(f.base, "absent")
+    NodeFs.mkdirSync(tools, { recursive: true })
+    NodeFs.mkdirSync(shared)
+    NodeFs.mkdirSync(NodePath.join(f.workspaceRoot, "sub"))
+    const secret = NodePath.join(f.workspaceRoot, ".env")
+    const nested = NodePath.join(f.workspaceRoot, "sub/.ENV.local")
+    const reopened = NodePath.join(f.workspaceRoot, ".env.public")
+    for (const file of [secret, nested, reopened]) NodeFs.writeFileSync(file, "value")
+    const command = ChildProcess.make("fixture", [], {
+      cwd: f.workspaceRoot,
+      env: { PATH: `${tools}:${absent}:relative` },
+      extendEnv: false
+    })
+    const descriptor = Object.getOwnPropertyDescriptor(process, "arch")!
+    try {
+      Object.defineProperty(process, "arch", { ...descriptor, value: "x64" })
+      const argvOf = (verification: ProcessConfinement.Verification | undefined) =>
+        run(Effect.map(
+          ProcessConfinement.make({ ...f, host: linuxHost(f), verification }).confine(command, open(f)),
+          (wrapped) => wrapped.args.map(plainWord).join(" ")
+        ))
+      const text = await argvOf({ reads: [shared, reopened, absent], hiddenPrefixes: [".env"] })
+      expect(text).toContain(`--ro-bind ${tools} ${tools}`)
+      expect(text).toContain(`--ro-bind ${shared} ${shared}`)
+      expect(text).toContain(`--ro-bind /dev/null ${secret}`)
+      expect(text).toContain(`--ro-bind /dev/null ${nested}`)
+      expect(text).toContain(`--ro-bind ${reopened} ${reopened}`)
+      expect(text).not.toContain(`--ro-bind /dev/null ${reopened}`)
+      expect(text).not.toContain(absent)
+      // With no names to hide and no reads, the toolchain is still bound.
+      const bare = await argvOf({})
+      expect(bare).toContain(`--ro-bind ${tools} ${tools}`)
+      expect(bare).not.toContain("/dev/null")
+      // An agent command gets none of it.
+      const agent = await argvOf(undefined)
+      expect(agent).not.toContain(tools)
+      expect(agent).not.toContain("/dev/null")
+    } finally {
+      Object.defineProperty(process, "arch", descriptor)
+    }
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
+  it("closes hidden names in the seatbelt profile of a verification run", async () => {
+    const f = fixture()
+    const service = ProcessConfinement.make({ ...f, verification: { hiddenPrefixes: [".env"] } })
+    const wrapped = await run(service.confine(ChildProcess.make("fixture", [], { cwd: f.workspaceRoot }), open(f)))
+    const words = wrapped.args.map(plainWord)
+    const profile = words[words.indexOf("-p") + 1]!
+    expect(profile).toContain("(deny file-read* file-write* (regex #\"^")
+    expect(profile.endsWith("/(.*/)?(\\.[eE][nN][vV])[^/]*(/|$)\"))")).toBe(true)
+    const agent = await run(ProcessConfinement.make(f).confine(ChildProcess.make("fixture"), open(f)))
+    expect(agent.args.map(plainWord).join(" ")).not.toContain("regex")
+  })
+
+  it("refuses a run once a verification read no longer names what the operator opened", async () => {
+    const f = fixture()
+    const outside = NodePath.join(f.base, "shared")
+    const inside = NodePath.join(f.workspaceRoot, ".env.public")
+    NodeFs.writeFileSync(outside, "operator value")
+    NodeFs.writeFileSync(inside, "public value")
+    const command = ChildProcess.make("fixture", [], { cwd: f.workspaceRoot })
+    const made = (reads: ReadonlyArray<string>) =>
+      ProcessConfinement.make({ ...f, host: linuxHost(f), verification: { reads, hiddenPrefixes: [".env"] } })
+    const refusal = {
+      reason: {
+        _tag: "PermissionDenied",
+        description: expect.stringContaining("no longer names what it named when the run began")
+      }
+    }
+    for (const read of [outside, inside]) {
+      // Resolved when the service is made, before any command runs.
+      const service = made([read])
+      const first = await run(service.confine(command, open(f)))
+      expect(first.args.map(plainWord).join(" ")).toContain(`--ro-bind ${read} ${read}`)
+      // What an earlier command can do: move the entry away and put another under its name.
+      NodeFs.renameSync(read, `${read}.moved`)
+      NodeFs.writeFileSync(read, "aimed elsewhere")
+      expect(await run(Effect.flip(service.confine(command, open(f))))).toMatchObject(refusal)
+      NodeFs.rmSync(read)
+      expect(await run(Effect.flip(service.confine(command, open(f))))).toMatchObject(refusal)
+      // A link in its place resolves elsewhere even when it reaches the same file.
+      NodeFs.symlinkSync(`${read}.moved`, read)
+      expect(await run(Effect.flip(service.confine(command, open(f))))).toMatchObject(refusal)
+    }
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
+  it("refuses a verification read that is not absolute, and leaves nothing behind", async () => {
+    const f = fixture()
+    const service = ProcessConfinement.make({ ...f, verification: { reads: ["relative/path"] } })
+    const error = await run(Effect.flip(service.confine(ChildProcess.make("fixture"), open(f))))
+    expect(error).toMatchObject({
+      reason: {
+        _tag: "PermissionDenied",
+        description: expect.stringContaining("a verification read is not an absolute path")
+      }
+    })
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+})
+
 /** Native test hosts inspect the arguments they actually execute. */
 const plainWord = (value: string | Redacted.Redacted<string>): string =>
   Redacted.isRedacted(value) ? Redacted.value(value) : value

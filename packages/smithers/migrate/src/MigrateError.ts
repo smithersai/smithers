@@ -19,8 +19,10 @@ import * as Schema from "effect/Schema"
  *
  * `invalid-layout` refuses a root, report directory, or flows directory that
  * could escape or overlap the project. `stale-plan` refuses an apply whose
- * plan no longer describes the tree it is about to edit. Both leave the
- * project untouched and exit 1.
+ * plan no longer describes the tree it is about to edit. `no-sandbox` refuses
+ * an apply on a host that cannot confine the verification commands, unless
+ * the operator passed `--verify-unconfined`. All three leave the project
+ * untouched and exit 1.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -36,7 +38,8 @@ export const MigrateErrorCode = Schema.Literals([
   "io",
   "unsupported-project",
   "invalid-layout",
-  "stale-plan"
+  "stale-plan",
+  "no-sandbox"
 ])
 
 /**

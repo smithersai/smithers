@@ -13,6 +13,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
 import { Capability, GrantStore, Workspace } from "@smthrs/kernel"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
+import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Command from "@smthrs/migrate/flow/Command"
 import type * as Contract from "@smthrs/migrate/flow/Contract"
 import * as Layers from "@smthrs/migrate/flow/Layers"
@@ -21,14 +22,19 @@ import * as Verify from "@smthrs/migrate/flow/Verify"
 import * as Scan from "@smthrs/migrate/Scan"
 import * as Units from "@smthrs/migrate/Units"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import * as ProcessSandbox from "@smthrs/platform-node/ProcessSandbox"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { copyFixture, nodeLayer } from "../fixtures/helpers.ts"
+import { copyFixture, journeyHost, nodeLayer, sandboxAvailable } from "../fixtures/helpers.ts"
+
+/** Node's services with the confinement a real composition gives verification. */
+const hostVerification = Layer.merge(NodeServices.layer, Layers.layerVerificationConfinement(journeyHost))
 
 const root = Effect.runSync(Layers.migrationRoot("/tmp/project"))
 
@@ -242,7 +248,7 @@ describe("Layers.rules over a real grant store", () => {
         expectFlows: false
       })
       expect(result.typecheck[0]?.exitCode).toBe(0)
-    }).pipe(Effect.provide(NodeServices.layer)))
+    }).pipe(Effect.provide(hostVerification)))
 
   for (const approved of ["npm test -- tests/*", "npm test -- tests/?", "npm test -- *"]) {
     it.effect(`does not turn ${approved} into a wildcard shell grant`, () =>
@@ -301,7 +307,7 @@ describe("Layers.rules over a real grant store", () => {
       expect(result.tests?.command).toBe(approved)
       expect(result.tests?.exitCode).toBe(0)
       expect(result.tests?.stdoutTail).toBe("grant-tests/x")
-    }).pipe(Effect.provide(NodeServices.layer)))
+    }).pipe(Effect.provide(hostVerification)))
 
   it.effect("refuses every other command, including the ones that would reach run state anyway", () =>
     Effect.gen(function*() {
@@ -517,4 +523,380 @@ describe("Layers.rules over a SQLite database's sidecars", () => {
       writeFileSync(join(project, ".smithers", "workflow.tsx"), "export {}\n")
       expect(yield* outcome((fs) => fs.readFile(join(project, ".smithers", "workflow.tsx")))).toBe("allowed")
     }).pipe(Effect.scoped))
+})
+
+describe("Layers.verificationEnvironment", () => {
+  it("keeps the bootstrap names and drops everything else the operator exports", () => {
+    expect(Layers.verificationEnvironment({
+      PATH: "/usr/bin",
+      HOME: "/home/operator",
+      USER: "operator",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "C",
+      TERM: "xterm",
+      TMPDIR: "/tmp",
+      SHELL: "/bin/sh",
+      ANTHROPIC_API_KEY: "key",
+      NPM_TOKEN: "token",
+      AWS_SECRET_ACCESS_KEY: "secret",
+      NODE_OPTIONS: "--require ./planted.cjs",
+      LC_CTYPE: undefined
+    })).toEqual({
+      PATH: "/usr/bin",
+      HOME: "/home/operator",
+      USER: "operator",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "C",
+      TERM: "xterm",
+      TMPDIR: "/tmp",
+      SHELL: "/bin/sh"
+    })
+  })
+})
+
+describe("Layers.layerVerificationConfinement", () => {
+  const profile: KernelProcessConfinement.Profile = {
+    workspaceRoot: "/project",
+    reads: ["."],
+    writes: ["."],
+    readOnly: [".git"],
+    network: "open"
+  }
+
+  it.effect("replaces the command's environment whatever confinement it wraps", () => {
+    const seen: Array<{ readonly command: ChildProcess.StandardCommand; readonly profile: unknown }> = []
+    const recording = Layer.succeed(KernelProcessConfinement.ProcessConfinement)({
+      confine: (command, given) =>
+        Effect.sync(() => {
+          seen.push({ command, profile: given })
+          return command
+        })
+    })
+    return Effect.gen(function*() {
+      const confinement = yield* KernelProcessConfinement.ProcessConfinement
+      yield* confinement.confine(
+        ChildProcess.make("npm", ["install"], {
+          cwd: "/project",
+          env: { NPM_TOKEN: "token" },
+          extendEnv: true
+        }),
+        profile
+      )
+      yield* confinement.confine(ChildProcess.make("npm run test", { cwd: "/project", shell: true }), profile)
+
+      expect(seen.map((entry) => [entry.command.command, entry.command.args])).toEqual([
+        ["npm", ["install"]],
+        ["npm run test", []]
+      ])
+      for (const entry of seen) {
+        expect(entry.profile).toEqual(profile)
+        expect(entry.command.options.env).toEqual({ PATH: "/usr/bin", LC_ALL: "C" })
+        expect(entry.command.options.extendEnv).toBe(false)
+        expect(entry.command.options.cwd).toBe("/project")
+      }
+      expect(seen[1]?.command.options.shell).toBe(true)
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layers.layerVerificationConfinement({
+        environment: { PATH: "/usr/bin", LC_ALL: "C", NPM_TOKEN: "operator-token", ANTHROPIC_API_KEY: "key" },
+        confinement: recording
+      }))
+    )
+  })
+
+  it.effect("gives a command no environment when the host was given none", () => {
+    const seen: Array<ChildProcess.StandardCommand> = []
+    return Effect.gen(function*() {
+      const confinement = yield* KernelProcessConfinement.ProcessConfinement
+      yield* confinement.confine(ChildProcess.make("tsc", ["--noEmit"]), profile)
+      expect(seen[0]?.options.env).toEqual({})
+      expect(seen[0]?.options.extendEnv).toBe(false)
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layers.layerVerificationConfinement({
+        confinement: Layer.succeed(KernelProcessConfinement.ProcessConfinement)({
+          confine: (command) =>
+            Effect.sync(() => {
+              seen.push(command)
+              return command
+            })
+        })
+      }))
+    )
+  })
+
+  // Every apply journey confines its verification wherever the host can. CI's
+  // Linux lanes install bubblewrap, so there a skip would hide the confinement.
+  it.skipIf(process.env.CI === undefined || process.platform !== "linux")(
+    "has a process sandbox wherever CI runs this suite on Linux",
+    () => {
+      expect(sandboxAvailable).toBe(true)
+    }
+  )
+
+  it.effect.skipIf(!sandboxAvailable)(
+    "confines an install whose lifecycle script the agent rewrote",
+    () =>
+      Effect.gen(function*() {
+        // The review's reproduction: the argv is the operator's unchanged
+        // `npm install`, and the manifest it reads names a `preinstall`.
+        const base = realpathSync(mkdtempSync(join(tmpdir(), "migrate-confined-install-")))
+        try {
+          const project = join(base, "project")
+          const outside = join(base, "outside-the-project")
+          mkdirSync(join(project, ".git", "hooks"), { recursive: true })
+          mkdirSync(join(project, ".smithers-migrate"), { recursive: true })
+          writeFileSync(join(project, ".smithers-migrate", "pending-unit.json"), "host-owned")
+          const attempt = (path: string): string =>
+            `try { fs.writeFileSync(${JSON.stringify(path)}, 'planted') } catch (error) { console.log('refused ' + ${
+              JSON.stringify(path)
+            }) }`
+          const program = [
+            "const fs = require('node:fs')",
+            attempt(outside),
+            attempt(".git/hooks/pre-commit"),
+            attempt(".smithers-migrate/pending-unit.json"),
+            "fs.writeFileSync('inside-the-project', 'written')",
+            "console.log('operator value: ' + process.env.MIGRATE_OPERATOR_VALUE)",
+            "console.log('home=' + process.env.HOME)"
+          ].join("; ")
+          writeFileSync(
+            join(project, "package.json"),
+            JSON.stringify({
+              name: "planted",
+              version: "1.0.0",
+              scripts: { preinstall: `node -e ${JSON.stringify(program)}` }
+            })
+          )
+
+          const result = yield* Verify.run({
+            root: project,
+            commands: {
+              install: Units.argv("npm", "install", "--no-audit", "--no-fund", "--foreground-scripts"),
+              typecheck: [],
+              flowsDir: "flows"
+            },
+            expectFlows: false,
+            sealed: [".smithers-migrate"]
+          }).pipe(
+            Effect.provide(Layer.merge(
+              NodeServices.layer,
+              Layers.layerVerificationConfinement({
+                environment: { ...process.env, MIGRATE_OPERATOR_VALUE: "operator-only" }
+              })
+            ))
+          )
+
+          expect(result.install?.exitCode, result.install?.stderrTail).toBe(0)
+          // The script ran, and it could write the project.
+          expect(readFileSync(join(project, "inside-the-project"), "utf8")).toBe("written")
+          // It reached nothing outside the project, no version-control hook,
+          // and nothing the host owns.
+          expect(existsSync(outside)).toBe(false)
+          expect(existsSync(join(project, ".git", "hooks", "pre-commit"))).toBe(false)
+          expect(readFileSync(join(project, ".smithers-migrate", "pending-unit.json"), "utf8")).toBe("host-owned")
+          expect(result.install?.stdoutTail).toContain("refused .git/hooks/pre-commit")
+          expect(result.install?.stdoutTail).toContain("refused .smithers-migrate/pending-unit.json")
+          // It saw neither the operator's environment nor the operator's home.
+          expect(result.install?.stdoutTail).toContain("operator value: undefined")
+          expect(result.install?.stdoutTail).not.toContain(`home=${homedir()}`)
+        } finally {
+          rmSync(base, { recursive: true, force: true })
+        }
+      }),
+    120_000
+  )
+})
+
+describe("Layers.layerVerificationConfinement on a host with no sandbox", () => {
+  const without = (platform: NodeJS.Platform): ProcessSandbox.Host => ({
+    ...ProcessSandbox.host(),
+    platform,
+    executable: () => undefined
+  })
+  const built = (host: ProcessSandbox.Host) =>
+    Effect.flip(Effect.scoped(Layer.build(Layers.layerVerificationConfinement({ host }))))
+
+  it.effect("refuses to build on Linux without bubblewrap, naming it and the opt-out", () =>
+    Effect.gen(function*() {
+      const failure = yield* built(without("linux"))
+      expect(failure.code).toBe("no-sandbox")
+      expect(failure.message).toBe("verification commands need a process sandbox, and this host has none")
+      expect(failure.details).toContain("bwrap is not on PATH (install the bubblewrap package)")
+      expect(failure.details).toContain("--verify-unconfined")
+    }))
+
+  it.effect("refuses to build on Windows, which has no sandbox to install", () =>
+    Effect.gen(function*() {
+      const failure = yield* built(without("win32"))
+      expect(failure.code).toBe("no-sandbox")
+      expect(failure.details).toContain("win32 has no process sandbox this tool can use.")
+      expect(failure.details).not.toContain("docker")
+      expect(failure.details).toContain("--verify-unconfined")
+    }))
+
+  it.effect("runs a command exactly as given once the operator chooses to run unconfined", () =>
+    Effect.gen(function*() {
+      const command = ChildProcess.make("npm", ["install"], { cwd: "/project", env: { NPM_TOKEN: "token" } })
+      const confinement = yield* KernelProcessConfinement.ProcessConfinement
+      const started = yield* Effect.scoped(confinement.confine(command, {
+        workspaceRoot: "/project",
+        reads: ["."],
+        writes: ["."],
+        readOnly: [],
+        network: "open"
+      }))
+      expect(started).toBe(command)
+    }).pipe(
+      Effect.provide(Layers.layerVerificationConfinement({
+        host: without("win32"),
+        verifyUnconfined: true,
+        environment: { PATH: "/usr/bin" }
+      }))
+    ))
+
+  it("words the warning an entry point prints for that choice", () => {
+    expect(Command.unconfinedWarning).toBe(Layers.unconfinedWarning)
+    expect(Layers.unconfinedWarning).toContain("--verify-unconfined")
+    expect(Layers.unconfinedWarning).toContain("with no sandbox")
+    expect(Layers.unconfinedWarning).toContain("your privileges, your environment, and your credentials")
+  })
+})
+
+describe("Layers.layerVerificationConfinement in the host's sandbox", () => {
+  const temporaries: Array<string> = []
+  const project = (files: Readonly<Record<string, string>>): { readonly base: string; readonly root: string } => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "migrate-verification-")))
+    temporaries.push(base)
+    const root = join(base, "project")
+    for (const [name, content] of Object.entries(files)) {
+      mkdirSync(join(root, name, ".."), { recursive: true })
+      writeFileSync(join(root, name), content)
+    }
+    return { base, root }
+  }
+  const verify = (
+    root: string,
+    commands: Omit<Contract.Commands, "flowsDir">,
+    config: Layers.VerificationConfig = {}
+  ) =>
+    Verify.run({ root, commands: { ...commands, flowsDir: "flows" }, expectFlows: false }).pipe(
+      Effect.provide(Layer.merge(
+        NodeServices.layer,
+        Layers.layerVerificationConfinement({ root, environment: process.env, ...config })
+      )),
+      Effect.ensuring(Effect.sync(() => {
+        for (const base of temporaries.splice(0)) rmSync(base, { recursive: true, force: true })
+      }))
+    )
+  const printing = (path: string): Contract.VerificationCommand =>
+    Units.argv("node", "-e", `process.stdout.write(require("node:fs").readFileSync(${JSON.stringify(path)}, "utf8"))`)
+  const packageManagers = ["npm", "pnpm"].every((name) => ProcessSandbox.host().executable(name) !== undefined)
+
+  it.effect.skipIf(!sandboxAvailable || !packageManagers)(
+    "runs pnpm, an npm script that starts npm and pnpm, and a shell-line override",
+    () =>
+      Effect.gen(function*() {
+        const { root } = project({
+          "package.json": JSON.stringify({
+            name: "confined-toolchain",
+            version: "1.0.0",
+            scripts: {
+              own: "node -e \"console.log('own-script-ran')\"",
+              nested: "npm --version && pnpm --version && echo nested-ran"
+            }
+          })
+        })
+
+        const result = yield* verify(root, {
+          // pnpm starts every script through a sequenced socketpair.
+          format: Units.argv("pnpm", "run", "own"),
+          // The package manager the host resolved starts two more by name.
+          typecheck: [Units.argv("npm", "run", "nested")],
+          // The operator's override is a shell line, resolved by `/bin/sh`.
+          test: "npm run own"
+        })
+
+        expect(result.format?.exitCode, result.format?.stderrTail).toBe(0)
+        expect(result.format?.stdoutTail).toContain("own-script-ran")
+        expect(result.typecheck[0]?.exitCode, result.typecheck[0]?.stderrTail).toBe(0)
+        expect(result.typecheck[0]?.stdoutTail).toContain("nested-ran")
+        expect(result.tests?.command).toBe("npm run own")
+        expect(result.tests?.exitCode, result.tests?.stderrTail).toBe(0)
+        expect(result.tests?.stdoutTail).toContain("own-script-ran")
+      }),
+    180_000
+  )
+
+  it.effect.skipIf(!sandboxAvailable)(
+    "hides dotenv files from a verification command until --verify-read names one",
+    () =>
+      Effect.gen(function*() {
+        const files = {
+          ".env": "root-secret-line",
+          "packages/api/.env.local": "nested-secret-line",
+          "packages/api/.env.example": "example-line",
+          "settings.json": "plain-settings"
+        }
+        const commands = {
+          format: printing(".env"),
+          typecheck: [printing("packages/api/.env.local"), printing("packages/api/.env.example")],
+          test: printing("settings.json")
+        }
+
+        const hidden = yield* verify(project(files).root, commands)
+        for (const command of [hidden.format, ...hidden.typecheck]) {
+          expect(`${command?.stdoutTail}${command?.stderrTail}`).not.toMatch(/root-secret|nested-secret|example-line/)
+          expect(command?.stdoutTail).toBe("")
+        }
+        expect(hidden.tests?.stdoutTail).toBe("plain-settings")
+
+        // A relative path resolves from the project root and reopens that one file.
+        const reopened = yield* verify(project(files).root, commands, {
+          verifyRead: ["packages/api/.env.example"]
+        })
+        expect(reopened.typecheck[1]?.exitCode, reopened.typecheck[1]?.stderrTail).toBe(0)
+        expect(reopened.typecheck[1]?.stdoutTail).toBe("example-line")
+        expect(reopened.format?.stdoutTail).toBe("")
+        expect(reopened.typecheck[0]?.stdoutTail).toBe("")
+      }),
+    120_000
+  )
+
+  it.effect.skipIf(!sandboxAvailable)(
+    "opens a path outside the project only when --verify-read names it",
+    () =>
+      Effect.gen(function*() {
+        const closed = project({ "package.json": "{}" })
+        const outside = join(closed.base, "registry-settings")
+        writeFileSync(outside, "outside-value")
+
+        const refused = yield* verify(closed.root, { typecheck: [printing(outside)] })
+        expect(refused.typecheck[0]?.exitCode).not.toBe(0)
+        expect(refused.typecheck[0]?.stdoutTail).toBe("")
+
+        const opened = project({ "package.json": "{}" })
+        const named = join(opened.base, "registry-settings")
+        writeFileSync(named, "outside-value")
+        const read = yield* verify(opened.root, {
+          typecheck: [printing(named)],
+          test: Units.argv("node", "-e", `require("node:fs").writeFileSync(${JSON.stringify(named)}, "changed")`)
+        }, { verifyRead: [named] })
+        expect(read.typecheck[0]?.exitCode, read.typecheck[0]?.stderrTail).toBe(0)
+        expect(read.typecheck[0]?.stdoutTail).toBe("outside-value")
+        expect(read.tests?.exitCode).not.toBe(0)
+
+        // A host that names no root passes an absolute path through as it is.
+        const rootless = project({ "package.json": "{}" })
+        const absolute = join(rootless.base, "registry-settings")
+        writeFileSync(absolute, "outside-value")
+        const direct = yield* verify(rootless.root, { typecheck: [printing(absolute)] }, {
+          root: undefined,
+          verifyRead: [absolute]
+        })
+        expect(direct.typecheck[0]?.exitCode, direct.typecheck[0]?.stderrTail).toBe(0)
+        expect(direct.typecheck[0]?.stdoutTail).toBe("outside-value")
+      }),
+    120_000
+  )
 })

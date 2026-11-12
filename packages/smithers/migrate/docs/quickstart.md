@@ -88,7 +88,14 @@ That order is fixed, and it is the order the rewrite runs in. See
 
 `--apply` runs the project's own install, format, typecheck, and test commands
 on your machine, package manager lifecycle scripts and `repoCommands.test`
-included. Run it only on a trusted checkout or inside a sandbox.
+included. Each command runs in the host's process sandbox, which gives it the
+project and your toolchain and withholds your home directory, your
+environment, and your dotenv files; see
+[what a verification command can reach](./guides/set-verification-commands.md#what-a-verification-command-can-reach).
+The sandbox leaves the network open and the project's source readable, so
+run it only on a trusted checkout or inside a sandbox. A host with no sandbox
+(Windows, or Linux without bubblewrap) refuses `--apply` with `no-sandbox`
+until you install one or pass `--verify-unconfined`.
 
 Pass `--apply` and name the seat the rewrite runs on:
 

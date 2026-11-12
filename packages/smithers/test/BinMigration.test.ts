@@ -244,7 +244,9 @@ describe("the migrate verb's option surface", processBudget, () => {
         "--verify-install",
         "--verify-format",
         "--verify-typecheck",
-        "--verify-test"
+        "--verify-test",
+        "--verify-read",
+        "--verify-unconfined"
       ]
     ) {
       expect(text, flag).toContain(flag)

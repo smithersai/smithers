@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Security
+
+- Verification commands run in the host's process sandbox (bubblewrap on
+  Linux, seatbelt on macOS). The rewrite agent owns `package.json`, tests, and
+  tool configuration, so an unchanged `npm install` or `npm run test` executed
+  agent-written lifecycle scripts with the operator's privileges and
+  environment. Each command now reads the project and the toolchain on the
+  operator's `PATH`, writes only the project, cannot write `.git`, `.jj`, or
+  the report directory, gets a private `HOME` and `TMPDIR`, and inherits only
+  `PATH`, `HOME`, `USER`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, and `SHELL`. The
+  network stays open. Dotenv files (`.env*`, any case, any depth) are hidden
+  from reads and writes.
+- A verification command that creates `.git` or `.jj` in a project that had
+  none fails the verification, and the host removes what it created.
+- Checkpoint `git` commands run with `core.hooksPath=/dev/null` and
+  `core.fsmonitor=false`: a hook directory or a monitor is a program a project
+  file can name, and a checkpoint runs with the operator's authority.
+- **New default:** `--apply` on a host with no sandbox (Windows, Linux without
+  `bwrap`) refuses with the new `no-sandbox` code and exit 1 before any unit
+  runs. It never falls back to running the commands unconfined.
+
+### Added
+
+- `--verify-read <path>` (repeatable) opens one more path to the sandboxed
+  verification commands: read-only outside the project, and inside it the
+  dotenv files at or below the path.
+- `--verify-unconfined` runs the verification commands with no sandbox, with
+  the operator's privileges and environment, and prints a warning on stderr.
+- `Layers.layerVerificationConfinement`, `Layers.VerificationConfig`,
+  `Layers.verificationEnvironment`, `Layers.unconfinedWarning`,
+  `Command.unconfinedWarning`, `Options.hostOwnedDirectories`, and the
+  `verifyRead`, `verifyUnconfined`, `confinement`, and `host` fields of
+  `Layers.NodeConfig`. `Command.runNode` and `Command.layerNode` take
+  `verifyRead` and `verifyUnconfined`. `Verify.run` and `MigrateFlow.finish`
+  need a `@smthrs/kernel` `ProcessConfinement` in their context; without one
+  each command reports exit 127 and nothing is spawned.
+
 ### Changed
 
 - The migration-only flow options now type `defaultFlowsDir` as `string` instead

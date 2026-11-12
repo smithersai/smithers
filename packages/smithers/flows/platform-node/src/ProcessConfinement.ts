@@ -20,6 +20,11 @@
  * the mechanism cannot enforce safely, a symbolic link below the workspace
  * root, is always refused.
  *
+ * {@link Options.verification} is the second kind of run this module
+ * confines: a project's own install, typecheck, and test commands, which
+ * execute files an agent edited and need a toolchain an agent command does
+ * not. See {@link Verification}.
+ *
  * @since 1.0.0-rc.1
  */
 
@@ -53,6 +58,53 @@ export interface Options {
   readonly host?: ProcessSandbox.Host | undefined
   /** Where each run's private temporary directory is created; defaults to the OS temporary directory. */
   readonly temporaryDirectory?: string | undefined
+  /** Confines a project's own toolchain instead of one agent command; see {@link Verification}. */
+  readonly verification?: Verification | undefined
+}
+
+/**
+ * What a project's own verification commands get beyond an agent command.
+ *
+ * A package manager starts other programs by name and talks to the scripts it
+ * runs, so three things change, and nothing else does:
+ *
+ * - The toolchain is readable. Every `PATH` entry of the command's
+ *   environment and the install root of each package manager and runtime on
+ *   it are bound read-only, as `ProcessSandbox.toolchainReads` computes them
+ *   on the host. The rest of the home directory stays hidden.
+ * - Linux admits `socketpair(AF_UNIX, SOCK_SEQPACKET)`, which pnpm starts
+ *   every script through. Like the stream pair it is connection-oriented and
+ *   unnamed, so it reaches only the processes that inherit it. `socket(AF_UNIX)`
+ *   and the datagram pair, which can address a host endpoint, stay refused.
+ * - Entries named by `hiddenPrefixes` are closed for reads and writes
+ *   wherever they sit in the workspace.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Verification {
+  /**
+   * Absolute host paths the operator opens for reading. One outside the
+   * workspace is bound read-only. One inside it reopens, for reading, the
+   * hidden entries at or below it, and the run may not write there. Each
+   * path is resolved once, when the service is made: one that does not exist
+   * then opens nothing, and a run is refused once a path no longer names the
+   * file or directory it named then.
+   */
+  readonly reads?: ReadonlyArray<string> | undefined
+  /**
+   * Entry-name prefixes hidden wherever they appear below the workspace
+   * root, in any ASCII case: `.env` hides `.env`, `.env.local`, and `.ENV`.
+   */
+  readonly hiddenPrefixes?: ReadonlyArray<string> | undefined
+}
+
+/** A verification read as it resolved when the service was made: the path given, its real path, and the file it named. */
+interface Opened {
+  readonly read: string
+  readonly real: string
+  readonly dev: number
+  readonly ino: number
 }
 
 const shellLine = (command: ChildProcess.StandardCommand): string => [command.command, ...command.args].join(" ")
@@ -95,9 +147,10 @@ const messageOf = (cause: unknown): string =>
     : String(cause)
 
 /** Classic BPF for seccomp_data: deny host Unix sockets and io_uring, preserving stream socketpair.
+ * `sequenced` also preserves the SOCK_SEQPACKET pair, which is connection-oriented like the stream pair.
  * Closed networking additionally denies every IP socket family.
  * Wrong ABI and x32 syscall encodings fail closed rather than bypassing socket(). */
-const networkFilter = (architecture: string, network: "none" | "open"): Uint8Array => {
+const networkFilter = (architecture: string, network: "none" | "open", sequenced: boolean): Uint8Array => {
   const abi = architecture === "x64"
     ? { audit: 0xc000003e, socket: 41, socketpair: 53 }
     : architecture === "arm64"
@@ -113,12 +166,15 @@ const networkFilter = (architecture: string, network: "none" | "open"): Uint8Arr
     [0x06, 0, 0, 0x80000000], // kill x32 / invalid high syscall numbers
     [0x15, 0, 1, 425], // io_uring_setup on both supported ABIs
     [0x06, 0, 0, 0x00050001], // io_uring can otherwise create sockets without socket()
-    [0x15, 0, 6, abi.socketpair],
+    [0x15, 0, sequenced ? 7 : 6, abi.socketpair],
     [0x20, 0, 0, 16], // socketpair domain
-    [0x15, 0, 4, 1], // AF_UNIX
+    [0x15, 0, sequenced ? 5 : 4, 1], // AF_UNIX
     [0x20, 0, 0, 24], // socketpair type, low 32 bits of args[1]
     [0x54, 0, 0, 0xf], // strip SOCK_NONBLOCK and SOCK_CLOEXEC
-    [0x15, 1, 0, 1], // only SOCK_STREAM; Linux aliases SOCK_RAW to datagram operations
+    // Only connection-oriented pairs; Linux aliases SOCK_RAW to datagram
+    // operations, and a datagram pair can address a host endpoint.
+    [0x15, sequenced ? 2 : 1, 0, 1], // SOCK_STREAM
+    ...(sequenced ? [[0x15, 1, 0, 5] as const] : []), // SOCK_SEQPACKET
     [0x06, 0, 0, 0x00050001],
     [0x20, 0, 0, 0] // reload syscall number before the socket() policy
   ]
@@ -154,6 +210,20 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
   const hostFacts = options.host ?? ProcessSandbox.host()
   const temporaryRoot = options.temporaryDirectory ?? NodeOs.tmpdir()
   const unavailable = options.unavailable ?? "refuse"
+  const verification = options.verification
+  // Resolved here, before any command runs. A confined command can rename
+  // what it may write, so resolving a name again before a later command
+  // would let the earlier one aim it at a file the operator never opened.
+  const opens = (verification?.reads ?? []).flatMap((read): ReadonlyArray<Opened | string> => {
+    if (!NodePath.isAbsolute(read)) return [read]
+    try {
+      const real = NodeFs.realpathSync(read)
+      const { dev, ino } = NodeFs.statSync(real)
+      return [{ read, real, dev, ino }]
+    } catch {
+      return []
+    }
+  })
   const confine = Effect.fn("ProcessConfinement.confine")(function*(
     command: ChildProcess.StandardCommand,
     profile: KernelProcessConfinement.Profile
@@ -238,17 +308,6 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     if (ProcessSandbox.isUnenforceable(planned)) {
       return yield* failure("PermissionDenied", command, planned.message, planned)
     }
-    // A workspace link does not grant authority to its target on the host.
-    const confinement: ProcessSandbox.Plan = { ...planned, externalReads: [] }
-    yield* Effect.try({
-      try: () => {
-        ProcessSandbox.validateWrites(confinement, hostFacts)
-        NodeFs.mkdirSync(NodePath.join(tmp, "home"), { recursive: true })
-        NodeFs.mkdirSync(NodePath.join(tmp, "cache"), { recursive: true })
-        for (const write of planned.writes) NodeFs.mkdirSync(write, { recursive: true })
-      },
-      catch: (cause) => failure("Unknown", command, `could not prepare the confinement: ${messageOf(cause)}`, cause)
-    })
     // Only the target receives its requested environment. Dynamic-loader and
     // other startup variables must never configure the host sandbox launcher.
     // A null prototype keeps an own `__proto__` entry instead of running the setter.
@@ -264,6 +323,53 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
       else if (typeof value === "string") targetEnvironment[name] = value
       else delete targetEnvironment[name]
     }
+    // A workspace link does not grant authority to its target on the host.
+    // Verification adds what the host itself chose and what the operator named.
+    const opened = yield* Effect.try({
+      try: () => {
+        if (verification === undefined) return { externalReads: [] }
+        const outside: Array<string> = []
+        const restored: Array<string> = []
+        for (const open of opens) {
+          if (typeof open === "string") throw new Error("a verification read is not an absolute path")
+          const now = NodeFs.statSync(open.read, { throwIfNoEntry: false })
+          if (
+            now === undefined || now.dev !== open.dev || now.ino !== open.ino ||
+            NodeFs.realpathSync(open.read) !== open.real
+          ) {
+            throw new Error("a verification read no longer names what it named when the run began")
+          }
+          if (within(canonical.root, open.real)) restored.push(open.real)
+          else outside.push(open.read, open.real)
+        }
+        const prefixes = verification.hiddenPrefixes ?? []
+        return {
+          externalReads: [
+            ...ProcessSandbox.toolchainReads(targetEnvironment.PATH, canonical.root, hostFacts),
+            ...outside
+          ],
+          hidden: {
+            prefixes,
+            // Seatbelt closes the names by pattern and needs no list.
+            paths: planned.mechanism._tag === "bubblewrap"
+              ? ProcessSandbox.hiddenEntries(canonical.root, prefixes, restored, hostFacts)
+              : [],
+            restored
+          }
+        }
+      },
+      catch: (cause) => failure("PermissionDenied", command, messageOf(cause), cause)
+    })
+    const confinement: ProcessSandbox.Plan = { ...planned, ...opened }
+    yield* Effect.try({
+      try: () => {
+        ProcessSandbox.validateWrites(confinement, hostFacts)
+        NodeFs.mkdirSync(NodePath.join(tmp, "home"), { recursive: true })
+        NodeFs.mkdirSync(NodePath.join(tmp, "cache"), { recursive: true })
+        for (const write of planned.writes) NodeFs.mkdirSync(write, { recursive: true })
+      },
+      catch: (cause) => failure("Unknown", command, `could not prepare the confinement: ${messageOf(cause)}`, cause)
+    })
     const privateEnvironment = ProcessSandbox.environment(confinement)
     const script = yield* Effect.try({
       try: () => {
@@ -319,7 +425,10 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
       const filter = yield* Effect.try({
         try: () => {
           const file = NodePath.join(tmp, "network.seccomp")
-          NodeFs.writeFileSync(file, networkFilter(process.arch, profile.network), { flag: "wx", mode: 0o600 })
+          NodeFs.writeFileSync(file, networkFilter(process.arch, profile.network, verification !== undefined), {
+            flag: "wx",
+            mode: 0o600
+          })
           return file
         },
         catch: (cause) => failure("PermissionDenied", command, messageOf(cause), cause)

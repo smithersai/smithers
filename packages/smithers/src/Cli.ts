@@ -426,7 +426,9 @@ export const makeCli = (
         verifyInstall: z.string().optional(),
         verifyFormat: z.string().optional(),
         verifyTypecheck: z.array(z.string()).optional(),
-        verifyTest: z.string().optional()
+        verifyTest: z.string().optional(),
+        verifyRead: z.array(z.string()).optional(),
+        verifyUnconfined: z.boolean().default(false)
       }),
       run: (c) =>
         Presentation.guard(c, async () => {
@@ -450,7 +452,9 @@ export const makeCli = (
                 verifyInstall: c.options.verifyInstall,
                 verifyFormat: c.options.verifyFormat,
                 verifyTypecheck: c.options.verifyTypecheck,
-                verifyTest: c.options.verifyTest
+                verifyTest: c.options.verifyTest,
+                verifyRead: c.options.verifyRead,
+                verifyUnconfined: c.options.verifyUnconfined
               }, globalsOf())
             }),
             c.options,

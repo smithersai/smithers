@@ -908,7 +908,8 @@ export const finish = (payload: typeof finishAction.payloadSchema.Type): Effect.
         root,
         commands: outline.commands,
         changedFiles: [...changed, ...archived.changed].map((file) => file.path),
-        expectFlows: outline.expectFlows
+        expectFlows: outline.expectFlows,
+        sealed: Options.hostOwnedDirectories(options)
       })
       const finalVerification: Checks.CheckResult = {
         name: "the final tree verifies",
@@ -1444,7 +1445,8 @@ export const unit = Flow.make(unitTag, {
                     root: options.root,
                     commands: outline.commands,
                     changedFiles: result.changedFiles,
-                    expectFlows: outline.expectFlows
+                    expectFlows: outline.expectFlows,
+                    sealed: Options.hostOwnedDirectories(options)
                   }),
                   {
                     if: (verification) => Verify.verdict(verification) === "pass",

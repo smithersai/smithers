@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { copyFixture, fixture } from "./fixtures/helpers.ts"
+import { copyFixture, fixture, unconfinedNode } from "./fixtures/helpers.ts"
 
 const uiImport = "import { statusClass } from \"@smthrs/ui/status\"\nexport const action = statusClass(\"healthy\")\n"
 
@@ -194,5 +194,5 @@ describe("current @smthrs/ui migration", () => {
       expect(after.dependencies["smthrs"]).toBeUndefined()
       expect(after.dependencies["@smthrs/ui"]).toBe("1.0.0-rc.1")
       expect(readFileSync(join(root, "lib", "ui.ts"), "utf8")).toBe(uiImport)
-    }).pipe(Effect.provide(NodeServices.layer)))
+    }).pipe(Effect.provide(unconfinedNode)))
 })

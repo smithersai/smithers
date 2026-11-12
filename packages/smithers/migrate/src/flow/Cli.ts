@@ -64,6 +64,20 @@ const flags = {
     Flag.withDescription("The command that runs the tests, instead of the project's own test script"),
     Flag.optional
   ),
+  // What a verification command may reach. Each one runs in the host's
+  // process sandbox, because it executes files the rewrite agent edited.
+  verifyRead: Flag.String("verify-read").pipe(
+    Flag.withDescription(
+      "A path the sandboxed verification commands may also read, repeatable; relative paths resolve from the project root"
+    ),
+    Flag.atLeast(0)
+  ),
+  verifyUnconfined: Flag.Boolean("verify-unconfined").pipe(
+    Flag.withDescription(
+      "Run the verification commands with no sandbox, with your own privileges and environment"
+    ),
+    Flag.withDefault(false)
+  ),
   json: Flag.Boolean("json").pipe(Flag.withDefault(false))
 }
 
@@ -108,7 +122,14 @@ export const command = Command.make("smithers-migrate", flags, (config) =>
       process.cwd(),
       process.env
     )
-    const outcome = yield* Effect.result(CommandModule.runNode(options, { environment: process.env }))
+    if (options.mode === "apply" && config.verifyUnconfined) {
+      yield* Console.error(`smithers-migrate: ${CommandModule.unconfinedWarning}`)
+    }
+    const outcome = yield* Effect.result(CommandModule.runNode(options, {
+      environment: process.env,
+      verifyRead: config.verifyRead,
+      verifyUnconfined: config.verifyUnconfined
+    }))
     if (outcome._tag === "Failure") {
       const error: MigrateError = outcome.failure
       // A refused gate is not a crash, and neither is a second apply finding

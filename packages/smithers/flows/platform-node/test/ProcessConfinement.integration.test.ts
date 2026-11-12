@@ -569,3 +569,242 @@ const plainEnvironment = (
   Object.fromEntries(
     Object.entries(values ?? {}).map(([key, value]) => [key, value === undefined ? undefined : plainWord(value)])
   )
+
+describe.skipIf(!available || process.platform !== "linux")("verification confinement on Linux (#5436)", () => {
+  const verifying = (verification: ProcessConfinement.Verification = { hiddenPrefixes: [".env"] }) => {
+    const f = fixture()
+    const service = ProcessConfinement.make({ temporaryDirectory: f.temporaryDirectory, verification })
+    const profile: Profile = {
+      workspaceRoot: f.workspaceRoot,
+      reads: ["."],
+      writes: ["."],
+      readOnly: [],
+      network: "open"
+    }
+    const execute = (command: ChildProcess.StandardCommand) =>
+      Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          return yield* spawn(yield* service.confine(command, profile))
+        })).pipe(Effect.provide(spawnerLayer), Effect.timeout("60 seconds"))
+      )
+    return { ...f, execute, agent: (command: ChildProcess.StandardCommand) => f.execute(command, profile) }
+  }
+  const toolbox = () => {
+    const tools = NodeFs.realpathSync(NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "confined-toolchain-")))
+    fixtures.push(tools)
+    NodeFs.mkdirSync(NodePath.join(tools, "bin"))
+    NodeFs.writeFileSync(NodePath.join(tools, "bin/helper"), "#!/bin/sh\necho helper-ran\n", { mode: 0o755 })
+    NodeFs.writeFileSync(NodePath.join(tools, "beside-the-toolchain"), "outside-secret")
+    return tools
+  }
+
+  it("starts a program a script names, found on PATH outside every grant, and opens nothing beside it", async () => {
+    const tools = toolbox()
+    const f = verifying()
+    const options = {
+      cwd: f.workspaceRoot,
+      env: { PATH: `${NodePath.join(tools, "bin")}:/usr/bin:/bin` },
+      extendEnv: false
+    }
+    // The package manager's case: the program the host resolved starts another by name.
+    const nested = ChildProcess.make("/bin/sh", ["-c", "helper"], options)
+    const ran = await f.execute(nested)
+    expect(ran.code, ran.stderr).toBe(0)
+    expect(ran.stdout).toBe("helper-ran\n")
+    // The operator's shell-line override resolves the same way.
+    const line = await f.execute(ChildProcess.make("helper && echo line-ran", { ...options, shell: true }))
+    expect(line.code, line.stderr).toBe(0)
+    expect(line.stdout).toBe("helper-ran\nline-ran\n")
+    const beside = await f.execute(
+      ChildProcess.make("/bin/cat", [NodePath.join(tools, "beside-the-toolchain")], options)
+    )
+    expect(beside.code).not.toBe(0)
+    expect(beside.stdout).not.toContain("outside-secret")
+    const written = await f.execute(
+      ChildProcess.make("/bin/sh", ["-c", `echo planted > ${NodePath.join(tools, "bin/helper")}`], options)
+    )
+    expect(written.code).not.toBe(0)
+    expect(NodeFs.readFileSync(NodePath.join(tools, "bin/helper"), "utf8")).toContain("helper-ran")
+    // An agent command resolves only its own program.
+    const agent = await f.agent(nested)
+    expect(agent.code).not.toBe(0)
+    expect(agent.stdout).not.toContain("helper-ran")
+  })
+
+  it("hides dotenv files from reads, writes, renames, and links, and reopens only what the operator names", async () => {
+    const reopenedName = "sub/.env.public"
+    const f = verifying()
+    NodeFs.mkdirSync(NodePath.join(f.workspaceRoot, "sub/.envdir"), { recursive: true })
+    const secrets: Readonly<Record<string, string>> = {
+      ".env": "root-secret",
+      "sub/.env.local": "nested-secret",
+      "sub/.ENV": "upper-secret",
+      "sub/.envdir/key": "tree-secret",
+      [reopenedName]: "public-value"
+    }
+    for (const [name, value] of Object.entries(secrets)) {
+      NodeFs.writeFileSync(NodePath.join(f.workspaceRoot, name), value)
+    }
+    NodeFs.writeFileSync(NodePath.join(f.workspaceRoot, "sub/plain"), "plain-value")
+    const script = [
+      "cat .env sub/.env.local sub/.ENV sub/.envdir/key sub/.env.public sub/plain",
+      "echo overwritten > .env",
+      "rm -f .env sub/.env.local",
+      "mv .env moved",
+      "ln sub/.ENV linked",
+      // A mask stays on its entry when the directory above it is renamed.
+      "mv sub renamed && cat renamed/.env.local renamed/.ENV renamed/.envdir/key",
+      "echo done"
+    ].join("; ")
+    const command = ChildProcess.make("/bin/sh", ["-c", script], { cwd: f.workspaceRoot })
+    const hidden = await f.execute(command)
+    expect(hidden.code, hidden.stderr).toBe(0)
+    expect(hidden.stdout).toBe("plain-valuedone\n")
+    for (const value of Object.values(secrets)) expect(hidden.stdout + hidden.stderr).not.toContain(value)
+    NodeFs.renameSync(NodePath.join(f.workspaceRoot, "renamed"), NodePath.join(f.workspaceRoot, "sub"))
+    for (const [name, value] of Object.entries(secrets)) {
+      expect(NodeFs.readFileSync(NodePath.join(f.workspaceRoot, name), "utf8")).toBe(value)
+    }
+    expect(NodeFs.existsSync(NodePath.join(f.workspaceRoot, "moved"))).toBe(false)
+    expect(NodeFs.existsSync(NodePath.join(f.workspaceRoot, "linked"))).toBe(false)
+
+    const reopening = ProcessConfinement.make({
+      temporaryDirectory: f.temporaryDirectory,
+      verification: { hiddenPrefixes: [".env"], reads: [NodePath.join(f.workspaceRoot, reopenedName)] }
+    })
+    const reopened = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        return yield* spawn(
+          yield* reopening.confine(
+            ChildProcess.make("/bin/sh", [
+              "-c",
+              "cat sub/.env.public; echo; cat sub/.env.local; echo changed > sub/.env.public; echo done"
+            ], { cwd: f.workspaceRoot }),
+            { workspaceRoot: f.workspaceRoot, reads: ["."], writes: ["."], readOnly: [], network: "open" }
+          )
+        )
+      })).pipe(Effect.provide(spawnerLayer), Effect.timeout("60 seconds"))
+    )
+    expect(reopened.stdout).toBe("public-value\ndone\n")
+    expect(NodeFs.readFileSync(NodePath.join(f.workspaceRoot, reopenedName), "utf8")).toBe("public-value")
+    // An agent command under the same grants is not what hides them.
+    const agent = await f.agent(ChildProcess.make("/bin/cat", [".env"], { cwd: f.workspaceRoot }))
+    expect(agent.stdout).toBe("root-secret")
+  })
+
+  it("keeps a dotenv file hidden from the command after the one that moved its directory", async () => {
+    const f = verifying()
+    NodeFs.mkdirSync(NodePath.join(f.workspaceRoot, "apps/web"), { recursive: true })
+    NodeFs.writeFileSync(NodePath.join(f.workspaceRoot, "apps/web/.env"), "moved-secret")
+    const shell = (script: string) => ChildProcess.make("/bin/sh", ["-c", script], { cwd: f.workspaceRoot })
+    // Under a dependency tree, where a lifecycle script may write anything.
+    const moved = await f.execute(shell("mkdir node_modules && mv apps/web node_modules/w && echo moved"))
+    expect(moved.stdout, moved.stderr).toBe("moved\n")
+    const next = await f.execute(shell("cat node_modules/w/.env; echo done"))
+    expect(next.stdout).toBe("done\n")
+    expect(next.stdout + next.stderr).not.toContain("moved-secret")
+    expect(NodeFs.readFileSync(NodePath.join(f.workspaceRoot, "node_modules/w/.env"), "utf8")).toBe("moved-secret")
+  })
+
+  it.skipIf(process.getuid?.() === 0)(
+    "starts no command while a workspace directory cannot be searched for dotenv files",
+    async () => {
+      const f = verifying()
+      const locked = NodePath.join(f.workspaceRoot, "apps")
+      NodeFs.mkdirSync(locked)
+      NodeFs.writeFileSync(NodePath.join(locked, ".env"), "locked-secret")
+      const shell = (script: string) => ChildProcess.make("/bin/sh", ["-c", script], { cwd: f.workspaceRoot })
+      // An earlier command takes the directory's read permission away.
+      expect((await f.execute(shell("chmod 000 apps && echo locked"))).stdout).toBe("locked\n")
+      try {
+        await expect(f.execute(shell("chmod 755 apps && cat apps/.env"))).rejects.toThrow(/cannot be listed/)
+      } finally {
+        NodeFs.chmodSync(locked, 0o755)
+      }
+    }
+  )
+
+  it("refuses the command after one that put another entry under a name the operator reopened", async () => {
+    const f = verifying()
+    NodeFs.mkdirSync(NodePath.join(f.workspaceRoot, "sub"))
+    NodeFs.writeFileSync(NodePath.join(f.workspaceRoot, "sub/.env.example"), "example-value")
+    NodeFs.writeFileSync(NodePath.join(f.workspaceRoot, "sub/.env"), "sub-secret")
+    const service = ProcessConfinement.make({
+      temporaryDirectory: f.temporaryDirectory,
+      verification: { hiddenPrefixes: [".env"], reads: [NodePath.join(f.workspaceRoot, "sub/.env.example")] }
+    })
+    const execute = (script: string) =>
+      Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          return yield* spawn(
+            yield* service.confine(
+              ChildProcess.make("/bin/sh", ["-c", script], { cwd: f.workspaceRoot }),
+              { workspaceRoot: f.workspaceRoot, reads: ["."], writes: ["."], readOnly: [], network: "open" }
+            )
+          )
+        })).pipe(Effect.provide(spawnerLayer), Effect.timeout("60 seconds"))
+      )
+    // The reopened file reads; a second directory takes its parent's name.
+    const first = await execute("cat sub/.env.example; mv sub aside && mkdir sub && echo x > sub/.env.example")
+    expect(first.stdout).toBe("example-value")
+    await expect(execute("cat sub/.env.example aside/.env")).rejects.toThrow(/no longer names what it named/)
+  })
+
+  it("reads a host path outside the workspace only when the operator names it", async () => {
+    const tools = toolbox()
+    const named = NodePath.join(tools, "beside-the-toolchain")
+    const command = (f: { readonly workspaceRoot: string }) =>
+      ChildProcess.make("/bin/cat", [named], { cwd: f.workspaceRoot })
+    const closed = verifying()
+    expect((await closed.execute(command(closed))).stdout).toBe("")
+    const opened = verifying({ reads: [named] })
+    const read = await opened.execute(command(opened))
+    expect(read.code, read.stderr).toBe(0)
+    expect(read.stdout).toBe("outside-secret")
+    const write = await opened.execute(
+      ChildProcess.make("/bin/sh", ["-c", `echo changed > ${named}`], { cwd: opened.workspaceRoot })
+    )
+    expect(write.code).not.toBe(0)
+    expect(NodeFs.readFileSync(named, "utf8")).toBe("outside-secret")
+  })
+
+  it("lets a script runner open a sequenced socketpair, and nothing that can name a host endpoint", async () => {
+    const f = verifying()
+    NodeFs.mkdirSync(NodePath.join(f.workspaceRoot, "out"))
+    const executable = NodePath.join(f.workspaceRoot, "out/pair-probe")
+    const source = String.raw`
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  int pair[2];
+  for (int index = 1; index < argc; index++) {
+    int type = atoi(argv[index]);
+    if (type == 0) { int fd = socket(AF_UNIX, SOCK_STREAM, 0); printf("socket:%d\n", fd < 0 ? errno : 0); continue; }
+    if (socketpair(AF_UNIX, type | SOCK_CLOEXEC, 0, pair)) { printf("pair %d:%d\n", type, errno); continue; }
+    if (write(pair[0], "x", 1) != 1) return 90;
+    char byte = 0;
+    if (read(pair[1], &byte, 1) != 1 || byte != 'x') return 91;
+    printf("pair %d:0\n", type); close(pair[0]); close(pair[1]);
+  }
+  return 0;
+}
+`
+    const compiled = NodeChildProcess.spawnSync("cc", ["-x", "c", "-", "-o", executable], {
+      input: source,
+      encoding: "utf8"
+    })
+    expect(compiled.status, compiled.stderr).toBe(0)
+    const types = [String(1), String(5), String(2), String(3), "0"]
+    const command = ChildProcess.make(executable, types, { cwd: f.workspaceRoot })
+    const verification = await f.execute(command)
+    expect(verification.code, verification.stderr).toBe(0)
+    expect(verification.stdout).toBe("pair 1:0\npair 5:0\npair 2:1\npair 3:1\nsocket:1\n")
+    const agent = await f.agent(command)
+    expect(agent.code, agent.stderr).toBe(0)
+    expect(agent.stdout).toBe("pair 1:0\npair 5:1\npair 2:1\npair 3:1\nsocket:1\n")
+  })
+})

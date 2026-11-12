@@ -100,6 +100,8 @@ A verified unit archives what the migration replaced. `package.json`, `tsconfig*
 
 `--verify-install`, `--verify-format`, `--verify-typecheck` (repeatable), and `--verify-test` replace the commands the detection ladder derives from the manifests and the lockfile. They matter more than a convenience: the orchestrator verifies every unit with these lines after the agent answers, so a project whose typecheck lives in a Makefile has no other way to be migrated. One empty value, `--verify-typecheck ""`, runs no typecheck at all.
 
+Every verification command runs in the host's process sandbox (bubblewrap on Linux, seatbelt on macOS), because it executes files the agent edited: it gets the project and your toolchain, and not your home directory, your environment, or a dotenv file. `--verify-read <path>` (repeatable) opens one more path for reading. A host with no sandbox refuses `--apply` with `no-sandbox`; `--verify-unconfined` runs the commands with no sandbox and prints a warning. [Set the commands that verify each unit](./docs/guides/set-verification-commands.md#what-a-verification-command-can-reach) has the whole boundary.
+
 A derived command is an executable and its arguments, spawned with no shell: a tsconfig named `tsconfig.;rm -rf .json` is one argument to `tsc`, not a line a shell reads. The derived formatter runs in check mode (`dprint check`, `prettier --check .`), because a verification asks a question and a formatter that rewrites the repository answers it by editing files the unit does not own. Only an operator override keeps shell semantics, because the operator typed it.
 
 ## Provider credentials

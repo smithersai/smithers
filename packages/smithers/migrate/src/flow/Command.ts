@@ -283,6 +283,10 @@ export const layerNode = (config: {
   readonly reportDir?: string | undefined
   readonly state?: Options.State | undefined
   readonly commands?: Units.CommandOverrides | undefined
+  /** `--verify-read`: paths a sandboxed verification command may also read. */
+  readonly verifyRead?: ReadonlyArray<string> | undefined
+  /** `--verify-unconfined`: run the verification commands with no sandbox. */
+  readonly verifyUnconfined?: boolean | undefined
 }) =>
   Layers.layerNodeScanned({
     root: config.root,
@@ -292,8 +296,19 @@ export const layerNode = (config: {
     ...(config.flowsDir === undefined ? {} : { flowsDir: config.flowsDir }),
     ...(config.reportDir === undefined ? {} : { reportDir: config.reportDir }),
     ...(config.state === undefined ? {} : { state: config.state }),
-    ...(config.commands === undefined ? {} : { commands: config.commands })
+    ...(config.commands === undefined ? {} : { commands: config.commands }),
+    ...(config.verifyRead === undefined ? {} : { verifyRead: config.verifyRead }),
+    ...(config.verifyUnconfined === undefined ? {} : { verifyUnconfined: config.verifyUnconfined })
   })
+
+/**
+ * What an entry point prints before an apply whose verification runs with no
+ * sandbox, `--verify-unconfined`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const unconfinedWarning: string = Layers.unconfinedWarning
 
 /**
  * The migration's own registrations, for a host that already has an engine.
@@ -381,6 +396,10 @@ export const reportDirectory = (options: MigrateOptions): string => `${options.r
  * Runs one migration under a Node composition built from the project itself,
  * and returns the report and the rendering the caller asked for.
  *
+ * An apply verifies each unit inside the host's process sandbox. On a host
+ * with none it fails with `no-sandbox` before any unit runs, unless
+ * `verifyUnconfined` is set. `verifyRead` opens more paths to the sandbox.
+ *
  * @category execution
  * @since 1.0.0-rc.0
  */
@@ -389,6 +408,8 @@ export const runNode = (
   config: {
     readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
     readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+    readonly verifyRead?: ReadonlyArray<string> | undefined
+    readonly verifyUnconfined?: boolean | undefined
   } = {}
 ): Effect.Effect<Report.MigrationReport, MigrateError> => {
   try {
@@ -405,7 +426,9 @@ export const runNode = (
         ...(options.seat === undefined ? {} : { seat: options.seat }),
         ...(config.environment === undefined ? {} : { environment: config.environment }),
         // The host verifies and spawns with the same commands the units do.
-        ...(options.commands === undefined ? {} : { commands: options.commands })
+        ...(options.commands === undefined ? {} : { commands: options.commands }),
+        ...(config.verifyRead === undefined ? {} : { verifyRead: config.verifyRead }),
+        ...(config.verifyUnconfined === undefined ? {} : { verifyUnconfined: config.verifyUnconfined })
       })
     ).pipe(
       // The composition itself can refuse to build: the scan it derives the

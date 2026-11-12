@@ -373,6 +373,11 @@ describe("unified root command dispatch", () => {
       "tsc --noEmit",
       "--verify-typecheck",
       "tsc -p test",
+      "--verify-read",
+      ".env.test",
+      "--verify-read",
+      "/opt/registry-settings",
+      "--verify-unconfined",
       "--json"
     ])
     expect(ports.local).toHaveBeenCalledExactlyOnceWith(
@@ -396,7 +401,9 @@ describe("unified root command dispatch", () => {
       verifyInstall: undefined,
       verifyFormat: undefined,
       verifyTypecheck: ["tsc --noEmit", "tsc -p test"],
-      verifyTest: undefined
+      verifyTest: undefined,
+      verifyRead: [".env.test", "/opt/registry-settings"],
+      verifyUnconfined: true
     }, { environment: {} })
     expect(JSON.parse(result.stdout)).toMatchObject({ exitCode: 0, units: [] })
     expect(result.codes).toEqual([0])

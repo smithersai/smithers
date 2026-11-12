@@ -27988,12 +27988,14 @@ One failure type for the whole package, so the CLI maps a code onto an exit
 status without walking a cause chain. The codes are `run-state-blocked`,
 `unsafe-blocked`, `apply-in-progress`, `no-vcs`, `checkpoint-failed`,
 `verify-failed`, `agent-failed`, `io`, `unsupported-project`, `invalid-layout`,
-and `stale-plan`. The first two are the operator gates, and the third is a
+`stale-plan`, and `no-sandbox`. The first two are the operator gates, and the third is a
 second apply finding the first one's lock; all three exit 3, and every other
 code exits 1. `invalid-layout` refuses a root, report directory, or flows
 directory that could leave or overlap the project, before anything is read.
 `stale-plan` refuses an apply whose project changed after it was planned,
-before anything is written. `Command.isMigrateError` is the guard the entry
+before anything is written. `no-sandbox` refuses an apply on a host that
+cannot confine the verification commands, before any unit runs, unless the
+operator passed `--verify-unconfined`. `Command.isMigrateError` is the guard the entry
 points use: the class and its code, never a `_tag` string an arbitrary object
 can carry.
 
@@ -29150,6 +29152,7 @@ always pass: they report the blockage instead of refusing on it. See
 | `validateLayout`         | `(options: MigrateOptions) => Effect<void, MigrateError, FileSystem \| Path>` | What a schema cannot see: a symlink, and a report directory holding files that are not the tool's. |
 | `layoutIssue`            | `(options) => string \| undefined`                                            | Why a root and its two layout paths are not acceptable together.                                   |
 | `relativePathIssue`      | `(label: string, value: string) => string \| undefined`                       | Why one layout path is not acceptable.                                                             |
+| `hostOwnedDirectories`   | `(options: MigrateOptions) => ReadonlyArray<string>`                          | The default and the configured report directory, which no verification command may write.          |
 | `reportDir`              | `(options: MigrateOptions) => string`                                         | The report directory, defaulted.                                                                   |
 | `flowsDir`               | `(options: MigrateOptions) => string`                                         | The flows directory, defaulted.                                                                    |
 | `maxRepairRounds`        | `(options: MigrateOptions) => number`                                         | The repair rounds, defaulted.                                                                      |
@@ -29329,7 +29332,13 @@ the failing output.
 ### Verify
 
 `@smthrs/migrate/flow/Verify`. Install, format, typecheck, tests, and registry
-discovery.
+discovery. Every command starts through the `@smthrs/kernel`
+`ProcessConfinement` in the context, with a profile that opens the project
+for reads and writes, seals `.git`, `.jj`, and the payload's `sealed` paths
+against writes, and leaves the network open. With no `ProcessConfinement`
+provided, each command reports exit 127 and nothing is spawned. What the host
+adds around that profile (the toolchain, hidden dotenv files, the operator's
+extra reads) is `Layers.layerVerificationConfinement`.
 
 | Export             | Signature                                                      | What it is                                   |
 | ------------------ | -------------------------------------------------------------- | -------------------------------------------- |
@@ -29435,21 +29444,25 @@ implementation.
 `@smthrs/migrate/flow/Layers`. The Node composition, its grant rules, and a
 scripted composition to test a migration against.
 
-| Export                                                              | Signature                                                        | What it is                                                                                                                                            |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layerNode`                                                         | `(config: NodeConfig) => Layer`                                  | Everything a migration needs on Node.                                                                                                                 |
-| `layerNodeScanned`                                                  | `(config: ScannedConfig) => Layer`                               | The same, deriving the grant rules and commands from a scan.                                                                                          |
-| `layerScripted`                                                     | `(config) => Layer`                                              | The same composition with a scripted model, for tests.                                                                                                |
-| `layerSnapshotBoundary`                                             | `Layer<FlowEngine.SnapshotBoundary>`                             | The engine's snapshot boundary.                                                                                                                       |
-| `rules`                                                             | `(options) => ...`                                               | The grant rules: `fs:*` denied on run state, the report directory, and every case spelling of `.git`, `.jj`, and `.env*`; no agent process authority. |
-| `commandsFor`                                                       | `(detection, overrides?, flowsDir?) => Contract.Commands`        | One derivation for the host, the prompt, and the grants.                                                                                              |
-| `verificationCommands`                                              | `(commands: Contract.Commands) => ReadonlyArray<string>`         | Those commands as the lines a grant names.                                                                                                            |
-| `seatResolver`                                                      | `(options) => SeatResolver.Service`                              | Maps the declared seat onto `provider:model` and reads that provider's key.                                                                           |
-| `configuredProvider`                                                | `(environment) => string \| undefined`                           | The provider whose key is present, and nothing about which model.                                                                                     |
-| `apiKeyVariable`                                                    | `{ anthropic, openai, openrouter }`                              | Which variable carries each provider's key.                                                                                                           |
-| `migrationRoot`                                                     | `(root: string) => Effect<MigrationRoot, MigrateError>`          | The branded absolute root every service is pinned to.                                                                                                 |
-| `scriptedModel`, `done`                                             | `(script: Script) => Model.Model`, `(output: unknown) => string` | The test model and the cell that answers with a value.                                                                                                |
-| `NodeConfig`, `ScannedConfig`, `Script`, `Runtime`, `MigrationRoot` | `interface` or `type`                                            | The composition's inputs and its runtime type.                                                                                                        |
+| Export                                                              | Signature                                                                  | What it is                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layerNode`                                                         | `(config: NodeConfig) => Layer`                                            | Everything a migration needs on Node.                                                                                                                                                                                                                                                                 |
+| `layerNodeScanned`                                                  | `(config: ScannedConfig) => Layer`                                         | The same, deriving the grant rules and commands from a scan.                                                                                                                                                                                                                                          |
+| `layerScripted`                                                     | `(config) => Layer`                                                        | The same composition with a scripted model, for tests.                                                                                                                                                                                                                                                |
+| `layerSnapshotBoundary`                                             | `Layer<FlowEngine.SnapshotBoundary>`                                       | The engine's snapshot boundary.                                                                                                                                                                                                                                                                       |
+| `rules`                                                             | `(options) => ...`                                                         | The grant rules: `fs:*` denied on run state, the report directory, and every case spelling of `.git`, `.jj`, and `.env*`; no agent process authority.                                                                                                                                                 |
+| `commandsFor`                                                       | `(detection, overrides?, flowsDir?) => Contract.Commands`                  | One derivation for the host, the prompt, and the grants.                                                                                                                                                                                                                                              |
+| `verificationCommands`                                              | `(commands: Contract.Commands) => ReadonlyArray<string>`                   | Those commands as the lines a grant names.                                                                                                                                                                                                                                                            |
+| `layerVerificationConfinement`                                      | `(config?: VerificationConfig) => Layer<ProcessConfinement, MigrateError>` | What confines the verification commands: the host's native sandbox in verification mode, with dotenv files hidden, `verifyRead` opened, and the environment cut to `verificationEnvironment`. Fails with `no-sandbox` on a host that has none; `verifyUnconfined` runs the commands as given instead. |
+| `VerificationConfig`                                                | `interface`                                                                | `root`, `environment`, `verifyRead`, `verifyUnconfined`, `confinement` (a host's own sandbox in place of the native one), and `host`.                                                                                                                                                                 |
+| `unconfinedWarning`                                                 | `string`                                                                   | What an entry point prints before an apply that runs verification with no sandbox.                                                                                                                                                                                                                    |
+| `verificationEnvironment`                                           | `(environment) => Record<string, string>`                                  | The variables a verification command inherits: `PATH`, `HOME`, `USER`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, `SHELL`.                                                                                                                                                                                     |
+| `seatResolver`                                                      | `(options) => SeatResolver.Service`                                        | Maps the declared seat onto `provider:model` and reads that provider's key.                                                                                                                                                                                                                           |
+| `configuredProvider`                                                | `(environment) => string \| undefined`                                     | The provider whose key is present, and nothing about which model.                                                                                                                                                                                                                                     |
+| `apiKeyVariable`                                                    | `{ anthropic, openai, openrouter }`                                        | Which variable carries each provider's key.                                                                                                                                                                                                                                                           |
+| `migrationRoot`                                                     | `(root: string) => Effect<MigrationRoot, MigrateError>`                    | The branded absolute root every service is pinned to.                                                                                                                                                                                                                                                 |
+| `scriptedModel`, `done`                                             | `(script: Script) => Model.Model`, `(output: unknown) => string`           | The test model and the cell that answers with a value.                                                                                                                                                                                                                                                |
+| `NodeConfig`, `ScannedConfig`, `Script`, `Runtime`, `MigrationRoot` | `interface` or `type`                                                      | The composition's inputs and its runtime type.                                                                                                                                                                                                                                                        |
 
 `rules` grants process commands only when the capability pattern grammar can
 represent the complete line literally. Lines containing `*` or `?` receive no
@@ -29463,23 +29476,24 @@ not exported by this subpath.
 `@smthrs/migrate/flow/Command`. The entry point the CLI verb, the bin, and a
 durable host share.
 
-| Export                                              | Signature                                                                            | What it is                                                                                                |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `run`                                               | `(options: MigrateOptions) => Effect<MigrationReport, MigrateError, Requirements>`   | Survey, then launch.                                                                                      |
-| `runNode`                                           | `(options, config?) => Effect<MigrationReport, MigrateError>`                        | The same, on the bundled Node composition.                                                                |
-| `survey`                                            | `(options) => Effect<Survey, MigrateError, FileSystem \| Path>`                      | Reads the project without touching it.                                                                    |
-| `launch`                                            | `(options, surveyed: Survey) => Effect<MigrationReport, MigrateError, Requirements>` | Executes the flow over a survey taken earlier.                                                            |
-| `layerNode`                                         | `(config) => Layer`                                                                  | The composition `runNode` provides.                                                                       |
-| `registration`                                      | `typeof MigrateFlow.layer`                                                           | Action implementations and flow registrations; launch through `Command.launch` to acquire the apply lock. |
-| `optionsOf`                                         | `(flags: Flags, cwd: string, environment?) => MigrateOptions`                        | Parsed flags as the flow's payload. `--scan` wins over `--apply`.                                         |
-| `commandsOf`                                        | `(result: ScanResult, options) => Contract.Commands`                                 | The verification commands this project implies.                                                           |
-| `render`                                            | `(report, format: "human" \| "json", reportDirectory?) => string`                    | The summary, or the whole document.                                                                       |
-| `exitCode`                                          | `(report: MigrationReport) => 0 \| 1 \| 3`                                           | The process status the report implies.                                                                    |
-| `reportDirectory`                                   | `(options: MigrateOptions) => string`                                                | Where this run wrote its report.                                                                          |
-| `executionId`                                       | `(options: MigrateOptions, generatedAt: string) => string`                           | The execution id one invocation takes.                                                                    |
-| `isMigrateError`                                    | `(error: unknown) => error is MigrateError`                                          | Decided by the class and its schema, never by a `_tag` string.                                            |
-| `flowId`                                            | `"system/migrate"`                                                                   | Integration label for an application-owned control-plane route.                                           |
-| `Survey`, `Flags`, `Requirements`, `MigrateOptions` | `interface` or `type`                                                                | The survey, the parsed flags, the services a run needs, and the payload.                                  |
+| Export                                              | Signature                                                                            | What it is                                                                                                                                  |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`                                               | `(options: MigrateOptions) => Effect<MigrationReport, MigrateError, Requirements>`   | Survey, then launch.                                                                                                                        |
+| `runNode`                                           | `(options, config?) => Effect<MigrationReport, MigrateError>`                        | The same, on the bundled Node composition. `config.verifyRead` and `config.verifyUnconfined` are `--verify-read` and `--verify-unconfined`. |
+| `unconfinedWarning`                                 | `string`                                                                             | The warning both entry points print on stderr before an apply with `verifyUnconfined`.                                                      |
+| `survey`                                            | `(options) => Effect<Survey, MigrateError, FileSystem \| Path>`                      | Reads the project without touching it.                                                                                                      |
+| `launch`                                            | `(options, surveyed: Survey) => Effect<MigrationReport, MigrateError, Requirements>` | Executes the flow over a survey taken earlier.                                                                                              |
+| `layerNode`                                         | `(config) => Layer`                                                                  | The composition `runNode` provides.                                                                                                         |
+| `registration`                                      | `typeof MigrateFlow.layer`                                                           | Action implementations and flow registrations; launch through `Command.launch` to acquire the apply lock.                                   |
+| `optionsOf`                                         | `(flags: Flags, cwd: string, environment?) => MigrateOptions`                        | Parsed flags as the flow's payload. `--scan` wins over `--apply`.                                                                           |
+| `commandsOf`                                        | `(result: ScanResult, options) => Contract.Commands`                                 | The verification commands this project implies.                                                                                             |
+| `render`                                            | `(report, format: "human" \| "json", reportDirectory?) => string`                    | The summary, or the whole document.                                                                                                         |
+| `exitCode`                                          | `(report: MigrationReport) => 0 \| 1 \| 3`                                           | The process status the report implies.                                                                                                      |
+| `reportDirectory`                                   | `(options: MigrateOptions) => string`                                                | Where this run wrote its report.                                                                                                            |
+| `executionId`                                       | `(options: MigrateOptions, generatedAt: string) => string`                           | The execution id one invocation takes.                                                                                                      |
+| `isMigrateError`                                    | `(error: unknown) => error is MigrateError`                                          | Decided by the class and its schema, never by a `_tag` string.                                                                              |
+| `flowId`                                            | `"system/migrate"`                                                                   | Integration label for an application-owned control-plane route.                                                                             |
+| `Survey`, `Flags`, `Requirements`, `MigrateOptions` | `interface` or `type`                                                                | The survey, the parsed flags, the services a run needs, and the payload.                                                                    |
 
 ### Cli
 
@@ -37579,6 +37593,7 @@ a guarded spawner without it refuses execution.
 | `unavailable`        | `"refuse"`             | Refuse a missing mechanism; `"unconfined"` explicitly permits execution with a warning. |
 | `temporaryDirectory` | OS temporary directory | Parent for private, scope-owned temporary storage.                                      |
 | `host`               | Real host probes       | Injectable mechanism selection and filesystem probes.                                   |
+| `verification`       | Absent                 | Confines a project's own toolchain instead of one agent command; see below.             |
 
 Linux needs `bwrap`; macOS needs `/usr/bin/sandbox-exec`. An installed mechanism
 that fails to start never falls back to unconfined execution. A shell request
@@ -37601,6 +37616,22 @@ known host credential locations stay masked. Workspace links do not grant
 reads of their external targets. This boundary does not isolate trusted host
 JavaScript or supply a remote sandbox provider.
 
+`verification` is for commands that execute files an agent edited: an install
+with lifecycle scripts, a typecheck, a test run. It changes three things and
+leaves the rest of the boundary as an agent command gets it. The toolchain is
+readable: every `PATH` entry of the command's environment and the install root
+of each runtime and package manager on it, never the home directory, a
+credential location, or a parent of the workspace. Linux admits the
+`SOCK_SEQPACKET` socketpair beside the stream pair, because pnpm starts every
+script through one and neither can name a host endpoint; `socket(AF_UNIX)` and
+the datagram pair stay refused. Entries whose name starts with one of
+`hiddenPrefixes`, in any ASCII case and at any depth, are closed for reads and
+writes; on Linux a workspace directory that cannot be listed refuses the run.
+`reads` lists absolute paths the operator opens: one outside the workspace is
+bound read-only, and one inside it reopens, for reading, the hidden entries at
+or below it. Each is resolved once, when the service is made, and a run is
+refused once a path names a different file or directory.
+
 ## ProcessSandbox
 
 The build graph and `ProcessConfinement` share this mechanism implementation.
@@ -37609,7 +37640,10 @@ environment, host?)` resolve a request into an enforced command.
 `seatbelt`, `bubblewrap`, and `docker` render each supported mechanism;
 `host`, `validateWrites`, `environment`, `diagnose`, `isUnenforceable`, and
 `unenforceable` expose its host probes, validation, environment, diagnostics,
-and refusals. Requests name `network`, `reads`, and writable directory `writes`,
+and refusals. `toolchainReads(searchPath, workspaceRoot, host)` and
+`hiddenEntries(workspaceRoot, prefixes, restored, host)` compute what the
+verification mode opens and hides, and a plan's `hidden` field carries the
+result to the renderers. Requests name `network`, `reads`, and writable directory `writes`,
 with optional `mechanism`, `writeFiles`, `readOnly`, `externalReads`, `strict`,
 and `unixSockets`. Native agent confinement uses a strict process and IPC
 policy and closes Unix sockets; build tools retain their declared policy. Build

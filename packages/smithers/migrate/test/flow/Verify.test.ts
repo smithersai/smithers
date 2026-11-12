@@ -6,14 +6,21 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
+import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Verify from "@smthrs/migrate/flow/Verify"
 import * as Report from "@smthrs/migrate/Report"
+import * as Units from "@smthrs/migrate/Units"
 import * as Effect from "effect/Effect"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
+import * as PlatformError from "effect/PlatformError"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { unconfinedNode } from "../fixtures/helpers.ts"
 
-const platform = NodeServices.layer
+/** The explicit unconfined choice: this suite's subject is what a command reports. */
+const platform = unconfinedNode
 
 const temporaries: Array<string> = []
 const scratch = (name: string): string => {
@@ -193,4 +200,175 @@ describe("Verify.run", () => {
       expect(result.typecheck[0]?.stderrTail).toContain("exceeded 500ms")
       expect(Verify.verdict(result)).toBe("fail")
     }).pipe(Effect.provide(platform)))
+})
+
+describe("Verify.run confines every command it starts", () => {
+  const marking = (name: string): string => nodeCommand(`require('node:fs').writeFileSync(${JSON.stringify(name)}, '')`)
+
+  it.effect("starts no command, and says why, when the host provides no confinement", () =>
+    Effect.gen(function*() {
+      const root = projectWithFlow("unconfined", discoverable)
+
+      const result = yield* Verify.run({
+        root,
+        commands: {
+          install: marking("installed"),
+          format: Units.argv("node", "-e", "require('node:fs').writeFileSync('formatted', '')"),
+          typecheck: [marking("typechecked")],
+          test: marking("tested"),
+          flowsDir: "flows"
+        }
+      })
+
+      for (const command of [result.install, result.format, result.typecheck[0], result.tests]) {
+        expect(command?.exitCode).toBe(127)
+        expect(command?.stderrTail).toContain("process confinement is required to run a verification command")
+      }
+      for (const name of ["installed", "formatted", "typechecked", "tested"]) {
+        expect(existsSync(join(root, name))).toBe(false)
+      }
+      // Discovery reads files in this process and starts nothing, so it still answers.
+      expect(result.discovery?.exitCode).toBe(0)
+      expect(Verify.verdict(result)).toBe("fail")
+    }).pipe(Effect.provide(NodeServices.layer)))
+
+  it.effect("hands each command to the confinement with a profile that opens the project and seals what exists", () => {
+    const calls: Array<{ readonly command: string; readonly profile: KernelProcessConfinement.Profile }> = []
+    const recording = Layer.succeed(KernelProcessConfinement.ProcessConfinement)({
+      confine: (command, profile) =>
+        Effect.sync(() => {
+          calls.push({ command: command.command, profile })
+          return command
+        })
+    })
+    return Effect.gen(function*() {
+      const root = projectWithFlow("profile", discoverable)
+      mkdirSync(join(root, ".git"))
+      mkdirSync(join(root, ".smithers-migrate"))
+      const install = nodeCommand("process.exit(0)")
+
+      const result = yield* Verify.run({
+        root,
+        commands: {
+          install,
+          format: Units.argv("node", "-e", ""),
+          typecheck: [Units.argv("node", "-e", ""), Units.argv("node", "-e", "")],
+          test: Units.argv("node", "-e", ""),
+          flowsDir: "flows"
+        },
+        // A path that is missing, one that leaves the root, one that is
+        // absolute and elsewhere, and the root itself seal nothing.
+        sealed: [".smithers-migrate", "not-there", "../elsewhere", tmpdir(), ".", ".smithers-migrate"]
+      })
+
+      expect(Verify.verdict(result)).toBe("pass")
+      expect(calls.map((call) => call.command)).toEqual([install, "node", "node", "node", "node"])
+      for (const call of calls) {
+        expect(call.profile).toEqual({
+          workspaceRoot: root,
+          reads: ["."],
+          writes: ["."],
+          // `.jj` is sealed whenever it exists; this project has none.
+          readOnly: [".git", ".smithers-migrate"],
+          network: "open"
+        })
+      }
+    }).pipe(Effect.provide(Layer.merge(NodeServices.layer, recording)))
+  })
+
+  it.effect("seals a path the host could not probe, so the mechanism refuses rather than leaves it open", () => {
+    const profiles: Array<KernelProcessConfinement.Profile> = []
+    const recording = Layer.succeed(KernelProcessConfinement.ProcessConfinement)({
+      confine: (command, profile) =>
+        Effect.sync(() => {
+          profiles.push(profile)
+          return command
+        })
+    })
+    // The fault: the probe of `.jj` fails, as on a directory the host may not stat.
+    const unprobeable = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (fs) => ({
+        ...fs,
+        exists: (path: string) =>
+          path.endsWith(".jj")
+            ? Effect.fail(PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "exists",
+              description: "the probe was refused",
+              pathOrDescriptor: path
+            }))
+            : fs.exists(path)
+      }))
+    ).pipe(Layer.provide(NodeServices.layer))
+    return Effect.gen(function*() {
+      const root = projectWithFlow("unprobeable", discoverable)
+
+      yield* Verify.run({
+        root,
+        commands: { typecheck: [Units.argv("node", "-e", "")], flowsDir: "flows" }
+      })
+
+      // `.git` was probed and is absent; `.jj` could not be probed.
+      expect(profiles.map((profile) => profile.readOnly)).toEqual([[".jj"]])
+    }).pipe(Effect.provide(unprobeable), Effect.provide(Layer.merge(NodeServices.layer, recording)))
+  })
+
+  it.effect("removes version-control metadata a command created, and fails the verification", () =>
+    Effect.gen(function*() {
+      // No mechanism can seal a path that is not there. A checkpoint that
+      // found this `.git` would run the monitor its configuration names.
+      const root = projectWithFlow("planted", discoverable)
+      mkdirSync(join(root, ".jj"))
+      const plant = nodeCommand(
+        "const fs = require('node:fs'); fs.mkdirSync('.git'); " +
+          "fs.writeFileSync('.git/config', '[core]\\n\\tfsmonitor = touch planted\\n'); " +
+          "fs.writeFileSync('.jj/written-by-a-command', '')"
+      )
+
+      const result = yield* Verify.run({
+        root,
+        commands: { typecheck: [Units.argv("node", "-e", "")], test: plant, flowsDir: "flows" }
+      })
+
+      expect(result.tests?.exitCode, result.tests?.stderrTail).toBe(0)
+      expect(existsSync(join(root, ".git"))).toBe(false)
+      // What was there before the commands is the operator's, and stays.
+      expect(existsSync(join(root, ".jj", "written-by-a-command"))).toBe(true)
+      expect(result.typecheck.map((command) => command.exitCode)).toEqual([0, 1])
+      expect(result.typecheck[1]?.command).toBe("version-control metadata")
+      expect(result.typecheck[1]?.stderrTail).toContain("created .git at the project root, and the host removed it")
+      expect(Verify.verdict(result)).toBe("fail")
+
+      // A run that plants nothing reports nothing.
+      const clean = yield* Verify.run({ root, commands: { typecheck: [], flowsDir: "flows" } })
+      expect(clean.typecheck).toEqual([])
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("reports a confinement's refusal as the command's failure and starts nothing", () =>
+    Effect.gen(function*() {
+      const root = projectWithFlow("refused", discoverable)
+
+      const result = yield* Verify.run({
+        root,
+        commands: { typecheck: [], test: marking("tested"), flowsDir: "flows" }
+      })
+
+      expect(result.tests?.exitCode).toBe(127)
+      expect(result.tests?.stderrTail).toContain("bwrap is not on PATH")
+      expect(existsSync(join(root, "tested"))).toBe(false)
+      expect(Verify.failures(result)).toEqual([`\`${marking("tested")}\` exited 127`])
+    }).pipe(Effect.provide(Layer.merge(
+      NodeServices.layer,
+      Layer.succeed(KernelProcessConfinement.ProcessConfinement)({
+        confine: () =>
+          Effect.fail(PlatformError.systemError({
+            _tag: "NotFound",
+            module: "ProcessConfinement",
+            method: "confine",
+            description: "bwrap is not on PATH (install the bubblewrap package)"
+          }))
+      })
+    ))))
 })

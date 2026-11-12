@@ -122,6 +122,31 @@ describe("Checkpoint.detectVcs", () => {
 })
 
 describe("Checkpoint.take on git", () => {
+  it.effect("starts no hook and no filesystem monitor the project names", () =>
+    Effect.gen(function*() {
+      // Both are programs a project file or a confined command can choose,
+      // and a checkpoint runs with the operator's authority.
+      const root = gitProject("hooks")
+      const hooks = join(root, ".husky", "_")
+      mkdirSync(hooks, { recursive: true })
+      for (const hook of ["reference-transaction", "post-index-change"]) {
+        writeFileSync(join(hooks, hook), "#!/bin/sh\ntouch \"$(git rev-parse --show-toplevel)/hook-ran\"\n", {
+          mode: 0o755
+        })
+      }
+      writeFileSync(join(root, "monitor.sh"), "#!/bin/sh\ntouch monitor-ran\n", { mode: 0o755 })
+      const git = (...args: Array<string>) => execFileSync("git", args, { cwd: root, stdio: "ignore" })
+      git("config", "core.hooksPath", ".husky/_")
+      git("config", "core.fsmonitor", "./monitor.sh")
+      write(root, "workflow.jsx", "edited before the checkpoint\n")
+
+      const ref = yield* Checkpoint.take(payload(root, ["workflow.jsx"]))
+
+      expect(ref.vcs).toBe("git")
+      expect(existsSync(join(root, "hook-ran"))).toBe(false)
+      expect(existsSync(join(root, "monitor-ran"))).toBe(false)
+    }).pipe(Effect.provide(platform)))
+
   it.effect("refuses to overwrite an unresolved checkpoint before changing any backup bytes", () =>
     Effect.gen(function*() {
       const root = gitProject("pending-retry")

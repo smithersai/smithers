@@ -4,6 +4,10 @@
 
 ### Added
 
+- `smthrs migrate` takes `--verify-read <path>` and `--verify-unconfined`.
+  `--apply` now runs each verification command in the host's process sandbox
+  and refuses on a host with none; see the `@smthrs/migrate` changelog.
+
 - `SMITHERS_CHECKOUT_NO_LATER_COMMITS=1` declares that the operator built the
   checkout at one commit and nothing in it is later. Runs were told this
   unconditionally; they are now told only where it is declared.

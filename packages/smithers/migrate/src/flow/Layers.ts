@@ -12,6 +12,14 @@
  * execution is unavailable; configured verification belongs to the deterministic
  * orchestrator, whose run-state digests detect changes and restore the unit.
  *
+ * The verification commands are the third party. They are the operator's
+ * command lines, and they execute what the agent wrote: lifecycle scripts,
+ * tests, tool plugins. They start through the host's process sandbox with a
+ * bootstrap environment, so that text gets the project and the toolchain and
+ * not the operator's machine. A host with no sandbox refuses to build this
+ * composition unless the operator chose to run them unconfined. Version
+ * control and recovery stay outside that sandbox.
+ *
  * The seat is a role. `AgentAction` declares `migrate`, and the resolver here
  * maps that one name onto whatever the operator asked for with `--seat`. No
  * model id appears anywhere in this package, the prompt's worked pairs
@@ -38,6 +46,7 @@ import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import { Capability, GrantStore, Permission, Workspace } from "@smthrs/kernel"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as KernelPath from "@smthrs/kernel/Path"
+import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import type * as ModelError from "@smthrs/model/ModelError"
@@ -46,13 +55,16 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Route from "@smthrs/model/Route"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
+import * as ProcessConfinement from "@smthrs/platform-node/ProcessConfinement"
+import * as ProcessSandbox from "@smthrs/platform-node/ProcessSandbox"
 import type * as Brand from "effect/Brand"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as ChildProcess from "effect/process/ChildProcess"
 import * as Redacted from "effect/Redacted"
 import type * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
-import { isAbsolute } from "node:path"
+import { isAbsolute, resolve } from "node:path"
 import { make, type MigrateError } from "../MigrateError.ts"
 import * as Scan from "../Scan.ts"
 import * as Units from "../Units.ts"
@@ -382,6 +394,144 @@ export const layerSnapshotBoundary: Layer.Layer<FlowEngine.SnapshotBoundary> = L
   diff: () => Effect.succeed(undefined)
 })
 
+const inheritedVariables: ReadonlySet<string> = new Set(["PATH", "HOME", "USER", "LANG", "TERM", "TMPDIR", "SHELL"])
+
+/**
+ * The environment a verification command starts with: the bootstrap names a
+ * toolchain needs to be found and to print (`PATH`, `HOME`, `USER`, `LANG`,
+ * every `LC_*`, `TERM`, `TMPDIR`, `SHELL`) and nothing else the operator's
+ * shell exports. A provider key, a registry token, or a cloud credential in
+ * the operator's environment never reaches a lifecycle script or a test.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const verificationEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>
+): Record<string, string> => {
+  const kept: Record<string, string> = {}
+  for (const [name, value] of Object.entries(environment)) {
+    if (value !== undefined && (inheritedVariables.has(name) || name.startsWith("LC_"))) kept[name] = value
+  }
+  return kept
+}
+
+/**
+ * The entry names a verification command may neither read nor write, wherever
+ * they sit in the project: every name that starts with `.env`, in any case.
+ * The same names {@link rules} denies the agent.
+ */
+const hiddenPrefixes: ReadonlyArray<string> = [".env"]
+
+/**
+ * What the operator is told when verification runs with no sandbox.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const unconfinedWarning =
+  "warning: --verify-unconfined runs the install, format, typecheck, and test commands with no sandbox. " +
+  "They execute files the rewrite agent edits (package.json scripts, tests, tool configuration) " +
+  "with your privileges, your environment, and your credentials."
+
+/**
+ * What decides how the verification commands are confined.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface VerificationConfig {
+  /** The project root a relative `verifyRead` path resolves from. */
+  readonly root?: string | undefined
+  /** The environment {@link verificationEnvironment} cuts down for a sandboxed command. */
+  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /**
+   * Paths a sandboxed command may also read, `--verify-read`. One outside the
+   * project is opened read-only. One inside it reopens, for reading, the
+   * dotenv files at or below it.
+   */
+  readonly verifyRead?: ReadonlyArray<string> | undefined
+  /**
+   * `--verify-unconfined`: run the commands with the operator's own authority
+   * and environment, as every host did before the sandbox. The explicit
+   * choice for a host that has no sandbox or is one already.
+   */
+  readonly verifyUnconfined?: boolean | undefined
+  /**
+   * What confines the commands instead of the host's native sandbox, for a
+   * host that brings its own. It receives the same cut-down environment.
+   */
+  readonly confinement?: Layer.Layer<KernelProcessConfinement.ProcessConfinement> | undefined
+  /** The host facts the native sandbox is selected from; defaults to the real host. */
+  readonly host?: ProcessSandbox.Host | undefined
+}
+
+const noSandbox = (refusal: ProcessSandbox.Unenforceable): MigrateError =>
+  make(
+    "no-sandbox",
+    "verification commands need a process sandbox, and this host has none",
+    `${
+      refusal.mechanism === "docker"
+        ? `${refusal.platform} has no process sandbox this tool can use.`
+        : refusal.message
+    } The install, format, typecheck, and test commands execute files the rewrite agent edits, so they run ` +
+      "sandboxed or not at all. Install the sandbox (on Linux, the bubblewrap package) and rerun, or pass " +
+      "--verify-unconfined to run them with your own privileges and environment."
+  )
+
+/**
+ * The confinement every verification command starts through on a Node host.
+ *
+ * The host's native sandbox by default: bubblewrap on Linux, seatbelt on
+ * macOS, in the verification mode of `@smthrs/platform-node`'s
+ * `ProcessConfinement`. A command gets the project tree, the toolchain the
+ * host's `PATH` names, a private home and temporary directory, and no other
+ * host file. Dotenv files are hidden from it, and `verifyRead` opens what the
+ * operator names. Its environment is replaced by
+ * {@link verificationEnvironment} of the environment the host was given.
+ *
+ * A host with no sandbox fails the layer with `no-sandbox`, before any unit
+ * runs, and the error names what is missing and `--verify-unconfined`.
+ * Nothing falls back silently. `verifyUnconfined` is that opt-out: the
+ * commands run as given, with the operator's authority and environment.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerVerificationConfinement = (
+  options: VerificationConfig = {}
+): Layer.Layer<KernelProcessConfinement.ProcessConfinement, MigrateError> => {
+  const bounded = (sandbox: Layer.Layer<KernelProcessConfinement.ProcessConfinement>) =>
+    Layer.effect(
+      KernelProcessConfinement.ProcessConfinement,
+      Effect.map(KernelProcessConfinement.ProcessConfinement, (host) => {
+        const env = verificationEnvironment(options.environment ?? {})
+        return KernelProcessConfinement.ProcessConfinement.of({
+          confine: (command, profile) =>
+            host.confine(
+              ChildProcess.make(command.command, command.args, { ...command.options, env, extendEnv: false }),
+              profile
+            )
+        })
+      })
+    ).pipe(Layer.provide(sandbox))
+  if (options.confinement !== undefined) return bounded(options.confinement)
+  if (options.verifyUnconfined === true) return KernelProcessConfinement.layerNoop
+  const host = options.host ?? ProcessSandbox.host()
+  const selected = ProcessSandbox.select({ network: "open" }, host)
+  if (ProcessSandbox.isUnenforceable(selected)) {
+    return Layer.effect(KernelProcessConfinement.ProcessConfinement, Effect.fail(noSandbox(selected)))
+  }
+  const root = options.root
+  return bounded(ProcessConfinement.layer({
+    host,
+    verification: {
+      reads: (options.verifyRead ?? []).map((read) => root === undefined ? read : resolve(root, read)),
+      hiddenPrefixes
+    }
+  }))
+}
+
 /**
  * A deterministic scan/plan host. No model, sandbox or agent is registered,
  * so planning remains keyless without installing an unavailable judge.
@@ -412,6 +562,17 @@ export interface NodeConfig {
   readonly reportDir?: string | undefined
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly seat?: string | undefined
+  /** `--verify-read`; see {@link VerificationConfig}. */
+  readonly verifyRead?: ReadonlyArray<string> | undefined
+  /** `--verify-unconfined`; see {@link VerificationConfig}. */
+  readonly verifyUnconfined?: boolean | undefined
+  /**
+   * What confines the verification commands, instead of the host's native
+   * sandbox. See {@link VerificationConfig}.
+   */
+  readonly confinement?: Layer.Layer<KernelProcessConfinement.ProcessConfinement> | undefined
+  /** The host facts the native sandbox is selected from; see {@link VerificationConfig}. */
+  readonly host?: ProcessSandbox.Host | undefined
 }
 
 /**
@@ -559,6 +720,7 @@ export const layerNode = (config: NodeConfig) => {
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(layerVerificationConfinement(config)),
       Layer.provideMerge(evaluator!)
     )
   }))
@@ -576,6 +738,10 @@ export interface ScannedConfig {
   readonly root: string
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   readonly seat?: string | undefined
+  /** `--verify-read`; see {@link VerificationConfig}. */
+  readonly verifyRead?: ReadonlyArray<string> | undefined
+  /** `--verify-unconfined`; see {@link VerificationConfig}. */
+  readonly verifyUnconfined?: boolean | undefined
   readonly flowsDir?: string | undefined
   /** The tool's own directory, which the scan skips. Defaults to `.smithers-migrate`. */
   readonly reportDir?: string | undefined
@@ -650,6 +816,8 @@ export const layerNodeScanned = (config: ScannedConfig) => {
         evaluator,
         ...(config.environment === undefined ? {} : { environment: config.environment }),
         ...(config.seat === undefined ? {} : { seat: config.seat }),
+        ...(config.verifyRead === undefined ? {} : { verifyRead: config.verifyRead }),
+        ...(config.verifyUnconfined === undefined ? {} : { verifyUnconfined: config.verifyUnconfined }),
         runStatePaths: Transform.runStatePaths(result),
         ...(config.reportDir === undefined ? {} : { reportDir: config.reportDir }),
         commands: commandsFor(result.detection, config.commands ?? {}, config.flowsDir ?? Units.defaultFlowsDir)
@@ -754,6 +922,7 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       Layer.provideMerge(layerSnapshotBoundary),
       Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(layerVerificationConfinement(config)),
       // The model is scripted, so the judge is too, and it answers every
       // classifier a judged step asks: the completion brake never falls
       // back, and a scripted composition that reached for a gateway key

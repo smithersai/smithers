@@ -343,6 +343,19 @@ export const defaultMaxRepairRounds = 3
 export const reportDir = (options: MigrateOptions): string => options.reportDir ?? defaultReportDir
 
 /**
+ * The directories this run's host owns: the default report directory, which
+ * holds the permanent lock, and the configured one, which holds the backups
+ * and the recovery record a restore trusts. The agent may not touch them and
+ * a verification command may not write them.
+ *
+ * @category accessors
+ * @since 1.0.0
+ */
+export const hostOwnedDirectories = (options: MigrateOptions): ReadonlyArray<string> => [
+  ...new Set([defaultReportDir, reportDir(options)])
+]
+
+/**
  * The flows directory this run migrates into.
  *
  * @category accessors

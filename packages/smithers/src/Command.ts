@@ -629,6 +629,16 @@ const migrateFlags = {
   verifyTest: Flag.String("verify-test").pipe(
     Flag.withDescription("The command that runs the tests, instead of the project's own test script"),
     Flag.optional
+  ),
+  verifyRead: Flag.String("verify-read").pipe(
+    Flag.withDescription(
+      "A path the sandboxed verification commands may also read, repeatable; relative paths resolve from the project root"
+    ),
+    Flag.atLeast(0)
+  ),
+  verifyUnconfined: Flag.Boolean("verify-unconfined").pipe(
+    Flag.withDefault(false),
+    Flag.withDescription("Run the verification commands with no sandbox, with your own privileges and environment")
   )
 }
 
@@ -658,7 +668,9 @@ const migrate = Command.make("migrate", {
       verifyInstall: Option.getOrUndefined(config.verifyInstall),
       verifyFormat: Option.getOrUndefined(config.verifyFormat),
       verifyTypecheck: config.verifyTypecheck,
-      verifyTest: Option.getOrUndefined(config.verifyTest)
+      verifyTest: Option.getOrUndefined(config.verifyTest),
+      verifyRead: config.verifyRead,
+      verifyUnconfined: config.verifyUnconfined
     }, yield* globalsOf)
     if (outcome._tag === "Parked") {
       const { _tag: _, ...document } = outcome

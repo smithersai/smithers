@@ -22,14 +22,14 @@ import * as Effect from "effect/Effect"
 import { TestClock } from "effect/testing"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { copyFixture, fixture, hashTree } from "../fixtures/helpers.ts"
+import { copyFixture, fixture, hashTree, unconfinedNode } from "../fixtures/helpers.ts"
 
 const golden = readFileSync(
   join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"),
   "utf8"
 )
 
-const platform = NodeServices.layer
+const platform = unconfinedNode
 
 const options = (root: string, overrides: Partial<Options.MigrateOptions> = {}): Options.MigrateOptions => ({
   root,

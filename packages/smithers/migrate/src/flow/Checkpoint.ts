@@ -646,7 +646,13 @@ const runVcs = (
   args: ReadonlyArray<string>,
   cwd: string
 ): Effect.Effect<Exec.Result, MigrateError, ChildProcessSpawner> =>
-  Exec.run(command, { args, cwd, timeoutMs: 120_000 }).pipe(
+  Exec.run(command, {
+    // A hook or a filesystem monitor is a program the project can name, and
+    // a checkpoint runs with the operator's authority: neither starts here.
+    args: command === "git" ? ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args] : args,
+    cwd,
+    timeoutMs: 120_000
+  }).pipe(
     Effect.mapError((failure) => make("checkpoint-failed", `${command} ${args.join(" ")}: ${failure.reason}`))
   )
 

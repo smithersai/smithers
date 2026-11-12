@@ -156,10 +156,22 @@ describe("legacy operator command contracts", () => {
       "types",
       "--verify-test",
       "test",
+      "--verify-read",
+      ".env.test",
+      "--verify-read",
+      "/opt/registry-settings",
+      "--verify-unconfined",
       "--json"
     ])
     expect(result.failure).toBeUndefined()
     expect(ports.migrate.mock.calls).toHaveLength(1)
+    // How verification is confined is the host's, not the flow's payload.
+    expect(ports.migrate.mock.calls[0]![1]).toMatchObject({
+      verifyRead: [".env.test", "/opt/registry-settings"],
+      verifyUnconfined: true
+    })
+    // The operator chose to run with no sandbox, and is told so off stdout.
+    expect(result.stderr).toContain("smithers-migrate: warning: --verify-unconfined runs the install")
     expect(ports.migrate.mock.calls[0]![0]).toMatchObject({
       root: target,
       mode: "apply",
@@ -176,6 +188,15 @@ describe("legacy operator command contracts", () => {
     })
     expect(result.stdout).toBe(`migration json ${target}/report`)
     expect(result.codes).toEqual([0])
+  })
+
+  it("warns about unconfined verification only for an apply that asked for it", async () => {
+    const sandboxed = await invoke(["migrate", "--apply", "--json"])
+    expect(sandboxed.stderr).toBe("")
+    expect(ports.migrate.mock.calls[0]![1]).toMatchObject({ verifyRead: [], verifyUnconfined: false })
+    // A plan runs no verification command, so the flag has nothing to warn about.
+    const planned = await invoke(["migrate", "--verify-unconfined", "--json"])
+    expect(planned.stderr).toBe("")
   })
 
   it("retains a successful migration's nonzero report status even under quiet output", async () => {

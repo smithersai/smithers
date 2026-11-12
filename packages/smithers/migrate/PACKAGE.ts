@@ -59,10 +59,10 @@ const securityReview = Smithers.SecurityReview({
       id: "agent-proc-spawn-grants",
       title: "The agent may spawn only the project's exact verification command lines",
       threat:
-        "A prompt-injected rewrite agent runs an arbitrary shell command, or edits package.json or .git hooks so the unsandboxed verification run executes its code on the operator's machine.",
+        "A prompt-injected rewrite agent runs an arbitrary shell command, or edits package.json or .git hooks so a verification run executes its code with the operator's privileges and environment.",
       lookFor: [
         "A `proc:spawn` allow derived from anything but `verificationCommands`, or a wildcard pattern produced from a command line containing `*` or `?`.",
-        "A verification command resolved from a package.json script the agent can rewrite during the same unit before `Verify.run` executes it.",
+        "A verification command that starts without the host `ProcessConfinement`, with a profile that opens more than the project, or with the operator's environment instead of `verificationEnvironment`.",
         "Agent write access to `.git/`, `.jj/`, or package manager config that a later host-run jj, git, or install command would execute."
       ],
       paths: [

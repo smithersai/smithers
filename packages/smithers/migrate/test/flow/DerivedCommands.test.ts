@@ -30,7 +30,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { copyFixture, nodeLayer } from "../fixtures/helpers.ts"
+import { copyFixture, nodeLayer, unconfinedNode } from "../fixtures/helpers.ts"
 
 /** Every shape of hostile file name a POSIX filesystem accepts. */
 const hostileNames: ReadonlyArray<string> = [
@@ -183,7 +183,7 @@ describe("derived typecheck commands over hostile tsconfig names", () => {
         expectFlows: false
       }, { command: 30_000 }).pipe(
         Effect.provideService(ChildProcessSpawner, recording),
-        Effect.provide(NodeServices.layer)
+        Effect.provide(unconfinedNode)
       )
 
       expect(result.typecheck.map((entry) => entry.exitCode)).toEqual(result.typecheck.map(() => 0))
@@ -221,7 +221,7 @@ describe("Verify over an argv command", () => {
         root,
         commands: { typecheck: [], test: Units.argv("node", "-e", script, "--", ...hostile), flowsDir: "flows" },
         expectFlows: false
-      }).pipe(Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(unconfinedNode))
 
       expect(result.tests?.exitCode).toBe(0)
       expect(JSON.parse(readFileSync(join(root, "argv.json"), "utf8"))).toEqual(hostile)
@@ -242,7 +242,7 @@ describe("Verify over an argv command", () => {
           flowsDir: "flows"
         },
         expectFlows: false
-      }).pipe(Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(unconfinedNode))
 
       expect(result.tests?.exitCode).toBe(0)
       expect(result.tests?.command).toBe("node -e \"process.exit(0)\" && node -e \"process.exit(0)\"")

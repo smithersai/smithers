@@ -21,6 +21,7 @@ smthrs migrate: <message>
 | `invalid-layout`      | 1    | The root, report directory, or flows directory is not usable.          |
 | `unsupported-project` | 1    | The plan does not describe this project.                               |
 | `stale-plan`          | 1    | The project changed after it was planned.                              |
+| `no-sandbox`          | 1    | The host cannot confine the verification commands.                     |
 | `checkpoint-failed`   | 1    | A unit could not be checkpointed or restored.                          |
 | `io`                  | 1    | A file, a directory, or the runtime itself could not be read or built. |
 | `verify-failed`       | 1    | Reserved. No code path raises it.                                      |
@@ -229,6 +230,42 @@ worth reading before you apply.
 Read [Recover from a failed unit](./guides/recover-a-failed-unit.md). The
 unit's files are already restored; the report says why it failed and how to
 rerun it.
+
+## no-sandbox
+
+**What happened.** `apply` found no process sandbox on this host and refused
+before any unit ran. The verification commands execute files the rewrite agent
+edits, so they run sandboxed or not at all. Nothing was edited. The message
+names what is missing, for example `bwrap is not on PATH (install the
+bubblewrap package)`.
+
+**What to change.** On Linux, install bubblewrap and rerun. macOS ships its
+sandbox. Windows has none: run the migration under WSL or in a Linux
+container. Where the machine itself is disposable, pass `--verify-unconfined`
+to run the commands with your own privileges and environment; the tool prints
+a warning first. See
+[hosts with no sandbox](./guides/set-verification-commands.md#hosts-with-no-sandbox).
+
+## A verification command fails only inside the sandbox
+
+**What happened.** A command that passes in your shell fails during `apply`.
+The report's output tail for that command says why. Four causes account for
+most of them:
+
+| The tail says                                                  | Cause                                                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `bwrap:` followed by a namespace or `uid map` permission error | The host forbids unprivileged user namespaces, so bubblewrap cannot start.          |
+| `not found` for a program your shell finds                     | The program is not in a directory on the `PATH` the tool was started with.          |
+| A missing variable, or a `401` from a registry                 | The command got only the bootstrap environment, a private home, and no dotenv file. |
+| `Operation not permitted` from `listen`, `bind`, or `connect`  | The command opened a named Unix socket.                                             |
+| Exit 127 and `process confinement is required`                 | A host embedding `Verify.run` provided no `ProcessConfinement`.                     |
+
+**What to change.** Allow unprivileged user namespaces for `bwrap` (on Ubuntu,
+its AppArmor profile). Start the tool from a shell whose `PATH` holds the
+toolchain. Open a file the command needs with `--verify-read`, or put registry
+settings in the project. If none of that fits, `--verify-unconfined` runs the
+commands with no sandbox. See
+[what a verification command can reach](./guides/set-verification-commands.md#what-a-verification-command-can-reach).
 
 ## Nothing failed, but a migrated flow does not appear
 

@@ -17,6 +17,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
+import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Checkpoint from "@smthrs/migrate/flow/Checkpoint"
 import * as Command from "@smthrs/migrate/flow/Command"
 import * as Layers from "@smthrs/migrate/flow/Layers"
@@ -24,16 +25,25 @@ import * as Lock from "@smthrs/migrate/flow/Lock"
 import * as MigrateFlow from "@smthrs/migrate/flow/MigrateFlow"
 import * as Transform from "@smthrs/migrate/flow/Transform"
 import { make } from "@smthrs/migrate/MigrateError"
+import * as ProcessSandbox from "@smthrs/platform-node/ProcessSandbox"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
+import * as PlatformError from "effect/PlatformError"
 import { execFileSync, spawnSync } from "node:child_process"
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { copyFixture, fixture, hashTree, nativeHelperAvailable } from "../fixtures/helpers.ts"
+import {
+  copyFixture,
+  fixture,
+  hashTree,
+  journeyHost,
+  nativeHelperAvailable,
+  sandboxAvailable
+} from "../fixtures/helpers.ts"
 
 const golden = readFileSync(
   join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"),
@@ -100,7 +110,9 @@ const apply = <Faulted = never>(
   overrides: Partial<Command.MigrateOptions> = {},
   scripted?: (root: string, written: Array<string>) => Layers.Script,
   /** An action implementation that replaces the production one, to inject a fault. */
-  fault?: Layer.Layer<Faulted, never, FlowRuntime.FlowRuntime | FileSystem.FileSystem | Path.Path>
+  fault?: Layer.Layer<Faulted, never, FlowRuntime.FlowRuntime | FileSystem.FileSystem | Path.Path>,
+  /** How the host confines verification; the production sandbox wherever the host has one. */
+  host: Pick<Layers.NodeConfig, "confinement" | "environment" | "host" | "verifyUnconfined"> = journeyHost
 ) =>
   Effect.gen(function*() {
     const written: Array<string> = []
@@ -109,6 +121,7 @@ const apply = <Faulted = never>(
       Effect.provide(Layers.layerNodeScanned({ root, evaluator: ScriptedJudge.layer }))
     )
     const composition = Layers.layerScripted({
+      ...host,
       root,
       commands: surveyed.commands,
       // The same list `Layers.layerNodeScanned` gives a real run, so the
@@ -141,6 +154,118 @@ describe("the native filesystem helper", () => {
   it.skipIf(process.env.CI === undefined)("is present wherever CI runs this suite", () => {
     expect(nativeHelperAvailable).toBe(true)
   })
+})
+
+describe("apply confines the commands that verify each unit", () => {
+  // No unit writes anything here, so these journeys need no native helper:
+  // their subject is what the verification after each answer may reach.
+  const answersEmpty = () => (asked: string): string => emptyAnswer(unitOf(asked))
+
+  it.effect.skipIf(!sandboxAvailable)(
+    "runs a rewritten package script inside the project sandbox, without the operator's environment",
+    () =>
+      Effect.gen(function*() {
+        const root = copyFixture("jsx-single")
+        // Beside the project, where only an unconfined process can write.
+        const marker = `${root}-escaped`
+        // The manifest as a rewrite leaves it: the operator's unchanged
+        // `npm run test` now executes a program of the agent's choosing.
+        const program =
+          `require('node:fs').writeFileSync(${JSON.stringify(marker)}, String(process.env.MIGRATE_OPERATOR_VALUE)); ` +
+          "console.log('the planted script ran with ' + process.env.MIGRATE_OPERATOR_VALUE)"
+        const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+          scripts: Record<string, string>
+        }
+        manifest.scripts["test"] = `node -e ${JSON.stringify(program)}`
+        writeFileSync(join(root, "package.json"), JSON.stringify(manifest, null, 2))
+        committed(root)
+        try {
+          const { report } = yield* apply(
+            root,
+            { maxRepairRounds: 0, commands: { typecheck: [], test: "npm run test" } },
+            answersEmpty,
+            undefined,
+            { environment: { ...process.env, MIGRATE_OPERATOR_VALUE: "operator-only" } }
+          )
+
+          // Every unit's verification executed the script through the
+          // operator's command line.
+          expect(report.units.map((unit) => unit.id)).toEqual(["dependencies", "workflow:simple-workflow", "project"])
+          for (const unit of report.units) {
+            expect([unit.id, unit.verification?.tests?.command]).toEqual([unit.id, "npm run test"])
+            expect(unit.verification?.tests?.stdoutTail).toContain("the planted script ran with undefined")
+          }
+          // And the script reached neither the host nor the operator's environment.
+          expect(existsSync(marker)).toBe(false)
+          expect(JSON.stringify(report)).not.toContain("operator-only")
+        } finally {
+          rmSync(marker, { force: true })
+        }
+      })
+  )
+
+  it.effect("starts no verification command on a host that cannot confine one", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      committed(root)
+      const unconfinable = Layer.succeed(KernelProcessConfinement.ProcessConfinement)({
+        confine: () =>
+          Effect.fail(PlatformError.systemError({
+            _tag: "NotFound",
+            module: "ProcessConfinement",
+            method: "confine",
+            description: "this host has no process sandbox"
+          }))
+      })
+
+      const { report } = yield* apply(
+        root,
+        {
+          maxRepairRounds: 0,
+          commands: { typecheck: [], test: `node -e "require('node:fs').writeFileSync('verification-ran', '')"` }
+        },
+        answersEmpty,
+        undefined,
+        { environment: process.env, confinement: unconfinable }
+      )
+
+      expect(report.units).toHaveLength(3)
+      for (const unit of report.units) {
+        expect([unit.id, unit.status]).toEqual([unit.id, "failed"])
+        expect(unit.verification?.tests?.exitCode).toBe(127)
+        expect(unit.verification?.tests?.stderrTail).toContain("this host has no process sandbox")
+      }
+      expect(existsSync(join(root, "verification-ran"))).toBe(false)
+    }))
+
+  it.effect("refuses an apply on a host with no sandbox before any unit runs, and applies once told to", () =>
+    Effect.gen(function*() {
+      const windows: ProcessSandbox.Host = { ...ProcessSandbox.host(), platform: "win32", executable: () => undefined }
+      const root = copyFixture("jsx-single")
+      committed(root)
+      const before = hashTree(root)
+      const marking = {
+        maxRepairRounds: 0,
+        commands: { typecheck: [], test: `node -e "require('node:fs').writeFileSync('verification-ran', '')"` }
+      }
+
+      const failure = yield* Effect.flip(
+        apply(root, marking, answersEmpty, undefined, { environment: process.env, host: windows })
+      )
+
+      expect(failure).toMatchObject({ code: "no-sandbox" })
+      expect(String((failure as { readonly details?: string }).details)).toContain("--verify-unconfined")
+      // Nothing started: no unit, no report, no verification command.
+      expect(hashTree(root)).toEqual(before)
+
+      const { report } = yield* apply(root, marking, answersEmpty, undefined, {
+        environment: process.env,
+        host: windows,
+        verifyUnconfined: true
+      })
+      expect(report.units).toHaveLength(3)
+      for (const unit of report.units) expect(unit.verification?.tests?.exitCode).toBe(0)
+    }))
 })
 
 describe("apply over a single-file JSX project", () => {

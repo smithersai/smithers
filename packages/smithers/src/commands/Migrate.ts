@@ -11,7 +11,7 @@
 
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import * as Report from "@smthrs/migrate/Report"
-import { Effect, Layer, Schema } from "effect"
+import { Console, Effect, Layer, Schema } from "effect"
 import * as CliError from "../CliError.ts"
 import * as Legacy from "../Legacy.ts"
 import * as NodeControl from "../NodeControl.ts"
@@ -42,6 +42,10 @@ export interface Options {
   readonly verifyFormat?: string | undefined
   readonly verifyTypecheck?: ReadonlyArray<string> | undefined
   readonly verifyTest?: string | undefined
+  /** Paths the sandboxed verification commands may also read. */
+  readonly verifyRead?: ReadonlyArray<string> | undefined
+  /** Run the verification commands with no sandbox. */
+  readonly verifyUnconfined?: boolean | undefined
 }
 
 /**
@@ -119,8 +123,14 @@ export const run = (
       target,
       environment
     )
+    // On stderr, so a script reading the report from stdout still parses it.
+    if (migrateOptions.mode === "apply" && options.verifyUnconfined === true) {
+      yield* Console.error(`smithers-migrate: ${MigrateCommand.unconfinedWarning}`)
+    }
     const outcome = yield* Effect.result(MigrateCommand.runNode(migrateOptions, {
       environment,
+      ...(options.verifyRead === undefined ? {} : { verifyRead: options.verifyRead }),
+      ...(options.verifyUnconfined === undefined ? {} : { verifyUnconfined: options.verifyUnconfined }),
       evaluator: NodeControl.layerSeatEvaluator(environment).pipe(
         Layer.provide(NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(environment)))
       )

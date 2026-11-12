@@ -271,10 +271,37 @@ export interface Plan {
    * request's own `externalReads` land here too.
    */
   readonly externalReads: ReadonlyArray<string>
+  /** Workspace entries closed by name under every grant; see {@link Hidden}. */
+  readonly hidden?: Hidden | undefined
   /** A host directory the run may scribble in; created by the caller, removed after. */
   readonly tmp: string
   readonly uid: number | undefined
   readonly gid: number | undefined
+}
+
+/**
+ * Workspace entries a run may neither read nor write, whatever tree a grant
+ * opened around them: dotenv files, for one.
+ *
+ * An entry is hidden by its name, wherever it sits below the workspace root
+ * and in every ASCII case spelling. Seatbelt enforces `prefixes` as a path
+ * pattern, so a rename of a parent directory or a hard link does not reopen
+ * an entry, in the workspace or in the run's temporary directory. Bubblewrap
+ * has no pattern rule: it masks each of `paths`, the
+ * entries {@link hiddenEntries} found before the spawn, with an empty
+ * read-only mount, which stays on the entry when a parent is renamed.
+ * `restored` names the entries the operator opened again, for reading only.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Hidden {
+  /** Name prefixes, each made of letters, digits, `.`, `_`, and `-`. */
+  readonly prefixes: ReadonlyArray<string>
+  /** The existing entries those prefixes name: absolute, canonical, none below another. */
+  readonly paths: ReadonlyArray<string>
+  /** Absolute canonical workspace paths reopened for reading, a hidden entry or a tree holding some. */
+  readonly restored: ReadonlyArray<string>
 }
 
 const pathSeparator = (platform: NodeJS.Platform): string => platform === "win32" ? ";" : ":"
@@ -947,6 +974,121 @@ export const launcher = (
   return covered(real) ? withinGrant : { program: real, reads: [real] }
 }
 
+/**
+ * The programs a project's own verification starts by name: the JavaScript
+ * runtimes and the package managers, with the launchers each one ships.
+ */
+const toolchainPrograms: ReadonlyArray<string> = [
+  "node",
+  "npm",
+  "npx",
+  "pnpm",
+  "pnpx",
+  "yarn",
+  "yarnpkg",
+  "bun",
+  "bunx",
+  "corepack"
+]
+
+/**
+ * The host paths a project's own toolchain is read from, for a run that
+ * starts more programs than the one {@link launcher} resolves: an install
+ * whose lifecycle script calls `pnpm`, a test script that calls `npm`.
+ *
+ * The host chooses them from its own `PATH`, never from anything the confined
+ * run wrote. Each absolute `PATH` entry is one, under the spelling `PATH`
+ * uses and under its real path, so a name the run looks up resolves inside
+ * the sandbox the way it resolves outside. So is the install root of each
+ * package manager and runtime `PATH` resolves, found the way {@link launcher}
+ * finds one program's: the package directory holding the real file, or the
+ * file itself. That covers a version manager's layout under the home
+ * directory (nvm, a corepack shim, a pnpm cmd-shim) without opening the home.
+ *
+ * A path that is the workspace, the home directory, or an ancestor of one is
+ * never returned. Neither is a credential location, an ancestor of one, or a
+ * path inside one, nor a path that is or resolves inside the workspace: only
+ * the run's own declaration opens that tree.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const toolchainReads = (
+  searchPath: string | undefined,
+  workspaceRoot: string,
+  hostFacts: Host
+): ReadonlyArray<string> => {
+  const closed = [
+    workspaceRoot,
+    ...(hostFacts.home === undefined ? [] : [hostFacts.home]),
+    ...credentialPaths(hostFacts)
+  ]
+  const credentials = credentialPaths(hostFacts)
+  const admissible = (path: string): boolean =>
+    pathApi(path).isAbsolute(path) && hostFacts.exists(path) && !insideRoot(workspaceRoot, path) &&
+    // A link on PATH must not bind a workspace subtree under a second name,
+    // where no hidden entry is masked.
+    !insideRoot(workspaceRoot, hostFacts.realpath?.(path) ?? path) &&
+    !closed.some((kept) => insideRoot(path, kept)) &&
+    !credentials.some((kept) => insideRoot(kept, path))
+  const found: Array<string> = []
+  for (const entry of (searchPath ?? "").split(":")) {
+    if (entry === "" || !pathApi(entry).isAbsolute(entry) || !hostFacts.isDirectory(entry)) continue
+    found.push(entry, hostFacts.realpath?.(entry) ?? entry)
+  }
+  for (const program of toolchainPrograms) {
+    found.push(...launcher(program, searchPath, [], workspaceRoot, hostFacts).reads)
+  }
+  return collapse(found.filter(admissible))
+}
+
+const hiddenPrefix = /^[A-Za-z0-9._-]+$/
+
+/**
+ * The existing workspace entries a set of name prefixes hides.
+ *
+ * Walks the real tree below the root and returns every entry whose name
+ * starts with a prefix, in any ASCII case, without descending into it. A
+ * symbolic link is neither followed nor returned: its target is hidden under
+ * the target's own name or lies outside what the run may read. Every real
+ * directory is searched, a dependency tree included: an earlier run can move
+ * a directory anywhere it may write, and the entries below it move with it.
+ * An entry at or below a `restored` path is left out, and so is a prefix
+ * outside the letters, digits, `.`, `_`, and `-` a pattern rule can carry.
+ *
+ * Throws when a directory cannot be listed: an entry the search cannot see
+ * would stay open, so the caller refuses the run.
+ *
+ * @category resolution
+ * @since 1.0.0
+ */
+export const hiddenEntries = (
+  workspaceRoot: string,
+  prefixes: ReadonlyArray<string>,
+  restored: ReadonlyArray<string>,
+  hostFacts: Host
+): ReadonlyArray<string> => {
+  const wanted = prefixes.filter((prefix) => hiddenPrefix.test(prefix)).map((prefix) => prefix.toLowerCase())
+  if (wanted.length === 0) return []
+  const link = hostFacts.isSymbolicLink ?? isSymbolicLink
+  const found: Array<string> = []
+  const pending = [workspaceRoot]
+  while (pending.length > 0) {
+    const directory = pending.pop()!
+    const names = hostFacts.entries?.(directory)
+    if (names === undefined) {
+      throw new Error("a workspace directory cannot be listed, so the entries hidden below it cannot be closed")
+    }
+    for (const name of names) {
+      const path = pathApi(directory).join(directory, name)
+      if (link(path) || restored.some((open) => insideRoot(open, path))) continue
+      if (wanted.some((prefix) => name.toLowerCase().startsWith(prefix))) found.push(path)
+      else if (hostFacts.isDirectory(path)) pending.push(path)
+    }
+  }
+  return found.sort()
+}
+
 /** A bind at a different lexical path must not reveal a protected broker tree. */
 const refuseBrokerAliases = (paths: ReadonlyArray<string>, hostFacts: Host, mechanism: string): void => {
   for (const path of paths) {
@@ -1040,6 +1182,28 @@ export const bubblewrap = (
         )
       }
       out.push("--ro-bind", closed, closed)
+    }
+  }
+  // A hidden entry is covered after every grant and seal that could reach it.
+  // The mask is a mount on the entry itself, so it follows a renamed parent,
+  // refuses a rename or removal of the entry, and cannot be hard-linked.
+  const hidden = confinement.hidden ?? { paths: [], restored: [] }
+  for (const path of hidden.paths) {
+    if (!hostFacts.isDirectory(path)) {
+      out.push("--ro-bind", "/dev/null", path)
+      continue
+    }
+    out.push("--tmpfs", path)
+    for (const open of hidden.restored) {
+      if (insideRoot(path, open) && hostFacts.exists(open)) out.push("--ro-bind", open, open)
+    }
+    out.push("--remount-ro", path)
+  }
+  // What the operator reopened is for reading: a writable workspace bind
+  // around it would otherwise let the run replace it.
+  for (const open of hidden.restored) {
+    if (hostFacts.exists(open) && !hidden.paths.some((path) => insideRoot(path, open))) {
+      out.push("--ro-bind", open, open)
     }
   }
   const granted = [
@@ -1257,6 +1421,37 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   }
   if (confinement.externalReads.length > 0) {
     lines.push(`(allow file-read* ${confinement.externalReads.map((path) => `(subpath ${sbpl(path)})`).join(" ")})`)
+  }
+  const hidden = confinement.hidden
+  if (hidden !== undefined && hidden.prefixes.length > 0) {
+    // Last, so no grant above reopens a hidden name. A pattern on the whole
+    // path holds when a parent directory is renamed, and seatbelt refuses a
+    // hard link whose source it may not read. The pattern covers the private
+    // temporary directory too: a run may rename a workspace directory there.
+    const roots = [confinement.workspaceRoot, confinement.tmp]
+    if (roots.some((root) => /["\n\r]/.test(root)) || hidden.prefixes.some((prefix) => !hiddenPrefix.test(prefix))) {
+      throw unenforceable(
+        hostFacts.platform,
+        "seatbelt",
+        "expressible hidden name",
+        "a hidden entry name or the workspace path cannot be written as a seatbelt pattern"
+      )
+    }
+    const literal = (text: string): string => text.replace(/[.[\]{}()*+?^$|\\]/g, "\\$&")
+    const anyCase = (text: string): string =>
+      [...text].map((character) =>
+        /[A-Za-z]/.test(character) ? `[${character.toLowerCase()}${character.toUpperCase()}]` : literal(character)
+      ).join("")
+    const names = hidden.prefixes.map(anyCase).join("|")
+    lines.push(
+      `(deny file-read* file-write* (regex #"^(${roots.map(literal).join("|")})/(.*/)?(${names})[^/]*(/|$)"))`
+    )
+    if (hidden.restored.length > 0) {
+      // Reopened for reading alone: a run that could write there could move
+      // a directory in and read the hidden entries below it.
+      const reopened = hidden.restored.map((path) => `(subpath ${sbpl(path)})`).join(" ")
+      lines.push(`(allow file-read* ${reopened})`, `(deny file-write* ${reopened})`)
+    }
   }
   return lines.join("")
 }

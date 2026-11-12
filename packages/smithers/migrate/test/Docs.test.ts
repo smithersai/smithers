@@ -210,6 +210,7 @@ describe("security claims", () => {
       const text = unwrapped(read(`../docs/${page}`))
       expect(text).toContain("runs the project's own install, format, typecheck, and test commands")
       expect(text).toMatch(/trusted checkout or inside a sandbox/)
+      expect(text).toContain("Each command runs in the host's process sandbox")
     }
   )
 })

@@ -1300,6 +1300,7 @@ a guarded spawner without it refuses execution.
 | `unavailable`        | `"refuse"`             | Refuse a missing mechanism; `"unconfined"` explicitly permits execution with a warning. |
 | `temporaryDirectory` | OS temporary directory | Parent for private, scope-owned temporary storage.                                      |
 | `host`               | Real host probes       | Injectable mechanism selection and filesystem probes.                                   |
+| `verification`       | Absent                 | Confines a project's own toolchain instead of one agent command; see below.             |
 
 Linux needs `bwrap`; macOS needs `/usr/bin/sandbox-exec`. An installed mechanism
 that fails to start never falls back to unconfined execution. A shell request
@@ -1322,6 +1323,22 @@ known host credential locations stay masked. Workspace links do not grant
 reads of their external targets. This boundary does not isolate trusted host
 JavaScript or supply a remote sandbox provider.
 
+`verification` is for commands that execute files an agent edited: an install
+with lifecycle scripts, a typecheck, a test run. It changes three things and
+leaves the rest of the boundary as an agent command gets it. The toolchain is
+readable: every `PATH` entry of the command's environment and the install root
+of each runtime and package manager on it, never the home directory, a
+credential location, or a parent of the workspace. Linux admits the
+`SOCK_SEQPACKET` socketpair beside the stream pair, because pnpm starts every
+script through one and neither can name a host endpoint; `socket(AF_UNIX)` and
+the datagram pair stay refused. Entries whose name starts with one of
+`hiddenPrefixes`, in any ASCII case and at any depth, are closed for reads and
+writes; on Linux a workspace directory that cannot be listed refuses the run.
+`reads` lists absolute paths the operator opens: one outside the workspace is
+bound read-only, and one inside it reopens, for reading, the hidden entries at
+or below it. Each is resolved once, when the service is made, and a run is
+refused once a path names a different file or directory.
+
 ## ProcessSandbox
 
 The build graph and `ProcessConfinement` share this mechanism implementation.
@@ -1330,7 +1347,10 @@ environment, host?)` resolve a request into an enforced command.
 `seatbelt`, `bubblewrap`, and `docker` render each supported mechanism;
 `host`, `validateWrites`, `environment`, `diagnose`, `isUnenforceable`, and
 `unenforceable` expose its host probes, validation, environment, diagnostics,
-and refusals. Requests name `network`, `reads`, and writable directory `writes`,
+and refusals. `toolchainReads(searchPath, workspaceRoot, host)` and
+`hiddenEntries(workspaceRoot, prefixes, restored, host)` compute what the
+verification mode opens and hides, and a plan's `hidden` field carries the
+result to the renderers. Requests name `network`, `reads`, and writable directory `writes`,
 with optional `mechanism`, `writeFiles`, `readOnly`, `externalReads`, `strict`,
 and `unixSockets`. Native agent confinement uses a strict process and IPC
 policy and closes Unix sockets; build tools retain their declared policy. Build

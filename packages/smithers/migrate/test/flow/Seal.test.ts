@@ -22,7 +22,7 @@ import * as Effect from "effect/Effect"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { copyFixture, fixture, hashTree, nativeHelperAvailable, nodeLayer } from "../fixtures/helpers.ts"
+import { copyFixture, fixture, hashTree, journeyHost, nativeHelperAvailable, nodeLayer } from "../fixtures/helpers.ts"
 
 const golden = readFileSync(
   join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"),
@@ -68,6 +68,7 @@ const script: Layers.Script = (asked) => {
 const launch = (root: string, surveyed: Command.Survey) =>
   Command.launch(options(root), surveyed).pipe(
     Effect.provide(Layers.layerScripted({
+      ...journeyHost,
       root,
       commands: surveyed.commands,
       runStatePaths: Transform.runStatePaths(surveyed.scan),

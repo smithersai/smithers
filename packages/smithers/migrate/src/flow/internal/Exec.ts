@@ -23,6 +23,7 @@ import * as Option from "effect/Option"
 import type { PlatformError } from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 
 /**
@@ -56,6 +57,14 @@ export interface Options {
   readonly timeoutMs?: number | undefined
   /** Present means an argv; absent means a command line for the platform shell. */
   readonly args?: ReadonlyArray<string> | undefined
+  /**
+   * Rewrites the built command before it starts, inside the spawn's scope.
+   * This is where a caller wraps a command in a host confinement, and a
+   * refusal here is a command that never started.
+   */
+  readonly prepare?:
+    | ((command: ChildProcess.StandardCommand) => Effect.Effect<ChildProcess.Command, PlatformError, Scope.Scope>)
+    | undefined
 }
 
 /**
@@ -171,11 +180,10 @@ const spawn = (
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options.env === undefined ? {} : { env: options.env })
     }
-    const handle = yield* spawner.spawn(
-      options.args === undefined
-        ? ChildProcess.make(command, settings)
-        : ChildProcess.make(command, [...options.args], settings)
-    )
+    const built = options.args === undefined
+      ? ChildProcess.make(command, settings)
+      : ChildProcess.make(command, [...options.args], settings)
+    const handle = yield* spawner.spawn(options.prepare === undefined ? built : yield* options.prepare(built))
     // Draining runs in its own fiber so the budget can be enforced by joining
     // it: a fiber join is interruptible, where a drain blocked on a pipe the
     // child never closes is not. A command over budget is abandoned rather

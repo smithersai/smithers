@@ -6,6 +6,9 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
+import * as ProcessSandbox from "@smthrs/platform-node/ProcessSandbox"
 import { buildSync } from "esbuild"
 import { spawnSync } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
@@ -34,6 +37,34 @@ export const platform: Layer.Layer<never> = Layer.merge(NodeFileSystem.layer, No
 
 /** The layer scanners take: a real filesystem and a real path service. */
 export const nodeLayer = Layer.merge(NodeFileSystem.layer, NodePath.layer)
+
+/**
+ * Node's services with the explicit unconfined choice, for a suite that calls
+ * `Verify.run` or `MigrateFlow.finish` directly and whose subject is not the
+ * confinement: exit codes, output tails, budgets, rollback. Without a
+ * `ProcessConfinement` in the context verification starts no command.
+ */
+export const unconfinedNode = Layer.merge(NodeServices.layer, KernelProcessConfinement.layerNoop)
+
+/**
+ * Whether this host can enforce a process sandbox: bubblewrap on Linux,
+ * seatbelt on macOS. CI installs bubblewrap on its Linux lanes.
+ */
+export const sandboxAvailable: boolean = !ProcessSandbox.isUnenforceable(
+  ProcessSandbox.select({ network: "open" }, ProcessSandbox.host())
+)
+
+/**
+ * What an apply journey passes a composition beside its own settings: the
+ * process environment, so a confined verification command finds its toolchain
+ * on `PATH`, and the production sandbox wherever the host has one. A host with
+ * none (Windows) makes the operator's explicit choice, `--verify-unconfined`,
+ * so the journey still tests everything but the confinement.
+ */
+export const journeyHost = {
+  environment: process.env,
+  ...(sandboxAvailable ? {} : { verifyUnconfined: true })
+}
 
 /** The absolute path of one committed fixture. */
 export const fixture = (name: string): string => fileURLToPath(new URL(`./${name}`, import.meta.url))

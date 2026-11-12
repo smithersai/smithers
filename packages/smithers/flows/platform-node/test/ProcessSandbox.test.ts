@@ -2355,3 +2355,214 @@ describe("link inputs", () => {
     expect(profile).not.toContain("/work/ws/consumer/agent")
   })
 })
+
+describe("verification toolchain reads (#5436)", () => {
+  const home = "/home/u"
+  const nvm = `${home}/.nvm/versions/node/v22`
+  const npmPackage = `${nvm}/lib/node_modules/npm`
+  const facts = (overrides: Partial<ProcessSandbox.Host> = {}): ProcessSandbox.Host => ({
+    ...host(
+      "linux",
+      { bwrap: "/usr/bin/bwrap", [`${nvm}/bin/npm`]: `${nvm}/bin/npm`, [`${nvm}/bin/node`]: `${nvm}/bin/node` },
+      [`${npmPackage}/package.json`, `${nvm}/bin/node`, `${home}/.ssh`],
+      [
+        `${nvm}/bin`,
+        npmPackage,
+        "/usr/bin",
+        "/opt/link",
+        "/opt/real",
+        home,
+        "/",
+        `${root}/node_modules/.bin`,
+        `${home}/.ssh`,
+        "/srv"
+      ]
+    ),
+    home,
+    realpath: (path) =>
+      path === `${nvm}/bin/npm` ? `${npmPackage}/bin/npm-cli.js` : path === "/opt/link" ? "/opt/real" : path,
+    ...overrides
+  })
+
+  it("opens each PATH directory under both spellings and each package manager's install root", () => {
+    const reads = ProcessSandbox.toolchainReads(
+      `${nvm}/bin:relative/bin::/usr/bin:/opt/link:/missing:${nvm}/bin/node`,
+      root,
+      facts()
+    )
+    expect(reads).toEqual(["/usr/bin", "/opt/link", "/opt/real", `${nvm}/bin`, npmPackage])
+  })
+
+  it("never opens the workspace, the home, a credential location, or an ancestor of one", () => {
+    const reads = ProcessSandbox.toolchainReads(
+      `/:/home:${home}:${home}/.ssh:${home}/.docker/bin:/srv:${root}/node_modules/.bin:/usr/bin`,
+      "/srv/ws",
+      {
+        ...facts(),
+        isDirectory: () => true,
+        exists: () => true
+      }
+    )
+    expect(reads).toEqual(["/usr/bin", `${root}/node_modules/.bin`])
+    // The same entry is inside the workspace when the workspace is its root.
+    expect(ProcessSandbox.toolchainReads(`${root}/node_modules/.bin`, root, facts())).toEqual([])
+    // A link on PATH that resolves into the workspace would bind that tree under a second name.
+    expect(ProcessSandbox.toolchainReads("/opt/alias:/usr/bin", root, {
+      ...facts(),
+      isDirectory: () => true,
+      exists: () => true,
+      realpath: (path) => path === "/opt/alias" ? `${root}/node_modules/.bin` : path
+    })).toEqual(["/usr/bin"])
+  })
+
+  it("falls back to the host lookup with no PATH, and to the spelled entry with no realpath probe", () => {
+    const lookup = facts({ executable: (name) => name === "npm" ? `${nvm}/bin/npm` : undefined })
+    expect(ProcessSandbox.toolchainReads(undefined, root, lookup)).toEqual([npmPackage])
+    const { realpath: _, ...bare } = facts({ home: undefined })
+    expect(ProcessSandbox.toolchainReads("/opt/link", root, bare)).toEqual(["/opt/link"])
+  })
+})
+
+describe("hidden workspace entries (#5436)", () => {
+  const listing: Readonly<Record<string, ReadonlyArray<string>>> = {
+    [root]: [".env", ".ENV.local", ".environment", "env", "node_modules", "src", "linked", ".envlink", "locked"],
+    [`${root}/src`]: [".env.test", "config", "a.ts"],
+    [`${root}/src/config`]: [".Env"],
+    [`${root}/node_modules`]: [".env"],
+    [`${root}/.environment`]: [".env"],
+    [`${root}/locked`]: []
+  }
+  const directories = [root, `${root}/src`, `${root}/src/config`, `${root}/node_modules`, `${root}/.environment`]
+  const facts: ProcessSandbox.Host = {
+    ...host("linux", { bwrap: "/usr/bin/bwrap" }, [], [...directories, `${root}/linked`, `${root}/locked`]),
+    entries: (directory) => listing[directory],
+    isSymbolicLink: (path) => path === `${root}/linked` || path === `${root}/.envlink`
+  }
+
+  it("finds every entry a prefix names, in any case and under a dependency tree, without following links", () => {
+    expect(ProcessSandbox.hiddenEntries(root, [".env"], [], facts)).toEqual([
+      `${root}/.ENV.local`,
+      `${root}/.env`,
+      `${root}/.environment`,
+      // An earlier run can move a directory under node_modules, so it is searched.
+      `${root}/node_modules/.env`,
+      `${root}/src/.env.test`,
+      `${root}/src/config/.Env`
+    ])
+  })
+
+  it("leaves out what the operator reopened and a prefix a pattern rule cannot carry", () => {
+    expect(ProcessSandbox.hiddenEntries(root, [".env"], [`${root}/src`, `${root}/.env`], facts)).toEqual([
+      `${root}/.ENV.local`,
+      `${root}/.environment`,
+      `${root}/node_modules/.env`
+    ])
+    expect(ProcessSandbox.hiddenEntries(root, [".env/x", "a b", ""], [], facts)).toEqual([])
+    expect(ProcessSandbox.hiddenEntries(root, [".env", "*"], [`${root}/src`], facts)).toHaveLength(4)
+  })
+
+  it("refuses a directory it cannot list, and probes links itself when the host has no probe", () => {
+    // An entry the search cannot see would stay open: a run that removed a
+    // directory's read permission must not get the next run past the mask.
+    const unlistable: ProcessSandbox.Host = {
+      ...facts,
+      entries: (directory) => directory === `${root}/locked` ? undefined : listing[directory]
+    }
+    expect(() => ProcessSandbox.hiddenEntries(root, [".env"], [], unlistable)).toThrow(/cannot be listed/)
+    const { entries: _, ...unlisted } = facts
+    expect(() => ProcessSandbox.hiddenEntries(root, [".env"], [], unlisted)).toThrow(/cannot be listed/)
+    // With no name to hide there is nothing to search for.
+    expect(ProcessSandbox.hiddenEntries(root, [], [], unlisted)).toEqual([])
+    const base = NodeFs.realpathSync(NodeFs.mkdtempSync(NodePath.join(fixtureDirectory(), "smthrs-hidden-")))
+    try {
+      NodeFs.mkdirSync(NodePath.join(base, "sub"))
+      NodeFs.writeFileSync(NodePath.join(base, "sub/.env"), "value")
+      NodeFs.symlinkSync(NodePath.join(base, "sub/.env"), NodePath.join(base, ".env.link"))
+      NodeFs.symlinkSync(NodePath.join(base, "sub"), NodePath.join(base, "alias"))
+      const { isSymbolicLink: __, ...real } = ProcessSandbox.host()
+      expect(ProcessSandbox.hiddenEntries(base, [".env"], [], real)).toEqual([NodePath.join(base, "sub/.env")])
+    } finally {
+      NodeFs.rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  const withHidden = (hostFacts: ProcessSandbox.Host, hidden: ProcessSandbox.Hidden): ProcessSandbox.Plan => ({
+    ...planned(hostFacts, { reads: ["."], writes: ["."], writeFiles: [], readOnly: [] }),
+    hidden
+  })
+
+  it("masks each hidden entry under bubblewrap after the workspace bind, and rebinds what was reopened", () => {
+    const file = `${root}/.env`
+    const tree = `${root}/.environment`
+    const inner = `${tree}/public`
+    const reopened = `${root}/src/.env.test`
+    const hostFacts: ProcessSandbox.Host = {
+      ...host("linux", { bwrap: "/usr/bin/bwrap" }, [file, inner, reopened], [root, tree])
+    }
+    const argv = ProcessSandbox.bubblewrap(
+      withHidden(hostFacts, {
+        prefixes: [".env"],
+        paths: [file, tree],
+        restored: [inner, reopened, `${tree}/missing`, `${root}/gone`]
+      }),
+      ["true"],
+      hostFacts
+    )
+    const text = argv.join(" ")
+    expect(text).toContain(`--ro-bind /dev/null ${file}`)
+    expect(text).toContain(`--tmpfs ${tree} --ro-bind ${inner} ${inner} --remount-ro ${tree}`)
+    expect(text).toContain(`--ro-bind ${reopened} ${reopened}`)
+    expect(text).not.toContain("missing")
+    expect(text).not.toContain(`${root}/gone`)
+    expect(text.split(`--ro-bind ${inner} ${inner}`)).toHaveLength(2)
+    expect(text.indexOf(`--ro-bind /dev/null ${file}`)).toBeGreaterThan(text.indexOf(`--bind ${root} ${root}`))
+    // A hidden directory the operator reopened whole is bound once, read-only.
+    const whole = ProcessSandbox.bubblewrap(
+      withHidden(hostFacts, { prefixes: [".env"], paths: [], restored: [tree] }),
+      ["true"],
+      hostFacts
+    ).join(" ")
+    expect(whole).toContain(`--ro-bind ${tree} ${tree}`)
+    expect(whole).not.toContain("--tmpfs /work/ws/.environment")
+  })
+
+  it("closes hidden names under seatbelt with one pattern after every grant, then the reopened paths", () => {
+    const hostFacts = { ...darwin, exists: () => true, isDirectory: (path: string) => path === root }
+    const plan = withHidden(hostFacts, { prefixes: [".env", "id_rsa"], paths: [], restored: [`${root}/.env.public`] })
+    const profile = ProcessSandbox.seatbelt({ ...plan, externalReads: ["/opt/tools"] }, hostFacts)
+    // The run's temporary directory is covered too: a workspace directory can be renamed into it.
+    const deny = "(deny file-read* file-write* (regex #\"^(/work/ws|/work/ws/\\.flows/sandbox/run1)/(.*/)?" +
+      "(\\.[eE][nN][vV]|[iI][dD]_[rR][sS][aA])[^/]*(/|$)\"))"
+    // Reopened for reading only, so nothing can be moved in beside it.
+    const reopen = "(allow file-read* (subpath \"/work/ws/.env.public\"))" +
+      "(deny file-write* (subpath \"/work/ws/.env.public\"))"
+    expect(profile.endsWith(deny + reopen)).toBe(true)
+    expect(profile.indexOf(deny)).toBeGreaterThan(profile.indexOf("(subpath \"/opt/tools\")"))
+    const none = ProcessSandbox.seatbelt(withHidden(hostFacts, { prefixes: [], paths: [], restored: [] }), hostFacts)
+    expect(none).not.toContain("regex")
+    const closed = ProcessSandbox.seatbelt(
+      withHidden(hostFacts, { prefixes: [".env"], paths: [], restored: [] }),
+      hostFacts
+    )
+    expect(closed.endsWith("[^/]*(/|$)\"))")).toBe(true)
+  })
+
+  it("escapes the workspace path in the seatbelt pattern and refuses what a pattern cannot carry", () => {
+    const odd = "/work/a.b (c)+[d]"
+    const hostFacts = { ...darwin, exists: () => true, isDirectory: () => true }
+    const at = (workspaceRoot: string, prefixes: ReadonlyArray<string>): ProcessSandbox.Plan => ({
+      ...planned(hostFacts, { reads: [], writes: [], writeFiles: [], readOnly: [] }),
+      workspaceRoot,
+      cwd: workspaceRoot,
+      hidden: { prefixes, paths: [], restored: [] }
+    })
+    expect(ProcessSandbox.seatbelt(at(odd, [".env"]), hostFacts))
+      .toContain(
+        "(regex #\"^(/work/a\\.b \\(c\\)\\+\\[d\\]|/work/ws/\\.flows/sandbox/run1)/(.*/)?(\\.[eE][nN][vV])[^/]*(/|$)\")"
+      )
+    for (const [workspaceRoot, prefix] of [["/work/a\"b", ".env"], ["/work/a\nb", ".env"], [root, ".env*"]] as const) {
+      expect(() => ProcessSandbox.seatbelt(at(workspaceRoot, [prefix]), hostFacts))
+        .toThrow(/cannot be written as a seatbelt pattern/)
+    }
+  })
+})

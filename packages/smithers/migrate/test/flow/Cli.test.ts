@@ -12,6 +12,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
 import * as Cli from "@smthrs/migrate/flow/Cli"
+import * as CommandModule from "@smthrs/migrate/flow/Command"
 import * as Lock from "@smthrs/migrate/flow/Lock"
 import { CliConfig, Command } from "effect/cli"
 import * as Effect from "effect/Effect"
@@ -134,6 +135,46 @@ describe("the smithers-migrate command in process", () => {
         "--acknowledge-run-state",
         "--seat",
         "anthropic:some-model"
+      ])
+
+      expect(status).toBe(0)
+    }))
+
+  it.live("warns on stderr before an apply whose verification runs unconfined, and only then", () =>
+    Effect.gen(function*() {
+      const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
+      try {
+        const root = copyFixture("jsx-single")
+        const warned = (): boolean =>
+          errors.mock.calls.some((call) => String(call[0]) === `smithers-migrate: ${CommandModule.unconfinedWarning}`)
+
+        // A plan runs no verification command, so there is nothing to warn about.
+        expect(yield* run(["--root", root, "--report-dir", ".out", "--verify-unconfined"])).toBe(0)
+        expect(warned()).toBe(false)
+
+        // The apply stops at the missing seat; the warning came first.
+        const status = yield* run(["--root", root, "--apply", "--allow-no-vcs", "--verify-unconfined"])
+        expect(status).toBe(1)
+        expect(warned()).toBe(true)
+        expect(String(errors.mock.calls[0]?.[0])).toBe(`smithers-migrate: ${CommandModule.unconfinedWarning}`)
+      } finally {
+        errors.mockRestore()
+      }
+    }))
+
+  it.live("takes every path the sandboxed verification may also read", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+
+      const status = yield* run([
+        "--root",
+        root,
+        "--report-dir",
+        ".out",
+        "--verify-read",
+        ".env.example",
+        "--verify-read",
+        "/opt/registry-settings"
       ])
 
       expect(status).toBe(0)
