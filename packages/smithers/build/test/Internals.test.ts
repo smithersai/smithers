@@ -123,6 +123,29 @@ describe("normalizeEnvironment", () => {
     )
   })
 
+  it.each(["BASH_FUNC_which%%", "BASH_FUNC_module%%", "BASH_FUNC_ml%%", "ProgramFiles(x86)"])(
+    "skips the non-portable POSIX lookup name %s",
+    (name) => {
+      expect(normalizeEnvironment({ PATH: "/usr/bin", [name]: "unselected" }, false, "environment"))
+        .toEqual(new Map([["PATH", "/usr/bin"]]))
+    }
+  )
+
+  it("does not inspect values under skipped POSIX names", () => {
+    const source = Object.defineProperty({ PATH: "/usr/bin" }, "BASH_FUNC_which%%", {
+      enumerable: true,
+      get: () => {
+        throw new Error("unselected value was read")
+      }
+    })
+    expect(normalizeEnvironment(source, false, "environment")).toEqual(new Map([["PATH", "/usr/bin"]]))
+  })
+
+  it.each(["A=B", "", "A\u0007B"])("refuses the unusable Windows lookup name %j", (name) => {
+    expect(() => normalizeEnvironment({ [name]: "x" }, true, "environment"))
+      .toThrow(`environment name is not portable: ${JSON.stringify(name)}`)
+  })
+
   it("refuses everything a child environment cannot carry", () => {
     expect(normalize("PATH=/bin")).toThrow(/must be an object of string values/)
     expect(normalize([["PATH", "/bin"]])).toThrow(/must be an object of string values/)

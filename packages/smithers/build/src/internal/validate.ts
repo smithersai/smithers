@@ -186,8 +186,8 @@ const windowsEnvironmentName = /^[^=\u0000-\u001F\u007F]+$/
  * A name the repository declares is a different question and keeps the portable
  * rule: the `.npmrc` placeholder syntax matches only a portable name, and every
  * bootstrap name is portable by construction. Those two lists are the whole of
- * what a child receives, so relaxing the source's rule never puts a
- * non-portable name on a command line or in a child environment.
+ * what a child receives, so a name outside the source's rule never reaches a
+ * command line or a child environment whether the source refuses it or not.
  *
  * @private
  * @since 0.1.0
@@ -203,6 +203,10 @@ export const usableEnvironmentName = (name: string, windows: boolean): boolean =
  * because the Windows environment block is case-insensitive, and two entries
  * differing only in case would otherwise both be admitted and one of them
  * silently win.
+ *
+ * POSIX names outside the portable convention, such as bash function exports
+ * `BASH_FUNC_which%%`, are skipped before reading their values. Windows names
+ * the environment block cannot carry are refused.
  *
  * @private
  * @since 0.1.0
@@ -229,7 +233,8 @@ export const normalizeEnvironment = (
     }
     const name = key
     if (!usableEnvironmentName(name, windows)) {
-      throw new TypeError(`${what} name is not portable: ${JSON.stringify(name)}`)
+      if (windows) throw new TypeError(`${what} name is not portable: ${JSON.stringify(name)}`)
+      continue
     }
     const descriptor = inspect(what, () => Object.getOwnPropertyDescriptor(record, name))
     if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) {

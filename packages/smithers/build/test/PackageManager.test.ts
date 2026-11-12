@@ -224,15 +224,18 @@ describe("PackageManager.storeRoot", () => {
     }
   })
 
-  /** Off Windows the portable name rule is unchanged. */
-  it("keeps the portable name rule on a POSIX host", () => {
+  it("skips a POSIX name outside the export convention instead of refusing the host", () => {
     expect(() =>
       PackageManager.makeNoop("pnpm", {
         requirement: "11.21.0",
         projectRoot: "/workspace",
-        environment: { "ProgramFiles(x86)": "C:\\Program Files (x86)" }
+        environment: {
+          PATH: "/usr/bin",
+          "BASH_FUNC_which%%": "() {  declare -f which\n}",
+          "ProgramFiles(x86)": "C:\\Program Files (x86)"
+        }
       }, platform)
-    ).toThrow(/package-manager environment name is not portable: "ProgramFiles\(x86\)"/)
+    ).not.toThrow()
   })
 
   it("does not invoke user string conversion while rejecting an invalid timeout", () => {
@@ -499,12 +502,14 @@ describe("PackageManager.storeRoot", () => {
           PATH: process.env.PATH,
           LEGACY_SECRET: "comment-only",
           PROXY_CREDENTIAL: "comment-only",
-          NPM_TOKEN: "live-token"
+          NPM_TOKEN: "live-token",
+          // A bash function export on the host: skipped by the lookup table, never forwarded.
+          "BASH_FUNC_which%%": "() {  declare -f which\n}"
         }
       })
       const observed = JSON.parse(await Effect.runPromise(manager.version)) as Record<string, unknown>
       expect(observed.NPM_TOKEN).toBe("live-token")
-      for (const name of ["LEGACY_SECRET", "PROXY_CREDENTIAL"]) {
+      for (const name of ["LEGACY_SECRET", "PROXY_CREDENTIAL", "BASH_FUNC_which%%"]) {
         expect(observed).not.toHaveProperty(name)
       }
     })

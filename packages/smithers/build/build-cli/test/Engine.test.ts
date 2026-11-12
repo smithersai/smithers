@@ -178,15 +178,7 @@ describe("install engine boundary", () => {
     expect(() => packageManagerEnvironment({ "A\u0007B": "x" }, [], true)).toThrow(/non-portable name/)
   })
 
-  /**
-   * A POSIX host carries names the `export NAME=` convention never produces:
-   * bash exports shell functions as `BASH_FUNC_which%%`, and every host running
-   * environment-modules adds more. Every child inherits them, so refusing the
-   * copy failed every target on such a host before anything ran. The
-   * package-manager layer selects from its own allowlist, so a dropped name
-   * could never have reached a child; the copy skips it and keeps going.
-   */
-  it("skips a name outside the POSIX convention instead of refusing the copy", () => {
+  it("copies a name outside the POSIX convention instead of refusing the copy", () => {
     expect(packageManagerEnvironment(
       {
         PATH: "/usr/bin",
@@ -196,7 +188,11 @@ describe("install engine boundary", () => {
       },
       [],
       false
-    )).toEqual({ PATH: "/usr/bin" })
+    )).toEqual({
+      PATH: "/usr/bin",
+      "BASH_FUNC_which%%": "() {  declare -f which\n}",
+      "ProgramFiles(x86)": "x"
+    })
   })
 
   /** A Windows name the environment block cannot carry names itself in the refusal. */

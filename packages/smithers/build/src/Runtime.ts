@@ -212,9 +212,9 @@ export interface Options {
    * executable-lookup names. When omitted, the live service selects those names
    * from `globalThis.process?.env`, or uses an empty environment without a host.
    *
-   * Because it is the host's environment, its names are held to the host's own
-   * rule rather than to the portable one. Windows names `ProgramFiles(x86)`,
-   * and a lookup table is not a declaration.
+   * POSIX names outside the portable convention, such as bash function exports
+   * `BASH_FUNC_which%%`, are skipped. Windows names such as `ProgramFiles(x86)`
+   * are accepted; names the Windows environment block cannot carry are refused.
    */
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   /** The interpreter executable, when it is not on `PATH` under its own name. */

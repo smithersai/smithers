@@ -597,7 +597,9 @@ describe("Runtime measurement", () => {
           environment: {
             PATH: process.env.PATH,
             HOME: "/hidden/home",
-            UNRELATED_SECRET: "must-not-leak"
+            UNRELATED_SECRET: "must-not-leak",
+            // An exported bash function must not prevent the version probe.
+            "BASH_FUNC_which%%": "() {  declare -f which\n}"
           }
         }).pipe(Effect.flatMap((service) => service.version), Effect.provide(ExecutableFixture.layer))
       )
@@ -618,6 +620,7 @@ describe("Runtime measurement", () => {
       expect(names).toEqual(JSON.parse(baseline.stdout))
       expect(names).not.toContain("HOME")
       expect(names).not.toContain("UNRELATED_SECRET")
+      expect(names).not.toContain("BASH_FUNC_which%%")
     })
   })
 
@@ -634,7 +637,9 @@ describe("Runtime measurement", () => {
           `process.stdout.write("1.0.0\\n")`
       )
       const previous = process.env.SMITHERS_BUILD_PROBE_MARKER
+      const previousFunction = process.env["BASH_FUNC_which%%"]
       process.env.SMITHERS_BUILD_PROBE_MARKER = "ambient"
+      process.env["BASH_FUNC_which%%"] = "() { declare -f which; }"
       try {
         await Effect.runPromise(
           Runtime.make("node", { requirement: "1.0.0", platform, executable }).pipe(
@@ -645,6 +650,8 @@ describe("Runtime measurement", () => {
       } finally {
         if (previous === undefined) delete process.env.SMITHERS_BUILD_PROBE_MARKER
         else process.env.SMITHERS_BUILD_PROBE_MARKER = previous
+        if (previousFunction === undefined) delete process.env["BASH_FUNC_which%%"]
+        else process.env["BASH_FUNC_which%%"] = previousFunction
       }
       expect(JSON.parse(await Fs.readFile(observed, "utf8"))).toBeNull()
     })

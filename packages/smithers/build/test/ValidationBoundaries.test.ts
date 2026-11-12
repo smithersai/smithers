@@ -79,7 +79,7 @@ describe("construction inspection", () => {
     })
     expect(() => Validate.normalizeEnvironment(trapped, false, "environment"))
       .toThrow("environment could not be inspected safely")
-    expect(() => Validate.normalizeEnvironment({ "BAD=NAME": "x" }, false, "environment"))
+    expect(() => Validate.normalizeEnvironment({ "BAD=NAME": "x" }, true, "environment"))
       .toThrow(/name is not portable/)
   })
 

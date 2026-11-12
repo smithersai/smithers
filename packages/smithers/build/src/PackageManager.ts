@@ -389,9 +389,9 @@ export interface Options {
    * whole value of a registry-scoped credential setting; the complete object is
    * never inherited by a child. Relative `PATH` entries are dropped.
    *
-   * Because it is the host's environment, its names are held to the host's own
-   * rule rather than to the portable one. Windows names `ProgramFiles(x86)`,
-   * and a lookup table is not a declaration.
+   * POSIX names outside the portable convention, such as bash function exports
+   * `BASH_FUNC_which%%`, are skipped. Windows names such as `ProgramFiles(x86)`
+   * are accepted; names the Windows environment block cannot carry are refused.
    */
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
   /** Wall-clock deadline for each fetch or link command. */

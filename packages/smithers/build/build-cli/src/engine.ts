@@ -79,11 +79,6 @@ export interface InstallResult {
 }
 
 /**
- * The POSIX convention for an environment name: what `export NAME=` accepts.
- */
-const portableEnvironmentName = /^[A-Za-z_][A-Za-z0-9_]*$/
-
-/**
  * The Windows environment block's own rule: `NAME=VALUE` entries separated by
  * NUL, so a name is non-empty and carries neither `=` nor a control character.
  *
@@ -91,12 +86,11 @@ const portableEnvironmentName = /^[A-Za-z_][A-Za-z0-9_]*$/
  * `ProgramFiles(x86)` and `CommonProgramFiles(x86)` are on every 64-bit image,
  * including the GitHub Actions `windows-latest` runner, so holding a Windows
  * host to the POSIX rule refuses the whole environment before any command runs.
+ *
+ * POSIX names are filtered by the runtime and package-manager lookup tables,
+ * which select only their own allowlists before starting a child.
  */
 const windowsEnvironmentName = /^[^=\u0000-\u001F\u007F]+$/
-
-/** Whether a name is one the host can carry into a child environment. */
-const usableEnvironmentName = (name: string, windows: boolean): boolean =>
-  windows ? windowsEnvironmentName.test(name) : portableEnvironmentName.test(name)
 
 const normalizeSensitiveEnvironment = (value: unknown): ReadonlyArray<string> => {
   let length: number
@@ -169,22 +163,13 @@ export const packageManagerEnvironment = (
   const seen = new Set<string>()
   let bytes = 0
   for (const key of keys) {
-    if (typeof key !== "string" || !usableEnvironmentName(key, windows)) {
+    if (typeof key !== "string" || (windows && !windowsEnvironmentName.test(key))) {
       // A Windows name outside the environment block's own grammar cannot be
       // carried by any spawn, so a source holding one is corrupt and the whole
-      // copy is refused. A POSIX name outside the `export NAME=` convention is
-      // a different thing: bash exports shell functions as `BASH_FUNC_which%%`
-      // and environment-modules adds more, every child inherits them, and
-      // refusing here failed every target on such a host. The package-manager
-      // layer selects from a 16-name allowlist anyway, so a name this copy
-      // drops could never have reached a child; skipping it is the honest
-      // answer, refusing the command is not.
-      if (windows || typeof key !== "string") {
-        throw new TypeError(
-          `environment source contains a non-portable name: ${JSON.stringify(String(key))}`
-        )
-      }
-      continue
+      // copy is refused.
+      throw new TypeError(
+        `environment source contains a non-portable name: ${JSON.stringify(String(key))}`
+      )
     }
     let descriptor: PropertyDescriptor | undefined
     try {
