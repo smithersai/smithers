@@ -544,7 +544,8 @@ evidence do not acquire invented phases, successful checks, or file changes.
   Running or completed execution status alone never settles a wait. Repeated registrations retain the opening timestamp, generations
   have separate identities, and replay hides settlements beyond its cursor;
   callers price `meter` dispatches as described above.
-- `inspectLabel(tag)` reads the build-generated Appendix C Inspect rendering.
+- `inspectLabel(tag)` reads the hand-kept Appendix C Inspect label; an agent
+  tool call is labeled by what it did ("Read a file", "Ran a command").
   Coding call and native execution spans use the same labels. Dynamic
   `<cell-call:flow>` wrappers use the wrapped action's rendering; unknown
   historical tags keep their recorded id. Inspection and replay read data only.

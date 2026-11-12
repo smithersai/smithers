@@ -2,6 +2,8 @@
 /**
  * The deterministic Inspect label of each kept action in .specs/product/actions.md
  * Appendix C, keyed by action id; null marks an action whose Inspect shows no label.
+ * The agent's own tools (Appendix B.3) are labeled by what the call did, in past
+ * tense, never by the card the spec says they render into.
  *
  * @since 1.0.0
  */
@@ -23,9 +25,9 @@ export const ACTION_RENDERINGS: Readonly<Record<string, string | null>> = {
   "agent/run": "Worked a turn",
   "agent/send (stamp)": null,
   "agent/trace/checkpoint": null,
-  "apply_patch": "An attributed edit in the File and Diff cards",
+  "apply_patch": "Applied a patch",
   "ask": "Needs you",
-  "bash": "Terminal card (agent session). Missing: no terminal today",
+  "bash": "Ran a command",
   "checks/lint": "Linted the change",
   "checks/review": "Reviewed the change",
   "checks/security": "Reviewed security",
@@ -164,20 +166,20 @@ export const ACTION_RENDERINGS: Readonly<Record<string, string | null>> = {
   "create-flow/fix": "Fixed the flow",
   "create-flow/provision": "Set up the flow",
   "create-flow/scaffold": "Wrote the flow",
-  "edit": "An attributed edit in the File and Diff cards",
+  "edit": "Edited a file",
   "factory/Todo": "Routed the TODO",
   "factory/route-todo": "Chose how to start",
   "factory/stamp-route": "Declined the TODO",
-  "glob": "A \"read\" line in branch activity, opening the File card",
-  "grep": "A \"read\" line in branch activity, opening the File card",
-  "jev": "Inspect only: \"Decided <question>\"",
-  "ls": "A \"read\" line in branch activity, opening the File card",
-  "memory": "The \"Context\" line and the preflight cell in Inspect",
+  "glob": "Listed matching files",
+  "grep": "Searched files",
+  "jev": "Decided a question",
+  "ls": "Listed a directory",
+  "memory": "Recalled context",
   "memory/mine": "Saved lessons",
   "memory/mine/run": "Saved lessons",
-  "read": "A \"read\" line in branch activity, opening the File card",
-  "recall": "The \"Context\" line and the preflight cell in Inspect",
-  "recall (namespaced)": "The \"Context\" line and the preflight cell in Inspect",
+  "read": "Read a file",
+  "recall": "Recalled context",
+  "recall (namespaced)": "Recalled context",
   "remember": "Learning receipt",
   "review": "Reviewed the change",
   "smithers-review/ApplyVerdicts": "Settled findings",
@@ -198,7 +200,7 @@ export const ACTION_RENDERINGS: Readonly<Record<string, string | null>> = {
   "system/human-task": "Waited for your answer",
   "system/sleep": null,
   "system/wait-for": null,
-  "test": "Terminal card plus checks. Missing: needs SMITHERS_TEST_COMMAND",
+  "test": "Ran the tests",
   "wait": "Waited",
   "wiki/assess-review": "Assessed a wiki page",
   "wiki/bind-review-provenance": "Linked a review to its source",
@@ -210,5 +212,5 @@ export const ACTION_RENDERINGS: Readonly<Record<string, string | null>> = {
   "wiki/select-recorded-review": "Reused a review",
   "wiki/validate-review": "Checked a wiki page",
   "wiki/write-snapshot": "Saved wiki pages",
-  "write": "An attributed edit in the File and Diff cards"
+  "write": "Wrote a file"
 }

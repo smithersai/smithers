@@ -1,5 +1,5 @@
 /**
- * Inspect labels for recorded actions, read from the generated Appendix C table.
+ * Inspect labels for recorded actions, read from the hand-kept Appendix C table.
  *
  * @since 1.0.0
  */

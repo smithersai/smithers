@@ -580,8 +580,39 @@ test("a call span keeps its journaled flow name beside the display label, for kn
   ])
   const calls = model.rows.filter((row) => row.kind === "call")
   expect(calls.map((row) => row.detail.flowName)).toEqual(["read", "legacy.retired-tool", undefined])
-  expect(calls[0]!.label).toBe(inspectLabel("read"))
+  expect(calls[0]!.label).toBe("Read a file")
   expect("flowName" in calls[2]!.detail).toBe(false)
+})
+
+test("an agent tool call is labeled by what it did, never by the card Appendix C says it renders into", () => {
+  expect(
+    ["read", "ls", "glob", "grep", "edit", "write", "apply_patch", "bash", "test", "jev", "memory", "recall"].map(
+      inspectLabel
+    )
+  ).toEqual([
+    "Read a file",
+    "Listed a directory",
+    "Listed matching files",
+    "Searched files",
+    "Edited a file",
+    "Wrote a file",
+    "Applied a patch",
+    "Ran a command",
+    "Ran the tests",
+    "Decided a question",
+    "Recalled context",
+    "Recalled context"
+  ])
+  const model = traceFromJournal(RUN, [
+    at(1, "control.agent.turn-opened", {}, 1),
+    at(2, "control.agent.cell-call-started", { flowName: "read", callId: "r", input: { path: "a" } }, 2),
+    at(3, "control.agent.cell-call-started", { flowName: "bash", callId: "b", input: { command: "ls" } }, 3)
+  ])
+  expect(model.rows.filter((row) => row.kind === "call").map((row) => row.label)).toEqual([
+    "Read a file",
+    "Ran a command"
+  ])
+  expect(turnNarratives(model)[0]?.text).toBe("The agent called Read a file, Ran a command.")
 })
 
 test("native call facts upgrade telemetry through the gateway's shared normalization without a second span", () => {
