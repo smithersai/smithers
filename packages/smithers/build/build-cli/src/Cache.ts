@@ -133,9 +133,10 @@ export const remoteTransferConcurrency = 8
 /**
  * How many content-store exchanges a fresh cache handle admits at first.
  *
- * Both cache services admit two artifact transfers at once per isolate or
- * process and answer the rest with `429`, so a handle starts there and only
- * probes higher after a long run of admitted exchanges.
+ * Every cache service admits at least two artifact transfers at once per
+ * isolate or process and answers the rest with `429`: the self-hosted service
+ * and older hosted deployments admit exactly two. A handle starts there and
+ * probes higher only after a long run of admitted exchanges.
  *
  * @category constants
  * @since 1.0.0

@@ -1,3 +1,4 @@
+import { maxConcurrentArtifactReads } from "../protocol.ts"
 import { createHash } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeTestDatabase, type TestDatabase } from "./d1.ts"
@@ -297,23 +298,26 @@ describe("worker entry point", () => {
     const get = () => worker.fetch(new Request(`https://cache.test/cas/${digest}`, {
       headers: { authorization: "Bearer entry-point-read-token" }
     }), makeEnv())
-    const first = await get()
-    const second = await get()
-    expect(first.status).toBe(200)
-    expect(second.status).toBe(200)
+    const held: Array<Response> = []
+    for (let n = 0; n < maxConcurrentArtifactReads; n++) held.push(await get())
+    expect(held.map((response) => response.status)).toEqual(
+      Array.from({ length: maxConcurrentArtifactReads }, () => 200)
+    )
     expect((await get()).status).toBe(429)
+    const [first, second, ...rest] = held
     sources[0]!.error(new Error("download failed"))
-    await expect(first.arrayBuffer()).rejects.toThrow()
+    await expect(first!.arrayBuffer()).rejects.toThrow()
     const third = await get()
     expect(third.status).toBe(200)
     expect((await get()).status).toBe(429)
-    await second.body!.cancel()
-    await second.body!.cancel()
+    await second!.body!.cancel()
+    await second!.body!.cancel()
     const fourth = await get()
     expect(fourth.status).toBe(200)
     expect((await get()).status).toBe(429)
     await third.body!.cancel()
     await fourth.body!.cancel()
+    for (const response of rest) await response.body!.cancel()
   })
 
   it.each(["complete", "failed", "cancelled", "cancelled_during_read"])("records terminal stream %s after headers and releases admission", async (outcome) => {

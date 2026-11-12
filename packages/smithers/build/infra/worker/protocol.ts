@@ -188,12 +188,28 @@ export const maxConcurrentActionCachePublications = 4
 export const maxConcurrentFindMissingRequests = 8
 
 /**
- * The maximum number of large CAS transfers admitted by one Worker isolate.
+ * The maximum number of artifact uploads admitted by one Worker isolate.
+ *
+ * An upload buffers its whole body, up to 16 MiB, inside its slot.
  *
  * @category constants
  * @since 0.1.0
  */
 export const maxConcurrentArtifactTransfers = 2
+
+/**
+ * The maximum number of artifact downloads admitted by one Worker isolate.
+ *
+ * A download streams the R2 body to the client one pull at a time and buffers
+ * no artifact, so it is bounded separately from uploads and well above them.
+ * A cold restore fetches hundreds of artifacts, and the clients holding one
+ * credential at a location share an isolate. The per-credential request
+ * budget still bounds what downloads cost.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maxConcurrentArtifactReads = 16
 
 /**
  * Successful readiness checks are coalesced for this monotonic interval.
@@ -1444,6 +1460,7 @@ export const makeAdmissionState = () => ({
   activeCacheRequests: 0,
   activeActionCachePublications: 0,
   activeArtifactTransfers: 0,
+  activeArtifactReads: 0,
   activeFindMissingRequests: 0,
   dependencies: new Map<string, number>()
 })
@@ -1493,7 +1510,7 @@ export const createHandler = (dependencies: ProtocolDependencies, admission = ma
   const contentGet = boundedOperation<[string], ContentObject | null>(
     "contentStore.get",
     normalized.contentStore.get,
-    maxConcurrentArtifactTransfers,
+    maxConcurrentArtifactReads,
     admission.dependencies,
     (object) => {
       if (object?.body instanceof ReadableStream) void discardBody(object.body)
@@ -1715,11 +1732,20 @@ export const createHandler = (dependencies: ProtocolDependencies, admission = ma
             return json(400, { error: "digest must be valid URL encoding" })
           }
           if (request.method === "GET" || request.method === "PUT") {
-            if (admission.activeArtifactTransfers >= maxConcurrentArtifactTransfers) {
+            // Downloads stream and uploads buffer, so each has its own ceiling.
+            const reading = request.method === "GET"
+            if (
+              reading
+                ? admission.activeArtifactReads >= maxConcurrentArtifactReads
+                : admission.activeArtifactTransfers >= maxConcurrentArtifactTransfers
+            ) {
               await discardBody(request.body)
-              return busy("too many simultaneous artifact transfers")
+              return busy(
+                reading ? "too many simultaneous artifact downloads" : "too many simultaneous artifact transfers"
+              )
             }
-            admission.activeArtifactTransfers += 1
+            if (reading) admission.activeArtifactReads += 1
+            else admission.activeArtifactTransfers += 1
             let transferred = false
             try {
               const response = await handleArtifact(
@@ -1744,7 +1770,7 @@ export const createHandler = (dependencies: ProtocolDependencies, admission = ma
                 response,
                 body,
                 () => {
-                  admission.activeArtifactTransfers -= 1
+                  admission.activeArtifactReads -= 1
                   admission.activeCacheRequests -= 1
                 },
                 "contentStore.get",
@@ -1754,7 +1780,10 @@ export const createHandler = (dependencies: ProtocolDependencies, admission = ma
               streaming = true
               return held
             } finally {
-              if (!transferred) admission.activeArtifactTransfers -= 1
+              if (!transferred) {
+                if (reading) admission.activeArtifactReads -= 1
+                else admission.activeArtifactTransfers -= 1
+              }
             }
           }
           return await handleArtifact(request, digest, contentStore, maxArtifactBytes)

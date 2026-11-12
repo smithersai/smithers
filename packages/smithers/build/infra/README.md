@@ -433,10 +433,14 @@ canonicalize to the same discriminator and answer `200` where this table
 promises `409`.
 
 One isolate admits at most 64 cache requests, with independent route ceilings
-of four action-cache publications, eight `findMissing` requests, and two
-artifact transfers. An artifact transfer holds its slot until the transfer
-ends: a `PUT` body is buffered inside the slot, and a `GET` slot is held by
-the response body until the client drains or cancels it. Excess work returns
+of four action-cache publications, eight `findMissing` requests, two artifact
+uploads, and sixteen artifact downloads. An artifact transfer holds its slot
+until the transfer ends: a `PUT` body is buffered inside the slot, and a `GET`
+slot is held by the response body until the client drains or cancels it.
+Downloads have the larger ceiling because the R2 body streams through one pull
+at a time and no artifact is buffered, while a cold restore fetches hundreds of
+artifacts. The self-hosted service reads each artifact whole from Postgres, so
+it keeps two transfers of either kind. Excess work returns
 `429` with `Retry-After: 1` and its request body is cancelled without waiting
 for a hostile cancellation promise.
 
@@ -447,7 +451,8 @@ permits promptly; aborts and deadlines return `503`. Storage adapters receive an
 `AbortSignal`. Operations that ignore cancellation retain separate per-method
 permits until they settle, bounded by the corresponding route ceiling (64 for
 action reads, deletes, and artifact presence checks; four for action
-publications; eight for `findMissing`; two for artifact gets or puts).
+publications; eight for `findMissing`; sixteen for artifact gets; two for
+artifact puts).
 Readiness retains at most one backend probe.
 While an uncancellable operation occupies every dependency permit, retries
 return `503`; they cannot accumulate more backend work.

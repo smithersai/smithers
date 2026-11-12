@@ -14,6 +14,7 @@ import {
   maxBodyChunks,
   maxCanonicalJsonBytes,
   maxConcurrentActionCachePublications,
+  maxConcurrentArtifactReads,
   maxConcurrentArtifactTransfers,
   maxConcurrentCacheRequests,
   maxConcurrentFindMissingRequests,
@@ -607,7 +608,7 @@ describe("remote-cache hardening", () => {
     await Promise.all(admitted)
   })
 
-  it("bounds large artifact transfers independently of total requests", async () => {
+  it("bounds artifact downloads independently of total requests", async () => {
     let entered = 0
     let release: (() => void) | undefined
     const gate = new Promise<void>((resolve) => {
@@ -626,13 +627,68 @@ describe("remote-cache hardening", () => {
     }
     const handler = makeHandler({ contentStore: blockingStore })
     const digest = "b".repeat(64)
-    const admitted = Array.from({ length: maxConcurrentArtifactTransfers }, () => handler(request(`/cas/${digest}`)))
-    await vi.waitFor(() => expect(entered).toBe(maxConcurrentArtifactTransfers))
+    const admitted = Array.from({ length: maxConcurrentArtifactReads }, () => handler(request(`/cas/${digest}`)))
+    await vi.waitFor(() => expect(entered).toBe(maxConcurrentArtifactReads))
 
     const overflow = await handler(request(`/cas/${digest}`))
     expect(overflow.status).toBe(429)
+    expect(await overflow.json()).toEqual({ error: "too many simultaneous artifact downloads" })
     release?.()
     await Promise.all(admitted)
+  })
+
+  it("admits many more streamed downloads than buffered uploads", async () => {
+    // A restore fetches hundreds of artifacts; an upload buffers 16 MiB.
+    expect(maxConcurrentArtifactReads).toBeGreaterThanOrEqual(8 * maxConcurrentArtifactTransfers)
+    let entered = 0
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const contentStore = new MemoryContentStore()
+    const blockingStore: ContentStore = {
+      get: (digest) => contentStore.get(digest),
+      has: (digest) => contentStore.has(digest),
+      put: async (digest, bytes) => {
+        entered += 1
+        await gate
+        return contentStore.put(digest, bytes)
+      },
+      presentDigests: (digests) => contentStore.presentDigests(digests)
+    }
+    const handler = makeHandler({ contentStore: blockingStore })
+    const stored = textEncoder.encode("downloaded while uploads wait")
+    const storedDigest = digestOf("downloaded while uploads wait")
+    await contentStore.put(storedDigest, new Uint8Array(stored))
+    const upload = (n: number) => {
+      const bytes = textEncoder.encode(`upload ${n}`)
+      return handler(
+        request(`/cas/${digestOf(`upload ${n}`)}`, {
+          method: "PUT",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" },
+          body: bytes
+        })
+      )
+    }
+    const uploads = Array.from({ length: maxConcurrentArtifactTransfers }, (_, n) => upload(n))
+    await vi.waitFor(() => expect(entered).toBe(maxConcurrentArtifactTransfers))
+    const refused = await upload(maxConcurrentArtifactTransfers)
+    expect(refused.status).toBe(429)
+    expect(await refused.json()).toEqual({ error: "too many simultaneous artifact transfers" })
+    // Uploads holding every upload slot leave downloads admitted.
+    const downloads = await Promise.all(
+      Array.from({ length: maxConcurrentArtifactReads }, () => handler(request(`/cas/${storedDigest}`)))
+    )
+    expect(downloads.map((response) => response.status)).toEqual(
+      Array.from({ length: maxConcurrentArtifactReads }, () => 200)
+    )
+    expect((await handler(request(`/cas/${storedDigest}`))).status).toBe(429)
+    for (const response of downloads) expect(new Uint8Array(await response.arrayBuffer())).toEqual(stored)
+    expect((await handler(request(`/cas/${storedDigest}`))).status).toBe(200)
+    release?.()
+    expect((await Promise.all(uploads)).map((response) => response.status)).toEqual(
+      Array.from({ length: maxConcurrentArtifactTransfers }, () => 201)
+    )
   })
 
   it("bounds memory-heavy action-cache publications independently of reads", async () => {
@@ -1287,10 +1343,10 @@ describe("remote-cache hardening", () => {
     const handler = makeHandler({ contentStore })
 
     const held = await Promise.all(
-      Array.from({ length: maxConcurrentArtifactTransfers }, () => handler(request(`/cas/${digest}`)))
+      Array.from({ length: maxConcurrentArtifactReads }, () => handler(request(`/cas/${digest}`)))
     )
     expect(held.map((response) => response.status)).toEqual(
-      Array.from({ length: maxConcurrentArtifactTransfers }, () => 200)
+      Array.from({ length: maxConcurrentArtifactReads }, () => 200)
     )
 
     // Every slot is still held: the bodies have not been consumed, so the
@@ -1626,9 +1682,11 @@ describe("remote-cache hardening", () => {
     }
     const handler = makeHandler({ contentStore: stalled })
     const held = await Promise.all(
-      Array.from({ length: maxConcurrentArtifactTransfers }, () => handler(request(`/cas/${digest}`)))
+      Array.from({ length: maxConcurrentArtifactReads }, () => handler(request(`/cas/${digest}`)))
     )
-    expect(held.map((response) => response.status)).toEqual([200, 200])
+    expect(held.map((response) => response.status)).toEqual(
+      Array.from({ length: maxConcurrentArtifactReads }, () => 200)
+    )
     expect((await handler(request(`/cas/${digest}`))).status).toBe(429)
 
     // The cancelled transfer's source read settles after the cancel and

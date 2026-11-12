@@ -169,8 +169,8 @@ describe("remote output failure boundaries", () => {
     expect(f.warnings).toEqual([])
   }, 30000)
   it("settles at a service that admits two transfers and restores without a miss", async () => {
-    // The hosted Worker admits two artifact transfers per isolate and answers
-    // the rest with 429, as this transport does.
+    // The self-hosted service admits two artifact transfers and answers the
+    // rest with 429, as this transport does.
     const f = await fixture()
     await Fs.mkdir(Path.join(f.a, "out"))
     for (let i = 0; i < 160; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), "artifact-" + i)

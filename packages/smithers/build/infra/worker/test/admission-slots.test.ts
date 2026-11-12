@@ -7,7 +7,7 @@ import {
   createHandler,
   type DeleteFence,
   maxConcurrentActionCachePublications,
-  maxConcurrentArtifactTransfers,
+  maxConcurrentArtifactReads,
   maxConcurrentCacheRequests
 } from "../protocol.ts"
 
@@ -106,7 +106,7 @@ describe("admission slots survive a failed hand-off to the response body", () =>
 
       // More failures than either ceiling admits: a leak of one slot per
       // failure would answer 429 well before the last one.
-      const attempts = maxConcurrentCacheRequests + maxConcurrentArtifactTransfers + 1
+      const attempts = maxConcurrentCacheRequests + maxConcurrentArtifactReads + 1
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         const response = await handler(request(`/cas/${digest}`))
         expect(response.status).toBe(503)
@@ -340,30 +340,29 @@ describe("bounded dependency work", () => {
       expect(signals[0]?.aborted).toBe(true)
 
       vi.useFakeTimers()
-      let settled = false
-      const timedOut = handler(request(`/cas/${digest}`)).then((response) => {
-        settled = true
-        return response
-      })
-      // Authentication uses native crypto, so wait for the dependency to start
-      // before advancing its clock.
-      await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+      // The aborted read still holds one download permit; time out enough
+      // reads to hold every other one.
+      const timedOut = Array.from({ length: maxConcurrentArtifactReads - 1 }, () => handler(request(`/cas/${digest}`)))
+      // Authentication uses native crypto, so wait for every dependency to
+      // start before advancing its clock.
+      await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(maxConcurrentArtifactReads))
       await vi.advanceTimersByTimeAsync(30_001)
-      expect(settled).toBe(true)
-      expect((await timedOut).status).toBe(503)
-      expect(signals[1]?.aborted).toBe(true)
+      expect((await Promise.all(timedOut)).map((response) => response.status)).toEqual(
+        Array.from({ length: maxConcurrentArtifactReads - 1 }, () => 503)
+      )
+      expect(signals.every((signal) => signal?.aborted === true)).toBe(true)
       expect((await handler(request(`/cas/${digest}`))).status).toBe(503)
-      expect(get).toHaveBeenCalledTimes(2)
+      expect(get).toHaveBeenCalledTimes(maxConcurrentArtifactReads)
       expect((await handler(request(`/ac/${keyDigest}`))).status).toBe(404)
 
       const cancelled = vi.fn()
       releases[0]?.({ body: new ReadableStream({ cancel: cancelled }) })
-      releases[1]?.(null)
+      for (const release of releases.slice(1)) release(null)
       await vi.advanceTimersByTimeAsync(0)
       expect(cancelled).toHaveBeenCalledTimes(1)
       const retry = handler(request(`/cas/${digest}`))
-      await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3))
-      releases[2]?.({ body: "artifact" })
+      await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(maxConcurrentArtifactReads + 1))
+      releases[maxConcurrentArtifactReads]?.({ body: "artifact" })
       const response = await retry
       expect(response.status).toBe(200)
       expect(await response.text()).toBe("artifact")
