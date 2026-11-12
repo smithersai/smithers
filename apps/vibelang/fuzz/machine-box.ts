@@ -8,7 +8,8 @@ import { join } from "node:path"
 import type { Readable } from "node:stream"
 
 export class BoxFailure extends Data.TaggedError("BoxFailure")<{ readonly operation: string }> {}
-export type BoxFault = "start" | "stuck" | "setup" | "snapshot" | "destroy" | "exec" | "running"
+/** `dies`: the container stops while a command runs (its process still finishes). */
+export type BoxFault = "start" | "stuck" | "setup" | "snapshot" | "destroy" | "exec" | "running" | "dies"
 
 const WORKSPACE = "/workspace"
 const CALLS = "/var/lib/vibelang/calls"
@@ -51,7 +52,10 @@ export function makeBox() {
         Effect.sync(() => spawn(argv[0]!, script, { cwd: (options.cwd ?? WORKSPACE).replace(WORKSPACE, workspace), env: { PATH: process.env.PATH, ...options.env, HOME: workspace }, stdio: [options.stdin === "pipe" ? "pipe" : "ignore", "pipe", "pipe"] })),
         (spawned) => Effect.sync(() => spawned.exitCode === null && spawned.kill("SIGKILL")),
       )
-      const exited = new Promise<number>((resolve) => child.once("close", (code) => resolve(code ?? 137)))
+      const exited = new Promise<number>((resolve) => child.once("close", (code) => {
+        if (faults.has("dies")) state.running = false
+        resolve(code ?? 137)
+      }))
       return {
         stdin: child.stdin === null ? undefined : Sink.forEach((chunk: Uint8Array) => Effect.promise(() => new Promise<void>((resolve) => child.stdin!.write(chunk, () => resolve())))).pipe(Sink.mapEffect(() => Effect.sync(() => void child.stdin!.end()))),
         stdout: read(child.stdout!), stderr: read(child.stderr!), exitCode: Effect.promise(() => exited),

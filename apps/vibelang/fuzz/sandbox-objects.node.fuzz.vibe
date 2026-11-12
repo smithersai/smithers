@@ -55,7 +55,26 @@ it.live("sandbox/machine-object", () => run("sandbox/machine-object", MachineInp
     { kind: "stop" as const, generation: 0, current: true, next: false, operation: 0, command: 0, duration: 0, fault: clean },
     { kind: "start" as const, generation: 0, current: false, next: true, operation: 0, command: 0, duration: 0, fault: clean },
   ] : []
-  for (const step of [...lifecycle, ...input.steps]) {
+  // Every box fault once per execution, at each kind it can break: a start, a leased command, a stop.
+  const faultWalk = FAULTS.flatMap((_, at) => [
+    { kind: "start" as const, generation: 0, current: false, next: true, operation: at, command: 0, duration: 0, fault: { faulty: true, fault: at } },
+    { kind: "lease" as const, generation: 0, current: true, next: false, operation: at, command: 0, duration: 0, fault: clean },
+    { kind: "command" as const, generation: 0, current: true, next: false, operation: at, command: 0, duration: 0, fault: { faulty: true, fault: at } },
+    { kind: "stop" as const, generation: 0, current: true, next: false, operation: at, command: 0, duration: 0, fault: { faulty: true, fault: at } },
+  ])
+  // A container that stops while an admitted command runs: the command is not current, and it never runs again.
+  {
+    generation += 1
+    const started = try machine.apply("start", generation, "op-dies", "")
+    try machine.apply("lease", generation, "op-dies", "60000")
+    local.faults.add("dies")
+    const ran = local.state.executed.length
+    const lost = try machine.apply("command", generation, "op-dies", "echo hi")
+    local.faults.clear()
+    const again = try machine.apply("command", generation, "op-dies", "echo hi")
+    if (started.ok && (lost.ok || local.state.executed.length !== ran + 1 || again.ok)) return false
+  }
+  for (const step of [...lifecycle, ...faultWalk, ...input.steps]) {
     faulted(local.faults, step.fault)
     const target = step.next ? generation + 1 : step.current ? generation : step.generation
     const executedBefore = local.state.executed.length

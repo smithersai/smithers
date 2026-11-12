@@ -1367,3 +1367,9 @@ now starts each execution by writing them: a charged reply that still holds its 
 and reservation 0, the day's charge and the reply's receipt unchanged), and a hold that is not a count makes the
 next admission a defect. Mutants caught: the release written as a full settlement (it rewrites the receipt; the
 totals alone did not show it); a negative hold admitted.
+
+`worker/machineObject.vibe` 64, 85 and 109 waited on box faults the draw rarely paired with the right step.
+`sandbox/machine-object` now walks every box fault each execution at a start, a leased command and a stop, then a
+container that stops while an admitted command runs (a new `dies` fault in `fuzz/machine-box.ts`; `FAULTS` is
+unchanged, so saved values keep their meaning): that command is `not-current` and never runs again. Mutant caught:
+the box's running state left out of the command's last check.
