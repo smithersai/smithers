@@ -38,12 +38,12 @@ describe("the export setting", () => {
       seen.push(`${request.method} ${request.url} ${request.headers["authorization"] === "Bearer token-for-tests"}`)
       return Effect.die("stop here")
     })
-    const github = try exporterOf("github:codeplanesmithers/smithers-vibelang-e2e", token, recording, REF_NAMES, "http://github.test")
+    const github = try exporterOf("github:codeplanesmithers/smithers-vibelang-e2e", token, recording, REF_NAMES, "https://github.test")
     const before = seen.length
     try Effect.exit(github.repository.readBlob("e".repeat(40)))
     try Effect.try(() => {
       expect(before).toBe(0)
-      expect(seen).toEqual(["GET http://github.test/repos/codeplanesmithers/smithers-vibelang-e2e/git/blobs/" + "e".repeat(40) + " true"])
+      expect(seen).toEqual(["GET https://github.test/repos/codeplanesmithers/smithers-vibelang-e2e/git/blobs/" + "e".repeat(40) + " true"])
     })
   })
 
@@ -83,12 +83,12 @@ describe("the export setting", () => {
       seen.push(`${request.method} ${request.url}`)
       return Effect.die("stop here")
     })
-    const exporter = try exporterOf("github:smithersai/vibelang", token, recording, REF_NAMES, "http://github.test")
+    const exporter = try exporterOf("github:smithersai/vibelang", token, recording, REF_NAMES, "https://github.test")
     try Effect.exit(exporter.repository.updateRefs({ operation: "test", updates: [
       { ref: REF_NAMES.mythical, before: null, after: tip },
       { ref: REF_NAMES.notes, before: null, after: tip },
       { ref: REF_NAMES.manifest, before: null, after: tip },
     ] }))
-    try Effect.try(() => expect(seen).toEqual(["POST http://github.test/graphql"]))
+    try Effect.try(() => expect(seen).toEqual(["POST https://github.test/graphql"]))
   })
 })
