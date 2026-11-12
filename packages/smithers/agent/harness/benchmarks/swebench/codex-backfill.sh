@@ -341,14 +341,28 @@ run_one() {
     if [ "$PIN" = "$ID" ]; then KEEP_IMAGE=1; fi
   done
 
+  # A runner whose patch capture failed keeps the workspace it paid for and
+  # names it in this marker, so the operator can capture again without paying
+  # for another attempt. Nothing here deletes a workspace the marker names, and
+  # a retry would purge it, so the instance is refused until the operator has
+  # recovered the edits and removed the marker.
+  CAPTURE_FAILED="$LOG_PREFIX.capture-failed"
+  if [ -f "$CAPTURE_FAILED" ]; then
+    log "$ID" "REFUSED: an earlier attempt's patch capture failed and its paid edits are kept at $WORK; recover them as $CAPTURE_FAILED describes, then delete that marker to run $ID again"
+    cleanup_one
+    trap - EXIT INT TERM
+    return 1
+  fi
+
   # The image and the testbed, gone — on the way out of a verdict and out of a
   # failure alike. A failed instance re-runs from the top and re-pulls what it
   # needs, so keeping its image buys nothing and costs 2-3 GB of the gate's
-  # headroom. The diagnostic goes to stderr: this function's stdout is the image
-  # state the ledger records.
+  # headroom. The workspace goes too, unless a failed capture retained it. The
+  # diagnostic goes to stderr: this function's stdout is the image state the
+  # ledger records.
   discard_image() {
     if [ -n "${CONTAINER:-}" ]; then docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; fi
-    if [ -n "${WORK:-}" ]; then rm -rf -- "$WORK"; fi
+    if [ -n "${WORK:-}" ] && [ ! -f "$CAPTURE_FAILED" ]; then rm -rf -- "$WORK"; fi
     if [ "$KEEP_IMAGE" = "1" ]; then printf 'kept'; return 0; fi
     if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then printf 'absent'; return 0; fi
     docker rmi -f "$IMAGE" >/dev/null 2>&1 || log "$ID" "could not delete $IMAGE" >&2
@@ -447,6 +461,9 @@ run_one() {
   # The patch is captured after the agent, so its existence is what says the
   # workspace was built and the attempt really happened. An exit status is not:
   # a timeout exits 124 with a perfectly good patch.
+  if [ -f "$CAPTURE_FAILED" ]; then
+    fail_one "the run's patch capture failed (exit $RUN_STATUS); its paid edits are kept at $WORK, see $CAPTURE_FAILED" || return 1
+  fi
   if [ ! -f "$PATCH" ]; then
     fail_one "the run captured no patch (exit $RUN_STATUS)" || return 1
   fi

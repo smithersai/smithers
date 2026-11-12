@@ -1965,6 +1965,13 @@ both are retried from the top, and the retry purges the dead attempt's artifacts
 already has a report under the run id, so a retry that kept one would file the
 dead attempt's verdict against a patch it never saw.
 
+A failed patch capture is the exception. The runner keeps the paid workspace
+and writes `logs-codex/<id>-<index>.capture-failed`, so the backfill records a
+`failed` row, keeps that workspace, and refuses every later attempt at the
+instance while the marker exists: a retry would purge the edits it names.
+Recover the patch from the retained checkout, then delete the marker to let the
+backfill run the instance again.
+
 Each attempt carries the run index `r90c`: `r90` is the full benchmark's flows
 lane and `r90c` is the codex lane over the same instances, so the two sit side by
 side in the shared codex roots under one readable rule.  `lib/run-paths.sh`

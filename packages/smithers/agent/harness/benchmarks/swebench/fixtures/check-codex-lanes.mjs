@@ -462,3 +462,75 @@ for (const harness of ["codex", "flows"]) {
     })
   }
 }
+
+// The backfill over a runner whose capture failed: the runner double does what
+// `run-instance-codex.sh` does on that path (edits in the workspace, the marker,
+// no patch, the capture's status), and the backfill must keep the paid edits
+// both on the way out of that attempt and on the next pass.
+test("codex backfill keeps a workspace whose capture failed, and refuses to purge it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "swebench-backfill-capture-"))
+  try {
+    const fbDirectory = join(dir, "fullbench")
+    const artifacts = join(dir, "artifacts")
+    for (const path of [fbDirectory, artifacts, join(dir, "bin")]) mkdirSync(path, { recursive: true })
+    jsonl(join(fbDirectory, "manifest.jsonl"), [
+      { kind: "instance", id: "a__a-1", state: "graded", at: 1, verdict: "resolved" }
+    ])
+    writeFileSync(join(dir, "bin/docker"), "#!/bin/bash\nprintf '%s\\n' \"$*\" >> \"$FIXTURE_DIR/docker.log\"\n", {
+      mode: 0o755
+    })
+    writeFileSync(
+      join(dir, "runner"),
+      `#!/bin/bash
+set -eu
+eval "$(${JSON.stringify(join(root, "lib/run-paths.sh"))} codex "$1" "$4")"
+echo run >> "$FIXTURE_DIR/runs.log"
+mkdir -p "$WORK" "$LOG_ROOT"
+printf 'paid edits\\n' > "$WORK/edited.txt"
+printf 'captureExitStatus=3\\nworkspace=%s\\npatch=%s\\n' "$WORK" "$PATCH" > "$LOG_PREFIX.capture-failed"
+exit 3
+`,
+      { mode: 0o755 }
+    )
+    const run = () =>
+      spawnSync(join(root, "codex-backfill.sh"), ["--one", "a__a-1"], {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${join(dir, "bin")}:${process.env.PATH}`,
+          FB_DIR: fbDirectory,
+          SWB_ARTIFACT_ROOT: artifacts,
+          SWB_EVAL_LOG_ROOT: join(dir, "eval-logs"),
+          SWB_SAMPLE: join(dir, "no-sample.json"),
+          SWB_FULLBENCH_PINNED: "none",
+          SWB_DISK_FREE_MIB: "100000",
+          SWB_CODEX_AUTH_CMD: "true",
+          SWB_CODEX_RUN_CMD: join(dir, "runner"),
+          FIXTURE_DIR: dir
+        }
+      })
+    const work = join(artifacts, "work-codex/a__a-1-r90c")
+    const marker = join(artifacts, "logs-codex/a__a-1-r90c.capture-failed")
+
+    const first = run()
+    assert.equal(first.status, 1, first.stdout + first.stderr)
+    assert.match(first.stdout, /FAILED: the run's patch capture failed \(exit 3\)/u)
+    assert.equal(readFileSync(join(work, "edited.txt"), "utf8"), "paid edits\n", "the paid edits survive the failure")
+    assert.ok(readFileSync(marker, "utf8").includes(work), "and the marker still names a real workspace")
+    const rows = readFileSync(join(fbDirectory, "codex-manifest.jsonl"), "utf8").trim().split("\n").map((line) =>
+      JSON.parse(line)
+    )
+    assert.equal(rows.at(-1).state, "failed")
+    assert.match(rows.at(-1).reason, /patch capture failed/u)
+
+    const retry = run()
+    assert.equal(retry.status, 1, retry.stdout + retry.stderr)
+    assert.match(retry.stdout, /REFUSED: an earlier attempt's patch capture failed/u)
+    assert.equal(readFileSync(join(work, "edited.txt"), "utf8"), "paid edits\n", "the retry did not purge them")
+    assert.ok(existsSync(marker))
+    assert.equal(readFileSync(join(dir, "runs.log"), "utf8"), "run\n", "and paid for no second attempt")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
