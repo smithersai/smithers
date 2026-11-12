@@ -1,13 +1,15 @@
-// Stop through the real HTTP handler, session store, role receipts, engine and agent job store.
+// Stop and steer through the real HTTP handler, session store, role receipts, engine and agent job store.
 import { AgentRunner } from "@smthrs/agent"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Database, Journal } from "@smthrs/flows"
+import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Context, Deferred, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { stopRoute } from "../src/features/runs/contract.ts"
+import { steersRoute, stopRoute } from "../src/features/runs/contract.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
 import * as RepoRuns from "./RepoRuns.ts"
@@ -131,6 +133,84 @@ test.each([
         expect(job).toEqual(authority === "unchanged"
           ? { cancel_requested: true, status: "cancelled" } : { cancel_requested: false, status: "queued" })
       }
+    })
+  })))
+})
+
+test.each(["session", "role", "unchanged"] as const)("a steer waiting for its writer rechecks %s before admission", async (authority) => {
+  const auth = await signInHarness(runtime, { config: configured })
+  auth.github.person = { id: accountIdOf("maya"), login: "maya" }
+  const signed = await auth.signInAs()
+  expect(signed.response.status).toBe(303)
+  const [person] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<{ id: string }>`SELECT id::text FROM people WHERE github_login = 'maya'`))
+  const database = (await runtime.runPromise(TestDatabase.Scratch)).database
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  github.roles.set("maya", "write")
+  const roles = await runtime.runPromise(RepoRoles.make(database, {
+    repository: repositoryOf("acme/home"), app: Option.some(app({ privateKey: await appKey() })), http: github.http,
+  }))
+  let entered!: () => void
+  let release!: () => void
+  const waiting = new Promise<void>((resolve) => { entered = resolve })
+  const proceed = new Promise<void>((resolve) => { release = resolve })
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    const working = yield* Deferred.make<void>()
+    const registration = Layer.merge(Session.toLayer(() => Deferred.succeed(working, undefined).pipe(Effect.andThen(Effect.never))),
+      Interpreter.layer(Working)).pipe(Layer.provideMerge(Action.layerImplementations))
+    const { context, engine } = yield* build(registration)
+    const server = yield* TestDatabase.serverUrl
+    const applied = yield* Stack.apply({ opId: uuid(), repoId: REPOSITORY.id,
+      actor: { id: person!.id, login: "maya" }, via: "person",
+      op: { kind: "commit", title: "Steer authority", prompt: "Inspect", acceptance: [] },
+    }, { runs: true }).pipe(Effect.provide(database))
+    if (applied.kind !== "applied") return yield* Effect.die("attempt not admitted")
+    const runId = `todo:${applied.receipt.starts[0]!.attemptId}`
+    yield* Effect.forkScoped((Context.get(context, FlowRuntime.FlowRuntime)).execute(Working, {
+      executionId: runId, payload: {},
+    }).pipe(Effect.provide(context)))
+    yield* Deferred.await(working)
+    // The engine writer is busy until the test releases it: the route has passed its first checks by then.
+    const writer = Layer.unwrap(Effect.promise(async () => {
+      entered()
+      await proceed
+      return ExecutionHost.database(server.toString(), engine.schema)
+    }))
+    const api = yield* RemoteRuns.make(database, {
+      database: ExecutionHost.readDatabase(server.toString(), engine.schema), writer, schema: engine.schema,
+      flows: [Working], repositoryRun: () => Effect.succeed(Option.none()), stop: () => Effect.die("unused"),
+      transcript: () => Effect.die("unused"),
+    }, roles)
+    const handler = HttpEffect.toWebHandler(api.fetch.pipe(Effect.provide(auth.sessions), Effect.provide(FetchHttpClient.layer)))
+    yield* Effect.promise(async () => {
+      const pending = handler(new Request(`http://chat.test${steersRoute(runId)}`, {
+        method: "POST",
+        headers: { cookie: cookie(signed.cookies), "x-smithers-device-person": person!.id, "content-type": "application/json" },
+        body: JSON.stringify({ id: uuid(), body: "Keep going" }),
+      }))
+      await Promise.race([waiting, pending.then((response) => { throw new Error(`steer ended before gate: ${response.status}`) })])
+      try {
+        await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => authority === "session"
+          ? sql`UPDATE sessions SET revoked_at = clock_timestamp(), revoked_reason = 'sign_out' WHERE person_id = ${person!.id}`
+          : authority === "role"
+          ? sql`UPDATE github_repo_roles SET role = 'guest' WHERE repo_id = ${REPOSITORY.id} AND person_id = ${person!.id}`
+          : Effect.void))
+      } finally { release() }
+      const response = await pending
+      expect(response.status, `a delayed steer must revalidate ${authority}`).toBe(
+        authority === "unchanged" ? 202 : authority === "session" ? 401 : 403,
+      )
+      if (authority !== "unchanged") {
+        expect(await response.json()).toEqual({ code: authority === "session" ? "authentication" : "forbidden" })
+      }
+      const queued = await runtime.runPromise(Effect.flatMap(NotificationQueue.NotificationQueue, (queue) => queue.pending(runId)).pipe(
+        Effect.provide(NotificationQueue.layer.pipe(
+          Layer.provide(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject" })),
+          Layer.provide(Layer.provideMerge(Database.DurableWriter.layer(), ExecutionHost.database(server.toString(), engine.schema))),
+        )),
+        Effect.scoped,
+      ))
+      expect(queued.map((notification) => notification._tag)).toEqual(authority === "unchanged" ? ["human-steer"] : [])
     })
   })))
 })

@@ -218,6 +218,9 @@ const clippedValues = (inspection: EngineStore.RunInspection.Inspection): number
 
 class NotWorking extends Data.TaggedError("NotWorking")<{}> {}
 
+/** A steer whose sender signed out or lost the repository while it waited for the engine writer. */
+class Revoked extends Data.TaggedError("Revoked")<{ readonly refusal: "authentication" | "forbidden" }> {}
+
 const noStore = { "cache-control": "no-store" }
 
 /**
@@ -477,14 +480,20 @@ export const make = <E, R, EE, ER, RS>(
           fields.steerId = id
           const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
           if (Option.isNone(attempt)) return refused(404, "not_found")
-          if (!(yield* memberOn(actor.value.value, attempt.value.repoId))) return refused(403, "forbidden")
-          if (!canAsk(actor.value.value)) return refused(403, "forbidden")
+          const who = actor.value.value
+          const authority = yield* resolvedMember(who, attempt.value.repoId)
+          if (Option.isNone(authority)) return refused(403, "forbidden")
+          if (!canAsk(who)) return refused(403, "forbidden")
           fields.runId = runId
-          const admitted = yield* Effect.gen(function* () {
+          // The app's transaction stays open from before the engine writer is taken until the steer commits. Once the
+          // writer is held, the session and role receipt are locked and rechecked, as Stop does, through admission.
+          const admitted = yield* Effect.flatMap(SqlClient.SqlClient, (app) => app.withTransaction(Effect.gen(function* () {
             const journal = yield* Journal.Journal.Journal
             const notifications = yield* NotificationQueue.NotificationQueue
             const reads = yield* EngineStore.RunInspection.RunInspection
             return yield* journal.transact(Effect.gen(function* () {
+              const refusal = yield* stillAdmitted(who, authority.value).pipe(Effect.provideService(SqlClient.SqlClient, app))
+              if (refusal !== undefined) return yield* new Revoked({ refusal })
               // Admission resolves durable identity first. A duplicate keeps its
               // receipt even after completion; a new steer is rolled back unless
               // the run is steerable under this same engine writer transaction.
@@ -509,9 +518,12 @@ export const make = <E, R, EE, ER, RS>(
               }
               return receipt
             }))
-          }).pipe(Effect.provide(queue), Effect.scoped, Effect.result)
+          }).pipe(Effect.provide(queue), Effect.scoped))).pipe(Effect.provide(database), Effect.result)
           if (admitted._tag === "Failure") {
             const failure = admitted.failure
+            if (Predicate.isTagged(failure, "Revoked")) {
+              return refused(failure.refusal === "authentication" ? 401 : 403, failure.refusal)
+            }
             if (Predicate.isTagged(failure, "NotWorking")) return refused(409, "not_working")
             if (Predicate.isTagged(failure, "/notifications/NotificationError") && failure.code === "notification_id_reused") {
               return refused(409, "conflict")
