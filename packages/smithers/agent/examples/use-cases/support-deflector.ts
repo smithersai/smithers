@@ -169,14 +169,15 @@ export const SupportDeflector = Flow.make("examples/SupportDeflector", {
   },
   success: Outcome,
   error: AgentAction.AgentFailure,
-  body: ({ ticket = {} }) => {
+  body: Node.capture({}, ({ ticket = {} }) => {
     const { body = "", customer = "unknown", id: ticketId = "unknown", subject = "" } = ticket
+    const run = { body, subject, ticketId }
     return Node.bindPlanned(
       Classify.call({ subject, body, customer }),
-      (classification: Planned.Planned<Classification>) =>
+      Node.capture(run, (classification: Planned.Planned<Classification>) =>
         Node.bindPlanned(
           Retrieve.call({ category: classification.category, reasoning: classification.reasoning, subject }),
-          (knowledge: Planned.Planned<Knowledge>) =>
+          Node.capture(run, (knowledge: Planned.Planned<Knowledge>) =>
             Node.bindPlanned(
               DraftReply.call({
                 category: classification.category,
@@ -185,10 +186,10 @@ export const SupportDeflector = Flow.make("examples/SupportDeflector", {
                 subject,
                 body
               }),
-              (draft: Planned.Planned<Draft>) =>
+              Node.capture(run, (draft: Planned.Planned<Draft>) =>
                 Node.branch(Node.succeed({ classification, knowledge, draft }), {
-                  if: shouldEscalate,
-                  then: () =>
+                  if: Node.capture({}, shouldEscalate),
+                  then: Node.capture(run, () =>
                     Node.andThen(
                       Escalate.call({
                         ticketId,
@@ -201,27 +202,27 @@ export const SupportDeflector = Flow.make("examples/SupportDeflector", {
                       }),
                       Node.map(
                         Node.succeed({ category: classification.category, riskLevel: classification.riskLevel }),
-                        ({ category, riskLevel }): typeof Outcome.Type => ({
+                        Node.capture(run, ({ category, riskLevel }): typeof Outcome.Type => ({
                           status: "escalated",
                           ticketId,
                           summary: `Ticket escalated to human agent — ${riskLevel} risk, ${category} category`
-                        })
+                        }))
                       )
-                    ),
-                  else: () =>
+                    )),
+                  else: Node.capture(run, () =>
                     Node.map(
                       Node.succeed({ tone: draft.tone, articles: knowledge.articles }),
-                      ({ articles, tone }): typeof Outcome.Type => ({
+                      Node.capture(run, ({ articles, tone }): typeof Outcome.Type => ({
                         status: "deflected",
                         ticketId,
                         summary: `Auto-replied with ${tone} response covering ${articles.length} knowledge articles`
-                      })
-                    )
-                })
-            )
-        )
+                      }))
+                    ))
+                }))
+            ))
+        ))
     )
-  }
+  })
 })
 
 /** Every step the flow calls. */

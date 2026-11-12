@@ -170,8 +170,8 @@ const settle = (
   persist: Planned.Planned<typeof Persist.Type>
 ): Node.Node<typeof Output.Type, AgentAction.AgentFailure, Requirements> =>
   Node.branch(Node.succeed({ response, persist }), {
-    if: (done) => done.response.needsEscalation,
-    then: () =>
+    if: Node.capture({}, (done) => done.response.needsEscalation),
+    then: Node.capture({}, () =>
       Node.bindPlanned(
         Escalate.call({
           customerId: recall.customerId,
@@ -181,9 +181,13 @@ const settle = (
           sentiment: recall.sentiment,
           recentTickets: recall.recentTickets
         }),
-        (escalation: Planned.Planned<typeof Escalation.Type>) => Node.succeed({ recall, response, persist, escalation })
-      ),
-    else: () => Node.succeed({ recall, response, persist, escalation: null })
+        Node.capture(
+          {},
+          (escalation: Planned.Planned<typeof Escalation.Type>) =>
+            Node.succeed({ recall, response, persist, escalation })
+        )
+      )),
+    else: Node.capture({}, () => Node.succeed({ recall, response, persist, escalation: null }))
   })
 
 /** The flow: recall, respond, persist, and escalate when the reply asks for it. */
@@ -195,10 +199,10 @@ export const MemorySupportAgent = Flow.make("examples/MemorySupportAgent", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ conversationHistory = [], customerId = "unknown", latestMessage = "" }) =>
+  body: Node.capture({}, ({ conversationHistory = [], customerId = "unknown", latestMessage = "" }) =>
     Node.bindPlanned(
       RecallMemory.call({ customerId, conversationHistory }),
-      (recall: Planned.Planned<typeof Recall.Type>) =>
+      Node.capture({ latestMessage }, (recall: Planned.Planned<typeof Recall.Type>) =>
         Node.bindPlanned(
           Respond.call({
             customerId: recall.customerId,
@@ -207,7 +211,7 @@ export const MemorySupportAgent = Flow.make("examples/MemorySupportAgent", {
             sentiment: recall.sentiment,
             latestMessage
           }),
-          (response: Planned.Planned<typeof Response.Type>) =>
+          Node.capture({ latestMessage }, (response: Planned.Planned<typeof Response.Type>) =>
             Node.bindPlanned(
               PersistMemory.call({
                 customerId: recall.customerId,
@@ -215,10 +219,10 @@ export const MemorySupportAgent = Flow.make("examples/MemorySupportAgent", {
                 reply: response.reply,
                 latestMessage
               }),
-              (persist: Planned.Planned<typeof Persist.Type>) => settle(recall, response, persist)
-            )
-        )
-    )
+              Node.capture({}, (persist: Planned.Planned<typeof Persist.Type>) => settle(recall, response, persist))
+            ))
+        ))
+    ))
 })
 
 /** Every step the flow calls. */

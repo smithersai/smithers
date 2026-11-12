@@ -156,16 +156,16 @@ export const SloBreachExplainer = Flow.make("examples/SloBreachExplainer", {
   payload: Alarm,
   success: IncidentNote,
   error: AgentAction.AgentFailure,
-  body: (alarm) =>
+  body: Node.capture({}, (alarm) =>
     Node.bindPlanned(
       Node.all({
         traces: FetchTraces.call({ service: alarm.service, window: alarm.window, sloName: alarm.sloName }),
         logs: FetchLogs.call({ service: alarm.service, window: alarm.window, observed: alarm.observed }),
         changes: FetchChanges.call({ service: alarm.service, window: alarm.window })
       }),
-      (context: Planned.Planned<Context>) =>
-        Synthesize.call({ alarm, traces: context.traces, logs: context.logs, changes: context.changes })
-    )
+      Node.capture({ alarm }, (context: Planned.Planned<Context>) =>
+        Synthesize.call({ alarm, traces: context.traces, logs: context.logs, changes: context.changes }))
+    ))
 })
 
 /** Every step the flow calls. */

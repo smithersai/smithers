@@ -137,34 +137,40 @@ export const BlogAnalyzerPipeline = Flow.make("examples/BlogAnalyzerPipeline", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ categories = [], format = "auto-detect", limit = 50, outputFormat = "markdown", source }) =>
-    Node.bindPlanned(
-      IngestPosts.call({ source, format, limit }),
-      (ingest: Planned.Planned<typeof Ingest.Type>) =>
-        Node.bindPlanned(
-          Node.map(Node.succeed({ ingest }), sample),
-          (sampled: Planned.Planned<ReturnType<typeof sample>>) =>
-            Node.bindPlanned(
-              AnalyzePosts.call({
-                totalIngested: sampled.totalIngested,
-                articles: sampled.articles,
-                remainingCount: sampled.remainingCount,
-                categories
-              }),
-              (analysis: Planned.Planned<typeof Analysis.Type>) =>
-                Node.bindPlanned(
-                  Node.map(Node.succeed({ analysis }), ({ analysis }) => analysis.insights.slice(0, sampleSize)),
-                  (insights: Planned.Planned<ReadonlyArray<typeof Insight.Type>>) =>
-                    ReportInsights.call({
-                      totalAnalyzed: analysis.totalAnalyzed,
-                      insights,
-                      topCategories: analysis.topCategories,
-                      outputFormat
-                    })
-                )
-            )
-        )
-    )
+  body: Node.capture(
+    {},
+    ({ categories = [], format = "auto-detect", limit = 50, outputFormat = "markdown", source }) =>
+      Node.bindPlanned(
+        IngestPosts.call({ source, format, limit }),
+        Node.capture({ categories, outputFormat }, (ingest: Planned.Planned<typeof Ingest.Type>) =>
+          Node.bindPlanned(
+            Node.map(Node.succeed({ ingest }), Node.capture({}, sample)),
+            Node.capture({ categories, outputFormat }, (sampled: Planned.Planned<ReturnType<typeof sample>>) =>
+              Node.bindPlanned(
+                AnalyzePosts.call({
+                  totalIngested: sampled.totalIngested,
+                  articles: sampled.articles,
+                  remainingCount: sampled.remainingCount,
+                  categories
+                }),
+                Node.capture({ outputFormat }, (analysis: Planned.Planned<typeof Analysis.Type>) =>
+                  Node.bindPlanned(
+                    Node.map(
+                      Node.succeed({ analysis }),
+                      Node.capture({}, ({ analysis }) => analysis.insights.slice(0, sampleSize))
+                    ),
+                    Node.capture({ outputFormat }, (insights: Planned.Planned<ReadonlyArray<typeof Insight.Type>>) =>
+                      ReportInsights.call({
+                        totalAnalyzed: analysis.totalAnalyzed,
+                        insights,
+                        topCategories: analysis.topCategories,
+                        outputFormat
+                      }))
+                  ))
+              ))
+          ))
+      )
+  )
 })
 
 /** Every step the flow calls. */

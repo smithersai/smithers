@@ -159,19 +159,19 @@ export const RunShards = Flow.make("examples/TestSharderJudge/RunShards", {
   },
   success: Schema.Array(RunResult),
   error: AgentAction.AgentFailure,
-  body: ({ concurrency, runner, tests, timeoutMs }) => {
+  body: Node.capture({}, ({ concurrency, runner, tests, timeoutMs }) => {
     if (tests.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a runner that failed or timed out on its own settles as null instead of failing its siblings.
     const members = Object.fromEntries(tests.map((test, index) => [
       `${index}`,
       Node.catch(RunTest.call({ testFile: test.file, reason: test.reason, runner, timeoutMs }), {
         error: Recoverable,
-        onFailure: () => Node.succeed(null)
+        onFailure: Node.capture({}, () => Node.succeed(null))
       })
     ]))
     const joined = Bounded.all(members, { concurrency })
-    return Node.map(joined, (ran) => Object.values(ran).filter(Schema.is(RunResult)))
-  }
+    return Node.map(joined, Node.capture({}, (ran) => Object.values(ran).filter(Schema.is(RunResult))))
+  })
 })
 
 /** The flow: analyze, select, run the shards, adjudicate. */
@@ -186,7 +186,7 @@ export const TestSharderJudge = Flow.make("examples/TestSharderJudge", {
   },
   success: Adjudication,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     baseBranch = "main",
     diff,
     maxConcurrency = 4,
@@ -196,7 +196,7 @@ export const TestSharderJudge = Flow.make("examples/TestSharderJudge", {
   }) =>
     Node.bindPlanned(
       AnalyzeChange.call({ diff, baseBranch }),
-      (analysis: Planned.Planned<typeof Analysis.Type>) =>
+      Node.capture({ maxConcurrency, runner, testGlob, timeoutMs }, (analysis: Planned.Planned<typeof Analysis.Type>) =>
         Node.bindPlanned(
           SelectTests.call({
             changedFiles: analysis.changedFiles,
@@ -204,19 +204,19 @@ export const TestSharderJudge = Flow.make("examples/TestSharderJudge", {
             riskLevel: analysis.riskLevel,
             testGlob
           }),
-          (selection: Planned.Planned<typeof Selection.Type>) =>
+          Node.capture({ maxConcurrency, runner, timeoutMs }, (selection: Planned.Planned<typeof Selection.Type>) =>
             Node.bindPlanned(
               RunShards.child({ tests: selection.priorityTests, runner, timeoutMs, concurrency: maxConcurrency }),
-              (results: Planned.Planned<ReadonlyArray<RunResult>>) =>
+              Node.capture({}, (results: Planned.Planned<ReadonlyArray<RunResult>>) =>
                 Adjudicate.call({
                   results,
                   selectedTests: selection.priorityTests,
                   deferredTests: selection.deferredTests,
                   riskLevel: analysis.riskLevel
-                })
-            )
-        )
-    )
+                }))
+            ))
+        ))
+    ))
 })
 
 /** Every step the flow calls, and the child flow it starts. */

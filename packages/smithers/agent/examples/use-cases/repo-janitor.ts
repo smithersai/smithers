@@ -153,27 +153,27 @@ export const RepoJanitor = Flow.make("examples/RepoJanitor", {
   payload: { repoRoot: Schema.optional(Schema.String), maxItemsPerCategory: Schema.optional(Schema.Number) },
   success: PrSummary,
   error: AgentAction.AgentFailure,
-  body: ({ maxItemsPerCategory = 20, repoRoot = "." }) =>
+  body: Node.capture({}, ({ maxItemsPerCategory = 20, repoRoot = "." }) =>
     Node.bindPlanned(
       Scan.call({ repoRoot, categories: [...categories], maxItemsPerCategory }),
-      (scan: Planned.Planned<typeof ScanResult.Type>) => {
+      Node.capture({}, (scan: Planned.Planned<typeof ScanResult.Type>) => {
         // A fixer whose category the scan did not report settles as null.
         const members = Object.fromEntries(categories.map((category) => [
           ids[category],
           Node.branch(Node.succeed(scan), {
-            if: (found) => found.category === category && found.count > 0,
-            then: () => Fix.call({ category, items: scan.items }),
-            else: () => Node.succeed(null)
+            if: Node.capture({ category }, (found) => found.category === category && found.count > 0),
+            then: Node.capture({ category }, () => Fix.call({ category, items: scan.items })),
+            else: Node.capture({}, () => Node.succeed(null))
           })
         ]))
         const fixed = Bounded.all(members, { concurrency: 3 })
-        return Node.branch(Node.map(fixed, tally), {
-          if: (totals) => totals.totalFixes > 0,
-          then: (totals) => Summarize.call(totals),
-          else: () => Node.succeed(empty)
+        return Node.branch(Node.map(fixed, Node.capture({}, tally)), {
+          if: Node.capture({}, (totals) => totals.totalFixes > 0),
+          then: Node.capture({}, (totals) => Summarize.call(totals)),
+          else: Node.capture({}, () => Node.succeed(empty))
         })
-      }
-    )
+      })
+    ))
 })
 
 /** Every step the flow calls. */

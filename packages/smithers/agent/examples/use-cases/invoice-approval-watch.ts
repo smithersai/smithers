@@ -170,7 +170,7 @@ export const InvoiceApprovalWatch = Flow.make("examples/InvoiceApprovalWatch", {
   },
   success: ApprovalQueue,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     approvalThreshold = 5000,
     approverMapping = null,
     duplicateWindow = "30d",
@@ -179,24 +179,26 @@ export const InvoiceApprovalWatch = Flow.make("examples/InvoiceApprovalWatch", {
     inboxFilter = null,
     source = "email",
     vendorAllowlist = null
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = { approvalThreshold, vendorAllowlist, duplicateWindow, approverMapping, escalationRules }
+    return Node.bindPlanned(
       Extract.call({ source, files, inboxFilter }),
-      (data: Planned.Planned<typeof InvoiceData.Type>) =>
+      Node.capture(run, (data: Planned.Planned<typeof InvoiceData.Type>) =>
         Node.bindPlanned(
           Node.map(
             Validate.call({ invoices: data.invoices, approvalThreshold, vendorAllowlist, duplicateWindow }),
-            flagged
+            Node.capture({}, flagged)
           ),
-          (checked: Planned.Planned<ReturnType<typeof flagged>>) =>
+          Node.capture(run, (checked: Planned.Planned<ReturnType<typeof flagged>>) =>
             Route.call({
               flaggedInvoices: checked.flaggedInvoices,
               totalProcessed: checked.totalProcessed,
               approverMapping,
               escalationRules
-            })
-        )
+            }))
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

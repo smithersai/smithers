@@ -87,18 +87,18 @@ export const LogDigest = Flow.make("examples/LogDigest", {
   },
   success: Digest,
   error: AgentAction.AgentFailure,
-  body: ({ commands = [], logPaths = [], tailLines = 100 }) =>
+  body: Node.capture({}, ({ commands = [], logPaths = [], tailLines = 100 }) =>
     Node.bindPlanned(
       Collect.call({ logPaths, commands, tailLines }),
-      (logs: Planned.Planned<typeof CollectedLogs.Type>) =>
+      Node.capture({}, (logs: Planned.Planned<typeof CollectedLogs.Type>) =>
         Summarize.call({
           source: logs.source,
           lineCount: logs.lineCount,
           errorLines: logs.errorLines,
           warningLines: logs.warningLines,
           rawTail: logs.rawTail
-        })
-    )
+        }))
+    ))
 })
 
 /** Every step the flow calls. */

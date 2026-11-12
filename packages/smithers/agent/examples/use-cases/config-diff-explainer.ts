@@ -122,19 +122,20 @@ export const ConfigDiffExplainer = Flow.make("examples/ConfigDiffExplainer", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     autoApproveThreshold = "low",
     context = "",
     filePatterns = ["values.yaml", "*.tf", "*.env", "*.yaml"],
     gitRef = "HEAD~1..HEAD",
     paths = []
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = { autoApproveThreshold, context }
+    return Node.bindPlanned(
       FetchDiffs.call({ paths, gitRef, filePatterns }),
-      (fetched) =>
+      Node.capture(run, (fetched) =>
         Node.bindPlanned(
           Explain.call({ files: fetched.files, totalChanges: fetched.totalChanges, context }),
-          (explanation) =>
+          Node.capture(run, (explanation) =>
             Node.bindPlanned(
               Approve.call({
                 riskLevel: explanation.riskLevel,
@@ -143,10 +144,11 @@ export const ConfigDiffExplainer = Flow.make("examples/ConfigDiffExplainer", {
                 summary: explanation.summary,
                 autoApproveThreshold
               }),
-              (review) => Node.succeed({ explanation, review })
-            )
-        )
+              Node.capture({}, (review) => Node.succeed({ explanation, review }))
+            ))
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

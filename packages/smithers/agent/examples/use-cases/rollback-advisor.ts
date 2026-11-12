@@ -108,7 +108,10 @@ const mitigate = ({ mitigation }: { readonly mitigation: string }): Outcome => (
 export const Rollback = Flow.make("examples/RollbackAdvisor/Rollback", {
   payload: { deployment: Schema.String, reason: Schema.String },
   success: Outcome,
-  body: ({ deployment, reason }) => Node.map(Node.succeed({ deployment, reason }), approved)
+  body: Node.capture(
+    {},
+    ({ deployment, reason }) => Node.map(Node.succeed({ deployment, reason }), Node.capture({}, approved))
+  )
 })
 
 /** Asks a person, then calls the rollback only after approval. */
@@ -143,16 +146,20 @@ export const RollbackAdvisor = Flow.make("examples/RollbackAdvisor", {
   payload: { deployment: Schema.optional(Schema.String), symptoms: Schema.optional(Schema.Array(Schema.String)) },
   success: Outcome,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed, RollbackDenied]),
-  body: ({ deployment = "unknown", symptoms = [] }) =>
+  body: Node.capture({}, ({ deployment = "unknown", symptoms = [] }) =>
     Node.bindPlanned(
       GatherEvidence.call({ deployment, symptoms: symptoms.join(", ") }),
-      (evidence: Planned.Planned<typeof Evidence.Type>) =>
+      Node.capture({ deployment }, (evidence: Planned.Planned<typeof Evidence.Type>) =>
         Node.branch(Advise.call({ deployment, evidence: evidence.rawFindings }), {
-          if: (advice) => advice.shouldRollback,
-          then: (advice) => gatedRollback(deployment, advice.reason),
-          else: (advice) => Node.map(Node.succeed({ mitigation: advice.mitigation }), mitigate)
-        })
-    )
+          if: Node.capture({}, (advice) =>
+            advice.shouldRollback),
+          then: Node.capture({ deployment }, (advice) => gatedRollback(deployment, advice.reason)),
+          else: Node.capture(
+            {},
+            (advice) => Node.map(Node.succeed({ mitigation: advice.mitigation }), Node.capture({}, mitigate))
+          )
+        }))
+    ))
 })
 
 /** Every model step the flow calls. The interpreter supplies human tasks. */

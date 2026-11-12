@@ -1735,6 +1735,41 @@ describe("HumanTask.decode", () => {
     expect(build(Decision)).not.toEqual(build(Schema.String))
   })
 
+  const asking = (decode: <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>) => Node.Node<unknown, E, R>) =>
+    Flow.make("humanTask/decode-stable", {
+      payload: {},
+      success: Schema.Json,
+      error: HumanTask.HumanTaskFailed,
+      body: Node.capture(
+        {},
+        () =>
+          HumanTask.action.call({ name: "release", kind: "json", prompt: "Decide." }).pipe(decode) as Node.Node<
+            typeof Schema.Json.Type,
+            HumanTask.HumanTaskFailed
+          >
+      )
+    })
+  const stable = (decode: Parameters<typeof asking>[0]) =>
+    Graph.build(asking(decode), {}, { callbackIdentity: "stable" })
+  const mapper = (decode: Parameters<typeof asking>[0]) => Graph.nodes(stable(decode)).map((node) => node.draft)
+
+  it("admits the decoder under stable callback identity, keyed by the schema's document", () => {
+    expect(stable(HumanTask.decode(Decision)).diagnostics).toEqual([])
+    const sameShape = Schema.Struct({ decision: Schema.Literals(["ship", "hold"]) })
+    expect(mapper(HumanTask.decode(sameShape))).toEqual(mapper(HumanTask.decode(Decision)))
+    expect(mapper(HumanTask.decode(Schema.String))).not.toEqual(mapper(HumanTask.decode(Decision)))
+  })
+
+  it("refuses a schema with no JSON Schema form unless the author versions the decoder", () => {
+    const Unidentified = Schema.TupleWithRest(Schema.Tuple([]), [Schema.String, Schema.Number, Schema.String])
+    expect(() => HumanTask.decode(Unidentified)).toThrow(HumanTask.DecodeIdentityError)
+    expect(() => HumanTask.decode(Unidentified)).toThrow(/Pass HumanTask.decode\(schema, \{ version \}\)/)
+    const v1 = HumanTask.decode(Unidentified, { version: "answer/v1" })
+    expect(stable(v1).diagnostics).toEqual([])
+    expect(mapper(v1)).toEqual(mapper(HumanTask.decode(Unidentified, { version: "answer/v1" })))
+    expect(mapper(v1)).not.toEqual(mapper(HumanTask.decode(Unidentified, { version: "answer/v2" })))
+  })
+
   effect("gives the answer the caller's own type", () =>
     drive(
       Effect.gen(function*() {

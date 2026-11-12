@@ -165,39 +165,42 @@ export const DynamicSchemaEnricher = Flow.make("examples/DynamicSchemaEnricher",
   },
   success: TypedOutput,
   error: AgentAction.AgentFailure,
-  body: ({ document = "", schemaRegistry = "default", source = "unknown", tenant = "default" }) =>
-    Node.bindPlanned(
-      ParseContext.call({ rawInput: document, source, tenant }),
-      (context: Planned.Planned<typeof Context.Type>) =>
-        Node.bindPlanned(
-          Resolve.call({
-            documentFamily: context.documentFamily,
-            tenant: context.tenant,
-            source: context.source,
-            detectedLanguage: context.detectedLanguage,
-            schemaRegistry
-          }),
-          (resolved: Planned.Planned<typeof ResolvedSchema.Type>) =>
-            Node.bindPlanned(
-              Extract.call({
-                rawContent: context.rawContent,
-                schemaId: resolved.schemaId,
-                fields: resolved.fields,
-                tenantOverrides: resolved.tenantOverrides
-              }),
-              (extraction: Planned.Planned<typeof Extraction.Type>) =>
-                Output.call({
+  body: Node.capture(
+    {},
+    ({ document = "", schemaRegistry = "default", source = "unknown", tenant = "default" }) =>
+      Node.bindPlanned(
+        ParseContext.call({ rawInput: document, source, tenant }),
+        Node.capture({ schemaRegistry }, (context: Planned.Planned<typeof Context.Type>) =>
+          Node.bindPlanned(
+            Resolve.call({
+              documentFamily: context.documentFamily,
+              tenant: context.tenant,
+              source: context.source,
+              detectedLanguage: context.detectedLanguage,
+              schemaRegistry
+            }),
+            Node.capture({}, (resolved: Planned.Planned<typeof ResolvedSchema.Type>) =>
+              Node.bindPlanned(
+                Extract.call({
+                  rawContent: context.rawContent,
                   schemaId: resolved.schemaId,
-                  tenant: context.tenant,
-                  documentFamily: context.documentFamily,
-                  extractedFields: extraction.extractedFields,
-                  missingRequired: extraction.missingRequired,
-                  warnings: extraction.warnings,
-                  confidence: extraction.extractionConfidence
-                })
-            )
-        )
-    )
+                  fields: resolved.fields,
+                  tenantOverrides: resolved.tenantOverrides
+                }),
+                Node.capture({}, (extraction: Planned.Planned<typeof Extraction.Type>) =>
+                  Output.call({
+                    schemaId: resolved.schemaId,
+                    tenant: context.tenant,
+                    documentFamily: context.documentFamily,
+                    extractedFields: extraction.extractedFields,
+                    missingRequired: extraction.missingRequired,
+                    warnings: extraction.warnings,
+                    confidence: extraction.extractionConfidence
+                  }))
+              ))
+          ))
+      )
+  )
 })
 
 /** Every step the flow calls. */

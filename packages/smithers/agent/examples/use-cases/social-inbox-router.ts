@@ -205,33 +205,38 @@ export const SocialInboxRouter = Flow.make("examples/SocialInboxRouter", {
   },
   success: RouterOutput,
   error: AgentAction.AgentFailure,
-  body: ({ messages = [], platform = "linkedin", productContext = {}, relationshipContext = {}, senderContext = {} }) =>
-    Node.bindPlanned(
-      NormalizeMessage.call({ messages, platform }),
-      (item: Planned.Planned<typeof InboxItem.Type>) =>
-        Node.bindPlanned(
-          Classify.call({ items: [item] }),
-          (classified: Planned.Planned<Classification>) =>
-            Node.bindPlanned(
-              Node.map(Node.succeed(classified), sort),
-              (sorted: Planned.Planned<ReturnType<typeof sort>>) =>
-                Node.bindPlanned(
-                  Node.all({
-                    lead: LeadActions.call({ leads: sorted.leads, senderContext }),
-                    support: SupportActions.call({ supportItems: sorted.supportItems, productContext }),
-                    followUp: FollowUpActions.call({ followUps: sorted.followUps, relationshipContext })
-                  }),
-                  (actions) =>
-                    Summarize.call({
-                      classified,
-                      leadActions: actions.lead,
-                      supportActions: actions.support,
-                      followUpActions: actions.followUp
-                    })
-                )
-            )
-        )
-    )
+  body: Node.capture(
+    {},
+    ({ messages = [], platform = "linkedin", productContext = {}, relationshipContext = {}, senderContext = {} }) => {
+      const run = { productContext, relationshipContext, senderContext }
+      return Node.bindPlanned(
+        NormalizeMessage.call({ messages, platform }),
+        Node.capture(run, (item: Planned.Planned<typeof InboxItem.Type>) =>
+          Node.bindPlanned(
+            Classify.call({ items: [item] }),
+            Node.capture(run, (classified: Planned.Planned<Classification>) =>
+              Node.bindPlanned(
+                Node.map(Node.succeed(classified), Node.capture({}, sort)),
+                Node.capture(run, (sorted: Planned.Planned<ReturnType<typeof sort>>) =>
+                  Node.bindPlanned(
+                    Node.all({
+                      lead: LeadActions.call({ leads: sorted.leads, senderContext }),
+                      support: SupportActions.call({ supportItems: sorted.supportItems, productContext }),
+                      followUp: FollowUpActions.call({ followUps: sorted.followUps, relationshipContext })
+                    }),
+                    Node.capture({}, (actions) =>
+                      Summarize.call({
+                        classified,
+                        leadActions: actions.lead,
+                        supportActions: actions.support,
+                        followUpActions: actions.followUp
+                      }))
+                  ))
+              ))
+          ))
+      )
+    }
+  )
 })
 
 /** Every step the flow calls. */

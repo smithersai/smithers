@@ -206,25 +206,34 @@ const round = (
   anomalies: ReadonlyArray<Planned.Planned<Anomaly>>
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> => {
   const { baselines, endpoint, maxIterations, payload } = probe
+  // Captures refuse `undefined`, so an absent payload is left out rather than captured.
+  const at = { endpoint, baselines, maxIterations, iteration, ...(payload === undefined ? {} : { payload }) }
   return Node.bindPlanned(
     Invoke.call({ endpoint, payload, baselines, iteration }),
-    (invocation: Planned.Planned<Invocation>) =>
+    Node.capture(at, (invocation: Planned.Planned<Invocation>) =>
       Node.bindPlanned(
         Collect.call({
           invocations: [...invocations, invocation],
           previousAggregates: previous === undefined ? null : previous.aggregates
         }),
-        (collection: Planned.Planned<Collection>) =>
+        Node.capture(at, (collection: Planned.Planned<Collection>) =>
           Node.branch(Detect.call({ aggregates: collection.aggregates, baselines, previousAnomalies: anomalies }), {
-            if: (anomaly) => !anomaly.driftDetected,
-            then: (anomaly) =>
-              Node.map(Node.succeed({ iterations: iteration, anomalies: [...anomalies, anomaly] }), report),
-            else: (anomaly) =>
+            if: Node.capture({}, (anomaly) =>
+              !anomaly.driftDetected),
+            then: Node.capture({ iteration }, (anomaly) =>
+              Node.map(
+                Node.succeed({ iterations: iteration, anomalies: [...anomalies, anomaly] }),
+                Node.capture({}, report)
+              )),
+            else: Node.capture(at, (anomaly) =>
               iteration >= maxIterations
-                ? Node.map(Node.succeed({ iterations: iteration, anomalies: [...anomalies, anomaly] }), report)
-                : round(probe, iteration + 1, [...invocations, invocation], collection, [...anomalies, anomaly])
-          })
-      )
+                ? Node.map(
+                  Node.succeed({ iterations: iteration, anomalies: [...anomalies, anomaly] }),
+                  Node.capture({}, report)
+                )
+                : round(probe, iteration + 1, [...invocations, invocation], collection, [...anomalies, anomaly]))
+          }))
+      ))
   )
 }
 
@@ -238,8 +247,11 @@ export const CollectorProbe = Flow.make("examples/CollectorProbe", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ baselines = { quality: 0.92, costUsd: 0.02, latencyMs: 500 }, endpoint, maxIterations = 5, payload }) =>
-    round({ endpoint, payload, baselines, maxIterations }, 1, [], undefined, [])
+  body: Node.capture(
+    {},
+    ({ baselines = { quality: 0.92, costUsd: 0.02, latencyMs: 500 }, endpoint, maxIterations = 5, payload }) =>
+      round({ endpoint, payload, baselines, maxIterations }, 1, [], undefined, [])
+  )
 })
 
 /** Every step the flow calls. */

@@ -172,18 +172,18 @@ const route = (
 export const Switchboard = Flow.make("examples/ClassifierSwitchboard/Switchboard", {
   payload: { items: Schema.Array(IntakeItem), classifications: Schema.Array(Classified) },
   success: Schema.Array(HandlerResult),
-  body: ({ classifications, items }) => {
+  body: Node.capture({}, ({ classifications, items }) => {
     if (classifications.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a failed handler settles as null instead of failing its siblings.
     const members = Object.fromEntries(classifications.map((classified) => [
       `handle-${classified.domain}-${classified.itemId}`,
       Node.catch(route(classified, items.find((item) => item.id === classified.itemId)), {
-        onFailure: () => Node.succeed(null)
+        onFailure: Node.capture({}, () => Node.succeed(null))
       })
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })
-    return Node.map(joined, (handled) => Object.values(handled).filter(Schema.is(HandlerResult)))
-  }
+    return Node.map(joined, Node.capture({}, (handled) => Object.values(handled).filter(Schema.is(HandlerResult))))
+  })
 })
 
 /** Summarizes the switchboard's results. 0.x ran it on the classifier's agent, so it keeps those instructions. */
@@ -211,24 +211,27 @@ export const ClassifierSwitchboard = Flow.make("examples/ClassifierSwitchboard",
   },
   success: Summary,
   error: AgentAction.AgentFailure,
-  body: ({ fetchCmd, items, source = "mixed" }) =>
+  body: Node.capture({}, ({ fetchCmd, items, source = "mixed" }) =>
     Node.bindPlanned(
       IntakeStep.call({ source, items: items ?? null, fetchCmd: fetchCmd ?? null }),
-      (intake: Planned.Planned<typeof Intake.Type>) =>
+      Node.capture({}, (intake: Planned.Planned<typeof Intake.Type>) =>
         Node.bindPlanned(
           Classify.call({ items: intake.items, domains: [...domains] }),
-          (classification: Planned.Planned<typeof Classification.Type>) =>
+          Node.capture({}, (classification: Planned.Planned<typeof Classification.Type>) =>
             Node.bindPlanned(
               Switchboard.child({ items: intake.items, classifications: classification.classifications }),
-              (results: Planned.Planned<ReadonlyArray<HandlerResult>>) =>
+              Node.capture({}, (results: Planned.Planned<ReadonlyArray<HandlerResult>>) =>
                 Node.bindPlanned(
-                  Node.map(Node.succeed(intake.items), (normalized) => normalized.length),
-                  (totalItems) =>
-                    Summarize.call({ classifications: classification.classifications, results, totalItems })
-                )
-            )
-        )
-    )
+                  Node.map(Node.succeed(intake.items), Node.capture({}, (normalized) => normalized.length)),
+                  Node.capture(
+                    {},
+                    (totalItems) =>
+                      Summarize.call({ classifications: classification.classifications, results, totalItems })
+                  )
+                ))
+            ))
+        ))
+    ))
 })
 
 /** Every step the flow calls, and the child flow it starts. */

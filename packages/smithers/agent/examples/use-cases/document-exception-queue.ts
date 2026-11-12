@@ -231,12 +231,15 @@ const perFile = <A, Tag extends Tags>(
   files: ReadonlyArray<string>,
   concurrency: number,
   step: (file: string) => Node.Node<A, AgentAction.AgentFailure, Action.Requirement<Tag>>,
+  kept: string,
   is: (value: unknown) => value is A
 ): Node.Node<ReadonlyArray<A>, AgentAction.AgentFailure, Action.Requirement<Tag>> => {
   if (files.length === 0) return Node.succeed([])
   const keyed = files.map((file, index) => [`${index}-${nodeId(file)}`, step(file)] as const)
   const joined = Bounded.all(Object.fromEntries(keyed), { concurrency })
-  return Node.map(joined, Node.capture({}, (byFile) => keyed.map(([key]) => byFile[key]).filter(is)))
+  // `is` is a function, so its schema's name stands in for it in the captures.
+  const keys = keyed.map(([key]) => key)
+  return Node.map(joined, Node.capture({ keys, kept }, (byFile) => keys.map((key) => byFile[key]).filter(is)))
 }
 
 /** Every extraction so far, plus the re-extraction. Pure, so it is a `Node.map`, not a step. */
@@ -269,7 +272,7 @@ const review = (
     then: Node.capture({ settings }, () =>
       Node.branch(
         Node.bindPlanned(
-          Node.map(Node.succeed(reconciliation), reviewPrompt),
+          Node.map(Node.succeed(reconciliation), Node.capture({}, reviewPrompt)),
           Node.capture({}, (prompt: Planned.Planned<string>) =>
             HumanTask.action.call({ name: reviewTask, kind: "json", prompt, schema: approvalSchema }).pipe(
               HumanTask.decode(Approval)
@@ -311,7 +314,7 @@ const reconcile = (
           TargetedReextract.call({ reconciliation, extractions, files: settings.files }),
           Node.capture({ settings, round }, (again: Planned.Planned<Extraction>) =>
             Node.bindPlanned(
-              Node.map(Node.succeed({ prior: extractions, again }), append),
+              Node.map(Node.succeed({ prior: extractions, again }), Node.capture({}, append)),
               Node.capture({ settings, round }, (all: Planned.Planned<ReadonlyArray<Extraction>>) =>
                 round >= settings.maxReconcileIterations
                   ? review(settings, all, reconciliation)
@@ -353,6 +356,7 @@ export const DocumentExceptionQueue = Flow.make("examples/DocumentExceptionQueue
         files,
         maxConcurrency,
         Node.capture({ packetContext }, (file) => Classify.call({ file, packetContext })),
+        "DocumentClass",
         Schema.is(DocumentClass)
       ),
       Node.capture(
@@ -363,6 +367,7 @@ export const DocumentExceptionQueue = Flow.make("examples/DocumentExceptionQueue
               files,
               maxConcurrency,
               Node.capture({ targetFields }, (file) => Extract.call({ file, documentClasses, targetFields })),
+              "Extraction",
               Schema.is(Extraction)
             ),
             Node.capture(

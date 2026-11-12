@@ -87,11 +87,15 @@ export const GitHubIssues = Flow.make("examples/GitHubIssues", {
   payload: { repo: Schema.optional(Schema.String) },
   success: Board,
   error: AgentAction.AgentFailure,
-  body: ({ repo = "smithersai/smithers" }) =>
+  body: Node.capture({}, ({ repo = "smithersai/smithers" }) =>
     Node.bindPlanned(
       TriageIssues.call({ repo }),
-      (triaged: Planned.Planned<typeof Triaged.Type>) => Node.map(Node.succeed({ repo, issues: triaged.issues }), board)
-    )
+      Node.capture(
+        { repo },
+        (triaged: Planned.Planned<typeof Triaged.Type>) =>
+          Node.map(Node.succeed({ repo, issues: triaged.issues }), Node.capture({}, board))
+      )
+    ))
 })
 
 /** Every step the flow calls. */

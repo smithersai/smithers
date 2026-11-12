@@ -173,7 +173,7 @@ export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
   },
   success: RoutingDecision,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     approvalThreshold = 10_000,
     escalationTeam = "finance-ops",
     knownDomains = [],
@@ -184,19 +184,29 @@ export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
     rawEmail,
     recentBankChanges = [],
     recentExceptions = []
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = {
+      approvalThreshold,
+      escalationTeam,
+      knownDomains,
+      knownVendors,
+      notifyChannels,
+      openPOs,
+      recentBankChanges,
+      recentExceptions
+    }
+    return Node.bindPlanned(
       Ingest.call({ rawEmail, mailbox }),
-      (email: Planned.Planned<typeof Email.Type>) =>
+      Node.capture(run, (email: Planned.Planned<typeof Email.Type>) =>
         Node.bindPlanned(
           Node.all({
             classification: Classify.call({ email, knownVendors, recentExceptions }),
             risk: DetectRisk.call({ email, knownDomains, recentBankChanges })
           }),
-          (checked) =>
+          Node.capture(run, (checked) =>
             Node.bindPlanned(
               ExtractInvoice.call({ email, category: checked.classification.category, openPOs }),
-              (invoice: Planned.Planned<typeof InvoiceExtract.Type>) =>
+              Node.capture(run, (invoice: Planned.Planned<typeof InvoiceExtract.Type>) =>
                 Route.call({
                   messageId: email.messageId,
                   classification: checked.classification,
@@ -205,10 +215,11 @@ export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
                   approvalThreshold,
                   escalationTeam,
                   notifyChannels
-                })
-            )
-        )
+                }))
+            ))
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

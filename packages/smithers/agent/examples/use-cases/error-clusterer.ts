@@ -189,16 +189,20 @@ export const ErrorClusterer = Flow.make("examples/ErrorClusterer", {
   },
   success: KbUpdate,
   error: AgentAction.AgentFailure,
-  body: ({ kbPath = "./error-kb", logPaths = [], since = "24h", sources = ["ci" as const], ticketPrefix = "ERR" }) =>
-    Node.bindPlanned(
-      Node.map(Ingest.call({ sources, logPaths, since }), cluster),
-      (clustered: Planned.Planned<Clusters>) =>
+  body: Node.capture({}, (
+    { kbPath = "./error-kb", logPaths = [], since = "24h", sources = ["ci" as const], ticketPrefix = "ERR" }
+  ) => {
+    const run = { kbPath, ticketPrefix }
+    return Node.bindPlanned(
+      Node.map(Ingest.call({ sources, logPaths, since }), Node.capture({}, cluster)),
+      Node.capture(run, (clustered: Planned.Planned<Clusters>) =>
         Node.bindPlanned(
           Explain.call({ clusters: clustered.clusters, totalClusters: clustered.totalClusters, kbPath }),
-          (explained: Planned.Planned<typeof Explanations.Type>) =>
-            Update.call({ explanations: explained.explanations, kbPath, ticketPrefix, clusters: clustered.clusters })
-        )
+          Node.capture(run, (explained: Planned.Planned<typeof Explanations.Type>) =>
+            Update.call({ explanations: explained.explanations, kbPath, ticketPrefix, clusters: clustered.clusters }))
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

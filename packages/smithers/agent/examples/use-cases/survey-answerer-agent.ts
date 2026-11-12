@@ -147,17 +147,17 @@ export const SurveyAnswererAgent = Flow.make("examples/SurveyAnswererAgent", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ questions = [], sources = [] }) =>
+  body: Node.capture({}, ({ questions = [], sources = [] }) =>
     Node.bindPlanned(
       GatherContext.call({ sources, questions }),
-      (context: Planned.Planned<typeof SourceContext.Type>) =>
+      Node.capture({ questions }, (context: Planned.Planned<typeof SourceContext.Type>) =>
         Node.bindPlanned(
           GenerateAnswers.call({
             questions,
             documentSummaries: context.documentSummaries,
             keyFacts: context.keyFacts
           }),
-          (answers: Planned.Planned<typeof SurveyAnswers.Type>) =>
+          Node.capture({}, (answers: Planned.Planned<typeof SurveyAnswers.Type>) =>
             Node.bindPlanned(
               Validate.call({
                 answers: answers.answers,
@@ -165,10 +165,13 @@ export const SurveyAnswererAgent = Flow.make("examples/SurveyAnswererAgent", {
                 keyFacts: context.keyFacts,
                 documentSummaries: context.documentSummaries
               }),
-              (validation: Planned.Planned<typeof Validation.Type>) => Node.succeed({ answers, validation })
-            )
-        )
-    )
+              Node.capture(
+                {},
+                (validation: Planned.Planned<typeof Validation.Type>) => Node.succeed({ answers, validation })
+              )
+            ))
+        ))
+    ))
 })
 
 /** Every step the flow calls. */

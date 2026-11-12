@@ -132,7 +132,7 @@ const question = ({ company, score }: { readonly company: string; readonly score
 /** Asks a person, and settles with their typed decision. */
 const approve = (lead: Planned.Planned<Lead>, score: Planned.Planned<Score>) =>
   Node.bindPlanned(
-    Node.map(Node.succeed({ company: lead.company, score }), question),
+    Node.map(Node.succeed({ company: lead.company, score }), Node.capture({}, question)),
     Node.capture({}, (prompt: Planned.Planned<string>) =>
       HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema }).pipe(
         HumanTask.decode(Approval)

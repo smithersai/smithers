@@ -136,7 +136,7 @@ export const Etl = Flow.make("examples/Etl", {
   },
   success: Loaded,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     destination,
     onDuplicate = "skip",
     pattern = "*",
@@ -144,13 +144,17 @@ export const Etl = Flow.make("examples/Etl", {
     sourceFormat = "auto-detect",
     targetFormat = "JSON",
     transformRules = "Normalize and clean the data"
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = { destination, onDuplicate, targetFormat, transformRules }
+    return Node.bindPlanned(
       Extract.call({ source, pattern, sourceFormat }),
-      (extracted: Planned.Planned<typeof Extracted.Type>) =>
+      Node.capture(run, (extracted: Planned.Planned<typeof Extracted.Type>) =>
         Node.bindPlanned(
-          Node.map(Node.succeed({ records: extracted.records, total: extracted.totalExtracted }), preview),
-          (shown) =>
+          Node.map(
+            Node.succeed({ records: extracted.records, total: extracted.totalExtracted }),
+            Node.capture({}, preview)
+          ),
+          Node.capture(run, (shown) =>
             Node.bindPlanned(
               Transform.call({
                 totalExtracted: extracted.totalExtracted,
@@ -159,24 +163,25 @@ export const Etl = Flow.make("examples/Etl", {
                 transformRules,
                 targetFormat
               }),
-              (transformed: Planned.Planned<typeof Transformed.Type>) =>
+              Node.capture(run, (transformed: Planned.Planned<typeof Transformed.Type>) =>
                 Node.bindPlanned(
                   Node.map(
                     Node.succeed({ records: transformed.records, total: transformed.totalTransformed }),
-                    preview
+                    Node.capture({}, preview)
                   ),
-                  (loading) =>
+                  Node.capture(run, (loading) =>
                     Load.call({
                       totalTransformed: transformed.totalTransformed,
                       destination,
                       records: loading.records,
                       remainingCount: loading.remainingCount,
                       onDuplicate
-                    })
-                )
-            )
-        )
+                    }))
+                ))
+            ))
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

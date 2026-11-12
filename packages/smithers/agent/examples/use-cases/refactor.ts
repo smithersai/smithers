@@ -143,7 +143,7 @@ export const RefactorTargets = Flow.make("examples/Refactor/RefactorTargets", {
   payload: { targets: Schema.Array(Target), refactoring: Schema.String, example: Schema.NullOr(Example) },
   success: Schema.Array(Change),
   error: AgentAction.AgentFailure,
-  body: ({ example, refactoring, targets }) => {
+  body: Node.capture({}, ({ example, refactoring, targets }) => {
     if (targets.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a refactor that failed on its own settles as null instead of failing its siblings.
     const members = Object.fromEntries(targets.map((target, index) => [
@@ -156,12 +156,12 @@ export const RefactorTargets = Flow.make("examples/Refactor/RefactorTargets", {
           refactoring,
           example
         }),
-        { error: Recoverable, onFailure: () => Node.succeed(null) }
+        { error: Recoverable, onFailure: Node.capture({}, () => Node.succeed(null)) }
       )
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })
-    return Node.map(joined, (changed) => Object.values(changed).filter(Schema.is(Change)))
-  }
+    return Node.map(joined, Node.capture({}, (changed) => Object.values(changed).filter(Schema.is(Change))))
+  })
 })
 
 /** Counts the changes. Pure, so it is a `Node.map`, not a step. */
@@ -197,7 +197,7 @@ export const Refactor = Flow.make("examples/Refactor", {
   },
   success: Summary,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     directory,
     example,
     lintCmd = "npx eslint .",
@@ -205,21 +205,33 @@ export const Refactor = Flow.make("examples/Refactor", {
     refactoring,
     testCmd = "npm test",
     typecheckCmd = "npx tsc --noEmit"
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = { directory, example: example ?? null, lintCmd, refactoring, testCmd, typecheckCmd }
+    return Node.bindPlanned(
       Analyze.call({ directory, pattern, refactoring, example: example ?? null }),
-      (analysis: Planned.Planned<typeof Analysis.Type>) =>
-        Node.branch(RefactorTargets.child({ targets: analysis.targets, refactoring, example: example ?? null }), {
-          if: (changes) => changes.length > 0,
-          then: (changes) =>
-            Node.bindPlanned(
-              Verify.call({ directory, typecheckCmd, testCmd, lintCmd }),
-              (verification) => Node.map(Node.succeed({ targets: analysis.targets, changes, verification }), summarize)
-            ),
-          else: (changes) =>
-            Node.map(Node.succeed({ targets: analysis.targets, changes, verification: null }), summarize)
-        })
+      Node.capture(
+        run,
+        (analysis: Planned.Planned<typeof Analysis.Type>) =>
+          Node.branch(RefactorTargets.child({ targets: analysis.targets, refactoring, example: example ?? null }), {
+            if: Node.capture({}, (changes) => changes.length > 0),
+            then: Node.capture(run, (changes) =>
+              Node.bindPlanned(
+                Verify.call({ directory, typecheckCmd, testCmd, lintCmd }),
+                Node.capture({}, (verification) =>
+                  Node.map(
+                    Node.succeed({ targets: analysis.targets, changes, verification }),
+                    Node.capture({}, summarize)
+                  ))
+              )),
+            else: Node.capture({}, (changes) =>
+              Node.map(
+                Node.succeed({ targets: analysis.targets, changes, verification: null }),
+                Node.capture({}, summarize)
+              ))
+          })
+      )
     )
+  })
 })
 
 /** Every step the flow calls, and the child flow it starts. */

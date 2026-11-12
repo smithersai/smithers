@@ -206,15 +206,18 @@ export const DraftAnswers = Flow.make("examples/RfpResponseRoom/DraftAnswers", {
   },
   success: Schema.Array(AnswerDraft),
   error: AgentAction.AgentFailure,
-  body: ({ answerPlan, approvedSources, maxDraftConcurrency, requirements }) => {
+  body: Node.capture({}, ({ answerPlan, approvedSources, maxDraftConcurrency, requirements }) => {
     if (requirements.length === 0) return Node.succeed([])
     const members = Object.fromEntries(requirements.map((requirement) => [
       requirement.id,
       DraftAnswer.call({ requirement, answerPlan, approvedSources })
     ]))
     const joined = Bounded.all(members, { concurrency: maxDraftConcurrency })
-    return Node.map(joined, (drafted) => requirements.map((requirement) => drafted[requirement.id]!))
-  }
+    return Node.map(
+      joined,
+      Node.capture({ requirements }, (drafted) => requirements.map((requirement) => drafted[requirement.id]!))
+    )
+  })
 })
 
 /**
@@ -267,27 +270,32 @@ const reviewAndPackage = (
     Node.capture({ confidenceThreshold, outputFormat }, (reviews: Planned.Planned<ReadonlyArray<Review>>) => {
       const pack = (approval: Planned.Planned<typeof Approval.Type> | null) =>
         PackageProposal.call({ rfp, drafts, reviews, approval, outputFormat })
-      return Node.branch(Node.map(Node.succeed({ drafts, reviews, confidenceThreshold }), exceptions), {
-        if: Node.capture({}, (gate) => gate.needsReview),
-        then: (gate) =>
-          Node.branch(
-            HumanTask.decode(Approval)(
-              HumanTask.action.call({ name: smeReview, kind: "json", prompt: gate.prompt, schema: approvalAnswer })
-            ),
-            {
-              if: Node.capture({}, (approval) => approval.approved),
-              then: (approval) => pack(approval),
-              // `Node.fail` types its error as the JSON projection of `toJSON`,
-              // which is `unknown`; the flow's error schema decodes it back.
-              else: () =>
-                Node.fail(new ProposalDenied({ message: "The SME denied the RFP response exceptions." })) as Node.Node<
-                  never,
-                  ProposalDenied
-                >
-            }
-          ),
-        else: () => pack(null)
-      })
+      return Node.branch(
+        Node.map(Node.succeed({ drafts, reviews, confidenceThreshold }), Node.capture({}, exceptions)),
+        {
+          if: Node.capture({}, (gate) => gate.needsReview),
+          then: Node.capture({ outputFormat }, (gate) =>
+            Node.branch(
+              HumanTask.decode(Approval)(
+                HumanTask.action.call({ name: smeReview, kind: "json", prompt: gate.prompt, schema: approvalAnswer })
+              ),
+              {
+                if: Node.capture({}, (approval) => approval.approved),
+                then: Node.capture({ outputFormat }, (approval) => pack(approval)),
+                // `Node.fail` types its error as the JSON projection of `toJSON`,
+                // which is `unknown`; the flow's error schema decodes it back.
+                else: Node.capture({}, () =>
+                  Node.fail(
+                    new ProposalDenied({ message: "The SME denied the RFP response exceptions." })
+                  ) as Node.Node<
+                    never,
+                    ProposalDenied
+                  >)
+              }
+            )),
+          else: Node.capture({ outputFormat }, () => pack(null))
+        }
+      )
     })
   )
 }
@@ -305,7 +313,7 @@ export const RfpResponseRoom = Flow.make("examples/RfpResponseRoom", {
   },
   success: ProposalPackage,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed, ProposalDenied]),
-  body: ({
+  body: Node.capture({}, ({
     approvedSources = "fixtures/rfp-response-room/approved-answers",
     confidenceThreshold = 0.8,
     customer = "Example customer",
@@ -340,7 +348,7 @@ export const RfpResponseRoom = Flow.make("examples/RfpResponseRoom", {
             )
           )
       )
-    )
+    ))
 })
 
 /** Every step the flow calls, the SME question included, and the child flow it starts. */

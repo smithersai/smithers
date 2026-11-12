@@ -117,17 +117,17 @@ export const HandleItems = Flow.make("examples/Triage/HandleItems", {
   payload: { items: Schema.Array(Item) },
   success: Schema.Array(HandlerResult),
   error: AgentAction.AgentFailure,
-  body: ({ items }) => {
+  body: Node.capture({}, ({ items }) => {
     const actionable = items.filter((item): item is Actionable => item.assignTo !== "ignore")
     if (actionable.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a handler that failed on its own settles as null instead of failing its siblings.
     const members = Object.fromEntries(actionable.map((item) => [
       item.id,
-      Node.catch(route(item), { error: Recoverable, onFailure: () => Node.succeed(null) })
+      Node.catch(route(item), { error: Recoverable, onFailure: Node.capture({}, () => Node.succeed(null)) })
     ]))
     const joined = Bounded.all(members, { concurrency: 5 })
-    return Node.map(joined, (handled) => Object.values(handled).filter(Schema.is(HandlerResult)))
-  }
+    return Node.map(joined, Node.capture({}, (handled) => Object.values(handled).filter(Schema.is(HandlerResult))))
+  })
 })
 
 /** Counts the outcomes. Pure, so it is a `Node.map`, not a step. */
@@ -156,16 +156,22 @@ export const Triage = Flow.make("examples/Triage", {
   },
   success: TriageReport,
   error: AgentAction.AgentFailure,
-  body: ({ fetchCmd = "gh issue list --json number,title,body,labels --limit 20", items, source = "GitHub issues" }) =>
-    Node.bindPlanned(
-      Classify.call({ source, items: items ?? null, fetchCmd }),
-      (classification: Planned.Planned<typeof Classification.Type>) =>
-        Node.bindPlanned(
-          HandleItems.child({ items: classification.items }),
-          (results: Planned.Planned<ReadonlyArray<HandlerResult>>) =>
-            Node.map(Node.succeed({ items: classification.items, results }), report)
-        )
-    )
+  body: Node.capture(
+    {},
+    ({ fetchCmd = "gh issue list --json number,title,body,labels --limit 20", items, source = "GitHub issues" }) =>
+      Node.bindPlanned(
+        Classify.call({ source, items: items ?? null, fetchCmd }),
+        Node.capture({}, (classification: Planned.Planned<typeof Classification.Type>) =>
+          Node.bindPlanned(
+            HandleItems.child({ items: classification.items }),
+            Node.capture(
+              {},
+              (results: Planned.Planned<ReadonlyArray<HandlerResult>>) =>
+                Node.map(Node.succeed({ items: classification.items, results }), Node.capture({}, report))
+            )
+          ))
+      )
+  )
 })
 
 /** Every step the flow calls, and the child flow it starts. */

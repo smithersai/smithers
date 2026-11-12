@@ -135,14 +135,18 @@ const rerun = (
   results: ReadonlyArray<Planned.Planned<RunResult>>
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> =>
   attempt > maxRuns
-    ? Node.branch(Node.map(Node.succeed(results), pack), {
-      if: (evidence) => evidence.divergent,
-      then: (evidence) => Analyze.call({ command, evidence }),
-      else: (evidence) => Node.map(Node.succeed(evidence), consistent)
+    ? Node.branch(Node.map(Node.succeed(results), Node.capture({}, pack)), {
+      if: Node.capture({}, (evidence) => evidence.divergent),
+      then: Node.capture({ command }, (evidence) => Analyze.call({ command, evidence })),
+      else: Node.capture({}, (evidence) => Node.map(Node.succeed(evidence), Node.capture({}, consistent)))
     })
     : Node.bindPlanned(
       RunTest.call({ command, attempt, maxRuns, previousOutcome }),
-      (result: Planned.Planned<RunResult>) => rerun(command, maxRuns, attempt + 1, result.outcome, [...results, result])
+      Node.capture(
+        { attempt, command, maxRuns },
+        (result: Planned.Planned<RunResult>) =>
+          rerun(command, maxRuns, attempt + 1, result.outcome, [...results, result])
+      )
     )
 
 /** The flow. `runs` is real at plan time, so it sets how many attempts the plan holds. */
@@ -150,7 +154,7 @@ export const FlakeHunter = Flow.make("examples/FlakeHunter", {
   payload: { command: Schema.String, runs: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))) },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ command, runs = 5 }) => rerun(command, runs, 1, "none", [])
+  body: Node.capture({}, ({ command, runs = 5 }) => rerun(command, runs, 1, "none", []))
 })
 
 /** Every step the flow calls. */

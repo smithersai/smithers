@@ -132,10 +132,11 @@ export const FailingTestAuthor = Flow.make("examples/FailingTestAuthor", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ issue = {}, testCmd = "npx vitest run", testDir = "tests" }) =>
-    Node.bindPlanned(
+  body: Node.capture({}, ({ issue = {}, testCmd = "npx vitest run", testDir = "tests" }) => {
+    const settings = { testCmd, testDir }
+    return Node.bindPlanned(
       AnalyzeIssue.call({ issue }),
-      (analysis: Planned.Planned<typeof Analysis.Type>) =>
+      Node.capture(settings, (analysis: Planned.Planned<typeof Analysis.Type>) =>
         Node.bindPlanned(
           AuthorTest.call({
             component: analysis.component,
@@ -144,14 +145,18 @@ export const FailingTestAuthor = Flow.make("examples/FailingTestAuthor", {
             actualBehavior: analysis.actualBehavior,
             testDir
           }),
-          (test: Planned.Planned<typeof AuthoredTest.Type>) =>
+          Node.capture(settings, (test: Planned.Planned<typeof AuthoredTest.Type>) =>
             Node.bindPlanned(
               RunTest.call({ testPath: test.testPath, testCmd }),
-              (run: Planned.Planned<typeof RunResult.Type>) =>
-                Node.map(Node.succeed({ testPath: test.testPath, run }), report)
-            )
-        )
+              Node.capture(
+                {},
+                (run: Planned.Planned<typeof RunResult.Type>) =>
+                  Node.map(Node.succeed({ testPath: test.testPath, run }), Node.capture({}, report))
+              )
+            ))
+        ))
     )
+  })
 })
 
 /** Every agent step the flow calls. The host implements {@link RunTest}. */

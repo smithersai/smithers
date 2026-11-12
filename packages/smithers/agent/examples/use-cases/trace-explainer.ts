@@ -123,10 +123,10 @@ export const TraceExplainer = Flow.make("examples/TraceExplainer", {
   payload: { traceFile: Schema.optional(Schema.String), traceDir: Schema.optional(Schema.String) },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ traceDir, traceFile }) =>
+  body: Node.capture({}, ({ traceDir, traceFile }) =>
     Node.bindPlanned(
       Ingest.call({ source: traceFile ?? traceDir ?? "." }),
-      (ingested: Planned.Planned<typeof Ingested.Type>) =>
+      Node.capture({}, (ingested: Planned.Planned<typeof Ingested.Type>) =>
         Node.bindPlanned(
           Analyze.call({
             spans: ingested.spans,
@@ -134,7 +134,7 @@ export const TraceExplainer = Flow.make("examples/TraceExplainer", {
             totalTokens: ingested.totalTokens,
             failedSpanCount: ingested.failedSpanCount
           }),
-          (analysis: Planned.Planned<typeof Analysis.Type>) =>
+          Node.capture({}, (analysis: Planned.Planned<typeof Analysis.Type>) =>
             Explain.call({
               bottleneck: analysis.bottleneck,
               hotPath: analysis.hotPath,
@@ -142,9 +142,9 @@ export const TraceExplainer = Flow.make("examples/TraceExplainer", {
               tokenHogs: analysis.tokenHogs,
               totalDurationMs: ingested.totalDurationMs,
               totalTokens: ingested.totalTokens
-            })
-        )
-    )
+            }))
+        ))
+    ))
 })
 
 /** Every step the flow calls. */

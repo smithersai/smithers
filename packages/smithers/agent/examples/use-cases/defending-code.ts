@@ -365,13 +365,17 @@ const bugsOf = (dedupe: typeof Dedupe.Type) => uniqueBy(dedupe.uniqueBugs, (b) =
 const fanOut = <A, R>(
   members: Readonly<Record<string, Node.Node<A, AgentAction.AgentFailure, R>>>,
   fanout: number,
+  kept: string,
   keep: (value: unknown) => value is A
 ): Node.Node<ReadonlyArray<A>, never, R> => {
   const caught = Object.fromEntries(
-    Object.entries(members).map(([key, call]) => [key, Node.catch(call, { onFailure: () => Node.succeed(null) })])
+    Object.entries(members).map((
+      [key, call]
+    ) => [key, Node.catch(call, { onFailure: Node.capture({}, () => Node.succeed(null)) })])
   )
   const joined = Bounded.all(caught, { concurrency: fanout })
-  return Node.map(joined, (settled) => Object.values(settled).filter(keep))
+  // `keep` is a function, so its schema's name stands in for it in the captures.
+  return Node.map(joined, Node.capture({ kept }, (settled) => Object.values(settled).filter(keep)))
 }
 
 const Fanout = Schema.Int.check(Schema.isGreaterThan(0))
@@ -380,7 +384,7 @@ const Fanout = Schema.Int.check(Schema.isGreaterThan(0))
 export const FindAll = Flow.make("examples/DefendingCode/FindAll", {
   payload: { subsystems: Schema.Array(Subsystem), work: Schema.String, binary: Schema.String, fanout: Fanout },
   success: Schema.Array(Find),
-  body: ({ binary, fanout, subsystems, work }) => {
+  body: Node.capture({}, ({ binary, fanout, subsystems, work }) => {
     const unique = uniqueBy(subsystems, (s: Subsystem) => slug(s.id))
     if (unique.length === 0) return Node.succeed([])
     return fanOut(
@@ -388,16 +392,17 @@ export const FindAll = Flow.make("examples/DefendingCode/FindAll", {
         unique.map((subsystem) => [`find-${slug(subsystem.id)}`, FindBug.call({ subsystem, work, binary })])
       ),
       fanout,
+      "Find",
       Schema.is(Find)
     )
-  }
+  })
 })
 
 /** Re-verifies each crash the finders reported. */
 export const VerifyAll = Flow.make("examples/DefendingCode/VerifyAll", {
   payload: { finds: Schema.Array(Find), work: Schema.String, binary: Schema.String, fanout: Fanout },
   success: Schema.Array(Verify),
-  body: ({ binary, fanout, finds, work }) => {
+  body: Node.capture({}, ({ binary, fanout, finds, work }) => {
     const crashed = crashedOf(finds)
     if (crashed.length === 0) return Node.succeed([])
     return fanOut(
@@ -405,21 +410,23 @@ export const VerifyAll = Flow.make("examples/DefendingCode/VerifyAll", {
         crashed.map((find) => [`verify-${slug(find.subsystemId)}`, VerifyCrash.call({ find, work, binary })])
       ),
       fanout,
+      "Verify",
       Schema.is(Verify)
     )
-  }
+  })
 })
 
 /** Writes one report per unique bug. */
 export const ReportAll = Flow.make("examples/DefendingCode/ReportAll", {
   payload: { bugs: Schema.Array(UniqueBug), work: Schema.String, fanout: Fanout },
   success: Schema.Array(Report),
-  body: ({ bugs, fanout, work }) =>
+  body: Node.capture({}, ({ bugs, fanout, work }) =>
     fanOut(
       Object.fromEntries(bugs.map((bug) => [`report-${slug(bug.bugId)}`, ReportBug.call({ bug, work })])),
       fanout,
+      "Report",
       Schema.is(Report)
-    )
+    ))
 })
 
 /** What the roll-up reads: every stage that ran, and `undefined` for one that did not. */
@@ -453,7 +460,8 @@ type Requirements = Action.Requirement<
 >
 
 /** Rolls up whichever stages ran, holding planned references until they settle. */
-const rollUp = (ran: object): Node.Node<Summary> => Node.map(Node.succeed(ran), (real) => summarize(real as Ran))
+const rollUp = (ran: object): Node.Node<Summary> =>
+  Node.map(Node.succeed(ran), Node.capture({}, (real) => summarize(real as Ran)))
 
 /** Dedupe, then report and patch when any unique bug survives. */
 const triage = (
@@ -464,18 +472,20 @@ const triage = (
 ): Node.Node<Summary, AgentAction.AgentFailure, Requirements> =>
   Node.bindPlanned(
     DedupeCrashes.call({ verified }),
-    (dedupe: Planned.Planned<typeof Dedupe.Type>) =>
-      Node.branch(Node.map(Node.succeed(dedupe), bugsOf), {
-        if: (bugs) => bugs.length > 0,
-        then: (bugs) =>
+    Node.capture({ work, fanout }, (dedupe: Planned.Planned<typeof Dedupe.Type>) =>
+      Node.branch(Node.map(Node.succeed(dedupe), Node.capture({}, bugsOf)), {
+        if: Node.capture({}, (bugs) =>
+          bugs.length > 0),
+        then: Node.capture({ work, fanout }, (bugs) =>
           Node.andThen(
             ReportAll.child({ bugs, work, fanout }),
-            Node.bindPlanned(PatchBugs.call({ bugs, work }), (patch: Planned.Planned<Patch>) =>
-              rollUp({ ...ran, dedupe, patch }))
-          ),
-        else: () =>
-          rollUp({ ...ran, dedupe })
-      })
+            Node.bindPlanned(
+              PatchBugs.call({ bugs, work }),
+              Node.capture({}, (patch: Planned.Planned<Patch>) => rollUp({ ...ran, dedupe, patch }))
+            )
+          )),
+        else: Node.capture({}, () => rollUp({ ...ran, dedupe }))
+      }))
   )
 
 /** The seven-stage pipeline. */
@@ -483,31 +493,38 @@ export const DefendingCode = Flow.make("examples/DefendingCode", {
   payload: { runId: RunId, fanout: Schema.optional(Fanout) },
   success: Summary,
   error: Schema.Union([AgentAction.AgentFailure, BuildFailed]),
-  body: ({ fanout = 3, runId }) => {
+  body: Node.capture({}, ({ fanout = 3, runId }) => {
     const work = `runs/${runId}`
     const binary = `${work}/card_parser`
+    const run = { work, binary, fanout }
     return Node.branch(BuildTarget.call({ source: targetSource, work, binary }), {
-      if: (build) => build.ok,
-      then: () =>
-        Node.bindPlanned(ReconTarget.call({ work }), (recon: Planned.Planned<typeof Recon.Type>) =>
+      if: Node.capture({}, (build) => build.ok),
+      then: Node.capture(
+        run,
+        () =>
           Node.bindPlanned(
-            FindAll.child({ subsystems: recon.subsystems, work, binary, fanout }),
-            (finds: Planned.Planned<ReadonlyArray<Find>>) =>
+            ReconTarget.call({ work }),
+            Node.capture(run, (recon: Planned.Planned<typeof Recon.Type>) =>
               Node.bindPlanned(
-                VerifyAll.child({ finds, work, binary, fanout }),
-                (verifies: Planned.Planned<ReadonlyArray<Verify>>) => {
-                  const ran = { subsystems: recon.subsystems, finds, verifies }
-                  return Node.branch(Node.map(Node.succeed(verifies), verifiedOf), {
-                    if: (verified) => verified.length > 0,
-                    then: (verified) => triage(work, fanout, ran, verified),
-                    else: () => rollUp(ran)
-                  })
-                }
-              )
-          )),
-      else: () => Node.succeed(summarize({}))
+                FindAll.child({ subsystems: recon.subsystems, work, binary, fanout }),
+                Node.capture(run, (finds: Planned.Planned<ReadonlyArray<Find>>) =>
+                  Node.bindPlanned(
+                    VerifyAll.child({ finds, work, binary, fanout }),
+                    Node.capture(run, (verifies: Planned.Planned<ReadonlyArray<Verify>>) => {
+                      const ran = { subsystems: recon.subsystems, finds, verifies }
+                      return Node.branch(Node.map(Node.succeed(verifies), Node.capture({}, verifiedOf)), {
+                        if: Node.capture({}, (verified) => verified.length > 0),
+                        then: Node.capture(run, (verified) => triage(work, fanout, ran, verified)),
+                        else: Node.capture({}, () => rollUp(ran))
+                      })
+                    })
+                  ))
+              ))
+          )
+      ),
+      else: Node.capture({}, () => Node.succeed(summarize({})))
     })
-  }
+  })
 })
 
 /**

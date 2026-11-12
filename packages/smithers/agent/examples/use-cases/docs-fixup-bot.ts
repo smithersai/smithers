@@ -171,25 +171,26 @@ export const DocsFixupBot = Flow.make("examples/DocsFixupBot", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     categories = ["import", "api", "cli", "syntax", "dead-link"],
     docGlobs = ["docs/**/*.mdx", "docs/**/*.md"],
     dryRun = false,
     repo,
     srcGlobs = ["src/**/*.ts", "src/**/*.tsx"]
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = { repo: repo ?? null, dryRun }
+    return Node.bindPlanned(
       ScanDocs.call({ docGlobs, srcGlobs, categories }),
-      (scan: Planned.Planned<typeof Scan.Type>) =>
+      Node.capture(run, (scan: Planned.Planned<typeof Scan.Type>) =>
         Node.bindPlanned(
           RepairExamples.call({ brokenExamples: scan.brokenExamples, totalBroken: scan.totalBroken }),
-          (repair: Planned.Planned<typeof Repair.Type>) =>
+          Node.capture(run, (repair: Planned.Planned<typeof Repair.Type>) =>
             Node.bindPlanned(
               Node.all({
                 verification: VerifyRepair.call({ fixes: repair.fixes, filesChanged: repair.filesChanged }),
                 pullRequest: Node.bindPlanned(
-                  Node.map(Node.succeed(repair.fixes), (fixes) => fixes.length),
-                  (totalFixed) =>
+                  Node.map(Node.succeed(repair.fixes), Node.capture({}, (fixes) => fixes.length)),
+                  Node.capture(run, (totalFixed) =>
                     OpenPullRequest.call({
                       filesChanged: repair.filesChanged,
                       summary: repair.summary,
@@ -197,13 +198,17 @@ export const DocsFixupBot = Flow.make("examples/DocsFixupBot", {
                       skipped: repair.skipped,
                       repo: repo ?? null,
                       dryRun
-                    })
+                    }))
                 )
               }),
-              (done) => Node.succeed({ scan, repair, verification: done.verification, pullRequest: done.pullRequest })
-            )
-        )
+              Node.capture(
+                {},
+                (done) => Node.succeed({ scan, repair, verification: done.verification, pullRequest: done.pullRequest })
+              )
+            ))
+        ))
     )
+  })
 })
 
 /** What a host supplies for the step that leaves the model. */

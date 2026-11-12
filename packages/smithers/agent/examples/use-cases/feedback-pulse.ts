@@ -144,21 +144,21 @@ export const FeedbackPulse = Flow.make("examples/FeedbackPulse", {
   },
   success: Notification,
   error: AgentAction.AgentFailure,
-  body: ({ dateRange = {}, feedback = [], sources = [] }) =>
+  body: Node.capture({}, ({ dateRange = {}, feedback = [], sources = [] }) =>
     Node.bindPlanned(
       NormalizeFeedback.call({ feedback, sources, dateRange }),
-      (intake: Planned.Planned<typeof Intake.Type>) =>
+      Node.capture({}, (intake: Planned.Planned<typeof Intake.Type>) =>
         Node.bindPlanned(
           ExtractThemes.call({ items: intake.items, totalCount: intake.totalCount }),
-          (extraction: Planned.Planned<typeof Extraction.Type>) =>
+          Node.capture({}, (extraction: Planned.Planned<typeof Extraction.Type>) =>
             DraftNotifications.call({
               themes: extraction.themes,
               painPoints: extraction.painPoints,
               sentimentBreakdown: extraction.sentimentBreakdown,
               notableInsights: extraction.notableInsights
-            })
-        )
-    )
+            }))
+        ))
+    ))
 })
 
 /** Every step the flow calls. */

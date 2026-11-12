@@ -182,22 +182,22 @@ const enrich = (
       external: ExternalEnrich.call({ alertId: alert.alertId, indicators: alert.indicators }),
       internal: InternalEnrich.call({ indicators: alert.indicators, rawDescription: alert.rawDescription })
     }),
-    (enrichment) =>
+    Node.capture({}, (enrichment) =>
       Node.bindPlanned(
         Analyst.call({
           alert,
           externalEnrichment: enrichment.external,
           internalEnrichment: enrichment.internal
         }),
-        (verdict) =>
+        Node.capture({}, (verdict) =>
           Case.call({
             alertId: alert.alertId,
             severity: verdict.severity,
             narrative: verdict.narrative,
             firstActions: verdict.firstActions,
             affectedAssets: enrichment.internal.affectedAssets
-          })
-      )
+          }))
+      ))
   )
 
 /** The flow: ingest, enrich in parallel, assess, file. */
@@ -205,7 +205,10 @@ export const ThreatIntelEnricher = Flow.make("examples/ThreatIntelEnricher", {
   payload: { alert: Schema.optional(Schema.Json), source: Schema.optional(Schema.String) },
   success: CaseRecord,
   error: AgentAction.AgentFailure,
-  body: ({ alert = {}, source = "unknown" }) => Node.bindPlanned(Ingest.call({ alert, source }), enrich)
+  body: Node.capture(
+    {},
+    ({ alert = {}, source = "unknown" }) => Node.bindPlanned(Ingest.call({ alert, source }), Node.capture({}, enrich))
+  )
 })
 
 /** Every step the flow calls. */

@@ -135,13 +135,14 @@ export const ReceiptStreamWatcher = Flow.make("examples/ReceiptStreamWatcher", {
   payload: { file: Schema.optional(Schema.NullOr(Schema.String)), text: Schema.optional(Schema.NullOr(Schema.String)) },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ file = null, text = null }) =>
+  body: Node.capture({}, ({ file = null, text = null }) =>
     Node.bindPlanned(
       Extract.call({ file, text, confidenceThreshold }),
-      (extraction: Planned.Planned<typeof PartialExtraction.Type>) =>
+      Node.capture({}, (extraction: Planned.Planned<typeof PartialExtraction.Type>) =>
         Node.branch(Consume.call({ extraction, threshold: confidenceThreshold, minFields: minFieldsForRouting }), {
-          if: (consumed) => consumed.readyForRouting,
-          then: (consumed) =>
+          if: Node.capture({}, (consumed) =>
+            consumed.readyForRouting),
+          then: Node.capture({}, (consumed) =>
             Node.bindPlanned(
               Route.call({
                 merchant: extraction.merchant.value,
@@ -150,11 +151,14 @@ export const ReceiptStreamWatcher = Flow.make("examples/ReceiptStreamWatcher", {
                 date: extraction.date.value,
                 highConfidenceCount: consumed.highConfidenceCount
               }),
-              (routing: Planned.Planned<typeof RoutingDecision.Type>) => Node.succeed({ consumed, routing })
-            ),
-          else: (consumed) => Node.succeed({ consumed, routing: null })
-        })
-    )
+              Node.capture(
+                {},
+                (routing: Planned.Planned<typeof RoutingDecision.Type>) => Node.succeed({ consumed, routing })
+              )
+            )),
+          else: Node.capture({}, (consumed) => Node.succeed({ consumed, routing: null }))
+        }))
+    ))
 })
 
 /** Every step the flow calls. */

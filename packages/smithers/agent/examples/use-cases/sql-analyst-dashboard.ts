@@ -259,7 +259,7 @@ const draftAndCheck = (
       { dialect, maxSqlAttempts, rowLimit, attempt },
       (draft: Planned.Planned<typeof SqlDraft.Type>) =>
         Node.branch(CheckSql.call({ draft, queryPlan, dialect, rowLimit }), {
-          if: querySafe,
+          if: Node.capture({}, querySafe),
           then: Node.capture({}, (check) => Node.succeed(check)),
           else: Node.capture(
             { maxSqlAttempts, attempt },
@@ -273,10 +273,10 @@ const draftAndCheck = (
 /** Asks a person about `check` when it needs it, and settles with their decision or `null`. */
 const approve = (check: Planned.Planned<SqlCheck>): Node.Node<Approval | null, Failure, Requirements> =>
   Node.branch(Node.succeed(check), {
-    if: needsApproval,
+    if: Node.capture({}, needsApproval),
     then: Node.capture({}, () =>
       Node.bindPlanned(
-        Node.map(Node.succeed({ check }), question),
+        Node.map(Node.succeed({ check }), Node.capture({}, question)),
         Node.capture({}, (prompt: Planned.Planned<string>) =>
           HumanTask.decode(Approval)(
             HumanTask.action.call({ name: approvalName, kind: "json", prompt, schema: approvalSchema })
@@ -327,7 +327,7 @@ export const SqlAnalystDashboard = Flow.make("examples/SqlAnalystDashboard", {
                         (approval: Planned.Planned<Approval | null>) =>
                           Node.bindPlanned(
                             Node.branch(Node.succeed({ check, approval }), {
-                              if: mayExecute,
+                              if: Node.capture({}, mayExecute),
                               then: Node.capture(
                                 { database, dialect },
                                 () => ExecuteQuery.call({ database, dialect, sql: check.safeSql })

@@ -99,15 +99,18 @@ const round = (
   previousIssues: Planned.Planned<ReadonlyArray<string> | undefined> | undefined
 ): Node.Node<typeof Output.Type, AgentAction.AgentFailure, Requirements> =>
   Node.branch(ReviewCode.call({ directory, focus, previousIssues }), {
-    if: (review) => review.approved,
-    then: () => Node.succeed({ finalSummary: "Code review passed - LGTM!", totalIterations: iteration }),
-    else: (review) =>
+    if: Node.capture({}, (review) => review.approved),
+    then: Node.capture(
+      { iteration },
+      () => Node.succeed({ finalSummary: "Code review passed - LGTM!", totalIterations: iteration })
+    ),
+    else: Node.capture({ directory, focus, iteration }, (review) =>
       Node.andThen(
         FixCode.call({ directory, feedback: review.feedback, issues: review.issues }),
         iteration >= maxIterations
           ? Node.succeed({ finalSummary: `Review completed after ${iteration} iterations`, totalIterations: iteration })
           : round(directory, focus, iteration + 1, review.issues)
-      )
+      ))
   })
 
 /** The bounded review loop. */
@@ -115,7 +118,7 @@ export const CodeReviewLoop = Flow.make("examples/CodeReviewLoop", {
   payload: { directory: Schema.String, focus: Schema.String },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ directory, focus }) => round(directory, focus, 1, undefined)
+  body: Node.capture({}, ({ directory, focus }) => round(directory, focus, 1, undefined))
 })
 
 /** Every step the flow calls. */

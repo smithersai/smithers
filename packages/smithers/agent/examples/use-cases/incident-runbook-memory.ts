@@ -200,7 +200,7 @@ export const Ratify = Flow.make("examples/IncidentRunbookMemory/RatifyRule", {
   payload: { ruleNoteId: Schema.String },
   success: Ratification,
   error: MemoryError,
-  body: ({ ruleNoteId }) => RatifyRule.call({ ruleNoteId })
+  body: Node.capture({}, ({ ruleNoteId }) => RatifyRule.call({ ruleNoteId }))
 })
 
 /** Asks a person, then ratifies only after approval. */
@@ -231,22 +231,26 @@ const gatedRatify = (ruleNoteId: Planned.Planned<string>) =>
 const bankLessons = (incident: string, topic: string, existingLessons: Planned.Planned<ReadonlyArray<string>>) =>
   Node.bindPlanned(
     ExtractLessons.call({ incident, topic, existingLessons }),
-    (lessons: Planned.Planned<typeof Lessons.Type>) => RecordLessons.call({ topic, lessons })
+    Node.capture({ topic }, (lessons: Planned.Planned<typeof Lessons.Type>) => RecordLessons.call({ topic, lessons }))
   )
 
 /** Distills, proposes, and ratifies after approval; denial fails before ratification. */
 const distill = (topic: string, recall: Planned.Planned<typeof Recall.Type>) =>
   Node.bindPlanned(
     DistillRule.call({ topic, lessons: recall.lessons }),
-    (distilled: Planned.Planned<typeof Distilled.Type>) =>
+    Node.capture({ topic }, (distilled: Planned.Planned<typeof Distilled.Type>) =>
       Node.bindPlanned(
         ProposeRule.call({ topic, distilled, lessonIds: recall.lessonIds }),
-        (proposal: Planned.Planned<typeof Proposal.Type>) =>
+        Node.capture({}, (proposal: Planned.Planned<typeof Proposal.Type>) =>
           Node.bindPlanned(
             gatedRatify(proposal.ruleNoteId),
-            (ratification: Planned.Planned<typeof Ratification.Type | null>) => Node.succeed({ proposal, ratification })
-          )
-      )
+            Node.capture(
+              {},
+              (ratification: Planned.Planned<typeof Ratification.Type | null>) =>
+                Node.succeed({ proposal, ratification })
+            )
+          ))
+      ))
   )
 
 /**
@@ -259,40 +263,48 @@ export const IncidentRunbookMemory = Flow.make("examples/IncidentRunbookMemory",
   payload: { incident: Schema.optional(Schema.String), topic: Schema.optional(Schema.String) },
   success: Output,
   error: Schema.Union([AgentAction.AgentFailure, MemoryError, HumanTask.HumanTaskFailed, RuleDenied]),
-  body: ({ incident = "deploys failing, cache tier cold after the weekend scale-down", topic = "deploys" }) =>
-    Node.bindPlanned(
-      RecallKnowledge.call({ topic }),
-      (recall: Planned.Planned<typeof Recall.Type>) =>
-        Node.bindPlanned(
-          TriageIncident.call({ incident, rules: recall.rules, lessons: recall.lessons, onCall: recall.onCall }),
-          (triage: Planned.Planned<typeof Triage.Type>) =>
-            Node.bindPlanned(
-              Node.andThen(Node.succeed(triage), bankLessons(incident, topic, recall.lessons)),
-              (bank: Planned.Planned<typeof Bank.Type>) =>
-                Node.branch(Node.succeed(recall), {
-                  if: (known) => known.lessonCount >= distillThreshold,
-                  then: () =>
-                    Node.bindPlanned(
-                      Node.andThen(Node.succeed(bank), distill(topic, recall)),
-                      (
-                        distilled: Planned.Planned<{
-                          readonly proposal: typeof Proposal.Type
-                          readonly ratification: typeof Ratification.Type | null
-                        }>
-                      ) =>
-                        Node.succeed({
-                          recall,
-                          triage,
-                          bank,
-                          proposal: distilled.proposal,
-                          ratification: distilled.ratification
-                        })
-                    ),
-                  else: () => Node.succeed({ recall, triage, bank, proposal: null, ratification: null })
-                })
-            )
-        )
-    )
+  body: Node.capture(
+    {},
+    ({ incident = "deploys failing, cache tier cold after the weekend scale-down", topic = "deploys" }) => {
+      const run = { incident, topic }
+      return Node.bindPlanned(
+        RecallKnowledge.call({ topic }),
+        Node.capture(run, (recall: Planned.Planned<typeof Recall.Type>) =>
+          Node.bindPlanned(
+            TriageIncident.call({ incident, rules: recall.rules, lessons: recall.lessons, onCall: recall.onCall }),
+            Node.capture(run, (triage: Planned.Planned<typeof Triage.Type>) =>
+              Node.bindPlanned(
+                Node.andThen(Node.succeed(triage), bankLessons(incident, topic, recall.lessons)),
+                Node.capture(run, (bank: Planned.Planned<typeof Bank.Type>) =>
+                  Node.branch(Node.succeed(recall), {
+                    if: Node.capture({}, (known) => known.lessonCount >= distillThreshold),
+                    then: Node.capture(run, () =>
+                      Node.bindPlanned(
+                        Node.andThen(Node.succeed(bank), distill(topic, recall)),
+                        Node.capture({}, (
+                          distilled: Planned.Planned<{
+                            readonly proposal: typeof Proposal.Type
+                            readonly ratification: typeof Ratification.Type | null
+                          }>
+                        ) =>
+                          Node.succeed({
+                            recall,
+                            triage,
+                            bank,
+                            proposal: distilled.proposal,
+                            ratification: distilled.ratification
+                          }))
+                      )),
+                    else: Node.capture(
+                      {},
+                      () => Node.succeed({ recall, triage, bank, proposal: null, ratification: null })
+                    )
+                  }))
+              ))
+          ))
+      )
+    }
+  )
 })
 
 const lessonPrefix = "lesson/"

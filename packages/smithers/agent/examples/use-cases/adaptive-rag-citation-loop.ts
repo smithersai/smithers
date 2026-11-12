@@ -253,7 +253,7 @@ const gather = (question: string, plan: Planned.Planned<RetrievalPlan>) =>
     vector: Retrieve.call({ source: "vector", plan, question }),
     keyword: Retrieve.call({ source: "keyword", plan, question }),
     fetched: Node.bindPlanned(
-      Node.map(Node.succeed(plan), fetchSource),
+      Node.map(Node.succeed(plan), Node.capture({}, fetchSource)),
       Node.capture({ question }, (source) => Retrieve.call({ source, plan, question }))
     )
   })
@@ -270,7 +270,7 @@ const settleUngrounded = (ask: Ask, answer: Planned.Planned<Answer>, grade: Plan
     then: Node.capture({ ask }, (graded) =>
       Node.bindPlanned(
         Node.bindPlanned(
-          Node.map(Node.succeed(graded), reviewRequest),
+          Node.map(Node.succeed(graded), Node.capture({}, reviewRequest)),
           Node.capture({ name: reviewTask, schema: approvalSchema }, (prompt: Planned.Planned<string>) =>
             HumanTask.action.call({ name: reviewTask, kind: "json", prompt, schema: approvalSchema }).pipe(
               HumanTask.decode(Approval)

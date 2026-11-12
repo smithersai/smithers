@@ -216,39 +216,43 @@ export const BranchDoctor = Flow.make("examples/BranchDoctor", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ autoExecute = false, baseBranch = "main", repoPath, symptoms = [] }) =>
-    Node.bindPlanned(
+  body: Node.capture({}, ({ autoExecute = false, baseBranch = "main", repoPath, symptoms = [] }) => {
+    const run = { autoExecute, baseBranch, repoPath, symptoms }
+    return Node.bindPlanned(
       Inspect.call({ repoPath, baseBranch, symptoms }),
-      (inspection: Planned.Planned<typeof Inspection.Type>) =>
+      Node.capture(run, (inspection: Planned.Planned<typeof Inspection.Type>) =>
         Node.bindPlanned(
           Diagnose.call({ inspection, symptoms }),
-          (diagnosis: Planned.Planned<Diagnosis>) =>
+          Node.capture(run, (diagnosis: Planned.Planned<Diagnosis>) =>
             Node.bindPlanned(
               Plan.call({ diagnosis, inspection, repoPath, baseBranch }),
-              (plan: Planned.Planned<RecoveryPlan>) =>
+              Node.capture(run, (plan: Planned.Planned<RecoveryPlan>) =>
                 autoExecute
                   ? Node.bindPlanned(
-                    Node.map(Node.succeed(plan), partition),
-                    (split: Planned.Planned<ReturnType<typeof partition>>) =>
+                    Node.map(Node.succeed(plan), Node.capture({}, partition)),
+                    Node.capture(run, (split: Planned.Planned<ReturnType<typeof partition>>) =>
                       Node.bindPlanned(
                         Execute.call({ commands: split.safe, repoPath }),
-                        (ran: Planned.Planned<ReadonlyArray<typeof Executed.Type>>) =>
+                        Node.capture(run, (ran: Planned.Planned<ReadonlyArray<typeof Executed.Type>>) =>
                           Node.map(
                             Node.succeed({ diagnosis, plan, ran, unsafe: split.unsafe }),
-                            (found) =>
+                            Node.capture({}, (found) =>
                               summarize(true, {
                                 diagnosis: found.diagnosis,
                                 plan: found.plan,
                                 execution: executionOf(found.ran, found.unsafe)
-                              })
-                          )
-                      )
+                              }))
+                          ))
+                      ))
                   )
-                  : Node.map(Node.succeed({ diagnosis, plan }), (found) =>
-                    summarize(false, { ...found, execution: null }))
-            )
-        )
+                  : Node.map(
+                    Node.succeed({ diagnosis, plan }),
+                    Node.capture({}, (found) => summarize(false, { ...found, execution: null }))
+                  ))
+            ))
+        ))
     )
+  })
 })
 
 /** Every agent step the flow calls. The host implements {@link Execute}. */

@@ -168,7 +168,7 @@ export const OpenApiContractAgent = Flow.make("examples/OpenApiContractAgent", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     authScheme = "bearer",
     baseUrl = "https://api.example.com",
     brandedIds = true,
@@ -178,16 +178,21 @@ export const OpenApiContractAgent = Flow.make("examples/OpenApiContractAgent", {
     namingConvention = "PascalCase",
     specContent,
     specPath
-  }) =>
-    Node.bindPlanned(ParseContract.call({ specPath, specContent, format, filterPaths }), (contract) =>
-      Node.bindPlanned(
-        GenerateInterfaces.call({ contract, naming: namingConvention, includeZod, brandedIds }),
-        (interfaces) =>
-          Node.bindPlanned(
-            TypedCallsStep.call({ interfaces, contract, baseUrl, authScheme }),
-            (typedCalls) => Node.succeed({ interfaces, typedCalls })
-          )
-      ))
+  }) => {
+    const run = { authScheme, baseUrl, brandedIds, includeZod, namingConvention }
+    return Node.bindPlanned(
+      ParseContract.call({ specPath, specContent, format, filterPaths }),
+      Node.capture(run, (contract) =>
+        Node.bindPlanned(
+          GenerateInterfaces.call({ contract, naming: namingConvention, includeZod, brandedIds }),
+          Node.capture(run, (interfaces) =>
+            Node.bindPlanned(
+              TypedCallsStep.call({ interfaces, contract, baseUrl, authScheme }),
+              Node.capture({}, (typedCalls) => Node.succeed({ interfaces, typedCalls }))
+            ))
+        ))
+    )
+  })
 })
 
 /** Every step the flow calls. */

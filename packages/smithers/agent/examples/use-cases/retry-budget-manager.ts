@@ -182,7 +182,10 @@ const escalate = (
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> =>
   Node.bindPlanned(
     Escalate.call({ stepName, stepResults: results, policies, budgetTotal: budget, budgetUsed: results.length }),
-    (escalation) => Node.map(Node.succeed({ stepName, budget, results, escalation }), report)
+    Node.capture(
+      { budget, stepName },
+      (escalation) => Node.map(Node.succeed({ stepName, budget, results, escalation }), Node.capture({}, report))
+    )
   )
 
 /**
@@ -198,6 +201,7 @@ const tryStep = (
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> => {
   const { budget, command, stepName } = run
   const latest = policies.at(-1)
+  const attempt = { budget, command, n, stepName }
   return Node.branch(
     RunStep.call({
       stepName,
@@ -209,23 +213,26 @@ const tryStep = (
       previousError: results.at(-1)?.errorMessage
     }),
     {
-      if: (step) => step.success,
-      then: (step) =>
-        Node.map(Node.succeed({ stepName, budget, results: [...results, step], escalation: null }), report),
-      else: (step) => {
+      if: Node.capture({}, (step) => step.success),
+      then: Node.capture(attempt, (step) =>
+        Node.map(
+          Node.succeed({ stepName, budget, results: [...results, step], escalation: null }),
+          Node.capture({}, report)
+        )),
+      else: Node.capture(attempt, (step) => {
         const tried = [...results, step]
         return Node.branch(
           DecidePolicy.call({ stepResult: step, attempt: n, budgetTotal: budget, budgetSpent: n, history: tried }),
           {
-            if: (policy) => policy.budgetRemaining <= 0 || policy.escalate,
-            then: (policy) => escalate(run, tried, [...policies, policy]),
-            else: (policy) =>
+            if: Node.capture({}, (policy) => policy.budgetRemaining <= 0 || policy.escalate),
+            then: Node.capture(attempt, (policy) => escalate(run, tried, [...policies, policy])),
+            else: Node.capture(attempt, (policy) =>
               n >= budget
                 ? escalate(run, tried, [...policies, policy])
-                : tryStep(run, n + 1, tried, [...policies, policy])
+                : tryStep(run, n + 1, tried, [...policies, policy]))
           }
         )
-      }
+      })
     }
   )
 }
@@ -239,7 +246,10 @@ export const RetryBudgetManager = Flow.make("examples/RetryBudgetManager", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ budget = 5, command, stepName = "default-step" }) => tryStep({ stepName, command, budget }, 1, [], [])
+  body: Node.capture(
+    {},
+    ({ budget = 5, command, stepName = "default-step" }) => tryStep({ stepName, command, budget }, 1, [], [])
+  )
 })
 
 /** Every step the flow calls. */

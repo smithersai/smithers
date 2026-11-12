@@ -192,8 +192,15 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
   payload: { event: MeetingEvent },
   success: Brief,
   error: AgentAction.AgentFailure,
-  body: ({ event }) =>
-    Node.bindPlanned(
+  body: Node.capture({}, ({ event }) => {
+    const run = {
+      meetingId: event.meetingId,
+      title: event.title,
+      organizer: event.organizer,
+      attendees: event.attendees,
+      scheduledAt: event.scheduledAt
+    }
+    return Node.bindPlanned(
       Classify.call({
         title: event.title,
         description: event.description ?? "",
@@ -201,7 +208,7 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
         attendees: event.attendees,
         calendarSource: event.calendarSource
       }),
-      (classification: Planned.Planned<typeof Classification.Type>) =>
+      Node.capture(run, (classification: Planned.Planned<typeof Classification.Type>) =>
         Node.andThen(
           Node.succeed(classification),
           Node.bindPlanned(
@@ -218,7 +225,7 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
                 accountName: event.title
               })
             }),
-            (context) =>
+            Node.capture(run, (context) =>
               WriteBrief.call({
                 meetingId: event.meetingId,
                 title: event.title,
@@ -230,10 +237,11 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
                 attendeeProfiles: context.attendees.profiles,
                 previousMeetings: context.history.previousMeetings,
                 openActionItems: context.history.openActionItems
-              })
+              }))
           )
-        )
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

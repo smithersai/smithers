@@ -81,6 +81,19 @@ The schema you pass to `decode` and the question's own schema description must
 agree. A disagreement surfaces as a defect rather than as a failure a body could
 catch, because the two descriptions are the same claim written twice.
 
+`decode` keys its decoder by the schema's JSON Schema document, so
+`Interpreter.layerWithImplementations` admits it and a durable resume notices a
+changed schema. A schema with no JSON Schema form, or a transformation that
+changes what the schema decodes without changing that document, needs a version
+you change whenever the decoder changes:
+
+```ts
+HumanTask.decode(Decision, { version: "release-decision/v2" })
+```
+
+Without a version, a schema with no JSON Schema form throws
+`HumanTask.DecodeIdentityError` when the flow is built.
+
 ## Record an answer
 
 The run parks carrying the current attempt's token. Whoever collects the answer

@@ -176,7 +176,7 @@ export const FridayBot = Flow.make("examples/FridayBot", {
   },
   success: PublishResult,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     forceWeekly = false,
     linearTeamId = "",
     publishTo = "slack",
@@ -184,10 +184,11 @@ export const FridayBot = Flow.make("examples/FridayBot", {
     slackChannel = "#team-updates",
     slackChannels = [],
     timezone = "America/Los_Angeles"
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = { linearTeamId, publishTo, repo, slackChannel, slackChannels }
+    return Node.bindPlanned(
       Schedule.call({ timezone, forceWeekly }),
-      (schedule: Planned.Planned<typeof ScheduleContext.Type>) => {
+      Node.capture(run, (schedule: Planned.Planned<typeof ScheduleContext.Type>) => {
         const period = { cutoff: schedule.cutoffISO, periodLabel: schedule.periodLabel }
         // 0.x's `<Parallel maxConcurrency={3}>` over three collectors runs all three at once.
         const collected = Node.all({
@@ -195,20 +196,27 @@ export const FridayBot = Flow.make("examples/FridayBot", {
           linear: CollectLinear.call({ teamId: linearTeamId, ...period }),
           slack: CollectSlack.call({ channels: slackChannels, ...period })
         })
-        return Node.bindPlanned(collected, (digests) =>
-          Node.bindPlanned(
-            Summarize.call({
-              periodLabel: schedule.periodLabel,
-              isWeekly: schedule.isWeekly,
-              github: digests.github,
-              linear: digests.linear,
-              slack: digests.slack
-            }),
-            (summary: Planned.Planned<typeof Summary.Type>) =>
-              Publish.call({ destination: publishTo, channel: slackChannel, summary })
-          ))
-      }
+        return Node.bindPlanned(
+          collected,
+          Node.capture(run, (digests) =>
+            Node.bindPlanned(
+              Summarize.call({
+                periodLabel: schedule.periodLabel,
+                isWeekly: schedule.isWeekly,
+                github: digests.github,
+                linear: digests.linear,
+                slack: digests.slack
+              }),
+              Node.capture(
+                run,
+                (summary: Planned.Planned<typeof Summary.Type>) =>
+                  Publish.call({ destination: publishTo, channel: slackChannel, summary })
+              )
+            ))
+        )
+      })
     )
+  })
 })
 
 /** Every step the flow calls. */

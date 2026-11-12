@@ -144,24 +144,25 @@ const phase = (
   const milestone = milestones[index]
   if (milestone === undefined) return Node.succeed(progress(milestones, index))
   const { id, requirements, title } = milestone
+  const run = { directory, milestones, index }
   return Node.bindPlanned(
-    Node.map(Node.succeed(results), completedOf),
-    (completedMilestones) =>
+    Node.map(Node.succeed(results), Node.capture({}, completedOf)),
+    Node.capture(run, (completedMilestones) =>
       Node.bindPlanned(
         Implement.call({ id, title, requirements, directory, completedMilestones }),
-        (result: Planned.Planned<MilestoneResult>) =>
+        Node.capture(run, (result: Planned.Planned<MilestoneResult>) =>
           Node.branch(
             Node.andThen(
               Node.succeed(result),
               Validate.call({ id, title, validationCommand: milestone.validation, directory })
             ),
             {
-              if: (validation) => validation.passed,
-              then: () => phase(directory, milestones, index + 1, [...results, result]),
-              else: () => Node.succeed(progress(milestones, index))
+              if: Node.capture({}, (validation) => validation.passed),
+              then: Node.capture(run, () => phase(directory, milestones, index + 1, [...results, result])),
+              else: Node.capture(run, () => Node.succeed(progress(milestones, index)))
             }
-          )
-      )
+          ))
+      ))
   )
 }
 
@@ -170,7 +171,7 @@ export const Milestone = Flow.make("examples/Milestone", {
   payload: { directory: Schema.String, milestones: Schema.optional(Schema.NonEmptyArray(MilestoneSpec)) },
   success: Progress,
   error: AgentAction.AgentFailure,
-  body: ({ directory, milestones = defaultMilestones }) => phase(directory, milestones, 0, [])
+  body: Node.capture({}, ({ directory, milestones = defaultMilestones }) => phase(directory, milestones, 0, []))
 })
 
 /** Every step the flow calls. */

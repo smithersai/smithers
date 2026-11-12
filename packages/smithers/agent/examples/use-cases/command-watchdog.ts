@@ -141,6 +141,7 @@ const round = (
   runs: ReadonlyArray<Planned.Planned<RunResult>>
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> => {
   const { command, maxRuns, thresholdPercent } = bounds
+  const at = { bounds, iteration }
   return Node.bindPlanned(
     RunCommand.call({
       command,
@@ -148,27 +149,30 @@ const round = (
       previousDurationMs: previous?.durationMs,
       previousExitCode: previous?.exitCode
     }),
-    (current: Planned.Planned<RunResult>) =>
-      Node.branch(Detect.call({ command, iteration, thresholdPercent, current, previous }), {
-        if: (notability) => notability.notable,
-        then: (notability) =>
-          Escalate.call({
-            command,
-            notable: notability.notable,
-            reasons: notability.reasons,
-            runs: [...runs, current],
-            diffSummary: notability.diffSummary
-          }),
-        else: () =>
-          iteration >= maxRuns
-            ? Node.succeed({
-              status: "steady" as const,
-              anomalies: [],
-              runCount: iteration,
-              summary: `${command} ran ${iteration} times with no notable anomalies`
-            })
-            : round(bounds, iteration + 1, current, [...runs, current])
-      })
+    Node.capture(
+      at,
+      (current: Planned.Planned<RunResult>) =>
+        Node.branch(Detect.call({ command, iteration, thresholdPercent, current, previous }), {
+          if: Node.capture({}, (notability) => notability.notable),
+          then: Node.capture({ command }, (notability) =>
+            Escalate.call({
+              command,
+              notable: notability.notable,
+              reasons: notability.reasons,
+              runs: [...runs, current],
+              diffSummary: notability.diffSummary
+            })),
+          else: Node.capture(at, () =>
+            iteration >= maxRuns
+              ? Node.succeed({
+                status: "steady" as const,
+                anomalies: [],
+                runCount: iteration,
+                summary: `${command} ran ${iteration} times with no notable anomalies`
+              })
+              : round(bounds, iteration + 1, current, [...runs, current]))
+        })
+    )
   )
 }
 
@@ -181,8 +185,10 @@ export const CommandWatchdog = Flow.make("examples/CommandWatchdog", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ command, maxRuns = 5, thresholdPercent = 25 }) =>
-    round({ command, maxRuns, thresholdPercent }, 1, undefined, [])
+  body: Node.capture(
+    {},
+    ({ command, maxRuns = 5, thresholdPercent = 25 }) => round({ command, maxRuns, thresholdPercent }, 1, undefined, [])
+  )
 })
 
 /** Every step the flow calls. */

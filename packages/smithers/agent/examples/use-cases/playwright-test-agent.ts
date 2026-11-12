@@ -192,12 +192,22 @@ const round = (
   latest: Planned.Planned<GeneratedTests>,
   attempts: ReadonlyArray<Planned.Planned<GeneratedTests>>,
   runs: ReadonlyArray<Planned.Planned<TestRun>>
-): Node.Node<typeof FinalReport.Type, AgentAction.AgentFailure, Requirements> =>
-  Node.branch(RunTests.call({ generatedTests: latest, command: settings.command, appUrl: settings.appUrl }), {
-    if: (run) => run.passed,
-    then: (run) =>
-      ReportRun.call({ plan: settings.plan, generatedAttempts: attempts, runs: [...runs, run], passed: true }),
-    else: (run) =>
+): Node.Node<typeof FinalReport.Type, AgentAction.AgentFailure, Requirements> => {
+  const at = {
+    appUrl: settings.appUrl,
+    assertionPolicy: settings.assertionPolicy,
+    command: settings.command,
+    iteration,
+    maxIterations: settings.maxIterations,
+    productBrief: settings.productBrief
+  }
+  return Node.branch(RunTests.call({ generatedTests: latest, command: settings.command, appUrl: settings.appUrl }), {
+    if: Node.capture({}, (run) => run.passed),
+    then: Node.capture(
+      {},
+      (run) => ReportRun.call({ plan: settings.plan, generatedAttempts: attempts, runs: [...runs, run], passed: true })
+    ),
+    else: Node.capture(at, (run) =>
       Node.bindPlanned(
         HealTests.call({
           generatedTests: latest,
@@ -205,7 +215,7 @@ const round = (
           productBrief: settings.productBrief,
           assertionPolicy: settings.assertionPolicy
         }),
-        (healed: Planned.Planned<GeneratedTests>) =>
+        Node.capture(at, (healed: Planned.Planned<GeneratedTests>) =>
           iteration >= settings.maxIterations
             ? ReportRun.call({
               plan: settings.plan,
@@ -213,9 +223,10 @@ const round = (
               runs: [...runs, run],
               passed: false
             })
-            : round(settings, iteration + 1, healed, [...attempts, healed], [...runs, run])
-      )
+            : round(settings, iteration + 1, healed, [...attempts, healed], [...runs, run]))
+      ))
   })
+}
 
 /** The flow. `maxIterations` is real at plan time, so it sets how many rounds the plan holds. */
 export const PlaywrightTestAgent = Flow.make("examples/PlaywrightTestAgent", {
@@ -232,7 +243,7 @@ export const PlaywrightTestAgent = Flow.make("examples/PlaywrightTestAgent", {
   },
   success: FinalReport,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     appUrl = "http://localhost:3000",
     assertionPolicy = "Do not remove or weaken business-critical assertions.",
     existingTestGlob = "tests/**/*.spec.{ts,tsx}",
@@ -244,22 +255,23 @@ export const PlaywrightTestAgent = Flow.make("examples/PlaywrightTestAgent", {
     testDirectory = "tests/generated"
   }) => {
     const brief = productBrief ?? story ?? ""
+    const run = { appUrl, assertionPolicy, brief, maxIterations, testCommand, testDirectory }
     return Node.bindPlanned(
       PlanTests.call({ appUrl, productBrief: brief, seedTest: seedTest ?? null, existingTestGlob }),
-      (plan: Planned.Planned<typeof TestPlan.Type>) =>
+      Node.capture(run, (plan: Planned.Planned<typeof TestPlan.Type>) =>
         Node.bindPlanned(
           GenerateTests.call({ plan, testDirectory, appUrl }),
-          (generated: Planned.Planned<GeneratedTests>) =>
+          Node.capture(run, (generated: Planned.Planned<GeneratedTests>) =>
             round(
               { plan, appUrl, command: testCommand, productBrief: brief, assertionPolicy, maxIterations },
               1,
               generated,
               [generated],
               []
-            )
-        )
+            ))
+        ))
     )
-  }
+  })
 })
 
 /** What a host supplies for the step that leaves the model. */

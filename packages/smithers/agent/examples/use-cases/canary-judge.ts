@@ -169,7 +169,7 @@ export const CanaryJudge = Flow.make("examples/CanaryJudge", {
   },
   success: DeployAction,
   error: AgentAction.AgentFailure,
-  body: (
+  body: Node.capture({}, (
     {
       deploymentId = "unknown",
       notifyChannels = ["#deploys"],
@@ -178,8 +178,9 @@ export const CanaryJudge = Flow.make("examples/CanaryJudge", {
       windowMinutes = 15,
       ...input
     }
-  ) =>
-    Node.bindPlanned(
+  ) => {
+    const run = { deploymentId, notifyChannels, serviceName, thresholds }
+    return Node.bindPlanned(
       Node.all({
         stable: Collect.call({
           stream: "stable",
@@ -196,17 +197,21 @@ export const CanaryJudge = Flow.make("examples/CanaryJudge", {
           windowMinutes
         })
       }),
-      (streams: Planned.Planned<Streams>) =>
+      Node.capture(run, (streams: Planned.Planned<Streams>) =>
         Node.bindPlanned(
           Compare.call({ stable: streams.stable, canary: streams.canary, thresholds }),
-          (comparison: Planned.Planned<typeof Comparison.Type>) =>
+          Node.capture(run, (comparison: Planned.Planned<typeof Comparison.Type>) =>
             Node.bindPlanned(
               Judge.call({ comparison, riskSignals: comparison.riskSignals, deploymentId, serviceName }),
-              (verdict: Planned.Planned<typeof Verdict.Type>) =>
-                Node.map(Node.succeed({ verdict, deploymentId, notifyChannels }), deploy)
-            )
-        )
+              Node.capture(
+                run,
+                (verdict: Planned.Planned<typeof Verdict.Type>) =>
+                  Node.map(Node.succeed({ verdict, deploymentId, notifyChannels }), Node.capture({}, deploy))
+              )
+            ))
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

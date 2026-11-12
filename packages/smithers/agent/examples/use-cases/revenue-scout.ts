@@ -143,25 +143,35 @@ export const RevenueScout = Flow.make("examples/RevenueScout", {
   },
   success: Handoff,
   error: AgentAction.AgentFailure,
-  body: ({ accountContext, conversations, crmTarget = "salesforce", fetchCmd, source = "support", teamMapping }) => {
-    const handOff = (
-      opportunities: Planned.Planned<ReadonlyArray<typeof Opportunity.Type>> | ReadonlyArray<never>,
-      totalScanned: Planned.Planned<number>
-    ) => HandOff.call({ opportunities, totalScanned, crmTarget, teamMapping: teamMapping ?? null })
-    return Node.branch(
-      Node.map(Classify.call({ source, conversations: conversations ?? null, fetchCmd: fetchCmd ?? null }), scan),
-      {
-        if: ({ flagged }) => flagged.length > 0,
-        then: (scanned) =>
-          Node.bindPlanned(
-            Extract.call({ flaggedConversations: scanned.flagged, accountContext: accountContext ?? null }),
-            (extraction: Planned.Planned<typeof Extraction.Type>) =>
-              handOff(extraction.opportunities, scanned.totalScanned)
-          ),
-        else: (scanned) => handOff([], scanned.totalScanned)
-      }
-    )
-  }
+  body: Node.capture(
+    {},
+    ({ accountContext, conversations, crmTarget = "salesforce", fetchCmd, source = "support", teamMapping }) => {
+      const handOff = (
+        opportunities: Planned.Planned<ReadonlyArray<typeof Opportunity.Type>> | ReadonlyArray<never>,
+        totalScanned: Planned.Planned<number>
+      ) => HandOff.call({ opportunities, totalScanned, crmTarget, teamMapping: teamMapping ?? null })
+      const run = { accountContext: accountContext ?? null, crmTarget, teamMapping: teamMapping ?? null }
+      return Node.branch(
+        Node.map(
+          Classify.call({ source, conversations: conversations ?? null, fetchCmd: fetchCmd ?? null }),
+          Node.capture({}, scan)
+        ),
+        {
+          if: Node.capture({}, ({ flagged }) => flagged.length > 0),
+          then: Node.capture(run, (scanned) =>
+            Node.bindPlanned(
+              Extract.call({ flaggedConversations: scanned.flagged, accountContext: accountContext ?? null }),
+              Node.capture(
+                run,
+                (extraction: Planned.Planned<typeof Extraction.Type>) =>
+                  handOff(extraction.opportunities, scanned.totalScanned)
+              )
+            )),
+          else: Node.capture(run, (scanned) => handOff([], scanned.totalScanned))
+        }
+      )
+    }
+  )
 })
 
 /** Every step the flow calls. */

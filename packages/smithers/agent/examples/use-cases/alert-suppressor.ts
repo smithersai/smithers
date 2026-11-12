@@ -211,32 +211,33 @@ export const AlertSuppressor = Flow.make("examples/AlertSuppressor", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: (
+  body: Node.capture({}, (
     { alerts = [], incidentSource = "opsgenie", noiseRules = [], pageChannel = "pagerduty", ticketSystem = "jira" }
   ) => {
     // The payload is real at plan time, so the dedupe runs here, beside the lookup.
     const deduped = dedupe(alerts)
+    const run = { alerts, deduped, pageChannel, ticketSystem }
     return Node.bindPlanned(
       LookUpContext.call({ alerts, noiseRules, incidentSource }),
-      (context: Planned.Planned<typeof IncidentContext.Type>) =>
+      Node.capture(run, (context: Planned.Planned<typeof IncidentContext.Type>) =>
         Node.bindPlanned(
           Classify.call({
             uniqueAlerts: deduped.uniqueAlerts,
             noiseRules: context.noiseRules,
             recentIncidents: context.recentIncidents
           }),
-          (classification: Planned.Planned<typeof Classification.Type>) =>
+          Node.capture(run, (classification: Planned.Planned<typeof Classification.Type>) =>
             Node.bindPlanned(
               Dispatch.call({ classifications: classification.classifications, pageChannel, ticketSystem }),
-              (sink: Planned.Planned<typeof SinkResult.Type>) =>
+              Node.capture(run, (sink: Planned.Planned<typeof SinkResult.Type>) =>
                 Node.map(
                   Node.succeed({ received: alerts.length, deduped, classification, sink, pageChannel }),
-                  summarize
-                )
-            )
-        )
+                  Node.capture({}, summarize)
+                ))
+            ))
+        ))
     )
-  }
+  })
 })
 
 /** Every step the flow calls. */

@@ -128,39 +128,56 @@ const step = (
   low: Bound,
   high: Bound,
   verdicts: ReadonlyArray<Planned.Planned<Adjudication>>
-): Node.Node<Output, AgentAction.AgentFailure, Requirements> =>
-  Node.bindPlanned(Node.map(Node.succeed({ low, high }), midpoint), (mid: Planned.Planned<number>) =>
-    Node.bindPlanned(
-      TestCommit.call({ repoPath, testCommand, low, high, mid }),
-      (tested: Planned.Planned<typeof BisectStep.Type>) => {
-        const adjudication = Adjudicate.call({
-          sha: tested.sha,
-          testOutput: tested.testOutput,
-          exitCode: tested.exitCode,
-          low,
-          high,
-          mid,
-          previousVerdicts: verdicts
-        })
-        const settle = (latest: Planned.Planned<Adjudication>) =>
-          Node.map(Node.succeed({ culpritSha: latest.culpritSha }), summarize(iteration))
-        return iteration >= maxIterations
-          ? Node.bindPlanned(adjudication, settle)
-          : Node.branch(adjudication, {
-            if: (latest) => latest.culpritFound,
-            then: settle,
-            else: (latest) =>
-              step(repoPath, testCommand, iteration + 1, latest.nextLow, latest.nextHigh, [...verdicts, latest])
+): Node.Node<Output, AgentAction.AgentFailure, Requirements> => {
+  // The bounds are real only on the first step; a later step's are planned and are not captured.
+  const at = {
+    repoPath,
+    testCommand,
+    iteration,
+    ...(typeof low === "number" && typeof high === "number" ? { low, high } : {})
+  }
+  return Node.bindPlanned(
+    Node.map(Node.succeed({ low, high }), Node.capture({}, midpoint)),
+    Node.capture(at, (mid: Planned.Planned<number>) =>
+      Node.bindPlanned(
+        TestCommit.call({ repoPath, testCommand, low, high, mid }),
+        Node.capture(at, (tested: Planned.Planned<typeof BisectStep.Type>) => {
+          const adjudication = Adjudicate.call({
+            sha: tested.sha,
+            testOutput: tested.testOutput,
+            exitCode: tested.exitCode,
+            low,
+            high,
+            mid,
+            previousVerdicts: verdicts
           })
-      }
-    ))
+          const settle = Node.capture({ iteration }, (latest: Planned.Planned<Adjudication>) =>
+            Node.map(
+              Node.succeed({ culpritSha: latest.culpritSha }),
+              Node.capture({ iteration }, summarize(iteration))
+            ))
+          return iteration >= maxIterations
+            ? Node.bindPlanned(adjudication, settle)
+            : Node.branch(adjudication, {
+              if: Node.capture({}, (latest) => latest.culpritFound),
+              then: settle,
+              else: Node.capture(at, (latest) =>
+                step(repoPath, testCommand, iteration + 1, latest.nextLow, latest.nextHigh, [...verdicts, latest]))
+            })
+        })
+      ))
+  )
+}
 
 /** The bounded bisect. `commitCount` is real at plan time, so it sets the first upper bound. */
 export const BisectGuide = Flow.make("examples/BisectGuide", {
   payload: { repoPath: Schema.String, testCommand: Schema.String, commitCount: Schema.Number },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ commitCount, repoPath, testCommand }) => step(repoPath, testCommand, 1, 0, Math.max(0, commitCount - 1), [])
+  body: Node.capture(
+    {},
+    ({ commitCount, repoPath, testCommand }) => step(repoPath, testCommand, 1, 0, Math.max(0, commitCount - 1), [])
+  )
 })
 
 /** Every agent step the flow calls. The host implements {@link TestCommit}. */

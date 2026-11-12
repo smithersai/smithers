@@ -151,7 +151,7 @@ const detector = (baseline: Baseline) =>
     },
     compare: {
       call: (compared: { readonly snapshot: Planned.Planned<BenchmarkRun>; readonly baseline: Baseline }) =>
-        Node.map(Node.succeed(compared), diff)
+        Node.map(Node.succeed(compared), Node.capture({}, diff))
     },
     alert: {
       call: ({ baseline, comparison }: { readonly comparison: Planned.Planned<Diff>; readonly baseline: Baseline }) =>
@@ -169,7 +169,7 @@ export const BenchmarkSheriff = Flow.make("examples/BenchmarkSheriff", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ baseline = [], command = "npm run bench", cwd = ".", thresholdPercent = 5 }) => {
+  body: Node.capture({}, ({ baseline = [], command = "npm run bench", cwd = ".", thresholdPercent = 5 }) => {
     // `DriftDetector.make` declares a loosely typed flow. Its members above are
     // this port's own typed steps, so its result is the `Detection` they make
     // and its only failure is theirs.
@@ -178,10 +178,13 @@ export const BenchmarkSheriff = Flow.make("examples/BenchmarkSheriff", {
     }) as Node.Node<Detection, AgentAction.AgentFailure, Requirements>
     return Node.bindPlanned(
       detected,
-      (detection: Planned.Planned<Detection>) =>
-        Node.map(Node.succeed({ detection, threshold: thresholdPercent }), settle)
+      Node.capture(
+        { thresholdPercent },
+        (detection: Planned.Planned<Detection>) =>
+          Node.map(Node.succeed({ detection, threshold: thresholdPercent }), Node.capture({}, settle))
+      )
     )
-  }
+  })
 })
 
 /** Every step the flow calls. */

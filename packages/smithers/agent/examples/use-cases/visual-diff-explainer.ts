@@ -154,7 +154,7 @@ export const VisualDiffExplainer = Flow.make("examples/VisualDiffExplainer", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     baselineDir = "__screenshots__/baseline",
     currentDir = "__screenshots__/current",
     outputFile = "visual-regression-report.md",
@@ -163,17 +163,17 @@ export const VisualDiffExplainer = Flow.make("examples/VisualDiffExplainer", {
   }) =>
     Node.bindPlanned(
       RunTests.call({ testCommand, baselineDir, currentDir }),
-      (failed: Planned.Planned<typeof FailedTests.Type>) =>
+      Node.capture({ outputFile, repository }, (failed: Planned.Planned<typeof FailedTests.Type>) =>
         Node.bindPlanned(
           CollectPairs.call({ tests: failed.tests, totalFailed: failed.totalFailed }),
-          (collected: Planned.Planned<typeof ImagePairs.Type>) =>
+          Node.capture({ outputFile, repository }, (collected: Planned.Planned<typeof ImagePairs.Type>) =>
             Node.bindPlanned(
               AnalyzeDiff.call({ pairs: collected.pairs }),
-              (analysis: Planned.Planned<typeof Analysis.Type>) =>
-                WriteReport.call({ findings: analysis.findings, outputFile, repository })
-            )
-        )
-    )
+              Node.capture({ outputFile, repository }, (analysis: Planned.Planned<typeof Analysis.Type>) =>
+                WriteReport.call({ findings: analysis.findings, outputFile, repository }))
+            ))
+        ))
+    ))
 })
 
 /** Every step the flow calls. */

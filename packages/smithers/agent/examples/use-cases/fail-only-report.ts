@@ -222,21 +222,27 @@ const runAll = (
   const members = Object.fromEntries(commands.map(({ cmd }, index) => [
     `${index}`,
     Node.catch(RunCommand.call({ command: cmd, directory: options.directory, timeoutMs: options.timeoutMs }), {
-      onFailure: (failure) =>
-        Node.map(Node.succeed(failure), (error): RunResult => ({
-          command: cmd,
-          // Runner failures use the conventional exit code 125.
-          exitCode: 125,
-          stdout: error.stdout ?? "",
-          stderr: error.stderr ?
-            `${error.message}\n${error.stderr}` :
-            error.message,
-          durationMs: error.durationMs ?? 0
-        }))
+      onFailure: Node.capture(
+        { cmd },
+        (failure) =>
+          Node.map(
+            Node.succeed(failure),
+            Node.capture({ cmd }, (error): RunResult => ({
+              command: cmd,
+              // Runner failures use the conventional exit code 125.
+              exitCode: 125,
+              stdout: error.stdout ?? "",
+              stderr: error.stderr ?
+                `${error.message}\n${error.stderr}` :
+                error.message,
+              durationMs: error.durationMs ?? 0
+            }))
+          )
+      )
     })
   ]))
   const joined = Bounded.all(members, { concurrency: options.concurrency })
-  return Node.map(joined, (ran) => Object.values(ran))
+  return Node.map(joined, Node.capture({}, (ran) => Object.values(ran)))
 }
 
 const Positive = Schema.Int.check(Schema.isGreaterThan(0))
@@ -252,24 +258,45 @@ export const FailOnlyReport = Flow.make("examples/FailOnlyReport", {
   },
   success: Sink,
   error: AgentAction.AgentFailure,
-  body: ({ commands = defaultCommands, directory = ".", maxParallel = 4, sink = "pr-comment", timeoutMs = 300_000 }) =>
-    Node.bindPlanned(
+  body: Node.capture({}, (
+    { commands = defaultCommands, directory = ".", maxParallel = 4, sink = "pr-comment", timeoutMs = 300_000 }
+  ) => {
+    const run = { commands, sink }
+    return Node.bindPlanned(
       runAll(commands, { directory, timeoutMs, concurrency: maxParallel }),
-      (runs: Planned.Planned<ReadonlyArray<RunResult>>) =>
-        Node.branch(Analyze.call({ results: runs }), {
-          if: (analysis) => analysis.notable,
-          then: (analysis) =>
-            Node.bindPlanned(
-              WriteReport.call({
-                failingCommands: analysis.failingCommands,
-                regressingCommands: analysis.regressingCommands,
-                artifacts: analysis.artifacts
-              }),
-              (report) => Node.map(Node.succeed({ destination: sink, summary: report.overallSummary }), reported)
-            ),
-          else: () => Node.map(Node.succeed({ destination: sink, commandCount: commands.length, runs }), quiet)
-        })
+      Node.capture(
+        run,
+        (runs: Planned.Planned<ReadonlyArray<RunResult>>) =>
+          Node.branch(Analyze.call({ results: runs }), {
+            if: Node.capture({}, (analysis) => analysis.notable),
+            then: Node.capture(run, (analysis) =>
+              Node.bindPlanned(
+                WriteReport.call({
+                  failingCommands: analysis.failingCommands,
+                  regressingCommands: analysis.regressingCommands,
+                  artifacts: analysis.artifacts
+                }),
+                Node.capture(
+                  run,
+                  (report) =>
+                    Node.map(
+                      Node.succeed({ destination: sink, summary: report.overallSummary }),
+                      Node.capture({}, reported)
+                    )
+                )
+              )),
+            else: Node.capture(
+              run,
+              () =>
+                Node.map(
+                  Node.succeed({ destination: sink, commandCount: commands.length, runs }),
+                  Node.capture({}, quiet)
+                )
+            )
+          })
+      )
     )
+  })
 })
 
 /** Every step the flow calls, with commands run on this host. */

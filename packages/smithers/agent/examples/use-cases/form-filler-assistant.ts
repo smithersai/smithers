@@ -189,8 +189,8 @@ const finish = (
       formSchema: settings.formSchema
     }),
     {
-      if: (validation) => validation.valid,
-      then: (validation) =>
+      if: Node.capture({}, (validation) => validation.valid),
+      then: Node.capture({ settings }, (validation) =>
         Node.bindPlanned(
           Submit.call({
             payload: validation.normalizedPayload,
@@ -198,9 +198,12 @@ const finish = (
             method: settings.method,
             dryRun: settings.dryRun
           }),
-          (submission: Planned.Planned<typeof Submission.Type>) => Node.succeed({ validation, submission })
-        ),
-      else: (validation) => Node.succeed({ validation, submission: null })
+          Node.capture(
+            {},
+            (submission: Planned.Planned<typeof Submission.Type>) => Node.succeed({ validation, submission })
+          )
+        )),
+      else: Node.capture({}, (validation) => Node.succeed({ validation, submission: null }))
     }
   )
 
@@ -223,12 +226,12 @@ const clarify = (
       userResponses: settings.userResponses
     }),
     {
-      if: (clarification) => clarification.allRequiredCollected,
-      then: (clarification) => finish(settings, extraction, clarification),
-      else: (clarification) =>
+      if: Node.capture({}, (clarification) => clarification.allRequiredCollected),
+      then: Node.capture({ settings }, (clarification) => finish(settings, extraction, clarification)),
+      else: Node.capture({ round, settings }, (clarification) =>
         round >= settings.maxClarifications
           ? finish(settings, extraction, clarification)
-          : clarify(settings, extraction, round + 1, clarification)
+          : clarify(settings, extraction, round + 1, clarification))
     }
   )
 
@@ -246,7 +249,7 @@ export const FormFillerAssistant = Flow.make("examples/FormFillerAssistant", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     documents = [],
     dryRun = true,
     formSchema = {},
@@ -259,11 +262,11 @@ export const FormFillerAssistant = Flow.make("examples/FormFillerAssistant", {
     const settings: Settings = { formSchema, userResponses, maxClarifications, target, method, dryRun }
     return Node.branch(Extract.call({ documents, userInput, formSchema }), {
       // 0.x's loop `until` held from the start when nothing required was missing, so no round ran.
-      if: (extraction) => extraction.missingFields.every((field) => !field.required),
-      then: (extraction) => finish(settings, extraction, undefined),
-      else: (extraction) => clarify(settings, extraction, 1, undefined)
+      if: Node.capture({}, (extraction) => extraction.missingFields.every((field) => !field.required)),
+      then: Node.capture({ settings }, (extraction) => finish(settings, extraction, undefined)),
+      else: Node.capture({ settings }, (extraction) => clarify(settings, extraction, 1, undefined))
     })
-  }
+  })
 })
 
 /** Every step the flow calls. */

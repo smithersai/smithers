@@ -1011,24 +1011,67 @@ export const answer = (options: {
  * authoring mistake, not a human one — and it surfaces as a defect naming the
  * offending path rather than as a failure a body could sensibly catch.
  *
+ * The decoder is a captured callback, so `Interpreter.layerWithImplementations`
+ * admits it. Its identity is the schema's JSON Schema document: changing the
+ * schema changes the identity, and a durable resume refuses a plan built with
+ * a different schema. A schema with no JSON Schema form, or one whose
+ * transformation changes what it decodes without changing that document,
+ * needs `options.version`, which replaces the document as the identity. Bump
+ * it whenever the decoder's behaviour changes. Without a version, a schema
+ * with no JSON Schema form throws {@link DecodeIdentityError}.
+ *
  * @category combinators
  * @since 0.1.0
  */
-export const decode =
-  <S extends Schema.ConstraintDecoder<unknown>>(schema: S) =>
-  <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>): Node.Node<S["Type"], E, R> =>
-    Node.map(self, answerDecoder(schema))
+export const decode = <S extends Schema.ConstraintDecoder<unknown>>(schema: S, options?: DecodeOptions) => {
+  const decoder = answerDecoder(schema, options?.version)
+  return <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>): Node.Node<S["Type"], E, R> => Node.map(self, decoder)
+}
 
-// Schema decoders are opaque callbacks. Reuse one per immutable schema so a
-// same-process rebuild preserves its identity without claiming portable
-// identity for arbitrary schema transformations or checks.
-const answerDecoders = new WeakMap<object, (input: unknown) => unknown>()
+/**
+ * What {@link decode} accepts besides the schema.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface DecodeOptions {
+  /**
+   * The decoder's identity in place of the schema's JSON Schema document.
+   * Required for a schema with no JSON Schema form.
+   */
+  readonly version?: string | undefined
+}
 
-const answerDecoder = <S extends Schema.ConstraintDecoder<unknown>>(schema: S): (input: unknown) => S["Type"] => {
-  let decoder = answerDecoders.get(schema)
-  if (decoder === undefined) {
-    decoder = Schema.decodeUnknownSync(schema)
-    answerDecoders.set(schema, decoder)
+/**
+ * {@link decode} was given a schema it cannot derive a portable identity for
+ * and no `version`.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class DecodeIdentityError extends Schema.TaggedError<DecodeIdentityError>()(
+  "@smthrs/flow/HumanTask/DecodeIdentityError",
+  { message: Schema.String }
+) {}
+
+const answerDecoder = <S extends Schema.ConstraintDecoder<unknown>>(
+  schema: S,
+  version: string | undefined
+): (input: unknown) => S["Type"] => {
+  const decodeAnswer = Schema.decodeUnknownSync(schema)
+  return Node.capture(
+    version === undefined ? { schema: answerSchemaIdentity(schema) } : { version },
+    (input: unknown): S["Type"] => decodeAnswer(input)
+  )
+}
+
+const answerSchemaIdentity = (schema: Schema.ConstraintDecoder<unknown>): Node.SchemaIdentity => {
+  try {
+    return Node.schemaIdentity(schema as unknown as Schema.Top)
+  } catch (cause) {
+    throw new DecodeIdentityError({
+      message: `HumanTask.decode cannot derive an identity for this schema: ${(cause as Error).message}. ` +
+        "Pass HumanTask.decode(schema, { version }) and change the version whenever the decoder changes."
+    })
   }
-  return decoder
 }

@@ -143,13 +143,13 @@ export const LeadEnricher = Flow.make("examples/LeadEnricher", {
   payload: { lead: Schema.optional(Schema.Json), source: Schema.optional(Schema.String) },
   success: CrmRecord,
   error: AgentAction.AgentFailure,
-  body: ({ lead = {}, source = "other" }) =>
+  body: Node.capture({}, ({ lead = {}, source = "other" }) =>
     Node.bindPlanned(
       NormalizeLead.call({ lead, source }),
-      (intake: Planned.Planned<typeof Intake.Type>) =>
+      Node.capture({}, (intake: Planned.Planned<typeof Intake.Type>) =>
         Node.bindPlanned(
           Enrich.call({ company: intake.company, contactEmail: intake.contactEmail, rawNotes: intake.rawNotes }),
-          (enrichment: Planned.Planned<typeof Enrichment.Type>) =>
+          Node.capture({}, (enrichment: Planned.Planned<typeof Enrichment.Type>) =>
             Node.bindPlanned(
               ProfileLead.call({
                 intake,
@@ -157,7 +157,7 @@ export const LeadEnricher = Flow.make("examples/LeadEnricher", {
                 techStack: enrichment.techStack,
                 recentNews: enrichment.recentNews
               }),
-              (profile: Planned.Planned<typeof Profile.Type>) =>
+              Node.capture({}, (profile: Planned.Planned<typeof Profile.Type>) =>
                 WriteCrmRecord.call({
                   leadId: intake.leadId,
                   company: intake.company,
@@ -166,10 +166,10 @@ export const LeadEnricher = Flow.make("examples/LeadEnricher", {
                   recommendedPlaybook: profile.recommendedPlaybook,
                   painPoints: profile.painPoints,
                   talkingPoints: profile.talkingPoints
-                })
-            )
-        )
-    )
+                }))
+            ))
+        ))
+    ))
 })
 
 /** Every step the flow calls. */

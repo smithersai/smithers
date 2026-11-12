@@ -184,14 +184,14 @@ const Retryable = Schema.Union([StructuredOutput.StructuredOutputFailure, Harnes
 
 /** One agent step with 0.x's single retry. */
 const retriedOnce = <E, R>(call: () => Node.Node<typeof EditSummary.Type, E, R>) =>
-  Node.catch(call(), { error: Retryable, onFailure: () => call() })
+  Node.catch(call(), { error: Retryable, onFailure: Node.capture({}, () => call()) })
 
 /** The five-step instance run. Each step waits for the one before it. */
 export const SweEvo = Flow.make("examples/SweEvo", {
   payload: Instance,
   success: Score,
   error: AgentAction.AgentFailure,
-  body: (instance) =>
+  body: Node.capture({}, (instance) =>
     Node.andThen(
       PrepareRepo.call({ instanceId: instance.instance_id, image: instance.image, baseCommit: instance.base_commit }),
       Node.andThen(
@@ -200,12 +200,12 @@ export const SweEvo = Flow.make("examples/SweEvo", {
           retriedOnce(() => Refine.call(instance)),
           Node.bindPlanned(
             CaptureDiff.call({ instanceId: instance.instance_id }),
-            (diff: Planned.Planned<typeof Diff.Type>) =>
-              ScoreCandidate.call({ instanceId: instance.instance_id, patch: diff.patch, timeoutS: scoreTimeoutS })
+            Node.capture({ instance }, (diff: Planned.Planned<typeof Diff.Type>) =>
+              ScoreCandidate.call({ instanceId: instance.instance_id, patch: diff.patch, timeoutS: scoreTimeoutS }))
           )
         )
       )
-    )
+    ))
 })
 
 /**

@@ -169,32 +169,41 @@ export const DocsPatcher = Flow.make("examples/DocsPatcher", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ baseBranch = "main", docGlobs = ["docs/**/*.mdx", "README.md"], dryRun = false, repo, scope = "all" }) =>
-    Node.bindPlanned(
-      DetectDrift.call({ baseBranch, docGlobs, scope }),
-      (drift: Planned.Planned<typeof Drift.Type>) =>
-        Node.bindPlanned(
-          PatchDocs.call({ changes: drift.changes, affectedDocs: drift.affectedDocs, severity: drift.severity }),
-          (patch: Planned.Planned<typeof Patch.Type>) =>
-            Node.bindPlanned(
-              Node.all({
-                verification: VerifyPatch.call({
-                  patches: patch.patches,
-                  filesChanged: patch.filesChanged,
-                  baseBranch
+  body: Node.capture(
+    {},
+    ({ baseBranch = "main", docGlobs = ["docs/**/*.mdx", "README.md"], dryRun = false, repo, scope = "all" }) => {
+      const run = { baseBranch, repo: repo ?? null, dryRun }
+      return Node.bindPlanned(
+        DetectDrift.call({ baseBranch, docGlobs, scope }),
+        Node.capture(run, (drift: Planned.Planned<typeof Drift.Type>) =>
+          Node.bindPlanned(
+            PatchDocs.call({ changes: drift.changes, affectedDocs: drift.affectedDocs, severity: drift.severity }),
+            Node.capture(run, (patch: Planned.Planned<typeof Patch.Type>) =>
+              Node.bindPlanned(
+                Node.all({
+                  verification: VerifyPatch.call({
+                    patches: patch.patches,
+                    filesChanged: patch.filesChanged,
+                    baseBranch
+                  }),
+                  pullRequest: CreatePullRequest.call({
+                    filesChanged: patch.filesChanged,
+                    summary: patch.summary,
+                    severity: drift.severity,
+                    repo: repo ?? null,
+                    dryRun
+                  })
                 }),
-                pullRequest: CreatePullRequest.call({
-                  filesChanged: patch.filesChanged,
-                  summary: patch.summary,
-                  severity: drift.severity,
-                  repo: repo ?? null,
-                  dryRun
-                })
-              }),
-              (done) => Node.succeed({ drift, patch, verification: done.verification, pullRequest: done.pullRequest })
-            )
-        )
-    )
+                Node.capture(
+                  {},
+                  (done) =>
+                    Node.succeed({ drift, patch, verification: done.verification, pullRequest: done.pullRequest })
+                )
+              ))
+          ))
+      )
+    }
+  )
 })
 
 /** What a host supplies for the step that leaves the model. */

@@ -138,7 +138,7 @@ const approve = (detection: Planned.Planned<Detection>) =>
   Node.bindPlanned(
     Node.map(
       Node.succeed({ hostId: detection.hostId, severity: detection.severity, indicators: detection.indicators }),
-      question
+      Node.capture({}, question)
     ),
     Node.capture({}, (prompt: Planned.Planned<string>) =>
       HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema }).pipe(
@@ -180,7 +180,7 @@ export const RansomwareIsolationCoordinator = Flow.make("examples/RansomwareIsol
   body: Node.capture({}, ({ evidence = [], host = "unknown" }) =>
     Node.branch(Detect.call({ host, evidence }), {
       if: Node.capture({}, (detection) => detection.isolateRecommended),
-      then: isolate,
+      then: Node.capture({}, isolate),
       else: Node.capture({}, (detection) =>
         WriteReport.call({
           hostId: detection.hostId,

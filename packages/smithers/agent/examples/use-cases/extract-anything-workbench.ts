@@ -116,28 +116,36 @@ export const ExtractAnythingWorkbench = Flow.make("examples/ExtractAnythingWorkb
   },
   success: Preview,
   error: AgentAction.AgentFailure,
-  body: ({ extractors = ["auto"], input, targetSchema }) =>
-    Node.bindPlanned(
+  body: Node.capture({}, ({ extractors = ["auto"], input, targetSchema }) => {
+    const run = { extractors, input, targetSchema }
+    return Node.bindPlanned(
       Node.all(Object.fromEntries(extractors.map((extractorName) => [
         extractorName,
         Extract.call({ extractorName, input, targetSchema })
       ]))),
-      (candidates: Planned.Planned<Readonly<Record<string, Candidate>>>) =>
+      Node.capture(run, (candidates: Planned.Planned<Readonly<Record<string, Candidate>>>) =>
         Node.bindPlanned(
           Node.all(Object.fromEntries(extractors.map((extractorName) => [
             extractorName,
             Validate.call({ candidate: candidates[extractorName]!, targetSchema })
           ]))),
-          (validations: Planned.Planned<Readonly<Record<string, Validation>>>) =>
+          Node.capture(run, (validations: Planned.Planned<Readonly<Record<string, Validation>>>) =>
             Node.bindPlanned(
-              Node.map(Node.succeed({ names: extractors, candidates, validations }), (byName) => ({
-                candidates: inOrder(byName.names, byName.candidates),
-                validations: inOrder(byName.names, byName.validations)
-              })),
-              (lists) => PreviewStep.call({ input, validations: lists.validations, candidates: lists.candidates })
-            )
-        )
+              Node.map(
+                Node.succeed({ names: extractors, candidates, validations }),
+                Node.capture({}, (byName) => ({
+                  candidates: inOrder(byName.names, byName.candidates),
+                  validations: inOrder(byName.names, byName.validations)
+                }))
+              ),
+              Node.capture(
+                run,
+                (lists) => PreviewStep.call({ input, validations: lists.validations, candidates: lists.candidates })
+              )
+            ))
+        ))
     )
+  })
 })
 
 /** Every step the flow calls. */

@@ -119,17 +119,17 @@ export const OpenPullRequest = Action.make("examples/DocSync/OpenPullRequest", {
 export const FixAll = Flow.make("examples/DocSync/FixAll", {
   payload: { discrepancies: Schema.Array(Discrepancy) },
   success: Schema.Array(FixResult),
-  body: ({ discrepancies }) => {
+  body: Node.capture({}, ({ discrepancies }) => {
     const fixable = discrepancies.filter((d) => d.severity !== "info")
     if (fixable.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a failed fixer settles as null instead of failing its siblings.
     const members = Object.fromEntries(fixable.map((discrepancy, i) => [
       `fix-${i}`,
-      Node.catch(FixDoc.call(discrepancy), { onFailure: () => Node.succeed(null) })
+      Node.catch(FixDoc.call(discrepancy), { onFailure: Node.capture({}, () => Node.succeed(null)) })
     ]))
     const joined = Bounded.all(members, { concurrency: 3 })
-    return Node.map(joined, (fixed) => Object.values(fixed).filter(Schema.is(FixResult)))
-  }
+    return Node.map(joined, Node.capture({}, (fixed) => Object.values(fixed).filter(Schema.is(FixResult))))
+  })
 })
 
 /** The pull request 0.x's PR prompt spelled out, over the files a fixer fixed. Pure. */
@@ -153,23 +153,23 @@ export const DocSync = Flow.make("examples/DocSync", {
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ docsDir = "docs/", format = "mdx", srcDir = "src/" }) =>
+  body: Node.capture({}, ({ docsDir = "docs/", format = "mdx", srcDir = "src/" }) =>
     Node.bindPlanned(
       AuditDocs.call({ docsDir, srcDir, format }),
-      (audit: Planned.Planned<typeof Audit.Type>) =>
+      Node.capture({}, (audit: Planned.Planned<typeof Audit.Type>) =>
         Node.bindPlanned(
           FixAll.child({ discrepancies: audit.discrepancies }),
-          (fixes: Planned.Planned<ReadonlyArray<FixResult>>) =>
+          Node.capture({}, (fixes: Planned.Planned<ReadonlyArray<FixResult>>) =>
             Node.bindPlanned(
-              Node.branch(Node.map(Node.succeed(fixes), request), {
-                if: (pr) => pr.files.length > 0,
-                then: (pr) => OpenPullRequest.call(pr),
-                else: () => Node.succeed(null)
+              Node.branch(Node.map(Node.succeed(fixes), Node.capture({}, request)), {
+                if: Node.capture({}, (pr) => pr.files.length > 0),
+                then: Node.capture({}, (pr) => OpenPullRequest.call(pr)),
+                else: Node.capture({}, () => Node.succeed(null))
               }),
-              (pullRequest) => Node.succeed({ audit, fixes, pullRequest })
-            )
-        )
-    )
+              Node.capture({}, (pullRequest) => Node.succeed({ audit, fixes, pullRequest }))
+            ))
+        ))
+    ))
 })
 
 /** What a host supplies for the step that leaves the model. */

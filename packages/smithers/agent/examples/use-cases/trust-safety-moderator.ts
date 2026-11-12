@@ -134,27 +134,33 @@ export const TrustSafetyModerator = Flow.make("examples/TrustSafetyModerator", {
   },
   success: Decision,
   error: AgentAction.AgentFailure,
-  body: ({ authorId = "anonymous", content = "", policies = "default", source = "user_submission" }) =>
-    Node.bindPlanned(IntakeContent.call({ content, source, authorId }), (intake) =>
+  body: Node.capture(
+    {},
+    ({ authorId = "anonymous", content = "", policies = "default", source = "user_submission" }) =>
       Node.bindPlanned(
-        Moderate.call({
-          contentId: intake.contentId,
-          contentType: intake.contentType,
-          rawText: intake.rawText,
-          policies
-        }),
-        (moderation) =>
-          Act.call({
-            contentId: moderation.contentId,
-            riskLevel: moderation.riskLevel,
-            policyClass: moderation.policyClass,
-            confidence: moderation.confidence,
-            reasoning: moderation.reasoning,
-            flaggedSegments: moderation.flaggedSegments,
-            needsHumanReview: moderation.needsHumanReview,
-            rawText: intake.rawText
-          })
-      ))
+        IntakeContent.call({ content, source, authorId }),
+        Node.capture({ policies }, (intake) =>
+          Node.bindPlanned(
+            Moderate.call({
+              contentId: intake.contentId,
+              contentType: intake.contentType,
+              rawText: intake.rawText,
+              policies
+            }),
+            Node.capture({}, (moderation) =>
+              Act.call({
+                contentId: moderation.contentId,
+                riskLevel: moderation.riskLevel,
+                policyClass: moderation.policyClass,
+                confidence: moderation.confidence,
+                reasoning: moderation.reasoning,
+                flaggedSegments: moderation.flaggedSegments,
+                needsHumanReview: moderation.needsHumanReview,
+                rawText: intake.rawText
+              }))
+          ))
+      )
+  )
 })
 
 /** Every step the flow calls. */

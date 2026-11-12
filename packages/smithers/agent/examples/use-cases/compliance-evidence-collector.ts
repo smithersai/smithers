@@ -166,7 +166,7 @@ const attributed = (pair: Pair) =>
 export const FetchEvidence = Flow.make("examples/ComplianceEvidenceCollector/FetchEvidence", {
   payload: { controls: Schema.Array(PlannedControl), concurrency: Positive, timeoutMs: Positive },
   success: Schema.Array(EvidenceItem),
-  body: ({ concurrency, controls, timeoutMs }) => {
+  body: Node.capture({}, ({ concurrency, controls, timeoutMs }) => {
     // 0.x `continueOnFail`: a failed fetch settles as null instead of failing its siblings.
     // Members are keyed by position: the plan may list a source twice, and ids may concatenate alike.
     const members = Object.fromEntries(controls.flatMap((control, c) =>
@@ -183,14 +183,14 @@ export const FetchEvidence = Flow.make("examples/ComplianceEvidenceCollector/Fet
             }),
             attributed({ controlId: control.controlId, sourceId: source.sourceId })
           ),
-          { onFailure: () => Node.succeed(null) }
+          { onFailure: Node.capture({}, () => Node.succeed(null)) }
         )
       ])
     ))
     if (Object.keys(members).length === 0) return Node.succeed([])
     const joined = Bounded.all(members, { concurrency })
-    return Node.map(joined, (fetched) => Object.values(fetched).filter(Schema.is(EvidenceItem)))
-  }
+    return Node.map(joined, Node.capture({}, (fetched) => Object.values(fetched).filter(Schema.is(EvidenceItem))))
+  })
 })
 
 /** Normalizes every collected evidence item, once all of them are in. */
@@ -198,7 +198,7 @@ export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector
   payload: { evidence: Schema.Array(EvidenceItem), concurrency: Positive },
   success: Schema.Array(Normalized),
   error: AgentAction.AgentFailure,
-  body: ({ concurrency, evidence }) => {
+  body: Node.capture({}, ({ concurrency, evidence }) => {
     if (evidence.length === 0) return Node.succeed([])
     const members = Object.fromEntries(evidence.map((item: EvidenceItem, index) => [
       `normalize-${index}`,
@@ -215,9 +215,12 @@ export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector
     const joined = Bounded.all(members, { concurrency })
     return Node.map(
       joined,
-      (normalized): ReadonlyArray<Normalized> => Object.values(normalized).filter(Schema.is(Normalized))
+      Node.capture(
+        {},
+        (normalized): ReadonlyArray<Normalized> => Object.values(normalized).filter(Schema.is(Normalized))
+      )
     )
-  }
+  })
 })
 
 /** The flow: plan, fetch, normalize, assemble. */
@@ -231,16 +234,21 @@ export const ComplianceEvidenceCollector = Flow.make("examples/ComplianceEvidenc
   },
   success: Packet,
   error: AgentAction.AgentFailure,
-  body: ({ controls, framework = "SOC2", maxConcurrency = 5, scope, timeoutMs = 60_000 }) =>
-    Node.bindPlanned(PlanCollection.call({ framework, scope, controls }), (plan) =>
-      Node.bindPlanned(
-        FetchEvidence.child({ controls: plan.controls, concurrency: maxConcurrency, timeoutMs }),
-        (evidence) =>
-          Node.bindPlanned(
-            NormalizeEvidence.child({ evidence, concurrency: maxConcurrency }),
-            (findings) => AssemblePacket.call({ framework, findings, controls: plan.controls })
-          )
-      ))
+  body: Node.capture({}, ({ controls, framework = "SOC2", maxConcurrency = 5, scope, timeoutMs = 60_000 }) => {
+    const run = { framework, maxConcurrency, timeoutMs }
+    return Node.bindPlanned(
+      PlanCollection.call({ framework, scope, controls }),
+      Node.capture(run, (plan) =>
+        Node.bindPlanned(
+          FetchEvidence.child({ controls: plan.controls, concurrency: maxConcurrency, timeoutMs }),
+          Node.capture(run, (evidence) =>
+            Node.bindPlanned(
+              NormalizeEvidence.child({ evidence, concurrency: maxConcurrency }),
+              Node.capture(run, (findings) => AssemblePacket.call({ framework, findings, controls: plan.controls }))
+            ))
+        ))
+    )
+  })
 })
 
 /** Every step the flow calls, and the child flows it starts. */

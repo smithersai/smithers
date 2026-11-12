@@ -470,7 +470,7 @@ Provide a complete convoy summary with merge log.`
 
 /** 0.x's `retries={1}`: a failed call runs once more. */
 const retriedOnce = <A, R>(call: () => Node.Node<A, AgentAction.AgentFailure, R>) =>
-  Node.catch(call(), { onFailure: () => call() })
+  Node.catch(call(), { onFailure: Node.capture({}, () => call()) })
 
 const convoyRow = (plan: Plan, goal: string): typeof Convoy.Type => ({
   id: plan.convoyId,
@@ -520,8 +520,11 @@ const patrol = (
 ): WitnessCall =>
   count === 0
     ? Node.succeed(events)
-    : Node.bindPlanned(Witness.call(payload), (event: Planned.Planned<WitnessEvent>) =>
-      Node.andThen(Node.succeed(event), patrol(count - 1, payload, [...events, event])))
+    : Node.bindPlanned(
+      Witness.call(payload),
+      Node.capture({ beads: payload.beads, count }, (event: Planned.Planned<WitnessEvent>) =>
+        Node.andThen(Node.succeed(event), patrol(count - 1, payload, [...events, event])))
+    )
 
 type DispatchTag = `examples/Gastown/${"WriteConvoy" | "WriteBead" | "Polecat" | "Witness"}`
 
@@ -534,7 +537,7 @@ export const Dispatch = Flow.make("examples/Gastown/Dispatch", {
   payload: { plan: Plan, goal: Schema.String, maxAgents: Schema.Int.check(Schema.isGreaterThan(0)) },
   success: Schema.Struct({ results: Schema.Array(PolecatResult), witnessEvents: Schema.Array(WitnessEvent) }),
   error: AgentAction.AgentFailure,
-  body: ({ goal, maxAgents, plan }) => {
+  body: Node.capture({}, ({ goal, maxAgents, plan }) => {
     const opened = WriteConvoy.call(convoyRow(plan, goal))
     if (plan.beads.length === 0) {
       return Node.andThen(opened, Node.succeed({ results: [], witnessEvents: [] }))
@@ -545,25 +548,40 @@ export const Dispatch = Flow.make("examples/Gastown/Dispatch", {
     // 0.x `continueOnFail` after `retries={1}`: a polecat that fails twice settles as null.
     const polecats = Object.fromEntries(plan.beads.map((bead) => [
       `polecat-${bead.id}`,
-      Node.catch(retriedOnce(() => Polecat.call(bead)), { onFailure: () => Node.succeed(null) })
+      Node.catch(retriedOnce(() => Polecat.call(bead)), { onFailure: Node.capture({}, () => Node.succeed(null)) })
     ]))
     const joined = Bounded.all(polecats, { concurrency: maxAgents })
-    const worked = Node.map(joined, (settled) => Object.values(settled).filter(Schema.is(PolecatResult)))
+    const worked = Node.map(
+      joined,
+      Node.capture(
+        {},
+        (settled) => Object.values(settled).filter(Schema.is(PolecatResult))
+      )
+    )
     const dispatched: Node.Node<
       { readonly results: ReadonlyArray<PolecatResult>; readonly witnessEvents: ReadonlyArray<WitnessEvent> },
       AgentAction.AgentFailure,
       Action.Requirement<DispatchTag>
-    > = Node.bindPlanned(worked, (results: Planned.Planned<ReadonlyArray<PolecatResult>>) =>
-      Node.bindPlanned(
-        Node.branch(Node.succeed(results), {
-          if: (settled) => settled.length < plan.beads.length,
-          then: () => patrol(patrolsFor(plan.beads.length), { polecatResults: results, beads: plan.beads }, []),
-          else: () => Node.succeed([])
-        }),
-        (witnessEvents: Planned.Planned<ReadonlyArray<WitnessEvent>>) => Node.succeed({ results, witnessEvents })
-      ))
+    > = Node.bindPlanned(
+      worked,
+      Node.capture({ plan }, (results: Planned.Planned<ReadonlyArray<PolecatResult>>) =>
+        Node.bindPlanned(
+          Node.branch(Node.succeed(results), {
+            if: Node.capture({ plan }, (settled) => settled.length < plan.beads.length),
+            then: Node.capture(
+              { plan },
+              () => patrol(patrolsFor(plan.beads.length), { polecatResults: results, beads: plan.beads }, [])
+            ),
+            else: Node.capture({}, () => Node.succeed([]))
+          }),
+          Node.capture(
+            {},
+            (witnessEvents: Planned.Planned<ReadonlyArray<WitnessEvent>>) => Node.succeed({ results, witnessEvents })
+          )
+        ))
+    )
     return Node.andThen(opened, Node.andThen(slung, dispatched))
-  }
+  })
 })
 
 /** What one landing records: the ready request and the refinery's result. */
@@ -588,14 +606,14 @@ const land = (
       targetBranch,
       phase: "ready"
     }),
-    (opened: Planned.Planned<MergeRequest>) =>
+    Node.capture({ result, targetBranch }, (opened: Planned.Planned<MergeRequest>) =>
       Node.andThen(
         Node.succeed(opened),
         Node.bindPlanned(
           retriedOnce(() => Refinery.call({ result, targetBranch })),
-          (merged: Planned.Planned<MergeRequest>) => Node.succeed({ opened, merged })
+          Node.capture({}, (merged: Planned.Planned<MergeRequest>) => Node.succeed({ opened, merged }))
         )
-      )
+      ))
   )
 
 /** Every merge settled as merged or rejected: 0.x's `allMergesDone`. */
@@ -611,7 +629,7 @@ export const Refine = Flow.make("examples/Gastown/Refine", {
   payload: { plan: Plan, goal: Schema.String, results: Schema.Array(PolecatResult), baseBranch: Schema.String },
   success: Schema.Array(MergeRequest),
   error: AgentAction.AgentFailure,
-  body: ({ baseBranch, goal, plan, results }) => {
+  body: Node.capture({}, ({ baseBranch, goal, plan, results }) => {
     const completed = results.filter((r) => r.exitType === "completed")
     if (completed.length === 0) return Node.succeed([])
     // Each landing starts only once the one before it settled, and a failed
@@ -624,27 +642,43 @@ export const Refine = Flow.make("examples/Gastown/Refine", {
       if (next === undefined) return Node.succeed(landed)
       return Node.bindPlanned(
         land(next, baseBranch),
-        (pair: Planned.Planned<Landing>) => Node.andThen(Node.succeed(pair), queue(index + 1, [...landed, pair]))
+        Node.capture(
+          { baseBranch, completed, index },
+          (pair: Planned.Planned<Landing>) => Node.andThen(Node.succeed(pair), queue(index + 1, [...landed, pair]))
+        )
       )
     }
-    return Node.bindPlanned(queue(0, []), (pairs: Planned.Planned<ReadonlyArray<Landing>>) => {
-      const requests = Node.map(Node.succeed(pairs), (real) => real.flatMap(({ merged, opened }) => [opened, merged]))
-      return Node.branch(Node.map(Node.succeed(pairs), (real) => real.map((p) => p.merged)), {
-        if: (merged) => allMergesDone(merged, completed.length),
-        then: (merged) =>
-          Node.bindPlanned(
-            Node.map(Node.succeed(merged), (real): typeof Convoy.Type => ({
-              ...convoyRow(plan, goal),
-              status: "closed",
-              completedTasks: real.filter((mr) => mr.phase === "merged").length,
-              failedTasks: real.filter((mr) => mr.phase === "rejected" || mr.phase === "failed").length
-            })),
-            (closed: Planned.Planned<typeof Convoy.Type>) => Node.andThen(WriteConvoy.call(closed), requests)
-          ),
-        else: () => requests
+    const run = { completed, goal, plan }
+    return Node.bindPlanned(
+      queue(0, []),
+      Node.capture(run, (pairs: Planned.Planned<ReadonlyArray<Landing>>) => {
+        const requests = Node.map(
+          Node.succeed(pairs),
+          Node.capture({}, (real) => real.flatMap(({ merged, opened }) => [opened, merged]))
+        )
+        return Node.branch(Node.map(Node.succeed(pairs), Node.capture({}, (real) => real.map((p) => p.merged))), {
+          if: Node.capture(run, (merged) => allMergesDone(merged, completed.length)),
+          then: Node.capture(run, (merged) =>
+            Node.bindPlanned(
+              Node.map(
+                Node.succeed(merged),
+                Node.capture(run, (real): typeof Convoy.Type => ({
+                  ...convoyRow(plan, goal),
+                  status: "closed",
+                  completedTasks: real.filter((mr) => mr.phase === "merged").length,
+                  failedTasks: real.filter((mr) => mr.phase === "rejected" || mr.phase === "failed").length
+                }))
+              ),
+              Node.capture(
+                {},
+                (closed: Planned.Planned<typeof Convoy.Type>) => Node.andThen(WriteConvoy.call(closed), requests)
+              )
+            )),
+          else: Node.capture({}, () => requests)
+        })
       })
-    })
-  }
+    )
+  })
 })
 
 /** The flow: plan, dispatch, refine, report. */
@@ -657,16 +691,17 @@ export const Gastown = Flow.make("examples/Gastown", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ baseBranch = "main", directory, goal, maxAgents }) =>
-    Node.bindPlanned(
+  body: Node.capture({}, ({ baseBranch = "main", directory, goal, maxAgents }) => {
+    const run = { baseBranch, goal, ...(maxAgents === undefined ? {} : { maxAgents }) }
+    return Node.bindPlanned(
       Mayor.call({ directory, goal, ...(maxAgents === undefined ? {} : { maxAgents }) }),
-      (plan: Planned.Planned<Plan>) =>
+      Node.capture(run, (plan: Planned.Planned<Plan>) =>
         Node.bindPlanned(
           Dispatch.child({ plan, goal, maxAgents: maxAgents ?? 5 }),
-          (dispatched: Planned.Planned<typeof Dispatch.successSchema.Type>) =>
+          Node.capture(run, (dispatched: Planned.Planned<typeof Dispatch.successSchema.Type>) =>
             Node.bindPlanned(
               Refine.child({ plan, goal, results: dispatched.results, baseBranch }),
-              (mergeRequests: Planned.Planned<ReadonlyArray<MergeRequest>>) =>
+              Node.capture(run, (mergeRequests: Planned.Planned<ReadonlyArray<MergeRequest>>) =>
                 Summarize.call({
                   convoyId: plan.convoyId,
                   goal,
@@ -674,10 +709,11 @@ export const Gastown = Flow.make("examples/Gastown", {
                   polecatResults: dispatched.results,
                   mergeRequests,
                   witnessEvents: dispatched.witnessEvents
-                })
-            )
-        )
+                }))
+            ))
+        ))
     )
+  })
 })
 
 /**

@@ -164,29 +164,34 @@ export const ContractDriftSentinel = Flow.make("examples/ContractDriftSentinel",
   },
   success: Output,
   error: AgentAction.AgentFailure,
-  body: ({ baselinePath, consumers = [], currentPath, format = "auto" }) =>
-    Node.bindPlanned(Load.call({ baselinePath, currentPath, format }), (snapshot) =>
-      Node.bindPlanned(
-        Diff.call({
-          format: snapshot.format,
-          baseline: snapshot.baseline,
-          current: snapshot.current,
-          entities: snapshot.entities
-        }),
-        (diff) =>
-          Node.bindPlanned(
-            Node.map(Analyze.call({ diff, consumers, format: snapshot.format }), gate),
-            (gated) =>
-              WriteOutput.call({
-                status: gated.status,
-                breakingCount: gated.breakingCount,
-                riskScore: gated.riskScore,
-                breakingChanges: gated.breakingChanges,
-                safeChanges: gated.safeChanges,
-                summary: gated.summary
-              })
-          )
-      ))
+  body: Node.capture({}, ({ baselinePath, consumers = [], currentPath, format = "auto" }) => {
+    const run = { consumers }
+    return Node.bindPlanned(
+      Load.call({ baselinePath, currentPath, format }),
+      Node.capture(run, (snapshot) =>
+        Node.bindPlanned(
+          Diff.call({
+            format: snapshot.format,
+            baseline: snapshot.baseline,
+            current: snapshot.current,
+            entities: snapshot.entities
+          }),
+          Node.capture(run, (diff) =>
+            Node.bindPlanned(
+              Node.map(Analyze.call({ diff, consumers, format: snapshot.format }), Node.capture({}, gate)),
+              Node.capture({}, (gated) =>
+                WriteOutput.call({
+                  status: gated.status,
+                  breakingCount: gated.breakingCount,
+                  riskScore: gated.riskScore,
+                  breakingChanges: gated.breakingChanges,
+                  safeChanges: gated.safeChanges,
+                  summary: gated.summary
+                }))
+            ))
+        ))
+    )
+  })
 })
 
 /** Every step the flow calls. */

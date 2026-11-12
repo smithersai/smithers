@@ -129,17 +129,19 @@ const autoUpdatable = (dependency: Dependency) => !dependency.breaking && depend
 export const UpdateCandidates = Flow.make("examples/DependencyUpdate/UpdateCandidates", {
   payload: { directory: Schema.String, outdated: Schema.Array(Dependency) },
   success: Schema.Array(UpdateResult),
-  body: ({ directory, outdated }) => {
+  body: Node.capture({}, ({ directory, outdated }) => {
     const candidates = outdated.filter(autoUpdatable)
     if (candidates.length === 0) return Node.succeed([])
     // 0.x `continueOnFail`: a failed updater settles as null instead of failing its siblings.
     const members = Object.fromEntries(candidates.map(({ breaking: _, ...dependency }) => [
       dependency.name,
-      Node.catch(UpdateDependency.call({ ...dependency, directory }), { onFailure: () => Node.succeed(null) })
+      Node.catch(UpdateDependency.call({ ...dependency, directory }), {
+        onFailure: Node.capture({}, () => Node.succeed(null))
+      })
     ]))
     const joined = Bounded.all(members, { concurrency: 3 })
-    return Node.map(joined, (updated) => Object.values(updated).filter(Schema.is(UpdateResult)))
-  }
+    return Node.map(joined, Node.capture({}, (updated) => Object.values(updated).filter(Schema.is(UpdateResult))))
+  })
 })
 
 /** Counts the outcomes. Pure, so it is a `Node.map`, not a step. */
@@ -173,28 +175,39 @@ export const DependencyUpdate = Flow.make("examples/DependencyUpdate", {
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     buildCmd = "npm run build",
     checkCmd = "npm outdated --json",
     directory,
     lockfile = "package-lock.json",
     testCmd = "npm test",
     typecheckCmd = "npx tsc --noEmit"
-  }) =>
-    Node.bindPlanned(
+  }) => {
+    const run = { directory, typecheckCmd, testCmd, buildCmd }
+    return Node.bindPlanned(
       ScanDependencies.call({ directory, checkCmd, lockfile }),
-      (scan: Planned.Planned<typeof Scan.Type>) =>
-        Node.branch(UpdateCandidates.child({ directory, outdated: scan.outdated }), {
-          if: (updates) => updates.length > 0,
-          then: (updates) =>
-            Node.bindPlanned(
-              Verify.call({ directory, typecheckCmd, testCmd, buildCmd }),
-              (verify: Planned.Planned<typeof Verification.Type>) =>
-                Node.map(Node.succeed({ scan, updates, verify }), report)
-            ),
-          else: (updates) => Node.map(Node.succeed({ scan, updates, verify: null }), report)
-        })
+      Node.capture(
+        run,
+        (scan: Planned.Planned<typeof Scan.Type>) =>
+          Node.branch(UpdateCandidates.child({ directory, outdated: scan.outdated }), {
+            if: Node.capture({}, (updates) => updates.length > 0),
+            then: Node.capture(run, (updates) =>
+              Node.bindPlanned(
+                Verify.call({ directory, typecheckCmd, testCmd, buildCmd }),
+                Node.capture(
+                  {},
+                  (verify: Planned.Planned<typeof Verification.Type>) =>
+                    Node.map(Node.succeed({ scan, updates, verify }), Node.capture({}, report))
+                )
+              )),
+            else: Node.capture(
+              {},
+              (updates) => Node.map(Node.succeed({ scan, updates, verify: null }), Node.capture({}, report))
+            )
+          })
+      )
     )
+  })
 })
 
 /** Every agent step the flow calls, and the child flow it starts. The host implements {@link Verify}. */

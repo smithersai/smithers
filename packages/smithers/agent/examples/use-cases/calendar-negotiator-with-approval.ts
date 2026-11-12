@@ -241,7 +241,7 @@ const approveThenWrite = (
   idempotencyKey: string
 ): Node.Node<typeof Outcome.Type, Failure, Requirements> =>
   Node.bindPlanned(
-    Node.map(Node.succeed({ reply, idempotencyKey }), question),
+    Node.map(Node.succeed({ reply, idempotencyKey }), Node.capture({}, question)),
     Node.capture({ threadId, idempotencyKey: idempotencyKey ?? null }, (prompt: Planned.Planned<string>) =>
       Node.branch(
         HumanTask.decode(Approval)(

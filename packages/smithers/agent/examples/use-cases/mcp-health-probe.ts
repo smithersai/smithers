@@ -207,45 +207,58 @@ const round = (
   iteration: number,
   earlier: Planned.Planned<ReadonlyArray<ProbeResult>> | ReadonlyArray<never>,
   reports: ReadonlyArray<Planned.Planned<Report>>
-): Node.Node<Outcome, AgentAction.AgentFailure, Requirements> =>
+): Node.Node<Outcome, AgentAction.AgentFailure, Requirements> => {
+  const run = {
+    iteration,
+    options: {
+      ...options,
+      lastRun: options.lastRun ?? null,
+      previousBaseline: options.previousBaseline ?? null,
+      notifyChannel: options.notifyChannel ?? null
+    }
+  }
   // The probes read nothing the scheduler says, so `Node.andThen` only orders them after it.
-  Node.andThen(
+  return Node.andThen(
     Schedule.call({ intervalMs: options.intervalMs, lastRun: options.lastRun, iteration: iteration - 1 }),
-    Node.bindPlanned(probeAll(options), (probed: Planned.Planned<Readonly<Record<string, unknown>>>) =>
-      Node.bindPlanned(
-        Node.map(Node.succeed({ earlier, probed }), accumulate),
-        (probeResults: Planned.Planned<ReadonlyArray<ProbeResult>>) =>
-          Node.branch(
-            CheckResults.call({
-              probeResults,
-              previousBaseline: options.previousBaseline,
-              latencyThresholdMs: options.latencyThresholdMs
-            }),
-            {
-              if: (check) => check.materialChange === false,
-              then: (check) => Node.succeed({ iterations: iteration, check, reports }),
-              else: (check) =>
-                Node.bindPlanned(
-                  Reporter.call({
-                    check,
-                    probeResults,
-                    outputPath: options.outputPath,
-                    notifyChannel: options.notifyChannel
-                  }),
-                  (report: Planned.Planned<Report>) =>
-                    iteration >= options.maxIterations
-                      ? Node.succeed({ iterations: iteration, check, reports: [...reports, report] })
-                      // The next round reads nothing the report says either; settling
-                      // the report first keeps 0.x's order, where it began the next round.
-                      : Node.andThen(
-                        Node.succeed(report),
-                        round(options, iteration + 1, probeResults, [...reports, report])
-                      )
-                )
-            }
-          )
-      ))
+    Node.bindPlanned(
+      probeAll(options),
+      Node.capture(run, (probed: Planned.Planned<Readonly<Record<string, unknown>>>) =>
+        Node.bindPlanned(
+          Node.map(Node.succeed({ earlier, probed }), Node.capture({}, accumulate)),
+          Node.capture(run, (probeResults: Planned.Planned<ReadonlyArray<ProbeResult>>) =>
+            Node.branch(
+              CheckResults.call({
+                probeResults,
+                previousBaseline: options.previousBaseline,
+                latencyThresholdMs: options.latencyThresholdMs
+              }),
+              {
+                if: Node.capture({}, (check) => check.materialChange === false),
+                then: Node.capture({ iteration }, (check) => Node.succeed({ iterations: iteration, check, reports })),
+                else: Node.capture(run, (check) =>
+                  Node.bindPlanned(
+                    Reporter.call({
+                      check,
+                      probeResults,
+                      outputPath: options.outputPath,
+                      notifyChannel: options.notifyChannel
+                    }),
+                    Node.capture(run, (report: Planned.Planned<Report>) =>
+                      iteration >= options.maxIterations
+                        ? Node.succeed({ iterations: iteration, check, reports: [...reports, report] })
+                        // The next round reads nothing the report says either; settling
+                        // the report first keeps 0.x's order, where it began the next round.
+                        : Node.andThen(
+                          Node.succeed(report),
+                          round(options, iteration + 1, probeResults, [...reports, report])
+                        ))
+                  ))
+              }
+            ))
+        ))
+    )
   )
+}
 
 /** The flow. `servers` and `maxIterations` are real at plan time, so they set the plan's width and depth. */
 export const McpHealthProbe = Flow.make("examples/McpHealthProbe", {
@@ -263,7 +276,7 @@ export const McpHealthProbe = Flow.make("examples/McpHealthProbe", {
   },
   success: Outcome,
   error: AgentAction.AgentFailure,
-  body: ({
+  body: Node.capture({}, ({
     baselines = {},
     intervalMs = 300_000,
     lastRun,
@@ -291,7 +304,7 @@ export const McpHealthProbe = Flow.make("examples/McpHealthProbe", {
       1,
       [],
       []
-    )
+    ))
 })
 
 /** Every step the flow calls. */
