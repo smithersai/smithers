@@ -111,9 +111,10 @@ journal reads finish after that credential expired.
 
 `SyncClient.subscribe` wraps the RPC stream. It detects invalid cursor movement
 as `SyncGapError`, refuses a frame or a catch-up page that contradicts itself
-as a `protocol_violation`, reconnects transport failures under exponential
-backoff capped at five seconds, and resumes from the subscription's matching
-progress map. Authentication is `SyncAuth`, and both are part of the package
+as a `protocol_violation`, reconnects transport failures of the live stream
+under exponential backoff capped at five seconds, and resumes from the
+subscription's matching progress map. A transport failure during the catch-up
+`Sync.Read` surfaces as `transport_failed` instead. Authentication is `SyncAuth`, and both are part of the package
 rather than left to the application.
 
 ## Compacted runs

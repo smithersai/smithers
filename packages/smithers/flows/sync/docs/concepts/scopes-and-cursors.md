@@ -49,8 +49,9 @@ the cursor, not the entry sequences against each other. See
 
 A cursor set that names one run twice is ambiguous about where the read starts,
 so both `Sync.Read` and `Sync.Subscribe` refuse it with `invalid_request`
-rather than picking one. `SyncProtocol.duplicateCursorRunId` is the check, and
-the client applies it to the server's echoed cursors as well: a response that
+rather than picking one. `SyncProtocol.duplicateCursorRunId` is the check.
+`SyncClient.subscribe` applies it to the cursors it is given, before any
+request leaves, and to the server's echoed cursors as well: a response that
 names a run twice is a `protocol_violation`.
 
 The schema cannot express uniqueness, so the rule is stated once and enforced

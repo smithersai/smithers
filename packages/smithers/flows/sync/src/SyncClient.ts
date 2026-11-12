@@ -131,6 +131,10 @@ export interface SubscribeOptions<EApply = never, EResync = never> {
    * apply callback is present, delivered otherwise), so a caller
    * ahead of the shared view keeps its place and a caller behind it is
    * fast-forwarded. Rebuild from an earlier position with a fresh client.
+   *
+   * One cursor per run: a set that names a run twice is refused with
+   * `invalid_request` before any request leaves, exactly as the server
+   * refuses it, because there is no correct choice between the two readings.
    */
   readonly cursors: WorkspaceCursor
   readonly capability?: ShareCapability
@@ -276,6 +280,9 @@ type Cursors = Map<JournalEvent.RunId, RunCursor>
 
 const cursorMap = (cursors: WorkspaceCursor): Cursors => new Map(cursors.map((cursor) => [cursor.runId, { ...cursor }]))
 
+const duplicateCursors = (runId: JournalEvent.RunId): SyncError =>
+  new SyncError({ code: "invalid_request", message: `Cursors name run ${runId} more than once` })
+
 const canonicalCursors = (cursors: ReadonlyMap<JournalEvent.RunId, RunCursor>): WorkspaceCursor =>
   Array.from(cursors.values(), (cursor) => ({ ...cursor })).sort((left, right) =>
     // A Map has one value per key, so this comparator never receives equal
@@ -305,19 +312,35 @@ const advance = (
 /**
  * Live-follow reconnect policy: exponential backoff capped at five seconds,
  * the same shape as `RpcClient`'s own transport retry policy, and only for
- * transport failures — gaps, authorization refusals, server closes, and the
- * consumer's own callback failures propagate to the consumer.
+ * transport failures of the live RPC stream itself — gaps, authorization
+ * refusals, server closes, and the consumer's own callback failures propagate
+ * to the consumer.
  */
 const reconnectPolicy = Schedule.min([
   Schedule.exponential(500, 1.5),
   Schedule.spaced(5000)
 ]).pipe(
-  Schedule.while(({ input }: { readonly input: Cause.Cause<unknown> }) => isTransportCause(input))
+  Schedule.while(({ input }: { readonly input: Cause.Cause<unknown> }) => isLiveTransportCause(input))
 )
 
-const isTransportCause = (cause: Cause.Cause<unknown>): boolean => {
+/**
+ * Marks the reasons of a failure that came out of the live `Sync.Subscribe`
+ * stream. The reconnect schedule reads this mark together with the code, not
+ * the code alone: `SyncError.is` is structural, so a consumer whose `apply`
+ * fails with a `transport_failed` it propagated from another client carries
+ * the same shape, and the mark is what keeps that failure the consumer's.
+ */
+const LiveTransport = Context.Reference<boolean>("@smthrs/sync/SyncClient/LiveTransport", {
+  defaultValue: () => false
+})
+
+const liveTransport = (cause: Cause.Cause<SyncError>): Cause.Cause<SyncError> =>
+  Cause.annotate(cause, Context.make(LiveTransport, true))
+
+const isLiveTransportCause = (cause: Cause.Cause<unknown>): boolean => {
   const reason = cause.reasons[0]!
   return cause.reasons.length === 1 && Cause.isFailReason(reason) &&
+    Context.get(Cause.reasonAnnotations(reason), LiveTransport) &&
     SyncError.is(reason.error) && reason.error.code === "transport_failed"
 }
 
@@ -543,6 +566,11 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
           ...input,
           ...yield* Admission.decode(RequestEnvelope, input, "invalid_request")
         }
+        // The server refuses this set, and `cursorMap` would otherwise keep
+        // the last cursor silently: `[{A,5},{A,100}]` started after 100 and
+        // skipped 6..100 without an error.
+        const duplicate = duplicateCursorRunId(options.cursors)
+        if (duplicate !== undefined) return yield* Effect.fail(duplicateCursors(duplicate))
         // The client's own policy was checked once, by the constructor. What
         // is left is the count this REQUEST carries: the declared type says
         // `number`, and `NaN` disabled each comparison it appears in rather
@@ -688,7 +716,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
               })
             )
           ).pipe(
-            Stream.catchCause((cause) => Stream.failCause(rpcCause(cause))),
+            Stream.catchCause((cause) => Stream.failCause(liveTransport(rpcCause(cause)))),
             Stream.mapEffect((frame) => Admission.decode(Frame, frame)),
             Stream.mapEffect((frame): Effect.Effect<Frame, SyncError> =>
               frame._tag === "Entries"
@@ -732,7 +760,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
         const follow = (): Stream.Stream<JournalEvent.Entry, Failure> =>
           live().pipe(
             Stream.tapCause((cause) =>
-              isTransportCause(cause)
+              isLiveTransportCause(cause)
                 ? Effect.logWarning("sync live follow transport failed; reconnecting with backoff", cause)
                 : Effect.void
             ),

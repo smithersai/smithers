@@ -188,7 +188,11 @@ Transport, authentication, and reconnect are handled here rather than left to
 the application. A live follow that loses its transport reconnects under
 exponential backoff capped at five seconds, resuming from the subscription's
 progress; gaps, authorization refusals, and server closes propagate to the
-consumer instead of retrying.
+consumer instead of retrying. Only the live `Sync.Subscribe` stream reconnects:
+a `transport_failed` while `Sync.Read` pages catch-up history, or from
+`snapshot`, surfaces to the consumer, who resubscribes from progress. The
+retry reads where a failure came from, so an `apply` that fails with a
+`transport_failed` of its own fails the subscription instead of reconnecting.
 
 A delivery bookmark names what was delivered. `SubscribeOptions.apply`
 additionally records `progress.applied`: the callback runs to success before

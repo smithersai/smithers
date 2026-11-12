@@ -269,6 +269,54 @@ describe("SyncClient failure paths", () => {
       expect(attemptsBeforeTimeAdvanced).toBe(1)
     }))
 
+  // `SyncError.is` is structural, so an `apply` that propagates another
+  // client's `transport_failed` used to look like a dropped socket: the follow
+  // resubscribed, redelivered the same entry, and repeated for as long as the
+  // callback kept failing. The docs promise the opposite: a failure in `apply`
+  // fails the subscription with that entry unacknowledged.
+  it.effect("fails the subscription when apply fails with a transport-shaped error during live follow", () =>
+    Effect.gen(function*() {
+      let calls = 0
+      let applied = 0
+      const client = stubClient({
+        subscribe: () => {
+          calls++
+          // Bound the pre-fix reconnect loop so the regression fails without a timeout.
+          return calls <= 3
+            ? Stream.succeed<SyncProtocol.Frame>({
+              generation: 0,
+              _tag: "Entries",
+              runId: id,
+              fromSeq: seq(0),
+              toSeq: seq(0),
+              entries: [entry("failures", 0)]
+            })
+            : Stream.fail(new SyncError({ code: "closed", message: "probe limit" }))
+        }
+      })
+      const downstream = new SyncError({ code: "transport_failed", message: "downstream sync client lost its socket" })
+
+      const fiber = yield* Effect.flip(
+        client.subscribe({
+          scope,
+          cursors: [],
+          apply: () => {
+            applied++
+            return Effect.fail(downstream)
+          }
+        }).pipe(Stream.runDrain)
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      // Three backoffs reach the probe limit, so the pre-fix loop ends with
+      // `closed` instead of hanging on the test clock.
+      for (let backoff = 0; backoff < 3; backoff += 1) yield* TestClock.adjust(5000)
+      const failure = yield* Fiber.join(fiber)
+
+      expect(failure).toBe(downstream)
+      expect({ calls, applied }).toEqual({ calls: 1, applied: 1 })
+      // the entry stays unacknowledged for the next applying subscription
+      expect(yield* client.progress).toEqual({ delivered: [], applied: [] })
+    }))
+
   it.effect("stops live work when the consumer cancels the subscription", () =>
     Effect.gen(function*() {
       let calls = 0

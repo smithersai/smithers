@@ -116,6 +116,12 @@ delivered bookmarks; applying subscriptions resume from applied progress.
 An unrelated defect or interruption accompanying a disconnect stays terminal,
 with its complete cause preserved.
 
+Catch-up does not reconnect: a `Sync.Read` page that loses its transport fails
+the subscription with `transport_failed`, and the consumer resubscribes from
+its progress. The reconnect also reads where a failure came from, not its code
+alone, so an `apply` callback that fails with a `transport_failed` of its own
+fails the subscription as any other consumer failure does.
+
 Transport, authentication, and reconnect all live in this package rather than
 in the application. A follower that had to implement them would have to
 re-derive the cursor rules above to do it safely.

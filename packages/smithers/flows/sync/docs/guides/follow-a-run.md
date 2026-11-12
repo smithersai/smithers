@@ -137,8 +137,10 @@ subscription itself as `capability`. See
 
 The stream fails with `SyncError` or `SyncGapError`. Two cases have recovery paths:
 
-- `transport_failed` is retried under exponential backoff capped at five
-  seconds and only surfaces if the stream is otherwise ended.
+- `transport_failed` during live follow is retried under exponential backoff
+  capped at five seconds. During catch-up, while `Sync.Read` pages history,
+  it surfaces instead, so a consumer that wants to keep following resubscribes
+  from its progress; the cursors it carries make that safe.
 - `compacted` requires an explicit `onResync` handler to restore a checkpoint
   and return its exact cursor before restarting. Without one it fails closed. See
   [Handle a compacted run](./handle-a-compacted-run.md).

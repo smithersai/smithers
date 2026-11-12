@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed
+
+- `SyncClient.subscribe` reconnects only on a transport failure of the live
+  `Sync.Subscribe` stream. An `apply` callback that failed with a
+  `transport_failed` of its own was retried forever, redelivering the same
+  entry under backoff; it now fails the subscription with that entry
+  unacknowledged, as documented.
+- `SyncClient.subscribe` refuses a cursor set that names one run twice with
+  `invalid_request`, as the server does. The last cursor used to win silently,
+  skipping or replaying the entries between the two.
+- The docs state that only the live phase reconnects: a `transport_failed`
+  during the catch-up `Sync.Read` or from `snapshot` reaches the consumer.
+
 ### Security
 
 - **Breaking.** `BranchShare` and `WorkspaceShare` keyrings refuse a signing
