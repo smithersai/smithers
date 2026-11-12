@@ -105,14 +105,6 @@ export function wikiRequest(wiki: boolean, named: boolean, designs: boolean, num
   return numbered ? "decision" : "index"
 }
 
-/** Whether a failed wiki edit is marked `unwritten`: a first execution that wrote nothing, refused before writing. */
-//@ verify
-//@ ensures \result == (fresh && !touched && (reason == "conflict" || reason == "empty" || reason == "connect"))
-//@ ensures touched ==> !\result
-export function wikiUnwritten(fresh: boolean, touched: boolean, reason: string): boolean {
-  return fresh && !touched && (reason === "conflict" || reason === "empty" || reason === "connect")
-}
-
 /** How the mock's fixture repository answers a wiki request. */
 export type FixtureVerdict = "read" | "missing" | "invalid" | "empty" | "draft" | "conflict" | "write"
 
@@ -149,22 +141,6 @@ export function reviewNumber(reviews: number): number {
   return 1000 + reviews + 1
 }
 
-/** The HTTP status a wiki refusal is answered with. Anything unnamed is 503: never a success. */
-//@ verify
-//@ ensures reason == "forbidden" ==> \result == 403
-//@ ensures (reason == "sign-in" || reason == "connect") ==> \result == 401
-//@ ensures reason == "missing" ==> \result == 404
-//@ ensures (reason == "unknown" || reason == "conflict") ==> \result == 409
-//@ ensures (reason == "empty" || reason == "invalid" || reason == "fork" || reason == "install") ==> \result == 400
-//@ ensures reason != "forbidden" && reason != "sign-in" && reason != "connect" && reason != "missing" && reason != "unknown" && reason != "conflict" && reason != "empty" && reason != "invalid" && reason != "fork" && reason != "install" ==> \result == 503
-export function wikiRefusalStatus(reason: string): number {
-  if (reason === "forbidden") return 403
-  if (reason === "sign-in" || reason === "connect") return 401
-  if (reason === "missing") return 404
-  if (reason === "unknown" || reason === "conflict") return 409
-  if (reason === "empty" || reason === "invalid" || reason === "fork" || reason === "install") return 400
-  return 503
-}
 
 /** Whether a UTF-16 code unit may appear in a section anchor: a lowercase ASCII letter, a digit or `-` (0018 third-lane batch 34). */
 //@ verify

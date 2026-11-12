@@ -19,8 +19,8 @@ import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
-import { carriesCode, failureReason, requestKey } from "../src/core/issueHostDecision.vibe"
-import { editable, wikiRefusalStatus, wikiUnwritten } from "../src/core/wikiPageDecision.vibe"
+import { carriesCode, failureReason, requestKey, wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
+import { editable } from "../src/core/wikiPageDecision.vibe"
 
 export service WikiAuthority {
   current(): (Principal | undefined)!WikiFailure

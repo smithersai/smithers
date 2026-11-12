@@ -5395,14 +5395,17 @@ cases.extend([('src/core/wikiPageDecision.vibe', *case) for case in [
 ('wiki-request-wiki', 'wikiRequest', 'if (!wiki) return "none"', 'if (false) return "none"', 'only a wiki request opens a page'),
 ('wiki-request-designs', 'wikiRequest', 'if (designs) return "designs"', 'if (designs && !numbered) return "designs"', 'designs wins over a number'),
 ('wiki-request-index', 'wikiRequest', 'return numbered ? "decision" : "index"', 'return "index"', 'a number names its decision'),
-('wiki-unwritten-touched', 'wikiUnwritten', 'return fresh && !touched && (', 'return fresh && (', 'a touched edit was maybe written'),
-('wiki-unwritten-connect', 'wikiUnwritten', ' || reason === "connect")', ')', 'a lost connection wrote nothing'),
 ('wiki-fixture-read', 'fixtureVerdict', 'if (op === "read") return known ? "read" : "missing"', 'if (op === "read") return "read"', 'an unknown page is missing'),
 ('wiki-fixture-key', 'fixtureVerdict', 'if (keyless) return "invalid"', 'if (keyless && !known) return "invalid"', 'an edit needs a key'),
 ('wiki-fixture-blank', 'fixtureVerdict', 'if (blank) return "empty"', 'if (blank && op !== "draft") return "empty"', 'a blank draft is empty'),
 ('wiki-fixture-stale', 'fixtureVerdict', 'if (stale) return "conflict"', 'if (stale && unchanged) return "conflict"', 'a stale base conflicts'),
 ('wiki-fixture-unchanged', 'fixtureVerdict', 'return unchanged ? "empty" : "write"', 'return "write"', 'an unchanged page writes nothing'),
 ('wiki-review-number', 'reviewNumber', 'return 1000 + reviews + 1', 'return 1000 + reviews', 'reviews are numbered past 1000'),
+]])
+# Lane vl-coverage-core: the wiki host's unwritten mark and refusal status, moved from wikiPageDecision (0016).
+cases.extend([('src/core/issueHostDecision.vibe', *case) for case in [
+('wiki-unwritten-touched', 'wikiUnwritten', 'return fresh && !touched && (', 'return fresh && (', 'a touched edit was maybe written'),
+('wiki-unwritten-connect', 'wikiUnwritten', ' || reason === "connect")', ')', 'a lost connection wrote nothing'),
 ('wiki-status-conflict', 'wikiRefusalStatus', 'if (reason === "unknown" || reason === "conflict") return 409', 'if (reason === "unknown") return 409', 'a conflict is 409'),
 ('wiki-status-connect', 'wikiRefusalStatus', 'if (reason === "sign-in" || reason === "connect") return 401', 'if (reason === "sign-in") return 401', 'connect asks for a sign-in'),
 ('wiki-status-default', 'wikiRefusalStatus', '  return 503\n}', '  return 500\n}', 'an unnamed refusal is 503'),

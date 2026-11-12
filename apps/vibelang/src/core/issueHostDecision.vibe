@@ -1,7 +1,8 @@
 // The issues host's own decisions (wiki/decisions/0022-issues-and-vips.md, 0018 third-lane batch 6): which request
 // keys are admitted, how a GitHub failure is classified and answered over HTTP, which refusals were decided before any
 // write, how a GitHub issue reads as a task and a VIP, which pull request backs a VIP, what a
-// partly written human review still has to do, what an observed timeline event says, how an outside approval is
+// partly written human review still has to do, when a
+// failed wiki edit is unwritten and what status a wiki refusal answers with, what an observed timeline event says, how an outside approval is
 // projected without a local receipt, and how the stored revision advances. `worker/Issues.vibe` and `worker/Wiki.vibe`
 // call these, and no browser code does; GitHub calls, schema decoding, dates and sorting stay outside the proof.
 //
@@ -248,4 +249,29 @@ export interface VipFile { readonly filename: string; readonly status: string }
 export function vipDocumentMatches(issueAuthor: number, reviewAuthor: number, path: string, files: ReadonlyArray<VipFile>): boolean {
   if (issueAuthor <= 0 || issueAuthor !== reviewAuthor || path === "") return false
   return files.some(file => file.filename === path && file.status !== "removed")
+}
+
+/** Whether a failed wiki edit is marked `unwritten`: a first execution that wrote nothing, refused before writing. */
+//@ verify
+//@ ensures \result == (fresh && !touched && (reason == "conflict" || reason == "empty" || reason == "connect"))
+//@ ensures touched ==> !\result
+export function wikiUnwritten(fresh: boolean, touched: boolean, reason: string): boolean {
+  return fresh && !touched && (reason === "conflict" || reason === "empty" || reason === "connect")
+}
+
+/** The HTTP status a wiki refusal is answered with. Anything unnamed is 503: never a success. */
+//@ verify
+//@ ensures reason == "forbidden" ==> \result == 403
+//@ ensures (reason == "sign-in" || reason == "connect") ==> \result == 401
+//@ ensures reason == "missing" ==> \result == 404
+//@ ensures (reason == "unknown" || reason == "conflict") ==> \result == 409
+//@ ensures (reason == "empty" || reason == "invalid" || reason == "fork" || reason == "install") ==> \result == 400
+//@ ensures reason != "forbidden" && reason != "sign-in" && reason != "connect" && reason != "missing" && reason != "unknown" && reason != "conflict" && reason != "empty" && reason != "invalid" && reason != "fork" && reason != "install" ==> \result == 503
+export function wikiRefusalStatus(reason: string): number {
+  if (reason === "forbidden") return 403
+  if (reason === "sign-in" || reason === "connect") return 401
+  if (reason === "missing") return 404
+  if (reason === "unknown" || reason === "conflict") return 409
+  if (reason === "empty" || reason === "invalid" || reason === "fork" || reason === "install") return 400
+  return 503
 }

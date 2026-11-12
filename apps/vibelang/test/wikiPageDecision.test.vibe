@@ -1,7 +1,8 @@
 // Third-lane batch 9 (0018): wiki page decisions, proved in wikiPageDecision as wiki.vibe and worker/Wiki.vibe use them.
 import { describe, expect, it } from "@effect/vitest"
 import { pages, requestedWiki, wikiEditable, wikiPage, wikiPath } from "../src/core/wiki.vibe"
-import { editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, reviewNumber, wikiHref, wikiRefusalStatus, wikiRequest, wikiUnwritten } from "../src/core/wikiPageDecision.vibe"
+import { editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, reviewNumber, wikiHref, wikiRequest } from "../src/core/wikiPageDecision.vibe"
+import { wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 
 /** The request rule as it read before batch 9, kept to show the proved form answers alike. */
 function requestedBefore(text: string): string | undefined {

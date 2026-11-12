@@ -55,6 +55,7 @@ and `pnpm verify:broken` pass on all nine modules, and the unit gate measures ev
 | `nonnegativeCursor`, `responseKind`, `liveHealth`, `validTourStep` | `protocolDecision` | `clientProtocolDecision` (new); `protocolDecision` keeps the Worker's and command hosts' decisions and leaves the bundle | `schemas`, `LiveFactory`, `MockFactory`, `web/backend`, `worker/Http` |
 | `reviewActions`, `vipDocumentMatches`, `VipFile` | `conversation` (the state machine: every screen) | `issueHostDecision` | `worker/Issues` |
 | `cancellable` | `actionRunDecision` (only this name: `MockActions`) | `src/actions/actionHostDecision` | `MockActions`, `worker/ActionRuns` |
+| `wikiUnwritten`, `wikiRefusalStatus` | `wikiPageDecision` (page lookups: `wiki`, `WikiFactory`) | `issueHostDecision` | `worker/Wiki` |
 
 Measured on main `6fbe6ee1` (`pnpm e2e:coverage`, base and change on boxes): covered counts are identical
 (branches 4,522, lines 4,643, functions 2,004, statements 5,547), so the browser runs exactly what it ran; the roster
@@ -62,7 +63,7 @@ lost 278 branch arms, 110 lines, 51 functions and 159 statements that no browser
 went from 862 to 584: `issueHostDecision` (123), `protocolDecision` (52) and `actionRunDecision` (17) left the
 roster, `flowDecision` 83 → 24, `wikiPageDecision` 34 → 11, `wire` 11 → 1, and `clientProtocolDecision` has 6 of 8.
 That measurement also moved `wikiUnwritten` and `wikiRefusalStatus` out of `wikiPageDecision` (its 34 → 11); they
-wait for vl-proveall3's open proofs in that file, so until they move `wikiPageDecision` keeps them.
+moved after vl-proveall3's proofs in that file landed (`7b447afd`).
 
 Named browser sites and status:
 

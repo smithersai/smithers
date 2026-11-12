@@ -3,8 +3,9 @@
 import { it } from "@effect/vitest"
 import { pages, requestedWiki, wikiEditable, wikiPage, wikiPath } from "../src/core/wiki.vibe"
 import {
-  editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, reviewNumber, wikiHref, wikiRefusalStatus, wikiRequest, wikiUnwritten,
+  editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, reviewNumber, wikiHref, wikiRequest,
 } from "../src/core/wikiPageDecision.vibe"
+import { wikiRefusalStatus, wikiUnwritten } from "../src/core/issueHostDecision.vibe"
 import {
   decisionLabel, digitsEnd, feedFrom, findDate, findDigitsEnd, findFeed, findFolded, findHeading, findKey, findLineEnd, findRulingEnd, findRulings,
   firstDate, firstHeading, foldedAt, foldedIncludes, headingTitle, keyFrom, lineEnd, rulingEnd, rulingsFrom,
