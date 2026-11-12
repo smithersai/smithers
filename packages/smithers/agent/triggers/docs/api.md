@@ -748,6 +748,7 @@ interface Options {
   readonly cancelTimeout?: Duration.Input | undefined
   readonly host?: string | undefined
   readonly fireRetention?: Duration.Input | undefined
+  readonly staleAfter?: Duration.Input | undefined
 }
 
 interface Service {
@@ -757,6 +758,7 @@ interface Service {
 const defaultHost: string
 const defaultConcurrency: number
 const defaultFireRetention: Duration.Duration
+const defaultStaleAfter: Duration.Duration
 const durationBoundaries: ReadonlyArray<number>
 ```
 
@@ -810,6 +812,14 @@ the row that reports it.
 `defaultFireRetention`, thirty days, and must be a finite, positive Effect
 duration. A tick calls `TriggerStore.pruneFires` with the cutoff at most once
 an hour; a prune that fails is logged and the tick goes on.
+
+`staleAfter` is how long after a boundary passes a trigger declared
+`catchUp: "none"` still fires it. An older boundary was missed, by downtime or
+a stalled tick, and is skipped with the watermark moved past it. It defaults to
+`defaultStaleAfter`, five minutes; `layer` adds its `pollInterval`, the longest
+a tick can be waiting to see a boundary. A host that calls `make` or `tick`
+less often than every five minutes sets it above its own interval. It must be a
+finite, positive Effect duration.
 
 `runOnce` holds a semaphore permit, so concurrent calls on one scheduler
 serialize.

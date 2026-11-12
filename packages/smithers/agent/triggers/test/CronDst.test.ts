@@ -199,7 +199,9 @@ type Tick = (instant: number) => Effect.Effect<void, TriggerError>
 
 const scheduler = (runner: RunnerFixture): Effect.Effect<Tick, TriggerError, TriggerStore.TriggerStore | Scope.Scope> =>
   Effect.map(
-    Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service)),
+    // These schedulers tick as seldom as hourly, so a boundary may wait up to
+    // an hour to be seen and still be the present.
+    Scheduler.make({ staleAfter: "1 hour" }).pipe(Effect.provideService(Scheduler.Runner, runner.service)),
     (service) => (instant) =>
       Effect.gen(function*() {
         yield* TestClock.setTime(instant)

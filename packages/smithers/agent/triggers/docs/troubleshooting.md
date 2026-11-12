@@ -255,8 +255,9 @@ trigger.
 **A backlog disappeared after downtime.** Either `catchUp` is `none`, which
 replays no missed boundary, or the backlog exceeded `maxCatchUp` and was
 abandoned with a warning annotated with the trigger id. Check the logs for
-`A trigger abandoned catch-up work beyond its bound`. The current occurrence
-still fires in both cases.
+`A trigger abandoned catch-up work beyond its bound`. Under `one` and `all` the
+current occurrence still fires. Under `none` it fires only when it is younger
+than the scheduler's `staleAfter`.
 
 ## The trigger fired twice
 

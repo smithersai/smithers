@@ -7,6 +7,7 @@ import type { Registered } from "../src/TriggerStore.ts"
 
 const hour = 60 * 60 * 1_000
 const now = 3.5 * hour
+const staleAfter = 5 * 60 * 1_000
 
 const hourly = (overrides: Partial<Registered> = {}): Registered => ({
   id: "hourly",
@@ -22,8 +23,8 @@ const hourly = (overrides: Partial<Registered> = {}): Registered => ({
   ...overrides
 })
 
-const compute = (trigger: Registered, observed: number | undefined) =>
-  Effect.runPromise(DueOccurrences.compute(trigger, now, observed))
+const compute = (trigger: Registered, observed: number | undefined, freshFor = staleAfter) =>
+  Effect.runPromise(DueOccurrences.compute(trigger, now, observed, freshFor))
 
 describe("DueOccurrences", () => {
   it("owes nothing on first sight of a trigger that never fired, and starts the watermark at the current boundary", async () => {
@@ -41,12 +42,18 @@ describe("DueOccurrences", () => {
     })
   })
 
-  // A restart that crosses a boundary owes that boundary under every policy.
-  it("owes the current boundary on first sight under catchUp none, and nothing once it fired", async () => {
-    expect(await compute(hourly({ lastFiredAt: 0, catchUp: "none" }), undefined)).toEqual({
-      occurrences: [3 * hour],
-      watermark: 3 * hour
-    })
+  // Under `none` a restart owes the boundary it crossed only while that
+  // boundary is still the present. The 03:00 boundary is half an hour old.
+  it("owes the current boundary under catchUp none only while it is no older than staleAfter", async () => {
+    for (const observed of [undefined, hour]) {
+      const trigger = hourly({ lastFiredAt: 0, catchUp: "none" })
+      expect(await compute(trigger, observed, hour)).toEqual({ occurrences: [3 * hour], watermark: 3 * hour })
+      expect(await compute(trigger, observed, 30 * 60 * 1_000)).toEqual({
+        occurrences: [3 * hour],
+        watermark: 3 * hour
+      })
+      expect(await compute(trigger, observed)).toEqual({ occurrences: [], watermark: 3 * hour })
+    }
     expect(await compute(hourly({ lastFiredAt: 3 * hour, catchUp: "none" }), undefined)).toEqual({
       occurrences: [],
       watermark: 3 * hour
@@ -60,7 +67,10 @@ describe("DueOccurrences", () => {
 
   it("owes the backlog under the catch-up policy, then the current boundary", async () => {
     expect(await compute(hourly(), hour)).toEqual({ occurrences: [2 * hour, 3 * hour], watermark: 3 * hour })
-    expect(await compute(hourly({ catchUp: "none" }), hour)).toEqual({ occurrences: [3 * hour], watermark: 3 * hour })
+    expect(await compute(hourly({ catchUp: "none" }), hour, hour)).toEqual({
+      occurrences: [3 * hour],
+      watermark: 3 * hour
+    })
   })
 
   it("abandons a backlog beyond the bound with a warning, and still owes the current boundary", async () => {
@@ -70,7 +80,7 @@ describe("DueOccurrences", () => {
     })
     const run = (observed: number | undefined) =>
       Effect.runPromise(
-        DueOccurrences.compute(hourly({ lastFiredAt: 0, maxCatchUp: 1 }), now, observed).pipe(
+        DueOccurrences.compute(hourly({ lastFiredAt: 0, maxCatchUp: 1 }), now, observed, staleAfter).pipe(
           Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
         )
       )
@@ -85,6 +95,19 @@ describe("DueOccurrences", () => {
     }
   })
 
+  // Issue #4905: a weekly trigger last fired Monday 2 March and a host down
+  // until Sunday 15 March 20:00. The Monday 9 March run is 6.7 days stale:
+  // `none` skips it and moves the watermark past it, `one` still owes it.
+  it("skips a stale missed boundary under catchUp none and owes it under one", async () => {
+    const weekly = hourly({ cron: "0 3 * * 1", lastFiredAt: Date.parse("2026-03-02T03:00:00.000Z") })
+    const restart = Date.parse("2026-03-15T20:00:00.000Z")
+    const missed = Date.parse("2026-03-09T03:00:00.000Z")
+    const due = (catchUp: Registered["catchUp"]) =>
+      Effect.runPromise(DueOccurrences.compute({ ...weekly, catchUp, maxCatchUp: 1 }, restart, undefined, staleAfter))
+    expect(await due("none")).toEqual({ occurrences: [], watermark: missed })
+    expect(await due("one")).toEqual({ occurrences: [missed], watermark: missed })
+  })
+
   // A scheduler that stalled in-process across boundaries and one that
   // restarted across the same boundaries missed the same occurrences, so the
   // declaration owes the same runs either way. The stalled poll used to leave
@@ -93,7 +116,7 @@ describe("DueOccurrences", () => {
   it("owes the same occurrences after a stall as after a restart across the same boundaries", async () => {
     const cases: ReadonlyArray<readonly [Partial<Registered>, ReadonlyArray<number>]> = [
       [{ catchUp: "one" }, [3 * hour]],
-      [{ catchUp: "none" }, [3 * hour]],
+      [{ catchUp: "none" }, []],
       [{ catchUp: "all", maxCatchUp: 3 }, [hour, 2 * hour, 3 * hour]],
       [{ catchUp: "all", maxCatchUp: 2 }, [3 * hour]]
     ]
@@ -114,7 +137,7 @@ describe("DueOccurrences", () => {
     })
     const run = (trigger: Registered, observed: number | undefined) =>
       Effect.runPromise(
-        DueOccurrences.compute(trigger, now, observed).pipe(
+        DueOccurrences.compute(trigger, now, observed, staleAfter).pipe(
           Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
         )
       )
@@ -138,7 +161,7 @@ describe("DueOccurrences", () => {
     })
     const run = (trigger: Registered, observed: number | undefined) =>
       Effect.runPromise(
-        DueOccurrences.compute(trigger, now, observed).pipe(
+        DueOccurrences.compute(trigger, now, observed, staleAfter).pipe(
           Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
         )
       )
@@ -158,7 +181,9 @@ describe("DueOccurrences", () => {
     // occurrence search refuses it with `invalid_options` on either poll.
     const unsearchable = hourly({ lastFiredAt: 0, maxCatchUp: Number.MAX_SAFE_INTEGER })
     for (const observed of [undefined, 0]) {
-      const error = await Effect.runPromise(Effect.flip(DueOccurrences.compute(unsearchable, now, observed)))
+      const error = await Effect.runPromise(
+        Effect.flip(DueOccurrences.compute(unsearchable, now, observed, staleAfter))
+      )
       expect(error).toMatchObject({ code: "invalid_options", path: "limit" })
     }
   })

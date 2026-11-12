@@ -41,8 +41,22 @@ const withinBound = (
       : Effect.fail(error))
 
 /**
+ * The latest boundary of a trigger's cron at or before `now`.
+ *
+ * @private
+ * @since 1.0.0-rc.18
+ */
+export const boundary = (trigger: Registered, now: number): Effect.Effect<number, TriggerError> =>
+  Effect.gen(function*() {
+    const cron = yield* Cron.parse(trigger.cron, trigger.timezone)
+    return (yield* Cron.previousAtOrBefore(cron, new Date(now))).getTime()
+  })
+
+/**
  * Computes what a trigger owes at `now`, given the watermark this process has
  * already dispatched through, or `undefined` on first sight of the trigger.
+ * Under `catchUp: "none"` a boundary more than `staleAfter` milliseconds old
+ * is history, not the present, and is skipped.
  *
  * The answer depends on nothing but its arguments. The watermark is the
  * caller's to keep: it only moves forward, and only past occurrences the
@@ -54,7 +68,8 @@ const withinBound = (
 export const compute = (
   trigger: Registered,
   now: number,
-  observed: number | undefined
+  observed: number | undefined,
+  staleAfter: number
 ): Effect.Effect<Due, TriggerError> =>
   Effect.gen(function*() {
     const cron = yield* Cron.parse(trigger.cron, trigger.timezone)
@@ -86,10 +101,12 @@ export const compute = (
       trigger.id,
       CatchUp.occurrences(trigger.catchUp, bound, new Date(since), new Date(now), cron)
     )
-    // The current boundary is owed whatever the policy says about the
-    // backlog. Under `none`, or once the bound abandoned the backlog, a
-    // restart used to skip it.
+    // Under `one` and `all` the current boundary is owed whatever the bound
+    // did to the backlog. Under `none` it is owed only while it is still the
+    // present: a restart a minute after the boundary fires it, a restart a
+    // week after it does not.
     const occurrences = owed.map((occurrence) => occurrence.getTime())
-    if (occurrences.at(-1) !== current) occurrences.push(current)
+    const present = trigger.catchUp !== "none" || now - current <= staleAfter
+    if (present && occurrences.at(-1) !== current) occurrences.push(current)
     return { occurrences, watermark: current }
   })

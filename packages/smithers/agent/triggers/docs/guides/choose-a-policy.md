@@ -51,7 +51,9 @@ flow leaves behind is the flow's problem, not the trigger's.
 Ask whether those boundaries are still worth anything now.
 
 **Choose `none` when only the present matters.** The default. A schedule that
-polls current state does not want three replays of a stale poll.
+polls current state does not want three replays of a stale poll. A boundary
+older than the scheduler's `staleAfter` is skipped, so a run never starts days
+late after an outage.
 
 **Choose `one` when the work is idempotent and the latest is what matters.** The
 trigger fires the most recent missed boundary and forgets the rest. This is the

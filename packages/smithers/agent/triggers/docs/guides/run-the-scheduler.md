@@ -70,6 +70,7 @@ Scheduler.layer({ pollInterval: "30 seconds" })
 | `startTimeout`    | `"4 minutes"`  | How long one `Runner.start` may take before the launch is abandoned and left pending.                                    |
 | `inspectTimeout`  | `"30 seconds"` | How long one `Runner.inspect` may take before it counts as a failed inspection.                                          |
 | `cancelTimeout`   | `"30 seconds"` | How long one `Runner.cancel` may take before the supersede fails and is compensated.                                     |
+| `staleAfter`      | `"5 minutes"`  | How old a boundary may be and still fire under `catchUp: "none"`. `Scheduler.layer` adds `pollInterval` to the default.  |
 
 Both intervals must be finite, positive Effect durations. Zero would tick
 without pause and an infinite interval never completes, and

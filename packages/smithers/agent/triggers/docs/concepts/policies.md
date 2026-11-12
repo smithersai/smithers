@@ -67,6 +67,14 @@ it:
 | `one`  | The most recent missed occurrence only.          |
 | `all`  | Every missed occurrence, in order, oldest first. |
 
+Under `none` the scheduler fires a boundary only while it is the present: less
+than the scheduler's `staleAfter` old, five minutes by default, plus the poll
+interval under `Scheduler.layer`. A weekly trigger whose host comes back six
+days after Monday's boundary skips that run and fires next Monday. A trigger
+that was disabled is not caught up either: the scheduler keeps its watermark
+moving while it is disabled, so enabling it again replays nothing under any
+policy.
+
 ```ts
 import * as CatchUp from "@smthrs/triggers/CatchUp"
 import * as Cron from "@smthrs/triggers/Cron"

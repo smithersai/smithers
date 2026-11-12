@@ -231,6 +231,78 @@ describe("Scheduler", () => {
     expect(refused).toMatchObject({ code: "invalid_options", path: "fireRetention" })
   })
 
+  it("refuses a staleAfter that is not a finite positive duration", async () => {
+    const refused = await Effect.runPromise(
+      Effect.flip(Scheduler.make({ staleAfter: "0 millis" })).pipe(
+        Effect.provideService(Scheduler.Runner, runnerFixture().service),
+        Effect.provide(TestTriggers.layer),
+        Effect.scoped
+      )
+    )
+    expect(refused).toMatchObject({ code: "invalid_options", path: "staleAfter" })
+  })
+
+  // Issue #4905: a disabled trigger kept the watermark it had when it was
+  // paused, so enabling it again under `all` replayed every boundary of the
+  // pause as if the host had been down.
+  it("replays none of the boundaries a trigger skipped while disabled", async () => {
+    const results: Array<TriggerStore.Result> = []
+    const runner = runnerFixture()
+    await Effect.runPromise(provideTest(
+      Effect.scoped(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const declaration = trigger("skip", "all")
+        yield* store.register(declaration)
+        const scheduler = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
+        yield* TestClock.setTime(hour / 2)
+        yield* scheduler.runOnce
+        yield* TestClock.setTime(hour)
+        yield* scheduler.runOnce
+        runner.active.clear()
+        yield* store.register({ ...declaration, enabled: false })
+        yield* TestClock.setTime(3 * hour)
+        yield* scheduler.runOnce
+        yield* store.register(declaration)
+        yield* TestClock.setTime(3 * hour + 60_000)
+        yield* scheduler.runOnce
+        yield* TestClock.setTime(4 * hour)
+        yield* scheduler.runOnce
+      })),
+      results
+    ))
+    expect(runner.starts.map((input) => input.idempotencyKey)).toEqual([
+      `hourly:${new Date(hour).toISOString()}`,
+      `hourly:${new Date(4 * hour).toISOString()}`
+    ])
+  })
+
+  // Only a legacy row can carry a cron with no occurrence: the stores refuse
+  // one at registration. A paused trigger claims nothing, so it fails no tick.
+  it("keeps a tick clean past a disabled trigger whose cron has no occurrence", async () => {
+    const ticked = await Effect.runPromise(provideTest(
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* store.register({ ...trigger("skip", "all"), enabled: false })
+        const legacy = TriggerStore.TriggerStore.of({
+          ...store,
+          list: () =>
+            Effect.map(store.list(), (rows) =>
+              rows.map((row) => ({
+                ...row,
+                trigger: Result.map(row.trigger, (registration) => ({ ...registration, cron: "0 0 30 2 *" }))
+              })))
+        })
+        yield* TestClock.setTime(hour)
+        return yield* Scheduler.tick({ since: 0 }).pipe(
+          Effect.provideService(Scheduler.Runner, runnerFixture().service),
+          Effect.provideService(TriggerStore.TriggerStore, legacy)
+        )
+      }),
+      []
+    ))
+    expect(ticked).toEqual({ at: hour, watermark: hour })
+  })
+
   it("recovers disabled active occurrences without scheduling new ones", async () => {
     const results: Array<TriggerStore.Result> = []
     const runner = runnerFixture()

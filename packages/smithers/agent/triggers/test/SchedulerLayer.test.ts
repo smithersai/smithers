@@ -257,6 +257,26 @@ describe("Scheduler.layer", () => {
     expect(beats).toEqual([Scheduler.defaultHost, Scheduler.defaultHost])
   })
 
+  // A tick can be a whole poll late to see a boundary, so under `none` the
+  // layer counts a boundary as the present for its poll plus five minutes.
+  it("adds its poll interval to the default staleAfter, and honours a stated one", async () => {
+    const launched = (options: Scheduler.Options) => {
+      const runner = runs()
+      return run(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* seeded(store)
+        yield* TestClock.setTime(hour + 20 * minute)
+        yield* Effect.scoped(Effect.gen(function*() {
+          const built = yield* Layer.build(scheduler(options, store, runner))
+          yield* Scheduler.Scheduler.use((service) => service.runOnce).pipe(Effect.provide(built))
+        }))
+        return runner.starts.map((start) => start.idempotencyKey)
+      }))
+    }
+    expect(await launched({ pollInterval: "1 hour" })).toEqual(["hourly:1970-01-01T01:00:00.000Z"])
+    expect(await launched({ pollInterval: "1 hour", staleAfter: "5 minutes" })).toEqual([])
+  })
+
   it("is interrupted, not failed, when its scope closes during a tick", async () => {
     const gate = Deferred.makeUnsafe<void>()
     const runner = runs(() => Deferred.await(gate))

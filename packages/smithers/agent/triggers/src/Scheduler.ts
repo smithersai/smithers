@@ -374,6 +374,15 @@ export interface Options {
    * and the tick goes on.
    */
   readonly fireRetention?: Duration.Input | undefined
+  /**
+   * How long after a boundary passes a trigger declared `catchUp: "none"`
+   * still fires it. An older boundary was missed, by downtime or a stalled
+   * tick, and is skipped. Defaults to {@link defaultStaleAfter}; {@link layer}
+   * adds its `pollInterval`, the longest a tick can be waiting to see a
+   * boundary. A host calling {@link make} or {@link tick} less often than
+   * every five minutes raises it above its own interval.
+   */
+  readonly staleAfter?: Duration.Input | undefined
 }
 
 /**
@@ -402,6 +411,15 @@ export const defaultConcurrency = 4
  * @since 1.0.0-rc.1
  */
 export const defaultFireRetention: Duration.Duration = Duration.days(30)
+
+/**
+ * How long after a boundary passes a trigger declared `catchUp: "none"` still
+ * fires it when the options name no `staleAfter`: five minutes.
+ *
+ * @category constants
+ * @since 1.0.0-rc.18
+ */
+export const defaultStaleAfter: Duration.Duration = Duration.minutes(5)
 
 const pruneEvery = 60 * 60 * 1_000
 
@@ -523,6 +541,7 @@ interface Settings {
   readonly inspectTimeout: Duration.Duration
   readonly cancelTimeout: Duration.Duration
   readonly fireRetention: Duration.Duration
+  readonly staleAfter: Duration.Duration
 }
 
 const settings = (options: Options): Effect.Effect<Settings, TriggerError> =>
@@ -538,7 +557,8 @@ const settings = (options: Options): Effect.Effect<Settings, TriggerError> =>
       startTimeout: yield* duration(options.startTimeout ?? "4 minutes", "startTimeout"),
       inspectTimeout: yield* duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout"),
       cancelTimeout: yield* duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout"),
-      fireRetention: yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention")
+      fireRetention: yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention"),
+      staleAfter: yield* duration(options.staleAfter ?? defaultStaleAfter, "staleAfter")
     }
   })
 
@@ -561,7 +581,7 @@ const build = (
     const active = yield* ActiveRuns.make
     const observedAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
     const semaphore = yield* Semaphore.make(1)
-    const { cancelTimeout, concurrency, fireRetention, inspectTimeout, runPollInterval, startTimeout } =
+    const { cancelTimeout, concurrency, fireRetention, inspectTimeout, runPollInterval, staleAfter, startTimeout } =
       yield* settings(options)
     // A one-shot tick remembers no earlier prune. Its `since` stands in: the
     // ledger is pruned on a first tick and when an hour boundary passed since.
@@ -1091,11 +1111,19 @@ const build = (
         const now = yield* Clock.currentTimeMillis
         const running = yield* resolveActive(trigger, held)
         // Disable prevents future claims, not recovery of an already active
-        // occurrence (including a plan waiting for a human decision).
-        if (!trigger.enabled) return
+        // occurrence (including a plan waiting for a human decision). A pause
+        // is not downtime: the watermark keeps up with the boundaries it
+        // skips, so enabling the trigger again replays none of them. A paused
+        // trigger claims nothing, so a boundary it cannot compute fails no tick.
+        if (!trigger.enabled) {
+          return yield* DueOccurrences.boundary(trigger, now).pipe(
+            Effect.flatMap((current) => observe(trigger.id, current)),
+            Effect.ignore
+          )
+        }
         if (running === undefined || trigger.overlap === "supersede") yield* resumePending(trigger, held)
         const observed = (yield* Ref.get(observedAt)).get(trigger.id) ?? seeded(trigger)
-        const due = yield* DueOccurrences.compute(trigger, now, observed)
+        const due = yield* DueOccurrences.compute(trigger, now, observed, Duration.toMillis(staleAfter))
         let dispatched: number | undefined
         let interrupted = false
         let stale = false
@@ -1428,7 +1456,10 @@ export const layer = (
       // `concurrency` refuses the layer instead of failing every tick.
       yield* settings(options)
       const pollMillis = Duration.toMillis(pollInterval)
-      const { pollInterval: _pollInterval, runPollInterval: _runPollInterval, ...tickOptions } = options
+      const { pollInterval: _pollInterval, runPollInterval: _runPollInterval, ...rest } = options
+      // A boundary can pass just after a tick read the clock and wait a whole
+      // poll for the next one, so the poll is added to the default.
+      const tickOptions = { ...rest, staleAfter: options.staleAfter ?? Duration.sum(pollInterval, defaultStaleAfter) }
       const host = options.host ?? defaultHost
       const services = yield* Effect.context<Runner | TriggerStore>()
       const fire = (since: number | undefined): Effect.Effect<Ticked, TriggerError> =>
