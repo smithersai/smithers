@@ -202,10 +202,25 @@ export const useTranscriptView = (options: {
       if (message !== undefined) box.scrollChildIntoView(`${message.id}:text`)
     }
     follow()
-    return Timer.after(60, () => {
-      follow()
+    // The aim lands on the next native frame. Layout that settles later moves
+    // nothing or keeps the bottom (sticky scroll), and then the edge is aimed
+    // again. A reader who scrolled up in between has newer intent: keep it.
+    let landed: number | undefined
+    const land = () => {
+      renderer.off("frame", land)
+      landed = viewport()?.scrollTop
+    }
+    renderer.on("frame", land)
+    const cancel = Timer.after(60, () => {
+      renderer.off("frame", land)
+      const box = viewport()
+      if (box === null || landed === undefined || box.scrollTop === landed || box.scrollTop >= furthest(box)) follow()
       setLiveEdge(0)
     })
+    return () => {
+      renderer.off("frame", land)
+      cancel()
+    }
   }, [liveEdge, surface])
   const pendingReveal = useRef<
     {
