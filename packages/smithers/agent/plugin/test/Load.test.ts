@@ -598,6 +598,48 @@ describe("load refuses a plugin and loads the rest", () => {
     ])
   })
 
+  it("refuses a view path that leaves the plugin's own path, or one another view of its scope holds", async () => {
+    const view = (id: string, scope: "app" | "repository", path: string) => ({
+      id: `routed/${id}`,
+      title: "Routed",
+      scope,
+      path,
+      sizes: ["full"],
+      minimum: "anyone",
+      render: { kind: "blocks", blocks: [] }
+    })
+    const routed = (...views: ReadonlyArray<ReturnType<typeof view>>) =>
+      refusals([{ tier: "repository", manifest: minimal("routed", { contributes: { views } }) }])
+    for (
+      const path of ["../../settings?x=1#y", "/attacker.example/x", "a//b", "a/./b", "https:x", "a\\b", "x".repeat(129)]
+    ) {
+      expect(await routed(view("a", "app", path)), path).toEqual([["routed", "invalid", "contributes.views[0].path"]])
+    }
+    expect(
+      await routed(
+        view("a", "app", ""),
+        view("b", "app", "lanes/today"),
+        view("c", "repository", ""),
+        view("d", "repository", "lanes/today")
+      )
+    ).toEqual([])
+    expect(await routed(view("a", "repository", "same"), view("b", "repository", "same"))).toEqual([
+      ["routed", "conflict", "contributes.views[1].path"]
+    ])
+  })
+
+  it("bounds the schemas one manifest inlines together, however often a $ref repeats", async () => {
+    // A10 inlines to 15,347 bytes; the defs and two aliases fit 64 KiB, the third overdraws it.
+    const defs: Record<string, unknown> = { A0: {} }
+    for (let level = 1; level <= 10; level++) {
+      defs[`A${level}`] = { anyOf: [{ $ref: `#/$defs/A${level - 1}` }, { $ref: `#/$defs/A${level - 1}` }] }
+    }
+    for (let alias = 0; alias < 1_500; alias++) defs[`B${alias}`] = { $ref: "#/$defs/A10" }
+    expect(await refusals([{ tier: "repository", manifest: minimal("aliased", { $defs: defs }) }])).toEqual([
+      ["aliased", "invalid", "$defs.B2"]
+    ])
+  })
+
   it("refuses a view whose minimum is below a flow it dispatches", async () => {
     expect(await queueWith((manifest) => (manifest.contributes.views[0].minimum = "guest"))).toEqual([
       ["queue", "minimum_below_flow", "contributes.views[0].minimum"]

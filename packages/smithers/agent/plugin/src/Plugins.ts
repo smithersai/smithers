@@ -25,7 +25,7 @@ import type { ArgsOf, ContextOf, HookKind, KeysOfKind, SuccessOf } from "./Hooks
 import { engineHooks } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
 import { PluginError } from "./PluginError.ts"
-import { defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.ts"
+import { defaultHandlerTimeout, defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.ts"
 
 const empty: ReadonlyArray<HandlerRecord> = Object.freeze([])
 
@@ -62,7 +62,8 @@ const kindMismatch = (
 
 const runHandler = (
   record: HandlerRecord,
-  args: ReadonlyArray<unknown>
+  args: ReadonlyArray<unknown>,
+  timeout: number
 ): Effect.Effect<unknown, PluginError, any> => {
   const onCause = (cause: Cause.Cause<unknown>) =>
     Effect.fail(
@@ -88,7 +89,19 @@ const runHandler = (
             hook: record.hook
           })
         )
-    )
+    ),
+    Effect.timeoutOrElse({
+      duration: timeout,
+      orElse: () =>
+        Effect.fail(
+          new PluginError({
+            code: "hook_failed",
+            message: `hook "${record.hook}" in plugin "${record.plugin}" did not finish within ${timeout} ms`,
+            plugin: record.plugin,
+            hook: record.hook
+          })
+        )
+    })
   )
 }
 
@@ -137,6 +150,8 @@ export interface Service<H = FlowsHooks> {
  */
 export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
   const handlers = (hook: string): ReadonlyArray<HandlerRecord> => resolved.handlers.get(hook) ?? empty
+  const timeout = resolved.handlerTimeout ?? defaultHandlerTimeout
+  const run = (record: HandlerRecord, args: ReadonlyArray<unknown>) => runHandler(record, args, timeout)
 
   const sequential = ((hook: string, ...args: Array<unknown>) =>
     Effect.gen(function*() {
@@ -144,7 +159,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
       if (mismatch !== undefined) return yield* Effect.fail(mismatch)
       const results: Array<unknown> = []
       for (const record of handlers(hook)) {
-        results.push(yield* runHandler(record, args))
+        results.push(yield* run(record, args))
       }
       return results
     })) as Service<H>["sequential"]
@@ -155,7 +170,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
     return Effect.forEach(
       handlers(hook),
       (record) =>
-        runHandler(record, args).pipe(
+        run(record, args).pipe(
           Effect.match({ onFailure: (error) => [error], onSuccess: () => [] as Array<PluginError> })
         ),
       { concurrency: resolved.parallelConcurrency }
@@ -167,7 +182,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
       const mismatch = kindMismatch(resolved, hook, "first", handlers(hook))
       if (mismatch !== undefined) return yield* Effect.fail(mismatch)
       for (const record of handlers(hook)) {
-        const result = yield* runHandler(record, args)
+        const result = yield* run(record, args)
         if (!Option.isOption(result)) {
           return yield* Effect.fail(
             new PluginError({
@@ -190,7 +205,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
         if (mismatch !== undefined) return yield* Effect.fail(mismatch)
         let value = initial
         for (const record of handlers(hook)) {
-          const patch = yield* runHandler(record, [value])
+          const patch = yield* run(record, [value])
           if (patch !== undefined) {
             value = yield* Effect.try({
               try: () => merge(value, patch),

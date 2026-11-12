@@ -35,6 +35,7 @@ const violations: Readonly<Record<string, () => Promise<{ readonly code: string 
     return refusal(nested)
   },
   maximumParallelConcurrency: () => refusal([], { parallelConcurrency: Resolve.maximumParallelConcurrency + 1 }),
+  maximumHandlerTimeout: () => refusal([], { handlerTimeout: Resolve.maximumHandlerTimeout + 1 }),
   maximumPluginNameLength: () => refusal([{ name: "x".repeat(Resolve.maximumPluginNameLength + 1) }])
 }
 
@@ -66,9 +67,14 @@ describe("reference documentation matches admission", () => {
       expect(row.value, row.constant).toBe(Resolve[row.constant as keyof typeof Resolve])
       const violate = violations[row.constant]
       if (violate === undefined) {
-        // The one row that is a default rather than a bound: nothing can exceed it.
+        // A default rather than a bound: nothing can exceed it.
         expect(row.refused, row.constant).toBe("none, it is the default value")
-        expect((await run(Resolve.resolve([]))).parallelConcurrency).toBe(row.value)
+        const resolved = await run(Resolve.resolve([]))
+        const defaults: Readonly<Record<string, unknown>> = {
+          defaultParallelConcurrency: resolved.parallelConcurrency,
+          defaultHandlerTimeout: resolved.handlerTimeout
+        }
+        expect(defaults[row.constant], row.constant).toBe(row.value)
         continue
       }
       expect(`\`${(await violate()).code}\``, row.constant).toBe(row.refused)

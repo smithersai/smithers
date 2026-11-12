@@ -77,6 +77,37 @@ export const maximumBytes = 16_384
  */
 export const maximumDepth = 32
 
+/**
+ * The most UTF-8 bytes every schema resolved against one {@link Budget}
+ * inlines to together: the size of the largest manifest, so `$ref` reuse
+ * never makes a manifest's schemas cost more than the manifest could spell
+ * out.
+ *
+ * @category limits
+ * @since 1.1.0
+ */
+export const maximumInlinedBytes = 65_536
+
+/**
+ * The inlined bytes several resolutions still share, such as every schema in
+ * one manifest. {@link resolve} draws each result's size from it and refuses
+ * once it runs out.
+ *
+ * @category models
+ * @since 1.1.0
+ */
+export interface Budget {
+  remaining: number
+}
+
+/**
+ * A fresh {@link Budget} of {@link maximumInlinedBytes}.
+ *
+ * @category constructors
+ * @since 1.1.0
+ */
+export const budget = (): Budget => ({ remaining: maximumInlinedBytes })
+
 const typeNames: ReadonlySet<string> = new Set(["object", "array", "string", "integer", "number", "boolean", "null"])
 const keywords: ReadonlySet<string> = new Set([
   "type",
@@ -234,8 +265,10 @@ const keyword = (walk: Walk, key: string, value: Json, path: string): unknown =>
  * Refuses `schema_unresolved` for a keyword outside the subset, a URL or
  * unknown ref, or a ref cycle; `secret_field` for a `password` format,
  * `writeOnly: true`, or a property named like a secret; `invalid` for a
- * malformed keyword or a schema over {@link maximumBytes}. `at` prefixes
- * every path the refusal names; refs inside `defs` are named `$defs.<Name>`.
+ * malformed keyword or a schema over {@link maximumBytes}, or one that
+ * overdraws `shared`. `at` prefixes every path the refusal names; refs inside
+ * `defs` are named `$defs.<Name>`. Without `shared` the call has its own
+ * {@link budget}.
  *
  * @category resolution
  * @since 1.1.0
@@ -243,7 +276,8 @@ const keyword = (walk: Walk, key: string, value: Json, path: string): unknown =>
 export const resolve = (
   schema: Json,
   defs: { readonly [name: string]: Json } = {},
-  at = ""
+  at = "",
+  shared: Budget = budget()
 ): Effect.Effect<Resolved, Refusal> =>
   Effect.suspend(() => {
     if (bytes(schema) > maximumBytes) {
@@ -253,12 +287,23 @@ export const resolve = (
     }
     try {
       const resolved = node({ defs, stack: [], nodes: 0, depth: 0 }, schema, at)
-      return bytes(resolved as Json) > maximumBytes
-        ? Effect.fail(
+      const size = bytes(resolved as Json)
+      if (size > maximumBytes) {
+        return Effect.fail(
           new Refusal({
             reason: "invalid",
             path: at,
             detail: `the schema exceeds ${maximumBytes} bytes once its references are inlined`
+          })
+        )
+      }
+      shared.remaining -= size
+      return shared.remaining < 0
+        ? Effect.fail(
+          new Refusal({
+            reason: "invalid",
+            path: at,
+            detail: `the schemas exceed ${maximumInlinedBytes} bytes together once their references are inlined`
           })
         )
         : Effect.succeed(resolved)

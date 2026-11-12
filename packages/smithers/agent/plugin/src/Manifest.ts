@@ -184,6 +184,8 @@ export const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(1024))
  */
 export const When = Schema.String.check(Schema.isMaxLength(256))
 
+const relative = /^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+)*$/
+
 /**
  * A path confined to the plugin root, portable across hosts: `/`-separated
  * segments of letters, digits and `._@+-`, with no leading `/`, no empty, `.`
@@ -192,9 +194,13 @@ export const When = Schema.String.check(Schema.isMaxLength(256))
  * @category schemas
  * @since 1.1.0
  */
-export const RelativePath = Schema.String.check(
-  Schema.isMaxLength(256),
-  Schema.isPattern(/^(?!.*(?:^|\/)\.{1,2}(?:\/|$))[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+)*$/)
+export const RelativePath = Schema.String.check(Schema.isMaxLength(256), Schema.isPattern(relative))
+
+// A view's path under its plugin's own: empty, or a RelativePath of at most
+// 128 characters, so a view never routes outside `/app/<plugin>/`.
+const viewPath = Schema.String.check(
+  Schema.isMaxLength(128),
+  Schema.isPattern(new RegExp(`^$|${relative.source}`))
 )
 
 /**
@@ -291,7 +297,7 @@ export const View = Schema.Struct({
   id: Qualified,
   title: Title,
   scope: Schema.Literals(["app", "repository"]),
-  path: Schema.String.check(Schema.isMaxLength(128)),
+  path: viewPath,
   sizes: bounded(Schema.Literals(["inline", "full"]), 2),
   minimum: Minimum,
   render: Render,

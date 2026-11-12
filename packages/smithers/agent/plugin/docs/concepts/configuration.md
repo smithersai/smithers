@@ -98,6 +98,9 @@ too, a chain of small patches cannot add up past them.
 After the waterfall settles, `Kernel.make` decodes and freezes the result, then
 runs every `configResolved` handler in parallel. Those handlers are observers:
 their success values are discarded, and their failures do not fail startup.
+An observer still running after the handler timeout (`handlerTimeout`, 30
+seconds by default) is stopped and reported as `hook_failed` too, so a stalled
+observer never holds startup.
 Read them from `kernel.observerErrors` and log them at your own boundary:
 
 ```ts

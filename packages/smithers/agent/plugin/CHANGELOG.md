@@ -13,6 +13,19 @@
   receives. `PluginHost.open` takes the repository a `repository` view opens on.
 - `Load.HostFacts.slash`: the host's own slash names; a plugin command naming
   one refuses `conflict`.
+- `Resolve.Options.handlerTimeout`, `Resolve.defaultHandlerTimeout` (30,000 ms)
+  and `Resolve.maximumHandlerTimeout` (600,000 ms): a handler still running at
+  its deadline fails with `hook_failed`, so a stalled startup hook no longer
+  hangs `Kernel.make`.
+- `JsonSchema.budget`, `JsonSchema.Budget` and `JsonSchema.maximumInlinedBytes`:
+  `Load.load` refuses a manifest whose schemas inline to more than 65,536 bytes
+  together.
+
+### Fixed
+
+- A view's `path` must be empty or a `RelativePath`, so `Host.pathOf` never
+  leaves the plugin's own path, and two views sharing a `scope` and `path`
+  refuse `conflict`.
 
 ## [1.0.0-rc.0] - 2026-09-01
 

@@ -116,6 +116,17 @@ describe("JsonSchema.resolve", () => {
     for (let depth = 0; depth <= JsonSchema.maximumDepth; depth++) deep = { items: deep }
     expect((await refused(deep))[0]).toBe("invalid")
   })
+
+  it("draws every result from a shared budget and refuses the one that overdraws it", async () => {
+    const shared = JsonSchema.budget()
+    expect(shared.remaining).toBe(JsonSchema.maximumInlinedBytes)
+    // 15,017 bytes each: four fit 64 KiB, the fifth does not.
+    const big = { description: "x".repeat(15_000) }
+    for (let call = 0; call < 4; call++) await Effect.runPromise(JsonSchema.resolve(big, {}, "s", shared))
+    const overdrawn = await Effect.runPromise(Effect.flip(JsonSchema.resolve(big, {}, "t", shared)))
+    expect([overdrawn.reason, overdrawn.path]).toEqual(["invalid", "t"])
+    for (let call = 0; call < 5; call++) expect(await resolve(big)).toEqual(big)
+  })
 })
 
 describe("JsonSchema.validate", () => {

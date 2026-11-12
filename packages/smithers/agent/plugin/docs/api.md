@@ -265,8 +265,10 @@ was declared for them. The typed signatures make the mismatch unreachable
 without a cast; the runtime check covers the cast.
 
 Handlers must return an Effect. Synchronous throws, Effect failures and defects,
-and non-Effect results (including `undefined`, scalars, and Promises) become
-`hook_failed` with the plugin and hook names. Non-Effect error messages include
+non-Effect results (including `undefined`, scalars, and Promises), and an Effect
+still running after `Resolved.handlerTimeout` milliseconds become `hook_failed`
+with the plugin and hook names, so a stalled startup hook fails or is reported
+by `Kernel.make` instead of hanging it. Non-Effect error messages include
 the result's JavaScript `typeof`. Parallel dispatch collects these errors and
 continues running sibling observers, including with `parallelConcurrency: 1`.
 `Kernel.make` succeeds and reports them in `observerErrors`. Sequential dispatch
@@ -299,6 +301,7 @@ interface Resolved<H = FlowsHooks> {
   readonly handlers: ReadonlyMap<string, ReadonlyArray<HandlerRecord>>
   readonly kinds: Readonly<Record<string, HookKind>>
   readonly parallelConcurrency: number
+  readonly handlerTimeout?: number | undefined
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
 }
 
@@ -308,6 +311,7 @@ interface Options<H = FlowsHooks> {
   readonly hooks?: HookCatalog<H> | undefined
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
   readonly parallelConcurrency?: number | undefined
+  readonly handlerTimeout?: number | undefined
 }
 
 const resolve: <H = FlowsHooks>(
@@ -326,6 +330,7 @@ const layer: <H>(resolved: Resolved<H>) => Layer.Layer<any, PluginError, any>
 | `hooks`               | `engineHooks` | The hook names and kinds this host recognizes, typed as `HookCatalog<H>`. The `unknown_hook` guard checks against it, the frozen copy is `Resolved.kinds`, and `config` or `configResolved` labelled with any kind but `waterfall` or `parallel` fails with `hook_kind_mismatch` at `$options.hooks.<name>`. |
 | `cacheEnvironment`    | absent        | Complete composition identity for sealed activity keys. Requires a `version` on every selected plugin.                                                                                                                                                                                                       |
 | `parallelConcurrency` | `16`          | Maximum observers run at once. A positive safe integer through 256.                                                                                                                                                                                                                                          |
+| `handlerTimeout`      | `30000`       | Milliseconds one handler may run before it fails with `hook_failed`, attributed to its plugin and hook. A positive safe integer through 600,000. A hand-built `Resolved` without it gets the default.                                                                                                        |
 
 `resolve` is once-only and everything it returns is a copy the kernel owns.
 Plugin records and hook objects are snapshotted, handler records and ordered
@@ -358,15 +363,17 @@ and in the merged output.
 
 ### Limits
 
-| Constant                     | Value | Refusal                       |
-| ---------------------------- | ----- | ----------------------------- |
-| `maximumPlugins`             | 256   | `resource_limit`              |
-| `maximumHandlers`            | 1,024 | `resource_limit`              |
-| `maximumPluginInputNodes`    | 4,096 | `resource_limit`              |
-| `maximumPluginDepth`         | 64    | `resource_limit`              |
-| `maximumParallelConcurrency` | 256   | `resource_limit`              |
-| `maximumPluginNameLength`    | 256   | `invalid_plugin`              |
-| `defaultParallelConcurrency` | 16    | none, it is the default value |
+| Constant                     | Value   | Refusal                       |
+| ---------------------------- | ------- | ----------------------------- |
+| `maximumPlugins`             | 256     | `resource_limit`              |
+| `maximumHandlers`            | 1,024   | `resource_limit`              |
+| `maximumPluginInputNodes`    | 4,096   | `resource_limit`              |
+| `maximumPluginDepth`         | 64      | `resource_limit`              |
+| `maximumParallelConcurrency` | 256     | `resource_limit`              |
+| `maximumHandlerTimeout`      | 600,000 | `resource_limit`              |
+| `maximumPluginNameLength`    | 256     | `invalid_plugin`              |
+| `defaultParallelConcurrency` | 16      | none, it is the default value |
+| `defaultHandlerTimeout`      | 30,000  | none, it is the default value |
 
 A `resource_limit` carries the path of the offending entry or preset array, and
 the handler bound counts the handlers the kernel dispatches. Plugin, version,
@@ -545,7 +552,10 @@ keeps the first 64 characters of a key, then `...`, so a hostile key cannot
 make it long. A `RelativePath` (`flows`, `skills`, a `view` or `app`
 render's `module`) is portable and stays inside the plugin root: `/`-separated
 segments of letters, digits and `._@+-`, with no leading `/`, no empty, `.` or
-`..` segment, no scheme and no backslash.
+`..` segment, no scheme and no backslash. A view's `path` is empty or such a
+path of at most 128 characters, so `pathOf` always lands under the plugin's
+own `/app/<plugin>/` or `/<owner>/<name>/-/<plugin>/`; two views of one plugin
+with the same `scope` and `path` refuse `conflict`.
 
 ### Manifest limits
 
@@ -601,12 +611,13 @@ name both plugins and their tiers. Refusals are ordered by plugin id. `maximumHe
 
 | Export                                           | Summary                                                                                                 |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `resolve(schema, defs?, at?)`                    | `Effect<Resolved, Refusal>`: admits the closed subset and inlines `#/$defs/<Name>` refs.                |
+| `resolve(schema, defs?, at?, shared?)`           | `Effect<Resolved, Refusal>`: admits the closed subset and inlines `#/$defs/<Name>` refs.                |
 | `validate(resolved, value)`                      | `Option<string>`: the path of the first failing value (`$.note`), or none.                              |
 | `properties(resolved)`                           | Every declared property name, `oneOf` and `anyOf` members included.                                     |
 | `property(resolved, name)`, `at(resolved, path)` | The schema a property name, or a path of names and `items` indexes, reaches; undefined when undeclared. |
 | `Resolved`, `TypeName`, `Json`                   | The resolved schema shape.                                                                              |
 | `maximumBytes`, `maximumDepth`                   | 16,384 bytes, 32 levels.                                                                                |
+| `budget()`, `Budget`, `maximumInlinedBytes`      | A `{ remaining }` count of inlined bytes several `resolve` calls share: 65,536 bytes.                   |
 
 The admitted keywords are `type`, `properties`, `required`,
 `additionalProperties` (boolean only), `items` (one schema), `enum`, `const`,

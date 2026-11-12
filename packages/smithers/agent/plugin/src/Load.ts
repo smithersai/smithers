@@ -330,7 +330,11 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
       return yield* fail("invalid", "userOnly", "userOnly names exactly the owned flows that are not model-invocable")
     }
 
-    for (const [name, schema] of Object.entries(defs)) yield* JsonSchema.resolve(schema, defs, `$defs.${name}`)
+    // One budget for every schema in the manifest, so `$ref` reuse cannot multiply the work.
+    const inlining = JsonSchema.budget()
+    for (const [name, schema] of Object.entries(defs)) {
+      yield* JsonSchema.resolve(schema, defs, `$defs.${name}`, inlining)
+    }
 
     const taken = new Set<string>()
     const claim = (contribution: string, path: string): Effect.Effect<void, Refusal> => {
@@ -368,9 +372,13 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
     }
 
     const views: Array<View> = []
+    const routes = new Set<string>()
     for (const [index, view] of (contributes.views ?? []).entries()) {
       const at = `contributes.views[${index}]`
       yield* claim(view.id, `${at}.id`)
+      const route = `${view.scope}:${view.path}`
+      if (routes.has(route)) return yield* fail("conflict", `${at}.path`, `another ${view.scope} view has this path`)
+      routes.add(route)
       yield* rendered(view.render, tier, `${at}.render`)
       const rowSchemas = yield* rows(view.reads, at)
       const events: Array<Event> = []
@@ -385,7 +393,7 @@ const admit = (host: HostFacts, plugin: Decoded, state: State): Effect.Effect<vo
         }
         const payload = event.payload === undefined
           ? undefined
-          : yield* JsonSchema.resolve(event.payload, defs, `${where}.payload`)
+          : yield* JsonSchema.resolve(event.payload, defs, `${where}.payload`, inlining)
         const payloads = payload === undefined ? [] : [payload]
         const facts = yield* flowOf(event.flow, `${where}.flow`)
         yield* atLeast(view.minimum, facts, `${at}.minimum`, event.flow)

@@ -1,4 +1,5 @@
-import { Context, Effect } from "effect"
+import { Context, Effect, Fiber } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Config from "../src/Config.ts"
 import type { ResolvedConfig } from "../src/Config.ts"
@@ -214,6 +215,42 @@ describe("Kernel.make", () => {
       { name: "noisy", hooks: { configResolved: () => Effect.fail("boom") } }
     ]))
     expect(kernel.observerErrors.map((error) => error.plugin)).toEqual(["noisy"])
+  })
+
+  it("fails a startup handler that outlives the handler timeout, naming its plugin", async () => {
+    const kernel = await run(Kernel.make(
+      [
+        { name: "ok", hooks: { configResolved: () => Effect.void } },
+        { name: "stalled", hooks: { configResolved: () => Effect.never } }
+      ],
+      {},
+      { handlerTimeout: 20 }
+    ))
+    expect(kernel.observerErrors.map((error) => [error.code, error.plugin, error.hook])).toEqual([
+      ["hook_failed", "stalled", "configResolved"]
+    ])
+    const error = await run(
+      Kernel.make([{ name: "stalled", hooks: { config: () => Effect.never } }], {}, { handlerTimeout: 20 }).pipe(
+        Effect.flip
+      )
+    )
+    expect([error.code, error.plugin, error.hook]).toEqual(["hook_failed", "stalled", "config"])
+  })
+
+  it("gives each handler the default timeout when none is set", async () => {
+    const error = await run(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(
+          Kernel.make([{ name: "stalled", hooks: { config: () => Effect.never } }]).pipe(Effect.flip)
+        )
+        yield* TestClock.adjust(Resolve.defaultHandlerTimeout - 1)
+        expect(fiber.pollUnsafe()).toBeUndefined()
+        yield* TestClock.adjust(1)
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+    expect([error.code, error.plugin, error.hook]).toEqual(["hook_failed", "stalled", "config"])
+    expect(error.message).toContain(`within ${Resolve.defaultHandlerTimeout} ms`)
   })
 
   it("fails with config_invalid when the post-waterfall config does not decode", async () => {

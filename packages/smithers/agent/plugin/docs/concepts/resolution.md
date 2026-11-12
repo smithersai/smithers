@@ -97,15 +97,17 @@ changes nothing about dispatch.
 
 One kernel accepts:
 
-| Limit                                                       | Value | Export                               |
-| ----------------------------------------------------------- | ----- | ------------------------------------ |
-| Plugins                                                     | 256   | `Resolve.maximumPlugins`             |
-| Hook handlers                                               | 1,024 | `Resolve.maximumHandlers`            |
-| Input nodes, including arrays and dropped entries           | 4,096 | `Resolve.maximumPluginInputNodes`    |
-| Nested preset-array depth                                   | 64    | `Resolve.maximumPluginDepth`         |
-| Plugin, version, and hook name length, in UTF-16 code units | 256   | `Resolve.maximumPluginNameLength`    |
-| Parallel observers at once, by default                      | 16    | `Resolve.defaultParallelConcurrency` |
-| Parallel observers at once, at most                         | 256   | `Resolve.maximumParallelConcurrency` |
+| Limit                                                       | Value   | Export                               |
+| ----------------------------------------------------------- | ------- | ------------------------------------ |
+| Plugins                                                     | 256     | `Resolve.maximumPlugins`             |
+| Hook handlers                                               | 1,024   | `Resolve.maximumHandlers`            |
+| Input nodes, including arrays and dropped entries           | 4,096   | `Resolve.maximumPluginInputNodes`    |
+| Nested preset-array depth                                   | 64      | `Resolve.maximumPluginDepth`         |
+| Plugin, version, and hook name length, in UTF-16 code units | 256     | `Resolve.maximumPluginNameLength`    |
+| Parallel observers at once, by default                      | 16      | `Resolve.defaultParallelConcurrency` |
+| Parallel observers at once, at most                         | 256     | `Resolve.maximumParallelConcurrency` |
+| Milliseconds one handler may run, by default                | 30,000  | `Resolve.defaultHandlerTimeout`      |
+| Milliseconds one handler may run, at most                   | 600,000 | `Resolve.maximumHandlerTimeout`      |
 
 Exceeding a count or depth limit fails with `resource_limit` and the path of the
 offending entry or preset array. Invalid names fail with `invalid_plugin`.

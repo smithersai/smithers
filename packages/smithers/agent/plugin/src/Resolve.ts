@@ -79,6 +79,22 @@ export const defaultParallelConcurrency = 16
 export const maximumParallelConcurrency = 256
 
 /**
+ * Default deadline for one hook handler, in milliseconds.
+ *
+ * @category limits
+ * @since 1.1.0
+ */
+export const defaultHandlerTimeout = 30_000
+
+/**
+ * Maximum configurable handler deadline, in milliseconds.
+ *
+ * @category limits
+ * @since 1.1.0
+ */
+export const maximumHandlerTimeout = 600_000
+
+/**
  * One resolved handler with immutable attribution.
  *
  * @category models
@@ -102,6 +118,12 @@ export interface Resolved<H = FlowsHooks> {
   /** The frozen runtime catalog this resolution admitted. Dispatch refuses a method whose kind differs from it. */
   readonly kinds: Readonly<Record<string, HookKind>>
   readonly parallelConcurrency: number
+  /**
+   * Milliseconds one handler may run before it fails with `hook_failed`.
+   * `resolve` always sets it; a hand-built resolution without it gets
+   * {@link defaultHandlerTimeout}.
+   */
+  readonly handlerTimeout?: number | undefined
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
 }
 
@@ -126,6 +148,8 @@ export interface Options<H = FlowsHooks> {
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
   /** Maximum observers run at once. Defaults to 16 and cannot exceed 256. */
   readonly parallelConcurrency?: number | undefined
+  /** Milliseconds one handler may run before it fails with `hook_failed`. Defaults to 30,000 and cannot exceed 600,000. */
+  readonly handlerTimeout?: number | undefined
 }
 
 interface RawOptions {
@@ -134,6 +158,7 @@ interface RawOptions {
   readonly hooks: unknown
   readonly cacheEnvironment: unknown
   readonly parallelConcurrency: unknown
+  readonly handlerTimeout: unknown
 }
 
 const failure = (
@@ -190,14 +215,15 @@ const snapshotOptions = (input: unknown): RawOptions => {
   const values = ownData(
     input,
     "$options",
-    new Set(["config", "target", "hooks", "cacheEnvironment", "parallelConcurrency"])
+    new Set(["config", "target", "hooks", "cacheEnvironment", "parallelConcurrency", "handlerTimeout"])
   )
   return {
     config: values.config,
     target: values.target,
     hooks: values.hooks,
     cacheEnvironment: values.cacheEnvironment,
-    parallelConcurrency: values.parallelConcurrency
+    parallelConcurrency: values.parallelConcurrency,
+    handlerTimeout: values.handlerTimeout
   }
 }
 
@@ -430,6 +456,19 @@ export const resolve = <H = FlowsHooks>(
     const parallelConcurrency = raw.parallelConcurrency === undefined
       ? defaultParallelConcurrency
       : raw.parallelConcurrency
+    if (
+      raw.handlerTimeout !== undefined &&
+      (typeof raw.handlerTimeout !== "number" || !Number.isSafeInteger(raw.handlerTimeout) ||
+        raw.handlerTimeout <= 0 ||
+        raw.handlerTimeout > maximumHandlerTimeout)
+    ) {
+      return yield* Effect.fail(failure(
+        "resource_limit",
+        `handler timeout must be between 1 and ${maximumHandlerTimeout} milliseconds`,
+        "$options.handlerTimeout"
+      ))
+    }
+    const handlerTimeout = raw.handlerTimeout === undefined ? defaultHandlerTimeout : raw.handlerTimeout
     const config = yield* Config.snapshot(configOverride ?? raw.config ?? {})
     const known = yield* Effect.try({
       try: () => snapshotCatalog(raw.hooks ?? engineHooks),
@@ -524,6 +563,7 @@ export const resolve = <H = FlowsHooks>(
       handlers: ImmutableMap.make(entries),
       kinds: known,
       parallelConcurrency,
+      handlerTimeout,
       ...(cacheEnvironment === undefined ? {} : { cacheEnvironment })
     })
   })
