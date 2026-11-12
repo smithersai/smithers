@@ -676,12 +676,15 @@ export const nativePlatform = (
   // Retained TODO attempts wait for stack signals after delivery. A
   // scratch Run owns no stack item and finishes with its module result.
   reenterModules: options.planning === undefined || options.draftVersion ? undefined : ["todo"],
+  // Only a host bound to the hosted input-delivery service fences a TODO's
+  // steering drain there; a local TODO drains its own inbox. A half-declared
+  // binding still refuses delivery.
   beforeSteeringDrain: (runId, flowId) => {
-    if (flowId !== "todo" || options.planning === undefined) return Effect.void
+    const origin = process.env.SMITHERS_MODEL_PROXY_URL
+    const credential = process.env.SMITHERS_MODEL_ROLE_IMPLEMENTER_KEY
+    if (flowId !== "todo" || options.planning === undefined || (!origin && !credential)) return Effect.void
     return Effect.tryPromise({
       try: async (signal) => {
-        const origin = process.env.SMITHERS_MODEL_PROXY_URL
-        const credential = process.env.SMITHERS_MODEL_ROLE_IMPLEMENTER_KEY
         if (!origin || !credential) throw new Error("Missing input delivery fence")
         const response = await fetch(`${origin.replace(/\/+$/, "")}/input-fence?run=${encodeURIComponent(runId)}`, {
           headers: { Authorization: `Bearer ${credential}` },
