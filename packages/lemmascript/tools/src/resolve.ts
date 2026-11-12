@@ -1054,7 +1054,13 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
           };
         }
       }
-      const fn = resolveExpr(e.fn, ctx);
+      let fn = resolveExpr(e.fn, ctx);
+      // A string method on a string-union value (`role.slice(1)`): the value is a string at runtime, so the receiver
+      // widens to `string` for the method (fixtures/update-returns).
+      if (fn.kind === "field" && fn.obj.ty.kind === "user" && declOfKind(ctx.typeDecls, fn.obj.ty.name, "string-union")
+          && recognizeBuiltin({ kind: "string" }, fn.field) !== null) {
+        fn = { ...fn, obj: widenStringUnion(fn.obj, { kind: "string" }, ctx.typeDecls) };
+      }
       const rawArgs = inferLambdaParamTypes(fn, e.args, ctx);
       // For .push() on a typed array, resolve args with element type context
       let argCtx = ctx;
@@ -1143,7 +1149,11 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
     }
 
     case "field": {
-      const obj = resolveExpr(e.obj, ctx);
+      let obj = resolveExpr(e.obj, ctx);
+      // A string-union value's length (`role.length`) is its string's.
+      if (e.field === "length" && obj.ty.kind === "user" && declOfKind(ctx.typeDecls, obj.ty.name, "string-union")) {
+        obj = widenStringUnion(obj, { kind: "string" }, ctx.typeDecls);
+      }
       let isDiscriminant = false;
       let ty: Ty = { kind: "unknown" };
 

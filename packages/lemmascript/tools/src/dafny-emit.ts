@@ -192,6 +192,28 @@ export function emittedNameMap(): Map<string, string> {
   return new Map([..._generatedDafnyNames, ..._userDafnyNames]);
 }
 
+/** TypeScript keeps types and values apart, so a module may read a type `Act` (a string union) and a value `Act` (a
+ *  Foldkit command). Dafny has one namespace for both: a function, extern or constant whose name a type also declares
+ *  is emitted under a fresh name, at its declaration and at every reference (fixtures/update-returns/names.ts). Reset
+ *  per file. */
+let _valueRenames = new Map<string, string>();
+
+function collectValueRenames(decls: readonly { kind: string; name?: string }[]): void {
+  _valueRenames = new Map();
+  const typeKinds = new Set(["inductive", "structure", "type-alias", "opaque-type"]);
+  const typeNames = new Set(decls.filter(d => typeKinds.has(d.kind) && d.name !== undefined).map(d => d.name!));
+  for (const d of decls) {
+    if (typeKinds.has(d.kind) || d.name === undefined || !typeNames.has(d.name) || _valueRenames.has(d.name)) continue;
+    const emitted = freshDafnyName(`${escapeName(d.name)}_value`);
+    _takenDafnyNames.add(emitted);
+    _valueRenames.set(d.name, emitted);
+  }
+}
+
+function escapeValueName(name: string): string {
+  return _valueRenames.get(name) ?? escapeName(name);
+}
+
 function escapeName(name: string): string {
   // \result is carried through the IR as var "\\result"; render it as the
   // current method's out-parameter name (chosen locally by methodHeader).
@@ -310,7 +332,7 @@ function wrapQuantifier(sub: Expr): string {
 
 function emitExpr(e: Expr): string {
   switch (e.kind) {
-    case "var": return e.name === "undefined" ? "None" : escapeName(e.name);
+    case "var": return e.name === "undefined" ? "None" : escapeValueName(e.name);
     case "num": return `${e.value}`;
     // Already canonical decimal; Dafny's `int` is mathematical, so no `n` suffix.
     case "bigint": return e.value;
@@ -709,7 +731,7 @@ function emitExpr(e: Expr): string {
           ? `${e.ctorOf}.${ctor}(${args.join(", ")})`
           : `${ctor}(${args.join(", ")})`;
       }
-      return `${escapeName(e.fn)}(${args.join(", ")})`;
+      return `${escapeValueName(e.fn)}(${args.join(", ")})`;
     }
 
     case "field": {
@@ -1338,7 +1360,7 @@ function emitDecl(d: Decl): string {
 
     case "def": {
       const tp = d.typeParams.length > 0 ? `<${d.typeParams.join(", ")}>` : "";
-      const lines = [`${d.opaque ? "opaque " : ""}function ${escapeName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
+      const lines = [`${d.opaque ? "opaque " : ""}function ${escapeValueName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
       for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
       // An opaque function's callers reason from its contract, so a non-recursive one carries it on the function,
       // proved there against the body. A recursive contract names the function again and would instantiate without
@@ -1369,7 +1391,7 @@ function emitDecl(d: Decl): string {
 
     case "def-by-method": {
       const tp = d.typeParams.length > 0 ? `<${d.typeParams.join(", ")}>` : "";
-      const lines = [`function ${escapeName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
+      const lines = [`function ${escapeValueName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
       for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
       if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
       lines.push(`{`);
@@ -1383,7 +1405,7 @@ function emitDecl(d: Decl): string {
 
     case "method": {
       const tp = d.typeParams.length > 0 ? `<${d.typeParams.join(", ")}>` : "";
-      const lines = [methodHeader(`method ${escapeName(d.name)}${tp}`, d.params, d.returnType, d)];
+      const lines = [methodHeader(`method ${escapeValueName(d.name)}${tp}`, d.params, d.returnType, d)];
       const witness = witnessContext(d.name, d.params, d.returnType, d.requires, d.ensures, d.body);
       try {
         for (const r of d.requires) lines.push(`  requires ${emitContract(r, "requires")}`);
@@ -1419,8 +1441,8 @@ function emitDecl(d: Decl): string {
 
     case "const": {
       // Declared without a value: Dafny's constant of a nonempty type with an arbitrary, fixed value.
-      if (d.value === null) return `const ${escapeName(d.name)}: ${tyToDafny(d.type)}`;
-      return `const ${escapeName(d.name)}: ${tyToDafny(d.type)} := ${emitExpr(d.value)}`;
+      if (d.value === null) return `const ${escapeValueName(d.name)}: ${tyToDafny(d.type)}`;
+      return `const ${escapeValueName(d.name)}: ${tyToDafny(d.type)} := ${emitExpr(d.value)}`;
     }
 
     case "extern": {
@@ -1432,14 +1454,14 @@ function emitDecl(d: Decl): string {
       if (d.impure) {
         const scope = { requires: d.requires, ensures: d.ensures, body: [] as Stmt[] };
         const lines = [methodHeader(
-          `method {:axiom} ${escapeName(d.name)}${tp}`,
+          `method {:axiom} ${escapeValueName(d.name)}${tp}`,
           d.params, d.returnType, scope, true,
         )];
         for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
         for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
         return lines.join("\n");
       }
-      const lines = [`function {:axiom} ${escapeName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
+      const lines = [`function {:axiom} ${escapeValueName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
       for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
       for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
       return lines.join("\n");
@@ -2207,6 +2229,7 @@ export function emitDafnyFile(file: Module, tsFileName?: string, options: LscOpt
   _stringSemantics = options["string-semantics"];
   _dafnyLibrary = options["dafny-library"];
   resetDafnyNameCache();
+  collectValueRenames(file.decls as readonly { kind: string; name?: string }[]);
   buildRecordCtorMap(file.decls);
   _neededPreambles.clear();
   _havocedTypeNames.clear();

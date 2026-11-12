@@ -170,6 +170,23 @@ fi
 expect_proof_failure \
   "two commands with different arguments verified as equal (host-extern)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/host-extern/use-wrong.ts"
+# The shapes of a whole Foldkit `update` (update-returns): a host `Return` alias is a record with its `never` field
+# dropped, a message constructor is its variant, a string method given a regular expression or one LemmaScript does
+# not model is an opaque extern, a string-union value takes string methods and its length, a generated table is a
+# fixed unknown value, a spread override with optional fields reads a `??` in its call, and names.ts keeps a value and
+# a type of one name apart, types a proved function over an anonymous union, and builds a copied constant as its own
+# record.
+cp -R tools/fixtures/update-returns "$fixture_dir/"
+mkdir -p "$fixture_dir/update-returns/node_modules"
+mv "$fixture_dir/update-returns/hostlib" "$fixture_dir/update-returns/node_modules/hostlib"
+for name in use spread names; do
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/update-returns/$name.ts"
+done
+for name in return constructor regex method role table spread names; do
+  expect_proof_failure \
+    "a wrong twin verified (update-returns/wrong-$name)" \
+    "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/update-returns/wrong-$name.ts"
+done
 # Unicode case mapping changes non-ASCII text and its length; the model must not prove otherwise.
 cp tools/fixtures/string-case-length-wrong.ts "$fixture_dir/"
 expect_proof_failure \

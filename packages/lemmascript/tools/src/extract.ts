@@ -7,6 +7,7 @@
  * @since 0.1.0
  */
 
+import { recognizeBuiltin } from "./builtins.js";
 import { desugarMessageUnions } from "./message-union.js";
 import { RegexRefused, regexTestName } from "./regex.js";
 import { Project, Node, FunctionDeclaration, InterfaceDeclaration, SourceFile, TypeAliasDeclaration, Type, SyntaxKind, Expression, ElementAccessExpression, ScriptTarget, VariableDeclaration, ts } from "ts-morph";
@@ -172,10 +173,13 @@ function crossFileConst(id: Node, currentPath: string): VariableDeclaration | un
   if (decl.getSourceFile().getFilePath().endsWith(".d.ts")) {
     if (init || decl.getSourceFile().isInNodeModules() || decl.getSourceFile().isFromExternalLibrary()) return undefined;
     if (decl.getType().getCallSignatures().length > 0) return undefined;
+    // A value with a type of the same name (`Message`: a Foldkit union's constructors beside its type) is read as the
+    // type, never as a constant (fixtures/update-returns).
+    if (symbol?.getDeclarations().some(d => Node.isTypeAliasDeclaration(d) || Node.isInterfaceDeclaration(d))) return undefined;
     return decl;
   }
   if (!init || Node.isArrowFunction(init) || Node.isFunctionExpression(init)) return undefined;
-  if (typeToString(decl.getType()).startsWith("__")) return undefined;
+  if (decl.getType().getCallSignatures().length > 0) return undefined;
   return decl;
 }
 
@@ -198,13 +202,19 @@ function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<strin
     }
     copied.set(name, decl);
     _validateDependency(decl.getSourceFile());
-    const init = decl.getInitializer();
+    // A constant of an anonymous type (a generated table: a list of anonymous records) is not copied: it is a fixed
+    // value of a synthesized type that nothing reveals, so a body and a contract read the same table
+    // (fixtures/update-returns).
+    const init = /\b__(?:type|object)\b/.test(typeToString(decl.getType())) ? undefined : decl.getInitializer();
     for (const id of init?.getDescendantsOfKind(SyntaxKind.Identifier) ?? []) {
       const dep = crossFileConst(id, currentPath);
       if (dep) copy(id.getText(), dep);
     }
     const tsType = init ? typeToString(decl.getType()) : localTypeText(decl.getType(), name, decl);
     out.push({ name, tsType, value: init ? extractExpr(init as Expression) : null });
+    // The constant's type (`ReadonlyArray<Step>`) is declared in its own module: resolve it like an extern's signature
+    // type, or its record literals are built as another record that shares a field (fixtures/update-returns/names.ts).
+    _externSigTypes.push({ type: decl.getType(), node: decl.getTypeNode() ?? decl });
   };
   for (const imp of named ? sourceFile.getImportDeclarations() : []) {
     if (imp.isTypeOnly()) continue;
@@ -743,6 +753,56 @@ function extractExpr(node: Expression): RawExpr {
         const fnName = callee.getName() === "max" ? "MaxOfSeq" : "MinOfSeq";
         return { kind: "call", fn: { kind: "var", name: fnName }, args: [combined] };
       }
+    }
+    // `Message.Tag(payload)`, a Foldkit message union's constructor: the call's type is a `_tag` union with a member
+    // `Tag`, so it is the variant literal `{ _tag: "Tag", …payload }`, built by its typed context
+    // (fixtures/update-returns).
+    if (Node.isPropertyAccessExpression(callee) && node.getArguments().length <= 1) {
+      const result = node.getType();
+      const members = result.isUnion() ? result.getUnionTypes() : [result];
+      const tag = callee.getName();
+      const variant = members.find(m => m.getProperty("_tag")?.getTypeAtLocation(node).getLiteralValue() === tag);
+      const payload = node.getArguments()[0];
+      if (variant && members.every(m => m.getProperty("_tag") !== undefined) && (!payload || Node.isObjectLiteralExpression(payload))) {
+        const fields: { name: string; value: RawExpr }[] = [{ name: "_tag", value: { kind: "str", value: tag } }];
+        for (const prop of payload && Node.isObjectLiteralExpression(payload) ? payload.getProperties() : []) {
+          if (Node.isShorthandPropertyAssignment(prop)) fields.push({ name: prop.getName(), value: { kind: "var", name: prop.getName() } });
+          else if (Node.isPropertyAssignment(prop) && Node.isIdentifier(prop.getNameNode())) fields.push({ name: prop.getName(), value: extractExpr(prop.getInitializerOrThrow()) });
+          else throw new Error(`a message constructor's payload must name its fields: ${node.getText()}`);
+        }
+        return { kind: "record", spread: null, fields };
+      }
+    }
+    // `text.split(/\s+/)`: a split on a regular-expression literal is an opaque extern of the receiver and its other
+    // arguments, one per pattern, typed by the call: equal inputs give equal results, and nothing more is assumed
+    // (fixtures/update-returns). Every other method given a regular expression is still refused by name below.
+    const regexArg = node.getArguments().findIndex(a => Node.isRegularExpressionLiteral(a));
+    if (Node.isPropertyAccessExpression(callee) && callee.getName() === "split" && regexArg === 0 && callee.getExpression().getType().isString()) {
+      const literal = `${callee.getName()} ${node.getArguments()[regexArg]!.getText()}`;
+      const others = node.getArguments().filter((_, i) => i !== regexArg);
+      let name = _regexMethodNames.get(literal);
+      if (!name) {
+        name = `Regex_${_regexMethodNames.size + 1}_${callee.getName()}`;
+        _regexMethodNames.set(literal, name);
+        _externs.set(name, {
+          qualified: name, flat: name, typeParams: [],
+          params: [{ name: "text", tsType: "string" }, ...others.map((a, i) => ({ name: `arg${i}`, tsType: _eraseGenerics(typeToString(a.getType())) }))],
+          returnType: _eraseGenerics(typeToString(node.getType())), requires: [], ensures: [], impure: false,
+        });
+      }
+      return { kind: "call", fn: { kind: "var", name }, args: [extractExpr(callee.getExpression()), ...others.map(a => extractExpr(a as Expression))] };
+    }
+    // `text.toWellFormed()`, `text.padStart(2, "0")`: a pure, locale-independent string method LemmaScript does not
+    // model is an opaque extern of the receiver and its arguments, one per method, typed by the call.
+    if (Node.isPropertyAccessExpression(callee) && callee.getExpression().getType().isString()
+        && OPAQUE_STRING_METHODS.has(callee.getName()) && recognizeBuiltin({ kind: "string" }, callee.getName()) === null) {
+      const name = `String_${callee.getName()}`;
+      const args = node.getArguments();
+      const params = [{ name: "text", tsType: "string" }, ...args.map((a, i) => ({ name: `arg${i}`, tsType: _eraseGenerics(typeToString(a.getType())) }))];
+      const prior = _externs.get(name);
+      if (prior && prior.params.length !== params.length) throw new Error(`String.${callee.getName()} is called with ${args.length} and ${prior.params.length - 1} arguments; give each call the same arity`);
+      if (!prior) _externs.set(name, { qualified: name, flat: name, typeParams: [], params, returnType: _eraseGenerics(typeToString(node.getType())), requires: [], ensures: [], impure: false });
+      return { kind: "call", fn: { kind: "var", name }, args: [extractExpr(callee.getExpression()), ...args.map(a => extractExpr(a as Expression))] };
     }
     // `pattern.test(s)` on a literal pattern, or a module constant holding one: the proved matcher of regex.ts. Every
     // other use of a regular expression is refused by name.
@@ -1319,6 +1379,8 @@ function fieldsOf(owner: string, type: Type, locationNode: Node, extraDecls?: Ty
   const fields: FieldInfo[] = [];
   for (const prop of type.getProperties()) {
     if (prop.getName() === skip) continue;
+    // A field typed `never` (Foldkit's `outMessage?: never`) can hold no value.
+    if (prop.getTypeAtLocation(locationNode).isNever()) continue;
     const override = overrides?.get(prop.getName());
     if (override) { fields.push({ name: prop.getName(), tsType: override }); continue; }
 
@@ -1463,6 +1525,12 @@ function typeName(...parts: string[]): string {
 let _anonNames: Map<ts.Type, string> = new Map();
 /** The synthesized datatypes behind `_anonNames`, so a structurally equal type reuses one (`adoptAnonymous`). */
 let _anonDecls: TypeDeclInfo[] = [];
+/** String methods given a regular-expression literal, by method and pattern, and the opaque extern each is. Reset per
+ *  module. */
+let _regexMethodNames: Map<string, string> = new Map();
+/** Pure, locale-independent `String.prototype` methods LemmaScript has no model of, read as opaque externs. Methods it
+ *  models or refuses by name (`indexOf`, `lastIndexOf`, `charCodeAt`, `replace`…) keep that treatment. */
+const OPAQUE_STRING_METHODS = new Set(["toWellFormed", "padStart", "padEnd"]);
 /** Names LemmaScript made up for anonymous types (`adoptAnonymous`, an anonymous return's `<Fn>Result`), as opposed to
  *  names a declaration gives. Only these may be replaced by a declared type of the same structure
  *  (`unifyStructuralTypes`). Reset per module in `extractModule`. */
@@ -2958,6 +3026,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   _anonNames = new Map();
   _anonDecls = [];
   _synthesizedNames = new Set();
+  _regexMethodNames = new Map();
   _reservedTypeNames = new Set(sourceFile.getStatements().flatMap(st =>
     Node.isTypeAliasDeclaration(st) || Node.isInterfaceDeclaration(st) || Node.isClassDeclaration(st) || Node.isEnumDeclaration(st) ? [st.getName() ?? ""] : []));
   for (const stmt of sourceFile.getStatements()) {

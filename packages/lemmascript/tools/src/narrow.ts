@@ -94,7 +94,9 @@ function recurseExpr(e: TExpr, ctx: CondCtx): TExpr {
     case "nullish": return { ...e, left: re(e.left), right: re(e.right) };
     case "forall": return { ...e, body: re(e.body) };
     case "exists": return { ...e, body: re(e.body) };
-    case "someMatch": return { ...e, someBody: re(e.someBody), noneBody: re(e.noneBody) };
+    // The scrutinee too: a spread merge's scrutinee reads the override, which may be a call with `??` in its
+    // arguments (`{ ...model, ...visit(model.last ?? "") }`, fixtures/update-returns/spread.ts).
+    case "someMatch": return { ...e, scrutinee: re(e.scrutinee), someBody: re(e.someBody), noneBody: re(e.noneBody) };
     case "let": return { ...e, value: re(e.value), body: re(e.body) };
     case "tagMatch": return { ...e, scrutinee: re(e.scrutinee),
       cases: e.cases.map(c => ({ ...c, body: re(c.body) })),

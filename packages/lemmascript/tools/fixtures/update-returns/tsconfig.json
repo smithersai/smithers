@@ -1,0 +1,1 @@
+{ "compilerOptions": { "strict": true, "exactOptionalPropertyTypes": true, "target": "ES2022", "lib": ["ES2022", "ES2024.String"], "module": "ESNext", "moduleResolution": "bundler", "noEmit": true } }
