@@ -110,8 +110,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/github/Repository.ts",
-        "src/github/Actions.ts",
-        "src/core/IssueSync.ts"
+        "src/github/Actions.ts"
       ]
     },
     {

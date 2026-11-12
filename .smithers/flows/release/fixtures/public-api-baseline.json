@@ -5540,16 +5540,6 @@
         "./core/migrations/0001_integration_cursors": null,
         "./github/Webhook": null,
         "./github/ListenerRegistry": null,
-        "./core/IssueSync": {
-          "import": {
-            "types": "./dist/esm/core/IssueSync.d.ts",
-            "default": "./dist/esm/core/IssueSync.js"
-          },
-          "require": {
-            "types": "./dist/cjs/core/IssueSync.d.ts",
-            "default": "./dist/cjs/core/IssueSync.js"
-          }
-        },
         "./linear": null,
         "./linear/Actions": null,
         "./linear/Config": null,
@@ -5582,7 +5572,6 @@
         "core/IntegrationCursorMigration.d.ts": "c3b668232ab7184858059193ad810f8853968a427e9f7692ea38d2c74a152522",
         "core/IntegrationError.d.ts": "5db3271d7848ea53e9f0eb82e78c6413c4058bb81b6426f36a2687fca426647a",
         "core/IntegrationRecordsMigration.d.ts": "34ffd1a21676b687c1160775c3559f256549061956de7926b81bf295cd38b518",
-        "core/IssueSync.d.ts": "7b85b4e88535a613e6329b1350d42bd2518bad628e82d4f2989d4e9f8f38959a",
         "core/JsonPath.d.ts": "92e932e23b688601d974c31adeca91ffef74d2ba5975bafcd61600b40ca8cb21",
         "core/Migrations.d.ts": "971baa70d314a26014bbebad5aa1c75a8ce66015b5d8a38e3a6a7c384bafdc29",
         "core/OAuthToken.d.ts": "f01795011e1215ba56e5f7b4d252e469a5d0597e6c39334caf9cca5da38db385",

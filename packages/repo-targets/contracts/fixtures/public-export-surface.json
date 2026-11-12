@@ -1033,17 +1033,6 @@
       "reason": "pass@k and pass^k statistics over repeated live runs of one case (cfcbf1e56, #1850). A pure module over recorded trial outcomes; it adds no runner, store or model call."
     },
     {
-      "name": "@smthrs/integrations",
-      "subpath": "./core/IssueSync",
-      "development": "./src/core/IssueSync.ts",
-      "published": {
-        "types": "./dist/esm/core/IssueSync.d.ts",
-        "import": "./dist/esm/core/IssueSync.js",
-        "require": "./dist/cjs/core/IssueSync.js"
-      },
-      "reason": "Shared issue/comment mirror contract the Slack and Telegram adapters implement against the backend's issue API (b662d687b). The backend owns identities, mappings, claims and receipts; this module owns no store or worker."
-    },
-    {
       "name": "@smthrs/scorers",
       "subpath": "./Checks",
       "development": "./src/Checks.ts",
@@ -5111,6 +5100,17 @@
         "require": "./dist/cjs/test/TestNodeRuntime.js"
       },
       "reason": "Test support: a durable Node engine over one SQLite file with a recording-nothing Jj. The runnable examples in @smthrs/flows, @smthrs/agent and @smthrs/mcp share it once they live beside the packages they demonstrate (#4089); like engine-store's ./test/TestStores it is not a host. Retired: TestNodeRuntime is now the @smthrs/platform-node root's TestNodeRuntime."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./core/IssueSync",
+      "development": "./src/core/IssueSync.ts",
+      "published": {
+        "types": "./dist/esm/core/IssueSync.d.ts",
+        "import": "./dist/esm/core/IssueSync.js",
+        "require": "./dist/cjs/core/IssueSync.js"
+      },
+      "reason": "Shared issue/comment mirror contract the Slack and Telegram adapters implement against the backend's issue API (b662d687b). The backend owns identities, mappings, claims and receipts; this module owns no store or worker. Retired: the backend issue-sync routes were removed with the Go backend and nothing imported the module (#4883)."
     }
   ]
 }

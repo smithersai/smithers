@@ -66,6 +66,13 @@ describe("integration product scope", () => {
     }
   })
 
+  it("keeps core/IssueSync removed: its backend routes are gone", () => {
+    expect(existsSync(resolve(root, "src", "core", "IssueSync.ts"))).toBe(false)
+    for (const map of [manifest.exports, manifest.publishConfig.exports]) {
+      expect(map["./core/IssueSync"] ?? null).toBeNull()
+    }
+  })
+
   it.each(removedTelegram)("keeps telegram/%s removed", (module) => {
     expect(existsSync(resolve(root, "src", "telegram", module + ".ts"))).toBe(false)
     for (const map of [manifest.exports, manifest.publishConfig.exports]) {

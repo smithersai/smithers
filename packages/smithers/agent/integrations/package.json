@@ -73,7 +73,6 @@
     "./core/migrations/0001_integration_cursors": null,
     "./github/Webhook": null,
     "./github/ListenerRegistry": null,
-    "./core/IssueSync": "./src/core/IssueSync.ts",
     "./linear": null,
     "./linear/Actions": null,
     "./linear/Config": null,
@@ -422,16 +421,6 @@
       "./core/migrations/0001_integration_cursors": null,
       "./github/Webhook": null,
       "./github/ListenerRegistry": null,
-      "./core/IssueSync": {
-        "import": {
-          "types": "./dist/esm/core/IssueSync.d.ts",
-          "default": "./dist/esm/core/IssueSync.js"
-        },
-        "require": {
-          "types": "./dist/cjs/core/IssueSync.d.ts",
-          "default": "./dist/cjs/core/IssueSync.js"
-        }
-      },
       "./linear": null,
       "./linear/Actions": null,
       "./linear/Config": null,
