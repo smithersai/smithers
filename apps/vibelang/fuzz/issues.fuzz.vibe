@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest"
-import { fixtureIssues, makeIssueFactory } from "../src/core/IssuesFactory.vibe"
+import { fixtureIssues, makeIssueFactory, type FixturePerson } from "../src/core/IssuesFactory.vibe"
+import { agentRefused } from "../src/core/issueHostDecision.vibe"
 import { applyIssues, issuePermission } from "../src/core/conversation.vibe"
 import { canLinkIssues } from "../src/core/issueGraphDecision.vibe"
 import { IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
@@ -80,3 +81,43 @@ it.live("issues/product-mock-lifecycle", () => run("issues/product-mock-lifecycl
   const draft = try api.act({ ...request("draft", 0, "draft"), title: "", text: "", example: "", prior: "" })
   return draft.draft !== undefined && participations === 2 && (try api.read()).items.find((item) => item.number === id)?.task === ""
 }))
+
+const SUCCESSORS = ["same", "viewer", "other", "agent"] as const
+
+/**
+ * The durable step checks its person again: after admission as a maintainer, a step that finds another person, the
+ * same person without the operation's permission, or their agent asking to accept or decline, is forbidden and writes
+ * nothing; the same person goes on as admitted. Each case is a fresh fixture whose identity changes between the two.
+ */
+it.live("issues/identity-changes", () => run("issues/identity-changes", Schema.Struct({ request: IssueRequest }), ({ request }) => effect {
+  const admitted: FixturePerson = { id: "fixture-will", login: "will", role: "maintainer" }
+  const blank = { number: 1, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" }
+  const fixed: ReadonlyArray<IssueRequest> = [{ ...blank, op: "read", key: "k-read" }, { ...blank, op: "accept", key: "k-accept" }, { ...blank, op: "comment", text: "Fuzzed", key: "k-comment" }]
+  for (const successor of SUCCESSORS) {
+    const later: FixturePerson = successor === "same" ? admitted : successor === "viewer" ? { ...admitted, role: "viewer" }
+      : successor === "other" ? { ...admitted, id: "fixture-jun", login: "jun" } : { ...admitted, kind: "agent" }
+    for (const asked of [...fixed, request]) {
+      // Reads around the act see the admitted person; inside it the first lookup admits and the later ones are the step's.
+      let lookups = -1
+      const api = try makeIssueFactory(() => sync(() => { if (lookups >= 0) lookups += 1; return lookups <= 1 ? admitted : later }))
+      const before = try api.read()
+      lookups = 0
+      const answer = try exit(api.act(asked))
+      lookups = -1
+      const after = try api.read()
+      const forbidden = successor === "other" || (successor === "viewer" && !issuePermission("viewer", asked.op)) || (successor === "agent" && asked.op !== "read" && agentRefused(asked.op, "agent"))
+      if (answer._tag === "Failure") {
+        if (Cause.hasDies(answer.cause) || after.seq !== before.seq || !same(after.items, before.items)) return false
+        const reason = Cause.findError(answer.cause)
+        const refusedHere = reason._tag === "Success" && (reason.success as { readonly reason?: string }).reason === "forbidden"
+        // A request the schema or the admission refuses never reaches the step; a valid fixed one always does.
+        if (fixed.includes(asked) && refusedHere !== forbidden) return false
+        if (!forbidden && refusedHere) return false
+        continue
+      }
+      if (forbidden) return false
+    }
+  }
+  return true
+}))
+

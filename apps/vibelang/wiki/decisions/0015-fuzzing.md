@@ -1574,3 +1574,10 @@ a2 and a3) and having a visitor cancel a2. Every run list must be newest first, 
 for a Tour run, the one flow a viewer may run (its least role is `viewer`; the walk's visitor pass starts one). Mutant
 caught: the list oldest first. Equivalent: removing the directory's cancel role check, since the action object
 refuses the same cancel.
+
+`src/core/IssuesFactory.vibe` 67 and 70, the fixture's durable step checking its person again: `issues/identity-changes`
+admits a maintainer, then lets the step find the same person, that person as a viewer, another person, or their agent,
+for a read, an accept, a comment and a drawn request, each in a fresh fixture. Another person is always forbidden (the
+execution id names the admitted person), a viewer is forbidden what its role cannot do, an agent is forbidden to accept
+or decline, and a forbidden step writes nothing; the same person is never forbidden. Mutants caught: the execution id
+check removed; the agent check removed.
