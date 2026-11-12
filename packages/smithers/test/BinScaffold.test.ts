@@ -107,7 +107,9 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       const registry = report.checks.find((check) => check.name === "registry")!
       expect(registry.level).toBe("fail")
       expect(registry.detail).toContain(`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=${missing}`)
-      expect(registry.detail).toContain("cargo build --locked --release -p smithers-ffi --bin smithers-jj-export")
+      expect(registry.detail).toContain(
+        "cargo build --locked --release --package smithers-ffi --bin smithers-jj-export"
+      )
       // The rest of the report still runs.
       expect(report.checks).toEqual(expect.arrayContaining([expect.objectContaining({ name: "node" })]))
     } finally {

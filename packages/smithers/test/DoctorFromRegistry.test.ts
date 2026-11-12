@@ -179,7 +179,9 @@ describe("local diagnostics off the registry snapshot", () => {
       const registry = check(report, "registry")
       expect(registry?.level).toBe("fail")
       expect(registry?.detail).toContain(`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=${missing}`)
-      expect(registry?.detail).toContain("cargo build --locked --release -p smithers-ffi --bin smithers-jj-export")
+      expect(registry?.detail).toContain(
+        "cargo build --locked --release --package smithers-ffi --bin smithers-jj-export"
+      )
       // The rest of the report still runs, and no flow is claimed as discovered.
       expect(check(report, "node")).toBeDefined()
       expect(registry?.detail).not.toContain("flows discovered")
