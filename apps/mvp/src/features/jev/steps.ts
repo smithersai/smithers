@@ -1,7 +1,7 @@
 import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Classifier, Evaluator, type Model, ModelError, ModelProxy } from "@smthrs/model"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { MODEL_ROUTE, quotaRefused } from "../model/contract"
 import { JEV_ROUTE } from "../personal-model/contract"
@@ -35,6 +35,12 @@ export const MODEL_RETRY = RetryPolicy.make({
   ],
 })
 
+/**
+ * How long a judgment waits for the person's own Jev, the whole exchange, its body included. ChatApi bounds Jev's own call
+ * at the evaluator's deadline and answers within this; past it, no answer came and the seat answers.
+ */
+export const OWN_JEV_WITHIN: Duration.Input = "15 seconds"
+
 /** The judge's seat: the model endpoint's `judge` role, read with `ModelProxy`'s client and keyed with its `prepare`. */
 export class JudgeSeat extends Context.Service<
   JudgeSeat,
@@ -50,8 +56,11 @@ export class JudgeSeat extends Context.Service<
     readonly ownJev?: (request: Evaluator.Request) => Effect.Effect<Option.Option<Evaluator.Response>, Evaluator.EvaluatorError>
   }
 >()("@smthrs/mvp/jev/JudgeSeat") {
-  /** The `judge` role of the model endpoint on `origin`, through the host's `HttpClient`. */
-  static readonly layer = (origin: string) =>
+  /**
+   * The `judge` role of the model endpoint on `origin`, through the host's `HttpClient`, waiting `ownJevWithin`
+   * ({@link OWN_JEV_WITHIN} unless set) for the person's own Jev.
+   */
+  static readonly layer = (origin: string, options: { readonly ownJevWithin?: Duration.Input } = {}) =>
     Layer.effect(
       JudgeSeat,
       Effect.gen(function* () {
@@ -61,18 +70,19 @@ export class JudgeSeat extends Context.Service<
           model: yield* ModelProxy.makeClient({ url }),
           route: { prepare: ModelProxy.prepare({ url }) },
           retryPolicy: MODEL_RETRY,
-          ownJev: ownJev(`${origin}${JEV_ROUTE}`, client),
+          ownJev: ownJev(`${origin}${JEV_ROUTE}`, client, options.ownJevWithin ?? OWN_JEV_WITHIN),
         }
       }),
     )
 }
 
 /**
- * Asks the person's own Jev through ChatApi, which holds their key: `404` means they have none. So does no answer at all:
- * this request has no durable retries, and the seat's do, so a dropped connection doesn't cost every judgment its
- * attempts, whoever has a Jev connection. A refusal keeps Jev's code; an answer with no code is `unreachable`.
+ * Asks the person's own Jev through ChatApi, which holds their key: `404` means they have none. So does no answer at all,
+ * a whole answer not within `within` included: this request has no durable retries, and the seat's do, so a dropped or
+ * stalled connection doesn't cost every judgment its attempts, whoever has a Jev connection. A refusal keeps Jev's code;
+ * an answer with no code is `unreachable`.
  */
-const ownJev = (url: string, client: HttpClient.HttpClient) => (request: Evaluator.Request) =>
+const ownJev = (url: string, client: HttpClient.HttpClient, within: Duration.Input) => (request: Evaluator.Request) =>
   Effect.gen(function* () {
     const body = { state: request.state, questions: request.questions }
     const sent = yield* client.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body)).pipe(Effect.option)
@@ -85,6 +95,8 @@ const ownJev = (url: string, client: HttpClient.HttpClient) => (request: Evaluat
     }
     return Option.some(json as unknown as Evaluator.Response)
   }).pipe(
+    // Interrupting the request aborts its fetch, so a stalled body stops too.
+    Effect.timeoutOrElse({ duration: within, orElse: () => Effect.succeed(Option.none<Evaluator.Response>()) }),
     Effect.catch((failure) =>
       failure instanceof Evaluator.EvaluatorError
         ? Effect.fail(failure)
