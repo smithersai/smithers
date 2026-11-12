@@ -17,7 +17,10 @@
  * the same output. Chunk names carry a content hash, so a chunk never changes
  * under a running TUI.
  *
- * Run it alone with `node scripts/build-tui.mjs`.
+ * Run it alone with `node scripts/build-tui.mjs`. `logLevel` is esbuild's:
+ * the package build prints warnings, and the launch-time rebuild that
+ * `smthrs tui` runs prints only errors, so a launch's stderr carries the
+ * TUI's own output and not the compile warnings of the sources it bundles.
  */
 import { build } from "esbuild"
 import vibelang from "vibelang-unplugin/esbuild"
@@ -108,7 +111,7 @@ export const assertTuiImports = (metafile, declared) => {
   }
 }
 
-export const buildTui = async () => {
+export const buildTui = async ({ logLevel = "warning" } = {}) => {
   verifyNativeArtifacts()
   const manifest = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"))
   const declared = new Set([
@@ -136,7 +139,7 @@ export const buildTui = async () => {
     },
     metafile: true,
     write: false,
-    logLevel: "warning",
+    logLevel,
     // `.vibe` modules of the workspace packages the TUI imports compile with
     // their own package's tsconfig.
     plugins: [vibelang({ root: app }), declaredDependenciesExternal(declared)]

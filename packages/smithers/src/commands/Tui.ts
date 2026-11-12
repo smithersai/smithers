@@ -249,8 +249,11 @@ const cliRoot = (): URL => new URL(".", import.meta.resolve("@smthrs/cli/package
 /** Rebuilds the checkout bundle so Node never runs stale workspace code. */
 const rebuild = async (packageRoot: URL): Promise<void> => {
   const script = new URL("scripts/build-tui.mjs", packageRoot).href
-  const { buildTui } = (await import(script)) as { readonly buildTui: () => Promise<void> }
-  await buildTui()
+  const { buildTui } = (await import(script)) as {
+    readonly buildTui: (options: { readonly logLevel: "error" }) => Promise<void>
+  }
+  // A failed bundle still reports; its sources' compile warnings belong to the package build.
+  await buildTui({ logLevel: "error" })
 }
 
 /** Forwarded to the TUI; SIGINT reaches it from the terminal directly. */
