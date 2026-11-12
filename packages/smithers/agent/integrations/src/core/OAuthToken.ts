@@ -18,7 +18,11 @@
  *   the value this source exchanged: through the control-plane `Credential`
  *   boundary with {@link credentialStore}, whose `rotate` compares the stored
  *   secret and writes over the version it compared in one step, so a writer in
- *   any process that commits first wins and this source keeps its token.
+ *   any process that commits first wins and this source keeps its token. A
+ *   write that fails or is interrupted keeps the rotation and the minted
+ *   access token in the source: the call fails with the store's error, and
+ *   every later `token` writes the rotation again before it serves or
+ *   exchanges anything, so the retired token is never presented.
  * - **Recovery.** Independent sources sharing one credential can both present
  *   the same refresh token, and a rotating provider refuses the second with
  *   `invalid_grant`. The loser re-reads the stored token once and fails
@@ -580,6 +584,11 @@ interface Cached {
   readonly staleAtMs: number
 }
 
+interface Rotation {
+  readonly previous: Redacted.Redacted<string>
+  readonly next: Redacted.Redacted<string>
+}
+
 // The source over `http`. Throws an IntegrationError for a bad config; `make`
 // turns that into a typed failure.
 const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource => {
@@ -631,34 +640,56 @@ const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource
       )
     })
 
-  const refresh = Effect.gen(function*() {
-    const { current, grant } = yield* Effect.flatMap(options.refreshToken.load, (current) =>
-      exchange(current).pipe(
-        Effect.catchIf((error) => error.details?.["oauthError"] === "invalid_grant", (error) =>
-          rotationPending(current, error))
-      ))
-    const now = yield* Clock.currentTimeMillis
-    if (grant.refreshToken !== null && Redacted.value(grant.refreshToken) !== Redacted.value(current)) {
-      const replaced = yield* options.refreshToken.replace(current, grant.refreshToken)
-      if (!replaced) {
-        yield* Effect.logWarning(
-          `${endpoint.provider} rotated the refresh token, but another refresher replaced the stored one first; keeping the stored token.`
-        )
+  // A rotation the provider answered but the store has not taken yet. The
+  // provider already retired `previous`, so `next` is the only live refresh
+  // token until it is written; it is written before anything else is served.
+  const unpersisted = Ref.makeUnsafe<Option.Option<Rotation>>(Option.none())
+
+  const persist = Effect.flatMap(
+    Ref.get(unpersisted),
+    (rotation) =>
+      Option.isNone(rotation) ? Effect.void : Effect.gen(function*() {
+        const replaced = yield* options.refreshToken.replace(rotation.value.previous, rotation.value.next)
+        yield* Ref.set(unpersisted, Option.none())
+        if (!replaced) {
+          yield* Effect.logWarning(
+            `${endpoint.provider} rotated the refresh token, but another refresher replaced the stored one first; keeping the stored token.`
+          )
+        }
+      })
+  )
+
+  // Between the provider's answer and recording it nothing may interrupt:
+  // the answer carries the only live refresh token.
+  const refresh = Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function*() {
+      const { current, grant } = yield* restore(Effect.flatMap(options.refreshToken.load, (current) =>
+        exchange(current).pipe(
+          Effect.catchIf((error) => error.details?.["oauthError"] === "invalid_grant", (error) =>
+            rotationPending(current, error))
+        )))
+      const now = yield* Clock.currentTimeMillis
+      yield* Ref.set(
+        cache,
+        grant.expiresInSeconds === null
+          ? Option.none()
+          : Option.some({ token: grant.accessToken, staleAtMs: now + grant.expiresInSeconds * 1000 - skewMs })
+      )
+      if (grant.refreshToken !== null && Redacted.value(grant.refreshToken) !== Redacted.value(current)) {
+        yield* Ref.set(unpersisted, Option.some({ previous: current, next: grant.refreshToken }))
+        yield* restore(persist)
       }
-    }
-    yield* Ref.set(
-      cache,
-      grant.expiresInSeconds === null
-        ? Option.none()
-        : Option.some({ token: grant.accessToken, staleAtMs: now + grant.expiresInSeconds * 1000 - skewMs })
-    )
-    return grant.accessToken
-  })
+      return grant.accessToken
+    })
+  )
 
   const token = Effect.gen(function*() {
     const hit = yield* cached
-    if (Option.isSome(hit)) return hit.value.token
+    if (Option.isSome(hit) && Option.isNone(yield* Ref.get(unpersisted))) return hit.value.token
     return yield* lock.withPermits(1)(Effect.gen(function*() {
+      // A rotation a failed or interrupted write left behind is written first:
+      // the stored token is dead until it is.
+      yield* persist
       // Another caller may have refreshed while this one waited for the lock.
       const again = yield* cached
       return Option.isSome(again) ? again.value.token : yield* refresh

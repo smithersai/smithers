@@ -276,7 +276,10 @@ Short-lived OAuth access tokens minted from a stored refresh token, behind an
 source caches a token until `skew` before it expires and refreshes on demand;
 a rotated refresh token is written back through the `RefreshTokenStore`
 (`memoryStore`, or `credentialStore(credentials, reference)` over the control
-plane's credential boundary with a compare-and-set). `exchangeCode` completes
+plane's credential boundary with a compare-and-set). A write that fails or
+is interrupted keeps the rotation and the minted access token: the call fails
+with the store's error, and every later `token` writes the rotation first, so
+the retired refresh token is never presented again. `exchangeCode` completes
 an authorization-code grant as an `Effect<Grant, IntegrationError, HttpClient>`.
 `exchangeRefreshToken` presents one refresh token once and returns the whole
 `Grant`, rotation included, for a host that stores refresh tokens itself, such

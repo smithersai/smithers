@@ -73,6 +73,11 @@
 
 ### Fixed
 
+- `Core.OAuthToken.make` keeps a rotated refresh token whose write to the
+  `RefreshTokenStore` failed or was interrupted, and writes it before the
+  next `token` serves or exchanges anything. It used to drop it, leaving the
+  store with a retired token and every later call failing `retryable`
+  ([#4881](https://github.com/smithersai/smithers/issues/4881)).
 - `Telegram.Source.run` retries a transient `getUpdates` failure with capped
   exponential backoff instead of stopping on the first network error or 5xx.
 - Linear and Telegram serialize request bodies before sending, so a BigInt or

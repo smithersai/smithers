@@ -769,19 +769,88 @@ describe("OAuthToken credential store", () => {
     expect(error.summary).toContain(REFERENCE.name)
   })
 
-  it("surfaces a store failure while persisting a rotation", async () => {
-    fixture = await startFixture((_request, response) =>
-      json(response, 200, { access_token: "access", expires_in: 3600, refresh_token: "rotated" })
-    )
-    const store: OAuthToken.RefreshTokenStore = {
-      load: Effect.succeed(Redacted.make(REFRESH)),
-      replace: () => Effect.fail(new IntegrationError("credentials-missing", "no storage", { retryable: false }))
-    }
-    const error = await failure(tokenOf(endpoint({ refreshToken: store })))
+  it("keeps a rotation whose write failed and writes it before serving the minted token", async () => {
+    const provider = strictRotatingProvider({ holdFirst: 0 })
+    fixture = await startFixture(provider.handle)
+    const store = failingWrites(1)
+    const source = sourceOf(endpoint({ refreshToken: store }))
+
+    const error = await failure(source.token)
     expect(error.reason).toBe("credentials-missing")
     expect(error.summary).toBe("no storage")
+
+    // The provider retired REFRESH; the next call writes rt-1 and serves the
+    // token the failed call minted, without another exchange.
+    expect(value(await Effect.runPromise(source.token))).toBe("at-1")
+    expect(value(await Effect.runPromise(store.load))).toBe("rt-1")
+    await Effect.runPromise(source.invalidate)
+    expect(value(await Effect.runPromise(source.token))).toBe("at-2")
+    expect(tokenRequests().map((request) => form(request).get("refresh_token"))).toEqual([REFRESH, "rt-1"])
+  })
+
+  it("fails again, without presenting the retired token, while the rotation cannot be written", async () => {
+    let minted = 0
+    fixture = await startFixture((request, response) => {
+      minted += 1
+      // No expires_in: nothing is cached, so every call needs the refresh token.
+      json(response, 200, { access_token: `access-${minted}`, refresh_token: `${form(request).get("refresh_token")}+` })
+    })
+    const store = failingWrites(2)
+    const source = sourceOf(endpoint({ refreshToken: store }))
+
+    expect((await failure(source.token)).summary).toBe("no storage")
+    expect((await failure(source.token)).summary).toBe("no storage")
+    expect(value(await Effect.runPromise(source.token))).toBe("access-2")
+    expect(value(await Effect.runPromise(store.load))).toBe(`${REFRESH}++`)
+    expect(tokenRequests().map((request) => form(request).get("refresh_token"))).toEqual([REFRESH, `${REFRESH}+`])
+  })
+
+  it("keeps a rotation whose write was interrupted", async () => {
+    const provider = strictRotatingProvider({ holdFirst: 0 })
+    fixture = await startFixture(provider.handle)
+    const durable = OAuthToken.memoryStore(Redacted.make(REFRESH))
+    let writes = 0
+    let writing: () => void = () => undefined
+    const started = new Promise<void>((resolve) => {
+      writing = resolve
+    })
+    const store: OAuthToken.RefreshTokenStore = {
+      load: durable.load,
+      replace: (previous, next) =>
+        Effect.suspend(() => {
+          writes += 1
+          if (writes > 1) return durable.replace(previous, next)
+          writing()
+          return Effect.never
+        })
+    }
+    const source = sourceOf(endpoint({ refreshToken: store }))
+
+    const fiber = Effect.runFork(source.token)
+    await started
+    await Effect.runPromise(Fiber.interrupt(fiber))
+
+    expect(value(await Effect.runPromise(source.token))).toBe("at-1")
+    expect(value(await Effect.runPromise(store.load))).toBe("rt-1")
+    expect(tokenRequests()).toHaveLength(1)
   })
 })
+
+/** A memory store seeded with REFRESH whose first `failures` writes fail. */
+const failingWrites = (failures: number): OAuthToken.RefreshTokenStore => {
+  const durable = OAuthToken.memoryStore(Redacted.make(REFRESH))
+  let writes = 0
+  return {
+    load: durable.load,
+    replace: (previous, next) =>
+      Effect.suspend(() => {
+        writes += 1
+        return writes <= failures
+          ? Effect.fail(new IntegrationError("credentials-missing", "no storage", { retryable: false }))
+          : durable.replace(previous, next)
+      })
+  }
+}
 
 describe("OAuthToken code exchange", () => {
   it("redeems a code with its verifier and returns both tokens", async () => {
