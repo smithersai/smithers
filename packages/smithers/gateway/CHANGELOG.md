@@ -24,6 +24,16 @@
 
 ### Changed
 
+- `workspace-runs` rows clip `finalOutput`, `failureMessage`, and `diagnosis`
+  to 1,024 encoded JSON content bytes, so long final answers no longer refuse the whole
+  listing with `resource_limit`; `run-summary` keeps the complete text. A
+  `workspace-runs` subscription that names a `flowId` no longer admits other
+  flows' runs into its deltas. Workspace reads keep each run's folded rows
+  instead of its event window and share eight journal-read permits across all
+  clients, with a 4 MiB budget for retained workspace state. Followed facts
+  survive lagging journal reads across batches. A `run-events` cursor whose event left the retained window is
+  verified against the journal instead of refused as not issued (#4914).
+
 - The runtime monitor omits the raw journal (paged from `run-events` when its
   tab opens; a replay frame keeps its prefix) and adds the run's `extent`.
   Plan structure and child-flow calls are no longer steps, and a check phase

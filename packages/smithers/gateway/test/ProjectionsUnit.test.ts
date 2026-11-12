@@ -14,6 +14,7 @@ import type { Service as ControlService } from "@smthrs/control/Control"
 import { PersistenceError, Unavailable } from "@smthrs/control/ControlError"
 import type { ControlEvent, ListResponse, RunSummary } from "@smthrs/control/ControlSchema"
 import { Deferred, Effect, Fiber, Logger, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { GatewayError } from "../src/GatewayError.ts"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
@@ -557,6 +558,11 @@ describe("Projections resource bounds", () => {
       // A row set too large for the wire is still a refusal: rows go out whole.
       expect((yield* Effect.flip(oversizedRows.snapshot({ _tag: "workspace-runs" }))).code)
         .toBe("resource_limit")
+      // Individual run cards retain complete metadata and still enforce the
+      // wire budget independently of the workspace's retained-state budget.
+      const card = yield* Effect.flip(oversizedRows.snapshot({ _tag: "run-summary", runId: run.runId }))
+      expect(card.code).toBe("resource_limit")
+      expect(card.message).toContain("Projection rows exceed")
     }))
 
   it.effect("refuses malformed and backward event histories as unavailable", () =>
@@ -2643,5 +2649,473 @@ describe("incremental journal snapshots", () => {
         watch: () => Stream.fromIterable(history)
       }))
       expect((yield* cold.snapshot(selector)).rows).toEqual(next.rows)
+    }))
+})
+
+describe("Projections workspace reads (issue 4914)", () => {
+  /** A listing and per-run journals keyed by run id, followed by `followed`. */
+  const workspace = (
+    runs: ReadonlyArray<RunSummary>,
+    journals: ReadonlyMap<string, ReadonlyArray<ControlEvent>>,
+    followed: ReadonlyArray<ControlEvent> = [],
+    arrivals: ReadonlyArray<RunSummary> = []
+  ) => {
+    const reads: Array<string> = []
+    const listed = [...runs]
+    const service = control({
+      list: (request) => {
+        if (request._tag !== "runs") return Effect.succeed({ _tag: "runs", items: [] })
+        const { flowId, runId } = request.filters ?? {}
+        return Effect.succeed({
+          _tag: "runs",
+          items: listed.filter((candidate) =>
+            (runId === undefined || candidate.runId === runId) && (flowId === undefined || candidate.flowId === flowId)
+          )
+        })
+      },
+      watch: (filter) => {
+        if (filter.follow === true) {
+          listed.push(...arrivals)
+          return Stream.fromIterable(followed)
+        }
+        if (filter.runId !== undefined) reads.push(filter.runId)
+        return Stream.fromIterable(
+          (journals.get(filter.runId ?? "") ?? []).filter((item) => item.sequence > (filter.afterSequence ?? -1))
+        )
+      }
+    })
+    return { reads, service }
+  }
+
+  const ofRun = (runId: string, sequence: number, kind: string, payload: unknown): ControlEvent => ({
+    ...event(sequence, kind, { runId, ...(payload as object) }),
+    runId
+  })
+
+  it.effect("keeps a flow-filtered workspace-runs subscription to that flow's runs", () =>
+    Effect.gen(function*() {
+      const deploy: RunSummary = { ...run, status: "running" }
+      const other: RunSummary = { ...numberedRun(2), flowId: "other", status: "running", createdAt: 3 }
+      const later: RunSummary = { ...numberedRun(3), status: "running", createdAt: 4 }
+      const otherAccepted = ofRun(other.runId, 1, "control.run.accepted", {})
+      const otherRunning = ofRun(other.runId, 2, "control.run.running", {})
+      // Journaled after the run was judged, so only a permanent verdict skips it.
+      const otherLater = ofRun(other.runId, 3, "control.agent.turn-opened", { seat: "opus" })
+      const laterAccepted = ofRun(later.runId, 1, "control.run.accepted", {})
+      const { reads, service } = workspace(
+        [deploy],
+        new Map([[other.runId, [otherAccepted, otherRunning]], [later.runId, [laterAccepted]]]),
+        [otherAccepted, otherRunning, otherLater, laterAccepted],
+        [other, later]
+      )
+      const selector = { _tag: "workspace-runs" as const, flowId: "deploy" }
+      const frames = yield* Stream.runCollect(make(service, { heartbeatMillis: 60_000 }).subscribe(selector))
+      const ids = (rows: ReadonlyArray<unknown>) => rows.map((row) => (row as { readonly runId: string }).runId)
+      const deltas = frames.flatMap((frame) => frame._tag === "delta" ? [ids(frame.delta)] : [])
+      // Before the fix the follower admitted every flow's runs, so a per-flow
+      // dashboard listed run-2 of flow "other" after its first event.
+      expect(deltas).toEqual([[deploy.runId, later.runId]])
+      // A run's flow never changes, so the excluded run is read once and its
+      // later events cost no read.
+      expect(reads.filter((runId) => runId === other.runId)).toHaveLength(1)
+    }))
+
+  it.effect("clips list text so 500 long final answers still answer the workspace listing", () =>
+    Effect.gen(function*() {
+      const answer = "a".repeat(10_000)
+      const cause = "c".repeat(10_000)
+      const runs = Array.from({ length: Projections.maxWorkspaceRuns }, (_, index): RunSummary => ({
+        ...numberedRun(index + 1),
+        status: index === 0 ? "failed" : "completed"
+      }))
+      const journals = new Map(runs.map((summary, index) => [
+        summary.runId,
+        index === 0
+          ? [ofRun(summary.runId, 1, "control.run.failed", { cause })]
+          : [
+            ofRun(summary.runId, 1, "control.agent.resolved", { text: answer }),
+            ofRun(summary.runId, 2, "control.run.completed", {})
+          ]
+      ]))
+      const projections = make(workspace(runs, journals).service)
+      // 500 rows of 10 KiB answers are about 5 MiB, over the 4 MiB row budget
+      // that refused the whole listing with resource_limit before the fix.
+      const listing = yield* projections.snapshot({ _tag: "workspace-runs" })
+      expect(listing.rows).toHaveLength(Projections.maxWorkspaceRuns)
+      const [failed, completed] = listing.rows
+      expect([...failed!.failureMessage!]).toHaveLength(1_022)
+      expect(failed!.failureMessage!.endsWith("…")).toBe(true)
+      expect([...completed!.finalOutput!]).toHaveLength(1_022)
+      expect(completed!.finalOutput!.endsWith("…")).toBe(true)
+      expect([...completed!.diagnosis].length).toBeLessThanOrEqual(1_024)
+      // A run card still serves the complete text.
+      const card = yield* projections.snapshot({ _tag: "run-summary", runId: runs[1]!.runId })
+      expect(card.rows[0]?.finalOutput).toBe(answer)
+      const failedCard = yield* projections.snapshot({ _tag: "run-summary", runId: runs[0]!.runId })
+      expect(failedCard.rows[0]?.failureMessage).toBe(cause)
+    }))
+
+  for (
+    const [name, answer] of [
+      ["astral Unicode", "😀".repeat(3_000)],
+      ["JSON escapes", "\u0000".repeat(2_000)],
+      ["the exact text budget", "a".repeat(1_024)]
+    ] as const
+  ) {
+    it.effect(`bounds list text by encoded bytes for ${name}`, () =>
+      Effect.gen(function*() {
+        const runs = Array.from({ length: Projections.maxWorkspaceRuns }, (_, index): RunSummary => ({
+          ...numberedRun(index + 1),
+          status: "completed"
+        }))
+        const journals = new Map(runs.map((summary) => [
+          summary.runId,
+          [
+            ofRun(summary.runId, 1, "control.agent.resolved", { text: answer }),
+            ofRun(summary.runId, 2, "control.run.completed", {})
+          ]
+        ]))
+        const projections = make(workspace(runs, journals).service)
+        const listing = yield* projections.snapshot({ _tag: "workspace-runs" })
+        expect(listing.rows).toHaveLength(Projections.maxWorkspaceRuns)
+        const encodedBytes = (text: string) => new TextEncoder().encode(JSON.stringify(text)).byteLength - 2
+        for (const row of listing.rows) {
+          expect(encodedBytes(row.finalOutput!)).toBeLessThanOrEqual(1_024)
+          expect(encodedBytes(row.diagnosis)).toBeLessThanOrEqual(1_024)
+          expect(new TextDecoder().decode(new TextEncoder().encode(row.finalOutput!))).toBe(row.finalOutput)
+        }
+        expect(new TextEncoder().encode(JSON.stringify(listing.rows)).byteLength)
+          .toBeLessThanOrEqual(Projections.maxProjectionBytes)
+        const card = yield* projections.snapshot({ _tag: "run-summary", runId: runs[0]!.runId })
+        expect(card.rows[0]?.finalOutput).toBe(answer)
+        expect(listing.rows[0]?.finalOutput)
+          .toBe(
+            name === "the exact text budget" ? answer : answer.slice(0, listing.rows[0]!.finalOutput!.length - 1) + "…"
+          )
+      }))
+  }
+
+  it.effect("bounds workspace journal reads at eight across concurrent snapshots", () =>
+    Effect.gen(function*() {
+      const runs = Array.from({ length: 12 }, (_, index) => numberedRun(index + 1))
+      let active = 0
+      let peak = 0
+      const projections = make(control({
+        list: (request) =>
+          Effect.succeed({
+            _tag: "runs",
+            items: request._tag === "runs" && request.filters?.runId
+              ? runs.filter((candidate) => candidate.runId === request.filters?.runId) :
+              runs
+          }),
+        watch: () =>
+          Stream.unwrap(Effect.gen(function*() {
+            active += 1
+            peak = Math.max(peak, active)
+            yield* Effect.yieldNow
+            active -= 1
+            return Stream.empty
+          }))
+      }))
+      // Each snapshot reads eight journals at once; before the fix two
+      // concurrent snapshots held sixteen windows, and N held 8 * N.
+      const snapshots = yield* Effect.all([
+        projections.snapshot({ _tag: "workspace-runs" }),
+        projections.snapshot({ _tag: "workspace-runs" })
+      ], { concurrency: "unbounded" })
+      expect(snapshots.map((snapshot) => snapshot.rows.length)).toEqual([12, 12])
+      expect(peak).toBe(8)
+    }))
+
+  it.effect("folds a followed workspace run from a fresh journal read", () =>
+    Effect.gen(function*() {
+      const accepted = ofRun(run.runId, 1, "control.run.accepted", {})
+      const turn = ofRun(run.runId, 2, "control.agent.turn-opened", { seat: "opus" })
+      const journal: Array<ControlEvent> = [accepted]
+      const followed = [accepted, turn]
+      const reads: Array<number | undefined> = []
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [{ ...run, status: "running" }] }),
+          watch: (filter) => {
+            if (filter.follow === true) {
+              journal.push(turn)
+              return Stream.fromIterable(followed)
+            }
+            reads.push(filter.afterSequence)
+            return Stream.fromIterable(journal.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+          }
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      const frames = yield* Stream.runCollect(projections.subscribe({ _tag: "workspace-runs" }))
+      const deltas = frames.filter((frame) => frame._tag === "delta")
+      expect(deltas).toHaveLength(1)
+      expect(deltas[0]?._tag === "delta" ? deltas[0].delta : []).toMatchObject([{ runId: run.runId, turns: 1 }])
+      // The follower keeps rows, not the window: the grown run is re-read, and
+      // the read cache asks the journal only for the suffix after the snapshot.
+      expect(reads).toEqual([undefined, 0])
+    }))
+
+  it.effect("holds a follower's journal reads to the shared workspace permits", () =>
+    Effect.gen(function*() {
+      const held = Array.from({ length: 8 }, (_, index): RunSummary => ({ ...numberedRun(index + 1) }))
+      const followedRun: RunSummary = { ...numberedRun(9), flowId: "ship", status: "running" }
+      const admitted: RunSummary = { ...numberedRun(10), flowId: "ship", status: "running", createdAt: 3 }
+      const followedAccepted = ofRun(followedRun.runId, 1, "control.run.accepted", {})
+      const followedTurn = ofRun(followedRun.runId, 2, "control.agent.turn-opened", { seat: "opus" })
+      const admittedAccepted = ofRun(admitted.runId, 1, "control.run.accepted", {})
+      const journals = new Map([
+        [followedRun.runId, [followedAccepted]],
+        [admitted.runId, [admittedAccepted]]
+      ])
+      const followGate = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      const allHeld = yield* Deferred.make<void>()
+      const snapshotEnded = yield* Deferred.make<void>()
+      let holding = 0
+      const reads: Array<string> = []
+      const projections = make(
+        control({
+          list: (request) => {
+            if (request._tag !== "runs") return Effect.succeed({ _tag: "runs", items: [] })
+            const { flowId, runId } = request.filters ?? {}
+            const all = [...held, followedRun, admitted]
+            return Effect.succeed({
+              _tag: "runs",
+              items: runId !== undefined
+                ? all.filter((candidate) => candidate.runId === runId)
+                : flowId === "deploy"
+                ? held
+                : [followedRun]
+            })
+          },
+          watch: (filter) => {
+            if (filter.follow === true) {
+              return Stream.unwrap(
+                Effect.as(Deferred.await(followGate), Stream.make(followedTurn, admittedAccepted))
+              )
+            }
+            const journal = journals.get(filter.runId ?? "")
+            if (journal !== undefined) {
+              reads.push(filter.runId!)
+              journals.set(followedRun.runId, [followedAccepted, followedTurn])
+              return Stream.fromIterable(journal.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+            }
+            return Stream.unwrap(Effect.gen(function*() {
+              holding += 1
+              if (holding === held.length) yield* Deferred.succeed(allHeld, undefined)
+              yield* Deferred.await(gate)
+              return Stream.empty
+            }))
+          }
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      const following = yield* Effect.forkChild(
+        projections.subscribe({ _tag: "workspace-runs", flowId: "ship" }).pipe(
+          Stream.tap((frame) =>
+            frame._tag === "snapshot-end" ? Deferred.succeed(snapshotEnded, undefined) : Effect.void
+          ),
+          Stream.filter((frame) => frame._tag === "delta"),
+          Stream.take(1),
+          Stream.runCollect
+        )
+      )
+      yield* Deferred.await(snapshotEnded)
+      expect(reads).toEqual([followedRun.runId])
+      // Another client's snapshot holds all eight permits on journals that do
+      // not answer yet; the follower then has one run to refresh and one to admit.
+      const snapshot = yield* Effect.forkChild(projections.snapshot({ _tag: "workspace-runs", flowId: "deploy" }))
+      yield* Deferred.await(allHeld)
+      yield* Deferred.succeed(followGate, undefined)
+      yield* TestClock.adjust(100)
+      for (let index = 0; index < 50; index += 1) yield* Effect.yieldNow
+      // Before the fix a follower read journals outside any shared bound.
+      expect(reads).toEqual([followedRun.runId])
+      yield* Deferred.succeed(gate, undefined)
+      yield* TestClock.adjust(100)
+      const frames = yield* Fiber.join(following)
+      expect(frames[0]?._tag === "delta" ? frames[0].delta : []).toMatchObject([
+        { runId: followedRun.runId, turns: 1 },
+        { runId: admitted.runId }
+      ])
+      expect(reads).toEqual([followedRun.runId, admitted.runId, followedRun.runId])
+      expect((yield* Fiber.join(snapshot)).rows).toHaveLength(held.length)
+    }))
+
+  it.effect("refolds a followed run whose journal read ran ahead of a row change", () =>
+    Effect.gen(function*() {
+      const followedRun: RunSummary = { ...run, status: "running", deadlineAt: 10 }
+      const accepted = ofRun(run.runId, 1, "control.run.accepted", {})
+      const first = ofRun(run.runId, 2, "control.agent.turn-opened", { seat: "opus" })
+      const second = ofRun(run.runId, 3, "control.agent.turn-opened", { seat: "opus" })
+      let journal: ReadonlyArray<ControlEvent> = [accepted]
+      let deadlineAt = 10
+      const next = yield* Deferred.make<void>()
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [{ ...followedRun, deadlineAt }] }),
+          watch: (filter) => {
+            if (filter.follow !== true) {
+              return Stream.fromIterable(journal.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+            }
+            // The second event is already journaled when the first is followed.
+            journal = [accepted, first, second]
+            return Stream.concat(
+              Stream.make(accepted, first),
+              Stream.fromEffect(Effect.as(Deferred.await(next), second))
+            )
+          }
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      let delivered = 0
+      const following = yield* Effect.forkChild(
+        Stream.runCollect(
+          projections.subscribe({ _tag: "workspace-runs" }).pipe(
+            Stream.tap((frame) => Effect.sync(() => frame._tag === "delta" ? delivered += 1 : delivered))
+          )
+        )
+      )
+      // Advance the coalescing window until the first batch is folded.
+      while (delivered === 0) {
+        yield* TestClock.adjust(10)
+        yield* Effect.yieldNow
+      }
+      // The row changes with the second event, after the first refresh read it.
+      deadlineAt = 20
+      yield* Deferred.succeed(next, undefined)
+      while (delivered === 1) {
+        yield* TestClock.adjust(10)
+        yield* Effect.yieldNow
+      }
+      const deltas = (yield* Fiber.join(following)).flatMap((frame) => frame._tag === "delta" ? [frame.delta] : [])
+      // A follower that re-reads journals must not count the second event as
+      // folded by the first read, or the listing keeps the row that read saw.
+      expect(deltas.map((rows) => rows.map((row) => (row as { readonly deadlineAt?: number }).deadlineAt)))
+        .toEqual([[10], [20]])
+    }))
+
+  it.effect("retains followed facts across batches until the journal catches up", () =>
+    Effect.gen(function*() {
+      const accepted = ofRun(run.runId, 1, "control.run.accepted", {})
+      const turns = [2, 3, 4].map((sequence) =>
+        ofRun(run.runId, sequence, "control.agent.turn-opened", { seat: "opus" })
+      )
+      let journal = [accepted]
+      const second = yield* Deferred.make<void>()
+      const third = yield* Deferred.make<void>()
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [{ ...run, status: "running" }] }),
+          watch: (filter) =>
+            filter.follow === true
+              ? Stream.concat(
+                Stream.make(turns[0]!),
+                Stream.concat(
+                  Stream.fromEffect(Effect.as(Deferred.await(second), turns[1]!)),
+                  Stream.fromEffect(Effect.as(Deferred.await(third), turns[2]!))
+                )
+              )
+              : Stream.fromIterable(journal.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      let delivered = 0
+      const following = yield* Effect.forkChild(Stream.runCollect(
+        projections.subscribe({ _tag: "workspace-runs" }).pipe(
+          Stream.tap((frame) =>
+            Effect.gen(function*() {
+              if (frame._tag !== "delta") return
+              delivered += 1
+              if (delivered === 1) yield* Deferred.succeed(second, undefined)
+              if (delivered === 2) {
+                journal = [accepted, ...turns]
+                yield* Deferred.succeed(third, undefined)
+              }
+            })
+          )
+        )
+      ))
+      for (let index = 0; index < 100 && delivered < 3; index += 1) {
+        yield* TestClock.adjust(10)
+        yield* Effect.yieldNow
+      }
+      expect(delivered).toBe(3)
+      const frames = yield* Fiber.join(following)
+      const counts = frames.flatMap((frame) =>
+        frame._tag === "delta" ? [(frame.delta[0] as GatewayProjection.RunSummaryRow).turns] : []
+      )
+      // The first two refreshes still read only the accepted event. The last
+      // catches up and must consume the unread facts without counting them twice.
+      expect(counts).toEqual([1, 2, 3])
+    }))
+
+  it.effect("refuses a workspace snapshot before retaining every oversized row", () =>
+    Effect.gen(function*() {
+      const runs = Array.from({ length: 24 }, (_, index): RunSummary => ({
+        ...numberedRun(index + 1),
+        flowId: "f".repeat(300_000),
+        status: "running"
+      }))
+      const { service, reads } = workspace(runs, new Map())
+      const failure = yield* Effect.flip(make(service).snapshot({ _tag: "workspace-runs" }))
+      expect(failure.code).toBe("resource_limit")
+      expect(failure.message).toContain("Workspace projection state")
+      // Charging the summary and rows happens as each journal is folded,
+      // before all 24 large folded rows can be gathered.
+      expect(reads.length).toBeLessThan(runs.length)
+    }))
+
+  it.effect("refuses a workspace follower before retaining every oversized arrival", () =>
+    Effect.gen(function*() {
+      const arrivals = Array.from({ length: 24 }, (_, index): RunSummary => ({
+        ...numberedRun(index + 2),
+        flowId: "f".repeat(300_000),
+        status: "running"
+      }))
+      const events = arrivals.map((summary) => ofRun(summary.runId, 1, "control.run.accepted", {}))
+      const { service, reads } = workspace(
+        [run],
+        new Map(events.map((event) => [event.runId!, [event]])),
+        events,
+        arrivals
+      )
+      const failure = yield* Effect.flip(Stream.runCollect(
+        make(service, { heartbeatMillis: 60_000 }).subscribe({ _tag: "workspace-runs" })
+      ))
+      expect(failure.code).toBe("resource_limit")
+      expect(failure.message).toContain("Workspace projection state")
+      expect(reads.length).toBeLessThan(arrivals.length)
+    }))
+
+  it.effect("resumes run-events from a cursor that left the bounded window", () =>
+    Effect.gen(function*() {
+      const history = Array.from(
+        { length: Projections.maxEventsPerRun + 5 },
+        (_, index) => event(index + 1, "control.monitor.beat", {})
+      )
+      const selector = { _tag: "run-events" as const, runId: "run-1" }
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: (filter) => Stream.fromIterable(history.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      // Sequence 2 was issued, but the window now holds only the newest
+      // 10,000 events. Before the fix this was refused as "was not issued".
+      const frames = yield* Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 2)))
+      const sequences = frames.flatMap((frame) =>
+        frame._tag === "delta" ? (frame.delta as ReadonlyArray<ControlEvent>).map((item) => item.sequence) : []
+      )
+      expect(sequences).toHaveLength(Projections.maxEventsPerRun + 3)
+      expect(sequences[0]).toBe(3)
+      expect(sequences.at(-1)).toBe(Projections.maxEventsPerRun + 5)
+      const forged = yield* Effect.flip(
+        Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 2, 1)))
+      )
+      expect(forged.message).toContain("was not issued")
     }))
 })

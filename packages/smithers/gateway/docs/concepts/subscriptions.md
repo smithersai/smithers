@@ -72,11 +72,15 @@ rows in total.
 
 A workspace subscription does not fold per event. The follower gathers the
 events that arrive within a 50 millisecond window, or the first 1024 of them,
-and admits them as one batch. Each run's rows are cached and refolded only
-when that run's journal grew, and a grown run's row is re-read once per batch
-rather than once per event. One batch answers one `DeltaFrame` carrying the
-whole workspace, so a burst across many runs costs one frame plus one run
-lookup per run that changed. The window bounds the frame rate at twenty per
+and admits them as one batch. The follower keeps each run's folded rows, never
+its event window. Follow notifications that a journal read has not returned
+yet stay with the row until the journal covers them, so a lagging read cannot
+drop activity from an earlier batch. A run whose journal grew is re-read once per batch rather than once
+per event, through a read cache that asks for only the suffix of a recently
+read run, and only its rows are refolded. One batch answers one `DeltaFrame`
+carrying the whole workspace, so a burst across many runs costs one frame plus
+one read per run that changed. A `workspace-runs` selector that names a
+`flowId` admits only that flow's runs, in deltas as in the snapshot. The window bounds the frame rate at twenty per
 second no matter how many runs journal at once; a quiet workspace sends no
 delta at all.
 
@@ -87,8 +91,13 @@ the summary changed, it retries with the new summary, up to eight journal
 reads. A row that keeps changing is refused with `run_unavailable`. This keeps
 a terminal event from being acknowledged with the preceding run status.
 
-Snapshot rows and the follow seed share the same final event buffer. Workspace
-snapshots reconcile up to eight runs concurrently. Listing stops at 500 runs,
+Snapshot rows and the follow seed share the same final event buffer. A
+workspace read folds each run as soon as its journal is read and keeps only its
+rows. Every workspace snapshot and follower shares eight journal-read permits,
+so the gateway reads at most eight workspace journals at once however many
+clients read. Each workspace snapshot and follower charges retained summaries,
+rows, and unread notifications to a 4 MiB encoded byte budget before storing
+them, and refuses further growth with `resource_limit`. Listing stops at 500 runs,
 an empty page, or a repeated cursor; each continued page adds a run, so at most
 500 pages are read.
 

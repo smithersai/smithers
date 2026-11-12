@@ -91,6 +91,11 @@ conflicting evidence do not supply output. Strings are preserved; other JSON
 values are serialized. The binding and result survive in the carried diagnosis
 when older events leave the retained window.
 
+A `workspace-runs` row clips `finalOutput`, `failureMessage`, and `diagnosis`
+to 1,024 encoded JSON content bytes, including UTF-8 and JSON escapes, and marks the cut with an ellipsis, so 500 long answers
+still fit the listing's 4 MiB row budget. `run-summary` serves the complete
+text.
+
 ## How a node gets its id
 
 `run-tree` folds agent cell calls, not child runs. A node opens on a call

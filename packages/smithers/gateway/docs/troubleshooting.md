@@ -190,6 +190,12 @@ events and 4 MiB of retained events plus digest identity state. Older events
 enter a carried digest. Large retained events are clipped to 16 KiB. The read
 fails if the digest's exact identity state cannot fit the 4 MiB budget.
 
+**Cause: workspace state** The workspace's retained summaries, rows, and
+follow notifications not yet readable from the journal exceed 4 MiB. Each
+run is charged before retention, so an oversized workspace fails before
+collecting every run's rows. Concurrent workspace reads share eight journal
+permits.
+
 **Cause: oversized graph event** A native `flows.engine.plan-recorded` or
 `flows.engine.subgraph-appended` event exceeds 16 KiB. These events are refused
 instead of clipped, including on `run-events` pages, so graph topology stays
@@ -203,6 +209,11 @@ a page is empty. Other large events are clipped, while admitted native
 a bounded `Control.watch` read and keep future graph events within 16 KiB.
 
 **Cause: projected rows** The encoded projected row set exceeds 4 MiB.
+
+The `workspace-runs` listing clips `finalOutput`, `failureMessage`, and
+`diagnosis` to 1,024 encoded JSON content bytes each, including Unicode and
+JSON escapes. Long answers do not consume the whole listing budget; use
+`run-summary` for the complete text.
 
 **Fix** Narrow the selector to reduce the projected row set, for example
 `node-output` for one node or `run-summary`. This only helps if the selected
