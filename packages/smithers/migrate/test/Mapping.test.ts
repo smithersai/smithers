@@ -425,6 +425,18 @@ describe("Mapping.snippet keeps the TypeScript it generates valid", () => {
     expect(transpiles(`async function wrap() {\n${text}\n}`), text).toBe(true)
   })
 
+  it("refuses an agent task whose prompt composes another prompt, so the task is guided", () => {
+    const task = hit("Task", ["id", "output", "agent"], {
+      id: "go",
+      outputChain: "z.object({ summary: z.string() })",
+      payloadFields: "{}",
+      promptText: "import Shared from \"./shared.mdx\"\n\nHello <Shared />"
+    })
+
+    expect(Mapping.snippet(task)).toBeUndefined()
+    expect(Mapping.classify(task)).toBe("guided")
+  })
+
   it("refuses a group whose step ids would print as one identifier", () => {
     for (const construct of ["Sequence", "Parallel"]) {
       const text = Mapping.snippet(hit(construct, [], {

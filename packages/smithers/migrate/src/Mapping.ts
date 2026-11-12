@@ -1346,7 +1346,10 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
 
       if (hit.props.includes("agent")) {
         const prompt = detail["promptText"]
-        if (prompt === undefined) return undefined
+        // Only an interpolation-only prompt prints as a template literal. A
+        // prompt that imports a module or renders a component would reach the
+        // model as raw JSX source, so the agent rewrites it under the rule.
+        if (prompt === undefined || PromptHints.classify(prompt) !== "interpolation-only") return undefined
         const lines = [`export const ${name} = AgentAction.make(${JSON.stringify(tag)}, {`]
         lines.push(`  payload: ${indented(payload, "  ")},`)
         lines.push(`  output: ${indented(success, "  ")},`)
