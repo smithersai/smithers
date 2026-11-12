@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.18 -->
 
-4000 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+4021 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
@@ -455,6 +455,10 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **platform-node,targets:** retry a start the machine was too busy to make ([aa60fad77c](https://github.com/smithersai/smithers/commit/aa60fad77c1b716b40f08eabaac41bcf5f1ab2af))
+- **tui:** keep a reader's scroll when the late live-edge aim fires ([4565d7e765](https://github.com/smithersai/smithers/commit/4565d7e7656d4b95e4cf6dfbcce7307627fe98f5))
+- **tui:** keep approval preparation failures out of user error text ([7925fb29f0](https://github.com/smithersai/smithers/commit/7925fb29f00e0dbf87bd3ea23656a3f7609b79ab))
+- **tui:** use the whole-resource default capability envelope ([432be48d00](https://github.com/smithersai/smithers/commit/432be48d0099afd0b46ead9351a21e0294c4f9f9))
 - **flows:** keep the quickstart on the published rc.16 cohort ([de46f39cd8](https://github.com/smithersai/smithers/commit/de46f39cd8a2695c3cbfdb9178fd6380a252c685))
 - **sandbox:** CommandSandbox acquire reports a transport that could not run its probe ([a7106c8f7e](https://github.com/smithersai/smithers/commit/a7106c8f7e292fdbae1859fa7141fe265475fc9a))
 - **sandbox:** a concurrent Sandbox.job start checks the owner's liveness before the settlement ([1d86c5cf0c](https://github.com/smithersai/smithers/commit/1d86c5cf0c3ebf1cd97db20da9bb971f176b58de))
@@ -2512,6 +2516,10 @@ the release notes at
 
 ### ⚡ Performance
 
+- **build-cli:** run the suite on two workers and bound process waits by the test ([09caea4d63](https://github.com/smithersai/smithers/commit/09caea4d634a8906c07ac059900b26465041d8bf))
+- **build-cli:** keep the saved digest index when a plan changes no row ([28057dd25c](https://github.com/smithersai/smithers/commit/28057dd25c70569164a3005f08cb13e8b50ede21))
+- **targets:** resolve each input directory once and lstat each file once ([d1031d9832](https://github.com/smithersai/smithers/commit/d1031d9832e977b92c697b9f913392132d0325d7))
+- **build-cli:** encode each shared declared input once per invocation ([ae9dce8ab5](https://github.com/smithersai/smithers/commit/ae9dce8ab5bb8480f5e5fcd1fafea4b491a951ec))
 - **targets:** check each declared file once per invocation ([f4c221a811](https://github.com/smithersai/smithers/commit/f4c221a8116ba3e13103a5db99067d72caaf67b8))
 - **build-cli:** look up and identify each executable once per plan ([72c012ede9](https://github.com/smithersai/smithers/commit/72c012ede908d70185ccfe083c2f63ae6e31bd83))
 - **targets:** share directory reads across one invocation's glob expansions ([3598159eb7](https://github.com/smithersai/smithers/commit/3598159eb78a5e982a104bc8c4c05ddeb6e39885))
@@ -3152,6 +3160,19 @@ the release notes at
 
 ### 📦 Other changes
 
+- **style(build-cli):** format the VibeLang resolution child environment ([17027e4b34](https://github.com/smithersai/smithers/commit/17027e4b34556ef1651ddfd38292207fd6241207))
+- **test(targets):** give the Windows matrix receipts case a measured time limit ([4ba5d1a239](https://github.com/smithersai/smithers/commit/4ba5d1a2390d38d49939cf1be94276f45a63df44))
+- **test(build-cli):** bound the public source CLI catalog run by the test ([e788531702](https://github.com/smithersai/smithers/commit/e7885317024c348e0e9ec3319ed80b593fd2ab53))
+- **test(build-cli):** a watch plan child saves only its digests, under the forwarded cache directory ([a0d9eafdc9](https://github.com/smithersai/smithers/commit/a0d9eafdc9452dc81ffc234a5c25e7438b5479c8))
+- **test(targets):** expect the ninth CI shard in the repository pipeline ([8a96d0aa1e](https://github.com/smithersai/smithers/commit/8a96d0aa1e98e8a224201ad41afc00fe1f393aa9))
+- **test(build-cli):** keep the runner's preloads out of the VibeLang resolution children ([b4d33e2404](https://github.com/smithersai/smithers/commit/b4d33e24046c17c543cf49f06f8c154e6dc67397))
+- **test(tui):** preload the compiler in the review flow child ([60cb332552](https://github.com/smithersai/smithers/commit/60cb332552b946a02ab0ee42d5ebd1e5a4c29f60))
+- **test(tui):** expect a stopped frame in the folded devtools run ([0076fe4733](https://github.com/smithersai/smithers/commit/0076fe473309f2697b79578670d746b8c795c969))
+- **test(tui):** count the saved launch key in the app flow records ([3f94c5967c](https://github.com/smithersai/smithers/commit/3f94c5967cd11fdeb9bbf2622898bc4706d2107d))
+- **test(tui):** wait for the saved outcome in the command-routes answers ([ef08a20781](https://github.com/smithersai/smithers/commit/ef08a20781d3f35162d2db9ccd57119192096385))
+- **test(tui):** focus Summary rows before row keys in terminal tests ([f192003bad](https://github.com/smithersai/smithers/commit/f192003badc5004ce0cf41d02a9b23f10006f3d5))
+- **test(tui):** fail the box rules read by its stdin script ([fc25eeb4cb](https://github.com/smithersai/smithers/commit/fc25eeb4cbac743d409d84900d3008c5e009eb71))
+- **test(tui):** preload the compiler in external-project Bun children ([7e63bc8436](https://github.com/smithersai/smithers/commit/7e63bc84362ca4479454cbb5140ba43ed707e268))
 - **test(cli):** expect one container process per bash call in the host timing journal ([b88127fa7d](https://github.com/smithersai/smithers/commit/b88127fa7dd01571e69e5623684acf5e15a4ecde))
 - **test(cli):** keep installed packages in node_modules/<name> in the absent-SDK fixture ([144d361e15](https://github.com/smithersai/smithers/commit/144d361e157a093585e542f660e70825472636a2))
 - **test(cli):** skill path check skips jj's own state directory ([08a56b9862](https://github.com/smithersai/smithers/commit/08a56b9862be839281c170d6053944ea2d17fe4b))
