@@ -45,7 +45,7 @@ function trace(h: H, run: Run, now = 0, chosen = "", disconnected: ReadonlyArray
     h.div([h.Class("vl-term")], [
       h.div([h.Class("vl-term-bar")], [title(run.flow), duration(run, now, disconnected)]),
       h.pre([h.Class("vl-term-body"), h.AriaLabel("Logs")], [step === undefined ? "" : `${title(step.name)} · ${step.state}`]),
-      ...(run.result === "" ? [] : [h.div([h.Class("vl-term-bar"), h.AriaLabel("Result")], [resultText(run.result)])]),
+      ...(run.result === "" ? [] : [h.div([h.Class("vl-term-bar"), h.AriaLabel("Result")], [resultText(run.result, run.flow)])]),
     ]),
   ])
 }

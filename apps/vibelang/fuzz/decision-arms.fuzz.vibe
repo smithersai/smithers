@@ -122,7 +122,7 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   // The slash menu offers the page's mode switch only when it knows the mode; a refused write's result reads as its reason.
   const open = { ...initialActions, slash: true }
   try check("completions without a mode", completions({ actions: open, draft: "/" }).length === 0 && completions({ actions: open, draft: "/", mode: "live" }).some((entry) => entry.command === "/mock"))
-  try check("resultText", resultText(JSON.stringify({ id: "m1", refusal: "forbidden" })) === historyRefusal("forbidden") && resultText(JSON.stringify({ id: "m1", refusal: null })) === JSON.stringify({ id: "m1", refusal: null }) && resultText(other) === other)
+  try check("resultText", resultText(JSON.stringify({ id: "m1", refusal: "forbidden" }), other) === historyRefusal("forbidden") && resultText(JSON.stringify({ id: "m1", refusal: null }), other) === JSON.stringify({ id: "m1", refusal: null }) && resultText(other, other) === other)
   // A specification revision is sent with the revision it revises (0 before any).
   const revise = issuesUpdate({ ...initialIssues, role: "maintainer", status: "ready", screen: "specification", comment: other || "x" }, "spec-revise", other || "x")
   try check(`spec-revise ${JSON.stringify(revise.request ?? null)}`, revise.request?.op === "spec-revise" && revise.request.revision === 0)

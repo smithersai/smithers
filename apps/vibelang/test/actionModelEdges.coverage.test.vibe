@@ -2,7 +2,7 @@
 // matches the first word; the runs list merges snapshots by id, newest start first, and never rolls a run back.
 import { describe, expect, it } from "@effect/vitest"
 import type { Run } from "../src/actions/Actions.vibe"
-import { completions, initial, mergeRuns } from "../src/web/actionModel.vibe"
+import { completions, initial, mergeRuns, resultText } from "../src/web/actionModel.vibe"
 
 const open = { ...initial, slash: true }
 const names = (draft: string, mode?: string) => completions({ actions: open, draft, ...(mode === undefined ? {} : { mode }) }).map((entry) => entry.command)
@@ -62,5 +62,22 @@ describe("the runs list", () => {
     const current = [run("b", 20, "running", 20), run("a", 10, "failed", 40)]
     const merged = mergeRuns(current, [run("a", 10, "running", 99)])
     expect(merged.find((each) => each.id === "a")!.state).toBe("failed")
+  })
+})
+
+describe("a refused history write's result", () => {
+  const refused = (refusal: string) => JSON.stringify({ id: "", refusal })
+  it.each([
+    ["vibelang/history/Plan", "Needs a title."],
+    ["vibelang/history/Start", "Needs a lane."],
+    ["vibelang/history/Note", "Needs text."],
+  ] as const)("an empty %s names what it needs", (flow, words) => {
+    expect(resultText(refused("empty"), flow)).toBe(words)
+  })
+
+  it("names any other refusal in the history page's words, and passes any other result through", () => {
+    expect(resultText(refused("unknown"), "vibelang/history/Start")).toBe("No such epic or commit.")
+    expect(resultText(JSON.stringify({ id: "m9", refusal: null }), "vibelang/history/Start")).toBe(JSON.stringify({ id: "m9", refusal: null }))
+    expect(resultText("done", "vibelang/tour")).toBe("done")
   })
 })

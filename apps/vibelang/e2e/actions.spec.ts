@@ -100,6 +100,30 @@ test("the agent runs each history and sandbox command a maintainer may run", asy
   await expect(page.getByRole("region", { name: "Actions", exact: true }).getByLabel("Result", { exact: true })).toContainText("refusal")
 })
 
+test("a history write the sequencer refuses says why in its run", async ({ page }) => {
+  // Each run on a fresh page: one run card of its kind, so its Result is the one opened. Refusals: src/history/mythical.vibe
+  // `decide`; only the agent's door sends a blank lane or note, so its Result names the field (src/web/actionModel.vibe).
+  test.setTimeout(90_000)
+  const refused: ReadonlyArray<readonly [string, RegExp, string]> = [
+    ['Run /start {"id":"m-none","lane":"lane-a"}', /Open Start run/, "No such epic or commit."],
+    ['Run /start {"id":"m1","lane":" "}', /Open Start run/, "Needs a lane."],
+    ['Run /note {"id":"m-none","section":"tried","text":"Nowhere."}', /Open Note run/, "No such epic or commit."],
+    ['Run /note {"id":"m1","section":"evidence","text":" "}', /Open Note run/, "Needs text."],
+  ]
+  for (const [text, card, words] of refused) {
+    await chat(page)
+    await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+    const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
+    await input.fill(text)
+    await input.press("Enter")
+    const run = page.getByRole("button", { name: card })
+    await expect(run).toHaveCount(1)
+    await run.click()
+    const result = page.getByRole("region", { name: "Actions", exact: true }).getByLabel("Result", { exact: true })
+    await expect(result).toHaveText(words)
+  }
+})
+
 test.describe("local real-engine action faults and role views", () => {
   test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_4511 ?? process.env.E2E_PORT ?? 4173}` })
   test("all five roles see only commands they may run", async ({ page }) => {
