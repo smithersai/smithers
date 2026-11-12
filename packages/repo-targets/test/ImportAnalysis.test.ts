@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+import ts from "typescript"
+import { fileURLToPath } from "node:url"
 import { analyze, specifiers } from "../src/ImportAnalysis.ts"
 
 /** The references of one source, one line each: `<line> <form> <specifier>[ type]`. */
@@ -364,3 +366,21 @@ describe("analyze: a .vibe module and its .ts twin", () => {
     expect(() => analyze("Broken.vibe", "export effect function broken( {")).toThrow()
   })
 })
+
+it("carries the parser contract into an isolated downstream TypeScript program", () => {
+  const program = ts.createProgram({
+    rootNames: [fileURLToPath(new URL("../src/ImportAnalysis.ts", import.meta.url))],
+    options: {
+      strict: true,
+      noEmit: true,
+      skipLibCheck: false,
+      allowImportingTsExtensions: true,
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      types: []
+    }
+  })
+  expect(ts.getPreEmitDiagnostics(program).map((diagnostic) =>
+    ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))).toEqual([])
+}, 30_000)

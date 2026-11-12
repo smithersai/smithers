@@ -13,6 +13,8 @@
  * @since 0.1.0
  */
 
+/// <reference path="./vibelang-eslint.d.ts" />
+
 import ts from "typescript"
 import { parseESTree } from "vibelang/eslint"
 

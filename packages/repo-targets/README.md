@@ -136,7 +136,11 @@ An exact entry matches only its own text, so `page.route` misses `tab.page.route
 
 A source is a `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs` or VibeLang `.vibe` file under `cwd`, outside `node_modules`, `dist`, `coverage`, `target`, `tmp`, `test-results`, `playwright-report`, any dot-directory, and any nested directory with its own `package.json`. Before parsing, the check refuses every rule covering no source, reporting its zero-based index, kind, patterns and reason. An omitted `files` is reported as `["**/*"]`. There is no empty-scope exception.
 
-Each source is parsed once with the TypeScript compiler API, in `src/ImportAnalysis.ts`, which the repository's dependency-boundary gate and circular-import guard share. A string or comment that mentions an import is not one. **Known VibeLang blocker:** `.vibe` still goes through TypeScript error recovery, which can miss VibeLang syntax. It must use compiler output before migrations can rely on it. The installed `vibelang@0.0.8` project API emits JavaScript, erasing type-only imports that these rules forbid by default; it exposes no TypeScript emit preserving those references. The [work note](../../apps/mvp/docs/work/importrules-vibelang-emit.md) records the upstream gap and reproduction.
+Each source is parsed once in `src/ImportAnalysis.ts`, which the repository's dependency-boundary gate and circular-import guard share. TypeScript sources use the TypeScript compiler API; `.vibe` sources use `parseESTree` from `vibelang/eslint`, preserving authored type references. A string or comment that mentions an import is not one.
+
+Source consumers of `ImportAnalysis` receive its parser declaration through a
+source reference. They do not need to include this package's ambient declaration
+files in their own TypeScript project configuration.
 
 The target runs `scripts/import-rules.mjs <cwd> '<rules JSON>'` in `cwd`. On a violation it prints one line per violation to stderr and exits 1:
 
