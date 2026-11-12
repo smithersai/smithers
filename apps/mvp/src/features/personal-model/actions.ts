@@ -103,10 +103,12 @@ const confirm = (write: Form) =>
 
 /**
  * Sends `form`, the whole list, for a press of Save (`adding`: the Add dialog's, which closes once ChatApi takes it). A
- * connection it leaves out is removed. A key left empty keeps the one saved on that connection, at the same base URL, so
- * a saved key never goes to another host without the person typing it again. What the server would refuse is refused
- * here, unsent, with the server's own code (`checkSave`). Answers whether the save was sent: not while the last write is
- * on its way, nor when the section refused it.
+ * connection it leaves out is removed. It names the rows the device has as the list it edited (`known`), so ChatApi
+ * refuses it, `stale`, when a connection was saved or removed elsewhere and hasn't reached this device yet. A key left
+ * empty keeps the one saved on that connection, at the same base URL, so a saved key never goes to another host without
+ * the person typing it again. What the server would refuse is refused here, unsent, with the server's own code
+ * (`checkSave`). Answers whether the save was sent: not while the last write is on its way, nor when the section
+ * refused it.
  */
 const send = (form: SaveForm, adding: boolean) => {
   const connections = form.connections.map(({ key, ...connection }) => ({
@@ -133,7 +135,7 @@ const send = (form: SaveForm, adding: boolean) => {
       return false
     }
     // The list as the form says it, each key `Redacted`: ChatApi normalizes it, and fills in what a kind leaves out.
-    yield* (yield* PersonalModelClient).put({ connections }).pipe(
+    yield* (yield* PersonalModelClient).put({ connections, known: saved.map((row) => row.id) }).pipe(
       Effect.matchEffect({
         onSuccess: () => confirm(begun.value),
         onFailure: (refused: ModelNotTaken) =>

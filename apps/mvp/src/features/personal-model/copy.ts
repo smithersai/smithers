@@ -101,6 +101,7 @@ export const REFUSAL_COPY: Record<Refusal | "unsaved", string> = {
   surrounding_space: "Keys can't start or end with a space",
   too_large: "Keys are at most 16 KiB",
   key_required: "Enter the key",
+  stale: "Your connections changed on another device; try again",
   invalid_token: "Tokens start with sk-ant-oat",
   link_expired: LINK_EXPIRED,
   link_refused: "OpenAI refused the link",

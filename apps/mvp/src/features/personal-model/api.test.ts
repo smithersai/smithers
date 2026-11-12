@@ -46,6 +46,7 @@ const put = {
     // The key saved on this connection stays: the body carries no key for it.
     { id: "connection-2", kind: "jev", active: false, key: undefined },
   ],
+  known: ["connection-2"],
 }
 
 const started = { userCode: "ABCD-EFGH", verificationUrl: "https://auth.openai.com/codex/device", expiresInSeconds: 900 }
@@ -82,6 +83,7 @@ describe("PersonalModelClient", () => {
             { kind: "api_key", protocol: "openai-chat", baseUrl: "https://api.openai.com", models: { implement: "gpt-6.1-sol" }, key: KEY },
             { id: "connection-2", kind: "jev", active: false },
           ],
+          known: ["connection-2"],
         }),
       },
       { method: "DELETE", url: "http://chat.test/api/me/model", body: "" },

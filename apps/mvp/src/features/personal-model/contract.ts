@@ -306,10 +306,20 @@ export interface ConnectionPut {
   readonly models?: Readonly<Record<string, string>> | undefined
 }
 
-/** `PUT` body: every connection the person keeps, in their order. A saved one it leaves out is removed. */
+/**
+ * `PUT` body: every connection the person keeps, in their order. A saved one it leaves out is removed. `known` is the
+ * ids of the saved connections the list was edited from: unless they are the saved ones still, the save is `stale`, so
+ * a device that hasn't seen a connection saved elsewhere never removes it. Without `known` the list replaces whatever is
+ * saved.
+ */
 export interface ModelsPut {
   readonly connections: ReadonlyArray<ConnectionPut>
+  readonly known?: ReadonlyArray<string> | undefined
 }
+
+/** Whether `known` names exactly the `saved` connections, in any order: a list edited from them may replace them. */
+export const knowsSaved = (known: ReadonlyArray<string>, saved: ReadonlyArray<{ readonly id: string }>): boolean =>
+  new Set(known).size === saved.length && saved.every((row) => known.includes(row.id))
 
 /** A connection once checked: normalized, with the key if one was typed and the model each tier names on it. */
 export interface CheckedConnection {
@@ -407,6 +417,7 @@ export const REFUSALS = [
   "surrounding_space",
   "too_large",
   "key_required",
+  "stale",
   "invalid_token",
   "link_expired",
   "link_refused",

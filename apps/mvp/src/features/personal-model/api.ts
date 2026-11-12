@@ -34,10 +34,11 @@ export class ModelNotTaken extends Data.TaggedError("ModelNotTaken")<{
 
 /**
  * What Save sends: every connection the person keeps, in their order, each as the form said it and, unless the saved
- * one stays, its key, `Redacted` until the body is made.
+ * one stays, its key, `Redacted` until the body is made; and the ids of the saved connections it was edited from.
  */
 export interface ModelPut {
   readonly connections: ReadonlyArray<Omit<ConnectionPut, "key"> & { readonly key: Redacted.Redacted<string> | undefined }>
+  readonly known: ReadonlyArray<string>
 }
 
 const Refused = Schema.Struct({ code: Schema.Literals(REFUSALS) })
@@ -107,6 +108,7 @@ export class PersonalModelClient extends Context.Service<
                   connections: put.connections.map(({ key, ...connection }) =>
                     key === undefined ? connection : { ...connection, key: Redacted.value(key) }
                   ),
+                  known: put.known,
                 }),
               ),
               202,

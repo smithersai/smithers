@@ -2,7 +2,12 @@ import * as WriteAuthority from "../WriteAuthority.ts"
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import type { ModelTier } from "../../src/features/model/contract.ts"
-import type { ConnectionKind, Protocol, SavedConnection } from "../../src/features/personal-model/contract.ts"
+import {
+  type ConnectionKind,
+  knowsSaved,
+  type Protocol,
+  type SavedConnection,
+} from "../../src/features/personal-model/contract.ts"
 
 // The personal model tables (db/migrations/0056_personal_models.ts, 0065_model_tiers.ts and 0075_model_connections.ts,
 // docs/features/personal-model.md#postgres): each person's ordered connections, their sealed credentials and the model
@@ -33,11 +38,12 @@ export interface ConnectionWrite {
 
 /**
  * One save a flow step makes, under its invocation key, so a step run again writes and records once: every connection
- * the person keeps, in their order.
+ * the person keeps, in their order, and the ids of the saved ones it was edited from (`known`), if it says.
  */
 export interface Put {
   readonly personId: string
   readonly connections: ReadonlyArray<ConnectionWrite>
+  readonly known?: ReadonlyArray<string> | undefined
   readonly authority?: WriteAuthority.Session | null
   readonly invocationKey: string
 }
@@ -45,7 +51,8 @@ export interface Put {
 /**
  * What a save did: `set` the person's first connections, `replace` their list, nothing again (`repeat`), or nothing at
  * all (`stale`): a connection it kept without its credential was removed or moved to another base URL since the route
- * checked it, so a write would have pointed it somewhere the person never typed it for.
+ * checked it, so a write would have pointed it somewhere the person never typed it for; or the list was edited from
+ * other connections than the saved ones, so a write would remove one its device never saw.
  */
 export type Change = "set" | "replace" | "repeat" | "stale"
 
@@ -89,6 +96,7 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
         readonly baseUrl: string | null
       }>`
         SELECT id, kind, protocol, base_url AS "baseUrl" FROM personal_models WHERE person_id = ${write.personId} FOR UPDATE`
+      if (write.known !== undefined && !knowsSaved(write.known, before)) return "stale" as const
       const kept = write.connections.filter((connection) => connection.sealed === undefined)
       if (!kept.every((connection) =>
         before.some((row) =>

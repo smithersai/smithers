@@ -13,6 +13,7 @@ import {
   JEV_ROUTE,
   jevOf,
   keyTail,
+  knowsSaved,
   LINK_SECONDS,
   MAX_JEV_BODY_BYTES,
   MAX_PUT_BODY_BYTES,
@@ -89,6 +90,7 @@ const PutBody = Schema.Struct({
     key: Schema.optional(Schema.String),
     models: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   })),
+  known: Schema.optional(Schema.Array(Schema.String)),
 })
 const decodePut = Schema.decodeUnknownEffect(Schema.fromJsonString(PutBody))
 
@@ -452,6 +454,10 @@ export const make = <E, R>(
       }
       // A key kept without its value must be the one saved at the same base URL: read what the person saved.
       const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
+      // A list edited from other connections than the saved ones would remove one this device never saw (`model/Store`
+      // checks again under its lock).
+      const { known } = decoded.value
+      if (known !== undefined && !knowsSaved(known, saved)) return refuse(409, "stale")
       // The browser sees each key's last characters again: they must be a small part of it (`too_short`).
       const checked = checkSave(decoded.value, saved, Binding.valueProblem, defaults)
       if (typeof checked === "string") return refuse(400, checked)
@@ -468,7 +474,7 @@ export const make = <E, R>(
       })
       const started = yield* starter.start(ModelFlows.Put, {
         executionId,
-        payload: { authority: WriteAuthority.sessionOf(actor.value) ?? null, personId, connections: writes },
+        payload: { authority: WriteAuthority.sessionOf(actor.value) ?? null, personId, connections: writes, known },
       }).pipe(Effect.result)
       if (started._tag === "Failure") return refuse(503, "unavailable")
       fields.outcome = "putting"

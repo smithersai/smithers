@@ -105,6 +105,30 @@ const BOTH = {
 const ONE = SAVE.connections[0]!
 
 describe("PUT /api/me/model", () => {
+  test("a list edited from other connections than the saved ones is refused stale and removes none", async () => {
+    const h = await open({ actor: member })
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put({ ...SAVE, known: [] })))).toEqual([202, {}])
+    const [first] = await rows(runtime)
+    const kept = { ...ONE, id: first!.id, key: undefined }
+    const kimi = { kind: "moonshot", key: VALUE }
+    // A device that hasn't the saved one yet.
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put({ connections: [kept, kimi], known: [] }))))
+      .toEqual([409, { code: "stale" }])
+    expect((await rows(runtime)).map(({ id }) => id)).toEqual([first!.id])
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put({ connections: [kept, kimi], known: [first!.id] }))))
+      .toEqual([202, {}])
+    const ids = (await rows(runtime)).map(({ id }) => id)
+    expect(ids).toHaveLength(2)
+    // A device that hasn't Kimi yet turns the first off: Kimi and its key stay.
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put({ connections: [{ ...kept, active: false }], known: [first!.id] }))))
+      .toEqual([409, { code: "stale" }])
+    expect((await rows(runtime)).map(({ id, active }) => [id, active])).toEqual(ids.map((id) => [id, true]))
+    // One that has both removes Kimi on purpose.
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put({ connections: [kept], known: [...ids].reverse() }))))
+      .toEqual([202, {}])
+    expect((await rows(runtime)).map(({ id }) => id)).toEqual([first!.id])
+  })
+
   test("a Member saves and replaces their key; Postgres and the journal hold only ciphertext and the key's tail", async () => {
     const h = await open({ actor: member })
 
@@ -392,6 +416,22 @@ describe("model/Put and model/Delete", () => {
     expect(await run(Store.remove(remove))).toBe("repeat")
     expect((await events(runtime)).map((event) => event.action)).toEqual(["set", "delete"])
     expect(await run(Store.saved("person-member"))).toEqual([])
+  })
+
+  test("a list edited from other connections than the saved ones writes nothing under the lock: stale", async () => {
+    const database = await scratchDatabase()
+    const run = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.provide(effect, database) as Effect.Effect<A>)
+    expect(await run(Store.put({ ...model, known: [connection.id], invocationKey: "known-1" }))).toBe("stale")
+    expect(await run(Store.put({ ...model, known: [], invocationKey: "known-2" }))).toBe("set")
+    const added = { ...connection, id: crypto.randomUUID(), sealed }
+    expect(await run(Store.put({ ...model, connections: [connection, added], known: [], invocationKey: "known-3" }))).toBe("stale")
+    expect(await run(Store.put({ ...model, connections: [connection, added], known: [connection.id], invocationKey: "known-4" })))
+      .toBe("replace")
+    // Edited from the first alone, it would remove the one added since.
+    expect(await run(Store.put({ ...model, connections: [{ ...connection, active: false }], known: [connection.id], invocationKey: "known-5" })))
+      .toBe("stale")
+    expect((await rows(runtime)).map(({ id, active }) => [id, active])).toEqual([[connection.id, true], [added.id, true]])
+    expect((await events(runtime)).map((event) => event.action)).toEqual(["set", "replace"])
   })
 
   test("a kept key that was removed or moved since the route checked it writes nothing: stale", async () => {

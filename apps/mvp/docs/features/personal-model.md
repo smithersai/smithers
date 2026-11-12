@@ -36,8 +36,12 @@ POST /api/model/<role>                     a todo run                       POST
 
 ## Saving
 
-`PUT /api/me/model` with `{ connections }` saves the person's whole list, in order, and answers `202 {}` once
-`model/Put` started; the rows arrive in the shape. A saved connection the body leaves out is removed.
+`PUT /api/me/model` with `{ connections, known }` saves the person's whole list, in order, and answers `202 {}` once
+`model/Put` started; the rows arrive in the shape. A saved connection the body leaves out is removed. `known` is the ids
+of the saved connections the device edited the list from. Unless they are exactly the saved ones, the save is refused
+`stale` 409, and `model/Store` checks again under its lock: a device that hasn't yet seen a connection saved or
+removed elsewhere never removes it. The section sends the rows it has; a body without `known` replaces whatever is
+saved.
 
 ```json
 {
@@ -46,7 +50,8 @@ POST /api/model/<role>                     a todo run                       POST
     { "id": "…", "kind": "api_key", "protocol": "openai-chat", "baseUrl": "https://api.openai.com",
       "models": { "implement": "gpt-6.1-sol" } },
     { "kind": "moonshot", "key": "sk-…", "active": false }
-  ]
+  ],
+  "known": ["…"]
 }
 ```
 
@@ -75,7 +80,7 @@ POST /api/model/<role>                     a todo run                       POST
   refusal.
 - **Refusals** answer `{ code }`: `authentication` 401, `forbidden` 403, `invalid` 400, and `invalid_protocol`,
   `invalid_base_url`, `invalid_model`, `invalid_token`, `too_short`, `too_long`, `control_character`, `malformed_text`, `non_ascii`, `surrounding_space`,
-  `key_required` 400, `too_large` 413 (over 192 KiB), `off` 503 (no SECRETS_KEY), `unavailable` 503. A link answers
+  `key_required` 400, `stale` 409, `too_large` 413 (over 192 KiB), `off` 503 (no SECRETS_KEY), `unavailable` 503. A link answers
   `link_expired` or `link_refused`.
 
 `DELETE /api/me/model` removes the whole list through `model/Delete` and answers `202 {}`: anyone signed in removes
@@ -83,7 +88,8 @@ their own, whatever their role, and the agent may for them.
 
 `model/Put` (step `model/Store`) and `model/Delete` (step `model/Erase`) run on the Cloudflare host (`FlowExecution`).
 Each writes the rows and its `personal_model_events` record in one transaction under its invocation key, so a step run
-again records nothing twice. A kept connection that was removed or moved meanwhile writes nothing (`stale`). A database
+again records nothing twice. A kept connection that was removed or moved meanwhile, or a `known` that is no longer the
+saved list, writes nothing (`stale`). A database
 failure is `StoreUnavailable`, retried for up to 30 minutes.
 
 Connection writes share a per-person transaction lock, including when the list is empty. A Codex link carries the

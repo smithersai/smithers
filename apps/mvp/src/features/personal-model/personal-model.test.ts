@@ -462,6 +462,50 @@ describe("a Member's own model, on ChatApi's real routes", () => {
     expect(leaks(tab.kept(), [KEY, ROTATED])).toEqual([])
   }, WITHIN)
 
+  test("a press on a device that hasn't seen a connection added elsewhere is refused stale and removes nothing", async () => {
+    const first = await open()
+    expect(first.actions.save(SCRIPTED(KEY))).toBe(true)
+    await until(() => expect(first.form()).toMatchObject({ state: "done", saved: 1 }))
+    const openai = first.row()!.id
+    // The second device's shape answers wait while `held`, so it keeps the list it has.
+    let held = false
+    let release = () => {}
+    const released = new Promise<void>((resolve) => release = resolve)
+    const second = await open({
+      api: first.api,
+      fetch: (api) => async (input, init) => {
+        const response = await api.fetch(input, init)
+        const path = new URL(input instanceof Request ? input.url : String(input)).pathname
+        if (held && path === PERSONAL_MODEL_SHAPE_ROUTE) await released
+        return response
+      },
+    })
+    await until(() => expect(second.rows().map(({ id }) => id)).toEqual([openai]))
+    held = true
+
+    expect(first.actions.add({ kind: "moonshot", key: ROTATED })).toBe(true)
+    await until(() => expect(first.form()).toMatchObject({ state: "done", saved: 2 }))
+    const kimi = first.rows()[1]!.id
+    expect(second.rows().map(({ id }) => id)).toEqual([openai])
+
+    // Its list leaves out Kimi, which it never saw: ChatApi refuses it rather than remove Kimi and its key.
+    expect(second.actions.setActive(openai, false)).toBe(true)
+    await until(() => expect(second.form()).toMatchObject({ state: "failed", failure: "stale" }))
+    expect(second.status()).toMatchObject({ text: "Your connections changed on another device; try again" })
+    expect(second.actions.add({ kind: "jev", key: KEY })).toBe(true)
+    await until(() => expect(second.form()).toMatchObject({ state: "failed", failure: "stale" }))
+
+    release()
+    await until(() => expect(second.rows().map(({ id, active }) => [id, active])).toEqual([[openai, true], [kimi, true]]))
+    // Once the device has the list, the same press lands, and keeps Kimi.
+    expect(second.actions.setActive(openai, false)).toBe(true)
+    await until(() => expect(second.form()).toMatchObject({ state: "done" }))
+    await until(() => expect(first.rows().map(({ id, active, keyLast4 }) => [id, active, keyLast4])).toEqual([
+      [openai, false, keyTail(KEY)],
+      [kimi, true, keyTail(ROTATED)],
+    ]))
+  }, WITHIN)
+
   test("a Claude token saves, its kind answers no tier, and a second takes over from the first", async () => {
     const tab = await open()
     const token = `sk-ant-oat01-${KEY}`

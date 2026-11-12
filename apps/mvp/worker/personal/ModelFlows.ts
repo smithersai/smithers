@@ -57,7 +57,12 @@ const decodeDevice = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ deviceAuthId: Schema.String, userCode: Schema.String })),
 )
 
-const putPayload = { authority: WriteAuthority.Admission, personId: Schema.String, connections: Schema.Array(ConnectionWrite) }
+const putPayload = {
+  authority: WriteAuthority.Admission,
+  personId: Schema.String,
+  connections: Schema.Array(ConnectionWrite),
+  known: Schema.optional(Schema.Array(Schema.String)),
+}
 
 const deletePayload = { authority: WriteAuthority.Admission, personId: Schema.String }
 
@@ -214,6 +219,7 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         authority: write.authority,
         personId: write.personId,
         connections: write.connections,
+        known: write.known,
         invocationKey: key,
       }).pipe(Effect.provide(database), Effect.catch(unavailable))
       return { change }
