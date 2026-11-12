@@ -376,6 +376,35 @@ test("the gate fails on a banned import outside src/ and passes once it is gone"
   assert.match(clean.stdout, /import no banned durable runtime/)
 })
 
+test("the ban reads .mts and .cts files, every .smithers flow, the root flow workspaces and eval suites", () => {
+  using fixture = gateFixture()
+  const { write, run } = fixture
+  write("pnpm-workspace.yaml", "packages:\n  - apps/*\n  - .smithers/flows\n  - evals/*\n")
+  write(".smithers/flows/package.json", JSON.stringify({ name: "fixture-flows", private: true }))
+  write("evals/answers/package.json", JSON.stringify({ name: "fixture-evals", private: true }))
+  const banned = {
+    "apps/chat/worker/Answer.mts": "import { generateText } from \"ai\"\n",
+    "apps/chat/worker/Answer.cts": "import { generateText } from \"ai\"\n",
+    "apps/chat/.smithers/flows/answer/flow.ts": "import { generateText } from \"ai\"\n",
+    ".smithers/flows/release/flow.ts": "import { generateText } from \"ai\"\n",
+    ".smithers/WORKSPACE.ts": "import { generateText } from \"ai\"\n",
+    "evals/answers/run.ts": "import { generateText } from \"ai\"\n"
+  }
+  for (const [path, text] of Object.entries(banned)) write(path, text)
+  // Run state a flow writes under `.smithers` is not source.
+  write("apps/chat/.smithers/runs/r1/step.js", "import { generateText } from \"ai\"\n")
+  const failed = run()
+  assert.equal(failed.status, 1, failed.stdout)
+  const reported = failed.stderr.split("\n").filter((line) => line.includes("(the Vercel AI SDK)"))
+    .map((line) => line.slice(2, line.indexOf(":")))
+    .sort()
+  assert.deepEqual(reported, Object.keys(banned).sort())
+  for (const path of Object.keys(banned)) write(path, "export const ok = 1\n")
+  const clean = run()
+  assert.equal(clean.status, 0, clean.stderr)
+  assert.match(clean.stdout, /import no banned durable runtime/)
+})
+
 test("a VibeLang source is read like a TypeScript one: an undeclared import and a banned runtime both fail", () => {
   using fixture = gateFixture()
   const { write, run } = fixture

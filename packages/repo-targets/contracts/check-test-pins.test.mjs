@@ -24,6 +24,81 @@ test("finds every outright pin form, whatever the runner prefix", () => {
   ])
 })
 
+test("finds every other spelling of a pin: a table, a variable title, an options object, a literal condition", () => {
+  const source = [
+    `it.fails.each(["flow.plan", "flow.source"])("provides %s", (name) => {})`,
+    `describe.skip.each([1, 2])("row %i", () => {})`,
+    `it.skip(titleVariable, () => {})`,
+    `it("off by option", { skip: true }, () => {})`,
+    `test("todo by option", { timeout: 5_000, todo: "not yet" }, () => {})`,
+    `it.skipIf(true)("always skipped", () => {})`,
+    `it.runIf(false)("never run", () => {})`
+  ].join("\n")
+
+  assert.deepEqual(findPins(source).map((pin) => [pin.form, pin.title, pin.line]), [
+    ["fails.each", "provides %s", 1],
+    ["skip.each", "row %i", 2],
+    ["skip", "titleVariable", 3],
+    ["{ skip }", "off by option", 4],
+    ["{ todo }", "todo by option", 5],
+    ["skipIf(true)", "always skipped", 6],
+    ["runIf(false)", "never run", 7]
+  ])
+
+  // Options that switch nothing off, a literal condition that runs the test,
+  // and a call that merely passes `{ fails: true }` along are not pins.
+  const clean = [
+    `it("bounded", { timeout: 5_000, skip: false }, () => {})`,
+    `it.skipIf(false)("runs", () => {})`,
+    `it.runIf(true)("runs too", () => {})`,
+    `describe("saga", () => { it("compensates", () => run(step("three", { fails: true }))) })`
+  ].join("\n")
+  assert.deepEqual(findPins(clean), [])
+})
+
+test("a context skip under an opt-in environment condition is a pin, named by its test or helper", () => {
+  const inBody = [
+    `it("completes a live session", async (ctx) => {`,
+    `  if (process.env["SMITHERS_LIVE_MODEL_TESTS"] !== "1") {`,
+    `    ctx.skip("live provider tests require SMITHERS_LIVE_MODEL_TESTS=1")`,
+    `  }`,
+    `  if (!loggedIn()) ctx.skip("log in first")`,
+    `})`
+  ].join("\n")
+  assert.deepEqual(findPins(inBody).map((pin) => [pin.title, pin.line]), [["completes a live session", 3]])
+
+  const oneLine = [
+    `const apiKey = process.env.GATEWAY_KEY`,
+    `test("calls the gateway", (t) => {`,
+    `  if (apiKey === undefined) t.skip("GATEWAY_KEY is unset")`,
+    `})`
+  ].join("\n")
+  assert.deepEqual(findPins(oneLine).map((pin) => [pin.title, pin.line]), [["calls the gateway", 3]])
+
+  const asArgument = `it("live", (context) => { context.skip(process.env.LIVE !== "1", "opt in") })`
+  assert.deepEqual(findPins(asArgument).map((pin) => pin.title), ["live"])
+
+  const helper = [
+    `it("an earlier offline case", () => {})`,
+    `describe("live", () => {`,
+    `  const requireLive = (ctx: TestContext): void => {`,
+    `    if (process.env.LIVE !== "1") ctx.skip("opt in")`,
+    `  }`,
+    `  it("answers", (ctx) => { requireLive(ctx) })`,
+    `})`
+  ].join("\n")
+  assert.deepEqual(findPins(helper).map((pin) => [pin.title, pin.line]), [["requireLive", 4]])
+
+  // A capability condition, or a variable the package's test target supplies, is not a pin.
+  const capability = [
+    `it("needs jj", (ctx) => {`,
+    `  if (!jjInstalled) ctx.skip("jj is not installed")`,
+    `  if (process.env.SMITHERS_TEST_PG_URL === undefined) ctx.skip("no database")`,
+    `})`
+  ].join("\n")
+  assert.deepEqual(findPins(capability, new Set(["SMITHERS_TEST_PG_URL"])), [])
+})
+
 test("a capability gate is not a pin", () => {
   const source = [
     `describe.skipIf(process.platform === "win32")("windows", () => {})`,

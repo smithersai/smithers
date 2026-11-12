@@ -512,8 +512,9 @@ const lockfileParityUnit = Smithers.NodeTest({
 
 /**
  * Every import a workspace source makes is declared by that workspace, and no
- * source under `apps/` or `packages/` imports a durable runtime or model SDK
- * that "Everything is a durable flow" in the root `AGENTS.md` bans: Cloudflare
+ * source in any workspace member or `.smithers` directory imports a durable
+ * runtime or model SDK that "Everything is a durable flow" in the root
+ * `AGENTS.md` bans: Cloudflare
  * Workflows (directly or through Alchemy), Temporal, Inngest, Trigger.dev, the
  * Vercel AI SDK, LangChain or Mastra.
  *

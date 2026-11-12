@@ -15,9 +15,10 @@
  * dependencies, or validated private adapters vendored into the distribution.
  *
  * It also enforces "Everything is a durable flow" in the root `AGENTS.md`: no
- * source file anywhere under `apps/` or `packages/` (tests, scripts and Worker
- * entries included) imports another durable runtime or model SDK in place of
- * `@smthrs/flow`. See {@link bannedImportsInSource} for the list.
+ * source file in any workspace member or any `.smithers` directory (tests,
+ * scripts, Worker entries and flows included) imports another durable runtime
+ * or model SDK in place of `@smthrs/flow`. See {@link banScopeFiles} for the
+ * scope and {@link scanSource} for the list.
  *
  * Run it with `pnpm exec smithers-build test '//packages/repo-targets:dependencyBoundaries'`, or
  * directly with `node packages/repo-targets/contracts/check-dependency-boundaries.mjs`.
@@ -35,10 +36,11 @@ import { analyze, specifiers } from "../src/ImportAnalysis.ts"
 // workspace.
 // Membership comes from `pnpm-workspace.yaml` through the shared reader, so a
 // package nested inside the product package it belongs to
-// (`packages/smithers/flows/canonical`) is checked like any other. This gate scans
-// `packages/` and `apps/`, and the offline eval suites stay out: they are
-// private, never published, and import the source of the package they measure
-// directly, as they did when they lived under `evals/` (#4090).
+// (`packages/smithers/flows/canonical`) is checked like any other. The
+// declaration rule scans `packages/` and `apps/`, and the offline eval suites
+// stay out of it: they are private, never published, and import the source of
+// the package they measure directly, as they did when they lived under
+// `evals/` (#4090). The durable-flow ban reads every member (`banScopeFiles`).
 const scannedRoots = ["packages/", "apps/"]
 // These are source excerpts displayed by the decision queue, not modules the
 // maintainer app loads (e1efaba2 and 0c455cbe). Keep the exception at its exact
@@ -53,7 +55,7 @@ const evalSuites = [
 ]
 const isEvalSuite = (dir) => evalSuites.some((suite) => suite.endsWith("/") ? dir.startsWith(suite) : dir === suite)
 // VibeLang sources (`.vibe`) import like TypeScript ones and are read the same way.
-const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vibe"])
+const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mts", ".cts", ".mjs", ".cjs", ".vibe"])
 const ignoredDirs = new Set([
   ".alchemy",
   ".flows",
@@ -71,6 +73,11 @@ const ignoredDirs = new Set([
   "target",
   "tmp"
 ])
+// The durable-flow ban reads every `.smithers` directory too: file flows live
+// at `.smithers/flows/<name>/flow.ts`, inside an app or package as much as at
+// the root. It skips only the run state a flow writes there.
+const banIgnoredDirs = new Set([...ignoredDirs].filter((dir) => dir !== ".smithers"))
+const smithersStateDirs = new Set(["cache", "executions", "runs"])
 const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map((mod) => `node:${mod}`)])
 // Reach-throughs that predate the rule, as `file -> specifier`. Each is a
 // debt: the target is either an `internal/*` module its package deliberately
@@ -87,6 +94,11 @@ const knownReachThroughs = new Set([
 // rewrites; none of it runs as Smithers code. The gate fails on a stale entry
 // so the list only shrinks.
 const knownLegacyFixtureImports = new Set([
+  ".smithers/flows/migrate-smithers-v1/test/fixtures/smithers-0x-hello/simple-workflow.jsx -> @ai-sdk/anthropic",
+  ".smithers/flows/migrate-smithers-v1/test/fixtures/smithers-0x-hello/simple-workflow.jsx -> ai",
+  "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/agents.ts -> @ai-sdk/anthropic",
+  "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/agents.ts -> @ai-sdk/openai",
+  "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/agents.ts -> ai",
   "packages/smithers/migrate/test/fixtures/jsx-single/simple-workflow.jsx -> @ai-sdk/anthropic",
   "packages/smithers/migrate/test/fixtures/jsx-single/simple-workflow.jsx -> ai",
   "packages/smithers/migrate/test/fixtures/jsx-single/tests/_setup.ts -> ai",
@@ -205,13 +217,20 @@ function findWorkspacePackages() {
   return packages.sort((a, b) => a.dir.localeCompare(b.dir))
 }
 
-/** @param {string} dir @param {string[]} out @param {string[]} [nestedPackageDirs] */
-export function collectSourceFiles(dir, out, nestedPackageDirs) {
+/**
+ * @param {string} dir
+ * @param {string[]} out
+ * @param {string[]} [nestedPackageDirs]
+ * @param {{ ban?: boolean }} [options] `ban` walks `.smithers` directories, for the durable-flow ban.
+ */
+export function collectSourceFiles(dir, out, nestedPackageDirs, options = {}) {
   if (reviewSnapshotRoots.some((root) => `${dir.split(sep).join("/")}/`.startsWith(root))) return
   const absDir = join(repoRoot, dir)
   if (!isDirectory(absDir)) return
+  const ignored = options.ban ? banIgnoredDirs : ignoredDirs
   for (const entry of readdirSync(absDir)) {
-    if (ignoredDirs.has(entry)) continue
+    if (ignored.has(entry)) continue
+    if (basename(dir) === ".smithers" && smithersStateDirs.has(entry)) continue
     const child = join(dir, entry)
     const absChild = join(repoRoot, child)
     // Skip symlinks before stat-following can recurse through workspace cycles
@@ -231,7 +250,7 @@ export function collectSourceFiles(dir, out, nestedPackageDirs) {
         nestedPackageDirs.push(child)
         continue
       }
-      collectSourceFiles(child, out, nestedPackageDirs)
+      collectSourceFiles(child, out, nestedPackageDirs, options)
       continue
     }
     if (!stats.isFile()) continue
@@ -516,6 +535,29 @@ export function dependencySets(pkg) {
   return { runtime, dev }
 }
 
+/**
+ * Every file the durable-flow ban reads, deduplicated across nested members.
+ *
+ * The ban covers every source file of every workspace member, not only the
+ * `src/` tree the declaration rule reads, and not only `packages/` and `apps/`:
+ * a Worker entry, a test, a script, an eval suite and the root flow workspaces
+ * (`.smithers/flows`) run our code too. It also reads every `.smithers`
+ * directory, the root one included, because that is where file flows live.
+ *
+ * @param {Iterable<string>} rootFiles The root workspace's own sources and build-graph declarations.
+ * @returns {Set<string>}
+ */
+export function banScopeFiles(rootFiles) {
+  const scope = new Set(rootFiles)
+  for (const dir of [...workspacePackages(repoRoot).map((member) => member.dir), ".smithers"]) {
+    /** @type {string[]} */
+    const files = []
+    collectSourceFiles(dir.split("/").join(sep), files, undefined, { ban: true })
+    for (const file of files) scope.add(file)
+  }
+  return scope
+}
+
 function main() {
   const workspacePackages = findWorkspacePackages()
   const workspaceNames = new Set(workspacePackages.map((pkg) => pkg.name))
@@ -526,18 +568,8 @@ function main() {
   const reachThroughs = []
   /** @type {Set<string>} */
   const seenReachThroughs = new Set()
-  // The durable-flow ban covers every source file of every scanned package,
-  // not only the `src/` tree the declaration rule reads: a Worker entry, a
-  // test or a script runs our code too. Nested members are deduplicated.
-  /** @type {Set<string>} */
-  const banScope = new Set()
-  for (const pkg of workspacePackages) {
-    /** @type {string[]} */
-    const files = []
-    if (pkg.dir === ".") files.push(...filesForPackage(pkg, memberDirs).files)
-    else collectSourceFiles(pkg.dir, files)
-    for (const file of files) banScope.add(file)
-  }
+  const rootPackage = workspacePackages.find((pkg) => pkg.dir === ".")
+  const banScope = banScopeFiles(rootPackage === undefined ? [] : filesForPackage(rootPackage, memberDirs).files)
 
   const packageQueue = [...workspacePackages]
   let checkedPackageCount = 0

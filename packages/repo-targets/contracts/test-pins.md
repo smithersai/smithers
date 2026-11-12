@@ -127,6 +127,15 @@ A **pin** is a test the default gate does not run to a pass. Three forms count:
 - `.skipIf` / `.runIf` on an environment variable nothing in the repo sets. The
   test executes only for someone who remembers it exists.
 
+Each form has other spellings that count the same, and the gate reads them:
+`.each(...)` after the modifier (`it.fails.each([...])("title")` pins every
+row), a title that is not a literal (registered by its source spelling), a
+`{ skip: true }`, `{ todo: true }` or `{ fails: true }` options object, a
+literal `skipIf(true)` or `runIf(false)`, and a `ctx.skip()` (or `context.skip`,
+`t.skip`) inside a test body under an opt-in environment condition. A context
+skip is registered under its enclosing test's title, or under the name of the
+shared helper it sits in, because every test that calls the helper is off.
+
 A `.skipIf` / `.runIf` on a platform, an installed binary, or a built artifact
 is a capability gate rather than a pin, because it runs on the supported
 configuration. `describe.skipIf(process.platform === "win32")`,
@@ -183,6 +192,11 @@ only.
 | `smithers/flows/flow` | `hands off a set in sorted order, so the next round's payload is its identity snapshot` | `it.effect.fails` |
 | `smithers/flows/platform-cloudflare` | `ObjectDatabase in workerd (FLOWS_WORKERD_SMOKE=1)` | `describe.skipIf(FLOWS_WORKERD_SMOKE !== "1")` |
 | `smithers/flows/sync` | `holds post-warmup growth slopes through TCP reconnects, compaction, retention and a stalled subscriber` | `it.runIf(SMITHERS_SOAK_MINUTES !== undefined)` |
+| `smithers` | `provides an install transport for %s` | `it.fails.each` |
+| `smithers` | `resolves a logged-in ChatGPT seat and completes a real two-call session directly` | `ctx.skip` when `SMITHERS_LIVE_MODEL_TESTS !== "1"` |
+| `smithers/agent` | `separates recorded file picks that came back flat, over the live gateway` | `ctx.skip` when `SMITHERS_LIVE_MODEL_TESTS !== "1"` or `AI_GATEWAY_API_KEY` is unset |
+| `smithers/agent/model` | `requireLiveGateway` | `ctx.skip` when `SMITHERS_LIVE_MODEL_TESTS !== "1"` or `AI_GATEWAY_API_KEY` is unset |
+| `smithers/agent/model` | `requireKey` | `ctx.skip` when `SMITHERS_LIVE_MODEL_TESTS !== "1"` or `CEREBRAS_API_KEY` is unset |
 
 **Configuration ownership and callback replay:** `16d282b8981a` retained the
 configuration writer race as known broken: another writer can replace the file
@@ -448,6 +462,24 @@ and a user's Gemini seat stops streaming. Run it with
 `SMITHERS_LIVE_MODEL_TESTS=1 GEMINI_API_KEY=... pnpm --filter @smthrs/model test`.
 Closing it for the default gate means paying for provider traffic on every
 run, which the RC does not do.
+
+**`smithers`: the install transports (cli-1).** `InstallFlowBindings.test.ts`
+pins `it.fails.each` over `flow.plan` and `flow.source`: the catalog advertises
+an install door for each, and neither has an HTTP or client transport, so an
+install of either has nothing to call. The rows turn red the day a transport
+lands; remove the `.fails` then.
+
+**Live provider traffic behind `ctx.skip`.** Four suites gate live calls inside
+the test body on `SMITHERS_LIVE_MODEL_TESTS=1` plus a credential, the same
+intent flag the Gemini contract uses: `CodexSeat.integration.test.ts` signs a
+real two-call session with this machine's Codex login, `StandardFlows.test.ts`
+replays the #3992 flat file picks over the AI gateway, and the
+`requireLiveGateway` (`Evaluator.test.ts`) and `requireKey`
+(`CerebrasStructuredOutput.integration.test.ts`) helpers gate every live case in
+their suites. In the Codex and Cerebras suites,
+`SMITHERS_REQUIRE_LIVE_CREDENTIALS=1` turns the skip into a failure for a run
+that must carry live evidence. Closing them for the default
+gate means paying for provider traffic on every run, which the RC does not do.
 
 **`std`: the larger-than-memory stream.** `SearchConformance.test.ts` pins one
 `it.skip` whose title says why: the conformance suite proves `Grep` streams a

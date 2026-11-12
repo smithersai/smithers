@@ -5,7 +5,11 @@
  * A pin is a test the default gate never runs to a pass. Three forms count:
  * `it.fails`/`test.fails` (an assertion that current behavior is wrong),
  * `.skip`/`.todo` (disabled outright), and a `.skipIf`/`.runIf` gated on an
- * environment variable nothing in the repo sets. All three are legitimate
+ * environment variable nothing in the repo sets. Each has other spellings that
+ * count the same: `.each(...)` after the modifier, a title that is not a
+ * literal, a `{ skip: true }` (or `todo`, `fails`) options object, a literal
+ * `skipIf(true)`/`runIf(false)`, and a `ctx.skip()` inside the test body under
+ * an opt-in environment condition. All three are legitimate
  * occasionally and all three rot silently, so the rule is not "no pins" — it is
  * "no pin the docs do not explain". The 2026-08-16 readiness audit's F4 line
  * item existed because nothing enforced that.
@@ -39,17 +43,37 @@ export const notesPath = join(repoRoot, "packages/repo-targets/contracts", "test
 const ownSuite = fileURLToPath(new URL("./check-test-pins.test.mjs", import.meta.url))
 
 /**
- * Matches an outright pin and captures its title.
+ * Matches an outright pin's modifier, and a `.each(` table call after it.
  *
  * The prefix is deliberately loose — `it`, `test`, `describe`, `it.effect`,
  * `it.live`, `it.scoped` all appear in this repo — but the modifier is anchored
- * to the exact pin forms.
+ * to the exact pin forms. `it.fails.each([...])("title")` pins every row.
  */
-const pinPattern = /\b(?:it|test|describe)(?:\.[a-zA-Z]+)*\.(fails|skip|todo)\s*\(\s*(["'`])((?:[^\\]|\\.)*?)\2/g
+const pinPattern = /\b(?:it|test|describe)(?:\.[a-zA-Z]+)*\.(fails|skip|todo)\b(\.each\s*\()?/g
+
+/** Matches a test call with a literal title and an options object, as in `it("title", { skip: true }, ...)`. */
+const optionsPinPattern =
+  /\b(?:it|test|describe)(?:\.[a-zA-Z]+)*\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1\s*,\s*\{[^{}]*?\b(fails|skip|todo)\s*:\s*(?:true|(["'`])(?:\\.|(?!\4)[^\\])*\4)\s*[,}]/g
 
 /** Matches the beginning of a conditional suite's condition. */
 const conditionalStartPattern =
   /\b(?:it|test|describe)(?:\.[a-zA-Z]+)*\.(skipIf|runIf)\s*\(/g
+
+/** Matches a skip made inside a test body, on the test context: `ctx.skip(`, `context.skip(`, `t.skip(`. */
+const contextSkipPattern = /\b(ctx|context|t)\.skip\s*\(/g
+
+/** Matches a test call with a literal title, so a context skip is named by its enclosing test. */
+const testTitlePattern = /\b(?:it|test)(?:\.[a-zA-Z]+)*\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g
+
+/**
+ * Matches a function declaration at any depth, so a context skip in a shared
+ * helper (`const requireKey = (ctx) => { ... }`) is named by that helper.
+ */
+const helperPattern =
+  /^[ \t]*(?:export\s+)?(?:async\s+)?(?:function\*?\s+([A-Za-z_$][\w$]*)|(?:const|let)\s+([A-Za-z_$][\w$]*)\b[^=\n]*=\s*(?:async\s+)?(?:function\b|\([^)\n]*\)[^=\n]*=>|[A-Za-z_$][\w$]*\s*=>))/gm
+
+/** Matches an `if (` whose condition may guard a context skip. */
+const ifPattern = /\bif\s*\(/g
 
 /** Reads the closing parenthesis paired with the one at `openIndex`. */
 const readParenthesized = (source, openIndex) => {
@@ -74,8 +98,54 @@ const readParenthesized = (source, openIndex) => {
   return undefined
 }
 
-/** Reads the title at the start of a conditional suite's invocation. */
-const conditionalTitlePattern = /\s*\(\s*(["'`])((?:[^\\]|\\.)*?)\1/y
+/** Matches the opening parenthesis of the call that follows a condition or an `.each(...)` table. */
+const nextCallPattern = /\s*\(/y
+
+/** Reads a literal title at the start of a call's arguments. */
+const literalTitlePattern = /\s*(["'`])((?:[^\\]|\\.)*?)\1/y
+
+/** The text of the first argument in a call's argument text, up to its first top-level comma. */
+const firstArgument = (text) => {
+  let depth = 0
+  let quote
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index]
+    if (quote !== undefined) {
+      if (character === "\\") index++
+      else if (character === quote) quote = undefined
+      continue
+    }
+    if (character === '"' || character === "'" || character === "`") quote = character
+    else if ("([{".includes(character)) depth++
+    else if (")]}".includes(character)) depth--
+    else if (character === "," && depth === 0) return text.slice(0, index).trim()
+  }
+  return text.trim()
+}
+
+/**
+ * The title of the call whose opening parenthesis is at `openIndex`.
+ *
+ * A literal title reads as its text. Any other first argument reads as its
+ * source, so `it.skip(titleVariable, ...)` is still a pin the register must
+ * name, by that spelling. A call with no argument has no title.
+ */
+const readTitle = (source, openIndex) => {
+  literalTitlePattern.lastIndex = openIndex + 1
+  const literal = literalTitlePattern.exec(source)
+  if (literal !== null) return literal[2]
+  const call = readParenthesized(source, openIndex)
+  if (call === undefined) return undefined
+  const title = firstArgument(call.text)
+  return title === "" ? undefined : title
+}
+
+/** The opening parenthesis of the call written right after `index`, or undefined. */
+const nextCall = (source, index) => {
+  nextCallPattern.lastIndex = index
+  const open = nextCallPattern.exec(source)
+  return open === null ? undefined : open.index + open[0].length - 1
+}
 
 /**
  * Whether a `skipIf`/`runIf` condition leaves the suite off in a default run.
@@ -247,22 +317,76 @@ export const findPins = (source, supplied = new Set()) => {
   const lineOf = (index) => source.slice(0, index).split("\n").length
   const pins = []
   for (const match of source.matchAll(pinPattern)) {
-    pins.push({ form: match[1], title: match[3], line: lineOf(match.index) })
+    let open = nextCall(source, match.index + match[0].length - (match[2] === undefined ? 0 : 1))
+    if (open !== undefined && match[2] !== undefined) {
+      const table = readParenthesized(source, open)
+      open = table === undefined ? undefined : nextCall(source, table.closeIndex + 1)
+    }
+    const title = open === undefined ? undefined : readTitle(source, open)
+    if (title === undefined) continue
+    pins.push({ form: match[2] === undefined ? match[1] : `${match[1]}.each`, title, line: lineOf(match.index) })
+  }
+  for (const match of source.matchAll(optionsPinPattern)) {
+    pins.push({ form: `{ ${match[3]} }`, title: match[2], line: lineOf(match.index) })
   }
   for (const match of source.matchAll(conditionalStartPattern)) {
     const openIndex = match.index + match[0].length - 1
     const condition = readParenthesized(source, openIndex)
-    if (condition === undefined || !isOptIn(condition.text, source, supplied)) continue
-    conditionalTitlePattern.lastIndex = condition.closeIndex + 1
-    const title = conditionalTitlePattern.exec(source)
-    if (title === null) continue
+    if (condition === undefined) continue
+    // A literal condition is no condition: `skipIf(true)` is `skip`.
+    const literallyOff = condition.text.trim() === (match[1] === "skipIf" ? "true" : "false")
+    if (!literallyOff && !isOptIn(condition.text, source, supplied)) continue
+    const open = nextCall(source, condition.closeIndex + 1)
+    const title = open === undefined ? undefined : readTitle(source, open)
+    if (title === undefined) continue
     pins.push({
       form: `${match[1]}(${condition.text.trim()})`,
-      title: title[2],
+      title,
       line: lineOf(match.index)
     })
   }
+  for (const match of source.matchAll(contextSkipPattern)) {
+    const guard = optInGuard(source, match.index, supplied)
+    if (guard === undefined) continue
+    // The enclosing test is the last one opened before the skip, unless a
+    // function declaration starts after it: then the skip is in that shared
+    // helper, and every test that calls it is off.
+    const before = source.slice(0, match.index)
+    const opened = [...before.matchAll(testTitlePattern)].at(-1)
+    const helper = [...before.matchAll(helperPattern)].at(-1)
+    const title = helper !== undefined && (opened === undefined || helper.index > opened.index) ? helper[1] ?? helper[2] : opened?.[2]
+    if (title === undefined) continue
+    pins.push({ form: `${match[1]}.skip under if (${guard})`, title, line: lineOf(match.index) })
+  }
   return pins.sort((a, b) => a.line - b.line)
+}
+
+/**
+ * The opt-in condition that guards the context skip at `skipIndex`, or undefined.
+ *
+ * A skip inside a test body is the environment-gated pin in another spelling:
+ * `if (process.env.X !== "1") ctx.skip()` leaves the test off in a default run
+ * just as `it.skipIf(process.env.X !== "1")` does. The guard is an enclosing
+ * `if` (its braced block, or its one-line statement) whose condition
+ * {@link isOptIn}, or the skip's own condition argument. A skip under a
+ * capability condition (`if (!loggedIn) ctx.skip()`) is not a pin.
+ */
+const optInGuard = (source, skipIndex, supplied) => {
+  const call = readParenthesized(source, source.indexOf("(", skipIndex))
+  if (call !== undefined) {
+    const argument = firstArgument(call.text)
+    if (!/^(["'`])/.test(argument) && isOptIn(argument, source, supplied)) return argument
+  }
+  for (const match of source.slice(0, skipIndex).matchAll(ifPattern)) {
+    const condition = readParenthesized(source, match.index + match[0].length - 1)
+    if (condition === undefined || !isOptIn(condition.text, source, supplied)) continue
+    const bodyStart = source.slice(condition.closeIndex + 1).search(/\S/) + condition.closeIndex + 1
+    const body = source[bodyStart] === "{"
+      ? readBracketed(source, bodyStart)
+      : source.slice(bodyStart, source.indexOf("\n", bodyStart) === -1 ? undefined : source.indexOf("\n", bodyStart))
+    if (body !== undefined && skipIndex < bodyStart + 1 + body.length) return condition.text.trim()
+  }
+  return undefined
 }
 
 /** The documented `{ package, title }` pairs in the Surviving pins table. */
