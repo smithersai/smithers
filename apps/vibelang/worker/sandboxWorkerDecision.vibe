@@ -143,3 +143,44 @@ export function serialized(kind: string): boolean {
 export function leaseRunning(status: string): boolean {
   return status === "running"
 }
+
+export type CallShape = "duration" | "exec" | "as-is"
+
+/** A recorded Container call's shape: every inactivity timeout is erased, an exec is scanned, anything else is kept. */
+//@ verify
+//@ ensures \result == (operation == "setInactivityTimeout" ? "duration" : (operation == "exec" ? "exec" : "as-is"))
+export function callShape(operation: string): CallShape {
+  if (operation === "setInactivityTimeout") return "duration"
+  if (operation !== "exec") return "as-is"
+  return "exec"
+}
+
+/** Only an exec's third argument, the run script, is scanned for its timeout word. */
+//@ verify
+//@ ensures \result == (index == 2)
+export function scriptArgument(index: number): boolean {
+  return index === 2
+}
+
+/** Only the run script's fourth quoted word, the seconds of lease left when the command began, is erased. */
+//@ verify
+//@ ensures \result == (word == 3)
+export function erasedWord(word: number): boolean {
+  return word === 3
+}
+
+/** Where a recorded call goes: after the calls stored before an eviction, and kept only below the limit. */
+export interface RecordSlot {
+  readonly at: number
+  readonly kept: boolean
+}
+
+//@ verify
+//@ requires 0 <= stored && 0 <= index
+//@ ensures \result.at == stored + index
+//@ ensures \result.kept == (stored + index < max)
+//@ ensures \result.kept ==> \result.at < max
+export function recordSlot(stored: number, index: number, max: number): RecordSlot {
+  const at = stored + index
+  return { at, kept: at < max }
+}

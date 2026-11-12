@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { executionKind, gatewayChoice, leaseMillis, leaseRunning, probeAdmitted, probeConversationKnown, probeOwnerOf, probeOwnerShaped, probeRole, probeRoute, refusalStatus, sandboxVerb, sandboxWrite, serialized, stillRunning } from "../worker/sandboxWorkerDecision.vibe"
+import { callShape, erasedWord, executionKind, gatewayChoice, leaseMillis, leaseRunning, probeAdmitted, probeConversationKnown, probeOwnerOf, probeOwnerShaped, probeRole, probeRoute, recordSlot, refusalStatus, sandboxVerb, scriptArgument, sandboxWrite, serialized, stillRunning } from "../worker/sandboxWorkerDecision.vibe"
 import { PROBE_WINDOW_MS, deadlineOf, probeOwner } from "../worker/sandboxProbeFetch.vibe"
 
 describe("the server's sandbox decisions", () => {
@@ -19,6 +19,11 @@ describe("the server's sandbox decisions", () => {
     expect([probeRoute("/api/probe/machine", "POST"), probeRoute("/api/probe/container", "POST"), probeRoute("/api/probe/machine", "GET"), probeRoute("/api/probe/other", "POST")]).toEqual(["machine", "container", "not-found", "not-found"])
     expect([probeConversationKnown("live"), probeConversationKnown("direct"), probeConversationKnown(""), probeConversationKnown("other")]).toEqual([true, true, false, false])
     expect([stillRunning(false, "stopped"), stillRunning(true, "stopped"), stillRunning(true, "running")]).toEqual([true, false, true])
+  })
+  it("erases only a recording's run-to-run words and keeps calls below the limit, after the stored ones", () => {
+    expect([callShape("setInactivityTimeout"), callShape("exec"), callShape("start"), callShape("")]).toEqual(["duration", "exec", "as-is", "as-is"])
+    expect([scriptArgument(1), scriptArgument(2), scriptArgument(3), erasedWord(2), erasedWord(3), erasedWord(4)]).toEqual([false, true, false, false, true, false])
+    expect([recordSlot(0, 0, 2), recordSlot(1, 0, 2), recordSlot(1, 1, 2), recordSlot(5, 3, 2000)]).toEqual([{ at: 0, kept: true }, { at: 1, kept: true }, { at: 2, kept: false }, { at: 8, kept: true }])
   })
   it("reads, writes or refuses a sandbox request and checks what each write needs", () => {
     expect([sandboxVerb(undefined, "GET"), sandboxVerb("start", "POST"), sandboxVerb(undefined, "POST"), sandboxVerb("start", "GET"), sandboxVerb(undefined, "DELETE")]).toEqual(["read", "write", "not-found", "not-found", "not-found"])

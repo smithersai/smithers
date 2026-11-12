@@ -5,6 +5,7 @@
 // never declares the probe, so no product object records.
 import * as ContainerRecording from "@smthrs/testing/ContainerRecording"
 import { machineObject, type MachineBox, type ObjectState } from "./machineObject.vibe"
+import { callShape, erasedWord, recordSlot, scriptArgument } from "./sandboxWorkerDecision.vibe"
 
 /** passthrough (default): the Container as is. record: every call kept in the machine object's storage. */
 export const ProbeContainerMode = Schema.Literals(["passthrough", "record"])
@@ -21,12 +22,13 @@ const QUOTED = /'((?:[^']|'\\'')*)'/g
  * seconds of lease left when the command began). Everything else compares exactly.
  */
 export function normalizeCall(operation: ContainerRecording.Operation, input: unknown): unknown {
-  if (operation === "setInactivityTimeout") return "<duration>"
-  if (operation !== "exec") return input
+  const shape = callShape(operation)
+  if (shape === "duration") return "<duration>"
+  if (shape === "as-is") return input
   const exec = input as { readonly argv: ReadonlyArray<string>; readonly options: unknown }
   let word = 0
-  const erased = (script: string) => script.replace(QUOTED, (quoted) => word++ === 3 ? "'<timeout>'" : quoted)
-  return { ...exec, argv: exec.argv.map((arg, index) => index === 2 ? erased(arg) : arg) }
+  const erased = (script: string) => script.replace(QUOTED, (quoted) => erasedWord(word++) ? "'<timeout>'" : quoted)
+  return { ...exec, argv: exec.argv.map((arg, index) => scriptArgument(index) ? erased(arg) : arg) }
 }
 
 const key = (index: number) => `${PREFIX}${String(index).padStart(6, "0")}`
@@ -41,9 +43,9 @@ export effect function probeBox(box: MachineBox, state: ObjectState, mode: Probe
   return ContainerRecording.record(box, {
     normalize: normalizeCall,
     onCall: (call, index) => {
-      const at = stored + index
-      const log = Effect.logInfo("vibelang.sandbox.container_recorded").pipe(Effect.annotateLogs({ operation: call.operation, index: at, kept: at < max }))
-      return at < max ? Effect.andThen(promise(() => state.raw.storage.put(key(at), call)), log) : log
+      const slot = recordSlot(stored, index, max)
+      const log = Effect.logInfo("vibelang.sandbox.container_recorded").pipe(Effect.annotateLogs({ operation: call.operation, index: slot.at, kept: slot.kept }))
+      return slot.kept ? Effect.andThen(promise(() => state.raw.storage.put(key(slot.at), call)), log) : log
     },
   }).container
 }
