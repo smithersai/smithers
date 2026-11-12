@@ -75,6 +75,14 @@ export * as FixtureStore from "./FixtureStore.ts"
  */
 export * as HttpRecording from "./HttpRecording.ts"
 
+/**
+ * Record, replay or pass through every call a Durable Object makes on its
+ * Cloudflare Container.
+ *
+ * @since 1.0.0
+ */
+export * as ContainerRecording from "./ContainerRecording.ts"
+
 /** @since 0.0.0 @category layers */
 export * as MemoryEngine from "./MemoryEngine.ts"
 

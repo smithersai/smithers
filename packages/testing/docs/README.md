@@ -127,6 +127,8 @@ tree: [`@smthrs/cli`](/api/cli) is the `smithers` command line, and
   and the calls the recorder refuses to write.
 - [Record an HTTP service](./guides/record-http.md): pass through, record
   with every credential scrubbed, or replay with no network.
+- [Record a Cloudflare Container](./guides/record-a-container.md): pass through,
+  record or replay every call a Durable Object makes on its Container.
 - [Script a model](./guides/script-a-model.md): the turns a recording cannot
   make, such as a question on cue, a build broken once, or a held turn.
 - [API reference](./api.md): every module and every export.

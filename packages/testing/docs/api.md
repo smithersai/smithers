@@ -1340,6 +1340,85 @@ a field it needs fails the recording run rather than a later replay.
 `sk-`, GitHub, AWS, Slack, Google, GitLab and npm keys). `encode` also refuses a
 named secret that survived, as rule `live-secret`.
 
+## ContainerRecording
+
+Records, replays or passes through every call a Durable Object makes on its
+Cloudflare Container. Import it from `@smthrs/testing/ContainerRecording` in a
+Worker; it imports no Node module. See
+[Record, replay or pass through a Cloudflare Container](./guides/record-a-container.md).
+
+```ts
+const Mode: Schema.Literals<["passthrough", "record", "replay"]>
+const Operation: Schema.Literals<[
+  "running", "start", "setInactivityTimeout", "interceptOutboundHttp",
+  "interceptAllOutboundHttp", "interceptOutboundHttps", "snapshotContainer", "destroy", "exec"
+]>
+
+interface Call {
+  readonly operation: Operation
+  readonly input: unknown
+  readonly output?: unknown
+  readonly failure?: string | undefined
+}
+interface ExecAnswer {
+  readonly stdout: string
+  readonly stderr: string
+  readonly exitCode?: number | undefined
+  readonly exitFailure?: string | undefined
+}
+interface Recording {
+  readonly label?: string | undefined
+  readonly calls: ReadonlyArray<Call>
+}
+type Normalize = (operation: Operation, input: unknown) => unknown
+
+const record: <C extends Container<any, any>>(
+  live: C,
+  options?: { readonly normalize?: Normalize; readonly onCall?: (call: Call, index: number) => Effect.Effect<void> }
+) => { readonly container: C; readonly calls: () => ReadonlyArray<Call> }
+const replay: <C extends Container<any, any>>(
+  recording: Recording,
+  options?: { readonly normalize?: Normalize }
+) => { readonly container: C; readonly remaining: () => number }
+const make: <C extends Container<any, any>>(options: {
+  readonly mode: Mode
+  readonly live?: C
+  readonly recording?: Recording
+  readonly normalize?: Normalize
+  readonly onCall?: (call: Call, index: number) => Effect.Effect<void>
+}) => C
+const encode: (
+  recording: Recording,
+  secrets?: ReadonlyArray<string | Redacted.Redacted<string>>
+) => Effect.Effect<string, CredentialInRecordingError>
+const decode: (text: string) => Recording
+
+class UnrecordedCallError {
+  readonly index: number
+  readonly operation: string
+  readonly recorded: string
+}
+class CredentialInRecordingError {
+  readonly rules: ReadonlyArray<string>
+}
+class ReplayedFailure extends Error {
+  readonly _tag: string
+  readonly operation: Operation
+}
+```
+
+`Container` is the slice of Alchemy's Durable Object container handle a
+container object uses: `running`, `start`, `setInactivityTimeout`, the three
+intercepts, `snapshotContainer`, `destroy` and `exec`. `record` calls `live` and
+hands each completed call to `onCall` with its index in the order calls began; a
+command's call completes when its scope closes. `replay` reaches no container:
+each call must match the recording's next call by operation and normalized
+input, or it dies with `UnrecordedCallError`; a recorded failure replays as a
+`ReplayedFailure` with the live failure's tag. `make` picks one by mode; a
+`replay` without a recording or another mode without `live` is a defect.
+`encode` scrubs and scans as `HttpRecording.encode` does; `decode` throws on a
+malformed recording.
+
 ## RecordingModel
 
 Wraps a live model so each call is written to a sink when its stream ends.

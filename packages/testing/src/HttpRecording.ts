@@ -23,12 +23,13 @@
  * @since 1.0.0
  */
 
-import { defaultRules, placeholder, redact } from "@smthrs/journal/Redaction"
+import { placeholder, redact } from "@smthrs/journal/Redaction"
 import { Effect, Exit, Layer, Redacted, Schema, type Scope } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import type * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
+import { scan as scanCredentials } from "./internal/credentials.ts"
 
 /**
  * How a recorded client reaches its service.
@@ -171,30 +172,6 @@ export class CredentialInRecordingError extends Schema.TaggedError<CredentialInR
   }
 }
 
-// The journal's token-shaped rules, as RecordingModel uses them. Its name and
-// assignment rules are applied by `redact` while scrubbing and are not part of
-// the scan: a recorded field named `token` is already `[REDACTED]`.
-const credentialRules = new Set([
-  "private-key-block",
-  "smithers-scoped-token",
-  "smithers-machine-token",
-  "url-credentials",
-  "bearer-token",
-  "jwt",
-  "api-key",
-  "github-token",
-  "github-fine-grained-token",
-  "aws-access-key",
-  "slack-token",
-  "google-api-key",
-  "gitlab-token",
-  "npm-token",
-  "slack-webhook"
-])
-const credentialPatterns = defaultRules
-  .filter((rule) => credentialRules.has(rule.id))
-  .map((rule) => ({ id: rule.id, pattern: new RegExp(rule.pattern.source, rule.pattern.flags.replace("g", "")) }))
-
 /**
  * The ids of the credential shapes found in `text`; empty when it holds none.
  *
@@ -205,8 +182,7 @@ const credentialPatterns = defaultRules
  * @category scanning
  * @since 1.0.0
  */
-export const scan = (text: string): ReadonlyArray<string> =>
-  credentialPatterns.filter((rule) => rule.pattern.test(text)).map((rule) => rule.id)
+export const scan = (text: string): ReadonlyArray<string> => scanCredentials(text)
 
 // Response headers that change what a client does. Everything else (cookies,
 // request ids, rate-limit counters, signatures) is dropped.

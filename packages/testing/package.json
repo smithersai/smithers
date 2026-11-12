@@ -49,6 +49,7 @@
     "./Fixture": "./src/Fixture.ts",
     "./FixtureStore": "./src/FixtureStore.ts",
     "./HttpRecording": "./src/HttpRecording.ts",
+    "./ContainerRecording": "./src/ContainerRecording.ts",
     "./FlowEngineLike": "./src/FlowEngineLike.ts",
     "./HostSuite": "./src/HostSuite.ts",
     "./JournalAssertions": "./src/JournalAssertions.ts",
@@ -190,6 +191,16 @@
         "require": {
           "types": "./dist/cjs/HttpRecording.d.ts",
           "default": "./dist/cjs/HttpRecording.js"
+        }
+      },
+      "./ContainerRecording": {
+        "import": {
+          "types": "./dist/esm/ContainerRecording.d.ts",
+          "default": "./dist/esm/ContainerRecording.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ContainerRecording.d.ts",
+          "default": "./dist/cjs/ContainerRecording.js"
         }
       },
       "./FlowEngineLike": {
