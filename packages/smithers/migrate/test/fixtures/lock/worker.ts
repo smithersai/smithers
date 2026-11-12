@@ -22,12 +22,12 @@ const operation = Effect.gen(function*() {
   })
   const patched: FileSystem.FileSystem = {
     ...fs,
-    writeFileString: (file, value, options) => {
+    open: (file, options) => {
       if (mode === "before-publish" && file.includes(".apply.lock.tmp-") && !paused) {
         paused = true
-        return pause("initializing").pipe(Effect.andThen(fs.writeFileString(file, value, options)))
+        return pause("initializing").pipe(Effect.andThen(fs.open(file, options)))
       }
-      return fs.writeFileString(file, value, options)
+      return fs.open(file, options)
     },
     readFileString: (file, options) => fs.readFileString(file, options).pipe(Effect.tap(() => {
       if (mode !== "after-read" || !file.endsWith("/apply.lock") || paused) return Effect.void

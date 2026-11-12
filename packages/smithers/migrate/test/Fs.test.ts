@@ -7,8 +7,11 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as PlatformError from "effect/PlatformError"
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -73,6 +76,57 @@ describe("Fs.writeAtomic", () => {
       expect(readdirSync(root)).toEqual(["occupied"])
       expect(existsSync(file)).toBe(true)
     }))
+})
+
+describe("Fs.writeAtomic never opens a temporary name that already exists", () => {
+  it.effect("leaves a planted link and a crashed run's leftover alone and renames only its own file", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const outside = join(scratch(), "user-file.txt")
+      writeFileSync(outside, "ORIGINAL USER FILE\n")
+      // Every name this process could pick next: links that lead outside the
+      // report directory, and one regular file a crashed run left behind.
+      const planted = Array.from({ length: 64 }, (_, n) => `.pending-unit.json.tmp-${process.pid}-${n}`)
+      for (const name of planted.slice(1)) symlinkSync(outside, join(root, name))
+      writeFileSync(join(root, planted[0]!), "LEFTOVER\n")
+      const file = join(root, "pending-unit.json")
+
+      yield* write(file, "CHECKPOINT JSON\n")
+
+      expect(readFileSync(outside, "utf8")).toBe("ORIGINAL USER FILE\n")
+      expect(readFileSync(join(root, planted[0]!), "utf8")).toBe("LEFTOVER\n")
+      expect(lstatSync(file).isFile()).toBe(true)
+      expect(lstatSync(file).mode & 0o777).toBe(0o600)
+      expect(readFileSync(file, "utf8")).toBe("CHECKPOINT JSON\n")
+      expect(readdirSync(root).sort()).toEqual(["pending-unit.json", ...planted].sort())
+      for (const name of planted.slice(1)) expect(lstatSync(join(root, name)).isSymbolicLink()).toBe(true)
+    }))
+
+  it.effect("removes the file it created when writing into it fails", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const file = join(root, "pending-unit.json")
+      const fs = yield* FileSystem.FileSystem
+      const failure = PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "writeAll" })
+      const io: FileSystem.FileSystem = {
+        ...fs,
+        open: (path, options) =>
+          fs.open(path, options).pipe(
+            Effect.map((handle) =>
+              Object.assign(Object.create(Object.getPrototypeOf(handle)), handle, {
+                writeAll: () => Effect.fail(failure)
+              })
+            )
+          )
+      }
+
+      const error = yield* Effect.flip(
+        Fs.writeAtomic(file, "never\n").pipe(Effect.provideService(FileSystem.FileSystem, io))
+      )
+
+      expect(error).toBe(failure)
+      expect(readdirSync(root)).toEqual([])
+    }).pipe(Effect.provide(nodeLayer)))
 })
 
 describe("Fs.isStaleTemporary", () => {

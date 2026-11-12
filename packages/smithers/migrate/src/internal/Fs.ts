@@ -418,6 +418,12 @@ let atomicCounter = 0
  * leaves the temporary file behind; it matches {@link staleTemporary} and is
  * tolerated rather than reported as a foreign file.
  *
+ * The temporary file is created exclusively, readable by its owner only, and
+ * written through the handle that created it. A name that already exists — a
+ * crashed run's leftover, or a link planted to redirect the write outside the
+ * project — is never opened: the writer moves on to the next counter, so only
+ * the file this call created is renamed over the target.
+ *
  * The caller keeps its own error mapping: this fails with the platform's
  * error, exactly as `fs.writeFileString` would.
  *
@@ -431,9 +437,22 @@ export const writeAtomic = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const temporary = path.join(path.dirname(file), `.${path.basename(file)}.tmp-${process.pid}-${atomicCounter++}`)
-    yield* fs.writeFileString(temporary, text).pipe(
-      Effect.andThen(fs.rename(temporary, file)),
+    const bytes = new TextEncoder().encode(text)
+    const create: Effect.Effect<string, PlatformError.PlatformError> = Effect.suspend(() => {
+      const temporary = path.join(path.dirname(file), `.${path.basename(file)}.tmp-${process.pid}-${atomicCounter++}`)
+      return fs.open(temporary, { flag: "wx", mode: 0o600 }).pipe(
+        Effect.flatMap((handle) =>
+          handle.writeAll(bytes).pipe(
+            Effect.onError(() => fs.remove(temporary, { force: true }).pipe(Effect.ignore))
+          )
+        ),
+        Effect.scoped,
+        Effect.as(temporary),
+        Effect.catchIf((error) => error.reason._tag === "AlreadyExists", () => create)
+      )
+    })
+    const temporary = yield* create
+    yield* fs.rename(temporary, file).pipe(
       // A failure after the temporary file landed must not leave it behind:
       // the report directory refuses entries that are not the tool's own.
       Effect.onError(() => fs.remove(temporary, { force: true }).pipe(Effect.ignore))

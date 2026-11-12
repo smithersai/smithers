@@ -240,12 +240,12 @@ describe("Lock.acquire", () => {
       const failure = PlatformError.systemError({
         _tag: "PermissionDenied",
         module: "FileSystem",
-        method: "writeFileString"
+        method: "open"
       })
       const failed = yield* Effect.flip(
         Lock.acquire({ root, reportDir: "audit" }).pipe(Effect.provideService(FileSystem.FileSystem, {
           ...fs,
-          writeFileString: () => Effect.fail(failure)
+          open: () => Effect.fail(failure)
         }))
       )
       expect(failed.code).toBe("io")
