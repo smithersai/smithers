@@ -61,7 +61,9 @@ for (const name of ["repo-view", "terminal-frame"]) {
     assert.deepEqual(manifest.exports["."], {
       types: "./src/index.ts", import: "./src/index.ts", default: "./src/index.ts"
     })
-    const unitDirectory = name === "terminal-frame" ? "./test" : "test"
+    // A path, not a bare word: Bun reads `test` as a filter over every file
+    // below the package, which takes in repo-view's browser/ probes too.
+    const unitDirectory = "./test"
     assert.equal(manifest.scripts.test, `bun test --isolate ${unitDirectory}`)
     const config = readFileSync(join(directory, "bunfig.toml"), "utf8")
     assert.match(config, /^coverage = true$/m)
