@@ -16,6 +16,7 @@
  * @since 0.0.0
  */
 
+import { ConflictStrategy, Mode, Tier } from "@smthrs/plan/Effects"
 import type * as Duration from "effect/Duration"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
@@ -235,11 +236,17 @@ export class MarkdownError extends Schema.TaggedError<MarkdownError>()("flows/co
  * Model-seat and collaborator arrays are copied, so later changes to the
  * supplied frontmatter arrays do not change the lowered flow or its decorators.
  *
+ * `capabilities` is the flow's capability ceiling, with `Flow.make`'s meaning:
+ * an omitted field leaves the ceiling to the caller, and an explicit `[]`
+ * denies every capability. Both the native flow and its action carry a
+ * declared ceiling.
+ *
  * The declared limits are part of the flow, not metadata beside it.
  * `modelInvocable` and `deadline` go to `@smthrs/flow`'s `Flow.make`, so the
  * native flow carries `Flow.ModelInvocable` and enforces the deadline;
  * `budget` and `sandbox` are copied onto the signature. A `sandbox` selection
- * places the flow in a sandbox. An invalid limit, or a sandbox selection
+ * places the flow in a sandbox. An invalid limit, a `placement` outside its
+ * four names, an `effects` field outside its schema, or a sandbox selection
  * beside another placement, throws a `RangeError` naming the flow and the
  * field, like `Flow.make`'s own construction errors.
  *
@@ -251,17 +258,19 @@ export const lowerMarkdown = (
   frontmatter: MarkdownFrontmatter,
   body: string
 ): Flow.Flow<typeof input, typeof output> => {
-  const budget = decodeLimit(frontmatter.name, "budget", Budget, frontmatter.budget)
+  const placement = decodeField(frontmatter.name, "placement", PlacementName, frontmatter.placement)
+  const effects = decodeField(frontmatter.name, "effects", EffectsFrontmatter, frontmatter.effects)
+  const budget = decodeField(frontmatter.name, "budget", Budget, frontmatter.budget)
   if (
     budget !== undefined && budget.tokens === undefined && budget.milliseconds === undefined &&
     budget.usd === undefined
   ) {
     throw new RangeError(`lowerMarkdown: "${frontmatter.name}" budget must declare at least one ceiling`)
   }
-  const sandbox = decodeLimit(frontmatter.name, "sandbox", SandboxSelection, frontmatter.sandbox)
-  if (sandbox !== undefined && frontmatter.placement !== undefined && frontmatter.placement !== "sandbox") {
+  const sandbox = decodeField(frontmatter.name, "sandbox", SandboxSelection, frontmatter.sandbox)
+  if (sandbox !== undefined && placement !== undefined && placement !== "sandbox") {
     throw new RangeError(
-      `lowerMarkdown: "${frontmatter.name}" selects a sandbox but is placed ${frontmatter.placement}`
+      `lowerMarkdown: "${frontmatter.name}" selects a sandbox but is placed ${placement}`
     )
   }
   const flow = build({
@@ -272,19 +281,14 @@ export const lowerMarkdown = (
     description: frontmatter.description,
     input,
     output,
-    capabilities: [...new Set(frontmatter.capabilities ?? [])].sort(),
-    effects: undefined,
-    ...(frontmatter.effects === undefined
-      ? {}
-      : {
-        effects: Effects.make({
-          reads: frontmatter.effects.reads ?? [],
-          writes: frontmatter.effects.writes ?? [],
-          mode: frontmatter.effects.mode ?? "hermetic",
-          onConflict: frontmatter.effects.onConflict ?? "serialize",
-          tier: frontmatter.effects.tier
-        })
-      }),
+    capabilities: frontmatter.capabilities === undefined ? undefined : [...new Set(frontmatter.capabilities)].sort(),
+    effects: effects === undefined ? undefined : Effects.make({
+      reads: effects.reads ?? [],
+      writes: effects.writes ?? [],
+      mode: effects.mode ?? "hermetic",
+      onConflict: effects.onConflict ?? "serialize",
+      tier: effects.tier
+    }),
     model: typeof frontmatter.model === "object" ? [...frontmatter.model] : frontmatter.model ?? "smart",
     flows: [...frontmatter.flows ?? []],
     prompt: body,
@@ -294,23 +298,35 @@ export const lowerMarkdown = (
     sandbox
   })
 
-  switch (sandbox === undefined ? frontmatter.placement : "sandbox") {
-    case "sandbox":
-      return Flow.within(flow, Placement.sandbox())
-    case "remote":
-      return Flow.within(flow, Placement.remote())
-    case "client":
-      return Flow.within(flow, Placement.client())
-    case "local":
-      return Flow.within(flow, Placement.local())
-    default:
-      return flow
-  }
+  const placed = sandbox === undefined ? placement : "sandbox"
+  return placed === undefined ? flow : Flow.within(flow, placements[placed]())
 }
+
+// The placement names the frontmatter may use, and the host directive each
+// one lowers to. A name outside this list is refused, never lowered unplaced.
+const PlacementName = Schema.Literals(["sandbox", "remote", "client", "local"])
+
+const placements: Record<typeof PlacementName.Type, () => Placement.Placement> = {
+  sandbox: Placement.sandbox,
+  remote: Placement.remote,
+  client: Placement.client,
+  local: Placement.local
+}
+
+// The effect envelope the frontmatter may declare. Its enumerations are
+// `@smthrs/plan`'s own, so a misspelled mode, conflict strategy or tier is
+// refused instead of becoming the action's dispatch tier.
+const EffectsFrontmatter = Schema.Struct({
+  reads: Schema.optional(Schema.Array(Schema.String)),
+  writes: Schema.optional(Schema.Array(Schema.String)),
+  mode: Schema.optional(Mode),
+  onConflict: Schema.optional(ConflictStrategy),
+  tier: Schema.optional(Tier)
+})
 
 // Decoding copies the value, so a later edit to the supplied frontmatter does
 // not reach the lowered flow.
-const decodeLimit = <A>(
+const decodeField = <A>(
   name: string,
   field: string,
   schema: Schema.Decoder<A>,

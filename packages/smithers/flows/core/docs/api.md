@@ -520,6 +520,11 @@ host supplies the implementation for, and the collaborators it names stay
 declarations. The `smart` seat is the explicit fallback when the frontmatter
 declares no `model`.
 
+`capabilities` is the flow's capability ceiling, with `Flow.make`'s meaning:
+omitting it leaves the ceiling to the caller, and an explicit `[]` denies every
+capability. The native flow and its action both carry a declared ceiling, so
+`signature.capabilities` and the lowered `Flow.Capabilities` annotation agree.
+
 The declared limits are part of the lowered flow. `modelInvocable` and
 `deadline` go to `@smthrs/flow`'s `Flow.make`, so the native flow carries
 `Flow.ModelInvocable` and enforces the deadline; `budget` and `sandbox` are
@@ -535,11 +540,14 @@ const flow = Markdown.lowerMarkdown({
 }, "Review the pull request.")
 ```
 
-An invalid limit throws a `RangeError` that names the flow and the field, the
+An invalid field throws a `RangeError` that names the flow and the field, the
 way `Flow.make` refuses invalid static configuration: a budget value outside
 its schema, a budget with no ceiling, a sandbox selection outside its schema,
-a sandbox selection beside a placement other than `sandbox`, or a deadline that
-is not a positive finite duration.
+a sandbox selection beside a placement other than `sandbox`, a deadline that
+is not a positive finite duration, a `placement` other than `sandbox`,
+`remote`, `client` or `local`, or an `effects` field outside its schema, such
+as a misspelled `mode`, `onConflict` or `tier`. Nothing is lowered unplaced or
+onto another tier because its name was misspelled.
 
 ### Markdown.MarkdownFrontmatter
 

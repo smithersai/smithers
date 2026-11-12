@@ -44,6 +44,13 @@
 
 ### Fixed
 
+- Fixed `Markdown.lowerMarkdown`, which dropped an explicit `capabilities: []`,
+  so a flow declared with no authority inherited the calling flow's whole
+  grant, and which lowered a `placement` outside `sandbox`, `remote`, `client`
+  and `local` as unplaced and copied a misspelled effect `mode`, `onConflict`
+  or `tier` onto the action. An omitted `capabilities` still inherits, `[]` now
+  denies on the native flow and its action, and an unknown placement or effect
+  enumeration is refused with a `RangeError` naming the flow and the field.
 - Fixed `Markdown.parseSkill`, which accepted documents the Agent Skills
   specification forbids: any non-empty `name`, a `description` of any length,
   and a sequence-valued `allowed-tools`. It now enforces the specification's

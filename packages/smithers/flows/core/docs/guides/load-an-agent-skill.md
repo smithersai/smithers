@@ -95,9 +95,13 @@ const flow = Markdown.lowerMarkdown({
 }, "Summarize the changelog for the release.")
 ```
 
-`effects` defaults each omitted field: `reads` and `writes` to empty, `mode` to
-`hermetic`, and `onConflict` to `serialize`. `placement` accepts `"sandbox"`,
-`"remote"`, `"client"`, and `"local"`; omitting it leaves the flow unplaced.
+`capabilities` is the flow's ceiling: omitting it inherits the caller's grant,
+and `[]` denies every capability, as it does in `Flow.make`. `effects` defaults
+each omitted field: `reads` and `writes` to empty, `mode` to `hermetic`, and
+`onConflict` to `serialize`; a `mode`, `onConflict` or `tier` outside its
+enumeration is refused with a `RangeError`. `placement` accepts `"sandbox"`,
+`"remote"`, `"client"`, and `"local"`; omitting it leaves the flow unplaced, and
+any other name is refused with a `RangeError` rather than lowered unplaced.
 
 ## Validate frontmatter you already have
 

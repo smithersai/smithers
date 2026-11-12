@@ -1,10 +1,12 @@
-import { Graph } from "@smthrs/flow"
+import { Flow as Durable, Graph } from "@smthrs/flow"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
 
 import { describe, expect, it } from "vitest"
 import * as Annotations from "../src/Annotations.ts"
 import * as Effects from "../src/Effects.ts"
+import * as Flow from "../src/Flow.ts"
 
 import * as Markdown from "../src/Markdown.ts"
 import * as Placement from "../src/Placement.ts"
@@ -53,6 +55,66 @@ describe("Markdown", () => {
     }))
   })
 
+  // A caller granting `fs` and `net` to the lowered flow: the planned graph
+  // shows whether the flow's own ceiling joins the caller's.
+  const grantedTo = (callee: ReturnType<typeof Markdown.lowerMarkdown>) =>
+    Graph.nodes(Graph.build(
+      Durable.make("granting", {
+        payload: Schema.Struct({ args: Schema.String }),
+        success: Schema.String,
+        capabilities: ["fs", "net"],
+        body: ({ args }) => callee.call({ args })
+      }).call({ args: "hello" })
+    )).map((node) => node.capabilityCeilings)
+
+  it("keeps an explicit empty capability list as the ceiling that denies every capability", () => {
+    const denied = Markdown.lowerMarkdown({ name: "denied", capabilities: [] }, "Prompt")
+
+    expect(denied.capabilities).toEqual([])
+    for (const bag of [denied.annotations, denied.flow.annotations, denied.action!.annotations]) {
+      expect(Option.getOrUndefined(Annotations.getOption(bag, Durable.Capabilities))).toEqual([])
+    }
+    // The action and the lowered flow carry the empty group beside the
+    // caller's grant; the granting flow's own node keeps only its grant.
+    expect(grantedTo(denied)).toEqual([
+      [["fs", "net"], [], []],
+      [["fs", "net"], []],
+      [["fs", "net"]]
+    ])
+  })
+
+  it("leaves the capability ceiling to the caller when the frontmatter declares none", () => {
+    const inherited = Markdown.lowerMarkdown({ name: "inherited" }, "Prompt")
+
+    expect(inherited.capabilities).toEqual([])
+    for (const bag of [inherited.annotations, inherited.flow.annotations, inherited.action!.annotations]) {
+      expect(bag.mapUnsafe.has(Durable.Capabilities.key)).toBe(false)
+    }
+    expect(grantedTo(inherited)).toEqual([[["fs", "net"]], [["fs", "net"]], [["fs", "net"]]])
+  })
+
+  it.each([undefined, []] as const)("retains the %j capability declaration through decorators", (capabilities) => {
+    const original = Markdown.lowerMarkdown({ name: "decorated", capabilities }, "Prompt")
+    const decorated = Flow.withFlows(Flow.within(original, Placement.sandbox()), ["helper"])
+
+    expect(grantedTo(decorated)).toEqual(grantedTo(original))
+    expect(decorated.flow.annotations.mapUnsafe.has(Durable.Capabilities.key)).toBe(capabilities !== undefined)
+    expect(decorated.action!.annotations.mapUnsafe.has(Durable.Capabilities.key)).toBe(capabilities !== undefined)
+  })
+
+  it.each(
+    (["hermetic", "expected"] as const).flatMap((mode) =>
+      (["serialize", "lane", "fail"] as const).flatMap((onConflict) =>
+        (["sealed", "compensable", "irreversible"] as const).map((tier) => ({ mode, onConflict, tier }))
+      )
+    )
+  )("preserves valid effect enums $mode/$onConflict/$tier", (effects) => {
+    const lowered = Markdown.lowerMarkdown({ name: "effects", effects }, "Prompt")
+
+    expect(lowered.effects).toMatchObject(effects)
+    expect(lowered.action!.tier).toBe(effects.tier)
+  })
+
   it("uses the empty read set when markdown effects omit reads", () => {
     const flow = Markdown.lowerMarkdown({ name: "empty-reads", effects: {} }, "Prompt")
 
@@ -70,6 +132,18 @@ describe("Markdown", () => {
     const flow = Markdown.lowerMarkdown({ name: `placed-${placement}`, placement }, "Prompt")
 
     expect(Option.getOrThrow(Annotations.getOption(flow.annotations, Annotations.Placement))).toEqual(expected)
+  })
+
+  it.each([
+    ["an unknown placement", { placement: "moon" }, /"refused" placement is invalid/],
+    ["an unknown effect mode", { effects: { mode: "loose" } }, /"refused" effects is invalid/],
+    ["an unknown conflict strategy", { effects: { onConflict: "race" } }, /"refused" effects is invalid/],
+    ["an unknown effect tier", { effects: { tier: "bogus" } }, /"refused" effects is invalid/],
+    ["a non-string write path", { effects: { writes: [7] } }, /"refused" effects is invalid/]
+  ])("refuses %s instead of lowering it", (_label, fields, message) => {
+    const lower = () => Markdown.lowerMarkdown({ name: "refused", ...fields } as never, "Prompt")
+    expect(lower).toThrow(RangeError)
+    expect(lower).toThrow(message)
   })
 
   it("accepts exactly the Agent Skills name grammar", () => {

@@ -625,6 +625,33 @@ body`)
     })
   })
 
+  it.each(
+    [
+      ["omitted", "", undefined],
+      ["empty", "capabilities: []", []],
+      ["non-empty", "capabilities: [Read]", ["Read"]]
+    ] as const
+  )("preserves an %s capability declaration through descriptor encoding and core lowering", (
+    _label,
+    declaration,
+    expected
+  ) => {
+    const descriptor = Option.getOrThrow(
+      fromMarkdown(`---\ndescription: Review\n${declaration}\n---\nbody`).descriptor
+    )
+    const restored = Schema.decodeUnknownSync(Descriptor.FlowDescriptor)(
+      Schema.encodeUnknownSync(Descriptor.FlowDescriptor)(descriptor)
+    )
+    const frontmatter = MarkdownFlow.toCoreFrontmatter(restored)
+    const lowered = CoreMarkdown.lowerMarkdown(frontmatter, "body")
+
+    expect(frontmatter.capabilities).toEqual(expected)
+    for (const annotations of [lowered.annotations, lowered.flow.annotations, lowered.action!.annotations]) {
+      expect(annotations.mapUnsafe.has(Durable.Capabilities.key)).toBe(expected !== undefined)
+      if (expected !== undefined) expect(Context.get(annotations, Durable.Capabilities)).toEqual(expected)
+    }
+  })
+
   it("keeps the declared limits when a descriptor converts to the core authoring value", () => {
     const descriptor = Option.getOrThrow(
       fromMarkdown([

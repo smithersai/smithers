@@ -243,6 +243,9 @@ export const renderPrompt = (body: FlowBodyPrompt, input: { readonly args: strin
  * `/core/Markdown`. This is the deliberate registry-to-core adapter
  * boundary; metadata is not independently reinterpreted downstream.
  *
+ * An omitted capability declaration stays omitted; a declared list, including
+ * `[]`, remains the native flow and action ceiling.
+ *
  * Every limit the author declared crosses it: `modelInvocable`, the budget's
  * ceilings, its `deadline` (the descriptor folds it into `budget`; core takes
  * it as the flow's own deadline), and the sandbox selection.
@@ -256,7 +259,7 @@ export const toCoreFrontmatter = (descriptor: FlowDescriptorType): CoreMarkdown.
     name: descriptor.name,
     description: descriptor.description,
     flows: descriptor.flows,
-    capabilities: descriptor.capabilities,
+    capabilities: Object.hasOwn(descriptor.frontmatter, "capabilities") ? descriptor.capabilities : undefined,
     effects: descriptor.effects,
     ...(Option.getOrUndefined(descriptor.model) === undefined
       ? {}

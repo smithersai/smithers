@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Markdown lowering now preserves an omitted capability declaration separately
+  from an explicit `[]`, so inheritance and denial survive descriptor conversion.
+
 - A confined source's module closure stays inside its confinement root
   ([#4731](https://github.com/smithersai/smithers/issues/4731)). A pack
   `flow.ts` importing `../../../x`, or reaching a host file through a symbolic

@@ -688,6 +688,10 @@ registry-to-core adapter boundary: metadata crosses it once and is not
 independently reinterpreted downstream. `Executable` uses it to lower a loaded
 markdown body into its annotations.
 
+A capability declaration stays omitted when the source frontmatter omits it,
+so the lowered flow inherits its caller's grant. An explicit list, including
+`[]` to deny every capability, becomes the native flow and action ceiling.
+
 Every limit the author declared crosses it: `modelInvocable`, the budget's
 ceilings, the sandbox selection, and the run deadline, which the descriptor
 folds into `budget` and core takes as the flow's own `deadline`. The lowered

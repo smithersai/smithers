@@ -101,6 +101,13 @@ export interface Flow<
   readonly input: I
   readonly output: O
   readonly error: Err
+  /**
+   * The capability ceiling as a catalog projection: the declared list, or `[]`
+   * when the declaration left the ceiling to its caller. Whether `[]` denies
+   * or inherits is what {@link Flow.annotations} records: a declared ceiling,
+   * `[]` included, is stored under `@smthrs/flow`'s `Flow.Capabilities`, and
+   * an undeclared one is absent from the bag.
+   */
   readonly capabilities: ReadonlyArray<string>
   readonly effects: Effects.Declaration | undefined
   /**
@@ -226,7 +233,12 @@ interface Options<
   readonly input: I
   readonly output: O
   readonly error: Err
-  readonly capabilities: ReadonlyArray<string>
+  /**
+   * The declared capability ceiling, or `undefined` when the declaration left
+   * the ceiling to its caller. `[]` is a declaration: it denies every
+   * capability, exactly as `@smthrs/flow`'s `Flow.make` option does.
+   */
+  readonly capabilities: ReadonlyArray<string> | undefined
   readonly effects: Effects.Declaration | undefined
   readonly model: Seat | readonly [Seat, ...Array<Seat>] | undefined
   readonly flows: ReadonlyArray<Reference> | undefined
@@ -298,6 +310,9 @@ export const build = <
   const annotatedCapabilities = options.annotations.mapUnsafe.has(Durable.Capabilities.key)
     ? Annotations.getOption(options.annotations, Durable.Capabilities)
     : Option.none<ReadonlyArray<string>>()
+  // An undeclared ceiling stays undeclared, so `@smthrs/flow` stores no
+  // `Capabilities` annotation and the caller's grant applies. A declared `[]`
+  // is forwarded as the denying ceiling it is.
   const capabilities = Option.getOrElse(annotatedCapabilities, () => options.capabilities)
   const effects = Option.getOrElse(
     Annotations.getOption(options.annotations, Annotations.Effects),
@@ -306,7 +321,7 @@ export const build = <
   const declared = {
     payload,
     ...(options.description === undefined ? {} : { description: options.description }),
-    ...(capabilities.length === 0 && Option.isNone(annotatedCapabilities) ? {} : { capabilities }),
+    ...(capabilities === undefined ? {} : { capabilities }),
     ...(effects === undefined ? {} : { effects }),
     success: options.output,
     error: options.error,
@@ -364,7 +379,7 @@ export const build = <
     input: options.input,
     output: options.output,
     error: options.error,
-    capabilities,
+    capabilities: capabilities ?? [],
     effects,
     model: options.model,
     flows: options.flows,
