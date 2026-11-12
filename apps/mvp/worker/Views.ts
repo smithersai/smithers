@@ -558,6 +558,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           return yield* Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient
                 return yield* sql.withTransaction(Effect.gen(function* () {
+                  // Shares.write holds this same row lock. Take it before the view's, as an add does, so a move reads
+                  // policy only after a share change commits and keeps it through the move.
+                  yield* sql`
+                    SELECT b.id FROM branches b JOIN conversations c ON c.branch_id = b.id
+                      JOIN views v ON v.conversation_id = c.id
+                    WHERE v.id = ${viewId} FOR UPDATE OF b`
                   const [view] = yield* sql<{
                     readonly template: string
                     readonly conversationId: string

@@ -1,14 +1,14 @@
 // The agent's forms and generated views in ChatApi (worker/Views.ts, docs/features/views.md), through the real handler
 // on this file's schema of the compose Postgres (`pnpm db:up`) and the real presentation realm (worker/ViewRealm.ts):
 // adding a form and a generated view, a move in a generated view, and a question asked from either.
-import { Effect, Redacted, Stream } from "effect"
+import { Deferred, Effect, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "../src/features/views/renderer.ts"
 import * as Database from "../db/Database.ts"
 import type { Actor } from "./Actor.ts"
-import { tracked } from "./test/branch.ts"
-import { harness, recorded, testFile } from "./test/harness.ts"
+import { shared, tracked } from "./test/branch.ts"
+import { eventually, harness, recorded, testFile } from "./test/harness.ts"
 import * as Views from "./Views.ts"
 
 const runtime = testFile("agent-views")
@@ -329,6 +329,53 @@ describe("a move ChatApi can't make", () => {
       sql`UPDATE views SET conversation_id = ${theirs.conversationId} WHERE id = ${view.id}`))
     expect((await moveIn(h, view.id)).status).toBe(403)
     expect(await viewRow(view.id)).toMatchObject({ revision: 0 })
+  })
+
+  test("a move waiting on a share revocation rechecks edit access before it changes the board", async () => {
+    const h = await open()
+    const view = board()
+    await post(h, "/api/views", view)
+    const branch = await tracked(runtime, "github/octocat/spoon-knife", `revoke-${crypto.randomUUID().slice(0, 8)}`, "open", "person-owner")
+    await shared(runtime, branch.branchId, member.subject.id, "edit")
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE views SET conversation_id = ${branch.conversationId} WHERE id = ${view.id}`))
+    const locked = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const revoke = runtime.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql.withTransaction(Effect.gen(function* () {
+        yield* sql`SELECT id FROM branches WHERE id = ${branch.branchId} FOR UPDATE`
+        yield* sql`LOCK TABLE view_moves IN SHARE MODE`
+        yield* sql`DELETE FROM branch_shares WHERE branch_id = ${branch.branchId} AND grantee = ${member.subject.id}`
+        yield* Deferred.succeed(locked, undefined)
+        yield* Deferred.await(release)
+      }))
+    }))
+    await runtime.runPromise(Deferred.await(locked))
+    let completed = false
+    const response = moveIn(h, view.id).then((value) => {
+      completed = true
+      return value
+    })
+    try {
+      // Without the branch lock the move passes its check and waits on view_moves until revocation commits.
+      await eventually(async () =>
+        completed || await runtime.runPromise(Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient
+          const [row] = yield* sql<{ waiting: boolean }>`SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock'
+              AND ((query LIKE '%branches%' AND query LIKE '%FOR UPDATE%') OR query LIKE '%INSERT INTO view_moves%')
+          ) AS waiting`
+          return row!.waiting
+        }))
+      )
+    } finally {
+      await runtime.runPromise(Deferred.succeed(release, undefined))
+      await revoke
+    }
+    expect([(await response).status]).toEqual([403])
+    expect(await viewRow(view.id)).toMatchObject({ revision: 0, state: TIC_TAC_TOE_STATE })
+    expect(h.line("chat.view.state").at(-1)?.annotations.status).toBe(403)
   })
 
   test("Postgres unreachable answers 503, logged by its SQL reason", async () => {
