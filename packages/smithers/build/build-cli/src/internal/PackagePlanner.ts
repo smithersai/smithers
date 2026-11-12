@@ -82,7 +82,8 @@ import type {
   PackagePlan,
   RunOptions,
   TargetApprovals,
-  TestOperandPlan
+  TestOperandPlan,
+  TreeInputReads
 } from "./PackageOptions.ts"
 import * as Path from "./Path.ts"
 import type * as RuleContract from "./RuleContract.ts"
@@ -309,8 +310,8 @@ interface PlanContext {
   readonly remoteCache: Workspace.RemoteCacheAccess | undefined
   /** File digests already read, by this plan, an earlier plan of the invocation, or the last invocation. */
   readonly digests: SafeFs.DigestIndex
-  /** Package and declared tree input → its digested rows (plan-time, memoized). */
-  readonly treeInputs: Map<string, Promise<Pick<Workspace.ExpandedInput, "files" | "digest">>>
+  /** Package and declared tree input → its digested rows, for this plan or every plan of the invocation. */
+  readonly treeInputs: TreeInputReads
   /** ImportClosure label → canonical result digest (plan-time, memoized). */
   /** Expanded crate sets, memoized per `S.Cargo.AppSet` label. */
   readonly crateSets: Map<string, ReadonlyArray<CrateRow>>
@@ -3967,7 +3968,7 @@ const planWithServices = async (
     storeWarned: false,
     remoteCache: options.remoteCache,
     digests,
-    treeInputs: new Map(),
+    treeInputs: options.treeInputs ?? new Map(),
     crateSets: new Map(),
     closureDigests: new Map(),
     closureResults: new Map(),

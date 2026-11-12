@@ -356,7 +356,8 @@ cannot read point at the declaration that can.
 
 ## Sharing declarations
 
-Declare once and reuse. Each target digests the declaration independently.
+Declare once and reuse. One plan expands and digests a declaration once for every
+target that names it, and the plans `ci` makes for its verbs share that expansion.
 
 ```ts
 // packages/greeter/PACKAGE.ts

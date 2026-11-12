@@ -177,7 +177,22 @@ export interface RunOptions {
    * saved index and saves it when planning ends.
    */
   readonly digests?: SafeFs.DigestIndex | undefined
+  /**
+   * Declared tree inputs already expanded, shared by every plan of one
+   * invocation, so the verbs `ci` plans walk each glob once. Without one, a
+   * plan expands each declaration once for its own targets.
+   */
+  readonly treeInputs?: TreeInputReads | undefined
 }
+
+/**
+ * Package and declared tree input (everything but a git diff) → its digested
+ * rows, as one invocation's plans read them.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type TreeInputReads = Map<string, Promise<Pick<Workspace.ExpandedInput, "files" | "digest">>>
 
 /**
  * One revision of a target that declares `approval: "required"`.

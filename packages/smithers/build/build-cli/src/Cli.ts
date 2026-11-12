@@ -38,6 +38,7 @@ import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
 import { CacheCredentials } from "./internal/CacheCredentials.ts"
 import * as DigestIndexFile from "./internal/DigestIndexFile.ts"
 import * as GoCache from "./internal/GoCache.ts"
+import type { TreeInputReads } from "./internal/PackageOptions.ts"
 import * as RemoteCi from "./internal/RemoteCi.ts"
 import * as Shards from "./internal/Shards.ts"
 import { requireRecorded } from "./internal/UnrecordedGates.ts"
@@ -950,8 +951,10 @@ const runCi = async (
     const packagePlans: Array<{ readonly kind: (typeof ciKinds)[number]; readonly plan: PackageExec.PackagePlan }> = []
     const refusals: Array<Planner.UnsupportedVerbError> = []
     const accepted = new Set<string>()
-    // The four verb plans read the same tree: each file is read once for all of them.
+    // The four verb plans read the same tree: each glob is walked and each
+    // file read once for all of them. Nothing runs between them.
     const digests = await DigestIndexFile.load(index.root, cacheDirectory, reporter.note)
+    const treeInputs: TreeInputReads = new Map()
     try {
       for (const kind of ciKinds) {
         let remaining = [...patterns]
@@ -976,7 +979,8 @@ const runCi = async (
                 approvals: config.approvals,
                 // CI never spawns an agent: the docs-verb page writers stay out.
                 unattended: true,
-                digests
+                digests,
+                treeInputs
               })
             })
             for (const pattern of remaining) accepted.add(pattern)
