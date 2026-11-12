@@ -120,6 +120,11 @@ exactly those, whatever their sequences. A steer handed over and never
 confirmed, because the consumer restarted in between, stays pending rather
 than riding along with a later one that a cutoff would deliver.
 
+A host that delivers only some kinds of steer at a boundary names those, too.
+A TODO run's feedback boundary names its pending Messages and legacy
+`outside_change` notes, so a Seat, Thinking or Tools setting on the same
+lineage stays pending for the agent harness that applies it.
+
 ## The unit of drain is a triple
 
 A drain is identified by `(runId, targetLineageId, boundary)`. Two lineages

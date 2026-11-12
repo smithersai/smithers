@@ -91,6 +91,21 @@ describe("NotificationState", () => {
     expect(anyLineage.promoted.map((item) => item.notification.id)).toEqual(["one", "elsewhere"])
   })
 
+  it("promotes a named legacy outside-change note, never a queued note of another kind", () => {
+    let state = NotificationState.empty(4)
+    state = NotificationState.admit(state, notification("note", "system-event", { kind: "outside_change" } as never), 1)
+      .state
+    state = NotificationState.admit(state, notification("other", "system-event", { kind: "progress" } as never), 2)
+      .state
+    state =
+      NotificationState.admit(state, notification("forged", "human-followup", { kind: "outside_change" } as never), 3)
+        .state
+
+    const named = NotificationState.promoteIds(state, ["note", "other", "forged"], "run/root")
+    expect(named.promoted.map((item) => item.notification.id)).toEqual(["note"])
+    expect(named.state.items.map((item) => item.notification.id)).toEqual(["other", "forged"])
+  })
+
   it("coalesces system events with a later payload and earlier sequence", () => {
     let state = NotificationState.empty(5)
     let decision: NotificationState.AdmissionDecision | undefined

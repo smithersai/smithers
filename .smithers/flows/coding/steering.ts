@@ -214,14 +214,17 @@ export const receiveFeedback = (input: typeof ReceiveFeedback.payloadSchema.Type
     const instance = yield* FlowRuntime.FlowInstance
     const queue = yield* NotificationQueue.NotificationQueue
     const boundary = feedbackBoundary(instance.executionId, input)
-    const receipt = yield* queue.drain({
-      runId: owner.value.rootId,
-      targetLineageId: owner.value.flowId === todoFlowId ? owner.value.rootId : lineage(owner.value.rootId),
-      boundary,
-      wouldIdle: true
-    }).pipe(Effect.mapError(() =>
-      new CodingError({ code: "unavailable", message: `Request feedback at ${boundary} could not be read` })
-    ))
+    const receipt = yield* (owner.value.flowId === todoFlowId
+      ? drainTodoFeedback(queue, owner.value.rootId, boundary)
+      : queue.drain({
+        runId: owner.value.rootId,
+        targetLineageId: lineage(owner.value.rootId),
+        boundary,
+        wouldIdle: true
+      }))
+      .pipe(Effect.mapError(() =>
+        new CodingError({ code: "unavailable", message: `Request feedback at ${boundary} could not be read` })
+      ))
     return { boundary, messages: receipt.notifications }
   })
 export const feedbackLayer = ReceiveFeedback.toLayer(receiveFeedback)
@@ -233,6 +236,28 @@ const outsideChange = (message: Notification.Notification) => {
   return message._tag === "system-event" && typeof payload === "object" && payload !== null &&
     !Array.isArray(payload) && payload.kind === "outside_change"
 }
+
+/** A TODO run's root lineage also carries its model settings (Seat, Thinking,
+ * Tools), which the run's harness applies at its own boundaries. A feedback
+ * boundary promotes only the Messages and watcher notes pending there, by ID,
+ * so a setting stays pending for the harness. A replayed boundary returns its
+ * committed delivery.
+ */
+export const drainTodoFeedback = (queue: NotificationQueue.Service, rootId: string, boundary: string) =>
+  queue.pending(rootId).pipe(
+    Effect.flatMap((pending) =>
+      queue.drain({
+        runId: rootId,
+        targetLineageId: rootId,
+        boundary,
+        wouldIdle: true,
+        ids: pending.filter((notification) =>
+          notification.targetLineageId === rootId &&
+          (SteerPayload.decode(notification)?.kind === "Message" || outsideChange(notification))
+        ).map((notification) => notification.id)
+      })
+    )
+  )
 
 /** Each received message as the step reads it, with its ID and attribution.
  * A payload that is not a Message stays quoted JSON data, never dropped: the

@@ -223,6 +223,16 @@ export const pending = (
     )
   )
 
+// A steer, or a legacy `outside_change` system event: both reach the next
+// boundary whatever the run would otherwise do.
+const deliversAtBoundary = (notification: Notification): boolean =>
+  admissionClass(notification) === "steer" || (
+    notification._tag === "system-event" &&
+    typeof notification.payload === "object" && notification.payload !== null &&
+    !Array.isArray(notification.payload) &&
+    (notification.payload as Readonly<Record<string, unknown>>).kind === "outside_change"
+  )
+
 /**
  * Promotes every steer notification admitted at or before the turn-close
  * cutoff. Notifications admitted after the cutoff remain pending.
@@ -242,13 +252,7 @@ export const promoteSteers = (state: State, cutoffSeq: number, targetLineageId?:
   const remaining: Array<Pending> = []
   for (const item of state.items) {
     if (
-      (admissionClass(item.notification) === "steer" || (
-        item.notification._tag === "system-event" &&
-        typeof item.notification.payload === "object" && item.notification.payload !== null &&
-        !Array.isArray(item.notification.payload) &&
-        (item.notification.payload as Readonly<Record<string, unknown>>).kind === "outside_change"
-      )) &&
-      item.seq <= cutoffSeq &&
+      deliversAtBoundary(item.notification) && item.seq <= cutoffSeq &&
       (targetLineageId === undefined || item.notification.targetLineageId === targetLineageId)
     ) {
       promoted.push(item)
@@ -261,7 +265,9 @@ export const promoteSteers = (state: State, cutoffSeq: number, targetLineageId?:
 
 /**
  * Promotes the pending steers named in `ids`, in admission order, whatever
- * their sequences. Ids not pending for the lineage are ignored.
+ * their sequences. Ids not pending for the lineage are ignored. A legacy
+ * `outside_change` system event is promoted when named, as `promoteSteers`
+ * promotes it at its cutoff.
  *
  * @param state the current queue state
  * @param ids the steers a consumer confirmed it delivered
@@ -275,7 +281,7 @@ export const promoteIds = (state: State, ids: ReadonlyArray<string>, targetLinea
   const remaining: Array<Pending> = []
   for (const item of state.items) {
     if (
-      admissionClass(item.notification) === "steer" && named.has(item.notification.id) &&
+      deliversAtBoundary(item.notification) && named.has(item.notification.id) &&
       (targetLineageId === undefined || item.notification.targetLineageId === targetLineageId)
     ) {
       promoted.push(item)

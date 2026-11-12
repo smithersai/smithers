@@ -847,6 +847,86 @@ test("TODO feedback actions consume messages admitted through the control door",
   }
 })
 
+test("TODO feedback boundaries take Messages and leave model settings pending for the harness", {
+  timeout: 60_000
+}, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "todo-feedback-settings-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const journal = await journalLayer(join(root, "control.db"))
+  let routed: NotificationQueue.Service | undefined
+  const parent = ManagedRuntime.make(
+    LocalControl.layer(
+      Registry.layerNoop(),
+      { runtime: controlLayer, journal: journal.pipe(Layer.orDie) },
+      Layer.succeed(ControlExecutor.ControlExecutor, ControlExecutor.makeNoop()),
+      (queue, control, journal) => (routed = routeMessages(queue, control, journal))
+    ).pipe(Layer.provideMerge(controlLayer))
+  )
+  t.after(() => parent.dispose())
+  const owner = await parent.runPromise(Effect.gen(function*() {
+    return yield* launch(yield* ControlRuntime.ControlRuntime, "todo")
+  }))
+  const queue = routed!
+  const Probe = Flow.make("test/TodoFeedbackSettings", {
+    payload: ReceiveFeedback.payloadSchema,
+    success: FeedbackReceipt,
+    error: ReceiveFeedback.errorSchema,
+    body: (input) => ReceiveFeedback.call(input)
+  })
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(Interpreter.layer(Probe), feedbackLayer).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue, queue)),
+      Layer.provide(Layer.succeed(ModuleOwner, { rootId: owner.runId, flowId: "todo" })),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+  )
+  t.after(() => runtime.dispose())
+  const harness = await parent.runPromise(
+    Notifications.make({ runId: owner.runId, lineageId: owner.runId }).pipe(
+      Effect.provideService(NotificationQueue.NotificationQueue, queue)
+    )
+  )
+  const settings = [
+    ["seat", { kind: "Seat", seat: "configured:model" }],
+    ["thinking", { kind: "Thinking", thinking: "high" }],
+    ["tools", { kind: "Tools", toolNames: ["read"] }]
+  ] as const
+  let revision = 0
+  // route is the TODO request's own boundary; plan and implement are the
+  // inner planning and implementation boundaries.
+  for (const boundary of ["route", "plan", "implement"] as const) {
+    for (const [kind, payload] of settings) {
+      for (const mixed of [false, true]) {
+        const id = `${boundary}-${kind}-${mixed ? "mixed" : "alone"}`
+        await parent.runPromise(queue.admit(owner.runId, message(`${id}-setting`, owner.runId, payload)))
+        if (mixed) await parent.runPromise(queue.admit(owner.runId, message(`${id}-message`, owner.runId)))
+        const receipt = await runtime.runPromise(
+          Probe.execute({ boundary, revision: revision++ }).pipe(Effect.scoped)
+        )
+        assert.deepEqual(receipt.messages.map((m) => m.id), mixed ? [`${id}-message`] : [])
+        const feedback = await Effect.runPromise(appendFeedback("", receipt))
+        assert.equal(feedback.endsWith(`\n${id}-message`), mixed)
+        assert.equal(
+          feedback.includes(kind === "seat" ? "configured:model" : kind === "thinking" ? "high" : "read"),
+          false
+        )
+        assert.deepEqual((await parent.runPromise(queue.pending(owner.runId))).map((n) => n.id), [`${id}-setting`])
+        // The harness still applies the setting at its own boundary.
+        const drained = await parent.runPromise(harness.drain({ boundary: `model-${id}`, wouldIdle: true }))
+        if (kind === "tools") assert.equal(drained.inserts.length, 1)
+        else {
+          assert.deepEqual(drained.seatChanges.map((change) => change._tag), [
+            kind === "seat" ? "SeatChange" : "ThinkingChange"
+          ])
+        }
+        assert.deepEqual(await parent.runPromise(queue.pending(owner.runId)), [])
+      }
+    }
+  }
+})
+
 const native = (letter: string, parent?: string) => ({
   kind: "resolved" as const,
   changeId: letter.repeat(32),

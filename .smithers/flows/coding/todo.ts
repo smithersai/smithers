@@ -10,7 +10,7 @@ import * as NotificationQueue from "../../../packages/smithers/notifications/src
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
 import Request from "./request-flow.ts"
 import { CodingError, RequestInput, RequestResult } from "./schema.ts"
-import { renderFeedback } from "./steering.ts"
+import { drainTodoFeedback, renderFeedback } from "./steering.ts"
 import { TodoBoundary, todoBringBoundary } from "./todo-pause.ts"
 import { readTodoDelivery } from "./vibe-evidence.ts"
 import Vibe, { VibeError } from "./vibe-flow.ts"
@@ -65,12 +65,7 @@ const reviewInputLayer = TodoReviewInput.toLayer(() =>
     const queue = yield* NotificationQueue.NotificationQueue
     for (let rung = 0;; rung++) {
       const boundary = `todo-review:${instance.executionId}:${rung}`
-      const receipt = yield* queue.drain({
-        runId: owner.value.rootId,
-        targetLineageId: owner.value.rootId,
-        boundary,
-        wouldIdle: true
-      })
+      const receipt = yield* drainTodoFeedback(queue, owner.value.rootId, boundary)
         .pipe(
           Effect.mapError(() => new CodingError({ code: "unavailable", message: "Review input could not be read" }))
         )
