@@ -232,18 +232,32 @@ describe("RuntimeBridge", () => {
 
   it.effect("refuses stale owners, artifacts, and source revisions before execution", () =>
     Effect.gen(function*() {
+      let plans = 0
+      let runs = 0
+      const control = service({
+        plan: () => {
+          plans++
+          return Effect.succeed(plan)
+        },
+        run: () => {
+          runs++
+          return Effect.succeed(accepted)
+        }
+      })
       const stale = yield* Effect.flip(
-        RuntimeBridge.execute(config, service(), principal, { ...launch, ownerGeneration: 6 })
+        RuntimeBridge.execute(config, control, principal, { ...launch, ownerGeneration: 6 })
       )
       expect(stale).toMatchObject({ code: "stale_owner", retryable: true })
       const artifact = yield* Effect.flip(
-        RuntimeBridge.execute(config, service(), principal, { ...launch, runtimeArtifactDigest: "c".repeat(64) })
+        RuntimeBridge.execute(config, control, principal, { ...launch, runtimeArtifactDigest: "c".repeat(64) })
       )
       expect(artifact).toMatchObject({ code: "artifact_mismatch", retryable: false })
       const hostSource = yield* Effect.flip(
-        RuntimeBridge.execute({ ...config, sourceRevision: "c".repeat(40) }, service(), principal, launch)
+        RuntimeBridge.execute({ ...config, sourceRevision: "c".repeat(40) }, control, principal, launch)
       )
       expect(hostSource).toMatchObject({ code: "source_mismatch", retryable: false })
+      // Refused before execution: Control neither planned nor ran anything.
+      expect([plans, runs]).toEqual([0, 0])
       const source = yield* Effect.flip(RuntimeBridge.execute(
         config,
         service({
@@ -270,6 +284,51 @@ describe("RuntimeBridge", () => {
         expect(missing).toMatchObject({ code: "source_mismatch", retryable: false })
         expect(runs).toBe(0)
       }
+    }))
+
+  it.effect("refuses a stale owner on every mutation before any Control call", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      const record = (operation: string) => () =>
+        Effect.sync(() => {
+          calls.push(operation)
+          return accepted
+        })
+      const control = service({
+        plan: () =>
+          Effect.sync(() => {
+            calls.push("plan")
+            return plan
+          }),
+        run: record("run"),
+        approve: record("approve"),
+        deny: record("deny"),
+        signal: record("signal"),
+        steer: record("steer"),
+        cancel: record("cancel"),
+        resume: record("resume")
+      })
+      const stale = { protocol: RuntimeBridge.protocol, applicationRequestId: "stale-1", ownerGeneration: 6 } as const
+      const commands: ReadonlyArray<RuntimeBridge.Command> = [
+        { ...stale, operation: "approve", approval: plan.approval },
+        { ...stale, operation: "deny", approval: plan.approval },
+        { ...stale, operation: "signal", runId: "run-1", signal: { name: "answer", payload: true } },
+        {
+          ...stale,
+          operation: "steer",
+          runId: "run-1",
+          messageId: "message-1",
+          createdAt: 2,
+          steer: { kind: "Message", body: "continue" }
+        },
+        { ...stale, operation: "cancel", runId: "run-1", reason: "operator" },
+        { ...stale, operation: "resume", runId: "run-1" }
+      ]
+      for (const command of commands) {
+        const refused = yield* Effect.flip(RuntimeBridge.execute(config, control, principal, command))
+        expect(refused).toMatchObject({ code: "stale_owner", retryable: true })
+      }
+      expect(calls).toEqual([])
     }))
 
   it.effect("runs a pinned launch only from its pinned source and only when its plan is the pinned code", () =>
@@ -667,6 +726,33 @@ describe("RuntimeBridge", () => {
       const result = yield* RuntimeBridge.observe(service(), { protocol: RuntimeBridge.protocol, runId: "run-1" })
       expect(result.terminal).toBe(true)
       expect(result.run).not.toHaveProperty("finalOutput")
+    }))
+
+  it.effect("caps an observation page at 1,000 events and defaults it to 250", () =>
+    Effect.gen(function*() {
+      const journal = (length: number) =>
+        service({
+          list: () => Effect.succeed({ _tag: "runs", items: [{ ...summary, status: "running" }] }),
+          watch: () =>
+            Stream.fromIterable(
+              Array.from({ length }, (_, index) => ({
+                sequence: index + 1,
+                kind: "event",
+                occurredAt: index + 1,
+                payload: null
+              }))
+            )
+        })
+      const capped = yield* RuntimeBridge.observe(journal(1_002), {
+        protocol: RuntimeBridge.protocol,
+        runId: "run-1",
+        limit: 2_000
+      })
+      expect(capped.events).toHaveLength(1_000)
+      expect(capped).toMatchObject({ nextCursor: "1000", hasMore: true })
+      const defaulted = yield* RuntimeBridge.observe(journal(251), { protocol: RuntimeBridge.protocol, runId: "run-1" })
+      expect(defaulted.events).toHaveLength(250)
+      expect(defaulted).toMatchObject({ nextCursor: "250", hasMore: true })
     }))
 
   it.effect("uses defaults, caps pages, and advances every supported cursor shape", () =>
