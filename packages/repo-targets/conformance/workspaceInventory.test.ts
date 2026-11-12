@@ -32,7 +32,18 @@ it("includes nested and config-less packages while excluding installed dependenc
 
 it("keeps non-library members in the full inventory used by barrel and containment checks", () => {
   const inventory = readWorkspaceInventory()
-  for (const name of ["rpc", "smithers/ui", "smithers/ui/ui-styleguide", "smithers/ui/repo-view", "smithers/ui/terminal-frame", "smithers/build/infra"]) {
+  for (
+    const name of [
+      "rpc",
+      "smithers/ui",
+      "smithers/ui/ui-styleguide",
+      "smithers/ui/repo-view",
+      "smithers/ui/terminal-frame",
+      "smithers/ui/ui-css",
+      "smithers/build/infra",
+      "lemmascript"
+    ]
+  ) {
     assert.ok(inventory.manifests.some((entry) => entry.name === name))
     assert.ok(!inventory.packages.includes(name))
   }
@@ -61,3 +72,33 @@ for (const name of ["repo-view", "terminal-frame"]) {
     assert.match(declaration, /targets: \{[\s\S]*?\bunitTests\b/)
   })
 }
+
+it("the private ui-css kit keeps its Bun suite behind the scalar 100% coverage gate", () => {
+  const { packagesDir } = readWorkspaceInventory()
+  const directory = join(packagesDir, "smithers/ui/ui-css")
+  const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"))
+  assert.equal(manifest.private, true)
+  assert.equal(manifest.publishConfig, undefined)
+  assert.equal(manifest.scripts.test, "bun test tests")
+  const config = readFileSync(join(directory, "bunfig.toml"), "utf8")
+  assert.match(config, /^coverage = true$/m)
+  assert.match(config, /^coverageThreshold = 1$/m)
+  const declaration = readFileSync(join(directory, "PACKAGE.ts"), "utf8")
+  assert.match(declaration, /const unitTests = Smithers\.NodeTest\(\{\s*runtime: Smithers\.Runtime\.Bun\(/)
+  assert.match(declaration, /targets: \{[\s\S]*?\bunitTests\b/)
+})
+
+it("the vendored LemmaScript keeps its upstream harness as the package test", () => {
+  const { packagesDir } = readWorkspaceInventory()
+  const directory = join(packagesDir, "lemmascript")
+  const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"))
+  assert.equal(manifest.private, true)
+  assert.equal(manifest.exports, undefined)
+  assert.equal(manifest.publishConfig, undefined)
+  assert.equal(manifest.scripts.test, "bash tools/test-fixtures.sh")
+  assert.match(readFileSync(join(directory, "tools/test-fixtures.sh"), "utf8"), /--test tools\/tests\/\*\.test\.ts/)
+  const declaration = readFileSync(join(directory, "PACKAGE.ts"), "utf8")
+  assert.match(declaration, /const test = Smithers\.Shell\.Test\(/)
+  assert.ok(declaration.includes("pnpm --filter @smthrs/lemmascript test"))
+  assert.match(declaration, /targets: \{[\s\S]*?\btest\b/)
+})

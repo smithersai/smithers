@@ -35,8 +35,14 @@ export const readWorkspaceInventory = (root = resolve(import.meta.dirname, "../.
   // under `packages/` is still derived, so a new config-less package is still
   // visible to every assertion below.
   // 04f89c41 split the heavy code views and terminal frame from the Bun UI kit.
+  // 400de336 moved the framework-free styles into `@smthrs/ui-css`, a fifth
+  // private kit on the same Bun suite and 100% `bunfig.toml` gate.
   const zeroXUiKits = new Set([
-    "smithers/ui", "smithers/ui/ui-styleguide", "smithers/ui/repo-view", "smithers/ui/terminal-frame"
+    "smithers/ui",
+    "smithers/ui/ui-styleguide",
+    "smithers/ui/repo-view",
+    "smithers/ui/terminal-frame",
+    "smithers/ui/ui-css"
   ])
   // A carve-out for nested members that are not libraries:
   // `packages/smithers/build/infra` is the hosted cache Cloudflare Worker that ships
@@ -57,10 +63,19 @@ export const readWorkspaceInventory = (root = resolve(import.meta.dirname, "../.
   // published. It is named rather than derived for the same reason the UI kits
   // are: a smaller universe, not a smaller assertion.
   const bunTestedContracts = new Set(["rpc"])
+  // A fifth carve-out, for vendored tools. `@smthrs/lemmascript` (6b347aff) is
+  // a copy of the upstream LemmaScript compiler kept so a proof can patch it.
+  // It is private, ships no exports and is never published, and it keeps the
+  // upstream harness: `tools/test-fixtures.sh` runs its node:test units and
+  // Dafny fixtures, and its PACKAGE.ts `test` target runs that script. Moving
+  // upstream's suite to Vitest would fork it for no gate. The workspace
+  // inventory test pins that harness instead.
+  const vendoredTools = new Set(["lemmascript"])
   const packages = manifests.map(({ name }) => name)
     .filter((name) => !zeroXUiKits.has(name))
     .filter((name) => !nestedNonLibraries.has(name))
     .filter((name) => !bunTestedContracts.has(name))
+    .filter((name) => !vendoredTools.has(name))
   const configs = packages.map((name) => {
     const path = join(packagesDir, name, "vitest.config.ts")
     return {
