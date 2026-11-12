@@ -21,6 +21,7 @@ import {
   receiptMatches,
   type Revision
 } from "../coding/schema.ts"
+import { verifyImplementation } from "../coding/verify-schema.ts"
 
 const revision = (commit: string): Revision => ({
   changeId: "k".repeat(32),
@@ -79,7 +80,7 @@ index 3333333..4444444 100644
 +{"token":"never sent"}
 `
 
-const run = (text = diff, lenses?: unknown, flow?: string) => {
+const run = (text = diff, lenses?: unknown, flow?: string, subject = implementation) => {
   const diffs: Array<[string, string]> = []
   const jj = Layer.succeed(
     Jj.Jj,
@@ -91,7 +92,8 @@ const run = (text = diff, lenses?: unknown, flow?: string) => {
         })
     })
   )
-  return Effect.runPromise(Effect.result(capture(invocation(lenses, flow))).pipe(Effect.provide(jj)))
+  const invoked = { ...invocation(lenses, flow), input: { implementation: subject, check } as never }
+  return Effect.runPromise(Effect.result(capture(invoked)).pipe(Effect.provide(jj)))
     .then((result) => ({ result, diffs }))
 }
 
@@ -106,6 +108,22 @@ test("the review check reads the immutable parent..head diff once, drops private
   assert.ok(captured.diff.includes("catch {}"))
   assert.ok(!captured.diff.includes("never sent"), "a private repository-jobs path never reaches the reviewer")
   assert.equal(captured.implementation.change, "change-1")
+})
+
+test("a rebased stack candidate is reviewed against the tip it was rebased onto, not itself", async () => {
+  const head = { ...revision("b"), parentCommitIds: ["c".repeat(40)] }
+  const { result, diffs } = await run(diff, undefined, undefined, verifyImplementation(head, ["src/a.ts"]))
+  assert.deepEqual(diffs, [["c".repeat(40), "b".repeat(40)]], "the candidate's rebased diff is read")
+  assert.equal(result._tag === "Success" && result.success.refused, null)
+  assert.ok(result._tag === "Success" && result.success.diff.includes("catch {}"))
+  const merge = { ...head, parentCommitIds: ["c".repeat(40), "d".repeat(40)] }
+  const refused = await run(diff, undefined, undefined, verifyImplementation(merge, ["src/a.ts"]))
+  assert.deepEqual(refused.diffs, [], "a candidate without one parent reads no diff")
+  assert.equal(refused.result._tag, "Failure")
+  assert.match(
+    refused.result._tag === "Failure" ? refused.result.failure.message : "",
+    /one commit the change applies to/
+  )
 })
 
 test("the receipt binds the Change and commit, and aggregates every lens's findings", async () => {

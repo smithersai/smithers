@@ -162,6 +162,17 @@ export const Implementation = Schema.Struct({
   writes: Schema.Array(Text)
 })
 export type Implementation = typeof Implementation.Type
+/**
+ * The commit the change applies to: the implementation's parent, or for a
+ * verified stack candidate (parent and head are the one retained commit) the
+ * commit it was rebased onto.
+ */
+export const reviewBase = (implementation: Implementation): string | undefined =>
+  implementation.parent.commitId !== implementation.head.commitId
+    ? implementation.parent.commitId
+    : implementation.head.parentCommitIds.length === 1
+    ? implementation.head.parentCommitIds[0]
+    : undefined
 export const Receipt = Schema.Struct({
   checkId: Id,
   target: Text,

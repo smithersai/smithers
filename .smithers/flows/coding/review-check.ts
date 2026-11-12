@@ -3,7 +3,8 @@
  * evidence-only completion on the `coding/review` role, which the host
  * defaults to a provider other than the implementer's, so no change is judged
  * only by the model that wrote it. The only input is the unified diff between
- * the implementation's immutable parent and head, so a resumed run reviews
+ * the commit the implementation applies to (its immutable parent, or the tip a
+ * stack candidate was rebased onto) and its head, so a resumed run reviews
  * exactly what the first attempt reviewed. */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
@@ -13,7 +14,7 @@ import { Effect, Layer, Schema } from "effect"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
 import { files } from "./jev-check.ts"
 import { privatePath } from "./private-paths.ts"
-import { Check, checkInputDigest, CodingError, type Finding, Implementation, Receipt } from "./schema.ts"
+import { Check, checkInputDigest, CodingError, type Finding, Implementation, Receipt, reviewBase } from "./schema.ts"
 
 /** The role every lens runs on. */
 export const reviewRole = "coding/review"
@@ -148,7 +149,9 @@ export const capture = (
     if (new Set(lenses.map((lens) => lens.id)).size !== lenses.length) {
       return yield* invalid("The registered review check body names each lens once")
     }
-    const diff = yield* (yield* Jj.Jj).diff(implementation.parent.commitId, implementation.head.commitId).pipe(
+    const base = reviewBase(implementation)
+    if (base === undefined) return yield* invalid("The review check needs the one commit the change applies to")
+    const diff = yield* (yield* Jj.Jj).diff(base, implementation.head.commitId).pipe(
       Effect.mapError((error) =>
         new CodingError({
           code: "execution",

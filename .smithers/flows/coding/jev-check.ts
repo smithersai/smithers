@@ -1,7 +1,8 @@
 /** Lint on Jev: a registered check whose body declares maintainer rules, judged
  * one changed hunk at a time by the host's evaluator. It reads no files: the
- * only input is the unified diff between the implementation's immutable parent
- * and head, so a resumed run judges exactly what the first attempt judged. */
+ * only input is the unified diff between the commit the implementation applies
+ * to (its immutable parent, or the tip a stack candidate was rebased onto) and
+ * its head, so a resumed run judges exactly what the first attempt judged. */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import type * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
@@ -22,7 +23,7 @@ import {
   scopedPaths
 } from "./jev-rules.ts"
 import { privatePath } from "./private-paths.ts"
-import { Check, checkInputDigest, CodingError, type Finding, Implementation, Receipt } from "./schema.ts"
+import { Check, checkInputDigest, CodingError, type Finding, Implementation, Receipt, reviewBase } from "./schema.ts"
 
 /** The most rules one check body may declare. */
 export const MAX_RULES = 8
@@ -177,7 +178,8 @@ export const judge = (
         invalid(`The registered Jev check body needs 1 to ${MAX_RULES} rules with id, rule and paths`)
       )
     )
-    const base = implementation.parent.commitId, candidate = implementation.head.commitId
+    const base = reviewBase(implementation), candidate = implementation.head.commitId
+    if (base === undefined) return yield* invalid("The Jev check needs the one commit the change applies to")
     const diff = yield* (yield* Jj.Jj).diff(base, candidate).pipe(Effect.mapError((error) =>
       new CodingError({
         code: "execution",

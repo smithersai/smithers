@@ -163,7 +163,9 @@ The deployed coding host explicitly selects `concurrency: 1` to run one revision
 
 `jev-check.ts` registers `coding/JevCheck`. Its body's first line declares up to
 eight rules, `{"rules":[{"id","rule","paths"}]}`. The check reads only the
-unified diff between the implementation's immutable parent and head, skips
+unified diff between the commit the implementation applies to and its head:
+the implementation's immutable parent, or the tip a stack candidate was
+rebased onto (a candidate head without exactly one parent is refused). It skips
 private repository-job paths, and asks Jev whether each in-scope hunk violates
 each rule (the `check/rule` classifier, 0.8/0.2 thresholds). A file's first
 hunk carries its diff header, so mode, rename and copy changes reach Jev, and a
@@ -177,8 +179,7 @@ no other model answers in its place. See `.smithers/flows/checks/lint/flow.mdx`.
 
 `review-check.ts` registers `coding/ReviewCheck`. Its body's first line declares
 up to eight lenses, `{"lenses":[{"id","focus"}]}`; `.smithers/flows/checks/review/flow.mdx`
-declares this repository's. The check reads the same immutable parent..head
-diff as the Jev check, drops private repository-job paths, and asks one
+declares this repository's. The check reads the same diff as the Jev check, drops private repository-job paths, and asks one
 evidence-only completion per lens on the `coding/review` role. Unpinned, the
 host runs that role on the first seat its keys resolve from `reviewSeats` in
 `host.ts`: the implementer's router (AI Gateway or OpenRouter) on a second

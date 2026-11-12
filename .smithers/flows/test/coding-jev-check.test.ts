@@ -6,6 +6,7 @@ import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
 import { files, judge, MAX_QUESTIONS, Rules } from "../coding/jev-check.ts"
 import type { Check, Implementation, Revision } from "../coding/schema.ts"
+import { verifyImplementation } from "../coding/verify-schema.ts"
 
 const revision = (commit: string): Revision => ({
   changeId: "k".repeat(32),
@@ -37,9 +38,9 @@ const body = {
     paths: ["apps/**"]
   }]
 }
-const invocation = (rules: unknown = body) => ({
+const invocation = (rules: unknown = body, subject = implementation) => ({
   flow: "checks/lint",
-  input: { implementation, check } as never,
+  input: { implementation: subject, check } as never,
   prompt: `${JSON.stringify(rules)}\n\nresource trailer`,
   model: null,
   placement: null,
@@ -69,7 +70,7 @@ index 3333333..4444444 100644
 +{"token":"never sent"}
 `
 
-const run = (script: Evaluator.Script, text = diff, rules?: unknown) => {
+const run = (script: Evaluator.Script, text = diff, rules?: unknown, subject = implementation) => {
   const diffs: Array<[string, string]> = []
   const jj = Layer.succeed(
     Jj.Jj,
@@ -82,7 +83,10 @@ const run = (script: Evaluator.Script, text = diff, rules?: unknown) => {
     })
   )
   return Effect.runPromise(
-    Effect.result(judge(invocation(rules))).pipe(Effect.provide(jj), Effect.provide(Evaluator.layerScripted(script)))
+    Effect.result(judge(invocation(rules, subject))).pipe(
+      Effect.provide(jj),
+      Effect.provide(Evaluator.layerScripted(script))
+    )
   ).then((result) => ({ result, diffs }))
 }
 
@@ -105,6 +109,27 @@ test("the Jev lint check judges each in-scope hunk of the implementation diff an
   assert.equal(asked.length, 2, "two src hunks for one rule; the app rule has nothing in scope")
   assert.ok(asked.every((hunk) => !hunk.includes("never sent")), "a private repository-jobs path is never sent to Jev")
   assert.equal(JSON.parse(receipt.evidence).judge, "jev")
+})
+
+test("a rebased stack candidate is judged against the tip it was rebased onto, not itself", async () => {
+  const head = { ...revision("b"), parentCommitIds: ["c".repeat(40)] }
+  const flagged = (request: { state: unknown }) => ({
+    violates: { probability: (request.state as { hunk: string }).hunk.includes("console.log") ? 0.97 : 0.03 }
+  })
+  const { result, diffs } = await run(flagged, diff, undefined, verifyImplementation(head, ["src/a.ts"]))
+  assert.deepEqual(diffs, [["c".repeat(40), "b".repeat(40)]], "the candidate's rebased diff is read")
+  assert.equal(result._tag === "Success" && result.success.status, "failed")
+  assert.deepEqual(result._tag === "Success" ? result.success.findings.map((finding) => finding.message) : [], [
+    "src/a.ts:2 no-console: The changed lines add no console.log call."
+  ])
+  const merge = { ...head, parentCommitIds: ["c".repeat(40), "d".repeat(40)] }
+  const refused = await run(flagged, diff, undefined, verifyImplementation(merge, ["src/a.ts"]))
+  assert.deepEqual(refused.diffs, [], "a candidate without one parent reads no diff")
+  assert.equal(refused.result._tag, "Failure")
+  assert.match(
+    refused.result._tag === "Failure" ? refused.result.failure.message : "",
+    /one commit the change applies to/
+  )
 })
 
 test("a clean change passes, an indecisive answer fails as uncertain, and Jev down is an error", async () => {

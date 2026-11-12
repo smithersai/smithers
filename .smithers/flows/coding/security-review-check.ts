@@ -23,7 +23,7 @@ import * as TrustedReview from "../../../packages/smithers/build/build-cli/src/T
 import { type ImmutableSourceOptions, withImmutableCommit, withImmutableSource } from "./immutable-source.ts"
 import { NativeCoding } from "./native.ts"
 import { privatePath } from "./private-paths.ts"
-import { Check, checkInputDigest, CodingError, Implementation, Receipt } from "./schema.ts"
+import { Check, checkInputDigest, CodingError, Implementation, Receipt, reviewBase } from "./schema.ts"
 
 /** The registered Markdown flow's verified body, as its first nonempty line: the review labels it applies. */
 export const Body = Schema.Struct({
@@ -187,18 +187,6 @@ export const exportedSource = (
     }
   }
 }
-
-/**
- * The commit the change applies to: the implementation's parent, or for a
- * verified stack candidate (parent and head are the one retained commit) the
- * commit it was rebased onto.
- */
-export const reviewBase = (implementation: Implementation): string | undefined =>
-  implementation.parent.commitId !== implementation.head.commitId
-    ? implementation.parent.commitId
-    : implementation.head.parentCommitIds.length === 1
-    ? implementation.head.parentCommitIds[0]
-    : undefined
 
 type Reviewed = Awaited<ReturnType<typeof TrustedReview.reviewPrepared>>
 

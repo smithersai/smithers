@@ -15,11 +15,11 @@ import { dirname, join } from "node:path"
 import { after, test } from "node:test"
 import { NativeCoding } from "../coding/native.ts"
 import type { Check, Implementation, Receipt, Revision } from "../coding/schema.ts"
+import { reviewBase } from "../coding/schema.ts"
 import {
   auditSecurity,
   emptyAudit,
   emptyChange,
-  reviewBase,
   ReviewSecurity,
   reviewSecurity,
   seatTransport,
