@@ -11,8 +11,12 @@
  * @since 1.0.0
  */
 
+import * as Data from "effect/Data"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+
+/** A shared tool directory that holds other tools than the target declares. */
+class ToolDirectoryClash extends Data.TaggedError("smithers-build/ToolDirectoryClash")<{ readonly message: string }> {}
 
 /**
  * One tool a command finds by name, at its absolute host path.
@@ -72,5 +76,7 @@ export const directory = async (parent: string, id: string, tools: ReadonlyArray
   }
   // Another spawn of this node renamed its copy first.
   if (await holds(final, tools)) return final
-  throw new Error(`tool directory ${final} holds other tools than this target declares; remove it and run again`)
+  throw new ToolDirectoryClash({
+    message: `tool directory ${final} holds other tools than this target declares; remove it and run again`
+  })
 }

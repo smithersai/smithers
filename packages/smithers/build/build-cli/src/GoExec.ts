@@ -8,6 +8,7 @@ import type * as Go from "@smthrs/targets/Go"
 import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
+import * as Data from "effect/Data"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -17,6 +18,9 @@ import * as Text from "./internal/Text.ts"
 import type * as NixExec from "./NixExec.ts"
 import * as PackageTree from "./PackageTree.ts"
 import * as StampExec from "./StampExec.ts"
+
+/** A package pattern that names a directory outside the declared Go module. */
+class GoPatternRefused extends Data.TaggedError("smithers-build/GoPatternRefused")<{ readonly message: string }> {}
 
 /**
  * Where one Go rule is being planned: the workspace root, the declaring
@@ -357,10 +361,10 @@ const anchor = (pattern: string, packagePath: string, context: Context): string 
   if (directory === undefined) return pattern
   const relative = NodePath.posix.relative(moduleRelative(context), NodePath.posix.normalize(directory))
   if (relative === ".." || relative.startsWith("../")) {
-    throw new Error(
-      `package pattern ${JSON.stringify(pattern)} is outside the module at ` +
+    throw new GoPatternRefused({
+      message: `package pattern ${JSON.stringify(pattern)} is outside the module at ` +
         `${JSON.stringify(moduleRelative(context) === "" ? "." : moduleRelative(context))}`
-    )
+    })
   }
   return relative === "" ? "." : relative === "..." ? "./..." : `./${relative}`
 }
