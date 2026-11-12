@@ -101,7 +101,7 @@ describe("a TODO's run on Cloudflare", () => {
     const runId = await Effect.runPromise(t.api.remote.todoRun("Stop race"))
     await Effect.runPromise(t.api.remote.startExternal(runId))
     await t.runs.actions.openRun(runId)
-    await until(() => expect(actsOf(t.inspection()!, Date.now(), undefined, true).stop).toBe(true))
+    await until(() => expect(actsOf(t.inspection()!, Date.now(), undefined, { owner: "octo", name: "hello" }).stop).toBe(true))
     await until(async () => expect(await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`SELECT key FROM agent_jobs WHERE task->'context'->>'attemptId' = ${runId.slice(5)}`)))).toHaveLength(1))
     const ready = Effect.runSync(Deferred.make<number>())
@@ -136,7 +136,7 @@ describe("a TODO's run on Cloudflare", () => {
     const runId = await Effect.runPromise(t.api.remote.todoRun("External"))
     await Effect.runPromise(t.api.remote.startExternal(runId))
     await t.runs.actions.openRun(runId)
-    await until(() => expect(actsOf(t.inspection()!, Date.now(), undefined, true).stop).toBe(true))
+    await until(() => expect(actsOf(t.inspection()!, Date.now(), undefined, { owner: "octo", name: "hello" }).stop).toBe(true))
     await until(async () => expect(await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`SELECT key FROM agent_jobs WHERE task->'context'->>'attemptId' = ${runId.slice(5)}`)))).toHaveLength(1))
     t.runs.actions.stop()
@@ -485,7 +485,7 @@ describe("a repository's run on Cloudflare", () => {
     await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
     await until(() => expect(t.inspection()?.run.status).toBe("suspended"))
     expect(hostOf(runId, true)).toBe("Cloud")
-    expect(actsOf(t.inspection()!, Date.now(), undefined, true)).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
+    expect(actsOf(t.inspection()!, Date.now(), undefined, { owner: "octo", name: "hello" })).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
 
     // Stop: run/cancel on this device's engine, which asks ChatApi, whose object stops the run; the page follows it.
     t.runs.actions.stop()
@@ -494,7 +494,7 @@ describe("a repository's run on Cloudflare", () => {
     expect(t.runs.queries.view.toArray[0]?.refusal).toBeNull()
     expect(t.api.spans.filter((span) => span.name === "run.stop")).toHaveLength(1)
     // Stopped, it runs again whole, never only its failed jobs: it reported none.
-    expect(actsOf(t.inspection()!, Date.now(), undefined, true)).toEqual({ stop: false, retry: true, retryFailed: false, resume: false })
+    expect(actsOf(t.inspection()!, Date.now(), undefined, { owner: "octo", name: "hello" })).toEqual({ stop: false, retry: true, retryFailed: false, resume: false })
 
     // This test ChatApi runs no repository flows: the Run form the list's loader read says why it shows none.
     await until(() => expect(t.runs.queries.form.toArray[0]).toMatchObject({ repo: { owner, name }, flows: [], state: "refused" }))
@@ -539,7 +539,7 @@ describe("a repository's run on Cloudflare", () => {
       t.runs.actions.closeRun(runId)
       await t.runs.actions.openRun(jobId, { owner: "octo", name: "hello" })
       await until(() => expect(t.inspection()?.run).toMatchObject({ runId: jobId, status: "running", parentRunId: runId }))
-      expect(actsOf(t.inspection()!, Date.now(), undefined, true).stop).toBe(false)
+      expect(actsOf(t.inspection()!, Date.now(), undefined, { owner: "octo", name: "hello" }).stop).toBe(false)
       await Effect.runPromise(t.api.remote.release(runId))
       // The job's change reads the job's own page, through the subscription its run's page made.
       await until(() => expect(t.inspection()?.run).toMatchObject({ runId: jobId, status: "completed" }))

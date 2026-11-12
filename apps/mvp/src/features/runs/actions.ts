@@ -6,7 +6,7 @@ import { Context, Effect, Metric, Option, Ref } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { isRemoteRun, MAX_STEER_CHARS, STEER_ID_NAMESPACE, RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
 import { todoRetryPayload } from "./todoRun"
-import { retriesOf } from "./page"
+import { placeOf, retriesOf } from "./page"
 import { actionRunPath } from "../actions/contract"
 import type { Inspection, RepoName, RepoRunForm, RunTab, RunView } from "./schema"
 import { FORM, VIEW } from "./schema"
@@ -96,6 +96,13 @@ const openInspection = Effect.gen(function* () {
   return Option.flatMap(page, (page) => Option.fromNullishOr(page.inspection as Inspection | null))
 })
 
+/** Where the open run's acts go (`placeOf`): its route's repository, else as its read was placed. */
+const openPlace = Effect.gen(function* () {
+  const store = yield* RunsStore
+  const view = Option.getOrThrow(yield* store.view.get(VIEW))
+  return placeOf(Option.getOrUndefined(yield* store.pages.get(view.runId ?? "")), view.repo)
+})
+
 type Act = "stop" | "retry" | "retry_from" | "resume"
 
 /**
@@ -141,11 +148,11 @@ const refusalOf = (dispatched: { readonly _tag: "Done" } | { readonly _tag: "Fai
 /** Stop: `run/cancel` on the open run; on Cloudflare for a repository's run, or a TODO's external agent. */
 export const stop = acting("stop", (inspection) =>
   Effect.gen(function* () {
-    const view = Option.getOrThrow(yield* (yield* RunsStore).view.get(VIEW))
+    const place = yield* openPlace
     const payload = { runId: inspection.run.runId, seq: inspection.run.lastSeq }
     return yield* (yield* FlowDispatch).dispatch(
       "run/cancel",
-      view.repo == null && !isRemoteRun(inspection.run.runId) ? payload : { ...payload, host: "cloud" as const },
+      place === "own" && !isRemoteRun(inspection.run.runId) ? payload : { ...payload, host: "cloud" as const },
       { door: "button" },
     )
   }).pipe(
@@ -225,8 +232,8 @@ const retryCloud = (repo: RepoName, failed: boolean) =>
 
 /** Retry failed: a repository's run again, only its jobs that didn't pass. */
 export const retryFailed = Effect.gen(function* () {
-  const view = Option.getOrThrow(yield* (yield* RunsStore).view.get(VIEW))
-  if (view.repo != null) yield* retryCloud(view.repo, true)
+  const place = yield* openPlace
+  if (typeof place === "object") yield* retryCloud(place, true)
 })
 
 /**
@@ -234,10 +241,8 @@ export const retryFailed = Effect.gen(function* () {
  * originating act. A repository's run runs again on Cloudflare.
  */
 export const retry = (version: "pinned" | "current") =>
-  Effect.flatMap(RunsStore, (store) => store.view.get(VIEW)).pipe(
-    Effect.map(Option.getOrThrow),
-    Effect.flatMap((view) => view.repo != null ? retryCloud(view.repo, false) : retryLocal(version)),
-  )
+  Effect.flatMap(openPlace, (place) =>
+    typeof place === "object" ? retryCloud(place, false) : place === "own" ? retryLocal(version) : Effect.void)
 
 /** `retry` on this device's engine, or a TODO's run. */
 const retryLocal = (version: "pinned" | "current") =>

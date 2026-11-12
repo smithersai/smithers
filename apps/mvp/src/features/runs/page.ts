@@ -26,7 +26,7 @@ import { failedTodoRun, hasDomainOutcome, headerStatusOf, todoRetryPayload } fro
 import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract"
 import { isoOf } from "../pulls/view"
 import { repoId } from "../repo/contract"
-import type { CloudRun, Inspection, RepoRunRow, RepoRunsLoaded, RunPage, RunRow, RunView, SteerSending, SteerSent } from "./schema"
+import type { CloudRun, Inspection, RepoName, RepoRunRow, RepoRunsLoaded, RunPage, RunRow, RunView, SteerSending, SteerSent } from "./schema"
 
 // A run's page as a frontend draws it (decision 0014 §5, docs/features/runs.md#the-run-page): pure functions from the
 // engine's read of a run to `@smthrs/ui`'s run-page rows. The steps are the plan's action calls and child boundaries,
@@ -66,23 +66,42 @@ export const journalOf = (page: RunPage): ReadonlyArray<JournalRow> => {
 export const STALLED_AFTER_MS = 60_000
 
 /**
+ * Where a run's acts go (docs/features/actions.md#acts): `own` for a person's own run, on this device's engine or a
+ * TODO's on Cloudflare; the repository whose run it is, on Cloudflare, as its route names it or else as its read was
+ * placed (`repoId`), whichever URL opened it; `unplaced` for any other run read on Cloudflare, such as a system flow,
+ * which has no act there.
+ */
+export type RunPlace = RepoName | "own" | "unplaced"
+
+/** `page`'s place (`RunPlace`), its route's repository `repo` first. A page not yet read is `own`. */
+export const placeOf = (page: Pick<RunPage, "id" | "personal" | "repoId" | "state"> | undefined, repo: RepoName | null | undefined): RunPlace => {
+  if (repo != null) return repo
+  if (page?.state !== "read" || page.personal === true || isRemoteRun(page.id)) return "own"
+  const [, owner, name] = (page.repoId ?? "").split("/")
+  return owner === undefined || name === undefined ? "unplaced" : { owner, name }
+}
+
+/**
  * Which acts the page offers on a run at `now`: Stop while it hasn't settled and no stop was asked; Retry once it
  * settled, when its flow is retried; Resume while it waits, or runs but has recorded nothing for `STALLED_AFTER_MS`.
  * A Cloudflare TODO offers Retry through todo/Retry, which allocates its attempt through the stack writer. A repository's
- * run (`cloud`) offers Retry once settled and Retry failed once its jobs failed, both on Cloudflare.
- * Stop and Resume remain local-engine acts; a remote TODO stops when its TODO drops, or its external agent by Stop.
+ * run (`place`) offers Stop while it runs, Retry once settled and Retry failed once its jobs failed, all on Cloudflare;
+ * an `unplaced` run offers none. Resume remains a local-engine act; a remote TODO stops when its TODO drops, or its
+ * external agent by Stop.
  */
 export const actsOf = (
   inspection: Inspection,
   now: number,
   events: ReadonlyArray<Pick<JournalRow, "emittedAtMs">> = inspection.journal.events,
-  cloud = false,
+  place: RunPlace = "own",
 ) => {
   const { run } = inspection
+  // Cloudflare's stop and runs routes act only on a repository's run.
+  if (place === "unplaced") return { stop: false, retry: false, retryFailed: false, resume: false }
   // A repository's run stops on Cloudflare (docs/features/actions.md#acts), and its jobs with it; a TODO's stops when its
   // TODO is dropped.
   // Retry runs it again whole once it settled, and Retry failed only its jobs that didn't pass.
-  if (cloud) {
+  if (place !== "own") {
     // A job stops and runs again with its run.
     const own = run.parentRunId === null
     return {

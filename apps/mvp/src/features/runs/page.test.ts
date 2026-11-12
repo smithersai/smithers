@@ -15,6 +15,7 @@ import {
   listLoaded,
   listRows,
   missingOf,
+  placeOf,
   repoRunRows,
   repoRunsLoaded,
   retriesFrom,
@@ -199,24 +200,41 @@ describe("a run on Cloudflare", () => {
 })
 
 describe("a repository's run", () => {
+  const OCTO = { owner: "octo", name: "hello" }
   test("Stop while it runs and no stop was asked, Retry and Retry failed once it ended, on Cloudflare", () => {
     const live = inspection({ run: run({ runId: "ci:1", status: "running", finishedAtMs: null }) })
-    expect(actsOf(live, 1_000 + STALLED_AFTER_MS, undefined, true)).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
+    expect(actsOf(live, 1_000 + STALLED_AFTER_MS, undefined, OCTO)).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
     const asked = inspection({ run: run({ runId: "ci:1", status: "running", cancelRequestedAtMs: 1_500 }) })
-    expect(actsOf(asked, 0, undefined, true).stop).toBe(false)
-    expect(actsOf(inspection({ run: run({ runId: "ci:1" }) }), 0, undefined, true).stop).toBe(false)
+    expect(actsOf(asked, 0, undefined, OCTO).stop).toBe(false)
+    expect(actsOf(inspection({ run: run({ runId: "ci:1" }) }), 0, undefined, OCTO).stop).toBe(false)
     // Once it ended: Retry, and Retry failed when it failed.
-    expect(actsOf(inspection({ run: run({ runId: "ci:1", status: "failed" }) }), 0, undefined, true))
+    expect(actsOf(inspection({ run: run({ runId: "ci:1", status: "failed" }) }), 0, undefined, OCTO))
       .toEqual({ stop: false, retry: true, retryFailed: true, resume: false })
-    expect(actsOf(inspection({ run: run({ runId: "ci:1", status: "completed" }) }), 0, undefined, true))
+    expect(actsOf(inspection({ run: run({ runId: "ci:1", status: "completed" }) }), 0, undefined, OCTO))
       .toEqual({ stop: false, retry: true, retryFailed: false, resume: false })
     // A job stops and runs again with its run: its own page offers neither.
     const job = inspection({ run: run({ runId: "job-1", parentRunId: "ci:1", status: "running", finishedAtMs: null }) })
-    expect(actsOf(job, 0, undefined, true).stop).toBe(false)
+    expect(actsOf(job, 0, undefined, OCTO).stop).toBe(false)
     const failedJob = inspection({ run: run({ runId: "job-1", parentRunId: "ci:1", status: "failed" }) })
-    expect(actsOf(failedJob, 0, undefined, true)).toEqual({ stop: false, retry: false, retryFailed: false, resume: false })
+    expect(actsOf(failedJob, 0, undefined, OCTO)).toEqual({ stop: false, retry: false, retryFailed: false, resume: false })
     expect(hostOf("ci:1", true)).toBe("Cloud")
     expect(missingOf({ id: "ci:1", state: "not_found" }, true)).toBe("Not found")
+  })
+
+  test("its place is its repository's whichever URL opened it; a run on Cloudflare with none offers no act", () => {
+    const read = { id: "ci:1", state: "read" } as const
+    // The route's repository first, else the repository its read was placed in: a global URL acts on Cloudflare too.
+    expect(placeOf({ ...read, repoId: "github/elsewhere/repo" }, OCTO)).toEqual(OCTO)
+    expect(placeOf({ ...read, repoId: "github/octo/hello" }, null)).toEqual(OCTO)
+    // A person's own run, read on this device or a TODO's, and a page not read yet.
+    expect(placeOf({ ...read, personal: true }, null)).toBe("own")
+    expect(placeOf({ id: "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f", state: "read" }, undefined)).toBe("own")
+    expect(placeOf({ id: "ci:1", state: "loading" }, null)).toBe("own")
+    expect(placeOf(undefined, null)).toBe("own")
+    // A system flow, or a read not placed yet: Cloudflare's stop and runs routes take neither.
+    expect(placeOf(read, null)).toBe("unplaced")
+    const live = inspection({ run: run({ runId: "ci:1", status: "suspended", finishedAtMs: null }) })
+    expect(actsOf(live, 1_000 + STALLED_AFTER_MS, undefined, "unplaced")).toEqual({ stop: false, retry: false, retryFailed: false, resume: false })
   })
 
   const repoRun = (overrides: Partial<RepoRunRow>): RepoRunRow => ({

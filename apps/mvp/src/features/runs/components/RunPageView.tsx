@@ -23,7 +23,7 @@ import {
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FAILED, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
-import { actsOf, agentStopOf, journalOf, missingOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
+import { actsOf, agentStopOf, journalOf, missingOf, placeOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
@@ -69,7 +69,9 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
   const now = view.now ?? Date.now()
   const at = view.at ?? null
   // The evidence fold is independent of the presentation clock; open bars use the current time below.
-  const repo = view.repo ?? null
+  // Where its acts go and its jobs open: its repository's, whichever URL opened it.
+  const place = placeOf(page, view.repo)
+  const repo = typeof place === "object" ? place : null
   // A repository's run opens the runs it started, its jobs, on its own pages (docs/features/actions.md).
   const frame = useMemo(
     () => graphOf(page, at, run.createdAtMs, repo === null ? undefined : (id) => `${actionRunPath(repo.owner, repo.name, id)}${fromRuns ? "?from=runs" : ""}`),
@@ -78,12 +80,12 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
   const graph = { ...frame, time: at === null ? now : frame.time }
   const steps = graph.steps
   const shown = selectedStep(steps, view.selected)
-  const acts = actsOf(inspection, now, journalOf(page), repo !== null)
+  const acts = actsOf(inspection, now, journalOf(page), place)
   const agentStop = agentStopOf(inspection, view)
   const busy = view.acting !== null
   // Retry from here: the selected step, when it is this run's own and offers it.
   const from = shown?.node !== undefined && shown.node.runId === run.runId &&
-      retriesFrom(inspection, repo !== null).has(shown.node.nodeId)
+      retriesFrom(inspection, place !== "own").has(shown.node.nodeId)
     ? shown.node.nodeId
     : null
   return (

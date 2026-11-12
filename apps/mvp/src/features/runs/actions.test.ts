@@ -2,7 +2,7 @@
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Fiber, Layer, Logger, ManagedRuntime, Option, Stream } from "effect"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import { repoAuthority } from "../../test/repoAuthority"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RemoteRunsClient, RepoRunsFailed } from "./api"
@@ -13,7 +13,7 @@ import { REFUSAL_WORDS } from "./contract"
 import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
 import { RunsStore } from "./store"
-import { actsOf } from "./page"
+import { actsOf, placeOf } from "./page"
 import { headerStatusOf } from "./todoRun"
 
 const inspection = (runId: string): Inspection => ({
@@ -457,6 +457,50 @@ test("Retry and Retry failed on a repository's run run on Cloudflare and open th
   expect(t.navigated).toEqual(["/octo/hello/actions/runs/ci%3A2", "/octo/hello/actions/runs/ci%3A2"])
 })
 
+test("a repository's run opened at its global URL stops and runs again on Cloudflare; a system run acts nowhere", async () => {
+  const cloudRun = (runId: string, kind: "repo" | "system", repo: string | null) => ({
+    runId, flow: "ci", kind, status: "running" as const, cancelRequested: false, createdAtMs: 0, startedAtMs: 0,
+    finishedAtMs: null, trigger: "push" as const, branch: "main", actor: null, repo,
+  })
+  const running = (runId: string): Inspection => {
+    const read = inspection(runId)
+    return { ...read, run: { ...read.run, status: "running", finishedAtMs: null, lastSeq: 7 } }
+  }
+  const t = await setup({
+    dispatch: Effect.succeed({ _tag: "Done", value: { runId: "ci:2" } }),
+    // This device's engine never held either run: ChatApi answers them.
+    exists: (id) => id === "a" ? Effect.succeed(inspection(id)) : Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })),
+    remote: {
+      inspect: (id: string) => Effect.succeed(running(id)),
+      list: Effect.succeed([cloudRun("ci:1", "repo", "octo/hello"), cloudRun("deploy:1", "system", null)]),
+    } as Partial<RemoteRunsClient["Service"]>,
+  })
+  await t.runtime.runPromise(t.store.loadCloud)
+  const placed = async (runId: string) => {
+    // `/app/runs/$runId` names no repository.
+    await t.runtime.runPromise(actions.openRun(runId))
+    await vi.waitFor(async () => expect(await t.runtime.runPromise(t.store.pages.get(runId)).then(Option.getOrThrow)).toMatchObject({ state: "read" }))
+    const page = await t.runtime.runPromise(t.store.pages.get(runId)).then(Option.getOrThrow)
+    return { page, acts: actsOf(page.inspection as Inspection, 0, undefined, placeOf(page, (await t.view()).repo)) }
+  }
+  const repoRun = await placed("ci:1")
+  expect(repoRun.page.repoId).toBe("github/octo/hello")
+  expect(repoRun.acts).toEqual({ stop: true, retry: false, retryFailed: false, resume: false })
+  await t.runtime.runPromise(actions.stop)
+  await t.runtime.runPromise(actions.retry("pinned"))
+  expect(t.calls.map((call) => [call.name, call.payload])).toEqual([
+    ["run/cancel", { runId: "ci:1", seq: 7, host: "cloud" }],
+    ["run/retry", { runId: "ci:1", version: "pinned", host: "cloud", repo: "octo/hello", failed: false }],
+  ])
+  // A system flow: Cloudflare's stop and runs routes act only on a repository's run.
+  const system = await placed("deploy:1")
+  expect(system.page.system).toBe(true)
+  expect(system.acts).toEqual({ stop: false, retry: false, retryFailed: false, resume: false })
+  await t.runtime.runPromise(actions.retry("pinned"))
+  await t.runtime.runPromise(actions.retryFailed)
+  expect(t.calls).toHaveLength(2)
+})
+
 test("Retry failed refused stays on the page; on a device's run it does nothing", async () => {
   const t = await setup({ dispatch: Effect.succeed({ _tag: "Failed", error: { code: "nothing_failed" } }) })
   await t.runtime.runPromise(actions.retryFailed)
@@ -487,6 +531,6 @@ test("a repository's run whose jobs failed reads Failed and offers Retry failed,
   expect(headerStatusOf({ ...run, result: { ...failure, text: "not json" } })).toBe("completed")
   expect(headerStatusOf({ ...run, result: { ...failure, clipped: true } })).toBe("completed")
   expect(headerStatusOf({ ...run, flowName: "flow/run" })).toBe("completed")
-  expect(actsOf({ ...inspection("ci:1"), run }, 0, undefined, true)).toEqual({ stop: false, retry: true, retryFailed: true, resume: false })
-  expect(actsOf({ ...inspection("ci:1"), run: { ...run, result: null } }, 0, undefined, true).retryFailed).toBe(false)
+  expect(actsOf({ ...inspection("ci:1"), run }, 0, undefined, { owner: "octo", name: "hello" })).toEqual({ stop: false, retry: true, retryFailed: true, resume: false })
+  expect(actsOf({ ...inspection("ci:1"), run: { ...run, result: null } }, 0, undefined, { owner: "octo", name: "hello" }).retryFailed).toBe(false)
 })
