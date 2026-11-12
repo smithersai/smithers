@@ -20,7 +20,7 @@
  *
  * It loads no clipboard (OSC 52) addon.
  */
-import type { IDisposable, ILink, ITheme, Terminal as XTerminal } from "@xterm/xterm";
+import type { IBufferLine, IDisposable, ILink, ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { initializeId, isPageKey, isRecord, isWebUrl, linksIn, nonceAttribute } from "./protocol";
 
 /** The xterm.js modules the frame runs. */
@@ -88,9 +88,25 @@ export const startTerminalFrame = (frame: FrameWindow, modules: TerminalFrameMod
     });
     term.registerLinkProvider({
       provideLinks: (y, callback) => {
-        const text = term.buffer.active.getLine(y - 1)?.translateToString(true) ?? "";
-        const links = linksIn(text).map(({ start, url }): ILink => ({
-          range: { start: { x: start + 1, y }, end: { x: start + url.length, y } },
+        // A line longer than the terminal is wide wraps onto rows marked `isWrapped`.
+        // Links are found in the whole line row `y` is part of, so a URL that wraps is
+        // offered whole, from any of its rows, and never as its first row alone.
+        const buffer = term.buffer.active;
+        let first = y - 1;
+        while (first > 0 && buffer.getLine(first)?.isWrapped) first -= 1;
+        const lines: Array<IBufferLine> = [];
+        for (let line = buffer.getLine(first); line !== undefined && (lines.length === 0 || line.isWrapped); line = buffer.getLine(first + lines.length)) {
+          lines.push(line);
+        }
+        const rows = lines.map((line, index) => line.translateToString(index === lines.length - 1));
+        // The cell holding the character at `offset` of the joined line.
+        const cell = (offset: number) => {
+          let row = 0;
+          while (row < rows.length - 1 && offset >= rows[row]!.length) offset -= rows[row++]!.length;
+          return { x: offset + 1, y: first + row + 1 };
+        };
+        const links = linksIn(rows.join("")).map(({ start, url }): ILink => ({
+          range: { start: cell(start), end: cell(start + url.length - 1) },
           text: url,
           activate: follow,
         }));

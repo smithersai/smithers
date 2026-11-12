@@ -269,7 +269,8 @@ describe("the terminal frame runtime", () => {
   test("finds the web links in a line of output, and offers each to be clicked", async () => {
     const opened = frame();
     const { received, term } = await connect(opened);
-    await write(term, "see https://example.test/a?b=1. and (http://x.test/p) or ftp://no.test http://[::bad\r\nplain text");
+    await write(term, "see https://example.test/a?b=1. and (http://x.test/p) or\r\nftp://no.test http://[::bad\r\nplain text");
+    expect(term.buffer.active.getLine(1)!.isWrapped).toBe(false);
     const links = (await linksAt(term, 1))!;
     expect(links.map((link) => [link.text, link.range.start.x, link.range.end.x])).toEqual([
       ["https://example.test/a?b=1", 5, 30],
@@ -280,5 +281,26 @@ describe("the terminal frame runtime", () => {
     links[1]!.activate(click(opened), links[1]!.text);
     await waitFor(() => received.some((message) => message.method === "terminal/link"));
     expect(of(received, "terminal/link")).toEqual([{ url: "http://x.test/p" }]);
+  });
+
+  test("finds a web link that wraps onto a second row whole, from either row, and offers it with its full range", async () => {
+    const opened = frame();
+    const { received, term } = await connect(opened);
+    const url = "https://example.test/login/oauth/authorize?client_id=Iv1.b507a08c87ecfe98&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback&state=xyz";
+    expect(url.length).toBeGreaterThan(term.cols);
+    await write(term, `Open ${url} now\r\n${"-".repeat(term.cols)}see http://x.test/second\r\nplain text`);
+    // The line wrapped: row 2 continues row 1, and row 4 continues row 3.
+    expect([1, 2, 3, 4].map((row) => term.buffer.active.getLine(row - 1)!.isWrapped)).toEqual([false, true, false, true]);
+    const wrapped = { text: url, start: { x: 6, y: 1 }, end: { x: 5 + url.length - term.cols, y: 2 } };
+    const at = (y: number) => linksAt(term, y).then((links) => links?.map((link) => ({ text: link.text, ...link.range })));
+    expect(await at(1)).toEqual([wrapped]);
+    expect(await at(2)).toEqual([wrapped]);
+    expect(await at(3)).toEqual([{ text: "http://x.test/second", start: { x: 5, y: 4 }, end: { x: 24, y: 4 } }]);
+    expect(await at(4)).toEqual([{ text: "http://x.test/second", start: { x: 5, y: 4 }, end: { x: 24, y: 4 } }]);
+    expect(await at(5)).toBeUndefined();
+    const [link] = (await linksAt(term, 2))!;
+    link!.activate(click(opened), link!.text);
+    await waitFor(() => received.some((message) => message.method === "terminal/link"));
+    expect(of(received, "terminal/link")).toEqual([{ url }]);
   });
 });
