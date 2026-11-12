@@ -3,6 +3,7 @@ import * as Dialect from "@smthrs/database/Dialect"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import type { OwnerId } from "@smthrs/run-store/Ownership"
+import * as RunStore from "@smthrs/run-store/RunStore"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -19,7 +20,10 @@ const owner = { hostId: "owner-host", pid: 10, nonce: "owner-nonce" } as const
 const stranger = { hostId: "stranger-host", pid: 11, nonce: "stranger-nonce" } as const
 const frame = { lineageId: "run/root", seq: 1 } as const
 
-const memorySeed = (extraEdges: ReadonlyArray<LineageEdge> = []) =>
+const memorySeed = (
+  extraEdges: ReadonlyArray<LineageEdge> = [],
+  runOwners: ReadonlyMap<string, OwnerId> = new Map([["run", owner]])
+) =>
   MemoryTimeTravelStore.make({
     records: [
       {
@@ -58,7 +62,7 @@ const memorySeed = (extraEdges: ReadonlyArray<LineageEdge> = []) =>
       ...extraEdges
     ],
     snapshots: [{ runId: "run", frame: { lineageId: "run/root", seq: 0 }, changeId: "change-0" }],
-    runOwners: new Map([["run", owner]])
+    runOwners
   })
 
 const seedSql = (sql: SqlClient.SqlClient) =>
@@ -278,6 +282,43 @@ describe("TimeTravelStore conformance", () => {
         expect(result.archived).toEqual([false, false])
       }
       expect(memory.state()).toEqual(before)
+    }))
+
+  it.effect("refuses a run with no recorded owner identically without changing history", () =>
+    Effect.gen(function*() {
+      const refuse = (store: TimeTravelStore.Service) =>
+        Effect.gen(function*() {
+          const failure = yield* Effect.flip(store.archiveAndTruncate("run", frame, [], owner))
+          return {
+            failure: { code: failure.code, message: failure.message },
+            archived: yield* store.archivedAt("run", 2, 0)
+          }
+        })
+      const unowned = memorySeed([], new Map())
+      const before = unowned.state()
+      const memory = yield* refuse(unowned)
+      const sqlite = yield* withSql((store, sql) =>
+        Effect.gen(function*() {
+          yield* seedSql(sql)
+          yield* sql`
+            UPDATE flows_runs
+            SET status = 'suspended', owner_host_id = NULL, owner_pid = NULL, owner_nonce = NULL,
+              heartbeat_at_ms = NULL
+            WHERE run_id = 'run'
+          `
+          return yield* refuse(store)
+        })
+      )
+
+      expect(memory).toEqual(sqlite)
+      expect(memory).toEqual({
+        failure: {
+          code: "fence_lost",
+          message: "run run is no longer owned by owner-host:10:owner-nonce"
+        },
+        archived: false
+      })
+      expect(unowned.state()).toEqual(before)
     }))
 
   // `stranger` differs from `owner` in all three fields, so it cannot tell
@@ -1124,6 +1165,79 @@ describe("TimeTravelStore fork child id", () => {
         })
       }))
   }
+})
+
+describe("MemoryTimeTravelStore run store fence", () => {
+  const runRow = (recorded: OwnerId | null): RunStore.RunRow => ({
+    runId: "run",
+    status: recorded === null ? "suspended" : "running",
+    createdAtMs: 0,
+    startedAtMs: 0,
+    finishedAtMs: null,
+    owner: recorded,
+    heartbeatAtMs: recorded === null ? null : 0,
+    claim: null,
+    claimedAtMs: null,
+    parentRunId: null,
+    cancelRequestedAtMs: null,
+    stateJson: "{}"
+  })
+  const storeOver = (get: RunStore.Service["get"]) =>
+    MemoryTimeTravelStore.make({
+      records: [
+        { runId: "run", seq: 0, eventId: "run-0", payload: {} },
+        { runId: "run", seq: 1, eventId: "run-1", payload: {} }
+      ],
+      // The run store wins over a stale map entry for the rewound run.
+      runOwners: new Map([["run", stranger]]),
+      runs: RunStore.makeNoop({ get })
+    })
+  const runStoreError = (code: RunStore.RunStoreError["code"]) =>
+    new RunStore.RunStoreError({ code, method: "get", message: "get failed", cause: "get" })
+
+  it.effect("truncates under the owner the run store records", () =>
+    Effect.gen(function*() {
+      const store = storeOver(() => Effect.succeed(runRow(owner)))
+      const result = yield* store.archiveAndTruncate("run", { lineageId: "run/root", seq: 0 }, [], owner)
+
+      expect(result.archived).toBe(1)
+      expect(store.state().records.map((record) => record.eventId)).toEqual(["run-0"])
+    }))
+
+  for (
+    const { name, get } of [
+      { name: "a different owner", get: () => Effect.succeed(runRow(stranger)) },
+      { name: "no owner", get: () => Effect.succeed(runRow(null)) },
+      { name: "no row", get: () => Effect.fail(runStoreError("not_found_row")) }
+    ]
+  ) {
+    it.effect(`refuses fence_lost when the run store records ${name}`, () =>
+      Effect.gen(function*() {
+        const store = storeOver(get)
+        const before = store.state()
+        const failure = yield* Effect.flip(
+          store.archiveAndTruncate("run", { lineageId: "run/root", seq: 0 }, [], owner)
+        )
+
+        expect(failure).toMatchObject({
+          code: "fence_lost",
+          message: "run run is no longer owned by owner-host:10:owner-nonce"
+        })
+        expect(store.state()).toEqual(before)
+      }))
+  }
+
+  it.effect("reports an unreadable run row as unknown without changing history", () =>
+    Effect.gen(function*() {
+      const store = storeOver(() => Effect.fail(runStoreError("persistence_failed")))
+      const before = store.state()
+      const failure = yield* Effect.flip(
+        store.archiveAndTruncate("run", { lineageId: "run/root", seq: 0 }, [], owner)
+      )
+
+      expect(failure).toMatchObject({ code: "unknown", message: "could not read run run" })
+      expect(store.state()).toEqual(before)
+    }))
 })
 
 describe("MemoryTimeTravelStore append", () => {

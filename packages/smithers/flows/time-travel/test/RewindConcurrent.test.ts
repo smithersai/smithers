@@ -92,15 +92,6 @@ const makeRuns = (
 describe("Rewind concurrency", () => {
   it.effect("returns typed busy to a second rewind while the first holds the activated RunStore CAS", () =>
     Effect.gen(function*() {
-      const store = MemoryTimeTravelStore.make({
-        records: [{
-          runId: "run",
-          seq: 0,
-          eventId: "event-0",
-          lineageId: "run/root",
-          payload: { eventType: "baseline", payload: {}, meta: { lineageId: "run/root" } }
-        }]
-      })
       // The winner's heartbeat is what keeps the claim from looking abandoned
       // while the loser is being refused, and it only pulses on the clock the
       // test drives: a fiber forked onto the default runtime would sleep on
@@ -113,6 +104,16 @@ describe("Rewind concurrency", () => {
             pulses.push({ runId, owner: heartbeatOwner })
             return { _tag: "Updated" as const }
           })
+      })
+      const store = MemoryTimeTravelStore.make({
+        records: [{
+          runId: "run",
+          seq: 0,
+          eventId: "event-0",
+          lineageId: "run/root",
+          payload: { eventType: "baseline", payload: {}, meta: { lineageId: "run/root" } }
+        }],
+        runs
       })
       const journal = Journal.makeNoop({
         entries: ({ runId, after }) =>
@@ -213,6 +214,7 @@ describe("Rewind concurrency", () => {
       // restore the workspace, evict a cache row, or run an effect handler's
       // rollback — those are the first rewind's to own, and a loser that
       // compensated would undo the winner's work under it.
+      const runs = makeRuns()
       const store = MemoryTimeTravelStore.make({
         records: [{
           runId: "run",
@@ -220,9 +222,9 @@ describe("Rewind concurrency", () => {
           eventId: "event-0",
           lineageId: "run/root",
           payload: { eventType: "baseline", payload: {}, meta: { lineageId: "run/root" } }
-        }]
+        }],
+        runs
       })
-      const runs = makeRuns()
       const journal = Journal.makeNoop({
         entries: () => Effect.succeed({ entries: [], hasMore: false })
       })

@@ -29,6 +29,32 @@ const row: RunStore.RunRow = {
   stateJson: "{}"
 }
 
+/**
+ * A run store over {@link row} whose owner is the one `activate` records, so
+ * the memory store's owner fence reads the owner the rewind minted.
+ */
+const ownedRuns = (onClaim: () => void = () => {}): RunStore.Service => {
+  let owner: RunStore.RunRow["owner"] = null
+  return RunStore.makeNoop({
+    get: () => Effect.sync(() => ({ ...row, owner })),
+    claim: (_runId, _expected, _owner, nowMs) =>
+      Effect.sync(() => {
+        onClaim()
+        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
+      }),
+    activate: (_runId, claimant) =>
+      Effect.sync(() => {
+        owner = claimant
+        return { _tag: "Activated" as const }
+      }),
+    transitionOwned: () =>
+      Effect.sync(() => {
+        owner = null
+        return { _tag: "Transitioned" as const }
+      })
+  })
+}
+
 describe("TimeTravel rewind options", () => {
   const malformed: ReadonlyArray<{ readonly pageSize?: number; readonly maxHistoryEntries?: number }> = [
     { pageSize: 0 },
@@ -377,9 +403,15 @@ describe("TimeTravel rewind history cap", () => {
         lineageId: "run/root",
         payload: { eventType: "test", payload: {}, meta: { lineageId: "run/root" } }
       })
-      const store = MemoryTimeTravelStore.make({ records: [journalRecord(0), journalRecord(1), journalRecord(2)] })
-      const before = store.state()
       let claims = 0
+      const runs = ownedRuns(() => {
+        claims += 1
+      })
+      const store = MemoryTimeTravelStore.make({
+        records: [journalRecord(0), journalRecord(1), journalRecord(2)],
+        runs
+      })
+      const before = store.state()
       const entries: ReadonlyArray<JournalEvent.Entry> = store.state().records.map((record) => ({
         runId: record.runId as JournalEvent.RunId,
         seq: record.seq as JournalEvent.Seq,
@@ -398,16 +430,6 @@ describe("TimeTravel rewind history cap", () => {
             const page = remaining.slice(0, limit)
             return { entries: page, hasMore: remaining.length > page.length }
           })
-      })
-      const runs = RunStore.makeNoop({
-        get: () => Effect.succeed(row),
-        claim: (_runId, _expected, _owner, nowMs) =>
-          Effect.sync(() => {
-            claims += 1
-            return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-          }),
-        activate: () => Effect.succeed({ _tag: "Activated" as const }),
-        transitionOwned: () => Effect.succeed({ _tag: "Transitioned" as const })
       })
       const layer = TimeTravel.layer.pipe(
         Layer.provide(
@@ -465,6 +487,7 @@ describe("TimeTravel rewind rate limiter", () => {
 
   const composed = (
     store: ReturnType<typeof MemoryTimeTravelStore.make>,
+    runs: RunStore.Service,
     options: Parameters<typeof layerWith>[0]
   ) => {
     const entries: ReadonlyArray<JournalEvent.Entry> = store.state().records.map((record) => ({
@@ -482,15 +505,7 @@ describe("TimeTravel rewind rate limiter", () => {
       Layer.provide(
         Layer.mergeAll(
           Layer.succeed(TimeTravelStore)(store),
-          Layer.succeed(RunStore.RunStore)(
-            RunStore.makeNoop({
-              get: () => Effect.succeed(row),
-              claim: (_runId, _expected, _owner, nowMs) =>
-                Effect.succeed({ _tag: "Claimed" as const, claimedAtMs: nowMs }),
-              activate: () => Effect.succeed({ _tag: "Activated" as const }),
-              transitionOwned: () => Effect.succeed({ _tag: "Transitioned" as const })
-            })
-          ),
+          Layer.succeed(RunStore.RunStore)(runs),
           Layer.succeed(Journal.Journal)(
             Journal.makeNoop({
               entries: ({ after, limit }) =>
@@ -522,9 +537,10 @@ describe("TimeTravel rewind rate limiter", () => {
 
   it.effect("refuses `rate_limited` through the composition and records the decision", () =>
     Effect.gen(function*() {
-      const store = MemoryTimeTravelStore.make({ records: [journalRecord(0), journalRecord(1)] })
+      const runs = ownedRuns()
+      const store = MemoryTimeTravelStore.make({ records: [journalRecord(0), journalRecord(1)], runs })
       const asked: Array<{ readonly runId: string; readonly lineageId: string; readonly seq: number }> = []
-      const layer = composed(store, {
+      const layer = composed(store, runs, {
         rateLimit: ({ frame, runId }) =>
           Effect.sync(() => {
             asked.push({ runId, lineageId: frame.lineageId, seq: frame.seq })
@@ -549,9 +565,10 @@ describe("TimeTravel rewind rate limiter", () => {
 
   it.effect("stamps an allowing decision on the audit and truncates the suffix", () =>
     Effect.gen(function*() {
-      const store = MemoryTimeTravelStore.make({ records: [journalRecord(0), journalRecord(1)] })
+      const runs = ownedRuns()
+      const store = MemoryTimeTravelStore.make({ records: [journalRecord(0), journalRecord(1)], runs })
       const checkedAt: Array<number> = []
-      const layer = composed(store, {
+      const layer = composed(store, runs, {
         rateLimit: ({ nowMs }) =>
           Effect.sync(() => {
             checkedAt.push(nowMs)

@@ -130,7 +130,10 @@ stating:
 
 - `archiveAndTruncate` is **fenced**. It re-checks the run's recorded owner and
   every non-terminal attached child's exact owner inside the same transaction,
-  and refuses the whole mutation with `fence_lost` on a mismatch.
+  and refuses the whole mutation with `fence_lost` on a mismatch. A run that
+  records no owner, or has no row, is a mismatch. The memory store reads the
+  owner from its `runs` option (the `RunStore` a rewind activates its owner
+  through) or, without one, from `runOwners`.
 - `nextForkId` **reserves** the id it mints. The reservation is what makes a
   crashed fork retryable under a fresh lane name instead of colliding with the
   leftover on disk. Intent rows stay counted even after reclamation.

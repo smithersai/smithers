@@ -483,9 +483,11 @@ const layer: (options?: Options) => Layer<TimeTravelStore.TimeTravelStore>
 ```
 
 `Options` seeds the world with `records`, `edges`, `snapshots`, `liveRuns`,
-`runOwners`, and `runStatuses`, and `failAt` injects an `unknown`-coded failure
-at a named internal step so crash-recovery paths are reachable without
-crashing. `JournalRecord` is one seeded record: `{ runId, seq, eventId,
+`runOwners`, and `runStatuses`; `runs` names the `RunStore` whose row owner
+`archiveAndTruncate` fences on in place of `runOwners`, and a run that records
+no owner is refused `fence_lost`, as on SQL. `failAt` injects an
+`unknown`-coded failure at a named internal step so crash-recovery paths are
+reachable without crashing. `JournalRecord` is one seeded record: `{ runId, seq, eventId,
 lineageId?, payload, eventType? }`. `MemoryState` is the whole world as
 `records`, `archived`, `edges`, `audits`, `receipts`, `snapshots`, `liveRuns`,
 `runOwners`, `runStatuses`, and `forkIntents`, copied on every read.

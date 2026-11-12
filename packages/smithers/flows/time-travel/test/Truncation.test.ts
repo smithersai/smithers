@@ -13,6 +13,7 @@ const records: ReadonlyArray<Memory.JournalRecord> = [
 ]
 
 const owner = { hostId: "host-a", pid: 1234, nonce: "nonce" } as const
+const runOwners = new Map([["parent", owner]])
 
 const edges: ReadonlyArray<LineageEdge> = [
   { parentRunId: "parent", parentSeq: 2, childRunId: "child", kind: "child", attached: true },
@@ -87,7 +88,7 @@ describe("truncation", () => {
     }))
   it.effect("archives the parent suffix and every attached descendant atomically", () =>
     Effect.gen(function*() {
-      const store = Memory.make({ records, edges })
+      const store = Memory.make({ records, edges, runOwners })
       const result = yield* (
         store.archiveAndTruncate("parent", { lineageId: "parent/root", seq: 0 }, [], owner)
       )
@@ -107,12 +108,14 @@ describe("truncation", () => {
 
   it.effect("rolls back every mutation when the transaction fails before truncation", () =>
     Effect.gen(function*() {
-      const store = Memory.make({ records, edges, failAt: "archiveAndTruncate:before-truncate" })
+      const store = Memory.make({ records, edges, runOwners, failAt: "archiveAndTruncate:before-truncate" })
       const before = store.state()
 
-      yield* (
+      const failure = yield* (
         Effect.flip(store.archiveAndTruncate("parent", { lineageId: "parent/root", seq: 0 }, [], owner))
       )
+
+      expect(failure.message).toBe("injected failure at archiveAndTruncate:before-truncate")
 
       expect(store.state()).toEqual(before)
     }))
@@ -127,11 +130,12 @@ describe("truncation", () => {
           "archiveAndTruncate:commit"
         ]
       ) {
-        const store = Memory.make({ records, edges, failAt })
+        const store = Memory.make({ records, edges, runOwners, failAt })
         const before = store.state()
-        yield* (
+        const failure = yield* (
           Effect.flip(store.archiveAndTruncate("parent", { lineageId: "parent/root", seq: 0 }, [receipt], owner))
         )
+        expect(failure.message).toBe(`injected failure at ${failAt}`)
         expect(store.state()).toEqual(before)
       }
 

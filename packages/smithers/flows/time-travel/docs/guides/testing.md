@@ -40,8 +40,25 @@ The other seeds describe the rest of the world the operation reads:
 | `snapshots`   | Anchors the snapshot projector would have recorded.                                           |
 | `liveRuns`    | Runs to treat as still executing, so a frame in one is refused `live_parent` or `live_child`. |
 | `runOwners`   | The owner each run records, which is what `archiveAndTruncate` fences on.                     |
+| `runs`        | The `RunStore` whose rows the fence reads instead, so a rewind's own owner passes it.         |
 | `runStatuses` | The status each seeded run row records. An absent run id models a missing row.                |
 | `failAt`      | An internal step to fail at, so a crash path is reachable without crashing.                   |
+
+`archiveAndTruncate` fails closed, as the SQL store does: it commits only while
+the run records exactly the caller's owner, and a run with no recorded owner is
+refused with `fence_lost`. `TimeTravel.rewind` mints its owner and activates it
+through the `RunStore`, so a store a rewind truncates must read that run store.
+Pass the same `RunStore` double the service runs over:
+
+```ts
+import { makeRuns, row } from "./MemoryHarness.ts"
+
+const runs = makeRuns([row({ runId: "run" })])
+const store = MemoryTimeTravelStore.make({ records: [record(0, 10), record(1, 20), record(2, 30)], runs })
+```
+
+A test that calls `archiveAndTruncate` directly with its own owner can name it
+in `runOwners` instead.
 
 `make` returns the store widened with a `state()` inspector. That widening is
 the reason to call it rather than `MemoryTimeTravelStore.layer`: the inspector

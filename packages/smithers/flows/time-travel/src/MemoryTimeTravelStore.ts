@@ -17,7 +17,7 @@
 
 import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import type { OwnerId } from "@smthrs/journal/OwnerId"
-import { isTerminalRunStatus, type RunStatus } from "@smthrs/run-store/RunStore"
+import { isTerminalRunStatus, type RunStatus, type Service as RunStoreService } from "@smthrs/run-store/RunStore"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -125,13 +125,24 @@ export interface Options {
   /**
    * The owner each run records.
    *
-   * `archiveAndTruncate` is fenced on the caller's ownership, and this store
-   * used to accept the `owner` argument and drop it, so `fence_lost` was
-   * reachable only on SQL and every memory rewind suite was blind to a
-   * superseded owner. A run named here refuses a mismatched owner; a run absent
-   * from the map records no owner and so has no fence to lose.
+   * `archiveAndTruncate` commits only while the rewound run records exactly
+   * the caller's owner, as `SqlTimeTravelStore` asserts against `flows_runs`.
+   * A run absent from the map records no owner, so truncating it fails with
+   * `fence_lost`. Ignored for the rewound run when {@link Options.runs} is
+   * supplied.
    */
   readonly runOwners?: ReadonlyMap<string, OwnerId>
+  /**
+   * The run table the owner fence reads.
+   *
+   * `TimeTravel.rewind` activates its own owner through the `RunStore` before
+   * it truncates, so a caller cannot name that owner in
+   * {@link Options.runOwners} ahead of time. Pass the `RunStore` the service
+   * runs over and `archiveAndTruncate` reads the owner its row records at
+   * commit; a missing row or a row with no owner fails with `fence_lost`, as
+   * on SQL.
+   */
+  readonly runs?: RunStoreService
   /**
    * The status each seeded run row records.
    *
@@ -284,6 +295,22 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
           ? cause
           : error("unknown", "memory transaction failed", cause)
     })
+  /**
+   * The owner the run table records for `runId`: the {@link Options.runs}
+   * row when a run store is supplied, otherwise {@link Options.runOwners}.
+   * A missing row records no owner.
+   */
+  const recordedOwner = (runId: string): Effect.Effect<OwnerId | undefined, TimeTravelError> =>
+    options.runs === undefined
+      ? Effect.sync(() => runOwners.get(runId))
+      : options.runs.get(runId).pipe(
+        Effect.map((row) => row.owner ?? undefined),
+        Effect.catch((cause) =>
+          cause.code === "not_found_row"
+            ? Effect.succeed(undefined)
+            : Effect.fail(error("unknown", `could not read run ${runId}`, cause))
+        )
+      )
   const atomicWithTime = <A>(body: (nowMs: number) => A): Effect.Effect<A, TimeTravelError> =>
     Clock.currentTimeMillis.pipe(Effect.flatMap((nowMs) => atomic(() => body(nowMs))))
   /** Replaces the anchors at each batch member's frame, later members winning. */
@@ -413,64 +440,67 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
         Schema.decodeUnknownEffect(Frame)(frame).pipe(
           Effect.mapError((cause) => error("invalid", "invalid archive frame", cause)),
           Effect.tap(() => Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq })),
-          Effect.andThen(atomic(() => {
-            fail("archiveAndTruncate:start")
-            // The same commit-time owner predicate the SQL store asserts: a
-            // superseded rewinder never truncates history behind the live owner.
-            const recorded = runOwners.get(runId)
-            if (
-              recorded !== undefined &&
-              (recorded.hostId !== owner.hostId || recorded.pid !== owner.pid || recorded.nonce !== owner.nonce)
-            ) {
-              throw error(
-                "fence_lost",
-                `run ${runId} is no longer owned by ${owner.hostId}:${owner.pid}:${owner.nonce}`
-              )
-            }
-            const descendants = LineageTree.descendants(edges, runId, frame)
-            for (const childRunId of descendants.attachedRunIds) {
-              const status = runStatuses.get(childRunId)
-              if (status === undefined || isTerminalRunStatus(status)) {
-                continue
-              }
-              const expectedOwner = childOwners?.get(childRunId)
-              const actualOwner = runOwners.get(childRunId)
+          Effect.andThen(recordedOwner(runId)),
+          Effect.flatMap((recorded) =>
+            atomic(() => {
+              fail("archiveAndTruncate:start")
+              // The same commit-time owner predicate the SQL store asserts: a
+              // superseded rewinder never truncates history behind the live owner,
+              // and a run that records no owner has no owner to match.
               if (
-                expectedOwner === undefined ||
-                actualOwner === undefined ||
-                actualOwner.hostId !== expectedOwner.hostId ||
-                actualOwner.pid !== expectedOwner.pid ||
-                actualOwner.nonce !== expectedOwner.nonce
+                recorded === undefined ||
+                recorded.hostId !== owner.hostId || recorded.pid !== owner.pid || recorded.nonce !== owner.nonce
               ) {
-                throw error("fence_lost", `attached child ${childRunId} is not owned by this rewind`)
+                throw error(
+                  "fence_lost",
+                  `run ${runId} is no longer owned by ${owner.hostId}:${owner.pid}:${owner.nonce}`
+                )
               }
-            }
-            const doomed = records.filter((record) =>
-              (record.runId === runId && record.seq > frame.seq) ||
-              descendants.attachedRunIds.has(record.runId)
-            )
-            fail("archiveAndTruncate:before-archive")
-            archived.push(...doomed.map((record) => ({ ...record, generation: generations.get(record.runId) ?? 0 })))
-            fail("archiveAndTruncate:before-truncate")
-            records = records.filter((record) =>
-              !(
+              const descendants = LineageTree.descendants(edges, runId, frame)
+              for (const childRunId of descendants.attachedRunIds) {
+                const status = runStatuses.get(childRunId)
+                if (status === undefined || isTerminalRunStatus(status)) {
+                  continue
+                }
+                const expectedOwner = childOwners?.get(childRunId)
+                const actualOwner = runOwners.get(childRunId)
+                if (
+                  expectedOwner === undefined ||
+                  actualOwner === undefined ||
+                  actualOwner.hostId !== expectedOwner.hostId ||
+                  actualOwner.pid !== expectedOwner.pid ||
+                  actualOwner.nonce !== expectedOwner.nonce
+                ) {
+                  throw error("fence_lost", `attached child ${childRunId} is not owned by this rewind`)
+                }
+              }
+              const doomed = records.filter((record) =>
                 (record.runId === runId && record.seq > frame.seq) ||
                 descendants.attachedRunIds.has(record.runId)
               )
-            )
-            snapshots = snapshots.filter((snapshot) =>
-              !((snapshot.runId === runId && snapshot.frame.seq > frame.seq) ||
-                descendants.attachedRunIds.has(snapshot.runId))
-            )
-            for (const truncatedRunId of [runId, ...descendants.attachedRunIds]) {
-              generations.set(truncatedRunId, (generations.get(truncatedRunId) ?? 0) + 1)
-            }
-            const attachedChildren = new Set(descendants.attached.map((edge) => edge.childRunId))
-            edges = edges.filter((edge) => !attachedChildren.has(edge.childRunId))
-            receipts.push(...clone([...newReceipts], "receipts"))
-            fail("archiveAndTruncate:commit")
-            return { archived: doomed.length, orphaned: descendants.detached }
-          }))
+              fail("archiveAndTruncate:before-archive")
+              archived.push(...doomed.map((record) => ({ ...record, generation: generations.get(record.runId) ?? 0 })))
+              fail("archiveAndTruncate:before-truncate")
+              records = records.filter((record) =>
+                !(
+                  (record.runId === runId && record.seq > frame.seq) ||
+                  descendants.attachedRunIds.has(record.runId)
+                )
+              )
+              snapshots = snapshots.filter((snapshot) =>
+                !((snapshot.runId === runId && snapshot.frame.seq > frame.seq) ||
+                  descendants.attachedRunIds.has(snapshot.runId))
+              )
+              for (const truncatedRunId of [runId, ...descendants.attachedRunIds]) {
+                generations.set(truncatedRunId, (generations.get(truncatedRunId) ?? 0) + 1)
+              }
+              const attachedChildren = new Set(descendants.attached.map((edge) => edge.childRunId))
+              edges = edges.filter((edge) => !attachedChildren.has(edge.childRunId))
+              receipts.push(...clone([...newReceipts], "receipts"))
+              fail("archiveAndTruncate:commit")
+              return { archived: doomed.length, orphaned: descendants.detached }
+            })
+          )
         )
     ),
     archivedAt: Effect.fn("TimeTravelStore.archivedAt")((runId, seq, generation) =>

@@ -226,11 +226,12 @@ describe("Rewind", () => {
         boundaryRecord(2, effect("send-2", "send", "irreversible")),
         boundaryRecord(3, effect("workspace", "fs-write", "compensable"))
       ]
+      const runs = makeRuns([row("run")])
       const store = MemoryTimeTravelStore.make({
         records,
-        snapshots: [{ runId: "run", frame, changeId: "target" }]
+        snapshots: [{ runId: "run", frame, changeId: "target" }],
+        runs
       })
-      const runs = makeRuns([row("run")])
       const jj = makeJj("current")
 
       const result = yield* (
@@ -260,8 +261,8 @@ describe("Rewind", () => {
         kind: "child",
         attached: false
       }
-      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge] })
       const runs = makeRuns([row("run"), row("child", "completed")])
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge], runs })
       const jj = makeJj("current")
 
       const result = yield* (
@@ -288,8 +289,8 @@ describe("Rewind", () => {
           kind: "child",
           attached: false
         }
-        const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge] })
         const runs = makeRuns([row("run"), row(edge.childRunId, status)])
+        const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge], runs })
 
         const result = yield* (
           provide(
@@ -360,8 +361,8 @@ describe("Rewind", () => {
         { parentRunId: "run", parentSeq: 1, childRunId: "child-a", kind: "child", attached: false },
         { parentRunId: "run", parentSeq: 2, childRunId: "child-b", kind: "child", attached: false }
       ]
-      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges })
       const runs = makeRuns([row("run"), row("child-a", "suspended"), row("child-b", "suspended")])
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges, runs })
       const jj = makeJj("current")
 
       const result = yield* (
@@ -424,8 +425,8 @@ describe("Rewind", () => {
         attached: true
       }
       const detached: LineageEdge = { ...attached, parentSeq: 1, attached: false }
-      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [attached, detached] })
       const runs = makeRuns([row("run"), row(attached.childRunId, "suspended")])
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [attached, detached], runs })
 
       const result = yield* provide(
         Rewind.rewind({
@@ -451,8 +452,8 @@ describe("Rewind", () => {
         kind: "child",
         attached: true
       }
-      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge] })
       const runs = makeRuns([row("run"), row(edge.childRunId, "completed")])
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge], runs })
 
       const result = yield* provide(
         Rewind.rewind({ runId: "run", frame, owner, auditId: "audit-attached-terminal" }),
@@ -565,12 +566,14 @@ describe("Rewind", () => {
 
   it.effect("revalidates the tail under the claim from one page at the expected tail, never a rescan", () =>
     Effect.gen(function*() {
+      const runs = makeRuns([row("run")])
       const store = MemoryTimeTravelStore.make({
         records: [baseline(), { ...baseline(), seq: 1, eventId: "event-1" }, {
           ...baseline(),
           seq: 2,
           eventId: "event-2"
-        }]
+        }],
+        runs
       })
       const reads: Array<{ readonly after: number | undefined; readonly limit: number }> = []
       const journal = Journal.makeNoop({
@@ -598,7 +601,7 @@ describe("Rewind", () => {
             })
           )
         ),
-        { store, runs: makeRuns([row("run")]), jj: makeJj("current").service, journal }
+        { store, runs, jj: makeJj("current").service, journal }
       )
 
       expect(result.frame).toEqual(tailFrame)
@@ -683,13 +686,14 @@ describe("Rewind", () => {
 
   describe("revalidates the frame and history generation under the claim", () => {
     const frameOne = { lineageId: "run/root", seq: 1 } as const
-    const threeRecords = () =>
+    const threeRecords = (options: Pick<MemoryTimeTravelStore.Options, "runs"> = {}) =>
       MemoryTimeTravelStore.make({
         records: [baseline(), { ...baseline(), seq: 1, eventId: "event-1" }, {
           ...baseline(),
           seq: 2,
           eventId: "event-2"
-        }]
+        }],
+        ...options
       })
     /**
      * A journal that holds `before` until validation finishes and `after`
@@ -713,17 +717,19 @@ describe("Rewind", () => {
     }
     const attempt = (
       journal: ReturnType<typeof switching>,
-      store: ReturnType<typeof MemoryTimeTravelStore.make> = threeRecords()
-    ) =>
-      provide(
+      store?: ReturnType<typeof MemoryTimeTravelStore.make>
+    ) => {
+      const runs = makeRuns([row("run")])
+      return provide(
         Rewind.validate({ runId: "run", frame: frameOne }).pipe(
           Effect.tap(() => Effect.sync(() => void (journal.state.validated = true))),
           Effect.flatMap((expectedTail) =>
             Rewind.rewind({ runId: "run", frame: frameOne, owner, auditId: "audit-revalidated", expectedTail })
           )
         ),
-        { store, runs: makeRuns([row("run")]), jj: makeJj("current").service, journal: journal.journal }
+        { store: store ?? threeRecords({ runs }), runs, jj: makeJj("current").service, journal: journal.journal }
       )
+    }
     const all = [journalEntry(0), journalEntry(1), journalEntry(2)]
 
     it.effect("refuses a frame whose record vanished below an unmoved tail", () =>
@@ -822,8 +828,8 @@ describe("Rewind", () => {
         eventType: "flows.engine.run-decision",
         payload: { state: { cursor } }
       })
-      const store = MemoryTimeTravelStore.make({ records: [decision(1, 1), decision(5, 5)] })
       const runs = makeRuns([row("run")])
+      const store = MemoryTimeTravelStore.make({ records: [decision(1, 1), decision(5, 5)], runs })
 
       yield* provide(
         Rewind.rewind({
@@ -854,7 +860,7 @@ describe("Rewind", () => {
             return { _tag: "Updated" as const }
           })
       })
-      const store = MemoryTimeTravelStore.make({ records: [baseline()] })
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], runs })
 
       const fiber = yield* Effect.forkChild(
         provide(
@@ -902,7 +908,7 @@ describe("Rewind", () => {
             Effect.as({ _tag: "Transitioned" as const })
           )
       })
-      const store = MemoryTimeTravelStore.make({ records: [baseline()] })
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], runs })
       const fiber = yield* Effect.forkChild(
         provide(
           Rewind.rewind({ runId: "run", frame, owner, auditId: "audit-intentional-release" }),
@@ -931,8 +937,8 @@ describe("Rewind", () => {
         kind: "child",
         attached: false
       }
-      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge] })
       const base = makeRuns([row("run"), row(edge.childRunId, "suspended")])
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge], runs: base })
       const cancellationFailure = new RunStore.RunStoreError({
         code: "persistence_failed",
         method: "transitionOwned",
@@ -974,8 +980,8 @@ describe("Rewind", () => {
         kind: "child",
         attached: false
       }
-      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge] })
       const runs = makeRuns([row("run"), row("child", "suspended")])
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge], runs })
       const jj = makeJj("current")
 
       const failure = yield* (
@@ -1015,8 +1021,8 @@ describe("Rewind", () => {
         { parentRunId: "run", parentSeq: 1, childRunId: "child-a", kind: "child", attached: false },
         { parentRunId: "run", parentSeq: 2, childRunId: "child-b", kind: "child", attached: false }
       ]
-      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [...edges] })
       const runs = makeRuns([row("run"), row("child-a", "suspended"), row("child-b", "suspended")])
+      const store = MemoryTimeTravelStore.make({ records: [baseline()], edges: [...edges], runs })
       const jj = makeJj("current")
 
       yield* (

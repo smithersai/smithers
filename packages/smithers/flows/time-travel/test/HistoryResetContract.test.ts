@@ -25,7 +25,7 @@ const edges: ReadonlyArray<LineageEdge> = [
 ]
 
 const observeMemory = (seq: number) => {
-  const store = MemoryTimeTravelStore.make({ records, edges })
+  const store = MemoryTimeTravelStore.make({ records, edges, runOwners: new Map([["parent", owner]]) })
   return store.archiveAndTruncate("parent", { lineageId: "parent/root", seq }, [], owner).pipe(
     Effect.map((archive) => {
       const state = store.state()

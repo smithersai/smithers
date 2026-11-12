@@ -114,8 +114,10 @@ describe("rewind generation commit evidence", () => {
             Effect.gen(function*() {
               const sql = yield* Effect.service(SqlClient.SqlClient)
               const sqlStore = yield* TimeTravelStore
+              const runs = yield* RunStore.RunStore
+              // Both stores fence on the one SQL run table.
               const memoryStore = backend === "memory"
-                ? Memory.make({ records: [record(0), record(1), record(2)] })
+                ? Memory.make({ records: [record(0), record(1), record(2)], runs })
                 : undefined
               const store = memoryStore ?? sqlStore
               yield* sql`
@@ -180,7 +182,6 @@ describe("rewind generation commit evidence", () => {
                 )
               expect(outcomes).toEqual([{ _tag: completed ? "Completed" : "RolledBack", auditId: "second-rewind" }])
               expect(yield* store.pendingAudits()).toEqual([])
-              const runs = yield* RunStore.RunStore
               expect(yield* runs.get("run")).toMatchObject({ status: "suspended", owner: null })
               if (memoryStore !== undefined) {
                 expect(memoryStore.state().audits[0]).toMatchObject({

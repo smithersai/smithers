@@ -284,8 +284,8 @@ describe("Rewind protocol fault matrix", () => {
       Effect.gen(function*() {
         const logs: Array<{ level: string; message: unknown; annotations: unknown }> = []
         const initialRecords = [stored(0, "baseline", {}), stored(1, "suffix", {})]
-        const store = MemoryTimeTravelStore.make({ records: initialRecords, failAt: scenario.failAt })
         const runs = makeRuns(runRow())
+        const store = MemoryTimeTravelStore.make({ records: initialRecords, runs, failAt: scenario.failAt })
 
         const failure = yield* (
           Effect.flip(
@@ -795,14 +795,15 @@ describe("Rewind protocol fault matrix", () => {
 
   it.effect("reads every non-empty suffix page before archiving history", () =>
     Effect.gen(function*() {
+      const runs = makeRuns(runRow())
       const store = MemoryTimeTravelStore.make({
         records: [
           stored(0, "baseline", {}),
           stored(1, "suffix", { value: 1 }),
           stored(2, "suffix", { value: 2 })
-        ]
+        ],
+        runs
       })
-      const runs = makeRuns(runRow())
 
       const result = yield* (
         provide(
@@ -867,7 +868,11 @@ describe("Rewind protocol fault matrix", () => {
           }
         ]
       ) {
-        const memory = MemoryTimeTravelStore.make({ records: [stored(0, "baseline", {}), stored(1, "suffix", {})] })
+        const runs = makeRuns(runRow(), { transitionOwned: scenario.transition })
+        const memory = MemoryTimeTravelStore.make({
+          records: [stored(0, "baseline", {}), stored(1, "suffix", {})],
+          runs
+        })
         const logs: Array<{ level: string; message: unknown; annotations: unknown }> = []
         const store: typeof memory = {
           ...memory,
@@ -876,7 +881,6 @@ describe("Rewind protocol fault matrix", () => {
               ? Effect.fail(error("unknown", "postcommit audit unavailable"))
               : memory.updateAudit(id, patch)
         }
-        const runs = makeRuns(runRow(), { transitionOwned: scenario.transition })
         const jj = makeJj()
 
         const failure = yield* (
@@ -1160,16 +1164,17 @@ describe("Rewind after the archive is committed", () => {
       // `archive_committed` — a rewind that archived and then lost the fence is
       // half-applied, and an audit marked `failed` or `rolled_back` would tell
       // Recovery there is nothing to finish.
-      const store = MemoryTimeTravelStore.make({
-        records: records(),
-        snapshots: [{ runId: "run", frame, changeId: "target" }]
-      })
       const jj = makeJj()
       // The post-archive transition to `suspended` is the step that loses the
       // fence; every earlier transition still succeeds.
       const runs = makeRuns(runRow(), {
         transitionOwned: (_runId, _owner, status) =>
           Effect.succeed(status === "suspended" ? { _tag: "FenceLost" as const } : { _tag: "Transitioned" as const })
+      })
+      const store = MemoryTimeTravelStore.make({
+        records: records(),
+        snapshots: [{ runId: "run", frame, changeId: "target" }],
+        runs
       })
       const rollbacks: Array<string> = []
       const registry = Effect.runSync(

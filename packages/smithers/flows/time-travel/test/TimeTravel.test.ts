@@ -95,13 +95,14 @@ const makeRuns = (): RunStore.Service => {
 
 const harness = (options: {
   readonly store: ReturnType<typeof MemoryTimeTravelStore.make>
+  readonly runs: RunStore.Service
   readonly workspaces?: Array<string>
 }) =>
   TimeTravel.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(TimeTravelStore)(options.store),
-        Layer.succeed(RunStore.RunStore)(makeRuns()),
+        Layer.succeed(RunStore.RunStore)(options.runs),
         Layer.succeed(Journal.Journal)(journalOf(options.store)),
         Layer.succeed(Jj.Jj)(
           Jj.makeNoop({
@@ -118,17 +119,22 @@ const harness = (options: {
     )
   )
 
+/**
+ * Runs `body` against the service over `store`. A rewind's owner fence reads
+ * `runs`, so a test that rewinds builds its store over the same run store.
+ */
 const run = <A>(
   store: ReturnType<typeof MemoryTimeTravelStore.make>,
   body: (timeTravel: TimeTravel["Service"]) => Effect.Effect<A, unknown>,
-  workspaces?: Array<string>
+  workspaces?: Array<string>,
+  runs: RunStore.Service = makeRuns()
 ) =>
   Effect.scoped(
     Effect.gen(function*() {
       const timeTravel = yield* TimeTravel
       return yield* body(timeTravel)
     }).pipe(
-      Effect.provide(harness({ store, ...(workspaces === undefined ? {} : { workspaces }) })),
+      Effect.provide(harness({ store, runs, ...(workspaces === undefined ? {} : { workspaces }) })),
       Effect.orDie
     )
   )
@@ -176,13 +182,17 @@ describe("TimeTravel", () => {
 
   it.effect("rewinds at a position with the ownership claim wired internally", () =>
     Effect.gen(function*() {
+      const runs = makeRuns()
       const store = MemoryTimeTravelStore.make({
-        records: [record(0, 10), record(1, 20), record(2, 30), record(3, 40)]
+        records: [record(0, 10), record(1, 20), record(2, 30), record(3, 40)],
+        runs
       })
 
       const result = yield* run(
         store,
-        (timeTravel) => timeTravel.rewind({ runId: "run", frame: { lineageId, seq: 1 } })
+        (timeTravel) => timeTravel.rewind({ runId: "run", frame: { lineageId, seq: 1 } }),
+        undefined,
+        runs
       )
 
       expect(result.archive.archived).toBe(2)
@@ -192,8 +202,10 @@ describe("TimeTravel", () => {
 
   it.effect("honours fork root and rewind paging", () =>
     Effect.gen(function*() {
+      const runs = makeRuns()
       const store = MemoryTimeTravelStore.make({
-        records: [record(0, 10), record(1, 20), record(2, 30), record(3, 40)]
+        records: [record(0, 10), record(1, 20), record(2, 30), record(3, 40)],
+        runs
       })
       const workspaces: Array<string> = []
 
@@ -209,7 +221,8 @@ describe("TimeTravel", () => {
               pageSize: 1
             })
           }),
-        workspaces
+        workspaces,
+        runs
       )
 
       const lane = Fork.workspaceNameFor("run:fork:1:1")
@@ -262,7 +275,7 @@ describe("TimeTravel", () => {
                 { runId: "run", frame: { lineageId, seq: 0 } },
                 { detachedChildren: "blcok" as never }
               )
-            }).pipe(Effect.provide(harness({ store })))
+            }).pipe(Effect.provide(harness({ store, runs: makeRuns() })))
           )
         )
       )
@@ -363,12 +376,6 @@ describe("TimeTravel", () => {
 describe("TimeTravel wiring", () => {
   it.effect("mints distinct owners with repeated clock and random outputs across restart layers", () =>
     Effect.gen(function*() {
-      const store = MemoryTimeTravelStore.make({
-        records: [
-          record(0, 10),
-          record(1, 20)
-        ]
-      })
       let current = row("run")
       const claimedOwners: Array<{ readonly hostId: string; readonly nonce: string }> = []
       const runs = RunStore.makeNoop({
@@ -402,6 +409,13 @@ describe("TimeTravel wiring", () => {
             current = { ...current, status, owner: null, heartbeatAtMs: null }
             return { _tag: "Transitioned" as const }
           })
+      })
+      const store = MemoryTimeTravelStore.make({
+        records: [
+          record(0, 10),
+          record(1, 20)
+        ],
+        runs
       })
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
@@ -865,12 +879,14 @@ describe("TimeTravel compensation descriptors", () => {
 
   const rewindWith = (compensation: string) =>
     Effect.gen(function*() {
+      const runs = makeRuns()
       const store = MemoryTimeTravelStore.make({
         records: [
           record(0, 10),
           boundary(1, "intended", "billing/refund/v1"),
           boundary(2, "succeeded", "billing/refund/v1")
-        ]
+        ],
+        runs
       })
       const reverted: Array<string> = []
       const exit = yield* Effect.scoped(
@@ -892,7 +908,7 @@ describe("TimeTravel compensation descriptors", () => {
                     rollback: () => Effect.void
                   }]),
                   Layer.succeed(TimeTravelStore)(store),
-                  Layer.succeed(RunStore.RunStore)(makeRuns()),
+                  Layer.succeed(RunStore.RunStore)(runs),
                   Layer.succeed(Journal.Journal)(journalOf(store)),
                   Layer.succeed(Jj.Jj)(
                     Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })

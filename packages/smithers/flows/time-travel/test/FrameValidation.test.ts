@@ -82,6 +82,26 @@ const journal = Journal.makeNoop({
 })
 
 const makeHarness = () => {
+  let claims = 0
+  let workspaces = 0
+  let writes = 0
+  let reads = 0
+  // The owner `activate` records is the one the store's fence reads.
+  let owner: RunStore.RunRow["owner"] = null
+  const runs = RunStore.makeNoop({
+    get: () => Effect.sync(() => ({ ...row(), owner })),
+    claim: (_runId, _expected, _owner, nowMs) =>
+      Effect.sync(() => {
+        claims += 1
+        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
+      }),
+    activate: (_runId, claimant) =>
+      Effect.sync(() => {
+        owner = claimant
+        return { _tag: "Activated" as const }
+      }),
+    transitionOwned: () => Effect.succeed({ _tag: "Transitioned" as const })
+  })
   const store = MemoryTimeTravelStore.make({
     records: entries.map((entry) => ({
       runId: entry.runId,
@@ -89,21 +109,8 @@ const makeHarness = () => {
       eventId: entry.eventId,
       lineageId: (entry.meta as { readonly lineageId: string }).lineageId,
       payload: { eventType: entry.eventType, payload: entry.payload, meta: entry.meta }
-    }))
-  })
-  let claims = 0
-  let workspaces = 0
-  let writes = 0
-  let reads = 0
-  const runs = RunStore.makeNoop({
-    get: () => Effect.succeed(row()),
-    claim: (_runId, _expected, _owner, nowMs) =>
-      Effect.sync(() => {
-        claims += 1
-        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-      }),
-    activate: () => Effect.succeed({ _tag: "Activated" as const }),
-    transitionOwned: () => Effect.succeed({ _tag: "Transitioned" as const })
+    })),
+    runs
   })
   const dependencies = Layer.mergeAll(
     Layer.succeed(TimeTravelStore)(store),
@@ -294,18 +301,24 @@ describe("public TimeTravel frame validation", () => {
 })
 
 const bareHarness = (journal: Journal.Service) => {
-  const store = MemoryTimeTravelStore.make()
   let claims = 0
+  // The owner `activate` records is the one the store's fence reads.
+  let owner: RunStore.RunRow["owner"] = null
   const runs = RunStore.makeNoop({
-    get: () => Effect.succeed(row()),
+    get: () => Effect.sync(() => ({ ...row(), owner })),
     claim: (_runId, _expected, _owner, nowMs) =>
       Effect.sync(() => {
         claims += 1
         return { _tag: "Claimed" as const, claimedAtMs: nowMs }
       }),
-    activate: () => Effect.succeed({ _tag: "Activated" as const }),
+    activate: (_runId, claimant) =>
+      Effect.sync(() => {
+        owner = claimant
+        return { _tag: "Activated" as const }
+      }),
     transitionOwned: () => Effect.succeed({ _tag: "Transitioned" as const })
   })
+  const store = MemoryTimeTravelStore.make({ runs })
   const layer = TimeTravel.layer.pipe(
     Layer.provide(
       Layer.mergeAll(

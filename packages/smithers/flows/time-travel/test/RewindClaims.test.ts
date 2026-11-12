@@ -291,7 +291,9 @@ describe("Rewind detached child cancellation", () => {
             Effect.succeed({ _tag: "Transitioned" as const }))
     })
 
-  const storeWithChild = () => MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge] })
+  // The rewind claims the run under `owner`, so the run table records it.
+  const storeWithChild = () =>
+    MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge], runOwners: new Map([["run", owner]]) })
 
   const statefulParentAndChild = () => {
     const rows = new Map<string, RunStore.RunRow>([
@@ -357,7 +359,8 @@ describe("Rewind detached child cancellation", () => {
   const attachedStore = () =>
     MemoryTimeTravelStore.make({
       records: [baseline(), { runId: "child", seq: 0, eventId: "child-0", payload: {} }],
-      edges: [{ ...edge, attached: true }]
+      edges: [{ ...edge, attached: true }],
+      runOwners: new Map([["run", owner]])
     })
 
   it.effect("persists the child plan and owns the child before the archive hook", () =>
