@@ -27,9 +27,11 @@
  * with the current cases and checks, without calling the role's model; with
  * `--judge`, a turn is judged again when it has no verdict or its verdict was
  * made under other judge notes or another rubric (`Rubric.judgeKey`), and
- * `--rejudge` judges every conversation again. `--check-profile` composes the
- * suite's profile (shared instructions, charter, skills, byte caps), prints
- * what it found and exits; it is the check for a profile.
+ * `--rejudge` judges every conversation again. A verdict the rescore carries
+ * over keeps the `judgeKey` it was made under, so a later `--judge` still sees
+ * that its notes changed. `--check-profile` composes the suite's profile
+ * (shared instructions, charter, skills, byte caps), prints what it found and
+ * exits; it is the check for a profile.
  *
  * Other flags: `--coverage` lists how many cases test each spec rule; `--cases a,b` keeps some cases; `--category a,b` keeps some
  * categories; `--reply-from summary` reads a RoleResult reply's summary; `--profile <file>` and `--common <file>` swap the
@@ -469,6 +471,11 @@ interface Outcome {
   readonly pass: boolean
   readonly failed: ReadonlyArray<Checks.Check>
   readonly judgeReason: string | undefined
+  /**
+   * What the verdict depended on (`Rubric.judgeKey`): the current key when the
+   * judge gave the verdict in this run, else the key it was saved with.
+   */
+  readonly judgeKey: string | undefined
 }
 
 interface SavedConversation {
@@ -540,12 +547,13 @@ const rescore = (file: string) =>
           }))
       )
       const checksPass = results.length > 0 && failed.length === 0
+      const key = CharacterRubric.judgeKey(suiteCase)
       let judgePass = conversation.judgePass
       let judgeReason = conversation.judge
-      if (
-        checksPass && judgeScorer !== undefined &&
-        (rejudge || CharacterRubric.needsJudge(conversation, CharacterRubric.judgeKey(suiteCase)))
-      ) {
+      // A carried verdict keeps the key it was made under; only a verdict
+      // given here is stamped with the current one.
+      let judgeKey = conversation.judgeKey
+      if (checksPass && judgeScorer !== undefined && (rejudge || CharacterRubric.needsJudge(conversation, key))) {
         const graded = yield* characterJudge.score({
           input: {},
           output: {
@@ -557,6 +565,7 @@ const rescore = (file: string) =>
         })
         judgePass = (graded.meta as { readonly pass: boolean }).pass
         judgeReason = graded.reason
+        judgeKey = key
       }
       outcomes.push({
         plan: { suiteCase, variant: { kind: "live" }, trial: conversation.trial },
@@ -566,7 +575,8 @@ const rescore = (file: string) =>
         judgePass: checksPass ? judgePass : true,
         pass: checksPass && judgePass,
         failed,
-        judgeReason: checksPass ? judgeReason : undefined
+        judgeReason: checksPass ? judgeReason : undefined,
+        judgeKey: checksPass ? judgeKey : undefined
       })
     }
     return outcomes
@@ -646,7 +656,8 @@ const program = Effect.gen(function*() {
               !check.pass
             )
             : [],
-          judgeReason: judged?.kind === "score" ? judged.reason : judged?.reason
+          judgeReason: judged?.kind === "score" ? judged.reason : judged?.reason,
+          judgeKey: judged?.kind === "score" ? CharacterRubric.judgeKey(plan.suiteCase) : undefined
         }
       })
     })
@@ -762,7 +773,7 @@ const program = Effect.gen(function*() {
             checksPass: outcome.checksPass,
             judgePass: outcome.judgePass,
             judge: outcome.judgeReason,
-            judgeKey: CharacterRubric.judgeKey(outcome.plan.suiteCase),
+            judgeKey: outcome.judgeKey,
             failed: outcome.failed,
             turns: outcome.conversation?.turns.map((turn) => ({
               trigger: turn.trigger,

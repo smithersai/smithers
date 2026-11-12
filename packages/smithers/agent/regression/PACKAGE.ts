@@ -75,16 +75,18 @@ const character = Smithers.NodeTest({
 })
 
 /**
- * The character runner's own `bun:test` suites: the world's patching and
- * tools, the deterministic checks, and what the judge sees and re-judges.
- * Pure and fast; no model, no network.
+ * The character runner's own `bun:test` suites, every `character/*.test.ts`:
+ * the world's patching and tools, the deterministic checks, what the judge
+ * sees and re-judges, the seat environment's credential stripping, the
+ * profile composer, the `--label` guard, and the rescore exit codes through
+ * the real CLI. Fast; no model, no network.
  *
  * @since 0.1.0
  * @category test
  */
 const characterUnit = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["character/world.test.ts", "character/score.test.ts", "character/rubric.test.ts"]),
+  runner: Smithers.testSuite(["character"]),
   srcs: characterSources,
   deps: [],
   cwd

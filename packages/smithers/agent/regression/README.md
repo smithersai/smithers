@@ -234,10 +234,11 @@ themselves when they are symlinks, are skipped.
 cases and checks without calling the role's model; with `--judge` it judges a
 conversation again when it has no verdict or its verdict was made under other
 judge notes or another rubric version (each saved conversation carries the
-`judgeKey` it was judged under), and `--rejudge` judges every conversation
-again. `--check-profile` composes the suite's role file (shared instructions,
-charter, skills, byte caps), prints what it found and exits non-zero on a
-missing skill or an oversized part; it is the check for a role file.
+`judgeKey` its verdict was made under, and a rescore that keeps a verdict keeps
+its key), and `--rejudge` judges every conversation again. `--check-profile`
+composes the suite's role file (shared instructions, charter, skills, byte
+caps), prints what it found and exits non-zero on a missing skill or an
+oversized part; it is the check for a role file.
 
 Limits: the world's tools are simulations, so a live pass shows how the
 profile behaves against this world, not that real integrations work. The
