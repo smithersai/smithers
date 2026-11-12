@@ -1427,7 +1427,8 @@ describe("unified durable log streams", () => {
       false,
       { after: 40, limit: 2, root: "/fixture", quiet: false, verbose: false, follow: false },
       result.config,
-      40
+      // The whole watch cursor, so a page can resume inside an expanded journal entry (69e55744).
+      { sequence: 40 }
     )
     expect(returned).toHaveBeenCalledOnce()
     expect(ports.progress).not.toHaveBeenCalled()
