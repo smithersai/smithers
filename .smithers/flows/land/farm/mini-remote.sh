@@ -1,6 +1,8 @@
 #!/bin/bash
 # remote.sh <slot> <node version> <cwd> <e2e 0|1> <env count> [NAME=VALUE...] -- <command...>
 set -uo pipefail
+# A non-login environment (a CI runner step, a sandboxed test) may not export USER.
+: "${USER:=$(id -un)}"
 exec 9<&0 0</dev/null # fd 9 is the MacBook's keeper; nothing else reads it
 SLOT=$1 NODE_VERSION=$2 CWD=$3 E2E=$4 NENV=$5; shift 5
 # Slot names select database identifiers as well as paths: validate before either use.
