@@ -9,8 +9,10 @@
 //! filesystem, so futures are driven with `pollster::block_on`, the same way
 //! jj-lib's own sync wrappers (e.g. `Store::get_commit`) do.
 
+use std::ffi::OsString;
 use std::path::Component;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use jj_lib::commit::Commit;
@@ -401,12 +403,81 @@ fn validate_workspace_name(name: &str) -> Result<(), OpError> {
     Ok(())
 }
 
+/// Whether `path` has a `.jj` or `.git` component, compared without regard to
+/// ASCII case because APFS and NTFS resolve `.JJ` to `.jj`.
+fn has_store_component(path: &Path) -> bool {
+    path.components().any(|component| {
+        component.as_os_str().to_str().is_some_and(|segment| {
+            segment.eq_ignore_ascii_case(".jj") || segment.eq_ignore_ascii_case(".git")
+        })
+    })
+}
+
+/// `path` with every symlink among its existing components replaced by its
+/// target, the way `create_dir_all` and the host will follow them. The first
+/// missing component ends resolution: nothing below it exists to be a link.
+/// Works without `canonicalize`, which wasm32-wasip1 lacks.
+fn resolve_existing_symlinks(path: &Path) -> Result<PathBuf, OpError> {
+    // Hops a symlink chain may take, matching Linux's `MAXSYMLINKS`.
+    const MAX_HOPS: usize = 40;
+    let mut pending: Vec<OsString> = path
+        .components()
+        .rev()
+        .map(|component| component.as_os_str().to_owned())
+        .collect();
+    let mut resolved = PathBuf::new();
+    let mut hops = 0;
+    let mut missing = false;
+    while let Some(segment) = pending.pop() {
+        if segment == "/" {
+            resolved = PathBuf::from("/");
+            continue;
+        }
+        if segment == "." {
+            continue;
+        }
+        if segment == ".." {
+            resolved.pop();
+            continue;
+        }
+        let candidate = resolved.join(&segment);
+        if !missing {
+            match std::fs::symlink_metadata(&candidate) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    hops += 1;
+                    if hops > MAX_HOPS {
+                        return Err(OpError::unknown(format!(
+                            "destination path {:?} has too many levels of symlinks",
+                            path.display().to_string()
+                        )));
+                    }
+                    let target = std::fs::read_link(&candidate)?;
+                    pending.extend(
+                        target
+                            .components()
+                            .rev()
+                            .map(|component| component.as_os_str().to_owned()),
+                    );
+                    continue;
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => missing = true,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        resolved = candidate;
+    }
+    Ok(resolved)
+}
+
 /// The destination a `workspaceAdd` may create: an absolute path with no
 /// `.` or `..` component and no `.jj` or `.git` component, compared without
 /// regard to ASCII case because APFS and NTFS resolve `.JJ` to `.jj`. The
 /// path is caller-chosen, and without these checks it could climb out of the
 /// directory the caller named or land a working copy inside a repository's
-/// `.jj` store or colocated `.git` directory.
+/// `.jj` store or colocated `.git` directory. The `.jj`/`.git` check runs
+/// again on the path with its existing symlinks resolved, so a symlinked
+/// parent cannot point the destination into a store.
 fn workspace_destination(path: &str) -> Result<&Path, OpError> {
     let destination = Path::new(path);
     if !destination.is_absolute() {
@@ -419,15 +490,20 @@ fn workspace_destination(path: &str) -> Result<&Path, OpError> {
     let dot_segment = path
         .split('/')
         .any(|segment| segment == "." || segment == "..");
-    let bad_component = destination.components().any(|component| {
-        matches!(component, Component::ParentDir | Component::CurDir)
-            || component.as_os_str().to_str().is_some_and(|segment| {
-                segment.eq_ignore_ascii_case(".jj") || segment.eq_ignore_ascii_case(".git")
-            })
-    });
+    let bad_component = destination
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        || has_store_component(destination);
     if dot_segment || bad_component {
         return Err(OpError::unknown(format!(
             "destination path {path:?} must not contain '.', '..', '.jj', or '.git' components"
+        )));
+    }
+    let resolved = resolve_existing_symlinks(destination)?;
+    if has_store_component(&resolved) {
+        return Err(OpError::unknown(format!(
+            "destination path {path:?} resolves through a symlink to {:?}, inside a '.jj' or '.git' directory",
+            resolved.display().to_string()
         )));
     }
     Ok(destination)
@@ -999,6 +1075,60 @@ mod tests {
 
         workspace_add(&root, "Lane_1.a-b", lane).unwrap();
         workspace_forget(&root, "Lane_1.a-b").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_add_refuses_destinations_that_resolve_into_a_store_through_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        init(&root).unwrap();
+        std::fs::create_dir(root.join(".git")).unwrap();
+        symlink(root.join(".jj"), temp.path().join("absolute")).unwrap();
+        symlink("repo/.git", temp.path().join("relative")).unwrap();
+        symlink("absolute", temp.path().join("chained")).unwrap();
+        symlink("loop-b", temp.path().join("loop-a")).unwrap();
+        symlink("loop-a", temp.path().join("loop-b")).unwrap();
+
+        for (link, store) in [
+            ("absolute", root.join(".jj")),
+            ("relative", root.join(".git")),
+            ("chained", root.join(".jj")),
+        ] {
+            let path = temp.path().join(link).join("sneak");
+            let error = workspace_add(&root, "sneak", path.to_str().unwrap()).unwrap_err();
+            assert_eq!(error.code, crate::error::ErrorCode::Unknown);
+            assert!(
+                error.message.contains("resolves through a symlink"),
+                "{}",
+                error.message
+            );
+            assert!(
+                !store.join("sneak").exists(),
+                "{link} created a working copy in the store"
+            );
+        }
+        let looping = temp.path().join("loop-a").join("lane");
+        let error = workspace_add(&root, "lane", looping.to_str().unwrap()).unwrap_err();
+        assert!(
+            error.message.contains("too many levels of symlinks"),
+            "{}",
+            error.message
+        );
+
+        let settings = user_settings().unwrap();
+        let (_, repo) = load(&settings, &root).unwrap();
+        assert_eq!(repo.view().wc_commit_ids().len(), 1);
+
+        // A symlinked parent that resolves outside any store is still a valid destination.
+        std::fs::create_dir(temp.path().join("lanes")).unwrap();
+        symlink(temp.path().join("lanes"), temp.path().join("lanes-link")).unwrap();
+        let lane = temp.path().join("lanes-link").join("lane");
+        workspace_add(&root, "lane", lane.to_str().unwrap()).unwrap();
+        assert!(temp.path().join("lanes").join("lane").join(".jj").is_dir());
+        workspace_forget(&root, "lane").unwrap();
     }
 
     #[test]

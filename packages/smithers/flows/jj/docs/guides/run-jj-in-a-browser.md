@@ -175,8 +175,10 @@ operation can close that gap.
 
 The reactor refuses a `workspaceAdd` or `workspaceForget` name outside
 `[A-Za-z0-9._-]`, an empty name, and one that starts with `.`. It refuses a
-`workspaceAdd` path that is relative or has a `.`, `..`, or `.jj` component.
-Each refusal fails `unknown` before any directory or repository state is
+`workspaceAdd` path that is relative or has a `.`, `..`, `.jj`, or `.git`
+component, compared without regard to ASCII case. It resolves the symlinks
+among the path's existing directories and refuses a path that then lands inside
+a `.jj` or `.git` directory. Each refusal fails `unknown` before any directory or repository state is
 written. The CLI layers pass names and paths to jj unchanged.
 
 ### `root(from)` answers for its own slice

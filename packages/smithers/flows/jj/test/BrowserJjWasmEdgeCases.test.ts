@@ -5,7 +5,8 @@
  * level), snapshot with nothing changed, unicode / deep / space-containing
  * paths, a >1MiB file through the shim's chunked reads, file↔directory
  * replacement across restore, overlapping Effect operations on one instance,
- * and workspaceForget of a name that never existed.
+ * a workspaceAdd destination whose symlinked parent points into `.jj`, and
+ * workspaceForget of a name that never existed.
  *
  * Each scenario builds its own temp-dir repo so no test depends on another's
  * mutations. The compiled module is shared — compilation is the expensive
@@ -439,6 +440,22 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj edge cases over flows_jj.was
         write(host, "x.txt", "mutated\n")
         yield* (jj.restore(snap.commitId))
         expect(read(host, "x.txt")).toBe("x\n")
+      }), { timeout })
+  })
+
+  describe("workspaceAdd through a symlinked parent", () => {
+    it.effect("refuses a destination whose parent links into the .jj store", () =>
+      Effect.gen(function*() {
+        const host = freshHost()
+        const jj = yield* jjFor(host)
+        write(host, "a.txt", "alpha\n")
+        yield* (jj.snapshot("base"))
+        fsModule.symlinkSync("repo/.jj", join(host, "link"))
+
+        const refused = yield* flip(jj.workspaceAdd("sneak", "/link/sneak"))
+        expect(refused.code).toBe("unknown")
+        expect(refused.message).toContain("resolves through a symlink")
+        expect(fsModule.existsSync(join(host, "repo", ".jj", "sneak"))).toBe(false)
       }), { timeout })
   })
 
