@@ -1,11 +1,15 @@
 /** Wrapped harnesses: the vendor argv, the stream fold, and worker runs end to end on stand-in binaries. */
+import * as AgentBudget from "@smthrs/agent/Budget"
 import * as SmithersPlugin from "@smthrs/agent/SmithersPlugin"
 import { afterEach, describe, expect, it } from "bun:test"
-import { mkdtempSync, readFileSync } from "node:fs"
+import { Effect } from "effect"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as Budget from "../src/budget.ts"
 import * as Context from "../src/context.ts"
-import type * as Host from "../src/host.ts"
+import * as Host from "../src/host.ts"
+import * as Log from "../src/log.ts"
 import { Workspace } from "../src/workspace.ts"
 import * as Wrapped from "../src/wrapped.ts"
 
@@ -428,4 +432,104 @@ it("titles wrapped workers from the prompt at a word boundary without asking ano
   expect(prompt[description.length]).toBe(" ")
   expect(asked).toEqual([])
   workspace.dispose()
+})
+
+/** A real host's caps over `ledger`, with no memory flow: what a wrapped worker's run answers to. */
+const cappedHost = (budget: AgentBudget.Policy, ledger: AgentBudget.Ledger): Host.Host => {
+  const { memory: _memory, ...on } = Host.make({
+    cwd: mkdtempSync(join(tmpdir(), "tui-wrapped-cap-")),
+    environment: {},
+    approvals: "all",
+    budget,
+    ledger
+  })
+  return on
+}
+const today = () => new Date().toISOString().slice(0, 10)
+
+it("stops a Claude Code worker at its run cap, charges its calls to the day, and resumes it under a raised cap", async () => {
+  const log = vendors("0.5")
+  const ledger = AgentBudget.memoryLedger()
+  const on = cappedHost({ tokens: { max: 200, onExceeded: "fail" }, daily: { max: 5000 } }, ledger)
+  const alerts: Array<string> = []
+  const stop = Log.subscribe((message) => alerts.push(message))
+  try {
+    const workspace = workspaceOn(on)
+    workspace.request({ id: "c", title: "fix session", prompt: "Fix the session.", harness: "claude", by: "user" })
+    const tab = () => workspace.snapshot().tabs[0]!
+    await until(() => tab().status === "failed")
+    // Each call is 105 tokens, so a second would pass 200: the vendor is stopped after its first.
+    expect(tab().failure?.headline).toBe("Token budget reached")
+    expect(Budget.capped(tab().failure)).toBe(true)
+    expect(await Effect.runPromise(ledger.total(today()))).toBe(105)
+    expect(workspace.transcript("c").usage).toMatchObject({ input: 100, output: 5 })
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toMatch(/^Run token cap reached: 105 of 200 tokens used by worker tui-[0-9a-f]{8}-1\./)
+    const session = tab().harness!.session!
+    // Twice the cap is a new run's allowance: both of the resumed run's calls fit in 400.
+    workspace.raiseCap("c", { times: 2 })
+    await until(() => tab().status === "done")
+    expect(tab()).toMatchObject({ status: "done", answer: "Refreshed the cookie before retry." })
+    expect(await Effect.runPromise(ledger.total(today()))).toBe(315)
+    expect(alerts).toHaveLength(1)
+    const argv = readFileSync(log, "utf8").trim().split("\n")
+    expect(argv).toHaveLength(2)
+    expect(argv[1]).toContain(`--resume ${session}`)
+  } finally {
+    stop()
+    await on.dispose()
+  }
+})
+
+it("charges a Codex worker's turn to the day, and starts no vendor once the day's cap is spent", async () => {
+  const log = vendors("0")
+  const ledger = AgentBudget.memoryLedger()
+  const on = cappedHost({ daily: { max: 108 } }, ledger)
+  const alerts: Array<string> = []
+  const stop = Log.subscribe((message) => alerts.push(message))
+  try {
+    const workspace = workspaceOn(on)
+    workspace.request({ id: "x", title: "fix queue", prompt: "Fix the queue.", harness: "codex", by: "user" })
+    const tab = (index: number) => workspace.snapshot().tabs[index]!
+    await until(() => tab(0).status === "done")
+    // The turn that spent the day had already answered: it is charged, 100 in and 8 out, and stays done.
+    expect(tab(0)).toMatchObject({ status: "done", answer: "Fixed the flaky queue." })
+    expect(await Effect.runPromise(ledger.total(today()))).toBe(108)
+    for (const harness of ["codex", "claude"] as const) {
+      workspace.request({ id: harness, title: "next", prompt: "Next.", harness, by: "user" })
+    }
+    await until(() => tab(1).status === "failed" && tab(2).status === "failed")
+    for (const index of [1, 2]) {
+      expect(tab(index).failure).toMatchObject({
+        headline: "Daily token cap reached",
+        line: "108 of 108 tokens used today."
+      })
+    }
+    expect(alerts[0]).toMatch(/^Daily token cap reached: 108 of 108 tokens used today, stopped at worker tui-/)
+    expect(readFileSync(log, "utf8").trim().split("\n")).toHaveLength(1)
+  } finally {
+    stop()
+    await on.dispose()
+  }
+})
+
+it("fails a wrapped worker whose spend cannot be recorded, and stops its vendor", async () => {
+  const log = vendors("0.5")
+  const memory = AgentBudget.memoryLedger()
+  const on = cappedHost({ daily: { max: 5000 } }, {
+    ...memory,
+    record: () => Effect.fail(new Error("the spend file is read-only"))
+  })
+  try {
+    const workspace = workspaceOn(on)
+    workspace.request({ id: "c", title: "fix session", prompt: "Fix the session.", harness: "claude", by: "user" })
+    const tab = () => workspace.snapshot().tabs[0]!
+    await until(() => tab().status === "failed")
+    expect(tab().detail).toContain("the spend file is read-only")
+    const notes = workspace.transcript("c").items.filter((item) => item.kind === "note").map((item) => item.text)
+    expect(notes).not.toContain("⏺ Refreshed the cookie before retry.")
+    expect(existsSync(log)).toBe(true)
+  } finally {
+    await on.dispose()
+  }
 })

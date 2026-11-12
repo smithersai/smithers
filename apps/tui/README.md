@@ -606,6 +606,14 @@ quitting it hands the worker back, and it continues headless with
 otherwise it only reads (Claude Code in plan mode, Codex in a read-only
 sandbox).
 
+A wrapped worker answers to the same spend caps as any other worker. A launch
+is refused once the run's cap or the day's is spent. Each model call the vendor
+reports is charged to the run and to the day's ledger, and a call that leaves
+no room for the next one stops the vendor with **Token budget reached** or
+**Daily token cap reached**; Raise cap resumes the worker on its session. Codex
+reports its tokens only when its turn completes, so its turn is charged then and
+the caps apply to its next launch.
+
 ## Custom agents
 
 A custom agent is a markdown flow, `.smithers/flows/<name>/flow.mdx` (or `SKILL.md`).

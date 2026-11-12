@@ -1122,6 +1122,8 @@ export class Workspace {
     }
     let cancelled = false
     let current: Wrapped.Handle | undefined
+    // The vendor makes its own model calls: the host's caps admit each launch and are charged each call.
+    const meter = this.options.host.meter?.(tab.caps === undefined ? {} : { caps: tab.caps })
     const body = async (): Promise<Host.Outcome> => {
       // A take-over does not survive a restart: the vendor's own TUI went with the process.
       const restored = this.tabs.get(tab.id)
@@ -1170,6 +1172,13 @@ export class Workspace {
       {
         for (;;) {
           if (cancelled) return { _tag: "cancelled" }
+          const refused = await meter?.admit()
+          if (refused !== undefined) return refused
+          // A cap a call crossed stops the vendor; the charges are read in the order the vendor made them.
+          let capped: Host.Outcome | undefined
+          let charging: Promise<void> = Promise.resolve()
+          // Once the vendor answered it makes no further call, so there is nothing left to stop.
+          let answered = false
           const session = this.tabs.get(tab.id)?.harness?.session ?? chosen
           const handle = Wrapped.run({
             vendor,
@@ -1183,6 +1192,7 @@ export class Workspace {
             if (!own()) return
             if (folded.error === undefined && (folded.settled === true || folded.answer !== undefined)) accepted()
             if (folded.announce !== undefined) this.announced.set(tab.id, folded.announce)
+            if (folded.answer !== undefined) answered = true
             const at = this.tabs.get(tab.id)!
             if (folded.session !== undefined && at.harness?.session !== folded.session) {
               this.tabs.put({ ...at, harness: { ...at.harness!, session: folded.session } })
@@ -1191,6 +1201,13 @@ export class Workspace {
             const usage = folded.usage
             if (usage !== undefined && (usage.call === undefined || !counted.has(usage.call))) {
               if (usage.call !== undefined) counted.add(usage.call)
+              if (meter !== undefined) {
+                charging = charging.then(() => meter.charge(usage)).then((crossed) => {
+                  if (crossed === undefined || capped !== undefined || answered) return
+                  capped = crossed
+                  handle.stop()
+                })
+              }
               const transcript = this.transcript(tab.id)
               this.transcripts.set(tab.id, {
                 ...transcript,
@@ -1208,8 +1225,11 @@ export class Workspace {
           current = handle
           this.vendorRuns.set(tab.id, handle)
           const outcome = await handle.done
+          await charging
           if (outcome._tag === "done") accepted()
           this.vendorRuns.delete(tab.id)
+          // A vendor that finished has its answer; one the cap stopped fails with the cap.
+          if (capped !== undefined && outcome._tag !== "done") return capped
           const handover = this.handovers.get(tab.id)
           if (handover?.withdrawn === true && !cancelled) {
             // Released before the terminal was handed over: the run just goes on.

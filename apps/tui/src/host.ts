@@ -152,6 +152,19 @@ export interface Turn {
   readonly cancel: () => void
 }
 
+/**
+ * The caps of one run whose model calls a vendor makes itself: a wrapped harness. Each answers the
+ * failure the run stops with, or nothing while it may go on.
+ */
+export interface Meter {
+  /** Whether the run may make its next model call, by its run cap and the day's. */
+  readonly admit: () => Promise<Outcome | undefined>
+  /** Charges one model call the vendor reported to the run and the day, then answers as `admit` does. */
+  readonly charge: (
+    usage: { readonly input: number; readonly output: number; readonly cached: number }
+  ) => Promise<Outcome | undefined>
+}
+
 export interface Host {
   readonly cwd: string
   /** The host's run token cap; absent when it is off. */
@@ -184,6 +197,11 @@ export interface Host {
   /** Which model accounts ran out of credit this session; every turn this host runs records it. */
   readonly credit?: Credit.Ledger
   readonly run: (input: TurnInput) => Turn
+  /**
+   * The caps of a wrapped worker's run, as `run` applies them to its own; `caps` as `TurnInput.caps`.
+   * Absent on test fakes, which cap nothing.
+   */
+  readonly meter?: (input: { readonly caps?: Caps }) => Meter
   /** Absent on hosts that approve nothing, such as test fakes. */
   readonly approvals?: {
     readonly mode: Approvals.Mode
@@ -817,6 +835,50 @@ export const make = (options: {
     }
   }
 
+  const meter: NonNullable<Host["meter"]> = (input) => {
+    // A run of its own, as a turn is: its allowance is new and its calls are its alone in the ledger.
+    const executionId = `tui-${hostId}-${++turns}`
+    // No policy caps nothing; the vendor's calls are still the run's.
+    const budget = Effect.runPromise(
+      Effect.orDie(Budget.make(raised(options.budget ?? {}, input.caps ?? {}), ledgerOptions))
+    )
+    let calls = 0
+    const stopped = (error: Budget.BudgetExceeded | Budget.Skipped | Budget.AccountingUnavailable): Outcome => {
+      const notice = capNotice(error, `worker ${executionId}`)
+      if (notice !== undefined) Log.alert("host.cap", notice)
+      return { _tag: "failed", message: describe(Cause.fail(error)), detail: error.message, error }
+    }
+    const decide = (
+      ask: (budget: Budget.Service) => Effect.Effect<Budget.Verdict, Budget.AccountingUnavailable>
+    ): Promise<Outcome | undefined> =>
+      budget.then((service) =>
+        Effect.runPromise(Effect.match(ask(service), {
+          onFailure: stopped,
+          onSuccess: (verdict) => (verdict._tag === "refuse" ? stopped(verdict.failure) : undefined)
+        }))
+      )
+    return {
+      admit: () => decide((service) => service.check(undefined)),
+      charge: (usage) => {
+        // The budget holds no run here, so the key names this one: the ledger keeps a call per key.
+        const key = `${executionId}/${++calls}`
+        return decide((service) =>
+          Effect.andThen(
+            service.record(
+              key,
+              ModelEvent.Usage.make({
+                inputTokens: usage.input,
+                outputTokens: usage.output,
+                cachedInputTokens: usage.cached
+              })
+            ),
+            service.check(undefined)
+          )
+        )
+      }
+    }
+  }
+
   const approvals: NonNullable<Host["approvals"]> = {
     mode: approvalMode,
     authorize: (requests, signal) =>
@@ -846,6 +908,7 @@ export const make = (options: {
     credit,
     memory,
     run,
+    meter,
     approvals,
     describe: describeTab,
     monitor,
