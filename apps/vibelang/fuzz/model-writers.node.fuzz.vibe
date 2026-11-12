@@ -36,6 +36,42 @@ const ReviewerInput = Schema.Struct({ reviewer: Schema.Literals(["astra", "sol",
 
 const spendFailures = effect (draft: string) => (try Metric.value(Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft }))).count
 
+/** An admitting ledger whose physical model calls the day refuses, or cannot record. */
+function physicalLedger(physical: "refuse" | "fault") {
+  const day = ledger("admit")
+  const spend: Spend.Shape = {
+    admit: effect (date, key, ceiling) => {
+      if (!key.startsWith("model/")) return try day.spend.admit(date, key, ceiling)
+      if (physical === "fault") throw new Unreachable({ what: "budget" })
+      return false
+    },
+    spend: day.spend.spend,
+  }
+  return spend
+}
+
+/** A wiki draft whose model call the day refuses or cannot record: `budget`, never `draft`. */
+effect function wikiPhysical(physical: "refuse" | "fault") {
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ page: "roadmap", text: "# Edited" }))], prompt: 3, completion: 4 }])
+  const agent = wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })))
+  return try within(wikiWriter.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, physicalLedger(physical)))), effect {
+    const result = try Effect.result((try WikiWriter).draft({ page: "roadmap", source: "# Page", ask: "Shorter." }))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  })
+}
+
+/** A review whose model call the day refuses or cannot record: `budget`, never `review`. */
+effect function reviewPhysical(reviewer: "astra" | "sol" | "fable" | "opus", physical: "refuse" | "fault") {
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ verdict: "LGTM", grade: "A", review: "Fine." }))], prompt: 2, completion: 2 }])
+  const values = { ...scripted.values, [`SPEC_REVIEW_${reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, physicalLedger(physical))), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  const spec = { revision: 1, text: "spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  return try within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(reviewer, spec))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  })
+}
+
 /** An admitting ledger that never takes a charge. */
 function unchargeable() {
   const day = ledger("admit")
@@ -66,6 +102,7 @@ it.live("wiki/writer", () => run("wiki/writer", WikiInput, (input) => scoped(eff
   const refusal = try Effect.flip(bare.run({ page: input.page, source: "# Page", ask: input.ask }, undefined as never) as never as Effect<never, WikiFailure>)
   if (bare.available || refusal.reason !== "no-model") return false
   if (!(try wikiSettlementDown(input.ask))) return false
+  if ((try wikiPhysical("refuse")) !== "budget" || (try wikiPhysical("fault")) !== "budget") return false
   const { log, spend } = ledger(input.admission)
   let agents = 0
   const agent = input.agent === "fails" || input.agent === "drafts" || input.agent === "absent" ? Layer.succeed(WikiDraftAgent, {
@@ -119,6 +156,7 @@ effect function keylessReviewer(reviewer: "astra" | "sol" | "fable" | "opus") {
 /** A reviewer with no configured model and a refused budget never asks a model; reasons stay within the known set. */
 it.live("specification/reviewers", () => run("specification/reviewers", ReviewerInput, (input) => scoped(effect {
   if (!(try reviewSettlementDown(input.reviewer, input.revision)) || !(try keylessReviewer(input.reviewer))) return false
+  if ((try reviewPhysical(input.reviewer, "refuse")) !== "budget" || (try reviewPhysical(input.reviewer, "fault")) !== "budget") return false
   const { log, spend } = ledger(input.admission)
   const name = `SPEC_REVIEW_${input.reviewer.toUpperCase()}`
   const failing = input.bound === "refused" ? try scriptedModel(FAILING) : undefined
@@ -204,7 +242,35 @@ function scriptOf(input: typeof ReplyInput.Type, done: (output: string) => strin
  * `Reply.answer` over a real model answer: an answer the agent completed is finished with exactly that text, its visible
  * stream is a prefix of it, and everything else fails with one of the product's reasons.
  */
+/** One reply over `scripts` and `spend`: what it finished or failed with, and how often it started over. */
+effect function replyOver(scripts: ReadonlyArray<Scripted>, spend: Spend.Shape) {
+  const log = { finished: [] as Array<string>, failed: [] as Array<string>, restarts: 0 }
+  const replies: Replies.Shape = {
+    start: () => succeed("done" as const),
+    history: () => succeed([{ author: "person" as const, text: "question" }]),
+    append: () => Effect.void,
+    restart: () => sync(() => { log.restarts += 1 }),
+    finish: (_reply, text) => sync(() => { log.finished.push(text); return "done" as const }),
+    fail: (_reply, reason) => sync(() => { log.failed.push(reason); return "done" as const }),
+  }
+  const scripted = try scriptedModel(scripts)
+  const services = Layer.mergeAll(
+    Layer.succeed(Replies, replies), Layer.succeed(Spend, spend), Layer.succeed(ChatModel, { model: scripted.model, unusable: "" }),
+    Layer.succeed(Tours, {} as Tours.Shape), Layer.succeed(HistoryTools, { history: {} as HistoryTools.Shape["history"] }),
+  )
+  try within(services, Effect.as(Effect.orDie(answerPost("m1")), "settled") as never)
+  return log
+}
+
 it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scoped(effect {
+  // Every execution: an answer that starts over shows the second text only; a model call the day refuses, or whose
+  // charge cannot be recorded, fails the reply as the budget's.
+  const corrected = try replyOver(scriptsOf({ ...input, kind: "corrected" }), ledger("admit").spend)
+  if (input.text.isWellFormed() && input.text.trim() !== "" && (corrected.restarts !== 1 || corrected.finished[0] !== input.text)) return false
+  for (const physical of ["refuse", "fault"] as const) {
+    const refused = try replyOver(scriptsOf({ ...input, kind: "answer" }), physicalLedger(physical))
+    if (refused.finished.length !== 0 || refused.failed[0] !== REASONS.budget) return false
+  }
   const log = { finished: [] as Array<string>, failed: [] as Array<string>, appended: new Map<number, string>(), restarts: 0, starts: 0 }
   const { log: charges, spend } = ledger(input.admission)
   const replies: Replies.Shape = {

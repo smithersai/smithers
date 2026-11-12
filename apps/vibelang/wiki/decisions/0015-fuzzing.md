@@ -1373,3 +1373,9 @@ totals alone did not show it); a negative hold admitted.
 container that stops while an admitted command runs (a new `dies` fault in `fuzz/machine-box.ts`; `FAULTS` is
 unchanged, so saved values keep their meaning): that command is `not-current` and never runs again. Mutant caught:
 the box's running state left out of the command's last check.
+
+The wiki writer, the reviewers and the reply now also each meet a model call the day refuses, and one whose charge
+the ledger cannot record (`physicalLedger` in `model-writers`): all three answer the budget's failure, never the
+model's. Each reply execution also starts over once (`corrected`): only the second text is shown. Mutants caught:
+the wiki's refused call reported `draft`; the reviewers' and the reply's ledger outage passed on as the model's
+failure; a reply that never starts over.
