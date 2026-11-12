@@ -80,7 +80,7 @@ const registered = Effect.gen(function*() {
   const store = yield* TriggerStore.TriggerStore
   const trigger = yield* Trigger.make(declaration)
   return yield* store.register(trigger)
-  // { ...declaration, revision: 1, lastFiredAt: undefined }
+  // { ...declaration, revision: 1, registeredAt: <store clock>, lastFiredAt: undefined }
 })
 ```
 
@@ -88,8 +88,11 @@ const registered = Effect.gen(function*() {
   id. A scheduler carries it into each claim, so an edit invalidates in-flight
   decisions rather than racing them. See
   [the claim protocol](../concepts/claim-protocol.md).
-- `lastFiredAt` is absent until an occurrence is recorded. Its absence is what
-  tells the first tick that this trigger owes no history.
+- `lastFiredAt` is absent until an occurrence is recorded. Until then catch-up
+  starts from `registeredAt`, the store clock at the id's first registration,
+  so the trigger owes no boundary from before it was registered, and the ones
+  after it as `catchUp` says, even to a scheduler that starts later. Registering the id again keeps
+  `registeredAt`.
 
 `SqlTriggerStore.register` re-validates the declaration itself, so a caller that
 bypassed `Trigger.make` still cannot write an unsatisfiable cron into the

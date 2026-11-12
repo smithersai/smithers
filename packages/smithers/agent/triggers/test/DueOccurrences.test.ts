@@ -31,6 +31,23 @@ describe("DueOccurrences", () => {
     expect(await compute(hourly(), undefined)).toEqual({ occurrences: [], watermark: 3 * hour })
   })
 
+  // A restart across a never-fired trigger's first boundary used to lose it:
+  // the new process had no baseline but its own first sight.
+  it("owes the boundaries since registration on first sight of a trigger that never fired", async () => {
+    expect(await compute(hourly({ registeredAt: 1.5 * hour }), undefined)).toEqual({
+      occurrences: [2 * hour, 3 * hour],
+      watermark: 3 * hour
+    })
+    expect(await compute(hourly({ registeredAt: 3.2 * hour }), undefined)).toEqual({
+      occurrences: [],
+      watermark: 3 * hour
+    })
+    expect(await compute(hourly({ registeredAt: 0, lastFiredAt: 2 * hour }), undefined)).toEqual({
+      occurrences: [3 * hour],
+      watermark: 3 * hour
+    })
+  })
+
   it("owes the catch-up since lastFiredAt on first sight, current occurrence included", async () => {
     expect(await compute(hourly({ lastFiredAt: 0 }), undefined)).toEqual({
       occurrences: [hour, 2 * hour, 3 * hour],

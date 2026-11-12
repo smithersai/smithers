@@ -116,13 +116,29 @@ type AdmittedDecision = Extract<Decision, { readonly _tag: "Decided" }>
 const decided = (claim: Claim, writes: ReadonlyArray<Write>): AdmittedDecision => ({ _tag: "Decided", claim, writes })
 
 /**
+ * The occurrence a re-arm drops: the older of the buffered occurrence and the
+ * one arriving, or `undefined` when nothing else was buffered.
+ *
+ * A trigger buffers one occurrence, and {@link Overlap.pendingAfter} keeps the
+ * newer. The store settles the dropped one `skipped` in the same write; left
+ * alone, its row stayed `buffered` or unsettled forever, outside the prune and
+ * listed as work still to run.
+ *
+ * @category decision
+ * @since 1.0.0-rc.18
+ */
+export const displaced = (pending: number | undefined, due: number): number | undefined =>
+  pending === undefined || pending === due ? undefined : Math.min(pending, due)
+
+/**
  * What a reader finds behind a trigger's active owner: nothing, a live owner,
  * or an expired reservation to release.
  *
  * `expected` is the reservation the release must still find in place.
  * `recovered` is the launched predecessor the release hands back, and
  * `pending` is the occurrence it re-arms; both are absent when the reservation
- * covered no unsettled fire.
+ * covered no unsettled fire. `displaced` is the occurrence the re-arm dropped,
+ * which the release settles `skipped`.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -135,6 +151,7 @@ export type Lease =
     readonly expected: string
     readonly recovered?: string | undefined
     readonly pending?: number | undefined
+    readonly displaced?: number | undefined
   }
 
 /**
@@ -164,10 +181,12 @@ export const lease = (input: {
   const occurrence = reservationOccurrence(activeRunId)
   if (occurrence === undefined || unfinished === undefined) return { _tag: "Expired", expected: activeRunId }
   const predecessor = unfinished.runId
+  const dropped = displaced(pending, occurrence)
   return {
     _tag: "Expired",
     expected: activeRunId,
     pending: Overlap.pendingAfter({ running: false, pending, due: occurrence }),
+    ...(dropped === undefined ? {} : { displaced: dropped }),
     ...(predecessor !== undefined && !isReservation(predecessor) ? { recovered: predecessor } : {})
   }
 }
@@ -252,6 +271,12 @@ export const decideFenced = ({ claimedAt, fire, reservationId, snapshot }: Input
       } else {
         activeRunId = undefined
         if (expiredOccurrence !== fire.occurrence) {
+          // The occurrence this claim is about to take is decided below, so
+          // only another one is settled here.
+          const dropped = displaced(pending, expiredOccurrence)
+          if (dropped !== undefined && dropped !== fire.occurrence) {
+            writes.push({ _tag: "SetOutcome", occurrence: dropped, outcome: "skipped", whileOpen: true })
+          }
           pending = Overlap.pendingAfter({ running: false, pending, due: expiredOccurrence })
         }
       }
@@ -273,7 +298,15 @@ export const decideFenced = ({ claimedAt, fire, reservationId, snapshot }: Input
       whileOpen: false
     })
     writes.push({ _tag: "AdvanceCursor", occurrence: fire.occurrence })
-    if (action === "buffer") writes.push({ _tag: "SetPending", occurrence: Overlap.pendingAfter(state) })
+    if (action === "buffer") {
+      writes.push({ _tag: "SetPending", occurrence: Overlap.pendingAfter(state) })
+      // Written after the `buffered` above, so an arrival older than the
+      // buffered occurrence ends `skipped` too.
+      const dropped = displaced(state.pending, state.due)
+      if (dropped !== undefined) {
+        writes.push({ _tag: "SetOutcome", occurrence: dropped, outcome: "skipped", whileOpen: true })
+      }
+    }
     return decided({ claimed: true, action }, writes)
   }
   let supersededRunId = activeRunId

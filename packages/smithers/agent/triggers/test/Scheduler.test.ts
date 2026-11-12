@@ -191,9 +191,9 @@ describe("Scheduler", () => {
     const counts = await Effect.runPromise(provideTest(
       Effect.scoped(Effect.gen(function*() {
         const store = yield* TriggerStore.TriggerStore
+        yield* TestClock.setTime(hour)
         yield* store.register(trigger("skip", "one"))
         const scheduler = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
-        yield* TestClock.setTime(hour)
         yield* scheduler.runOnce
         yield* TestClock.setTime(2 * hour)
         yield* scheduler.runOnce
@@ -341,8 +341,8 @@ describe("Scheduler", () => {
       await Effect.runPromise(provideTest(
         Effect.scoped(Effect.gen(function*() {
           const store = yield* TriggerStore.TriggerStore
-          yield* store.register(trigger("skip", "one"))
           yield* TestClock.setTime(hour)
+          yield* store.register(trigger("skip", "one"))
           const scheduler = yield* Scheduler.make({ runPollInterval: "1 minute" }).pipe(
             Effect.provideService(Scheduler.Runner, runner.service)
           )
@@ -724,6 +724,7 @@ describe("Scheduler", () => {
         Effect.scoped(
           Effect.gen(function*() {
             const store = yield* TriggerStore.TriggerStore
+            yield* TestClock.setTime(hour + 30 * 60 * 1_000)
             yield* store.register({ ...trigger("skip", "none"), id: "a-february-30" })
             yield* store.register({ ...trigger("skip", "none"), id: "b-hourly" })
             const legacy = TriggerStore.TriggerStore.of({
@@ -745,7 +746,6 @@ describe("Scheduler", () => {
                     )
                 )
             })
-            yield* TestClock.setTime(hour + 30 * 60 * 1_000)
             const scheduler = yield* Scheduler.make().pipe(
               Effect.provideService(Scheduler.Runner, runner.service),
               Effect.provideService(TriggerStore.TriggerStore, legacy)
@@ -769,6 +769,7 @@ describe("Scheduler", () => {
   // happened to pass before it existed: `catchUp: "none"` says exactly that.
   // The first poll establishes the watermark, and the trigger fires from the
   // next boundary.
+  // The 01:00 boundary passed before the trigger was registered at 01:20.
   it("establishes a watermark without firing a stale occurrence on a new trigger's first poll", async () => {
     const results: Array<TriggerStore.Result> = []
     const runner = runnerFixture()
@@ -777,6 +778,7 @@ describe("Scheduler", () => {
         Effect.scoped(
           Effect.gen(function*() {
             const store = yield* TriggerStore.TriggerStore
+            yield* TestClock.setTime(hour + 20 * 60 * 1_000)
             yield* store.register(trigger("skip", "none"))
             yield* TestClock.setTime(hour + 30 * 60 * 1_000)
             const scheduler = yield* Scheduler.make().pipe(

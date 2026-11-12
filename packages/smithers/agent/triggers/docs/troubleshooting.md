@@ -236,11 +236,12 @@ from `Control.list` carries no `schedulerLastTickMs` in the same case. A
 heartbeat older than `pollInterval` by a wide margin means the scheduler's scope
 closed. Then, four behaviors are correct and surprising.
 
-**A trigger with no durable cursor fires nothing on its first tick.** A trigger with no
-`lastFiredAt` establishes a watermark at the latest boundary on first sight and
-starts from the next one. Registering a weekly trigger on a Sunday evening does
-not fire it for the Monday six days gone. Run a second tick after a boundary has
-passed, or seed a `lastFiredAt` by recording a result.
+**A trigger that never fired owes nothing from before its registration.** With
+no `lastFiredAt`, catch-up starts from `registeredAt`. Registering a weekly
+trigger on a Sunday evening does not fire it for the Monday six days gone; the
+first tick fires once a boundary passes after registration. A row stored before
+the `0005_registered_at` migration has no `registeredAt`, so a process starts it
+from its own first sight until the id is registered again.
 
 **A boundary was skipped while a run was in flight.** That is `overlap: "skip"`,
 the default. The occurrence is recorded as `skipped` and the cursor advances.
@@ -248,7 +249,8 @@ Choose `buffer-one` if one coalesced follow-up is enough.
 
 **A buffered occurrence has not run yet.** The buffer drains on the next tick
 after the active run settles, and it holds exactly one occurrence: a run that
-overran four boundaries leaves one pending occurrence, the newest.
+overran four boundaries leaves one pending occurrence, the newest. The
+occurrences it replaced are recorded `skipped`.
 `store.activeRun(triggerId)` tells you whether something is still holding the
 trigger.
 

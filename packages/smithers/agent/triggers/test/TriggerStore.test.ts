@@ -43,6 +43,41 @@ describe("TriggerStore", () => {
     expect(plan.map((row) => row.detail).join("\n")).toContain("flows_trigger_fires_run_id")
   })
 
+  it("prunes buffered and unsettled rows a newer occurrence replaced before they were settled", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const sql = yield* SqlClient.SqlClient
+        yield* store.register({ ...trigger, overlap: "buffer-one" })
+        yield* sql`INSERT INTO flows_trigger_fires (trigger_id, occurrence_at_ms, outcome) VALUES ('daily', 1, 'buffered')`
+        yield* sql`INSERT INTO flows_trigger_fires (trigger_id, occurrence_at_ms) VALUES ('daily', 2)`
+        yield* sql`INSERT INTO flows_trigger_fires (trigger_id, occurrence_at_ms, outcome) VALUES ('daily', 3, 'buffered')`
+        yield* sql`UPDATE flows_triggers SET pending_at_ms = 3 WHERE trigger_id = 'daily'`
+        const removed = yield* store.pruneFires({ olderThan: Number.MAX_SAFE_INTEGER })
+        return { removed, left: (yield* store.history()).items.map((row) => row.occurrence) }
+      }).pipe(Effect.provide(layerWithSql))
+    )
+    expect(result.removed).toBe(2)
+    expect(result.left).toEqual([3])
+  })
+
+  it("gives a row stored before registration was recorded a baseline when it is registered again", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const sql = yield* SqlClient.SqlClient
+        yield* store.register(trigger)
+        yield* sql`UPDATE flows_triggers SET registered_at_ms = NULL WHERE trigger_id = 'daily'`
+        const legacy = yield* store.get("daily")
+        yield* TestClock.setTime(5_000)
+        return { legacy, again: yield* store.register(trigger) }
+      }).pipe(Effect.provide(layerWithSql), Effect.provide(TestClock.layer()))
+    )
+    expect(result.legacy).toMatchObject({ _tag: "Some" })
+    expect(result.legacy._tag === "Some" ? result.legacy.value.registeredAt : 0).toBeUndefined()
+    expect(result.again.registeredAt).toBe(5_000)
+  })
+
   it("settles a legacy launched row with no run id without clearing a newer reservation", async () => {
     await Effect.runPromise(
       Effect.gen(function*() {

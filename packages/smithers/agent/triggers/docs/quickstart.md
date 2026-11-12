@@ -73,6 +73,9 @@ decides when a tick happens. That is what makes the walkthrough deterministic:
 ```ts
 const program = Effect.scoped(Effect.gen(function*() {
   const triggers = yield* TriggerStore.TriggerStore
+  // Registration happens at the first tick's instant. The trigger owes the
+  // boundaries that pass after it is registered, and none before.
+  yield* TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
   yield* triggers.register({
     id: "nightly-report",
     flowId: "reports/nightly",
@@ -87,9 +90,8 @@ const program = Effect.scoped(Effect.gen(function*() {
 
   const scheduler = yield* Scheduler.make()
 
-  // First sight of this trigger: the tick records where the clock is and
-  // fires nothing, because a trigger that has never fired owes no history.
-  yield* TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
+  // First sight of this trigger: no boundary has passed since it was
+  // registered, so the tick records a watermark and fires nothing.
   yield* scheduler.runOnce
 
   // A boundary has passed since that watermark, so this tick launches it.
@@ -130,6 +132,7 @@ row look like this:
     maxCatchUp: 1,
     enabled: true,
     revision: 1,
+    registeredAt: 1772334000000,
     lastFiredAt: 1772420400000
   }
 }
@@ -140,8 +143,11 @@ row look like this:
 Four facts in that output are the package working.
 
 - **The first tick fired nothing.** A trigger registered on Sunday evening does
-  not owe Monday morning six days ago. With no `lastFiredAt`, the first tick a
-  process sees establishes a watermark at the latest boundary and starts from
+  not owe Monday morning six days ago. With no `lastFiredAt`, catch-up starts
+  from `registeredAt`, and no boundary had passed since. A boundary that passes
+  after registration is owed as `catchUp` says, even to a process that starts
+  later. The first
+  tick establishes a watermark at the latest boundary and starts from
   the next one.
 - **The idempotency key is the occurrence, not the moment.** It is
   `<triggerId>:<occurrence ISO instant>`, computed from the schedule boundary

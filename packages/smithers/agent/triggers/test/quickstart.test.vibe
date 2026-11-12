@@ -25,6 +25,7 @@ it.effect("records the fired occurrence as the trigger's last fire", effect () =
     maxCatchUp: 1,
     enabled: true,
     revision: 1,
+    registeredAt: Date.parse("2026-03-01T03:00:00.000Z"),
     lastFiredAt: Date.parse(occurrence)
   })
 })

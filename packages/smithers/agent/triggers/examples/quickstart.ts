@@ -63,6 +63,9 @@ export const runQuickstart = (): Promise<QuickstartResult> => {
 
   const program = Effect.scoped(Effect.gen(function*() {
     const triggers = yield* TriggerStore.TriggerStore
+    // Registration happens at the first tick's instant. The trigger owes the
+    // boundaries that pass after it is registered, and none before.
+    yield* TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
     yield* triggers.register({
       id: "nightly-report",
       flowId: "reports/nightly",
@@ -77,9 +80,8 @@ export const runQuickstart = (): Promise<QuickstartResult> => {
 
     const scheduler = yield* Scheduler.make()
 
-    // First sight of this trigger: the tick records where the clock is and
-    // fires nothing, because a trigger that has never fired owes no history.
-    yield* TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
+    // First sight of this trigger: no boundary has passed since it was
+    // registered, so the tick records a watermark and fires nothing.
     yield* scheduler.runOnce
 
     // A boundary has passed since that watermark, so this tick launches it.

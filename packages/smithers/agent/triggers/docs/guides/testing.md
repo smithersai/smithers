@@ -95,9 +95,10 @@ Two habits keep such a test honest:
 
 - Yield after a tick that launches. The launch monitor runs in a forked fiber,
   so the terminal result is recorded after `runOnce` returns.
-- Remember that the first tick a process performs on a trigger establishes a
-  watermark and fires nothing. A test that expects a launch needs a second tick,
-  or a trigger seeded with a `lastFiredAt` through a recorded result.
+- Set the test clock before registering. Catch-up starts from `registeredAt`,
+  so a trigger registered at the test clock's epoch owes the boundaries since
+  1970 on its first tick. Registered at the first tick's instant, it fires
+  nothing until a later tick passes a boundary.
 
 ## Observe what the store recorded
 

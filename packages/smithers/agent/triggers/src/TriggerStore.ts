@@ -18,8 +18,13 @@ import type { Trigger } from "./Trigger.ts"
 import { TriggerError } from "./TriggerError.ts"
 
 /**
- * A stored trigger, with the revision that fences concurrent edits and
- * when it last fired.
+ * A stored trigger, with the revision that fences concurrent edits, when it
+ * last fired, and when its id was first registered.
+ *
+ * `registeredAt` is the store clock at the first registration; registering
+ * the id again keeps it. It is the durable baseline catch-up starts from
+ * until `lastFiredAt` exists. A row stored before the store kept it has none
+ * until it is registered again.
  *
  * @category models
  * @since 0.1.0
@@ -27,6 +32,7 @@ import { TriggerError } from "./TriggerError.ts"
 export interface Registered extends Trigger {
   readonly revision: number
   readonly lastFiredAt?: number | undefined
+  readonly registeredAt?: number | undefined
 }
 /**
  * One scheduled occurrence of a trigger, addressed by its occurrence

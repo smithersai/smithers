@@ -75,11 +75,14 @@ export const compute = (
     const cron = yield* Cron.parse(trigger.cron, trigger.timezone)
     const current = (yield* Cron.previousAtOrBefore(cron, new Date(now))).getTime()
     // First sight of this trigger in this process starts from the last fire
-    // the store recorded. A trigger that has never fired starts from here
-    // rather than from whatever occurrence last passed: registering a weekly
-    // trigger on a Sunday evening owes nothing for the Monday six days gone,
-    // which is what `catchUp` says.
-    const since = observed ?? trigger.lastFiredAt
+    // the store recorded, or, for a trigger that has never fired, from its
+    // registration. Registering a weekly trigger on a Sunday evening owes
+    // nothing for the Monday six days gone, which is what `catchUp` says, but
+    // the policy decides a boundary that passed after registration even when
+    // this process started after it: starting from the process instead lost a
+    // never-fired trigger's first boundary to every restart across it. Only a
+    // row stored before registration was recorded starts from here.
+    const since = observed ?? trigger.lastFiredAt ?? trigger.registeredAt
     if (since === undefined || current <= since) {
       return { occurrences: [], watermark: Math.max(current, observed ?? current) }
     }

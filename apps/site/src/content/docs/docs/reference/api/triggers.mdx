@@ -387,11 +387,16 @@ results.
 interface Registered extends Trigger {
   readonly revision: number
   readonly lastFiredAt?: number | undefined
+  readonly registeredAt?: number | undefined
 }
 ```
 
 `revision` fences concurrent edits. `lastFiredAt` is the cursor catch-up resumes
-from, and is absent until an occurrence is recorded.
+from, and is absent until an occurrence is recorded. `registeredAt` is the store
+clock at the id's first registration, kept when the id is registered again; it
+is the baseline catch-up starts from until `lastFiredAt` exists. The
+`0005_registered_at` migration adds it, and a row stored before that migration
+has none until it is registered again.
 
 ### TriggerStore.Fire, ClaimFire, and Claim
 
@@ -509,7 +514,7 @@ interface Service {
 | `activeOccurrence` | The occurrence owned by one active run or reservation. `lastFiredAt` cannot answer this, because later skipped and buffered occurrences advance that cursor while an older run remains active.                     |
 | `clearActive`      | Compare-and-swap release of one run id.                                                                                                                                                                            |
 | `history`          | The fire ledger, newest occurrence first, filtered and paged by a `HistoryQuery`. A limit that is not a positive safe integer is refused with `invalid_options` and `path` `"limit"`.                              |
-| `pruneFires`       | Deletes settled ledger rows older than `olderThan` and answers how many. Keeps the buffered occurrence and the row naming the active run. A cutoff that is not a safe integer is refused with `invalid_options`.   |
+| `pruneFires`       | Deletes ledger rows older than `olderThan` that no run, reservation, or buffer holds; answers how many. Launched rows stay. A cutoff that is not a safe integer is refused with `invalid_options`.                 |
 | `inspect`          | The run or reservation and the buffered occurrence one trigger holds, read as the row has them. Expires nothing; `activeRun` is the read that expires a stale reservation.                                         |
 | `heartbeat`        | Records that `host` polled the store at the store clock's current time. One row per host; a later poll overwrites.                                                                                                 |
 | `lastHeartbeat`    | The newest heartbeat across every host, or `None` when no scheduler has ever polled. Equal times fall to the lower host name so the answer is one row.                                                             |
@@ -964,8 +969,8 @@ durable flow step, a queue consumer, a scheduled function. It needs no scope.
 
 A scheduler from `make` keeps two things in memory that such a host loses. The
 first is the watermark each trigger was dispatched through: a scheduler built
-for every tick sees every trigger for the first time, and first sight owes a
-trigger that never fired nothing, so it never fires. The second is the fiber
+for every tick sees every trigger for the first time, so it knows only the
+cursor the store recorded. The second is the fiber
 launching each run: closing the scope interrupts it, and the occurrence waits
 for the five-minute reservation lease.
 

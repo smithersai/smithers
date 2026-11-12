@@ -39,7 +39,8 @@ Overlap.decide("buffer-one", { running: true, due: 3_600_000 }) // "buffer"
 
 `buffer-one` buffers exactly one occurrence, and the buffer is a coalescing
 slot rather than a queue. `Overlap.pendingAfter` keeps the later of the two, so
-a run that overruns four boundaries leaves one pending occurrence, the newest:
+a run that overruns four boundaries leaves one pending occurrence, the newest.
+The store records each occurrence the slot dropped as `skipped`:
 
 ```ts
 import * as Overlap from "@smthrs/triggers/Overlap"
@@ -101,10 +102,14 @@ queue or a flow that processes its own interval backlog.
 
 Three rules are worth knowing before you pick a value.
 
-**A trigger that has never fired owes nothing.** `CatchUp.occurrences` answers
-with an empty list when `lastFiredAt` is `undefined`, whatever the policy says.
-Registering a weekly trigger on a Sunday evening does not fire it for the Monday
-six days gone.
+**A trigger that has never fired owes only what passed since it was
+registered.** The scheduler hands `CatchUp.occurrences` the trigger's
+`registeredAt` until `lastFiredAt` exists. Registering a weekly trigger on a
+Sunday evening does not fire it for the Monday six days gone, and under `one`
+and `all` a boundary that passes after registration is owed even to a
+scheduler that starts later.
+`CatchUp.occurrences` itself answers an empty list when given no cursor,
+whatever the policy says.
 
 **`maxCatchUp` binds every policy, `one` included.** It defaults to 0, which
 pairs with the `none` default: a declaration that states no catch-up intent

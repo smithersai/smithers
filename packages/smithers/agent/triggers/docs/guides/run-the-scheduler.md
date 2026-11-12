@@ -153,7 +153,7 @@ serialize rather than interleave.
 
 A durable flow step, a queue consumer and a scheduled function keep nothing in
 memory between ticks. A scheduler built for each tick would see every trigger
-for the first time, which owes a trigger that never fired nothing, and closing
+for the first time and know only the cursor the store recorded, and closing
 its scope would cut its launches off. `Scheduler.tick` is one whole tick for
 such a host. It takes the watermark the previous tick answered and returns
 only once its launches are recorded:

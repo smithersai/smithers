@@ -298,6 +298,7 @@ for (const zone of zones) {
         const outcome = await onStore((warnings) =>
           Effect.gen(function*() {
             const store = yield* TriggerStore.TriggerStore
+            yield* TestClock.setTime(Date.parse(from))
             yield* store.register(yield* declare(timezone, "weekly-review", "0 9 * * 5"))
             const tick = yield* scheduler(runner)
             // Every hour of the window, so the old-offset hour after each
@@ -492,6 +493,7 @@ for (const zone of zones) {
         const failures = await onStore((warnings) =>
           Effect.gen(function*() {
             const store = yield* TriggerStore.TriggerStore
+            yield* TestClock.setTime(Date.parse(from))
             yield* store.register(yield* declare(timezone, "weekly-close", expression))
             const tick = yield* scheduler(runner)
             for (const instant of [...hourly(from, to), Date.parse(to)]) yield* tick(instant)

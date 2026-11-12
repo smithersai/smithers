@@ -104,7 +104,7 @@ describe("documentation contracts", () => {
   it("documents fire ledger growth and the retention rule that bounds it (performance/4)", () => {
     const reference = read("docs/api.md")
     expect(reference).toContain("Nothing else in the store deletes from the fire ledger")
-    expect(reference).toContain("Deletes settled ledger rows older than `olderThan` and answers how many")
+    expect(reference).toContain("Deletes ledger rows older than `olderThan` that no run, reservation, or buffer holds")
   })
 
   it("documents accepted getters and their two evaluations (documentation/5)", () => {

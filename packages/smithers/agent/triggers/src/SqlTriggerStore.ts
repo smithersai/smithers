@@ -34,6 +34,7 @@ import {
   type Registered,
   reservationId,
   reservationOccurrence,
+  reservationPrefix,
   resultRefusal,
   type Service,
   TriggerStore
@@ -51,6 +52,7 @@ interface Row {
   readonly enabled: number
   readonly revision: number
   readonly last_fired_at_ms: number | null
+  readonly registered_at_ms: number | null
   readonly active_run_id: string | null
   readonly pending_at_ms: number | null
 }
@@ -98,7 +100,8 @@ const unknownTrigger = (triggerId: string) =>
 const StoredDeclaration = Schema.Struct({
   ...Trigger.Trigger.fields,
   revision: Schema.Int,
-  lastFiredAt: Schema.optional(Schema.Number)
+  lastFiredAt: Schema.optional(Schema.Number),
+  registeredAt: Schema.optional(Schema.Number)
 })
 const decodeDeclaration = Schema.decodeUnknownSync(StoredDeclaration)
 
@@ -114,7 +117,8 @@ const declaration = (row: Row): Registered =>
     maxCatchUp: row.max_catch_up,
     enabled: row.enabled === 1,
     revision: row.revision,
-    ...(row.last_fired_at_ms === null ? {} : { lastFiredAt: row.last_fired_at_ms })
+    ...(row.last_fired_at_ms === null ? {} : { lastFiredAt: row.last_fired_at_ms }),
+    ...(row.registered_at_ms === null ? {} : { registeredAt: row.registered_at_ms })
   })
 
 // The offending id belongs in the message: a store failure that only says a
@@ -169,6 +173,12 @@ export const make: Effect.Effect<
         rows[0] === undefined ? Effect.succeed(Option.none()) : decode(rows[0]).pipe(Effect.map(Option.some))
       )
     )
+  // A re-arm keeps the newer of two occurrences, and the one it drops will
+  // never run. See `ClaimDecision.displaced`.
+  const settleDisplaced = (triggerId: string, occurrence: number | undefined) =>
+    occurrence === undefined ? Effect.void : sql`UPDATE flows_trigger_fires SET outcome = 'skipped'
+      WHERE trigger_id = ${triggerId} AND occurrence_at_ms = ${occurrence}
+        AND (outcome IS NULL OR outcome = 'buffered')`.pipe(Effect.asVoid)
   const fireSnapshot = (
     row: { readonly outcome: string | null; readonly run_id: string | null } | undefined
   ): ClaimDecision.Fire | undefined =>
@@ -312,17 +322,24 @@ export const make: Effect.Effect<
       // Registration is the last point where an unsatisfiable expression can
       // still be refused. The decoded declaration and its input string were
       // already copied at the call boundary, before this lazy work begins.
+      // The first registration instant is kept across re-registrations: it is
+      // the durable baseline catch-up starts from until the trigger fires. A
+      // row written before the column existed takes this registration's.
       return Effect.suspend(() =>
         Schedule.validate(snapshot).pipe(
-          Effect.andThen(
+          Effect.andThen(Clock.currentTimeMillis),
+          Effect.flatMap((registeredAt) =>
             write(sql`
-              INSERT INTO flows_triggers (trigger_id, flow_id, input_json, cron, timezone, overlap, catch_up, max_catch_up, enabled, revision)
+              INSERT INTO flows_triggers (trigger_id, flow_id, input_json, cron, timezone, overlap, catch_up, max_catch_up, enabled, revision, registered_at_ms)
               VALUES (${snapshot.id}, ${snapshot.flowId}, ${input}, ${snapshot.cron}, ${
               snapshot.timezone ?? null
-            }, ${snapshot.overlap}, ${snapshot.catchUp}, ${snapshot.maxCatchUp}, ${snapshot.enabled ? 1 : 0}, 1)
+            }, ${snapshot.overlap}, ${snapshot.catchUp}, ${snapshot.maxCatchUp}, ${
+              snapshot.enabled ? 1 : 0
+            }, 1, ${registeredAt})
               ON CONFLICT (trigger_id) DO UPDATE SET flow_id = excluded.flow_id, input_json = excluded.input_json, cron = excluded.cron,
                 timezone = excluded.timezone, overlap = excluded.overlap, catch_up = excluded.catch_up, max_catch_up = excluded.max_catch_up,
-                enabled = excluded.enabled, revision = flows_triggers.revision + 1
+                enabled = excluded.enabled, revision = flows_triggers.revision + 1,
+                registered_at_ms = COALESCE(flows_triggers.registered_at_ms, excluded.registered_at_ms)
             `.pipe(
               Effect.flatMap(() => get(snapshot.id)),
               Effect.flatMap((registered) =>
@@ -455,6 +472,7 @@ export const make: Effect.Effect<
           pending: row.pending_at_ms ?? undefined,
           due: fire.occurrence
         })
+        yield* settleDisplaced(fire.triggerId, ClaimDecision.displaced(row.pending_at_ms ?? undefined, fire.occurrence))
         const predecessors = row.run_id === null || isReservation(row.run_id) ?
           [] :
           yield* sql<{ readonly run_id: string }>`
@@ -477,6 +495,7 @@ export const make: Effect.Effect<
           pending: row.pending_at_ms ?? undefined,
           due: fire.occurrence
         })
+        yield* settleDisplaced(fire.triggerId, ClaimDecision.displaced(row.pending_at_ms ?? undefined, fire.occurrence))
         yield* sql`UPDATE flows_triggers SET pending_at_ms = ${pending} WHERE trigger_id = ${fire.triggerId}`
       })).pipe(Effect.asVoid),
     activeRun: (triggerId) =>
@@ -519,6 +538,7 @@ export const make: Effect.Effect<
               SET active_run_id = ${lease.recovered ?? null}, active_claimed_at_ms = NULL,
                 pending_at_ms = ${lease.pending}
               WHERE trigger_id = ${triggerId} AND active_run_id = ${lease.expected}`
+          yield* settleDisplaced(triggerId, lease.displaced)
           return lease.recovered === undefined ? Option.none() : Option.some(lease.recovered)
         }))
       }),
@@ -566,19 +586,22 @@ export const make: Effect.Effect<
       pruneCutoff(olderThan).pipe(
         Effect.flatMap((cutoff) =>
           // The trigger row names the state the scheduler still reads: the
-          // buffered occurrence and the run or reservation on `active_run_id`.
-          // An unsettled row carries no outcome, so the outcome filter already
-          // spares a reserved occurrence.
+          // buffered occurrence, the run on `active_run_id`, and the occurrence
+          // a reservation there ends with. Every other row that is not a run
+          // still launched is history, including a `buffered` or unsettled row
+          // a newer occurrence replaced before such rows were settled.
           write(Effect.gen(function*() {
             const deleted = yield* sql`
               DELETE FROM flows_trigger_fires
               WHERE occurrence_at_ms < ${cutoff}
-                AND outcome IN ('completed', 'failed', 'skipped', 'superseded')
+                AND (outcome IS NULL OR outcome <> 'launched')
                 AND NOT EXISTS (
                   SELECT 1 FROM flows_triggers t
                   WHERE t.trigger_id = flows_trigger_fires.trigger_id
                     AND (t.pending_at_ms = flows_trigger_fires.occurrence_at_ms
-                      OR t.active_run_id = flows_trigger_fires.run_id)
+                      OR t.active_run_id = flows_trigger_fires.run_id
+                      OR (t.active_run_id LIKE ${`${reservationPrefix}%`}
+                        AND t.active_run_id LIKE ${"%:"} || CAST(flows_trigger_fires.occurrence_at_ms AS TEXT)))
                 )
             `.raw
             return yield* affectedRows(deleted)

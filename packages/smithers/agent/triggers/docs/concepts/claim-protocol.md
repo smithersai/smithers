@@ -214,8 +214,8 @@ failure from silently losing a boundary.
 The two are different questions. `lastFiredAt` answers "what does this trigger
 owe after downtime". The in-process watermark answers "what has this process
 already handled since it started", and a fresh process has none, which is why
-first sight of a trigger establishes one and computes catch-up from `lastFiredAt`
-when that durable cursor exists. A bound breach abandons the backlog, never the
+first sight of a trigger establishes one and computes catch-up from `lastFiredAt`,
+or from `registeredAt` for a trigger that never fired. A bound breach abandons the backlog, never the
 current occurrence: every poll, the first included, dispatches the current
 occurrence subject to overlap. See [Overlap and catch-up](./policies.md).
 

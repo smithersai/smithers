@@ -114,6 +114,20 @@ type Decision =
   | { readonly _tag: "Failure"; readonly error: TriggerError }
   | { readonly _tag: "Success"; readonly claim: Claim; readonly state: State }
 
+// The SQL store's `UPDATE ... SET outcome = ... WHERE outcome IS NULL OR
+// outcome = 'buffered'`: it settles only an open row, and creates none.
+const settleOpen = (
+  fires: Map<string, Outcome | null>,
+  triggerId: string,
+  occurrence: number | undefined,
+  outcome: Outcome
+): void => {
+  if (occurrence === undefined) return
+  const fireKey = key(triggerId, occurrence)
+  const current = fires.get(fireKey)
+  if (fires.has(fireKey) && (current === null || current === "buffered")) fires.set(fireKey, outcome)
+}
+
 const fireSnapshot = (current: State, fireKey: string): ClaimDecision.Fire | undefined => {
   if (!current.fires.has(fireKey)) return undefined
   const runId = current.fireRunIds.get(fireKey)
@@ -174,10 +188,12 @@ const applyClaim = (
   for (const write of decision.writes) {
     switch (write._tag) {
       case "SetOutcome": {
-        const target = key(fire.triggerId, write.occurrence)
         // The decision and application are one Ref.modify operation. An
-        // active reservation's fire cannot settle between these two steps.
-        fires.set(target, write.outcome)
+        // active reservation's fire cannot settle between these two steps,
+        // but a dropped occurrence named by `whileOpen` may already be
+        // settled, or may have no row at all.
+        if (write.whileOpen) settleOpen(fires, fire.triggerId, write.occurrence, write.outcome)
+        else fires.set(key(fire.triggerId, write.occurrence), write.outcome)
         break
       }
       case "SetRunId": {
@@ -291,16 +307,20 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
       const serialized = input
       return Effect.suspend(() =>
         Schedule.validate(snapshot).pipe(
-          Effect.andThen(Ref.modify(state, (current) => {
-            const prior = current.triggers.get(snapshot.id)
-            const stored: Stored = {
-              ...snapshot,
-              input: serialized,
-              revision: (prior?.revision ?? 0) + 1,
-              ...(prior?.lastFiredAt === undefined ? {} : { lastFiredAt: prior.lastFiredAt })
-            }
-            return [registered(stored), { ...current, triggers: new Map(current.triggers).set(snapshot.id, stored) }]
-          }))
+          Effect.andThen(Clock.currentTimeMillis),
+          Effect.flatMap((now) =>
+            Ref.modify(state, (current) => {
+              const prior = current.triggers.get(snapshot.id)
+              const stored: Stored = {
+                ...snapshot,
+                input: serialized,
+                revision: (prior?.revision ?? 0) + 1,
+                registeredAt: prior?.registeredAt ?? now,
+                ...(prior?.lastFiredAt === undefined ? {} : { lastFiredAt: prior.lastFiredAt })
+              }
+              return [registered(stored), { ...current, triggers: new Map(current.triggers).set(snapshot.id, stored) }]
+            })
+          )
         )
       )
     },
@@ -414,10 +434,13 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
             current
           ]
         }
+        const before = current.pending.get(fire.triggerId)
         const pending = new Map(current.pending).set(
           fire.triggerId,
-          Overlap.pendingAfter({ running: false, pending: current.pending.get(fire.triggerId), due: fire.occurrence })
+          Overlap.pendingAfter({ running: false, pending: before, due: fire.occurrence })
         )
+        const fires = new Map(current.fires)
+        settleOpen(fires, fire.triggerId, ClaimDecision.displaced(before, fire.occurrence), "skipped")
         const active = new Map(current.active)
         const predecessor = current.fireRunIds.get(key(fire.triggerId, fire.occurrence))
         const predecessorOccurrence = predecessor === undefined ? undefined : current.runOccurrences.get(predecessor)
@@ -429,16 +452,16 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
         } else {
           active.delete(fire.triggerId)
         }
-        return [Effect.void, { ...current, pending, active }]
+        return [Effect.void, { ...current, fires, pending, active }]
       }).pipe(Effect.flatten),
     setPending: (fire) =>
       requireTrigger(fire.triggerId, (_trigger, current) => {
+        const before = current.pending.get(fire.triggerId)
         const pending = new Map(current.pending)
-        pending.set(
-          fire.triggerId,
-          Overlap.pendingAfter({ running: true, pending: pending.get(fire.triggerId), due: fire.occurrence })
-        )
-        return [undefined, { ...current, pending }]
+        pending.set(fire.triggerId, Overlap.pendingAfter({ running: true, pending: before, due: fire.occurrence }))
+        const fires = new Map(current.fires)
+        settleOpen(fires, fire.triggerId, ClaimDecision.displaced(before, fire.occurrence), "skipped")
+        return [undefined, { ...current, fires, pending }]
       }),
     activeRun: (triggerId) =>
       Effect.flatMap(Clock.currentTimeMillis, (now) =>
@@ -464,12 +487,14 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
           if (lease._tag === "Held") return [Option.some(lease.runId), current]
           const active = new Map(current.active)
           const pending = new Map(current.pending)
+          const fires = new Map(current.fires)
           if (lease.pending !== undefined) pending.set(triggerId, lease.pending)
+          settleOpen(fires, triggerId, lease.displaced, "skipped")
           if (lease.recovered === undefined) active.delete(triggerId)
           else active.set(triggerId, { runId: lease.recovered })
           return [
             lease.recovered === undefined ? Option.none() : Option.some(lease.recovered),
-            { ...current, active, pending }
+            { ...current, active, fires, pending }
           ]
         })),
     activeOccurrence: (triggerId, runId) =>
@@ -510,13 +535,13 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
           const runOccurrences = new Map(current.runOccurrences)
           let removed = 0
           for (const [fireKey, outcome] of current.fires) {
-            if (
-              outcome !== "completed" && outcome !== "failed" && outcome !== "skipped" && outcome !== "superseded"
-            ) continue
+            if (outcome === "launched") continue
             const record = fireRecord(current, fireKey, outcome)
             if (record.occurrence >= cutoff) continue
             if (current.pending.get(record.triggerId) === record.occurrence) continue
-            if (record.runId !== undefined && current.active.get(record.triggerId)?.runId === record.runId) continue
+            const activeRunId = current.active.get(record.triggerId)?.runId
+            if (record.runId !== undefined && activeRunId === record.runId) continue
+            if (activeRunId !== undefined && reservationOccurrence(activeRunId) === record.occurrence) continue
             fires.delete(fireKey)
             fireErrors.delete(fireKey)
             if (record.runId !== undefined) {

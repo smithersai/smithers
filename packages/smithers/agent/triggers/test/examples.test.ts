@@ -25,6 +25,7 @@ describe("examples", () => {
       maxCatchUp: 1,
       enabled: true,
       revision: 1,
+      registeredAt: Date.parse("2026-03-01T03:00:00.000Z"),
       lastFiredAt: Date.parse("2026-03-02T03:00:00.000Z")
     })
   })

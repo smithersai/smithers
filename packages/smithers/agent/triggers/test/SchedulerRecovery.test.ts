@@ -1117,8 +1117,8 @@ describe("Scheduler over real SQLite", () => {
     const outcome = await Effect.runPromise(
       Effect.gen(function*() {
         const triggers = yield* TriggerStore.TriggerStore
-        yield* triggers.register(declaration)
         yield* TestClock.setTime(hour)
+        yield* triggers.register(declaration)
 
         yield* Effect.scoped(
           Effect.gen(function*() {
@@ -1171,6 +1171,35 @@ describe("Scheduler over real SQLite", () => {
     expect(
       outcome.cursor._tag === "Some" ? outcome.cursor.value.lastFiredAt : undefined
     ).toBe(4 * hour)
+  })
+
+  // A trigger that never fired had no durable baseline, so a process that
+  // was down across its first boundary started from its own first sight and
+  // never fired that boundary. `none` skips a boundary this stale by design,
+  // so `one` stands for the policies that owe it.
+  it("fires a never-fired trigger's first boundary after a restart across it", async () => {
+    const runner = runnerFixture()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const triggers = yield* TriggerStore.TriggerStore
+        const once = Effect.scoped(
+          Effect.gen(function*() {
+            const scheduler = yield* Scheduler.make({ runPollInterval: "1 hour" }).pipe(
+              Effect.provideService(Scheduler.Runner, runner.service)
+            )
+            yield* scheduler.runOnce
+            yield* Effect.yieldNow
+          })
+        )
+        yield* TestClock.setTime(hour / 2)
+        yield* triggers.register(trigger("skip", "one"))
+        yield* TestClock.setTime(hour * 0.75)
+        yield* once
+        yield* TestClock.setTime(hour * 1.5)
+        yield* once
+      }).pipe(Effect.provide(store), Effect.provide(TestClock.layer()))
+    )
+    expect(runner.starts.map((input) => input.idempotencyKey)).toEqual([`hourly:${new Date(hour).toISOString()}`])
   })
 
   it("records a recovered run as completed when it has settled", async () => {

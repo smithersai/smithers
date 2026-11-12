@@ -97,6 +97,17 @@
   `runner_unavailable` now records `failed` on every launch path. A launch from
   the pending pointer used to re-arm the occurrence for every error, so it was
   launched again on every tick and its fire never recorded an outcome.
+- A trigger that never fired kept its baseline only in process memory, so a
+  restart across its first boundary lost that occurrence under every catch-up
+  policy (#4908). `Registered.registeredAt`, the store clock at the id's first
+  registration, is now the durable baseline until `lastFiredAt` exists; the
+  `0005_registered_at` migration adds the column, and a row stored before it
+  gains one when it is registered again.
+- `buffer-one` left every occurrence a newer one replaced recorded `buffered`
+  forever: listed as work still to run and never pruned (#4908). The store now
+  records the dropped occurrence `skipped` in the same write, whether a buffer
+  claim, an expired reservation, `restorePending`, or `setPending` replaced it,
+  and `pruneFires` removes `buffered` and unsettled rows nothing holds.
 - Daylight saving (#1930). `Cron` now searches wall-clock times and resolves
   each one in the trigger's zone. A time that spring forward skips fires once,
   at the instant it would have had on the old offset (a daily 02:30 fires at

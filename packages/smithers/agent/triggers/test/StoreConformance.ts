@@ -151,6 +151,132 @@ export const storeConformance = <LayerError>(
       }))
     })
 
+    it("records when an id was first registered and keeps it across re-registration", async () => {
+      const result = await run(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* TestClock.setTime(1_000)
+        const first = yield* store.register(declaration)
+        yield* TestClock.setTime(2_000)
+        const again = yield* store.register({ ...declaration, enabled: false })
+        return { first, again, read: yield* store.get(declaration.id) }
+      }))
+      expect(result.first).toMatchObject({ revision: 1, registeredAt: 1_000 })
+      expect(result.again).toMatchObject({ revision: 2, registeredAt: 1_000 })
+      expect(result.read).toMatchObject({ _tag: "Some", value: { registeredAt: 1_000 } })
+    })
+
+    // Buffer-one holds one occurrence. Each one a newer arrival replaced used
+    // to stay `buffered` forever: listed as work still to run, and outside
+    // the prune.
+    it("settles each buffered occurrence a newer one replaces as skipped, so the prune removes it", async () => {
+      const result = await run(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const registered = yield* store.register({ ...declaration, overlap: "buffer-one" })
+        const fire = { triggerId: declaration.id, expectedRevision: registered.revision }
+        yield* store.claimFire({ ...fire, occurrence: 1 })
+        yield* store.recordResult({
+          ...fire,
+          occurrence: 1,
+          outcome: "launched",
+          runId: "run-1",
+          reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+        })
+        for (const occurrence of [2, 3, 4]) yield* store.claimFire({ ...fire, occurrence })
+        const buffered = (yield* store.history()).items.map((row) => [row.occurrence, row.outcome])
+        yield* store.recordResult({ ...fire, occurrence: 1, outcome: "completed", runId: "run-1" })
+        const resumed = yield* store.claimPending(fire)
+        yield* store.recordResult({
+          ...fire,
+          occurrence: 4,
+          outcome: "launched",
+          runId: "run-2",
+          reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+        })
+        yield* store.recordResult({ ...fire, occurrence: 4, outcome: "completed", runId: "run-2" })
+        const removed = yield* store.pruneFires({ olderThan: Number.MAX_SAFE_INTEGER })
+        return {
+          buffered,
+          resumed,
+          removed,
+          left: (yield* store.history()).items,
+          held: yield* store.inspect(declaration.id)
+        }
+      }))
+      expect(result.buffered).toEqual([[4, "buffered"], [3, "skipped"], [2, "skipped"], [1, "launched"]])
+      expect(result.resumed).toMatchObject({
+        _tag: "Some",
+        value: { occurrence: 4, claim: { claimed: true, action: "fire" } }
+      })
+      expect(result.removed).toBe(4)
+      expect(result.left).toEqual([])
+      expect(result.held).toEqual({})
+    })
+
+    // 1 runs, 2 is buffered behind it and resumed under a reservation that
+    // never launches, and 3 is buffered behind that reservation. Every way the
+    // reservation ends re-arms the newer of 2 and 3 and must settle the other.
+    const reservedBehindBuffer = Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      const registered = yield* store.register({ ...declaration, overlap: "buffer-one" })
+      const fire = { triggerId: declaration.id, expectedRevision: registered.revision }
+      yield* store.claimFire({ ...fire, occurrence: 1 })
+      yield* store.recordResult({
+        ...fire,
+        occurrence: 1,
+        outcome: "launched",
+        runId: "run-1",
+        reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+      })
+      yield* store.claimFire({ ...fire, occurrence: 2 })
+      yield* store.recordResult({ ...fire, occurrence: 1, outcome: "completed", runId: "run-1" })
+      yield* store.claimPending(fire)
+      const reservation = (yield* store.inspect(declaration.id)).activeRunId!
+      // The buffered row the live reservation holds is not history.
+      const pruned = yield* store.pruneFires({ olderThan: Number.MAX_SAFE_INTEGER })
+      yield* store.claimFire({ ...fire, occurrence: 3 })
+      return { store, fire, reservation, pruned }
+    })
+    const outcomes = (store: TriggerStore.Service) =>
+      Effect.map(store.history(), (page) => page.items.map((row) => [row.occurrence, row.outcome]))
+
+    it("settles the occurrence an expired reservation's re-arm drops", async () => {
+      const result = await run(Effect.gen(function*() {
+        const { pruned, store } = yield* reservedBehindBuffer
+        yield* TestClock.adjust(reservationLeaseMs + 1)
+        const active = yield* store.activeRun(declaration.id)
+        return { pruned, active, held: yield* store.inspect(declaration.id), items: yield* outcomes(store) }
+      }))
+      expect(result.pruned).toBe(1)
+      expect(result.active).toMatchObject({ _tag: "None" })
+      expect(result.held).toEqual({ pendingAt: 3 })
+      expect(result.items).toEqual([[3, "buffered"], [2, "skipped"]])
+    })
+
+    it("settles the occurrence a later claim's reclaim of an expired reservation drops", async () => {
+      const result = await run(Effect.gen(function*() {
+        const { fire, store } = yield* reservedBehindBuffer
+        yield* TestClock.adjust(reservationLeaseMs + 1)
+        const claim = yield* store.claimFire({ ...fire, occurrence: 4 })
+        return { claim, held: yield* store.inspect(declaration.id), items: yield* outcomes(store) }
+      }))
+      expect(result.claim).toMatchObject({ claimed: true, action: "fire" })
+      expect(result.held.pendingAt).toBe(3)
+      expect(result.items).toEqual([[4, null], [3, "buffered"], [2, "skipped"]])
+    })
+
+    it("settles the occurrence restorePending and setPending drop", async () => {
+      const result = await run(Effect.gen(function*() {
+        const { fire, reservation, store } = yield* reservedBehindBuffer
+        yield* store.restorePending({ triggerId: fire.triggerId, occurrence: 2, reservationId: reservation })
+        const restored = yield* outcomes(store)
+        yield* store.setPending({ triggerId: fire.triggerId, occurrence: 5 })
+        return { restored, held: yield* store.inspect(declaration.id), items: yield* outcomes(store) }
+      }))
+      expect(result.restored).toEqual([[3, "buffered"], [2, "skipped"]])
+      expect(result.held).toEqual({ pendingAt: 5 })
+      expect(result.items).toEqual([[3, "skipped"], [2, "skipped"]])
+    })
+
     it("reclaims a legacy reservation that points at a missing occurrence", async () => {
       await run(Effect.gen(function*() {
         const store = yield* TriggerStore.TriggerStore

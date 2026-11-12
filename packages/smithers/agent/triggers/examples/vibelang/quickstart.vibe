@@ -25,6 +25,9 @@ export const layer = (launched: Array<Scheduler.StartInput>) =>
 /** Registers a nightly trigger, then ticks across two schedule boundaries. */
 export effect function registerAndTick() {
   const triggers = try TriggerStore.TriggerStore
+  // Registration happens at the first tick's instant. The trigger owes the
+  // boundaries that pass after it is registered, and none before.
+  try TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
   try triggers.register({
     id: "nightly-report",
     flowId: "reports/nightly",
@@ -39,8 +42,8 @@ export effect function registerAndTick() {
 
   const scheduler = try Scheduler.make()
 
-  // First sight of this trigger: the tick records a watermark and fires nothing.
-  try TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
+  // First sight of this trigger: no boundary has passed since it was
+  // registered, so the tick records a watermark and fires nothing.
   try scheduler.runOnce
 
   // A boundary has passed since that watermark, so this tick launches it.
