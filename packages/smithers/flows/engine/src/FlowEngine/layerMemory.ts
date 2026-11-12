@@ -527,14 +527,9 @@ const resumeUnlocked = Effect.fnUntraced(function*(
 ): Effect.fn.Return<void> {
   wake(memory, executionId)
   // Only the first drive and a suspended round are driven: a live round
-  // keeps running, and every other settlement is terminal. A wake that lands
-  // on a live round is delivered once the round settles: the round may park
-  // having read its wait before the completion, and a child round has no
-  // polling follower to re-drive it.
+  // keeps running, and every other settlement is terminal.
   if (state.fiber !== undefined && !settledSuspended(state)) {
-    if (state.fiber.pollUnsafe() !== undefined || memory.missedWakes.has(executionId)) return
-    memory.missedWakes.add(executionId)
-    yield* Effect.forkIn(Effect.andThen(Fiber.await(state.fiber), resume(memory, executionId)), memory.scope)
+    if (state.fiber.pollUnsafe() === undefined) memory.missedWakes.add(executionId)
     return
   }
   // The latest still-open registration serves every drive, so a re-drive
@@ -792,19 +787,16 @@ const awaitsPendingClock = (memory: Memory, state: ExecutionState): boolean => {
 
 /**
  * A follower's elapsed poll (`{ poll: true }`). As the durable engine does, it
- * re-drives a parked run only when a wake may be due: it leaves a round that
- * awaits a timer this engine holds to that timer, which re-drives the run when
- * it fires. A timer the run armed without awaiting it, such as its deadline,
- * leaves the poll to re-drive the run. A
- * completion that landed while a round was live re-drives the run when that
- * round settles. Re-driving it earlier replays the round only to park it
- * again, once per poll.
+ * leaves a round that awaits a timer this engine holds to that timer, unless
+ * a completion may have landed while the round was live. A timer armed
+ * without awaiting it, such as its deadline, leaves the poll to re-drive
+ * the run.
  */
 const pollResume = (memory: Memory, flow: Flow.Any, executionId: string) =>
   Effect.suspend(() => {
     const state = executionOf(memory, flow, executionId)
     const waitsOnItsTimer = state !== undefined && settledSuspended(state) && !state.instance.interrupted &&
-      awaitsPendingClock(memory, state)
+      !memory.missedWakes.has(executionId) && awaitsPendingClock(memory, state)
     return waitsOnItsTimer ? authorize(flow, state, executionId) : resumeAuthorized(memory, flow, executionId)
   })
 
