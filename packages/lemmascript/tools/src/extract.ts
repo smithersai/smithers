@@ -240,8 +240,11 @@ function detectCrossFileExtern(
   const externalDecl = decls.find(d => d.getSourceFile().getFilePath() !== currentPath);
   if (!externalDecl) return null;
   // Skip stdlib / typings — those have built-in dispatch elsewhere or are
-  // genuinely out of LS's verification model.
-  if (externalDecl.getSourceFile().getFilePath().endsWith(".d.ts")) return null;
+  // genuinely out of LS's verification model. A project's own declaration file
+  // (VibeLang's emitted declaration of a module outside the subset) declares the
+  // project's values without bodies: each is an opaque extern (fixtures/host-extern).
+  const externalFile = externalDecl.getSourceFile();
+  if (externalFile.getFilePath().endsWith(".d.ts") && (externalFile.isInNodeModules() || externalFile.isFromExternalLibrary())) return null;
   const sig = callee.getType().getCallSignatures()[0];
   if (!sig) return null;
   // Includes global declarations selected by TypeScript without an import edge.
@@ -260,16 +263,43 @@ function detectCrossFileExtern(
   // A type the printer can only spell as its structure (an Effect Schema value type, `typeof Model.Type`) has no
   // name at the call site: the callee's own written type names it (`model: Model`), a plain reference the resolver
   // declares from the callee's type nodes; otherwise it is read by the datatype that models it.
+  // A type a host library declares is the opaque `Host`. A type printed at the call site names another module's
+  // type through the caller's namespace import (`Decide.Screen`); the declaration is extracted under its own name.
+  const namespaces = sourceFile.getImportDeclarations().map(i => i.getNamespaceImport()?.getText()).filter((n): n is string => n !== undefined);
+  const unqualified = (text: string) => namespaces.reduce((out, n) => out.replace(new RegExp(String.raw`\b${n}\.(?=[A-Za-z_])`, "g"), ""), text);
   const externTypeText = (t: Type, written?: Node) => {
-    const printed = t.getText(callee, ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope | ts.TypeFormatFlags.NoTruncation);
+    if (hostDeclared(withoutReadonly(t))) return HOST_TYPE;
+    const printed = unqualified(t.getText(callee, ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope | ts.TypeFormatFlags.NoTruncation));
     if (!printed.includes("{")) return printed;
     if (written && Node.isTypeReference(written) && written.getTypeArguments().length === 0) return written.getTypeName().getText().replace(/^.*\./, "");
     return typeToString(t);
   };
+  // A parameter of an anonymous object type, as a project declaration states a Foldkit command's arguments, is a
+  // record named after the extern (`PingArgs`; `{}` is the record with no fields), so the call's object literal is
+  // built as that record.
+  const calleeName = (Node.isPropertyAccessExpression(callee) ? `${callee.getExpression().getText()}_${callee.getName()}` : callee.getText()).replace(/\./g, "_");
+  // Only for a value a project's declaration file declares: a proved module's function keeps its parameters' own
+  // types (`model: Model`), which an argument record would replace.
+  const declaredValue = externalFile.getFilePath().endsWith(".d.ts");
+  const argsRecord = (t: Type, index: number): string | null => {
+    const u = withoutReadonly(t);
+    if (!declaredValue || _synthArrayUnions === null || !u.isObject() || u.isArray() || u.isTuple() || u.getCallSignatures().length > 0 || hostDeclared(u)) return null;
+    const symbolName = u.getSymbol()?.getName();
+    if ((symbolName !== undefined && !symbolName.startsWith("__")) || u.getAliasSymbol() !== undefined) return null;
+    const hint = typeName(`${calleeName.charAt(0).toUpperCase()}${calleeName.slice(1)}${index === 0 ? "" : index + 1}Args`);
+    if (u.getProperties().length > 0) return localTypeText(u, hint, callee);
+    if (u.getStringIndexType() !== undefined || u.getNumberIndexType() !== undefined) return null;
+    if (!_synthArrayUnions.some(d => d.name === hint)) {
+      _synthArrayUnions.push({ name: hint, kind: "record", fields: [] });
+      _synthesizedNames.add(hint);
+    }
+    return hint;
+  };
   const declaration = sig.getDeclaration() as Node & { getReturnTypeNode?: () => Node | undefined };
-  const params = sig.getParameters().map(p => ({
+  const params = sig.getParameters().map((p, index) => ({
     name: p.getName(),
-    tsType: externTypeText(p.getTypeAtLocation(callee), (p.getDeclarations()[0] as { getTypeNode?: () => Node | undefined } | undefined)?.getTypeNode?.()),
+    tsType: argsRecord(p.getTypeAtLocation(callee), index)
+      ?? externTypeText(p.getTypeAtLocation(callee), (p.getDeclarations()[0] as { getTypeNode?: () => Node | undefined } | undefined)?.getTypeNode?.()),
   }));
   const returnType = externTypeText(sig.getReturnType(), declaration?.getReturnTypeNode?.());
   for (const p of sig.getParameters()) {
@@ -1629,8 +1659,87 @@ function declaredTypeTextIfBetter(propDecl: Node | undefined, tsType: string, pr
   return text;
 }
 
+/** The one opaque type that stands for every object type a host library declares (a package's own typings, not
+ *  TypeScript's standard library): Foldkit's `Command<…>`, Effect's `Effect<…>`, the record a command definition
+ *  returns. LemmaScript models none of their structure, so they share one abstract carrier: a value of it can only be
+ *  passed along and compared (fixtures/host-extern). */
+export const HOST_TYPE = "Host";
+
+function inHostLibrary(node: Node): boolean {
+  const file = node.getSourceFile();
+  return file.isInNodeModules() && !file.getFilePath().includes("/node_modules/typescript/lib/");
+}
+
+/** A host library's alias of a plain object type (Foldkit's `Update.Return<Model, Message> = Readonly<{ model: Model;
+ *  commands: … }>`) is data with the program's types in it: a record, not the opaque `Host`. */
+function structuralHostAliasDeclaration(declaration: Node): boolean {
+  if (!Node.isTypeAliasDeclaration(declaration) || !inHostLibrary(declaration)) return false;
+  let node = declaration.getTypeNode();
+  if (node && Node.isTypeReference(node) && node.getTypeName().getText() === "Readonly" && node.getTypeArguments().length === 1) node = node.getTypeArguments()[0];
+  return node !== undefined && Node.isTypeLiteral(node);
+}
+
+/** `Readonly<T>` from the standard library changes no value: read it as `T`. */
+function withoutReadonly(type: Type): Type {
+  const alias = type.getAliasSymbol();
+  const args = type.getAliasTypeArguments();
+  if (alias?.getName() === "Readonly" && args.length === 1 && alias.getDeclarations().every(d => d.getSourceFile().getFilePath().includes("/node_modules/typescript/lib/"))) {
+    return withoutReadonly(args[0]!);
+  }
+  return type;
+}
+
+/** Whether a host library itself declares `type`: a named type (`Effect`, the alias `Command`) or a type literal
+ *  written in its typings. A type a host library only computes, such as the mapped type Effect Schema derives a
+ *  record from (`typeof Model.Type`), has the program's structure and is read like any other record. */
+function hostDeclared(type: Type): boolean {
+  if (!type.isObject() || type.isArray() || type.isTuple()) return false;
+  const aliasDeclaration = type.getAliasSymbol()?.getDeclarations()[0];
+  if (aliasDeclaration !== undefined && structuralHostAliasDeclaration(aliasDeclaration)) return false;
+  const named = (symbol: import("ts-morph").Symbol | undefined): boolean => {
+    if (!symbol || symbol.getName().startsWith("__")) return false;
+    const declarations = symbol.getDeclarations();
+    return declarations.length > 0 && declarations.every(inHostLibrary);
+  };
+  if (named(type.getAliasSymbol())) return true;
+  const symbol = type.getSymbol();
+  if (named(symbol)) return true;
+  const declarations = symbol?.getDeclarations() ?? [];
+  return symbol?.getName() === "__type" && declarations.length > 0 && declarations.every(d => Node.isTypeLiteral(d) && inHostLibrary(d));
+}
+
+/** A written type's text with each type a host library declares (`Hostlib.Command<…>`) written `Host`, a host
+ *  library's structural alias (`Update.Return<…>`) as the record its instance is, and each type a namespace import
+ *  qualifies (`Decide.Screen`) as the declaration it names, the name the declaration is extracted under. */
+function typeNodeText(tn: Node): string {
+  const edits: { start: number; end: number; text: string }[] = [];
+  const visit = (n: Node): void => {
+    if (Node.isTypeReference(n)) {
+      const name = n.getTypeName();
+      const named = name.getSymbol();
+      const symbol = named?.isAlias() ? named.getAliasedSymbol() ?? named : named;
+      const declarations = symbol?.getDeclarations() ?? [];
+      if (declarations.length > 0 && declarations.every(inHostLibrary)) {
+        const text = declarations.some(structuralHostAliasDeclaration)
+          ? localTypeText(withoutReadonly(n.getType()), symbol!.getName(), n) : HOST_TYPE;
+        edits.push({ start: n.getStart(), end: n.getEnd(), text });
+        return;
+      }
+      if (Node.isQualifiedName(name)) edits.push({ start: name.getStart(), end: name.getRight().getStart(), text: "" });
+    }
+    n.forEachChild(visit);
+  };
+  visit(tn);
+  let text = tn.getText();
+  const base = tn.getStart();
+  for (const edit of edits.sort((a, b) => b.start - a.start)) text = text.slice(0, edit.start - base) + edit.text + text.slice(edit.end - base);
+  return text;
+}
+
 function typeToString(type: Type): string {
   if (type.isUndefined()) return "undefined";
+  type = withoutReadonly(type);
+  if (hostDeclared(type)) return HOST_TYPE;
   if (type.isNumber() || type.isNumberLiteral()) return "number";
   if (type.isBigInt() || type.isBigIntLiteral()) return "bigint";
   if (type.isString() || type.isStringLiteral()) return "string";
@@ -2676,7 +2785,7 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
         // type (`edit: NonNullable<Model["edit"]>`) is the type it resolves to, the record the field holds.
         tsType = localTypeText(p.getType(), typeName(fn.getName() ?? "anonymous", p.getName()), p);
       } else if (tn) {
-        tsType = _eraseGenerics(tn.getText());
+        tsType = _eraseGenerics(typeNodeText(tn));
       } else {
         tsType = _eraseGenerics(typeToString(p.getType()));
       }
@@ -2707,7 +2816,7 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
       if (node && node.getKind() === SyntaxKind.TypePredicate) return "boolean";
       if (node && Node.isUnionTypeNode(node)) return _eraseGenerics(_tsTypeFromUnionNode(node));
       if (node && computedTypeNode(node)) return _eraseGenerics(localTypeText(fn.getReturnType(), typeName(fn.getName() ?? "anonymous", "result"), node));
-      if (node) return _eraseGenerics(node.getText());
+      if (node) return _eraseGenerics(typeNodeText(node));
       const inferred = fn.getReturnType();
       if (inferred.isAny()) return "unknown";
       return _eraseGenerics(typeToString(inferred));
@@ -2750,6 +2859,9 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   _externs.clear();
   _externContractConsts.clear();
   _externSigTypes.length = 0;
+  // Activate the synthesized-type accumulator (see below) before the first extern is read: a contract may call an
+  // extern whose argument record (`PingArgs`) is synthesized into `typeDecls`.
+  _synthArrayUnions = typeDecls;
 
   // A contract may call an imported function that no body calls (a mutant, or a
   // clause stated in terms of the import). Body extraction would never declare
@@ -3289,6 +3401,8 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   const builtins = new Set(["Map", "Set", "Array", "String", "Number", "Boolean", "Promise", "Date", "RegExp", "Error"]);
   const visitedTypes = new Set<unknown>();
   function resolveType(t: Type, locationNode: Node) {
+    // A host library's own type is the one opaque `Host`: nothing inside it is declared.
+    if (hostDeclared(withoutReadonly(t))) return;
     // Resolve type aliases (e.g. string unions imported from other files).
     // BEFORE the visited guard: the same interned compilerType can arrive both
     // with and without its alias symbol (getTypeAtLocation drops it), and an

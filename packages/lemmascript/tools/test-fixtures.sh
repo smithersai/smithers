@@ -156,6 +156,20 @@ cp -R tools/fixtures/structural "$fixture_dir/"
 expect_proof_failure \
   "a flipped client verified as unchanged (structural)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/structural/use-wrong.ts"
+# A project's declaration file (host-extern): a command it declares is an opaque extern of a record of its
+# arguments (`{}` is the empty record); every type a host library declares (`Hostlib.Command<…>`, its `Effect`) is the
+# one opaque `Host`; a type named through a namespace import (`Decide.Screen`) is its declaration.
+cp -R tools/fixtures/host-extern "$fixture_dir/"
+mkdir -p "$fixture_dir/host-extern/node_modules"
+mv "$fixture_dir/host-extern/hostlib" "$fixture_dir/host-extern/node_modules/hostlib"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/host-extern/use.ts"
+if ! grep -Fq 'function {:axiom} Ping(args: PingArgs): Host' "$fixture_dir/host-extern/use.dfy.gen" || ! grep -Fq 'commands: seq<Host>' "$fixture_dir/host-extern/use.dfy.gen"; then
+  echo "ERROR: a declared command did not emit as an opaque extern of its argument record (host-extern)"
+  exit 1
+fi
+expect_proof_failure \
+  "two commands with different arguments verified as equal (host-extern)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/host-extern/use-wrong.ts"
 # Unicode case mapping changes non-ASCII text and its length; the model must not prove otherwise.
 cp tools/fixtures/string-case-length-wrong.ts "$fixture_dir/"
 expect_proof_failure \

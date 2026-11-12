@@ -976,6 +976,8 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
         ty = (e.right.kind === "var" && e.right.name === "undefined") ? left.ty : left.ty.inner;
       }
       else if (e.op === "||") ty = right.ty;
+      // A concatenated list (`[a, ...(c ? [b] : [])]`) has its parts' type, so a target field can wrap it.
+      else if (e.op === "arrayConcat") ty = left.ty.kind === "array" && left.ty.elem.kind !== "unknown" ? left.ty : right.ty;
       else if (e.op === "/") {
         // `number / number` is real (floating-point) division: 3 / 2 === 1.5,
         // never 1 — an integer quotient requires an explicit Math.floor (which

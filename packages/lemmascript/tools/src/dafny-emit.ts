@@ -769,6 +769,10 @@ function emitExpr(e: Expr): string {
         if (e.ctor && matches.includes(e.ctor)) ctorName = e.ctor;
         else if (matches.length > 0) ctorName = matches[0];
         if (!ctorName) ctorName = _recordCtors.get(e.fields[0].name);
+      } else if (e.ctor && _structureDecls.get(e.ctor)?.every(f => f.type.kind === "optional")) {
+        // `{}` typed as a record whose fields are all optional, or that has none (a command's arguments): every field
+        // is None (fixtures/host-extern).
+        ctorName = e.ctor;
       }
       if (ctorName) {
         const structFields = _structureDecls.get(ctorName);
