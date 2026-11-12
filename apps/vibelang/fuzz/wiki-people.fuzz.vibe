@@ -1,0 +1,88 @@
+// src/web/wikiView.vibe and roleView.vibe's arms that `screens/wiki-pane` and the browser stage reach only by some draws:
+// the wiki editor offering each failure's way out and taking typed text, the page finder taking a query, a page the
+// repository changed rendered with its links resolved, the account menu's keys, and a person's role chosen in the People
+// pane, in every execution (0015, eighteenth session).
+import { it } from "@effect/vitest"
+import { change, expectIgnored, findAll, given, keydown, scene, textContent, type as typeInto, type SceneSimulation } from "foldkit/scene"
+import { pages } from "../src/core/wiki.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { accountOf, init, Message, Model } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { run, same, Finding, Text } from "./run.vibe"
+
+const FLAGS = { session: "00000000-0000-4000-8000-000000000000", mode: "mock" as const, name: "fuzz" }
+const PAGE = pages.find((page) => page.id === "index") ?? pages[0]!
+
+/** A signed-in maintainer's chat with the wiki pane on PAGE; `change` sets the rest. */
+function model(change: Partial<Model>): Model {
+  const base = init(FLAGS).model
+  const account = accountOf(base)
+  return {
+    ...base, surface: "chat", docs: "pane", issues: { ...initialIssues, open: false }, wikiStatus: "ready",
+    account: { ...account, identity: { ...account.identity, id: "p1", login: "ada", role: "maintainer" } },
+    client: { ...base.client, conversation: { ...base.client.conversation, pane: `/wiki/${PAGE.id}` } },
+    ...change,
+  }
+}
+
+type Step = (simulation: SceneSimulation<Model, Message>) => SceneSimulation<Model, Message>
+
+/** What the page rendered and the Messages its interactions sent; update records and changes nothing. */
+effect function render(state: Model, ...steps: ReadonlyArray<Step>) {
+  const seen: Array<Message> = []
+  let html: SceneSimulation<Model, Message>["html"] | undefined = undefined
+  const capture = (simulation: SceneSimulation<Model, Message>) => { html = simulation.html; return simulation }
+  try Effect.try(() => scene({ update: (current: Model, message: Message) => { seen.push(message); return { model: current } }, view }, given(state), capture, ...steps))
+  const at = html!
+  return {
+    seen,
+    all: (selector: string) => findAll(at, selector),
+    // The page's body is set as a property (h.InnerHTML), which the vnode keeps in its props.
+    inner: (selector: string) => findAll(at, selector).map((each) => (each as unknown as { readonly data?: { readonly props?: { readonly innerHTML?: string } } }).data?.props?.innerHTML ?? ""),
+  }
+}
+
+/** A Finding named `name` unless `holds`. */
+effect function check(name: string, holds: boolean) {
+  if (!holds) throw new Finding({ report: `wiki and people ${name}` })
+}
+
+/**
+ * Each editor failure with a way out offers it (Connect GitHub posts to the connect route; Fork and Install link out)
+ * and one without, or no failure, offers none,
+ * and typed text reaches the editor; the finder sends its query; a page the repository changed renders its own source
+ * with relative links resolved to wiki pages; in the account menu ArrowDown and ArrowUp move focus with FocusedPrompt
+ * and x and Enter send nothing; choosing a person's role sends SelectedRole for that person.
+ */
+it.live("screens/wiki-and-people", () => run("screens/wiki-and-people", Schema.Struct({ text: Text }), ({ text }) => effect {
+  for (const error of ["Connect GitHub.", "Fork on GitHub.", "Install Smithers on your fork.", "The page changed. Reload the editor.", ""]) {
+    const typed = try Effect.try(() => typeInto("#vl-wiki-editor", text))
+    const editing = try render(model({ wikiEdit: { page: PAGE.id, base: "b", text: "# Draft", busy: false, error } }), typed)
+    const ways = ["form", "a", "button"].flatMap((tag) => editing.all(`.vl-wiki-edit-error ${tag}`))
+    const offers = error !== "The page changed. Reload the editor." && error !== ""
+    try check(`way out of ${error}`, (ways.length >= 1) === offers && (error !== "Connect GitHub." || editing.all(".vl-wiki-edit-error form[action^='/api/auth/connect']").length === 1))
+    const edited = try Effect.try(() => Message.UpdatedWikiEdit({ value: text }))
+    try check("typed text", same(editing.seen, [edited]))
+  }
+  const query = try Effect.try(() => typeInto("input[aria-label='Find a page']", text))
+  const finding = try render(model({}), query)
+  const filtered = try Effect.try(() => Message.FilteredWiki({ value: text }))
+  try check("finder", same(finding.seen, [filtered]))
+  const changed = try render(model({ wikiPages: [{ id: PAGE.id, source: `# Changed\n\nSee [the rulings](rulings.md) and [the web](https://example.com).`, revision: "r" }] }))
+  const body = changed.inner(".sui-md").join("")
+  try check(`observed page ${body.slice(0, 300)}`, body.includes("Changed") && body.includes(`href="https://example.com"`) && /href="[^"]*rulings"/.test(body) && !body.includes("rulings.md"))
+  // The account menu's keys.
+  for (const [key, moves] of [["ArrowDown", true], ["ArrowUp", true], ["x", false], ["Enter", false]] as const) {
+    const pressed = try Effect.try(() => moves ? [keydown("#vl-account-out", key)] : [keydown("#vl-account-out", key), expectIgnored()])
+    const menu = try render(model({ account: { ...accountOf(model({})), menu: true } }), ...pressed)
+    const focused = try Effect.try(() => Message.FocusedPrompt())
+    try check(`menu key ${key}`, same(menu.seen, moves ? [focused] : []))
+  }
+  // A person's role in the People pane.
+  const members = [{ id: "p2", login: "bo", role: "community" as const }]
+  const chosen = try Effect.try(() => change("select[aria-label='Role for bo']", "contributor"))
+  const people = try render(model({ account: { ...accountOf(model({})), people: "pane", members } }), chosen)
+  const selected = try Effect.try(() => Message.SelectedRole({ id: "p2", role: "contributor" }))
+  try check("role choice", same(people.seen, [selected]))
+  return true
+}))

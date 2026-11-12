@@ -1287,6 +1287,20 @@ export flow, too slow per execution. `clients/browser-delegates` now also starts
 page whose health says live and whose other requests fail: it selects live and the export fails typed. Mutation
 caught (20261241): `publish` answering without forwarding.
 
+### The wiki pane's ways out, the account menu, and the last small arms (eighteenth session)
+
+`screens/wiki-and-people` (`fuzz/wiki-people.fuzz.vibe`) renders the main view over chosen states in every execution:
+the wiki editor with each failure (Connect GitHub posts to the connect route; Fork and Install link out; a changed page
+and no failure offer nothing) taking drawn text as `UpdatedWikiEdit`; the page finder sending `FilteredWiki`; a page the
+repository changed rendered from its own source (read from the vnode's `innerHTML` property, as `h.InnerHTML` sets it)
+with a relative link resolved to a wiki page and a web link kept; the account menu's ArrowDown and ArrowUp moving focus
+(`FocusedPrompt`) while `x` and Enter send nothing; and a person's role chosen in the People pane (`SelectedRole`).
+The menu oracle names its keys: a first draft computed the expectation with `menuKeyMoves` itself and let a mutant
+through. `web/decision-arms` adds `completions` without a mode (the bench and unit suite call it so; the app always
+has one), `resultText` of a refusal, and a specification revision sent with revision 0 before any. Both seeds
+(20261243, 20261244) reach every listed arm. Mutations caught (20261245, 20261247): Install offering nothing, relative
+wiki links left unresolved, and Enter moving the menu.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

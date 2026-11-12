@@ -4,6 +4,9 @@
 // (0015, eighteenth session).
 import { it } from "@effect/vitest"
 import * as AccountView from "../src/web/accountViewDecision.vibe"
+import { completions, initial as initialActions, resultText } from "../src/web/actionModel.vibe"
+import { initialIssues, issuesUpdate } from "../src/web/issues.vibe"
+import { historyRefusal } from "../src/history/flowMachine.vibe"
 import * as IssuesView from "../src/web/issuesViewDecision.vibe"
 import * as Markdown from "../src/web/markdownDecision.vibe"
 import * as ModelD from "../src/web/modelDecision.vibe"
@@ -106,6 +109,13 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
     const selection: ModelD.RunSelection = { step: "s", run: shown, selected: "a", open: true, maximized: false }
     try check(`followedRun ${shown}`, same(ModelD.followedRun(selection, "run-2", other), shown === "" ? selection : { ...selection, step: "", run: "run-2", selected: other }))
   }
+  // The slash menu offers the page's mode switch only when it knows the mode; a refused write's result reads as its reason.
+  const open = { ...initialActions, slash: true }
+  try check("completions without a mode", completions({ actions: open, draft: "/" }).length === 0 && completions({ actions: open, draft: "/", mode: "live" }).some((entry) => entry.command === "/mock"))
+  try check("resultText", resultText(JSON.stringify({ id: "m1", refusal: "forbidden" })) === historyRefusal("forbidden") && resultText(JSON.stringify({ id: "m1", refusal: null })) === JSON.stringify({ id: "m1", refusal: null }) && resultText(other) === other)
+  // A specification revision is sent with the revision it revises (0 before any).
+  const revise = issuesUpdate({ ...initialIssues, role: "maintainer", status: "ready", screen: "specification", comment: other || "x" }, "spec-revise", other || "x")
+  try check(`spec-revise ${JSON.stringify(revise.request ?? null)}`, revise.request?.op === "spec-revise" && revise.request.revision === 0)
   // A saved page replaces what was known of it and comes last, once.
   const pages: ReadonlyArray<WikiEditor.WikiPage> = [{ id: "a", source: "A", revision: "1" }, { id: "p", source: "P", revision: "1" }, { id: "b", source: text, revision: "2" }]
   try check("savedWikiPages", same(WikiEditor.savedWikiPages(pages, "p", other, "3"), [pages[0], pages[2], { id: "p", source: other, revision: "3" }]))
