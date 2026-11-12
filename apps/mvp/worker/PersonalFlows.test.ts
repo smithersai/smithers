@@ -642,6 +642,27 @@ describe("reading flows", () => {
       .toEqual([404, { code: "not_found" }])
   })
 
+  test("GET /api/flows/source by flowId reads a revision under the name it was written with, after a rename", async () => {
+    const h = await open()
+    const first = await saved(h, "notes")
+    const renaming = crypto.randomUUID()
+    expect((await writeRound(h, renaming, round("digest", { flowId: first.flowId }))).status).toBe(200)
+    expect((await send(h, "POST", "/api/flows/save", saving(renaming, "digest"))).status).toBe(200)
+    const source = (name: string, revision: number, flowId = first.flowId) =>
+      [200, { flowId, name, revision, digest: digestSync(skill(name)), source: skill(name) }]
+    // A pinned Retry of the run before the rename: its revision, under its own name, which its source declares.
+    expect(await json(await send(h, "GET", `/api/flows/source?name=notes&revision=1&flowId=${first.flowId}`)))
+      .toEqual(source("notes", 1))
+    expect(await json(await send(h, "GET", `/api/flows/source?name=digest&flowId=${first.flowId}`))).toEqual(source("digest", 2))
+    expect(await json(await send(h, "GET", `/api/flows/source?name=digest&revision=2&flowId=${first.flowId}`)))
+      .toEqual(source("digest", 2))
+    // A revision under a name it wasn't written with: not found.
+    expect(await json(await send(h, "GET", `/api/flows/source?name=digest&revision=1&flowId=${first.flowId}`)))
+      .toEqual([404, { code: "not_found" }])
+    expect(await json(await send(h, "GET", `/api/flows/source?name=notes&flowId=${first.flowId}`)))
+      .toEqual([404, { code: "not_found" }])
+  })
+
   test("a name or revision that doesn't read is 400, and POST is 405", async () => {
     const h = await open()
     expect(await json(await send(h, "GET", "/api/flows/source?name=notes&flowId=not-a-uuid"))).toEqual([400, { code: "invalid" }])

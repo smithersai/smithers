@@ -2165,3 +2165,39 @@ describe("0106_machine_write_diagnostics", () => {
       expect(await on(through("0106"))).toEqual([])
     }))
 })
+
+describe("0119_flow_revision_names", () => {
+  test("each revision keeps the name its source declares, else its flow's; a new revision must name itself", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0118"))
+      const id = "00000000-0000-4000-8000-000000000001"
+      const drafted = (name: string) => renderSource({ name, description: "Drafted.", flows: [], instructions: "Go." })
+      // Saved as `notes`, renamed to `digest` by its second save; the third revision's tag doesn't read.
+      const sources = [drafted("notes"), drafted("digest"), "export default 1"]
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`INSERT INTO flows (id, owner_id, name, revision, description) VALUES (${id}, 'p', 'digest', 3, 'D.')`
+        for (const [index, source] of sources.entries()) {
+          yield* sql`INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
+            VALUES (${id}, ${index + 1}, ${digestSync(source)}, ${source}, 'p')`
+        }
+      }))
+      expect((await on(through("0119"))).map(([n, name]) => `${n}_${name}`)).toEqual(["119_flow_revision_names"])
+      const names = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly revision: number; readonly name: string }>`
+          SELECT revision, name FROM flow_revisions ORDER BY revision`))
+      expect(names).toEqual([{ revision: 1, name: "notes" }, { revision: 2, name: "digest" }, { revision: 3, name: "digest" }])
+      const insert = (name: string | null) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO flow_revisions (flow_id, revision, name, digest, source, created_by)
+          VALUES (${id}, 4, ${name}, ${digestSync("export default 1")}, 'export default 1', 'p')`).pipe(
+          Effect.as("taken"),
+          Effect.orElseSucceed(() => "refused"),
+        ))
+      expect([await insert(null), await insert("Bad")]).toEqual(["refused", "refused"])
+      expect(await insert("digest")).toBe("taken")
+      expect(await on(through("0119"))).toEqual([])
+    }))
+})

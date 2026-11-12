@@ -285,8 +285,8 @@ const save = (actorId: string, request: SaveRequest) =>
         revision = row.revision
       }
       yield* sql`
-        INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
-        VALUES (${flowId}, ${revision}, ${request.digest}, ${request.source}, ${actorId})`
+        INSERT INTO flow_revisions (flow_id, revision, name, digest, source, created_by)
+        VALUES (${flowId}, ${revision}, ${request.name}, ${request.digest}, ${request.source}, ${actorId})`
       const [written] = yield* sql<{ readonly txid: string }>`
         UPDATE flow_drafts SET status = 'saved', flow_id = ${flowId}, saved_revision = ${revision}, updated_at = now()
         WHERE id = ${request.draftId}
@@ -347,8 +347,8 @@ const writeFlow = (actorId: string, write: WriteRequest) =>
         }
       }
       const [written] = yield* sql<{ readonly txid: string }>`
-        INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
-        VALUES (${row.id}, ${row.revision}, ${write.digest}, ${write.source}, ${actorId})
+        INSERT INTO flow_revisions (flow_id, revision, name, digest, source, created_by)
+        VALUES (${row.id}, ${row.revision}, ${write.name}, ${write.digest}, ${write.source}, ${actorId})
         RETURNING pg_current_xact_id()::xid::text AS txid`
       return {
         _tag: "Written" as const,
@@ -390,16 +390,20 @@ const listDrafts = (actorId: string) =>
       ORDER BY updated_at DESC, id`
   })
 
-/** One revision of the person's flow `name`: the latest live one, or `revision` of any of their flows by that name. */
+/**
+ * One revision of the person's flow `name`: the latest live one, or `revision` of any of their flows by that name; with
+ * `flowId`, that flow's revision written under `name`.
+ */
 const sourceOf = (actorId: string, name: string, revision: number | undefined, flowId?: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    // A revision of the flow `flowId`, deleted or not: what a pinned run retries, even after its name was reused.
+    // A revision of the flow `flowId`, deleted or not, under the name it was written with: what a pinned run retries,
+    // even after the flow was renamed or its name was reused.
     if (flowId !== undefined) {
       const [row] = yield* sql<{ readonly flowId: string; readonly name: string; readonly revision: number; readonly digest: string; readonly source: string }>`
-        SELECT f.id AS "flowId", f.name, r.revision, r.digest, r.source FROM flows f
+        SELECT f.id AS "flowId", r.name, r.revision, r.digest, r.source FROM flows f
         JOIN flow_revisions r ON r.flow_id = f.id AND r.revision = ${revision ?? sql`f.revision`}
-        WHERE f.id = ${flowId} AND f.owner_id = ${actorId} AND f.name = ${name}`
+        WHERE f.id = ${flowId} AND f.owner_id = ${actorId} AND r.name = ${name}`
       return row
     }
     const rows = revision === undefined
