@@ -32,6 +32,10 @@ it("typechecks the quickstart snippets in the files the guide names", () => {
       strict: true,
       noEmit: true,
       allowImportingTsExtensions: true,
+      // The source reaches VibeLang modules (registry's `Bundled.vibe`), whose
+      // declarations are `.d.vibe.ts` sidecars that stock TypeScript reads only
+      // with arbitrary extensions allowed, as registry's own tsconfig does.
+      allowArbitraryExtensions: true,
       skipLibCheck: true,
       types: [],
       // Always the source: a dist left over from an earlier build would check
