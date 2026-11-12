@@ -20,6 +20,7 @@ import { runContextPreflight } from "./ContextPreflight.ts"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
 import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.ts"
 import { apiCaller, runHostTurn, sourceLister, sourceReader } from "./HostTools.ts"
+import { CHAT_CALLBACK_DEADLINE_MS } from "./internal/CallbackDeadline.ts"
 import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.ts"
 import type { ProducerError } from "./ModelHostError.ts"
 import type { ModelTurnOptions } from "./ModelTurnHost.ts"
@@ -60,30 +61,6 @@ export interface DurableChatGrant {
 }
 
 type CommitReply = Extract<AgentTurnJournal.AgentTurnJournalReply, { readonly status: "committed" | "duplicate" }>
-
-/**
- * How long one journal callback attempt may go unanswered.
- *
- * A hosted guest reaches its journal through the sandbox's egress proxy, and
- * nothing below this host bounds that call: `fetch` has no default deadline.
- * Production turn 2d851bdd attempted its first commit 1 ms after its first
- * provider event, and the guest's own records show that one attempt still
- * `pending` half an hour later with no socket for it in the guest's table at
- * all; turn 7e5fc00f spent 1 h 19 m there and committed nothing. An unanswered
- * callback is a transport fault whatever its cause, and a fault has to end the
- * attempt — an unbounded one spends the person's whole turn in silence and
- * produces neither output nor a receipt.
- *
- * A healthy callback is a loopback-shaped round trip: the fastest production
- * turns commit 300–500 batches in 30–60 s, and provider-start answered in
- * 424 ms under the worst conditions this investigation saw. 15 s is therefore
- * two orders of magnitude of headroom, and an attempt that exceeds it is
- * retried once on a new request before the turn fails.
- *
- * @category constants
- * @since 1.0.0-rc.1
- */
-export const CHAT_CALLBACK_DEADLINE_MS = 15_000
 
 // An attempt reports its phase once, however many readers ask: the failure the
 // host answers the API with and the record in the guest's own log are the same

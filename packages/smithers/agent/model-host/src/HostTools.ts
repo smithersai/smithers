@@ -40,10 +40,11 @@ import {
   TodoCommands,
   UiInstruction
 } from "@smthrs/rpc"
-import { Effect } from "effect"
+import { Duration, Effect } from "effect"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
+import { CHAT_CALLBACK_DEADLINE_MS } from "./internal/CallbackDeadline.ts"
 import { runModelTurn } from "./ModelTurnHost.ts"
 import type { FrameWriter, HeldToolCall, ModelTurnOptions } from "./ModelTurnHost.ts"
 
@@ -205,7 +206,20 @@ const readCallbackJson = async (response: Response): Promise<unknown | undefined
   }
 }
 
-/** Posts one producer callback with the grant's capability; a callback that does not answer states `unreachable`. */
+/** Ends an unanswered callback at the deadline: interruption aborts its request and body read. */
+const withinCallbackDeadline = <A>(
+  call: Effect.Effect<A | { readonly code: string }>
+): Effect.Effect<A | { readonly code: string }> =>
+  Effect.timeoutOrElse(call, {
+    duration: Duration.millis(CHAT_CALLBACK_DEADLINE_MS),
+    orElse: () => Effect.succeed({ code: "timed_out" })
+  })
+
+/**
+ * Posts one producer callback with the grant's capability. A callback that
+ * fails states `unreachable`; one that has not answered, body included, within
+ * the callback deadline states `timed_out`, and its request is aborted.
+ */
 const callback = <A>(
   callbackBaseUrl: string,
   grant: DurableChatGrant,
@@ -231,7 +245,7 @@ const callback = <A>(
       return response.ok ? answer(response, parsed) : { code: refusalCode(response, parsed) }
     },
     catch: () => ({ code: "unreachable" })
-  }).pipe(Effect.catch((refused) => Effect.succeed(refused)))
+  }).pipe(Effect.catch((refused) => Effect.succeed(refused)), withinCallbackDeadline)
 
 /**
  * The source read callback for one producer generation. Its capability is the
@@ -312,7 +326,7 @@ export const apiCaller =
         return { status: response.status, body }
       },
       catch: () => ({ code: "unreachable" })
-    }).pipe(Effect.catch((refused) => Effect.succeed(refused)))
+    }).pipe(Effect.catch((refused) => Effect.succeed(refused)), withinCallbackDeadline)
 
 const MAX_SHOWN_PATH = 200
 

@@ -5,11 +5,12 @@
  */
 
 import { ConfiguredModel } from "@smthrs/rpc"
-import { Effect, Redacted } from "effect"
+import { Duration, Effect, Redacted } from "effect"
 import type { PlannedModel } from "./ConfiguredModelRoute.ts"
 import { toModel } from "./ConfiguredModelRoute.ts"
 import type { ModelSource } from "./FastModelFallback.ts"
 import type { ModelTurnResolver } from "./HostServer.ts"
+import { CHAT_CALLBACK_DEADLINE_MS } from "./internal/CallbackDeadline.ts"
 import { readContextStream } from "./internal/ContextStream.ts"
 import { ResolveFailed } from "./ModelHostError.ts"
 import { refusingRedirects } from "./ProviderTransport.ts"
@@ -164,7 +165,13 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
             return readContextStream(response)
           },
           catch: () => new ResolveFailed({ message: "shared conversation context is unavailable" })
-        })
+        }).pipe(
+          // Interruption at the deadline aborts the request and its body read.
+          Effect.timeoutOrElse({
+            duration: Duration.millis(CHAT_CALLBACK_DEADLINE_MS),
+            orElse: () => Effect.fail(new ResolveFailed({ message: "shared conversation context timed out" }))
+          })
+        )
         if (options.preflightBinding === undefined) return { ...resolved, preflight: { ...resolved, input } }
         // This binding is supplied by the host launcher, never by the prompt.
         // It may spend a different owner key, but keeps that key's own origin.
