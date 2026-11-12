@@ -442,6 +442,10 @@ export class RunsStore extends Context.Service<
           // the list or a link: if ChatApi answers it, it is read and followed there from now on.
           if (state === "not_found" && !onCloud(runId)) {
             const there = yield* Effect.result(remote.inspect(runId, { limit: 1 }))
+            // A newer read, or a replay chosen meanwhile, owns the page: this one publishes nothing.
+            if (generations.get(runId) !== generation) return
+            const afterProbe = Option.getOrThrow(yield* view.get(VIEW))
+            if (afterProbe.runId === runId && afterProbe.at != null) return
             if (there._tag === "Success") {
               cloudRoots.add(runId)
               yield* Effect.forkIn(follow(runId), scope, { startImmediately: true })

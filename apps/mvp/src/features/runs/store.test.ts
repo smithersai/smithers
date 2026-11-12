@@ -742,6 +742,47 @@ test.each(["success", "failure"])("an older overlapping read cannot replace a ne
   expect(t.page("r")).toEqual(newest)
 })
 
+test.each(["fails", "answers"])("a cloud probe that %s after a newer read publishes nothing", async (outcome) => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection, RemoteReadFailed>())
+  // The engine first lacks the run, so the store asks ChatApi; the run then starts on this device.
+  let admitted = false
+  const t = open({
+    inspect: (id) => admitted ? Effect.succeed(inspection(id, [event(2)], false)) : refused("@smthrs/engine-store/RunNotFound"),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+    remote: () => Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending)),
+  })
+  const older = t.run(t.store.readRun("r"))
+  await t.run(Deferred.await(started))
+  admitted = true
+  await t.run(t.store.readRun("r"))
+  const newest = t.page("r")
+  expect(newest).toMatchObject({ state: "read" })
+  await t.run(outcome === "fails" ? Deferred.fail(pending, new RemoteReadFailed({ status: 404, code: "not_found" })) : Deferred.succeed(pending, inspection("r", [event(9)], false)))
+  await older
+  expect(t.page("r")).toEqual(newest)
+})
+
+test("a cloud probe that fails after replay is selected keeps the replayed page", async () => {
+  const started = Effect.runSync(Deferred.make<void>())
+  const pending = Effect.runSync(Deferred.make<Inspection, RemoteReadFailed>())
+  let held = false
+  const t = open({
+    inspect: (id) => held ? refused("@smthrs/engine-store/RunNotFound") : Effect.succeed(inspection(id, [event(0)], false)),
+    list: () => Effect.succeed({ runs: [], cursor: null }),
+    remote: () => Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(pending)),
+  })
+  await t.run(t.store.readRun("r"))
+  const shown = t.page("r")
+  held = true
+  const reading = t.run(t.store.readRun("r"))
+  await t.run(Deferred.await(started))
+  await t.run(t.store.view.update(VIEW, (draft) => { draft.runId = "r"; draft.at = 0 }))
+  await t.run(Deferred.fail(pending, new RemoteReadFailed({ status: 404, code: "not_found" })))
+  await reading
+  expect(t.page("r")).toEqual(shown)
+})
+
 test("a superseded read awaiting a child cannot replace the newer forest", async () => {
   const started = Effect.runSync(Deferred.make<void>())
   const child = Effect.runSync(Deferred.make<Inspection>())
