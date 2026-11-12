@@ -110,7 +110,7 @@ export const make = (stateDir: string) =>
               : { _tag: "Again" } as const
           }
           const row = decodeRow(yield* fs.readFileString(at.job(key)))
-          if (Option.isNone(row) || row.value.key !== key) return yield* Effect.fail("corrupt")
+          if (Option.isNone(row) || row.value.key !== key) return yield* new AgentRunner.AgentJobsUnavailable()
           return LocalJobs.standingOf(row.value, yield* Clock.currentTimeMillis)
         }).pipe(unavailable)
     })

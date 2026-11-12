@@ -364,7 +364,7 @@ export const make = (stateDir: string, options: Options = {}) =>
         }).pipe(unavailableJobs),
       status: (key) =>
         Effect.gen(function*() {
-          if (corrupt.has(`${fileOf(key)}.json`)) return yield* Effect.fail("corrupt")
+          if (corrupt.has(`${fileOf(key)}.json`)) return yield* new AgentRunner.AgentJobsUnavailable()
           yield* learnQueue
           const row = rows.get(key)
           // A key with no job was never queued: another generation.
