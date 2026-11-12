@@ -2077,12 +2077,13 @@ export function resolveModule(raw: RawModule): TModule {
     }
     const baseCtx: Ctx = { env, typeDecls: raw.typeDecls, overrides: new Map(), allowResult: false, returnTy: sig.returnTy, pureFns, fnParams, fnReturns, externs, inSpec: true, inLambda: false, narrowedPaths: [], narrowedIndices: [] };
     const ensuresCtx: Ctx = { ...baseCtx, env: extend(env, "\\result", sig.returnTy), allowResult: true };
-    const requires = ext.requires.map(s => {
-      try { return resolveSpec(s, baseCtx); } catch { return null; }
-    }).filter((e): e is TExpr => e !== null);
-    const ensures = ext.ensures.map(s => {
-      try { return resolveSpec(s, ensuresCtx); } catch { return null; }
-    }).filter((e): e is TExpr => e !== null);
+    // A clause that fails to resolve fails the module: dropping a precondition would turn the postconditions into
+    // axioms for every input.
+    const clause = (kind: "requires" | "ensures", ctx: Ctx) => (s: string): TExpr => {
+      try { return resolveSpec(s, ctx); } catch (err) { throw new Error(`extern ${ext.qualified}: //@ ${kind} ${s}: ${locatedMessage(err)}`); }
+    };
+    const requires = ext.requires.map(clause("requires", baseCtx));
+    const ensures = ext.ensures.map(clause("ensures", ensuresCtx));
     return {
       qualified: ext.qualified,
       flat: ext.flat,
