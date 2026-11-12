@@ -49,8 +49,11 @@ export interface Options {
  *
  * `Busy` is a "not yet", not a failure: another process holds the run, this
  * pass could not give acquired ownership back, a store read or write failed
- * (`unknown`), or the heartbeat lost the fence (`fence_lost`). The audit row
- * stays `in_progress`, stays in `pendingAudits`, and remains recoverable.
+ * (`unknown`), or the heartbeat lost the fence (`fence_lost`). A committed
+ * rewind whose run has since appended above the frame is also `busy`: neither
+ * rolling it back nor resetting the run to the frame is safe, so it waits for
+ * an operator. The audit row stays `in_progress`, stays in `pendingAudits`,
+ * and remains recoverable.
  * `Failed` is terminal and closes the audit; only a proven-permanent condition
  * reaches it, such as undecodable detail, a missing run row, a defect, a
  * handler rollback that failed with `compensation_failed`, or a rollback that
@@ -136,23 +139,39 @@ const archiveCommitted = (
     return Effect.succeed(true)
   }
   if (detail.suffixCount === 0) return Effect.succeed(false)
-  return journal.entries({
+  // The archive row `(run, generation, seq)` is written only by this rewind's
+  // commit, so it proves the commit on its own. The live suffix cannot
+  // disprove it: a run resumed after the commit appends above the frame
+  // again, and reading that as "not committed" rolled back a durable
+  // truncation.
+  if (detail.suffixTailSeq !== undefined && detail.generation !== undefined) {
+    return store.archivedAt(audit.runId, detail.suffixTailSeq, detail.generation)
+  }
+  const tailSeq = detail.suffixTailSeq
+  return liveSuffix(journal, audit, "archive commit").pipe(
+    // Audits predating recorded generations, or journals without them, keep
+    // the old evidence rule: an archive row at the tail seq may belong to an
+    // earlier rewind, so only an empty live suffix makes it this rewind's.
+    Effect.flatMap((live) =>
+      live || tailSeq === undefined ? Effect.succeed(false) : store.archivedAt(audit.runId, tailSeq)
+    )
+  )
+}
+
+// Whether the run's journal holds an entry above the audit's frame.
+const liveSuffix = (
+  journal: Journal.Service,
+  audit: Audit,
+  purpose: string
+): Effect.Effect<boolean, TimeTravelFailure> =>
+  journal.entries({
     runId: audit.runId as JournalEvent.RunId,
     after: audit.frame.seq as JournalEvent.Seq,
     limit: 1
   }).pipe(
-    Effect.mapError((cause) => error("unknown", `could not inspect archive commit for ${audit.id}`, cause)),
-    Effect.flatMap((page) => {
-      if (page.entries.length > 0) return Effect.succeed(false)
-      // Audits predating recorded generations, or journals without them, keep
-      // the old evidence rule: rolling back a committed truncation reverses
-      // compensation the truncated history no longer explains.
-      return detail.suffixTailSeq === undefined
-        ? Effect.succeed(false)
-        : store.archivedAt(audit.runId, detail.suffixTailSeq, detail.generation)
-    })
+    Effect.mapError((cause) => error("unknown", `could not inspect ${purpose} for ${audit.id}`, cause)),
+    Effect.map((page) => page.entries.length > 0)
   )
-}
 
 // The durable child nonce identifies claims made by rewind or an earlier
 // recovery pass, even after recovery has replaced/released the parent owner.
@@ -290,20 +309,15 @@ const terminalFailure = (
   detail: AuditDetail | undefined,
   failure: TimeTravelFailure
 ): Effect.Effect<Outcome, never> =>
-  store.updateAudit(audit.id, {
-    status: "failed",
-    detail: detail === undefined
-      ? {
-        version: 1,
-        phase: "terminal_failure",
-        failure: failure.message
-      }
-      : {
-        ...detail,
-        phase: "terminal_failure",
-        failure: failure.message
-      }
-  }).pipe(
+  // An undecodable detail is closed by status alone. It may be the only record
+  // of the receipts an interrupted rewind had already reversed, and
+  // `updateAudit` replaces the detail wholesale.
+  store.updateAudit(
+    audit.id,
+    detail === undefined
+      ? { status: "failed" }
+      : { status: "failed", detail: { ...detail, phase: "terminal_failure", failure: failure.message } }
+  ).pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("time-travel: failed to persist recovery audit", cause).pipe(
         Effect.annotateLogs({ auditId: audit.id, runId: audit.runId, step: "terminal_failure" })
@@ -357,11 +371,14 @@ const recoverOne = (
     // persisted. A retry would read the old detail and repeat non-idempotent
     // rollbacks, so a failure in that window stays terminal.
     let rollbackUnrecorded = false
+    // Set when a committed rewind finds its run advanced past the frame: the
+    // run goes back as it was found, neither parked nor reset to the frame.
+    let advancedStatus: "pending" | "suspended" | undefined
     let releaseProblem: string | undefined
     const release = (status: RunStore.RunStatus) =>
       Effect.suspend(() => {
         // A committed rewind stays suspended, even when it began pending.
-        const target = archiveWasCommitted ? "suspended" : status
+        const target = advancedStatus ?? (archiveWasCommitted ? "suspended" : status)
         return acquired === undefined
           ? Effect.void
           : Effect.exit(runs.transitionOwned(
@@ -429,6 +446,17 @@ const recoverOne = (
               const committed = yield* archiveCommitted(journal, store, audit, detail)
               archiveWasCommitted = committed
               if (committed) {
+                // A run resumed after the commit has journal entries above the
+                // frame again, and its row carries the state they produced.
+                // Writing the frame's state over it would reset the run behind
+                // its own journal, so the audit stays open for an operator.
+                if (yield* liveSuffix(journal, audit, "the journal above the rewind frame")) {
+                  // A stolen `running` row cannot go back to a dead owner.
+                  advancedStatus = acquiredRow.status === "pending" ? "pending" : "suspended"
+                  return yield* Effect.fail(
+                    error("busy", `run ${audit.runId} advanced past rewind frame ${audit.frame.seq} after its commit`)
+                  )
+                }
                 // The live run row still carries the post-frame state the rewind
                 // truncated. Derive the state at the surviving frame just as the
                 // normal rewind path does; a history without a decision payload

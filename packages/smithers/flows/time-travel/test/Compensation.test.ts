@@ -905,6 +905,7 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
         code: "compensation_failed",
         message: "target jj pointer was not resolved during preflight"
       })
+      expect(Compensation.applied(failure)).toEqual({ handlerReceipts: [receipt] })
     }))
 })
 
@@ -1026,7 +1027,57 @@ describe("Compensation.rollback", () => {
         code: "compensation_failed",
         message: "2 rewind rollback operation(s) failed"
       })
+      expect(Compensation.applied(failure)).toEqual({
+        handlerReceipts: [receipt],
+        workspace: { currentChangeId: "current", targetChangeId: "target" }
+      })
     }))
+
+  it.effect("names only the receipts whose rollback failed as still applied", () =>
+    Effect.gen(function*() {
+      const other = { ...receipt, id: "other:rollback", effect: { ...receipt.effect, id: "other" } }
+      const registry = registryOf([{
+        kind: "send",
+        tier: "irreversible",
+        requiresIdempotencyKey: true,
+        residue: () => "residue",
+        revert: () => Effect.succeed({}),
+        rollback: (effect) =>
+          effect.id === "send" ? Effect.fail(error("compensation_failed", "handler refused")) : Effect.void
+      }])
+
+      const failure = yield* Effect.flip(
+        Compensation.rollback({ handlerReceipts: [receipt, other] }).pipe(
+          Effect.provide(registry),
+          Effect.provide(jjOf())
+        )
+      )
+
+      expect(Compensation.applied(failure)).toEqual({ handlerReceipts: [receipt] })
+    }))
+
+  it.effect("keeps every receipt applied when the cleanup dies without saying which", () =>
+    Effect.gen(function*() {
+      const registry = Layer.succeed(EffectHandlerRegistry.EffectHandlerRegistry, {
+        ...EffectHandlerRegistry.makeNoop(),
+        rollback: () => {
+          throw new Error("registry defect")
+        }
+      })
+
+      const failure = yield* Effect.flip(
+        Compensation.rollback({ handlerReceipts: [receipt] }).pipe(
+          Effect.provide(registry),
+          Effect.provide(jjOf())
+        )
+      )
+
+      expect(Compensation.applied(failure)).toEqual({ handlerReceipts: [receipt] })
+    }))
+
+  it("reports nothing applied for a failure without a cleanup account", () => {
+    expect(Compensation.applied(error("compensation_failed", "plain"))).toBeUndefined()
+  })
 })
 
 describe("Compensation.toStoreReceipts", () => {

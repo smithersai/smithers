@@ -14,7 +14,7 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { EffectRecord } from "../EffectBoundary.ts"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, fromCause, type TimeTravelError } from "../TimeTravelError.ts"
 import type { Receipt } from "../TimeTravelStore.ts"
 import { Assessment as HandlerAssessment, EffectHandlerRegistry, RollbackReceipt } from "./EffectHandlerRegistry.ts"
 
@@ -119,6 +119,40 @@ export type Result = typeof Result.Type
  * @category constants
  */
 export const defaultTimeout = Duration.minutes(3)
+
+const AppliedCause = Schema.Struct({ applied: Result })
+const isAppliedCause = Schema.is(AppliedCause)
+
+/**
+ * What a failed compensation operation left applied to the outside world.
+ *
+ * Every operation here undoes its own work when it fails. When that cleanup
+ * fails too, the error's `cause` carries the receipts it could not undo as
+ * `applied`, and this reads them back. `undefined` means the failure left
+ * nothing applied. The caller keeps these receipts instead of recording a
+ * rollback, and never rolls them back a second time.
+ *
+ * @since 0.1.0
+ * @category compensation
+ */
+export const applied = (failure: TimeTravelError): Result | undefined =>
+  isAppliedCause(failure.cause) ? failure.cause.applied : undefined
+
+// What stays applied after a cleanup: the handler receipts its rollback could
+// not undo (all of them when the failure does not say which), and the
+// workspace receipt when the workspace could not be put back.
+const remaining = (
+  handlerExit: Exit.Exit<void, TimeTravelError>,
+  handlerReceipts: ReadonlyArray<RollbackReceipt>,
+  workspace?: WorkspaceReceipt | undefined
+): { readonly applied: Result } | undefined => {
+  const handlers = Exit.isFailure(handlerExit)
+    ? applied(fromCause(handlerExit.cause))?.handlerReceipts ?? handlerReceipts
+    : []
+  return handlers.length === 0 && workspace === undefined
+    ? undefined
+    : { applied: { handlerReceipts: handlers, ...(workspace === undefined ? {} : { workspace }) } }
+}
 
 // The protocol stays masked, but the timeout must be able to interrupt its
 // external worker. Otherwise timeout waits forever for the losing fiber.
@@ -272,9 +306,11 @@ const rollbackHandlers = (
 ): Effect.Effect<void, TimeTravelError> =>
   Effect.gen(function*() {
     const failures: Array<TimeTravelError> = []
+    const stillApplied = new Set<RollbackReceipt>()
     for (const receipt of [...receipts].reverse()) {
       const rollbackExit = yield* Effect.exit(bounded(registry.rollback(receipt), timeout))
       if (Exit.isFailure(rollbackExit)) {
+        stillApplied.add(receipt)
         failures.push(
           error(
             "compensation_failed",
@@ -286,7 +322,10 @@ const rollbackHandlers = (
     }
     if (failures.length > 0) {
       return yield* Effect.fail(
-        error("compensation_failed", `${failures.length} compensation rollback operation(s) failed`, failures)
+        error("compensation_failed", `${failures.length} compensation rollback operation(s) failed`, {
+          failures,
+          applied: { handlerReceipts: receipts.filter((receipt) => stillApplied.has(receipt)) }
+        })
       )
     }
   })
@@ -376,7 +415,8 @@ export const compensate = (
                 `could not compensate ${effect.id}: ${causeMessage(revertExit.cause)}`,
                 {
                   compensation: revertExit.cause,
-                  rollback: Exit.isFailure(rollbackExit) ? rollbackExit.cause : undefined
+                  rollback: Exit.isFailure(rollbackExit) ? rollbackExit.cause : undefined,
+                  ...remaining(rollbackExit, receipts)
                 }
               )
             )
@@ -395,7 +435,8 @@ export const compensate = (
                 `could not persist compensation receipt for ${effect.id}: ${causeMessage(durableExit.cause)}`,
                 {
                   compensation: durableExit.cause,
-                  rollback: Exit.isFailure(rollbackExit) ? rollbackExit.cause : undefined
+                  rollback: Exit.isFailure(rollbackExit) ? rollbackExit.cause : undefined,
+                  ...remaining(rollbackExit, receipts)
                 }
               )
             )
@@ -429,13 +470,25 @@ export const prepareWorkspace = (
 ): Effect.Effect<Result, TimeTravelError, EffectHandlerRegistry | Jj> =>
   Effect.gen(function*() {
     const registry = yield* EffectHandlerRegistry
-    // A cleanup failure on these two paths is logged rather than folded into
-    // the refusal: both mean the plan itself was malformed before any jj work
-    // started, and that is what the caller has to be told about.
-    const cleanUp = rollbackHandlers(registry, handlerReceipts, timeout).pipe(
-      Effect.catchCause((cause) => Effect.logError("time-travel: rollback after a refused restore failed", cause))
-    )
-    yield* assertExecutable(plan).pipe(Effect.tapError(() => cleanUp))
+    // On these two paths the refusal keeps its code and message: both mean
+    // the plan itself was malformed before any jj work started, and that is
+    // what the caller has to be told about. A cleanup failure is logged and
+    // its receipts still applied ride along as `applied`.
+    const cleanUp = (refusal: TimeTravelError) =>
+      Effect.exit(rollbackHandlers(registry, handlerReceipts, timeout)).pipe(
+        Effect.tap((cleanup) =>
+          Exit.isFailure(cleanup)
+            ? Effect.logError("time-travel: rollback after a refused restore failed", cleanup.cause)
+            : Effect.void
+        ),
+        Effect.flatMap((cleanup) => {
+          const left = remaining(cleanup, handlerReceipts)
+          return Effect.fail(
+            left === undefined ? refusal : error(refusal.code, refusal.message, { refusal: refusal.cause, ...left })
+          )
+        })
+      )
+    yield* assertExecutable(plan).pipe(Effect.catch(cleanUp))
     const jj = yield* Jj
     // A whole-repository rewind restores even without a compensable effect:
     // a bookmark move or rebase need not have come from a compensable step.
@@ -443,8 +496,7 @@ export const prepareWorkspace = (
       plan.effects.some((effect) => effect.tier === "compensable")
     if (!needsRestore) return { handlerReceipts }
     if (plan.targetChangeId === undefined) {
-      yield* cleanUp
-      return yield* Effect.fail(error("compensation_failed", "target jj pointer was not resolved during preflight"))
+      return yield* cleanUp(error("compensation_failed", "target jj pointer was not resolved during preflight"))
     }
 
     return yield* Effect.uninterruptible(
@@ -457,7 +509,11 @@ export const prepareWorkspace = (
               "compensation_failed",
               `could not snapshot current jj state: ${causeMessage(currentExit.cause)}`,
               Exit.isFailure(handlerRollback)
-                ? { snapshot: currentExit.cause, handlerRollback: handlerRollback.cause }
+                ? {
+                  snapshot: currentExit.cause,
+                  handlerRollback: handlerRollback.cause,
+                  ...remaining(handlerRollback, handlerReceipts)
+                }
                 : currentExit.cause
             )
           )
@@ -470,7 +526,9 @@ export const prepareWorkspace = (
             error(
               "compensation_failed",
               "could not read the current jj operation to restore the whole repository",
-              Exit.isFailure(handlerRollback) ? handlerRollback.cause : undefined
+              Exit.isFailure(handlerRollback)
+                ? { handlerRollback: handlerRollback.cause, ...remaining(handlerRollback, handlerReceipts) }
+                : undefined
             )
           )
         }
@@ -519,7 +577,8 @@ export const restorePreparedWorkspace = (
           {
             restore: restoreExit.cause,
             workspaceRollback: Exit.isFailure(workspaceRollback) ? workspaceRollback.cause : undefined,
-            handlerRollback: Exit.isFailure(handlerRollback) ? handlerRollback.cause : undefined
+            handlerRollback: Exit.isFailure(handlerRollback) ? handlerRollback.cause : undefined,
+            ...remaining(handlerRollback, handlerReceipts, Exit.isFailure(workspaceRollback) ? workspace : undefined)
           }
         )
       )
@@ -546,6 +605,7 @@ export const rollback = (
     return yield* Effect.uninterruptible(
       Effect.gen(function*() {
         const failures: Array<unknown> = []
+        let workspaceApplied: WorkspaceReceipt | undefined
         if (result.workspace !== undefined) {
           const workspaceExit = yield* Effect.exit(
             bounded(
@@ -553,13 +613,19 @@ export const rollback = (
               timeout
             )
           )
-          if (Exit.isFailure(workspaceExit)) failures.push(workspaceExit.cause)
+          if (Exit.isFailure(workspaceExit)) {
+            failures.push(workspaceExit.cause)
+            workspaceApplied = result.workspace
+          }
         }
         const handlerExit = yield* Effect.exit(rollbackHandlers(registry, result.handlerReceipts, timeout))
         if (Exit.isFailure(handlerExit)) failures.push(handlerExit.cause)
         if (failures.length > 0) {
           return yield* Effect.fail(
-            error("compensation_failed", `${failures.length} rewind rollback operation(s) failed`, failures)
+            error("compensation_failed", `${failures.length} rewind rollback operation(s) failed`, {
+              failures,
+              ...remaining(handlerExit, result.handlerReceipts, workspaceApplied)
+            })
           )
         }
       })

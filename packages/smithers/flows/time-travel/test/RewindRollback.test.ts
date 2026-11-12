@@ -1029,6 +1029,103 @@ describe("Rewind protocol fault matrix", () => {
       expect(store.state().records).toEqual(records())
     }))
 
+  it.effect("keeps the receipts a failed compensation could not undo on a terminal audit", () =>
+    Effect.gen(function*() {
+      // Reverts run newest first: "undone" and "stuck" succeed, "refused"
+      // fails. The cleanup then rolls back "stuck" (its provider is down) and
+      // "undone" (fine), so only "stuck" is still applied.
+      const store = MemoryTimeTravelStore.make({
+        records: [
+          stored(0, "baseline", {}),
+          stored(1, EffectBoundary.eventType, { version: 1, effect: crossed("refused", "send", "irreversible") }),
+          stored(2, EffectBoundary.eventType, { version: 1, effect: crossed("stuck", "send", "irreversible") }),
+          stored(3, EffectBoundary.eventType, { version: 1, effect: crossed("undone", "send", "irreversible") })
+        ]
+      })
+      const rolledBack: Array<string> = []
+      const registry = Effect.runSync(
+        EffectHandlerRegistry.make([{
+          kind: "send",
+          tier: "irreversible",
+          requiresIdempotencyKey: true,
+          residue: () => "message residue",
+          revert: (effect) =>
+            effect.id === "refused"
+              ? Effect.fail(error("compensation_failed", "revert refused"))
+              : Effect.succeed({ voided: effect.id }),
+          rollback: (effect) =>
+            Effect.sync(() => rolledBack.push(effect.id)).pipe(
+              Effect.andThen(
+                effect.id === "stuck" ? Effect.fail(error("compensation_failed", "provider down")) : Effect.void
+              )
+            )
+        }])
+      )
+      const runs = makeRuns(runRow())
+
+      const failure = yield* Effect.flip(
+        provide(
+          Rewind.rewind({ runId: "run", frame, owner, auditId: "audit-cleanup-failure" }),
+          { store, runs, jj: makeJj().service, registry }
+        )
+      )
+
+      expect(failure).toMatchObject({ code: "compensation_failed" })
+      // The cleanup's own rollback is the only one: the rewind never repeats it.
+      expect(rolledBack).toEqual(["stuck", "undone"])
+      const audit = store.state().audits[0]!
+      expect(audit.status).toBe("failed")
+      const detail = audit.detail as Rewind.AuditDetail
+      expect(detail.phase).toBe("terminal_failure")
+      expect(detail.rollbackFailure).toContain("could not compensate refused")
+      expect(detail.compensation?.handlerReceipts.map((receipt) => receipt.effect.id)).toEqual(["stuck"])
+      expect(detail.compensation?.workspace).toBeUndefined()
+      expect(runs.state()).toMatchObject({ status: "suspended", owner: null })
+      expect(store.state().records).toHaveLength(4)
+    }))
+
+  it.effect("keeps the pre-rewind change on a terminal audit when the workspace cannot be put back", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({
+        records: records(),
+        snapshots: [{ runId: "run", frame, changeId: "target" }]
+      })
+      const rolledBack: Array<string> = []
+      const registry = Effect.runSync(
+        EffectHandlerRegistry.make([{
+          kind: "send",
+          tier: "irreversible",
+          requiresIdempotencyKey: true,
+          residue: () => "message residue",
+          revert: () => Effect.succeed({ sent: true }),
+          rollback: (effect) => Effect.sync(() => rolledBack.push(effect.id))
+        }])
+      )
+      const jj = Jj.makeNoop({
+        snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
+        restore: () => Effect.fail(Jj.jjError({ code: "conflict", method: "restore" }))
+      })
+
+      const failure = yield* Effect.flip(
+        provide(
+          Rewind.rewind({ runId: "run", frame, owner, auditId: "audit-workspace-stuck" }),
+          { store, runs: makeRuns(runRow()), jj, registry }
+        )
+      )
+
+      expect(failure).toMatchObject({ code: "compensation_failed" })
+      expect(rolledBack).toEqual(["send"])
+      const audit = store.state().audits[0]!
+      expect(audit.status).toBe("failed")
+      const detail = audit.detail as Rewind.AuditDetail
+      expect(detail.phase).toBe("terminal_failure")
+      expect(detail.rollbackFailure).toContain("could not restore jj state target")
+      expect(detail.compensation).toEqual({
+        handlerReceipts: [],
+        workspace: { currentChangeId: "current", targetChangeId: "target" }
+      })
+    }))
+
   it.effect("finishes rollback cleanup after interruption", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({ records: records() })

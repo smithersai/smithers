@@ -758,6 +758,9 @@ interface Context {
  *   that fails runs its own cleanup, so it is emptied there while the detail
  *   keeps the receipts it last persisted. Rolling them back again would repeat
  *   non-idempotent handler side effects.
+ * - `cleanupFailure` is set when that step's own cleanup failed too. Its error
+ *   names what is still applied ({@link Compensation.applied}), which the
+ *   audit must keep instead of closing `rolled_back`.
  * - `claimedChildren` are the live child ownerships to give back or cancel.
  * - `archiveAttempted` and `archiveCommitted` describe the one commit point.
  *   The COMMIT can land before the `archive_committed` write does, so the
@@ -766,6 +769,7 @@ interface Context {
 interface Progress {
   detail: AuditDetail | undefined
   compensation: Compensation.Result
+  cleanupFailure: TimeTravelFailure | undefined
   archiveAttempted: boolean
   archiveCommitted: boolean
   suspended: boolean
@@ -953,6 +957,13 @@ const preflight = (context: Context, progress: Progress) =>
     return preflighted
   })
 
+// A compensation step undoes its own work when it fails. When that cleanup
+// failed as well, its error is the only account of what still stands.
+const keepCleanupFailure = (progress: Progress, failure: TimeTravelFailure) =>
+  Effect.sync(() => {
+    if (Compensation.applied(failure) !== undefined) progress.cleanupFailure = failure
+  })
+
 /**
  * Runs the compensation handlers and restores the workspace, persisting every
  * receipt before the next irreversible step. Ends at `compensated`.
@@ -968,7 +979,7 @@ const compensate = (context: Context, progress: Progress, preflighted: Preflight
       return store.updateAudit(auditId, { detail: nextDetail }).pipe(
         Effect.tap(() => Effect.sync(() => (progress.detail = nextDetail)))
       )
-    }, options.compensationTimeout)
+    }, options.compensationTimeout).pipe(Effect.tapError((failure) => keepCleanupFailure(progress, failure)))
     progress.compensation = { handlerReceipts }
     // The receipts reach durable storage BEFORE the next irreversible step.
     // They used to land only after `restoreWorkspace`, so a process death
@@ -986,6 +997,7 @@ const compensate = (context: Context, progress: Progress, preflighted: Preflight
     )
     if (Exit.isFailure(prepared)) {
       progress.compensation = { handlerReceipts: [] }
+      yield* keepCleanupFailure(progress, fromCause(prepared.cause))
       return yield* Effect.failCause(prepared.cause)
     }
     progress.compensation = prepared.value
@@ -995,6 +1007,7 @@ const compensate = (context: Context, progress: Progress, preflighted: Preflight
     )
     if (Exit.isFailure(restored)) {
       progress.compensation = { handlerReceipts: [] }
+      yield* keepCleanupFailure(progress, fromCause(restored.cause))
       return yield* Effect.failCause(restored.cause)
     }
     yield* StepHook.run("rewind", options.hooks?.beforeStep, "restore-workspace")
@@ -1166,8 +1179,9 @@ const settleFailure = (
       (progress.archiveAttempted || Cause.hasInterruptsOnly(cause)) &&
       progress.detail?.suffixTailSeq !== undefined
     ) {
-      // Publication after COMMIT can fail before the call returns. As in
-      // Recovery, require both an empty live suffix and its archived tail.
+      // Publication after COMMIT can fail before the call returns. The rewind
+      // still holds the run, so nothing has appended above the frame since:
+      // require both an empty live suffix and its archived tail.
       // An unreadable store leaves the audit open without risking rollback.
       // Audits predating recorded generations, or journals without them, keep
       // the old evidence rule: rolling back a committed truncation reverses
@@ -1233,12 +1247,24 @@ const settleFailure = (
     }
 
     if (!progress.archiveCommitted) {
-      const rollbackExit = yield* Effect.exit(Compensation.rollback(progress.compensation, options.compensationTimeout))
-      if (Exit.isSuccess(rollbackExit) && progress.detail?.compensation !== undefined) {
+      // A compensation step whose own cleanup failed has already rolled back
+      // everything it could. Its failure stands in for this rollback: running
+      // one again would repeat handler rollbacks that are not idempotent.
+      const rollbackExit = progress.cleanupFailure === undefined
+        ? yield* Effect.exit(Compensation.rollback(progress.compensation, options.compensationTimeout))
+        : Exit.fail(progress.cleanupFailure)
+      // Exactly what the rollback could not undo, when the failure says so.
+      const stillApplied = Exit.isFailure(rollbackExit)
+        ? Compensation.applied(fromCause(rollbackExit.cause))
+        : undefined
+      if (
+        progress.detail !== undefined &&
+        (stillApplied !== undefined || (Exit.isSuccess(rollbackExit) && progress.detail.compensation !== undefined))
+      ) {
         const { compensation: _, ...stripped } = progress.detail
-        progress.detail = stripped
-        // Handler rollback is not required to be idempotent. Record its
-        // success before run-state restoration can fail, otherwise a later
+        progress.detail = stillApplied === undefined ? stripped : { ...stripped, compensation: stillApplied }
+        // Handler rollback is not required to be idempotent. Record what it
+        // undid before run-state restoration can fail, otherwise a later
         // recovery pass repeats the same external side effects.
         yield* store.updateAudit(auditId, { detail: progress.detail })
       }
@@ -1312,7 +1338,8 @@ const settleFailure = (
           : `${failure.message}; rollback failed: ${String(rollbackFailure)}`
         // A rollback that SUCCEEDED already stripped `compensation` above,
         // before the restoration that can fail. A rollback that FAILED leaves
-        // those receipts applied, so they stay on the detail. This audit closes
+        // the receipts it could not undo applied, so they stay on the detail,
+        // and so do a compensation step's when its own cleanup failed. This audit closes
         // terminal, recovery only drains `in_progress` rows, and the only
         // writer of the receipt table, `archiveAndTruncate`, never ran on this
         // path. Stripping them here deleted the sole durable record of which
@@ -1398,6 +1425,7 @@ export const rewind = (
           const progress: Progress = {
             detail: undefined,
             compensation: { handlerReceipts: [] },
+            cleanupFailure: undefined,
             archiveAttempted: false,
             archiveCommitted: false,
             suspended: false,

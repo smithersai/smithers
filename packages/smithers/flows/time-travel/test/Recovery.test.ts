@@ -196,7 +196,9 @@ describe("Recovery", () => {
           runs,
           Jj.makeNoop({}),
           EffectHandlerRegistry.makeNoop(),
-          fault !== "archivedAt"
+          // A committed rewind's truncation left nothing above the frame; a
+          // suffix there would be a resumed run, which recovery refuses first.
+          fault === undefined
         )
         expect(outcomes).toMatchObject([{ _tag: fault === undefined ? "RolledBack" : "Busy" }])
         expect(yield* runs.get("run")).toMatchObject({

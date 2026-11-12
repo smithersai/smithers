@@ -294,4 +294,89 @@ describe("rewind generation commit evidence", () => {
         Effect.provide(NodeJj.layer)
       ))
   }
+  for (const [phase, status] of [["compensated", "suspended"], ["archive_committed", "pending"]] as const) {
+    it.effect(`SQL: leaves a ${phase} audit open and its ${status} run as found when the run appended after the commit`, () =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const store = yield* TimeTravelStore
+        yield* sql`
+          INSERT INTO flows_runs
+            (run_id, status, created_at_ms, state_json, owner_host_id, owner_pid, owner_nonce, heartbeat_at_ms)
+          VALUES ('run', 'running', 0, '{"version":1,"flowName":"Recovery","payload":{}}',
+                  ${owner.hostId}, ${owner.pid}, ${owner.nonce}, 0)
+        `
+        const append = (seq: number, eventId: string) =>
+          sql`
+            INSERT INTO flows_journal_events
+              (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+            VALUES ('run', ${seq}, ${eventId}, 'generation', ${seq}, 0, 'event', '{}', '{}')
+          `
+        for (const seq of [0, 1, 2]) yield* append(seq, `event-${seq}`)
+        // A real handler compensates an external SQL write; a wrong rollback
+        // would visibly restore the row the committed rewind reverted.
+        yield* sql`CREATE TABLE generation_effects (effect_id TEXT PRIMARY KEY)`
+        const registry = yield* EffectHandlerRegistry.make([{
+          kind: "generation/sql-write",
+          tier: "irreversible",
+          residue: () => "SQL row",
+          revert: () => Effect.succeed({ deleted: true }),
+          rollback: (effect) =>
+            sql`INSERT INTO generation_effects (effect_id) VALUES (${effect.id})`.pipe(
+              Effect.mapError((cause) => error("unknown", "could not roll back SQL compensation", cause))
+            )
+        }])
+        const receipt = yield* registry.revert({
+          id: "committed-effect",
+          kind: "generation/sql-write",
+          tier: "irreversible",
+          runId: "run",
+          lineageId: "run/root",
+          seq: 2,
+          status: "succeeded",
+          durableBoundary: true,
+          providerStream: false
+        })
+        const detail = {
+          version: 1,
+          phase,
+          originalStatus: "suspended",
+          suffixCount: 1,
+          suffixTailSeq: 2,
+          generation: 0,
+          compensation: { handlerReceipts: [receipt] },
+          warnings: [],
+          cancelledChildren: [],
+          pendingChildren: []
+        } satisfies Rewind.AuditDetail
+        yield* store.writeAudit({ id: "committed-rewind", runId: "run", frame, status: "in_progress", detail })
+        // The rewind committed, then died before recording it. The run was
+        // resumed from the frame and appended past it again.
+        yield* store.archiveAndTruncate("run", frame, [], owner)
+        yield* append(2, "resumed")
+        const advanced = "{\"version\":1,\"flowName\":\"Recovery\",\"payload\":{\"advanced\":true}}"
+        yield* sql`
+          UPDATE flows_runs SET status = ${status}, state_json = ${advanced}, owner_host_id = NULL,
+            owner_pid = NULL, owner_nonce = NULL, heartbeat_at_ms = NULL WHERE run_id = 'run'
+        `
+
+        const outcomes = yield* Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }).pipe(
+          Effect.provideService(EffectHandlerRegistry.EffectHandlerRegistry, registry)
+        )
+
+        expect(outcomes).toMatchObject([{
+          _tag: "Busy",
+          auditId: "committed-rewind",
+          error: { code: "busy", message: "run run advanced past rewind frame 1 after its commit" }
+        }])
+        expect(yield* sql`SELECT effect_id FROM generation_effects`).toEqual([])
+        expect(yield* sql`SELECT event_id FROM flows_journal_events WHERE run_id = 'run' ORDER BY seq`)
+          .toEqual([{ event_id: "event-0" }, { event_id: "event-1" }, { event_id: "resumed" }])
+        const runs = yield* RunStore.RunStore
+        expect(yield* runs.get("run")).toMatchObject({ status, owner: null, stateJson: advanced })
+        expect(yield* store.pendingAudits()).toMatchObject([{ id: "committed-rewind", status: "in_progress", detail }])
+      }).pipe(
+        Effect.provide(persistence),
+        Effect.provide(NodeJj.layer)
+      ))
+  }
 })

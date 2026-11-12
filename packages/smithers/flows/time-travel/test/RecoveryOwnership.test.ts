@@ -1094,7 +1094,9 @@ describe("Recovery ownership arbitration", () => {
       )
 
       expect(outcomes).toEqual([{ _tag: "Completed", auditId: "audit" }])
-      expect(entryQueries).toBe(0)
+      // The phase alone decides the commit. The one read checks that the run
+      // has not appended past the frame before its state is reset to it.
+      expect(entryQueries).toBe(1)
     }))
 
   it.effect("keeps a compensated audit open when the journal cannot be read", () =>
@@ -1136,10 +1138,10 @@ describe("Recovery ownership arbitration", () => {
         _tag: "Failed",
         error: { code: "unknown", message: "audit audit has no recoverable protocol detail" }
       })
-      expect(audits[0]).toMatchObject({
-        status: "failed",
-        detail: { phase: "terminal_failure", version: 1 }
-      })
+      // Closed by status alone: the detail it cannot read may be the only
+      // record of what the interrupted rewind had already reversed.
+      expect(audits[0]).toMatchObject({ status: "failed" })
+      expect(audits[0]!.detail).toEqual({ version: 2, phase: "archive_committed" })
     }))
 
   it.effect("rejects every malformed recovery-detail shape independently", () =>
