@@ -168,6 +168,54 @@ describe("relocate", () => {
     })
   })
 
+  it("refuses a shell call whose command names the live tree by absolute path", () => {
+    // `cd /testbed && pytest` leaves the checkout at once, so the "before"
+    // reading would test the agent's edited tree under the checkpoint's name,
+    // and a fix that passes both readings would read as "never failed".
+    const container = { mode: "unhermetic", container: "swebench-1" } as const
+    expect(
+      Relocate.relocate(
+        "bash",
+        { ...container, command: "cd /testbed && python -m pytest tests/test_x.py" },
+        materialized
+      )
+    ).toEqual({ _tag: "OutsideTree", path: "/testbed" })
+    expect(Relocate.relocate("bash", { ...container, command: "pytest /testbed/tests/test_x.py" }, materialized))
+      .toEqual({ _tag: "OutsideTree", path: "/testbed/tests/test_x.py" })
+    expect(Relocate.relocate("bash", { ...container, command: "pytest --rootdir=/testbed" }, materialized))
+      .toEqual({ _tag: "OutsideTree", path: "/testbed" })
+    // Every text the shell or its program reads, on the host side too.
+    expect(Relocate.relocate("bash", { script: "import os; os.chdir('/work/repo')" }, materialized))
+      .toEqual({ _tag: "OutsideTree", path: "/work/repo" })
+    expect(Relocate.relocate("bash", { script: "cat \"$1\"", args: ["/work/repo/mod.py"] }, materialized))
+      .toEqual({ _tag: "OutsideTree", path: "/work/repo/mod.py" })
+    expect(Relocate.relocate("bash", { command: "make", env: { SRC: "/work/repo/src" } }, materialized))
+      .toEqual({ _tag: "OutsideTree", path: "/work/repo/src" })
+    // A path that climbs out of the checkout is the live tree too.
+    expect(
+      Relocate.relocate(
+        "bash",
+        { ...container, command: "cat /testbed/.flows-checkpoints/cp-0-1/../mod.py" },
+        materialized
+      )
+    ).toEqual({ _tag: "OutsideTree", path: "/testbed/.flows-checkpoints/cp-0-1/../mod.py" })
+  })
+
+  it("runs a shell call that names the checkout itself or a longer path sharing the root's name", () => {
+    for (
+      const command of [
+        "cat /testbed/.flows-checkpoints/cp-0-1/mod.py",
+        "cd /testbed/.flows-checkpoints/cp-0-1 && ./runtests.py",
+        "ls /testbedx /opt/testbed /work/repository",
+        "pytest tests/test_x.py"
+      ]
+    ) {
+      expect(Relocate.relocate("bash", { command, container: "swebench-1" }, materialized), command).toMatchObject({
+        _tag: "Relocated"
+      })
+    }
+  })
+
   it("refuses a flow that names what it touches with something other than a path", () => {
     expect(Relocate.relocate("read", { path: 7 }, materialized)).toEqual({ _tag: "UnsupportedFlow" })
   })

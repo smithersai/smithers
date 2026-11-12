@@ -498,6 +498,28 @@ const checkoutScript = [
 ].join("\n")
 
 /**
+ * `$1` is the id, `$2` the lease. Removes the checkout {@link checkoutScript}
+ * makes for them, whether or not it finished: an interrupted checkout leaves a
+ * partial tree that no one else will clear. A directory that is no repository
+ * holds no checkout, so there is nothing to remove.
+ */
+const removeScript = [
+  "top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0",
+  `rm -rf -- "$top/${scratchDirectory}/$1-$2"`
+].join("\n")
+
+/**
+ * How long one git script in the container may run. A checkout can run what
+ * the repository configures, such as a smudge filter or a hook, and the
+ * transport can stall, so without a bound a frame's own timeout would wait on
+ * it forever. Ten minutes is the `bash` flow's own default.
+ */
+const containerGitTimeoutMs = 600_000
+
+/** Bytes kept per stream of one git script: two paths, or a commit and git's complaint. */
+const containerGitCaptureBytes = 64 * 1024
+
+/**
  * Builds the store for a host whose `bash` runs in one container.
  *
  * The repository is the container's, so every git command runs there, through
@@ -528,7 +550,12 @@ export const makeContainer = (
         stdin: false
       }).pipe(
         Effect.flatMap((plan) =>
-          Exec.exec(plan.file, { args: plan.args, env: plan.env }).pipe(
+          Exec.exec(plan.file, {
+            args: plan.args,
+            env: plan.env,
+            timeoutMs: containerGitTimeoutMs,
+            maxCaptureBytes: containerGitCaptureBytes
+          }).pipe(
             Effect.mapError((error) => Exec.toStdError(plan.file, error))
           )
         ),
@@ -549,15 +576,22 @@ export const makeContainer = (
           Effect.andThen(sh(pinScript, [id])),
           Effect.map(([commit]) => new Snapshot({ id, ref: commit! }))
         ),
+      // Only the lease is acquired. The checkout runs in `use`, where an
+      // interrupt reaches it, and the release removes whatever it left.
       materialize: (id, use) =>
         named(id).pipe(Effect.andThen(Effect.acquireUseRelease(
-          sh(checkoutScript, [id, globalThis.crypto.randomUUID()]),
-          ([root, checkout]) => use({ id, host: checkout!, guest: checkout!, root: root!, guestRoot: root! }),
-          ([, checkout]) =>
-            sh("rm -rf -- \"$1\"", [checkout!]).pipe(
+          Effect.sync(() => globalThis.crypto.randomUUID()),
+          (lease) =>
+            sh(checkoutScript, [id, lease]).pipe(
+              Effect.flatMap(([root, checkout]) =>
+                use({ id, host: checkout!, guest: checkout!, root: root!, guestRoot: root! })
+              )
+            ),
+          (lease) =>
+            sh(removeScript, [id, lease]).pipe(
               Effect.catch((error) =>
                 Effect.logWarning("could not remove a scratch checkout").pipe(
-                  Effect.annotateLogs({ path: checkout, reason: error.message })
+                  Effect.annotateLogs({ id, lease, reason: error.message })
                 )
               )
             )

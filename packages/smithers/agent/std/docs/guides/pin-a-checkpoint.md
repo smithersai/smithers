@@ -165,3 +165,8 @@ Three inputs are refused rather than rewritten, and the tag says which:
   which names the live tree under another name. That is exactly the tree the
   reading was taken to avoid, and a call key folds the checkpoint in, so a live
   reading recorded under a checkpoint would replay as a pinned one forever.
+  `bash` answers `OutsideTree` too when its `command`, `script`, an `args`
+  entry or an `env` value names the workspace root by absolute path outside the
+  checkout, as `cd /testbed && pytest` does: that command leaves the checkout
+  and runs against the live tree whatever its working directory is. Name paths
+  relative to the working directory instead.

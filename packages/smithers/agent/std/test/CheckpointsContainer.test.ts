@@ -12,9 +12,9 @@
  * repository — which is the whole of that host's shape.
  */
 import { NodeServices } from "@effect/platform-node"
-import { Cause, Effect, Exit, Layer, type Schema } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, type Schema } from "effect"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -224,13 +224,52 @@ describe("Checkpoints in a container with a filesystem of its own", () => {
     expect(git(app, ["status", "--porcelain"])).toBe("")
   }, 60_000)
 
+  it("stops a checkout that never returns when the call is interrupted, and removes what it left", async () => {
+    const app = repository()
+    const inner = task(app)
+    // The checkout finishes its tree and then never exits, as a stalled
+    // `docker exec` or a hook that waits forever would. Killing the transport
+    // does not stop it, as killing a `docker exec` client does not.
+    const hung = Container.make({
+      exec: (request) =>
+        inner.exec(
+          request.args[1]?.includes("checkout --quiet") === true
+            ? { ...request, args: request.args.map((arg, index) => index === 1 ? `${arg}\nsleep 60` : arg) }
+            : request
+        )
+    })
+    const scratchDirectory = join(app, Checkpoints.scratchDirectory)
+    const used: Array<string> = []
+    const ended = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* Checkpoints.makeContainer({ container: "task" })
+        const fiber = yield* Effect.forkChild(
+          store.materialize(Checkpoints.baseId, (found) => Effect.sync(() => used.push(found.host)))
+        )
+        // Interrupt once the tree is out, so only the hang is left running.
+        const checkedOut = () =>
+          existsSync(scratchDirectory) &&
+          readdirSync(scratchDirectory).some((lease) => existsSync(join(scratchDirectory, lease, "probe.sh")))
+        while (!checkedOut()) yield* Effect.sleep("50 millis")
+        yield* Fiber.interrupt(fiber)
+        return (yield* Fiber.await(fiber))._tag
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, Layer.succeed(Container.Container)(hung))))
+    )
+    expect(ended).toBe("Failure")
+    expect(used).toEqual([])
+    expect(readdirSync(scratchDirectory)).toEqual([])
+    expect(git(app, ["status", "--porcelain"])).toBe("")
+  }, 30_000)
+
   it("answers the call when the checkout cannot be removed, and refuses a transport that cannot start", async () => {
     const app = repository()
     const inner = task(app)
-    // The container refuses the removal; everything else runs.
+    // The container refuses the removal; everything else runs. The checkout
+    // script removes its own partial tree on failure, so it is told apart by
+    // the `git init` the removal does not run.
     const stuck = Container.make({
       exec: (request) =>
-        request.args[1]?.startsWith("rm -rf") === true
+        request.args[1]?.includes("rm -rf") === true && !request.args[1].includes("git init")
           ? Effect.succeed({ file: "false", args: [] })
           : inner.exec(request)
     })

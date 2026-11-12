@@ -106,6 +106,50 @@ const within = (root: string, declared: string): string | undefined => {
   return declared.startsWith(`${root}/`) ? contained(declared.slice(root.length + 1)) : undefined
 }
 
+/** A character that continues a path, so a root inside a longer path is not that root. */
+const pathCharacter = /[\w.~+@%/-]/
+
+/**
+ * The first path in `text` that names the tree under `root` without naming
+ * the checkout under it, or `undefined` when there is none.
+ *
+ * A shell call is relocated by its working directory, and a command that names
+ * the workspace absolutely (`cd /testbed && pytest`) leaves the checkout at once
+ * and tests the live tree. Nothing would tell the reading apart from a pinned
+ * one, so such a command is refused rather than run.
+ */
+const namesLiveTree = (text: string, root: string, checkout: string): string | undefined => {
+  for (let at = text.indexOf(root); at !== -1; at = text.indexOf(root, at + 1)) {
+    const before = text[at - 1]
+    const after = text[at + root.length]
+    if (before !== undefined && pathCharacter.test(before)) continue
+    if (!root.endsWith("/") && after !== undefined && after !== "/" && pathCharacter.test(after)) continue
+    let end = at + root.length
+    while (end < text.length && pathCharacter.test(text[end]!)) end++
+    const path = text.slice(at, end)
+    if (within(checkout, path) === undefined) return path
+  }
+  return undefined
+}
+
+/** The texts of a `bash` input that the shell or its program reads as commands or paths. */
+const commandTexts = (record: Record<string, Schema.Json>): ReadonlyArray<string> => {
+  const strings = (value: Schema.Json | undefined): ReadonlyArray<string> =>
+    typeof value === "string"
+      ? [value]
+      : Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : value !== null && typeof value === "object"
+      ? Object.values(value).filter((item): item is string => typeof item === "string")
+      : []
+  return [
+    ...strings(record["command"]),
+    ...strings(record["script"]),
+    ...strings(record["args"]),
+    ...strings(record["env"])
+  ]
+}
+
 /**
  * Rewrites one call's input so the call runs against a materialized checkpoint.
  *
@@ -121,12 +165,14 @@ const within = (root: string, declared: string): string | undefined => {
  * what it names, because these flows resolve their subject against the
  * workspace root and the checkpoint is a directory under it.
  *
- * Two paths are refused rather than rewritten, and both for the same reason —
+ * Three inputs are refused rather than rewritten, all for the same reason —
  * the host would otherwise hand back a reading of a tree the cell did not name.
- * An absolute path in these runs is a container path, and the host cannot know
- * which prefix of it names the tree. A relative path that climbs past the
- * checkpoint with `..` names the live tree, exactly the tree the reading was
- * taken to avoid.
+ * An absolute reader path in these runs is a container path, and the host
+ * cannot know which prefix of it names the tree. A relative path that climbs
+ * past the checkpoint with `..` names the live tree, exactly the tree the
+ * reading was taken to avoid. A `bash` command, script, argument or
+ * environment value that names the workspace root absolutely, outside the
+ * checkout, runs against the live tree whatever its working directory is.
  *
  * @category conversions
  * @since 1.0.0
@@ -151,6 +197,11 @@ export const relocate = (
     const kept = typeof declared === "string" && declared !== ""
       ? within(containerised ? materialized.guestRoot : materialized.root, declared)
       : ""
+    for (const text of commandTexts(record)) {
+      const live = namesLiveTree(text, materialized.guestRoot, materialized.guest) ??
+        namesLiveTree(text, materialized.root, materialized.host)
+      if (live !== undefined) return { _tag: "OutsideTree", path: live }
+    }
     return {
       _tag: "Relocated",
       input: { ...record, cwd: kept === undefined || kept === "" ? base : `${base}/${kept}` }
