@@ -48,7 +48,9 @@ interface Listed { readonly number: number; readonly title: string; readonly sta
 
 const lines = (path: string) => readFileSync(path, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line))
 const records = (): ReadonlyArray<TrackedRecord> => lines(env.E2E_TRACKING_RECORDS!)
-const sent = (): ReadonlyArray<{ key: string; writeId: string; at: string }> => lines(env.E2E_TRACKING_SEED_STATE!)
+/** The seed's admissions, one line per record sent; its settlement lines (`settled`) are not sends. */
+const sent = (): ReadonlyArray<{ key: string; writeId: string; at: string }> =>
+  lines(env.E2E_TRACKING_SEED_STATE!).filter((line) => line.settled === undefined)
 
 /** The numbers this run measured, merged into one file as each phase finishes. */
 const record = (phase: string, numbers: Readonly<Record<string, unknown>>) => {
