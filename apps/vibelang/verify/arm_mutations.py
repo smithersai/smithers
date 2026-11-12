@@ -17,7 +17,7 @@ cases = [
 (S, 'screen-run-step', 'runSelection', 'step: step ?? ""', 'step: ""', 'the run selection reads its step'),
 (S, 'screen-stream-from', 'streamScreen', 'epoch: model.epoch, from: model.from }', 'epoch: model.epoch, from: model.epoch }', 'the stream screen reads where the stream starts'),
 (S, 'screen-sandbox-pane', 'sandboxScreen', 'pane: model.sandboxPane ?? "closed", operation', 'pane: model.sandboxPane ?? "pane", operation', 'no sandbox pane is a closed one'),
-(S, 'screen-sandbox-request', 'sandboxScreen', 'request: model.sandboxRequest ?? 0', 'request: model.sandboxRequest ?? 1', 'no sandbox request is request 0'),
+(S, 'screen-sandbox-request', 'sandboxScreen', 'request: model.sandboxRequest, draft', 'request: 0, draft', 'the sandbox screen reads the request'),
 (S, 'screen-sandbox-draft', 'sandboxScreen', 'draft: model.terminalDraft ?? ""', 'draft: ""', 'the sandbox screen reads the terminal draft'),
 (S, 'screen-sandbox-result-busy', 'sandboxResult', 'busy: model.sandboxBusy ?? false', 'busy: model.sandboxBusy ?? true', 'no busy flag is not busy'),
 (S, 'screen-wiki-draft-recovery', 'wikiDraft', 'recovery: request.recovery ?? "" }', 'recovery: "" }', 'a waiting submission keeps its recovery key'),
