@@ -437,6 +437,11 @@ const checkContainerId = (containerId: string): Effect.Effect<void, IntegrationE
       invalid("A container id must be a non-empty string other than the connection-wide \"*\".", { containerId })
     )
 
+const checkReinstate = (connectionId: string, containerId: string | undefined): Effect.Effect<void, IntegrationError> =>
+  containerId === undefined
+    ? checkConnectionId(connectionId)
+    : Effect.andThen(checkConnectionId(connectionId), checkContainerId(containerId))
+
 const admitPage = (page: Page): Effect.Effect<ReadonlyArray<SourceRecord.SourceRecord>, IntegrationError> =>
   Effect.gen(function*() {
     yield* checkConnectionId(page.connectionId)
@@ -681,8 +686,12 @@ export const makeMemory: Effect.Effect<SourceStore> = Effect.gen(function*() {
         () => revoke(connectionId, containerId)
       ),
     reinstate: (connectionId, containerId) =>
-      transact((_, draft) =>
-        Effect.sync(() => void draft.revocations.get(connectionId)?.delete(containerId ?? WILDCARD))
+      Effect.flatMap(
+        checkReinstate(connectionId, containerId),
+        () =>
+          transact((_, draft) =>
+            Effect.sync(() => void draft.revocations.get(connectionId)?.delete(containerId ?? WILDCARD))
+          )
       ),
     isRevoked: (connectionId, containerId) =>
       Effect.map(Ref.get(state), (current) => {
@@ -962,14 +971,15 @@ export const makeSql: Effect.Effect<SourceStore, never, SqlClient.SqlClient | Du
         () => revoke(connectionId, containerId)
       ),
     reinstate: (connectionId, containerId) =>
-      transact(
-        "reinstate",
-        sql`DELETE FROM smithers_integration_revocations
-          WHERE connection_id = ${connectionId} AND container_id = ${containerId ?? WILDCARD}`.pipe(
-          Effect.asVoid,
-          failAs("reinstate")
-        )
-      ),
+      Effect.flatMap(checkReinstate(connectionId, containerId), () =>
+        transact(
+          "reinstate",
+          sql`DELETE FROM smithers_integration_revocations
+            WHERE connection_id = ${connectionId} AND container_id = ${containerId ?? WILDCARD}`.pipe(
+            Effect.asVoid,
+            failAs("reinstate")
+          )
+        )),
     isRevoked: (connectionId, containerId) =>
       sql<{ readonly found: number }>`SELECT 1 AS found FROM smithers_integration_revocations
         WHERE connection_id = ${connectionId}

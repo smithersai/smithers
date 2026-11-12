@@ -167,18 +167,26 @@ export const make = (options: {
         const deadline = start + maxWaitMs
         const resource = Budget.resourceOf(path)
 
-        if (Budget.isWrite(method)) {
-          const slot = yield* Ref.modify(state, (current) => {
-            const booked = Budget.reserveWrites(current, start, 1, limits)
-            const at = booked.slots[0]!
-            return at > deadline ? [at, current] : [at, booked.state]
+        // Books a write slot at `now`, giving back `previous` first: a write
+        // that waited out a pause rebooks behind the writes waiting with it,
+        // so they do not all start at the pause's end.
+        const space = (now: number, previous: number | undefined) =>
+          Effect.gen(function*() {
+            const slot = yield* Ref.modify(state, (current) => {
+              const kept = previous === undefined ? current : Budget.releaseWrite(current, previous)
+              const booked = Budget.reserveWrites(kept, now, 1, limits)
+              const at = booked.slots[0]!
+              return at > deadline ? [at, kept] : [at, booked.state]
+            })
+            if (slot > deadline) return yield* rateLimited(slot, "write spacing", method, path)
+            if (slot > now) {
+              yield* counted("spacing")
+              yield* Effect.sleep(Duration.millis(slot - now))
+            }
+            return slot
           })
-          if (slot > deadline) return yield* rateLimited(slot, "write spacing", method, path)
-          if (slot > start) {
-            yield* counted("spacing")
-            yield* Effect.sleep(Duration.millis(slot - start))
-          }
-        }
+
+        let slot = Budget.isWrite(method) ? yield* space(start, undefined) : undefined
 
         return yield* Semaphore.withPermits(permits, 1)(Effect.gen(function*() {
           for (;;) {
@@ -202,6 +210,7 @@ export const make = (options: {
               })
             )
             yield* Effect.sleep(Duration.millis(admission.until - now))
+            if (slot !== undefined) slot = yield* space(yield* Clock.currentTimeMillis, slot)
           }
           return yield* attempt.pipe(Effect.onExit((exit) =>
             Effect.gen(function*() {

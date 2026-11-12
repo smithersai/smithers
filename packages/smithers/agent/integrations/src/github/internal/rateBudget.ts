@@ -205,6 +205,18 @@ export const reserveWrites = (
 }
 
 /**
+ * Gives back one booked write slot, so a write that waited past it can book
+ * a new one after the writes still waiting.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const releaseWrite = (state: State, at: number): State => {
+  const index = state.writes.indexOf(at)
+  return { ...state, writes: state.writes.filter((_, i) => i !== index) }
+}
+
+/**
  * Why a request may not start yet.
  *
  * @since 1.0.0

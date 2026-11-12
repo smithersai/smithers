@@ -158,6 +158,22 @@ describe("RateLimit limit responses", () => {
     expect((await Effect.runPromise(Metric.value(pauses))).count).toBe(Number(before.count) + 1)
   })
 
+  it("spaces the writes that waited out a pause instead of starting them together", async () => {
+    const starts: Record<string, Array<number>> = { refused: [], b: [], c: [] }
+    await run(Effect.gen(function*() {
+      const rate = yield* limiter()
+      yield* after(
+        Effect.all([
+          call(rate, "POST", starts["refused"]!, { limited: true, takes: "100 millis" }),
+          call(rate, "POST", starts["b"]!),
+          call(rate, "POST", starts["c"]!)
+        ], { concurrency: "unbounded" }),
+        "5 minutes"
+      )
+    }))
+    expect(starts).toEqual({ refused: [0], b: [60_100], c: [61_100] })
+  })
+
   it("doubles the pause while GitHub keeps refusing, and clears it after a success", async () => {
     const starts: Array<number> = []
     await run(Effect.gen(function*() {

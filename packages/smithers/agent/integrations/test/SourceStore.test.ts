@@ -404,18 +404,28 @@ const contract = (name: string, layer: Layer.Layer<SourceStore>) => {
       expect(result.reinstated).toBe(false)
     })
 
-    it("refuses a malformed connection or container id for revocation", async () => {
-      const failures = await run(Effect.gen(function*() {
+    it("refuses a malformed connection or container id for revocation and reinstatement", async () => {
+      const result = await run(Effect.gen(function*() {
         const s = yield* store
-        return [
+        yield* s.revokeConnection("team-chat")
+        const failures = [
           yield* Effect.flip(s.revokeConnection("")),
           yield* Effect.flip(s.revokeConnection("team:chat")),
           yield* Effect.flip(s.revokeContainer("team-chat", "*")),
           yield* Effect.flip(s.revokeContainer("team-chat", "")),
-          yield* Effect.flip(s.revokeContainer("", "c-general"))
+          yield* Effect.flip(s.revokeContainer("", "c-general")),
+          yield* Effect.flip(s.reinstate("team-chat", "*")),
+          yield* Effect.flip(s.reinstate("team-chat", "")),
+          yield* Effect.flip(s.reinstate("", "c-general")),
+          yield* Effect.flip(s.reinstate(""))
         ]
+        // A container id of "*" never lifts the connection-wide revocation.
+        return { failures, revoked: yield* s.isRevoked("team-chat", "c-general") }
       }))
-      expect(failures.map((failure: IntegrationError) => failure.reason)).toEqual(Array(5).fill("invalid-config"))
+      expect(result.failures.map((failure: IntegrationError) => failure.reason)).toEqual(
+        Array(9).fill("invalid-config")
+      )
+      expect(result.revoked).toBe(true)
     })
 
     it("validates kept references against deletion, edits, grants and existence", async () => {
