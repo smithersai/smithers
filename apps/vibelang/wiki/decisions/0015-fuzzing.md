@@ -1663,3 +1663,12 @@ empty, never finishing blank. Mutant caught: an empty answer reported as failed.
 meters 1 to 120 ms past November's last 10 ms with 0 to 3 sandboxes running and December's bucket holding -1, 0.5, NaN,
 0 or 7. A broken bucket fails as `meter-domain`, never a defect; a valid one gains each running sandbox's December
 milliseconds. Mutant caught: a negative bucket accepted.
+
+`worker/mainLogDecision.vibe` 175 and 197 and `MainLog.vibe` 58: `history/main-first-parent-graph` built only acyclic
+graphs whose merge parents were listed. Two optional node fields (saved values still decode) add a first parent newer
+than its child (`back`, a cycle a corrupt listing could hold) and a merge whose second parent is unlisted (`side`). The
+oracle answers nothing when the first-parent line meets a commit twice, and nothing when a commit the tip reaches,
+outside the cursor's ancestry, has a parent that is neither listed nor in that ancestry; an unlisted parent id reached
+from the cursor counts as folded, as `ancestryShas` says. The first run refuted an oracle that left those ids out (the
+product was right: the tip's unlisted side parent was also an older merge's). Mutants caught: the cycle answering an
+empty list; the unlisted-parent check disabled.

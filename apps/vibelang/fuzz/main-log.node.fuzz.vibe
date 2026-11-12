@@ -5,20 +5,49 @@ import { githubMain, newCommits, type GitHubCommit } from "../worker/MainLog.vib
 import { titleOf } from "../src/history/seed.vibe"
 import { run, Int, Text } from "./run.vibe"
 
-const Graph = Schema.Struct({ nodes: Schema.Array(Schema.Struct({ text: Text, merge: Schema.Boolean, missing: Schema.Boolean })).check(Schema.isMaxLength(24)), cursor: Int })
+// `back`: a first parent newer than its child, which a corrupt listing could hold; `side`: a merge whose second parent
+// is unlisted. Optional, so saved values from before still decode.
+const Graph = Schema.Struct({ nodes: Schema.Array(Schema.Struct({ text: Text, merge: Schema.Boolean, missing: Schema.Boolean, back: Schema.optionalKey(Schema.Boolean), side: Schema.optionalKey(Schema.Boolean) })).check(Schema.isMaxLength(24)), cursor: Int })
+const shaOf = (n: number) => n.toString(16).padStart(12, "0").padEnd(40, "0")
 
+/**
+ * newCommits answers main's first-parent line from the newest commit to the cursor, or nothing when that line doesn't
+ * reach the cursor, meets a commit twice, or leaves a new ancestor of a non-empty cursor unlisted (mainLogDecision.vibe).
+ */
 it.live("history/main-first-parent-graph", () => run("history/main-first-parent-graph", Graph, ({ nodes, cursor }) => {
-  const listed: ReadonlyArray<GitHubCommit> = nodes.map((node, at) => ({ sha: (at + 1).toString(16).padStart(12, "0").padEnd(40, "0"), commit: { message: node.text }, parents: at === 0 ? [] : [{ sha: (node.missing ? 1000 : at).toString(16).padStart(12, "0").padEnd(40, "0") }, ...(node.merge && at > 1 ? [{ sha: (at - 1).toString(16).padStart(12, "0").padEnd(40, "0") }] : [])] })).reverse()
+  const first = (at: number, node: typeof nodes[number]) => node.back === true && at + 1 < nodes.length ? shaOf(at + 2) : shaOf(node.missing ? 1000 : at)
+  const listed: ReadonlyArray<GitHubCommit> = nodes.map((node, at) => ({ sha: shaOf(at + 1), commit: { message: node.text }, parents: at === 0 ? [] : [{ sha: first(at, node) }, ...(node.merge && at > 1 ? [{ sha: node.side === true ? shaOf(2000) : shaOf(at - 1) }] : [])] })).reverse()
   const target = cursor % (nodes.length + 1)
-  const key = target === 0 ? "" : target.toString(16).padStart(12, "0").padEnd(40, "0")
+  const key = target === 0 ? "" : shaOf(target)
   const actual = newCommits(listed, key)
+  const bySha = new Map(listed.map((node) => [node.sha, node]))
   let at = listed[0]
   const reached = new Set<string>()
+  let cycle = false
   while (at !== undefined && at.sha !== key) {
+    if (reached.has(at.sha)) { cycle = true; break }
     reached.add(at.sha)
-    at = listed.find((node) => node.sha === at!.parents[0]?.sha)
+    at = bySha.get(at.parents[0]?.sha ?? "")
   }
-  if (target !== 0 && at === undefined) return actual === undefined
+  if (cycle || (target !== 0 && at === undefined)) return actual === undefined
+  if (target !== 0) {
+    // Every ancestor of the cursor is folded; any other commit the newest one reaches needs each parent listed or folded.
+    const ancestors = (from: string) => {
+      const seen = new Set<string>()
+      const stack = [from]
+      while (stack.length > 0) {
+        const sha = stack.pop()!
+        if (seen.has(sha)) continue
+        // An unlisted parent id at the edge counts as reached: from the cursor, it is already folded.
+        seen.add(sha)
+        if (bySha.has(sha)) stack.push(...bySha.get(sha)!.parents.map((parent) => parent.sha))
+      }
+      return seen
+    }
+    const folded = ancestors(key)
+    const unlisted = [...ancestors(listed[0]!.sha)].some((sha) => bySha.has(sha) && !folded.has(sha) && bySha.get(sha)!.parents.some((parent) => !bySha.has(parent.sha) && !folded.has(parent.sha)))
+    if (unlisted) return actual === undefined
+  }
   if (actual === undefined || actual.length !== new Set(actual.map((node) => node.sha)).size) return false
   return actual.every((node) => listed.some((source) => source.sha.slice(0, 12) === node.sha && node.title === titleOf(source.commit.message))) && actual.length >= reached.size && (actual.length === 0 || actual.at(-1)?.sha === listed[0]?.sha.slice(0, 12))
 }))
