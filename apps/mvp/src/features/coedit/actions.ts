@@ -11,7 +11,7 @@ import { ChatStore } from "../chat/store"
 import { QUEUE_ASK_FLOW } from "../status/contract"
 import { StatusStore } from "../status/store"
 import { CONVERSATION_NAMESPACE } from "../branch/contract"
-import type { TextOf } from "./contract"
+import { MAX_EDIT_BYTES, type TextOf } from "./contract"
 import { saves } from "./metrics"
 import type { Selection, Sending, Shared } from "./schema"
 import { CoeditStore, encodeCursor, type Live, savedMarkOf, savedNameOf } from "./store"
@@ -43,7 +43,15 @@ const setRow = (live: Live, change: Partial<Omit<Shared, "id">>) =>
 const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, never, Needs> =>
   Effect.gen(function* () {
     const chat = yield* ChatStore
-    const pending = [...(yield* Ref.getAndSet(live.unsent, [])), ...(update === undefined ? [] : [update])]
+    // What one request carries: the updates that wait, merged while they hold at most `MAX_EDIT_BYTES`. The rest wait
+    // in order, and go once this one is in the outbox.
+    const [pending, more] = yield* Ref.modify(live.unsent, (unsent) => {
+      const all = [...unsent, ...(update === undefined ? [] : [update])]
+      let count = 1
+      let bytes = all[0]?.byteLength ?? 0
+      while (count < all.length && bytes + all[count]!.byteLength <= MAX_EDIT_BYTES) bytes += all[count++]!.byteLength
+      return [[all.slice(0, count), count < all.length] as const, all.slice(count)]
+    })
     if (pending.length === 0) return
     const merged = pending.length === 1 ? pending[0]! : SharedText.merge(pending)
     const row = { id: crypto.randomUUID(), textId: live.id, scope: live.scope, data: Base64.encode(merged), seed: false }
@@ -68,7 +76,12 @@ const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, n
         Effect.annotateLogs({ feature: "coedit", outcome: "failed", reason: failure.reason, errorCode: codeOf(failure) }),
         Effect.andThen(keep),
       )
-    yield* write.value.admitted.pipe(Effect.catch(refused), Effect.ensuring(settled))
+    const admitted = yield* write.value.admitted.pipe(
+      Effect.as(true),
+      Effect.catch((failure) => Effect.as(refused(failure), false)),
+      Effect.ensuring(settled),
+    )
+    if (admitted && more) yield* send(live, undefined)
   }).pipe(Effect.orDie)
 
 /** Puts `row` in the outbox: its write, or nothing in a tab that doesn't lead the outbox. */
@@ -101,10 +114,37 @@ export const type = (textId: string, value: string, edit: Edit = {}) =>
     const store = yield* CoeditStore
     const live = store.live(textId)
     if (live === undefined) return
-    const update = yield* live.replica.replace(value, { caret: edit.selection?.head, base: edit.base })
+    const updates = yield* replace(live, value, edit)
     if (edit.selection !== undefined) yield* place(live, edit.selection)
     yield* store.refresh(live)
-    if (update !== undefined) yield* send(live, update)
+    for (const update of updates) yield* send(live, update)
+  })
+
+const encoder = new TextEncoder()
+
+/**
+ * Makes `live`'s text `value`, as the input that showed `edit.base` asked, in as many updates as one request each
+ * carries: what the edit inserts goes `MAX_EDIT_BYTES` at a time, never inside a letter, each part one more update on
+ * the text the one before made. A paste of any size reaches everyone, and so does every edit after it.
+ */
+const replace = (live: Live, value: string, edit: Edit) =>
+  Effect.gen(function* () {
+    const base = edit.base ?? (yield* live.replica.text)
+    const change = SharedText.changeOf(base, value, edit.selection?.head)
+    const updates: Array<Uint8Array> = []
+    let before = base
+    let end = 0
+    while (true) {
+      const rest = change.insert.slice(end)
+      // UTF-8 takes at most 3 bytes for each UTF-16 unit, so a short insert is read whole.
+      end += encoder.encodeInto(rest, new Uint8Array(Math.min(MAX_EDIT_BYTES, 3 * rest.length))).read
+      const last = end === change.insert.length
+      const next = last ? value : base.slice(0, change.from) + change.insert.slice(0, end) + base.slice(change.to)
+      const update = yield* live.replica.replace(next, { caret: last ? edit.selection?.head : change.from + end, base: before })
+      if (update !== undefined) updates.push(update)
+      if (last) return updates
+      before = next
+    }
   })
 
 /** The person moved their caret or selection in text `textId`: everyone in it sees where. */

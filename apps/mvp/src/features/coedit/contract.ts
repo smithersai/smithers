@@ -73,6 +73,14 @@ export const MAX_TEXT_BODY_BYTES = 2 * 1024 * 1024
 export const MAX_UPDATE_LENGTH = MAX_TEXT_BODY_BYTES
 
 /**
+ * The most one update a browser sends inserts, in UTF-8 bytes: as much as the largest seed (1 MiB), so it fits one
+ * `POST`. A larger edit goes as several updates, one after another (`type` in actions.ts), and the outbox row of
+ * updates that waited merges them only up to it (`send`): an update ChatApi refused as too large (`413`) would be
+ * dropped for good, and every later edit, which builds on it, could never be applied by anyone else.
+ */
+export const MAX_EDIT_BYTES = 1024 * 1024
+
+/**
  * Why ChatApi refused an update for good: a bad body (`invalid`), signed out (`authentication`), allowed only to view
  * (`view_only`), not allowed at all (`forbidden`), or no such conversation or run (`not_found`).
  */

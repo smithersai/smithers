@@ -877,6 +877,44 @@ describe("sending", () => {
     expect(opened.count("existing")).toBe(1)
   }, WITHIN)
 
+  test("a paste over one request's limit reaches everyone in parts, and so does every edit after it", async () => {
+    const opened = await open()
+    const { owner } = opened
+    await openShared(opened, owner)
+    const other = await opened.ownTab()
+    await other.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(other.prompt()?.key).toBe(owner.prompt()?.key))
+    const id = owner.prompt()!.id
+    // 2.2 MB of letters of every UTF-8 width: as one update, its base64 alone is over the request's 2 MiB.
+    const pasted = "aé中😀".repeat(220_000)
+    await owner.coedit.type(id, pasted, { selection: { anchor: pasted.length, head: pasted.length } })
+    await owner.coedit.type(id, `${pasted}!`, { selection: { anchor: pasted.length + 1, head: pasted.length + 1 } })
+    await until(() => expect(other.prompt()?.text === `${pasted}!`).toBe(true))
+    expect(opened.count("refused")).toBe(0)
+    // The paste in three parts, then the letter typed after it.
+    expect(opened.count("stored")).toBe(4)
+  }, WITHIN)
+
+  test("updates that waited in a tab that doesn't lead go in as many requests as they need", async () => {
+    const opened = await open()
+    const { api, ownTab } = opened
+    const device = nodeDevice({ agent: api })
+    const leader = await ownTab(device)
+    await openShared(opened, leader)
+    const follower = await ownTab(device)
+    await follower.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(follower.prompt()?.key).toBe(leader.prompt()?.key))
+    const id = follower.prompt()!.id
+    // Two pastes before the tab leads, each within one request, both together over it.
+    const first = "x".repeat(900 * 1024)
+    const both = `${first}${"y".repeat(900 * 1024)}`
+    follower.coedit.type(id, first, { selection: { anchor: first.length, head: first.length } })
+    follower.coedit.type(id, both, { selection: { anchor: both.length, head: both.length } })
+    await until(() => expect(leader.prompt()?.text === both).toBe(true))
+    await until(() => expect(follower.unsent()).toBe(0))
+    expect(follower.sends("refused")).toBe(0)
+  }, WITHIN)
+
   test("a keystroke the device couldn't store says so, and reaches nobody", async () => {
     const opened = await open()
     const base = nodeDevice({ agent: opened.api })
