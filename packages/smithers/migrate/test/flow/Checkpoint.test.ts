@@ -656,6 +656,25 @@ describe("Checkpoint.take on git", () => {
       expect(rollback.deletedAdds.map((entry) => entry.path).sort()).toEqual(["flows/seats.ts", "scratch/notes.md"])
     }).pipe(Effect.provide(platform)))
 
+  it.effect("rolls a unit back when a file stands where its archive directory goes", () =>
+    Effect.gen(function*() {
+      const root = gitProject("rollback-archive-file")
+      const ref = yield* Checkpoint.take({ ...payload(root, ["workflow.jsx"]), treeExclude: [".smithers-migrate"] })
+      write(root, "workflow.jsx", "half migrated\n")
+      // The archive could not create its directory, so it wrote no copy, and
+      // the unit it failed is rolled back with the file still in the way.
+      write(root, ".smithers-migrate/archive", "in the way\n")
+
+      const rollback = yield* Checkpoint.rollback(root, ref, {
+        paths: ["workflow.jsx"],
+        archiveDir: join(root, ".smithers-migrate", "archive")
+      })
+
+      expect([...rollback.restored]).toEqual(["workflow.jsx"])
+      expect(readFileSync(join(root, "workflow.jsx"), "utf8")).toBe("old workflow\n")
+      expect(readFileSync(join(root, ".smithers-migrate", "archive"), "utf8")).toBe("in the way\n")
+    }).pipe(Effect.provide(platform)))
+
   it.effect("reports a deleted file and hands the checks the recorded sources", () =>
     Effect.gen(function*() {
       const root = gitProject("deleted")

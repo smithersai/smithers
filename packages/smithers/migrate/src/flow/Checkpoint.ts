@@ -930,6 +930,30 @@ const preserveAdded = (
   })
 
 /**
+ * Whether the archive can have written its copy of `file`. It writes a copy
+ * only after creating every directory above it, so under a component that is
+ * absent or is not a directory, such as a file where the archive directory
+ * goes, there is no copy, and a removal there fails instead of finding none.
+ */
+const archiveCopyPossible = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  archiveDir: string,
+  file: string
+): Effect.Effect<boolean, MigrateError> =>
+  Effect.gen(function*() {
+    let directory = archiveDir
+    for (const segment of ["", ...file.split("/").slice(0, -1)]) {
+      directory = path.join(directory, segment)
+      const info = yield* optionalNotFound(fs.stat(directory)).pipe(
+        Effect.mapError(io(`could not inspect the archive directory ${directory}`))
+      )
+      if (Option.isNone(info) || info.value.type !== "Directory") return false
+    }
+    return true
+  })
+
+/**
  * Puts a unit back the way the checkpoint found it, deciding what to put back
  * from the tree as it is at the moment of failure.
  *
@@ -947,7 +971,9 @@ const preserveAdded = (
  * - Every file the checkpoint recorded goes back byte for byte, whether the
  *   unit edited it, deleted it, or moved it into the archive. The archive copy
  *   of a file that went back is removed with it: an archive is the record of a
- *   migration that happened.
+ *   migration that happened. Where the archive could not have written a copy,
+ *   because a directory above it is absent or is not a directory, there is
+ *   nothing to remove.
  * - Every path added since is copied beside the checkpoint backup before it is
  *   removed, the unit's own targets included. The caller reports the copy.
  * - A file the unit modified or deleted that the checkpoint never copied is
@@ -1009,6 +1035,7 @@ export const rollback = (
     const restored = yield* restore(root, ref, [...recorded, ...declaredAdds, ...declared])
     if (options.archiveDir !== undefined) {
       for (const file of restored) {
+        if (!(yield* archiveCopyPossible(fs, path, options.archiveDir, file))) continue
         yield* fs.remove(path.join(options.archiveDir, ...file.split("/")), { recursive: true, force: true }).pipe(
           Effect.mapError(io(`could not remove rolled-back archive path ${file}`))
         )
