@@ -8,7 +8,8 @@ const root = fileURLToPath(new URL("../../../", import.meta.url))
 const referencedPaths = (markdown: string): Array<string> =>
   Array.from(markdown.matchAll(/`([^`\n]+)`/g), ([, value = ""]) => value).filter(
     // Literal relative paths have a slash and an extension or trailing slash; exclude commands, packages, and templates.
-    (value) => /^[\w.-]+\/(?:[\w./-]*\.[\w-]+|[\w./-]*\/)?$/.test(value)
+    // A path under `.jj/` is jj's own state, which a checkout may or may not hold, never a repository file.
+    (value) => /^[\w.-]+\/(?:[\w./-]*\.[\w-]+|[\w./-]*\/)?$/.test(value) && !value.startsWith(".jj/")
   )
 
 /** Every SKILL.md under a directory, as paths relative to it. */
@@ -37,9 +38,10 @@ test("skill repository paths exist", () => {
   expect(missing).toEqual([])
 })
 
-test("path matching includes stale files and directories and excludes nonliteral references", () => {
+test("path matching includes stale files and directories and excludes nonliteral references and jj state", () => {
   expect(referencedPaths(
     "`apps/app/src/bun/Harnesses.ts` `docs/learn/` `packages/rpc/src/LocalApp.ts` " +
-      "`@smthrs/flow` `flows/<name>/flow.ts` `node packages/smithers/flows/jj-wasm/build-wasm.mjs --verify` `--help`"
+      "`@smthrs/flow` `flows/<name>/flow.ts` `node packages/smithers/flows/jj-wasm/build-wasm.mjs --verify` `--help` " +
+      "`.jj/agent-recovery/`"
   )).toEqual(["apps/app/src/bun/Harnesses.ts", "docs/learn/", "packages/rpc/src/LocalApp.ts"])
 })
