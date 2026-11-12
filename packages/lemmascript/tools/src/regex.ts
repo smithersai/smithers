@@ -1,7 +1,19 @@
+/**
+ * Supported JavaScript regular-expression parsing and Dafny matcher definitions.
+ *
+ * @since 0.1.0
+ */
+
 // A JavaScript regular-expression subset as the Dafny `JsRe` datatype of the regex preamble below (`REGEX_CORE`):
 // literal code units, `.`, classes and their escapes, groups, alternation, and the quantifiers `* + ? {m} {m,} {m,n}`
 // (greedy or lazy: `test` answers the same), with `^` first and `$` last. No flags. Anything else is refused by name.
 
+/**
+ * Regular-expression IR for the supported flag-free subset.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Re =
   | { kind: "eps" }
   | { kind: "cls"; ranges: ReadonlyArray<readonly [number, number]>; neg: boolean }
@@ -9,8 +21,20 @@ export type Re =
   | { kind: "alt"; a: Re; b: Re }
   | { kind: "star"; a: Re };
 
+/**
+ * Regular-expression IR with beginning and end anchors.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Pattern { readonly re: Re; readonly bol: boolean; readonly eol: boolean }
 
+/**
+ * Error for a regular expression outside the supported subset.
+ *
+ * @since 0.1.0
+ * @category errors
+ */
 export class RegexRefused extends Error {}
 
 const EPS: Re = { kind: "eps" };
@@ -26,6 +50,12 @@ const SPACE: ReadonlyArray<readonly [number, number]> = [[9, 13], [32, 32], [160
 const LINE: ReadonlyArray<readonly [number, number]> = [[10, 10], [13, 13], [8232, 8233]];
 const MAX_REPEAT = 64;
 
+/**
+ * Parse a flag-free regular expression into the supported IR.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function parsePattern(source: string, flags: string): Pattern {
   if (flags !== "") throw new RegexRefused(`regular expression flags "${flags}" are outside the supported subset (none)`);
   let at = 0;
@@ -158,7 +188,11 @@ function escapedAt(source: string, index: number): boolean {
   return slashes % 2 === 1;
 }
 
-/** The pattern as a Dafny `JsRe` term. */
+/** The pattern as a Dafny `JsRe` term.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function dafnyTerm(re: Re): string {
   switch (re.kind) {
     case "eps": return "JsRe.Eps";
@@ -173,7 +207,11 @@ export function dafnyTerm(re: Re): string {
 
 const patterns = new Map<string, Pattern>();
 
-/** The Dafny function deciding `/source/flags.test(s)`; a pattern outside the subset throws RegexRefused. */
+/** The Dafny function deciding `/source/flags.test(s)`; a pattern outside the subset throws RegexRefused.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function regexTestName(source: string, flags: string): string {
   const pattern = parsePattern(source, flags);
   let hash = 2166136261;
@@ -183,17 +221,33 @@ export function regexTestName(source: string, flags: string): string {
   return name;
 }
 
+/**
+ * Recognize generated Dafny regular-expression test names.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function isRegexTestName(name: string): boolean {
   return /^JsRegexTest_[0-9a-f]{8}$/.test(name);
 }
 
-/** The core and one `JsRegexTest_<hash>` per pattern seen: `JsTest`, which the core proves is `JsSearch`. */
+/** The core and one `JsRegexTest_<hash>` per pattern seen: `JsTest`, which the core proves is `JsSearch`.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function regexPreamble(): string {
   const tests = [...patterns].map(([name, p]) =>
     `function ${name}(s: string): bool\n  ensures ${name}(s) <==> JsSearch(${dafnyTerm(p.re)}, JsCodeUnits(s), ${p.bol}, ${p.eol})\n{\n  JsTestCorrect(${dafnyTerm(p.re)}, JsCodeUnits(s), ${p.bol}, ${p.eol});\n  JsTest(${dafnyTerm(p.re)}, JsCodeUnits(s), ${p.bol}, ${p.eol})\n}`);
   return [REGEX_CORE, ...tests].join("\n\n");
 }
 
+/**
+ * Dafny matcher definitions and correctness proofs.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const REGEX_CORE = `// A regular-expression core over UTF-16 code units: the language a pattern denotes, a derivative matcher, and their
 // equivalence. JavaScript's RegExp.prototype.test on a pattern without backreferences or lookaround answers whether
 // some substring is in the language; anchors fix the substring's ends.
@@ -387,7 +441,11 @@ function JsCodeUnits(s: string): seq<int> {
 `;
 
 /** `test` by the language semantics the Dafny preamble proves its matcher equal to: some substring with the anchored
- *  ends is in the pattern's language. For differential tests against the native RegExp. */
+ *  ends is in the pattern's language. For differential tests against the native RegExp.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function testPattern(p: Pattern, s: string): boolean {
   const memo = new Map<Re, Map<number, boolean>>();
   const go = (r: Re, i: number, j: number): boolean => {

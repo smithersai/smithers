@@ -3,6 +3,8 @@
  *
  * Uses linked environments (Scheme-style) for lexical scoping.
  * No mutation — each let extends the chain, lookup walks it.
+ *
+ * @since 0.1.0
  */
 
 import { isRegexTestName } from "./regex.js";
@@ -2052,6 +2054,12 @@ function checkOpacity(functions: RawFunction[], pureFns: Set<string>): void {
   }
 }
 
+/**
+ * Resolve raw source IR into typed IR.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function resolveModule(raw: RawModule): TModule {
   _warnedRefEq.clear();
   precomputeFieldTypes(raw.typeDecls);

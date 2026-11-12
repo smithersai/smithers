@@ -22,6 +22,8 @@
  * It runs after narrow, so any legitimate optional (`?.`, `??` on an
  * optional-typed value) is already a `someMatch`; a `nullish`/`optChain` that
  * survives to here is unmodellable and gets havoc'd.
+ *
+ * @since 0.1.0
  */
 
 import type { TExpr, TStmt, TModule } from "./typedir.js";
@@ -360,7 +362,11 @@ function bodyHasHavoc(stmts: TStmt[]): boolean {
 /** Apply the auto-havoc abstraction to functions opted in via `//@ autohavoc`
  *  (file-level or per-function). A no-op when nothing is annotated. When any
  *  function opts in, also drop module constants whose initializer is
- *  unmodellable (e.g. `const fs = require("fs")` pulled in by reachability). */
+ *  unmodellable (e.g. `const fs = require("fs")` pulled in by reachability).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function autoHavocModule(mod: TModule): TModule {
   if (!mod.functions.some(f => f.autohavoc)) return mod;
   // Names of calls carrying a `//@ requires` precondition — these must never be

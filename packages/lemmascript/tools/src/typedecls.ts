@@ -11,32 +11,56 @@
  *     (`Foo<Bar>` looks up `Foo`).
  * Preserve a site's semantics when changing its lookup; do not "upgrade"
  * an exact site to dotted or sliced in passing.
+ *
+ * @since 0.1.0
  */
 
 import type { Ty } from "./typedir.js";
 import type { TypeDeclInfo } from "./types.js";
 
+/**
+ * Readonly source type-declaration metadata.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type TypeDecls = readonly TypeDeclInfo[];
 
 /** `Foo<Bar>` → `Foo`. The single home of the generic-base slice; §5.1
- *  (structured generic args) retires it. */
+ *  (structured generic args) retires it.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function tyBaseName(name: string): string {
   return name.includes("<") ? name.slice(0, name.indexOf("<")) : name;
 }
 
-/** Declaration by exact name. */
+/** Declaration by exact name.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function declOf(decls: TypeDecls, name: string): TypeDeclInfo | undefined {
   return decls.find(d => d.name === name);
 }
 
-/** Declaration by exact name, restricted to the given kinds. */
+/** Declaration by exact name, restricted to the given kinds.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function declOfKind(decls: TypeDecls, name: string,
     ...kinds: TypeDeclInfo["kind"][]): TypeDeclInfo | undefined {
   const d = declOf(decls, name);
   return d && kinds.includes(d.kind) ? d : undefined;
 }
 
-/** Declaration by exact name, falling back to the last dotted segment. */
+/** Declaration by exact name, falling back to the last dotted segment.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function declOfDotted(decls: TypeDecls, name: string): TypeDeclInfo | undefined {
   const direct = declOf(decls, name);
   if (direct) return direct;
@@ -46,32 +70,52 @@ export function declOfDotted(decls: TypeDecls, name: string): TypeDeclInfo | und
 }
 
 /** Declaration for a user-typed value: generic-base sliced, exact match.
- *  Undefined for non-user types. */
+ *  Undefined for non-user types.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function declOfTy(decls: TypeDecls, ty: Ty): TypeDeclInfo | undefined {
   return ty.kind === "user" ? declOf(decls, tyBaseName(ty.name)) : undefined;
 }
 
 /** Whether a user-typed value is a named string-literal union with `""` among its members: at runtime it
- *  is a plain string, so that member is falsy (`Boolean("")` is false) and every other member is truthy. */
+ *  is a plain string, so that member is falsy (`Boolean("")` is false) and every other member is truthy.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function hasEmptyStringMember(decls: TypeDecls, ty: Ty): boolean {
   const d = declOfTy(decls, ty);
   return d?.kind === "string-union" && (d.values?.includes("") ?? false);
 }
 
-/** The discriminated-union declaration of a user-typed value, if any. */
+/** The discriminated-union declaration of a user-typed value, if any.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function unionDeclOfTy(decls: TypeDecls, ty: Ty): TypeDeclInfo | undefined {
   const d = declOfTy(decls, ty);
   return d?.kind === "discriminated-union" ? d : undefined;
 }
 
 /** The discriminant field name of a user-typed value that is a
- *  discriminated union. */
+ *  discriminated union.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function discriminantOf(decls: TypeDecls, ty: Ty): string | undefined {
   return unionDeclOfTy(decls, ty)?.discriminant;
 }
 
 /** Reverse lookup: the union declaration owning a variant (discriminated
- *  union) or literal value (string union) of this name. */
+ *  union) or literal value (string union) of this name.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function declWithVariant(decls: TypeDecls, ctorOrValue: string): TypeDeclInfo | undefined {
   return decls.find(d => (d.kind === "discriminated-union" || d.kind === "string-union") &&
     ((d.variants?.some(v => v.name === ctorOrValue)) || (d.values?.includes(ctorOrValue) ?? false)));

@@ -13,6 +13,7 @@ tests read are unchanged except for the patches listed below.
 
 | Patch | Status |
 | --- | --- |
+| Tool modules and exported contracts carry the repository JSDoc headers, version tags, and categories; compiler behavior is unchanged | Local only |
 | `lsc claimcheck` is optional: this copy does not depend on `lemmascript-claimcheck`, and the subcommand reports it missing | Local only |
 | Object spread of a conditional over two object literals (`...(c ? { a: 1 } : { b: 2 })`) field by field | Offered upstream later |
 | Object spread of a value holding a strict subset of the base record's fields | Offered upstream later |

@@ -19,12 +19,26 @@
  * (byte-for-byte gauntlet compatibility), including their quirks — e.g.
  * `array.shift` returns the element type un-wrapped and `array.with` types
  * as `unknown`. Widen such bits deliberately, with tests.
+ *
+ * @since 0.1.0
  */
 
 import type { Ty, TExpr } from "./typedir.js";
 
+/**
+ * Receiver kinds with registered builtin method semantics.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type RecvKind = "array" | "string" | "map" | "set";
 
+/**
+ * Typing and purity rules for one builtin operation.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface BuiltinSpec {
   /** Return-type rule. `inSpec` matters for `map.get` (raw value in specs,
    *  Option in code). */
@@ -52,7 +66,11 @@ const optElem = (objTy: Ty): Ty =>
   objTy.kind === "array" ? { kind: "optional", inner: objTy.elem } : UNKNOWN;
 
 /** The table is the single source: each key is `<RecvKind>.<method>`, which
- *  *is* the `BuiltinId`. */
+ *  *is* the `BuiltinId`.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const BUILTINS = {
   // ── array ─────────────────────────────────────────────────
   "array.includes": { ret: BOOL, pure: true,
@@ -140,13 +158,21 @@ export const BUILTINS = {
   "set.delete": { ret: self, pure: false },
 } satisfies Record<`${RecvKind}.${string}`, BuiltinSpec>;
 
-/** One id per table entry. */
+/** One id per table entry.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type BuiltinId = keyof typeof BUILTINS;
 
 /** Recognize a builtin method call by receiver type kind + method name.
  *  Called by resolve (once per call node); everything downstream reads the
  *  stamped id. `hasOwn`, not `in`: `method` comes from user source, and `in`
- *  would match inherited names (`constructor`, `toString`). */
+ *  would match inherited names (`constructor`, `toString`).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function recognizeBuiltin(objTy: Ty, method: string): BuiltinId | null {
   const k = objTy.kind;
   if (k !== "array" && k !== "string" && k !== "map" && k !== "set") return null;
@@ -154,6 +180,12 @@ export function recognizeBuiltin(objTy: Ty, method: string): BuiltinId | null {
   return Object.hasOwn(BUILTINS, id) ? id as BuiltinId : null;
 }
 
+/**
+ * Look up the registered rules for a builtin identity.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function builtinSpec(id: BuiltinId): BuiltinSpec {
   return BUILTINS[id];
 }

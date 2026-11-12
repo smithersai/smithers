@@ -3,6 +3,8 @@
  * decisions: Bool-vs-Prop connectives, dropping Repr/DecidableEq for
  * opaque-tainted types, discriminator/destructor lowering, method dispatch,
  * and support-import selection.
+ *
+ * @since 0.1.0
  */
 
 import type { Expr, Stmt, Decl, Module, MatchPattern } from "./ir.js";
@@ -892,7 +894,11 @@ function emitPureExpr(e: Expr, indent: number): string {
 // ── File emission ────────────────────────────────────────────
 
 /** Reset per-module emitter state. Call once per module before the types file
- *  (not between types and def — the def file reads the types file's registries). */
+ *  (not between types and def — the def file reads the types file's registries).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function resetLeanModule(): void {
   _resultName = "res";
   _unionCtors.clear();
@@ -906,6 +912,12 @@ export function resetLeanModule(): void {
   _boolCtx = false;
 }
 
+/**
+ * Render a backend IR module as Lean source.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function emitLeanFile(file: Module): string {
   _needsJSString = false;
   _needsUnknown = false;

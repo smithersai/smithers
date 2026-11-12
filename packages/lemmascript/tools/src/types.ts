@@ -3,10 +3,18 @@
  *
  * Single source of truth for type-related decisions.
  * The transform phase imports this.
+ *
+ * @since 0.1.0
  */
 
 // ── Type info extracted from TS ──────────────────────────────
 
+/**
+ * Source field name, TypeScript type text, and optional resolved type.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface FieldInfo {
   name: string;
   tsType: string;
@@ -16,17 +24,35 @@ export interface FieldInfo {
   literalValues?: string[];
 }
 
+/**
+ * Discriminated-union variant and its fields.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface VariantInfo {
   name: string;
   fields: FieldInfo[];
 }
 
+/**
+ * Discriminated-union metadata and its variants.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface UnionTypeInfo {
   name: string;
   discriminant: string;
   variants: VariantInfo[];
 }
 
+/**
+ * Source type-declaration metadata.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TypeDeclInfo {
   name: string;
   typeParams?: string[];
@@ -62,6 +88,12 @@ import type { Project as TsProject, SourceFile, TypeNode } from "ts-morph";
  */
 let _synthFile: SourceFile | null = null;
 
+/**
+ * Initialize the synthetic source file used to parse type text.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function initTypeParser(project: TsProject): void {
   _synthFile = project.createSourceFile("__lsc_type_parse__.ts", "", { overwrite: true });
 }
@@ -73,6 +105,12 @@ function synthFile(): SourceFile {
   return _synthFile;
 }
 
+/**
+ * Parse TypeScript type text with the configured type parser.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function parseTsType(tsType: string): Ty {
   const sf = synthFile();
   sf.replaceWithText(`type __t = ${tsType};`);
@@ -196,7 +234,11 @@ function tyFromTypeNode(tn: TypeNode): Ty {
 }
 
 /** Render a Ty in LemmaScript canonical syntax — backend-neutral, side-effect-free.
- *  Used by `lsc info` for the signature field of `foo.ts.json`. */
+ *  Used by `lsc info` for the signature field of `foo.ts.json`.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function tyToCanonical(ty: Ty): string {
   switch (ty.kind) {
     case "bool":   return "bool";

@@ -12,7 +12,10 @@
  *   5. if c then true else false  →  c
  *
  * Statement-level rule 1 also handles match-statement on m.get.
+ *
+ * @since 0.1.0
  */
+
 import type { Expr, Stmt, Decl, Module, MatchArm, StmtMatchArm, MatchPattern } from "./ir.js";
 import { patternCtor, patternBinders, usesName, usesNameInStmts } from "./ir.js";
 
@@ -349,6 +352,12 @@ function rewriteChildrenStmt(s: Stmt): Stmt {
 
 // ── Module entry ────────────────────────────────────────────
 
+/**
+ * Apply backend-specific local simplifications to an IR module.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function peepholeModule(mod: Module, backend: "lean" | "dafny" = "dafny"): Module {
   EXPR_RULES = backend === "dafny" ? [...MAP_GET_RULES, ...BOOL_RULES] : MAP_GET_RULES;
   return { ...mod, decls: mod.decls.map(peepholeDecl) };

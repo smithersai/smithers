@@ -6,6 +6,8 @@
  *
  * Layer 1: structured (no strings for expressions)
  * Layer 2 (planned): add Ty to each node
+ *
+ * @since 0.1.0
  */
 
 // ── Expressions ──────────────────────────────────────────────
@@ -17,7 +19,11 @@
  *  A BigInt literal must never pass through `Number`/`parseInt`: `9007199254740993n`
  *  and `9007199254740992n` are distinct values that collapse to the same double.
  *  Hence the string payload — it also keeps the raw IR `JSON.stringify`-able,
- *  which `lsc extract` relies on. */
+ *  which `lsc extract` relies on.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function normalizeBigIntLiteral(text: string): string {
   const withoutSuffix = text.endsWith("n") ? text.slice(0, -1) : text;
   // BigInt() understands decimal, hex, binary, and octal; numeric separators
@@ -28,12 +34,22 @@ export function normalizeBigIntLiteral(text: string): string {
 /** A step in an optional chain — what to do with the binder after `?.`.
  *  field: `?.foo` or `.foo` after `?.`.
  *  call:  `?.foo()` or `.foo()` / `()` after `?.`.
- *  index: `?.[i]` or `[i]` after `?.`. */
+ *  index: `?.[i]` or `[i]` after `?.`.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type RawChainStep =
   | { kind: "field"; name: string }
   | { kind: "call"; args: RawExpr[] }
   | { kind: "index"; idx: RawExpr };
 
+/**
+ * Source-shaped expressions before type resolution.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type RawExpr =
   | { kind: "var"; name: string }
   | { kind: "num"; value: number }
@@ -63,6 +79,12 @@ export type RawExpr =
 
 // ── Statements ───────────────────────────────────────────────
 
+/**
+ * Source binding with an optional annotation and initializer.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawLet {
   // tsType: explicit source annotation when present (`const x: T = ...`),
   // otherwise null — resolve infers from the initializer. Letting ts-morph's
@@ -77,6 +99,12 @@ export interface RawLet {
   line: number;
 }
 
+/**
+ * Source assignment target and value.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawAssign {
   kind: "assign";
   target: string;
@@ -84,28 +112,58 @@ export interface RawAssign {
   line: number;
 }
 
+/**
+ * Source return statement and result.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawReturn {
   kind: "return";
   value: RawExpr;
   line: number;
 }
 
+/**
+ * Extracted break statement and its location.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawBreak {
   kind: "break";
   line: number;
 }
 
+/**
+ * Extracted continue statement and its location.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawContinue {
   kind: "continue";
   line: number;
 }
 
+/**
+ * Extracted expression statement.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawExprStmt {
   kind: "expr";
   expr: RawExpr;
   line: number;
 }
 
+/**
+ * Source condition and its branches.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawIf {
   kind: "if";
   cond: RawExpr;
@@ -114,6 +172,12 @@ export interface RawIf {
   line: number;
 }
 
+/**
+ * Source loop, condition, and annotations.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawWhile {
   kind: "while";
   cond: RawExpr;
@@ -123,6 +187,12 @@ export interface RawWhile {
   line: number;
 }
 
+/**
+ * Source switch scrutinee and branches.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawSwitch {
   kind: "switch";
   expr: RawExpr;
@@ -133,6 +203,12 @@ export interface RawSwitch {
   line: number;
 }
 
+/**
+ * Source collection iteration, bound names, and body.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawForOf {
   kind: "forof";
   names: string[];        // single name or destructured: [k, v, ...]
@@ -142,11 +218,23 @@ export interface RawForOf {
   line: number;
 }
 
+/**
+ * Extracted throw statement and its location.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawThrow {
   kind: "throw";
   line: number;
 }
 
+/**
+ * Specification-only binding.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawGhostLet {
   kind: "ghostLet";
   name: string;
@@ -155,6 +243,12 @@ export interface RawGhostLet {
   line: number;
 }
 
+/**
+ * Specification-only assignment.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawGhostAssign {
   kind: "ghostAssign";
   target: string;
@@ -162,6 +256,12 @@ export interface RawGhostAssign {
   line: number;
 }
 
+/**
+ * Specification assertion whose expression is parsed later.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawAssert {
   kind: "assert";
   expr: string;              // spec expression string (parsed later)
@@ -172,23 +272,45 @@ export interface RawAssert {
   witness?: string;
 }
 
+/**
+ * Statement variants produced by source extraction.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type RawStmt = RawLet | RawAssign | RawReturn | RawBreak | RawContinue | RawExprStmt | RawIf | RawWhile | RawSwitch | RawForOf | RawThrow | RawGhostLet | RawGhostAssign | RawAssert;
 
 // ── Top-level ────────────────────────────────────────────────
 
+/**
+ * Source parameter and its type annotation.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawParam {
   name: string;
   tsType: string;
 }
 
 /** One original TS parameter, before `params` flattens it for the provers
- *  (destructured object → N scalars, rest → one). `params == tsParams.flatMap(p => p.binds)`. */
+ *  (destructured object → N scalars, rest → one). `params == tsParams.flatMap(p => p.binds)`.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawTsParam {
   kind: "simple" | "object" | "rest";
   binds: string[];   // spec-param names (entries in `params`) this TS parameter contributes
   defaults?: Record<string, string>;  // bind-name → default source text (TS-only, ignored by provers), for binds that have one
 }
 
+/**
+ * Extracted function and its source contract.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawFunction {
   name: string;
   exported: boolean;      // part of the module's export surface (inline `export`, `export { }`, or re-export)
@@ -210,12 +332,24 @@ export interface RawFunction {
   line: number;
 }
 
+/**
+ * Extracted class, fields, and methods.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawClass {
   name: string;
   fields: { name: string; tsType: string }[];
   methods: RawFunction[];
 }
 
+/**
+ * Extracted constant, type annotation, and initializer.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawConst {
   name: string;
   tsType: string;
@@ -229,7 +363,11 @@ export interface RawConst {
  *  different value. Any `requires`/`ensures` are lifted from the source
  *  declaration so callers reason against the same per-call contract.
  *  Spec strings here are unresolved — resolve.ts parses them in the extern's
- *  own param scope. */
+ *  own param scope.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawExtern {
   qualified: string;       // dotted source name, e.g. "Wildcard.match"
   flat: string;            // emission name, e.g. "Wildcard_match"
@@ -241,6 +379,12 @@ export interface RawExtern {
   impure: boolean;         // effective call-by-call nondeterminism (Dafny method)
 }
 
+/**
+ * Source path, type declarations, and declarations produced by extraction.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RawModule {
   file: string;
   typeDecls: import("./types.js").TypeDeclInfo[];

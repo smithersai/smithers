@@ -3,6 +3,8 @@
  *
  * Produced by the resolve pass. Consumed by the transform.
  * Still TS-shaped (not Lean-shaped).
+ *
+ * @since 0.1.0
  */
 
 // Type-only: erased at runtime, so the builtins ↔ typedir reference cycle
@@ -14,6 +16,12 @@ import type { BuiltinId } from "./builtins.js";
 // `big` marks an int/nat that originated from a TS `bigint` (literal `123n` or
 // declared `bigint`). It rides along arithmetic so division can pick the right
 // JS semantics: `number / number` is real, but `bigint / bigint` is integer.
+/**
+ * Resolved types used by the typed IR.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Ty =
   | { kind: "bool" }
   | { kind: "nat"; big?: boolean }
@@ -30,13 +38,21 @@ export type Ty =
   | { kind: "fn"; params: Ty[]; result: Ty }
   | { kind: "unknown" }
 
-/** True for an int/nat that came from a TS `bigint` (integer division semantics). */
+/** True for an int/nat that came from a TS `bigint` (integer division semantics).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function isBigInt(ty: Ty): boolean {
   return (ty.kind === "int" || ty.kind === "nat") && !!ty.big;
 }
 
 /** Structural equality on Ty. Used to decide whether a tuple type is homogeneous
- *  (all elements equal ⇒ lower to `seq`) vs heterogeneous (⇒ keep as `tuple`). */
+ *  (all elements equal ⇒ lower to `seq`) vs heterogeneous (⇒ keep as `tuple`).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function tyEqual(a: Ty, b: Ty): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
@@ -67,13 +83,23 @@ export function tyEqual(a: Ty, b: Ty): boolean {
   }
 }
 
+/**
+ * Call classification assigned during resolution.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type CallKind = "pure" | "method" | "spec-pure" | "unknown"
 
 /** Typed counterpart of RawChainStep. Carries the result-type at this step.
  *  `builtinId` is the builtin identity assigned once by resolve
  *  (DESIGN_LS_IN_LS.md §3): present iff `(receiver type kind, method name)`
  *  matched the registry at resolve time. Downstream passes read
- *  classification off the stamp instead of re-recognizing by spelling. */
+ *  classification off the stamp instead of re-recognizing by spelling.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type TChainStep =
   | { kind: "field"; name: string; ty: Ty }
   | { kind: "call"; args: TExpr[]; ty: Ty; callKind: CallKind; builtinId?: BuiltinId }
@@ -81,6 +107,12 @@ export type TChainStep =
 
 // ── Expressions ──────────────────────────────────────────────
 
+/**
+ * Typed source-shaped expression variants.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type TExpr =
   | { kind: "var"; name: string; ty: Ty }
   | { kind: "num"; value: number; ty: Ty }
@@ -119,6 +151,12 @@ export type TExpr =
 
 // ── Statements ───────────────────────────────────────────────
 
+/**
+ * Resolved source-shaped statement variants.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type TStmt =
   | { kind: "let"; name: string; ty: Ty; mutable: boolean; init: TExpr }
   | { kind: "assign"; target: string; value: TExpr }
@@ -151,18 +189,34 @@ export type TStmt =
 
 /** Statement kinds that unconditionally leave the enclosing block. Shared by
  *  resolve (block-tail narrowing) and narrow (isTerminating); works on raw and
- *  typed IR alike since both use these kind strings. */
+ *  typed IR alike since both use these kind strings.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function isTerminatorKind(kind: string): boolean {
   return kind === "return" || kind === "throw" || kind === "break" || kind === "continue";
 }
 
 // ── Top-level ────────────────────────────────────────────────
 
+/**
+ * Typed function parameter.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TParam {
   name: string;
   ty: Ty;
 }
 
+/**
+ * Typed function signature, contract, and body.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TFunction {
   name: string;
   typeParams: string[];
@@ -179,19 +233,35 @@ export interface TFunction {
   body: TStmt[];
 }
 
+/**
+ * Typed class fields and methods.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TClass {
   name: string;
   fields: { name: string; ty: Ty }[];
   methods: TFunction[];
 }
 
+/**
+ * Typed constant and initializer.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TConst {
   name: string;
   ty: Ty;
   value: TExpr;
 }
 
-/** Resolved counterpart of RawExtern. */
+/** Resolved counterpart of RawExtern.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TExtern {
   qualified: string;
   flat: string;
@@ -203,6 +273,12 @@ export interface TExtern {
   impure: boolean;
 }
 
+/**
+ * Resolved module consumed by narrowing and lowering.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TModule {
   file: string;
   typeDecls: import("./types.js").TypeDeclInfo[];

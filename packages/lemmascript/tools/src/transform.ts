@@ -3,6 +3,8 @@
  *
  * Consumes resolved types and classifications.
  * No type lookups, no string parsing, no re-inference.
+ *
+ * @since 0.1.0
  */
 
 import type { TExpr, TStmt, TFunction, TModule, Ty } from "./typedir.js";
@@ -79,6 +81,7 @@ function mapStmt(s: Stmt, f: (e: Expr) => Expr | null): Stmt {
   }
 }
 
+const varE = (name: string): Expr => ({ kind: "var", name });
 /** Rename free occurrences of `from` to `to`, stopping at every construct that
  *  rebinds `from` — lambda params, `let`/`let-bind`/`ghostLet` (shadows the
  *  rest of the block), `match` arm patterns, `forall`/`exists`, and `for-in`
@@ -86,8 +89,11 @@ function mapStmt(s: Stmt, f: (e: Expr) => Expr | null): Stmt {
  *  own binding untouched. `mapExpr` doesn't descend into lambda bodies, so this
  *  walks them by hand — statement binders are tracked only at that body's top
  *  level, which is enough for the sole caller (dafny-emit's
- *  `comprehensionBinder`). TODO: generalize if more callers need this. */
-const varE = (name: string): Expr => ({ kind: "var", name });
+ *  `comprehensionBinder`). TODO: generalize if more callers need this.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function renameFreeVar(e: Expr, from: string, to: string): Expr {
   const f = (x: Expr): Expr | null => {
     if (x.kind === "var") return x.name === from ? { ...x, name: to } : x;
@@ -177,18 +183,42 @@ function mapTStmt(s: TStmt, f: (e: TExpr) => TExpr | null): TStmt {
 
 // ── Backend configuration ───────────────────────────────────
 
+/**
+ * Supported Lean and Dafny backend identities.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Backend = "lean" | "dafny";
 
+/**
+ * Backend capabilities used during lowering.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TransformOptions {
   backend: Backend;
   monadic: boolean;
 }
 
+/**
+ * Lowering options for the Lean backend.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const LEAN_OPTIONS: TransformOptions = {
   backend: "lean",
   monadic: true,
 };
 
+/**
+ * Lowering options for the Dafny backend.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const DAFNY_OPTIONS: TransformOptions = {
   backend: "dafny",
   monadic: false,
@@ -2610,6 +2640,9 @@ function findReassignedNames(stmts: TStmt[], names: Set<string>): Set<string> {
  * (e.g., replacing `x: Option<T>` with `x_val: T`). In that case, when the
  * variable appears directly as a record spread field value, it's wrapped in
  * Some() to preserve the field's Optional type.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function replaceVar(e: Expr, name: string, replacement: Expr, narrowing?: boolean): Expr {
   const rec = (expr: Expr) => replaceVar(expr, name, replacement, narrowing);
@@ -2638,7 +2671,11 @@ export function replaceVar(e: Expr, name: string, replacement: Expr, narrowing?:
 
 // ── Top-level transform ──────────────────────────────────────
 
-/** Transform for Lean backend — same logic, Lean options. */
+/** Transform for Lean backend — same logic, Lean options.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function transformModuleLean(mod: TModule, specImport?: string, moduleBase?: string): { typesFile: Module | null; defFile: Module } {
   const prev = _opts;
   _opts = LEAN_OPTIONS;
@@ -2649,7 +2686,11 @@ export function transformModuleLean(mod: TModule, specImport?: string, moduleBas
   }
 }
 
-/** Transform for Dafny backend — same logic, Dafny options. */
+/** Transform for Dafny backend — same logic, Dafny options.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function transformModuleDafny(mod: TModule): { typesFile: Module | null; defFile: Module } {
   const prev = _opts;
   _opts = DAFNY_OPTIONS;
@@ -2660,6 +2701,12 @@ export function transformModuleDafny(mod: TModule): { typesFile: Module | null; 
   }
 }
 
+/**
+ * Lower a typed module into backend type and definition modules.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function transformModule(mod: TModule, specImport?: string, moduleBaseOverride?: string): { typesFile: Module | null; defFile: Module } {
   _forofCounters.clear();
   _liftCounter = 0;

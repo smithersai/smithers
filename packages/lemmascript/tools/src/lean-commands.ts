@@ -1,11 +1,19 @@
 /**
  * Lean backend commands: gen, check.
+ *
+ * @since 0.1.0
  */
 
 import { existsSync, writeFileSync } from "fs";
 import { execFileSync } from "child_process";
 import path from "path";
 
+/**
+ * Write generated Lean type and definition companions.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function leanGen(typesPath: string | null, defPath: string, typesText: string | null, defText: string) {
   if (typesPath && typesText) {
     writeFileSync(typesPath, typesText);
@@ -15,7 +23,11 @@ export function leanGen(typesPath: string | null, defPath: string, typesText: st
   console.log(`Generated: ${defPath}`);
 }
 
-/** Find the nearest ancestor containing either supported Lake configuration. */
+/** Find the nearest ancestor containing either supported Lake configuration.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function findLakeProjectRoot(dir: string): string | null {
   let candidate = path.resolve(dir);
   while (true) {
@@ -30,6 +42,12 @@ export function findLakeProjectRoot(dir: string): string | null {
   }
 }
 
+/**
+ * Check a Lean proof companion in its enclosing Lake project.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function leanCheck(dir: string, base: string): boolean {
   const proofPath = path.join(dir, `${base}.proof.lean`);
   if (!existsSync(proofPath)) {

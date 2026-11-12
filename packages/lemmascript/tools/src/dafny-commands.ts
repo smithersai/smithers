@@ -1,5 +1,7 @@
 /**
  * Dafny backend commands: gen, check, regen.
+ *
+ * @since 0.1.0
  */
 
 import { existsSync, readFileSync, writeFileSync, copyFileSync, unlinkSync } from "fs";
@@ -13,6 +15,12 @@ function writeGen(genPath: string, text: string) {
   console.log(`Generated: ${genPath}`);
 }
 
+/**
+ * Write generated Dafny source and initialize a missing proof companion.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function dafnyGen(genPath: string, dfyPath: string, text: string) {
   writeGen(genPath, text);
   if (!existsSync(dfyPath)) {
@@ -21,6 +29,12 @@ export function dafnyGen(genPath: string, dfyPath: string, text: string) {
   }
 }
 
+/**
+ * Check that a proof companion only adds to generated source.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function dafnyCheckDiff(genPath: string, dfyPath: string, log?: RunLog): boolean {
   const ok = additionsOnly(genPath, dfyPath);
   if (!ok) log?.finish({ stage: "diff", exit: 1, dfyPath });
@@ -112,6 +126,9 @@ function readStringSemantics(content: string): LscOptions["string-semantics"] {
  * Always pass `--unicode-char` explicitly. UTF-16 mode also needs
  * `--allow-deprecation` because Dafny 4.11 deprecates `--unicode-char:false`.
  * Other warning categories remain fatal.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function dafnyVerifyArgs(content: string, timeLimit?: number, extraFlags?: string): { args: string[]; error?: string } {
   let stringSemantics: LscOptions["string-semantics"];
@@ -141,6 +158,12 @@ export function dafnyVerifyArgs(content: string, timeLimit?: number, extraFlags?
   return { args };
 }
 
+/**
+ * Run the Dafny verifier and record its outcome when logging is enabled.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function dafnyVerify(dfyPath: string, dir: string, timeLimit?: number, extraFlags?: string, log?: RunLog): boolean {
   console.log("Running dafny verify...");
   try {
@@ -168,6 +191,12 @@ export function dafnyVerify(dfyPath: string, dir: string, timeLimit?: number, ex
   }
 }
 
+/**
+ * Regenerate Dafny source, merge proof edits, and optionally verify it.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function dafnyRegen(genPath: string, dfyPath: string, basePath: string, text: string, dir: string, timeLimit?: number, extraFlags?: string, noVerify = false, log?: RunLog) {
   // 1. Read old gen before overwriting (needed for base seeding)
   const oldGen = existsSync(genPath) ? readFileSync(genPath, "utf-8") : "";

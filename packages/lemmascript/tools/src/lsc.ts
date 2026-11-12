@@ -3,6 +3,8 @@
  * lsc — LemmaScript compiler CLI
  *
  * Pipeline: extract → resolve → narrow → transform → peephole → emit
+ *
+ * @since 0.1.0
  */
 
 import { Project, ScriptTarget, type SourceFile } from "ts-morph";

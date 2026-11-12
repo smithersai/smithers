@@ -6,6 +6,8 @@
  * program or only the proof, and read the records back for that report.
  * Logging must never change lsc's output or exit code, so every filesystem
  * step is best-effort and swallows its own errors.
+ *
+ * @since 0.1.0
  */
 
 import { createHash, randomUUID } from "crypto";
@@ -14,8 +16,20 @@ import { tmpdir } from "os";
 import path from "path";
 import { findUp } from "./config.js";
 
+/**
+ * Schema version of persisted verification records.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const RUN_LOG_SCHEMA_VERSION = 1;
 
+/**
+ * Verifier member names grouped by their recorded result.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface MemberResults {
   passed: string[];
   failed: string[];
@@ -25,9 +39,18 @@ export interface MemberResults {
  * Where a run stopped: `diff` (additions-only check failed, Dafny never ran),
  * `conflict` (regen merge conflict), `resolve` (Dafny produced no member results),
  * `verify` (Dafny reported failures), or `ok`.
+ *
+ * @since 0.1.0
+ * @category models
  */
 export type RunStage = "ok" | "verify" | "resolve" | "diff" | "conflict";
 
+/**
+ * Persisted verification run and its source and proof hashes.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface VerifyRecord {
   v: number;
   type: "verify";
@@ -45,6 +68,12 @@ export interface VerifyRecord {
   lsc: string | null;
 }
 
+/**
+ * Configuration and source paths used to initialize a run log.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RunLogInit {
   logDir: string;
   cmd: "check" | "regen";
@@ -57,6 +86,9 @@ export interface RunLogInit {
  * Combine the `run-log` option with the `LSC_RUN_LOG` value lsc.ts read:
  * `false` turns logging off for one run; `true` or unset leaves it to the
  * config. Like lemmascript.json, any other value is an error.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function runLogEnabled(option: boolean, value: string | undefined): boolean {
   if (value === undefined || value === "" || value === "true") return option;
@@ -64,7 +96,11 @@ export function runLogEnabled(option: boolean, value: string | undefined): boole
   throw new Error(`LSC_RUN_LOG must be true or false (got ${JSON.stringify(value)})`);
 }
 
-/** The selected lemmascript.json's directory, else LemmaScript-files.txt's, else the source's git root, else cwd. */
+/** The selected lemmascript.json's directory, else LemmaScript-files.txt's, else the source's git root, else cwd.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function resolveLogDir(sourcePath: string, configFile: string | null): string {
   if (configFile) return path.dirname(path.resolve(configFile));
   const manifest = findUp("LemmaScript-files.txt", sourcePath);
@@ -73,7 +109,11 @@ export function resolveLogDir(sourcePath: string, configFile: string | null): st
   return git ? path.dirname(git) : process.cwd();
 }
 
-/** A filtered Dafny run verifies only some members, so absences mean nothing. */
+/** A filtered Dafny run verifies only some members, so absences mean nothing.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function isPartialRun(extraFlags: string | undefined): boolean {
   return /--filter-(symbol|position)\b/.test(extraFlags ?? "");
 }
@@ -82,6 +122,9 @@ export function isPartialRun(extraFlags: string | undefined): boolean {
  * Parse Dafny's `--log-format text` file. Each member gets one entry per
  * check (`correctness`, `well-formedness`); it passes only if every check's
  * outcome is `Correct`.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function parseTextLog(text: string): MemberResults {
   const seen = new Set<string>();
@@ -110,11 +153,21 @@ function isVerifyRecord(r: any): r is VerifyRecord {
     && hash(r.tsHash) && hash(r.dfyHash);
 }
 
-/** First 12 hex characters of the SHA-256 of `text`. */
+/** First 12 hex characters of the SHA-256 of `text`.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
 
+/**
+ * Run optional logging work without changing the verifier's result on failure.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function safely<T>(fn: () => T): T | null {
   try {
     return fn();
@@ -123,7 +176,11 @@ export function safely<T>(fn: () => T): T | null {
   }
 }
 
-/** Create `<logDir>/.lemmascript/` with a `.gitignore` that ignores the whole directory. */
+/** Create `<logDir>/.lemmascript/` with a `.gitignore` that ignores the whole directory.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function ensureLogDir(logDir: string): string {
   const dir = path.join(logDir, ".lemmascript");
   mkdirSync(path.join(dir, "blobs"), { recursive: true });
@@ -132,7 +189,11 @@ export function ensureLogDir(logDir: string): string {
   return dir;
 }
 
-/** Store the source as `blobs/<hash>.ts` unless that version is already there. */
+/** Store the source as `blobs/<hash>.ts` unless that version is already there.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function snapshotSource(dir: string, text: string): string {
   const hash = hashText(text);
   const blob = path.join(dir, "blobs", `${hash}.ts`);
@@ -145,6 +206,9 @@ export function snapshotSource(dir: string, text: string): string {
  * Skips lines that don't parse (such as a half-written last line), other
  * record types, other schema versions and records missing a field or
  * holding one of the wrong type; a missing log has no records.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function readRecords(logDir: string): VerifyRecord[] {
   const text = safely(() => readFileSync(path.join(logDir, ".lemmascript", "runs.jsonl"), "utf8")) ?? "";
@@ -160,6 +224,9 @@ export function readRecords(logDir: string): VerifyRecord[] {
  * One verification run. `lsc.ts` creates it before generating and passes it to
  * the Dafny helpers; whichever helper sees how the run ended calls `finish`, or
  * `discard` when nothing was verified. Only the first of these calls counts.
+ *
+ * @since 0.1.0
+ * @category models
  */
 export class RunLog {
   private readonly dir: string | null;

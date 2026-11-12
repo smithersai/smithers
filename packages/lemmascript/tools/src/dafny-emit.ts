@@ -1,5 +1,7 @@
 /**
  * Dafny emitter — IR → Dafny text.
+ *
+ * @since 0.1.0
  */
 
 import type { Expr, Stmt, Decl, Module, MatchPattern } from "./ir.js";
@@ -16,7 +18,11 @@ function revealLines(names: string[]): string[] {
   return names.map(name => `  reveal ${escapeName(name)}();`);
 }
 
-/** Appended to a function's name for the lemma that carries its `//@ ensures`. */
+/** Appended to a function's name for the lemma that carries its `//@ ensures`.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const ENSURES_LEMMA_SUFFIX = "_ensures";
 
 /** Fresh binder for a comprehension wrapping the given subexpressions: `base`
@@ -177,7 +183,11 @@ function resetDafnyNameCache(): void {
 /** Source-name → emitted-Dafny-name pairs from the most recent emitDafnyFile
  *  call (identity-mapped names included). Consumed by `lsc info --typed` so
  *  satellites (e.g. lemmascript-crosscheck) can address emitted declarations
- *  by their mangled names (`_Box` → `i_Box'`) without re-deriving the rules. */
+ *  by their mangled names (`_Box` → `i_Box'`) without re-deriving the rules.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function emittedNameMap(): Map<string, string> {
   return new Map([..._generatedDafnyNames, ..._userDafnyNames]);
 }
@@ -2050,6 +2060,9 @@ const PREAMBLE_CODE: [string, string | (() => string)][] = [
  * The names of the functions, predicates, lemmas and methods declared in Dafny
  * `text`, in order: a declaration starts its line, may carry modifiers
  * (`ghost`, `opaque`, …) and attributes (`{:axiom}`), and is never in a comment.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function declaredNames(text: string): string[] {
   const declaration = /^\s*(?:(?:ghost|opaque|static|twostate|least|greatest)\s+)*(?:function|predicate|lemma|method)(?:\s+\{:[^}]*\})*\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
@@ -2060,6 +2073,9 @@ export function declaredNames(text: string): string[] {
  * Every function, predicate, lemma and method the preambles declare, so tools reading
  * Dafny results can tell lsc's own helpers from the user's members. The
  * profile-dependent entries only change literals, so either variant gives the same names.
+ *
+ * @since 0.1.0
+ * @category models
  */
 export const DAFNY_HELPER_NAMES: ReadonlySet<string> = new Set(
   PREAMBLE_CODE.flatMap(([, code]) => declaredNames(typeof code === "function" ? code() : code)),
@@ -2172,6 +2188,12 @@ function translatePattern(p: MatchPattern): string {
 }
 
 
+/**
+ * Render a backend IR module as Dafny source with the resolved options.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function emitDafnyFile(file: Module, tsFileName?: string, options: LscOptions = DEFAULT_OPTIONS): string {
   // Programmatic callers share the CLI's compatibility checks.
   options = resolveOptions(options, tsFileName ?? "Dafny emission");

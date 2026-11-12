@@ -1,3 +1,9 @@
+/**
+ * Message-union desugaring before source extraction.
+ *
+ * @since 0.1.0
+ */
+
 // Foldkit's `defineMessageUnion({ Tag: { field: Schema.X } })`, read as the `_tag` union it defines.
 //
 // Foldkit types the union through Effect Schema, which LemmaScript does not type, so an `X.match(message, { … })`
@@ -47,7 +53,11 @@ function sameLines(original: string, replacement: string): string {
   return replacement + "\n".repeat(missing);
 }
 
-/** Rewrites every `const X = defineMessageUnion({ … })` in `file` in memory; returns the union names it rewrote. */
+/** Rewrites every `const X = defineMessageUnion({ … })` in `file` in memory; returns the union names it rewrote.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function desugarMessageUnions(file: SourceFile): string[] {
   if (!file.getFullText().includes("defineMessageUnion(")) return [];
   const edits: { start: number; end: number; text: string }[] = [];

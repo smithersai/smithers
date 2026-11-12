@@ -4,12 +4,20 @@
  * Config is discovered per source file, validated from one registry, then
  * layered with eligible file directives before consumers see a resolved set.
  * Filesystem policy stays here/lsc.ts; extractors and emitters receive options.
+ *
+ * @since 0.1.0
  */
 
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { ts } from "ts-morph";
 
+/**
+ * Supported compiler options, accepted values, and defaults.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const OPTION_SPECS = {
   "extern-default": {
     type: "enum",
@@ -60,11 +68,29 @@ type OptionValue<S> =
   S extends { type: "path" } ? string | null :
   never;
 
+/**
+ * Fully resolved option values indexed by the option registry.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type LscOptions = {
   readonly [K in keyof OptionSpecs]: OptionValue<OptionSpecs[K]>;
 };
+/**
+ * Option values supplied explicitly by a project or file directive.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type ExplicitOptions = Partial<LscOptions>;
 
+/**
+ * Frozen compiler defaults derived from the option registry.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export const DEFAULT_OPTIONS = Object.freeze(Object.fromEntries(
   Object.entries(OPTION_SPECS).map(([key, spec]) => [key, spec.default]),
 )) as LscOptions;
@@ -81,7 +107,11 @@ function isKnownKey(key: string): key is keyof OptionSpecs {
   return Object.hasOwn(OPTION_SPECS, key);
 }
 
-/** Validate one option against the registry and return its typed value. */
+/** Validate one option against the registry and return its typed value.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function parseOptionValue<K extends keyof LscOptions>(key: K, raw: unknown, source: string): LscOptions[K] {
   const spec = OPTION_SPECS[key] as AnyOptionSpec;
   if (spec.type === "boolean") {
@@ -101,7 +131,11 @@ export function parseOptionValue<K extends keyof LscOptions>(key: K, raw: unknow
   return raw as LscOptions[K];
 }
 
-/** Validate a parsed lemmascript.json object, returning only explicitly set keys. */
+/** Validate a parsed lemmascript.json object, returning only explicitly set keys.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function validateOptions(raw: unknown, source: string): ExplicitOptions {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     fail(source, "expected a JSON object");
@@ -175,7 +209,11 @@ function* fileCommentLines(sourceText: string): Generator<{ text: string; index:
   }
 }
 
-/** Parse top-of-file `//@ option key value` directives and legacy aliases. */
+/** Parse top-of-file `//@ option key value` directives and legacy aliases.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function parseFileOptions(sourceText: string, source: string): ExplicitOptions {
   const seen = new Map<keyof OptionSpecs, number>();
   const out: Record<string, unknown> = {};
@@ -227,7 +265,11 @@ export function parseFileOptions(sourceText: string, source: string): ExplicitOp
   return out as ExplicitOptions;
 }
 
-/** Apply defaults, check option compatibility, and freeze the resolved configuration. */
+/** Apply defaults, check option compatibility, and freeze the resolved configuration.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function resolveOptions(explicit: ExplicitOptions, source: string): LscOptions {
   const options = { ...DEFAULT_OPTIONS, ...explicit };
   // Dafny's precompiled standard library uses Unicode-scalar characters.
@@ -237,7 +279,11 @@ export function resolveOptions(explicit: ExplicitOptions, source: string): LscOp
   return Object.freeze(options);
 }
 
-/** Find `fileName` at or above `fromPath`. */
+/** Find `fileName` at or above `fromPath`.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function findUp(fileName: string, fromPath: string, fromIsDirectory = false): string | null {
   let dir = fromIsDirectory ? path.resolve(fromPath) : path.dirname(path.resolve(fromPath));
   while (true) {
@@ -249,7 +295,11 @@ export function findUp(fileName: string, fromPath: string, fromIsDirectory = fal
   }
 }
 
-/** Discover, parse, and validate a config without materializing defaults. */
+/** Discover, parse, and validate a config without materializing defaults.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function loadConfigOptions(
   sourcePath: string,
   configPath?: string,
@@ -273,7 +323,11 @@ export function loadConfigOptions(
   return { explicit: { ...explicit }, configFile };
 }
 
-/** Resolve the directory containing one source file's Dafny companions. */
+/** Resolve the directory containing one source file's Dafny companions.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function resolveDafnyArtifactDir(
   sourcePath: string,
   configFile: string | null,

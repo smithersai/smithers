@@ -18,6 +18,8 @@
  *
  * State is explicit (§6.1): detection that mints binders or consults type
  * declarations takes a `CondCtx`; nothing module-level.
+ *
+ * @since 0.1.0
  */
 
 import type { TExpr, TStmt, Ty } from "./typedir.js";
@@ -25,7 +27,11 @@ import { freshName, freshNameWhere, isUserName } from "./names.js";
 import type { TypeDecls } from "./typedecls.js";
 import { unionDeclOfTy, discriminantOf, hasEmptyStringMember } from "./typedecls.js";
 
-/** Explicit context: declarations, optChain counter, and scope-local binders. */
+/** Explicit context: declarations, optChain counter, and scope-local binders.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface CondCtx {
   decls: TypeDecls;
   oc: { n: number };
@@ -44,6 +50,12 @@ function freshBinder(ctx: CondCtx, hint: string, key?: string): string {
   return binder;
 }
 
+/**
+ * Allocate a fresh binder for an optional-chain value.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function freshOcBinder(ctx: CondCtx): string {
   return freshBinder(ctx, `_oc${ctx.oc.n++}_val`);
 }
@@ -55,7 +67,11 @@ export function freshOcBinder(ctx: CondCtx): string {
  *  source-safe hint during detection; materializers freshen it against the
  *  context's other binders. `truthiness` marks the `if (o)` / `!o` / `o ? :`
  *  forms, where presence alone isn't enough — a falsy inner value (`Some(0)`,
- *  `Some("")`) must still fail the check. */
+ *  `Some("")`) must still fail the check.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface PresentFact {
   scrutinee: TExpr;
   innerTy: Ty;
@@ -74,6 +90,12 @@ function pathParts(e: TExpr): string[] | null {
   return [cur.name, ...fields];
 }
 
+/**
+ * Return a readable binder hint for a recognized access path.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function binderHintFor(e: TExpr): string | null {
   const parts = pathParts(e);
   if (!parts) return null;
@@ -83,12 +105,22 @@ export function binderHintFor(e: TExpr): string | null {
 }
 
 /** The hint is deliberately readable, not a path identity: `a_b` and `a.b`
- *  share it. Key the allocation by the complete path instead. */
+ *  share it. Key the allocation by the complete path instead.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function freshPathBinder(e: TExpr, ctx: CondCtx): string | null {
   const hint = binderHintFor(e);
   return hint === null ? null : freshBinder(ctx, hint, JSON.stringify(["path", ...pathParts(e)!]));
 }
 
+/**
+ * Attach a fresh binder to a detected optional-presence fact.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function bindPresentFact(f: PresentFact, ctx: CondCtx): PresentFact {
   return { ...f, binder: freshPathBinder(f.scrutinee, ctx)! };
 }
@@ -96,7 +128,11 @@ export function bindPresentFact(f: PresentFact, ctx: CondCtx): PresentFact {
 /** Detect optional checks: `e !== undefined`, `e === undefined`, `!e`, or a
  *  bare optional `e` — for a pure-access-path optional-typed `e`. `!e` and
  *  bare `e` are truthiness forms. Following TS, only pure access paths
- *  narrow; complex scrutinees return null. */
+ *  narrow; complex scrutinees return null.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function presentFact(cond: TExpr): PresentFact | null {
   // `!e` where e is optional — a truthiness form: false iff e is absent OR its
   // inner value is itself falsy (so `Some(0)`/`Some("")` count as falsy too).
@@ -131,7 +167,11 @@ export function presentFact(cond: TExpr): PresentFact | null {
 /** Which types have falsy values in JS (`0`, `""`, `false`): the primitives, and a
  *  string-literal union with an `""` member. Everything else (array, record, …) is
  *  always truthy. The single home of that set — transform's `valueTruthyCond`
- *  gates on it too. */
+ *  gates on it too.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export const isFalsyCapableTy = (ty: Ty, decls: TypeDecls): boolean =>
   ["int", "nat", "string", "bool"].includes(ty.kind) || hasEmptyStringMember(decls, ty);
 
@@ -139,8 +179,20 @@ export const isFalsyCapableTy = (ty: Ty, decls: TypeDecls): boolean =>
 // (`if (o)`, `!o`, `o ? :`) over a nullable primitive must still test the bound
 // value. Nullable objects/arrays are always truthy, and `!== undefined` is a pure
 // presence check — neither needs the gate.
+/**
+ * Report whether a truthiness check can reject a present falsy value.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export const canBeFalsy = (f: PresentFact, decls: TypeDecls): boolean =>
   f.truthiness && isFalsyCapableTy(f.innerTy, decls);
+/**
+ * Reference a presence fact's bound value with its inner type.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export const bound = (f: PresentFact): TExpr =>
   ({ kind: "var", name: f.binder, ty: f.innerTy });
 
@@ -153,7 +205,11 @@ export const bound = (f: PresentFact): TExpr =>
  *  Search matching conjuncts in source order. A later check may read a field
  *  whose root an earlier check unwraps, so the left subtree must be searched
  *  before the right operand. Keep the remaining conjuncts in their original
- *  relative order. */
+ *  relative order.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function extractConjunct<C>(cond: TExpr, parse: (e: TExpr) => C | null): { check: C; restCond: TExpr } | null {
   if (cond.kind !== "binop" || cond.op !== "&&") return null;
   const left = parse(cond.left);
@@ -172,7 +228,11 @@ export function extractConjunct<C>(cond: TExpr, parse: (e: TExpr) => C | null): 
 }
 
 /** The first positive presence fact in source order, plus the residual.
- *  It becomes the outermost match, keeping later path checks in its arm. */
+ *  It becomes the outermost match, keeping later path checks in its arm.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function leadingPresent(cond: TExpr): { check: PresentFact; restCond: TExpr } | null {
   return extractConjunct(cond, e => {
     const f = presentFact(e);
@@ -182,7 +242,11 @@ export function leadingPresent(cond: TExpr): { check: PresentFact; restCond: TEx
 
 // ── `||`-chain analysis (De Morgan): None-detectors ─────────
 
-/** Flatten a nested `||` chain into its leaf conditions. */
+/** Flatten a nested `||` chain into its leaf conditions.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function flattenOr(e: TExpr): TExpr[] {
   if (e.kind === "binop" && e.op === "||") return [...flattenOr(e.left), ...flattenOr(e.right)];
   return [e];
@@ -191,9 +255,19 @@ export function flattenOr(e: TExpr): TExpr[] {
 /** A `||` disjunct that `x === None` makes true (so if every disjunct is false,
  *  `x` is Some). `residual` is the guard it still contributes once `x` is Some
  *  (`!v` for a falsy-capable `!x`; `v.chain !== lit` for an optchain compare;
- *  null otherwise). */
+ *  null otherwise).
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type NoneDetector = { scrutinee: TExpr; innerTy: Ty; binder: string; residual: TExpr | null };
 
+/**
+ * Find the absence implication and residual guard of a disjunction branch.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function noneDetector(leaf: TExpr, ctx: CondCtx): NoneDetector | null {
   // `x?.chain !== lit` — `undefined !== lit` is true when x is None.
   if (leaf.kind === "binop" && leaf.op === "!==") {
@@ -223,7 +297,11 @@ export function noneDetector(leaf: TExpr, ctx: CondCtx): NoneDetector | null {
 
 type OptChain = Extract<TExpr, { kind: "optChain" }>;
 
-/** Apply an optional chain's steps (field / index / call) to a base expr. */
+/** Apply an optional chain's steps (field / index / call) to a base expr.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function applyChain(body: TExpr, chain: OptChain["chain"]): TExpr {
   for (const step of chain) {
     if (step.kind === "field") body = { kind: "field", obj: body, field: step.name, ty: step.ty };
@@ -237,7 +315,11 @@ export function applyChain(body: TExpr, chain: OptChain["chain"]): TExpr {
 /** `applyChain` rebuilds a field access without the `isDiscriminant` flag
  *  resolve sets on a direct `x.disc`; restore it when the unwrapped access
  *  is the binder union's discriminant, so the guard feeds discriminant
- *  narrowing. (The single home of a fixup formerly duplicated per rule.) */
+ *  narrowing. (The single home of a fixup formerly duplicated per rule.)
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function restoreDiscriminantFlag(unwrapped: TExpr, decls: TypeDecls): void {
   if (unwrapped.kind === "field" &&
       discriminantOf(decls, unwrapped.obj.ty) === unwrapped.field) {
@@ -247,7 +329,11 @@ export function restoreDiscriminantFlag(unwrapped: TExpr, decls: TypeDecls): voi
 
 // ── In-bounds facts ─────────────────────────────────────────
 
-/** `0 <= idx && idx < arr.length` — the in-bounds guard for an array index. */
+/** `0 <= idx && idx < arr.length` — the in-bounds guard for an array index.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function arrayBoundsCond(arr: TExpr, idx: TExpr): TExpr {
   const len: TExpr = { kind: "field", obj: arr, field: "length", ty: { kind: "int" } };
   const lo: TExpr = { kind: "binop", op: "<=", left: { kind: "num", value: 0, ty: { kind: "int" } }, right: idx, ty: { kind: "bool" } };
@@ -259,7 +345,11 @@ export function arrayBoundsCond(arr: TExpr, idx: TExpr): TExpr {
 
 /** Minimal structural equality on the IR shapes we narrow against: var, field
  *  chain, and index (with pure key). Enough to recognize `m[k]` on both sides
- *  of a `k in m ? m[k] : default` ternary. */
+ *  of a `k in m ? m[k] : default` ternary.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function exprEqual(a: TExpr, b: TExpr): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "var" && b.kind === "var") return a.name === b.name;
@@ -272,7 +362,11 @@ export function exprEqual(a: TExpr, b: TExpr): boolean {
 
 /** Produce a reader-friendly binder hint for `m[k]` when both m and k are
  *  access-path shaped (var / field chain). Falls back to a generic counter
- *  name for computed keys. */
+ *  name for computed keys.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function binderHintForMapAccess(m: TExpr, k: TExpr, ctx: CondCtx): string {
   const mHint = binderHintFor(m);
   const kHint = binderHintFor(k);
@@ -287,12 +381,24 @@ export function binderHintForMapAccess(m: TExpr, k: TExpr, ctx: CondCtx): string
 
 // ── Variant facts (discriminants and synth array-unions) ────
 
+/**
+ * Scrutinee and narrowed variant metadata for a discriminated-union test.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface VariantFact {
   scrutinee: TExpr & { kind: "var" };
   typeName: string;
   variant: string;
 }
 
+/**
+ * Scrutinee and union metadata for an array-or-nonarray test.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface IsArrayFact {
   scrutinee: TExpr;
   typeName: string;
@@ -301,7 +407,11 @@ export interface IsArrayFact {
 
 /** A "narrowable path" is a var or a chain of field accesses rooted at a var
  *  — i.e., pure and structurally addressable, so transforms can substitute
- *  occurrences inside a matched arm without worrying about re-evaluation. */
+ *  occurrences inside a matched arm without worrying about re-evaluation.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function isNarrowablePath(e: TExpr): boolean {
   if (e.kind === "var") return true;
   if (e.kind === "field") return isNarrowablePath(e.obj);
@@ -309,7 +419,11 @@ export function isNarrowablePath(e: TExpr): boolean {
 }
 
 /** Detect `Array.isArray(<path>)` where `<path>` is a narrowable path whose
- *  type is a synthesized array-union (discriminant `"__isArray__"`). */
+ *  type is a synthesized array-union (discriminant `"__isArray__"`).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function isArrayFact(call: TExpr, ctx: CondCtx): (IsArrayFact & { variant: "ArrayBranch" }) | null {
   if (call.kind !== "call") return null;
   if (call.fn.kind !== "field" || call.fn.field !== "isArray") return null;
@@ -326,7 +440,11 @@ export function isArrayFact(call: TExpr, ctx: CondCtx): (IsArrayFact & { variant
  *  union (`U | T[]`) AND its `NonArrayBranch` payload `U` is itself `string`.
  *  The runtime `=== "string"` test matches that branch only when `U` is string —
  *  for any other non-array payload (`number | T[]`, …) it never holds, so we must
- *  NOT narrow. Returns the `NonArrayBranch` variant; the dual of `Array.isArray`. */
+ *  NOT narrow. Returns the `NonArrayBranch` variant; the dual of `Array.isArray`.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function typeofStringFact(e: TExpr, ctx: CondCtx): (IsArrayFact & { variant: "NonArrayBranch" }) | null {
   if (e.kind !== "binop" || e.op !== "===") return null;
   const tof = e.left.kind === "unop" && e.left.op === "typeof" ? e.left.expr
@@ -343,13 +461,21 @@ export function typeofStringFact(e: TExpr, ctx: CondCtx): (IsArrayFact & { varia
 
 /** Leading `Array.isArray(path)` fact of an `&&` chain (positive form only — a
  *  negated `!Array.isArray(...)` would narrow to the wrong variant for then-body
- *  consumers, so those are left to the untouched-conditional path). */
+ *  consumers, so those are left to the untouched-conditional path).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function leadingIsArray(cond: TExpr, ctx: CondCtx) {
   return extractConjunct(cond, e => isArrayFact(e, ctx));
 }
 
 /** Detect `x.kind === "variant"`, `'key' in x`, or `Array.isArray(x)` (synth
- *  array-union) as a positive discriminant check on a bare-var scrutinee. */
+ *  array-union) as a positive discriminant check on a bare-var scrutinee.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function variantFact(cond: TExpr, ctx: CondCtx): VariantFact | null {
   // Pattern: x.discriminant === "variant"
   if (cond.kind === "binop" && cond.op === "===" && cond.right.kind === "str" &&
@@ -386,7 +512,11 @@ export function variantFact(cond: TExpr, ctx: CondCtx): VariantFact | null {
 }
 
 /** Detect `x.kind !== "variant"` (negative discriminant check) or
- *  `!Array.isArray(x)` (synth array-union, narrows to NonArrayBranch). */
+ *  `!Array.isArray(x)` (synth array-union, narrows to NonArrayBranch).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function negVariantFact(cond: TExpr, ctx: CondCtx): VariantFact | null {
   if (cond.kind === "binop" && cond.op === "!==" && cond.right.kind === "str" &&
       cond.left.kind === "field" && cond.left.isDiscriminant &&
@@ -408,7 +538,11 @@ export function negVariantFact(cond: TExpr, ctx: CondCtx): VariantFact | null {
 
 /** Reify a presence fact in statement position: the falsy gate (for
  *  truthiness checks over falsy-capable inners) tests the bound value inside
- *  the Some arm, routing falsy inners to `none`. */
+ *  the Some arm, routing falsy inners to `none`.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function presentMatchStmts(f: PresentFact, some: TStmt[], none: TStmt[], ctx: CondCtx): TStmt {
   f = bindPresentFact(f, ctx);
   return {
@@ -420,7 +554,11 @@ export function presentMatchStmts(f: PresentFact, some: TStmt[], none: TStmt[], 
   };
 }
 
-/** Reify a presence fact in expression position; same falsy gate. */
+/** Reify a presence fact in expression position; same falsy gate.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function presentMatchExpr(f: PresentFact, some: TExpr, none: TExpr, ty: Ty, ctx: CondCtx): TExpr {
   f = bindPresentFact(f, ctx);
   return {

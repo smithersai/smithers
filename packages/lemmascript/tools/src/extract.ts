@@ -3,6 +3,8 @@
  *
  * Produces structured AST nodes, not strings.
  * The only strings are //@ annotation expressions (parsed later by specparser).
+ *
+ * @since 0.1.0
  */
 
 import { desugarMessageUnions } from "./message-union.js";
@@ -1004,6 +1006,12 @@ function extractExpr(node: Expression): RawExpr {
 
 const PREFIX = "//@ ";
 const KEYWORDS = ["requires", "ensures", "contract", "invariant", "decreases", "done_with", "type", "reveal"] as const;
+/**
+ * Recognized source annotation keywords.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type AnnotKind = (typeof KEYWORDS)[number];
 interface Annotation { kind: AnnotKind; expr: string }
 
@@ -1821,7 +1829,11 @@ function renameRawStmts(stmts: RawStmt[], from: string, to: string): RawStmt[] {
 // ── Statement extraction ─────────────────────────────────────
 
 /** An `//@ assert` body: `P`, or `forall(i, A ==> exists(k, B)) by exists(k, C)`, split at the first ` by exists(`
- *  outside parentheses, brackets and string literals, so a name `by` elsewhere stays a name. */
+ *  outside parentheses, brackets and string literals, so a name `by` elsewhere stays a name.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function rawAssert(text: string, line: number): import("./rawir.js").RawAssert {
   let depth = 0;
   let quote: string | null = null;
@@ -2648,6 +2660,12 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
 
 // ── Module extraction ────────────────────────────────────────
 
+/**
+ * Extract source declarations and annotations into raw IR.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFAULT_OPTIONS,
   validateDependency: (source: SourceFile) => void = () => {}): RawModule {
   _extractOptions = options;

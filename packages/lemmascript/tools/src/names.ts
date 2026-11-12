@@ -24,36 +24,60 @@
  * counters in invariants), so a spec mention is a reference, not a collision
  * — when a source collision does force a prime, spec references are expected
  * to follow it.
+ *
+ * @since 0.1.0
  */
 
 let _userNames = new Set<string>();
 
 /** Seeded once per module by extract with every Identifier token in the
- *  source — params, locals, fields, callees alike. */
+ *  source — params, locals, fields, callees alike.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function setUserNames(names: Set<string>): void {
   _userNames = names;
 }
 
+/**
+ * Check whether an identifier belongs to the current module's user names.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function isUserName(name: string): boolean {
   return _userNames.has(name);
 }
 
 /** The raw user identifiers, for a backend that needs to allocate its own
- *  emitted names against them (e.g. Dafny escaping — see dafny-emit). */
+ *  emitted names against them (e.g. Dafny escaping — see dafny-emit).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function userNames(): readonly string[] {
   return [..._userNames];
 }
 
 /** A toolchain-internal name: `base` verbatim, primed on collision against
  *  user-written names anywhere in the module. The common form — deterministic
- *  per module. */
+ *  per module.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function freshName(base: string): string {
   return freshNameWhere(base, isUserName);
 }
 
 /** The priming rule, against a caller-chosen collision predicate — for
  *  callers that know the exact scope (e.g. a comprehension binder checking
- *  only the expressions it wraps). The one place the rule lives. */
+ *  only the expressions it wraps). The one place the rule lives.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function freshNameWhere(base: string, taken: (name: string) => boolean): string {
   let name = base;
   while (taken(name)) name += "'";

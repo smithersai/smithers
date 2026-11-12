@@ -8,6 +8,8 @@
  * Output: `foo.ts.json` next to `foo.ts`, with shape:
  *   { method: { sig, requires, ensures, decreases }, ... }
  * Class methods key as `ClassName.method`.
+ *
+ * @since 0.1.0
  */
 
 import { writeFileSync } from "fs";
@@ -37,6 +39,12 @@ function fnToInfo(fn: RawFunction): FnInfo {
   };
 }
 
+/**
+ * Write the source-contract summary for functions and methods to `outPath`.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function runInfo(raw: RawModule, outPath: string): void {
   const out: Record<string, FnInfo> = {};
   for (const fn of raw.functions) {
@@ -58,6 +66,12 @@ export function runInfo(raw: RawModule, outPath: string): void {
 // needs to derive generators and classify functions without importing the
 // pipeline. Printed to stdout (like `lsc extract`), versioned by `schema`.
 
+/**
+ * Dafny emitted-name metadata included in typed information output.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TypedInfoDafny {
   /** Source name → emitted Dafny name, from an in-memory Dafny emission. */
   emittedNames?: Record<string, string>;
@@ -109,6 +123,12 @@ function typedFn(fn: TFunction, rawFn: RawFunction | undefined) {
   };
 }
 
+/**
+ * Print a typed declaration summary with optional backend emission metadata to stdout.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function runTypedInfo(
   raw: RawModule,
   typed: TModule,

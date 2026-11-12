@@ -11,6 +11,8 @@
  * whether the code, the spec or only the proof changed. `runsReport` gathers
  * all of this as data (what `--json` prints) and `formatText` summarises it;
  * `runRuns` is the command `lsc.ts` calls.
+ *
+ * @since 0.1.0
  */
 
 import { execFileSync } from "child_process";
@@ -44,12 +46,19 @@ const ANNOTATION_ROLES: Record<AnnotKind, "spec" | "proof"> = {
  */
 const SNAPSHOT_HASH = /^[0-9a-f]{12}$/;
 
-/** What one run says about one member. */
+/** What one run says about one member.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Verdict = "fail" | "pass" | "unchecked" | "gone";
 
 /**
  * What a fix changed between the first failing run and the passing run: the
  * TypeScript source, only the Dafny proof, or nothing at all.
+ *
+ * @since 0.1.0
+ * @category models
  */
 export type CatchKind = "source-fix" | "proof" | "flaky";
 
@@ -57,10 +66,17 @@ export type CatchKind = "source-fix" | "proof" | "flaky";
  * A guess at what a source fix changed, from its `.ts` diff: the code (likely
  * an implementation bug), the spec (likely a spec bug), both, or only proof
  * scaffolding and comments (likely not a bug).
+ *
+ * @since 0.1.0
+ * @category models
  */
 export type ChangeHint = "code" | "spec" | "mixed" | "proof";
 
-/** A member's failure streak, before members are grouped by TypeScript function. */
+/** A member's failure streak, before members are grouped by TypeScript function.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface MemberResult {
   file: string;
   member: string;
@@ -73,7 +89,11 @@ export interface MemberResult {
   droppedRun?: VerifyRecord;
 }
 
-/** Member results merged per TypeScript function; `failedRun` is the earliest member's. */
+/** Member results merged per TypeScript function; `failedRun` is the earliest member's.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface FunctionResult {
   file: string;
   function: string;
@@ -84,7 +104,11 @@ export interface FunctionResult {
   droppedRun?: VerifyRecord;
 }
 
-/** A failure in one TypeScript function that a later run fixed. Runs are named by id; times are UTC. */
+/** A failure in one TypeScript function that a later run fixed. Runs are named by id; times are UTC.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Catch {
   /** `<first failing run id>:<function>`, stable across reports of the same log. */
   id: string;
@@ -100,7 +124,11 @@ export interface Catch {
   evidence?: { hint: ChangeHint | null; diff: string | null };
 }
 
-/** A failure not fixed: still failing (open), or its function went away (dropped, with `droppedRun`). */
+/** A failure not fixed: still failing (open), or its function went away (dropped, with `droppedRun`).
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Unfixed {
   file: string;
   function: string;
@@ -110,7 +138,11 @@ export interface Unfixed {
   droppedRun?: string;
 }
 
-/** Everything `lsc runs` reports about one log; `lsc runs --json` prints it as is. */
+/** Everything `lsc runs` reports about one log; `lsc runs --json` prints it as is.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RunsReport {
   v: 1;
   /** Absolute path of runs.jsonl. */
@@ -135,7 +167,11 @@ function verdict(run: VerifyRecord, member: string): Verdict {
   return run.partial ? "unchecked" : "gone";
 }
 
-/** Every member's failure streaks, file by file, in log order. */
+/** Every member's failure streaks, file by file, in log order.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function memberResults(records: VerifyRecord[]): MemberResult[] {
   const byFile = new Map<string, VerifyRecord[]>();
   for (const r of records) {
@@ -171,6 +207,9 @@ export function memberResults(records: VerifyRecord[]): MemberResult[] {
  * The TypeScript function a Dafny member verifies: `foo_ensures` belongs to
  * `foo`, and any other member is its own function. Null for lsc's generated
  * helpers, which are not the user's code.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function functionOf(member: string): string | null {
   if (DAFNY_HELPER_NAMES.has(member)) return null;
@@ -211,6 +250,9 @@ function mergeSpan(fn: string, span: MemberResult[], last: MemberResult): Functi
  * starts in the run that ends another) are one result: it starts at the earliest
  * failure and ends the way the last of them ended (still open, fixed or dropped).
  * Generated helpers are left out.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function groupByFunction(results: MemberResult[]): FunctionResult[] {
   const byFunction = new Map<string, { fn: string; results: MemberResult[] }>();
@@ -243,7 +285,11 @@ export function groupByFunction(results: MemberResult[]): FunctionResult[] {
   return merged;
 }
 
-/** Compare the first failing run with the passing run: source first, then proof. */
+/** Compare the first failing run with the passing run: source first, then proof.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function classify(failed: VerifyRecord, fixed: VerifyRecord): CatchKind {
   if (failed.tsHash !== fixed.tsHash) return "source-fix";
   if (failed.dfyHash !== fixed.dfyHash) return "proof";
@@ -258,7 +304,11 @@ function lineChange(text: string): "code" | "spec" | "proof" | null {
   return "code";
 }
 
-/** Hint at what a source fix changed, from the `+`/`-` lines of its unified diff. */
+/** Hint at what a source fix changed, from the `+`/`-` lines of its unified diff.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function changeHint(diff: string): ChangeHint {
   const changed = new Set<string>();
   // Only file headers are metadata. Inside a hunk, even a line beginning
@@ -304,6 +354,9 @@ function columns(rows: string[][]): string[] {
  * catch, open and dropped failure. Times are shown in `timeZone` (the local
  * zone by default), with dates only when the log spans more than one day;
  * open and dropped failures always show the date they first failed.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function formatText(report: RunsReport, timeZone?: string): string {
   if (report.runs === 0 || report.from === null || report.to === null) return `No runs recorded yet in ${report.log}.`;
@@ -336,6 +389,9 @@ export function formatText(report: RunsReport, timeZone?: string): string {
  * The unified diff between two `.ts` snapshots in `<logDir>/.lemmascript/blobs/`,
  * or null when either is missing, a hash isn't a snapshot hash, or git can't
  * compare them.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function snapshotDiff(logDir: string, fromHash: string | null, toHash: string | null): string | null {
   if (fromHash === null || toHash === null || !SNAPSHOT_HASH.test(fromHash) || !SNAPSHOT_HASH.test(toHash)) return null;
@@ -384,6 +440,9 @@ function toUnfixed(r: FunctionResult): Unfixed {
 /**
  * Read `<logDir>/.lemmascript/runs.jsonl` and report its catches (ordered by
  * fix time) and its open and dropped failures (ordered by failure time).
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function runsReport(logDir: string): RunsReport {
   const records = readRecords(logDir);
@@ -428,6 +487,9 @@ function gitAvailable(): boolean {
  * `lsc runs [--json] [--config=<path>]`: report the log that `lsc check` and
  * `lsc regen` record to from the current directory. Recording settings don't
  * apply; a log that exists is always read.
+ *
+ * @since 0.1.0
+ * @category utilities
  */
 export function runRuns(args: string[]): void {
   let json = false;

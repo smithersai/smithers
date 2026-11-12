@@ -1,12 +1,20 @@
 /**
  * Spec expression parser.
  * Parses //@ annotation expressions into RawExpr AST nodes.
+ *
+ * @since 0.1.0
  */
 
 import type { RawExpr } from "./rawir.js";
 import { normalizeBigIntLiteral } from "./rawir.js";
 import { regexTestName } from "./regex.js";
 
+/**
+ * Specification expressions before type resolution.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Expr = RawExpr;
 
 // ── Tokenizer ────────────────────────────────────────────────
@@ -387,6 +395,12 @@ class Parser {
   }
 }
 
+/**
+ * Parse specification text into a raw expression.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function parseExpr(input: string): Expr {
   return new Parser(tokenize(input)).parse();
 }

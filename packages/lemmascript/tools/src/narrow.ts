@@ -32,6 +32,8 @@
  *
  * State is explicit (§6.1): a `CondCtx` (type declarations + optChain
  * binder counter) threads through the walk; no module-level state.
+ *
+ * @since 0.1.0
  */
 
 import type { TModule, TFunction, TStmt, TExpr } from "./typedir.js";
@@ -844,6 +846,12 @@ function narrowFunction(fn: TFunction, ctx: CondCtx): TFunction {
   };
 }
 
+/**
+ * Turn typed control conditions into structural narrowing.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function narrowModule(mod: TModule): TModule {
   const ctx: CondCtx = { decls: mod.typeDecls, oc: { n: 0 } };
   // An imported function's contracts are emitted too (as an axiom), so they need the same rewrites as local ones:

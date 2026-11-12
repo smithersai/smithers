@@ -3,12 +3,20 @@
  *
  * The transform phase produces these types.
  * The emit phase pretty-prints them to backend syntax (Lean or Dafny).
+ *
+ * @since 0.1.0
  */
 
 import type { Ty } from "./typedir.js";
 
 // ── Expressions ──────────────────────────────────────────────
 
+/**
+ * Backend-neutral expressions produced by transformation and consumed by peephole and emission.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Expr =
   | { kind: "var"; name: string }
   | { kind: "num"; value: number }
@@ -44,37 +52,109 @@ export type Expr =
 /** A match-arm pattern. Backend-neutral: `.some x`, `.syn seq`, `.none` are held
  *  structurally and rendered to each backend's constructor syntax by its emitter
  *  (`Some(x)` / `syn(seq)` in Dafny, `.some x` / `.syn seq` in Lean). String
- *  literals are stored decoded and quoted/escaped by the backend emitter. */
+ *  literals are stored decoded and quoted/escaped by the backend emitter.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type MatchPattern =
   | { kind: "wild" }                                    // "_"
   | { kind: "ctor"; ctor: string; binders: string[] }   // ".some x" ⇒ {ctor:"some", binders:["x"]}; ".none" ⇒ binders:[]
   | { kind: "literal"; value: string };                 // `"small"` ⇒ {value:"small"}
 
+/**
+ * Build a wildcard match pattern.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
 export const pWild = (): MatchPattern => ({ kind: "wild" });
+/**
+ * Build a constructor match pattern with named binders.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
 export const pCtor = (c: string, ...binders: string[]): MatchPattern => ({ kind: "ctor", ctor: c, binders });
+/**
+ * Build a literal match pattern.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
 export const pLiteral = (value: string): MatchPattern => ({ kind: "literal", value });
 
 // Named payload records for the shapes repeated across IR nodes. Purely
 // structural — identical to the object-literal types they replace, so
 // construction sites are unaffected.
+/**
+ * Named function parameter and its resolved type.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Param { name: string; type: Ty }
+/**
+ * Record field name and value expression.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface RecordField { name: string; value: Expr }
+/**
+ * Map key and value expressions.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface MapEntry { key: Expr; value: Expr }
+/**
+ * Constructor name and ordered field metadata.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface CtorInfo { name: string; fields: Param[] }
+/**
+ * String-valued option included in backend output.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface EmitOption { key: string; value: string }
 
-/** Binder identifiers a pattern introduces (`[]` for wildcard / nullary ctor). */
+/** Binder identifiers a pattern introduces (`[]` for wildcard / nullary ctor).
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function patternBinders(p: MatchPattern): string[] {
   return p.kind === "ctor" ? p.binders : [];
 }
+/**
+ * Return a pattern's constructor name, or null for other patterns.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function patternCtor(p: MatchPattern): string | null {
   return p.kind === "ctor" ? p.ctor : null;
 }
-/** Does the pattern bind `name`? */
+/** Does the pattern bind `name`?
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function patternBinds(p: MatchPattern, name: string): boolean {
   return patternBinders(p).includes(name);
 }
 
+/**
+ * Expression match pattern and result.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface MatchArm {
   pattern: MatchPattern;
   body: Expr;
@@ -82,6 +162,12 @@ export interface MatchArm {
 
 // ── Statements ──────────────────────────────────────────────
 
+/**
+ * Statement variants consumed by the backend emitters.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Stmt =
   | { kind: "let"; name: string; type: Ty; mutable: boolean; value: Expr }
   | { kind: "assign"; target: string; value: Expr }
@@ -100,6 +186,12 @@ export type Stmt =
   /** `witness`: the goal with its inner exists body replaced by the pick predicate (`forall(i, A ==> exists(k, C))`). */
   | { kind: "assert"; expr: Expr; assumed?: boolean; witness?: Expr }
 
+/**
+ * Statement match pattern and body.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface StmtMatchArm {
   pattern: MatchPattern;
   body: Stmt[];
@@ -107,6 +199,12 @@ export interface StmtMatchArm {
 
 // ── Top-level declarations ───────────────────────────────────
 
+/**
+ * Inductive type declaration and its constructors.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Inductive {
   kind: "inductive";
   name: string;
@@ -115,6 +213,12 @@ export interface Inductive {
   deriving: string[];
 }
 
+/**
+ * Structure declaration and its fields.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Structure {
   kind: "structure";
   name: string;
@@ -123,6 +227,12 @@ export interface Structure {
   deriving: string[];
 }
 
+/**
+ * Pure function signature, specification, and body.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface FnDef {
   kind: "def";
   name: string;
@@ -137,6 +247,12 @@ export interface FnDef {
   reveals?: string[]; // //@ reveal: opaque functions revealed in the companion lemma
 }
 
+/**
+ * Function with an executable method implementation.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface FnDefByMethod {
   kind: "def-by-method";
   name: string;
@@ -150,6 +266,12 @@ export interface FnDefByMethod {
   reveals?: string[];
 }
 
+/**
+ * Method signature, contract, and statement body.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface FnMethod {
   kind: "method";
   name: string;
@@ -163,12 +285,24 @@ export interface FnMethod {
   reveals?: string[];  // //@ reveal: opaque functions revealed at the start of the body
 }
 
+/**
+ * Named group of backend declarations.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Namespace {
   kind: "namespace";
   name: string;
   decls: Decl[];
 }
 
+/**
+ * Class name, fields, and methods.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface ClassDecl {
   kind: "class";
   name: string;
@@ -176,6 +310,12 @@ export interface ClassDecl {
   methods: FnMethod[];
 }
 
+/**
+ * Typed constant declaration and its value.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface ConstDecl {
   kind: "const";
   name: string;
@@ -183,6 +323,12 @@ export interface ConstDecl {
   value: Expr;
 }
 
+/**
+ * Type alias declaration and its target type.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface TypeAlias {
   kind: "type-alias";
   name: string;
@@ -193,7 +339,11 @@ export interface TypeAlias {
  *  can't model as a tagged union (no runtime test maps to a tag). It has no
  *  constructor and no tag predicate, so a value of it can only be passed
  *  through — any attempt to build or type-test it fails to lower. That is the
- *  only sound use of an un-discriminable union, so the opacity is its own guard. */
+ *  only sound use of an un-discriminable union, so the opacity is its own guard.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface OpaqueType {
   kind: "opaque-type";
   name: string;
@@ -202,7 +352,11 @@ export interface OpaqueType {
 /** Externally-declared operation. Pure externs are uninterpreted Dafny
  *  functions; impure externs are body-less methods whose result is an
  *  independent arbitrary value at each call. Any source `requires`/`ensures`
- *  travel with the declaration. */
+ *  travel with the declaration.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface ExternDecl {
   kind: "extern";
   name: string;                                 // flat name (dots → underscores)
@@ -214,8 +368,20 @@ export interface ExternDecl {
   impure: boolean;
 }
 
+/**
+ * Declaration variants consumed by the backend emitters.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export type Decl = Inductive | Structure | FnDef | FnDefByMethod | FnMethod | Namespace | ClassDecl | ConstDecl | TypeAlias | OpaqueType | ExternDecl;
 
+/**
+ * Backend module imports, options, and ordered declarations.
+ *
+ * @since 0.1.0
+ * @category models
+ */
 export interface Module {
   comment: string;
   imports: string[];
@@ -230,7 +396,11 @@ export interface Module {
  *  literal into arithmetic stays exact: JS bitwise operators truncate to 32 bits
  *  and `Math.pow(2, n)` is a double, both of which lie past 2^53. A `num`
  *  outside the safe-integer range has already lost precision, so it is not a
- *  usable answer — hence null. */
+ *  usable answer — hence null.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function exactIntegerLiteral(e: Expr): bigint | null {
   if (e.kind === "bigint") return BigInt(e.value);
   if (e.kind === "num") return Number.isSafeInteger(e.value) ? BigInt(e.value) : null;
@@ -254,6 +424,12 @@ export function exactIntegerLiteral(e: Expr): bigint | null {
 
 type ExprPred = (e: Expr) => boolean;
 
+/**
+ * Test whether any node in an expression tree satisfies a predicate.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function anyExpr(e: Expr, pred: ExprPred): boolean {
   if (pred(e)) return true;
   switch (e.kind) {
@@ -280,6 +456,12 @@ export function anyExpr(e: Expr, pred: ExprPred): boolean {
   }
 }
 
+/**
+ * Test a predicate against the expressions in a statement.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function anyExprInStmt(s: Stmt, pred: ExprPred): boolean {
   switch (s.kind) {
     case "let": case "assign": case "bind": case "let-bind": case "return":
@@ -295,6 +477,12 @@ export function anyExprInStmt(s: Stmt, pred: ExprPred): boolean {
   }
 }
 
+/**
+ * Test a predicate against expressions in a statement list.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function anyExprInStmts(stmts: Stmt[], pred: ExprPred): boolean {
   return stmts.some(s => anyExprInStmt(s, pred));
 }
@@ -309,10 +497,22 @@ const _refsName = (name: string): ExprPred =>
        (e.kind === "app" && e.fn === name) ||
        (e.kind === "constructor" && e.name === name);
 
+/**
+ * Check whether an expression mentions the requested identifier.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function usesName(e: Expr, name: string): boolean {
   return anyExpr(e, _refsName(name));
 }
 
+/**
+ * Check whether a statement list mentions the requested identifier.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function usesNameInStmts(stmts: Stmt[], name: string): boolean {
   return anyExprInStmts(stmts, _refsName(name));
 }
@@ -321,7 +521,11 @@ export function usesNameInStmts(stmts: Stmt[], name: string): boolean {
  *  `ghostLet` names, `assign`/`bind`/`ghostAssign` targets, `for-in` indices,
  *  and `match`-arm pattern binders — recursing through nested blocks. Distinct
  *  from `usesNameInStmts` (expression references only): an unread or assign-only
- *  local still duplicate-declares against a method's out-parameter in Dafny. */
+ *  local still duplicate-declares against a method's out-parameter in Dafny.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function bindsNameInStmts(stmts: Stmt[], name: string): boolean {
   return stmts.some(s => {
     switch (s.kind) {
@@ -338,7 +542,11 @@ export function bindsNameInStmts(stmts: Stmt[], name: string): boolean {
 
 /** Every occurrence of `name` a method's out-parameter binder must dodge —
  *  referenced in a spec (requires/ensures) or body, *or* bound/targeted anywhere
- *  in the body (an unread local still duplicate-declares). Both emitters share it. */
+ *  in the body (an unread local still duplicate-declares). Both emitters share it.
+ *
+ * @since 0.1.0
+ * @category utilities
+ */
 export function usesNameInDecl(requires: Expr[], ensures: Expr[], body: Stmt[], name: string): boolean {
   return requires.some(e => usesName(e, name)) || ensures.some(e => usesName(e, name))
     || usesNameInStmts(body, name) || bindsNameInStmts(body, name);
