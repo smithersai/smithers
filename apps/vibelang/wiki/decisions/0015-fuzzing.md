@@ -1551,3 +1551,9 @@ of 5 ms (refused `lease-duration`), runs a command, repeats it (answered from it
 again), changes the command under the same operation (`receipt-conflict`), leaves a receipt pending with a failed exec
 (its retry is `receipt-conflict`) and runs a command after the lease's end is moved to the past (`lease-expired`).
 Mutants caught: a receipt that ignores its command; a lease that ends a second late; a 1 ms lease floor.
+
+`worker/ActionDirectory.vibe` 57 and 88: `api-objects/world`'s walk ends by listing the first flow's runs (by then a0,
+a2 and a3) and having a visitor cancel a2. Every run list must be newest first, and a visitor's cancel may succeed only
+for a Tour run, the one flow a viewer may run (its least role is `viewer`; the walk's visitor pass starts one). Mutant
+caught: the list oldest first. Equivalent: removing the directory's cancel role check, since the action object
+refuses the same cancel.

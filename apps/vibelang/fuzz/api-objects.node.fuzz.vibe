@@ -62,6 +62,8 @@ const WALK: ReadonlyArray<Step> = [
   ...KINDS.flatMap((kind) => (["unbound", "faulty"] as const).flatMap((mode) => [
     step("fault", { kind, mode }), ...REACHES[kind].map((op) => step(op, { pick: 2 })), step("fault", { kind, mode: "ok" }),
   ])),
+  // The first flow's runs by now (a0, a2, a3), listed newest first; a visitor cancelling one is refused.
+  step("runs"), step("cancel", { pick: 2, trusted: undefined, signed: false }),
 ]
 
 /** The object class the health route names for each namespace. */
@@ -254,6 +256,17 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
         if (healthy() && step.op === "history-write" && !input.signIn && status !== 403) throw new Finding({ report: `history-write: ${status} without sign-in` })
         // 503 is a product answer only for an unreachable object, or an account route while sign-in is unconfigured.
         if (status === 503 && healthy() && !(accountRoute(route.path.split("?")[0]!) && !input.signIn)) throw new Finding({ report: `${step.op}: 503 with every object reachable` })
+        // A run list is newest first.
+        if (step.op === "runs" && status === 200 && healthy()) {
+          const runs = (try promise(() => HttpServerResponse.toWeb(response).json())) as ReadonlyArray<{ readonly started: number }>
+          if (runs.some((run, at) => at > 0 && run.started > runs[at - 1]!.started)) throw new Finding({ report: "runs: not newest first" })
+        }
+        // A visitor cancels only a tour, the one flow a viewer may run.
+        if (step.op === "cancel" && step.trusted === undefined && !step.signed && status < 300 && healthy()) {
+          const shown = try ask({ ...step, op: "run" }, routeOf({ ...step, op: "run" }))
+          const run = shown === undefined || shown.status !== 200 ? undefined : (try promise(() => HttpServerResponse.toWeb(shown).json())) as { readonly flow?: string }
+          if (run?.flow !== Tour._tag) throw new Finding({ report: `cancel: ${status} for a visitor on ${run?.flow ?? "no run"}` })
+        }
         if (step.op === "post" && status === 200 && healthy()) {
           const snapshot = (try method("conversation", `room${step.room % 3}`, "read", 0).pipe(Effect.provideService(RuntimeContext, runtime), Effect.scoped)) as { readonly entries: ReadonlyArray<{ readonly clientId?: string }> }
           if (!snapshot.entries.some((entry) => entry.clientId === `c${step.pick}`)) throw new Finding({ report: "post: accepted but not in the conversation" })
