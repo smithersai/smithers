@@ -1248,3 +1248,12 @@ distinct `agent/` operation id, the repeated command included. Mutants caught: t
 the closed command refused `unavailable`; the call's ordinal left out of its operation id (caught only once the cell
 repeated a command). Alone it reaches all of `SandboxTools.vibe`. A tool answers its value, or `{ ok: false, error }`
 when refused (`QuickJSSandbox.ts`), not a thrown error.
+
+`worker/Issues.vibe` missed seven lines, each a refusal the drawn ops reached by chance or never. The `steered-host`
+target's `shapes` scenario now asks, in order: a list holding a malformed issue (`protocol`); a selected issue the list
+does not show yet (the fake's `issueVisibleAt`), read by itself and shown; that issue's own read refused 403 (the fake's
+new `issueStatus`: `forbidden`, not a list without it); saved gates that are not the protocol, and saved gates at the
+last revision (both `protocol`, then restored); an injected host answering revision -1 (`protocol`).
+`issues/http-surface` posts every body kind before its drawn request, so a body that is not JSON and an oversized one
+reach the server each execution. Mutants caught: the unlisted issue not added; its refused read ignored; the saved
+revision's room unchecked; GitHub's revision range unchecked. The seven lines are reached from `issues` alone.

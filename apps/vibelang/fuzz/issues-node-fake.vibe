@@ -66,6 +66,8 @@ export interface Fake {
   reviews?: Record<number, Array<unknown>>
   tick?: number
   issueVisibleAt?: Record<number, number>
+  /** An issue's own read answers this status instead of the issue. */
+  issueStatus?: Record<number, number>
   eventVisibleAt?: Record<string, number>
   mergeShas?: Record<number, string>
   mergeability?: Record<number, Array<{ at: number; state: string }>>
@@ -283,6 +285,8 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       })
     }
     if (issueOne && request.method === "GET") {
+      const refused = fake.issueStatus?.[Number(issueOne[3])]
+      if (refused !== undefined) return try jsonResponse(request, refused, { message: "Refused" })
       const issue = fake.issues.find((candidate) => candidate.number === Number(issueOne[3]))
       const shown = issue !== undefined && fake.hideVip ? { ...issue, body: String(issue.body ?? "").replace(/<!-- vibelang:vip [^>]*-->/g, "") } : issue
       return try (shown === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, sortedLabels(shown)))

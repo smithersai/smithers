@@ -216,10 +216,11 @@ it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary"
   Effect.andThen(specificationWitnesses),
 ))
 
+const BODIES = ["empty", "garbage", "valid", "bad-key", "oversized", "recovery"] as const
 const HttpOp = Schema.Struct({
   method: Schema.Literals(["GET", "POST", "PUT", "DELETE"]),
   path: Schema.Literals(["/api/issues", "/api/issues/more", "/other"]),
-  body: Schema.Literals(["empty", "garbage", "valid", "bad-key", "oversized", "recovery"] as const),
+  body: Schema.Literals(BODIES),
   role: Role,
   signedOut: Schema.Boolean,
   key: Int,
@@ -227,7 +228,12 @@ const HttpOp = Schema.Struct({
 
 /** The issues HTTP boundary answers every shape with a typed status; failures name their reason. */
 const surface = reach()
+/** Every body posted to the tracker, then the drawn request. */
 const httpSurface = (input: typeof HttpOp.Type) => effect {
+  for (const body of BODIES) if (!(try scoped(httpOne({ ...input, method: "POST", path: "/api/issues", body })))) return false
+  return try httpOne(input)
+}
+const httpOne = (input: typeof HttpOp.Type) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const fake = seed()
@@ -492,6 +498,30 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
       fake.endlessReviews = false
       fake.endlessIssues = true
       try expect("a connected read of endless issues", "partial", { op: "read" })
+      fake.endlessIssues = false
+      fake.malformedIssues = true
+      try expect("a list with a malformed issue", "protocol", { op: "read" })
+      fake.malformedIssues = false
+      // GitHub's list trails a write: the selected issue, not listed yet, is read by itself and shown.
+      fake.tick = 0
+      fake.issueVisibleAt = { ...fake.issueVisibleAt, 3: 1 }
+      const trailing = try expect("a selected issue the list does not show yet", "ok", { op: "read", number: 3 })
+      if (trailing._tag === "Success" && !trailing.success.items.some((item) => item.number === 3)) throw new Finding({ report: "a selected issue missing from the list was not shown" })
+      // Its own read refused is the answer, not a list without it.
+      fake.issueStatus = { 3: 403 }
+      try expect("a selected issue whose own read is refused", "forbidden", { op: "read", number: 3 })
+      delete fake.issueStatus
+      delete fake.tick
+      // The project object's saved gates and GitHub's revision are checked before they are used.
+      const gates = try promise(() => storage.get("gates/state"))
+      try promise(() => storage.put("gates/state", { seq: "x" }))
+      try expect("saved gates that are not the protocol", "protocol", { op: "read" })
+      try promise(() => storage.put("gates/state", { seq: 9007199254740991, items: [] }))
+      try expect("saved gates with no revision left", "protocol", { op: "read" })
+      if (gates === undefined) try promise(() => storage.delete("gates/state"))
+      else try promise(() => storage.put("gates/state", gates))
+      const outOfRange: IssueHost.Shape = { perform: () => succeed({ seq: -1, items: [] } as never) }
+      try expect("a host answering a revision out of range", "protocol", { op: "read" }, [maintainer], outOfRange)
       break
     }
     case "served": {
