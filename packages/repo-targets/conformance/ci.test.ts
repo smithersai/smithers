@@ -232,17 +232,22 @@ describe("ci conformance", () => {
     // addition (`minimumReleaseAgeExclude`, for one) look like a failure here,
     // which is what pressured an earlier change into dropping the roster from
     // the assertion altogether. Flipping any entry to `true` must fail a gate.
+    // `@mongodb-js/zstd` and `node-liblzma` (722a7fb83f94) are the native
+    // builds just-bash's dependencies declare; platform-browser takes just-bash
+    // as a development dependency and runs it without them.
     const allowBuilds = workspace.match(/^allowBuilds:\n(?:  .+\n)+/m)?.[0]
     assert.equal(
       allowBuilds,
       [
         "allowBuilds:",
         "  \"@journeyapps/wa-sqlite\": false",
+        "  \"@mongodb-js/zstd\": false",
         "  core-js: false",
         "  dprint: false",
         "  es5-ext: false",
         "  esbuild: false",
         "  msgpackr-extract: false",
+        "  node-liblzma: false",
         "  playwright: false",
         "  sharp: false",
         "  unrs-resolver: false",
