@@ -4,7 +4,7 @@ import { it } from "@effect/vitest"
 import { RuntimeContext } from "alchemy"
 import { HttpServerRequest } from "effect/http"
 import type { SandboxSnapshot } from "../src/core/Factory.vibe"
-import { mayStart } from "../src/core/sandboxPolicy.vibe"
+import { mayStart, SandboxPolicy, signedOut } from "../src/core/sandboxPolicy.vibe"
 import { machineObject, type MachineBox, type ObjectState } from "../worker/SandboxMachine.vibe"
 import { accountObject, gatewayOf, gatewayWithIdentity, identityFromPolicy, noIdentity, SandboxGateway, SandboxIdentity } from "../worker/SandboxAccounts.vibe"
 import { signedOutGateway } from "../worker/SandboxHttp.vibe"
@@ -135,9 +135,22 @@ it.live("sandbox/account-gateway", () => run("sandbox/account-gateway", AccountI
   ))
   const defaults = try Effect.provide(effect { return try SandboxIdentity }, noIdentity)
   if ((try defaults.role("x")) !== "viewer") return false
+  // Signed out, by default and by policy, is the ownerless viewer.
+  const anonymous = try Effect.provideService(defaults.request(), HttpServerRequest.HttpServerRequest, {} as never)
+  const policed = try Effect.provide(effect { return try (try SandboxPolicy).current() }, signedOut)
+  if (anonymous.owner !== "" || anonymous.role !== "viewer" || policed.owner !== "" || policed.role !== "viewer") return false
   const account = try accountObject(stateOf(storage, "a"), (try Effect.try(() => namespaceOf(() => input.binding, machine))) as never, identity)
   const { gateway } = gatewayOf((try Effect.try(() => namespaceOf(() => true, account))) as never, identity)
   const admitted = input.allowed && input.person !== "" && mayStart(input.role)
+  // The accounts binding unreachable: an admitted person's write is Unavailable, anyone else's is still refused.
+  const unbound = gatewayOf((try Effect.try(() => namespaceOf(() => false, account))) as never, identity).gateway
+  const lost = try Effect.result(Effect.provideService(unbound.startSandbox("c-1", "op-lost"), HttpServerRequest.HttpServerRequest, {} as never))
+  if (lost._tag !== "Failure") return false
+  if (admitted ? !(lost.failure._tag === "Unavailable" && lost.failure.reason === "sandbox-binding") : !(lost.failure._tag === "Refused" && lost.failure.refusal === "forbidden")) return false
+  // And every execution, for an admitted contributor.
+  const contributor = try Effect.provide(effect { return try SandboxIdentity }, identityFromPolicy(() => succeed({ owner: "person-1", role: "contributor" as const }), () => succeed("contributor" as const), { authorize: () => Effect.void }))
+  const away = try Effect.result(Effect.provideService(gatewayOf((try Effect.try(() => namespaceOf(() => false, account))) as never, contributor).gateway.startSandbox("c-1", "op-away"), HttpServerRequest.HttpServerRequest, {} as never))
+  if (away._tag !== "Failure" || away.failure._tag !== "Unavailable" || away.failure.reason !== "sandbox-binding") return false
   type Step = typeof AccountInput.Type["steps"][number]
   effect function act(step: Step, generation: number) {
     const operation = `op-${step.operation % 4}`
