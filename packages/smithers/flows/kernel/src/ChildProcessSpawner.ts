@@ -230,10 +230,14 @@ export const ambientEnvironment = (
 /**
  * `globalThis` as an ambient host. A package compiled without Node's types
  * (`"types": []`, as the browser views are) types `globalThis` without
- * `process`, so the weak host type rejects it as a default (TS2559).
+ * `process`, so the weak host type rejects it as a default (TS2559). Widened
+ * to `object` first, it is a host that may or may not carry `process` under
+ * either set of types; an assertion would be unnecessary under Node's.
  */
-const globalThisHost = (): { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } } =>
-  globalThis as { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } }
+const globalThisHost = (): { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } } => {
+  const host: object = globalThis
+  return host
+}
 
 const environmentNames = (command: ChildProcess.StandardCommand): ReadonlyArray<string> | undefined => {
   const environment = command.options.env
