@@ -29,6 +29,8 @@ export default async function setup() {
           clearTimeout(timer)
           // The host prints the live issue sites' origins first (live-issues.spec.ts).
           process.env.LIVE_ISSUES_TEST_ORIGINS = output.match(/LIVE_ISSUES_READY (\{[^\n]+\})/)![1]!
+          // Then the recorded Markdown reply's prompt and sites, none until it is recorded (chat-markdown.spec.ts).
+          process.env.LIVE_REPLY_TEST = output.match(/LIVE_REPLY_READY (\{[^\n]+\})/)![1]!
           resolve(ready[1]!)
         }
       })

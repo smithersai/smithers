@@ -1,0 +1,59 @@
+// A local model provider for the live API Worker in workerd (test/support/workerd.vibe `serveApi`), answered through a
+// recording of the real model (ruling VL-36, test/support/model.vibe `recordedClient`). Each call the Worker's agent
+// makes goes on to the recorded provider's own origin through HttpRecording: a replay needs no key and reaches no
+// network; a recording run adds the key from this process's environment, so the Worker only ever holds a placeholder.
+// The browser's chat Markdown journey (e2e/chat-markdown.spec.ts) and its recorded case (test/model.recorded.test.vibe)
+// both run the reply this way. The server lives as long as the calling scope.
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { apply, empty, type Event } from "../../src/core/conversation.vibe"
+import { Factory } from "../../src/core/Factory.vibe"
+import { LiveFactory } from "../../src/core/LiveFactory.vibe"
+import { type Options, recordedClient } from "./model.vibe"
+import { room } from "./workerd.vibe"
+
+/** The prompt of the recorded Markdown case: a reply the chat renders as a table, a list and a quote. */
+export const MARKDOWN_PROMPT = "Compare let and const in VibeLang. Answer in Markdown: a two-column table, then a bulleted list of three rules, then one block quote."
+
+/** The credential the Worker's model record names: a placeholder key, allowed only toward this provider. */
+const CREDENTIAL = "RECORDED"
+
+/** Serves the model recording `name` to a Worker; `bindings` are the Worker's text configuration that points at it. */
+export effect function serveRecordedProvider(name: string, options: Options = {}) {
+  const recorded = try recordedClient(name, options)
+  const key = recorded.values[recorded.record.credential] ?? recorded.values[`SMITHERS_MODEL_KEY_${recorded.record.credential}`]
+  const context = try Layer.build(NodeHttpServer.layerTest)
+  const server = Context.get(context, HttpServer.HttpServer)
+  if (server.address._tag === "UnixPathAddress") return try Effect.die(new Error("recorded provider has no TCP port"))
+  const origin = `http://127.0.0.1:${server.address.port}`
+  const route = effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const body = try request.text
+    const path = new URL(request.url, origin)
+    const asked = HttpClientRequest.bodyText(HttpClientRequest.make(request.method as "POST")(recorded.record.baseUrl + path.pathname + path.search), body, "application/json")
+    const answer = try recorded.client.execute(recorded.mode === "replay" || key === undefined ? asked : HttpClientRequest.bearerToken(asked, key))
+    try Effect.logInfo("vibelang.test.recorded-provider").pipe(Effect.annotateLogs({ recording: name, mode: recorded.mode, status: answer.status }))
+    return HttpServerResponse.text(try answer.text, { status: answer.status, contentType: answer.headers["content-type"] ?? "application/json" })
+  }
+  const logged = route.pipe(Effect.catchCause((cause) => Effect.logError("vibelang.test.recorded-provider-failed").pipe(Effect.annotateLogs({ recording: name, cause: Cause.pretty(cause).split("\n")[0] ?? "" }), Effect.as(HttpServerResponse.empty({ status: 502 })))))
+  try forkScoped(HttpServer.serveEffect(logged).pipe(Effect.provide(context)))
+  const bindings: Readonly<Record<string, string>> = {
+    CHAT_MODEL: JSON.stringify({ ...recorded.record, baseUrl: origin, credential: CREDENTIAL }),
+    [`SMITHERS_MODEL_KEY_${CREDENTIAL}`]: "the-worker-holds-no-key",
+    [`SMITHERS_MODEL_KEY_${CREDENTIAL}_ORIGIN`]: origin,
+  }
+  return { origin, bindings }
+}
+
+/** Posts `prompt` to a new conversation of the live API at `origin`, as the browser does, and reads its settled reply. */
+export effect function replyFrom(origin: string, prompt: string) {
+  provide LiveFactory(origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+    const factory = try Factory
+    const conversation = try room("markdown")
+    try factory.post(conversation, "a", "Ada", prompt)
+    const events = Array.from(try Stream.runCollect(
+      factory.events(conversation, 0) |> Stream.takeUntil(%, (event: Event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"),
+    ))
+    return events.reduce(apply, empty).entries.at(-1)!
+  }
+}

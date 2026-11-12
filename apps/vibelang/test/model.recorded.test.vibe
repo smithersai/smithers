@@ -1,6 +1,7 @@
 // @vitest-environment node
 // The model's happy paths on recordings of the real model (ruling VL-36): the VIP and wiki draft writers, a
-// specification reviewer and a reply, each with smithers.sh's real agent inside one durable execution, over the
+// specification reviewer, a reply, and a reply in Markdown through the live Worker in workerd (the chat Markdown journey,
+// e2e/chat-markdown.spec.ts, replays the same recording), each with smithers.sh's real agent inside one durable execution, over the
 // deployment's default model (DEFAULT_CHAT_MODEL) through test/support/model.vibe. Replayed from
 // test/recordings/model-*.json unless VIBE_MODEL says otherwise; a replay needs no key and reaches no network. Until
 // the recordings are committed (`pnpm record:model` with CEREBRAS_API_KEY, at most 40 model calls) the cases skip.
@@ -21,9 +22,11 @@ import { wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
 import { ledger, within } from "./support/durableWriters.vibe"
 import { configured, recordedModel } from "./support/model.vibe"
 import { recordingText } from "./support/recordingFile.ts"
+import { MARKDOWN_PROMPT, replyFrom, serveRecordedProvider } from "./support/recordedProvider.vibe"
 import { replyWorld } from "./support/replyWorld.vibe"
+import { serveApi } from "./support/workerd.vibe"
 
-const CASES = ["vip-draft", "wiki-draft", "review", "reply"] as const
+const CASES = ["vip-draft", "wiki-draft", "review", "reply", "markdown"] as const
 const missing = CASES.filter((name) => recordingText(`test/recordings/model-${name}.json`) === undefined)
 const VIP: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title: "Tuple patterns", text: "Match on tuples in a case expression.", example: "case (a, b) -> a", prior: "ML", assignee: "" }
 const PAGE = { page: "roadmap", source: "# Roadmap\n\nTuples, then records, then pattern guards.\n", ask: "Make it one sentence." }
@@ -77,4 +80,15 @@ describe.skipIf(configured === "replay" && missing.length > 0)(`the real model's
     expect(spent[Budget.SPENT]).toBeLessThanOrEqual(REPLY_CEILING)
     expect(spent[Budget.RESERVED]).toBe(0)
   }), 120_000)
+
+  it.live("a reply in the live Worker answers in Markdown: a table, a list and a quote", () => scoped(effect {
+    const provider = try serveRecordedProvider("markdown")
+    const api = try acquireRelease(serveApi(provider.bindings), (served) => promise(() => served.dispose()))
+    const reply = try replyFrom(api.origin, MARKDOWN_PROMPT)
+    expect(reply).toMatchObject({ done: true, error: "" })
+    expect(reply.text).toMatch(/^\|.+\|\s*$/m)
+    expect(reply.text).toMatch(/^\|\s*:?-{3,}/m)
+    expect(reply.text).toMatch(/^\s*(?:[-*+]|\d+\.)\s+\S/m)
+    expect(reply.text).toMatch(/^>\s*\S/m)
+  }), 300_000)
 })

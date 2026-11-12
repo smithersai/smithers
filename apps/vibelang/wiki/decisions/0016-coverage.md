@@ -2902,3 +2902,25 @@ New tests:
 
 Waiting: `src/history/tools.vibe:93`, the `epic` arm's presence test for a `from` the type requires
 (`~/vl/vibelang-bugs/coverage-exhaustive-match`; VL-37 approves the compiler change, in flight).
+
+## The mock main's outside commits and the recorded Markdown reply (vl-coverage, session 26, 2026-11-12)
+
+The lead's two calls on the browser gate's sites that mock mode could not reach:
+
+1. **`areas.vibe` `areaOf`/`scopeOf` and `areaDecision.vibe`.** The sequencer calls `areaOf` only for a main commit
+   without a `Mythical:` trailer, and the mock's main landed only trailered commits. Real main is mostly commits without
+   one, so the mock's main now lands three real ones first (`AFTER_SEED`, decision 0020): a `type(scope):` title whose
+   scope an area names, one whose scope none names, and an emoji title with no scope. Journey:
+   `e2e/history-paths.spec.ts` "folds main's commits from outside the queue …"; unit: `test/historyFlows.test.vibe`
+   "main's commits from outside the queue" (a test seed opens Foundations; another seed's main has none).
+2. **Chat Markdown tables, lists and quotes.** The scripted mock agent answers plain text, and no model recording was
+   committed. The recorded case `markdown` (`test/model.recorded.test.vibe`) posts `MARKDOWN_PROMPT` to the live API
+   Worker in workerd, whose model is a local provider answering through the recording
+   (`test/support/recordedProvider.vibe`); the browser journey `e2e/chat-markdown.spec.ts` replays the same file
+   behind the preview build (`e2e/authbroker-host.vibe`) and asserts the table, list and quote render. Both skip until
+   `test/recordings/model-markdown.json` exists. The provider's wiring is tested without the model:
+   `test/recordedProvider.workerd.test.vibe` records a scripted provider's Markdown reply through a live Worker and
+   replays it into a fresh one with the provider gone. One-turn replies key on the prompt alone (`promptOf`), so the
+   browser's post finds the recorded calls. Waiting: `LEAD RUNS: cd apps/vibelang && pnpm record:model` (at most 40
+   model calls, all five cases).
+

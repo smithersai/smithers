@@ -57,11 +57,11 @@ export interface Options {
 }
 
 /**
- * The deployment's default model (DEFAULT_CHAT_MODEL) for one test, over `test/recordings/model-<name>.json`: the
- * HostModel service, the `fetch` its calls go through, and the configuration values a host that builds its own model
- * from a record reads (its credential's key, a placeholder on replay, which no request reaches the provider with).
+ * The recording a model test talks through, `test/recordings/model-<name>.json` by default: the capped HttpRecording
+ * client, its mode, the model record it answers for, and the configuration values a host that builds its own model
+ * from that record reads (its credential's key, a placeholder on replay, which no request reaches the provider with).
  */
-export effect function recordedModel(name: string, options: Options = {}) {
+export effect function recordedClient(name: string, options: Options = {}) {
   const mode = options.mode ?? configured
   const path = options.path ?? try recordingPath(`model-${name}`)
   const record = options.record ?? DEFAULT_CHAT_MODEL
@@ -70,6 +70,15 @@ export effect function recordedModel(name: string, options: Options = {}) {
   const live = capped(try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
   const secrets = [...(Option.isSome(key) ? [key.value] : []), ...(options.values === undefined ? [] : Object.values(options.values).filter((value) => !value.startsWith("http")))]
   const client = try HttpRecording.make({ mode, path, live, label: name, secrets, normalize })
+  return { client, mode, record, values }
+}
+
+/**
+ * The deployment's default model (DEFAULT_CHAT_MODEL) for one test, over `recordedClient(name)`: the HostModel
+ * service, the `fetch` its calls go through, and the record and configuration values it was built from.
+ */
+export effect function recordedModel(name: string, options: Options = {}) {
+  const { client, mode, record, values } = try recordedClient(name, options)
   const fetch = try Effect.try(() => fetchOver(client))
   const model = try HostModel.make(record, { fetch }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
   try Effect.logInfo("model test client").pipe(Effect.annotateLogs({ mode, recording: name }))

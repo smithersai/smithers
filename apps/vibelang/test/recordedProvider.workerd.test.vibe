@@ -1,0 +1,36 @@
+// @vitest-environment node
+// The recorded provider's own wiring (test/support/recordedProvider.vibe), before any real recording exists: a live
+// Worker's reply recorded against the scripted provider on a local socket (fuzz/model-server.vibe), then replayed into
+// a fresh Worker with the provider gone. A replay that asked anything the recording lacks would die with
+// UnrecordedRequestError and fail the reply.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+import { MARKDOWN_PROMPT, replyFrom, serveRecordedProvider } from "./support/recordedProvider.vibe"
+import { deadline, serveApi } from "./support/workerd.vibe"
+
+const ANSWER = "| Binding | Reassign |\n| --- | --- |\n| let | yes |\n\n- one\n- two\n\n> Prefer const."
+
+it.live("a live Worker's reply recorded through the local provider replays with the provider gone, holding no key", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = `${try fs.makeTempDirectoryScoped()}/model-markdown.json`
+    const live = try scoped(effect {
+      const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify(ANSWER))], prompt: 9, completion: 4 }])
+      const provider = try serveRecordedProvider("markdown", { mode: "record", record: scripted.record, values: scripted.values, path })
+      const api = try acquireRelease(serveApi(provider.bindings), (served) => promise(() => served.dispose()))
+      return { reply: try replyFrom(api.origin, MARKDOWN_PROMPT), record: scripted.record, values: scripted.values }
+    })
+    expect(live.reply).toMatchObject({ text: ANSWER, done: true, error: "" })
+    const text = try fs.readFileString(path)
+    expect(HttpRecording.scan(text)).toEqual([])
+    expect(text).not.toContain(live.values.SMITHERS_MODEL_KEY_FUZZ)
+    const replayed = try scoped(effect {
+      const provider = try serveRecordedProvider("markdown", { mode: "replay", record: live.record, values: live.values, path })
+      const api = try acquireRelease(serveApi(provider.bindings), (served) => promise(() => served.dispose()))
+      return try replyFrom(api.origin, MARKDOWN_PROMPT)
+    })
+    expect(replayed).toEqual(live.reply)
+  }
+}), deadline(300_000))

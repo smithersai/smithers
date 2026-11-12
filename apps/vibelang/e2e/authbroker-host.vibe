@@ -1,18 +1,32 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { serveLiveSite } from "../test/support/liveSite.vibe"
-import { serveAuthBroker, serveLiveIssues } from "../test/support/workerd.vibe"
+import { recordingPath } from "../test/support/github.vibe"
+import { MARKDOWN_PROMPT, serveRecordedProvider } from "../test/support/recordedProvider.vibe"
+import { serveApi, serveAuthBroker, serveLiveIssues } from "../test/support/workerd.vibe"
 // Every browser project gets its own hosts, so durable state never leaks between projects: the auth broker
-// (authbroker.spec.ts) and a live site whose issue routes run on workerd (live-issues.spec.ts) beside the preview server.
+// (authbroker.spec.ts), a live site whose issue routes run on workerd (live-issues.spec.ts) beside the preview server,
+// and, once the real model's Markdown reply is recorded (`pnpm record:model`), a live site whose API Worker replays it
+// (chat-markdown.spec.ts).
 NodeRuntime.runMain(scoped(effect {
   const site = `http://127.0.0.1:${try Config.String("E2E_PORT")}`
   const origins: Record<string, string> = {}
   const live: Record<string, string> = {}
+  const replies: Record<string, string> = {}
+  const markdown = try recordingPath("model-markdown")
+  const recorded = try Effect.provide(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.exists(markdown)), NodeServices.layer)
   for (const project of ["dark", "light", "phone"]) {
     const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
     origins[project] = host.origin
     const api = try acquireRelease(serveLiveIssues(), api => promise(() => api.dispose()))
     live[project] = (try serveLiveSite(api, site)).origin
+    if (recorded) {
+      const provider = try serveRecordedProvider("markdown", { mode: "replay" })
+      const replying = try acquireRelease(serveApi(provider.bindings), api => promise(() => api.dispose()))
+      replies[project] = (try serveLiveSite(replying, site)).origin
+    }
   }
+  try Console.log("LIVE_REPLY_READY " + JSON.stringify({ prompt: MARKDOWN_PROMPT, origins: replies }))
   try Console.log("LIVE_ISSUES_READY " + JSON.stringify(live))
   try Console.log("AUTH_BROKER_READY " + JSON.stringify(origins))
   try Effect.never
