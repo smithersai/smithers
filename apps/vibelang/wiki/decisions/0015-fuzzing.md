@@ -1157,6 +1157,34 @@ as `test/historyStartup.test.vibe` does: a whole export of the bootstrapped seed
 allows 120 s). Coverage of this target alone reaches every arm and function the file had open, at seeds 20261210 and
 20261211.
 
+### `src/web/historyStartup.vibe`: the page's own startup, every path
+
+The sixteenth session's final run left the file at 32/51 lines and 7/27 arms: no target started the history page.
+`history/startup` (`fuzz/history-startup.fuzz.vibe`) starts it over a real happy-dom window in every execution: the mock
+role from four kinds of query and three stored values, with storage present and unavailable (a faulty `Window`
+service); the agent choice (`?agent=mock` with storage refusing to keep it, `?agent=live` over a stored mock choice, a
+stored mock choice, nothing); and live, over the project's real Accounts object and the Worker's history routes on a
+loopback server, a signed-in person with a grant, a grant to someone else, a visitor, and a session and grant stream
+each lost once. The page's test hosts are shared with `test/historyStartup.test.vibe` through
+`test/support/historyApi.vibe`. Oracle: the role and agent rules above; the page asks the server only when it should;
+`?agent=live` forgets the stored choice; live, the frame's role is the session's, a grant to someone else leaves it
+(500 ms after the grant; it reaches the page within milliseconds on loopback), a visitor is a viewer who follows no
+grants, and a lost session is a viewer asked about again two seconds later. Each scenario serves its own API: an
+earlier draft shared one server across scenarios, and its saved `AccountUnavailable` failure was the target's, not the
+product's. Coverage of this target alone: 62/62 statements, 25/25 arms, 18/18 functions at seeds 20261214 and
+20261217. Mutation caught at 20261214: a grant applied whoever it names.
+
+### Saved web models after `af2bca7b` (eighteenth session)
+
+`af2bca7b` (another lane, 0016) made four of `Model`'s keys required: `account`, `sandboxRequest`, `wikiSerial` and
+`wikiEditRequest`. Six saved values of `web/view-branches`, `web/subscriptions`, `web/view-models` and
+`web/arbitrary-update` held models without them, so all four targets failed before their first execution (`the json
+codec cannot decode a saved value: Missing key at ["model"]["account"]`) and both full measurements at `63a8ddd2`
+(seeds 20261215, 20261216) stopped before the report. Each saved model now carries the value its missing key meant
+before the change (`account` `signedOut`, the three counters 0), written before its own keys so any it had wins; nothing
+else changed. All six decode and replay as regressions: 3 files, 10 tests passed. This is the second time (after
+`6e6b721d`): a change that narrows a schema a fuzz target draws from should run `pnpm fuzz` over its saved values.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
