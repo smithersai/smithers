@@ -97,6 +97,35 @@ passed, 1 skipped; workerd 20 passed. 12 of 202 files below 100%. `historyStartu
 Proofs (box node26): `pnpm verify src/history/mythical.vibe src/web/historyViewDecision.vibe` reports 43 and 16
 verified, 0 errors. `pnpm verify:broken history-named-trim history-named-empty`: BROKEN PASS, 2 of 2 rejected.
 
+**A fixture that held an impossible session.** `test/workerd/live-issues.vibe` answered the session route with a
+signed-in person and no ledger, a reply production never sends. After the change above, `LiveAccounts` refused it, so
+three `e2e/live-issues.spec.ts` journeys failed in 3 projects (9 failures in this session's browser gate). The host
+now answers as `worker/Accounts.vibe` does, with the ledger: 15 passed.
+
+**Unit arms closed in session 23:**
+
+| Site | How |
+| --- | --- |
+| `view.vibe` `model.docs ?? ""` (2) | Deleted: `Model.docs` is required (`"pane" \| "max"`) |
+| `view.vibe:153`, the tour's error line | `test/app.scene.test.vibe`: a failed tour request is named in the walkthrough bar |
+| `issueHostDecision.vibe:230`, an unlabel with no label | `test/issueHostDecision.test.vibe` |
+| `sandboxMeter.vibe:40`, `meter-overflow` | `test/sandboxMeterEdges.coverage.test.vibe`: a full ledger with a running sandbox |
+| `sandboxHost.vibe:52`, `:55`, `failureReason` | `test/sandboxHost.coverage.test.vibe`: an untagged failure, a non-object and a non-string tag log `defect` |
+| `sandboxMock.vibe:60`, `:63` | `test/sandboxKernelEdges.coverage.test.vibe`: a machine that never started holds no lease and runs no command |
+
+Named, not closed (unit):
+
+| Site | Reason |
+| --- | --- |
+| `issuesViewDecision.vibe:76`, `digits("")` | `compactAge`, its only caller, passes a string of length 1 or more. Closes with `//@ requires text.length > 0` on `digits` and the line deleted, which changes another lane's proof. |
+| `worker/mainLogDecision.vibe:73`, `at === undefined` | The inner loop pops every top that `bySha` lacks, so `at` is always defined. The arm only satisfies the type; the proof module owns it. |
+| `MockFactory.vibe:114`, `:122` | Unchanged from session 22. |
+| `issueGraphDecision.vibe`, `core/replayDecision.vibe` | Proof helpers that the fuzz suite also calls as oracles (`fuzz/core-issue-graph.node.fuzz.vibe`, `fuzz/conversation.fuzz.vibe`). VibeLang now has `spec function` (VIP-43), but making them spec functions would break the fuzz suite's oracles, which belong to `vl-fuzzpkg`. |
+| `core/flows.vibe:343`, `history/tools.vibe:93` (VL-37) | Unchanged. |
+
+Browser gate on this session's first change (box playwright): 423 passed, 9 failed (the fixture above), 12 skipped.
+101 of 123 files below 100%. Lines 4591/5549, branches 4412/6341, functions 1985/2356, statements 5475/7068.
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`

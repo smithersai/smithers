@@ -298,3 +298,10 @@ it("Exit minimizes a driven sandbox so the focused composer is available", () =>
   const model = update({ ...home, surface: "chat", tour: true, sandboxPane: "max" }, Message.PressedEscape()).model
   assert(model.sandboxPane).toBe("pane")
 })
+
+it("names a failed tour request in the walkthrough bar, where the hidden composer can't", () => {
+  scene({ update, view }, given({ ...home, surface: "chat", tour: true, tourError: "busy", docs: "max" }),
+    expect(role("alert")).toHaveText("Agent busy"),
+  )
+  scene({ update, view }, given({ ...home, surface: "chat", tour: true, docs: "max" }), expect(role("alert")).toBeAbsent())
+})

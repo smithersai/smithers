@@ -169,7 +169,7 @@ function showsWiki(model: Model): boolean {
 }
 function chatLayoutOf(model: Model): V.ChatLayout {
   const { conversation, pending } = model.client
-  return V.chatLayout(model.surface, conversation.pane, showsWiki(model), model.docs ?? "", actionsOf(model).open, actionsOf(model).maximized, model.tour, model.wikiAfter !== undefined && model.wikiAfter !== "", conversation.entries.length, pending.length)
+  return V.chatLayout(model.surface, conversation.pane, showsWiki(model), model.docs, actionsOf(model).open, actionsOf(model).maximized, model.tour, model.wikiAfter !== undefined && model.wikiAfter !== "", conversation.entries.length, pending.length)
 }
 function paneView(model: Model, h: H): Html {
   return showsWiki(model) ? wikiPane(model, h) : docsPane(model, h)
@@ -218,7 +218,7 @@ function chat(model: Model, h: H): Html {
       ...(!layout.actionsInline ? [] : [actionsPane(model, h)]),
       ...actionCards(model, h),
       ...conversation.entries.flatMap(entry => [
-        ...(V.wikiAfterEntry(showsWiki(model), model.wikiAfter ?? "", entry.id, model.docs ?? "") ? [wikiPane(model, h)] : []),
+        ...(V.wikiAfterEntry(showsWiki(model), model.wikiAfter ?? "", entry.id, model.docs) ? [wikiPane(model, h)] : []),
         entryView(entry, model, h),
       ]),
       ...pending.map((post) => pendingView(post, h)),

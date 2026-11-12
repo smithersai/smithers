@@ -2,7 +2,7 @@
 // and crash states from what the store holds after a process dies.
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "@effect/vitest"
-import { makeSandboxHost, type Machines } from "../src/core/sandboxHost.vibe"
+import { failureReason, makeSandboxHost, type Machines } from "../src/core/sandboxHost.vibe"
 import { mockPolicy, SandboxPolicy } from "../src/core/sandboxPolicy.vibe"
 import { Unavailable } from "../src/core/Factory.vibe"
 import { ALLOWANCE, BEYOND_CALENDAR, change, failureOf, holding, pendingOf, world } from "./support/sandboxWorld.vibe"
@@ -266,5 +266,16 @@ describe("sandbox writer boundaries", () => {
       const output = try Fiber.join(running)
       try Effect.try(() => { expect(output).toBe(answer); expect(answer).toBe("late") })
     }
+  })
+})
+
+describe("a failed step's logged reason", () => {
+  it("is an Unavailable's own reason, else the error's tag, else defect, and never the error's text", () => {
+    expect(failureReason(new Unavailable({ reason: "stale-generation" }))).toBe("stale-generation")
+    expect(failureReason({ _tag: "Refused", reason: "private words" })).toBe("Refused")
+    expect(failureReason({ _tag: 7, reason: "private words" })).toBe("defect")
+    expect(failureReason({ reason: "private words" })).toBe("defect")
+    expect(failureReason("private words")).toBe("defect")
+    expect(failureReason(null)).toBe("defect")
   })
 })

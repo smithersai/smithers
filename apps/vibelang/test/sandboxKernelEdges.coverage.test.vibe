@@ -60,4 +60,11 @@ describe("the mock machine", () => {
     const blank = try machines.command("m1", 1, "op5", "   ")
     try Effect.try(() => { expect(empty).toBe(""); expect(listed).toBe("a.txt  notes/b.txt"); expect(blank).toBe("") })
   })
+
+  it.effect("a machine that never started holds no lease and runs no command", () => effect {
+    const machines = memoryMachines()
+    const lease = try machines.lease("never", 1, 1000)
+    const command = try Effect.flip(machines.command("never", 1, "op1", "pwd"))
+    try Effect.try(() => { expect(lease).toBe(false); expect(command).toMatchObject({ _tag: "Unavailable", reason: "stale-generation" }) })
+  })
 })

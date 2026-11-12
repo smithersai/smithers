@@ -33,3 +33,10 @@ describe("a ledger outside the meter's domain", () => {
     try Effect.try(() => expect(reason).toBe("meter-domain"))
   })
 })
+
+describe("a ledger the next interval would overflow", () => {
+  it.effect("a running sandbox on a ledger already at the largest safe count is refused, not counted", () => effect {
+    const reason = try reasonOf(meter({ ...ledger, usedMilliseconds: Number.MAX_SAFE_INTEGER }, {}, at + 10, 36000))
+    try Effect.try(() => expect(reason).toBe("meter-overflow"))
+  })
+})
