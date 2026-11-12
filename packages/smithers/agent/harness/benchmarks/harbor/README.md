@@ -222,6 +222,9 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
   re-runs the trial in a fresh environment on the next healthy account
   (`--retry-include SeatExhausted`, or `requeue.py`). The stock arm records
   the limit as `usageLimit` and `resetAt` in `codex-account.json`.
+  The stock arm reads limits only from plain transcript lines and parsed
+  `error` or `turn.failed` events. Malformed JSON, task events, and command
+  exception summaries cannot disable an account.
   `report.py` refuses a scored trial whose metadata carries `requeues`: older
   harness revisions re-ran it in place.
 - A route fault (`authentication`, `no_route`, `provider_internal`,

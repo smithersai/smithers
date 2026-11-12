@@ -68,17 +68,16 @@ FAILURE_EVENTS = ("error", "turn.failed")
 
 
 def usage_limit_in(output: str) -> str | None:
-    """The usage-limit line in the CLI's output, if any: a plain line, or a failure event. On
-    nyc-02 (2026-10-15) `xz --long-help` printed "memory usage limit" in an `item.completed`
-    event; reading it as a dry seat disabled the only pooled account for 9.5 hours."""
+    """Read limits from plain transcript lines or parsed CLI failure events.
+    Malformed JSON and task events cannot establish account exhaustion."""
     for line in output.splitlines():
         text = line.strip()
         if text.startswith("{"):
             try:
                 event = json.loads(text)
             except ValueError:
-                event = None
-            if isinstance(event, dict) and event.get("type") not in FAILURE_EVENTS:
+                continue
+            if not isinstance(event, dict) or event.get("type") not in FAILURE_EVENTS:
                 continue
         if accounts.mentions_usage_limit(text):
             return text[:500]
@@ -266,8 +265,14 @@ class PooledCodex(Codex):
             text = output.read_text(errors="replace")
         except OSError:
             text = ""
+        self._record_output(text, failure)
+
+    def _record_output(self, text: str, failure: BaseException | None) -> None:
+        """Record transcript evidence before propagating the trial's outcome."""
         self._seal["webSearches"] += web_searches(text)
-        limit = usage_limit_in(text) or (usage_limit_in(str(failure)) if failure else None)
+        # Harbor's exception embeds a truncated head/tail of task output,
+        # which can splice a command's words into a non-JSON line.
+        limit = usage_limit_in(text)
         reached = container_commands(text)
         if self._seal["webSearches"]:
             searched = f"the CLI ran {self._seal['webSearches']} web search(es) outside the task container"

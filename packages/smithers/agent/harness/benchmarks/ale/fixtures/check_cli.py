@@ -28,7 +28,7 @@ class NativeCliTests(unittest.IsolatedAsyncioTestCase):
             async def smoke(args, workspace, env, log):
                 # Keep the generated runtime imports and Task declaration. Replace only
                 # the model action with a synthetic action using the REAL host sink.
-                flow = workspace / 'flows/ale/flow.ts'
+                flow = workspace / '.smithers/flows/ale/flow.ts'
                 source = flow.read_text()
                 shutil.copyfile(Path(__file__).with_name('cli_trace.ts'), flow.parent / 'cli_trace.ts')
                 fixture = './cli_trace.ts'
@@ -41,7 +41,7 @@ class NativeCliTests(unittest.IsolatedAsyncioTestCase):
             agent._command = smoke
             result = await asyncio.wait_for(agent.launch('smoke'), timeout=90)
             # No model ran: valid route evidence must still be refused.
-            self.assertEqual(result.exit_code, 0, (work / 'smithers-run.log').read_text())
+            self.assertEqual(result.exit_code, 0, (result.error, (work / 'smithers-run.log').read_text()))
             self.assertEqual(result.status, 'failed')
             self.assertIn('subscription model-route', result.error)
             events = _journal(work)
