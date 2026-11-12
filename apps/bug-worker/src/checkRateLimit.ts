@@ -9,6 +9,11 @@ import type { RateLimitRequest } from "./RateLimiter.ts";
  * refusal logs `bug_report.global_limit` so the flood is visible.
  */
 export const BUG_REPORTS_PER_HOUR = 2000;
+/**
+ * Accepted demo requests per hour across all clients: at most 200 16 KB
+ * requests (3.2 MB) an hour, far above what a sales inbox receives.
+ */
+export const DEMO_REQUESTS_PER_HOUR = 200;
 /** Default budget: accepted writes per client per hour, per route bucket. */
 export const RATE_LIMIT_PER_HOUR = 20;
 /**

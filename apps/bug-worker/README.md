@@ -1,7 +1,8 @@
 # bug-worker
 
 Cloudflare Worker behind `https://bug.smithers.sh` that receives bug reports
-from `smithers bug` (and anyone else) and stores them in KV.
+from `smithers bug` (and anyone else) and demo requests from the site's `/demo`
+form, and stores them in KV.
 
 ## The payload
 
@@ -77,6 +78,15 @@ title-only report.
   ignored), charged per /64 for IPv6.
   Stores `bug:<id>` and returns `{ id, url }`. No auth: reporting must be
   zero-friction. CORS allows POST from anywhere.
+- `POST /api/demo-requests` — the `/demo` form's four required fields,
+  `firstName`, `lastName`, `workEmail` and `message`, trimmed and bounded
+  (200, 200, 320 and 5000 characters; the email must be valid). Unknown keys are
+  dropped. 16KB cap, rate limits of 20 valid requests/hour per client and
+  200/hour across all clients, in buckets separate from bug reports; a 400 or
+  413 never spends the budget, and an all-clients refusal logs
+  `demo_request.global_limit`. Stores `demo:<id>` and returns `{ id }`.
+  `tests/demoRequests.test.ts` reads the endpoint and field names from
+  `apps/site/src/pages/demo/index.astro` and posts that payload.
 - `GET /api/bugs/:id` — maintainers only; requires the `x-bug-admin` header
   to match the `BUG_ADMIN_TOKEN` binding.
 - `GET /healthz`

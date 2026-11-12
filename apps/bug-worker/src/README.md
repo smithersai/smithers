@@ -4,7 +4,8 @@ Cloudflare Worker source for the bug.smithers.sh intake (routes, caps, and
 deploy instructions live in `../README.md`).
 
 - `worker.ts` — the entry point and fetch router: permissive CORS,
-  `POST /api/bugs` with a 256KB body cap, and admin-only `GET /api/bugs/:id`.
+  `POST /api/bugs` with a 256KB body cap, `POST /api/demo-requests` with a
+  16KB cap, and admin-only `GET /api/bugs/:id`.
   `createBugWorker(deps)` exists so tests can inject a clock; the default
   export uses `Date.now`.
 - `publicBaseUrl.ts` — the origin returned in a stored report receipt.
@@ -20,6 +21,8 @@ deploy instructions live in `../README.md`).
 - `bugReportSchema.ts` — loose zod schema requiring a non-blank `summary` or
   `title` (1 to 500 characters). Accepts current string and 0.x object platform
   values, preserves unknown fields, and stores either envelope without conversion.
+- `demoRequestSchema.ts` — the `/demo` form's four required fields, trimmed
+  and bounded; unknown keys are dropped.
 - `newBugId.ts` — sortable ulid-ish id (base32 ms timestamp + 16 random chars).
 - `env.ts` — `BugWorkerEnv`/`BugKv` binding interfaces; tests satisfy them with
   `tests/helpers/memoryKv.ts`.

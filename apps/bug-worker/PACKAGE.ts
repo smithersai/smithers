@@ -23,8 +23,14 @@ const sources = [
   Smithers.file("//apps/bug-worker/alchemy.run.ts")
 ]
 
-/** The suite and its in-memory KV double. */
-const suiteSources = [Smithers.glob("//apps/bug-worker/tests/**/*.ts")]
+/**
+ * The suite and its in-memory KV double, plus the site's demo page: the
+ * demo-request contract test reads its endpoint and field names.
+ */
+const suiteSources = [
+  Smithers.glob("//apps/bug-worker/tests/**/*.ts"),
+  Smithers.file("//apps/site/src/pages/demo/index.astro")
+]
 
 /**
  * Checks the worker and its suite against the package tsconfig.
@@ -91,7 +97,7 @@ const securityReview = Smithers.SecurityReview({
     },
     {
       id: "intake-abuse-bounds",
-      title: "Anonymous bug intake is bounded in body size, rate, and stored content",
+      title: "Anonymous bug and demo-request intake is bounded in body size, rate, and stored content",
       threat: "An anonymous caller exhausts storage or Worker memory, or plants HTML for triage tools.",
       lookFor: [
         "A body read buffers before readBodyBounded, or the cap trusts content-length alone.",
@@ -99,7 +105,14 @@ const securityReview = Smithers.SecurityReview({
         "Counters use KV read-modify-write instead of RateLimiter, IPv6 bypasses the /64 budget, or the all-clients hourly cap is absent.",
         "A stored report is served as HTML or loose fields are echoed into HTML."
       ],
-      paths: ["src/worker.ts", "src/readBodyBounded.ts", "src/checkRateLimit.ts", "src/RateLimiter.ts", "src/bugReportSchema.ts"]
+      paths: [
+        "src/worker.ts",
+        "src/readBodyBounded.ts",
+        "src/checkRateLimit.ts",
+        "src/RateLimiter.ts",
+        "src/bugReportSchema.ts",
+        "src/demoRequestSchema.ts"
+      ]
     },
     {
       id: "kv-key-space",
