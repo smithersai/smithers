@@ -341,13 +341,14 @@ const object = <E, R>(
               )),
             // A repository's run settles its row from the engine's status and its reported result (docs/features/actions.md), and a `todo` run
             // that ended in a defect fails its TODO `crashed` and starts the TODOs that frees (docs/features/todos.md).
+            // A failure of either fails the settlement, so the object retries both with backoff and keeps the run until
+            // both succeed; both run on every attempt.
             settled: (executionId) =>
               Effect.all([
-                RepoRuns.settle(executionId, database, RepoFlow.reportedFailure(executionId, database)).pipe(
+                Effect.exit(RepoRuns.settle(executionId, database, RepoFlow.reportedFailure(executionId, database)).pipe(
                   Effect.provide(appDatabase),
                   Effect.asVoid,
-                  // The alarm that forgets the run a day later tries once more.
-                  Effect.catchCause((cause) =>
+                  Effect.tapCause((cause) =>
                     Effect.logWarning("repo.run.settle").pipe(
                       Effect.annotateLogs({
                         runId: executionId,
@@ -356,7 +357,7 @@ const object = <E, R>(
                       })
                     )
                   )
-                ),
+                )),
                 Effect.flatMap(
                   flowStarter,
                   (started) => TodoRuns.settleCrashed(executionId, database, FleetAlert.startWith(started))
@@ -371,9 +372,9 @@ const object = <E, R>(
                               Effect.void)
                           ), { discard: true }))
                   ),
-                  // The alarm that forgets the run a day later reports again: the writer answers the same report with
-                  // the same starts (`repeated`), and starting one again changes nothing.
-                  Effect.catchCause((cause) =>
+                  // A retry reports again: the writer answers the same report with the same starts (`repeated`), and
+                  // starting one again changes nothing.
+                  Effect.tapCause((cause) =>
                     Effect.logWarning("todo.crashed").pipe(
                       Effect.annotateLogs({
                         runId: executionId,
@@ -383,7 +384,7 @@ const object = <E, R>(
                     )
                   )
                 )
-              ], { discard: true })
+              ]).pipe(Effect.flatMap(([repo]) => repo))
           })
         // Each wake of a branch's machine starts that generation's `sandbox/Keep` on its own object, once
         // (docs/features/sandbox-tools.md#sleep-and-wake); a job machine's keep names it, so it asks that machine.

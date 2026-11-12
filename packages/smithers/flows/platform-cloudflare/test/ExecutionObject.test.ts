@@ -20,6 +20,20 @@ import * as Postgres from "./fixtures/Postgres.ts"
 
 class AskFailed extends Schema.TaggedError<AskFailed>()("AskFailed", {}) {}
 
+/** What a `settled` handler fails with while the caller's own database is down. */
+class RecordUnavailable extends Schema.TaggedError<RecordUnavailable>()("RecordUnavailable", {}) {}
+
+/** A `settled` handler that records each execution id it was handed and fails while `down()` says so. */
+const handler = (down: () => boolean) => {
+  const handed: Array<string> = []
+  const settled: ExecutionObject.Settled = (executionId) =>
+    Effect.suspend(() => {
+      handed.push(executionId)
+      return down() ? Effect.fail(new RecordUnavailable()) : Effect.void
+    })
+  return { handed, settled }
+}
+
 /** A runtime whose construction fails, as one over an unreachable database does. */
 const unbuildable = () => Layer.unwrap(Effect.fail(new AskFailed())) as Layer.Layer<ExecutionObject.Services, AskFailed>
 
@@ -65,7 +79,7 @@ const object = (target: Postgres.Target = Postgres.direct) => {
   const steps: Array<string> = []
   const executionId = `answer-${randomUUID()}`
   const hostId = `object-${executionId}`
-  const alarm = () =>
+  const alarm = (settled?: ExecutionObject.Settled) =>
     ExecutionObject.alarm(memory.storage, {
       flows: [Answer],
       runtime: runtime({
@@ -73,7 +87,8 @@ const object = (target: Postgres.Target = Postgres.direct) => {
         database: Postgres.database(schema, target.url),
         record: (label) => Effect.sync(() => steps.push(label)).pipe(Effect.as(label))
       }),
-      router: Objects.unrouted
+      router: Objects.unrouted,
+      settled
     })
   const intent = (payload: { readonly question: string; readonly pauseMs: number }) =>
     ExecutionObject.intent(Answer, { executionId, payload })
@@ -110,6 +125,43 @@ for (const target of Postgres.targets) {
         expect(o.memory.alarm()).toBe(settledAt + ExecutionObject.settledRetentionMs)
         expect(o.memory.values.has(ExecutionObject.failuresKey)).toBe(false)
         expect(yield* o.status).toBe("completed")
+      }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
+    })
+
+    it.live("a settlement its handler refused retries the handler, not the drive, and the window starts once it took it", () => {
+      const o = object(target)
+      let down = true
+      const { handed, settled: report } = handler(() => down)
+      return Effect.gen(function*() {
+        yield* ExecutionObject.start(o.memory.storage, yield* o.intent({ question: "hi", pauseMs: 0 }), Effect.void)
+        const before = Date.now()
+        // The run completes, but the caller's record of it can't be written: the object retries, never arms the window.
+        expect(yield* o.alarm(report)).toEqual({
+          _tag: "Retrying",
+          attempt: 1,
+          retryAtMs: expect.any(Number),
+          failure: "RecordUnavailable",
+          detail: {}
+        })
+        expect(yield* o.status).toBe("completed")
+        expect(handed).toEqual([o.executionId])
+        expect(o.memory.values.has(ExecutionObject.settledKey)).toBe(true)
+        expect(o.memory.values.has(ExecutionObject.reportedKey)).toBe(false)
+        expect(o.memory.values.get(ExecutionObject.failuresKey)).toBe(1)
+        expect(o.memory.alarm()).toBeLessThanOrEqual(Date.now() + 1_000)
+        expect(o.memory.alarm()).toBeGreaterThanOrEqual(before + 1_000)
+        // The database is back: the next alarm hands the settlement over again, runs no step, and arms the window.
+        down = false
+        const outcome = yield* o.alarm(report)
+        const reportedAt = o.memory.values.get(ExecutionObject.reportedKey) as number
+        expect(outcome).toEqual({ _tag: "Settled", forgetAtMs: reportedAt + ExecutionObject.settledRetentionMs })
+        expect(o.memory.alarm()).toBe(reportedAt + ExecutionObject.settledRetentionMs)
+        expect(handed).toEqual([o.executionId, o.executionId])
+        expect(o.steps).toEqual(["ask:hi", "answer"])
+        expect(o.memory.values.has(ExecutionObject.failuresKey)).toBe(false)
+        // Taken: a duplicate alarm hands it over no more.
+        expect(yield* o.alarm(report)).toEqual(outcome)
+        expect(handed).toHaveLength(2)
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(o.schema))))
     })
 
@@ -472,6 +524,75 @@ describe("ExecutionObject without a database", () => {
       expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Idle" })
       expect(yield* ExecutionObject.wake(memory.storage)).toBe(false)
       expect(memory.alarm()).toBeNull()
+    }))
+
+  it.effect("a settlement its handler never took is never forgotten, however long it fails", () =>
+    Effect.gen(function*() {
+      const memory = MemoryStorage.make()
+      const value = yield* ExecutionObject.intent(Answer, {
+        executionId: "unreported",
+        payload: { question: "hi", pauseMs: 0 }
+      })
+      yield* ExecutionObject.start(memory.storage, value, Effect.void)
+      // What an earlier alarm left: a settlement at 1 s that its handler refused.
+      yield* memory.storage.put(ExecutionObject.settledKey, 1_000)
+      let down = true
+      const { handed, settled } = handler(() => down)
+      const options = {
+        flows: [Answer],
+        runtime: unbuildable,
+        router: Objects.unrouted,
+        settledRetentionMs: 60_000,
+        settled
+      }
+
+      // Long past the settlement's window, each alarm retries the handler with doubling backoff and keeps the intent.
+      yield* TestClock.setTime(1_000_000)
+      for (const [attempt, delayMs] of [[1, 1_000], [2, 2_000], [3, 4_000]] as const) {
+        expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({
+          _tag: "Retrying",
+          attempt,
+          retryAtMs: 1_000_000 + delayMs,
+          failure: "RecordUnavailable",
+          detail: {}
+        })
+        expect(memory.alarm()).toBe(1_000_000 + delayMs)
+      }
+      expect(memory.values.has(ExecutionObject.intentKey)).toBe(true)
+      expect(handed).toEqual(["unreported", "unreported", "unreported"])
+
+      // It takes the settlement: the window runs from then, so the object is not forgotten at once.
+      down = false
+      yield* TestClock.setTime(1_004_000)
+      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Settled", forgetAtMs: 1_064_000 })
+      expect(memory.values.get(ExecutionObject.reportedKey)).toBe(1_004_000)
+      expect(memory.values.has(ExecutionObject.failuresKey)).toBe(false)
+      expect(memory.alarm()).toBe(1_064_000)
+
+      yield* TestClock.setTime(1_064_000)
+      expect(yield* ExecutionObject.alarm(memory.storage, options)).toEqual({ _tag: "Forgotten" })
+      expect(memory.values.size).toBe(0)
+      expect(handed).toHaveLength(4)
+    }))
+
+  it.effect("a settled object whose intent no longer decodes hands its handler nothing and keeps its window", () =>
+    Effect.gen(function*() {
+      const memory = MemoryStorage.make()
+      yield* memory.storage.put(ExecutionObject.intentKey, "not an intent")
+      yield* memory.storage.put(ExecutionObject.settledKey, 1_000)
+      const { handed, settled } = handler(() => true)
+      yield* TestClock.setTime(2_000)
+      expect(
+        yield* ExecutionObject.alarm(memory.storage, {
+          flows: [Answer],
+          runtime: unbuildable,
+          router: Objects.unrouted,
+          settledRetentionMs: 60_000,
+          settled
+        })
+      ).toEqual({ _tag: "Settled", forgetAtMs: 62_000 })
+      expect(handed).toEqual([])
+      expect(memory.values.has(ExecutionObject.failuresKey)).toBe(false)
     }))
 
   it.effect("a failing runtime re-arms with doubling backoff, and the count survives between alarms", () =>

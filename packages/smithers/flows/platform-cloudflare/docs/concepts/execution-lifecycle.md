@@ -143,13 +143,25 @@ next alarm: drive ─ replay ─ step ─ ...
 
 A settled object holds its intent for a retention window, then forgets it.
 `settledRetentionMs` is the window: one day unless `alarm` is given
-`settledRetentionMs`.
+`settledRetentionMs`. With a `settled` handler the window starts only once
+the handler took the settlement.
 
 ```
 alarm: drive ─ settles ─► store when (smithers/settled), alarm at settled + window
 alarm before the window ends (a duplicate start, a wake) ─► no runtime, alarm at settled + window
 alarm at the window's end ─► delete intent, count and settlement; delete the alarm (Forgotten)
+
+with settled:
+alarm: drive ─ settles ─► store when, settled(executionId) ─ fails ─► count, alarm one backoff away (Retrying)
+                                                          └ succeeds ─► store when (smithers/reported), alarm at reported + window
 ```
+
+- **The caller's record is never forgotten.** `settled` takes the
+  settlement, such as an application row that leaves `working` when the run
+  ends. Every alarm hands it the execution id until it succeeds, retrying with
+  the backoff, past the window too; it builds no runtime and never drives the
+  run again. The handler must be idempotent: an alarm that dies after it ran
+  hands it over again.
 
 - **No drive after settlement.** An object that recorded its settlement never
   builds a runtime again. A duplicate `start` or a `wake` inside the window

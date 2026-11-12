@@ -673,36 +673,50 @@ describe("ExecutionHost over the compose Postgres", () => {
       })
     ))
 
-  test("each alarm that finds the run settled, and the one that forgets it, hands its execution id to settled", () =>
+  test("settled takes the run's settlement until it succeeds, and the run is forgotten only a day after", () =>
     withSchema(({ name, url }) =>
       Effect.gen(function* () {
         const object = memory()
         const settled: Array<string> = []
+        let down = true
         const executionId = crypto.randomUUID()
         const host = ExecutionHost.make(object.storage, {
           hostId: `object-${executionId}`,
           database: ExecutionHost.database(url, name),
           flows: { flows: [Pause.Pause], registration: Pause.registration((label) => Effect.succeed(label)) },
           router: recording().router,
-          settled: (id) => Effect.sync(() => void settled.push(id)),
+          // The app's database is down until `down` is cleared: the run's row can't be written.
+          settled: (id) => Effect.suspend(() => {
+            settled.push(id)
+            return down ? Effect.fail(new Error("app database unavailable")) : Effect.void
+          }),
         })
         expect((yield* host.alarm())._tag).toBe("Idle")
         yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "a", pauseMs: 60_000 } }))
         expect((yield* host.alarm())._tag).toBe("Parked")
         expect(settled).toEqual([])
-        // Stopped: the next alarm settles it cancelled and hands it over; a duplicate alarm hands it over again.
+        // Stopped: the next alarm settles it cancelled and hands it over, which fails, so the object retries with
+        // backoff instead of arming the day's window.
         yield* host.cancel()
-        const done = yield* host.alarm()
-        expect(done._tag).toBe("Settled")
-        expect((yield* host.alarm())._tag).toBe("Settled")
+        const refused = yield* host.alarm()
+        expect(refused).toMatchObject({ _tag: "Retrying", attempt: 1, failure: "Error" })
+        expect(settled).toEqual([executionId])
+        // A day later the app's row was still never written: the object still holds the run, and hands it over again.
+        const late = yield* Effect.gen(function* () {
+          yield* TestClock.setTime(Date.now() + ExecutionHost.settledRetentionMs + 1)
+          down = false
+          return yield* host.alarm()
+        }).pipe(Effect.provide(TestClock.layer()))
+        expect(late).toEqual({ _tag: "Settled", forgetAtMs: expect.any(Number) })
         expect(settled).toEqual([executionId, executionId])
-        // The alarm that forgets the run hands it over once more.
+        // Taken: a duplicate alarm hands nothing over, and the one that forgets the run a day after hands nothing.
+        expect((yield* host.alarm())._tag).toBe("Settled")
         const forgotten = yield* Effect.gen(function* () {
-          yield* TestClock.setTime(done._tag === "Settled" ? done.forgetAtMs : 0)
+          yield* TestClock.setTime(late._tag === "Settled" ? late.forgetAtMs : 0)
           return yield* host.alarm()
         }).pipe(Effect.provide(TestClock.layer()))
         expect(forgotten._tag).toBe("Forgotten")
-        expect(settled).toEqual([executionId, executionId, executionId])
+        expect(settled).toEqual([executionId, executionId])
       })
     ))
 

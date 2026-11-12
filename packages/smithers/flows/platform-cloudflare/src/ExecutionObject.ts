@@ -11,7 +11,8 @@
  * timers, retries and results stay in the engine's Postgres store; the
  * object's storage holds the intent, a failure count and, once the execution
  * settles, when it did. A settled object keeps its intent for
- * {@link settledRetentionMs}, then forgets it. A cancellation tombstone is retained permanently.
+ * {@link settledRetentionMs} after its caller's `settled` handler took the
+ * settlement, then forgets it. A cancellation tombstone is retained permanently.
  *
  * The functions take the object's storage as a structural slice, so the
  * same code runs under any Effect-native Durable Object (an Alchemy
@@ -113,8 +114,9 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  * - `Idle`: no intent is stored, so there was nothing to run; the alarm is
  *   deleted.
  * - `Settled`: the execution completed, failed or was cancelled. The object
- *   keeps the intent until `forgetAtMs`, the settlement plus the retention
- *   window, and the alarm is armed for it.
+ *   keeps the intent until `forgetAtMs`, the retention window after the
+ *   settlement (or, with a `settled` handler, after the handler took it), and
+ *   the alarm is armed for it.
  * - `Parked`: the execution waits. `wakeAtMs` is when the engine must next
  *   drive it (`EngineStore.nextWake`), usually its earliest pending
  *   `DurableClock`, and the alarm is armed for it; `null` means it waits on
@@ -130,9 +132,12 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  *   migration's cause (the migration, its failed statement, the SQL error's
  *   kind, SQLSTATE code and the database's message) and, for any other
  *   failure that reached the database, only the SQL error's kind and code,
- *   and for a lost or refused connection the driver's text for it.
+ *   and for a lost or refused connection the driver's text for it. A settled
+ *   execution whose `settled` handler failed retries the handler, not the
+ *   drive.
  * - `Forgotten`: the execution settled and its retention window has passed;
- *   the object deleted its intent, its count and its settlement, and the
+ *   the object deleted its intent, its count, its settlement and when its
+ *   `settled` handler took it, and the
  *   alarm is deleted. Any cancellation tombstone remains to reject delayed admission.
  *
  * @category models
@@ -215,6 +220,17 @@ export const failuresKey = "smithers/failures"
  * @since 1.0.0
  */
 export const settledKey = "smithers/settled"
+
+/**
+ * The storage key the time the `settled` handler {@link alarm} was given took
+ * the execution's settlement, in epoch milliseconds, lives under. The
+ * retention window starts then; until it is stored, every alarm hands the
+ * settlement to the handler again.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const reportedKey = "smithers/reported"
 
 /**
  * How long a settled object keeps its intent, in milliseconds, unless
@@ -751,6 +767,15 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * it deletes the intent, the count and the settlement, deletes the alarm and
  * answers `Forgotten`. One final alarm per object, and no sweep.
  *
+ * `settled`, when given, takes the settlement: the alarm that settles the
+ * execution, and every later one until it succeeds, hands it the execution
+ * id. A failure counts as an alarm without progress, re-arms the alarm with
+ * the backoff and answers `Retrying`, so the object keeps its intent until
+ * the handler succeeds. Then the object records when ({@link reportedKey}),
+ * and the retention window runs from that moment, not from the settlement.
+ * The handler must be idempotent: an alarm that dies after it ran hands it
+ * the settlement again.
+ *
  * Any failure, a router call's included, re-arms the alarm with the backoff
  * and returns `Retrying`, so the alarm never fails and Cloudflare's own retry
  * limit never drops an execution. The failure is logged by its tag, and a
@@ -770,15 +795,15 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * to objects of the same class, so `flows` lists every flow an execution may
  * start as a child or hand off to.
  *
- * `settledRetentionMs` is how long a settled object keeps its intent; it
- * defaults to {@link settledRetentionMs}. `driveBudgetMs` is how long the
+ * `settledRetentionMs` is how long a settled object keeps its intent once
+ * `settled` took it; it defaults to {@link settledRetentionMs}. `driveBudgetMs` is how long the
  * drive keeps starting steps; it defaults to {@link defaultDriveBudgetMs},
  * and the class passes {@link driveBudget}.
  *
  * @category operations
  * @since 1.0.0
  */
-export const alarm = <E, R, RS, RE = never, RR = never>(
+export const alarm = <E, R, RS, RE = never, RR = never, RT = never>(
   storage: Storage<RS>,
   options: {
     readonly flows: ReadonlyArray<Flow.Any>
@@ -786,8 +811,9 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     readonly router: Router<RE, RR>
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
+    readonly settled?: Settled<RT> | undefined
   }
-): Effect.Effect<Outcome, never, R | RS | RR> =>
+): Effect.Effect<Outcome, never, R | RS | RR | RT> =>
   Effect.gen(function*() {
     const raw = yield* storage.get<string>(intentKey)
     const ids = yield* idsOf(raw)
@@ -828,7 +854,7 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
   }).pipe(Effect.withSpan("cloudflare.execution.alarm"))
 
 /** What one {@link alarm} does with the stored intent `raw`, before it records the outcome. */
-const settleOrDrive = <E, R, RS, RE, RR>(
+const settleOrDrive = <E, R, RS, RE, RR, RT>(
   storage: Storage<RS>,
   raw: string | undefined,
   options: {
@@ -837,9 +863,10 @@ const settleOrDrive = <E, R, RS, RE, RR>(
     readonly router: Router<RE, RR>
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
+    readonly settled?: Settled<RT> | undefined
   },
   timing: Timing
-): Effect.Effect<Outcome, never, R | RS | RR> =>
+): Effect.Effect<Outcome, never, R | RS | RR | RT> =>
   Effect.gen(function*() {
     if (raw === undefined) {
       yield* storage.deleteAlarm()
@@ -848,16 +875,7 @@ const settleOrDrive = <E, R, RS, RE, RR>(
     const retain = options.settledRetentionMs ?? settledRetentionMs
     const settledAt = yield* storage.get<number>(settledKey)
     if (settledAt !== undefined) {
-      const forgetAtMs = settledAt + retain
-      if ((yield* Clock.currentTimeMillis) < forgetAtMs) {
-        yield* storage.setAlarm(forgetAtMs)
-        return { _tag: "Settled", forgetAtMs } as const
-      }
-      yield* storage.delete(intentKey)
-      yield* storage.delete(failuresKey)
-      yield* storage.delete(settledKey)
-      yield* storage.deleteAlarm()
-      return { _tag: "Forgotten" } as const
+      return yield* afterSettlement(storage, raw, settledAt + retain, retain, options.settled)
     }
     const routerContext = yield* Effect.context<RR>()
     const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
@@ -907,7 +925,10 @@ const settleOrDrive = <E, R, RS, RE, RR>(
     }))
     if (Exit.isSuccess(outcome)) {
       yield* storage.delete(failuresKey)
-      return outcome.value
+      // The run settled in this alarm: its handler takes the settlement now, not an alarm later.
+      return outcome.value._tag === "Settled" && options.settled !== undefined
+        ? yield* afterSettlement(storage, raw, outcome.value.forgetAtMs, retain, options.settled)
+        : outcome.value
     }
     const retryAtMs = (yield* Clock.currentTimeMillis) + backoff(attempt)
     yield* storage.setAlarm(retryAtMs)
@@ -921,24 +942,107 @@ const settleOrDrive = <E, R, RS, RE, RR>(
   })
 
 /**
+ * What takes an execution's settlement from its object: the caller's own
+ * record of the run, such as an application row that leaves `working` once
+ * the run ends. {@link alarm} hands it the execution id until it succeeds,
+ * so it must be idempotent.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Settled<R = never> = (executionId: string) => Effect.Effect<void, unknown, R>
+
+/**
+ * A settled object's alarm: hands the settlement to `settled` until it
+ * succeeds, then keeps the intent until `retain` has passed since it did, or,
+ * with no handler, until `forgetAtMs` (the settlement plus `retain`), and
+ * forgets it after.
+ */
+const afterSettlement = <RS, RT>(
+  storage: Storage<RS>,
+  raw: string,
+  forgetAtMs: number,
+  retain: number,
+  settled: Settled<RT> | undefined
+): Effect.Effect<Outcome, never, RS | RT> =>
+  Effect.gen(function*() {
+    let until = forgetAtMs
+    if (settled !== undefined) {
+      const reportedAt = (yield* storage.get<number>(reportedKey)) ?? (yield* report(storage, raw, settled))
+      if (typeof reportedAt !== "number") return reportedAt
+      until = reportedAt + retain
+    }
+    if ((yield* Clock.currentTimeMillis) < until) {
+      yield* storage.setAlarm(until)
+      return { _tag: "Settled", forgetAtMs: until } as const
+    }
+    yield* storage.delete(intentKey)
+    yield* storage.delete(failuresKey)
+    yield* storage.delete(settledKey)
+    yield* storage.delete(reportedKey)
+    yield* storage.deleteAlarm()
+    return { _tag: "Forgotten" } as const
+  })
+
+/**
+ * Hands the settled execution's id to `settled` once, counted as an alarm
+ * without progress, with the watchdog armed one backoff away. On success it
+ * records when, clears the count and answers that moment; on failure it
+ * re-arms the alarm with the backoff and answers `Retrying`. An intent that
+ * no longer decodes names no execution: nothing is handed over, and it
+ * counts as taken.
+ */
+const report = <RS, RT>(
+  storage: Storage<RS>,
+  raw: string,
+  settled: Settled<RT>
+): Effect.Effect<number | Extract<Outcome, { readonly _tag: "Retrying" }>, never, RS | RT> =>
+  Effect.gen(function*() {
+    const value = yield* Effect.option(decodeIntent(raw))
+    if (Option.isSome(value)) {
+      const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
+      yield* storage.put(failuresKey, attempt)
+      yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
+      const exit = yield* Effect.exit(settled(value.value.executionId))
+      if (Exit.isFailure(exit)) {
+        const retryAtMs = (yield* Clock.currentTimeMillis) + backoff(attempt)
+        yield* storage.setAlarm(retryAtMs)
+        return {
+          _tag: "Retrying",
+          attempt,
+          retryAtMs,
+          failure: RetryPolicy.failureType(exit.cause),
+          detail: FailureDetail.detail(exit.cause, undefined)
+        } as const
+      }
+      yield* storage.delete(failuresKey)
+    }
+    const reportedAt = yield* Clock.currentTimeMillis
+    yield* storage.put(reportedKey, reportedAt)
+    return reportedAt
+  })
+
+/**
  * Compose one object's handlers, including durable cancellation. Keep one
  * instance for the lifetime of the object incarnation. Cancellation records a
  * tombstone before interrupting the active engine, or wakes an idle object to
  * finish the engine's cancellation on its next alarm. No action is started by
  * the cancellation handler and no application retry loop is needed.
- * `driveBudgetMs` bounds each drive; `afterAlarm` runs after every outcome,
+ * `driveBudgetMs` bounds each drive; `settled` takes each settlement (see
+ * {@link alarm}); `afterAlarm` runs after every outcome,
  * once the active cancellation handler has been cleared. Concurrent alarm/RPC drives
  * serialize for this incarnation; a waiting caller never builds a competing runtime owner.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const make = <E, R, RS, RE = never, RR = never, RA = never>(storage: Storage<RS>, options: {
+export const make = <E, R, RS, RE = never, RR = never, RA = never, RT = never>(storage: Storage<RS>, options: {
   readonly flows: ReadonlyArray<Flow.Any>
   readonly runtime: (intent: Intent) => Layer.Layer<Services, E, R>
   readonly router: Router<RE, RR>
   readonly settledRetentionMs?: number | undefined
   readonly driveBudgetMs?: number | undefined
+  readonly settled?: Settled<RT> | undefined
   readonly afterAlarm?: Effect.Effect<void, never, RA> | undefined
   /** Recheck domain admission before a delayed start reaches the engine. Failure retries the alarm. */
   readonly canStart?: ((intent: Intent) => Effect.Effect<boolean, never, R>) | undefined

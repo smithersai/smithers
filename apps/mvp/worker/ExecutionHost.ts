@@ -452,9 +452,10 @@ export const readDatabase = (url: string, schema: string): Layer.Layer<SqlClient
  *
  * `database` is a layer, so each alarm opens its own connection and closes it when the alarm ends. `router` reaches
  * other objects of the same class by execution id. `afterAlarm` runs once each alarm is done, whatever it did, and
- * fails nothing: on Cloudflare it starts the window's `ops/DatabaseLoad` (`DatabaseLoad.sampler`). `settled` runs with
- * the execution id after each alarm that finds the run settled, and the one that forgets it, and fails nothing: on
- * Cloudflare it settles a repository run's row (worker/RepoRuns.ts `settle`).
+ * fails nothing: on Cloudflare it starts the window's `ops/DatabaseLoad` (`DatabaseLoad.sampler`). `settled` takes the
+ * run's settlement with its execution id (`ExecutionObject.alarm`): the alarm that settles the run, and every later
+ * one until it succeeds, calls it, each failure retrying with backoff, and the object forgets the run only a retention
+ * window after it succeeded. On Cloudflare it settles a repository run's row (worker/RepoRuns.ts `settle`).
  */
 export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
   storage: ExecutionObject.Storage<RS>,
@@ -468,7 +469,7 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
     readonly roleFreshMs?: number
     readonly router: ExecutionObject.Router<RE, RR>
     readonly afterAlarm?: Effect.Effect<void, never, RA>
-    readonly settled?: (executionId: string) => Effect.Effect<void, never, RT>
+    readonly settled?: ExecutionObject.Settled<RT>
     readonly driveBudgetMs?: number | undefined
     readonly canStart?: ((intent: ExecutionObject.Intent) => Effect.Effect<boolean, never, RD>) | undefined
   },
@@ -489,12 +490,8 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
     canStart: options.canStart,
     driveBudgetMs: options.driveBudgetMs,
     afterAlarm: options.afterAlarm,
+    settled: options.settled,
   })
-  /** The stored intent's execution id. */
-  const executionId = Effect.map(
-    storage.get<string>(ExecutionObject.intentKey),
-    (raw) => Option.flatMap(Option.fromNullishOr(raw), (text) => Option.map(decodeIntent(text), (intent) => intent.executionId)),
-  )
   return {
     ...object,
     /** The immutable start intent decides ownership even before the engine has created a run row. */
@@ -551,18 +548,6 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
       yield* Effect.logInfo("flow.answer").pipe(Effect.annotateLogs({ executionId, task, outcome: taken ? "taken" : "not_waiting" }))
       return taken
     })).pipe(Effect.orDie),
-
-    alarm: () =>
-      Effect.gen(function* () {
-        const settled = options.settled
-        // Read before the alarm: the alarm that forgets the run deletes its intent.
-        const id = settled === undefined ? Option.none<string>() : yield* executionId
-        const outcome = yield* object.alarm()
-        if (settled !== undefined && Option.isSome(id) && (outcome._tag === "Settled" || outcome._tag === "Forgotten")) {
-          yield* settled(id.value)
-        }
-        return outcome
-      }),
   }
 }
 

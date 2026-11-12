@@ -35509,7 +35509,7 @@ completes a deferred the execution waits on, or cancels it.
 ### `ExecutionObject.alarm`
 
 ```ts
-const alarm: <E, R, RS, RE = never, RR = never>(
+const alarm: <E, R, RS, RE = never, RR = never, RT = never>(
   storage: ExecutionObject.Storage<RS>,
   options: {
     readonly flows: ReadonlyArray<Flow.Any>
@@ -35517,8 +35517,9 @@ const alarm: <E, R, RS, RE = never, RR = never>(
     readonly router: ExecutionObject.Router<RE, RR>
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
+    readonly settled?: ExecutionObject.Settled<RT> | undefined
   }
-) => Effect.Effect<ExecutionObject.Outcome, never, R | RS | RR>
+) => Effect.Effect<ExecutionObject.Outcome, never, R | RS | RR | RT>
 ```
 
 Counts the attempt and arms the alarm one backoff away, builds
@@ -35549,6 +35550,15 @@ An object that recorded its settlement builds no runtime again. Before
 has passed since the settlement, its alarm arms itself for that moment and
 answers `Settled`. After, it deletes the intent, the count and the settlement,
 deletes the alarm and answers `Forgotten`: the object's storage is empty.
+
+`settled`, when given, takes the settlement (`ExecutionObject.Settled`). The
+alarm that settles the execution, and every later one until it succeeds,
+hands it the execution id. A failure counts as an alarm without progress,
+re-arms the alarm with the backoff and answers `Retrying`, so the object keeps
+its intent. On success the object records when under
+`ExecutionObject.reportedKey`, and `settledRetentionMs` runs from then. An
+intent that no longer decodes hands it nothing. The handler must be
+idempotent.
 
 ### `ExecutionObject.Router`
 
@@ -35626,6 +35636,17 @@ What one alarm did. `forgetAtMs` is when the settled object forgets its
 intent. `Yielded` is a drive that spent its budget; the alarm is armed for
 now. `failure` is the tag of what failed, never its message.
 
+### `ExecutionObject.Settled`
+
+```ts
+type Settled<R = never> = (executionId: string) => Effect.Effect<void, unknown, R>
+```
+
+What takes an execution's settlement from its object: the caller's own record
+of the run, such as an application row that leaves `working` once the run
+ends. `alarm` hands it the execution id until it succeeds, so it must be
+idempotent.
+
 ### `ExecutionObject.Services`
 
 ```ts
@@ -35652,6 +35673,7 @@ class IntentConflict extends Schema.TaggedError<IntentConflict>()(
 | `ExecutionObject.intentKey`              | `"smithers/intent"`                                                 | The storage key the intent lives under.                                          |
 | `ExecutionObject.failuresKey`            | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.                |
 | `ExecutionObject.settledKey`             | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.            |
+| `ExecutionObject.reportedKey`            | `"smithers/reported"`                                               | The storage key when `settled` took the settlement, in epoch ms, lives under.    |
 | `ExecutionObject.settledRetentionMs`     | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.                 |
 | `ExecutionObject.startGraceMs`           | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies.         |
 | `ExecutionObject.retryPolicy`            | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.                     |
