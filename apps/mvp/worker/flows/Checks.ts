@@ -283,6 +283,12 @@ export const jobMachineOf = (request: ChecksRequest): { readonly branch: Sandbox
 /** The check a head gets when its job machine couldn't check out exactly that commit: Failed, never a script's pass. */
 export const CHECKOUT_CHECK = "checkout"
 
+/**
+ * The checks Smithers itself runs on a head. A script named for one (`review.sh`, `checkout.sh`) never runs: its run row
+ * and status would be the built-in check's, so its pass could hide a review or checkout that failed.
+ */
+export const BUILT_IN_CHECKS: ReadonlySet<string> = new Set([REVIEW_CHECK, CHECKOUT_CHECK])
+
 /** Check `name`'s run id on `request`'s head: the version 5 UUID of its execution and name. */
 export const checkRunIdOf = (request: Pick<ChecksRequest, "repoId" | "sha">, name: string) =>
   Uuid.v5(CHECK_RUN_NAMESPACE, `${checkExecutionId(request.repoId, request.sha, "all")}:${name}`).pipe(
@@ -449,12 +455,16 @@ export const steps = <E, R>(
         return { checks: [{ name: CHECKOUT_CHECK, status: "failed" as const }] } satisfies Checked
       }
       const listed = yield* tool("list", { tool: "list", path: CHECKS_DIRECTORY }).pipe(Effect.option)
-      const names = Option.match(listed, {
+      const found = Option.match(listed, {
         onNone: () => [],
         onSome: (result) =>
           (result as typeof SandboxTools.ListResult.Type).entries.filter((entry) => entry.kind === "file" && entry.name.endsWith(".sh"))
             .map((entry) => entry.name.slice(0, -3)).filter((name) => CHECK_NAME.test(name)).sort(),
       })
+      const names = found.filter((name) => !BUILT_IN_CHECKS.has(name))
+      for (const name of found.filter((name) => BUILT_IN_CHECKS.has(name))) {
+        yield* Effect.logWarning("checks.reserved").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name }))
+      }
       // The scripts are a check suite of the checks this head turned out to have (`CheckSuite.runDiscovered`,
       // `@smthrs/patterns`), one at a time in name order. A script that fails is its check's answer, a failed row, so
       // the next still runs; a machine or Postgres that couldn't answer fails the suite, and this step for its retry

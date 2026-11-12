@@ -260,6 +260,36 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
   })
 
+  test("a script named for a built-in check never runs: a passing review.sh can't report a failed review Passed", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("   "))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const box = machine({ ".smithers/checks/review.sh": "", ".smithers/checks/checkout.sh": "", ".smithers/checks/a.sh": "" })
+    const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+    const logger = Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))
+    const implementation = Checks.steps({ ...services, reviewerFor: () => seat })
+    const registration = Layer.mergeAll(
+      Interpreter.layerWithImplementations(Checks.ChecksRun, Layer.mergeAll(
+        Checks.Scripts.toLayer((payload) => implementation.scripts(payload).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))),
+        Checks.ReviewPrepare.toLayer(implementation.prepare),
+        Checks.Review.toLayer(implementation.review),
+        Checks.Report.toLayer(implementation.report),
+      )),
+      Checks.reviewRounds({ ...services, reviewerFor: () => seat }),
+    ).pipe(Layer.provideMerge(Action.layerImplementations))
+    const ran = await runFlow(Checks.ChecksRun, request, withJobs(registration).pipe(Layer.provide(box.layer)))
+    expect(ran.exit).toEqual(Exit.succeed({
+      statuses: [{ name: "a", state: "success", outcome: "sent" }, { name: "review", state: "failure", outcome: "sent" }],
+    }))
+    expect(github.shownStatuses(request.sha)).toEqual({ "smithers/a": "success", "smithers/review": "failure" })
+    expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/a", "done"], ["checks/review", "failed"]])
+    expect(box.commands.filter((command) => command.startsWith("sh "))).toEqual(["sh .smithers/checks/a.sh"])
+    expect(new Set(logs.filter((log) => log.message === "checks.reserved").map((log) => log.annotations.check)))
+      .toEqual(new Set(["checkout", "review"]))
+  })
+
   test("without the App, the review fails, and the scripts still run", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
