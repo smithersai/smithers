@@ -21,26 +21,24 @@ The quickstart does not need jj. A compensable step or a time-travel fork
 does; [Installation](./installation.md#requirements) covers it.
 
 Create an empty project, install the three packages the program imports, and
-give it something to read. These commands require `1.0.0-rc.18` to be
-published on npm. If npm reports `ETARGET`, wait for that candidate; an
-earlier release uses different runtime imports.
+give it something to read:
 
 ```bash
 mkdir flows-quickstart && cd flows-quickstart
 npm init -y && npm pkg set type=module
-npm install @smthrs/platform-node@1.0.0-rc.18 @smthrs/flows@1.0.0-rc.18 effect@4.1.1
+npm install @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5
 mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
 
 The project is `"type": "module"` because the program ends in a top-level
 `await`. `@smthrs/flows` is the engine and its authoring names, and imports no
 platform code. `@smthrs/platform-node` is the Node host: it installs the SQLite
-driver and exports `NodeRuntime` from its root. `effect` is on the line because
-the program imports it directly. These pins use the same release candidate
-and the exact Effect peer version the packages require.
+driver. The published `1.0.0-rc.16` runtime is imported from
+`@smthrs/flows/NodeRuntime`, as the example below shows. `effect` is on the line because
+the program imports it directly. These pins reproduce the published API used below. The published rc.16 adapters require Effect 4.0.5; use that cohort together.
 
 With pnpm 11, replace the `npm install` line with
-`pnpm add @smthrs/platform-node@1.0.0-rc.18 @smthrs/flows@1.0.0-rc.18 effect@4.1.1`, then run
+`pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5`, then run
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind; an
 exact version is installed the day it is published. pnpm 11 also ends the install with
@@ -144,14 +142,15 @@ that goes around those services. An action that imports `node:fs` or calls the
 global `fetch` reads and fetches whatever the process can, with no rule at all.
 The grant store guards the services a body is handed; it is not a process
 sandbox. To isolate a body's own code, run it as a child flow with
-`SandboxedFlow` from `@smthrs/platform-node` on a container provider, as
+`SandboxedFlow` from `@smthrs/flows/SandboxedFlow` in `1.0.0-rc.16` on a container provider, as
 [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md)
 shows.
 
 ## Stand the host up and run it
 
-Import `NodeRuntime` from the root of `@smthrs/platform-node`, the Node
-platform package installed above.
+This example targets published `1.0.0-rc.16`, pinned above. The source checkout
+moves this namespace to the root of `@smthrs/platform-node`; that relocation
+is not exported by the published rc.16 package.
 
 `layerHost` owes nothing to its caller. It creates the database's parent
 directory, runs migrations, builds the guarded host over the grant store, adds
@@ -159,7 +158,7 @@ the step boundary and the workspace sandbox, installs `SIGINT` and `SIGTERM`
 handlers, and only then runs your registration phase.
 
 ```ts
-import { NodeRuntime } from "@smthrs/platform-node"
+import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 
 const host = NodeRuntime.layerHost(
   {
@@ -215,8 +214,9 @@ shows how to run only what changed.
 In [VibeLang](https://github.com/smithersai/vibelang) the action's body is an
 `effect` arrow, so `try` replaces each `yield*`, and `main` is an `effect`
 function that takes the workspace root instead of resolving it with
-`node:path`. Both versions import `NodeRuntime` from `@smthrs/platform-node`.
-`test/quickstart.test.vibe` runs it twice
+`node:path`. The tab follows the source checkout, where `NodeRuntime` is a
+namespace of `@smthrs/platform-node`'s root rather than the published rc.16
+`@smthrs/flows/NodeRuntime` subpath. `test/quickstart.test.vibe` runs it twice
 under one execution id after changing the note, and the second run still
 answers with the recorded contents.
 
