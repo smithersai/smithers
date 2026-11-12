@@ -1212,3 +1212,22 @@ checked separately.
 Mutants, each caught and restored: the repository's reuse check removed; a refused receipt replayed as output; a
 stopped sandbox's command not stale; `failureReason` ignoring an Unavailable's reason. From these two targets alone
 every `sandboxHost.vibe` and `WikiFactory.vibe` line and arm the fourth measurement missed is reached.
+
+`worker/VipDraft.vibe` (16 lines, 8 arms in the fourth measurement) was reached only through `issues`, which drew two
+drafts through the writer in 5 s and never ran the real draft agent. `vip/writer` walks every agent under an admitted
+budget in each execution, then the drawn agent and admission:
+
+| Agent | Holds |
+| --- | --- |
+| none, or no model | `no-model`; nothing admitted, spent or called; the agent itself also refuses `no-model` when asked directly |
+| any, admission refused or unreachable | `budget`; the agent never runs; nothing spent |
+| failing; usage the meter can't read | `draft`; `budget`; charged once |
+| scripted model: a VipDraft; not a VipDraft; prose; a provider 400 | the draft exactly; `draft`; `draft`; `draft`; charged once |
+| scripted model, its call refused by the day, or the ledger down | `budget`, after at least one call admission |
+| final charge never taken (virtual time) | the engine retries it, then `budget`; `vibelang_draft_spend_failures{draft=vip}` counts one |
+
+Mutants, each caught and restored: the spend failure not counted; a refused model call reported as `draft`; a ledger
+outage passed as the agent's failure; a refused admission ignored. Alone it reaches all of `VipDraft.vibe` except 63-64:
+the catch for a run whose usage can't be read. The writer builds its own memory meter, whose `usageOf` fails only when
+recovering the run's journal entries fails, so reaching it needs an engine whose journal reads alone fail. No target
+builds one; `WikiDraft.vibe` and `SpecificationReviewers.vibe` share the shape.
