@@ -1,27 +1,93 @@
 // @vitest-environment node
-// `pnpm test:sandboxes-live` (decision 0024, rulings VL-35 and VL-36): the sandbox lifecycle against real Cloudflare
-// Containers in the vl-test stage's probe Worker. On demand only; the ordinary suite runs the same body over local
-// processes (test/sandboxProbe.test.vibe) and over this run's recording (test/sandboxesReplay.test.vibe). It fails,
-// never skips, without its settings:
+// `pnpm test:sandboxes-live` (decision 0024, rulings VL-35 and VL-36): the sandbox scripts against real Cloudflare
+// Containers in the vl-test stage's probe Worker. On demand only; the ordinary suite runs the same bodies over local
+// processes (test/sandboxProbe.test.vibe), over the lifecycle's HTTP recording (test/sandboxesReplay.test.vibe), and in
+// workerd over the real Container's recorded calls (test/sandboxProbe.workerd.test.vibe). It fails, never skips,
+// without its settings:
 //
 //   VIBELANG_SANDBOX_PROBE_URL     the probe's workers.dev URL, from `pnpm deploy:sandboxes-test`
 //   VIBELANG_SANDBOX_PROBE_TOKEN   the token the stage was deployed with
-//   VIBELANG_SANDBOX_MODE          passthrough (default), or record to write test/recordings/sandboxes-live.json
+//   VIBELANG_SANDBOX_MODE          passthrough (default), or record: writes test/recordings/sandboxes-live.json and,
+//                                  from a stage deployed with VIBELANG_SANDBOX_CONTAINER_MODE=record, every script's
+//                                  Container calls under test/recordings/containers/
 //
-// Spend: one lite sandbox, one run at a time, at most PROBE_WINDOW_MS (10 minutes) of compute. A failed run sweeps it;
-// past the owner's deadline the probe's own alarm stops it and Cloudflare's inactivity timeout ends it.
-import { it } from "@effect/vitest"
+// Spend: one lite sandbox at a time, five scripts, each owner's compute ending by its deadline (at most PROBE_WINDOW_MS,
+// 10 minutes). A failed script sweeps or stops its sandbox; past the owner's deadline the probe's own alarm stops it and
+// Cloudflare's inactivity timeout ends it.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { describe, it } from "@effect/vitest"
 import { HttpRecording } from "@smthrs/testing"
+import * as ContainerRecording from "@smthrs/testing/ContainerRecording"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { expectLifecycle, lifecycle, normalize, RECORDING } from "./support/sandboxesLive.vibe"
+import { expect } from "vitest"
+import { containerCalls, containerRecording, deadline, direct, expectDirect, expectLifecycle, lifecycle, normalize, RECORDING, sweepBefore, unused, type Script } from "./support/sandboxesLive.vibe"
 
-it.live("a real Container starts, runs a command, checkpoints, restores, meters its minutes and is torn down", () => scoped(effect {
+const settings = effect {
   const origin = (try Config.String("VIBELANG_SANDBOX_PROBE_URL")).replace(/\/$/, "")
   const token = Redacted.value(try Config.Redacted("VIBELANG_SANDBOX_PROBE_TOKEN"))
   const mode = try Config.Literals(["passthrough", "record"] as const, "VIBELANG_SANDBOX_MODE").pipe(Config.withDefault("passthrough" as const))
-  const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
-  const client = try HttpRecording.make({ mode, path: RECORDING, live, secrets: [token], normalize })
-  const run = try Effect.provideService(lifecycle(origin, token), HttpClient.HttpClient, client)
-  try Effect.logInfo("vibelang.sandbox.live").pipe(Effect.annotateLogs({ mode, elapsedMs: run.elapsed, usedMinutes: run.ended.used }))
-  try Effect.try(() => expectLifecycle(run, true))
-}), 9 * 60_000)
+  return { origin, token, mode }
+}
+
+/** In record mode, writes the Container calls the probe recorded for `owner` in `script`, scrubbed of the token. */
+effect function keep(script: Script, owner: string) {
+  const { origin, token, mode } = try settings
+  if (mode !== "record") return
+  const calls = try containerCalls(origin, token, owner, script)
+  if (calls.length === 0) return try Effect.die(new Error(`the probe recorded no Container call for ${script}: deploy it with VIBELANG_SANDBOX_CONTAINER_MODE=record`))
+  const text = try ContainerRecording.encode({ label: script, calls }, [token])
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    try fs.makeDirectory(containerRecording(script).replace(/\/[^/]+$/, ""), { recursive: true })
+    try fs.writeFileString(containerRecording(script), text)
+  }
+  try Effect.logInfo("vibelang.sandbox.container_recording").pipe(Effect.annotateLogs({ script, calls: calls.length }))
+}
+
+describe("real Containers", () => {
+  it.live("a real Container starts, runs a command, checkpoints, restores, meters its minutes and is torn down", () => scoped(effect {
+    const { origin, token, mode } = try settings
+    const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+    const client = try HttpRecording.make({ mode, path: RECORDING, live, secrets: [token], normalize })
+    const run = try Effect.provideService(lifecycle(origin, token), HttpClient.HttpClient, client)
+    try Effect.logInfo("vibelang.sandbox.live").pipe(Effect.annotateLogs({ mode, elapsedMs: run.elapsed, usedMinutes: run.ended.used }))
+    try Effect.try(() => expectLifecycle(run, true))
+    provide FetchHttpClient.layer { try keep("lifecycle", run.owner) }
+  }), 9 * 60_000)
+
+  it.live("a real machine answers its own refusals of a running box, a receipt, a conflict and a failing command", () => scoped(effect {
+    const { origin, token } = try settings
+    provide FetchHttpClient.layer {
+      const run = try direct(origin, token)
+      try Effect.try(() => expectDirect(run))
+      try keep("direct", run.owner)
+    }
+  }), 9 * 60_000)
+
+  it.live("a sweep before the deadline stops what the owner left running", () => scoped(effect {
+    const { origin, token } = try settings
+    provide FetchHttpClient.layer {
+      const run = try sweepBefore(origin, token)
+      try Effect.try(() => expect([run.started.status, run.swept]).toEqual(["running", { running: false, status: 200 }]))
+      try keep("sweep-before", run.owner)
+    }
+  }), 9 * 60_000)
+
+  it.live("at its owner's deadline the sweep's meter stops a sandbox as a Viewer", () => scoped(effect {
+    const { origin, token } = try settings
+    provide FetchHttpClient.layer {
+      const run = try deadline(origin, token, 60_000)
+      try Effect.try(() => expect([run.started.status, run.started.generation, run.swept]).toEqual(["running", 1, { running: false, status: 200 }]))
+      try keep("deadline", run.owner)
+    }
+  }), 9 * 60_000)
+
+  it.live("an owner that never started a sandbox has nothing running", () => scoped(effect {
+    const { origin, token } = try settings
+    provide FetchHttpClient.layer {
+      const run = try unused(origin, token)
+      try Effect.try(() => expect(run.swept).toEqual({ running: false, status: 200 }))
+      try keep("unused", run.owner)
+    }
+  }), 2 * 60_000)
+})

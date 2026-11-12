@@ -1,0 +1,64 @@
+// The vl-test probe's Container recording (rulings VL-35 and VL-36, decision 0024). Deployed with
+// VIBELANG_SANDBOX_CONTAINER_MODE=record, each probe machine object records every call it makes on its real Container
+// (@smthrs/testing's ContainerRecording) into its own Durable Object storage, and `POST /api/probe/container` reads them
+// back. The workerd suite replays them behind the same machine object (test/workerd/sandbox-probe.vibe). Production
+// never declares the probe, so no product object records.
+import * as ContainerRecording from "@smthrs/testing/ContainerRecording"
+import { machineObject, type MachineBox, type ObjectState } from "./machineObject.vibe"
+
+/** passthrough (default): the Container as is. record: every call kept in the machine object's storage. */
+export const ProbeContainerMode = Schema.Literals(["passthrough", "record"])
+export type ProbeContainerMode = typeof ProbeContainerMode.Type
+export const CONTAINER_MODE = "VIBELANG_SANDBOX_CONTAINER_MODE"
+const PREFIX = "container-call/"
+/** A run records far fewer calls than this; a machine past it stops recording rather than filling its storage. */
+export const MAX_CALLS = 2000
+const QUOTED = /'((?:[^']|'\\'')*)'/g
+
+/**
+ * What changes from run to run, erased before a call is recorded or compared: every inactivity timeout (the lease left
+ * before the owner's deadline), and the timeout word of SandboxTools' run script (its fourth quoted argument, the
+ * seconds of lease left when the command began). Everything else compares exactly.
+ */
+export function normalizeCall(operation: ContainerRecording.Operation, input: unknown): unknown {
+  if (operation === "setInactivityTimeout") return "<duration>"
+  if (operation !== "exec") return input
+  const exec = input as { readonly argv: ReadonlyArray<string>; readonly options: unknown }
+  let word = 0
+  const erased = (script: string) => script.replace(QUOTED, (quoted) => word++ === 3 ? "'<timeout>'" : quoted)
+  return { ...exec, argv: exec.argv.map((arg, index) => index === 2 ? erased(arg) : arg) }
+}
+
+const key = (index: number) => `${PREFIX}${String(index).padStart(6, "0")}`
+
+/**
+ * The machine's Container for `mode`. Recording continues after the calls this object stored before an eviction, so
+ * a run's calls stay in the order they began; past `max` calls it logs each one and keeps none.
+ */
+export effect function probeBox(box: MachineBox, state: ObjectState, mode: ProbeContainerMode, max: number) {
+  if (mode === "passthrough") return box
+  const stored = (try promise(() => state.raw.storage.list({ prefix: PREFIX }))).size
+  return ContainerRecording.record(box, {
+    normalize: normalizeCall,
+    onCall: (call, index) => {
+      const at = stored + index
+      const log = Effect.logInfo("vibelang.sandbox.container_recorded").pipe(Effect.annotateLogs({ operation: call.operation, index: at, kept: at < max }))
+      return at < max ? Effect.andThen(promise(() => state.raw.storage.put(key(at), call)), log) : log
+    },
+  }).container
+}
+
+/**
+ * The probe's machine object: the product's body over the probe's Container (probeBox), and the calls it recorded.
+ * worker/SandboxProbe.vibe binds it; the workerd host builds every machine through it.
+ */
+export effect function probeMachine(box: MachineBox, state: ObjectState, mode: ProbeContainerMode, max = MAX_CALLS) {
+  const api = try machineObject(try probeBox(box, state, mode, max), state)
+  return { apply: api.apply, recording: () => recordingOf(state) }
+}
+
+/** Every call this machine object recorded, in the order they began. */
+export effect function recordingOf(state: ObjectState) {
+  const calls = try promise(() => state.raw.storage.list<ContainerRecording.Call>({ prefix: PREFIX }))
+  return [...calls.values()]
+}

@@ -135,6 +135,9 @@ so `issues/steered-host`'s "GitHub never showed the VIP" case still means what i
   metering and sweeping a real Container on the `vl-test` stage, and `test/sandboxesReplay.test.vibe` replays it in
   every `pnpm test`. The in-memory `memoryMachines` (`src/core/sandboxMock.vibe`) still serves
   `test/sandboxFlow.test.vibe` and `test/sandboxKernelEdges.coverage.test.vibe`, and stays the UI's mock mode (VL-13).
+  Below HTTP, the Container binding itself records and replays (`@smthrs/testing`'s `ContainerRecording`, lane
+  vl-coverage-workerd, 2026-11-11): the probe records each machine's real Container calls, and the workerd suite
+  replays them behind the real machine object. The recordings wait on the lead's record run (decision 0016's LEAD RUNS).
 - Device sign-in and accounts wait for the GitHub App's Device Flow setting.
 - The test repository keeps every closed issue a run made. The list cut keeps them out of recordings; a passthrough
   run still reads them.

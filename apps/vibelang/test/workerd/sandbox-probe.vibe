@@ -1,12 +1,16 @@
 // The vl-test stage's probe Worker body (worker/sandboxProbeFetch.vibe, as worker/SandboxProbe.vibe wires it) over the
-// production SandboxAccount and SandboxMachine bodies in real workerd SQLite, on the in-memory Container
-// (memoryContainer.vibe). test/sandboxProbe.workerd.test.vibe runs the real-Container suite against it and holds every
-// answer to the committed recording of the real run. `/machine/<name>` reaches a machine object directly; the `x-host-fault: account-binding` header breaks the
-// account binding.
+// production SandboxAccount and SandboxMachine bodies in real workerd SQLite. Each machine's Container is chosen per
+// machine by `POST /machine/<name>/container`: a replay of a real Container run's recorded calls (@smthrs/testing's
+// ContainerRecording, test/recordings/containers/), the in-memory Container (memoryContainer.vibe, the default), or the
+// in-memory Container recorded the way the deployed probe records (worker/sandboxProbeContainer.vibe).
+// test/sandboxProbe.workerd.test.vibe runs the real-Container suite against it. `/machine/<name>` reaches a machine
+// object directly, `/clamped/<name>` reaches it through the probe's lease clamp, and the `x-host-fault:
+// account-binding` and `machine-binding` headers break the probe's account and machine bindings.
+import * as ContainerRecording from "@smthrs/testing/ContainerRecording"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { machineObject } from "../../worker/machineObject.vibe"
 import { accountObject, gatewayOf } from "../../worker/accountObject.vibe"
+import { normalizeCall, probeMachine } from "../../worker/sandboxProbeContainer.vibe"
 import { leaseClamped, probeFetch, probeIdentity } from "../../worker/sandboxProbeFetch.vibe"
 import { memoryContainer, type Fault } from "./memoryContainer.vibe"
 import { PROBE_TOKEN } from "./sandbox-probe-token.vibe"
@@ -15,6 +19,10 @@ import { refuseBinding } from "../support/refuseBinding.ts"
 interface State { readonly id: { toString(): string }; readonly storage: unknown }
 interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(url: string, init?: RequestInit): Promise<Response> } }
 interface Env { readonly MACHINE: Namespace; readonly ACCOUNT: Namespace }
+type Box = ContainerRecording.Container<unknown>
+type Apply = [string, number, string, string]
+/** The Container a machine reaches. `max`: how many calls `record` keeps (the probe's MAX_CALLS when absent). */
+export interface Choice { readonly mode: "memory" | "record" | "replay"; readonly calls?: ReadonlyArray<ContainerRecording.Call>; readonly max?: number }
 
 const runtime = Layer.succeed(RuntimeContext, {} as never)
 const json = (body: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(body))
@@ -22,9 +30,14 @@ const identity = probeIdentity(PROBE_TOKEN)
 const post = (namespace: Namespace, name: string, path: string, body: unknown) =>
   promise(() => namespace.get(namespace.idFromName(name)).fetch(`https://object/${path}`, { method: "POST", body: JSON.stringify(body) }).then((response) => response.json()))
 
-/** Machine objects behind the RPC stub's shape: `apply` as the account and the probe's sweep call it. */
-function machines(env: Env) {
-  return { getByName: (name: string) => ({ apply: (...args: [string, number, string, string]) => post(env.MACHINE, name, "apply", args) }) }
+/** Machine objects behind the RPC stub's shape: `apply` as the account and the probe call it, and `recording`. */
+function machines(env: Env, broken = false) {
+  return {
+    getByName: (name: string) => broken ? refuseBinding() : ({
+      apply: (...args: Apply) => post(env.MACHINE, name, "apply", args),
+      recording: () => post(env.MACHINE, name, "recording", []),
+    }),
+  }
 }
 /** `broken`: the account binding throws, as workerd's does when the binding is missing. */
 function accounts(env: Env, broken = false) {
@@ -36,14 +49,49 @@ function accounts(env: Env, broken = false) {
   }
 }
 
+/**
+ * A replayed box that stops while a command runs, once armed: the `dies` fault over a recording, as a container that
+ * exits or is evicted mid-command. The command's own recorded answer still comes back; every later `running` is false
+ * and claims nothing, so the recording's later calls go unclaimed.
+ */
+function dying(box: Box) {
+  const fault = { armed: false, dead: false }
+  const container: Box = {
+    ...box,
+    get running() { return fault.dead ? succeed(false) : box.running },
+    exec: (argv, options) => Effect.tap(box.exec(argv, options), () => sync(() => { if (fault.armed) fault.dead = true })),
+  }
+  return { fault, container }
+}
+
 export class MachineHost {
   readonly memory = memoryContainer()
-  readonly api: ReturnType<typeof this.build>
-  constructor(readonly state: State) { this.api = this.build() }
-  build() { return runPromise(Effect.provide(machineObject(this.memory.container as never, { raw: this.state } as never), runtime)) }
+  replayed: { readonly remaining: () => number; readonly fault: { armed: boolean } } | undefined
+  api: ReturnType<typeof this.build>
+  constructor(readonly state: State) { this.api = this.build({ mode: "memory" }) }
+  /** The deployed probe's machine (probeMachine) over the chosen Container: recorded only in `record` mode. */
+  build(choice: Choice) {
+    this.replayed = undefined
+    let box: unknown = this.memory.container
+    if (choice.mode === "replay") {
+      const replay = ContainerRecording.replay<Box>({ calls: choice.calls ?? [] }, { normalize: normalizeCall })
+      const { fault, container } = dying(replay.container)
+      this.replayed = { remaining: replay.remaining, fault }
+      box = container
+    }
+    return runPromise(Effect.provide(probeMachine(box as never, { raw: this.state } as never, choice.mode === "record" ? "record" : "passthrough", choice.max), runtime))
+  }
   async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname
-    if (path === "/fault") { this.memory.box.fault = (await request.json() as { readonly fault: Fault }).fault; return json({}) }
+    if (path === "/container") { this.api = this.build(await request.json() as Choice); return json({}) }
+    if (path === "/remaining") return json({ remaining: this.replayed?.remaining() })
+    if (path === "/recording") return json(await runPromise(Effect.provide((await this.api).recording(), runtime)))
+    if (path === "/fault") {
+      const fault = (await request.json() as { readonly fault: Fault }).fault
+      if (this.replayed !== undefined) this.replayed.fault.armed = fault === "dies"
+      else this.memory.box.fault = fault
+      return json({})
+    }
     const args = await request.json() as ["start" | "stop" | "command" | "lease" | "status", number, string, string]
     return json(await runPromise(Effect.provide((await this.api).apply(...args), runtime)))
   }
@@ -67,10 +115,15 @@ export default {
     const url = new URL(request.url)
     const [, area, name, operation] = url.pathname.split("/")
     if (area === "machine") return env.MACHINE.get(env.MACHINE.idFromName(decodeURIComponent(name!))).fetch(`https://object/${operation ?? "apply"}`, { method: "POST", body: await request.text() })
-    // A test asks for a broken account binding with this header; a deployed probe has no such switch.
-    const named = accounts(env, request.headers.get("x-host-fault") === "account-binding")
+    if (area === "clamped") {
+      const args = await request.json() as ["start" | "stop" | "command" | "lease" | "status", number, string, string]
+      return json(await runPromise(Effect.provide(leaseClamped(machines(env) as never).getByName(decodeURIComponent(name!)).apply(...args), runtime)))
+    }
+    // A test asks for a broken binding with this header; a deployed probe has no such switch.
+    const fault = request.headers.get("x-host-fault")
+    const named = accounts(env, fault === "account-binding")
     const { gateway } = gatewayOf(named as never, identity)
-    const response = await runPromise(probeFetch(PROBE_TOKEN, gateway, named as never, machines(env) as never).pipe(
+    const response = await runPromise(probeFetch(PROBE_TOKEN, gateway, named as never, machines(env, fault === "machine-binding") as never).pipe(
       Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
       Effect.provide(runtime),
     ))

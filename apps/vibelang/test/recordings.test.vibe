@@ -1,9 +1,11 @@
 // @vitest-environment node
 // Ruling VL-36: a committed recording of a real service never holds a credential. Every file under test/recordings is
-// scanned with the recorder's own credential rules, so a hand edit or a recording made before a rule existed fails CI.
+// scanned with the recorder's own credential rules, so a hand edit or a recording made before a rule existed fails CI:
+// the HTTP recordings, and the Container recordings under test/recordings/containers/ (ContainerRecording).
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { expect, it } from "@effect/vitest"
 import { HttpRecording } from "@smthrs/testing"
+import * as ContainerRecording from "@smthrs/testing/ContainerRecording"
 
 it.effect("no committed recording holds a credential, and each one replays", () => effect {
   provide NodeServices.layer {
@@ -22,6 +24,20 @@ it.effect("no committed recording holds a credential, and each one replays", () 
       const recording = try HttpRecording.load(file)
       expect(recording.exchanges.length, name).toBeGreaterThan(0)
     }
+    const containers = path.join(directory, "containers")
+    const recorded = (try fs.exists(containers)) ? (try fs.readDirectory(containers)).filter((name) => name.endsWith(".json")).sort() : []
+    for (const name of recorded) {
+      const text = try fs.readFileString(path.join(containers, name))
+      for (const rule of HttpRecording.scan(text)) found.push(`containers/${name}: ${rule}`)
+      expect(new TextEncoder().encode(text).length, name).toBeLessThan(1024 * 1024)
+      expect((try Effect.try(() => ContainerRecording.decode(text))).calls.length, name).toBeGreaterThan(0)
+    }
     expect(found).toEqual([])
   }
+})
+
+it("a Container recording with a token shape fails the scan", () => {
+  const planted = `{"calls":[\n{"operation":"exec","input":null,"output":{"stdout":"ghp_${"a".repeat(36)}","stderr":"","exitCode":0}}\n]}\n`
+  expect(HttpRecording.scan(planted)).toEqual(["github-token"])
+  expect(ContainerRecording.decode(planted).calls).toHaveLength(1)
 })

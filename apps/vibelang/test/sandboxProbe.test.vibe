@@ -27,12 +27,13 @@ function stateOf(storage: ReturnType<typeof objectStorage>, id: string) {
 const provided = <A, E>(body: A!E!(RuntimeContext | Scope.Scope | HttpServer.HttpServer | HttpClient.HttpClient)) => Effect.scoped(Effect.provide(Effect.provideService(body, RuntimeContext, {} as never), NodeHttpServer.layerTest))
 
 /** The probe Worker's body over one account and one machine, served on the test server's loopback origin. */
-effect function probe(options: { readonly accountBinding?: boolean } = {}) {
+effect function probe(options: { readonly accountBinding?: boolean; readonly machineBinding?: boolean } = {}) {
   const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
   const machineStorage = try Effect.try(() => objectStorage())
   const machine = try machineObject(local.box as unknown as MachineBox, stateOf(machineStorage, "m"))
   const identity = probeIdentity(TOKEN)
-  const machines = try Effect.try(() => namespaceOf(() => true, machine))
+  // A local machine records nothing: only the deployed probe's Container records (worker/sandboxProbeContainer.vibe).
+  const machines = try Effect.try(() => namespaceOf(() => options.machineBinding !== false, { ...machine, recording: () => succeed([]) }))
   const account = try accountObject(stateOf(try Effect.try(() => objectStorage()), "a"), leaseClamped(machines) as never, identity)
   const accounts = try Effect.try(() => namespaceOf(() => options.accountBinding !== false, account))
   const { gateway } = gatewayOf(accounts as never, identity)
@@ -174,6 +175,40 @@ describe("the sandbox probe", () => {
       expect(statuses).toEqual([403, 403, 400, 400, 404, 404])
       expect(idle).toEqual({ running: false, status: 200 })
     })
+  }), 30_000)
+
+  it.live("drives the owner's direct machine and reads its recording only with the token and a probe owner", () => provided(effect {
+    try probe()
+    const client = try HttpClient.HttpClient
+    const owner = probeOwner(Date.now() + 60_000)
+    const ask = (path: string, who: string, body?: unknown) => Effect.flatMap(
+      client.execute(HttpClientRequest.post(path).pipe(HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`), HttpClientRequest.setHeader(OWNER_HEADER, who), (request) => body === undefined ? request : HttpClientRequest.bodyJsonUnsafe(request, body))),
+      (response) => Effect.map(response.json, (json) => [response.status, json]),
+    )
+    const answers = [
+      try ask("/api/probe/machine", owner, ["start", "start-1", ""]),
+      try ask("/api/probe/machine", owner, ["command", "pwd", "pwd"]),
+      try ask("/api/probe/machine", probeOwner(Date.now() - 1), ["status", "", ""]),
+      try ask("/api/probe/machine", owner, ["reboot", "", ""]),
+      try ask("/api/probe/container?conversation=direct", owner),
+      try ask("/api/probe/container?conversation=other", owner),
+      try ask("/api/probe/machine", owner, ["stop", "stop-1", ""]),
+    ]
+    try Effect.try(() => expect(answers).toEqual([
+      [200, { ok: true, output: "" }], [200, { ok: false, output: "", reason: "lease-expired" }], [403, { error: "forbidden" }], [400, { error: "request" }],
+      [200, { calls: [] }], [400, { error: "conversation" }], [200, { ok: true, output: "" }],
+    ]))
+  }), 30_000)
+
+  it.live("names a machine it cannot reach on the direct route and the recording read", () => provided(effect {
+    try probe({ machineBinding: false })
+    const client = try HttpClient.HttpClient
+    const owner = probeOwner(Date.now() + 60_000)
+    const statuses = try Effect.forEach(["/api/probe/machine", "/api/probe/container?conversation=live"], (path) => Effect.map(
+      client.execute(HttpClientRequest.post(path).pipe(HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`), HttpClientRequest.setHeader(OWNER_HEADER, owner), HttpClientRequest.bodyJsonUnsafe(["status", "", ""]))),
+      (response) => response.status,
+    ))
+    try Effect.try(() => expect(statuses).toEqual([503, 503]))
   }), 30_000)
 
   it.live("reports a sweep it could not finish as still running", () => provided(effect {

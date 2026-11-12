@@ -2428,6 +2428,96 @@ recorded exchanges ── compared with ──▶ test/recordings/sandboxes-live
 The fake answers only the commands the suite and these tests send; the real run is the authority for what they
 return. A new command form needs a new real recording first.
 
+### The real Container's calls, replayed behind the real objects (2026-11-11, rulings VL-36 and VL-38)
+
+The lead's reading of VL-38 (2026-11-11 18:55): the in-process fake is allowed only for fuzz targets; every other happy
+path runs on recordings. The section above held the in-memory Container to the real run's HTTP answers. This one moves
+the record and replay seam down to the Container binding itself, so the machine object in workerd sees the real
+Container's own answers.
+
+```
+vl-test stage (VIBELANG_SANDBOX_CONTAINER_MODE=record)            workerd suite (test/workerd/sandbox-probe.vibe)
+  SandboxMachine body                                               SandboxMachine body (same code)
+    └─ ContainerRecording.record(real Container)                      └─ ContainerRecording.replay(recorded calls)
+         └─ each call ─▶ the object's DO storage                           ▲ strict order; a miss dies, remaining() = 0
+  POST /api/probe/container ─▶ test/recordings/containers/<script>.json ─┘
+```
+
+- **SDK (SDK-1).** `@smthrs/testing/ContainerRecording`: passthrough, record and replay of the Container binding
+  (`running`, `start`, `setInactivityTimeout`, the intercepts, `snapshotContainer`, `destroy`, `exec` with its output
+  and exit, and failures by tag), with `normalize`, `encode` (scrubbed: named secrets, `redact`, then the
+  `HttpRecording.scan` rules, refused on a match) and `decode`. It follows VIP-71's record and replay rules as
+  `HttpRecording` does (replay never reaches the service, a miss is a failed test, the library reads no environment
+  variable). It imports no Node module, so the deployed probe records and workerd replays. The credential rules moved
+  to `src/internal/credentials.ts`, shared with `HttpRecording`. Guide: `packages/testing/docs/guides/record-a-container.md`.
+  `test/ContainerRecording.test.ts`: 7 tests, 100% lines, branches, functions and statements.
+- **Recording on the stage.** `worker/sandboxProbeContainer.vibe` wraps the probe machine's Container when the stage is
+  deployed with `VIBELANG_SANDBOX_CONTAINER_MODE=record` (default `passthrough`), and keeps each call in that machine
+  object's storage (at most 2,000; a call past that is logged and not kept). `normalizeCall` erases only what the clock
+  decides: every inactivity timeout and the run script's timeout word. `POST /api/probe/container?conversation=` (token
+  and a probe owner) answers a machine's calls. `POST /api/probe/machine` drives the owner's `direct` machine at
+  generation 1, with its lease clamped like every probe lease, so the machine's own refusals are recorded on a real box.
+  Production never declares the probe, so no product object records.
+- **Scripts** (`test/support/sandboxesLive.vibe`), each one owner and one machine: `lifecycle`, `direct`,
+  `sweep-before`, `deadline` and `unused`. `pnpm test:sandboxes-live` in record mode writes one recording per script,
+  scrubbed of the token; `test/recordings.test.vibe` scans and decodes every file under `test/recordings/containers/`
+  (a planted `ghp_` token fails it).
+- **Mutation.** Replayed standard output changed (`saved` to `spoiled`) fails the record-read-replay test (exit 1);
+  restored, it passes. A replayed call the recording does not hold is never answered: the probe request fails with a
+  500 naming `No recorded container call left for running (call 0)`.
+
+Which Container each test in `test/sandboxProbe.workerd.test.vibe` runs on:
+
+| Test | Container | Why |
+| --- | --- | --- |
+| lifecycle, `direct` steps, a box that stops mid-command | replay of the committed recording | happy paths (VL-36); they skip until the lead's recording is committed |
+| `unused`, `sweep-before`, `deadline` | replay when its recording is committed; memory until then | happy paths; the same test switches with no edit and then checks every call was claimed |
+| record, read through the probe, replay | memory recorded as the stage records, then replayed | proves the seam end to end in workerd before any real recording exists |
+| limit, empty replay | memory recorded with `max: 2`; an empty replay | the recorder's limit and a replay miss |
+| in-memory Container held to `sandboxes-live.json` | memory | `memoryContainer` serves the fuzz and benchmark hosts (VL-38), so it stays held to the real run |
+| lease under one second, owner that is no probe owner | memory | inputs the probe's clamp never sends a real machine, so no real run can record them |
+| signed out, route refusals, sweep refusals | none reached | no machine call, or a broken binding |
+
+`test/sandboxGateway.workerd.test.vibe` and `bench/sandbox-objects.bench.vibe` stay on the benchmark host's memory
+Container: the bench repeats calls no recording holds, and the gateway file asks refusals of bindings, not a box.
+
+**`leaseFor`'s `?? now`** (`worker/sandboxProbeFetch.vibe:43`, a lease for a machine whose owner is no probe owner) is
+reached in workerd: the probe host's `/clamped/<name>` route sends a lease through `leaseClamped` for `person-1/live`,
+which is clamped to the one-second floor, and a command 1.1 s later is refused `lease-expired`.
+
+**Coverage** (`pnpm test:workerd:coverage`, merged workerd gate, box `node26`, 22 files passed; the suite exits 1 on the
+thresholds of other files, 172 of 203 below 100%):
+
+| File | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `worker/machineObject.vibe` | 67/67 | 64/64 | 21/21 | 97/97 |
+| `worker/accountObject.vibe` | 48/48 | 37/37 | 39/39 | 79/79 |
+| `worker/sandboxProbeFetch.vibe` | 60/60 | 62/62 | 28/28 | 82/82 |
+| `worker/sandboxProbeContainer.vibe` | 24/24 | 13/14 | 15/15 | 37/37 |
+
+The one branch was `probeBox`'s unused `max` default, removed after the measurement. `worker/SandboxProbe.vibe` is
+the Alchemy binding no workerd host loads (0% here, as before); the unit gate measures it. In the unit gate
+(`pnpm test:coverage`) the four files above are at 100% lines and statements; 10 of 203 files are below 100% there.
+The 0016 numbers hold until the lead's recording lands: the replay tests then run in place of the memory runs above
+and must keep these rows at 100%.
+
+**LEAD RUNS** (on the Mac, with Cloudflare credentials; the recording run this section waits on):
+
+```sh
+cd apps/vibelang
+export VIBELANG_SANDBOX_IMAGE=docker.io/library/debian:bookworm-slim
+export VIBELANG_SANDBOX_PROBE_TOKEN="$(openssl rand -hex 32)"
+VIBELANG_SANDBOX_CONTAINER_MODE=record pnpm deploy:sandboxes-test --yes      # prints the probe's workers.dev URL
+VIBELANG_SANDBOX_MODE=record VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.dev pnpm test:sandboxes-live
+pnpm destroy:sandboxes-test --yes                                             # teardown: removes the stage
+# then commit test/recordings/sandboxes-live.json and test/recordings/containers/*.json
+```
+
+Spend: five lite Container starts (lifecycle 2, direct, sweep-before, deadline), one at a time, about 12 minutes of
+lite compute in total (the deadline script holds its box 60 s). At Cloudflare's published Containers rates for a lite
+instance (1/16 vCPU, 256 MiB, 2 GB disk) that is under $0.01. Every script's owner deadline is at most 10 minutes
+away; a failed script sweeps or stops its box; `destroy:sandboxes-test` removes the stage and its objects.
+
 ### Unit and fuzz results after the audit roster fixes
 
 Measured on `8c5d65ae` plus this lane. Unit: the fresh Node run passed 238 files / 2066 tests (1 expected failure,

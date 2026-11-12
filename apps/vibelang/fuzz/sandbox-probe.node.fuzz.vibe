@@ -45,7 +45,8 @@ it.live("sandbox/probe", () => run("sandbox/probe", Input, (input) => provided(e
   const token = input.configured ? TOKEN : ""
   const identity = probeIdentity(token)
   let healthy = true
-  const machines = try Effect.try(() => namespaceOf(() => true, machine))
+  // A local machine records nothing: only the deployed probe's Container records (worker/sandboxProbeContainer.vibe).
+  const machines = try Effect.try(() => namespaceOf(() => true, { ...machine, recording: () => succeed([]) }))
   const account = try accountObject(stateOf(try Effect.try(() => objectStorage()), "a"), leaseClamped(machines) as never, identity)
   const accounts = try Effect.try(() => namespaceOf(() => healthy, account))
   const { gateway } = gatewayOf(accounts as never, identity)

@@ -13,6 +13,7 @@ import type { Role } from "../src/core/sandboxDecision.vibe"
 import { observed } from "../src/core/sandboxHost.vibe"
 import type { AccountShape, SandboxIdentity } from "./accountObject.vibe"
 import type { MachineShape } from "./machineObject.vibe"
+import type * as ContainerRecording from "@smthrs/testing/ContainerRecording"
 import { sandboxRequest, type Gateway } from "./SandboxHttp.vibe"
 
 /** The Alchemy stage that deploys only the probe, its objects and the image (infra/Stack.vibe). */
@@ -22,6 +23,17 @@ export const PROBE_WINDOW_MS = 10 * 60_000
 /** The one conversation a probe run uses, so one run holds at most one sandbox. */
 export const PROBE_CONVERSATION = "live"
 export const OWNER_HEADER = "x-vibelang-probe-owner"
+/**
+ * The direct route's conversation: one machine per owner that `POST /api/probe/machine` drives outside any account,
+ * always at DIRECT_GENERATION, so the suite records the machine's own refusals of a running box on a real Container.
+ * Its spend ends with the suite's stop, or with Cloudflare's inactivity timeout: a lease there is clamped as well.
+ */
+export const DIRECT_CONVERSATION = "direct"
+export const DIRECT_GENERATION = 1
+/** A probe machine also answers the Container calls it recorded (sandboxProbeContainer.vibe). */
+export interface Recorded { recording(): ReadonlyArray<ContainerRecording.Call>!!RuntimeContext }
+const DirectRequest = Schema.Tuple([Schema.Literals(["start", "stop", "command", "lease", "status"]), Schema.String, Schema.String])
+const ROUTES = new Set(["/api/probe/sweep", "/api/probe/machine", "/api/probe/container"])
 const OWNER = /^probe-(\d{13})$/
 
 type Named<Shape> = { getByName(name: string): Shape }
@@ -95,16 +107,40 @@ export effect function sweep(accounts: Named<AccountShape>, machines: Named<Mach
   return { running: !status.ok || status.output !== "stopped" }
 }
 
-/** The probe Worker's fetch: the product's sandbox protocol, and the token-only sweep. */
-export function probeFetch(token: string, gateway: Gateway<RuntimeContext>, accounts: Named<AccountShape>, machines: Named<MachineShape>) {
+/** One operation on the owner's direct machine, before the owner's deadline only; its lease is clamped to it. */
+effect function direct(request: HttpServerRequest.HttpServerRequest, machines: Named<MachineShape>, owner: string) {
+  if (!admitted(owner, try Clock.currentTimeMillis)) return json({ error: "forbidden" }, 403)
+  const body = try Effect.option(Effect.flatMap(request.json, Schema.decodeUnknownEffect(DirectRequest)))
+  if (Option.isNone(body)) return json({ error: "request" }, 400)
+  const [kind, operationId, command] = body.value
+  const machine = Effect.flatMap(Effect.try(() => leaseClamped(machines).getByName(`${owner}/${DIRECT_CONVERSATION}`)), (stub) => stub.apply(kind, DIRECT_GENERATION, operationId, command))
+  const answer = observed("probe-machine", machine) catch () => undefined
+  return answer === undefined ? json({ error: "sandbox unavailable" }, 503) : json(answer)
+}
+
+/** The Container calls the owner's machine of `?conversation=` recorded, before or after the deadline. */
+effect function recorded(request: HttpServerRequest.HttpServerRequest, machines: Named<Recorded>, owner: string) {
+  const conversation = new URL(request.url, "http://probe.invalid").searchParams.get("conversation")
+  if (conversation !== PROBE_CONVERSATION && conversation !== DIRECT_CONVERSATION) return json({ error: "conversation" }, 400)
+  const calls = observed("probe-container", Effect.flatMap(Effect.try(() => machines.getByName(`${owner}/${conversation}`)), (stub) => stub.recording())) catch () => undefined
+  return calls === undefined ? json({ error: "sandbox unavailable" }, 503) : json({ calls })
+}
+
+/**
+ * The probe Worker's fetch: the product's sandbox protocol, and the token-only sweep, direct machine route and
+ * Container recording read.
+ */
+export function probeFetch(token: string, gateway: Gateway<RuntimeContext>, accounts: Named<AccountShape>, machines: Named<MachineShape & Recorded>) {
   return effect {
     const request = try HttpServerRequest.HttpServerRequest
     const path = new URL(request.url, "http://probe.invalid").pathname
     if (path.startsWith("/api/sandboxes/")) return try sandboxRequest(gateway)
-    if (path !== "/api/probe/sweep" || request.method !== "POST") return json({ error: "not found" }, 404)
+    if (!ROUTES.has(path) || request.method !== "POST") return json({ error: "not found" }, 404)
     if (!(try authorized(token, request.headers["authorization"]))) return json({ error: "forbidden" }, 403)
     const owner = request.headers[OWNER_HEADER] ?? ""
     if (deadlineOf(owner) === undefined) return json({ error: "owner" }, 400)
+    if (path === "/api/probe/machine") return try direct(request, machines, owner)
+    if (path === "/api/probe/container") return try recorded(request, machines, owner)
     const answer = observed("probe-sweep", sweep(accounts, machines, owner)) catch () => undefined
     return answer === undefined ? json({ error: "sandbox unavailable" }, 503) : json(answer)
   }

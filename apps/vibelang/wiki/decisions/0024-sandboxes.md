@@ -154,6 +154,14 @@ suite (LiveFactory) ── Bearer token, x-vibelang-probe-owner: probe-<deadline
   committed, `test/sandboxesReplay.test.vibe` replays the real run in every `pnpm test`, claims every exchange and scans
   the file for credentials; until then it skips with that reason. `test/sandboxProbe.test.vibe` records the loopback run
   and replays it, so the wiring is checked before the first real recording exists.
+- **Container recording (VL-36, 2026-11-11).** Deployed with `VIBELANG_SANDBOX_CONTAINER_MODE=record`, each probe
+  machine records every call it makes on its real Container (`@smthrs/testing`'s `ContainerRecording`,
+  `worker/sandboxProbeContainer.vibe`) into its own storage; `POST /api/probe/container?conversation=live|direct`
+  (token, probe owner) reads them. `POST /api/probe/machine` drives the owner's `direct` machine at generation 1, its
+  lease clamped to the deadline, so the machine's own refusals of a running box are recorded on a real one; its spend
+  ends with the script's stop or Cloudflare's inactivity timeout (the account's alarm does not know it).
+  `VIBELANG_SANDBOX_MODE=record pnpm test:sandboxes-live` writes `test/recordings/containers/<script>.json` for five
+  scripts, and the workerd suite replays them behind the real machine object (decision 0016).
 - **Not yet proved.** Snapshot restore, start latency within `startTimeoutMs`, metering against real time and the
   deploy itself wait on the first live run. Durable Object storage and native snapshots outlive a run (snapshots expire
   after 30 days without restore); `pnpm destroy:sandboxes-test` removes the stage.
@@ -202,5 +210,6 @@ export VIBELANG_SANDBOX_PROBE_TOKEN="$(openssl rand -hex 32)"
 pnpm deploy:sandboxes-test --yes                                       # prints the probe's workers.dev URL
 VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.dev pnpm test:sandboxes-live
 VIBELANG_SANDBOX_MODE=record VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.dev pnpm test:sandboxes-live   # then read and commit test/recordings/sandboxes-live.json
+# Container calls too: deploy with VIBELANG_SANDBOX_CONTAINER_MODE=record, then the record run above also writes test/recordings/containers/*.json
 pnpm destroy:sandboxes-test --yes                                      # removes the stage
 ```

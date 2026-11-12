@@ -1,18 +1,22 @@
 // The real-Container suite (test/support/sandboxesLive.vibe) in workerd: the probe Worker body over the production
-// SandboxAccount and SandboxMachine bodies in real workerd SQLite, on the in-memory Container (test/workerd/
-// memoryContainer.vibe). The in-memory Container is held to the real one (VL-36, the VL-38 pattern): every exchange of
-// the committed recording of a real Cloudflare Container run (test/recordings/sandboxes-live.json) must be answered
-// the same here, apart from values the clock or the allocator decides. The machine's own refusals of a running box
-// are asked directly.
+// SandboxAccount and SandboxMachine bodies in real workerd SQLite (test/workerd/sandbox-probe.vibe). Happy paths run on
+// a real Cloudflare Container's recorded calls (VL-36: test/recordings/containers/, @smthrs/testing's
+// ContainerRecording), replayed behind the real machine object; a replay claims every recorded call or fails. The
+// in-memory Container (test/workerd/memoryContainer.vibe) is the fuzz and benchmark hosts' Container (VL-38), held here
+// to the real run: every exchange of the committed HTTP recording (test/recordings/sandboxes-live.json) comes back the
+// same on it. Decision 0016 lists which test runs on which.
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
 import { HttpRecording } from "@smthrs/testing"
+import * as ContainerRecording from "@smthrs/testing/ContainerRecording"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { afterAll, beforeAll } from "vitest"
-import { deadline, serveSandboxProbe, type Served } from "./support/workerd.vibe"
-import { expectLifecycle, lifecycle, normalize, RECORDING } from "./support/sandboxesLive.vibe"
-import { OWNER_HEADER, PROBE_WINDOW_MS, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+import { deadline as within, serveSandboxProbe, type Served } from "./support/workerd.vibe"
+import { recordingText } from "./support/recordingFile.ts"
+import { containerCalls, containerRecording, deadline, direct, DIRECT_STEPS, directStep, expectDirect, expectLifecycle, LAST_STEP, lifecycle, normalize, probeClient, RECORDING, SCRIPTS, sweepBefore, unused, type Prepare, type Script } from "./support/sandboxesLive.vibe"
+import { DIRECT_CONVERSATION, OWNER_HEADER, PROBE_WINDOW_MS, probeOwner } from "../worker/sandboxProbeFetch.vibe"
 import { PROBE_TOKEN } from "./workerd/sandbox-probe-token.vibe"
+import type { Choice } from "./workerd/sandbox-probe.vibe"
 
 /**
  * The only response values comparison may erase: the sandbox's name is allocated per owner, and minutes and the
@@ -27,12 +31,45 @@ function semantic(value: unknown): unknown {
 type Exchanges = { readonly exchanges: ReadonlyArray<{ readonly request: unknown; readonly response: { readonly status: number; readonly body: unknown } }> }
 const comparable = (recording: Exchanges) => recording.exchanges.map(({ request, response }) => ({ request, status: response.status, body: semantic(response.body) }))
 
+/** Each script's committed Container recording, or undefined until the lead records one (decision 0016). */
+const recorded = Object.fromEntries(Object.keys(SCRIPTS).map((script) => [script, recordingText(containerRecording(script as Script))])) as Record<Script, string | undefined>
+const missing = (Object.keys(recorded) as Array<Script>).filter((script) => recorded[script] === undefined)
+/** The recorded deadline script's window (test/sandboxes.live.test.vibe); without its recording, a short one. */
+const DEADLINE_WINDOW = recorded.deadline === undefined ? 4000 : 60_000
+
 describe("the real-Container suite in workerd", () => {
   let probe: Served | undefined
-  beforeAll(async () => { probe = await runPromise(serveSandboxProbe()) }, deadline(120_000))
+  beforeAll(async () => { probe = await runPromise(serveSandboxProbe()) }, within(120_000))
   afterAll(async () => { await probe?.dispose() })
 
-  it.live("answers every exchange of the real Container run as it was recorded", () => scoped(effect {
+  /** Asks the host for a machine's Container; answers what the host answered. */
+  effect function host(machine: string, path: string, body: unknown) {
+    provide FetchHttpClient.layer {
+      const response = try (try HttpClient.HttpClient).execute(HttpClientRequest.post(`${probe!.origin}/${path.startsWith("clamped") ? path : `machine/${encodeURIComponent(machine)}/${path}`}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)))
+      try Effect.try(() => expect(response.status).toBe(200))
+      return (try response.json) as unknown
+    }
+  }
+  const choose = (machine: string, choice: Choice) => Effect.asVoid(host(machine, "container", choice))
+  const remaining = (machine: string) => Effect.map(host(machine, "remaining", {}), (answer) => (answer as { readonly remaining?: number }).remaining)
+  /** Loads `calls` into the owner's machine of `script` before the script's first request. */
+  const replaying = (script: Script, calls: ReadonlyArray<ContainerRecording.Call>, owners: Array<string>): Prepare => (owner) => {
+    owners.push(owner)
+    return choose(`${owner}/${SCRIPTS[script]}`, { mode: "replay", calls })
+  }
+  const committed = (script: Script) => ContainerRecording.decode(recorded[script]!).calls
+  /**
+   * A script's committed recording when there is one: `prepare` loads it, and `claimed` then checks that every recorded
+   * call was claimed. Without one the script runs on memory and `claimed` checks nothing.
+   */
+  function onRecording(script: Script) {
+    const owners: Array<string> = []
+    const prepare = recorded[script] === undefined ? undefined : replaying(script, committed(script), owners)
+    const claimed = () => owners.length === 0 ? Effect.void : Effect.flatMap(remaining(`${owners[0]}/${SCRIPTS[script]}`), (left) => Effect.try(() => expect(left).toBe(0)))
+    return { prepare, claimed }
+  }
+
+  it.live("the in-memory Container answers every exchange of the real Container run as it was recorded", () => scoped(effect {
     provide NodeServices.layer {
       const fs = try FileSystem.FileSystem
       const path = `${try fs.makeTempDirectoryScoped()}/sandboxes-live.json`
@@ -52,37 +89,142 @@ describe("the real-Container suite in workerd", () => {
     }
   }))
 
-  it.live("reports a running box, and refuses a bad lease, an expired lease, a changed or repeated command and a box that stops mid-command, on a running box", () => effect {
-    provide FetchHttpClient.layer {
-      const client = try HttpClient.HttpClient
-      effect function ask(machine: string, path: string, body: unknown) {
-        const response = try client.execute(HttpClientRequest.post(`${probe!.origin}/machine/${machine}/${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)))
-        try Effect.try(() => expect(response.status).toBe(200))
-        return (try response.json) as unknown
+  describe.skipIf(missing.length > 0)(`on the real Container's recorded calls (missing ${missing.join(", ")}: decision 0016's LEAD RUNS)`, () => {
+    it.live("the lifecycle replays every recorded call, and every exchange of the real run comes back the same", () => scoped(effect {
+      provide NodeServices.layer {
+        const fs = try FileSystem.FileSystem
+        const path = `${try fs.makeTempDirectoryScoped()}/sandboxes-live.json`
+        const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+        const owners: Array<string> = []
+        const run = try scoped(effect {
+          const client = try HttpRecording.make({ mode: "record", path, live, secrets: [PROBE_TOKEN], normalize })
+          return try Effect.provideService(lifecycle(probe!.origin, PROBE_TOKEN, PROBE_WINDOW_MS, replaying("lifecycle", committed("lifecycle"), owners)), HttpClient.HttpClient, client)
+        })
+        const hereText = try fs.readFileString(path)
+        const here = try Effect.try(() => JSON.parse(hereText) as Exchanges)
+        const realText = try fs.readFileString(RECORDING)
+        const real = try Effect.try(() => JSON.parse(realText) as Exchanges)
+        const left = try remaining(`${owners[0]}/${SCRIPTS.lifecycle}`)
+        try Effect.try(() => {
+          expectLifecycle(run, false)
+          expect(comparable(here)).toEqual(comparable(real))
+          expect(left).toBe(0)
+        })
       }
-      const call = (kind: string, operationId = "", command = "", generation = 1) => ask("direct", "apply", [kind, generation, operationId, command])
+    }))
+
+    it.live("the machine's own refusals, receipt, conflict and failing command replay as the real machine answered", () => scoped(effect {
+      provide FetchHttpClient.layer {
+        const owners: Array<string> = []
+        const run = try direct(probe!.origin, PROBE_TOKEN, replaying("direct", committed("direct"), owners))
+        const left = try remaining(`${owners[0]}/${DIRECT_CONVERSATION}`)
+        try Effect.try(() => { expectDirect(run); expect(left).toBe(0) })
+      }
+    }))
+
+    it.live("a recorded box that stops while a command runs: the machine refuses the command as not current", () => scoped(effect {
+      provide FetchHttpClient.layer {
+        const answers = try dies(committed("direct"))
+        try Effect.try(() => expect(answers).toEqual([{ ok: false, output: "", reason: "not-current" }, { ok: true, output: "stopped" }]))
+      }
+    }))
+  })
+
+  /** DIRECT_STEPS replayed from `calls` up to `last`, then the box stops while `last` runs: `last` and the state. */
+  effect function dies(calls: ReadonlyArray<ContainerRecording.Call>) {
+    const owner = probeOwner(Date.now() + PROBE_WINDOW_MS)
+    const machine = `${owner}/${DIRECT_CONVERSATION}`
+    try choose(machine, { mode: "replay", calls })
+    const client = probeClient(try HttpClient.HttpClient, PROBE_TOKEN, owner)
+    try Effect.forEach(DIRECT_STEPS.slice(0, LAST_STEP), (step) => directStep(client, probe!.origin, step))
+    try host(machine, "fault", { fault: "dies" })
+    const last = try directStep(client, probe!.origin, DIRECT_STEPS[LAST_STEP]!)
+    const status = try directStep(client, probe!.origin, ["status", "", ""])
+    return [last.body, status.body]
+  }
+
+  it.live("records a machine's Container calls as the deployed probe does, reads them through the probe, and a replay answers the same", () => scoped(effect {
+    provide FetchHttpClient.layer {
+      const recordedRun = try direct(probe!.origin, PROBE_TOKEN, (owner) => choose(`${owner}/${DIRECT_CONVERSATION}`, { mode: "record" }))
+      const calls = try containerCalls(probe!.origin, PROBE_TOKEN, recordedRun.owner, "direct")
+      const owners: Array<string> = []
+      const replayed = try direct(probe!.origin, PROBE_TOKEN, replaying("direct", calls, owners))
+      const left = try remaining(`${owners[0]}/${DIRECT_CONVERSATION}`)
+      const died = try dies(calls)
+      const text = try ContainerRecording.encode({ calls }, [PROBE_TOKEN])
+      try Effect.try(() => {
+        expectDirect(recordedRun)
+        expectDirect(replayed)
+        expect(left).toBe(0)
+        expect(died).toEqual([{ ok: false, output: "", reason: "not-current" }, { ok: true, output: "stopped" }])
+        expect(calls.map((call) => call.operation)).toContain("snapshotContainer")
+        // The clock's values are erased: every inactivity timeout and each run script's timeout word.
+        expect(calls.filter((call) => call.operation === "setInactivityTimeout").map((call) => call.input)).toEqual(["<duration>", "<duration>"])
+        expect(text).toContain("'<timeout>'")
+        expect(HttpRecording.scan(text)).toEqual([])
+      })
+    }
+  }))
+
+  it.live("keeps no recorded call past its limit, and a replay with nothing recorded is refused, never answered", () => scoped(effect {
+    provide FetchHttpClient.layer {
+      const owner = probeOwner(Date.now() + PROBE_WINDOW_MS)
+      try choose(`${owner}/${DIRECT_CONVERSATION}`, { mode: "record", max: 2 })
+      const client = probeClient(try HttpClient.HttpClient, PROBE_TOKEN, owner)
+      const started = try directStep(client, probe!.origin, ["start", "start-1", ""])
+      const calls = try containerCalls(probe!.origin, PROBE_TOKEN, owner, "direct")
+      const empty = probeOwner(Date.now() + PROBE_WINDOW_MS)
+      try choose(`${empty}/${DIRECT_CONVERSATION}`, { mode: "replay", calls: [] })
+      // A call the recording does not hold is a defect, never an answer: the request fails, naming the call.
+      const missed = try probeClient(try HttpClient.HttpClient, PROBE_TOKEN, empty).execute(HttpClientRequest.post(`${probe!.origin}/api/probe/machine`).pipe(HttpClientRequest.bodyJsonUnsafe(["status", "", ""])))
+      const refused = { status: missed.status, text: try missed.text }
+      try Effect.try(() => {
+        expect(started.body).toEqual({ ok: true, output: "" })
+        expect(calls.map((call) => call.operation)).toEqual(["running", "start"])
+        expect(refused.status).toBe(500)
+        expect(refused.text).toContain("No recorded container call left for running (call 0)")
+      })
+    }
+  }))
+
+  it.live("refuses a direct machine step past the owner's deadline or without a valid step, and a recording read of another conversation; names a machine it cannot reach", () => effect {
+    provide FetchHttpClient.layer {
+      const owner = probeOwner(Date.now() + 60_000)
+      const expired = probeOwner(Date.now() - 1)
       const answers = [
-        try call("start", "start-1"),
-        try call("status", "", "", 0),
-        try call("lease", "", "soon"),
-        try call("lease", "", "999"),
-        try call("command", "early", "cat keep.txt"),
-        try call("lease", "", "60000"),
-        try call("command", "write", "printf saved > keep.txt && cat keep.txt"),
-        try call("command", "write", "printf saved > keep.txt && cat keep.txt"),
-        try call("command", "write", "cat keep.txt"),
-        try call("command", "missing", "cat gone.txt"),
-        try ask("direct", "fault", { fault: "dies" }),
-        try call("command", "last", "cat keep.txt"),
-        try call("status"),
+        try probeAsk("/api/probe/machine", as(expired), ["status", "", ""]),
+        try probeAsk("/api/probe/machine", as(owner), ["reboot", "", ""]),
+        try probeAsk("/api/probe/machine", as(owner)),
+        try probeAsk("/api/probe/container?conversation=other", as(owner)),
+        try probeAsk("/api/probe/container", as(owner)),
+        try probeAsk("/api/probe/machine", { ...as(owner), "x-host-fault": "machine-binding" }, ["status", "", ""]),
+        try probeAsk("/api/probe/container?conversation=live", { ...as(owner), "x-host-fault": "machine-binding" }),
+        try probeAsk("/api/probe/container?conversation=live", as(expired)),
+        try probeAsk("/api/probe/machine", as(owner, "wrong"), ["status", "", ""]),
       ]
-      const refused = (reason: string) => ({ ok: false, output: "", reason })
       try Effect.try(() => expect(answers).toEqual([
-        { ok: true, output: "" }, { ok: true, output: "running" }, refused("lease-duration"), refused("lease-duration"), refused("lease-expired"), { ok: true, output: "running" },
-        { ok: true, output: "saved" }, { ok: true, output: "saved" }, { ok: false, output: "saved", reason: "receipt-conflict" },
-        { ok: true, output: expect.stringContaining("1") }, {}, refused("not-current"), { ok: true, output: "stopped" },
+        { status: 403, body: { error: "forbidden" } }, { status: 400, body: { error: "request" } }, { status: 400, body: { error: "request" } },
+        { status: 400, body: { error: "conversation" } }, { status: 400, body: { error: "conversation" } },
+        { status: 503, body: { error: "sandbox unavailable" } }, { status: 503, body: { error: "sandbox unavailable" } },
+        { status: 200, body: { calls: [] } }, { status: 403, body: { error: "forbidden" } },
       ]))
     }
+  })
+
+  // The in-memory Container, for what the probe's clamp never sends a real machine (decision 0016): a lease under the
+  // one-second floor, and a lease for a machine whose owner is no probe owner.
+  it.live("refuses a lease under one second, which the probe's clamp never asks of a real machine", () => effect {
+    const call = (kind: string, operationId = "", command = "") => host("unclamped", "apply", [kind, 1, operationId, command])
+    const answers = [try call("start", "start-1"), try call("lease", "", "999"), try call("lease", "", "21600001")]
+    try Effect.try(() => expect(answers).toEqual([{ ok: true, output: "" }, { ok: false, output: "", reason: "lease-duration" }, { ok: false, output: "", reason: "lease-duration" }]))
+  })
+
+  it.live("clamps a lease for a machine whose owner is no probe owner to the one-second floor", () => effect {
+    const started = try host("person-1/live", "apply", ["start", 1, "start-1", ""])
+    const leased = try host("person-1/live", "clamped/person-1%2Flive", ["lease", 1, "", "60000"])
+    try Effect.sleep(Duration.millis(1100))
+    const late = try host("person-1/live", "apply", ["command", 1, "late", "cat keep.txt"])
+    try Effect.try(() => expect([started, leased, late]).toEqual([{ ok: true, output: "" }, { ok: true, output: "running" }, { ok: false, output: "", reason: "lease-expired" }]))
   })
 
   effect function probeAsk(path: string, headers: Readonly<Record<string, string>>, body?: unknown) {
@@ -114,35 +256,38 @@ describe("the real-Container suite in workerd", () => {
         try probeAsk("/api/probe/sweep", as("person-1")),
         try probeAsk("/api/probe/sweep", as(undefined)),
         try probeAsk("/api/probe/sweep", { ...as(owner), "x-host-fault": "account-binding" }),
-        try probeAsk("/api/probe/sweep", as(owner)),
       ]
       try Effect.try(() => expect(answers).toEqual([
         { status: 404, body: { error: "not found" } }, { status: 403, body: { error: "forbidden" } }, { status: 400, body: { error: "owner" } }, { status: 400, body: { error: "owner" } },
-        { status: 503, body: { error: "sandbox unavailable" } }, { status: 200, body: { running: false } },
+        { status: 503, body: { error: "sandbox unavailable" } },
       ]))
     }
   })
 
-  it.live("a sweep before the deadline stops what the owner left running", () => effect {
+  it.live("an owner that never started a sandbox has nothing running", () => scoped(effect {
     provide FetchHttpClient.layer {
-      const owner = probeOwner(Date.now() + 60_000)
-      const started = try probeAsk("/api/sandboxes/live/start", as(owner), { operationId: "start-1" })
-      const swept = try probeAsk("/api/probe/sweep", as(owner))
-      try Effect.try(() => expect([started.status, swept]).toEqual([200, { status: 200, body: { running: false } }]))
+      const replay = onRecording("unused")
+      const run = try unused(probe!.origin, PROBE_TOKEN, replay.prepare)
+      try replay.claimed()
+      try Effect.try(() => expect(run.swept).toEqual({ running: false, status: 200 }))
     }
-  })
+  }))
 
-  it.live("tears a sandbox down at its owner's deadline: the sweep's meter stops it as a Viewer", () => effect {
+  it.live("a sweep before the deadline stops what the owner left running", () => scoped(effect {
     provide FetchHttpClient.layer {
-      const deadline = Date.now() + 4000
-      const owner = probeOwner(deadline)
-      const started = try probeAsk("/api/sandboxes/live/start", as(owner), { operationId: "start-1" })
-      try Effect.sleep(Duration.millis(Math.max(0, deadline - Date.now() + 100)))
-      const swept = try probeAsk("/api/probe/sweep", as(owner))
-      try Effect.try(() => {
-        expect(started).toMatchObject({ status: 200, body: { status: "running", generation: 1 } })
-        expect(swept).toEqual({ status: 200, body: { running: false } })
-      })
+      const replay = onRecording("sweep-before")
+      const run = try sweepBefore(probe!.origin, PROBE_TOKEN, replay.prepare)
+      try replay.claimed()
+      try Effect.try(() => expect([run.started.status, run.swept]).toEqual(["running", { running: false, status: 200 }]))
     }
-  }, deadline(60_000))
+  }))
+
+  it.live("tears a sandbox down at its owner's deadline: the sweep's meter stops it as a Viewer", () => scoped(effect {
+    provide FetchHttpClient.layer {
+      const replay = onRecording("deadline")
+      const run = try deadline(probe!.origin, PROBE_TOKEN, DEADLINE_WINDOW, replay.prepare)
+      try replay.claimed()
+      try Effect.try(() => expect([run.started.status, run.started.generation, run.swept]).toEqual(["running", 1, { running: false, status: 200 }]))
+    }
+  }), within(120_000))
 })
