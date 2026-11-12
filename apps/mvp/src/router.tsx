@@ -338,6 +338,14 @@ const conversationsRoute = createRoute({
 })
 
 /**
+ * Leaving a plugin's page hides its view, unless the next page already shows another: a plugin route that opened next
+ * showed its own view first, and hiding here would leave that page without its keys.
+ */
+const hideView = (context: RouterContext, view: { readonly id: string } | undefined) => {
+  if (view !== undefined) context.plugins.actions.hide(view.id)
+}
+
+/**
  * `/app/$plugin` and `/app/$plugin/<path>`: a plugin's view at its full size (decision 0017, `views`). The host shows it
  * while the route is open, so its keys and its strip act on it; a path no plugin declares is not found.
  */
@@ -351,7 +359,8 @@ const pluginRoute = (path: (typeof ROUTE_PATHS)["pluginIndex" | "pluginPath"]) =
       if (view === undefined) throw notFound()
       return enter(load, local, () => context.plugins.actions.show(view.id))
     },
-    onLeave: ({ context }) => context.plugins.actions.show(null),
+    onLeave: ({ context, params }) =>
+      hideView(context, context.plugins.actions.viewAt(params.plugin, (params as { readonly _splat?: string })._splat ?? "")),
   })
 const pluginIndexRoute = pluginRoute(ROUTE_PATHS.pluginIndex)
 const pluginPathRoute = pluginRoute(ROUTE_PATHS.pluginPath)
@@ -371,7 +380,11 @@ const repoPluginRoute = (path: (typeof ROUTE_PATHS)["repoPluginIndex" | "repoPlu
       if (view === undefined) throw notFound()
       return enterRepository(context, params, load, local, () => context.plugins.actions.show(view.id))
     },
-    onLeave: ({ context }) => context.plugins.actions.show(null),
+    onLeave: ({ context, params }) =>
+      hideView(
+        context,
+        context.plugins.actions.viewAt(params.plugin, (params as { readonly _splat?: string })._splat ?? "", "repository"),
+      ),
   })
 const repoPluginIndexRoute = repoPluginRoute(ROUTE_PATHS.repoPluginIndex)
 const repoPluginPathRoute = repoPluginRoute(ROUTE_PATHS.repoPluginPath)

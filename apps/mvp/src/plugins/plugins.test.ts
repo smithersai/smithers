@@ -4,18 +4,22 @@
 // ChatApi's real handler over the compose Postgres and Electric; only the model is scripted. Proves decision 0017 slice
 // 1's host contract and its trust boundaries at run time (docs/features/plugins.md).
 import { Host } from "@smthrs/plugin"
+import { createMemoryHistory } from "@tanstack/react-router"
 import { Cause, Effect, Exit, Fiber, Metric, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import type { QueueTab } from "../../plugins/queue/src/tab"
 import { Chat } from "../features/chat/chat"
+import { Home } from "../features/home/home"
+import { Repo } from "../features/repo/repo"
 import { StatusStore } from "../features/status/store"
 import { dispatches } from "../flows/dispatch"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../test/chatApi"
+import { shaOf } from "../../worker/test/branch"
 import { read as readTelemetry } from "../test/otlp"
 import type { BuiltIn } from "./builtin"
 import { pluginKeys } from "./keymap"
-import { hostFor, loads, pathOf, Plugins, presses, settledOf, viewAt, viewById } from "./plugins"
+import { hostFor, loads, pathOf, Plugins, presses, settledOf, shownView, viewAt, viewById } from "./plugins"
 import { draftKey } from "./schema"
 import { PluginsUi } from "./ui"
 
@@ -224,6 +228,38 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(a.run(third)?.answer).toEqual({ value: "release" }))
     await until(() => expect(a.run(third)?.status).toBe("done"))
     await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0 }))
+  })
+
+  test("going between a repository's plugin page and an app plugin page keeps the next page's view shown, so its keys act on it", async () => {
+    const api = await openApi()
+    const a = await openDevice(api)
+    api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main") } })
+    const { router } = await import("../router")
+    const repo = await a.runtime.runPromise(Effect.service(Repo))
+    const home = await a.runtime.runPromise(Effect.service(Home))
+    router.update({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      context: { ...router.options.context!, plugins: a.plugins, repo, home, router },
+      isServer: false,
+      origin: api.origin,
+    })
+    await router.load()
+    await until(() => expect(a.plugins.actions.viewAt("factory", "for-you", "repository")?.id).toBe("factory/for-you"))
+    const shown = () => a.runtime.runPromise(Effect.map(shownView, (view) => view?.id ?? null))
+    const page = () => router.state.matches.map((match) => `${match.routeId} ${match.status}`)
+    const queuePage = { to: "/app/$plugin/$", params: { plugin: "queue", _splat: "" } } as const
+    await router.navigate(queuePage)
+    expect(page()).toEqual(["__root__ success", "/app/$plugin/$ success"])
+    expect(await shown()).toBe(VIEW)
+    // The next route shows its view before the one left runs its `onLeave`, which hides only its own view.
+    await router.navigate({ to: "/$owner/$repo/-/$plugin/$", params: { owner: "octo", repo: "hello", plugin: "factory", _splat: "for-you" } })
+    expect(page()).toEqual(["__root__ success", "/$owner/$repo/-/$plugin/$ success"])
+    expect(await shown()).toBe("factory/for-you")
+    await router.navigate(queuePage)
+    expect(await shown()).toBe(VIEW)
+    // A page that is no plugin's hides the view.
+    await router.navigate({ to: "/" })
+    expect(await shown()).toBeNull()
   })
 
   test("PluginHost serves a plugin only what its manifest declares, and never sends a person-only event", async () => {

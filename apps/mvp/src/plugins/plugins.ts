@@ -553,11 +553,23 @@ export const shownView = Effect.gen(function* () {
   return id === null ? undefined : viewById(contributions, id)
 })
 
-/** Shows view `id` (`null` for none): the route that draws it calls this, and its leaving clears it. */
-export const show = (id: string | null) =>
+/** Shows view `id`: the route that draws it calls this. */
+export const show = (id: string) =>
   Effect.gen(function* () {
     const { shown } = yield* Plugins
     yield* shown.update(SHOWN, (row) => void (row.view = id))
+  }).pipe(Effect.orDie)
+
+/**
+ * Hides view `id` if it is still the one shown: its route calls this on leaving. A route's `onLeave` runs after the
+ * next route opened (router-core `runRouteLifecycle`), so a plugin route that opened next has already shown its own view.
+ */
+export const hide = (id: string) =>
+  Effect.gen(function* () {
+    const { shown } = yield* Plugins
+    yield* shown.update(SHOWN, (row) => {
+      if (row.view === id) row.view = null
+    })
   }).pipe(Effect.orDie)
 
 /** The note view `id` holds for `item`. */

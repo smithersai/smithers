@@ -5,7 +5,7 @@ import { codeOf } from "../errorCode"
 import { FlowDispatch } from "../flows/dispatch"
 import { rankOf, type Viewer } from "../features/commands/catalog"
 import type { Minimum } from "../flows/registry"
-import { hostFor, pathOf, Plugins, press, readable, setDraft, show, viewAt } from "./plugins"
+import { hide, hostFor, pathOf, Plugins, press, readable, setDraft, show, viewAt } from "./plugins"
 import { type Button, type Strip, stripOf } from "./strip"
 
 // The plugin host as a frontend sees it (decision 0017): the folded contributions, the host's own state, and plain
@@ -28,8 +28,10 @@ export interface PluginsView {
     readonly viewAt: (plugin: string, path: string, scope?: View["scope"]) => View | undefined
     /** Where a view shows; a `repository` view needs its repository. */
     readonly pathOf: (view: View, repository?: Host.Repository) => string | undefined
-    /** Shows view `id` (`null` for none). */
-    readonly show: (id: string | null) => void
+    /** Shows view `id`. */
+    readonly show: (id: string) => void
+    /** Hides view `id` if it is the one shown. */
+    readonly hide: (id: string) => void
     /** The strip for `item` under `view`. */
     readonly strip: (view: View, item: Readonly<Record<string, unknown>> | undefined) => Strip
     /** Presses `button` on view `id`'s strip, drawn for the item `drawn`: nothing runs if that item moved on. */
@@ -88,6 +90,7 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
           viewAt: (plugin, path, scope) => viewAt(plugins.contributions, plugin, path, scope),
           pathOf,
           show: (id) => run(show(id)),
+          hide: (id) => run(hide(id)),
           strip: (view, item) => stripOf(view, plugins.contributions.keybindings, item),
           press: (id, button, drawn) => run(press(id, button, "button", drawn)),
           setDraft: (id, text) => run(setDraft(id, text)),
