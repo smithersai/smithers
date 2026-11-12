@@ -43,6 +43,45 @@ describe("SourceStore search contract", () => {
   })
 })
 
+it("explicit SQLite text search matches the selected SQL backend case-insensitively and treats wildcards literally", async () => {
+  const search = Effect.gen(function*() {
+    const store = yield* SourceStore
+    yield* store.apply([
+      record({ externalId: "older", text: "Deploy ReLeAsE 100%_ready", updatedAtMs: 1_000 }),
+      record({ externalId: "newer", text: "release notes", updatedAtMs: 3_000 }),
+      record({
+        externalId: "private",
+        text: "RELEASE 100%_ready",
+        updatedAtMs: 4_000,
+        access: { scope: "container", containerId: "c-private" },
+        thread: { containerId: "c-private", threadId: null, parentId: null }
+      }),
+      record({ externalId: "unmatched", text: "lunch 100XXready", updatedAtMs: 5_000 }),
+      record({ externalId: "deleted", text: "RELEASE 100%_ready", deleted: true, updatedAtMs: 6_000 })
+    ])
+    return yield* Effect.forEach(["RELEASE", "release", "100%_READY", "missing"], (query) =>
+      Effect.map(
+        store.retrieve({
+          allowed: [{ connectionId: "team-chat", containers: ["c-general"] }],
+          query,
+          limit: 10
+        }),
+        (rows) => rows.map(({ externalId }) => externalId)
+      ))
+  })
+  // This client stays SQLite even when the matrix selects PostgreSQL for TestDatabase.layer.
+  const sqlite = Layer.orDie(Layer.provideMerge(
+    layerSql,
+    Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer)
+  ))
+  const actualSqlite = await runWith(sqlite)(search)
+  const selectedBackend = await run(search)
+  const expected = [["newer", "older"], ["newer", "older"], ["older"], []]
+  expect(actualSqlite).toEqual(expected)
+  expect(selectedBackend).toEqual(expected)
+  expect(actualSqlite).toEqual(selectedBackend)
+})
+
 const commitPage = (externalIds: ReadonlyArray<string>, cursor: string) =>
   Effect.flatMap(SourceStore, (store) =>
     store.commit({

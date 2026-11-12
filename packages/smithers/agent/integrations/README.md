@@ -190,3 +190,5 @@ hour before; GitHub's [limit of ten new tokens an hour](https://docs.github.com/
 showed its authorization page at the tenth on production) and `path` (`sign_in`, `hosted_sign_in`, `connect`). The broker
 calls it from `callback`, keeping a sealed per-person history (`person/` records, 30 days) of its own issues and
 revocations; it passes the request's `Referer` as `callback`'s fourth argument.
+
+Broker cancellation refuses removed sites and incomplete callbacks and clears its browser cookie; SQLite and PostgreSQL text search match case-insensitively.

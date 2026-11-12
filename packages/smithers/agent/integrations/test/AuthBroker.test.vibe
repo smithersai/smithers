@@ -303,6 +303,65 @@ it.effect("serves GitHub's cancel as a redirect to the site, clearing its cookie
   })
 })
 
+it.effect("refuses cancellation after the stored site's origin is removed without sending a redirect or handoff to it", () => effect {
+  const store = try Broker.memoryStore()
+  const f = try fixture(undefined, store)
+  // Reconstruct the broker over the real pending attempt after a deployment removes this site.
+  const broker = durable(try Broker.make({
+    origin: "https://smithers.sh", sites: sites.filter(site => site.origin !== origin), keys: f.keys, store,
+    encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github,
+  }))
+  const browser = "__Host-smithers-broker=" + f.start.cookie
+  const path = Broker.CALLBACK + "?" + new URLSearchParams({ state: f.state, error: Broker.CANCELLED })
+  const response = try call(broker, path, undefined, browser)
+  const web = HttpServerResponse.toWeb(response)
+  const body = try promise(() => web.text())
+  // Even if the site is re-enabled, the refused attempt cannot later redirect there.
+  const replay = try call(f.broker, path, undefined, browser)
+  try Effect.try(() => {
+    expect(response.status).toBe(400)
+    expect(response.headers.location).toBeUndefined()
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined()
+    expect(body).toBe('{"error":"sign-in"}')
+    expect(body).not.toContain(origin)
+    expect(body).not.toContain(f.pending.claims.nonce)
+    expect(response.cookies.cookies["__Host-smithers-broker"]).toMatchObject({ value: "" })
+    expect(web.headers.get("set-cookie")).toMatch(/max-age=0/i)
+    expect(replay.status).toBe(400)
+    expect(replay.headers.location).toBeUndefined()
+  })
+})
+
+it.effect("refuses cancel callbacks missing state or error exactly like a bad state and clears the browser cookie", () => effect {
+  const f = try fixture()
+  const browser = "__Host-smithers-broker=" + f.start.cookie
+  const queries: Array<Record<string, string>> = [
+    { state: "bad-state", error: Broker.CANCELLED },
+    { error: Broker.CANCELLED },
+    { state: f.state },
+    {},
+    { state: f.state, error: "" },
+  ]
+  for (const query of queries) {
+    const path = Broker.CALLBACK + "?" + new URLSearchParams(query)
+    const admitted = try screened(f.broker, path, { cookie: browser })
+    const response = try call(f.broker, path, undefined, browser)
+    const web = HttpServerResponse.toWeb(response)
+    const body = try promise(() => web.text())
+    try Effect.try(() => {
+      expect(admitted).toBe(false)
+      expect(response.status).toBe(400)
+      expect(body).toBe('{"error":"sign-in"}')
+      expect(response.headers.location).toBeUndefined()
+      expect(response.cookies.cookies["__Host-smithers-broker"]).toMatchObject({ value: "" })
+      expect(web.headers.get("set-cookie")).toMatch(/max-age=0/i)
+    })
+  }
+  // Malformed callbacks never consume the valid pending attempt.
+  const location = try f.broker.cancel(f.state, Broker.CANCELLED, f.start.cookie)
+  try Effect.try(() => expect(location).toBe(origin + Broker.CALLBACK + "#" + new URLSearchParams({ error: Broker.CANCELLED, state: f.pending.claims.nonce })))
+})
+
 it.effect("malformed provider callbacks leave a valid pending attempt usable", () => effect {
   const f = try fixture()
   const empty = try exit(f.broker.callback(f.state, "", f.start.cookie))

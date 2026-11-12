@@ -457,7 +457,8 @@ export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof ma
       return cookie(HttpServerResponse.redirect(start.location, { status: 303, headers: HEADERS }), start.cookie, REQUEST_TTL)
     }
     if (url.pathname === CALLBACK && request.method === "GET" && cancelled(url)) {
-      const location = try broker.cancel(url.searchParams.get("state") ?? "", url.searchParams.get("error") ?? "", request.cookies[cookieName])
+      // cancelled(url) requires an error parameter; only the state can be absent here.
+      const location = try broker.cancel(url.searchParams.get("state") ?? "", url.searchParams.get("error")!, request.cookies[cookieName])
       return cookie(HttpServerResponse.redirect(location, { status: 303, headers: HEADERS }), "", 0)
     }
     if (url.pathname === CALLBACK && request.method === "GET") {
