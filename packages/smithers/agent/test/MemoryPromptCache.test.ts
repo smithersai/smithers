@@ -234,7 +234,10 @@ const run = (options: {
       }),
       prompt: "Fix the answer in src/a.ts",
       registry: Registry.makeNoop({}),
-      capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+      // Whole authority is `*:**`. The harness admits memory's `fs:read:/**`
+      // declaration only where a grant provably covers it, and `subsumes`
+      // proves only `**` recursive, so a `*:*` envelope refuses the call.
+      capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "**" })],
       flows: [FlowBinding.source("gate", [gate])],
       plugins: [Memory.plugin(services, { root })],
       authorize: options.authorize,
