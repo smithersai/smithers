@@ -88874,11 +88874,6 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/ui/repo-view/browser/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
         "pattern": "packages/smithers/ui/repo-view/browser/**/*.tsx",
         "exclude": []
       }

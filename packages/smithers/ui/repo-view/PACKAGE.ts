@@ -84,7 +84,6 @@ const browserProbes = Smithers.NodeTest({
   runner: Smithers.testSuite(["browser"]),
   srcs: [
     ...sources,
-    Smithers.glob("//packages/smithers/ui/repo-view/browser/**/*.ts"),
     Smithers.glob("//packages/smithers/ui/repo-view/browser/**/*.tsx")
   ],
   deps: [uiSources],
