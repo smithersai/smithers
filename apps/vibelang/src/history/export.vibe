@@ -257,60 +257,6 @@ export effect function prepare(history: History, names: RefNames, pace: Pace = U
   return prepared
 }
 
-/** One batch of a paced export: the trees it read, the objects it wrote, and what is left. */
-export interface Batch {
-  readonly trees: ReadonlyArray<readonly [string, string]>
-  readonly wrote: ReadonlyArray<string>
-  /** Real commits whose trees are still to read. */
-  readonly needs: number
-  /** Objects still to write once every tree is known. */
-  readonly remaining: number
-  readonly candidate: Refs
-  readonly written: number
-  /** The history has no commits: nothing to export. */
-  readonly empty: boolean
-}
-
-/**
- * One batch of the export of `history` over the publication `refs` names, within `pace`: reads up to `pace.reads` trees
- * `trees` lacks, then, once every tree is known, writes up to `pace.writes` of the objects not in `done`, in order. The
- * same history planned again is the same objects, so a batch after a crash or a retry writes only what is missing;
- * a history that changed between batches plans the objects it now needs.
- */
-export effect function batch(history: History, refs: Refs, trees: ReadonlyArray<readonly [string, string]>, done: ReadonlyArray<string>, pace: Pace) {
-  const nothing: Batch = { trees: [], wrote: [], needs: 0, remaining: 0, candidate: NONE, written: 0, empty: true }
-  if (history.commits.length === 0) return nothing
-  const repository = try Repository.Repository
-  const published = try readPublished(repository, refs)
-  const known = new Map(trees)
-  let plan = try planned(repository, history, published, known)
-  const read: Array<readonly [string, string]> = []
-  for (const source of plan.needs.slice(0, pace.reads)) {
-    const tree = (try repository.readCommit(source)).tree
-    read.push([source, tree])
-    known.set(source, tree)
-  }
-  if (plan.needs.length > read.length) {
-    const reading: Batch = { ...nothing, trees: read, needs: plan.needs.length - read.length, empty: false }
-    return reading
-  }
-  if (read.length > 0) plan = try planned(repository, history, published, known)
-  const skip = new Set(done)
-  const todo: Array<Pending> = []
-  for (const each of plan.pending) {
-    if (skip.has(each.oid)) continue
-    skip.add(each.oid)
-    todo.push(each)
-  }
-  const wrote: Array<string> = []
-  for (const each of todo.slice(0, pace.writes)) {
-    try each.write()
-    wrote.push(each.oid)
-  }
-  const written: Batch = { trees: read, wrote, needs: 0, remaining: todo.length - wrote.length, candidate: plan.candidate, written: plan.written, empty: false }
-  return written
-}
-
 /** Why a check refused: a commit that is not the one before it's only child, a tree that is not main's, or a missing note. */
 export type CheckRefusal = "linear" | "tree" | "notes"
 

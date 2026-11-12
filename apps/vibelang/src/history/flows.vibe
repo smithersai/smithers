@@ -21,10 +21,11 @@
 // the steps' implementations: the History object and the mock reach the sequencer through `Stack`
 // (`historyRegistration`); the action host reaches the history through its `HistoryReader`
 // (src/actions/execution.vibe). Every host's authorize step reads who asks from `Caller`.
-import { Action as Step, DurableClock, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
+// `vibelang/history/Publish`, which only the Worker's History object runs, is in publish.vibe (decision 0016).
+import { Action as Step, Flow, Interpreter } from "@smthrs/flow"
 import { Repository } from "@smthrs/jj"
 import { Node } from "@smthrs/plan"
-import { batch, check, NONE, type Pace, prepare, publish, readRefs, UNPACED } from "./export.vibe"
+import { check, NONE, type Pace, prepare, publish, readRefs, UNPACED } from "./export.vibe"
 import { confirmed, type RefNames, same } from "./exportDecision.vibe"
 import { authorize, begin, canRecord, historySignature, type Run } from "./flowMachine.vibe"
 import type { History } from "./mythical.vibe"
@@ -37,7 +38,7 @@ export const HistoryAnswer = Schema.Struct({ id: Schema.String, refusal: Schema.
 /** A fold's answer: how many commits of main it folded, or why it could not read main. */
 export const FoldAnswer = Schema.Struct({ folded: Schema.Number, refusal: Schema.NullOr(Schema.String) })
 
-schema MainCommitSchema { readonly sha: string; readonly change: string; readonly title: string; readonly message: string }
+export schema MainCommitSchema { readonly sha: string; readonly change: string; readonly title: string; readonly message: string }
 
 const PrincipalSchema = Schema.Struct({ role: Schema.Literals(ROLES), name: Schema.String, agent: Schema.Boolean })
 
@@ -86,7 +87,7 @@ export const historySteps = Metric.counter("vibelang_history_steps", {
 })
 
 /** Logs and counts one step by its outcome only: never a title, a task, a note or a person's name. */
-effect function counted(step: string, outcome: string) {
+export effect function counted(step: string, outcome: string) {
   try Metric.update(Metric.withAttributes(historySteps, { step, outcome }), 1)
   try Effect.logInfo(`vibelang.history.${step}`).pipe(Effect.annotateLogs({ outcome }))
 }
@@ -136,51 +137,18 @@ export const FoldCommits = Step.make("vibelang/history/fold/commits", { payload:
 /** Loads the bootstrapped history into an empty store: `false` when the history has any event. */
 export const LoadBootstrap = Step.make("vibelang/history/bootstrap/load", { payload: {}, success: Schema.Boolean })
 
-/** A publisher round's answer: how many commits of main it folded, and its export's answer. */
-export const PublishAnswer = Schema.Struct({ folded: Schema.Number, mythical: Schema.String, written: Schema.Number, refusal: Schema.NullOr(Schema.String) })
-
 /** An export's answer: the bookmark's tip and how many commits it wrote, or why it was refused. */
 export const ExportAnswer = Schema.Struct({ mythical: Schema.String, written: Schema.Number, refusal: Schema.NullOr(Schema.String) })
-const RefsSchema = Schema.Struct({ mythical: Schema.String, notes: Schema.String, manifest: Schema.String })
+export const RefsSchema = Schema.Struct({ mythical: Schema.String, notes: Schema.String, manifest: Schema.String })
 const Prepared = Schema.Struct({ published: RefsSchema, candidate: RefsSchema, written: Schema.Number, refusal: Schema.NullOr(Schema.String) })
 const Checked = Schema.Struct({ checked: Schema.Number, refusal: Schema.NullOr(Schema.String) })
 const Sent = Schema.Struct({ refusal: Schema.NullOr(Schema.String) })
 const Observed = Schema.Struct({ refs: RefsSchema, refusal: Schema.NullOr(Schema.String) })
-const Begun = Schema.Struct({ refs: RefsSchema, refusal: Schema.NullOr(Schema.String) })
-const BatchSchema = Schema.Struct({
-  trees: Schema.Array(Schema.Tuple([Schema.String, Schema.String])),
-  wrote: Schema.Array(Schema.String),
-  needs: Schema.Number,
-  remaining: Schema.Number,
-  candidate: RefsSchema,
-  written: Schema.Number,
-  empty: Schema.Boolean,
-})
 type ExportAnswered = typeof ExportAnswer.Type
 
 export const AuthorizeExport = Step.make("vibelang/history/export/authorize", { payload: {}, success: RunSchema })
 /** The export's run: its prepare, check, publish and confirm steps, each journaled under `vibelang/history/export/<step>`. */
 export const RunExport = Step.make("vibelang/history/export/run", { payload: {}, success: ExportAnswer })
-/** A publisher round's run: the fold's steps, then the paced export's, each journaled. */
-export const RunPublish = Step.make("vibelang/history/publish/run", { payload: {}, success: PublishAnswer })
-
-/**
- * A batch GitHub refused for now is tried again at least as long after as it asked (`retryAfterMillis`: its
- * `Retry-After`, or `x-ratelimit-reset`), doubling from a minute to five, for at most a day. Only `unavailable` is
- * tried again; a refusal (`invalid`, `not_found`, `unsupported`) ends the round's export. Five minutes is the longest
- * wait: the engine waits out a retry inside the alarm that drives the step, and an alarm's drive has ten minutes
- * (`ExecutionObject.defaultDriveBudgetMs`); a longer limit is tried again every five minutes until it lifts.
- */
-export const BATCH_RETRY = RetryPolicy.make({
-  initialMs: 60_000,
-  factor: 2,
-  maxMs: 300_000,
-  expirationMs: 86_400_000,
-  retryable: [{ tag: "@smthrs/jj/RepositoryError", code: "unavailable" }],
-})
-
-/** How long a publisher's round waits after its export before it reads main again: ten minutes. */
-export const FOLLOW_MS = 10 * 60_000
 
 // ── the flows ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -268,25 +236,6 @@ export const Export = Flow.make("vibelang/history/Export", {
   }))),
 })
 
-type PublishFlow = Flow.Flow<"vibelang/history/Publish", Schema.Struct<{}>, typeof PublishAnswer, typeof Sleep.SleepRequestInvalid, Step.Requirement<"vibelang/history/publish/run">>
-
-/**
- * The History object's publisher, one lineage forever: each round folds main's new commits, exports what changed at the
- * repository's pace, waits `FOLLOW_MS`, and hands off to the next round, which the object keeps
- * (`ExecutionObject` `continueHere`). A main that moves during a round is folded by the next one; nothing runs twice.
- */
-export const Publish: PublishFlow = Flow.make("vibelang/history/Publish", {
-  description: "Follows main: folds its new commits into the mythical history and publishes what changed, paced to the repository's limits.",
-  modelInvocable: false,
-  payload: {},
-  success: PublishAnswer,
-  error: Sleep.SleepRequestInvalid,
-  body: Node.capture({}, () => RunPublish.call({}).pipe(
-    Node.andThen(Sleep.action.call({ millis: FOLLOW_MS })),
-    Node.andThen(Publish.to({})),
-  )),
-})
-
 export const Bootstrap = Flow.make("vibelang/history/Bootstrap", {
   description: "Loads the mythical history bootstrapped from the project's real history into an empty history.",
   modelInvocable: false,
@@ -323,7 +272,7 @@ export function planOf(payload: PlanRequest): PlanRequest {
 }
 
 /** Fold's read step: main after `main`, or unavailable when it could not be read. */
-effect function readMain(main: string) {
+export effect function readMain(main: string) {
   const commits = (try MainLog).since(main) catch () => null
   if (commits === null) {
     try counted("fold", "unavailable")
@@ -333,7 +282,7 @@ effect function readMain(main: string) {
 }
 
 /** Fold's fold step: each commit in main's order, each its own journaled step. */
-effect function foldCommits(commits: ReadonlyArray<MainCommit>) {
+export effect function foldCommits(commits: ReadonlyArray<MainCommit>) {
   const stack = try Stack
   let count = 0
   for (const commit of commits) {
@@ -345,12 +294,12 @@ effect function foldCommits(commits: ReadonlyArray<MainCommit>) {
 }
 
 /** A repository failure as a step's answer: its code alone, never its message. */
-function refusing<A, R>(body: A!Repository.RepositoryError!R, refused: (code: string) => A) {
+export function refusing<A, R>(body: A!Repository.RepositoryError!R, refused: (code: string) => A) {
   return Effect.catch(body, (error) => Effect.succeed(refused(error.code)))
 }
 
 /** One export step, journaled as `vibelang/history/export/<name>`, counted and spanned by its kind (`batch/3` is `batch`). */
-function exportStep<S extends Schema.Top, R>(name: string, success: S, body: S["Type"]!!R, outcome: (answer: S["Type"]) => string) {
+export function exportStep<S extends Schema.Top, R>(name: string, success: S, body: S["Type"]!!R, outcome: (answer: S["Type"]) => string) {
   const kind = name.split("/")[0]!
   return Step.make({
     name: `vibelang/history/export/${name}`,
@@ -363,36 +312,9 @@ function exportStep<S extends Schema.Top, R>(name: string, success: S, body: S["
   })
 }
 
-/** A paced batch: its step fails with the repository's error, so `BATCH_RETRY` tries it again; counted by outcome. */
-function batchStep<R>(at: number, body: typeof BatchSchema.Type!Repository.RepositoryError!R) {
-  return Step.make({
-    name: `vibelang/history/export/batch/${at}`,
-    success: BatchSchema,
-    error: Repository.RepositoryError,
-    retryPolicy: BATCH_RETRY,
-    execute: withSpan(effect {
-      const answer = body catch effect (error) => {
-        // A rate limit's wait is counted, never its message: the step's retry policy waits it out.
-        try counted("export.batch", error.retryAfterMillis === undefined ? error.code : "limited")
-        throw error
-      }
-      try counted("export.batch", answer.needs > 0 ? "read" : answer.remaining > 0 ? "wrote" : "done")
-      try Metric.update(Metric.withAttributes(exportObjects, { kind: "write" }), answer.wrote.length)
-      try Metric.update(Metric.withAttributes(exportObjects, { kind: "read" }), answer.trees.length)
-      return answer
-    }, "vibelang.history.export.batch"),
-  })
-}
-
-/** Objects a paced export wrote and real commits' trees it read, by kind. */
-export const exportObjects = Metric.counter("vibelang_history_export_objects", {
-  description: "Objects the paced export wrote and trees it read",
-  incremental: true,
-})
-
 /** Export's run: prepare, then (when anything changed) check, publish and confirm, each its own journaled step. */
 /** The pace an export target allows: `UNPACED` unless it names one. */
-function paceOf(target: ExportTarget.Shape): Pace {
+export function paceOf(target: ExportTarget.Shape): Pace {
   return target.pace ?? UNPACED
 }
 
@@ -411,10 +333,10 @@ effect function runExport() {
   return try finish(names, prepared.published, prepared.candidate, prepared.written)
 }
 
-const exported = (mythical: string, written: number, refusal: string | null): ExportAnswered => ({ mythical, written, refusal })
+export const exported = (mythical: string, written: number, refusal: string | null): ExportAnswered => ({ mythical, written, refusal })
 
 /** An export's last steps: check what was written, publish the three refs in one compare-and-swap, confirm from the refs. */
-effect function finish(names: RefNames, published: typeof RefsSchema.Type, candidate: typeof RefsSchema.Type, written: number) {
+export effect function finish(names: RefNames, published: typeof RefsSchema.Type, candidate: typeof RefsSchema.Type, written: number) {
   const answer = exported
   const checked = try exportStep("check", Checked, refusing(check(published, candidate), (refusal): typeof Checked.Type => ({ checked: 0, refusal })), (answer) => answer.refusal ?? "checked")
   if (checked.refusal !== null) return answer(published.mythical, 0, checked.refusal)
@@ -425,54 +347,6 @@ effect function finish(names: RefNames, published: typeof RefsSchema.Type, candi
   const outcome = observed.refusal === null ? confirmed(observed.refs, published, candidate) : "unchanged"
   if (outcome === "published") return answer(candidate.mythical, written, null)
   return answer(published.mythical, 0, outcome === "conflict" ? "conflict" : (sent.refusal ?? observed.refusal ?? "unavailable"))
-}
-
-/**
- * The publisher's export, paced: reads the published refs once (`export/begin`), then runs batches of `pace`
- * (`export/batch/<n>`, each retried by `BATCH_RETRY`) with a durable pause between them (`export/pause/<n>`), until
- * every tree is read and every object written; then checks, publishes and confirms as a person's export does. No ref
- * moves before that last compare-and-swap, from the refs `begin` read, so a partial run publishes nothing.
- */
-effect function pacedExport() {
-  const target = try ExportTarget
-  const names = target.names
-  const pace = paceOf(target)
-  const begun = try exportStep("begin", Begun, refusing(Effect.map(readRefs(try Repository.Repository, names), (refs): typeof Begun.Type => ({ refs, refusal: null })), (refusal): typeof Begun.Type => ({ refs: NONE, refusal })), (answer) => answer.refusal ?? "read")
-  if (begun.refusal !== null) return exported("", 0, begun.refusal)
-  const trees: Array<readonly [string, string]> = []
-  const done: Array<string> = []
-  for (let at = 0; ; at++) {
-    const known = [...trees]
-    const wrote = [...done]
-    const step = batchStep(at, effect { return try batch(try (try Stack).read(), begun.refs, known, wrote, pace) })
-    const answered = step catch (error) => error.code
-    if (typeof answered === "string") return exported(begun.refs.mythical, 0, answered)
-    trees.push(...answered.trees)
-    done.push(...answered.wrote)
-    if (answered.empty) return exported("", 0, "nothing")
-    if (answered.needs === 0 && answered.remaining === 0) {
-      if (same(begun.refs, answered.candidate)) return exported(answered.candidate.mythical, 0, null)
-      return try finish(names, begun.refs, answered.candidate, answered.written)
-    }
-    try counted("export.pause", "waiting")
-    // Always a durable timer, never a sleep held in the alarm: the object rests between batches.
-    try DurableClock.sleep({ name: `vibelang/history/export/pause/${at}`, duration: Duration.millis(pace.pauseMs), inMemoryThreshold: 0 })
-  }
-}
-
-/** A publisher round: fold main's new commits (as Fold's steps do), then the paced export. */
-effect function runPublish() {
-  const stack = try Stack
-  const main = try Step.make({ name: "vibelang/history/publish/fold/main", success: Schema.String, execute: Effect.map(stack.read(), (history) => history.main) })
-  const read = try Step.make({
-    name: "vibelang/history/publish/fold/read",
-    success: Schema.Struct({ available: Schema.Boolean, commits: Schema.Array(MainCommitSchema) }),
-    execute: readMain(main),
-  })
-  const folded = read.available ? (try foldCommits(read.commits)).folded : 0
-  const answer = try pacedExport()
-  try counted("publish", answer.refusal ?? (answer.written > 0 ? "published" : "current"))
-  return { folded, ...answer }
 }
 
 /** Bootstrap's load step. */
@@ -511,12 +385,6 @@ export const historyRegistration = Layer.mergeAll(
   )),
   Interpreter.layerWithImplementations(Bootstrap, LoadBootstrap.toLayer(() => withSpan(loadBootstrap(), "vibelang.history.bootstrap.load"))),
 )
-
-/**
- * Registers `vibelang/history/Publish`, the History object's publisher: its steps reach the sequencer through `Stack`,
- * main through `MainLog`, the repository through `Repository` and its refs and pace through `ExportTarget`.
- */
-export const publishRegistration = Interpreter.layerWithImplementations(Publish, RunPublish.toLayer(() => withSpan(runPublish(), "vibelang.history.publish.run")))
 
 /**
  * Registers `vibelang/history/Export`, for the hosts that hold a repository: its steps reach the sequencer through
