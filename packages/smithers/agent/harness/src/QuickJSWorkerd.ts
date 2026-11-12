@@ -1,4 +1,3 @@
-/// <reference path="./internal/quickjsWasm.d.ts" />
 /**
  * The QuickJS build on Cloudflare's workerd, for a Worker or Durable Object
  * that runs an agent's cells.

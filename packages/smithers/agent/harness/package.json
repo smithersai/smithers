@@ -76,7 +76,10 @@
     "./index": "./src/index.ts"
   },
   "imports": {
-    "#quickjs.wasm": "@jitl/quickjs-wasmfile-release-sync/wasm"
+    "#quickjs.wasm": {
+      "types": "./src/internal/quickjsWasm.d.ts",
+      "default": "@jitl/quickjs-wasmfile-release-sync/wasm"
+    }
   },
   "files": [
     "src/**/*.ts",

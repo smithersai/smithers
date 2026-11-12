@@ -6,6 +6,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Option } from "effect"
 import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
+import { fileURLToPath } from "node:url"
+import ts from "typescript"
 import * as Cell from "../src/Cell.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as QuickJSWorkerd from "../src/QuickJSWorkerd.ts"
@@ -64,4 +66,22 @@ describe("QuickJSWorkerd", () => {
       expect(failure).toBeInstanceOf(Sandbox.SandboxError)
       expect(failure).toMatchObject({ code: "runtime_failed", cause: lost })
     }).pipe(Effect.scoped))
+})
+
+// An app compiles this module's source through the package's `exports`, so its program holds QuickJSWorkerd.ts and what
+// that imports, never the declaration file beside it. `#quickjs.wasm` has to find its types through the package's own
+// `imports` map, the way Node and the bundler find the `.wasm` file.
+it("resolves the types of `#quickjs.wasm` through the package's imports", () => {
+  const tsconfig = fileURLToPath(new URL("../tsconfig.json", import.meta.url))
+  const config = ts.getParsedCommandLineOfConfigFile(tsconfig, {}, {
+    ...ts.sys,
+    onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+      throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
+    }
+  })
+  const importer = fileURLToPath(new URL("../src/QuickJSWorkerd.ts", import.meta.url))
+  const { resolvedModule } = ts.resolveModuleName("#quickjs.wasm", importer, config!.options, ts.sys)
+  expect(resolvedModule?.resolvedFileName).toBe(
+    fileURLToPath(new URL("../src/internal/quickjsWasm.d.ts", import.meta.url))
+  )
 })
