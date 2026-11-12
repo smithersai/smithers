@@ -420,6 +420,31 @@ describe.skipIf(!linuxUserland)("the std file flows on a real Linux userland", (
       }
     }))
 
+  it.live("takes a lock its holder released between the refused mkdir and the check", () =>
+    Effect.gen(function*() {
+      const workdir = tree("released")
+      const directory = join(root, "released-bin")
+      const refused = join(directory, "refused")
+      mkdirSync(directory)
+      const mkdir = spawnSync("sh", ["-c", "command -v mkdir"], { encoding: "utf8" }).stdout.trim()
+      // The first lock mkdir is refused as a held lock's is, and no lock is
+      // there when the script looks: its holder released it in between.
+      writeFileSync(
+        join(directory, "mkdir"),
+        `#!/bin/sh\ncase "$*" in *.lock*) if [ ! -e '${refused}' ]; then : > '${refused}'; ` +
+          `for last in "$@"; do :; done; ` +
+          `printf "mkdir: cannot create directory '%s': File exists\\n" "$last" >&2; exit 1; fi ;; esac\n` +
+          `exec '${mkdir}' "$@"\n`
+      )
+      chmodSync(join(directory, "mkdir"), 0o755)
+      const edit = Edit.run({ path: "src/a.py", oldString: "beta = 2", newString: "beta = 3" })
+      const { result } = yield* real(workdir, edit, undefined, { env: [`PATH=${directory}:${process.env["PATH"]}`] })
+      expect(existsSync(refused)).toBe(true)
+      expect(result._tag).toBe("Success")
+      expect(readFileSync(join(workdir, "src", "a.py"), "utf8")).toBe("alpha = 1\nbeta = 3\n")
+      expect(leftovers(join(workdir, "src"))).toEqual([])
+    }))
+
   it.live("holds the ordinary path's lock while it commits, so either path refuses the other", () =>
     Effect.gen(function*() {
       const workdir = tree("lock")

@@ -234,7 +234,9 @@ q() {
  * the file whose metadata the write keeps (the destination, or FROM) in
  * `$f`. `l I LOCK` takes the cooperative lock directory LOCK with an
  * exclusive `mkdir`, leaving it in `$h`, and reports `#I` when another writer
- * holds it; a stale lock is never stolen. `s I DEST META SIZE [OFFSET]`
+ * holds it; a stale lock is never stolen. A refused `mkdir` whose LOCK is
+ * gone when it is checked, released by its holder in between, is tried
+ * again, three times in all. `s I DEST META SIZE [OFFSET]`
  * stages write I: it copies SIZE bytes of standard input into a fresh
  * temporary file beside DEST and gives it the mode and owner of META, or the
  * umask's default, leaving it in `$t`. Two writes never read standard input
@@ -266,9 +268,12 @@ w() {
   fi
 }
 l() {
-  if e=$(mkdir -m 700 -- "$2" 2>&1); then h=$2; return; fi
-  if [ -e "$2" ] || [ -L "$2" ]; then printf '#%s\\n' "$1"; exit 20; fi
-  printf '%s\\n' "$e" >&2; k "$1" lock
+  lt=0
+  until e=$(mkdir -m 700 -- "$2" 2>&1); do
+    if [ -e "$2" ] || [ -L "$2" ]; then printf '#%s\\n' "$1"; exit 20; fi
+    lt=$((lt + 1)); [ "$lt" -lt 3 ] || { printf '%s\\n' "$e" >&2; k "$1" lock; }
+  done
+  h=$2
 }
 s() {
   t=; i=
