@@ -118,26 +118,31 @@ const signalsARunningCommand = (
           Effect.map(Effect.exit(handle.exitCode), Option.some),
           Effect.as(elapsed(commands.stopsWithin ?? defaultStopsWithin), Option.none())
         )
-        if (Option.isNone(stopped) || commands.survivor === undefined) return { stopped, survived: false }
+        if (Option.isNone(stopped) || commands.survivor === undefined) return { stopped, survivor: undefined }
         // The handle is the wrapper shell, and a shell that dies while its
         // child lives on satisfies everything above. The second look asks the
         // machine itself whether the command's work is still there.
         const survivor = yield* spawner.exitCode(
           ChildProcess.make(commands.survivor, { shell: commands.shell ?? false })
         )
-        return { stopped, survived: survivor === 0 }
+        return { stopped, survivor }
       }))
     ),
     (exit) =>
-      Exit.isSuccess(exit) && Option.isSome(exit.value.stopped) && !exit.value.survived ? undefined : {
-        check: "signals-a-running-command",
-        expected: "a declared `kill` stops a live process and everything it started",
-        actual: Exit.isSuccess(exit) && Option.isNone(exit.value.stopped)
-          ? "the command was still running after the signal"
-          : Exit.isSuccess(exit) && exit.value.survived
-          ? "the command's work was still running after its handle reported it stopped"
-          : describeExit(exit)
-      }
+      Exit.isSuccess(exit) && Option.isSome(exit.value.stopped) &&
+        (exit.value.survivor === undefined || exit.value.survivor === 1) ?
+        undefined :
+        {
+          check: "signals-a-running-command",
+          expected: "a declared `kill` stops a live process and everything it started",
+          actual: Exit.isSuccess(exit) && Option.isNone(exit.value.stopped)
+            ? "the command was still running after the signal"
+            : Exit.isSuccess(exit) && exit.value.survivor === 0
+            ? "the command's work was still running after its handle reported it stopped"
+            : Exit.isSuccess(exit) && exit.value.survivor !== undefined
+            ? `the survivor probe could not run (exit ${exit.value.survivor}), so the kill is unproven`
+            : describeExit(exit)
+        }
   )
 
 /** The text the stdin check sends and expects back, newline-free so a pty transport cannot reframe it. */

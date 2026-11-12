@@ -36,7 +36,7 @@ export interface Commands {
   readonly stopsWithin?: Duration.Input | undefined
   /**
    * A command that exits zero while the work `runs` started is still alive,
-   * and non-zero once it is gone.
+   * and one once it is gone. Any other exit leaves the kill unproven.
    *
    * A signal that stops the wrapper shell and leaves its child running
    * satisfies every observation the suite can make through the process

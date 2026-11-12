@@ -152,6 +152,9 @@ hold. `signals-a-running-command` watches the process rather than the call: a
 `kill` that answers success and leaves the command running satisfies the type
 and leaks a process for every cancelled action, so the check waits
 `Commands.stopsWithin` for the command to stop and names it when it does not.
+When `Commands.survivor` is supplied, exit `0` reports surviving work and exit `1`
+proves it is gone. Any other exit reports the kill as unproven, including `127`
+when the default POSIX probe's `pgrep` is missing.
 
 `DirectorySandbox` requires a lifecycle-backed contained spawner, such as
 `NodeHost.layerContained()` provided with a `ProcessLedger`. It refuses raw or

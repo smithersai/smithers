@@ -464,4 +464,23 @@ describe("ProviderConformance", () => {
       })
       expect(none.map(({ check }) => check)).not.toContain("signals-a-running-command")
     }))
+
+  for (const exitCode of [2, 126, 127, 255]) {
+    it.effect(`rejects an inconclusive survivor probe with exit ${exitCode}`, () =>
+      Effect.gen(function*() {
+        const provider = RemoteChildProcessSpawner.TestRemote.make({
+          scripts: { ...scripts, "still-there": { exitCode } },
+          kill: true
+        })
+
+        const violations = yield* ProviderConformance.check(provider, { ...commands, survivor: "still-there" })
+
+        expect(violations).toEqual([{
+          check: "signals-a-running-command",
+          expected: "a declared `kill` stops a live process and everything it started",
+          actual: `the survivor probe could not run (exit ${exitCode}), so the kill is unproven`
+        }])
+        expect(provider.state.commands).toContain("still-there")
+      }))
+  }
 })

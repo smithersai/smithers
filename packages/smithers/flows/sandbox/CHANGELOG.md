@@ -12,6 +12,9 @@
 
 ### Fixed
 
+- Conformance checks now report an unproven kill when the survivor probe cannot run or exits with a status other than
+  `0` or `1`, including guests without `pgrep`, instead of accepting a kill that may leave child processes alive.
+
 - A Microsandbox session with a Nix environment no longer captures the provider's
   `flake.nix` and `flake.lock` as repository edits. The default environment
   directory is now `/var/lib/smthrs/nix/<slug>`, outside the checkout, so a

@@ -16,7 +16,8 @@ import type { Commands } from "../ProviderConformance/Commands.ts"
  * `runs` sleeps for a duration nothing else on a shared machine is likely to
  * be sleeping for, and `survivor` looks for exactly that sleep with a pattern
  * that cannot match its own command line. A guest without `pgrep` answers 127
- * and the survivor question goes unanswered rather than wrongly answered.
+ * and receives a violation because the kill is unproven. Only exit 1 proves
+ * the command's work is gone.
  *
  * `check` does not use this value verbatim: several providers' machines are
  * the test host itself, and vitest runs suites in parallel workers, so two
