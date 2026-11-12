@@ -1,4 +1,4 @@
-import { reviewActions } from "../src/core/conversation.vibe"
+import { reviewActions } from "../src/core/issueHostDecision.vibe"
 import { expect, it } from "@effect/vitest"
 import { issueRequest, issuesUpdate, initialIssues } from "../src/web/issues.vibe"
 import { init, update, Message } from "../src/web/main.vibe"

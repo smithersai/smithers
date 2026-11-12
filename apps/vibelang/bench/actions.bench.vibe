@@ -8,8 +8,9 @@ import { prepare } from "../src/actions/execution.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import {
   acceptSnapshot, acceptStep, latestAt, runOpen, settleRun, cancelStep, stepRun,
-  pendingCount, acknowledgedPending, vipDocumentMatches, type ActionRun, type RunStep, type Pending,
+  pendingCount, acknowledgedPending, type ActionRun, type RunStep, type Pending,
 } from "../src/core/conversation.vibe"
+import { vipDocumentMatches } from "../src/core/issueHostDecision.vibe"
 import { taskOf, epicOf, rankOf, endOf, foldTarget, type Commit } from "../src/history/mythical.vibe"
 import { atLeast } from "../src/history/roles.vibe"
 import { vipDocument } from "../src/core/issueSchemas.vibe"

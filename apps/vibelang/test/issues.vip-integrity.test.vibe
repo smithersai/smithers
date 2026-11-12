@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 import { GitHub, Core } from "@smthrs/integrations"
-import { vipDocumentMatches } from "../src/core/conversation.vibe"
+import { vipDocumentMatches } from "../src/core/issueHostDecision.vibe"
 import { verifiedVip, repository } from "../worker/Issues.vibe"
 const path = "docs/design/vips/proposal-123.md"
 const body = (url: string) => `One feature.\n<!-- vibelang:vip path=${path} review=${url} -->`

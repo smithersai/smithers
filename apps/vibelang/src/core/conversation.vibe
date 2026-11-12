@@ -891,15 +891,6 @@ export function setCommitment(issue: IssueRecord, assignee: string, committed: b
   return { ...issue, task: committed ? "Queued" : "", assignee: committed ? assignee : "" }
 }
 
-/** Reconcile a human review after any prefix of its GitHub writes has completed. */
-//@ verify
-//@ ensures \result.allowed == (vip == "In review" || vip == (accepted ? "Accepted" : "Declined"))
-//@ ensures \result.label == (\result.allowed && vip == "In review")
-//@ ensures \result.close == (\result.allowed && !accepted && state == "open")
-export function reviewActions(vip: "" | "In review" | "Accepted" | "Declined", state: "open" | "closed", accepted: boolean): { readonly allowed: boolean; readonly label: boolean; readonly close: boolean } {
-  const allowed = vip === "In review" || vip === (accepted ? "Accepted" : "Declined")
-  return { allowed, label: allowed && vip === "In review", close: allowed && !accepted && state === "open" }
-}
 
 export interface UnansweredSelection { readonly indexes: ReadonlyArray<number>; readonly posts: ReadonlyArray<string> }
 /** Source positions make first-in-order selection and multiplicity explicit. */
@@ -971,18 +962,6 @@ export function acknowledgedPending(pending: ReadonlyArray<Pending>, clientId: s
     i++
   }
   return result
-}
-
-
-export interface VipFile { readonly filename: string; readonly status: string }
-/** The host supplies complete native PR facts and a validated repository document path. */
-//@ verify
-//@ ensures \result ==> issueAuthor > 0 && issueAuthor == reviewAuthor && path != ""
-//@ ensures \result ==> exists(i, 0 <= i && i < files.length && files[i].filename == path && files[i].status != "removed")
-//@ ensures (issueAuthor <= 0 || issueAuthor != reviewAuthor || path == "") ==> !\result
-export function vipDocumentMatches(issueAuthor: number, reviewAuthor: number, path: string, files: ReadonlyArray<VipFile>): boolean {
-  if (issueAuthor <= 0 || issueAuthor !== reviewAuthor || path === "") return false
-  return files.some(file => file.filename === path && file.status !== "removed")
 }
 
 

@@ -88,7 +88,7 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
-  "src/core/issueHostDecision.vibe": "Proved request-key admission (exactly /^[A-Za-z0-9-]{1,100}$/), GitHub failure classification and retry codes, the HTTP status of every refusal, the unwritten mark (a first execution refused before any write), task and VIP reading, the receipt-gated Accepted projection, the advancing revision, resumable operations and resume status, the agent's choice label both ways, and timeline event text (0018 third-lane batch 6).",
+  "src/core/issueHostDecision.vibe": "Proved request-key admission (exactly /^[A-Za-z0-9-]{1,100}$/), GitHub failure classification and retry codes, the HTTP status of every refusal, the unwritten mark (a first execution refused before any write), task and VIP reading, the receipt-gated Accepted projection, the advancing revision, resumable operations and resume status, the agent's choice label both ways, timeline event text, the pull request that backs a VIP (vipDocumentMatches) and a partly written human review's remaining writes (reviewActions) (0018 third-lane batch 6).",
   "src/core/mockFactoryDecision.vibe": "Proved the scripted agent's exact reply precedence, the draft outcome, actor journal keys (injective over id and kind), the restored id counter, the replay cursor and the live tail (0018 third-lane batch 8); the mock accounts' self-grant rule and fixture logins (batch 10).",
   "src/core/wikiPageDecision.vibe": "Proved first page by id, the editable rule, the designs alias, page links, the longest named id (earliest among ties), the first id with a prefix, the agent's request precedence, the wiki unwritten mark, the fixture repository's verdict and review numbers, and each refusal's HTTP status (0018 third-lane batch 9).",
   "src/core/actionRunDecision.vibe": "Proved the reply child id and test, which runs a start runs and a cancel stops, the settled state and result, and when a start, a history action and a tour settle (0018 third-lane batch 11).",
@@ -148,7 +148,7 @@ const functionBoundaries = {
   'src/history/seedSanitizeDecision.vibe:redactedFrom': 'Proved empty-suffix behavior, call safety and termination. Defines the exact ordered replacement recurrence; redactText proves that full recurrence. Native regex equivalence is tested (0018 batch 29).',
   'src/history/seedSanitizeDecision.vibe:boundariesFrom': 'Proved empty suffix, termination, strictly increasing positive endpoints within the source. Defines the endpoint recurrence, proved equal to sentenceEnds; native lookahead equivalence is tested (0018 batch 29).',
   "worker/Issues.vibe:issueWriteKey": "A SHA-256 digest of the request's identity as JSON: stable across recovery executions; JSON and the digest are host boundaries, nothing to decide.",
-  "worker/Issues.vibe:verifiedVip": "Calls the proved personId (accountsDecision), reviewNumberText (workerDecision) and vipDocumentMatches (conversation.vibe): the marker's pull number is a positive decimal under the repository's pull prefix, and the native PR's author and document must match. Host boundaries: the marker RegExp's matchAll (outside the RegExp subset), Number.isSafeInteger and the GitHub read.",
+  "worker/Issues.vibe:verifiedVip": "Calls the proved personId (accountsDecision), reviewNumberText (workerDecision) and vipDocumentMatches (issueHostDecision): the marker's pull number is a positive decimal under the repository's pull prefix, and the native PR's author and document must match. Host boundaries: the marker RegExp's matchAll (outside the RegExp subset), Number.isSafeInteger and the GitHub read.",
   "worker/Issues.vibe:publicIssues": "Wiring: the signed-out issue host with no principal, over the cached public client when one is given.",
   // Lane vl-proveall3, batch 23: the mock merge queue.
   "src/history/MockMythical.vibe:seeded": 'Imports the bundled seed and decodes it with its Schema; no decision. JSON and Schema decoding are host boundaries.',
@@ -328,7 +328,7 @@ const functionBoundaries = {
   "src/core/conversation.vibe:unansweredSpecificationReview": "Exact empty answer, grade, revision and link (0027).",
   "src/core/conversation.vibe:reviseSpecification": "Changed content increments the immutable revision and resets every field of all four answers; equal content is unchanged (0027).",
   "src/core/conversation.vibe:recordSpecificationReview": "Only the bound reviewer records their current-revision verdict and receipt; unrelated seats, revision and text are preserved (0027).",
-  "src/core/conversation.vibe:reviewActions": "Exact admissibility and remaining label/close actions after a partial review; GitHub action execution is outside this decision (0022)."
+  "src/core/issueHostDecision.vibe:reviewActions": "Exact admissibility and remaining label/close actions after a partial review; GitHub action execution is outside this decision (0022)."
 };
 const functions = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
 const logicNodes = new Set(['IfStatement', 'SwitchStatement', 'WhileStatement', 'DoWhileStatement',

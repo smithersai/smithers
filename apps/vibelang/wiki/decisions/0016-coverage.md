@@ -53,6 +53,7 @@ and `pnpm verify:broken` pass on all eight modules, and the unit gate measures e
 | `appends`, `startAnswer`, the `ReplyRun` model (8 functions) | `flowDecision` (tour decisions: `flows`, `MockFactory`) | `replyDecision` (new) | `worker/Reply`, `worker/Sequencer` |
 | `routeOf`, `decodeSegment`, `Route` | `wire` (paths and schemas: `LiveFactory`, `MockFactory`) | `routes` (new) | `worker/Http` |
 | `nonnegativeCursor`, `responseKind`, `liveHealth`, `validTourStep` | `protocolDecision` | `clientProtocolDecision` (new); `protocolDecision` keeps the Worker's and command hosts' decisions and leaves the bundle | `schemas`, `LiveFactory`, `MockFactory`, `web/backend`, `worker/Http` |
+| `reviewActions`, `vipDocumentMatches`, `VipFile` | `conversation` (the state machine: every screen) | `issueHostDecision` | `worker/Issues` |
 
 Measured on main `6fbe6ee1` (`pnpm e2e:coverage`, base and change on boxes): covered counts are identical
 (branches 4,522, lines 4,643, functions 2,004, statements 5,547), so the browser runs exactly what it ran; the roster

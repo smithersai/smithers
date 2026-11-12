@@ -1,6 +1,7 @@
 // The issues host's own decisions (wiki/decisions/0022-issues-and-vips.md, 0018 third-lane batch 6): which request
 // keys are admitted, how a GitHub failure is classified and answered over HTTP, which refusals were decided before any
-// write, how a GitHub issue reads as a task and a VIP, what an observed timeline event says, how an outside approval is
+// write, how a GitHub issue reads as a task and a VIP, which pull request backs a VIP, what a
+// partly written human review still has to do, what an observed timeline event says, how an outside approval is
 // projected without a local receipt, and how the stored revision advances. `worker/Issues.vibe` and `worker/Wiki.vibe`
 // call these, and no browser code does; GitHub calls, schema decoding, dates and sorting stay outside the proof.
 //
@@ -226,4 +227,25 @@ export function timelineText(event: string, hasLabel: boolean, label: string, ha
   if (event === "closed") return "closed this issue"
   if (event === "reopened") return "reopened this issue"
   return ""
+}
+
+/** Reconcile a human review after any prefix of its GitHub writes has completed. */
+//@ verify
+//@ ensures \result.allowed == (vip == "In review" || vip == (accepted ? "Accepted" : "Declined"))
+//@ ensures \result.label == (\result.allowed && vip == "In review")
+//@ ensures \result.close == (\result.allowed && !accepted && state == "open")
+export function reviewActions(vip: "" | "In review" | "Accepted" | "Declined", state: "open" | "closed", accepted: boolean): { readonly allowed: boolean; readonly label: boolean; readonly close: boolean } {
+  const allowed = vip === "In review" || vip === (accepted ? "Accepted" : "Declined")
+  return { allowed, label: allowed && vip === "In review", close: allowed && !accepted && state === "open" }
+}
+
+export interface VipFile { readonly filename: string; readonly status: string }
+/** The host supplies complete native PR facts and a validated repository document path. */
+//@ verify
+//@ ensures \result ==> issueAuthor > 0 && issueAuthor == reviewAuthor && path != ""
+//@ ensures \result ==> exists(i, 0 <= i && i < files.length && files[i].filename == path && files[i].status != "removed")
+//@ ensures (issueAuthor <= 0 || issueAuthor != reviewAuthor || path == "") ==> !\result
+export function vipDocumentMatches(issueAuthor: number, reviewAuthor: number, path: string, files: ReadonlyArray<VipFile>): boolean {
+  if (issueAuthor <= 0 || issueAuthor !== reviewAuthor || path === "") return false
+  return files.some(file => file.filename === path && file.status !== "removed")
 }
