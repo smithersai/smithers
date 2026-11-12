@@ -1,9 +1,9 @@
 ---
 title: Smithers harness on the frontier-harness-eval benchmark
-status: in-progress
+status: parked
 area: sdk
 owner: Fable lead session 2eeda18e (since 2026-11-10)
-updated: 2026-11-11
+updated: 2026-11-12
 links: [benchmarks.md, harness-completion-calibration.md]
 ---
 
@@ -90,11 +90,28 @@ overfitting to the benchmark.
   - The first pass lost ten trials to Docker Hub: Runta's image pulls were
     answered 429 Too Many Requests from 07:38 PST. Three of them had already
     run the agent and lost the verifier image. Pulls worked again by 08:06.
-- No seat serves `gpt-6.1-sol` until `codex-6` resets at 21:09 PST on
-  2026-11-11. A second attempt at all 62 tasks on one build (`2ee6ec6b`) is
-  queued behind that reset (`smithers-all-2`).
-- The Codex CLI and Claude Code arms have not run. They run inside the
-  sandbox, so they upload a subscription login to Runta; that waits on Will.
+- **Paused, 2026-11-12 01:10 PST.** Will: "lets pause benchmarks for now dont
+  worry about it". Both runs below were stopped part-way and their sandboxes
+  removed. Start none without his word; the questions about a Kimi key and
+  about logins in the sandbox are withdrawn.
+  - `smithers-all-2` (all 62 tasks again, build `2ee6ec6b`, `gpt-6.1-sol` on
+    `codex-6`): 17 scored, 13 passed. Failed: `vulnerable-secret` (refused
+    again), `filter-js-from-html`, `embedding-drift-monitor` and
+    `kv-store-grpc`; the last two passed on the first attempt. OpenAI refused
+    `model-extraction-relu-logits` on its first frame, a task that passed
+    before. 4 trials were cancelled mid-task and 40 never started.
+  - `smithers-claude-short-1` (the 26 short tasks on Claude Opus 5.5, through
+    the signed-in Claude Code seat, `-m claude-code/opus` with
+    `CLAUDE_CONFIG_DIR`): 17 scored, 15 passed, `vulnerable-secret` among
+    them. Both failures ran out of the 15 minutes: `make-doom-for-mips`, and
+    `adaptive-rejection-sampler`, where one model turn ran for 13 minutes and
+    never returned. 2 trials were cancelled mid-task and 7 never started.
+  - The same 17 short tasks on `gpt-6.1-sol`'s first attempt
+    (`smithers-15min-batch-1`): each model passed 15. Opus took 107 frames,
+    2.12M input tokens, 228K output and 2,279 s of model time; `gpt-6.1-sol`
+    took 103 frames, 1.53M input, 154K output and 4,238 s. Opus's visible
+    replies were about a quarter of its output tokens; the rest was thinking.
+- The Codex CLI and Claude Code arms have not run.
 
 ## The public board measures other models
 
@@ -131,6 +148,7 @@ needs Smithers on one of the five models; Kimi-K3 is first.
 | File flows made one remote exec per filesystem method: 523 execs, about 1,260 s of the batch's 9,896 s | A host that batches (`Read.Batched`) answers a whole snapshot or commit in one exec: `read` 6.4 s to 2.9, `edit` 32.9 to 5.5, `apply_patch` 24.8 to 5.6, `write` 30.5 to 5.2, `ls` 9.8 to 2.6 on Runta (`diag-tools-2`) |
 | A `bash` call that hit its time limit returned none of its output, and in a container the command kept running | The failure carries the output (`error.output`); the container enforces the deadline in the same exec and stops the command's process group |
 | `shell_command` and `test` also answered a time limit with no output | `shell_command` prints it after Codex's `command timed out after` line; `test` carries the end of each stream as `error.output` (`2ee6ec6b`) |
+| A `claude-code:` seat reported no reasoning tokens while thinking at `xhigh` | The seat reads `output_tokens_details.thinking_tokens` off the turn's result (`66b7feaf`) |
 | A patch of several files failed on a BusyBox guest: its `head -c` reads past the bytes it keeps | Several writes are cut from standard input spooled once; pinned against real Alpine |
 
 ## Open
@@ -145,7 +163,18 @@ needs Smithers on one of the five models; Kimi-K3 is first.
 - Rule 5's `git status` guard fails in a directory that is not a repository,
   and in a container with no `git`: 48 of the 62 tasks. It cut an `&&` chain
   short in 4 of 1,143 calls. Not worth a change.
-- A provider content refusal ends the run.
+- A provider content refusal ends the run. One on the first frame, before
+  any command, is recorded as `ContainerUnreachable` (no verdict); its cause
+  is in the trial's `metadata.cause`.
+- A `claude-code:` seat hands over a turn only when it ends, so a long turn
+  and a hung one look the same until the budget kills the run. Claude Code
+  can stream the turn (`includePartialMessages`) and reports API retries;
+  the seat reads neither. Opus's output cap there is 128,000 tokens, about
+  23 minutes at the 93 tokens a second measured.
+- The run is never told its time limit. `adaptive-rejection-sampler` took
+  `gpt-6.1-sol` 862 s of 900 and timed Opus out.
+- A seat disabled with no reset time re-enters the pool after its cool-off
+  and costs one trial each time while its weekly limit lasts.
 - The harness runs on the host and pays Runta's 2.3 s for each exec; an
   agent installed in the sandbox does not.
 - One attempt a task is noisy: 3 of 13 failures passed on a second attempt.
