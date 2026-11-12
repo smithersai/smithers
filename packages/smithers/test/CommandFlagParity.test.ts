@@ -1,13 +1,15 @@
 /**
- * The verbs the unified tree still hands to the legacy Effect parser as argv.
+ * The verbs the unified tree once handed to the legacy Effect parser as argv.
  *
- * `ControlCommands.ts` spells each of those flags twice: once as a zod option
- * and once as the `--flag` it forwards to `Bridge.invoke`. Nothing else pins
- * the pairs, so a flag renamed on one side would parse on the unified tree and
- * be refused by the legacy parser at run time. This walks every bridged verb's
- * local control help and asserts each flag it declares is one the legacy verb
- * declares too. The connection options and the unified globals are the
- * bridge's own and are translated, not forwarded.
+ * `ControlCommands.ts` spelled each of those flags twice: once as a zod option
+ * and once as the `--flag` it forwarded to `Bridge.invoke`. Since 4ad4d129 both
+ * spellings call one shared Effect and the flat spelling is a hidden transition
+ * alias that keeps its prior contract, so a flag a canonical verb gains is not
+ * added to its alias. This walks every bridged verb's local control help and
+ * asserts each flag it declares is one the legacy verb declares too, or one of
+ * the reviewed options the canonical verb gained after its alias froze. The
+ * connection options and the unified globals are the bridge's own and are
+ * translated, not forwarded.
  */
 import { NodeServices } from "@effect/platform-node"
 import { Control } from "@smthrs/control"
@@ -36,6 +38,15 @@ const bridged: ReadonlyArray<{ readonly unified: ReadonlyArray<string>; readonly
   { unified: ["approvals", "approve"], legacy: "approve" },
   { unified: ["approvals", "deny"], legacy: "deny" }
 ]
+
+/**
+ * The options a canonical verb gained after its flat alias froze, exactly. A
+ * missing entry and an entry the alias now declares both fail.
+ */
+const canonicalOnly: Readonly<Record<string, ReadonlyArray<string>>> = {
+  // 425ae130 waits for a signal's delivery or rejection (#4247).
+  "runs signal": ["--timeout", "--wait"]
+}
 
 const kebab = (key: string): string => `--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
 
@@ -74,6 +85,7 @@ describe("bridged verb flag parity", () => {
     const forwarded = flagsOf(await unifiedHelp(unified)).filter((flag) => !globals.has(flag) && !connection.has(flag))
     const declared = flagsOf(await legacyHelp(legacy))
     expect(declared.length).toBeGreaterThan(0)
-    for (const flag of forwarded) expect(declared, `${unified.join(" ")} ${flag}`).toContain(flag)
+    const path = unified.join(" ")
+    expect(forwarded.filter((flag) => !declared.includes(flag)).sort(), path).toEqual(canonicalOnly[path] ?? [])
   })
 })
