@@ -819,6 +819,22 @@
       "reason": "What a runner sends its host of an agent's run: event kinds, limits and redaction, shared by the CLI and the host that stores it (decision 0141)."
     },
     {
+      "name": "@smthrs/agent",
+      "subpath": "./ModelStep",
+      "development": "./src/ModelStep.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ModelStep.d.ts",
+          "default": "./dist/esm/ModelStep.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelStep.d.ts",
+          "default": "./dist/cjs/ModelStep.js"
+        }
+      },
+      "reason": "ModelStep.run, one model call as a durable sealed flow step, at the @smthrs/agent/<Module> subpath the README and installation guide promise for every root namespace (a737299f22c5)."
+    },
+    {
       "name": "@smthrs/cli",
       "subpath": "./BunControl",
       "development": "./src/BunControl.ts",
@@ -2118,22 +2134,6 @@
       "reason": "Orders every Set and Map entry by a stable rank at every depth, so equal collections encode to equal bytes before Canonical and SHA-256 derive a durable identity (VIP-44 row 1, f4b973ab2789)."
     },
     {
-      "name": "@smthrs/jj",
-      "subpath": "./Repository",
-      "development": "./src/Repository.ts",
-      "published": {
-        "import": {
-          "types": "./dist/esm/Repository.d.ts",
-          "default": "./dist/esm/Repository.js"
-        },
-        "require": {
-          "types": "./dist/cjs/Repository.d.ts",
-          "default": "./dist/cjs/Repository.js"
-        }
-      },
-      "reason": "A git repository objects and refs as a host capability beside Jj: content-addressed blob, tree and commit writes and atomic multi-ref compare-and-swap, answered by a hosting adapter or the memory adapter (4833b8c0d8bd)."
-    },
-    {
       "name": "@smthrs/sandbox",
       "subpath": "./HttpSandbox",
       "development": "./src/HttpSandbox/index.ts",
@@ -2157,6 +2157,29 @@
       "reason": "Closed implementation paths for the public entrypoint added in 40da8070201b."
     },
     {
+      "name": "@smthrs/sandbox",
+      "subpath": "./Remotes",
+      "development": "./src/Remotes/index.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Remotes/index.d.ts",
+          "default": "./dist/esm/Remotes/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Remotes/index.d.ts",
+          "default": "./dist/cjs/Remotes/index.js"
+        }
+      },
+      "reason": "Remotes.Remotes offers a flow's actions the machines WORKSPACE.ts declares in S.Remotes, by name: the host checks remote:acquire:<name> against the action's capability ceiling and starts the remote's transport outside the confinement (c72e767d3179, #4966)."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./Remotes/*",
+      "development": null,
+      "published": null,
+      "reason": "Closed implementation paths for the public entrypoint added in c72e767d3179."
+    },
+    {
       "name": "@smthrs/testing",
       "subpath": "./HttpRecording",
       "development": "./src/HttpRecording.ts",
@@ -2171,6 +2194,22 @@
         }
       },
       "reason": "Records, replays or passes through an HttpClient so a test pins provider traffic it owns end to end without a live network (9a22e2b64b15)."
+    },
+    {
+      "name": "@smthrs/testing",
+      "subpath": "./ContainerRecording",
+      "development": "./src/ContainerRecording.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ContainerRecording.d.ts",
+          "default": "./dist/esm/ContainerRecording.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ContainerRecording.d.ts",
+          "default": "./dist/cjs/ContainerRecording.js"
+        }
+      },
+      "reason": "Records, replays or passes through every call a Durable Object makes on its Cloudflare Container in the three VL-36 modes, with strict replay order and secret scrubbing; imports no Node module, so a deployed Worker records and workerd replays (6138c1eb849b)."
     }
   ],
   "removed": [
@@ -5111,6 +5150,22 @@
         "require": "./dist/cjs/core/IssueSync.js"
       },
       "reason": "Shared issue/comment mirror contract the Slack and Telegram adapters implement against the backend's issue API (b662d687b). The backend owns identities, mappings, claims and receipts; this module owns no store or worker. Retired: the backend issue-sync routes were removed with the Go backend and nothing imported the module (#4883)."
+    },
+    {
+      "name": "@smthrs/jj",
+      "subpath": "./Repository",
+      "development": "./src/Repository.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Repository.d.ts",
+          "default": "./dist/esm/Repository.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Repository.d.ts",
+          "default": "./dist/cjs/Repository.js"
+        }
+      },
+      "reason": "A git repository objects and refs as a host capability beside Jj: content-addressed blob, tree and commit writes and atomic multi-ref compare-and-swap, answered by a hosting adapter or the memory adapter (4833b8c0d8bd). Retired: 4197e4da85c1 (SDK-5) dropped the subpath; consumers import Repository from the @smthrs/jj root."
     }
   ]
 }
