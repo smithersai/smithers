@@ -5,9 +5,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use jj_lib::git::{self, GitPushOptions, GitRefUpdate, GitSubprocessOptions};
-use jj_lib::git::{GitProgress, GitSidebandLineTerminator, GitSubprocessCallback};
-use jj_lib::merge::Diff;
+use jj_lib::git_backend::GitBackend;
 use jj_lib::object_id::ObjectId;
 use jj_lib::repo::{ReadonlyRepo, Repo};
 use serde::{Deserialize, Serialize};
@@ -69,32 +67,6 @@ fn stale() -> Failure {
     }
 }
 
-// Neither transport sideband nor raw errors are emitted: authentication tools
-// and a remote may include credentials or untrusted data in their diagnostics.
-struct Quiet;
-impl GitSubprocessCallback for Quiet {
-    fn needs_progress(&self) -> bool {
-        false
-    }
-    fn progress(&mut self, _: &GitProgress) -> std::io::Result<()> {
-        Ok(())
-    }
-    fn local_sideband(
-        &mut self,
-        _: &[u8],
-        _: Option<GitSidebandLineTerminator>,
-    ) -> std::io::Result<()> {
-        Ok(())
-    }
-    fn remote_sideband(
-        &mut self,
-        _: &[u8],
-        _: Option<GitSidebandLineTerminator>,
-    ) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 fn config_valid(config: &Config, path: &Path) -> bool {
     // These fields come from the root-owned provisioning file, never from the
     // repository or request. Restrict them anyway before invoking transports.
@@ -130,8 +102,13 @@ fn config_valid(config: &Config, path: &Path) -> bool {
             )
 }
 
-pub(super) const TOKEN_CREDENTIAL_HELPER: &str =
-    "!f() { printf 'username=smithers\npassword=%s\n' \"$SMITHERS_NATIVE_REPOSITORY_TOKEN\"; }; f";
+// The token answers only a `get` for the exact bound origin, whatever URL
+// Git ends up asking about: protocol, host with port, and repository path.
+pub(super) const TOKEN_CREDENTIAL_HELPER: &str = "!f() { test \"$1\" = get || return 0; \
+    p= h= u=; while IFS= read -r l && test -n \"$l\"; do case \"$l\" in \
+    protocol=*) p=${l#protocol=};; host=*) h=${l#host=};; path=*) u=${l#path=};; esac; done; \
+    test \"$p://$h/$u\" = \"$SMITHERS_NATIVE_REPOSITORY_URL\" || return 0; \
+    printf 'username=smithers\npassword=%s\n' \"$SMITHERS_NATIVE_REPOSITORY_TOKEN\"; }; f";
 
 fn credential(config: &Config) -> Result<String> {
     // The executable consumes its private landing credential before ordinary
@@ -268,75 +245,43 @@ fn request_json(url: &str, body: &str, token: &str) -> Result<(String, serde_jso
 }
 
 fn push_source(repo: &ReadonlyRepo, config: &Config, source: &Source, name: &str) -> Result<()> {
-    let mut options =
-        GitSubprocessOptions::from_settings(repo.settings()).map_err(|_| unavailable())?;
-    let entries = [
-        ("remote.origin.url", config.git_url.clone()),
-        ("remote.origin.pushurl", config.git_url.clone()),
-        ("credential.helper", String::new()),
-        (
-            "credential.helper",
-            if std::env::var_os("SMITHERS_NATIVE_REPOSITORY_TOKEN").is_some() {
-                TOKEN_CREDENTIAL_HELPER.into()
-            } else {
-                format!("cache --socket {}", config.credential_socket)
-            },
-        ),
-        ("credential.useHttpPath", "true".into()),
-        ("core.hooksPath", "/dev/null".into()),
-        ("http.followRedirects", "false".into()),
-        ("http.lowSpeedLimit", "1".into()),
-        ("http.lowSpeedTime", "30".into()),
-    ];
-    options
-        .environment
-        .insert("GIT_CONFIG_COUNT".into(), entries.len().to_string().into());
-    for (index, (key, value)) in entries.into_iter().enumerate() {
-        options
-            .environment
-            .insert(format!("GIT_CONFIG_KEY_{index}").into(), key.into());
-        options
-            .environment
-            .insert(format!("GIT_CONFIG_VALUE_{index}").into(), value.into());
-    }
-    if let Some(token) = std::env::var_os("SMITHERS_NATIVE_REPOSITORY_TOKEN") {
-        options
-            .environment
-            .insert("SMITHERS_NATIVE_REPOSITORY_TOKEN".into(), token);
-    }
-    for key in [
-        "GIT_TERMINAL_PROMPT",
-        "GIT_TRACE",
-        "GIT_TRACE_PACKET",
-        "GIT_TRACE_CURL",
-        "GIT_CURL_VERBOSE",
-        "GIT_TRACE2",
-        "GIT_TRACE2_EVENT",
-        "GIT_TRACE2_PERF",
-    ] {
-        options.environment.insert(key.into(), "0".into());
-    }
-    options
-        .environment
-        .insert("GIT_ASKPASS".into(), "false".into());
-    let update = GitRefUpdate {
-        qualified_name: name.to_owned().into(),
-        targets: Diff {
-            before: None,
-            after: Some(
-                gix::ObjectId::from_hex(source.commit_id.as_bytes()).map_err(|_| invalid())?,
-            ),
-        },
+    // The workspace's Git config is writable by its tools, so the push runs
+    // from a scratch repository that shares only the object store.
+    let objects = repo
+        .store()
+        .backend_impl::<GitBackend>()
+        .ok_or_else(unavailable)?
+        .git_repo_path()
+        .join("objects");
+    let (_scratch, scratch_git) =
+        crate::source_import::scratch_repository().map_err(|_| unavailable())?;
+    let lease = format!("--force-with-lease={name}:");
+    let refspec = format!("{}:{name}", source.commit_id);
+    let origin = crate::source_import::Origin {
+        git_url: &config.git_url,
+        credential_socket: &config.credential_socket,
     };
     // The native transport owns push/CAS; even an ambiguous transport failure
     // is resolved only by the exact authoritative ACK, never by exit status.
-    let _ = git::push_updates(
-        repo,
-        options,
-        "origin".as_ref(),
-        &[update],
-        &mut Quiet,
-        &GitPushOptions::default(),
+    // Git's output is discarded: authentication tools and a remote may put
+    // credentials or untrusted data in their diagnostics.
+    let _ = crate::source_import::git(
+        &scratch_git,
+        &[
+            "-c",
+            "http.lowSpeedLimit=1",
+            "-c",
+            "http.lowSpeedTime=30",
+            "push",
+            "--porcelain",
+            "--no-verify",
+            &lease,
+            "--",
+            &config.git_url,
+            &refspec,
+        ],
+        Some((origin, &objects)),
+        false,
     );
     Ok(())
 }
@@ -447,7 +392,7 @@ pub fn run(path: &Path) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jj_lib::git_backend::GitBackend;
+    use jj_lib::git;
     use jj_lib::merged_tree::MergedTree;
     use jj_lib::workspace::Workspace;
     use pollster::FutureExt as _;
@@ -539,6 +484,137 @@ mod tests {
     #[cfg(windows)]
     fn local_windows_host_cannot_acquire_managed_unix_guest_credentials() {
         assert!(crate::source_create::read_provisioned_config::<Config>().is_err());
+    }
+
+    fn fill(url: &str, bound: &str) -> Option<String> {
+        let mut child = Command::new("git")
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_ASKPASS", "false")
+            .env("SMITHERS_NATIVE_REPOSITORY_TOKEN", "sentinel-private-token")
+            .env("SMITHERS_NATIVE_REPOSITORY_URL", bound)
+            .arg("-c")
+            .arg(format!("credential.helper={TOKEN_CREDENTIAL_HELPER}"))
+            .args(["-c", "credential.useHttpPath=true", "credential", "fill"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        write!(child.stdin.take().unwrap(), "url={url}\n\n").unwrap();
+        let output = child.wait_with_output().unwrap();
+        let text = String::from_utf8(output.stdout).unwrap();
+        output.status.success().then(|| {
+            text.lines()
+                .find_map(|line| line.strip_prefix("password="))
+                .unwrap()
+                .to_owned()
+        })
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn token_helper_answers_only_the_exact_bound_origin() {
+        let bound = "https://example.test/acme/widgets.git";
+        assert_eq!(
+            fill(bound, bound).as_deref(),
+            Some("sentinel-private-token")
+        );
+        let local = "http://127.0.0.1:4100/acme/widgets.git";
+        assert_eq!(
+            fill(local, local).as_deref(),
+            Some("sentinel-private-token")
+        );
+        for other in [
+            "https://attacker.example/acme/widgets.git",
+            "https://example.test/acme/other.git",
+            "http://example.test/acme/widgets.git",
+            "https://example.test:8443/acme/widgets.git",
+            "http://127.0.0.1:4101/acme/widgets.git",
+        ] {
+            assert_eq!(fill(other, bound), None, "{other} received the token");
+        }
+    }
+
+    #[test]
+    fn workspace_url_rewrite_cannot_redirect_publication() {
+        let (temp, mut config, request) = fixture();
+        let target = tempfile::TempDir::new().unwrap();
+        let settings = create_settings(&UserConfig::default());
+        Workspace::init_internal_git(&settings, target.path(), gix::hash::Kind::Sha1)
+            .block_on()
+            .unwrap();
+        let (_, target_repo) = load_repo_at_head(target.path(), &settings).unwrap();
+        let target_git = target_repo
+            .store()
+            .backend_impl::<GitBackend>()
+            .unwrap()
+            .git_repo_path()
+            .to_owned();
+        config.git_url = target_git.to_str().unwrap().into();
+        let (_, repo) = load_repo_at_head(temp.path(), &settings).unwrap();
+        let mut tx = repo.start_transaction();
+        git::add_remote(tx.repo_mut(), "origin".as_ref(), &config.git_url, None).unwrap();
+        let repo = tx.commit("bind origin").block_on().unwrap();
+        // A workspace tool writes a rewrite of the bound origin into the
+        // workspace's own Git config, aimed at an origin it controls.
+        let attacker = TcpListener::bind("127.0.0.1:0").unwrap();
+        attacker.set_nonblocking(true).unwrap();
+        let workspace_git = repo
+            .store()
+            .backend_impl::<GitBackend>()
+            .unwrap()
+            .git_repo_path()
+            .join("config");
+        let mut hostile = std::fs::OpenOptions::new()
+            .append(true)
+            .open(workspace_git)
+            .unwrap();
+        write!(
+            hostile,
+            "\n[url \"http://{}/\"]\n\tinsteadOf = {}\n",
+            attacker.local_addr().unwrap(),
+            config.git_url
+        )
+        .unwrap();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let watching = stop.clone();
+        let connections = std::thread::spawn(move || {
+            let mut count = 0;
+            while !watching.load(std::sync::atomic::Ordering::SeqCst) {
+                match attacker.accept() {
+                    Ok(_) => count += 1,
+                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+                }
+            }
+            count
+        });
+        // Publication loads the workspace fresh, as `publish_authenticated` does.
+        let (_, repo) = load_repo_at_head(temp.path(), &settings).unwrap();
+        let name = source_ref(&config.workspace_id, &request.source.commit_id).unwrap();
+        push_source(repo.as_ref(), &config, &request.source, &name).unwrap();
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            connections.join().unwrap(),
+            0,
+            "the rewritten origin was contacted"
+        );
+        let published = Command::new("git")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .arg("--git-dir")
+            .arg(&target_git)
+            .args(["rev-parse", "--verify", &name])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(published.stdout).unwrap().trim(),
+            request.source.commit_id,
+            "the bound origin must receive the source"
+        );
     }
 
     fn receipt(config: &Config, source: &Source) -> serde_json::Value {

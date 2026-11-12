@@ -91,10 +91,29 @@ fn hex_commit(id: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
-fn git(
+/// The one bound origin a transport may authenticate to.
+pub(super) struct Origin<'a> {
+    pub git_url: &'a str,
+    pub credential_socket: &'a str,
+}
+
+impl Binding {
+    fn origin(&self) -> Origin<'_> {
+        Origin {
+            git_url: &self.git_url,
+            credential_socket: &self.credential_socket,
+        }
+    }
+}
+
+/// Runs Git with no system, global or repository-supplied configuration
+/// beyond `git_dir` itself, which must be a scratch repository whenever a
+/// transport is given: the workspace's own Git config is writable by its
+/// tools, and a `url.*.insteadOf` there would redirect the bound origin.
+pub(super) fn git(
     git_dir: &Path,
     args: &[&str],
-    transport: Option<(&Binding, &Path)>,
+    transport: Option<(Origin<'_>, &Path)>,
     missing: bool,
 ) -> Result<Option<String>> {
     let mut command = Command::new("git");
@@ -126,7 +145,7 @@ fn git(
         ]);
     #[cfg(test)]
     command.args(["-c", "protocol.file.allow=always"]);
-    if let Some((binding, objects)) = transport {
+    if let Some((origin, objects)) = transport {
         // The host's private transport token survives publisher retirement.
         // It is supplied only to this installed helper, never repository tools.
         let helper = match std::env::var("SMITHERS_NATIVE_REPOSITORY_TOKEN") {
@@ -140,11 +159,13 @@ fn git(
                         "source credential is invalid",
                     ));
                 }
-                command.env("SMITHERS_NATIVE_REPOSITORY_TOKEN", token);
+                command
+                    .env("SMITHERS_NATIVE_REPOSITORY_TOKEN", token)
+                    .env("SMITHERS_NATIVE_REPOSITORY_URL", origin.git_url);
                 super::source_publish::TOKEN_CREDENTIAL_HELPER.to_owned()
             }
             Err(std::env::VarError::NotPresent) => {
-                format!("cache --socket {}", binding.credential_socket)
+                format!("cache --socket {}", origin.credential_socket)
             }
             Err(_) => {
                 return Err(Failure::new(
@@ -436,6 +457,42 @@ fn import_refs(repo: &Path) -> Result<()> {
     Ok(())
 }
 
+/// An empty bare repository whose config the workspace cannot reach. A
+/// transport through it shares only the workspace's object store.
+pub(super) fn scratch_repository() -> Result<(tempfile::TempDir, PathBuf)> {
+    let scratch = tempfile::tempdir().map_err(|_| {
+        Failure::new(
+            "source_import_unavailable",
+            "source scratch directory is unavailable",
+        )
+    })?;
+    let scratch_git = scratch.path().join("transport.git");
+    let status = Command::new("git")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .args(["init", "--bare", "--template="])
+        .arg(&scratch_git)
+        // Git reports the new repository on stdout, where the caller reads
+        // only this helper's JSON receipt.
+        .stdout(Stdio::null())
+        .status()
+        .map_err(|_| {
+            Failure::new(
+                "source_import_unavailable",
+                "Git source transport is unavailable",
+            )
+        })?;
+    if !status.success() {
+        return Err(Failure::new(
+            "source_import_unavailable",
+            "source scratch repository failed",
+        ));
+    }
+    Ok((scratch, scratch_git))
+}
+
 fn run_with_binding(repo: &Path, input: &Value, config: &Binding) -> Result<Value> {
     let request = field(input, "requestId")?;
     let commits = input
@@ -548,43 +605,19 @@ fn run_with_binding(repo: &Path, input: &Value, config: &Binding) -> Result<Valu
             "json(self) ++ \"\\n\"",
         ],
     )?;
-    let scratch = tempfile::tempdir().map_err(|_| {
-        Failure::new(
-            "source_import_unavailable",
-            "source scratch directory is unavailable",
-        )
-    })?;
-    let scratch_git = scratch.path().join("import.git");
-    let status = Command::new("git")
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .args(["init", "--bare", "--template="])
-        .arg(&scratch_git)
-        // Git reports the new repository on stdout, where the caller reads
-        // only this helper's JSON receipt.
-        .stdout(Stdio::null())
-        .status()
-        .map_err(|_| {
-            Failure::new(
-                "source_import_unavailable",
-                "Git source transport is unavailable",
-            )
-        })?;
-    if !status.success() {
-        return Err(Failure::new(
-            "source_import_unavailable",
-            "source scratch repository failed",
-        ));
-    }
+    let (_scratch, scratch_git) = scratch_repository()?;
     let objects = git_dir.join("objects");
     let mut advertised = BTreeMap::new();
     let mut remote_args = vec!["ls-remote", "--refs", config.git_url.as_str()];
     remote_args.extend(commits.iter().map(|item| item["ref"].as_str().unwrap()));
-    for line in git(&scratch_git, &remote_args, Some((config, &objects)), false)?
-        .unwrap()
-        .lines()
+    for line in git(
+        &scratch_git,
+        &remote_args,
+        Some((config.origin(), &objects)),
+        false,
+    )?
+    .unwrap()
+    .lines()
     {
         if let Some((sha, name)) = line.split_once('\t') {
             advertised.insert(name.to_owned(), sha.to_owned());
@@ -624,7 +657,12 @@ fn run_with_binding(repo: &Path, input: &Value, config: &Binding) -> Result<Valu
         config.git_url.as_str(),
     ];
     fetch_args.extend(fetch_refs.iter().map(String::as_str));
-    git(&scratch_git, &fetch_args, Some((config, &objects)), false)?;
+    git(
+        &scratch_git,
+        &fetch_args,
+        Some((config.origin(), &objects)),
+        false,
+    )?;
     for item in commits {
         let sha = field(item, "commitId")?;
         let fetched = git(
@@ -634,7 +672,7 @@ fn run_with_binding(repo: &Path, input: &Value, config: &Binding) -> Result<Valu
                 "--verify",
                 &format!("refs/smithers-import/{sha}^{{commit}}"),
             ],
-            Some((config, &objects)),
+            Some((config.origin(), &objects)),
             false,
         )?
         .unwrap();
