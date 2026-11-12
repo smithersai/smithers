@@ -11,6 +11,7 @@ import { Effect, Layer, Result, Schema } from "effect"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
 import {
   batches,
+  bounded,
   hunks,
   jevUnavailable,
   jevVerdict,
@@ -211,9 +212,20 @@ export const judge = (
     const public_ = parsed.filter((file) => !file.sides.some(privatePath))
     const paths = public_.map((file) => file.path)
     const comparison: RuleComparison = { diff: "", paths, files: [], changes: [] }
-    const changed = public_.flatMap((file) =>
-      hunks({ ...comparison, diff: file.text }).map((hunk) => ({ ...hunk, path: file.path }))
-    )
+    // The file's own header (its mode, rename or copy lines) leads its first hunk, and a file
+    // with no text hunk, such as a mode-only change, is judged on that header alone. A binary
+    // file is never asked about: its rules are uncertain below.
+    const changed = public_.flatMap((file) => {
+      if (file.binary) return []
+      const lines = file.text.replace(/\n$/, "").split("\n")
+      const end = lines.findIndex((line, index) => index > 0 && !extended.test(line))
+      const header = lines.slice(0, end === -1 ? lines.length : end).join("\n")
+      const [first, ...rest] = hunks({ ...comparison, diff: file.text })
+      const lead = first === undefined
+        ? { path: file.path, line: 1, ...bounded(header) }
+        : { ...first, ...(first.complete ? bounded(`${header}\n${first.hunk}`) : first) }
+      return [lead, ...rest].map((hunk) => ({ ...hunk, path: file.path }))
+    })
     const clipped = changed.find((hunk) => !hunk.complete)
     if (clipped !== undefined) {
       return receipt("failed", { refused: "hunk_too_large", path: clipped.path, limitBytes: MAX_HUNK_BYTES }, [

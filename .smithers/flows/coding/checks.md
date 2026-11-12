@@ -165,9 +165,12 @@ The deployed coding host explicitly selects `concurrency: 1` to run one revision
 eight rules, `{"rules":[{"id","rule","paths"}]}`. The check reads only the
 unified diff between the implementation's immutable parent and head, skips
 private repository-job paths, and asks Jev whether each in-scope hunk violates
-each rule (the `check/rule` classifier, 0.8/0.2 thresholds). A decisive flag
-or an unsure answer fails the receipt with a finding; more than 256 questions
-or a diff over 1 MB fails without asking. An unreachable Jev fails the check;
+each rule (the `check/rule` classifier, 0.8/0.2 thresholds). A file's first
+hunk carries its diff header, so mode, rename and copy changes reach Jev, and a
+file with no text hunk, such as a mode change, is judged on its header alone. A
+binary change in scope fails as uncertain. A decisive flag or an unsure answer
+fails the receipt with a finding; more than 256 questions or a diff over 1 MB
+fails without asking. An unreachable Jev fails the check;
 no other model answers in its place. See `.smithers/flows/checks/lint/flow.mdx`.
 
 ## Review on a second provider

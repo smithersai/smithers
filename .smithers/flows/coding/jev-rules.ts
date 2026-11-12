@@ -70,7 +70,9 @@ export const ruleClassifier = Classifier.make("check/rule", {
     path: Schema.String.annotate({ description: "The changed file's path in the candidate" }),
     line: Schema.Int.annotate({ description: "The hunk's first changed line in the candidate" }),
     hunk: Schema.String.annotate({
-      description: "The unified diff hunk, its @@ header included, kept under the 32 KiB the whole state may take"
+      description: "The unified diff hunk, its @@ header included, kept under the 32 KiB the whole state may take. " +
+        "A file's first hunk is led by its diff --git header and mode, rename or copy lines; " +
+        "a file with no text change, such as a mode change, is that header alone"
     })
   }),
   questions: {

@@ -237,3 +237,47 @@ test("a filename spelling another path, a clipped hunk and a binary change are n
     /cannot judge binary/
   )
 })
+
+test("a mode, rename or copy change reaches Jev, so an executable script never passes unseen", async () => {
+  const rules = { rules: [{ id: "no-exec", rule: "No shell script is executable.", paths: ["src/**"] }] }
+  const mixed =
+    "diff --git a/src/clean.ts b/src/clean.ts\n--- a/src/clean.ts\n+++ b/src/clean.ts\n@@ -1 +1 @@\n-a\n+b\n" +
+    "diff --git a/src/danger.sh b/src/danger.sh\nold mode 100644\nnew mode 100755\n"
+  const asked: Array<{ path: string; hunk: string }> = []
+  const judged = await run(
+    (request) => {
+      const state = request.state as { path: string; hunk: string }
+      asked.push(state)
+      return { violates: { probability: state.hunk.includes("new mode 100755") ? 0.95 : 0.02 } }
+    },
+    mixed,
+    rules
+  )
+  assert.deepEqual(asked.map((state) => state.path), ["src/clean.ts", "src/danger.sh"])
+  assert.equal(judged.result._tag === "Success" && judged.result.success.status, "failed")
+  assert.deepEqual(judged.result._tag === "Success" && judged.result.success.findings.map((found) => found.message), [
+    "src/danger.sh:1 no-exec: No shell script is executable."
+  ])
+  // A new executable file's mode rides with its first hunk, so it costs no extra question.
+  const created = await run(
+    (request) => ({
+      violates: { probability: (request.state as { hunk: string }).hunk.includes("new file mode 100755") ? 0.95 : 0.02 }
+    }),
+    "diff --git a/src/run.sh b/src/run.sh\nnew file mode 100755\n--- /dev/null\n+++ b/src/run.sh\n@@ -0,0 +1 @@\n+echo hi\n",
+    rules
+  )
+  assert.equal(created.result._tag === "Success" && created.result.success.status, "failed")
+  // A pure rename has no text hunk, so Jev judges its header and sees both names.
+  const renamed: Array<string> = []
+  await run(
+    (request) => {
+      renamed.push((request.state as { hunk: string }).hunk)
+      return { violates: { probability: 0.02 } }
+    },
+    "diff --git a/src/a.sh b/src/b.sh\nsimilarity index 100%\nrename from src/a.sh\nrename to src/b.sh\n",
+    rules
+  )
+  assert.deepEqual(renamed, [
+    "diff --git a/src/a.sh b/src/b.sh\nsimilarity index 100%\nrename from src/a.sh\nrename to src/b.sh"
+  ])
+})
