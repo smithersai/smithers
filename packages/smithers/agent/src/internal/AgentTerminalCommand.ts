@@ -161,6 +161,18 @@ export const failure = (error: unknown): StdError =>
     ? error
     : new StdError({ code: "command_failed", message: "Agent terminal transport failed" })
 
+const unconfirmed = "Agent terminal cleanup unconfirmed"
+
+/**
+ * Whether a command failed because `killRun` never confirmed the run's
+ * children were gone.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const cleanupUnconfirmed = (error: unknown): boolean =>
+  error instanceof StdError && error.message === unconfirmed
+
 /**
  * One registered run/session port; commands serialize, including failures.
  *
@@ -171,7 +183,6 @@ export class Commands {
   private queue: Promise<void> = Promise.resolve()
   private ended = false
   private killed: Promise<void> | undefined
-  private active: AbortController | undefined
   private disposeAfterKill: (() => void) | undefined
 
   private readonly port: CommandPort
@@ -185,10 +196,8 @@ export class Commands {
     return this.killed ??= Promise.resolve().then(() => this.port.killRun()).then(() => {
       this.dispose()
     }).catch(() => {
-      // Only a confirmed kill is reusable. Keep execution fenced, but permit
-      // a later end() to obtain the missing cleanup receipt.
-      this.killed = undefined
-      throw new StdError({ code: "command_failed", message: "Agent terminal cleanup unconfirmed" })
+      // Execution stays fenced: the run's children may still be alive.
+      throw new StdError({ code: "command_failed", message: unconfirmed })
     })
   }
 
@@ -196,13 +205,6 @@ export class Commands {
     const dispose = this.disposeAfterKill
     this.disposeAfterKill = undefined
     dispose?.()
-  }
-
-  async end(): Promise<void> {
-    this.ended = true
-    this.active?.abort()
-    await this.kill()
-    await this.queue
   }
 
   run(input: Bash.Input, signal: AbortSignal): Promise<Bash.Output> {
@@ -216,7 +218,6 @@ export class Commands {
     if (signal.aborted) throw new StdError({ code: "command_failed", message: "Agent terminal command cancelled" })
     const controller = new AbortController()
     const limitMillis = input.timeoutMs ?? Bash.DEFAULT_TIMEOUT_MS
-    this.active = controller
     let timeout = false
     const abort = () => controller.abort()
     signal.addEventListener("abort", abort, { once: true })
@@ -295,14 +296,11 @@ export class Commands {
         }
       }
       await this.kill()
-      // end() may have confirmed cleanup before this catch retained the iterator.
-      this.dispose()
       throw failure(error)
     } finally {
       clearTimeout(timer)
       signal.removeEventListener("abort", abort)
       controller.signal.removeEventListener("abort", cancel)
-      this.active = undefined
     }
   }
 }

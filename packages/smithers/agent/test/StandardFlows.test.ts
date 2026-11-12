@@ -37,7 +37,7 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Search from "@smthrs/std/Search"
 import * as TestRunner from "@smthrs/std/TestRunner"
-import { Context, Effect, Fiber, FileSystem, Layer, Option, Path, Redacted } from "effect"
+import { Context, Effect, Fiber, FileSystem, Layer, Logger, Option, Path, Redacted } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { existsSync, readFileSync } from "node:fs"
@@ -344,6 +344,70 @@ describe("the coding agent's terminal binding (T-TRM-05)", () => {
     await Effect.runPromise(Fiber.interrupt(fiber))
     expect(aborted).toBe(true)
     expect(counter.spawns).toBe(0)
+  })
+
+  // #4954: an interrupted call must not end before the run's children are
+  // confirmed gone, and a kill that fails must leave a record.
+  const deferred = () => {
+    let resolve!: () => void
+    const promise = new Promise<void>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+  const killedOnInterrupt = (killRun: () => Promise<void>) => {
+    const entered = deferred()
+    const port: StandardFlows.TerminalPort = {
+      execute: async function*(_, signal) {
+        entered.resolve()
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+      },
+      killRun
+    }
+    return { port, entered: entered.promise }
+  }
+
+  it("ends an interrupted call only after the run's kill is confirmed", async () => {
+    const killing = deferred()
+    const killed = deferred()
+    const { entered, port } = killedOnInterrupt(async () => {
+      killing.resolve()
+      await killed.promise
+    })
+    const source = StandardFlows.shell(noSpawn({ spawns: 0 }), undefined, { terminal: "agent", terminalPort: port })
+    const [binding] = await Effect.runPromise(source.bindings())
+    const fiber = Effect.runFork(binding!.run(callOf("bash", { command: "sleep", mode: "unhermetic" })))
+    await entered
+    let interrupted = false
+    const interrupt = Effect.runPromise(Fiber.interrupt(fiber)).then(() => {
+      interrupted = true
+    })
+    await killing.promise
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(interrupted).toBe(false)
+    killed.resolve()
+    await interrupt
+    expect(interrupted).toBe(true)
+  })
+
+  it("logs a warning when an interrupted call's kill is unconfirmed", async () => {
+    const { entered, port } = killedOnInterrupt(async () => {
+      throw new Error("kill_sessions lost")
+    })
+    const warnings: Array<unknown> = []
+    const capture = Logger.make((entry) => {
+      if (entry.logLevel === "Warn") warnings.push(entry.message)
+    })
+    const source = StandardFlows.shell(noSpawn({ spawns: 0 }), undefined, { terminal: "agent", terminalPort: port })
+    const [binding] = await Effect.runPromise(source.bindings())
+    const fiber = Effect.runFork(
+      binding!.run(callOf("bash", { command: "sleep", mode: "unhermetic" })).pipe(
+        Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
+      )
+    )
+    await entered
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(warnings).toEqual([["An interrupted agent terminal command may have left processes running"]])
   })
 })
 

@@ -411,9 +411,21 @@ const inAgentTerminal = (port: TerminalPort) => {
   // One queue per run: concurrent calls serialize without mixing results.
   const commands = new AgentTerminalCommand.Commands(port)
   return Bash.inTerminal((input) =>
-    Effect.tryPromise({
-      try: (signal) => commands.run(input, signal),
-      catch: AgentTerminalCommand.failure
+    Effect.callback<Bash.Output, StdError>((resume, signal) => {
+      const command = commands.run(input, signal)
+      command.then(
+        (output) => resume(Effect.succeed(output)),
+        (error) => resume(Effect.fail(AgentTerminalCommand.failure(error)))
+      )
+      // An interrupted call ends only when the command settles, which is after
+      // killRun confirms no child remains or fails to.
+      return Effect.promise(() => command.catch((error: unknown) => error)).pipe(
+        Effect.flatMap((settled) =>
+          AgentTerminalCommand.cleanupUnconfirmed(settled)
+            ? Effect.logWarning("An interrupted agent terminal command may have left processes running")
+            : Effect.void
+        )
+      )
     })
   )
 }

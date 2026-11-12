@@ -178,7 +178,6 @@ describe("registered terminal command result contract", () => {
       expect(await first).toMatchObject({ code: "command_failed", message: "Agent terminal subscription still open" })
       expect(await second).toMatchObject({ code: "provider_unavailable" })
       expect(calls).toBe(1)
-      await commands.end()
     }
   )
 
@@ -221,7 +220,6 @@ describe("registered terminal command result contract", () => {
     await releasing.promise
     await expect(result).rejects.toMatchObject({ code: "timeout" })
     expect(kills).toBe(1)
-    await commands.end()
   })
 
   it("accepts a trusted iterator without an optional return method", async () => {
@@ -368,7 +366,7 @@ describe("registered terminal command result contract", () => {
     expect(calls).toEqual(["printf fixture", "second"])
   })
 
-  it.each(["cancel", "timeout", "end"])("waits for confirmed kill on %s even if reads never finish", async (reason) => {
+  it.each(["cancel", "timeout"])("waits for confirmed kill on %s even if reads never finish", async (reason) => {
     const entered = deferred<void>()
     const killed = deferred<void>()
     const cleanup = deferred<void>()
@@ -393,17 +391,13 @@ describe("registered terminal command result contract", () => {
         return error
       })
     await entered.promise
-    let end: Promise<void> | undefined
     if (reason === "cancel") abort.abort()
-    if (reason === "end") end = commands.end()
     await killed.promise
     expect(settled).toBe(false)
     cleanup.resolve()
     const failure = await pending
     expect(failure).toMatchObject({ code: reason === "timeout" ? "timeout" : "command_failed" })
     expect(failure.limitMillis).toBe(reason === "timeout" ? 20 : undefined)
-    await end
-    await commands.end()
     expect(kills).toBe(1)
     await expect(commands.run(input, controller().signal)).rejects.toMatchObject({ code: "provider_unavailable" })
   })
@@ -440,8 +434,6 @@ describe("registered terminal command result contract", () => {
     expect(kills).toBe(0)
     expect(await commands.run(input, controller().signal)).toEqual(expected(""))
     expect(calls).toBe(2)
-    await commands.end()
-    expect(kills).toBe(1)
   })
 
   it.each([
@@ -520,7 +512,6 @@ describe("registered terminal command result contract", () => {
     killed.resolve()
     expect(await result).toMatchObject({ code: "command_failed", message: "Agent terminal command cancelled" })
     expect(released).toBe(1)
-    await commands.end()
   })
 
   it.each(["throw", "reject"])("observes failed disposal without replacing command failure: %s", async (failure) => {
@@ -543,7 +534,6 @@ describe("registered terminal command result contract", () => {
       message: "Invalid command status"
     })
     expect(released).toBe(1)
-    await commands.end()
   })
 
   it("fails closed when transport or cleanup fails", async () => {
@@ -565,48 +555,6 @@ describe("registered terminal command result contract", () => {
       code: "command_failed",
       message: "Agent terminal cleanup unconfirmed"
     })
-    await expect(failed.end()).rejects.toMatchObject({
-      code: "command_failed",
-      message: "Agent terminal cleanup unconfirmed"
-    })
     await expect(failed.run(input, controller().signal)).rejects.toMatchObject({ code: "provider_unavailable" })
-  })
-  it("retries unconfirmed run cleanup at end and releases the retained subscription once", async () => {
-    let attempts = 0
-    let released = 0
-    const entered = deferred<void>()
-    const receipt = deferred<void>()
-    const commands = new Commands({
-      execute: () => ({
-        [Symbol.asyncIterator]: () => ({
-          next: async () => ({ done: false as const, value: { kind: "exit" as const, code: -1 } }),
-          return: async () => {
-            released++
-            return { done: true as const, value: undefined }
-          }
-        })
-      }),
-      killRun: async () => {
-        attempts++
-        if (attempts === 1) throw new Error("lost kill receipt")
-        entered.resolve()
-        await receipt.promise
-      }
-    })
-    await expect(commands.run(input, controller().signal)).rejects.toMatchObject({
-      message: "Agent terminal cleanup unconfirmed"
-    })
-    expect(released).toBe(0)
-    const endings = [commands.end(), commands.end()]
-    await entered.promise
-    expect(attempts).toBe(2)
-    expect(released).toBe(0)
-    await expect(commands.run(input, controller().signal)).rejects.toMatchObject({ code: "provider_unavailable" })
-    receipt.resolve()
-    await Promise.all(endings)
-    expect(released).toBe(1)
-    await commands.end()
-    expect(attempts).toBe(2)
-    expect(released).toBe(1)
   })
 })
