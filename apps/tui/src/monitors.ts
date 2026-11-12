@@ -133,7 +133,10 @@ export class Monitors {
   private monitors = new Map<string, Monitor>()
   private stops = new Map<string, () => void>()
   private observations = new Map<string, AbortController>()
-  private ticks = new Map<string, { readonly generation: number | undefined; readonly task: Promise<void> }>()
+  private ticks = new Map<
+    string,
+    { readonly generation: number | undefined; readonly task: Promise<void>; again: boolean }
+  >()
   private generations = new Map<string, number>()
   private listeners = new Set<() => void>()
   private closed = false
@@ -237,7 +240,7 @@ export class Monitors {
       if (pending !== undefined) return
       pending = Timer.after(this.ports.settleMs ?? 2000, () => {
         pending = undefined
-        void this.tick(monitor.id)
+        void this.queue(monitor.id, true)
       })
     })
     this.stops.set(monitor.id, () => {
@@ -257,14 +260,30 @@ export class Monitors {
    * after a restart waits for the old generation's tick, whose result is
    * dropped, and then runs, so the restart's baseline is never lost.
    */
-  tick = (id: string): Promise<void> => {
+  tick = (id: string): Promise<void> => this.queue(id, false)
+  /**
+   * `again` is a source event: one that arrives while a tick runs asks for one
+   * more observation after it, so a change made during a slow judgment is still
+   * seen. Events during one tick coalesce; a stop or restart drops the request.
+   */
+  private queue(id: string, again: boolean): Promise<void> {
     const generation = this.generations.get(id)
     const running = this.ticks.get(id)
-    if (running !== undefined && running.generation === generation) return running.task
-    const task: Promise<void> = (running?.task ?? Promise.resolve()).then(() => this.run(id)).finally(() => {
+    if (running !== undefined && running.generation === generation) {
+      if (again) running.again = true
+      return running.task
+    }
+    const entry = { generation, task: Promise.resolve(), again: false }
+    const task: Promise<void> = (running?.task ?? Promise.resolve()).then(async () => {
+      do {
+        entry.again = false
+        await this.run(id)
+      } while (entry.again && this.generations.get(id) === generation)
+    }).finally(() => {
       if (this.ticks.get(id)?.task === task) this.ticks.delete(id)
     })
-    this.ticks.set(id, { generation, task })
+    entry.task = task
+    this.ticks.set(id, entry)
     return task
   }
   private async run(id: string): Promise<void> {

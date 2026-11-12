@@ -170,6 +170,53 @@ describe("monitor lifecycle", () => {
     expect(world.delivered).toHaveLength(1)
   })
 
+  /** Baseline `baseline`, then an event whose tick reads `working` and waits on Jev. */
+  const eventMidJudge = async (values: Array<string>) => {
+    const verdict = deferred<boolean>()
+    let calls = 0
+    const world = harness({ values, judge: () => ++calls === 1 ? verdict.promise : Promise.resolve(true) })
+    world.monitors.create(watchTab)
+    await world.monitors.tick("ci")
+    for (const listener of world.listeners) listener()
+    await until(() => world.judgeCalls.length === 1)
+    return { world, verdict }
+  }
+
+  it("observes again after a tick when the source changed while Jev was judging", async () => {
+    const { world, verdict } = await eventMidJudge(["baseline", "working", "failed"])
+    for (const listener of world.listeners) listener()
+    await Bun.sleep(5)
+    verdict.resolve(false)
+    await until(() => world.delivered.length === 1)
+    expect(world.judgeCalls).toEqual([
+      { watch: "the build fails", before: "baseline", after: "working" },
+      { watch: "the build fails", before: "working", after: "failed" }
+    ])
+  })
+
+  it("coalesces events during one tick into one more observation", async () => {
+    const { world, verdict } = await eventMidJudge(["baseline", "working", "failed"])
+    for (let event = 0; event < 3; event++) {
+      for (const listener of world.listeners) listener()
+      await Bun.sleep(5)
+    }
+    verdict.resolve(false)
+    await until(() => world.delivered.length === 1)
+    await Bun.sleep(5)
+    expect(world.observed).toHaveLength(3)
+  })
+
+  it("drops the follow-up observation when the monitor stops mid-judgment", async () => {
+    const { world, verdict } = await eventMidJudge(["baseline", "working", "failed"])
+    for (const listener of world.listeners) listener()
+    await Bun.sleep(5)
+    world.monitors.stop("ci")
+    verdict.resolve(true)
+    await Bun.sleep(5)
+    expect(world.observed).toHaveLength(2)
+    expect(world.delivered).toEqual([])
+  })
+
   it("stops: no more ticks, unsubscribed, and a failed or stopped monitor restarts by id", async () => {
     const world = harness({ values: ["a", "b", "c"] })
     world.monitors.create(watchTab)
