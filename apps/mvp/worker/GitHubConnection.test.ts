@@ -1,4 +1,4 @@
-import { ConfigProvider, Effect, Redacted } from "effect"
+import { ConfigProvider, Deferred, Effect, Fiber, Redacted } from "effect"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { expect, test } from "vitest"
 import { GitHub } from "@smthrs/integrations"
@@ -73,3 +73,35 @@ test("a registry with a valid grant loads; an empty or slash-less prefix disable
     expect(await configuredWith([{ ...grant, ...change }]), JSON.stringify(change)).toBeUndefined()
   }
 })
+
+// Two cold calls for one person arrive while the first host is still importing its cipher keys: both get the one host,
+// so its single-writer lock covers both.
+run("concurrent cold calls for one person share one host", Effect.gen(function*() {
+  const keysImported = yield* Deferred.make<void>()
+  const opened: Array<number> = []
+  const host = yield* Connection.hostsOf((person: number) =>
+    Effect.gen(function*() {
+      opened.push(person)
+      yield* Deferred.await(keysImported)
+      return { person }
+    })
+  )
+  const first = yield* Effect.forkChild(host(7))
+  const second = yield* Effect.forkChild(host(7))
+  yield* Effect.yieldNow
+  yield* Deferred.succeed(keysImported, undefined)
+  const [a, b] = [yield* Fiber.join(first), yield* Fiber.join(second)]
+  expect(opened).toEqual([7])
+  expect(a).toBe(b)
+}))
+// A refused construction is not kept, so the next call builds the host.
+run("a refused construction is tried again", Effect.gen(function*() {
+  let attempts = 0
+  const host = yield* Connection.hostsOf((person: number) => {
+    attempts += 1
+    return attempts === 1 ? Effect.fail("unavailable" as const) : Effect.succeed({ person })
+  })
+  expect(yield* Effect.flip(host(7))).toBe("unavailable")
+  expect(yield* host(7)).toBe(yield* host(7))
+  expect(attempts).toBe(2)
+}))

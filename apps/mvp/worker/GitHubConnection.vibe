@@ -55,6 +55,23 @@ export effect function configured() {
 const unavailable = { reason: "unavailable" as const }
 const outcome = <A>(body: A!GitHub.Delegation.DelegationRefused): Outcome<A>!! => Effect.map(Effect.result(body), (result) => result._tag === "Success" ? { ok: result.success } : { reason: result.failure.reason })
 
+/**
+ * One host per person for the object's lifetime. Lookup and construction hold one lock, so concurrent cold calls
+ * share one host and its single-writer lock instead of each building its own while the cipher keys import. A refused
+ * construction is not kept, so the next call tries again.
+ */
+export effect function hostsOf<H, E, R>(open: (person: number) => H!E!R) {
+  const hosts = new Map<number, H>()
+  const lock = try Semaphore.make(1)
+  return (person: number) => Semaphore.withPermits(lock, 1)(effect {
+    const known = hosts.get(person)
+    if (known !== undefined) return known
+    const made = try open(person)
+    hosts.set(person, made)
+    return made
+  })
+}
+
 export const live = GitHubConnection.make(effect {
   const state = try Cloudflare.DurableObjectState
   const setup = try Effect.orDie(configured())
@@ -70,15 +87,8 @@ export const live = GitHubConnection.make(effect {
     }
     const github = try GitHub.Auth.GitHubAuth.pipe(Effect.provide(GitHub.Auth.layer({ clientId: clientId.value, clientSecret: clientSecret.value }).pipe(Layer.provide(FetchHttpClient.layer))))
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
-    const hosts = new Map<number, Effect.Success<ReturnType<typeof make>>>()
     /** The router names this object by its person; the host refuses any other (GitHubConnectionHost.make). */
-    const host = effect (person: number) => {
-      const known = hosts.get(person)
-      if (known !== undefined) return known
-      const made = try make(person, hostId, state.raw.storage, setup, github)
-      hosts.set(person, made)
-      return made
-    }
+    const host = try hostsOf((person: number) => make(person, hostId, state.raw.storage, setup, github))
     return {
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
