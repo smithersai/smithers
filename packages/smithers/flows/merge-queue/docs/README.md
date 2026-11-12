@@ -109,9 +109,20 @@ sync     make the world match the state: fast-forward the target onto the
 gather   read the target's tip, new letters, every finished check, lost
          runs, fix agents' answers; wait only when there is nothing new and
          nothing to decide
-fold     apply those events and let the policy settle
+fold     apply those events and let the policy settle, dropping each change
+         as it ends
 check    the state's tree must be exactly the tip that was read
 ```
+
+The state a round returns is pruned: after every event the driver drops the
+changes that ended and the landings, so a host carries only what is still in
+the queue, however long the queue has run. Nothing the queue decides reads an
+ended change or a landing, and the Lean reference proves that the pruned queue
+decides exactly what a queue that keeps everything decides (`pruned_plan`,
+`pruned_step`, `pruned_round`). One rule makes that true: **a change id is
+never used again.** The queue no longer holds an ended change, so it cannot
+refuse its id; the file inbox does, by passing over an `enqueue` line whose id
+an earlier line enqueued.
 
 A round returns the changes it ended (`Outcome.ended`), and the next round
 records them. The record therefore holds only a decision the host kept: a

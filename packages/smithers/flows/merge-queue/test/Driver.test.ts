@@ -7,14 +7,13 @@ import { Driver, empty, QueueSchema, run, sameTree, strip, TargetDiverged, Unava
 import { random } from "./support/Generate.ts"
 import { steps } from "./support/Theorems.ts"
 import type { Script, World } from "./support/World.ts"
-import { makeWorld } from "./support/World.ts"
+import { makeWorld, statusesOf } from "./support/World.ts"
 
 const config: Config = { required: [1, 2], maxAttempts: 2, maxBatch: 4, maxRuns: 2, window: 5, defaultDuration: 60 }
 
 const start: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
 
-const statuses = (state: State): Readonly<Record<number, string>> =>
-  Object.fromEntries(state.changes.map((change) => [change.id, change.status._tag]))
+const statuses = statusesOf
 
 const show = (tree: ReadonlyArray<Part>): ReadonlyArray<string> => tree.map((entry) => `${entry.id}.${entry.rev}`)
 
@@ -76,25 +75,49 @@ const expectSound = (world: World, settings: Config = config): void => {
 }
 
 /**
- * The record holds every change that ended, once, as the queue's final state
- * has it: the revision, the attempts, the status with its reason, and for a
- * merged change the landing that holds that revision.
+ * The record against the ground truth of the world, once the queue is done.
+ * It holds every change that was handed in and every foreign commit, once. A
+ * change is recorded as merged exactly when the target holds it, at the
+ * revision it holds, as foreign exactly when the queue did not push it, and
+ * with the results of a complete green run when the queue did. An unmergeable
+ * change has written words. The queue's own state holds none of them.
  */
-const expectRecorded = (world: World, state: State, context = ""): void => {
-  const over = state.changes.filter((change) => !["queued", "fixing"].includes(change.status._tag))
-  expect(world.endings.map((ending) => ending.id).sort(), context).toEqual(over.map((change) => change.id).sort())
-  for (const change of over) {
-    const ending = world.endings.find((entry) => entry.id === change.id)!
-    expect({ rev: ending.rev, attempts: ending.attempts, status: ending.status }, context)
-      .toEqual({ rev: change.rev, attempts: change.attempts, status: change.status })
-    const landing = state.landed.find((entry) =>
-      entry.batch.some((part) => part.id === change.id && part.rev === change.rev)
+const expectRecorded = (world: World, end: Driver.Position, settings: Config = config, context = ""): void => {
+  const ids = world.endings.map((ending) => ending.id)
+  expect(new Set(ids).size, context).toBe(ids.length)
+  expect([...ids].sort((a, b) => a - b), context).toEqual([...world.known()].sort((a, b) => a - b))
+  expect(end.state.changes, context).toEqual([])
+  expect(end.state.landed, context).toEqual([])
+  const target = world.targets.at(-1)!
+  // What the queue itself put on the target: the parts each of its pushes added to the tree before it.
+  const pushed = new Set(
+    world.targets.flatMap((tree, index) =>
+      index > 0 && world.pushed.some((other) => sameTree(other, tree))
+        ? tree.slice(world.targets[index - 1]!.length).map((entry) => `${entry.id}.${entry.rev}`)
+        : []
     )
-    expect(ending.landing, context).toEqual(
-      change.status._tag === "merged"
-        ? { run: landing!.run, results: landing!.results, foreign: landing!.foreign }
-        : null
-    )
+  )
+  expect(
+    world.endings.filter((ending) => ending.status._tag === "merged").map((ending) => `${ending.id}.${ending.rev}`)
+      .sort(),
+    context
+  ).toEqual(target.map((entry) => `${entry.id}.${entry.rev}`).sort())
+  for (const ending of world.endings) {
+    if (ending.status._tag === "merged") {
+      const queued = pushed.has(`${ending.id}.${ending.rev}`)
+      expect(ending.landing?.foreign, context).toBe(!queued)
+      if (queued) {
+        expect(
+          settings.required.every((check) =>
+            ending.landing!.results.some((result) => result.check === check && result.verdict === "pass")
+          ) && ending.landing!.results.every((result) => result.verdict === "pass"),
+          context
+        ).toBe(true)
+      }
+    } else {
+      expect(ending.landing, context).toBeNull()
+      if (ending.status._tag === "unmergeable") expect(ending.status.reason.detail, context).not.toBe("")
+    }
   }
 }
 
@@ -111,7 +134,7 @@ describe("landing", () => {
     world.enqueue(2, 5)
     world.close()
     const end = await drain(world)
-    expect(statuses(end.state)).toEqual({ 1: "merged", 2: "merged" })
+    expect(statuses(world, end)).toEqual({ 1: "merged", 2: "merged" })
     expect(show(world.targets.at(-1)!)).toEqual(["2.0", "1.0"])
     expect(world.log).toContain("target.advance  -> 2.0,1.0")
     expectSound(world)
@@ -131,8 +154,8 @@ describe("landing", () => {
     for (const id of [1, 2, 3, 4]) world.enqueue(id)
     world.close()
     const end = await drain(world)
-    expect(statuses(end.state)).toEqual({ 1: "merged", 2: "merged", 3: "merged", 4: "merged" })
-    expect(end.state.changes[2]).toMatchObject({ rev: 1, attempts: 1 })
+    expect(statuses(world, end)).toEqual({ 1: "merged", 2: "merged", 3: "merged", 4: "merged" })
+    expect(world.endings.find((ending) => ending.id === 3)).toMatchObject({ rev: 1, attempts: 1 })
     expect([...show(world.targets.at(-1)!)].sort()).toEqual(["1.0", "2.0", "3.1", "4.0"])
     expect(world.briefs[0]).toMatchObject({ id: 3, rev: 0, attempt: 1, failures: [2] })
     expectSound(world)
@@ -149,11 +172,11 @@ describe("unmergeable", () => {
     world.enqueue(2)
     world.close()
     const end = await drain(world)
-    expect(end.state.changes[0]!.status).toMatchObject({
+    expect(world.endings.find((ending) => ending.id === 1)!.status).toMatchObject({
       _tag: "unmergeable",
       reason: { kind: "agentVerdict", detail: "conflicts with the new parser; redo it", failures: [1] }
     })
-    expect(statuses(end.state)[2]).toBe("merged")
+    expect(statuses(world, end)[2]).toBe("merged")
     expectSound(world)
   })
 
@@ -161,8 +184,9 @@ describe("unmergeable", () => {
     const world = makeWorld(config, { failing: (entry) => entry.id === 1 ? [2] : [], fix: () => ({ _tag: "fixed" }) })
     world.enqueue(1)
     world.close()
-    const end = await drain(world)
-    expect(end.state.changes[0]).toMatchObject({
+    await drain(world)
+    expect(world.endings[0]).toMatchObject({
+      id: 1,
       attempts: 2,
       rev: 2,
       status: { _tag: "unmergeable", reason: { kind: "attemptsExhausted", failures: [2], attempts: 2 } }
@@ -183,7 +207,7 @@ describe("streaming", () => {
       expect(world.runs.get(0)!.job).toMatchObject({ tree: [{ id: 1, rev: 0 }], checks: [1, 2], eta: 60 })
       world.finish(0)
     })
-    expect(statuses(position.state)).toEqual({ 1: "fixing" })
+    expect(statuses(world, position)).toEqual({ 1: "fixing" })
     expect(world.runs.get(0)!.waiting).toEqual([2])
     position = await during(world, position, () => {
       expect(world.log).toContain("fixer.brief 1#1 failures=1")
@@ -200,7 +224,7 @@ describe("streaming", () => {
       world.finish(1, 2)
     })
     const end = await drain(world, position)
-    expect(statuses(end.state)).toEqual({ 1: "merged" })
+    expect(statuses(world, end)).toEqual({ 1: "merged" })
     expectSound(world)
   })
 
@@ -216,13 +240,13 @@ describe("streaming", () => {
     expect(world.pushed).toEqual([])
     position = await round(config, world, position)
     expect(world.pushed).toEqual([[{ id: 1, rev: 0 }]])
-    expect(statuses(position.state)).toEqual({ 1: "merged" })
+    expect(statuses(world, position)).toEqual({ 1: "merged" })
   })
 
   it("orders a run's checks slowest first and predicts its ETA from past runs", async () => {
     const world = makeWorld(config, { duration: (check) => check === 2 ? 300 : 20 })
     world.enqueue(1)
-    let position: Driver.Position = await until(world, start, (outcome) => statuses(outcome.state)[1] === "merged")
+    let position: Driver.Position = await until(world, start, (outcome) => statuses(world, outcome)[1] === "merged")
     world.enqueue(2)
     position = await round(config, world, position)
     position = await round(config, world, position)
@@ -235,14 +259,14 @@ describe("the queue never blocks", () => {
   it("lands a later change while an earlier one is being fixed", async () => {
     const world = makeWorld(config, { failing: (entry) => entry.id === 1 && entry.rev === 0 ? [1] : [] })
     world.enqueue(1)
-    let position: Driver.Position = await until(world, start, (outcome) => statuses(outcome.state)[1] === "fixing")
+    let position: Driver.Position = await until(world, start, (outcome) => statuses(world, outcome)[1] === "fixing")
     world.enqueue(2)
-    position = await until(world, position, (outcome) => statuses(outcome.state)[2] === "merged")
-    expect(statuses(position.state)).toEqual({ 1: "fixing", 2: "merged" })
+    position = await until(world, position, (outcome) => statuses(world, outcome)[2] === "merged")
+    expect(statuses(world, position)).toEqual({ 1: "fixing", 2: "merged" })
     world.answer(1, 1, { _tag: "fixed" })
     world.close()
     const end = await drain(world, position)
-    expect(statuses(end.state)).toEqual({ 1: "merged", 2: "merged" })
+    expect(statuses(world, end)).toEqual({ 1: "merged", 2: "merged" })
     expect(show(world.targets.at(-1)!)).toEqual(["2.0", "1.1"])
     expectSound(world)
   })
@@ -255,7 +279,7 @@ describe("the queue never blocks", () => {
       world.withdraw(1)
       world.close()
     })
-    expect(statuses(position.state)).toEqual({ 1: "withdrawn" })
+    expect(statuses(world, position)).toEqual({ 1: "withdrawn" })
     expect((await drain(world, position)).done).toBe(true)
     await round(config, world, position)
     expect(world.log).toContain("ci.stop 0")
@@ -285,7 +309,8 @@ describe("everything is rebased on the tip of the target", () => {
     const end = await drain(world, position)
     expect(show(world.targets.at(-1)!)).toEqual(["900.0", "1.0"])
     expect(world.pushed.map(show)).toEqual([["900.0", "1.0"]])
-    expect(end.state.landed.map((landing) => landing.foreign)).toEqual([true, false])
+    expect(end.state.landed).toEqual([])
+    expect(world.endings.map((ending) => [ending.id, ending.landing!.foreign])).toEqual([[900, true], [1, false]])
     expectSound(world)
   })
 
@@ -296,7 +321,7 @@ describe("everything is rebased on the tip of the target", () => {
     world.foreign(901)
     position = await round(config, world, position)
     expect(show(position.state.main)).toEqual(["1.0", "901.0"])
-    expect(statuses(position.state)).toEqual({ 1: "merged", 901: "merged" })
+    expect(statuses(world, position)).toEqual({ 1: "merged", 901: "merged" })
     expectSound(world)
   })
 
@@ -305,7 +330,7 @@ describe("everything is rebased on the tip of the target", () => {
     world.enqueue(1)
     let position: Driver.Position = await round(config, world, start)
     world.foreign(900)
-    position = await until(world, position, (outcome) => statuses(outcome.state)[1] === "merged")
+    position = await until(world, position, (outcome) => statuses(world, outcome)[1] === "merged")
     world.foreign(901)
     world.enqueue(2)
     world.close()
@@ -384,15 +409,44 @@ describe("everything is rebased on the tip of the target", () => {
         expect(end, `seed ${seed}`).toBeDefined()
         expect(sameTree(end!.state.main, world.targets.at(-1)!), `seed ${seed}`).toBe(true)
         expect(
-          Object.values(statuses(end!.state)).every((status) => ["merged", "unmergeable", "withdrawn"].includes(status))
+          Object.values(statuses(world, end!)).every((status) =>
+            ["merged", "unmergeable", "withdrawn"].includes(status)
+          )
         )
           .toBe(true)
         expectSound(world, settings)
-        expectRecorded(world, end!.state, `seed ${seed}`)
+        expectRecorded(world, end!, settings, `seed ${seed}`)
       }
     },
     240_000
   )
+})
+
+describe("what the queue carries between rounds", () => {
+  it("holds only the changes still in the queue, however many have ended", async () => {
+    const settings: Config = { ...config, maxBatch: 3, maxRuns: 3 }
+    const world = makeWorld(settings, {
+      failing: (entry) => entry.id % 7 === 0 && entry.rev === 0 ? [1] : [],
+      fix: (brief) => brief.id % 14 === 0 ? { _tag: "gaveUp", detail: "redo it" } : { _tag: "fixed" }
+    })
+    let position: Driver.Position = start
+    let live = 0
+    for (let id = 1; id <= 120; id++) {
+      world.enqueue(id)
+      if (id % 10 === 0) world.withdraw(id)
+      position = await round(settings, world, position)
+      expect(position.state.changes.every((change) => ["queued", "fixing"].includes(change.status._tag))).toBe(true)
+      expect(position.state.landed).toEqual([])
+      live = Math.max(live, position.state.changes.length)
+    }
+    world.close()
+    const end = await drain(world, position, settings)
+    expect(world.endings).toHaveLength(120)
+    // At most a handful of changes are in the queue at once, so the state never holds more than that.
+    expect(live).toBeLessThan(12)
+    expectRecorded(world, end, settings)
+    expectSound(world, settings)
+  })
 })
 
 describe("the record of endings", () => {
@@ -410,8 +464,8 @@ describe("the record of endings", () => {
     world.withdraw(3)
     world.close()
     const end = await drain(world)
-    expect(statuses(end.state)).toEqual({ 900: "merged", 1: "unmergeable", 2: "merged", 3: "withdrawn" })
-    expectRecorded(world, end.state)
+    expect(statuses(world, end)).toEqual({ 900: "merged", 1: "unmergeable", 2: "merged", 3: "withdrawn" })
+    expectRecorded(world, end)
     const byId = Object.fromEntries(world.endings.map((ending) => [ending.id, ending]))
     expect(byId[900]).toEqual({
       id: 900,
@@ -440,7 +494,7 @@ describe("the record of endings", () => {
     const world = makeWorld(config)
     world.enqueue(1)
     world.close()
-    const landed = await until(world, start, (outcome) => statuses(outcome.state)[1] === "merged")
+    const landed = await until(world, start, (outcome) => statuses(world, outcome)[1] === "merged")
     expect(landed.ended.map((ending) => [ending.id, ending.status._tag])).toEqual([[1, "merged"]])
     expect(landed.done).toBe(false)
     expect(world.endings).toEqual([])
@@ -469,7 +523,7 @@ describe("the record of endings", () => {
   it("holds only the decision that was kept when a round ran twice and decided differently", async () => {
     const world = makeWorld(config, { failing: (entry) => entry.id === 1 ? [1] : [] })
     world.enqueue(1)
-    const fixing = await until(world, start, (outcome) => statuses(outcome.state)[1] === "fixing")
+    const fixing = await until(world, start, (outcome) => statuses(world, outcome)[1] === "fixing")
     world.answer(1, 1, { _tag: "gaveUp", detail: "redo it" })
     // The host dies before it keeps this round's outcome.
     const dropped = await round(config, world, fixing)
@@ -482,7 +536,7 @@ describe("the record of endings", () => {
     expect(world.endings).toEqual([])
     const end = await drain(world, kept)
     expect(world.endings).toEqual([{ id: 1, rev: 0, attempts: 1, status: { _tag: "withdrawn" }, landing: null }])
-    expectRecorded(world, end.state)
+    expectRecorded(world, end)
   })
 
   it("names what ended between two states and nothing that had ended before", () => {
@@ -526,9 +580,9 @@ describe("waiting", () => {
   it("wakes for a fix agent's answer, for a moved target and for a new letter", async () => {
     const world = makeWorld(config, { failing: (entry) => entry.rev === 0 && entry.id === 1 ? [1] : [] })
     world.enqueue(1)
-    let position: Driver.Position = await until(world, start, (outcome) => statuses(outcome.state)[1] === "fixing")
+    let position: Driver.Position = await until(world, start, (outcome) => statuses(world, outcome)[1] === "fixing")
     position = await during(world, position, () => world.answer(1, 1, { _tag: "gaveUp", detail: "no" }))
-    expect(statuses(position.state)).toEqual({ 1: "unmergeable" })
+    expect(statuses(world, position)).toEqual({ 1: "unmergeable" })
     position = await during(world, position, () => world.foreign(7))
     expect(show(position.state.main)).toEqual(["7.0"])
     expect((await during(world, position, () => world.close())).done).toBe(true)
@@ -547,7 +601,7 @@ describe("failures of the world", () => {
       world.close()
     })
     const end = await drain(world, position)
-    expect(statuses(end.state)).toEqual({ 1: "merged" })
+    expect(statuses(world, end)).toEqual({ 1: "merged" })
     expectSound(world)
   })
 
@@ -576,7 +630,7 @@ describe("failures of the world", () => {
       expect(failures).toBeGreaterThan(0)
       const expected = await drain(calm)
       expect(end?.state.main).toEqual(expected.state.main)
-      expect(statuses(end!.state)).toEqual(statuses(expected.state))
+      expect(statuses(world, end!)).toEqual(statuses(calm, expected))
       expectSound(world)
     }
   )
@@ -619,10 +673,10 @@ describe("crash and restart", () => {
       }
       expect(crashed, `crash at call ${crashAt}`).toBe(1)
       expect(end?.state.main, `crash at call ${crashAt}`).toEqual(expected.state.main)
-      expect(statuses(end!.state)).toEqual(statuses(expected.state))
+      expect(statuses(world, end!)).toEqual(statuses(calm, expected))
       expect(world.targets.at(-1)).toEqual(calm.targets.at(-1))
       expectSound(world)
-      expectRecorded(world, end!.state, `crash at call ${crashAt}`)
+      expectRecorded(world, end!, config, `crash at call ${crashAt}`)
       expect(world.endings).toEqual(calm.endings)
     }
   }, 240_000)
@@ -635,7 +689,7 @@ describe("commands", () => {
     world.enqueue(2)
     const pushing = await until(world, start, (outcome) => outcome.state.pushing !== null)
     expect(Driver.commands(config, pushing.state).advance).toEqual({ from: [], to: [{ id: 1, rev: 0 }] })
-    const position = await until(world, pushing, (outcome) => statuses(outcome.state)[2] === "fixing")
+    const position = await until(world, pushing, (outcome) => statuses(world, outcome)[2] === "fixing")
     const issued = Driver.commands(config, position.state)
     expect(issued.advance).toBeNull()
     expect(issued.briefs).toEqual([{ id: 2, rev: 0, attempt: 1, failures: [1], ahead: [] }])

@@ -16,6 +16,7 @@ import MergeQueue.Prediction
 import MergeQueue.Progress
 import MergeQueue.NeverBlocks
 import MergeQueue.Rebase
+import MergeQueue.Compact
 import MergeQueue.Trace
 
 open Lean Elab Command

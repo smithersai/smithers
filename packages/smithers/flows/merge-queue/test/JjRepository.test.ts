@@ -413,7 +413,8 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
       if (repo.head() !== heads.at(-1)) heads.push(repo.head())
       if (outcome.done) break
     }
-    expect(position.state.changes.filter((change) => change.status._tag === "merged")).toHaveLength(3)
+    expect(world.endings.filter((ending) => ending.status._tag === "merged")).toHaveLength(3)
+    expect(world.endings.filter((ending) => ending.landing?.foreign)).toHaveLength(1)
     expect(repo.files()).toEqual(["base.txt", "one.txt", "other.txt", "two.txt"])
     // Every position the bookmark held descends from the one before it: fast-forwards only.
     for (let index = 1; index < heads.length; index++) {

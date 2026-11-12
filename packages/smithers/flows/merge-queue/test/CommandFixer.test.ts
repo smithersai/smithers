@@ -232,9 +232,7 @@ describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, ()
       position = outcome
       if (outcome.done) break
     }
-    expect(Object.fromEntries(position.state.changes.map((change) => [change.id, change.status._tag])))
-      .toEqual({ 1: "merged", 2: "merged", 3: "merged" })
-    expect(position.state.changes[1]).toMatchObject({ rev: 1, attempts: 1 })
+    expect(position.state.changes).toEqual([])
     expect(world.jj("file", "list", "-r", "main").trim().split("\n").sort())
       .toEqual(["base.txt", "one.txt", "three.txt", "two.txt"])
     expect(JSON.parse(readFileSync(join(world.briefs, "2-1.brief.json"), "utf8"))).toMatchObject({

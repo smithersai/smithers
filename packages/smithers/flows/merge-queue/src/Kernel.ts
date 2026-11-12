@@ -8,6 +8,7 @@
  */
 
 export * from "./Basic.ts"
+export * from "./Compact.ts"
 export * from "./Policy.ts"
 export * from "./Predict.ts"
 export * from "./Step.ts"

@@ -183,7 +183,8 @@ export interface Config {
 
 /**
  * Everything the queue remembers. All of it is durable: a restart continues
- * from this value alone.
+ * from this value alone. Between rounds the driver keeps `pruned(state)`
+ * (`Compact.ts`): the same value without ended changes and landings.
  *
  * @category models
  * @since 0.1.0
@@ -191,7 +192,7 @@ export interface Config {
 export interface State {
   /** The target branch's tree. */
   readonly main: Tree
-  /** Every change ever enqueued, in arrival order. Never shrinks. */
+  /** Every change ever enqueued, in arrival order. No event removes one. */
   readonly changes: ReadonlyArray<Change>
   readonly runs: ReadonlyArray<Run>
   readonly nextRun: number

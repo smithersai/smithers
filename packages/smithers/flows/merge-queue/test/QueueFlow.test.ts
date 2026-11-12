@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import type { Config, State } from "../src/index.ts"
 import { empty, QueueFlow, sameTree, strip } from "../src/index.ts"
 import type { Script, World } from "./support/World.ts"
-import { makeWorld } from "./support/World.ts"
+import { makeWorld, statusesOf } from "./support/World.ts"
 
 const config: Config = { required: [1, 2], maxAttempts: 2, maxBatch: 4, maxRuns: 2, window: 5, defaultDuration: 60 }
 
@@ -23,8 +23,11 @@ const threeIsBroken: Script = {
   fix: () => ({ _tag: "fixed" })
 }
 
-const statuses = (state: State): Readonly<Record<number, string>> =>
-  Object.fromEntries(state.changes.map((change) => [change.id, change.status._tag]))
+/** How every change ended, from the record; the final state holds no ended change. */
+const statuses = (world: World, state: State): Readonly<Record<number, string>> => {
+  expect(state.changes).toEqual([])
+  return statusesOf(world, { state })
+}
 
 /** The queue flow over an engine and a world. */
 const queue = (world: World, engine: Layer.Layer<any, any, any>) =>
@@ -66,7 +69,7 @@ describe("the queue as a durable flow", () => {
     const exit = await run(world, memory, "queue-1")
     expect(Exit.isSuccess(exit)).toBe(true)
     const state = Exit.isSuccess(exit) ? exit.value : empty
-    expect(statuses(state)).toEqual({ 1: "merged", 2: "merged", 3: "merged", 4: "merged" })
+    expect(statuses(world, state)).toEqual({ 1: "merged", 2: "merged", 3: "merged", 4: "merged" })
     expect(sameTree(state.main, world.targets.at(-1)!)).toBe(true)
     expect(world.endings.map((ending) => [ending.id, ending.rev, ending.status._tag]).sort()).toEqual([
       [1, 0, "merged"],
@@ -94,7 +97,7 @@ describe("the queue as a durable flow", () => {
     world.close()
     world.failNext("ci", 3)
     const exit = await run(world, memory, "queue-retry")
-    expect(Exit.isSuccess(exit) && statuses(exit.value)).toEqual({ 1: "merged" })
+    expect(Exit.isSuccess(exit) && statuses(world, exit.value)).toEqual({ 1: "merged" })
     expectSound(world)
   })
 
@@ -112,7 +115,7 @@ describe("the queue as a durable flow", () => {
     const second = await run(world, TestNodeRuntime.durableEngine(file, "host-b"), "queue-3")
     expect(Exit.isSuccess(second)).toBe(true)
     const state = Exit.isSuccess(second) ? second.value : empty
-    expect(statuses(state)).toEqual({ 1: "merged", 2: "merged", 3: "merged" })
+    expect(statuses(world, state)).toEqual({ 1: "merged", 2: "merged", 3: "merged" })
     expect(new Set(world.pushed.map((tree) => JSON.stringify(tree))).size).toBe(world.pushed.length)
     expect(world.endings.map((ending) => ending.id).sort()).toEqual([1, 2, 3])
     expectSound(world)

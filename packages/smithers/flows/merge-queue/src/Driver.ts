@@ -13,6 +13,11 @@
  * queue's decision. A round that ran twice after a crash may decide
  * differently the second time; only the decision that was kept is written.
  *
+ * The round keeps only what the queue still needs: after every event it drops
+ * the changes that ended and the landings (`runPruned`, `settlePruned`). They
+ * are in the record of endings by the next round, so the state a host carries
+ * holds only what is still in the queue, however long the queue has run.
+ *
  * Every command is derived from the state alone, and a host records the state
  * between rounds (the flow in `QueueFlow.ts` does). So the target only ever
  * moves onto a tree a recorded decision pushed, and a crash anywhere repeats a
@@ -29,12 +34,13 @@
 import * as Effect from "effect/Effect"
 import type { Config, Event, State, Tree } from "./Basic.ts"
 import { isTerminal, sameTree, tree } from "./Basic.ts"
+import { runPruned, settlePruned } from "./Compact.ts"
 import type { FixBrief } from "./Policy.ts"
-import { fixBriefs, plan, settle, wantsCi } from "./Policy.ts"
+import { fixBriefs, plan, wantsCi } from "./Policy.ts"
 import { eta, remaining } from "./Predict.ts"
 import type { Ending, Job, Unavailable } from "./Services.ts"
 import { Ci, Endings, Fixer, Inbox, Target, TargetDiverged } from "./Services.ts"
-import { answered, pushingRun, run, strip } from "./Step.ts"
+import { answered, pushingRun, strip } from "./Step.ts"
 
 /**
  * What the queue carries from one round to the next.
@@ -43,6 +49,7 @@ import { answered, pushingRun, run, strip } from "./Step.ts"
  * @since 0.1.0
  */
 export interface Position {
+  /** The queue's state, pruned: no ended change and no landing. */
   readonly state: State
   /** How many inbox letters the queue has taken. */
   readonly cursor: number
@@ -112,16 +119,28 @@ export const commands = (config: Config, state: State): Commands => {
 }
 
 /**
- * Folds events into the state and lets the policy settle.
+ * Folds events into the pruned state and lets the policy settle, pruning after
+ * every event. Returns the next pruned state and the changes that ended on the
+ * way, in the order they ended.
  *
  * @category transitions
  * @since 0.1.0
  */
-export const advance = (config: Config, state: State, events: ReadonlyArray<Event>): State =>
-  settle(config, settleFuel, run(config, state, events))
+export const advance = (
+  config: Config,
+  state: State,
+  events: ReadonlyArray<Event>
+): { readonly state: State; readonly ended: ReadonlyArray<Ending> } => {
+  const finished: Array<Ending> = []
+  const dropped = (before: State, after: State): void => void finished.push(...ended(before, after))
+  const folded = runPruned(config, state, events, dropped)
+  return { state: settlePruned(config, settleFuel, folded, dropped), ended: finished }
+}
 
 /**
- * Whether the queue is finished: every change has ended and no run is left.
+ * Whether the queue is finished: no run is left, and every change the state
+ * holds has ended. A pruned state holds no ended change, so it is drained
+ * when it holds no change at all.
  *
  * @category predicates
  * @since 0.1.0
@@ -311,7 +330,7 @@ export interface Outcome extends Position {
 /**
  * One round: record the endings of the round before, sync the world to the
  * state, read the world (waiting when there is nothing new and nothing to
- * decide), fold and settle.
+ * decide), fold and settle, and prune what ended.
  *
  * The round ends by checking the queue is on the target's tip: the state's
  * tree must be exactly the tree the target was read on. A round that cannot
@@ -334,13 +353,16 @@ export const round = (
       yield* waitForNews(config, position, news.tip)
       news = yield* gather(config, position)
     }
-    const state = advance(config, position.state, news.events)
+    const { ended: finished, state } = advance(config, position.state, news.events)
     if (!sameTree(state.main, news.tip)) return yield* new TargetDiverged({ known: state.main, found: news.tip })
-    const finished = ended(position.state, state)
     yield* Effect.logInfo("merge queue round").pipe(
       Effect.annotateLogs({
         events: news.events.length,
-        landings: state.landed.length - position.state.landed.length,
+        landings: new Set(finished.flatMap((ending) =>
+          ending.landing === null
+            ? []
+            : [ending.landing.foreign ? `foreign ${ending.id}` : `run ${ending.landing.run}`]
+        )).size,
         ended: finished.length,
         runs: state.runs.length,
         fixing: fixBriefs(state).length,

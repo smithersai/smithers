@@ -76,7 +76,28 @@ export interface World {
   readonly runs: ReadonlyMap<number, RunRecord>
   /** The briefs fix agents were given, newest last. */
   readonly briefs: Array<FixBrief>
+  /** Every change id handed in through the inbox and every commit someone else put on the target. */
+  readonly known: () => ReadonlyArray<number>
 }
+
+/**
+ * Where every change is, by id: how the ones that ended ended (from the
+ * record, and from `ended`, the endings a round returned that are not in the
+ * record yet), and the status of the ones the queue still holds.
+ */
+export const statusesOf = (
+  world: { readonly endings: ReadonlyArray<Ending> },
+  at: {
+    readonly state: {
+      readonly changes: ReadonlyArray<{ readonly id: number; readonly status: { readonly _tag: string } }>
+    }
+    readonly ended?: ReadonlyArray<Ending>
+  }
+): Readonly<Record<number, string>> =>
+  Object.fromEntries([
+    ...[...world.endings, ...(at.ended ?? [])].map((ending) => [ending.id, ending.status._tag]),
+    ...at.state.changes.map((change) => [change.id, change.status._tag])
+  ])
 
 /** Builds a world for a queue config. */
 export const makeWorld = (config: Config, script: Script = {}): World => {
@@ -89,6 +110,7 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
   const targets: Array<Tree> = [[]]
   const pushed: Array<Tree> = []
   const recorded: Array<Ending> = []
+  const foreigners: Array<number> = []
   const faults: Record<Service, number> = { inbox: 0, ci: 0, fixer: 0, target: 0, endings: 0 }
   let calls = 0
   let failAt = -1
@@ -257,9 +279,18 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
     },
     calls: () => calls,
     foreign: (id) => {
+      foreigners.push(id)
       targets.push([...current(), { id, rev: 0 }])
       bump()
     },
+    known: () => [
+      ...new Set([
+        ...letters.flatMap((letter) =>
+          letter._tag === "event" && letter.event._tag === "enqueue" ? [letter.event.id] : []
+        ),
+        ...foreigners
+      ])
+    ],
     rewrite: (tree) => {
       targets.push(tree)
       bump()

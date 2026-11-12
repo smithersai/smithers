@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as ManagedRuntime from "effect/ManagedRuntime"
 import * as PlatformError from "effect/PlatformError"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -88,6 +89,41 @@ describe("the inbox as a file", () => {
       { _tag: "event", event: { _tag: "enqueue", id: 5, priority: 0 } }
     ])
     expect(seen).toEqual(["4=abc"])
+  })
+
+  it("hands a change id in once: a later enqueue line for the same id is passed over and registers nothing", async () => {
+    const path = fresh()
+    const seen: Array<string> = []
+    const layer = Layer.provideMerge(
+      FileInbox.layer({
+        path,
+        poll: "5 millis",
+        register: (id, commit) => Effect.sync(() => void seen.push(`${id}=${commit}`))
+      }),
+      NodeFileSystem.layer
+    )
+    // One inbox for the whole case, as a host has: it remembers which line first enqueued each id.
+    const host = ManagedRuntime.make(layer)
+    const read = (cursor: number) => host.runPromise(Effect.flatMap(Inbox, (inbox) => inbox.since(cursor)))
+    const enqueue = (id: number, commit: string): string => JSON.stringify({ _tag: "enqueue", id, priority: 0, commit })
+    const one = { _tag: "event", event: { _tag: "enqueue", id: 1, priority: 0 } }
+    const two = { _tag: "event", event: { _tag: "enqueue", id: 2, priority: 0 } }
+    const skip = { _tag: "skip" }
+    writeFileSync(path, [enqueue(1, "a"), enqueue(1, "b"), "{\"_tag\":\"withdraw\",\"id\":1}"].join("\n") + "\n")
+    expect(await read(0)).toEqual([one, skip, { _tag: "event", event: { _tag: "withdraw", id: 1 } }])
+    expect(seen).toEqual(["1=a"])
+    // Later lines, read from a cursor past the first enqueue: the id is still taken, though the change ended.
+    writeFileSync(path, [enqueue(1, "c"), enqueue(2, "d"), enqueue(2, "e")].join("\n") + "\n", { flag: "a" })
+    expect(await read(3)).toEqual([skip, two, skip])
+    expect(await read(4)).toEqual([two, skip])
+    expect(seen).toEqual(["1=a", "2=d", "2=d"])
+    // A host that starts over the same file (a fresh service) applies the rule from the whole file.
+    expect(await since(path, 3)).toEqual([skip, two, skip])
+    // A file that was replaced by a shorter one is read again from its start.
+    writeFileSync(path, enqueue(2, "f") + "\n")
+    expect(await read(0)).toEqual([two])
+    expect(seen.at(-1)).toBe("2=f")
+    await host.dispose()
   })
 
   it("wait returns once a line after the cursor exists", async () => {

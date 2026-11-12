@@ -11,7 +11,7 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type { Config, Job, Progress, Tree } from "../src/index.ts"
 import { Ci, CommandCi, Driver, empty, JjRepository } from "../src/index.ts"
-import { makeWorld } from "./support/World.ts"
+import { makeWorld, statusesOf } from "./support/World.ts"
 
 const jjInstalled = (() => {
   try {
@@ -252,10 +252,9 @@ describe.skipIf(!jjInstalled)("CI as commands on candidate commits", { timeout: 
       position = outcome
       if (outcome.done) break
     }
-    expect(Object.fromEntries(position.state.changes.map((change) => [change.id, change.status._tag])))
-      .toEqual({ 1: "merged", 2: "merged", 3: "merged" })
+    expect(statusesOf(fake, position)).toEqual({ 1: "merged", 2: "merged", 3: "merged" })
     expect(world.jj("file", "list", "-r", "main").trim().split("\n").sort())
       .toEqual(["base.txt", "one.txt", "three.txt", "two.txt"])
-    expect(position.state.changes[1]).toMatchObject({ rev: 1, attempts: 1 })
+    expect(fake.endings.find((ending) => ending.id === 2)).toMatchObject({ rev: 1, attempts: 1 })
   }, 120_000)
 })

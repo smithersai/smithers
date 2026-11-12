@@ -7,6 +7,11 @@
  * cursor, so one bad line never stops the queue or shifts the letters after
  * it.
  *
+ * A change id is handed in once. The queue forgets a change when it ends, so
+ * it cannot refuse an ended id itself; the inbox does. An `enqueue` line whose
+ * id an earlier line already enqueued is passed over like a line that is not
+ * a letter, whatever became of the first one.
+ *
  * @since 0.1.0
  */
 
@@ -113,8 +118,9 @@ export const append = (
 /**
  * The `Inbox` over a file.
  *
- * `since` skips lines that are not letters but counts them, so the cursor is
- * always a line number. `wait` polls the file; a read that fails is tried
+ * `since` skips lines that are not letters, and `enqueue` lines for an id an
+ * earlier line enqueued, but counts them, so the cursor is always a line
+ * number. `wait` polls the file; a read that fails is tried
  * again at the next poll.
  *
  * @category layers
@@ -126,16 +132,35 @@ export const layer = (options: Options): Layer.Layer<Inbox, never, FileSystem.Fi
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const read = lines(options.path).pipe(Effect.provideService(FileSystem.FileSystem, fs))
+      // The line that first enqueued each id. The file only grows, so each
+      // line is read for this once; a file that shrank is read again.
+      let first = new Map<number, number>()
+      let scanned = 0
+      const firstOf = (all: ReadonlyArray<string>, id: number): number => {
+        if (all.length < scanned) {
+          first = new Map()
+          scanned = 0
+        }
+        for (; scanned < all.length; scanned++) {
+          const decoded = decodeLine(all[scanned]!)
+          if (decoded._tag === "Some" && decoded.value._tag === "enqueue" && !first.has(decoded.value.id)) {
+            first.set(decoded.value.id, scanned)
+          }
+        }
+        return first.get(id)!
+      }
       return Inbox.of({
         since: (cursor) =>
           Effect.flatMap(read, (all) =>
-            Effect.forEach(all.slice(cursor), (line) =>
+            Effect.forEach(all.slice(cursor), (line, offset) =>
               Effect.gen(function*() {
                 const decoded = decodeLine(line)
-                if (
-                  options.register !== undefined && decoded._tag === "Some" && decoded.value._tag === "enqueue"
-                  && decoded.value.commit !== undefined
-                ) yield* options.register(decoded.value.id, decoded.value.commit)
+                if (decoded._tag === "Some" && decoded.value._tag === "enqueue") {
+                  if (firstOf(all, decoded.value.id) < cursor + offset) return { _tag: "skip" } as const
+                  if (options.register !== undefined && decoded.value.commit !== undefined) {
+                    yield* options.register(decoded.value.id, decoded.value.commit)
+                  }
+                }
                 return letter(line) ?? ({ _tag: "skip" } as const)
               }))),
         wait: (cursor) =>
