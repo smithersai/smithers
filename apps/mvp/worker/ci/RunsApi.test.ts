@@ -343,6 +343,12 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
     { stage: "body", authority: "home-role" },
     { stage: "body", authority: "alias" },
     { stage: "body", authority: "missing-alias" },
+    { stage: "body", authority: "deadline" },
+    { stage: "github", authority: "deadline" },
+    { stage: "body", authority: "alias-deadline" },
+    { stage: "body", authority: "rekey" },
+    { stage: "body", authority: "alias-rekey" },
+    { stage: "body", authority: "stale-home-role" },
     { stage: "body", authority: "unchanged" },
     { stage: "github", authority: "unchanged" },
   ] as const)("a delayed $stage cannot start after $authority revocation", async ({ stage, authority }) => {
@@ -354,7 +360,7 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
     const signed = await auth.signInAs()
     expect(signed.response.status).toBe(303)
     let cookies = signed.cookies
-    if (authority === "alias" || authority === "missing-alias") {
+    if (authority === "alias" || authority === "missing-alias" || authority === "alias-deadline" || authority === "alias-rekey") {
       const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
       const token = await Effect.runPromise(keys.token)
       const [session] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -366,7 +372,7 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
     }
     const { github } = repository()
     const h = await routes(github, {
-      sessions: auth.sessions, ...(authority === "home-role" ? { roleRepository: "acme/widgets" } : {}),
+      sessions: auth.sessions, ...(authority === "home-role" || authority === "stale-home-role" ? { roleRepository: "acme/widgets" } : {}),
     })
     let entered!: () => void
     let release!: () => void
@@ -406,6 +412,14 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
               clock_timestamp() + interval '1 hour', clock_timestamp())`
           case "alias": return sql`UPDATE host_sessions SET revoked_at = clock_timestamp() WHERE host = 'chat.test'`
           case "missing-alias": return sql`DELETE FROM host_sessions WHERE host = 'chat.test'`
+          // The sliding expiry stays ahead: only the absolute 400-day deadline has passed.
+          case "deadline": return sql`UPDATE sessions SET started_at = clock_timestamp() - interval '401 days' WHERE person_id = ${MAYA}`
+          case "alias-deadline": return sql`UPDATE host_sessions SET started_at = clock_timestamp() - interval '401 days' WHERE host = 'chat.test'`
+          // Reauthentication restamped the row: the admitting cookie's key no longer verifies it.
+          case "rekey": return sql`UPDATE sessions SET cookie_key = 'next' WHERE person_id = ${MAYA}`
+          case "alias-rekey": return sql`UPDATE host_sessions SET cookie_key = 'next' WHERE host = 'chat.test'`
+          case "stale-home-role": return sql`
+            UPDATE sessions SET role_verified_at = clock_timestamp() - interval '61 minutes' WHERE person_id = ${MAYA}`
           case "unchanged": return Effect.succeed([])
         }
       }))
@@ -419,9 +433,11 @@ describe("POST /api/repos/<owner>/<name>/runs", () => {
       expect(h.starts[0]!.payload).toMatchObject({ secrets: true })
       expect(await rows()).toHaveLength(1)
     } else {
-      const session = ["session", "expired", "missing-session", "alias", "missing-alias"].includes(authority)
+      const session = ["session", "expired", "missing-session", "alias", "missing-alias", "deadline", "alias-deadline",
+        "rekey", "alias-rekey"].includes(authority)
       expect(response, `delayed run must revalidate ${authority}`).toEqual(
-        session ? [401, { code: "authentication" }] : [403, { code: "forbidden" }],
+        session ? [401, { code: "authentication" }]
+          : authority === "stale-home-role" ? [503, { code: "unavailable" }] : [403, { code: "forbidden" }],
       )
       expect(h.starts).toEqual([])
       expect(await rows()).toEqual([])

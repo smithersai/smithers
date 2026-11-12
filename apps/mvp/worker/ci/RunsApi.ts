@@ -156,7 +156,7 @@ const admission = <R>(roles: RepoRoles.RepoRoles<R>, actor: Actor, repository: R
 
 /** Authority changed while reading the body or GitHub: roll back the ownership row before answering. */
 class AdmissionRefused extends Schema.TaggedError<AdmissionRefused>()("@smthrs/mvp/ci/RunAdmissionRefused", {
-  code: Schema.Literals(["authentication", "forbidden"]),
+  code: Schema.Literals(["authentication", "forbidden", "unavailable"]),
 }) {}
 
 const statusOf: Readonly<Record<RunsRefusal, number>> = {

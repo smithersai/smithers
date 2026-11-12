@@ -219,7 +219,7 @@ const clippedValues = (inspection: EngineStore.RunInspection.Inspection): number
 class NotWorking extends Data.TaggedError("NotWorking")<{}> {}
 
 /** A steer whose sender signed out or lost the repository while it waited for the engine writer. */
-class Revoked extends Data.TaggedError("Revoked")<{ readonly refusal: "authentication" | "forbidden" }> {}
+class Revoked extends Data.TaggedError("Revoked")<{ readonly refusal: "authentication" | "forbidden" | "unavailable" }> {}
 
 const noStore = { "cache-control": "no-store" }
 
@@ -322,7 +322,7 @@ export const make = <E, R, EE, ER, RS>(
             Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
               if (Option.isNone(admitted.authority)) return refused(403, "forbidden")
               const refusal = yield* stillAdmitted(who, admitted.authority.value)
-              if (refusal !== undefined) return refused(refusal === "authentication" ? 401 : 403, refusal)
+              if (refusal !== undefined) return refused({ authentication: 401, forbidden: 403, unavailable: 503 }[refusal], refusal)
               return yield* body
             }))).pipe(Effect.provide(database))
           // A TODO's run: its external agent stops, and the run goes on to fail the TODO, which keeps its place for
@@ -522,7 +522,7 @@ export const make = <E, R, EE, ER, RS>(
           if (admitted._tag === "Failure") {
             const failure = admitted.failure
             if (Predicate.isTagged(failure, "Revoked")) {
-              return refused(failure.refusal === "authentication" ? 401 : 403, failure.refusal)
+              return refused({ authentication: 401, forbidden: 403, unavailable: 503 }[failure.refusal], failure.refusal)
             }
             if (Predicate.isTagged(failure, "NotWorking")) return refused(409, "not_working")
             if (Predicate.isTagged(failure, "/notifications/NotificationError") && failure.code === "notification_id_reused") {

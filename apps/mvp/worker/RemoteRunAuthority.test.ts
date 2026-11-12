@@ -44,6 +44,12 @@ test.each([
   { kind: "todo", authority: "role", gate: "held" },
   { kind: "repo", authority: "unchanged", gate: "held" },
   { kind: "todo", authority: "unchanged", gate: "held" },
+  { kind: "repo", authority: "deadline", gate: "github" },
+  { kind: "todo", authority: "deadline", gate: "held" },
+  { kind: "repo", authority: "rekey", gate: "held" },
+  { kind: "todo", authority: "rekey", gate: "github" },
+  { kind: "repo", authority: "stale-home-role", gate: "held" },
+  { kind: "todo", authority: "stale-home-role", gate: "held" },
 ] as const)("delayed $kind cancel rechecks $authority after $gate read", async ({ kind, authority, gate }) => {
   const auth = await signInHarness(runtime, { config: configured })
   auth.github.person = { id: accountIdOf("maya"), login: "maya" }
@@ -55,7 +61,7 @@ test.each([
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.roles.set("maya", "write")
   const roles = await runtime.runPromise(RepoRoles.make(database, {
-    repository: repositoryOf("acme/home"), app: Option.some(app({ privateKey: await appKey() })), http: github.http,
+    repository: repositoryOf(authority === "stale-home-role" ? "acme/widgets" : "acme/home"), app: Option.some(app({ privateKey: await appKey() })), http: github.http,
   }))
   let entered!: () => void
   let release!: () => void
@@ -119,12 +125,20 @@ test.each([
           ? sql`UPDATE sessions SET revoked_at = clock_timestamp(), revoked_reason = 'sign_out' WHERE person_id = ${person!.id}`
           : authority === "role"
           ? sql`UPDATE github_repo_roles SET role = 'guest' WHERE repo_id = ${REPOSITORY.id} AND person_id = ${person!.id}`
+          // The sliding expiry stays ahead: only the absolute 400-day deadline has passed.
+          : authority === "deadline"
+          ? sql`UPDATE sessions SET started_at = clock_timestamp() - interval '401 days' WHERE person_id = ${person!.id}`
+          // Reauthentication restamped the row: the admitting cookie's key no longer verifies it.
+          : authority === "rekey" ? sql`UPDATE sessions SET cookie_key = 'next' WHERE person_id = ${person!.id}`
+          : authority === "stale-home-role"
+          ? sql`UPDATE sessions SET role_verified_at = clock_timestamp() - interval '61 minutes' WHERE person_id = ${person!.id}`
           : Effect.void))
       } finally { release() }
       const response = await pending
       expect([response.status, await response.json()], `delayed cancel must revalidate ${authority}`).toEqual(
         authority === "unchanged" ? [202, { outcome: "requested" }]
-          : authority === "session" ? [401, { code: "authentication" }] : [403, { code: "forbidden" }],
+          : authority === "role" ? [403, { code: "forbidden" }]
+          : authority === "stale-home-role" ? [503, { code: "unavailable" }] : [401, { code: "authentication" }],
       )
       expect(stopped).toEqual(kind === "repo" && authority === "unchanged" ? [runId] : [])
       if (jobKey !== undefined) {
@@ -137,7 +151,7 @@ test.each([
   })))
 })
 
-test.each(["session", "role", "unchanged"] as const)("a steer waiting for its writer rechecks %s before admission", async (authority) => {
+test.each(["session", "role", "deadline", "rekey", "stale-home-role", "unchanged"] as const)("a steer waiting for its writer rechecks %s before admission", async (authority) => {
   const auth = await signInHarness(runtime, { config: configured })
   auth.github.person = { id: accountIdOf("maya"), login: "maya" }
   const signed = await auth.signInAs()
@@ -148,7 +162,7 @@ test.each(["session", "role", "unchanged"] as const)("a steer waiting for its wr
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.roles.set("maya", "write")
   const roles = await runtime.runPromise(RepoRoles.make(database, {
-    repository: repositoryOf("acme/home"), app: Option.some(app({ privateKey: await appKey() })), http: github.http,
+    repository: repositoryOf(authority === "stale-home-role" ? "acme/widgets" : "acme/home"), app: Option.some(app({ privateKey: await appKey() })), http: github.http,
   }))
   let entered!: () => void
   let release!: () => void
@@ -194,15 +208,19 @@ test.each(["session", "role", "unchanged"] as const)("a steer waiting for its wr
           ? sql`UPDATE sessions SET revoked_at = clock_timestamp(), revoked_reason = 'sign_out' WHERE person_id = ${person!.id}`
           : authority === "role"
           ? sql`UPDATE github_repo_roles SET role = 'guest' WHERE repo_id = ${REPOSITORY.id} AND person_id = ${person!.id}`
+          : authority === "deadline"
+          ? sql`UPDATE sessions SET started_at = clock_timestamp() - interval '401 days' WHERE person_id = ${person!.id}`
+          : authority === "rekey" ? sql`UPDATE sessions SET cookie_key = 'next' WHERE person_id = ${person!.id}`
+          : authority === "stale-home-role"
+          ? sql`UPDATE sessions SET role_verified_at = clock_timestamp() - interval '61 minutes' WHERE person_id = ${person!.id}`
           : Effect.void))
       } finally { release() }
       const response = await pending
+      const code = authority === "role" ? "forbidden" : authority === "stale-home-role" ? "unavailable" : "authentication"
       expect(response.status, `a delayed steer must revalidate ${authority}`).toBe(
-        authority === "unchanged" ? 202 : authority === "session" ? 401 : 403,
+        authority === "unchanged" ? 202 : { authentication: 401, forbidden: 403, unavailable: 503 }[code],
       )
-      if (authority !== "unchanged") {
-        expect(await response.json()).toEqual({ code: authority === "session" ? "authentication" : "forbidden" })
-      }
+      if (authority !== "unchanged") expect(await response.json()).toEqual({ code })
       const queued = await runtime.runPromise(Effect.flatMap(NotificationQueue.NotificationQueue, (queue) => queue.pending(runId)).pipe(
         Effect.provide(NotificationQueue.layer.pipe(
           Layer.provide(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject" })),
