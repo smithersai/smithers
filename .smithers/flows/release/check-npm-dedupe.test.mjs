@@ -79,6 +79,46 @@ it("distinguishes optional library peers from a selected executable's requiremen
   assert.deepEqual(optionalPeersOf([library, { name: "runtime" }]), ["renderer"])
 })
 
+it("follows required transitive peers without excusing optional lockfile branches", () => {
+  const library = { peerDependencies: { runtime: "1", renderer: "1" },
+    peerDependenciesMeta: { runtime: { optional: true }, renderer: { optional: true } } }
+  const bridge = { dependencies: { adapter: "1" } }
+  const adapter = { peerDependencies: { runtime: "1", renderer: "1" },
+    peerDependenciesMeta: { renderer: { optional: true } } }
+  assert.deepEqual(optionalPeersOf([library, bridge], { "node_modules/adapter": adapter }), ["renderer"])
+  for (const orphan of [
+    { name: "runtime", version: "1" },
+    { optional: true, peerDependencies: { runtime: "1" } },
+    { optionalDependencies: { runtime: "1" } },
+    { dependencies: { runtime: "1" } }
+  ]) assert.deepEqual(optionalPeersOf([library], { "node_modules/orphan": orphan }), ["renderer", "runtime"])
+  assert.deepEqual(optionalPeersOf([library, bridge], {
+    "node_modules/adapter": { dependencies: { runtime: "1" }, optionalDependencies: { runtime: "1" } }
+  }), ["renderer", "runtime"])
+  assert.deepEqual(optionalPeersOf([library], {
+    "node_modules/adapter": { dependencies: { runtime: "1" } },
+    "node_modules/runtime": { dependencies: { adapter: "1" } }
+  }), ["renderer", "runtime"])
+})
+
+it("resolves required peers in nested scopes and honors the fixture root's optional edges", () => {
+  const library = { name: "library", peerDependencies: { runtime: "1", renderer: "1" },
+    peerDependenciesMeta: { runtime: { optional: true }, renderer: { optional: true } } }
+  const lock = {
+    "": { dependencies: { library: "1", bridge: "1", orphan: "1" }, optionalDependencies: { orphan: "1" } },
+    "node_modules/library": library,
+    "node_modules/bridge": { dependencies: { "@scope/adapter": "1" } },
+    "node_modules/bridge/node_modules/@scope/adapter": { peerDependencies: { runtime: "1" } },
+    "node_modules/bridge/node_modules/runtime": {},
+    "node_modules/@scope/adapter": { dependencies: { renderer: "1" } },
+    "node_modules/orphan": { optional: true, peerDependencies: { renderer: "1" } }
+  }
+  assert.deepEqual(optionalPeersOf([library], lock), ["renderer"])
+  delete lock["node_modules/bridge/node_modules/@scope/adapter"]
+  assert.deepEqual(optionalPeersOf([library], lock), ["runtime"])
+})
+
+
 it("isolates each default library and the CLI on npm and pnpm, and refuses an Effect below the supported range", { timeout: 10 * 60_000 }, async () => {
   const results = await resolveConsumerProfiles()
   for (const manager of ["npm", "pnpm"]) {

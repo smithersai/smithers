@@ -385,6 +385,10 @@ without invoking workspace discovery or consumer-tag comparison. The installer
 integrity suite runs that dependency-free command, then extracts and executes its archive
 after removing the build checkout, candidate tarballs and staging output.
 
+The npm consumer gate checks optional peers against the resolved dependency tree.
+A peer required by a transitive dependency is part of that install. An installed
+package alone does not excuse an unrelated optional peer from the default-install check.
+
 "Every gate" is literal: the release workflow installs the toolchain the
 required CI `test` job installs — ripgrep, bubblewrap, Go, Foundry, the
 containerd image store — and then runs one step,

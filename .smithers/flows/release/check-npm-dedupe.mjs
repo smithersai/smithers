@@ -76,22 +76,44 @@ const npmInstallArgs = [
 export const SINGLETONS = ["effect"]
 
 // A peer stays optional for this combined install only when no other selected
-// package requires it. In particular the CLI owns its Node runtime and TS
+// package or a resolved transitive dependency requires it. In particular the CLI owns its Node runtime and TS
 // loader even though browser-facing libraries expose those as optional peers.
-export const optionalPeersOf = (manifests) => {
-  const installed = new Set(manifests.map((manifest) => manifest.name))
+export const optionalPeersOf = (manifests, lockPackages = {}) => {
+  const installed = new Set(manifests.map((manifest) => manifest.name).filter(Boolean))
   const names = new Set()
-  const required = new Set()
+  const required = new Set(installed)
   for (const manifest of manifests) {
-    // An explicitly selected package is present even when a sibling only
-    // mentions it as an optional peer (for example the all-package smoke).
-    if (manifest.name !== undefined) required.add(manifest.name)
-    for (const name of Object.keys(manifest.dependencies ?? {})) required.add(name)
-    for (const name of Object.keys(manifest.peerDependencies ?? {})) {
-      if (manifest.peerDependenciesMeta?.[name]?.optional !== true) required.add(name)
-    }
     for (const [name, meta] of Object.entries(manifest.peerDependenciesMeta ?? {})) {
       if (meta?.optional === true && !installed.has(name)) names.add(name)
+    }
+  }
+  const requiredEdges = (manifest) => [...new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.peerDependencies ?? {}).filter((name) =>
+      manifest.peerDependenciesMeta?.[name]?.optional !== true)
+  ])].filter((name) => !Object.hasOwn(manifest.optionalDependencies ?? {}, name))
+  // Lockfile keys use forward slashes on every host. Search the owning
+  // package's node_modules, then ancestors, as Node resolves an import.
+  const resolveEdge = (owner, name) => {
+    const parts = owner === "" ? [] : owner.split("/")
+    for (let length = parts.length; length >= 0; length--) {
+      if (parts[length - 1] === "node_modules") continue
+      const path = [...parts.slice(0, length), "node_modules", name].join("/")
+      if (Object.hasOwn(lockPackages, path)) return path
+    }
+  }
+  const pending = Object.hasOwn(lockPackages, "")
+    ? [{ path: "", manifest: lockPackages[""] }]
+    : manifests.map((manifest) => ({ path: manifest.name === undefined ? "" : "node_modules/" + manifest.name, manifest }))
+  const seen = new Set()
+  while (pending.length > 0) {
+    const { path, manifest } = pending.pop()
+    for (const name of requiredEdges(manifest)) {
+      required.add(name)
+      const target = resolveEdge(path, name)
+      if (target === undefined || seen.has(target)) continue
+      seen.add(target)
+      pending.push({ path: target, manifest: lockPackages[target] })
     }
   }
   return [...names].filter((name) => !required.has(name)).sort()
@@ -164,7 +186,6 @@ export function copiesOf(lockPackages, name) {
  */
 export function resolveConsumerTree({ keepTmp: keep = false } = {}) {
   const packages = workspacePackages()
-  const optionalPeers = optionalPeersOf(packages.map((pkg) => pkg.manifest))
   const versionByName = new Map(packages.map((pkg) => [pkg.name, pkg.version]))
   const tmp = mkdtempSync(join(tmpdir(), "smithers-npm-dedupe-"))
   try {
@@ -209,7 +230,9 @@ export function resolveConsumerTree({ keepTmp: keep = false } = {}) {
       throw new Error(`npm install --package-lock-only failed: ${install.error?.message ?? `exit ${install.status}`}`)
     }
     const lock = JSON.parse(readFileSync(join(tmp, "package-lock.json"), "utf8"))
-    return { packages, optionalPeers, lockPackages: lock.packages ?? {}, tmp: keep ? tmp : undefined }
+    const lockPackages = lock.packages ?? {}
+    const optionalPeers = optionalPeersOf(packages.map((pkg) => pkg.manifest), lockPackages)
+    return { packages, optionalPeers, lockPackages, tmp: keep ? tmp : undefined }
   } finally {
     if (!keep) rmSync(tmp, { recursive: true, force: true })
   }
