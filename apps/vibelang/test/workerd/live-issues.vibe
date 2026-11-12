@@ -11,8 +11,11 @@ import { IssueAuthority, serveIssues } from "../../worker/Issues.vibe"
 import * as Accounts from "../../worker/Accounts.vibe"
 import { GitHubDelegate } from "../../worker/GitHubDelegate.vibe"
 import type { Storage } from "../../worker/Objects.vibe"
+import { empty } from "../../src/core/conversation.vibe"
 import { recordedClient, recordedConnection, recordedPerson, REPOSITORY } from "../support/recordedIssues.vibe"
 
+/** The session reply production gives (worker/Accounts.vibe `current`): the person and the ledger their role came from. */
+const signedIn = { ...recordedPerson, ledger: { ...empty, roles: [{ id: recordedPerson.id, role: recordedPerson.role, blocked: false }] } }
 const FAULTS = "faults/writes"
 const SESSION = "faults/session"
 const PHASE = "recording/phase"
@@ -27,7 +30,7 @@ export class LiveIssuesObject {
       return HttpServerResponse.toWeb(HttpServerResponse.empty())
     }
     if (url.pathname === "/api/auth/session") {
-      if (await storage.get(SESSION) !== "unavailable") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(recordedPerson))
+      if (await storage.get(SESSION) !== "unavailable") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(signedIn))
       return HttpServerResponse.toWeb(await runPromise(Accounts.disabled().pipe(
         Effect.tap(() => Effect.logWarning("vibelang.e2e.session-fault")),
         Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
