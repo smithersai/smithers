@@ -1096,6 +1096,24 @@ some target's draw. `web-arms` now chooses each one, both sides, in every execut
 A `web-arms` coverage run alone reaches all 16 sides at seeds 20261193 and 20261194. Mutation: `EndTour` answering
 `FocusedPrompt` for an unreachable agent is falsified by `end-tour` in the first execution (seed 20261192).
 
+### `src/web/sandboxView.vibe`, `actionView.vibe`, `actionViewDecision.vibe`: every pane state, chosen
+
+The final run of the sixteenth session left these three at 37/68, 57/77 and 75/94 arms: no target rendered an open
+Sandboxes pane for a role that may start one, or the Actions pane with a selected run, so the trace and its step
+choice never ran. `fuzz/web-views.fuzz.vibe` renders both panes over fixed lists of states in every execution; the
+draw fills only free text and numbers:
+
+| Target | States | Oracle |
+| --- | --- | --- |
+| `screens/sandbox-states` | 11: closed with and without a snapshot or any pane field; each gate (viewer, community, contributor); stopped without a sandbox, with one, with no allowance; starting; running; each failed operation; the minutes notice; maximized | Stop only while running; the sign-in prompt and link only for a viewer, the contributor gate for a role that may not start; the meter while stopped; New sandbox without a sandbox and Start with one; the terminal for a sandbox, disabled unless running and idle; Retry exactly for a failed start or stop; the minutes table only maximized; typed text is the terminal's value; every control named |
+| `screens/action-states` | 24: closed with and without a run; loading; runs failed to load; another failure as a notice; each layout; text and JSON input; a live, finished, failed, cancelled and empty run; the person's own live reply with and without the right to post; a finished reply; the slash menu in live, mock and pending mode | the case's primary control (Cancel, Re-run, Run or none); skeleton, Retry and notice; the input's placeholder; the selected action's run rows or "No runs yet"; one button per step and the log of the chosen step, else the first failed, else the first live, else the last; the result bar only with a result; the menu's commands and the page's other mode; every control named |
+
+A coverage run of this file alone reaches every arm of the three files at seeds 20261198 and 20261199. Mutations,
+both falsified in the first execution (seed 20261200): the trace skipping the failed step (`action-states` case 11)
+and a failed start offering no Retry (`sandbox-states` case 7). The slash menu is rendered twice, in the docked
+composer and in the closed palette dialog; a closed dialog is outside the accessibility tree, so the oracle expects
+both and is not a finding.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

@@ -1,0 +1,267 @@
+// The web views' arms that only a particular state reaches, each chosen in every execution rather than drawn: the
+// Sandboxes pane over every gate, snapshot and failure, and the Actions pane over every layout, control and trace
+// (0015, seventeenth session).
+import { it } from "@effect/vitest"
+import { attr, findAll, getAllByRole, given, role as locate, scene, textContent, type as typeInto, type SceneSimulation } from "foldkit/scene"
+import type { Html } from "foldkit/html"
+import type { SandboxSnapshot } from "../src/core/Factory.vibe"
+import type { Registered, Run, Step } from "../src/actions/Actions.vibe"
+import { type ActionView, initial as actionsInitial } from "../src/web/actionModel.vibe"
+import { actionTitle, stepKey } from "../src/web/actionViewDecision.vibe"
+import { sandboxPaneView } from "../src/web/viewDecision.vibe"
+import { mayStart } from "../src/core/sandboxDecision.vibe"
+import { init, Message, Model, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { run, same, Finding, Int, Text } from "./run.vibe"
+
+const ROLES = ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "slider", "searchbox", "spinbutton", "option", "tab", "menuitem", "treeitem"]
+
+function disabled(node: Html): boolean {
+  const data = (node as { data?: { attrs?: Record<string, unknown>; props?: Record<string, unknown> } }).data
+  return data?.attrs?.["disabled"] === true || data?.attrs?.["disabled"] === "" || data?.props?.["disabled"] === true
+}
+
+function valueOf(node: Html): unknown {
+  const data = (node as { data?: { attrs?: Record<string, unknown>; props?: Record<string, unknown> } }).data
+  return data?.props?.["value"] ?? data?.attrs?.["value"]
+}
+
+const home = init({ session: "00000000-0000-4000-8000-000000000000", mode: "mock", name: "fuzz" }).model
+
+type SandboxCase = {
+  readonly pane: "closed" | "pane" | "max"
+  readonly snapshot?: Partial<SandboxSnapshot>
+  readonly busy?: boolean
+  readonly operation?: "start" | "stop" | "command" | ""
+  readonly error?: boolean
+  readonly notice?: boolean
+  readonly draft?: boolean
+  readonly type?: boolean
+  /** No pane, busy or operation field at all, as before the person first opens the pane. */
+  readonly bare?: boolean
+  /** The failure offers Retry: only a failed start or stop does. */
+  readonly retry?: boolean
+}
+
+/** One case per arm of the pane: closed with and without a snapshot, each gate, each start control, each failure. */
+const SANDBOX_CASES: ReadonlyArray<SandboxCase> = [
+  { pane: "closed" },
+  { pane: "closed", bare: true },
+  { pane: "closed", snapshot: { role: "contributor" } },
+  { pane: "pane", snapshot: { role: "viewer" } },
+  { pane: "pane", snapshot: { role: "community" } },
+  { pane: "max" },
+  { pane: "pane", snapshot: { role: "contributor", allowance: 0, remaining: 0 } },
+  { pane: "pane", snapshot: { role: "contributor", id: "sb-1" }, busy: true, operation: "start", error: true, retry: true },
+  { pane: "max", snapshot: { role: "maintainer", id: "sb-2", status: "running" }, busy: true, operation: "stop", error: true, retry: true, notice: true, draft: true },
+  { pane: "pane", snapshot: { role: "contributor", id: "sb-3", status: "running" }, operation: "command", error: true, type: true },
+  { pane: "pane", snapshot: { role: "maintainer", id: "sb-4" }, operation: "", error: true, draft: true },
+]
+
+const SandboxInput = Schema.Struct({ remaining: Int, extra: Int, output: Text, draft: Text, error: Text, notice: Text, typed: Text })
+
+/**
+ * The Sandboxes pane as each case leaves it: closed, a button that names the pane (with the minutes badge only for a
+ * snapshot); open, Stop only while running, the sign-in prompt for a viewer and the contributor gate for a role that
+ * may not start; for a permitted role the meter while stopped, New sandbox without a sandbox and its Start row with
+ * one, the terminal for a sandbox (its input disabled unless running and idle), Retry exactly for a start or stop that
+ * failed, the minutes notice when set, and the table of minutes by role only maximized. Every control is named, and
+ * text typed into a running terminal is its draft.
+ */
+function sandboxHolds(c: SandboxCase, input: typeof SandboxInput.Type): boolean {
+  const snapshot: SandboxSnapshot | undefined = c.snapshot === undefined ? undefined : {
+    id: "", generation: 1, sequence: 1, status: "stopped", role: "contributor", resetAt: 0, used: 0, output: input.output,
+    allowance: input.remaining + input.extra, remaining: input.remaining, ...c.snapshot,
+  }
+  const model: Model = {
+    ...home, surface: "chat", ...(c.bare ? {} : { sandboxPane: c.pane, sandboxBusy: c.busy ?? false, sandboxOperation: c.operation ?? "" }),
+    ...(snapshot === undefined ? {} : { sandbox: snapshot }),
+    ...(c.error ? { sandboxError: `e${input.error}` } : {}),
+    ...(c.notice ? { minuteNotice: `n${input.notice}` } : {}),
+    ...(c.draft ? { terminalDraft: input.draft } : {}),
+  }
+  const running = snapshot?.status === "running"
+  const pane = sandboxPaneView(c.pane, running, c.busy ?? false, mayStart(snapshot?.role ?? "viewer"), snapshot?.role ?? "", c.operation ?? "", snapshot?.remaining === 0)
+  const typed = `t${input.typed}`
+  let holds = true
+  const check = (simulation: SceneSimulation<Model, Message>) => {
+    const html = simulation.html
+    const count = (kind: string, name: string | RegExp) => getAllByRole(kind, { name })(html).length
+    for (const kind of ROLES) if (getAllByRole(kind)(html).length !== getAllByRole(kind, { name: /\S/ })(html).length) holds = false
+    const open = c.pane !== "closed"
+    const sections = findAll(html, "section.vl-sandboxes")
+    if (sections.length !== (open ? 1 : 0)) holds = false
+    if (!open) {
+      const toggles = findAll(html, "button.vl-pane").filter((node) => textContent(node).startsWith("Sandboxes"))
+      if (toggles.length !== 1 || (findAll(toggles[0]!, ".sui-badge").length === 1) !== (snapshot !== undefined)) holds = false
+      return simulation
+    }
+    const ok = pane.gate === "ok"
+    if (count("button", "Stop") !== (running ? 1 : 0)) holds = false
+    if ((textContent(sections[0]!).includes("Sign in to start a sandbox")) !== (pane.gate === "sign-in")) holds = false
+    if ((textContent(sections[0]!).includes("Contributor required")) !== (pane.gate === "contributor")) holds = false
+    if (count("link", "Sign in") !== (pane.gate === "sign-in" ? 1 : 0)) holds = false
+    if (count("progressbar", "Minutes left") !== (ok && !running ? 1 : 0)) holds = false
+    if (count("button", "New sandbox") !== (ok && !running && !snapshot?.id ? 1 : 0)) holds = false
+    if (count("button", "Start") !== (ok && !running && !!snapshot?.id ? 1 : 0)) holds = false
+    const terminal = getAllByRole("textbox", { name: "Terminal command" })(html)
+    if (terminal.length !== (ok && !!snapshot?.id ? 1 : 0)) holds = false
+    if (terminal.length === 1 && disabled(terminal[0]!) !== (!running || (c.busy ?? false))) holds = false
+    if (findAll(html, ".vl-sb-starting").length !== (ok && pane.starting ? 1 : 0)) holds = false
+    if (count("button", "Retry") !== (c.retry ? 1 : 0)) holds = false
+    if (findAll(html, ".sui-alert-destructive").length !== (c.error ? 1 : 0)) holds = false
+    if (count("status", "Sandbox minutes") !== (c.notice ? 1 : 0)) holds = false
+    if (count("table", "Minutes by role") !== (c.pane === "max" ? 1 : 0)) holds = false
+    if (c.type && (terminal.length !== 1 || valueOf(terminal[0]!) !== typed)) holds = false
+    return simulation
+  }
+  if (c.type) scene({ update, view }, given(model), typeInto(locate("textbox", { name: "Terminal command" }), typed), check)
+  else scene({ update, view }, given(model), check)
+  return holds
+}
+
+it.live("screens/sandbox-states", () => run("screens/sandbox-states", SandboxInput, (input) => effect {
+  for (const [index, c] of SANDBOX_CASES.entries()) if (!(try Effect.try(() => sandboxHolds(c, input)))) throw new Finding({ report: `sandbox case ${index} does not hold` })
+  return true
+}))
+
+const POST: Registered = { name: "vibelang/Post", title: "Post", detail: "Post", command: "/post", runnable: true, least: "viewer", input: "text" }
+const JSON_ACTION: Registered = { name: "vibelang/Json", title: "Json", detail: "Json", command: "/json", runnable: true, least: "viewer", input: "json" }
+const REPLY = "vibelang/Reply"
+
+function step(key: string, state: Step["state"], at: number): Step { return { key, name: `vibelang/${key}`, attempt: 1, state, started: at, at: at + 1 } }
+function runOf(id: string, flow: string, state: Run["state"], steps: ReadonlyArray<Step>, result = ""): Run {
+  return { id, flow, door: "button", actor: "person", state, started: 1, at: 3, result, steps }
+}
+
+type ActionCase = {
+  readonly actions: Partial<ActionView>
+  /** The primary button's label, or none. */
+  readonly primary: "Cancel" | "Re-run" | "Run" | ""
+  readonly body: "loading" | "error" | "trace" | "list"
+  /** The input's placeholder when the action takes input. */
+  readonly input?: "{}" | "Message"
+  /** Run rows listed for the selected action (0 shows "No runs yet"). */
+  readonly rows?: number
+  /** In a trace: the index of the step its log shows, or -1 for none. */
+  readonly logged?: number
+  readonly notice?: boolean
+  readonly type?: boolean
+  /** The rest of the page: the mode and the draft the slash menu reads. */
+  readonly model?: { readonly mode?: Model["mode"]; readonly draft?: string }
+  /** The slash menu's options, by name. */
+  readonly menu?: ReadonlyArray<string>
+  /** Text the page shows somewhere. */
+  readonly shows?: ReadonlyArray<string>
+}
+
+/** One case per arm of the Actions pane and its decisions: closed with and without a run, loading, failed, each layout, each primary control, and a trace for each way it picks a step. */
+function actionCases(input: typeof ActionInput.Type): ReadonlyArray<ActionCase> {
+  const live = runOf("r-1", POST.name, "running", [step("a", "passed", 1), step("b", "waiting", 2), step("c", "running", 3)])
+  const done = runOf("r-2", POST.name, "passed", [step("a", "passed", 1), step("b", "failed", 2), step("c", "failed", 3)], input.result === "" ? "ok" : input.result)
+  const failed = runOf("r-3", POST.name, "failed", [step("a", "passed", 1), step("b", "failed", 2)])
+  const quiet = runOf("r-4", POST.name, "cancelled", [step("a", "passed", 1), step("b", "cancelled", 2)])
+  const empty = runOf("r-5", POST.name, "queued", [])
+  const reply = runOf("c-1-reply", REPLY, "running", [])
+  const otherReply = runOf("c-1", REPLY, "running", [])
+  const replyDone = runOf("c-3-reply", REPLY, "passed", [])
+  const open = { open: true, commands: [POST, JSON_ACTION], entries: [POST, JSON_ACTION] }
+  return [
+    { actions: {}, primary: "", body: "list" },
+    { actions: { runs: [done] }, primary: "", body: "list" },
+    { actions: { ...open, loading: true }, primary: "", body: "loading" },
+    { actions: { ...open, error: "Couldn't load runs" }, primary: "", body: "error" },
+    { actions: { ...open, error: `x${input.error}` }, primary: "", body: "list", notice: true },
+    { actions: { ...open, maximized: true, selected: POST.name, runs: [done, failed] }, primary: "Run", body: "list", input: "Message", rows: 2, type: true },
+    { actions: { ...open, maximized: true, runs: [done] }, primary: "", body: "list" },
+    { actions: { ...open, selected: JSON_ACTION.name, runs: [done], input: input.text }, primary: "Run", body: "list", input: "{}", rows: 0 },
+    { actions: { ...open, selected: POST.name, runs: [done, live] }, primary: "Run", body: "list", input: "Message", rows: 2 },
+    { actions: { ...open, selected: POST.name, run: live.id, runs: [live] }, primary: "Cancel", body: "trace", logged: 1 },
+    { actions: { ...open, selected: POST.name, run: done.id, runs: [done], now: 9, step: stepKey("c", 1) }, primary: "Re-run", body: "trace", logged: 2 },
+    { actions: { ...open, selected: POST.name, run: done.id, runs: [done], step: "none/1" }, primary: "Re-run", body: "trace", logged: 1 },
+    { actions: { ...open, run: failed.id, runs: [failed] }, primary: "", body: "trace", logged: 1 },
+    { actions: { ...open, run: quiet.id, runs: [quiet] }, primary: "", body: "trace", logged: 1 },
+    { actions: { ...open, run: empty.id, runs: [empty], error: `x${input.error}` }, primary: "", body: "trace", logged: -1, notice: true },
+    { actions: { ...open, run: reply.id, runs: [reply] }, primary: "Cancel", body: "trace", logged: -1 },
+    { actions: { ...open, commands: [], run: reply.id, runs: [reply] }, primary: "", body: "trace", logged: -1 },
+    { actions: { ...open, run: otherReply.id, runs: [otherReply] }, primary: "", body: "trace", logged: -1 },
+    { actions: { ...open, run: replyDone.id, runs: [replyDone] }, primary: "", body: "trace", logged: -1 },
+    { actions: { runs: [{ ...done, flow: "vibelang/ ", actor: "agent" }] }, primary: "", body: "list", shows: ["Action · ", "VibeLang agent"] },
+    { actions: { ...open, entries: [{ ...POST, name: "vibelang/Blank", title: " " }] }, primary: "", body: "list", shows: ["Blank"] },
+    { actions: { slash: true, commands: [POST] }, model: { mode: "live", draft: "/" }, primary: "", body: "list", menu: ["/post Post", "/mock Mock mode"] },
+    { actions: { slash: true, commands: [POST] }, model: { mode: "mock", draft: "/" }, primary: "", body: "list", menu: ["/post Post", "/live Live mode"] },
+    { actions: { slash: true, commands: [POST] }, model: { mode: "pending", draft: "/" }, primary: "", body: "list", menu: ["/post Post"] },
+  ]
+}
+
+const ActionInput = Schema.Struct({ result: Text, error: Text, text: Text, typed: Text })
+
+/**
+ * The Actions pane as each case leaves it: closed, a button that names the pane, with the latest run's badge only when
+ * there is one; open, the primary control the case names (Cancel for a live run, or for the person's own live reply
+ * when they may post; Re-run for a finished run; Run for a permitted action), a skeleton while loading, Retry when runs
+ * failed to load, the failure as a notice otherwise, the input with its placeholder for an action that takes one, the
+ * selected action's run rows (or "No runs yet"), the slash menu's commands with the page's other mode, and for a run its trace: one button per step and the log of the step
+ * chosen, else the first failed, else the first live one, else the last; its result only when there is one. Every
+ * control is named; text typed into the input is its value.
+ */
+function actionHolds(c: ActionCase, input: typeof ActionInput.Type): boolean {
+  const actions: ActionView = { ...actionsInitial, ...c.actions }
+  const model: Model = { ...home, surface: "chat", actions, ...c.model }
+  const run = actions.runs.find((entry) => entry.id === actions.run)
+  const typed = `t${input.typed}`
+  let holds = true
+  const check = (simulation: SceneSimulation<Model, Message>) => {
+    const html = simulation.html
+    const count = (kind: string, name: string | RegExp) => getAllByRole(kind, { name })(html).length
+    for (const kind of ROLES) if (getAllByRole(kind)(html).length !== getAllByRole(kind, { name: /\S/ })(html).length) holds = false
+    for (const text of c.shows ?? []) if (!textContent(html).includes(text)) holds = false
+    const menus = getAllByRole("listbox", { name: "Commands" })(html)
+    // The docked composer and the (closed) palette each hold the menu.
+    if (menus.length !== (c.menu === undefined ? 0 : 2)) holds = false
+    for (const menu of menus) {
+      const options = getAllByRole("option")(menu).map((node) => attr(node, "aria-label").pipe(Option.getOrElse(() => "")))
+      if (c.menu !== undefined && !same(options, c.menu)) { holds = false; shown = `menu ${JSON.stringify(options)}` }
+    }
+    const panes = findAll(html, "section.vl-actions-pane")
+    if (panes.length !== (actions.open ? 1 : 0)) holds = false
+    if (!actions.open) {
+      const toggles = getAllByRole("button", { name: "Expand Actions" })(html)
+      if (toggles.length !== 1 || (findAll(toggles[0]!, ".sui-badge").length === 1) !== (actions.runs.length > 0)) holds = false
+      return simulation
+    }
+    const pane = panes[0]!
+    for (const label of ["Cancel", "Re-run", "Run"]) if (getAllByRole("button", { name: label })(pane).length !== (c.primary === label ? 1 : 0)) holds = false
+    if (findAll(pane, ".sui-skeleton").length !== (c.body === "loading" ? 1 : 0)) holds = false
+    if (getAllByRole("button", { name: "Retry" })(pane).length !== (c.body === "error" ? 1 : 0)) holds = false
+    const alerts = getAllByRole("alert")(pane)
+    if (alerts.length !== (c.body === "error" || c.notice ? 1 : 0)) holds = false
+    if (c.notice && (alerts.length !== 1 || textContent(alerts[0]!) !== actions.error)) holds = false
+    const inputs = getAllByRole("textbox", { name: "Action input" })(pane)
+    if (inputs.length !== (c.input === undefined ? 0 : 1)) holds = false
+    if (c.input !== undefined && inputs.length === 1 && attr(inputs[0]!, "placeholder").pipe(Option.getOrElse(() => "")) !== c.input) holds = false
+    const rows = findAll(pane, "button.vl-run").length
+    if (c.rows !== undefined && (rows !== c.rows || (findAll(pane, ".sui-empty").length === 1) !== (c.rows === 0))) holds = false
+    const steps = getAllByRole("list", { name: "Steps" })(pane)
+    if (steps.length !== (c.body === "trace" ? 1 : 0)) holds = false
+    if (c.body === "trace" && run !== undefined) {
+      if (findAll(steps[0]!, "button").length !== run.steps.length) holds = false
+      const logs = findAll(pane, "pre.vl-term-body").map(textContent)
+      const shown = c.logged === undefined || c.logged < 0 ? "" : `${actionTitle(run.steps[c.logged]!.name)} · ${run.steps[c.logged]!.state}`
+      if (logs.length !== 1 || logs[0] !== shown) holds = false
+      if (findAll(pane, ".vl-term-bar").length !== (run.result === "" ? 1 : 2)) holds = false
+    }
+    if (c.type && (inputs.length !== 1 || valueOf(inputs[0]!) !== typed)) holds = false
+    return simulation
+  }
+  if (c.type) scene({ update, view }, given(model), typeInto(locate("textbox", { name: "Action input" }), typed), check)
+  else scene({ update, view }, given(model), check)
+  return holds
+}
+/** What the last failing action case rendered, for its report. */
+let shown = ""
+
+it.live("screens/action-states", () => run("screens/action-states", ActionInput, (input) => effect {
+  for (const [index, c] of actionCases(input).entries()) if (!(try Effect.try(() => actionHolds(c, input)))) throw new Finding({ report: `action case ${index} does not hold ${shown}` })
+  return true
+}))
