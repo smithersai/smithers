@@ -1321,6 +1321,14 @@ over blank, "just now", compact and other ages, absolute or not, long or short; 
 `learn-more-same-conversation` runs Learn more in the demo conversation (its messages kept) and from another (none).
 Seed 20261256 reaches both; mutants caught (20261257): a long unknown age without "ago", and Learn more always fresh.
 
+### `history/export-setting` after `e23e88dd` (eighteenth session)
+
+`e23e88dd` (integrations, 2026-11-12 14:37 UTC) requires a GitHub `apiBaseUrl` to be HTTPS except on loopback. The
+target's fixture `http://github.test` made `exporterOf` die (`IntegrationError`) whenever `api` was drawn, so the
+target failed at every seed and stopped `pnpm fuzz:coverage` before its report (20261258, 20261259). The fixture is now
+`https://github.test`; the target's client is unreachable, so no request is made. Seed 20261258: red before, 3 tests
+passed after.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

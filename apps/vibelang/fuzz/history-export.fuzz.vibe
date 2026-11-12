@@ -127,7 +127,7 @@ const Setting = Schema.Struct({
 const unreachable = HttpClient.make(() => Effect.die("building an exporter made a request"))
 
 it.live("history/export-setting", () => run("history/export-setting", Setting, ({ setting, token, api }) => effect {
-  const exporter = try exporterOf(setting, token ? Redacted.make("fuzz-token") : undefined, unreachable, REF_NAMES, api ? "http://github.test" : undefined)
+  const exporter = try exporterOf(setting, token ? Redacted.make("fuzz-token") : undefined, unreachable, REF_NAMES, api ? "https://github.test" : undefined)
   const github = token && setting !== undefined && /^github:[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(setting)
   return (exporter === off) === !github
 }))
