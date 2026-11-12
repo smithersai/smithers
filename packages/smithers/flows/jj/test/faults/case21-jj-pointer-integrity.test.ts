@@ -12,7 +12,7 @@
  * class dependency of the RC, so this case fails rather than skips on CI: a
  * silent skip is how a real regression against the real binary merges.
  */
-import { Jj } from "@smthrs/jj/Jj"
+import { isJjError, Jj } from "@smthrs/jj/Jj"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as Effect from "effect/Effect"
 import { execFileSync } from "node:child_process"
@@ -129,9 +129,9 @@ describe.skipIf(!jjInstalled)("case21 jj pointer integrity", () => {
     expect(readFileSync(file, "utf8")).toBe("kept")
   }, 120_000)
 
-  it("refuses a change id no snapshot ever minted", async () => {
-    const outcome = await Effect.runPromise(
-      Effect.exit(
+  it("refuses a change id no snapshot ever minted as `invalid_ref`", async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(
         Effect.provide(
           Effect.flatMap(Jj, (jj) => jj.restore("qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" as never)),
           NodeJj.layer
@@ -139,7 +139,10 @@ describe.skipIf(!jjInstalled)("case21 jj pointer integrity", () => {
       )
     )
     // `zzzzzzzz` is the root change every jj repository has, so the id here is
-    // one that cannot resolve rather than one that merely looks unusual.
-    expect(outcome._tag).toBe("Failure")
+    // one that cannot resolve rather than one that merely looks unusual. It is
+    // a well-formed change id, so the refusal is jj's own, and `invalid_ref`
+    // is the durable code a caller branching on a stale pointer reads.
+    expect(isJjError(error) && error.code).toBe("invalid_ref")
+    expect(isJjError(error) && error.message).toMatch(/^jj restore: Error: /)
   }, 120_000)
 })

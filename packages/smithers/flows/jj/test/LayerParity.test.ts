@@ -44,8 +44,20 @@ const table: ReadonlyArray<readonly [string, (jj: Jj) => Effect.Effect<unknown, 
   ["a malformed operation revision", (jj) => jj.opRestore!("--help"), "invalid_ref"],
   ["an empty restore revision", (jj) => jj.restore(""), "invalid_ref"],
   ["an empty diff revision", (jj) => jj.diff("@", ""), "invalid_ref"],
-  ["a revision that does not resolve", (jj) => jj.restore("nosuchchangeid"), "invalid_ref"],
-  ["two revisions that do not resolve", (jj) => jj.diff("zzznotachange", "alsonotachange"), "invalid_ref"]
+  // Neither of these is an id shape, so the CLI layer refuses them before any
+  // spawn; the wasm layer has no shape guard and reaches `invalid_ref` by
+  // failing to resolve them.
+  ["a revision that is not an id shape", (jj) => jj.restore("nosuchchangeid"), "invalid_ref"],
+  ["two revisions that are not id shapes", (jj) => jj.diff("zzznotachange", "alsonotachange"), "invalid_ref"],
+  // Well-formed ids no commit carries. These are the rows that drive the CLI
+  // layer through jj itself: `exactly(commit_id(x), 1)` matching nothing is
+  // reported in jj's own sentence, and that sentence has to classify
+  // `invalid_ref`, or a journal pointer that stopped resolving is journaled
+  // as `unknown`. `zzzzzzzz` is every repository's root change, so the
+  // change id is one that cannot resolve.
+  ["a well-formed commit id that does not resolve", (jj) => jj.restore("ffffffffffff"), "invalid_ref"],
+  ["a well-formed change id that does not resolve", (jj) => jj.restore("qqqqqqqqqqqq"), "invalid_ref"],
+  ["two well-formed revisions that do not resolve", (jj) => jj.diff("ffffffffffff", "qqqqqqqqqqqq"), "invalid_ref"]
 ]
 
 const codeOf = (jj: Jj, operation: (jj: Jj) => Effect.Effect<unknown, unknown>) =>

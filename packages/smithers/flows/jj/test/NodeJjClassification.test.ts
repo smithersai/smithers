@@ -34,6 +34,8 @@ case "$FLOWS_FAKE_JJ" in
   conflict-named-path) echo "Error: Path doesn't exist: docs/conflict-resolution.md" 1>&2; exit 1 ;;
   chained-conflict) printf 'Error: Failed to update the working copy\nCaused by: The merge would leave conflicts\n' 1>&2; exit 1 ;;
   revset-parse) echo "Error: Failed to parse revset: Syntax error" 1>&2; exit 1 ;;
+  revset-fewer) echo "Error: The revset has fewer than the expected 1 revisions (got 0)" 1>&2; exit 1 ;;
+  revset-more) echo "Error: The revset has more than the expected 1 revisions" 1>&2; exit 1 ;;
   stdout-only) echo "Error: reported on stdout"; exit 1 ;;
   long-stdout) i=0; while [ $i -lt 4000 ]; do echo "SECRET_FILE_CONTENT_LINE_$i"; i=$((i+1)); done; kill -9 $$ ;;
   long-stderr) i=0; while [ $i -lt 4000 ]; do echo "Warning: line $i of a long warning" 1>&2; i=$((i+1)); done
@@ -183,6 +185,16 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
   it.live("classifies `failed to parse revset` as `invalid_ref`, agreeing with the wasm layer", () =>
     Effect.gen(function*() {
       expect((yield* status("revset-parse")).code).toBe("invalid_ref")
+    }))
+
+  it.live("classifies an `exactly(…, 1)` revset that misses or widens as `invalid_ref`", () =>
+    Effect.gen(function*() {
+      // Every id the adapter hands to jj is wrapped as `exactly(commit_id(x), 1)`
+      // or `exactly(change_id(x), 1)`, so a journal pointer that no longer
+      // resolves is reported in these sentences and in no other. An ambiguous
+      // prefix is the wasm layer's `invalid_ref` too.
+      expect((yield* status("revset-fewer")).code).toBe("invalid_ref")
+      expect((yield* status("revset-more")).code).toBe("invalid_ref")
     }))
 
   it.live("classifies empty revisions as `invalid_ref` before any spawn", () =>

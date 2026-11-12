@@ -490,23 +490,22 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       expect(existsSync(lane)).toBe(false)
     }))
 
-  it.effect("classifies an unknown revision as `invalid_ref`", () =>
+  it.effect("classifies a well-formed revision jj cannot resolve as `invalid_ref`", () =>
     Effect.gen(function*() {
-      const error = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.restore("nosuchchangeid"))))
+      // Both ids pass the shape guard, so the failure is jj's own: the
+      // `exactly(…, 1)` revset matched no commit, and jj reports that in its
+      // own sentence. A string that is not an id shape never reaches jj and
+      // would prove nothing about this classification.
+      for (const revision of ["ffffffffffff", "qqqqqqqqqqqq"]) {
+        const error = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.restore(revision))))
 
-      expect(error.code).toBe("invalid_ref")
-      expect(error.message).toContain("jj restore")
-    }))
+        expect([revision, error.code]).toEqual([revision, "invalid_ref"])
+        expect(error.message, revision).toMatch(/^jj restore: Error: /)
+      }
 
-  it.effect("classifies a malformed revset as `invalid_ref`, agreeing with BrowserJj", () =>
-    Effect.gen(function*() {
-      // "Failed to parse revset: Syntax error" — the browser layer resolves the
-      // same string to invalid_ref, and the code is durable identity in
-      // journals, so the two layers must agree.
-      const error = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.diff("@@@bad", "@"))))
-
-      expect(error.code).toBe("invalid_ref")
-      expect(error.message).toContain("jj diff")
+      const diffError = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.diff("ffffffffffff", "@"))))
+      expect(diffError.code).toBe("invalid_ref")
+      expect(diffError.message).toMatch(/^jj diff: Error: /)
     }))
 
   it.effect("classifies an empty revision as `invalid_ref` without spawning jj", () =>
