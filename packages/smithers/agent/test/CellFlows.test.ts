@@ -907,10 +907,12 @@ ctx.done(suite.passed + " passed, " + suite.failed.join(","))`
     }))
     const settled = settledCalls(eventsOf(outcome))
     expect(settled.map((event) => event.result.message)).toEqual([
-      // A shell timeout keeps what the command printed, here nothing, and says where.
+      // A shell or test timeout keeps what the command printed, here nothing, and says where.
       "Flow bash failed: The command timed out; error.output holds what it printed before it was stopped.",
-      "Flow test failed: The command timed out."
+      "Flow test failed: The command timed out; error.output holds what it printed before it was stopped."
     ])
+    const printed = (value: unknown) => (value as { readonly output: { readonly stdout: string } }).output.stdout
+    expect(settled.map((event) => printed(event.result.value))).toEqual(["", ""])
     // A command's own timeout is a timeout, the code a guarded host parks on (#2120).
     expect(settled.every((event) => event.result.code === "timeout")).toBe(true)
     expect(JSON.stringify(settled.map((event) => event.result))).not.toContain("SYNTHETIC_")
