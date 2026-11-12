@@ -51,11 +51,18 @@ host replays. It reads no environment variable; the suite chooses the mode.
 ## What a recording holds
 
 ```json
-{"label":"direct","calls":[
-{"operation":"running","input":null,"output":false},
-{"operation":"start","input":{"enableInternet":false,"entrypoint":["sleep","infinity"]},"output":null},
-{"operation":"exec","input":{"argv":["sh","-c","cat keep.txt"],"options":{"stdout":"pipe","stderr":"pipe"}},"output":{"stdout":"saved","stderr":"","exitCode":0}}
-]}
+{
+  "label": "direct",
+  "calls": [
+    { "operation": "running", "input": null, "output": false },
+    { "operation": "start", "input": { "enableInternet": false, "entrypoint": ["sleep", "infinity"] }, "output": null },
+    {
+      "operation": "exec",
+      "input": { "argv": ["sh", "-c", "cat keep.txt"], "options": { "stdout": "pipe", "stderr": "pipe" } },
+      "output": { "stdout": "saved", "stderr": "", "exitCode": 0 }
+    }
+  ]
+}
 ```
 
 An intercept's fetcher binding is not data and is never recorded; an intercept

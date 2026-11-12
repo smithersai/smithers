@@ -1350,8 +1350,15 @@ Worker; it imports no Node module. See
 ```ts
 const Mode: Schema.Literals<["passthrough", "record", "replay"]>
 const Operation: Schema.Literals<[
-  "running", "start", "setInactivityTimeout", "interceptOutboundHttp",
-  "interceptAllOutboundHttp", "interceptOutboundHttps", "snapshotContainer", "destroy", "exec"
+  "running",
+  "start",
+  "setInactivityTimeout",
+  "interceptOutboundHttp",
+  "interceptAllOutboundHttp",
+  "interceptOutboundHttps",
+  "snapshotContainer",
+  "destroy",
+  "exec"
 ]>
 
 interface Call {
