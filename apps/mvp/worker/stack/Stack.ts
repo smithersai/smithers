@@ -1,3 +1,4 @@
+import * as ProtectedAuthority from "../ProtectedAuthority.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { digestSync } from "@smthrs/crypto"
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
@@ -201,9 +202,10 @@ export const lanesOf = (stack: Stack) => {
 /**
  * Applies `change` to its repository's stack in one transaction; `runs` says whether this host runs TODOs (a
  * `TodoRuns` is provided), and without it no TODO starts. A new op applies only while `holds` answers true in the same
- * transaction: on a repository other than the deployment's own, that the person still has the role the route decided
- * with (`RepoRoles.holds`, decision 0079 §6). Session and alias liveness are checked before any mutation or receipt
- * replay; fixed database timeouts bound this transaction. Records a span `stack.apply`, a log line and a count of `changes` by op
+ * transaction: that the person still has the role the route decided with, on a repository other than the deployment's
+ * own its role row (`RepoRoles.holds`, decision 0079 §6), on the deployment's own their newest role receipt
+ * (`ProtectedAuthority.holds`). Session and alias liveness are checked before any mutation or receipt replay, and again
+ * at commit with the role's freshness when `session` carries its scope; fixed database timeouts bound this transaction. Records a span `stack.apply`, a log line and a count of `changes` by op
  * and outcome, with the repository, op id, number and version: never a title or a prompt.
  */
 export const apply = <E = never, R = never>(
@@ -364,7 +366,9 @@ export const apply = <E = never, R = never>(
         lanes: lanesOf(after),
       } as const
     }), result => result.kind === "applied" || result.kind === "repeated"
-      ? linkWork(change.repoId).pipe(Effect.andThen(WriteAuthority.requireAtCommit(options.session)))
+      ? linkWork(change.repoId).pipe(Effect.andThen(options.session?.scope === undefined
+        ? WriteAuthority.requireAtCommit(options.session)
+        : ProtectedAuthority.requireAtCommit(options.session)))
       : Effect.void)).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed({ kind: "stale" as const })))
     const outcome = applied.kind === "applied"
       ? applied.receipt.outcome

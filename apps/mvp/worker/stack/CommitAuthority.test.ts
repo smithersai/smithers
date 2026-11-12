@@ -6,6 +6,8 @@ import type { Actor } from "../Actor.ts"
 import { testFile } from "../test/harness.ts"
 import { stackHarness, runs } from "./test/stack.ts"
 import * as Stack from "./Stack.ts"
+import * as SessionStore from "../SessionStore.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 
 const runtime = testFile("stack_commit_authority")
 const query = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(effect)
@@ -43,9 +45,10 @@ test("the final stack transaction checks session authority without adding read q
     expect((await h.fetch(todoStatusRoute("octo", "hello", 1))).status).toBe(404)
     reads.push(clients() - before)
   }
-  // Main's request-time role revalidation is one query. Writes additionally lock/check the session (and alias)
-  // and check the final deadline; none of those transaction checks runs on a read.
-  expect(counts.map((count) => count - counts[0]!)).toEqual([0, 4, 5])
+  // Main's request-time role revalidation is one query. Writes additionally lock/check the session (and alias),
+  // recheck the person's newest role under their lock, and check the final session and role deadline; none of those
+  // transaction checks runs on a read.
+  expect(counts.map((count) => count - counts[0]!)).toEqual([0, 9, 11])
   expect(reads.map(count => count - reads[0]!)).toEqual([0, 1, 1])
 })
 
@@ -129,4 +132,63 @@ test.each(endings)("retry refuses $ending ending during the remote status wait",
   expect(await snapshot()).toEqual(before)
   expect(host.started).toHaveLength(1)
   expect(host.stopped).toEqual([])
+})
+
+// Real Postgres and the public route on the deployment's own repository, whose role is the session's: a newer role
+// receipt recorded after the route resolved Admin must stop the change in the writer, then decide its resend.
+const demotions = [
+  ...operations.map((op) => ({ op, to: "guest" as const, resend: 403 })),
+  { op: "configure" as const, to: "member" as const, resend: 403 },
+  { op: "commit" as const, to: "member" as const, resend: 202 },
+]
+test.each(demotions)("$op refuses a recorded demotion to $to during the role read", async ({ op, to, resend }) => {
+  const who = await session()
+  const host = runs()
+  const setup = await stackHarness(runtime, { actor: who.actor, runs: host })
+  const commit = () => ({ opId: crypto.randomUUID(), op: "commit", title: "Demotion", prompt: "Demotion" })
+  // A stale writer may initialize an empty stack row before it refuses, so the stack exists first.
+  expect((await send(setup, op === "commit"
+    ? { opId: crypto.randomUUID(), op: "configure", lanes: 1, maxOpen: 7, base: "independent" }
+    : commit())).status).toBe(202)
+  if (op === "configure") expect((await send(setup, commit())).status).toBe(202)
+  if (op === "retry") {
+    expect((await query(Stack.report(host.started[0]!, { kind: "finished", state: "failed" }, { runs: true }))).outcome).toBe("applied")
+  }
+  const body = op === "commit" ? commit() : op === "configure"
+    ? { opId: crypto.randomUUID(), op, lanes: 64, maxOpen: 7, base: "independent" }
+    : { opId: crypto.randomUUID(), op, number: 1 }
+  const before = await snapshot()
+  const starts = [...host.started]
+  const stops = [...host.stopped]
+  let demoted = false
+  const h = await stackHarness(runtime, { actor: who.actor, runs: host, wrapRoles: (roles) => ({ ...roles,
+    resolve: (actor, repository) => roles.resolve(actor, repository).pipe(Effect.tap(() => Effect.promise(async () => {
+      if (demoted) return
+      demoted = true
+      await query(Effect.flatMap(SessionStore.roleObservation, (generation) => SessionStore.setRole(who.session, to, generation, 0)))
+    }))),
+  }) })
+  const response = await send(h, body)
+  expect(demoted).toBe(true)
+  expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
+  expect(await snapshot()).toEqual(before)
+  expect(host.started).toEqual(starts)
+  expect(host.stopped).toEqual(stops)
+  expect(h.line("stack.apply").at(-1)!.annotations).toMatchObject({ outcome: "stale" })
+  // The outbox sends it again; the route now decides with the newer role.
+  expect((await send(h, body)).status).toBe(resend)
+})
+
+// The writer's last check carries the role's scope: a deployment role receipt that aged out while the change waited
+// rolls the whole transaction back, as an ended session does.
+test("the writer's commit guard refuses a deployment change whose role receipt aged out", async () => {
+  const who = await session()
+  await sql(`UPDATE sessions SET role_verified_at = now() - interval '1 day' WHERE id = '${who.session}'`)
+  const before = await snapshot()
+  const applied = await query(Stack.apply({
+    opId: crypto.randomUUID(), repoId: "github/octo/hello", actor: { id: who.person, login: "stack-person" }, via: "person",
+    retryAny: false, op: { kind: "configure", lanes: 64, maxOpen: 7, base: "independent" },
+  }, { runs: true, session: WriteAuthority.protectedOf(who.actor) ?? undefined }))
+  expect(applied).toEqual({ kind: "stale" })
+  expect(await snapshot()).toEqual(before)
 })

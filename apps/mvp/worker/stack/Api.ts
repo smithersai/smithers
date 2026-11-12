@@ -1,10 +1,12 @@
 import { withRequestRay } from "../RequestRay.ts"
+import * as ProtectedAuthority from "../ProtectedAuthority.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { canAsk } from "../Actor.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient, SqlError } from "effect/sql"
+import { ROLES } from "../../src/features/auth/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { MAX_ISSUE_NUMBER } from "../../src/features/issues/contract.ts"
 import { isRepository, REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
@@ -379,7 +381,16 @@ export const make = <E, R>(
                 ? { kind: "attach", number: admitted.number, issue: admitted.issue }
                 : { kind: admitted.op, number: admitted.number },
             },
-            { runs: Option.isSome(runs), session: WriteAuthority.sessionOf(who), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
+            {
+              runs: Option.isSome(runs),
+              // The role's scope stays with the write: elsewhere the repository's role row, on the deployment's own
+              // repository the person's newest role receipt, each rechecked under its lock in the writer's transaction.
+              session: WriteAuthority.protectedOf(who, held) ?? undefined,
+              holds: Option.isSome(held)
+                ? RepoRoles.holds(held.value)
+                : ProtectedAuthority.holds(WriteAuthority.protectedOf(who), ROLES.filter((role) => role === actor.role)),
+              ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }),
+            },
           ).pipe(Effect.provide(database), Effect.catchTag("@smthrs/mvp/stack/RetryForbidden", () => Effect.succeed({ kind: "forbidden" as const }))))
           let applied = yield* apply(scopedActor, held)
           // The row the request read expired, or changed, while the change waited: GitHub decides again, once, as for
