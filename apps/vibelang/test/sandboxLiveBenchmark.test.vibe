@@ -66,7 +66,7 @@ for (const [name, status] of [["no token", 403], ["wrong token", 403], ["wrong m
     const check = name === "wrong token" ? checks[0]! : name === "wrong method" ? checks[1]! : { request: HttpClientRequest.post("https://probe.invalid/api/probe/coverage").pipe(HttpClientRequest.setHeaders({ [OWNER_HEADER]: owner })), expected: 403 }
     try Effect.try(() => expect(check.expected).toBe(status))
     const request = try HttpClientRequest.toWeb(check.request)
-    const accounts = { getByName: (_name: string) => ({ run: () => Effect.die("unexpected run"), alarm: () => Effect.die("unexpected alarm"), benchmarkCoverage: () => Effect.die("unexpected account counters") }) }
+    const accounts = { getByName: (_name: string) => ({ run: () => Effect.die("unexpected run"), alarm: () => Effect.die("unexpected alarm"), meter: () => Effect.die("unexpected meter"), benchmarkCoverage: () => Effect.die("unexpected account counters") }) }
     const machines = { getByName: (_name: string) => ({ apply: () => Effect.die("unexpected apply"), benchmarkCoverage: () => Effect.die("unexpected machine counters") }) }
     const response = try benchmarkFetch(Effect.die("unexpected fallback"), accounts, machines, probeIdentity("local-test")).pipe(
       Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
