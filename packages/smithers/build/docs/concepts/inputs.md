@@ -197,7 +197,11 @@ and every `utimes` call moves the status-change time, which an unprivileged
 process cannot set back, so an equal status names the same bytes. Any other
 status reads the file again. Within one invocation each file is resolved and
 checked once, however many declarations name it; a check that fails is made
-again by the next declaration that asks.
+again by the next declaration that asks. Each directory holding declared
+files is resolved to its canonical path once per invocation, and a regular
+file in it takes one `lstat` before its remembered digest is checked; a
+symbolic link, a missing path, and anything that is not a regular file take
+the full link and confinement checks.
 
 A digest is saved for the next invocation only when both times are at least two
 seconds older than the start of the read. A write in the same timestamp tick as

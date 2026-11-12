@@ -370,7 +370,10 @@ export interface DigestRow {
  * is the wall clock in nanoseconds that a read's start is measured on.
  * `confirmed` holds {@link digestFile}'s answer for each path this
  * invocation asked about, so a file several declarations name is resolved
- * and checked once; a failed answer is not kept.
+ * and checked once; a failed answer is not kept. `inputs` holds the same for
+ * `Input.digestFiles` rows, and `directories` holds each directory's
+ * canonical path, or undefined when it is missing, so the files of one
+ * directory resolve it once per invocation.
  *
  * @category models
  * @since 1.0.0
@@ -380,6 +383,8 @@ export interface DigestIndex {
   readonly used: Set<string>
   readonly now: () => bigint
   readonly confirmed: Map<string, Promise<string | undefined>>
+  readonly inputs: Map<string, Promise<unknown>>
+  readonly directories: Map<string, Promise<string | undefined>>
 }
 
 /**
@@ -405,7 +410,9 @@ export const makeDigestIndex = (
   rows: new Map(rows),
   used: new Set(),
   now,
-  confirmed: new Map()
+  confirmed: new Map(),
+  inputs: new Map(),
+  directories: new Map()
 })
 
 /** A time in nanoseconds since the epoch, from bigint stats or milliseconds. */

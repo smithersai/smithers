@@ -1746,8 +1746,72 @@ const isLinkInput = async (root: string, absolute: string, io: SafeFs.Io): Promi
   return !SafeFs.inside(root, target) || !(await io.lstat(target)).isFile()
 }
 
+/**
+ * Remembers one answer per key for the invocation an index belongs to; a
+ * failed answer is forgotten so the next caller asks again.
+ */
+const remembered = <A>(memo: Map<string, Promise<unknown>>, key: string, answer: () => Promise<A>): Promise<A> => {
+  const known = memo.get(key) as Promise<A> | undefined
+  if (known !== undefined) return known
+  const asked = answer()
+  memo.set(key, asked)
+  asked.catch(() => memo.delete(key))
+  return asked
+}
+
+/** A directory's canonical path, or undefined when it does not exist, asked once per invocation. */
+const canonicalDirectory = (digests: SafeFs.DigestIndex, directory: string, io: SafeFs.Io) =>
+  remembered(digests.directories, directory, () =>
+    io.realpath(directory).catch((cause: unknown) => {
+      const code = SafeFs.errorCode(cause)
+      if (code === "ENOENT" || code === "ENOTDIR") return undefined
+      throw cause
+    }))
+
 /** One row of {@link digestFiles}: a file's content, or a link input's target string. */
-const digestInput = async (
+const digestInput = (
+  root: string,
+  path: string,
+  io: SafeFs.Io,
+  signal: AbortSignal | undefined,
+  digests: SafeFs.DigestIndex | undefined
+): Promise<FileDigest> =>
+  digests === undefined
+    ? checkedInput(root, path, io, signal, undefined)
+    : remembered(digests.inputs, `${root}\0${path}`, () => regularInput(root, path, io, signal, digests))
+
+/**
+ * The common case first: a regular file in a directory inside the root, which
+ * needs one canonical directory (shared by its siblings) and one `lstat`
+ * before its digest. Anything else, a link, a missing path, a directory, a
+ * directory outside the root, takes {@link checkedInput}, which answers and
+ * fails exactly as it does without an index.
+ */
+const regularInput = async (
+  root: string,
+  path: string,
+  io: SafeFs.Io,
+  signal: AbortSignal | undefined,
+  digests: SafeFs.DigestIndex
+): Promise<FileDigest> => {
+  const absolute = NodePath.join(root, path)
+  const directory = await canonicalDirectory(digests, NodePath.dirname(absolute), io)
+  if (directory !== undefined && SafeFs.inside(root, directory)) {
+    const candidate = NodePath.join(directory, NodePath.basename(absolute))
+    const stats = await io.lstat(candidate).catch(() => undefined)
+    if (stats?.isFile() === true) {
+      signal?.throwIfAborted()
+      return {
+        path,
+        digest: await SafeFs.digestEntry({ path: candidate, stats }, { root, io, signal, what: inputNoun, digests })
+      }
+    }
+  }
+  return checkedInput(root, path, io, signal, digests)
+}
+
+/** One row of {@link digestFiles} through the full link and confinement checks. */
+const checkedInput = async (
   root: string,
   path: string,
   io: SafeFs.Io,

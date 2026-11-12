@@ -156,6 +156,79 @@ describe("SafeFs digest index", () => {
     expect(opened.length).toBe(2)
   })
 
+  it("checks each declared file with one lstat and resolves each directory once per invocation", async () => {
+    for (const name of ["dir/a.txt", "dir/b.txt", "dir/c.txt", "other/d.txt"]) await write(name, `${name}\n`)
+    const statted: Array<string> = []
+    const resolved: Array<string> = []
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      lstat: (candidate) => {
+        statted.push(NodePath.relative(root, candidate))
+        return SafeFs.defaultIo.lstat(candidate)
+      },
+      realpath: (candidate) => {
+        resolved.push(NodePath.relative(root, candidate))
+        return SafeFs.defaultIo.realpath(candidate)
+      }
+    }
+    const paths = ["dir/a.txt", "dir/b.txt", "dir/c.txt", "other/d.txt"]
+    const remembered = later()
+    await Input.digestFiles(root, paths, { digests: remembered })
+    // The next invocation, with every file settled and unchanged: nothing is
+    // opened, so only the checks that the index is still right remain.
+    const digests = later(remembered.rows)
+    const counted = counting()
+    const watched: SafeFs.Io = { ...io, open: counted.io.open }
+    const first = await Input.digestFiles(root, paths, { io: watched, digests })
+    const again = await Input.digestFiles(root, ["dir/a.txt", "other/d.txt"], { io: watched, digests })
+    expect(first).toEqual(paths.map((path) => ({ path, digest: sha256(`${path}\n`) })))
+    expect(again).toEqual([first[0], first[3]])
+    expect(counted.opened).toEqual([])
+    for (const path of paths) expect(statted.filter((name) => name === path)).toHaveLength(1)
+    expect(resolved.filter((name) => name === "dir")).toHaveLength(1)
+    expect(resolved.filter((name) => name === "other")).toHaveLength(1)
+  })
+
+  it("answers links, missing files and directories as it does without an index", async () => {
+    await write("dir/a.txt", "alpha\n")
+    await Fs.symlink("a.txt", NodePath.join(root, "dir/inside"))
+    await Fs.symlink("../../outside", NodePath.join(root, "dir/leaves"))
+    await Fs.symlink("nowhere.txt", NodePath.join(root, "dir/dangling"))
+    await Fs.mkdir(NodePath.join(root, "dir/sub"))
+    await Fs.mkdir(NodePath.join(root, "real"))
+    await write("real/b.txt", "beta\n")
+    await Fs.symlink("real", NodePath.join(root, "linked"))
+    const answer = (paths: ReadonlyArray<string>, digests?: SafeFs.DigestIndex) =>
+      Input.digestFiles(root, paths, digests === undefined ? {} : { digests }).then(
+        (rows) => ({ rows }),
+        (cause: unknown) => ({ failure: String(cause) })
+      )
+    for (
+      const paths of [["dir/a.txt", "dir/missing.txt", "dir/inside", "dir/dangling", "linked/b.txt"], ["dir/leaves"], [
+        "dir/sub"
+      ]]
+    ) {
+      expect(await answer(paths, later())).toEqual(await answer(paths))
+    }
+  })
+
+  it("reads a file edited after an earlier invocation, even with its old times restored", async () => {
+    const path = await write("dir/a.txt", "alpha\n")
+    const before = await Fs.lstat(path)
+    const first = later()
+    expect(await Input.digestFiles(root, ["dir/a.txt"], { digests: first })).toEqual([{
+      path: "dir/a.txt",
+      digest: sha256("alpha\n")
+    }])
+    await Fs.writeFile(path, "omega\n")
+    await Fs.utimes(path, before.atime, before.mtime)
+    const second = later(first.rows)
+    expect(await Input.digestFiles(root, ["dir/a.txt"], { digests: second })).toEqual([{
+      path: "dir/a.txt",
+      digest: sha256("omega\n")
+    }])
+  })
+
   it("resolves a path once per invocation, and asks again after a failure", async () => {
     const path = await write("a.txt", "alpha\n")
     await Fs.mkdir(NodePath.join(root, "dir.txt"))
