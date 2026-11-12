@@ -12,7 +12,7 @@ import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
 import {
   accountOf, ActOnIssue, ControlTourCommand, Flags, GrantRole, init, issueStateOf, LoadActions, LoadIssues, LoadPeople, Message, Model, OpenWikiEditor,
-  LoadIssueDetails, ReadAction, RefreshIssueProjection, RevealWiki, SandboxAction, SignInAccount, SignOutAccount, StartTourCommand, SubmitWikiEdit, subscriptions, update,
+  EndTourCommand, LoadIssueDetails, ReadAction, RefreshIssueProjection, RevealWiki, RunAction, SandboxAction, SignInAccount, SignOutAccount, StartTourCommand, SubmitWikiEdit, subscriptions, update,
   walkthroughSession, WikiLocation,
 } from "../src/web/main.vibe"
 import { backend, backendChanged, backendWithWiki, Role } from "./web-backends.vibe"
@@ -68,6 +68,7 @@ const SCENARIOS = [
   "sign-out-bare", "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-bare", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
   "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-bare", "wiki-unlisted", "details-bare", "sign-in-mock", "wiki-link",
+  "end-tour", "run-without-epoch", "issue-count", "details-mock",
 ] as const
 
 type Entries = Record<string, {
@@ -129,7 +130,9 @@ const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literal
  * Without a wiki service the editor's read and write fail unavailable; a write answered without its page or a review
  * completes with neither; issue details without an issues service fail; a mock sign-in without accounts is the viewer
  * and with failing accounts fails; a left click on a wiki link opens its page and one elsewhere does nothing. A start
- * answered for an earlier actions epoch changes nothing.
+ * answered for an earlier actions epoch changes nothing. An end of the tour that is done or refused gives the prompt
+ * back and one that never reached the agent fails; a run started without an epoch answers without one and one with an epoch names it; the issue count
+ * without an issues service focuses the dialog and with one loads the projection; issue details of a real issue load.
  */
 effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof CommandArms.Type) {
   const role = input.role
@@ -361,6 +364,34 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       })
       return Option.isSome(got) && got.value._tag === "ClickedWiki" && got.value.page === page
     }
+    case "end-tour": {
+      const answers: Array<string> = []
+      for (const end of [() => Effect.void, () => refuse("busy"), () => fault("fault")]) {
+        const got = try Effect.provide(answer(() => EndTourCommand({ conversation: "fuzz-tour" })), backendChanged(role, () => ({ endTour: end })))
+        answers.push(got._tag)
+      }
+      return same(answers, ["FocusedPrompt", "FocusedPrompt", "FailedEndTour"])
+    }
+    case "run-without-epoch": {
+      provide backend("mock", "maintainer") {
+        const got = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button" }))
+        const epoched = try answer(() => RunAction({ name: "vibelang/Post", text: "q", door: "button", epoch: input.number }))
+        return got._tag === "StartedAction" && !("epoch" in got) && epoched._tag === "StartedAction" && epoched.epoch === input.number
+      }
+    }
+    case "issue-count": {
+      const bare = try Effect.provide(effect { return try Stream.runHead(try subscription("issueCount", { active: true })) }, backend("bare", role))
+      const mock = try Effect.provide(effect { return try Stream.runHead(try subscription("issueCount", { active: true })) }, backend("mock", role))
+      return Option.isSome(bare) && bare.value._tag === "IssueDialogFocused" && Option.isSome(mock) && mock.value._tag === "IssueProjectionLoaded"
+    }
+    case "details-mock": {
+      provide backend("mock", "maintainer") {
+        const number = try issueNumber(input.number)
+        if (number === 0) return false
+        const got = try answer(() => LoadIssueDetails({ number, key: `${input.key}-details` }))
+        return got._tag === "IssueDetailsLoaded" && got.number === number
+      }
+    }
     case "editor-other-draft": {
       // Only an editable page has a source to edit (the decisions index is built, not stored).
       const editable = pages.filter((entry) => wikiEditable(entry.id))
@@ -373,7 +404,7 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
 
 /**
  * Every scenario runs in every execution, so no arm depends on what a short budget happens to draw. One execution runs
- * 34 scenarios (Commands and subscriptions) and takes about a second under coverage, hence the floor.
+ * 39 scenarios (Commands and subscriptions) and takes about a second under coverage, hence the floor.
  */
 it.live("web/command-arms", () => run("web/command-arms", CommandArms, (input) => Effect.provide(effect {
   for (const scenario of SCENARIOS) if (!(try commandHolds(scenario, input))) throw new Finding({ report: `${scenario} does not hold` })
@@ -383,6 +414,7 @@ it.live("web/command-arms", () => run("web/command-arms", CommandArms, (input) =
 const UPDATES = [
   "sandbox-busy", "retry-run", "people-max", "tour-repeat", "tour-sought-end-fails", "draft-outside-build",
   "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted", "learn-more-palette", "control-clears-error",
+  "pane-closes-editor", "scroll-stale", "tour-gap",
 ] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
@@ -399,7 +431,9 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * nobody; a submission from an editor whose request number is gone submits under request 0; an editor's fresh read
  * that names a confirmation time keeps it and focuses the editor; the walkthrough's second stop asks the agent unless
  * the walkthrough's own message is already in the conversation; Learn more over the open palette closes it first; a
- * tour control clears the last control's failure.
+ * tour control clears the last control's failure. A pane opening another page closes the open editor and one opening
+ * its own page keeps it; a scroll older than the last one changes nothing and one as new applies; a tour event past a missed one replays the
+ * tour from its start under the next epoch.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -457,6 +491,36 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const model: Model = { ...base, issues: { ...issueStateOf(base), open: true, assignee: "gone" } }
       const next = update(model, Message.IssuesLoaded({ data: { seq: 1, items: [], assignees: [{ login: "maya", label: "Maya" }] }, created: false, role: "maintainer" }))
       return valid(next.model) && next.model.issues?.assignee === ""
+    }
+    case "pane-closes-editor": {
+      const editable = pages.filter((entry) => wikiEditable(entry.id))
+      const page = editable[input.step % 2]!.id
+      const account = accountOf(base)
+      const model: Model = { ...base, account: { ...account, identity: { ...account.identity, id: "p1", role: "maintainer" } }, client: { ...base.client, conversation: { ...base.client.conversation, pane: `/wiki/${page}` } } }
+      const opened = update(model, Message.ClickedEditWiki())
+      const open = (opened.commands ?? []).find((entry) => entry.name === "OpenWikiEditor")
+      if (open === undefined) return false
+      const editing = update(opened.model, Message.BeganWikiEdit({ request: (open.args as { request: number }).request, page, source: "# A", draft: "" })).model
+      if (editing.wikiEdit === undefined) return false
+      const seq = editing.client.conversation.seq
+      const pane = (target: string) => update(editing, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: seq + 1, id: "", url: `/wiki/${target}` } })).model
+      const other = pane(editable[(input.step + 1) % 2]!.id)
+      const own = pane(page)
+      return valid(other) && valid(own) && other.wikiEdit === undefined && own.wikiEdit?.page === page
+    }
+    case "scroll-stale": {
+      const model: Model = { ...base, followIntent: input.seek + 1 }
+      const next = update(model, Message.ScrolledTranscript({ bottom: input.overlay, intent: input.seek }))
+      const fresh = update(model, Message.ScrolledTranscript({ bottom: input.overlay, intent: input.seek + 1 }))
+      if (!valid(fresh.model) || fresh.model.followIntent !== input.seek + 1) return false
+      return JSON.stringify(next.model) === JSON.stringify(model) && names(next).every((name) => name === "MeasureTheatre")
+    }
+    case "tour-gap": {
+      let model = base
+      for (const message of tourStop(model, input.step)) model = update(model, message).model
+      const seq = model.tourClient?.conversation.seq ?? 0
+      const next = update(model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", seq: seq + 2, id: TOUR_ID, step: input.step, target: WALKTHROUGH[input.step - 1]!.target, at: 1, duration: 1 } }))
+      return valid(next.model) && next.model.epoch === model.epoch + 1 && next.model.tourClient?.conversation.seq === 0 && names(next).every((name) => name === "MeasureTheatre")
     }
     case "submit-without-request": case "began-stale": {
       const page = pages.filter((entry) => wikiEditable(entry.id))[input.step % 2]!.id

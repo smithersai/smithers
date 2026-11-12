@@ -1076,6 +1076,26 @@ failed on its first execution at every seed, which stopped the full run at seed 
 oracle now names `RETRIES = 0`; it passes at 20261175, 20261176 and 1, and a meter given back one retry is falsified
 in the first execution (seed 20261177).
 
+## Status, 2026-11-11 (seventeenth session)
+
+### `src/web/main.vibe`: the last 8 arms, chosen
+
+The sixteenth session's final run (seed 20261184) left 8 arms of `main.vibe` open that other runs had reached only by
+some target's draw. `web-arms` now chooses each one, both sides, in every execution; none was dead:
+
+| Arm | Reached by | Oracle |
+| --- | --- | --- |
+| a pane event closes the editor | `web/update-arms` `pane-closes-editor`: a `PaneOpened` for the other editable page, then for the editor's own | the other page closes the editor; its own page keeps it |
+| a stale scroll | `scroll-stale`: a scroll older than the last, then one as new | the old one changes nothing; the new one is applied |
+| a tour event past a missed one | `tour-gap`: a started tour, then an event two numbers ahead | the tour client starts over under the next epoch |
+| `EndTour` failing | `web/command-arms` `end-tour`: an end that succeeds, is refused, or fails unavailable | `FocusedPrompt`, `FocusedPrompt`, `FailedEndTour` |
+| a run with and without an epoch | `run-without-epoch` | `StartedAction` carries the epoch only when it was given |
+| the issue count without and with an issues service | `issue-count`: the `issueCount` subscription over a bare and a mock backend | `IssueDialogFocused`, then `IssueProjectionLoaded` |
+| issue details answered | `details-mock`: a real issue number from the mock's records | `IssueDetailsLoaded` for that number |
+
+A `web-arms` coverage run alone reaches all 16 sides at seeds 20261193 and 20261194. Mutation: `EndTour` answering
+`FocusedPrompt` for an unreachable agent is falsified by `end-tour` in the first execution (seed 20261192).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
