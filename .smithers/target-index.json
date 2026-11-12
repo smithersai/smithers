@@ -82029,7 +82029,7 @@
     "outputs": [],
     "dependencies": [
       "//packages/smithers/flows/platform-cloudflare:check",
-      "//packages/smithers/flows/platform-cloudflare:lib"
+      "//packages/smithers/flows/platform-cloudflare:test"
     ],
     "source": {
       "file": "packages/smithers/flows/platform-cloudflare/PACKAGE.ts"
@@ -82518,6 +82518,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/platform-cloudflare/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-cloudflare/PACKAGE.ts"
       },
       {
         "kind": "file",

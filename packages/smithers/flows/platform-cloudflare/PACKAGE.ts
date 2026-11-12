@@ -15,14 +15,9 @@ import { Package as flows } from "../../../../.smithers/flows/PACKAGE.ts"
 
 const cwd = "packages/smithers/flows/platform-cloudflare"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+const { check, circular, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
-  examples: [{
-    page: Input.file("docs/quickstart.md"),
-    example: Input.file("examples/quickstart.vibe"),
-    test: Input.file("test/quickstart.test.vibe")
-  }],
   cwd
 })
 
@@ -69,6 +64,7 @@ const test = Smithers.Shell.Test({
     Smithers.glob("test/**/*.{ts,vibe}"),
     Smithers.glob("examples/**/*.vibe"),
     Smithers.file("package.json"),
+    Smithers.file("PACKAGE.ts"),
     Smithers.file("vitest.config.ts")
   ],
   timeout: "20m",
@@ -78,6 +74,23 @@ const test = Smithers.Shell.Test({
   },
   services: [postgres],
   sandbox: { network: "loopback" }
+})
+
+/**
+ * The quickstart's VibeLang tab is held to `examples/quickstart.vibe`; `docs`
+ * depends on this package's own `check` and `test`, the suite with its
+ * PostgreSQL service and the sandbox CLI the container suite's image copies,
+ * so the docs verb compiles and runs the example.
+ */
+const docs = Smithers.DocsParity({
+  readme: Input.file("README.md"),
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
+  deps: [check, test],
+  cwd
 })
 
 /**
