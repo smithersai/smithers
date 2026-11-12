@@ -51,9 +51,15 @@ export const steps = (
   }
 }
 
-/** The engine over `database`, registering every fixture flow. */
+/**
+ * The engine over `database`, registering every fixture flow. Its run reads
+ * know those flows, as `BrowserRuntime.run`'s know the flows it serves, so a
+ * run's values read through their schemas instead of as `<withheld>`.
+ */
 export const engine = (engineName: string, database: BrowserSqlite.Database, run: Steps) =>
-  BrowserRuntime.layer({ name: engineName }, registration(run.step)).pipe(Layer.provide(MemorySqlite.over(database)))
+  BrowserRuntime.layer({ name: engineName, flows }, registration(run.step)).pipe(
+    Layer.provide(MemorySqlite.over(database))
+  )
 
 /**
  * The engine over `database`, with the app's shared database opened on `pool`

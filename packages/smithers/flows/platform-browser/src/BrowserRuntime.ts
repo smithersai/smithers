@@ -57,8 +57,8 @@ export interface Options {
    * The flows whose runs the engine's run reads (`RunInspection`, the
    * `Inspect` and `List` requests) render through their own schemas, so a
    * `Schema.Redacted` field reads as `<redacted>`. `run` passes the flows it
-   * serves; a run of a flow not given here is read as stored, behind the
-   * journal's redaction rules alone.
+   * serves; a run of a flow not given here reads its payload, result and step
+   * outputs as `<withheld>`.
    */
   readonly flows?: ReadonlyArray<Flow.Any> | undefined
 }
