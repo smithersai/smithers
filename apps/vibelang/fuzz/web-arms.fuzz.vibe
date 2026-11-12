@@ -11,7 +11,7 @@ import { pages, wikiEditable } from "../src/core/wiki.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
 import {
-  accountOf, ActOnIssue, ControlTourCommand, Flags, GrantRole, init, issueStateOf, LoadActions, LoadIssues, LoadPeople, Message, Model, OpenWikiEditor,
+  accountOf, ActOnIssue, ControlTourCommand, Flags, GrantRole, init, issueStateOf, LoadActions, LoadIssues, LoadPeople, Message, Model, OpenWikiCommand, OpenWikiEditor,
   EndTourCommand, LoadIssueDetails, ReadAction, RefreshIssueProjection, RevealWiki, RunAction, SandboxAction, SignInAccount, SignOutAccount, StartTourCommand, SubmitWikiEdit, subscriptions, update,
   walkthroughSession, WikiLocation,
 } from "../src/web/main.vibe"
@@ -69,6 +69,7 @@ const SCENARIOS = [
   "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-bare", "wiki-unlisted", "details-bare", "sign-in-mock", "wiki-link",
   "end-tour", "run-without-epoch", "issue-count", "details-mock",
+  "sandbox-poll-unreachable", "open-wiki", "grant-bare", "run-json-blank",
 ] as const
 
 type Entries = Record<string, {
@@ -133,6 +134,9 @@ const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literal
  * answered for an earlier actions epoch changes nothing. An end of the tour that is done or refused gives the prompt
  * back and one that never reached the agent fails; a run started without an epoch answers without one and one with an epoch names it; the issue count
  * without an issues service focuses the dialog and with one loads the projection; issue details of a real issue load.
+ * An unreachable sandbox read names its reason; opening a wiki page succeeds over the mock and fails with its request
+ * number over a failing backend; a grant without accounts fails; a blank JSON action input starts the run with an empty
+ * object, and unreadable JSON fails as input.
  */
 effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof CommandArms.Type) {
   const role = input.role
@@ -392,6 +396,29 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         return got._tag === "IssueDetailsLoaded" && got.number === number
       }
     }
+    case "sandbox-poll-unreachable": {
+      provide backend("faulty", role) {
+        const got = try Stream.runHead(try subscription("sandbox", { conversation: "fuzz-sandbox", request: input.number, active: true, live: false, finished: 0 }))
+        return Option.isSome(got) && got.value._tag === "FailedSandbox" && got.value.reason === "fault" && got.value.request === input.number && got.value.polled === true
+      }
+    }
+    case "open-wiki": {
+      const page = pages[input.number % pages.length]!.id
+      const opened = try Effect.provide(answer(() => OpenWikiCommand({ conversation: "fuzz-wiki", page, request: input.number })), backend("mock", role))
+      const failed = try Effect.provide(answer(() => OpenWikiCommand({ conversation: "fuzz-wiki", page, request: input.number })), backend("faulty", role))
+      return opened._tag === "SucceededWiki" && failed._tag === "FailedWiki" && failed.request === input.number
+    }
+    case "grant-bare": {
+      const got = try Effect.provide(answer(() => GrantRole({ id: "1", role: "community" })), backend("bare", role))
+      return got._tag === "AccountFailed"
+    }
+    case "run-json-blank": {
+      provide backend("mock", "maintainer") {
+        const blank = try answer(() => RunAction({ name: "vibelang/Post", text: " \n", door: "button", format: "json" }))
+        const broken = try answer(() => RunAction({ name: "vibelang/Post", text: "{", door: "button", format: "json" }))
+        return blank._tag === "StartedAction" && broken._tag === "FailedActions" && broken.code === "input"
+      }
+    }
     case "editor-other-draft": {
       // Only an editable page has a source to edit (the decisions index is built, not stored).
       const editable = pages.filter((entry) => wikiEditable(entry.id))
@@ -414,7 +441,7 @@ it.live("web/command-arms", () => run("web/command-arms", CommandArms, (input) =
 const UPDATES = [
   "sandbox-busy", "retry-run", "people-max", "tour-repeat", "tour-sought-end-fails", "draft-outside-build",
   "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted", "learn-more-palette", "control-clears-error",
-  "pane-closes-editor", "scroll-stale", "tour-gap",
+  "pane-closes-editor", "scroll-stale", "tour-gap", "sandbox-polled-failure", "chat-from-splash",
 ] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
@@ -433,7 +460,9 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * the walkthrough's own message is already in the conversation; Learn more over the open palette closes it first; a
  * tour control clears the last control's failure. A pane opening another page closes the open editor and one opening
  * its own page keeps it; a scroll older than the last one changes nothing and one as new applies; a tour event past a missed one replays the
- * tour from its start under the next epoch.
+ * tour from its start under the next epoch. A polled sandbox read that fails names its reason when no operation waits
+ * and changes nothing while one does; Chat on the splash shrinks it and focuses the composer once the conversation
+ * has a message, and does nothing before.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -551,6 +580,22 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const next = update({ ...model, tourError: "lost" }, input.overlay ? Message.ClickedSkipStop() : Message.ClickedPauseTour())
       if (!names(next).includes("ControlTour")) return valid(next.model)
       return valid(next.model) && next.model.tourError === ""
+    }
+    case "sandbox-polled-failure": {
+      const model: Model = { ...base, sandboxRequest: input.step, sandboxError: "" }
+      const failed = (state: Model) => update(state, Message.FailedSandbox({ conversation: state.conversation, request: input.step, reason: "busy", polled: true })).model
+      const idle = failed(model)
+      const waiting = failed({ ...model, sandboxOperation: "start", sandboxBusy: true })
+      return valid(idle) && idle.sandboxError === "busy" && idle.sandboxBusy === false && waiting.sandboxError === "" && waiting.sandboxBusy === true
+    }
+    case "chat-from-splash": {
+      const splash: Model = { ...base, surface: "splash" }
+      const empty = update(splash, Message.ClickedChat())
+      const seq = base.client.conversation.seq
+      const posted = update(splash, Message.ReceivedEvent({ event: { type: "Posted", seq: seq + 1, id: "e-1", clientId: "fuzz-other", name: "You", text: "hi" } })).model
+      const full = update({ ...posted, surface: "splash" }, Message.ClickedChat())
+      // An active tour re-measures its stage after any message (tour-repeat); nothing else happens before a message.
+      return valid(full.model) && full.model.surface === "chat" && names(full).includes("FocusComposer") && names(empty).every((name) => name === "MeasureTheatre") && empty.model.surface === "splash"
     }
     case "walkthrough-posted": {
       const seq = base.client.conversation.seq

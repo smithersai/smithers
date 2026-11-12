@@ -1185,6 +1185,25 @@ before the change (`account` `signedOut`, the three counters 0), written before 
 else changed. All six decode and replay as regressions: 3 files, 10 tests passed. This is the second time (after
 `6e6b721d`): a change that narrows a schema a fuzz target draws from should run `pnpm fuzz` over its saved values.
 
+### `src/web/main.vibe` and `issueDecision.vibe`: the last draw-dependent arms (eighteenth session)
+
+Two full runs at `13edee21` (seeds 20261219, 20261220) left no `main.vibe` arm unreached by both, but six reached by only
+one, and `issueDecision.vibe`'s recovered specification write reached by neither. Each is now chosen:
+
+| Arm | Reached by | Oracle |
+| --- | --- | --- |
+| a polled sandbox read failing unreachable | `web/command-arms` `sandbox-poll-unreachable` (the failing backend) | `FailedSandbox` names `fault`, the request and `polled` |
+| `OpenWiki` failing | `open-wiki` over the mock and the failing backend | `SucceededWiki`, then `FailedWiki` with the request |
+| a grant without accounts | `grant-bare` | `AccountFailed` |
+| a blank JSON action input | `run-json-blank` | blank starts the run (an empty object); `{` fails as `input` |
+| a polled failure with and without a waiting operation | `web/update-arms` `sandbox-polled-failure` | idle: the reason, not busy; waiting: unchanged |
+| Chat on the splash | `chat-from-splash` | with a message: the chat and `FocusComposer`; without: nothing but an active tour's `MeasureTheatre` |
+| `issueRecoveredView` for `spec-revise` and `spec-review` | `web/issue-decisions` | its contract over five operations, completed or not |
+
+Coverage of the two files alone hits all seven at seeds 20261221 and 20261222. Mutations, each caught by its own case:
+the polled reason lost, a grant without accounts succeeding, a blank JSON input refused, a polled failure overwriting a
+waiting operation (20261223), an empty splash shrinking, and `spec-review` recovering to the issue.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

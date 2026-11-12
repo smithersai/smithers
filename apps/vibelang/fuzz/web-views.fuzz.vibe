@@ -8,7 +8,7 @@ import type { SandboxSnapshot } from "../src/core/Factory.vibe"
 import type { Registered, Run, Step } from "../src/actions/Actions.vibe"
 import { type ActionView, initial as actionsInitial } from "../src/web/actionModel.vibe"
 import { actionTitle, stepKey } from "../src/web/actionViewDecision.vibe"
-import { issueAction, issueAssigneeAfter, issueFailureText, issueKnownAction, issueStepError, type IssueFacts, type IssueScreen } from "../src/web/issueDecision.vibe"
+import { issueAction, issueAssigneeAfter, issueFailureText, issueKnownAction, issueRecoveredView, issueStepError, type IssueFacts, type IssueScreen } from "../src/web/issueDecision.vibe"
 import { sandboxPaneView } from "../src/web/viewDecision.vibe"
 import { mayStart } from "../src/core/sandboxDecision.vibe"
 import { init, Message, Model, update } from "../src/web/main.vibe"
@@ -283,7 +283,8 @@ const IssueDecisionInput = Schema.Struct({ action: Text, reason: Text, reviewer:
  * action is known exactly when the pane gives it behavior; a VIP step names its missing field (title, summary,
  * example, prior art) and only that; each failure reason has its own words and any other reason asks for a retry; a
  * saved assignee stays while assignable and the agent takes it otherwise; and repeating the operation a write waits
- * on (or the same reviewer's review) resends the saved request instead of a fresh one.
+ * on (or the same reviewer's review) resends the saved request instead of a fresh one. A recovered request returns to
+ * the specification for a specification write, else to the issue once completed, else to the form it came from.
  */
 it.live("web/issue-decisions", () => run("web/issue-decisions", IssueDecisionInput, (input) => effect {
   for (const action of KNOWN) if (!issueKnownAction(action)) throw new Finding({ report: `${action} is not known` })
@@ -298,6 +299,10 @@ it.live("web/issue-decisions", () => run("web/issue-decisions", IssueDecisionInp
   if (issueAssigneeAfter(true, input.current, input.agent) !== input.current || issueAssigneeAfter(false, input.current, input.agent) !== input.agent) throw new Finding({ report: "assignee" })
   const review = issueAction(SCREEN, "spec-review", input.reviewer, { ...FACTS, retryOp: "spec-review", retryReviewer: input.reviewer })
   if (review.request !== "saved" || !review.state.busy || review.state.error !== "" || review.state.serial !== SCREEN.serial) throw new Finding({ report: "the same reviewer" })
+  for (const op of ["spec-revise", "spec-review", "new", "propose", "comment"] as const) for (const completed of [false, true]) {
+    const expected = op === "spec-revise" || op === "spec-review" ? "specification" : completed ? "detail" : op === "new" ? "new" : op === "propose" ? "vip" : "detail"
+    if (issueRecoveredView(op, completed) !== expected) throw new Finding({ report: `recovered ${op}${completed ? ", completed" : ""}` })
+  }
   for (const op of ["comment", "commit", "accept", "read"] as const) {
     const again = issueAction(SCREEN, op, "", { ...FACTS, retryOp: op })
     if (again.request !== "saved" || !again.state.busy || again.state.serial !== SCREEN.serial) throw new Finding({ report: `${op} again` })
