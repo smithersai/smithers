@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest"
 import * as History from "../src/history/mythical.vibe"
 import * as Codec from "../src/history/schemas.vibe"
+import * as Areas from "../src/history/areas.vibe"
 import * as Seed from "../src/history/seed.vibe"
 import { ROLES, ACTIONS, may, atLeast } from "../src/history/roles.vibe"
 import { leastRole, peopleOnly } from "../src/history/flowMachine.vibe"
@@ -102,5 +103,5 @@ it.live("history/notes-and-trailers", () => run("history/notes-and-trailers", Sc
   const sanitized = Seed.sanitize(text)
   const expected = `m${id}`
   const trailer = trailerOf(`Title\n\nMythical: ${expected}\n`)
-  return trailer === expected && trailerOf("No trailer\n" + text) !== undefined && sanitized.length <= History.MAX_NOTE && !sanitized.includes("\n") && Seed.titleOf(text).length > 0 && Seed.evidenceOf(`Tests: ${text}\nOther: ignored`).every((line) => Seed.endsSentence(line) && !line.includes("Other: ignored")) && typeof Seed.areaOf(text) === "string" && typeof Seed.scopeOf(text) === "string"
+  return trailer === expected && trailerOf("No trailer\n" + text) !== undefined && sanitized.length <= History.MAX_NOTE && !sanitized.includes("\n") && Seed.titleOf(text).length > 0 && Seed.evidenceOf(`Tests: ${text}\nOther: ignored`).every((line) => Seed.endsSentence(line) && !line.includes("Other: ignored")) && typeof Areas.areaOf(text) === "string" && typeof Areas.scopeOf(text) === "string"
 }))

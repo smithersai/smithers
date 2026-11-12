@@ -9,7 +9,7 @@ import * as V from "./historyViewDecision.vibe"
 import type { Commit } from "../history/mythical.vibe"
 import { type CommitPage, type EpicCount, type Head, MAX_QUERY } from "../history/pages.vibe"
 import { clipQuery } from "../history/pageDecision.vibe"
-import { BOOTSTRAP } from "../history/seed.vibe"
+import { BOOTSTRAP } from "../history/areas.vibe"
 import {
   allowed, HistoryMessage, type HistoryMessage as Message, type HistoryModel, NEW_EPIC, pageOf, PLAN_ID, REPOSITORY_URL, shownCommit,
 } from "./historyApp.vibe"

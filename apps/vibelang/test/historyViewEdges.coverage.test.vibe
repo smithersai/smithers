@@ -5,7 +5,8 @@ import { click, Command, expect, given, keydown, role, scene, text, title, withi
 import { describe, it } from "@effect/vitest"
 import { apply, type History } from "../src/history/mythical.vibe"
 import { commitPageOf, epicPageOf, outlineOf } from "../src/history/pages.vibe"
-import { BOOTSTRAP, intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { BOOTSTRAP } from "../src/history/areas.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 import { HistoryMessage, HistoryModel, init, ReadEpic, ShowPlan, update } from "../src/web/historyApp.vibe"
 import { view } from "../src/web/historyView.vibe"
 

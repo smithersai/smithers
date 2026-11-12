@@ -1,5 +1,6 @@
 import { it, expect } from "@effect/vitest"
-import { bucketsOf, intentsOf, replay, seedOf, titleOf, areaOf, scopeOf, sanitize, evidenceOf, wholeSentences, endsSentence, type RawCommit } from "../src/history/seed.vibe"
+import { areaOf, scopeOf } from "../src/history/areas.vibe"
+import { bucketsOf, intentsOf, replay, seedOf, titleOf, sanitize, evidenceOf, wholeSentences, endsSentence, type RawCommit } from "../src/history/seed.vibe"
 import { newCommits } from "../worker/MainLog.vibe"
 import { seedFrom } from "../test/support/seedFrom.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"

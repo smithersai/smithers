@@ -2,7 +2,7 @@
 // a commit of main folded twice, a fold into a full history, and a bootstrap over a history that already has events.
 import { describe, expect, it } from "@effect/vitest"
 import { empty, type History, MAX_TITLE } from "../src/history/mythical.vibe"
-import { FOUNDATIONS } from "../src/history/seed.vibe"
+import { FOUNDATIONS } from "../src/history/areas.vibe"
 import { make, memoryStore, type MainCommit } from "../src/history/Sequencer.vibe"
 
 const commit = (sha: string, title = "docs: explain folds"): MainCommit => ({ sha, change: `I${sha}`, title, message: title })

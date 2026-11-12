@@ -4,7 +4,7 @@
 // sequencer calls them.
 import { it } from "@effect/vitest"
 import { empty, MAX_TITLE, type History } from "../src/history/mythical.vibe"
-import { areaOf } from "../src/history/seed.vibe"
+import { areaOf } from "../src/history/areas.vibe"
 import { make, memoryStore, type How } from "../src/history/Sequencer.vibe"
 import { run, Int, Text, same } from "./run.vibe"
 

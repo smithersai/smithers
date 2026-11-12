@@ -32,6 +32,13 @@ build, with no configuration change.
 The roster is `browserSources` in `e2e/coverage-reporter.ts`. It reads `dist/assets/*.js.map`, fails if the build
 has no source maps, and the reporter prints its size on each run. Test: `test/browserCoverageScope.test.vibe`.
 
+Because a bundled source counts whole, a browser module that imports one name from a server module ships, and is
+measured on, all of it. Such a name moves to a module of its own (session 25). `src/history/areas.vibe` holds the
+epics' areas, `areaOf` and the `BOOTSTRAP` byline: the sequencer files an outside commit by `areaOf`, and the history
+page hides the byline. Before the move those two imports put all of `src/history/seed.vibe` in the bundle: the
+bootstrap that groups real commits, which only `scripts/mythical-seed.vibe` runs (87 browser branch arms, 154 lines).
+The unit gate still measures `seed.vibe` whole.
+
 Named browser sites and status:
 
 | Site | Reason |

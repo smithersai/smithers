@@ -1,0 +1,88 @@
+// The epics a mythical history tells and the author of its seeded notes (wiki/decisions/0020-mythical-history.md). The
+// sequencer files a new commit under `areaOf` its title and the history page hides the `BOOTSTRAP` byline, so these
+// ship to the browser; the bootstrap that groups real commits (seed.vibe) does not (0016, "Browser gate scope").
+import { type Area, areaIndex, titleScope } from "./seedDecision.vibe"
+
+export type { Area }
+
+/** The epics, by what part of VibeLang they tell. A commit whose scope none names goes to `Foundations`. */
+export const AREAS: ReadonlyArray<Area> = [
+  {
+    title: "The compiler",
+    scopes: [
+      "compiler", "checker", "parser", "mapper", "ts-mapper", "vibelangmapper", "declarations", "diagnostics", "errors",
+      "match", "services", "schema", "forms", "api", "api-identity", "data", "prelude", "lower", "lowering", "types",
+      "sidecars", "provide", "modules", "module", "sourcemaps", "throws", "nothrow", "returns", "emit", "vibelang/emit",
+      "inference", "conversions", "effectscript", "effeck", "compiler-editor", "compiler-cli", "compiler-forms",
+      "compiler-config", "printer", "do", "try", "catch", "recursion", "generators", "producers", "handlers",
+      "concurrency", "fibers", "kernel", "interop", "globals", "modulespecifiers", "resolver", "tsoptions",
+      "typescript-shim", "shim", "layer", "effects", "effect", "vibex", "metadata", "incremental", "graph", "ast",
+      "estree", "vibelangestree", "converter-worker", "language", "trust", "boundaries", "batching", "scheduling",
+      "resources", "hatches", "vibelang", "fix", "lips",
+    ],
+  },
+  {
+    title: "The language specification and VIPs",
+    scopes: [
+      "spec", "vips", "vip40", "vip1", "vip-2", "decisions", "cases", "spec-evidence", "spec-tools", "spec-lint",
+      "rule-evidence", "conformance", "contracts", "design", "research",
+    ],
+  },
+  { title: "Fuzzing", scopes: ["fuzz", "vibelangfuzz", "fuzzing"] },
+  { title: "Migrating TypeScript to VibeLang", scopes: ["migrate", "migration", "codemod", "--fix", "quickfix"] },
+  {
+    title: "Editors and formatting",
+    scopes: [
+      "editor", "editors", "lsp", "ls", "tree-sitter", "tree-sitter-vibelang", "formatter", "format", "formatting",
+      "fmt", "vibelangfmt", "vscode", "nvim", "dprint", "devtools",
+    ],
+  },
+  { title: "The runtime and platforms", scopes: ["runtime", "platform", "node", "windows", "experimental"] },
+  {
+    title: "Bundlers, linters and integrations",
+    scopes: [
+      "vite", "vibelang-vite", "unplugin", "bun", "eslint", "oxlint", "lint", "knip", "loaders", "loader", "register",
+      "bundlers", "plugins", "registry", "vue", "svelte", "react", "foldkit", "ast-grep", "watch", "go",
+    ],
+  },
+  {
+    title: "Docs, guides and the site",
+    scopes: [
+      "docs", "site", "docs-tools", "readme", "readmes", "guides", "examples", "cheat-sheet", "tokens", "llms", "skill",
+      "user", "essentials", "onboarding", "contributing", "contrib", "starter", "create-vibelang", "create", "setup",
+      "project", "projects", "start", "upgrade", "alpha", "features", "smithers", "agents", "factory",
+    ],
+  },
+  {
+    title: "Tests, coverage and benchmarks",
+    scopes: [
+      "test", "tests", "coverage", "testing", "bench", "fixtures", "gate", "harness", "go-test-shards", "runners",
+      "failures", "accuracy", "parity", "first-bad", "main-red",
+    ],
+  },
+  {
+    title: "Release, CI and tooling",
+    scopes: [
+      "ci", "ci-health", "release", "release-notes", "releases", "publishing", "packaging", "packages", "build",
+      "tooling", "tools", "scripts", "config", "deps", "install", "repo", "license", "changelog", "maintainers", "cli",
+      "remote", "entry", "style", "check", "debugging", "cache", "caching", "experiments", "prototype", "chore",
+    ],
+  },
+]
+
+/** The epic for commits no area names: the project's first steps and anything without a scope. */
+export const FOUNDATIONS = "Foundations"
+
+/** The scope a commit title names: `type(scope):`'s first scope, else a bare `scope:` prefix, else `""`. */
+export function scopeOf(title: string): string {
+  return titleScope(title)
+}
+
+/** The title of the epic a commit with `title` belongs to. */
+export function areaOf(title: string): string {
+  const index = areaIndex(scopeOf(title), AREAS)
+  return index < 0 ? FOUNDATIONS : AREAS[index]!.title
+}
+
+/** The author of every seeded note. */
+export const BOOTSTRAP = "bootstrap"

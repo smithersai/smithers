@@ -3,9 +3,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { MAX_NOTE, MAX_TITLE } from "../src/history/mythical.vibe"
 import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { areaOf, BOOTSTRAP, FOUNDATIONS, scopeOf } from "../src/history/areas.vibe"
 import {
-  areaOf, BOOTSTRAP, bucketsOf, endsSentence, evidenceOf, FOUNDATIONS, intentsOf, type QueueEntry, type RawCommit, replay,
-  sanitize, scopeOf, seedOf, titleOf, UNTITLED, wholeSentences,
+  bucketsOf, endsSentence, evidenceOf, intentsOf, type QueueEntry, type RawCommit, replay, sanitize, seedOf, titleOf, UNTITLED, wholeSentences,
 } from "../src/history/seed.vibe"
 import { HISTORY_JSON, REPOSITORY } from "../src/history/seed/vibelang.vibe"
 import { seedFrom } from "./support/seedFrom.vibe"

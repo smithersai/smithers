@@ -8,12 +8,10 @@
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
 import { admitsLine, pairCut } from "./stackDecision.vibe"
-import { type Area, areaIndex, entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded, titleScope } from "./seedDecision.vibe"
+import { areaOf, BOOTSTRAP } from "./areas.vibe"
+import { entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded } from "./seedDecision.vibe"
 import { evidenceStart, firstLine, regeneratedTitle, revertedTitle } from "./seedTextDecision.vibe"
 import { redactText, sentenceEnds, sentenceTail } from "./seedSanitizeDecision.vibe"
-
-// An area is the proved decision module's (seedDecision.vibe); this module names the bootstrap's areas.
-export type { Area }
 
 /** A commit reachable from main, as the generator reads it; `parents` first parent first. */
 export interface RawCommit {
@@ -124,85 +122,6 @@ export const MAX_SEED_NOTES = 4
 
 /** The most characters a seeded note line holds. */
 export const MAX_SEED_NOTE = 300
-
-/** The epics, by what part of VibeLang they tell. A commit whose scope none names goes to `Foundations`. */
-export const AREAS: ReadonlyArray<Area> = [
-  {
-    title: "The compiler",
-    scopes: [
-      "compiler", "checker", "parser", "mapper", "ts-mapper", "vibelangmapper", "declarations", "diagnostics", "errors",
-      "match", "services", "schema", "forms", "api", "api-identity", "data", "prelude", "lower", "lowering", "types",
-      "sidecars", "provide", "modules", "module", "sourcemaps", "throws", "nothrow", "returns", "emit", "vibelang/emit",
-      "inference", "conversions", "effectscript", "effeck", "compiler-editor", "compiler-cli", "compiler-forms",
-      "compiler-config", "printer", "do", "try", "catch", "recursion", "generators", "producers", "handlers",
-      "concurrency", "fibers", "kernel", "interop", "globals", "modulespecifiers", "resolver", "tsoptions",
-      "typescript-shim", "shim", "layer", "effects", "effect", "vibex", "metadata", "incremental", "graph", "ast",
-      "estree", "vibelangestree", "converter-worker", "language", "trust", "boundaries", "batching", "scheduling",
-      "resources", "hatches", "vibelang", "fix", "lips",
-    ],
-  },
-  {
-    title: "The language specification and VIPs",
-    scopes: [
-      "spec", "vips", "vip40", "vip1", "vip-2", "decisions", "cases", "spec-evidence", "spec-tools", "spec-lint",
-      "rule-evidence", "conformance", "contracts", "design", "research",
-    ],
-  },
-  { title: "Fuzzing", scopes: ["fuzz", "vibelangfuzz", "fuzzing"] },
-  { title: "Migrating TypeScript to VibeLang", scopes: ["migrate", "migration", "codemod", "--fix", "quickfix"] },
-  {
-    title: "Editors and formatting",
-    scopes: [
-      "editor", "editors", "lsp", "ls", "tree-sitter", "tree-sitter-vibelang", "formatter", "format", "formatting",
-      "fmt", "vibelangfmt", "vscode", "nvim", "dprint", "devtools",
-    ],
-  },
-  { title: "The runtime and platforms", scopes: ["runtime", "platform", "node", "windows", "experimental"] },
-  {
-    title: "Bundlers, linters and integrations",
-    scopes: [
-      "vite", "vibelang-vite", "unplugin", "bun", "eslint", "oxlint", "lint", "knip", "loaders", "loader", "register",
-      "bundlers", "plugins", "registry", "vue", "svelte", "react", "foldkit", "ast-grep", "watch", "go",
-    ],
-  },
-  {
-    title: "Docs, guides and the site",
-    scopes: [
-      "docs", "site", "docs-tools", "readme", "readmes", "guides", "examples", "cheat-sheet", "tokens", "llms", "skill",
-      "user", "essentials", "onboarding", "contributing", "contrib", "starter", "create-vibelang", "create", "setup",
-      "project", "projects", "start", "upgrade", "alpha", "features", "smithers", "agents", "factory",
-    ],
-  },
-  {
-    title: "Tests, coverage and benchmarks",
-    scopes: [
-      "test", "tests", "coverage", "testing", "bench", "fixtures", "gate", "harness", "go-test-shards", "runners",
-      "failures", "accuracy", "parity", "first-bad", "main-red",
-    ],
-  },
-  {
-    title: "Release, CI and tooling",
-    scopes: [
-      "ci", "ci-health", "release", "release-notes", "releases", "publishing", "packaging", "packages", "build",
-      "tooling", "tools", "scripts", "config", "deps", "install", "repo", "license", "changelog", "maintainers", "cli",
-      "remote", "entry", "style", "check", "debugging", "cache", "caching", "experiments", "prototype", "chore",
-    ],
-  },
-]
-
-/** The epic for commits no area names: the project's first steps and anything without a scope. */
-export const FOUNDATIONS = "Foundations"
-
-/** The scope a commit title names: `type(scope):`'s first scope, else a bare `scope:` prefix, else `""`. */
-export function scopeOf(title: string): string {
-  return titleScope(title)
-}
-
-/** The title of the epic a commit with `title` belongs to. */
-export function areaOf(title: string): string {
-  const index = areaIndex(scopeOf(title), AREAS)
-  return index < 0 ? FOUNDATIONS : AREAS[index]!.title
-}
 
 /**
  * Text safe to publish in a note: no local paths or host names, one line of whole sentences. It keeps as many whole
@@ -391,9 +310,6 @@ function notesOf(group: Group): ReadonlyArray<SeedNote> {
     ...evidence.map((text) => ({ section: "evidence" as const, text: clip(text, MAX_NOTE) })),
   ]
 }
-
-/** The author of every seeded note. */
-export const BOOTSTRAP = "bootstrap"
 
 /**
  * The intents that record `seed` in an empty history, in order: open each epic and append its commits, fold main's

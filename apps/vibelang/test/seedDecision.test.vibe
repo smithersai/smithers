@@ -1,7 +1,8 @@
 // Third-lane batch 4 (0018): the bootstrap's decisions, proved in seedDecision, as seed.vibe uses them.
 import { describe, expect, it } from "@effect/vitest"
 import { MAX_NOTE } from "../src/history/mythical.vibe"
-import { AREAS, areaOf, evidenceOf, FOUNDATIONS, intentsOf, type QueueEntry, type RawCommit, seedOf, wholeSentences } from "../src/history/seed.vibe"
+import { areaOf, AREAS, FOUNDATIONS } from "../src/history/areas.vibe"
+import { evidenceOf, intentsOf, type QueueEntry, type RawCommit, seedOf, wholeSentences } from "../src/history/seed.vibe"
 import { areaIndex, entryUse, evidenceStep, foldedTitle, joins, lastFitEnd, sentenceCut } from "../src/history/seedDecision.vibe"
 
 function linear(descriptions: ReadonlyArray<string>): ReadonlyArray<RawCommit> {

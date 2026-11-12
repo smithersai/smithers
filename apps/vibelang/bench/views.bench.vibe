@@ -1,7 +1,7 @@
 import { it, expect as assert } from "@effect/vitest"
 import { scene, given, expect, role, text, type SceneStep } from "foldkit/scene"
 import * as P from "../src/history/pages.vibe"
-import { BOOTSTRAP } from "../src/history/seed.vibe"
+import { BOOTSTRAP } from "../src/history/areas.vibe"
 import { HistoryMessage, init as initHistory, noOutline, update as updateHistory, type HistoryModel } from "../src/web/historyApp.vibe"
 import { view as historyView, refusalText } from "../src/web/historyView.vibe"
 import { init, Message, update, signedOut, issueStateOf, type Model } from "../src/web/main.vibe"
