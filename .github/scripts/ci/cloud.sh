@@ -376,6 +376,7 @@ gate_tools() {
     workspace-6) echo 'js jj foundry postgres' ;;
     workspace-7) echo 'js jj foundry postgres' ;;
     workspace-8) echo 'js jj foundry postgres' ;;
+    workspace-9) echo 'js jj foundry postgres' ;;
     packages) echo 'js jj foundry postgres sshd' ;;
     packages-2) echo 'js jj foundry postgres sshd' ;;
     packages-3) echo 'js jj foundry postgres sshd' ;;
@@ -384,6 +385,7 @@ gate_tools() {
     packages-6) echo 'js jj foundry postgres sshd' ;;
     packages-7) echo 'js jj foundry postgres sshd' ;;
     packages-8) echo 'js jj foundry postgres sshd' ;;
+    packages-9) echo 'js jj foundry postgres sshd' ;;
     flows-issue-claim) echo 'js jj rust' ;;
     flows-evidence-bindings) echo 'js jj rust' ;;
     flows-release-rehearsal) echo 'js jj rust' ;;
@@ -512,25 +514,28 @@ run_gate() {
       pnpm exec smthrs ci '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     workspace-2)
-      pnpm exec smthrs ci '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/flow:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui/ui-css:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     workspace-3)
-      pnpm exec smthrs ci '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/effect-electric:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/plan:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/terminal-frame:*' '//packages/smithers/ui:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     workspace-4)
-      pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/fuzz:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     workspace-5)
-      pnpm exec smthrs ci '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/registry:*' '//packages/smithers/agent:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/patterns:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     workspace-6)
-      pnpm exec smthrs ci '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/errors:*' '//packages/repo-targets:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/build:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/step-cache:*' '//packages/smithers/flows/sync:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     workspace-7)
-      pnpm exec smthrs ci '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/rpc:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/regression:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/platform-cloudflare:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/ui/views:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     workspace-8)
-      pnpm exec smthrs ci '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/smithers/agent/std:*' '//packages/smithers/build/targets:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-9)
+      pnpm exec smthrs ci '//packages/effect-code-storage:*' '//packages/lemmascript:*' '//packages/smithers/agent/evals:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/control:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/gateway:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows-issue-claim)
       pnpm exec smthrs test '//.smithers/flows:issueClaim' --known-red '.github/ci-known-red.json' --verbose
@@ -733,25 +738,28 @@ run_gate() {
       pnpm exec smthrs test '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages-2)
-      pnpm exec smthrs test '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/flow:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui/ui-css:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages-3)
-      pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/plan:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/terminal-frame:*' '//packages/smithers/ui:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages-4)
-      pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/fuzz:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages-5)
-      pnpm exec smthrs test '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/registry:*' '//packages/smithers/agent:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/patterns:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages-6)
-      pnpm exec smthrs test '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/errors:*' '//packages/repo-targets:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/build:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/step-cache:*' '//packages/smithers/flows/sync:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages-7)
-      pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/rpc:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/regression:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/platform-cloudflare:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/ui/views:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages-8)
-      pnpm exec smthrs test '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/agent/std:*' '//packages/smithers/build/targets:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-9)
+      pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/lemmascript:*' '//packages/smithers/agent/evals:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/control:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/gateway:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     cloud-contract)
       bun test ./.github/scripts/ci/cloud.test.ts

@@ -94,10 +94,10 @@ test('CI receipt passes on the label\'s own status in the latest attempt, when a
 })
 
 test('shard receipts retain label verdicts and reject mismatched job identities', () => {
-  for (let shard = 2; shard <= 8; shard++) {
+  for (let shard = 2; shard <= 9; shard++) {
     for (const [artifactJob, jobName] of [
-      [`test-${shard}`, `workspace graph ${shard}/8 (coverage gates enforced)`],
-      [`packages-${shard}`, `package suites ${shard}/8 (ubuntu-latest)`]
+      [`test-${shard}`, `workspace graph ${shard}/9 (coverage gates enforced)`],
+      [`packages-${shard}`, `package suites ${shard}/9 (ubuntu-latest)`]
     ]) {
       assert.equal(ciFixture({ artifactJob, jobName }).pass, true)
       assert.equal(ciFixture({ artifactJob, jobName, status: 'failed' }).pass, false)

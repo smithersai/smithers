@@ -145,7 +145,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "test-2":
-    name: "workspace graph 2/8 (coverage gates enforced)"
+    name: "workspace graph 2/9 (coverage gates enforced)"
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
     steps:
@@ -265,7 +265,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/flow:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui/ui-css:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -280,7 +280,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "test-3":
-    name: "workspace graph 3/8 (coverage gates enforced)"
+    name: "workspace graph 3/9 (coverage gates enforced)"
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
     steps:
@@ -400,7 +400,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/effect-electric:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/plan:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/terminal-frame:*' '//packages/smithers/ui:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -415,7 +415,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "test-4":
-    name: "workspace graph 4/8 (coverage gates enforced)"
+    name: "workspace graph 4/9 (coverage gates enforced)"
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
     steps:
@@ -535,7 +535,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/platform-browser:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/fuzz:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -550,7 +550,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "test-5":
-    name: "workspace graph 5/8 (coverage gates enforced)"
+    name: "workspace graph 5/9 (coverage gates enforced)"
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
     steps:
@@ -670,7 +670,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/registry:*' '//packages/smithers/agent:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/patterns:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -685,7 +685,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "test-6":
-    name: "workspace graph 6/8 (coverage gates enforced)"
+    name: "workspace graph 6/9 (coverage gates enforced)"
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
     steps:
@@ -805,7 +805,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/errors:*' '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/errors:*' '//packages/repo-targets:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/build:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/step-cache:*' '//packages/smithers/flows/sync:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -820,7 +820,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "test-7":
-    name: "workspace graph 7/8 (coverage gates enforced)"
+    name: "workspace graph 7/9 (coverage gates enforced)"
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
     steps:
@@ -940,7 +940,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/effect-code-storage:*' '//packages/fuzz:*' '//packages/lemmascript:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/ui-css:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/rpc:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/regression:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/platform-cloudflare:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/ui/views:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -955,7 +955,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "test-8":
-    name: "workspace graph 8/8 (coverage gates enforced)"
+    name: "workspace graph 8/9 (coverage gates enforced)"
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
     steps:
@@ -1075,7 +1075,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/smithers/agent/std:*' '//packages/smithers/build/targets:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -1087,6 +1087,141 @@ jobs:
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
         with:
           "name": "smthrs-results-test-8-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "test-9":
+    name: "workspace graph 9/9 (coverage gates enforced)"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 40
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Validate GitHub Actions workflows"
+        uses: "docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f"
+        with:
+          "args": ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/npm-dist-tag.yml .github/workflows/distribution.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/drift.yml"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
+        with:
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Install Playwright browsers"
+        id: setup
+        run: |
+          cd 'packages/smithers/ui'
+          pnpm exec playwright install --with-deps 'chromium' 'webkit'
+        shell: "bash"
+      - name: "Workspace targets"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs ci '//packages/effect-code-storage:*' '//packages/lemmascript:*' '//packages/smithers/agent/evals:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/control:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/gateway:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-test-9-0-${{ github.run_attempt }}"
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "repository":
@@ -2275,7 +2410,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "packages-2":
-    name: "package suites 2/8 (${{ matrix.os }})"
+    name: "package suites 2/9 (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
@@ -2404,7 +2539,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/flow:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui/ui-css:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2419,7 +2554,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "packages-3":
-    name: "package suites 3/8 (${{ matrix.os }})"
+    name: "package suites 3/9 (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
@@ -2548,7 +2683,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/plan:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/terminal-frame:*' '//packages/smithers/ui:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2563,7 +2698,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "packages-4":
-    name: "package suites 4/8 (${{ matrix.os }})"
+    name: "package suites 4/9 (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
@@ -2692,7 +2827,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/platform-browser:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/fuzz:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2707,7 +2842,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "packages-5":
-    name: "package suites 5/8 (${{ matrix.os }})"
+    name: "package suites 5/9 (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
@@ -2836,7 +2971,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/registry:*' '//packages/smithers/agent:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/merge-queue:*' '//packages/smithers/flows/patterns:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2851,7 +2986,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "packages-6":
-    name: "package suites 6/8 (${{ matrix.os }})"
+    name: "package suites 6/9 (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
@@ -2980,7 +3115,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/errors:*' '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/errors:*' '//packages/repo-targets:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/build:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/step-cache:*' '//packages/smithers/flows/sync:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2995,7 +3130,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "packages-7":
-    name: "package suites 7/8 (${{ matrix.os }})"
+    name: "package suites 7/9 (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
@@ -3124,7 +3259,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/fuzz:*' '//packages/lemmascript:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/ui-css:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/rpc:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/regression:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/platform-cloudflare:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/ui/views:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -3139,7 +3274,7 @@ jobs:
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"
   "packages-8":
-    name: "package suites 8/8 (${{ matrix.os }})"
+    name: "package suites 8/9 (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
@@ -3268,7 +3403,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/smithers/agent/std:*' '//packages/smithers/build/targets:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -3280,5 +3415,149 @@ jobs:
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
         with:
           "name": "smthrs-results-packages-8-${{ strategy.job-index }}-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "packages-9":
+    name: "package suites 9/9 (${{ matrix.os }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        include:
+          - os: "ubuntu-latest"
+            advisory: false
+          - os: "macos-latest"
+            advisory: true
+          - os: "windows-latest"
+            advisory: true
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    continue-on-error: ${{ matrix.advisory }}
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
+        with:
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            sudo install -d -m 0755 /run/sshd
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Install Playwright browsers"
+        id: setup
+        run: |
+          cd 'packages/smithers/ui'
+          pnpm exec playwright install --with-deps 'chromium' 'webkit'
+        shell: "bash"
+      - name: "Package test targets"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/lemmascript:*' '//packages/smithers/agent/evals:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/control:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/gateway:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-packages-9-${{ strategy.job-index }}-${{ github.run_attempt }}"
           "path": "${{ runner.temp }}/smthrs-results"
           "if-no-files-found": "error"

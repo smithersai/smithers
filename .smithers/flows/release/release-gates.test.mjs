@@ -253,7 +253,7 @@ test("exclusion drift checks use literal tokens and reject dynamic gates", () =>
 })
 
 /** Pin every job so a new one forces a release decision. `on.push` is a trigger, not a job. */
-const ciJobs = ["test", ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`), "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages", ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)]
+const ciJobs = ["test", ...Array.from({ length: 8 }, (_, index) => `test-${index + 2}`), "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages", ...Array.from({ length: 8 }, (_, index) => `packages-${index + 2}`)]
 
 /** A copy of the release workflow with one more step ahead of the build. */
 const withUnlistedStep = (source, name, command) => {
@@ -410,7 +410,7 @@ test("the release proves every CI gate the exclusions do not name, and every exc
   assert.deepEqual(workflowJobs(ci), ciJobs)
   assert.deepEqual(ciGatesMissingFromInventory(releaseGates, ci, releaseGateExclusions), [], "these CI gates run in neither the release nor the exclusions")
   assert.deepEqual(staleExclusions(releaseGates, ci, releaseGateExclusions), [])
-  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["rust", "packages", ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`), "browser"])
+  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["rust", "packages", ...Array.from({ length: 8 }, (_, index) => `packages-${index + 2}`), "browser"])
   for (const exclusion of releaseGateExclusions) assert.ok(exclusion.reason.length > 40, `${exclusion.job} carries a reason`)
   // Partial exclusions name only what the release omits: the rest of the job is mirrored.
   assert.deepEqual(releaseGateExclusions.find((exclusion) => exclusion.job === "rust").commands, [

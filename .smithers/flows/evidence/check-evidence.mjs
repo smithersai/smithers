@@ -83,10 +83,10 @@ export const HOSTS = {
     'browser-0': 'web bundle compatibility',
     'packages-0': 'package suites (ubuntu-latest)', 'packages-1': 'package suites (macos-latest)',
     'packages-2': 'package suites (windows-latest)',
-    ...Object.fromEntries(Array.from({ length: 7 }, (_, offset) => offset + 2).flatMap(shard => [
-      [`test-${shard}-0`, `workspace graph ${shard}/8 (coverage gates enforced)`],
+    ...Object.fromEntries(Array.from({ length: 8 }, (_, offset) => offset + 2).flatMap(shard => [
+      [`test-${shard}-0`, `workspace graph ${shard}/9 (coverage gates enforced)`],
       ...['ubuntu-latest', 'macos-latest', 'windows-latest'].map((os, index) =>
-        [`packages-${shard}-${index}`, `package suites ${shard}/8 (${os})`])
+        [`packages-${shard}-${index}`, `package suites ${shard}/9 (${os})`])
     ]))
   } },
   'reference-host': { workflow: '.github/workflows/reference-host.yml', events: ['push', 'workflow_dispatch'],

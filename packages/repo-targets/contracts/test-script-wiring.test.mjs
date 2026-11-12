@@ -124,11 +124,11 @@ describe("test-file ownership", () => {
     for (const label of ["//.smithers/flows:issueClaim", "//.smithers/flows:evidenceBindings", "//.smithers/flows:releaseRehearsal", "//.smithers/flows:releaseVersion"]) {
       assert.ok(scripts.includes(`smthrs test '${label}'`), label)
     }
-    // Package suites now belong to eight disjoint, required workspace jobs.
+    // Package suites now belong to nine disjoint, required workspace jobs.
     // Check the emitted selectors against the real target inventory so losing
     // a package, duplicating it or making its owner advisory still fails here.
     const shards = Object.entries(workflow.jobs).filter(([id]) => /^test(?:-\d+)?$/.test(id))
-    assert.equal(shards.length, 8)
+    assert.equal(shards.length, 9)
     const selected = shards.flatMap(([id, job]) => {
       assert.notEqual(job["continue-on-error"], true, id)
       const steps = job.steps.filter((step) => step.name === "Workspace targets")

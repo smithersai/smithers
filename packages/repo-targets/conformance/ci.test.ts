@@ -375,7 +375,7 @@ describe("ci conformance", () => {
   it("runs every package shard on every platform with the same advisory policy", () => {
     const ci = readCi()
     const shards = Object.entries(ci.jobs).filter(([id]) => /^packages(?:-\d+)?$/.test(id))
-    assert.equal(shards.length, 8)
+    assert.equal(shards.length, 9)
     for (const [, job] of shards) {
     assert.deepEqual(job.strategy, {
       "fail-fast": false,

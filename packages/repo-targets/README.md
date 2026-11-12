@@ -262,8 +262,10 @@ ship, so a local in a body types as `any`.
 
 ## Hosted CI shards
 
-`ci/shards.ts` assigns every package to one of eight jobs in each lane.
-`GithubCiGen.balanceShards` uses longest-first scheduling with lexical ties;
+`ci/shards.ts` assigns every package to one of nine jobs in each lane.
+`GithubCiGen.balanceShards` uses longest-first scheduling with lexical ties.
+One assignment serves both lanes, so a package weighs its measured
+workspace-lane work (every target) plus its package-lane work (its tests);
 `additionalPatterns` keeps each shard in one graph plan. Nonrecursive `//package:*` selections
 preserve manual, exclusive and host filtering; prerequisites can run in more
 than one job. Coverage and known-red handling remain the package's own gates.
@@ -277,12 +279,19 @@ value, or an unfinished target's observed elapsed time at cancellation. The
 `censored` records retain those lower bounds and their timestamps; service
 lifetimes are excluded. Failed targets count. The unmeasured labels are manual Jev gates, excluded by wildcard
 selection. New unmeasured targets fail the contract until evidence is added.
+The fifteen targets added later (`//packages/fuzz:*`, `//packages/lemmascript:test`
+and eight others) come from release dry run 43208913043, job 131160235998
+(ubuntu-latest), which ran the whole `//packages/...` graph.
 
-The current bins contain 30.5–30.9 measured target-minutes each before two-slot
-execution. `test/CiShards.test.ts` rejects missing/duplicate package ownership,
-a bin above 32 target-minutes, or a spread above three target-minutes. The
-conservative bound covers every measured kind; test roots also have their own
-32-minute ceiling and four-minute spread (currently 26.3–29.6 target-minutes).
+`//packages/smithers:*` alone holds 31.3 measured target-minutes (29.9 of
+tests), so it fills one bin; the other eight hold 27.7–30.4 target-minutes each
+before two-slot execution, 22.9–25.6 of them tests. `test/CiShards.test.ts`
+rejects missing/duplicate package ownership, a bin above 32 target-minutes, or a
+spread above three target-minutes. The conservative bound covers every measured
+kind; test roots also have their own 32-minute ceiling and four-minute spread.
+A spread compares every bin, unless the heaviest bin holds a single package
+root: no split can lighten that bin, so the bound then compares the others.
+Each measure finds its own heaviest bin.
 These are workload bounds, not a hosted wall-time proof: setup, contention, dependency
 repetition and future suite growth still need a hosted run. Jobs have a
 40-minute ceiling, reduced from 90/180 minutes; the intended wall time is about

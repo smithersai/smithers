@@ -11,13 +11,22 @@ const packages = [...new Set(inventory
   .map((target) => `//${target.package}:*`))].sort()
 
 const measured = Object.entries(timings.durationMs)
+const tests = new Set(inventory.filter((target) => target.kinds.some((kind) => kind === "test") && !target.exclusive)
+  .map((target) => target.label))
+// A package's measured cost: every target (builds and private prerequisites
+// included, which is conservative and covers cold dependency work), or its
+// tests alone.
+const cost = (pattern: string, testsOnly: boolean): number => measured
+  .filter(([label]) => label.startsWith(pattern.slice(0, -1)) && (!testsOnly || tests.has(label)))
+  .reduce((total, [, duration]) => total + duration, 0)
+// One shard assignment serves both lanes: a workspace graph job runs every
+// target of its packages and a package suite job runs their tests. So the
+// balanced weight is the sum of the two lanes' work per package; balancing
+// either lane alone leaves the other lane's shards uneven.
 export const packageShards = balanceShards(packages.map((pattern) => ({
   pattern,
-  // Include measured private prerequisites and builds in both lanes. This is
-  // conservative for test-only jobs, and accounts for cold dependency work.
-  durationMs: Math.max(1, measured.filter(([label]) => label.startsWith(pattern.slice(0, -1)))
-    .reduce((total, [, duration]) => total + duration, 0))
-})), 8)
+  durationMs: Math.max(1, cost(pattern, false) + cost(pattern, true))
+})), 9)
 
 export const shardJobId = (lane: "test" | "packages", index: number): string =>
   index === 0 ? lane : `${lane}-${index + 1}`
