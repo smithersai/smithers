@@ -2,7 +2,7 @@
 layout: ../layouts/Legal.astro
 title: Privacy Policy
 description: What Smithers collects, why, and who processes it.
-updated: September 25, 2026
+updated: November 11, 2026
 ---
 
 <!-- COUNSEL REVIEW PENDING: draft by Tevm Inc., 2026-09-25. Not reviewed by a lawyer. -->
@@ -22,7 +22,7 @@ updated: September 25, 2026
 
 ## How your code is handled
 
-When you run work on a repository, Smithers clones it into an isolated sandbox virtual machine on Google Cloud. Agents read and change the code there. The parts of your code and prompts that a task needs are sent to a model provider to produce the result. Changes reach your repository only when you or the workflow you started pushes them.
+When you connect a repository, Smithers keeps a copy of it with Code Storage, our Git host. When you run work on a branch, Smithers clones it into an isolated sandbox: a Cloudflare Container for that branch. Agents read and change the code there. The parts of your code and prompts that a task needs are sent to a model provider to produce the result. Changes reach your repository only when you or the workflow you started pushes them.
 
 ## Subprocessors
 
@@ -31,8 +31,10 @@ When you run work on a repository, Smithers clones it into an isolated sandbox v
 | Anthropic | Runs AI models on prompts and code |
 | OpenAI | Runs AI models on prompts and code |
 | Stripe | Payments and subscriptions |
-| Google Cloud (GCP) | Hosting, databases and sandboxes |
-| Cloudflare | Website, edge network and request routing |
+| Cloudflare | Website, edge network, request routing, application servers and the sandboxes that run your code |
+| Neon | Databases: accounts, conversations and run records |
+| Code Storage (Pierre) | Git hosting for the copies of the repositories you connect |
+| Google Cloud (GCP) | Stores records kept from an earlier version of the Service. It no longer runs the Service |
 | GitHub | Sign-in and access to the repositories you connect |
 
 Under their API terms, Anthropic and OpenAI do not train models on API data by default.
