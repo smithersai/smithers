@@ -374,6 +374,33 @@ describe("resync", { timeout: 60_000 }, () => {
     expect(await textOf(guide)).toEqual({ content: "", saved: undefined })
   })
 
+  test("a text whose file GitHub grows past what the machine reads is left as it is and listed, not emptied", async () => {
+    const w = world()
+    write(w.workdir, { "README.md": "# Widgets\n\nA line\n" })
+    published(w, { "README.md": "# Widgets\n\nA line\n" })
+    const large = "x".repeat(SandboxTools.limits.fileBytes) + "\n"
+    const head = updated(w, { [GUIDE]: large })
+    w.sync()
+    const t = await tracked(w, head)
+    // Saved as the working copy holds it, so the plan takes it along; after the apply the machine reads its file in part.
+    const guide = await opened(t, GUIDE, "one\ntwo\nthree\n", { saved: true })
+    expect((await resyncing(t, head, w.layer())).exit).toEqual(Exit.succeed({ state: "conflict", paths: [GUIDE] }))
+    expect(w.head()).toBe(head)
+    expect(w.read(GUIDE)).toBe(large)
+    expect(await textOf(guide)).toEqual({ content: "one\ntwo\nthree\n", saved: savedMarkOf("one\ntwo\nthree\n") })
+    expect(await publication(t.branchId)).toMatchObject({ syncedSha: head, state: "conflict", conflicts: [GUIDE], syncing: null })
+
+    // An empty text of a file the machine reads only in part isn't that file's contents either: GitHub changing the file
+    // again stops the resync before anything changes.
+    const next = updated(w, { [GUIDE]: `${large}more\n` })
+    w.sync()
+    await sql(runtime, `DELETE FROM text_updates WHERE text_id = '${guide}'`)
+    await opened(t, GUIDE, "")
+    expect((await resyncing(t, next, w.layer())).exit).toEqual(Exit.succeed({ state: "conflict", paths: [GUIDE] }))
+    expect(w.head()).toBe(head)
+    expect(await textOf(guide)).toEqual({ content: "", saved: undefined })
+  })
+
   test("a mirror behind GitHub is asked to sync, and the next attempt goes through", async () => {
     const w = world()
     write(w.workdir, { "README.md": "# Widgets\n\nA line\n" })

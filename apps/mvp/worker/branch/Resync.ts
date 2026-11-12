@@ -186,7 +186,10 @@ export const resync = (input: Resyncing) =>
             ? Effect.fail(new ResyncRefused({ failure: "too_large" }))
             : Effect.succeed(SandboxTools.rebasePaths(read))
         })
-    /** The working copy's file at `path`, or none when it has none; a file read only in part is none of a text's. */
+    /**
+     * The working copy's file at `path` as a text holds it, empty when the working copy has none; none when the machine
+     * reads it only in part, which is no text's contents.
+     */
     const fileOf = (name: string, path: string) =>
       call(name, { tool: "read", path }).pipe(
         Effect.map((result) => {
@@ -195,7 +198,7 @@ export const resync = (input: Resyncing) =>
         }),
         Effect.catchIf(
           (error) => error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" && error.reason === "not_found",
-          () => Effect.succeed(Option.none<string>()),
+          () => Effect.succeed(Option.some("")),
         ),
         Effect.mapError(failureOf),
       )
@@ -237,7 +240,7 @@ export const resync = (input: Resyncing) =>
         const recorded = texts[path]
         if (recorded !== undefined && digestSync(found.content) === recorded) continue
         // Its contents are the working copy's; a text of a file the working copy hasn't is empty to be.
-        if (Option.getOrElse(before, () => "") === found.content) texts[path] = digestSync(found.content)
+        if (Option.contains(before, found.content)) texts[path] = digestSync(found.content)
         else unsaved.push(path)
       }
       if (unsaved.length > 0) return yield* conflicted(unsaved)
@@ -250,13 +253,18 @@ export const resync = (input: Resyncing) =>
     }
     // Otherwise HEAD is GitHub's head already: a plan names no tree to apply on, so it never answers Moved or Applied.
 
-    // 3. Each recorded text, if it still holds what it held, to the file's new contents; one someone typed in since is
-    // left as it is and listed.
+    // 3. Each recorded text, if it still holds what it held, to the file's new contents; one someone typed in since, or
+    // whose new file the machine reads only in part, is left as it is and listed.
     const now = yield* textsOf(branch.branchId, Object.keys(texts))
     const typed: Array<string> = []
     const writes: Array<{ readonly id: string; readonly textId: string; readonly data: string }> = []
     for (const [path, found] of now) {
-      const next = Option.getOrElse(yield* fileOf(`after:${path}`, path), () => "")
+      const after = yield* fileOf(`after:${path}`, path)
+      if (Option.isNone(after)) {
+        typed.push(path)
+        continue
+      }
+      const next = after.value
       if (found.content === next) continue
       if (digestSync(found.content) !== texts[path]) {
         typed.push(path)
