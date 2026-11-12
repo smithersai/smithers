@@ -90,6 +90,8 @@ describe("the product mock", () => {
       }
       const requested = try ask("run-plan", 'run /plan {"how":"append","epic":"","newEpic":"Agent","target":"","title":"docs: agent","task":"t"}')
       const unknown = try ask("run-unknown", "run /nothing")
+      // A registered command's name may hold a hyphen (`/sandbox-run`, `/sandbox-stop`).
+      const hyphenated = try ask("run-hyphen", 'run /sandbox-stop {"generation":1}')
       try factory.tour("run-borrow")
       try factory.post("run-borrow", "a", "Ada", "run /history")
       try factory.accounts!.choose("contributor")
@@ -97,7 +99,7 @@ describe("the product mock", () => {
       const post = (try factory.read("run-borrow", 0)).entries.find((entry) => entry.clientId === "a")!
       try settled(factory, "run-borrow", post.id)
       const borrowed = (try factory.read("run-borrow", 0)).entries.find((entry) => entry.inReplyTo === post.id)!.text
-      try Effect.try(() => expect([requested, unknown, borrowed]).toEqual(["Plan requested.", "Action unavailable.", "Action unavailable."]))
+      try Effect.try(() => expect([requested, unknown, hyphenated, borrowed]).toEqual(["Plan requested.", "Action unavailable.", "stop requested.", "Action unavailable."]))
     }
   }), 60_000)
 

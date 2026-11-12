@@ -76,6 +76,29 @@ test("a history note the scripted agent requests is signed as the agent's", asyn
   await expect(result).toContainText("(agent)")
 })
 
+test("the agent runs each history and sandbox command a maintainer may run", async ({ page }) => {
+  // One run of each kind the action host prepares and executes (src/actions/execution.vibe), through the agent's door.
+  test.setTimeout(90_000)
+  await chat(page)
+  await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
+  const plan = { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(actions): planned by the agent", task: "" }
+  const commands: ReadonlyArray<readonly [string, RegExp]> = [
+    [`Run /plan ${JSON.stringify(plan)}`, /Open Plan run/],
+    ['Run /start {"id":"m1","lane":"lane-a"}', /Open Start run/],
+    ["Run /sandbox", /Open start run/],
+    ['Run /sandbox-run {"command":"ls","generation":1}', /Open command run/],
+    ['Run /sandbox-stop {"generation":1}', /Open stop run/],
+  ]
+  for (const [text, card] of commands) {
+    await input.fill(text)
+    await input.press("Enter")
+    await expect(page.getByRole("button", { name: card })).toBeVisible()
+  }
+  await page.getByRole("button", { name: /Open Plan run/ }).click()
+  await expect(page.getByRole("region", { name: "Actions", exact: true }).getByLabel("Result", { exact: true })).toContainText("refusal")
+})
+
 test.describe("local real-engine action faults and role views", () => {
   test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_4511 ?? process.env.E2E_PORT ?? 4173}` })
   test("all five roles see only commands they may run", async ({ page }) => {

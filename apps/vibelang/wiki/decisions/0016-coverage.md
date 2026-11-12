@@ -3000,6 +3000,13 @@ It is also the browser's only path to `may`'s agent operand, `peopleOnly` and `h
 `e2e/history.spec.ts` "shows a new member and a community member only what a viewer sees" covers `standing`'s `new`
 and `community` arms: both rank below a contributor, so neither plans, notes, folds or exports.
 
+**Bug: the scripted agent could not request a hyphenated command.** Its pattern `^run\s+(\/[a-z]+…)$` stopped at a
+hyphen, so `Run /sandbox-run …` and `Run /sandbox-stop …` got a plain reply instead of a run, though both are
+registered commands (`src/actions/catalog.vibe`). The pattern now takes `[a-z][a-z-]*`. Unit:
+`test/mockFactory.coverage.test.vibe` "the agent requests an action its poster may run …" (failed first). Journey:
+`e2e/actions.spec.ts` "the agent runs each history and sandbox command a maintainer may run", one run of each kind
+`src/actions/execution.vibe` prepares and executes: plan, start, sandbox start, command and stop.
+
 ### `src/history/flowMachine.vibe` sites the browser does not reach
 
 | Site | Reason |
