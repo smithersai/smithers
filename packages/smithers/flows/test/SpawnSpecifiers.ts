@@ -27,9 +27,12 @@
  * literal then eats the rest of the line. A parser has no such edge: an import
  * is an import in every layout, and a comment is not a node at all.
  */
+import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import * as ts from "typescript"
+import { findCompiler } from "vibelang/project"
+import { hasVibeDirective } from "vibelang/source"
 
 /**
  * The modules whose import is the thing being gated, in every spelling that
@@ -59,7 +62,8 @@ export const spawningModules: ReadonlySet<string> = new Set([
  * components and the two `.js` entry points under `packages/*\/src`. None of
  * them spawns today, so the hole was prospective, but a gate whose whole job
  * is the bypass nobody has written yet cannot choose which files that bypass
- * is allowed to be written in.
+ * is allowed to be written in. The same went for the VibeLang modules
+ * (`.vibe`, `.vibex`) the repository is being rewritten into.
  */
 export const sourceExtensions: ReadonlyArray<string> = [
   ".ts",
@@ -69,23 +73,50 @@ export const sourceExtensions: ReadonlyArray<string> = [
   ".js",
   ".jsx",
   ".mjs",
-  ".cjs"
+  ".cjs",
+  ".vibe",
+  ".vibex"
 ]
 
 /**
- * How to parse a path, so JSX and TypeScript syntax both survive the scan.
+ * How to parse a path's {@link typeScriptText}, so JSX and TypeScript syntax
+ * both survive the scan.
  *
  * A `.tsx` file parsed as `.ts` loses every element to a type-assertion
  * ambiguity, and the imports above them go with it.
  */
-const scriptKind = (path: string): ts.ScriptKind =>
-  path.endsWith(".tsx")
+export const scriptKind = (path: string): ts.ScriptKind =>
+  path.endsWith(".tsx") || path.endsWith(".vibex")
     ? ts.ScriptKind.TSX
     : path.endsWith(".jsx")
     ? ts.ScriptKind.JSX
-    : path.endsWith(".ts") || path.endsWith(".mts") || path.endsWith(".cts")
+    : path.endsWith(".ts") || path.endsWith(".mts") || path.endsWith(".cts") || path.endsWith(".vibe")
     ? ts.ScriptKind.TS
     : ts.ScriptKind.JS
+
+let compiler: string | undefined
+
+/**
+ * The TypeScript the parser reads for a module: the source itself, or for a
+ * VibeLang module (`.vibe`, `.vibex`, or a TypeScript file with the `// @vibe`
+ * directive) the projection VibeLang gives linters (`vibelang
+ * --ts-projection`). The TypeScript parser does not accept every VibeLang form,
+ * and the projection lowers them while keeping each import and call, and
+ * every line, where the module has it.
+ *
+ * @param source The file's text.
+ * @param path Chooses the language; it need not exist.
+ */
+export const typeScriptText = (source: string, path: string): string => {
+  if (!/\.vibex?$/.test(path) && !hasVibeDirective(path, source)) return source
+  compiler ??= findCompiler(import.meta.dirname)
+  const output = execFileSync(compiler, ["--ts-projection", path], {
+    input: source,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024
+  })
+  return (JSON.parse(output) as { readonly text: string }).text
+}
 
 /**
  * A specifier that names one of the process-starting modules.
@@ -123,10 +154,17 @@ const namesSpawningModule = (node: ts.Node | undefined): boolean =>
  * matched either, because a string that is not an argument binds nothing.
  *
  * @param source The file's text.
- * @param path Used only to choose the parser's script kind; it need not exist.
+ * @param path Chooses the language and the parser's script kind; it need not
+ *   exist.
  */
 export const bindsSpawningModule = (source: string, path = "source.ts"): boolean => {
-  const parsed = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, scriptKind(path))
+  const parsed = ts.createSourceFile(
+    path,
+    typeScriptText(source, path),
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind(path)
+  )
   const visit = (node: ts.Node): true | undefined => {
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && namesSpawningModule(node.moduleSpecifier)) {
       return true

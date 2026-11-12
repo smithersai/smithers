@@ -181,6 +181,13 @@ among the path's existing directories and refuses a path that then lands inside
 a `.jj` or `.git` directory. Each refusal fails `unknown` before any directory or repository state is
 written. The CLI layers pass names and paths to jj unchanged.
 
+The reactor also refuses `workspaceForget` of the layer's own workspace,
+`default`, with `unknown`. Every operation starts from that workspace's
+working-copy commit, so after the forget none could run, `opRestore`
+included. If another tool forgot it, `opRestore` of an operation from before
+the forget re-attaches it; with no working-copy commit there is nothing to
+snapshot first.
+
 ### `root(from)` answers for its own slice
 
 The layer owns one workspace, so it answers the configured root for any path

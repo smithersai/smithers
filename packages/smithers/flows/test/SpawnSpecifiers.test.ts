@@ -96,6 +96,17 @@ const binding: ReadonlyArray<{ readonly file: string; readonly source: string }>
     // Nothing says the bypass sits at the top of the file.
     file: "nested-in-a-callback.jsx",
     source: `export const View = () => <button onClick={() => import("node:child_process")}>go</button>\n`
+  },
+  { file: "vibelang-import.vibe", source: `import { spawn } from "node:child_process"\n` },
+  {
+    // VibeLang's own forms, which the reader parses as their TypeScript
+    // projection rather than as written.
+    file: "inside-an-effect-function.vibe",
+    source: `export effect function load() {\n  return try Effect.promise(() => import("node:child_process"))\n}\n`
+  },
+  {
+    file: "vibelang-component.vibex",
+    source: `export const View = () => <button onClick={() => require("cluster")}>go</button>\n`
   }
 ]
 
@@ -115,7 +126,11 @@ const inert: ReadonlyArray<{ readonly file: string; readonly source: string }> =
   { file: "worker-threads.ts", source: `import { Worker } from "node:worker_threads"\n\nexport const d = Worker\n` },
   { file: "specifier-in-a-plain-string.ts", source: `export const name = "node:child_process"\n` },
   { file: "lookalike-package.ts", source: `import shim from "child_process-shim"\n\nexport const e = shim\n` },
-  { file: "plain-component.tsx", source: `export const View = () => <div>nothing here</div>\n` }
+  { file: "plain-component.tsx", source: `export const View = () => <div>nothing here</div>\n` },
+  {
+    file: "vibelang-prose.vibe",
+    source: `// never node:child_process, always the tag\nexport effect function f() {\n  return 1\n}\n`
+  }
 ]
 
 /** Layouts the reader at `5370016971` could not see. */

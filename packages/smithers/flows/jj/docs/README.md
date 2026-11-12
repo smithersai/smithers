@@ -38,8 +38,8 @@ Behind a service, each of those becomes a decision the composition makes once:
   succeeding.
 - **The same program runs in a tab.** `BrowserJj.layer({ fs, wasm })` runs the
   real jj-lib over a synchronous filesystem you mount, with real change ids and
-  a real operation log. Seven of the nine operations work there; `revert` and
-  `opRestore` are not in the compiled module and say so when you call them.
+  a real operation log. Eight of the nine operations work there; `revert` is
+  not in the compiled module and says so when you call it.
 
 The contract stays small on purpose. There is no `commit`, no `push`, and no
 `log`, because every backend owes an answer for every operation, including one

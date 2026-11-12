@@ -281,7 +281,13 @@ pub fn op_restore(root: &Path, operation_id: &str) -> Result<(), OpError> {
     let settings = user_settings()?;
     let (mut workspace, mut repo) = load(&settings, root)?;
     let name = workspace.workspace_name().to_owned();
-    let commit = snapshot_working_copy(&mut workspace, &mut repo)?;
+    // A workspace whose working-copy commit was forgotten has nothing to
+    // snapshot; restoring an operation from before the forget re-attaches it.
+    let old_tree = if repo.view().get_wc_commit_id(&name).is_some() {
+        Some(snapshot_working_copy(&mut workspace, &mut repo)?.tree())
+    } else {
+        None
+    };
     let id = match repo
         .op_store()
         .resolve_operation_id_prefix(&prefix)
@@ -328,7 +334,7 @@ pub fn op_restore(root: &Path, operation_id: &str) -> Result<(), OpError> {
         .block_on()?;
     let restored = wc_commit(&repo, &name)?;
     workspace
-        .check_out(repo.op_id().clone(), Some(&commit.tree()), &restored)
+        .check_out(repo.op_id().clone(), old_tree.as_ref(), &restored)
         .block_on()?;
     Ok(())
 }
@@ -577,18 +583,30 @@ pub fn workspace_add(root: &Path, name: &str, path: &str) -> Result<(), OpError>
 pub fn workspace_forget(root: &Path, name: &str) -> Result<(), OpError> {
     validate_workspace_name(name)?;
     let settings = user_settings()?;
-    let (_workspace, repo) = load(&settings, root)?;
+    let (workspace, repo) = load(&settings, root)?;
     let name_buf: WorkspaceNameBuf = name.into();
-    if repo.view().get_wc_commit_id(&name_buf).is_none() {
+    if workspace.workspace_name() == &*name_buf {
+        return Err(OpError::unknown(format!(
+            "workspace '{name}' is the one at this root; forgetting it would leave no working copy for any operation"
+        )));
+    }
+    forget(&repo, &name_buf)
+}
+
+/// Drops `name`'s working-copy commit and workspace record, unless it is
+/// already gone.
+fn forget(repo: &Arc<ReadonlyRepo>, name_buf: &WorkspaceName) -> Result<(), OpError> {
+    let name = name_buf.as_symbol();
+    if repo.view().get_wc_commit_id(name_buf).is_none() {
         return Ok(());
     }
     let mut tx = repo.start_transaction();
     let mut_repo = tx.repo_mut();
-    mut_repo.remove_workspace(&name_buf).block_on()?;
+    mut_repo.remove_workspace(name_buf).block_on()?;
     // Removing the working-copy commit may abandon it (a rewrite), which must
     // be propagated before the transaction commits.
     mut_repo.rebase_descendants().block_on()?;
-    repo.loader().workspace_store().forget(&[&*name_buf])?;
+    repo.loader().workspace_store().forget(&[name_buf])?;
     tx.commit(format!("forget workspace {name}")).block_on()?;
     Ok(())
 }
@@ -966,6 +984,58 @@ mod tests {
         assert_eq!(std::fs::read(root.join("note.txt")).unwrap(), b"before\n");
     }
 
+    /// Forgets the root's own workspace the way another process can (the CLI's
+    /// bare `jj workspace forget`), past the guard `workspace_forget` keeps.
+    fn forget_default(root: &Path) {
+        let settings = user_settings().unwrap();
+        let (_, repo) = load(&settings, root).unwrap();
+        forget(&repo, "default".as_ref()).unwrap();
+    }
+
+    #[test]
+    fn forgetting_the_own_workspace_is_refused_and_leaves_it_working() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        init(&root).unwrap();
+        std::fs::write(root.join("keep.txt"), b"kept\n").unwrap();
+        snapshot(&root, Some("kept")).unwrap();
+
+        let error = workspace_forget(&root, "default").unwrap_err();
+        assert_eq!(error.code, crate::error::ErrorCode::Unknown);
+        assert_eq!(
+            error.message,
+            "workspace 'default' is the one at this root; forgetting it would leave no working copy for any operation"
+        );
+        let settings = user_settings().unwrap();
+        let (_, repo) = load(&settings, &root).unwrap();
+        assert_eq!(repo.view().wc_commit_ids().len(), 1);
+        status(&root).unwrap();
+        snapshot(&root, None).unwrap();
+    }
+
+    #[test]
+    fn op_restore_reattaches_a_forgotten_own_workspace() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        init(&root).unwrap();
+        std::fs::write(root.join("keep.txt"), b"kept\n").unwrap();
+        let saved = snapshot(&root, Some("kept")).unwrap();
+        forget_default(&root);
+        assert_eq!(
+            status(&root).unwrap_err().message,
+            "workspace 'default' has no working-copy commit (forgotten?)"
+        );
+
+        op_restore(&root, &saved.operation_id).unwrap();
+
+        let settings = user_settings().unwrap();
+        let (_, repo) = load(&settings, &root).unwrap();
+        assert_eq!(repo.view().wc_commit_ids().len(), 1);
+        assert_eq!(std::fs::read(root.join("keep.txt")).unwrap(), b"kept\n");
+        status(&root).unwrap();
+        assert_eq!(diff(&root, "@", &saved.commit_id).unwrap(), "");
+    }
+
     #[test]
     fn adding_from_forgotten_current_workspace_refuses_before_destination_mutation() {
         for destination_exists in [false, true] {
@@ -974,7 +1044,7 @@ mod tests {
             init(&root).unwrap();
             std::fs::write(root.join("keep.txt"), b"preserved\n").unwrap();
             snapshot(&root, Some("preserved")).unwrap();
-            workspace_forget(&root, "default").unwrap();
+            forget_default(&root);
 
             let destination = temp.path().join("lane");
             if destination_exists {

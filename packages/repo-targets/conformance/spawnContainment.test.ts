@@ -3,7 +3,12 @@ import { readFileSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { describe, it } from "node:test"
 import * as ts from "typescript"
-import { collectSources, fileBindsSpawningModule } from "../../smithers/flows/test/SpawnSpecifiers.ts"
+import {
+  collectSources,
+  fileBindsSpawningModule,
+  scriptKind,
+  typeScriptText
+} from "../../smithers/flows/test/SpawnSpecifiers.ts"
 import { readWorkspaceInventory } from "./readWorkspaceInventory.ts"
 
 /**
@@ -242,11 +247,13 @@ describe("child-process containment conformance", () => {
     // assertion below pass over nothing. The extension assertions are the
     // widened universe stated as a requirement, so narrowing the walk back to
     // `.ts` fails here rather than silently un-scanning the 86 `.tsx`
-    // components and two `.js` entry points it used to skip.
+    // components, two `.js` entry points, and the VibeLang modules it used to
+    // skip.
     assert.ok(sources.length > 900)
     assert.ok((sources.map(({ id }) => id))!.includes("smithers/agent/std/src/internal/Exec.ts"))
     assert.equal(sources.some(({ id }) => id.endsWith(".tsx")), true)
     assert.equal(sources.some(({ id }) => id.endsWith(".js")), true)
+    assert.equal(sources.some(({ id }) => id.endsWith(".vibe")), true)
   })
 
   it("starts child processes only through the host's spawner", () => {
@@ -266,16 +273,10 @@ describe("child-process containment conformance", () => {
     for (const source of sources) {
       const file = ts.createSourceFile(
         source.path,
-        readFileSync(source.path, "utf8"),
+        typeScriptText(readFileSync(source.path, "utf8"), source.path),
         ts.ScriptTarget.Latest,
         true,
-        source.path.endsWith(".tsx")
-          ? ts.ScriptKind.TSX
-          : source.path.endsWith(".jsx")
-          ? ts.ScriptKind.JSX
-          : source.path.endsWith(".js")
-          ? ts.ScriptKind.JS
-          : ts.ScriptKind.TS
+        scriptKind(source.path)
       )
       const visit = (node: ts.Node): void => {
         if (

@@ -82,7 +82,7 @@ const sources = (directory: string): ReadonlyArray<string> => {
   return entries.flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(?:tsx?|vibex?)$/.test(entry.name) && !/\.test\.(?:tsx?|vibex?)$/.test(entry.name) ? [path] : []
   })
 }
 
@@ -113,7 +113,8 @@ describe("raw failure sites in the flow engine's packages", () => {
       expect.arrayContaining([
         "database/src/internal/PostgresSelection.ts",
         "src/Runtime.ts",
-        "platform-node/src/SandboxedFlow.ts"
+        "platform-node/src/SandboxedFlow.ts",
+        "engine/src/StepTrace.vibe"
       ])
     )
   })

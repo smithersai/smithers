@@ -6,7 +6,7 @@
  * paths, a >1MiB file through the shim's chunked reads, file↔directory
  * replacement across restore, overlapping Effect operations on one instance,
  * a workspaceAdd destination whose symlinked parent points into `.jj`, and
- * workspaceForget of a name that never existed.
+ * workspaceForget of a name that never existed and of the layer's own workspace.
  *
  * Each scenario builds its own temp-dir repo so no test depends on another's
  * mutations. The compiled module is shared — compilation is the expensive
@@ -478,6 +478,25 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj edge cases over flows_jj.was
         yield* (jj.workspaceForget("lane"))
         // Forgetting the same name again: gone means gone, still ok.
         yield* (jj.workspaceForget("lane"))
+      }), { timeout })
+  })
+
+  describe("workspaceForget of the layer's own workspace", () => {
+    it.effect("is refused, and every operation keeps working", () =>
+      Effect.gen(function*() {
+        const host = freshHost()
+        const jj = yield* jjFor(host)
+        write(host, "a.txt", "alpha\n")
+        const base = yield* (jj.snapshot("base"))
+
+        const refused = yield* flip(jj.workspaceForget("default"))
+        expect(refused).toMatchObject({ code: "unknown", method: "workspaceForget" })
+        expect(refused.message).toContain("workspace 'default' is the one at this root")
+
+        yield* (jj.status())
+        yield* (jj.opRestore!(base.operationId!))
+        expect(read(host, "a.txt")).toBe("alpha\n")
+        yield* (jj.workspaceAdd("lane", "/lane"))
       }), { timeout })
   })
 })
