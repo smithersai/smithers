@@ -30,6 +30,11 @@ const reviewed: ReadonlyArray<readonly [file: string, line: string, why: string]
     "an AbortSignal reason; the interrupt is reported by exit status 130/143"
   ],
   [
+    "src/Detached.ts",
+    `const deadline = setTimeout(() => verification.abort(new Error("Detached admission deadline reached")), maxWaitMs)`,
+    "an AbortSignal reason; the launch reports the deadline in its own did-not-reach-admission reason"
+  ],
+  [
     "src/Ui.ts",
     "catch: (cause) => cause instanceof Error ? cause : new Error(Failure.unknownSentence, { cause })",
     "the generic sentence around a thrown non-Error"
