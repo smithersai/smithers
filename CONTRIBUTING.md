@@ -25,6 +25,11 @@ later); that floor is what consumers may run, not what this workspace develops
 on. Install the pinned package manager (`pnpm@11.25.0`), then
 dependencies with `pnpm install`.
 
+Repository flow tests that select an explicit Node runtime also declare
+`imports: ["vibelang/register"]`, matching `.smithers/WORKSPACE.ts`. An explicit
+runtime replaces the workspace default, including its preloads; omitting the
+source loader prevents the tests from importing migrated workspace sources.
+
 Before landing on `main`, run every gate:
 
 ```sh

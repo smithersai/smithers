@@ -1,5 +1,6 @@
 import * as Target from "@smthrs/targets/Target"
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { readdir } from "node:fs/promises"
 import { join, posix, relative, sep } from "node:path"
 import { test } from "node:test"
@@ -91,4 +92,32 @@ test("every flow TypeScript test is run by a declared target", async () => {
 
 test("an added test without a runner fails the inventory", () => {
   assert.deepEqual(missingTests([".smithers/flows/test/new.test.ts"], new Set()), [".smithers/flows/test/new.test.ts"])
+})
+
+test("explicit Node test runtimes preload the workspace source loader", () => {
+  const missing = Object.entries(Package).flatMap(([name, target]) => {
+    const metadata = Target.metadata(target)
+    if (metadata.target !== "NodeTest") return []
+    const runtime =
+      (metadata.attrs as { readonly runtime?: { readonly name: string; readonly imports?: readonly string[] } }).runtime
+    return runtime?.name === "node" && !runtime.imports?.includes("vibelang/register") ? [name] : []
+  })
+  assert.deepEqual(missing, [], "an explicit Node runtime replaces the workspace default, including its source loader")
+})
+
+test("the explicit Node runtime imports the coding builder with migrated package sources", () => {
+  const runtime = (Target.metadata(Package.codingHostSize).attrs as {
+    readonly runtime: { readonly imports?: readonly string[] }
+  }).runtime
+  execFileSync(process.execPath, [
+    ...(runtime.imports ?? []).map((module) => `--import=${module}`),
+    "--input-type=module",
+    "-e",
+    "await import(" + JSON.stringify(new URL("../coding/build.mjs", import.meta.url).href) + ")"
+  ], {
+    cwd: root,
+    env: { ...process.env, NODE_OPTIONS: "", NODE_PATH: "" },
+    timeout: 30_000,
+    stdio: "pipe"
+  })
 })

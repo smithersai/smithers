@@ -260,10 +260,11 @@ const codingProjectInputs = [
   ...codingProjectSources,
   Smithers.glob("//.smithers/flows/checks/**/flow.mdx")
 ]
-const node = Smithers.Runtime.Node({ version: ">=26.4.0" })
 const bun = Smithers.Runtime.Bun({ version: ">=1.4.0" })
 
 // Existing policy integration uses actual JJ and the Node SQLite fixture.
+const node = Smithers.Runtime.Node({ version: ">=26.4.0", imports: ["vibelang/register"] })
+
 const coding = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner([
@@ -432,11 +433,11 @@ const codingNative = Smithers.Shell.Test({
 const testCoverage = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//.smithers/flows/test/target-coverage.test.ts")]),
   srcs: [
-    sources,
+    ...codingSources,
     Smithers.file("//.smithers/flows/PACKAGE.ts"),
     Smithers.file("//.smithers/flows/test/coding-native-gate.mjs")
   ],
-  deps: [],
+  deps: codingDependencies,
   cwd
 })
 // Snapshot regeneration must preserve the formatting gate it feeds.
