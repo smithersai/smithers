@@ -35,7 +35,21 @@ const normalize = (path: string): string => {
   return `/${parts.join("/")}`
 }
 
-const enoent = (path: string): Error => Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" })
+/** A `node:fs`-shaped failure: the code is what the adapter maps onto a `PlatformError`. */
+const systemError = (code: string, path: string): Error => Object.assign(new Error(`${code}: ${path}`), { code })
+
+const enoent = (path: string): Error => systemError("ENOENT", path)
+
+/** The directory a normalized key lives in; `/` is its own parent. */
+const parentOf = (key: string): string => key.replace(/\/[^/]*$/, "") || "/"
+
+/**
+ * The `node:fs` open flags a whole-file write accepts: `w` truncates, `a`
+ * appends, `x` refuses an existing file, and `+` adds reading, which a
+ * whole-file write never observes. Anything else is the argument error Node
+ * raises, never a silently truncating write.
+ */
+const writeFlag = /^([wa])(x?)\+?$/
 
 interface Entry {
   readonly type: "file" | "directory"
@@ -60,22 +74,29 @@ export const makeMemoryFs = (
   ])
   const encoder = new TextEncoder()
 
+  /**
+   * Creates every missing directory on the way, like `mkdir -p`. A file in the
+   * way is `ENOTDIR`, or `EEXIST` when it is the final segment, the way a disk
+   * reports it.
+   */
   const mkdirp = (path: string): void => {
     const parts = normalize(path).split("/").filter((p) => p !== "")
     let current = ""
-    for (const part of parts) {
+    for (const [index, part] of parts.entries()) {
       current = `${current}/${part}`
-      if (!entries.has(current)) entries.set(current, { type: "directory", data: new Uint8Array() })
+      const entry = entries.get(current)
+      if (entry === undefined) entries.set(current, { type: "directory", data: new Uint8Array() })
+      else if (entry.type !== "directory") throw systemError(index === parts.length - 1 ? "EEXIST" : "ENOTDIR", path)
     }
   }
 
-  const put = (path: string, data: Uint8Array): void => {
+  // Seeds are the one place parents appear on their own: a declared tree
+  // comes into being whole. A write at run time has to find its directory.
+  for (const [path, contents] of Object.entries(initial ?? {})) {
     const key = normalize(path)
-    mkdirp(key.replace(/\/[^/]*$/, "") || "/")
-    entries.set(key, { type: "file", data: data.slice() })
+    mkdirp(parentOf(key))
+    entries.set(key, { type: "file", data: encoder.encode(contents) })
   }
-
-  for (const [path, contents] of Object.entries(initial ?? {})) put(path, encoder.encode(contents))
 
   const get = (path: string): Entry => {
     const entry = entries.get(normalize(path))
@@ -104,25 +125,39 @@ export const makeMemoryFs = (
       return entry.data.slice()
     },
     writeFile: async (path, data, options) => {
-      if (options?.flag === "wx" && entries.has(normalize(path))) {
-        throw Object.assign(new Error(`EEXIST: ${path}`), { code: "EEXIST" })
+      const flag = writeFlag.exec(options?.flag ?? "w")
+      if (flag === null) {
+        throw Object.assign(new TypeError(`unknown write flag: ${options?.flag}`), { code: "ERR_INVALID_ARG_VALUE" })
       }
-      put(path, data)
+      const key = normalize(path)
+      const existing = entries.get(key)
+      if (existing !== undefined && flag[2] === "x") throw systemError("EEXIST", path)
+      if (existing?.type === "directory") throw systemError("EISDIR", path)
+      const parent = entries.get(parentOf(key))
+      if (parent === undefined) throw enoent(path)
+      if (parent.type !== "directory") throw systemError("ENOTDIR", path)
+      let bytes = data.slice()
+      if (flag[1] === "a" && existing !== undefined) {
+        bytes = new Uint8Array(existing.data.length + data.length)
+        bytes.set(existing.data)
+        bytes.set(data, existing.data.length)
+      }
+      entries.set(key, { type: "file", data: bytes })
     },
     mkdir: async (path, options) => {
       if (options?.recursive === true) mkdirp(path)
       else {
         const key = normalize(path)
-        if (entries.has(key)) throw Object.assign(new Error(`EEXIST: ${path}`), { code: "EEXIST" })
-        const parent = entries.get(key.replace(/\/[^/]*$/, "") || "/")
+        if (entries.has(key)) throw systemError("EEXIST", path)
+        const parent = entries.get(parentOf(key))
         if (parent === undefined) throw enoent(path)
-        if (parent.type !== "directory") throw Object.assign(new Error(`ENOTDIR: ${path}`), { code: "ENOTDIR" })
+        if (parent.type !== "directory") throw systemError("ENOTDIR", path)
         entries.set(key, { type: "directory", data: new Uint8Array() })
       }
     },
     readdir: async (path) => {
       const dir = normalize(path)
-      if (get(dir).type !== "directory") throw enoent(path)
+      if (get(dir).type !== "directory") throw systemError("ENOTDIR", path)
       const prefix = dir === "/" ? "/" : `${dir}/`
       const names = new Set<string>()
       for (const key of entries.keys()) {
@@ -160,7 +195,7 @@ export const makeMemoryFs = (
         entries.get(key)?.type === "directory" && options?.recursive !== true &&
         [...entries.keys()].some((other) => other !== key && other.startsWith(prefix))
       ) {
-        throw Object.assign(new Error(`ENOTEMPTY: ${path}`), { code: "ENOTEMPTY" })
+        throw systemError("ENOTEMPTY", path)
       }
       entries.delete(key)
       if (options?.recursive === true) {

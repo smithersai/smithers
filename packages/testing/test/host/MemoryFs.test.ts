@@ -47,6 +47,89 @@ describe("TestHost memory filesystem operations", () => {
       expect(yield* fs.readFileString("/w/exclusive.txt")).toBe("owned")
     }))
 
+  it.effect("appends with `a` and `a+` instead of truncating", () =>
+    Effect.gen(function*() {
+      const fs = fileSystem()
+      yield* fs.writeFileString("/w/log.txt", "one\n")
+      yield* fs.writeFileString("/w/log.txt", "two\n", { flag: "a" })
+      yield* fs.writeFile("/w/./log.txt", encoder.encode("three\n"), { flag: "a+" })
+      yield* fs.writeFileString("/w/fresh.txt", "first\n", { flag: "a" })
+      expect(yield* fs.readFileString("/w/log.txt")).toBe("one\ntwo\nthree\n")
+      expect(yield* fs.readFileString("/w/fresh.txt")).toBe("first\n")
+    }))
+
+  for (const flag of ["wx", "ax", "wx+", "ax+"] as const) {
+    it.effect(`refuses to clobber an existing file with \`${flag}\` and creates a missing one`, () =>
+      Effect.gen(function*() {
+        const fs = fileSystem()
+        const refused = yield* Effect.flip(fs.writeFileString("/w/./a.txt", "clobbered", { flag }))
+        expect(refused).toMatchObject({ reason: { _tag: "AlreadyExists" } })
+        expect(yield* fs.readFileString("/w/a.txt")).toBe("alpha")
+        yield* fs.writeFileString(`/w/${flag}.txt`, "owned", { flag })
+        expect(yield* fs.readFileString(`/w/${flag}.txt`)).toBe("owned")
+      }))
+  }
+
+  for (const flag of ["w", "w+"] as const) {
+    it.effect(`truncates an existing file with \`${flag}\``, () =>
+      Effect.gen(function*() {
+        const fs = fileSystem()
+        yield* fs.writeFileString("/w/a.txt", "replaced", { flag })
+        expect(yield* fs.readFileString("/w/a.txt")).toBe("replaced")
+      }))
+  }
+
+  it("refuses a flag it does not implement instead of guessing a truncating write", async () => {
+    const memory = makeMemoryFs({ "/w/a.txt": "alpha" })
+
+    await expect(memory.writeFile("/w/a.txt", encoder.encode("x"), { flag: "r+" })).rejects.toMatchObject({
+      code: "ERR_INVALID_ARG_VALUE"
+    })
+    expect(decoder.decode(await memory.readFile("/w/a.txt"))).toBe("alpha")
+  })
+
+  it.effect("refuses to write under a missing parent without creating it", () =>
+    Effect.gen(function*() {
+      const fs = fileSystem()
+      const refused = yield* Effect.flip(fs.writeFileString("/w/no/such/dir/file.txt", "orphan"))
+      expect(refused).toMatchObject({ reason: { _tag: "NotFound" } })
+      expect(yield* fs.exists("/w/no")).toBe(false)
+      expect(yield* fs.readDirectory("/w")).toEqual(["a.txt", "sub"])
+    }))
+
+  for (const flag of [undefined, "a"] as const) {
+    it.effect(`refuses to write over a directory with flag ${JSON.stringify(flag)} and keeps its children`, () =>
+      Effect.gen(function*() {
+        const fs = fileSystem()
+        const refused = yield* Effect.flip(
+          fs.writeFileString("/w/sub/", "flattened", flag === undefined ? undefined : { flag })
+        )
+        expect(refused).toMatchObject({ reason: { _tag: "BadResource" } })
+        expect((yield* fs.stat("/w/sub")).type).toBe("Directory")
+        expect(yield* fs.readFileString("/w/sub/b.txt")).toBe("beta")
+      }))
+  }
+
+  it.effect("refuses to write through a file as if it were a directory", () =>
+    Effect.gen(function*() {
+      const fs = fileSystem()
+      const refused = yield* Effect.flip(fs.writeFileString("/w/a.txt/sub.txt", "through"))
+      expect(refused).toMatchObject({ reason: { _tag: "BadResource" } })
+      expect(yield* fs.readFileString("/w/a.txt")).toBe("alpha")
+      expect(yield* fs.exists("/w/a.txt/sub.txt")).toBe(false)
+    }))
+
+  it("tags recursive mkdir through a file with ENOTDIR and over a file with EEXIST", async () => {
+    const memory = makeMemoryFs({ "/w/a.txt": "alpha" })
+
+    await expect(memory.mkdir("/w/a.txt/deep/er", { recursive: true })).rejects.toMatchObject({ code: "ENOTDIR" })
+    await expect(memory.mkdir("/w/./a.txt/", { recursive: true })).rejects.toMatchObject({ code: "EEXIST" })
+    await expect(memory.stat("/w/a.txt/deep")).rejects.toMatchObject({ code: "ENOENT" })
+    expect((await memory.stat("/w/a.txt")).isFile()).toBe(true)
+    await memory.mkdir("/w", { recursive: true })
+    await expect(memory.readdir("/w")).resolves.toEqual(["a.txt"])
+  })
+
   for (const path of ["/w/./a.txt", "/w/sub/", "/"]) {
     for (const options of [undefined, { recursive: false }]) {
       it.effect(`refuses non-recursive mkdir over ${path} with ${JSON.stringify(options)}`, () =>

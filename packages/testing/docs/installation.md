@@ -75,13 +75,23 @@ command table. An unlisted command returns exit code `127` and
 `command not found: <command>\n` on stderr, including names such as `constructor`
 and `__proto__`.
 
-The memory filesystem rejects non-recursive `mkdir` with `EEXIST` when the
-path exists, `ENOENT` when its parent is missing, and `ENOTDIR` when its parent
-is a file. Host conformance reserves its scratch directory with non-recursive
-`mkdir`, refusing collisions before writing its probe file. Non-recursive `rm`
-rejects a non-empty directory with
-`ENOTEMPTY`, including when `force` is set, and preserves its entries. Use
-`recursive: true` to create missing parents or remove a directory tree.
+The memory filesystem places files the way a disk does. A write fails with
+`ENOENT` when its parent directory is missing, `ENOTDIR` when a parent is a
+file, and `EISDIR` when the path is a directory; only the files seeded through
+`files` get their parent directories created for them. The write `flag` is
+honoured: `a` and `a+` append, `wx`, `ax`, and their `+` forms fail with
+`EEXIST` when the file exists, `w` and `w+` truncate, and any other flag is
+refused as an invalid argument rather than treated as a truncating write.
+Non-recursive `mkdir` rejects with `EEXIST` when the path exists, `ENOENT`
+when its parent is missing, and `ENOTDIR` when its parent is a file; recursive
+`mkdir` rejects a file in its way with `ENOTDIR` (`EEXIST` when the file is
+the final segment). Listing a file as a directory fails with `ENOTDIR`. Host
+conformance reserves its scratch directory with non-recursive `mkdir`, refusing
+collisions before writing its probe file, then holds the bundle to the append,
+exclusive-create, and placement rules above. Non-recursive `rm` rejects a
+non-empty directory with `ENOTEMPTY`, including when `force` is set, and
+preserves its entries. Use `recursive: true` to create missing parents or
+remove a directory tree.
 
 `Vitest` is ESM only and absent from the barrel on purpose. `vitest` refuses to
 load through `require()`, so a barrel that re-exported it would break

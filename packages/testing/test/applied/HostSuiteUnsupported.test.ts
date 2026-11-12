@@ -143,6 +143,7 @@ describe("the file-system probe owns its scratch directory", () => {
     const scratchPath = "/host-suite/pre-existing.txt"
     const run = Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
+      yield* fs.makeDirectory("/host-suite")
       yield* fs.writeFileString(scratchPath, "not the suite's")
       const suiteCase = HostSuite.hostSuite(TestHost.TestHost, {
         ...supported,

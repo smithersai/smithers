@@ -272,7 +272,7 @@ describe("TestHost memory filesystem edges", () => {
   it("refuses to list a file as a directory", async () => {
     const memory = TestHost.makeMemoryFs({ "/dir/f.txt": "x" })
 
-    await expect(memory.readdir("/dir/f.txt")).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(memory.readdir("/dir/f.txt")).rejects.toMatchObject({ code: "ENOTDIR" })
     await expect(memory.readdir("/dir")).resolves.toEqual(["f.txt"])
   })
 

@@ -256,6 +256,33 @@ export const hostSuite = (bundle: HostBundle, profile: HostProfile): ReadonlyArr
             yield* fs.writeFile(probePath, encoder.encode("host-suite"), { flag: "wx" })
             const value = decoder.decode(yield* fs.readFile(probePath))
             yield* assertEqual(value, "host-suite", "FileSystem", "readFile")
+            // The write flag is honoured, never dropped: an append extends the
+            // file, and an exclusive create refuses a file that exists.
+            yield* fs.writeFile(probePath, encoder.encode("-appended"), { flag: "a" })
+            const appended = decoder.decode(yield* fs.readFile(probePath))
+            yield* assertEqual(appended, "host-suite-appended", "FileSystem", "writeFile")
+            yield* assertCapabilityError(
+              fs.writeFile(probePath, encoder.encode("clobber"), { flag: "wx" }),
+              "FileSystem",
+              "writeFile",
+              "AlreadyExists"
+            )
+            // A write lands only where a disk would take it: under an existing
+            // directory, never over a directory, and never through a file.
+            const bytes = encoder.encode("misplaced")
+            yield* assertCapabilityError(
+              fs.writeFile(path.join(scratchPath, "missing", "orphan.txt"), bytes),
+              "FileSystem",
+              "writeFile",
+              "NotFound"
+            )
+            yield* assertCapabilityError(fs.writeFile(scratchPath, bytes), "FileSystem", "writeFile", "BadResource")
+            yield* assertCapabilityError(
+              fs.writeFile(path.join(probePath, "through.txt"), bytes),
+              "FileSystem",
+              "writeFile",
+              "BadResource"
+            )
           })
         )
       }),
