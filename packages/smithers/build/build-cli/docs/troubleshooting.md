@@ -211,6 +211,14 @@ For evaluation journals and grading receipts, follow
 
 ## A commit refused
 
+**`declared outDir <dir> holds a symlink whose target leaves it: <link> -> <target>`**
+
+A captured output tree keeps each symlink as its target text and recreates it
+on restore. A target that is absolute, or that climbs above the outDir with
+`..`, would point outside the restored tree, so it is never cached: the capture
+fails and names the link. Point the link at a path inside the outDir
+(`bin/tool -> ../lib/tool.js` stays inside), or copy the target into the tree.
+
 **`unrelated_changes`**
 
 A `Git.Commit` target with no declared path scope found changes in the working

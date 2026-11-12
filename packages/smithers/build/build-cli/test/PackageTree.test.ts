@@ -129,6 +129,23 @@ describe("decodeManifest confines every untrusted path", () => {
     expect(decoded).toBeUndefined()
   })
 
+  it("accepts a link entry whose .. target stays inside the outDir", () => {
+    const entry = { path: "bin/tool", kind: "link" as const, digest: "", executable: false, target: "../lib/tool.js" }
+    expect(PackageTree.decodeManifest({ outDir: "dist", entries: [entry] })).toEqual({
+      outDir: "dist",
+      entries: [entry]
+    })
+  })
+
+  it("rejects a link entry whose .. target climbs above the outDir", () => {
+    for (const [path, target] of [["bin/tool", "../../escape"], ["tool", "../escape"], ["bin/tool", "x/../../../e"]]) {
+      expect(PackageTree.decodeManifest({
+        outDir: "dist",
+        entries: [{ path, kind: "link", digest: "", executable: false, target }]
+      })).toBeUndefined()
+    }
+  })
+
   it("accepts a well-formed manifest", () => {
     const decoded = PackageTree.decodeManifest({
       outDir: "dist",
@@ -181,6 +198,48 @@ describe("materializeManifest never writes through a symlink out of the tree", (
       entries: [{ path: "a.txt", kind: "file", digest, executable: false, target: "" }]
     })
     expect(await Fs.readFile(NodePath.join(root, "dist", "a.txt"), "utf8")).toBe("art")
+  })
+})
+
+describe("captureOutDir records only links that decodeManifest restores", () => {
+  it("captures a link that climbs within the outDir and restores it from the decoded manifest", async () => {
+    await Fs.mkdir(NodePath.join(root, "dist", "lib"), { recursive: true })
+    await Fs.mkdir(NodePath.join(root, "dist", "bin"), { recursive: true })
+    await Fs.writeFile(NodePath.join(root, "dist", "lib", "tool.js"), "tool")
+    await Fs.symlink("../lib/tool.js", NodePath.join(root, "dist", "bin", "tool"))
+    const captured = await PackageTree.captureOutDir(root, ".flows", "dist")
+    // The cache stores the manifest as JSON and reads it back as untrusted input.
+    const decoded = PackageTree.decodeManifest(JSON.parse(JSON.stringify(captured)))
+    expect(decoded).toEqual(captured)
+    if (decoded === undefined) throw new Error("the captured manifest did not decode")
+    expect(decoded.entries.map((entry) => [entry.path, entry.kind, entry.target])).toEqual([
+      ["bin/tool", "link", "../lib/tool.js"],
+      ["lib/tool.js", "file", ""]
+    ])
+    await Fs.rm(NodePath.join(root, "dist"), { recursive: true })
+    await PackageTree.materializeManifest(root, ".flows", decoded)
+    expect(await Fs.readlink(NodePath.join(root, "dist", "bin", "tool"))).toBe("../lib/tool.js")
+    expect(await Fs.readFile(NodePath.join(root, "dist", "bin", "tool"), "utf8")).toBe("tool")
+    expect(await PackageTree.treeMatchesManifest(root, decoded)).toBeUndefined()
+  })
+
+  it("refuses a link whose target climbs above the outDir, naming the link", async () => {
+    await Fs.mkdir(NodePath.join(root, "dist", "bin"), { recursive: true })
+    await Fs.writeFile(NodePath.join(root, "secret.txt"), "host bytes")
+    await Fs.symlink("../../secret.txt", NodePath.join(root, "dist", "bin", "leak"))
+    await expect(PackageTree.captureOutDir(root, ".flows", "dist")).rejects.toMatchObject({
+      _tag: "smithers-build/OutDirLinkError",
+      link: "bin/leak",
+      target: "../../secret.txt",
+      message: "declared outDir dist holds a symlink whose target leaves it: bin/leak -> ../../secret.txt"
+    })
+  })
+
+  it("refuses a link whose target is absolute", async () => {
+    await Fs.mkdir(NodePath.join(root, "dist"), { recursive: true })
+    await Fs.symlink(outside, NodePath.join(root, "dist", "leak"))
+    await expect(PackageTree.captureOutDir(root, ".flows", "dist"))
+      .rejects.toThrow(/holds a symlink whose target leaves it: leak -> /)
   })
 })
 

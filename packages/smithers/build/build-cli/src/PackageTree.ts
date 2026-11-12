@@ -1828,6 +1828,30 @@ export class OutDirLimitError extends Data.TaggedError("smithers-build/OutDirLim
 }
 
 /**
+ * A captured tree holds a symlink whose target leaves the outDir: absolute,
+ * or climbing above the outDir root with `..`. Such a tree can never be
+ * restored from the cache, so capture refuses it and names the link.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class OutDirLinkError extends Data.TaggedError("smithers-build/OutDirLinkError")<{
+  /** The link, relative to its outDir. */
+  readonly link: string
+  /** The link's target as written. */
+  readonly target: string
+  readonly message: string
+}> {
+  constructor(outDir: string, link: string, target: string) {
+    super({
+      link,
+      target,
+      message: `declared outDir ${outDir} holds a symlink whose target leaves it: ${link} -> ${target}`
+    })
+  }
+}
+
+/**
  * Proves an output path cannot escape through its nearest existing ancestor.
  *
  * Restore callers run this before `mkdir`: resolving only the completed
@@ -1939,13 +1963,12 @@ export const captureOutDir = async (
         throw new OutDirLimitError("pathBytes", `${outDir}/${childRelative}`, limits.pathBytes)
       }
       if (entry.isSymbolicLink()) {
-        entries.push({
-          path: childRelative,
-          kind: "link",
-          digest: "",
-          executable: false,
-          target: await Fs.readlink(childAbsolute)
-        })
+        const target = await Fs.readlink(childAbsolute)
+        // A link whose target leaves the outDir can never be restored:
+        // `decodeManifest` refuses it, so the entry would publish and then miss
+        // on every run with nothing naming the cause. Refuse it here instead.
+        if (!isConfinedLinkTarget(childRelative, target)) throw new OutDirLinkError(outDir, childRelative, target)
+        entries.push({ path: childRelative, kind: "link", digest: "", executable: false, target })
       } else if (entry.isDirectory()) {
         await walk(childAbsolute, childRelative, depth + 1)
       } else if (entry.isFile()) {
@@ -2096,19 +2119,20 @@ const isConfinedRelative = (value: string): boolean =>
   !value.split(NodePath.sep).includes("..")
 
 /**
- * A symlink target that cannot point out of the tree it is materialized into:
- * not absolute, no `..` segment. A capture only ever records such targets;
- * an untrusted manifest that names an absolute or `..`-bearing target is
- * refused, because materializing it — or writing a later entry through it —
- * would leave the outDir.
+ * A symlink entry whose target cannot point out of the tree it is
+ * materialized into: the target is not absolute and, resolved against the
+ * link's own directory, stays inside the outDir. A target may climb with `..`
+ * as far as the link's depth allows (`bin/tool -> ../lib/tool.js`) but never
+ * above the outDir root. Capture refuses every other link, so a captured
+ * manifest always decodes; an untrusted manifest that names an escaping
+ * target is refused, because materializing it — or writing a later entry
+ * through it — would leave the outDir.
  */
-const isConfinedLinkTarget = (value: string): boolean =>
-  value !== "" &&
-  !value.includes("\0") &&
-  !NodePath.isAbsolute(value) &&
-  !value.startsWith("/") &&
-  !value.split("/").includes("..") &&
-  !value.split(NodePath.sep).includes("..")
+const isConfinedLinkTarget = (path: string, target: string): boolean => {
+  if (target === "" || target.includes("\0") || NodePath.isAbsolute(target) || target.startsWith("/")) return false
+  const resolved = NodePath.posix.normalize(NodePath.posix.join(NodePath.posix.dirname(path), posix(target)))
+  return resolved !== ".." && !resolved.startsWith("../")
+}
 
 /**
  * Validates one untrusted manifest read back from the cache.
@@ -2117,10 +2141,10 @@ const isConfinedLinkTarget = (value: string): boolean =>
  * remote body, a backup, or a hand edit. Every path it names is bound to the
  * outDir tree here so a poisoned entry cannot escape the workspace. `outDir`
  * is confined to a workspace-relative path with no `..` segment, every entry
- * path is likewise confined, and every link target is confined so a later
- * file entry cannot be written through a symlink that leaves the tree. The
- * caller must still bind the returned `outDir` to a declared output root
- * before materializing it.
+ * path is likewise confined, and every link target is confined to the outDir
+ * from the link's own directory so a later file entry cannot be written
+ * through a symlink that leaves the tree. The caller must still bind the
+ * returned `outDir` to a declared output root before materializing it.
  *
  * @category artifacts
  * @since 0.1.0
@@ -2145,7 +2169,7 @@ export const decodeManifest = (value: unknown): OutDirManifest | undefined => {
       (kind === "file" && !isSha256Hex(digest)) ||
       typeof executable !== "boolean" ||
       typeof target !== "string" ||
-      (kind === "link" && !isConfinedLinkTarget(target))
+      (kind === "link" && !isConfinedLinkTarget(path, target))
     ) return undefined
     decoded.push({ path, kind, digest, executable, target })
   }

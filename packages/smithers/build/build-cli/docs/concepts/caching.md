@@ -165,7 +165,12 @@ tampered store instead of leaving it poisoned for every later run.
 Restoring is bounded on both ends. A manifest read back from the cache is
 untrusted input, so every path it names is confined to the node's declared
 outputs before anything is written, and every blob is verified before the tree
-is materialized. Publication stages the whole tree in a temporary sibling,
+is materialized. A symlink in a captured tree is kept as its target text and
+recreated on restore. The target must stay inside the outDir when resolved from
+the link's own directory: `bin/tool -> ../lib/tool.js` does, while an absolute
+target or one that climbs above the outDir does not. Capture fails the target
+and names such a link rather than publishing an entry that can never be
+restored, and a manifest that names one is refused. Publication stages the whole tree in a temporary sibling,
 then moves the previous tree aside and renames the staged tree into place.
 These are two separate renames with a brief absence window at the output path.
 Readers that require continuous visibility must coordinate with publishers.

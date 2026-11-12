@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- A declared `outDir` holding a symlink that climbs with `..` but stays inside
+  the tree (`bin/tool -> ../lib/tool.js`) now restores from the cache. Its
+  manifest was captured, but the decoder refused every `..` target, so the
+  target rebuilt and republished on every run with nothing naming the cause
+  (#5095). A link whose target is absolute or climbs above the outDir now fails
+  the capture and names the link, instead of publishing an entry that can
+  never be restored.
+
 - A remote cache with no available credential (unset, empty or whitespace-only)
   now stays local from the start, sends no requests, and prints one
   `smthrs: remote cache off: no credentials` notice per run, instead of a 401
