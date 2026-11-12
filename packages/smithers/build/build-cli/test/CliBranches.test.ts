@@ -217,7 +217,15 @@ export const Package = S.Package({ targets: { ${
     expect(result.exitCode, result.envelope).toBe(0)
     expect(JSON.parse(result.envelope).exitCode).toBe(0)
     expect(`${result.envelope}${result.stdout}${result.stderr}`).not.toContain("fixture-watch-token")
-    expect(await Fs.readdir(root)).not.toContain(".watch-cache")
+    // A plan stores no result; it saves only the file digests it read, in the
+    // cache directory the child was given. The default one is never created.
+    expect(await Fs.readdir(root)).not.toContain(".flows")
+    const saved = await Fs.readdir(NodePath.join(root, ".watch-cache"), { recursive: true })
+    expect(saved.map((path) => path.split(NodePath.sep).join("/")).sort()).toEqual([
+      "plan",
+      "plan/.gitignore",
+      "plan/file-digests.json"
+    ])
   }, 120_000)
 
   it("degrades a real refused public-cache connection without exposing its read credential", async () => {
