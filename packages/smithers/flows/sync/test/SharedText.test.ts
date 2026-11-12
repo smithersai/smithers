@@ -409,6 +409,23 @@ describe("SharedText", () => {
           expect(yield* Effect.exit(ada!.apply(garbage))).toEqual(refused)
           expect(yield* ada!.text).toBe("kept")
         })))
+
+    it.effect("an update cut short, at any byte, is refused and changes nothing, even one whose text was read", () =>
+      replicas(2, ([ada, bob]) =>
+        Effect.gen(function*() {
+          const first = SharedText.seed("hello world")
+          yield* ada!.apply(first)
+          yield* bob!.apply(first)
+          // A deletion and an insertion: the insertion is read before the deletions, which a cut leaves out.
+          const update = (yield* bob!.replace("world!!"))!
+          const refused = Exit.fail(new SharedText.InvalidUpdate({ reason: "malformed" }))
+          for (let cut = 1; cut < update.length; cut++) {
+            expect(yield* Effect.exit(ada!.apply(update.slice(0, update.length - cut)))).toEqual(refused)
+            expect(yield* ada!.text).toBe("hello world")
+          }
+          yield* ada!.apply(update)
+          expect(yield* ada!.text).toBe("world!!")
+        })))
   })
 
   it.effect("a snapshot carries everything a replica holds", () =>

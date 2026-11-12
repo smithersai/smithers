@@ -284,8 +284,16 @@ export const make: Effect.Effect<SharedText, never, Scope.Scope> = Effect.map(
       )
     return {
       text: Effect.sync(() => text.toString()),
-      // Yjs reads a whole update before it changes the document, so one that fails to read changes nothing.
-      apply: (update) => Effect.try({ try: () => Y.applyUpdate(doc, update), catch: malformed }),
+      // Yjs changes the document while it reads an update: one cut short inside its deletions has already
+      // inserted its text when the read fails. Reading the whole update first leaves such a one unapplied.
+      apply: (update) =>
+        Effect.try({
+          try: () => {
+            Y.decodeUpdate(update)
+            Y.applyUpdate(doc, update)
+          },
+          catch: malformed
+        }),
       edit,
       replace: (next, options) =>
         Effect.suspend(() => {
