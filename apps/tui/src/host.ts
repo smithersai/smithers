@@ -1026,7 +1026,11 @@ export const turnOptions = (
         ask: (question) =>
           Effect.tryPromise({
             try: (signal) => asker(question, signal),
-            catch: (cause) => new StandardFlows.ApprovalUnavailable({ message: String(cause) })
+            catch: () => {
+              // The rejection can contain the question; record only the failed stage.
+              Log.write("approval.prepare_failed", { code: "approval_unavailable" })
+              return new StandardFlows.ApprovalUnavailable({ message: "The approval question could not be shown." })
+            }
           })
       })
     ])
