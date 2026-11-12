@@ -122,12 +122,12 @@ const workflowModules = [
   { matches: (specifier) => specifier === "cloudflare:workflows", whole: true, runtime: "Cloudflare Workflows" },
   { matches: (specifier) => specifier === "cloudflare:workers", names: /^Workflow/, runtime: "Cloudflare Workflows" },
   {
-    matches: (specifier) => /^alchemy\/Cloudflare\/Workflows(?:\/|$)/.test(specifier),
+    matches: (specifier) => /^@alchemy\.run\/cloudflare\/Workflows(?:\/|$)/.test(specifier),
     whole: true,
     runtime: "Cloudflare Workflows through Alchemy"
   },
   {
-    matches: (specifier) => /^alchemy\/Cloudflare(?:\/|$)/.test(specifier),
+    matches: (specifier) => /^@alchemy\.run\/cloudflare(?:\/|$)/.test(specifier),
     // `task`, `sleep`, `sleepUntil` and `waitForEvent` are Alchemy's workflow
     // step functions, which `@alchemy.run/cloudflare` re-exports at its root.
     names: /Workflow|^(?:task|sleep|sleepUntil|waitForEvent)$/,
