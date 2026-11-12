@@ -1,6 +1,4 @@
-import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { NotificationQueue } from "@smthrs/notifications"
-import type { Notification } from "@smthrs/notifications/Notification"
+import { Notification, NotificationQueue } from "@smthrs/notifications"
 
 const from = {
   sourceRunId: "operator",
@@ -10,7 +8,7 @@ const from = {
 }
 
 /** Urgent: this one is delivered in a batch when the current turn closes. */
-export const steer: Notification = {
+export const steer: Notification.Notification = {
   _tag: "human-steer",
   id: "message-1",
   delivery: "steer",
@@ -20,7 +18,7 @@ export const steer: Notification = {
 }
 
 /** Not urgent: this one waits until the run would otherwise have nothing to do. */
-export const followup: Notification = {
+export const followup: Notification.Notification = {
   _tag: "human-followup",
   id: "message-2",
   delivery: "queue",
@@ -59,10 +57,10 @@ export effect function quickstart() {
   }
 }
 
-/** The queue over the production SQLite journal on an in-memory database. */
-export const layer = Layer.provide(NotificationQueue.layer, TestJournal.layer())
+/** The queue over whichever journal its caller provides. */
+export const layer = NotificationQueue.layer
 
-/** Runs the walkthrough in a scope that closes the in-memory journal. */
+/** Runs the walkthrough in a scope of its own, over the caller's journal. */
 export effect function main() {
   return try scoped(effect {
     provide layer {

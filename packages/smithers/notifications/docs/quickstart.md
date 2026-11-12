@@ -151,19 +151,19 @@ record rather than decided a second time.
 ## The same walkthrough in VibeLang
 
 In [VibeLang](https://github.com/smithersai/vibelang) the program is an
-`effect` function and `try` runs each queue call. The journal goes in once:
-`layer` provides it to `NotificationQueue.layer`, a `provide` block supplies
-that layer, and `scoped` closes the in-memory database when the walkthrough
-ends. A queue failure stays in the error channel instead of becoming a defect
-through `Effect.orDie`.
+`effect` function and `try` runs each queue call. The module imports only the
+package root: `layer` is `NotificationQueue.layer`, a `provide` block supplies
+it, and the journal comes from the caller. `test/quickstart.test.vibe` passes
+`TestJournal.layer()`, the same production SQLite journal on an in-memory
+database as above, and its `scoped` block closes that database when the
+walkthrough ends. A queue failure stays in the error channel instead of
+becoming a defect through `Effect.orDie`.
 
 This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
 the package's docs check fails if this block and the file differ.
 
 ```vibe
-import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { NotificationQueue } from "@smthrs/notifications"
-import type { Notification } from "@smthrs/notifications/Notification"
+import { Notification, NotificationQueue } from "@smthrs/notifications"
 
 const from = {
   sourceRunId: "operator",
@@ -173,7 +173,7 @@ const from = {
 }
 
 /** Urgent: this one is delivered in a batch when the current turn closes. */
-export const steer: Notification = {
+export const steer: Notification.Notification = {
   _tag: "human-steer",
   id: "message-1",
   delivery: "steer",
@@ -183,7 +183,7 @@ export const steer: Notification = {
 }
 
 /** Not urgent: this one waits until the run would otherwise have nothing to do. */
-export const followup: Notification = {
+export const followup: Notification.Notification = {
   _tag: "human-followup",
   id: "message-2",
   delivery: "queue",
@@ -222,10 +222,10 @@ export effect function quickstart() {
   }
 }
 
-/** The queue over the production SQLite journal on an in-memory database. */
-export const layer = Layer.provide(NotificationQueue.layer, TestJournal.layer())
+/** The queue over whichever journal its caller provides. */
+export const layer = NotificationQueue.layer
 
-/** Runs the walkthrough in a scope that closes the in-memory journal. */
+/** Runs the walkthrough in a scope of its own, over the caller's journal. */
 export effect function main() {
   return try scoped(effect {
     provide layer {

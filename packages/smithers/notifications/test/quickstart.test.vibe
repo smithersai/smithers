@@ -1,9 +1,15 @@
 import { expect, it } from "@effect/vitest"
+import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { closeTurn, followup, layer, main, steer } from "../examples/quickstart.vibe"
 
 it.effect("delivers the steer at the first boundary and the follow-up at the next", effect () => {
-  expect(try main()).toEqual({
+  const outcome = try scoped(effect {
+    provide TestJournal.layer() {
+      return try main()
+    }
+  })
+  expect(outcome).toEqual({
     admitted: ["admitted", "admitted"],
     turn1: ["message-1"],
     turn2: ["message-2"],
@@ -13,7 +19,7 @@ it.effect("delivers the steer at the first boundary and the follow-up at the nex
 
 it.effect("answers a repeated drain from the committed promotion record", effect () => {
   const again = try scoped(effect {
-    provide layer {
+    provide Layer.provide(layer, TestJournal.layer()) {
       const queue = try NotificationQueue.NotificationQueue
       try queue.admit("run-1", steer)
       try queue.admit("run-1", followup)
