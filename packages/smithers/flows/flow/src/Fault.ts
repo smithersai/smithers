@@ -284,6 +284,11 @@ for (
   ]
 ) register(`@smthrs/flow/${tag}`, "bug")
 
+// A stored step this build cannot decode was written by a different build: the
+// deployment is wrong, not the person or the platform, as with the harness's
+// `incompatible_journal`.
+register("JournalDecodeError", "bug")
+
 // Lower host seams do not depend on flow authoring. Register their stable wire
 // tags here so classification does not introduce an upward package dependency.
 register("@smthrs/kernel/Unreachable", "infra")

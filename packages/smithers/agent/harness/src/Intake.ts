@@ -21,6 +21,7 @@
  * @since 1.0.0-rc.17
  */
 
+import * as Fault from "@smthrs/flow/Fault"
 import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Effect from "effect/Effect"
@@ -318,6 +319,9 @@ export class Unscreened extends Schema.TaggedError<Unscreened>()("@smthrs/harnes
   screening: Screening,
   coverage: Coverage
 }) {}
+// Jev left a text unanswered, and another attempt may answer it. An oversized
+// event asks Jev nothing, so its retries cost nothing before the ladder stops.
+Fault.register("@smthrs/harness/Intake/Unscreened", "dependency")
 
 /**
  * Screens one event's texts with Jev, in one batch.

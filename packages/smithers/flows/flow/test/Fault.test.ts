@@ -4,7 +4,7 @@
  * `respond` is the one ladder over the classes.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, ExternalJob, Fault, Flow, FlowRuntime, HumanTask } from "@smthrs/flow"
+import { Action, ExternalJob, Fault, Flow, FlowRuntime, HumanTask, JournalDecode } from "@smthrs/flow"
 
 const tagged = (tag: string, fields: Record<string, unknown> = {}) => ({ _tag: tag, ...fields })
 
@@ -143,6 +143,12 @@ describe("the flow's own rows", () => {
     })
     expect(Fault.of(timedOut)).toEqual({ class: "dependency", tag: "@smthrs/flow/AttemptTimedOut/attempt_timed_out" })
     expect(Fault.registered().has("@smthrs/flow/AttemptTimedOut")).toBe(true)
+  })
+
+  it("classifies a stored step this build cannot decode as a registered bug", () => {
+    const undecodable = new JournalDecode.JournalDecodeError({ stepTag: "s", objectId: "o", codeVersion: "v" })
+    expect(Fault.of(undecodable)).toEqual({ class: "bug", tag: "JournalDecodeError" })
+    expect(Fault.registered().has(undecodable._tag)).toBe(true)
   })
 })
 

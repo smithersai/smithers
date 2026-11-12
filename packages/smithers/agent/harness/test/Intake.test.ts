@@ -3,6 +3,7 @@
  * only on a confident spam or irrelevant subject, and refuses an event any
  * text of which Jev did not answer. Every transport is scripted.
  */
+import * as Fault from "@smthrs/flow/Fault"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Result } from "effect"
 import { describe, expect, it } from "vitest"
@@ -190,6 +191,8 @@ describe("screen", () => {
     expect(failure.screening.answers).toEqual([])
     expect(failure.screening.reason).toMatch(/^unanswered; issue: unreachable — /)
     expect(failure.coverage.texts).toEqual([{ id: "issue", stateBytes: expect.any(Number), screened: false }])
+    // Another attempt may reach Jev: a dependency fault, not an unregistered bug.
+    expect(Fault.of(failure)).toEqual({ class: "dependency", tag: "@smthrs/harness/Intake/Unscreened" })
   })
 
   it("refuses a partly answered event and keeps the answers it got", async () => {
