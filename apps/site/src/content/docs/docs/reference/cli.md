@@ -11,7 +11,7 @@ head:
       href: /docs/reference/cli.md
 ---
 
-Install discovery for `smthrs` 1.0.0-rc.17, plus additional local commands, as their `--help` describes them.
+Install discovery for `smthrs` 1.0.0-rc.18, plus additional local commands, as their `--help` describes them.
 
 Other callable library commands stay outside install discovery. Use their explicit `--help`; see the [library command reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md) and [CLI API](/docs/reference/api/cli/).
 

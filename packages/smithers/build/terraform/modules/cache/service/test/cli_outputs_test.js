@@ -30,10 +30,11 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
       const a = Path.join(root, "a"), b = Path.join(root, "b")
       const statuses = [], warnings = []
       let fault = () => undefined
-      const open = (workspaceRoot, token = writer) =>
+      const open = (workspaceRoot, token = writer, timeouts) =>
         openCache({
           workspaceRoot,
           endpoint: "https://cache.test",
+          ...(timeouts === undefined ? {} : { timeouts }),
           readToken: () => reader,
           writeToken: () => token,
           warn: (line) => warnings.push(line),
@@ -155,21 +156,46 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
       }
     }, 120000)
 
+    test("one slow findMissing costs one publication and keeps the remote", async () => {
+      await run(1, async (f) => {
+        await Fs.writeFile(Path.join(f.a, "other"), "other bytes")
+        const other = await Tree.captureFile(f.a, ".flows", "other")
+        const fast = { ...f.result, key: "e".repeat(64), output: { kind: "build", manifests: [], files: [other] } }
+        f.setFault(async (req) => {
+          if (!new URL(req.url).pathname.endsWith("/findMissing")) return f.handler(req)
+          const { digests } = await req.clone().json()
+          // Latency injected in transport: this entry's probe always outlives its deadline.
+          if (digests.includes(f.file.digest)) await new Promise((resolve) => setTimeout(resolve, 400))
+          return f.handler(req)
+        })
+        const cache = await f.open(f.a, writer, { get: 5000, put: 100 })
+        await cache.put(f.result.key, f.result)
+        await cache.put(fast.key, fast)
+        expect(f.actionCache.entries.has(f.result.key)).toBe(false)
+        expect(f.actionCache.entries.has(fast.key)).toBe(true)
+        expect(f.warnings).toEqual(["smthrs: remote cache findMissing timed out; skipped one publication"])
+        expect(await (await f.open(f.b)).get(fast.key)).not.toBeNull()
+        expect(await Tree.verifyFileManifest(f.b, ".flows", other)).toBeUndefined()
+      })
+    }, 30000)
+
     for (const kind of ["missing", "corrupt", "busy", "down", "reader"]) {
       test(kind + " retains local data and never publishes a partial result", async () => {
         await run(40 * 1024 * 1024, async (f) => {
           if (kind === "reader" || kind === "busy" || kind === "down") {
-            let failed = false
+            // A busy service stays busy through the first publication's retries.
+            let failing = true
             f.setFault((req) => {
               if (
-                !failed && req.method === "PUT" && new URL(req.url).pathname.startsWith("/cas/") && kind !== "reader"
+                failing && req.method === "PUT" && new URL(req.url).pathname.startsWith("/cas/") && kind !== "reader"
               ) {
-                failed = true
+                if (kind === "down") failing = false
                 return new Response(null, { status: kind === "busy" ? 429 : 503 })
               }
             })
             const cache = await f.open(f.a, kind === "reader" ? reader : writer)
             await cache.put(f.result.key, f.result)
+            failing = false
             expect(f.actionCache.entries.size).toBe(0)
             expect(await cache.get(f.result.key)).not.toBeNull()
             await cache.put(f.result.key, f.result)

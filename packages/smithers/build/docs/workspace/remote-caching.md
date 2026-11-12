@@ -94,9 +94,17 @@ Behavior:
 - Any remote failure prints one warning line to standard error and degrades the
   store to local-only for the rest of the process. A run never fails because the
   remote cache failed.
-- A `429` means the remote is busy or the credential spent its budget. The
-  client warns once, treats that GET as a miss or drops that one publication,
-  and keeps the remote enabled.
+- A `429` means the remote is busy or the credential spent its budget. An
+  artifact download, artifact upload, or `findMissing` probe is retried up to
+  six times with jittered exponential backoff from 100 milliseconds, within 8
+  seconds of waiting; a `Retry-After` longer than the time left stops at once.
+  After that the client warns once, treats that GET as a miss or drops that one
+  publication, and keeps the remote enabled.
+- A `findMissing` probe that outlives its deadline is a busy remote, not a
+  broken one. It is tried three times; then that one publication is skipped
+  with one warning and the remote stays enabled. Three publications in a row
+  that lose their probe this way, with no answered probe between them, disable
+  the remote like any other failure.
 - A `PUT` returning `201` inserted the entry, `200` found an identical entry,
   and `409` found a different result under the same key. A `409` warns without
   failing the run or disabling subsequent remote reads.
@@ -137,8 +145,9 @@ body, verification, and local blob publication. Metadata retains 3-second reads
 and 8-second writes. Bulk `findMissing` probes contain at most 128 digests.
 Their deadline is the metadata write budget plus 25 milliseconds per digest
 (11.2 seconds for a full batch by default), capped by the artifact read budget.
-This covers the request and bounded response body; a timeout identifies
-`findMissing` in the warning. A programmatic `timeouts.get` override caps bulk
+This covers the request and bounded response body; a probe that still times
+out after its retries skips that publication and names `findMissing` in the
+warning. A programmatic `timeouts.get` override caps bulk
 probes; `timeouts.put` supplies their base budget.
 An output-limit refusal warns once and skips that entry while other remote
 operations remain available. During an outage, local metadata still reaches the

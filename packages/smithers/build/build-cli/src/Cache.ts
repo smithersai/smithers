@@ -7,7 +7,9 @@
  * complete local hit stays on disk. A put writes the local result, uploads
  * missing output blobs, then publishes remote metadata. Any remote failure prints one warning line
  * and degrades the store to local-only for the rest of the process. A `429`
- * is not a failure: it costs only the request it answered.
+ * is not a failure: it costs only the request it answered, after a short
+ * bounded retry for content-store exchanges. A `findMissing` probe that
+ * outlives its deadline after the same retry costs only that publication.
  *
  * Every read on both sides is an untrusted read. A local entry file may have
  * been replaced by a symbolic link, a FIFO, or four gigabytes of noise; a
@@ -17,6 +19,7 @@
  * @since 0.1.0
  */
 
+import * as RetryPolicy from "@smthrs/flow/RetryPolicy"
 import * as Config from "@smthrs/targets/Config"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -109,6 +112,52 @@ export const remoteTimeouts = { get: 3_000, put: 8_000 } as const
 // Artifact exchanges include up to 16 MiB plus verification and fsync.
 const remoteArtifactTimeouts = { get: 60_000, put: 60_000 } as const
 const remoteFileResultTimestamp = "1970-01-01T00:00:00.000Z"
+
+/**
+ * How one busy or slow content-store exchange is retried before it is given
+ * up.
+ *
+ * A `429` from an artifact `GET`, `PUT`, or `findMissing` follows `busy`, and
+ * a `findMissing` that outlives its deadline follows `slow`. Both wait 100 ms
+ * doubled per attempt with full jitter, at most 2 s, and stop once the waits
+ * would pass 8 s; a `Retry-After` longer than the time left stops at once. A
+ * given-up exchange costs one entry: a miss for a restore, a skipped
+ * publication for a put. The remote stays enabled.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const remoteTransferRetry = {
+  busy: RetryPolicy.make({
+    initialMs: 100,
+    factor: 2,
+    maxMs: 2_000,
+    maxAttempts: 6,
+    jitterRatio: 1,
+    expirationMs: 8_000
+  }),
+  slow: RetryPolicy.make({
+    initialMs: 100,
+    factor: 2,
+    maxMs: 2_000,
+    maxAttempts: 3,
+    jitterRatio: 1,
+    expirationMs: 8_000
+  })
+} as const
+
+/**
+ * How many publications in a row may lose their `findMissing` to timeouts
+ * before the remote is disabled.
+ *
+ * One slow batch is a busy server and costs one publication. This many in a
+ * row, with no successful probe between them, is a remote that does not
+ * answer, and it is treated like any other remote failure.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const findMissingTimeoutLimit = 3
 
 /**
  * The stored entry shape both stores decode through.
@@ -832,6 +881,9 @@ const writeLocal = async (
  * losing promise's rejection is absorbed so an abort that arrives after the
  * race never surfaces as an unhandled rejection.
  */
+/** A remote exchange that outlived its deadline. */
+class RemoteTimeout extends Error {}
+
 const withDeadline = async <A>(
   operation: "get" | "put" | "findMissing",
   milliseconds: number,
@@ -841,7 +893,7 @@ const withDeadline = async <A>(
   let timer: ReturnType<typeof setTimeout> | undefined
   const expiry = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      const cause = new Error(`remote cache ${operation} timed out after ${milliseconds}ms`)
+      const cause = new RemoteTimeout(`remote cache ${operation} timed out after ${milliseconds}ms`)
       controller.abort(cause)
       reject(cause)
     }, milliseconds)
@@ -1223,9 +1275,16 @@ class RemoteStore {
     this.limitWarned = true
     this.warn("smthrs: remote cache entry exceeds limits; skipped one entry")
   }
+  private skipSlow(): void {
+    if (this.slowWarned) return
+    this.slowWarned = true
+    this.warn("smthrs: remote cache findMissing timed out; skipped one publication")
+  }
   // One CAS exchange at a time per cache handle, across all target workers.
   // Metadata requests retain their existing independent concurrency.
   private blobQueue: Promise<void> = Promise.resolve()
+  private findMissingTimeouts = 0
+  private slowWarned = false
 
   private blobs<A>(run: () => Promise<A>): Promise<A> {
     const pending = this.blobQueue.then(run)
@@ -1233,40 +1292,80 @@ class RemoteStore {
     return pending
   }
 
+  /**
+   * Runs one exchange, retrying a `429` (and, when `retryTimeout`, a
+   * deadline) on the {@link remoteTransferRetry} schedule. Resolves the last
+   * status, or `"timeout"` when the deadline outlived the budget. Other
+   * failures reject at once.
+   */
+  private async retrying(
+    retryTimeout: boolean,
+    run: () => Promise<{ readonly status: number; readonly retryAfter?: string | null | undefined }>
+  ): Promise<number | "timeout"> {
+    let waited = 0
+    for (let attempt = 1;; attempt += 1) {
+      let outcome: number | "timeout"
+      let retryAfterMs = 0
+      try {
+        const answer = await run()
+        outcome = answer.status
+        const seconds = answer.retryAfter === undefined || answer.retryAfter === null
+          ? Number.NaN
+          : Number(answer.retryAfter)
+        if (Number.isFinite(seconds) && seconds > 0) retryAfterMs = seconds * 1000
+      } catch (cause) {
+        if (!(retryTimeout && cause instanceof RemoteTimeout)) throw cause
+        outcome = "timeout"
+      }
+      if (outcome !== 429 && outcome !== "timeout") return outcome
+      if (this.degraded) return outcome
+      const policy = outcome === "timeout" ? remoteTransferRetry.slow : remoteTransferRetry.busy
+      const next = RetryPolicy.nextDelay(policy, attempt, { random: Math.random(), elapsedMs: waited })
+      if (Option.isNone(next) || retryAfterMs > (policy.expirationMs ?? 0) - waited) return outcome
+      const delay = next.value
+      waited += delay
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+
   /** Reads missing outputs into the CAS; never writes a declared output path. */
   async hydrate(cas: string, output: unknown): Promise<boolean> {
     return this.blobs(async () => {
       try {
-        return await OutputCas.hydrate(cas, output, async (digest) => {
-          if (this.degraded) return false
-          const status = await withDeadline("get", this.artifactTimeouts.get, async (signal) => {
-            const response = await this.fetch(`${this.endpoint}/cas/${digest}`, {
-              method: "GET",
-              headers: this.headers("read"),
-              redirect: "error",
-              signal
-            })
-            if (response.status !== 200) {
-              cancelBody(response.body)
-              return response.status
-            }
-            const bytes = await readBoundedBytes(response, OutputCas.chunkBytes)
-            if (bytes === undefined) throw new Error("remote CAS body exceeds its bound or is truncated")
-            signal.throwIfAborted()
-            await OutputCas.writeBlob(cas, digest, bytes, signal)
-            return 200
-          })
-          if (status === 200) return true
-          if (status === 429) this.skipBusy()
-          else if (status !== 404) this.degrade("GET", { status })
-          return false
-        })
+        return await OutputCas.hydrate(cas, output, (digest) => this.download(cas, digest))
       } catch (cause) {
         if (cause instanceof OutputCas.OutputLimitError) this.skipLimit()
         else this.degrade("GET", { cause })
         return false
       }
     })
+  }
+
+  /** Fetches one verified artifact into the CAS. */
+  private async download(cas: string, digest: string): Promise<boolean> {
+    if (this.degraded) return false
+    const status = await this.retrying(false, () =>
+      withDeadline("get", this.artifactTimeouts.get, async (signal) => {
+        const response = await this.fetch(`${this.endpoint}/cas/${digest}`, {
+          method: "GET",
+          headers: this.headers("read"),
+          redirect: "error",
+          signal
+        })
+        if (response.status !== 200) {
+          cancelBody(response.body)
+          return { status: response.status, retryAfter: response.headers.get("retry-after") }
+        }
+        const bytes = await readBoundedBytes(response, OutputCas.chunkBytes)
+        if (bytes === undefined) throw new Error("remote CAS body exceeds its bound or is truncated")
+        signal.throwIfAborted()
+        await OutputCas.writeBlob(cas, digest, bytes, signal)
+        return { status: 200 }
+      }))
+    if (status === 200) return true
+    if (status === 429) this.skipBusy()
+    else if (status !== 404) this.degrade("GET", { status: status as number })
+    return false
   }
 
   private async upload(cas: string, digests: ReadonlyArray<string>): Promise<boolean> {
@@ -1277,60 +1376,81 @@ class RemoteStore {
       // small and allow 25ms per lookup above the metadata publication budget,
       // capped by the artifact budget (including an explicit timeout override).
       const milliseconds = Math.min(this.artifactTimeouts.get, this.timeouts.put + batch.length * 25)
-      const missing = await withDeadline("findMissing", milliseconds, async (signal) => {
-        const response = await this.fetch(`${this.endpoint}/cas/findMissing`, {
-          method: "POST",
-          headers: this.headers("write"),
-          body: JSON.stringify({ digests: batch }),
-          redirect: "error",
-          signal
-        })
-        if (response.status === 429) {
-          cancelBody(response.body)
-          this.skipBusy()
-          return undefined
-        }
-        if (response.status === 401 || response.status === 403) {
-          cancelBody(response.body)
-          this.denyPublication()
-          return undefined
-        }
-        if (response.status !== 200) {
-          cancelBody(response.body)
-          this.degrade("GET", { status: response.status })
-          return undefined
-        }
-        const text = await readBoundedBody(response, 128 * 1024)
-        if (text === undefined) throw new Error("invalid remote CAS missing-digest body")
-        const value = JSON.parse(text) as { missing?: unknown }
-        if (
-          value === null || !Array.isArray(value.missing) || value.missing.length > batch.length ||
-          !value.missing.every((digest: unknown) => typeof digest === "string" && batch.includes(digest)) ||
-          new Set(value.missing).size !== value.missing.length
-        ) throw new Error("invalid remote CAS missing-digest list")
-        return value.missing as Array<string>
-      })
-      if (missing === undefined) return false
-      for (const digest of missing) {
-        if (this.degraded || this.publishDenied) return false
-        const bytes = await OutputCas.readBlob(cas, digest)
-        const status = await withDeadline("put", this.artifactTimeouts.put, async (signal) => {
-          const headers = this.headers("write")
-          headers.set("content-type", "application/octet-stream")
-          const response = await this.fetch(`${this.endpoint}/cas/${digest}`, {
-            method: "PUT",
-            headers,
-            body: new Uint8Array(bytes),
+      let missing: Array<string> = []
+      const status = await this.retrying(true, () =>
+        withDeadline("findMissing", milliseconds, async (signal) => {
+          const response = await this.fetch(`${this.endpoint}/cas/findMissing`, {
+            method: "POST",
+            headers: this.headers("write"),
+            body: JSON.stringify({ digests: batch }),
             redirect: "error",
             signal
           })
-          cancelBody(response.body)
-          return response.status
-        })
-        if (status === 200 || status === 201) continue
-        if (status === 401 || status === 403) this.denyPublication()
-        else if (status === 429) this.skipBusy()
-        else this.degrade("PUT", { status })
+          if (response.status !== 200) {
+            cancelBody(response.body)
+            return { status: response.status, retryAfter: response.headers.get("retry-after") }
+          }
+          const text = await readBoundedBody(response, 128 * 1024)
+          if (text === undefined) throw new Error("invalid remote CAS missing-digest body")
+          const value = JSON.parse(text) as { missing?: unknown }
+          if (
+            value === null || !Array.isArray(value.missing) || value.missing.length > batch.length ||
+            !value.missing.every((digest: unknown) => typeof digest === "string" && batch.includes(digest)) ||
+            new Set(value.missing).size !== value.missing.length
+          ) throw new Error("invalid remote CAS missing-digest list")
+          missing = value.missing as Array<string>
+          return { status: 200 }
+        }))
+      if (status === "timeout") {
+        // A slow batch is a busy server, not a dead one: it costs this entry.
+        // Only a run of them with no answer between disables the remote.
+        this.findMissingTimeouts += 1
+        if (this.findMissingTimeouts >= findMissingTimeoutLimit) {
+          this.degrade("PUT", {
+            cause: new Error(`remote cache findMissing timed out ${findMissingTimeoutLimit} publications in a row`)
+          })
+        } else {
+          this.skipSlow()
+        }
+        return false
+      }
+      if (status === 429) {
+        this.skipBusy()
+        return false
+      }
+      if (status === 401 || status === 403) {
+        this.denyPublication()
+        return false
+      }
+      if (status !== 200) {
+        this.degrade("GET", { status })
+        return false
+      }
+      this.findMissingTimeouts = 0
+      for (const digest of missing) {
+        if (this.degraded || this.publishDenied) return false
+        const bytes = await OutputCas.readBlob(cas, digest)
+        const putStatus = await this.retrying(
+          false,
+          () =>
+            withDeadline("put", this.artifactTimeouts.put, async (signal) => {
+              const headers = this.headers("write")
+              headers.set("content-type", "application/octet-stream")
+              const response = await this.fetch(`${this.endpoint}/cas/${digest}`, {
+                method: "PUT",
+                headers,
+                body: new Uint8Array(bytes),
+                redirect: "error",
+                signal
+              })
+              cancelBody(response.body)
+              return { status: response.status, retryAfter: response.headers.get("retry-after") }
+            })
+        )
+        if (putStatus === 200 || putStatus === 201) continue
+        if (putStatus === 401 || putStatus === 403) this.denyPublication()
+        else if (putStatus === 429) this.skipBusy()
+        else this.degrade("PUT", { status: putStatus as number })
         return false
       }
     }

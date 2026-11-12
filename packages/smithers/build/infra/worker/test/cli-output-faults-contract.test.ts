@@ -3,7 +3,11 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { openCache, type CachedResult } from "../../../build-cli/src/Cache.ts"
+import {
+  type CachedResult,
+  findMissingTimeoutLimit,
+  openCache
+} from "../../../build-cli/src/Cache.ts"
 import * as Tree from "../../../build-cli/src/PackageTree.ts"
 import { createHandler } from "../protocol.ts"
 import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
@@ -56,22 +60,40 @@ describe("remote output failure boundaries", () => {
       expect(f.warnings).toEqual([])
     }
   )
-  it("skips one busy download and restores on the next lookup", async () => {
+  it("retries one busy download and restores it on the same lookup", async () => {
     const f = await fixture()
     await (await f.open(f.a)).put(f.result.key, f.result)
-    let refused = false
+    let refused = 0
     f.setFault(req => {
-      if (!refused && req.method === "GET" && new URL(req.url).pathname.startsWith("/cas/")) {
-        refused = true
+      if (refused === 0 && req.method === "GET" && new URL(req.url).pathname.startsWith("/cas/")) {
+        refused++
+        return new Response(null, { status: 429, headers: { "retry-after": "1" } })
+      }
+    })
+    const reader = await f.open(f.b)
+    expect(await reader.get(f.result.key)).not.toBeNull()
+    expect(refused).toBe(1)
+    expect(await Tree.verifyFileManifest(f.b, ".flows", f.file)).toBeUndefined()
+    expect(f.warnings).toEqual([])
+  })
+  it("skips a download that stays busy and restores on the next lookup", async () => {
+    const f = await fixture()
+    await (await f.open(f.a)).put(f.result.key, f.result)
+    let busy = true, refused = 0
+    f.setFault(req => {
+      if (busy && req.method === "GET" && new URL(req.url).pathname.startsWith("/cas/")) {
+        refused++
         return new Response(null, { status: 429 })
       }
     })
     const reader = await f.open(f.b)
     expect(await reader.get(f.result.key)).toBeNull()
+    expect(refused).toBeGreaterThan(1)
+    busy = false
     expect(await reader.get(f.result.key)).not.toBeNull()
     expect(await Tree.verifyFileManifest(f.b, ".flows", f.file)).toBeUndefined()
     expect(f.warnings).toEqual(["smthrs: remote cache busy (HTTP 429); skipped one request"])
-  })
+  }, 30000)
   it.each(["oversized", "truncated", "corrupt", "hang"])("rejects a %s response before publishing a local blob", async kind => {
     const f = await fixture(false, kind === "hang")
     await (await f.open(f.a)).put(f.result.key, f.result)
@@ -112,7 +134,7 @@ describe("remote output failure boundaries", () => {
     const results = Array.from({ length: 4 }, (_, i) => ({ ...f.result, key: String(i).repeat(64) }))
     await Promise.all(results.map(result => publisher.put(result.key, result)))
     const reader = await f.open(f.b)
-    expect((await Promise.all(results.map(result => reader.get(result.key)))).every(Boolean)).toBe(true)
+    expect((await Promise.all(results.map(result => reader.get(result.key)))).every(Boolean), f.warnings.join("\n")).toBe(true)
     expect(f.peak()).toBe(1)
     expect(f.warnings).toEqual([])
   })
@@ -217,9 +239,10 @@ it("allows a bulk probe beyond the metadata deadline", async () => {
 
 it.each(["request", "body"])("races a hung bulk %s against an explicit timeout", async stage => {
   const f = await fixture(false, true)
-  let signal: AbortSignal | undefined
+  let signal: AbortSignal | undefined, probes = 0
   f.setFault((request, transportSignal) => {
     if (!new URL(request.url).pathname.endsWith("/findMissing")) return
+    probes++
     signal = transportSignal ?? undefined
     return stage === "request"
       ? new Promise<Response>(() => {})
@@ -228,28 +251,84 @@ it.each(["request", "body"])("races a hung bulk %s against an explicit timeout",
   const cache = await f.open(f.a)
   const start = performance.now()
   await cache.put(f.result.key, f.result)
-  expect(performance.now() - start).toBeLessThan(2000)
+  expect(performance.now() - start).toBeLessThan(5000)
   expect(signal?.aborted).toBe(true)
+  expect(probes).toBe(3)
   expect(f.actionCache.entries.size).toBe(0)
-  expect(f.warnings).toHaveLength(1)
-  expect(f.warnings[0]).toContain("findMissing timed out after 100ms")
+  expect(f.warnings).toEqual(["smthrs: remote cache findMissing timed out; skipped one publication"])
   expect(await cache.get(f.result.key)).not.toBeNull()
   await cache.put(f.result.key, f.result)
   expect(f.warnings).toHaveLength(1)
-})
+}, 30000)
 
-it("skips a busy later probe, then publishes every blob before metadata on retry", async () => {
+it("keeps publishing after one entry's findMissing stays slow", async () => {
+  // The hosted service can take longer than a batch's deadline under load. That
+  // costs the slow entry, never the run's later publications.
+  const f = await fixture(false, { get: 5000, put: 100 })
+  const slow = { ...f.result, key: "c".repeat(64) }
+  await Fs.writeFile(Path.join(f.a, "other"), "other bytes")
+  const other = await Tree.captureFile(f.a, ".flows", "other")
+  const fast = { ...f.result, key: "d".repeat(64), output: { kind: "build", manifests: [], files: [other] } }
+  f.setFault(async request => {
+    if (!new URL(request.url).pathname.endsWith("/findMissing")) return f.handler(request)
+    const { digests } = await request.clone().json() as { digests: Array<string> }
+    if (digests.includes(f.file.digest)) await new Promise(resolve => setTimeout(resolve, 400))
+    return f.handler(request)
+  })
+  const cache = await f.open(f.a)
+  await cache.put(slow.key, slow)
+  await cache.put(fast.key, fast)
+  expect(f.actionCache.entries.has(slow.key)).toBe(false)
+  expect(f.actionCache.entries.has(fast.key)).toBe(true)
+  expect(f.warnings).toEqual(["smthrs: remote cache findMissing timed out; skipped one publication"])
+  const reader = await f.open(f.b)
+  expect(await reader.get(fast.key)).not.toBeNull()
+  expect(await Tree.verifyFileManifest(f.b, ".flows", other)).toBeUndefined()
+}, 30000)
+
+it("publishes after one slow findMissing attempt", async () => {
+  const f = await fixture(false, { get: 5000, put: 100 })
+  let probes = 0
+  f.setFault(async request => {
+    if (!new URL(request.url).pathname.endsWith("/findMissing")) return f.handler(request)
+    if (++probes === 1) await new Promise(resolve => setTimeout(resolve, 400))
+    return f.handler(request)
+  })
+  await (await f.open(f.a)).put(f.result.key, f.result)
+  expect(probes).toBe(2)
+  expect(f.actionCache.entries.has(f.result.key)).toBe(true)
+  expect(f.warnings).toEqual([])
+}, 30000)
+
+it("disables the remote once findMissing times out for several publications in a row", async () => {
+  const f = await fixture(false, { get: 5000, put: 100 })
+  f.setFault(request => new URL(request.url).pathname.endsWith("/findMissing") ? new Promise<Response>(() => {}) : undefined)
+  const cache = await f.open(f.a)
+  for (let n = 0; n < findMissingTimeoutLimit + 1; n++) {
+    await cache.put(String(n).repeat(64), { ...f.result, key: String(n).repeat(64) })
+  }
+  expect(f.actionCache.entries.size).toBe(0)
+  expect(f.warnings).toEqual([
+    "smthrs: remote cache findMissing timed out; skipped one publication",
+    `smthrs: remote cache disabled after a failure: PUT request failed: remote cache findMissing timed out ${findMissingTimeoutLimit} publications in a row`
+  ])
+}, 60000)
+
+it("skips a probe that stays busy, then publishes every blob before metadata on retry", async () => {
   const f = await fixture()
   await Fs.mkdir(Path.join(f.a, "out"))
   for (let i = 0; i < 129; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), String(i))
   const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
   const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
-  let probes = 0
+  let probes = 0, busy = true
   f.setFault(request => {
-    if (new URL(request.url).pathname.endsWith("/findMissing") && ++probes === 2) return new Response(null, { status: 429 })
+    if (new URL(request.url).pathname.endsWith("/findMissing") && ++probes >= 2 && busy) {
+      return new Response(null, { status: 429 })
+    }
   })
   const cache = await f.open(f.a)
   await cache.put(result.key, result)
+  busy = false
   expect(f.actionCache.entries.size).toBe(0)
   expect(f.contentStore.objects.size).toBe(128)
   expect(await cache.get(result.key)).not.toBeNull()
@@ -276,13 +355,12 @@ it("scales a full discovery batch deadline and still races an uncooperative back
   const cache = await f.open(f.a)
   const start = performance.now()
   await cache.put(result.key, result)
-  expect(performance.now() - start).toBeGreaterThanOrEqual(3200)
-  expect(performance.now() - start).toBeLessThan(8000)
+  // Three attempts of 3300ms each, plus at most 300ms of backoff.
+  expect(performance.now() - start).toBeGreaterThanOrEqual(3 * 3200)
+  expect(performance.now() - start).toBeLessThan(16000)
   expect(signal?.aborted).toBe(true)
   expect(f.actionCache.entries.size).toBe(0)
   expect(f.contentStore.objects.size).toBe(0)
   expect(await cache.get(result.key)).not.toBeNull()
-  expect(f.warnings).toEqual([
-    "smthrs: remote cache disabled after a failure: PUT request failed: remote cache findMissing timed out after 3300ms"
-  ])
+  expect(f.warnings).toEqual(["smthrs: remote cache findMissing timed out; skipped one publication"])
 }, 30000)

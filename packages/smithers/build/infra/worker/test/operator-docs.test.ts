@@ -80,6 +80,7 @@ describe("operator documentation", () => {
     expect(guide).toContain("with its nine bindings")
     expect(guide).toContain(`exceed ${maxActionCacheRowBytes} bytes`)
     expect(guide).toContain(`over ${maxD1RowBytes} bytes`)
-    expect(guide).toMatch(/`429` as a miss for that GET or a dropped publication/)
+    expect(guide).toMatch(/retries a `429` on an artifact transfer or a\s+`findMissing` probe/)
+    expect(guide).toMatch(/a miss for\s+that GET or a dropped publication/)
   })
 })

@@ -460,8 +460,11 @@ methods return `405`. An internal storage refusal returns `503`. The
 target-cache CLI treats `503` as a remote failure: it marks the remote degraded
 and falls back to local caching and execution for the rest of the process,
 without retrying the remote. Repair the connection or storage issue and retry
-in a fresh invocation. The CLI treats a `429` as a miss for that GET or a
-dropped publication for that PUT and keeps the remote enabled. The engine's
+in a fresh invocation. The CLI retries a `429` on an artifact transfer or a
+`findMissing` probe a few times within 8 seconds, then treats it as a miss for
+that GET or a dropped publication for that PUT and keeps the remote enabled. A
+`findMissing` that outlives its deadline after three tries skips only that
+publication. The engine's
 artifact and step-cache clients have separate error handling; any retries
 configured in their HTTP transport or callers do not change the target-cache
 CLI policy.
@@ -603,8 +606,9 @@ blobs across entries costs 5000 artifact uploads, at least 40
 `findMissing` requests (128 digests per batch; entry boundaries can add probes), and one `/ac` request per
 entry. Entries are limited to 1000 direct artifact references. Concurrent jobs
 share the credential's 12000-request and 600-probe per-minute location budgets
-in `deployment.ts`; bursts can receive `429`, skip that publication or
-restore, and rebuild locally. The client does not retry or raise those budgets.
+in `deployment.ts`; bursts can receive `429`. The client retries each refused
+exchange briefly within a bounded budget, then skips that publication or
+restore and rebuilds locally. It never raises those budgets.
 
 Every chunk and index is declared directly in the publication's artifact
 references, so the self-hosted reference accounting retains both while the entry

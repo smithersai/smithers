@@ -97,15 +97,17 @@ describe("remote output blobs", () => {
   it.each([429, 503])("does not publish metadata after upload HTTP %i", async status => {
     const f = await fixture(), a = await fresh()
     const result = await capture(a, 40 * 1024 * 1024)
-    let failed = false
+    // A 503 fails once; a busy service stays busy through the first put's retries.
+    let failing = true
     const cache = await f.open(a, writer, request => {
-      if (!failed && request.method === "PUT" && new URL(request.url).pathname.startsWith("/cas/")) {
-        failed = true
+      if (failing && request.method === "PUT" && new URL(request.url).pathname.startsWith("/cas/")) {
+        if (status === 503) failing = false
         return new Response(null, { status })
       }
       return undefined
     })
     await cache.put(result.key, result)
+    failing = false
     expect(f.actionCache.entries.size).toBe(0)
     expect(await cache.get(result.key)).not.toBeNull()
     if (status === 429) {
