@@ -14,7 +14,7 @@ RepoPage ── RepoView (code, aside) ── CodeFileView: marks, hover card, c
    ▼
 CodeIntel actions ── LanguageServers.open ── @smthrs/std LanguageServer (LSP answers)
    │                   BrowserLanguageServer.make ── postMessage ──▶ language.worker.ts: serve(typescript, lib.*.d.ts)
-   │                     reads ◀── RepoClient.blob ◀── GET /api/repos/<o>/<n>/blob/<sha>/<path> (immutable)
+   │                     reads ◀── RepoClient.blob ◀── GET /api/repos/<o>/<n>/blob/<sha>/<path> (cached)
    ▼
 lsp.ts decodes ── the code-intel row (local TanStack DB) ── view.ts ── the components
 ```

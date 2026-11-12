@@ -449,12 +449,12 @@ describe("POST /api/repos", () => {
 })
 
 describe("reads", () => {
-  test("a tree lists every file at a commit, cached forever: the second read costs Code Storage nothing", async () => {
+  test("a tree lists every file at a commit, kept in the cache: the second read costs Code Storage nothing", async () => {
     const h = await repoHarness(runtime)
     const { headSha } = await h.seed("octocat", "Spoon-Knife")
     const first = await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
     expect(first.status).toBe(200)
-    expect(first.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    expect(first.headers.get("cache-control")).toBe("public, max-age=60, must-revalidate")
     expect(first.headers.get("content-type")).toContain("application/json")
     expect(await first.json()).toEqual({
       paths: ["README.md", "big.txt", "docs/guide.md", "logo.png", "src/index.ts"],
@@ -831,7 +831,7 @@ describe("raw", () => {
     h.scripted.fail("listBranches", h.scripted.error("listBranches", "ref_not_found", 404))
     expect((await h.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(404)
   })
-  test("a text file as plain UTF-8, a binary as bytes, never sniffed or run; cached forever like the file", async () => {
+  test("a text file as plain UTF-8, a binary as bytes, never sniffed or run; cached like the file", async () => {
     const h = await repoHarness(runtime)
     const { headSha } = await h.seed("octocat", "Spoon-Knife", fixture({
       files: { "index.html": "<script>alert(1)</script>", "logo.png": new Uint8Array([0x89, 0x50, 0, 1]) },
@@ -841,7 +841,7 @@ describe("raw", () => {
     expect(page.headers.get("content-type")).toBe("text/plain; charset=utf-8")
     expect(page.headers.get("x-content-type-options")).toBe("nosniff")
     expect(page.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox")
-    expect(page.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    expect(page.headers.get("cache-control")).toBe("public, max-age=60, must-revalidate")
     expect(await page.text()).toBe("<script>alert(1)</script>")
     const logo = await h.fetch(rawRoute("octocat", "Spoon-Knife", headSha, "logo.png"))
     expect(logo.headers.get("content-type")).toBe("application/octet-stream")
@@ -1347,4 +1347,83 @@ test.each([502, "rate_limited", "network"] as const)("unimported refs preserve a
   expect(response.status).toBe(503)
   expect(await response.json()).toEqual({ code: fault === "rate_limited" ? "rate_limited" : "github_unavailable" })
   if (fault === "rate_limited") expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0)
+})
+
+describe("a copy GitHub no longer shows everyone", () => {
+  const id = "github/octocat/spoon-knife"
+  // The visibility receipt outlives `resetRepos`: each test starts with none.
+  beforeEach(() => sql(`DELETE FROM github_repositories WHERE repo_id = '${id}'`))
+  /** Ages the visibility receipt past its 60 seconds, so the next read asks GitHub again. */
+  const expireReceipt = () =>
+    sql(`UPDATE github_repositories SET visibility_verified_at = visibility_verified_at - interval '61 seconds' WHERE repo_id = '${id}'`)
+  const routes = (sha: string) => [
+    treeRoute("octocat", "Spoon-Knife", sha),
+    blobRoute("octocat", "Spoon-Knife", sha, "README.md"),
+    rawRoute("octocat", "Spoon-Knife", sha, "README.md"),
+    `${rawRoute("octocat", "Spoon-Knife", sha, "README.md")}?download=1`,
+  ]
+
+  test("made private after its clone: tree, file, raw and download answer 404 to someone without a role there, cache hits too", async () => {
+    const actor: Actor.Actor = { subject: { kind: "person", id: "copy-reader" }, role: "member" }
+    const h = await repoHarness(runtime, { actor, localCopies: false })
+    h.github.publish("octocat", "Spoon-Knife")
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    for (const path of routes(headSha)) {
+      const response = await h.fetch(path)
+      expect(response.status, path).toBe(200)
+      expect(response.headers.get("cache-control"), path).toBe(
+        path.endsWith("?download=1") ? "private, no-store" : "public, max-age=60, must-revalidate",
+      )
+    }
+    expect(h.line("repo.tree").at(-1)!.annotations).toMatchObject({ reader: "public", status: 200 })
+    const codeStorageCalls = h.scripted.calls.length
+    h.github.publish("octocat", "Spoon-Knife", spoonKnife({ private: true }))
+    await expireReceipt()
+    for (const path of routes(headSha)) {
+      const response = await h.fetch(path)
+      expect(response.status, path).toBe(404)
+      expect(response.headers.get("cache-control"), path).toBe("no-store")
+      expect(await response.json()).toEqual({ code: "not_found" })
+    }
+    // Refused before the cache or Code Storage was asked.
+    expect(h.scripted.calls).toHaveLength(codeStorageCalls)
+    expect(h.line("repo.tree").at(-1)!.annotations).toMatchObject({ reader: "none", status: 404, errorCode: "not_found" })
+  })
+
+  test("deleted after its clone: a signed-out visitor gets 404, as for a private one", async () => {
+    const h = await repoHarness(runtime, { localCopies: false })
+    h.github.publish("octocat", "Spoon-Knife")
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    expect((await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))).status).toBe(200)
+    const visitor = await repoHarness(runtime, { actor: null, localCopies: false, scripted: h.scripted })
+    await expireReceipt()
+    // The visitor's GitHub never published it: the metadata read answers 404, absent and private alike.
+    const response = await visitor.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ code: "not_found" })
+  })
+
+  test("GitHub not answering once the receipt is old: 503, never the kept copy", async () => {
+    const h = await repoHarness(runtime, { localCopies: false })
+    h.github.publish("octocat", "Spoon-Knife")
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    expect((await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))).status).toBe(200)
+    h.github.fail("", 502)
+    await expireReceipt()
+    const response = await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ code: "unavailable" })
+  })
+
+  test("a private copy reads for someone with a role there, kept by nobody", async () => {
+    const h = await repoHarness(runtime, { localCopies: false, roles: "octocat/Spoon-Knife" })
+    h.github.publish("octocat", "Spoon-Knife")
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    h.github.publish("octocat", "Spoon-Knife", spoonKnife({ private: true }))
+    await expireReceipt()
+    const response = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    expect(h.line("repo.blob").at(-1)!.annotations).toMatchObject({ reader: "private", status: 200 })
+  })
 })

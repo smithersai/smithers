@@ -114,7 +114,7 @@ An `action` block naming `branch.new` is New branch, the maintainer's one promin
 | `homePageOf`, `tabsOf`, `offered`, `draftFor`, `filesOf`, `liveKindsOf`, `issuesOf`, `stackOf`, `runsOf`, `flowsOf` | pure: what the page shows from the rows (`view.ts`) |
 | live queries | the issues' `items` and sync rows (`IssuesStore`), this person's runs (`StatusStore`) and the opened stack (`TodosStore`), read by the store when the tab has them; `HomePage` adds this person's flows (`FlowsUi`) |
 
-Reading a home runs no flow: it is a read at an immutable commit, which RepoApi and the browser's HTTP cache keep (`Cache-Control: immutable`), or ChatApi's answer, and it changes nothing. New branch is a flow. The libraries are `@smthrs/views` (`Home.read`, `Home.visible`, `Home.widen`), `@smthrs/ui` (`RepositoryHome`), `@smthrs/effect-tanstack-db` (`Collection.persisted`, `Collection.local`, `LiveQuery`), Effect `HttpClient` (`HomeClient`, the repository feature's `RepoClient`), and `@smthrs/flow` through `FlowDispatch` ([libraries](../../../../docs/libraries.md)).
+Reading a home runs no flow: it is a read at an immutable commit, which RepoApi's cache keeps and the browser's HTTP cache keeps for a minute while GitHub shows the repository to everyone ([who reads a copy](repo.md#who-reads-a-copy)), or ChatApi's answer, and it changes nothing. New branch is a flow. The libraries are `@smthrs/views` (`Home.read`, `Home.visible`, `Home.widen`), `@smthrs/ui` (`RepositoryHome`), `@smthrs/effect-tanstack-db` (`Collection.persisted`, `Collection.local`, `LiveQuery`), Effect `HttpClient` (`HomeClient`, the repository feature's `RepoClient`), and `@smthrs/flow` through `FlowDispatch` ([libraries](../../../../docs/libraries.md)).
 
 ## ChatApi
 

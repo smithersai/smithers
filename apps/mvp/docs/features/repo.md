@@ -33,7 +33,7 @@ about        ◀── GET /api/repos/<o>/<n>/about ◀── immutable cache (b
 ```
 
 - **Cloning runs remotely** because it needs the Code Storage organization key, which a person must not hold ([0011](../decisions/0011-the-agent-runs-in-the-browser.md) §2). It is the durable flow `repo/Clone` on the per-execution Durable Object ([remote flows](remote-flows.md)).
-- **Reading runs anywhere.** The tree and file bodies stay in Code Storage and are read at a commit SHA, so an answer never changes: RepoApi keeps it in the immutable cache, and the browser's HTTP cache keeps it too (`Cache-Control: public, max-age=31536000, immutable`).
+- **Reading runs anywhere.** The tree and file bodies stay in Code Storage and are read at a commit SHA, so an answer never changes: RepoApi keeps it in the immutable cache. Who may read it can change, so every read first checks GitHub's visibility ([who reads a copy](#who-reads-a-copy)), and the browser's HTTP cache keeps a public answer only for the visibility receipt's 60 seconds (`Cache-Control: public, max-age=60, must-revalidate`).
 - **Libraries** (`docs/libraries.md`): `@smthrs/effect-code-storage` (`CodeStorage`, `GitRemote`), `@smthrs/artifacts` (`ImmutableCache`) with `@smthrs/platform-cloudflare`'s `EdgeCache.layer`, `@smthrs/integrations` (`GitHub.GitHubClient`, its `count` new for this) for the size call and the about read, `@smthrs/ui`'s `RepoAbout` and `GeneratedChip`, `@smthrs/flow` for the flows, `@smthrs/effect-electric` (`ShapeProxy`, `ElectricCollection`), `@smthrs/effect-tanstack-db`, and `@smthrs/repo-view`'s `RepoView`, imported from its root ([rules](../rules.md#sdkroot-imports-only)).
 
 ## RepoApi
@@ -45,9 +45,9 @@ about        ◀── GET /api/repos/<o>/<n>/about ◀── immutable cache (b
 | `POST /api/repos` `{ owner, name }` | signed in | persists the request and answers at once, starting nothing: `202 { txid, id, attempt, cloneId }` for a new clone or Try again on a `failed` or `capacity` row; `200 { txid: null, id, status, cloneId }` for a row already `cloning` or `ready` |
 | `POST /api/repos/launch` `{ owner, name, cloneId }` | signed in | starts the durable `repo/Clone` for attempt `cloneId` under its own [execution id](#execution-ids), so starting it again changes nothing: `202 { launched: true }` while the row holds that attempt `cloning`; `200 { launched: false, status }` for an attempt the row no longer holds or one that settled; `503 unavailable` when the Durable Object couldn't take it, and the row stays `cloning` for the next launch; if Code Storage was removed after the request, `503 not_configured` settles the matching attempt as failed (`unavailable`) and folds its feed row in the same transaction |
 | `GET /api/shapes/repositories` | anyone | Electric's `repositories`, whole: `ShapeProxy` with the table fixed and no subset requests |
-| `GET /api/repos/<owner>/<name>/tree/<sha>` | anyone | `{ paths, truncated }`: every file's path, in pages of 5,000, up to `REPO_TREE_MAX_PATHS` |
-| `GET /api/repos/<owner>/<name>/blob/<sha>/<path>` | anyone | the file's bytes (`application/octet-stream`, `x-blob-sha`) |
-| `GET /api/repos/<owner>/<name>/raw/<sha>/<path>` | anyone | the same bytes as a page shows them: `text/plain; charset=utf-8` for text, `application/octet-stream` for a binary, with `x-content-type-options: nosniff` and `content-security-policy: default-src 'none'; sandbox`, so a file is never sniffed or run |
+| `GET /api/repos/<owner>/<name>/tree/<sha>` | anyone GitHub shows it to ([who reads a copy](#who-reads-a-copy)) | `{ paths, truncated }`: every file's path, in pages of 5,000, up to `REPO_TREE_MAX_PATHS` |
+| `GET /api/repos/<owner>/<name>/blob/<sha>/<path>` | anyone GitHub shows it to ([who reads a copy](#who-reads-a-copy)) | the file's bytes (`application/octet-stream`, `x-blob-sha`) |
+| `GET /api/repos/<owner>/<name>/raw/<sha>/<path>` | anyone GitHub shows it to ([who reads a copy](#who-reads-a-copy)) | the same bytes as a page shows them: `text/plain; charset=utf-8` for text, `application/octet-stream` for a binary, with `x-content-type-options: nosniff` and `content-security-policy: default-src 'none'; sandbox`, so a file is never sniffed or run |
 | `GET /api/repos/<owner>/<name>/about` | anyone | what GitHub says of the repository, cloned or not ([About](#about)); `Cache-Control: public, max-age=N, must-revalidate` (seconds left) |
 | `GET /api/repos/<owner>/<name>/refs` | anyone | `{ defaultBranch, head, refsChangedAt, branches, tags, truncated }`: the ready row's default branch, head commit and refs revision (Postgres timestamp text as Electric delivers it, or null), and every branch and tag as `{ name, sha }`, in pages of 100 up to `REPO_MAX_REFS` each; `Cache-Control: private, no-store`, since it follows the row |
 
@@ -169,6 +169,19 @@ The server and HTTP caches never serve an expired About; text already read while
 `worker/RepoReads.ts` answers the GET routes and the agent's flows alike. A read checks the immutable cache under `repo.tree` (`id`, `sha`) or `repo.blob` (`id`, `sha`, `path`, which the `raw` route shares); a hit costs Code Storage nothing and is served over budget too. A miss checks this month's read budget, reads Code Storage, meters its bytes into `code_storage_usage`, and stores the answer. A failed read is never cached. A meter Postgres refuses is logged (`repo.meter`) and the read still answers.
 
 The branches and tags (`CodeStorage.listBranches` and `listTags`) change when a clone attempt settles `ready` and when the app makes a branch on the forge (`worker/branch/Branches.ts`), which may leave the default branch's head where it was. Both write the row's `refs_changed_at`, and the listing is cached under `repo.refs` (`id`, the head commit Settle wrote, `refs_changed_at`). A refs read first reads the `ready` row's `default_branch`, `head_sha` and `refs_changed_at` from Postgres (`Repos.readyHead`), then the listing through the cache. A device keys the refs it keeps the same way (`refsKey`), so a new branch shows the next time the view opens.
+
+### Who reads a copy
+
+A tree, file, raw or download read checks who may read Smithers' copy before it asks the immutable cache or Code Storage (`readsCopy` in `worker/branch/Access.ts`), so a warmed cache serves nobody GitHub no longer shows the repository to:
+
+| GitHub's visibility receipt (`RepoRoles.publicCopy`, at most 60 seconds old) | Answer | `Cache-Control` |
+|---|---|---|
+| public | the read | `public, max-age=60, must-revalidate` |
+| private, or 404 (deleted or private, alike), and the asker has a role there (`roleOn`) | the read | `private, no-store` |
+| private or 404, signed out or no role | `404 not_found` | `no-store` |
+| GitHub or Postgres not answering | `503 unavailable` or `rate_limited`, with GitHub's wait | `no-store` |
+
+The receipt is the one the role route and the repository rows share ([visibility of repository rows](#visibility-of-repository-rows)): one GitHub read per repository a minute, across data centers. A browser or shared cache keeps a public answer at most 60 seconds, so a repository made private stops being served within two minutes. Text already in someone's tab stays there. A download is never kept. Explicit local development (`alchemy dev` without the App) reads every copy as public. The `repo.tree`, `repo.blob` and `repo.raw` lines record the decision as `reader` (`public`, `private` or `none`). Refs decide their own (`RefReads.visible`).
 
 A refs read before a mirror has a ready head answers `204`, `X-Repo-State: not_imported`, with `private, no-store`. This says nothing about the repository's existence on GitHub. Missing refs in a ready mirror and provider failures retain their error responses. The browser treats the empty response as its existing missing-mirror state.
 
@@ -337,7 +350,6 @@ Code Storage and GitHub are third-party providers, scripted like the model (`wor
 - `repo/SetImports`, the operator's pause switch as a flow (`repo_imports.paused` is read; nothing writes it yet).
 - Delivering `repo.spend.alert` to Will, with the token-spend alert.
 - Several highlighted ranges in one file (0004 §7): `CodeFileView` marks one range.
-- Stopping showing a repository made private or deleted after cloning ([repo open states](../work/repo-open-states.md)).
 - Go to file through the command palette's path mode ([command palette](../work/command-palette.md)).
 - Serving git: the clone URL is GitHub's until Smithers serves git itself.
 - Another commit's details (message, author, age) beside a branch, tag or SHA other than the default branch's head.

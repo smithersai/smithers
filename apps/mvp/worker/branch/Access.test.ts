@@ -10,7 +10,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { Actor, Role } from "../Actor.ts"
 import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import { reset, sql } from "../github/test/fixtures.ts"
+import { reset, rolesThatRead, sql } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, INSTALLATION_ID, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { resetBranches, shared, tracked } from "../test/branch.ts"
@@ -30,6 +30,7 @@ import {
   isMember,
   isMemberOn,
   policyOf,
+  readsCopy,
   roleOn,
   underPolicy,
 } from "./Access.ts"
@@ -318,6 +319,12 @@ describe("roles per repository (decision 0079)", () => {
     // A BranchRoles with no uninstalled role keeps the session's.
     const plain = Layer.succeed(BranchRoles, BranchRoles.of({ roleOn: () => Effect.die("never asked: the App isn't recorded there") }))
     expect(await run(branchAccessIn(maya("member"), branch.branchId), plain)).toMatchObject({ access: "edit", role: "member" })
+  })
+
+  test("readsCopy: a resolver with no visibility receipt reads every copy as public, asking no one else", async () => {
+    const roles = BranchRoles.layer(rolesThatRead(repositoryOf("acme/home"), "guest"))
+    const never = Effect.die("never asked: the copy is public")
+    expect(await run(readsCopy(Option.none(), WIDGETS, never), roles)).toBe("public")
   })
 
   test("branchAccessAs decides with the role the actor carries, asking no one", async () => {

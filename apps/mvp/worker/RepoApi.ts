@@ -1,6 +1,7 @@
 import { withRequestRay } from "./RequestRay.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import { BranchRoles } from "./branch/Access.ts"
+import * as Visibility from "./github/Visibility.ts"
+import { BranchRoles, installedOn, readsCopy } from "./branch/Access.ts"
 import * as MirrorRefresh from "./MirrorRefresh.ts"
 import * as RefReads from "./branch/RefReads.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
@@ -49,7 +50,14 @@ import * as Repos from "./Repos.ts"
 // body, the owner and name, the SHA and the path.
 
 const noStore = { "cache-control": "no-store" }
-const immutable = { "cache-control": "public, max-age=31536000, immutable" }
+/**
+ * How long anyone may keep what a read at a SHA answered: a copy everyone may read for as long as its visibility receipt
+ * holds, so a repository made private stops being served within two of them; one person's read of a private copy never.
+ */
+const kept = {
+  public: { "cache-control": `public, max-age=${Visibility.TTL_MS / 1000}, must-revalidate` },
+  private: { "cache-control": "private, no-store" },
+}
 /** A raw file is shown as plain text, never sniffed, and runs nothing even if a browser would render it. */
 const rawHeaders = { "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" }
 
@@ -115,6 +123,18 @@ const clonesHere = (actor: Actor, id: string, fields: Record<string, string | nu
     fields.role = role ?? "none"
     return canClone({ ...actor, role })
   })
+
+/** A role read's refusal as a read's: not found, rate limited, or unavailable, with GitHub's wait. */
+const readRefusalOf = (error: unknown, fields: Record<string, string | number | null>) => {
+  if (error instanceof RepoRoles.RoleRefused) {
+    Object.assign(fields, RepoRoles.refusalFields(error))
+    return new RepoReads.ReadRefused({
+      code: error.code === "not_found" ? "not_found" : error.code === "rate_limited" ? "rate_limited" : "unavailable",
+      ...(error.retryAfterSeconds === undefined ? {} : { retryAfterMillis: error.retryAfterSeconds * 1000 }),
+    })
+  }
+  return new RepoReads.ReadRefused({ code: "unavailable" })
+}
 
 /** What RepoApi needs besides its database: the Code Storage client, when this deployment has an organization. */
 export interface Options {
@@ -326,7 +346,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
 
     /**
      * A tree, file or refs read: validated, answered from the cache or Code Storage, and recorded. The refs answer
-     * follows the row's head, so it is never kept by a browser; everything read at a SHA is kept forever.
+     * follows the row's head, so it is never kept by a browser. Before the cache or Code Storage is asked, a read at a SHA
+     * checks who may read the copy now (`readsCopy`): a repository GitHub no longer shows everyone answers `404` to
+     * anyone without a role there, and what a read answers is kept only as long as `kept` says.
      */
     const read = (path: string) =>
       Effect.gen(function* () {
@@ -347,69 +369,72 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (target.kind !== "refs") fields.sha = target.sha
           if (Option.isNone(reads)) return refuse(503, "not_configured")
           const attachment = target.kind === "raw" && new URL(request.url, "http://localhost").searchParams.get("download") === "1"
-          const answered = attachment
-            ? reads.value.download(target.owner, target.name, target.sha, target.file).pipe(
-              Effect.map((file) => HttpServerResponse.stream(file.stream, {
-                headers: { ...rawHeaders, "cache-control": "private, no-store",
-                  "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(target.file.split("/").at(-1)!)}` },
-                contentType: "application/octet-stream",
-              })),
-            )
-            : target.kind === "refs"
-            ? Effect.gen(function* () {
-              const names = yield* Effect.gen(function* () {
-                const actor = yield* (yield* Sessions).resolve
-                return yield* RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database))
-              }).pipe(Effect.mapError((error) => {
-                if (error instanceof RepoRoles.RoleRefused) {
-                  Object.assign(fields, RepoRoles.refusalFields(error))
-                  return new RepoReads.ReadRefused({
-                    code: error.code === "not_found" ? "not_found" : error.code === "rate_limited" ? "rate_limited" : "unavailable",
-                    ...(error.retryAfterSeconds === undefined ? {} : { retryAfterMillis: error.retryAfterSeconds * 1000 }),
+          // Who reads the copy, before any cached answer: the refs read decides its own (`RefReads.visible`).
+          const reader = target.kind === "refs" ? Effect.succeed("public" as const) : Effect.gen(function* () {
+            const actor = yield* (yield* Sessions).resolve
+            const id = repoId(target.owner, target.name)
+            return yield* readsCopy(actor, id, installedOn(id).pipe(Effect.provide(database)))
+          }).pipe(Effect.mapError((error) => readRefusalOf(error, fields)))
+          let cache: Record<string, string> = noStore
+          const answered = Effect.flatMap(reader, (shown) => {
+            if (target.kind !== "refs") fields.reader = shown
+            if (shown === "none") return Effect.fail(new RepoReads.ReadRefused({ code: "not_found" }))
+            cache = kept[shown]
+            return attachment
+              ? reads.value.download(target.owner, target.name, target.sha, target.file).pipe(
+                Effect.map((file) => HttpServerResponse.stream(file.stream, {
+                  headers: { ...rawHeaders, "cache-control": "private, no-store",
+                    "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(target.file.split("/").at(-1)!)}` },
+                  contentType: "application/octet-stream",
+                })),
+              )
+              : target.kind === "refs"
+              ? Effect.gen(function* () {
+                const names = yield* Effect.gen(function* () {
+                  const actor = yield* (yield* Sessions).resolve
+                  return yield* RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database))
+                }).pipe(Effect.mapError((error) => readRefusalOf(error, fields)))
+                const refs = yield* reads.value.refs(target.owner, target.name, names)
+                yield* MirrorRefresh.request(target.owner, target.name).pipe(Effect.catch(() => Effect.void))
+                return refs
+              }).pipe(
+                Effect.map((refs) => {
+                  const bytes = encoder.encode(JSON.stringify(refs))
+                  fields.bytes = bytes.length
+                  return HttpServerResponse.uint8Array(bytes, {
+                    headers: { "cache-control": "private, no-store" },
+                    contentType: "application/json",
                   })
-                }
-                return new RepoReads.ReadRefused({ code: "unavailable" })
-              }))
-              const refs = yield* reads.value.refs(target.owner, target.name, names)
-              yield* MirrorRefresh.request(target.owner, target.name).pipe(Effect.catch(() => Effect.void))
-              return refs
-            }).pipe(
-              Effect.map((refs) => {
-                const bytes = encoder.encode(JSON.stringify(refs))
-                fields.bytes = bytes.length
-                return HttpServerResponse.uint8Array(bytes, {
-                  headers: { "cache-control": "private, no-store" },
-                  contentType: "application/json",
-                })
-              }),
-            )
-            : target.kind === "tree"
-            ? reads.value.tree(target.owner, target.name, target.sha).pipe(
-              Effect.map((bytes) => {
-                fields.bytes = bytes.length
-                return HttpServerResponse.uint8Array(bytes, { headers: immutable, contentType: "application/json" })
-              }),
-            )
-            : reads.value.blob(target.owner, target.name, target.sha, target.file).pipe(
-              Effect.catchTag("ReadRefused", (error) =>
-                target.kind === "blob" && new URL(request.url, "http://localhost").searchParams.get("optional") === "true" && error.code === "not_found"
-                  // A missing repository or unreadable commit remains an error. Only a file's absence is normal.
-                  ? reads.value.tree(target.owner, target.name, target.sha).pipe(Effect.as(null))
-                  : Effect.fail(error)),
-              Effect.map((file) => {
-                if (file === null) return HttpServerResponse.empty({ status: 204, headers: immutable })
-                const { bytes, metadata } = file
-                fields.bytes = bytes.length
-                return HttpServerResponse.uint8Array(bytes, {
-                  headers: {
-                    ...immutable,
-                    ...(target.kind === "raw" ? rawHeaders : {}),
-                    ...(metadata.blobSha === undefined ? {} : { "x-blob-sha": metadata.blobSha }),
-                  },
-                  contentType: target.kind === "raw" ? rawType(bytes) : "application/octet-stream",
-                })
-              }),
-            )
+                }),
+              )
+              : target.kind === "tree"
+              ? reads.value.tree(target.owner, target.name, target.sha).pipe(
+                Effect.map((bytes) => {
+                  fields.bytes = bytes.length
+                  return HttpServerResponse.uint8Array(bytes, { headers: cache, contentType: "application/json" })
+                }),
+              )
+              : reads.value.blob(target.owner, target.name, target.sha, target.file).pipe(
+                Effect.catchTag("ReadRefused", (error) =>
+                  target.kind === "blob" && new URL(request.url, "http://localhost").searchParams.get("optional") === "true" && error.code === "not_found"
+                    // A missing repository or unreadable commit remains an error. Only a file's absence is normal.
+                    ? reads.value.tree(target.owner, target.name, target.sha).pipe(Effect.as(null))
+                    : Effect.fail(error)),
+                Effect.map((file) => {
+                  if (file === null) return HttpServerResponse.empty({ status: 204, headers: cache })
+                  const { bytes, metadata } = file
+                  fields.bytes = bytes.length
+                  return HttpServerResponse.uint8Array(bytes, {
+                    headers: {
+                      ...cache,
+                      ...(target.kind === "raw" ? rawHeaders : {}),
+                      ...(metadata.blobSha === undefined ? {} : { "x-blob-sha": metadata.blobSha }),
+                    },
+                    contentType: target.kind === "raw" ? rawType(bytes) : "application/octet-stream",
+                  })
+                }),
+              )
+          })
           return yield* answered.pipe(
             Effect.catchTag("ReadRefused", (refused): Effect.Effect<HttpServerResponse.HttpServerResponse, never, FlowStarter | R | HttpClient.HttpClient | Sessions | HttpServerRequest.HttpServerRequest> => {
               fields.errorCode = refused.code
@@ -446,7 +471,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 case "too_large":
                   return Effect.succeed(target.kind === "blob" && new URL(request.url, "http://localhost").searchParams.get("optional") === "true"
                     ? HttpServerResponse.jsonUnsafe({ code: "too_large", size: refused.size ?? MAX_BLOB_BYTES + 1 }, {
-                      headers: { ...immutable, "x-file-state": "too_large" },
+                      headers: { ...cache, "x-file-state": "too_large" },
                     })
                     : refuse(413, "too_large", refused.size === undefined ? {} : { size: refused.size }))
                 case "capacity":

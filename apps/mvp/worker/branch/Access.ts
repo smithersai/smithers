@@ -116,6 +116,8 @@ export class BranchRoles extends Context.Service<
      * to the repository checks again in its own transaction (`RepoRoles.holds`, decision 0148). Absent, nobody holds one.
      */
     readonly repoRoleOn?: (actor: Actor, repoId: string) => Effect.Effect<RepoRoles.Resolved, RepoRoles.RoleRefused>
+    /** Whether GitHub shows `repoId` to everyone (`RepoRoles.publicCopy`). Absent, every copy reads as public. */
+    readonly publicCopy?: (repoId: string) => Effect.Effect<boolean, RepoRoles.RoleRefused>
   }
 >()("@smthrs/mvp/branch/BranchRoles") {
   /** `BranchRoles` over `roles`, with what its database needs taken from where the layer is built. */
@@ -138,9 +140,29 @@ export class BranchRoles extends Context.Service<
               Effect.catch((refused) => RepoRoles.CANT_ACT.has(refused.code) ? Effect.succeed(NO_ROLE) : Effect.fail(refused)),
               Effect.provideContext(context),
             ),
+          publicCopy: (repoId) =>
+            roles.publicCopy === undefined
+              ? Effect.succeed(true)
+              : roles.publicCopy(repositoryOf(repoId.replace(/^github\//, ""))).pipe(Effect.provideContext(context)),
         })),
     )
 }
+
+/**
+ * Who may read Smithers' copy of repository `repoId` now (docs/features/repo.md#who-reads-a-copy): everyone while
+ * GitHub shows it to everyone (`public`), else only `actor` with a role there (`private`, by `roleOn`), else nobody
+ * (`none`): a repository made private or deleted after its clone is no longer shown to people GitHub doesn't show it to.
+ * `installed` (`installedOn`) is asked only for a copy GitHub doesn't show everyone. GitHub or Postgres not answering
+ * is the refusal, never a guess.
+ */
+export const readsCopy = <E, R>(actor: Option.Option<Actor>, repoId: string, installed: Effect.Effect<boolean, E, R>) =>
+  Effect.gen(function* () {
+    const roles = yield* BranchRoles
+    if (roles.publicCopy === undefined || (yield* roles.publicCopy(repoId))) return "public" as const
+    if (Option.isNone(actor)) return "none" as const
+    const role = yield* roleOn(actor.value, repoId, yield* installed)
+    return role === null ? "none" as const : "private" as const
+  })
 
 /**
  * The role `actor` works with on repository `repoId` (`installed`: whether Smithers recorded the App's installation on

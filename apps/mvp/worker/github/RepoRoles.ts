@@ -262,6 +262,11 @@ export interface RepoRoles<R = never> {
   readonly uninstalled?: (actor: Actor, repository: Repository) => Role | null
   /** Work without an installation requires a recorded public repository; local development may supply its own role. */
   readonly workUninstalled?: (actor: Actor, repository: Repository) => Effect.Effect<Role | null, RoleRefused, R>
+  /**
+   * Whether GitHub shows `repository` to everyone: the shared visibility receipt, read again once it is 60 seconds old.
+   * Absent, every copy reads as public.
+   */
+  readonly publicCopy?: (repository: Repository) => Effect.Effect<boolean, RoleRefused, R>
 }
 
 /** What `make` reads from the deployment's configuration: the read token's settings and the visibility API's origin. */
@@ -618,6 +623,13 @@ export const makeWith = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>,
           if (!publicNow) return null
           return yield* SessionStore.freshRole(actor)
         }).pipe(Effect.provide(database), Effect.mapError((error) => error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" }))),
+      // Explicit local development reads every copy; elsewhere GitHub not answering is the refusal (decision 0012).
+      publicCopy: (repository) => options.local === true
+        ? Effect.succeed(true)
+        : visibility(repository).pipe(
+          Effect.provide(database),
+          Effect.mapError((error) => error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" })),
+        ),
     } satisfies RepoRoles<R>
   })
 
