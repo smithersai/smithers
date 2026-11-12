@@ -57,6 +57,7 @@ import {
   writeSync
 } from "node:fs"
 import { dirname } from "node:path"
+import * as CliError from "../CliError.ts"
 import type * as Config from "./Config.ts"
 import * as Credential from "./Credential.ts"
 import * as Host from "./Host.ts"
@@ -250,7 +251,14 @@ const prestart = (argv: ReadonlyArray<string>, cwd: string, env: Record<string, 
       return Stream.runForEach((chunk: Uint8Array) =>
         Effect.gen(function*() {
           size += chunk.byteLength
-          if (size > 1024 * 1024) return yield* Effect.fail(new Error("prestart output limit"))
+          if (size > 1024 * 1024) {
+            return yield* new CliError.ResourceLimitError({
+              operation: "Prestart output",
+              subject: "the profile's prestart hook",
+              limit: 1024 * 1024,
+              unit: "bytes"
+            })
+          }
           if (keep) chunks.push(chunk)
         })
       )
