@@ -1,7 +1,8 @@
 // @vitest-environment node
 // Exercise the real patched dependency: recover per frame, then keep the same stdio subscription alive.
 import { describe, expect, it } from "@effect/vitest"
-import { RpcSerialization, RpcServer } from "effect/rpc"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
 
 const REQUEST = '{"jsonrpc":"2.0","id":1,"method":"ping"}\n'
 const encoder = new TextEncoder()
@@ -40,6 +41,50 @@ describe("Effect NDJSON recovery", () => {
         expect(parser.decode('3}\n')).toEqual([{ tail: 3 }])
       })
     }
+  })
+})
+
+describe("Effect HTTP NDJSON recovery", () => {
+  it.effect.each([0, 1])("reports the malformed response at flatMap index %s and clears the same parser", (index) => effect {
+    const parsers: Array<RpcSerialization.Parser> = []
+    const serialization = {
+      ...RpcSerialization.ndjson,
+      makeUnsafe: () => {
+        const parser = RpcSerialization.ndjson.makeUnsafe()
+        parsers.push(parser)
+        return parser
+      },
+    }
+    const valid = '{"_tag":"Exit","requestId":"1","exit":{"_tag":"Success","value":"ok"}}\n'
+    const later = [encoder.encode(valid), encoder.encode(valid.replace('"1"', '"2"'))]
+    const chunks = [...(index === 0 ? [] : [encoder.encode("\n")]), encoder.encode("{\n"), ...later]
+    // Faulty HTTP service; preserve a batch so flatMap also exercises a nonzero element index.
+    const faulty = HttpClient.make((request) => Effect.sync(() => Object.defineProperty(
+      HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty())),
+      "stream",
+      { value: Stream.fromArray(chunks) },
+    )))
+    const protocol = try RpcClient.makeProtocolHttp(
+      HttpClient.mapRequest(faulty, HttpClientRequest.prependUrl("http://faulty.invalid")),
+    ).pipe(Effect.provideService(RpcSerialization.RpcSerialization, serialization))
+    const result = try Effect.result(protocol.send(0, { _tag: "Request", id: "1", tag: "ping", payload: null, headers: [] }))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag !== "Failure") return
+      expect(result.failure.reason._tag).toBe("RpcClientDefect")
+      if (result.failure.reason._tag !== "RpcClientDefect") return
+      expect(result.failure.reason.message).toBe("Error decoding HTTP response")
+      expect.soft(result.failure.reason.cause).toBeInstanceOf(RpcSerialization.NdjsonDecodeError)
+    })
+    // HTTP aborts this response on a parse error. Feed its later chunks to that exact parser:
+    // a fresh parser or a second HTTP exchange would hide the poisoned-buffer regression.
+    try Effect.try(() => {
+      expect(parsers).toHaveLength(1)
+      expect(later.flatMap((data) => parsers[0]!.decode(data))).toEqual([
+        { _tag: "Exit", requestId: "1", exit: { _tag: "Success", value: "ok" } },
+        { _tag: "Exit", requestId: "2", exit: { _tag: "Success", value: "ok" } },
+      ])
+    })
   })
 })
 

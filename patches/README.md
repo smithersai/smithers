@@ -30,6 +30,14 @@ then `pnpm patch-commit <scratch>`. Keep the existing Schema.Json hunks. `test/e
 `surfaces/mcp-stdio` exercises the real factory with malformed lines in separate and coalesced chunks, parse-error
 replies, initialize, EOF and interruption. Remove these RPC hunks when those regressions pass on stock Effect.
 
+HTTP response decoding wraps each call as `chunk.flatMap((data) => parser.decode(data))` in source and runtime.
+Passing `parser.decode` directly lets Array.flatMap supply its index as the optional error callback, replacing
+`NdjsonDecodeError` with TypeError and retaining the rejected line. The HTTP regression in
+`apps/vibelang/test/effectNdjson.test.vibe` injects a faulty HttpClient response containing a malformed frame and
+later valid frames, at batch indexes zero and one. It checks the protocol defect's original cause and decodes
+the later chunks through the exact same parser to prove its buffer was reset. HTTP still aborts the bad response.
+The patch audit found no other `(parser.decode)` or `(frames.decode)` call sites in shipped `dist/`.
+
 ## @effect/platform-node@4.1.1
 
 `@effect/platform-node@4.1.1.patch` changes the `createRequire` base in `internal/http.js` (and its source) from

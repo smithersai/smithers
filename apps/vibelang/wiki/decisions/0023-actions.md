@@ -132,3 +132,13 @@ before the engine creates its journal row. Reply and history action alarms now a
 SDK's durable cancellation tombstone. The actual SQLite regression fails before this change; an unknown row with
 no tombstone still fails, cached requests remain forbidden after demotion, and history records no unauthorized
 commit. Existing settled and cancelled receipts keep their normal handling.
+
+
+## HTTP NDJSON decoding (2026-11-12, vl-effect-patch-flatmap)
+
+The existing Effect patch's optional parse-error callback also affects HTTP RPC. Wrap the decoder in a unary
+function when passing it to `Array.flatMap`, in shipped source and JavaScript, so the array index cannot become
+that callback. The malformed-response regression checks `NdjsonDecodeError` at indexes zero and one and verifies
+that later chunks decode with the same parser after rejection. HTTP still aborts a malformed response. The
+Schema.Json and stdio fixes remain intact; no dependency, compiler or application behavior changes. See
+`patches/README.md` for patch regeneration and removal conditions.

@@ -1,6 +1,3 @@
-# Effect 4.1.1: retain Schema.Json key metadata; recover NDJSON frames and MCP/stdin service after parse errors.
-# Default decoder failures reset text and UTF-8 state; stdio handles frames once, replies -32700, and logs terminal I/O failures.
-# Build/removal conditions and regression tests: patches/README.md. Keep source, runtime JavaScript and declarations aligned.
 diff --git a/dist/Schema.d.ts b/dist/Schema.d.ts
 index e8a212e66da0f2f69a3653ada31213e03aafda0a..d34ef9d5b7b9ddf6106e94f36e61abe255e2b45c 100644
 --- a/dist/Schema.d.ts
@@ -36,6 +33,35 @@ index e8a212e66da0f2f69a3653ada31213e03aafda0a..d34ef9d5b7b9ddf6106e94f36e61abe2
  /**
   * Schema for readonly string-keyed records whose values are JSON-compatible.
   *
+diff --git a/dist/ai/McpServer.js b/dist/ai/McpServer.js
+index cc55befd9eead19c8ce5be5808a780b831975bd6..37b3b75489b6c98ac1ab968b98644c1aa0787483 100644
+--- a/dist/ai/McpServer.js
++++ b/dist/ai/McpServer.js
+@@ -1508,9 +1508,9 @@ const mcpStdioSerialization = protocols => {
+       const parser = serialization.makeUnsafe();
+       let selectedProtocol;
+       return {
+-        decode: data => {
++        decode: (data, onError) => {
+           const decoded = [];
+-          for (const frame of frames.decode(data)) {
++          for (const frame of frames.decode(data, onError)) {
+             if (Array.isArray(frame)) {
+               const acceptsBatch = selectedProtocol?.runtime.transport.jsonRpc.acceptsBatches === true;
+               if (!acceptsBatch || frame.length === 0 || frame.some(McpRuntime.hasRequestProtocolVersion) || frame.some(isInitializeJsonRpcMessage)) {
+diff --git a/dist/rpc/RpcClient.js b/dist/rpc/RpcClient.js
+index a7b9ae4473d9913a5045d7c37ca4638f4eeec276..9bab467a4d7f7b9f70afdea3dcfce2517e7acbad 100644
+--- a/dist/rpc/RpcClient.js
++++ b/dist/rpc/RpcClient.js
+@@ -714,7 +714,7 @@ const makeHttpExchange = (client, serialization, writeResponse) => {
+     }
+     let hasResponse = false;
+     yield* Stream.runForEachArray(response.stream, chunk => Effect.try({
+-      try: () => chunk.flatMap(parser.decode),
++      try: () => chunk.flatMap((data) => parser.decode(data)),
+       catch: cause => protocolDefect("Error decoding HTTP response", cause)
+     }).pipe(Effect.flatMap(responses => {
+       if (responses.length === 0) return Effect.void;
 diff --git a/dist/rpc/RpcSerialization.d.ts b/dist/rpc/RpcSerialization.d.ts
 index 3cf778269b693cda0fad3ee20f0abbe19489bf4a..51d06c48fd2337f9cda405e9bd4e3689ae50d130 100644
 --- a/dist/rpc/RpcSerialization.d.ts
@@ -112,9 +138,10 @@ index f9ebe3f487f0eb22461bd23810f9c5c416e5c56a..e7c158365e1e18927efe9836a9f7d2cb
          jsonrpc: "2.0",
          id: jsonRpcInternalError,
 diff --git a/dist/rpc/RpcServer.js b/dist/rpc/RpcServer.js
+index d8d3f38add1e9a626a751281a5c3f0222b6943de..3e59b2552df82110abc9ec3c3ec7047d8d3ad809 100644
 --- a/dist/rpc/RpcServer.js
 +++ b/dist/rpc/RpcServer.js
-@@ -17,7 +17,6 @@
+@@ -17,7 +17,6 @@ import * as Option from "../Option.js";
  import * as Predicate from "../Predicate.js";
  import * as Pull from "../Pull.js";
  import * as Queue from "../Queue.js";
@@ -122,7 +149,7 @@ diff --git a/dist/rpc/RpcServer.js b/dist/rpc/RpcServer.js
  import * as Schema from "../Schema.js";
  import * as SchemaIssue from "../SchemaIssue.js";
  import * as Scope from "../Scope.js";
-@@ -1005,16 +1004,25 @@
+@@ -1005,16 +1004,25 @@ export const makeProtocolStdio = /*#__PURE__*/Effect.gen(function* () {
      const queue = yield* Queue.bounded(8);
      const parser = serialization.makeUnsafe();
      yield* stdio.stdin.pipe(Stream.runForEach(data => {
@@ -192,6 +219,35 @@ index 4b17a3312305ae2570014b2b0fb0e5e85caeddc2..4fb97826953d81ca2131b801edf09beb
    toCode: () => ({
      runtime: "Schema.Json",
      Type: "Schema.Json"
+diff --git a/src/ai/McpServer.ts b/src/ai/McpServer.ts
+index 20cca5449b8425e6bb24e7591395bcf65a461ebc..b2faf93ea24b29755b806a257b1594ed9231fac6 100644
+--- a/src/ai/McpServer.ts
++++ b/src/ai/McpServer.ts
+@@ -2463,9 +2463,9 @@ const mcpStdioSerialization = (
+       const parser = serialization.makeUnsafe()
+       let selectedProtocol: McpProtocol.ProtocolAdapter | undefined
+       return {
+-        decode: (data) => {
++        decode: (data, onError) => {
+           const decoded: Array<unknown> = []
+-          for (const frame of frames.decode(data)) {
++          for (const frame of frames.decode(data, onError)) {
+             if (Array.isArray(frame)) {
+               const acceptsBatch = selectedProtocol?.runtime.transport.jsonRpc.acceptsBatches === true
+               if (
+diff --git a/src/rpc/RpcClient.ts b/src/rpc/RpcClient.ts
+index 88b632bd6ab15ce917f55163574e712c6c261956..b4da350cac3241b9a461458083d42fdb262c1a28 100644
+--- a/src/rpc/RpcClient.ts
++++ b/src/rpc/RpcClient.ts
+@@ -1187,7 +1187,7 @@ const makeHttpExchange = (
+     let hasResponse = false
+     yield* Stream.runForEachArray(response.stream, (chunk) =>
+       Effect.try({
+-        try: () => chunk.flatMap(parser.decode) as Array<FromServerEncoded>,
++        try: () => chunk.flatMap((data) => parser.decode(data)) as Array<FromServerEncoded>,
+         catch: (cause) => protocolDefect("Error decoding HTTP response", cause)
+       }).pipe(
+         Effect.flatMap((responses) => {
 diff --git a/src/rpc/RpcSerialization.ts b/src/rpc/RpcSerialization.ts
 index 58553c1c8c63f60e09ab60daabc647e356122a3e..9721e2567509f4edeef0541e4141528deea5e9bb 100644
 --- a/src/rpc/RpcSerialization.ts
@@ -260,9 +316,10 @@ index 58553c1c8c63f60e09ab60daabc647e356122a3e..9721e2567509f4edeef0541e4141528d
          jsonrpc: "2.0",
          id: jsonRpcInternalError,
 diff --git a/src/rpc/RpcServer.ts b/src/rpc/RpcServer.ts
+index df45621c4378de5d4cae42c0125ded400d35d02a..b08edf2b63520ca8c1b43632d4fb1b223dfc00f0 100644
 --- a/src/rpc/RpcServer.ts
 +++ b/src/rpc/RpcServer.ts
-@@ -31,7 +31,6 @@
+@@ -31,7 +31,6 @@ import * as Option from "../Option.ts"
  import * as Predicate from "../Predicate.ts"
  import * as Pull from "../Pull.ts"
  import * as Queue from "../Queue.ts"
@@ -270,7 +327,7 @@ diff --git a/src/rpc/RpcServer.ts b/src/rpc/RpcServer.ts
  import * as Schema from "../Schema.ts"
  import * as SchemaIssue from "../SchemaIssue.ts"
  import * as Scope from "../Scope.ts"
-@@ -1561,25 +1560,37 @@
+@@ -1561,25 +1560,37 @@ export const makeProtocolStdio = Effect.gen(function*() {
  
      yield* stdio.stdin.pipe(
        Stream.runForEach((data) => {
@@ -319,33 +376,3 @@ diff --git a/src/rpc/RpcServer.ts b/src/rpc/RpcServer.ts
        Effect.ensuring(Effect.forkDetach(Fiber.interrupt(fiber), { startImmediately: true })),
        Effect.forkScoped
      )
-diff --git a/src/ai/McpServer.ts b/src/ai/McpServer.ts
---- a/src/ai/McpServer.ts
-+++ b/src/ai/McpServer.ts
-@@ -2463,9 +2463,9 @@
-       const parser = serialization.makeUnsafe()
-       let selectedProtocol: McpProtocol.ProtocolAdapter | undefined
-       return {
--        decode: (data) => {
-+        decode: (data, onError) => {
-           const decoded: Array<unknown> = []
--          for (const frame of frames.decode(data)) {
-+          for (const frame of frames.decode(data, onError)) {
-             if (Array.isArray(frame)) {
-               const acceptsBatch = selectedProtocol?.runtime.transport.jsonRpc.acceptsBatches === true
-               if (
-diff --git a/dist/ai/McpServer.js b/dist/ai/McpServer.js
---- a/dist/ai/McpServer.js
-+++ b/dist/ai/McpServer.js
-@@ -1508,9 +1508,9 @@
-       const parser = serialization.makeUnsafe();
-       let selectedProtocol;
-       return {
--        decode: data => {
-+        decode: (data, onError) => {
-           const decoded = [];
--          for (const frame of frames.decode(data)) {
-+          for (const frame of frames.decode(data, onError)) {
-             if (Array.isArray(frame)) {
-               const acceptsBatch = selectedProtocol?.runtime.transport.jsonRpc.acceptsBatches === true;
-               if (!acceptsBatch || frame.length === 0 || frame.some(McpRuntime.hasRequestProtocolVersion) || frame.some(isInitializeJsonRpcMessage)) {
