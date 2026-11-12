@@ -75,6 +75,12 @@ export type Selection =
  */
 export interface Request {
   readonly network: Network
+  /**
+   * Symbolic links the run sees as links: each exists at its path with its
+   * target string, and grants nothing through it. A request names the path
+   * workspace-relative; a plan names it absolute.
+   */
+  readonly links?: ReadonlyArray<Link> | undefined
   /** Whether host Unix sockets are permitted; defaults to true for build tools. */
   readonly unixSockets?: boolean | undefined
   /** Closed-by-default process and IPC policy for untrusted native commands. */
@@ -204,6 +210,18 @@ export const unenforceable = (
 })
 
 /**
+ * One symbolic link a confined run sees: its path and its target string,
+ * exactly as `readlink` returns it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Link {
+  readonly path: string
+  readonly target: string
+}
+
+/**
  * The resolved confinement one spawn runs under. Every path is absolute and
  * canonical.
  *
@@ -222,6 +240,14 @@ export interface Plan {
   readonly workspaceRoot: string
   readonly cwd: string
   readonly reads: ReadonlyArray<string>
+  /**
+   * Symbolic links placed as links. Each path is absolute and inside the
+   * workspace, and each target is relative and resolves, lexically, inside it.
+   * A link is never a read: what it points at is readable only when a read
+   * grants it. Bubblewrap creates each link that no read or write already
+   * covers; seatbelt grants the link itself, which the host already holds.
+   */
+  readonly links?: ReadonlyArray<Link> | undefined
   /**
    * Paths inside a granted directory that the declaration did not cover,
    * re-closed after the grant. Only a mechanism with deny rules (seatbelt)
@@ -610,6 +636,35 @@ export const plan = (
     const real = hostFacts.realpath?.(path) ?? path
     if (!insideRoot(root, real)) externalReads.push(real)
   }
+  // A link is placed, never followed, so its target is checked as a string:
+  // an absolute target, or one that climbs out of the workspace, would make
+  // the run's view depend on the host rather than on the declaration.
+  const links: Array<Link> = []
+  for (const link of request.links ?? []) {
+    const absolute = anchor(link.path)
+    const api = pathApi(root)
+    const resolved = absolute === undefined || api.isAbsolute(link.target) || /^[A-Za-z]:|^\\/.test(link.target)
+      ? undefined
+      : api.resolve(api.dirname(absolute), ...link.target.split("/"))
+    if (absolute === undefined || resolved === undefined || !insideRoot(root, resolved)) {
+      return unenforceable(
+        hostFacts.platform,
+        selected._tag,
+        "workspace link target",
+        `the link input ${link.path} -> ${link.target} must name a relative target inside the workspace`
+      )
+    }
+    links.push({ path: absolute, target: link.target })
+  }
+  if (links.length > 0 && selected._tag === "docker") {
+    return unenforceable(
+      hostFacts.platform,
+      "docker",
+      "bubblewrap or seatbelt",
+      `docker binds paths and cannot place the link input ${links[0]!.path} as a link; ` +
+        "a bind of the link would grant what it points at"
+    )
+  }
   for (const target of linkedReads) {
     if (!externalReads.some((read) => insideRoot(read, target))) {
       return unenforceable(
@@ -670,6 +725,7 @@ export const plan = (
     workspaceRoot: root,
     cwd: location.cwd,
     reads: collapse(declared),
+    ...(links.length === 0 ? {} : { links }),
     readDenies: [],
     writes: collapse(writes),
     readOnly: collapse(readOnly),
@@ -966,6 +1022,13 @@ export const bubblewrap = (
   for (const read of launch?.reads ?? []) out.push("--ro-bind", read, read)
   for (const read of confinement.reads) out.push("--ro-bind", read, read)
   for (const write of confinement.writes) out.push("--bind", write, write)
+  // A link inside a bound read or write is already there as the host's own
+  // link. Every other one is created in the workspace tmpfs, with its parent
+  // directories, before the tmpfs is remounted read-only.
+  for (const link of confinement.links ?? []) {
+    if ([...confinement.reads, ...confinement.writes].some((bound) => insideRoot(bound, link.path))) continue
+    out.push("--symlink", link.target, link.path)
+  }
   for (const closed of confinement.readOnly) {
     if (confinement.writes.some((write) => closed === write || closed.startsWith(write + pathApi(write).sep))) {
       if (!hostFacts.exists(closed)) {
@@ -1141,9 +1204,10 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   const traversable = ancestors("/", [...runtime, ...readable, ...confinement.externalReads])
     .filter((path) => !insideRoot(confinement.workspaceRoot, path))
   lines.push(`(allow file-read-metadata ${traversable.map((path) => `(literal ${sbpl(path)})`).join(" ")})`)
+  const links = (confinement.links ?? []).map((link) => link.path)
   const listable = ancestors(
     confinement.workspaceRoot,
-    readable.filter((path) => insideRoot(confinement.workspaceRoot, path))
+    [...readable.filter((path) => insideRoot(confinement.workspaceRoot, path)), ...links]
   )
   lines.push(
     `(deny file-read* (subpath ${sbpl(confinement.workspaceRoot)}))`
@@ -1164,8 +1228,8 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   // not just stat access. Open only each declared read's ancestor literal:
   // listing sibling names does not grant their bytes or their subdirectories.
   // The cwd's metadata grant above is not a declaration of readable inputs.
-  if (confinement.strict === true && confinement.reads.length > 0) {
-    const directories = ancestors(confinement.workspaceRoot, confinement.reads)
+  if (confinement.strict === true && confinement.reads.length + links.length > 0) {
+    const directories = ancestors(confinement.workspaceRoot, [...confinement.reads, ...links])
     lines.push(`(allow file-read-data ${directories.map((path) => `(literal ${sbpl(path)})`).join(" ")})`)
   }
   lines.push(
@@ -1179,6 +1243,11 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   if (confinement.readDenies.length > 0) {
     lines.push(`(deny file-read* ${confinement.readDenies.map((path) => `(subpath ${sbpl(path)})`).join(" ")})`)
   }
+  // A link is granted as itself, a literal. A strict profile grants metadata
+  // only on listed paths, so without this `readlink` fails there. Seatbelt
+  // checks a read through the link against the resolved path, so what the
+  // link points at stays closed unless a read opens it.
+  if (links.length > 0) lines.push(`(allow file-read* ${links.map((path) => `(literal ${sbpl(path)})`).join(" ")})`)
   const credentials = credentialPaths(hostFacts)
   if (credentials.length > 0) {
     lines.push(`(deny file-read* ${credentials.map((path) => `(subpath ${sbpl(path)})`).join(" ")})`)

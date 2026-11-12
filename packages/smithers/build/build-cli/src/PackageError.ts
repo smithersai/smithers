@@ -68,6 +68,7 @@ export type Code =
   | "undeclared_host_bin"
   | "illegal_data_target"
   | "install_identity_missing"
+  | "link_input_refused"
   | "private_owner_conflict"
   | "manifest_encode_failed"
   | "manifest_drift"

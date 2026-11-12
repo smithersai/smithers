@@ -1,6 +1,6 @@
 ---
 title: "Inputs"
-description: "The file(), glob(), and gitDiff() input declarations: how each resolves against a package, when the planner digests it, and what revalidation catches."
+description: "The file(), glob(), gitDiff(), nodeModules() and link() input declarations: how each resolves against a package, when the planner digests it, and what revalidation catches."
 ---
 
 An input is a declaration of content a target depends on. Declaring it is pure;
@@ -27,7 +27,9 @@ Each returns a plain tagged object.
 | `gitDiff(base)`              | `{ _tag: "GitDiff", base }`          |
 
 `nodeModules(path)` declares an installed dependency tree; see
-[Installed trees](#installed-trees). `Input.isDeclared(value)` tests for a
+[Installed trees](#installed-trees). `link(path)` declares a symbolic link,
+keyed by its target string; see [Symbolic link inputs](#symbolic-link-inputs).
+`Input.isDeclared(value)` tests for a
 declared input's tag. The union is
 `Input.Declared`.
 
@@ -45,10 +47,12 @@ a shared input. The result is an `ExpandedInput` per declaration:
 ```ts
 interface ExpandedInput {
   readonly declaration: Input.Declared
-  readonly files: ReadonlyArray<{ path: string; digest: string | undefined }>
+  readonly files: ReadonlyArray<{ path: string; digest: string | undefined; link?: string }>
   readonly digest: string
 }
 ```
+
+A row for a symbolic link input carries the link's target string in `link`.
 
 `digest` is the sha256 of the JSON of the file list. That digest is what reaches
 the target's key material. The pattern text and the path do not.
@@ -83,7 +87,9 @@ The walk:
 
 - honors every `.gitignore` from the workspace root down to the walked
   directory,
-- skips `.git` and `node_modules` entries,
+- skips `.git` entries,
+- skips `node_modules` directories, unless a `.gitignore` negation rule
+  un-ignores one (see [`node_modules` the workspace tracks](#node_modules-the-workspace-tracks)),
 - stops at subpackage boundaries: it never descends into a subdirectory holding
   a `PACKAGE.ts` file,
 - skips the resolved cache directory and the fixed `.flows/store` subtree
@@ -115,8 +121,29 @@ references.
 
 Repeated expansion of an unchanged tree is therefore deterministic. A pattern
 whose static prefix does not exist, is not a real directory, is unreachable
-through real directories, contains a `node_modules` segment, or lands inside
-host state expands to an empty list.
+through real directories, lands inside a `node_modules` no negation rule
+un-ignores, or lands inside host state expands to an empty list.
+
+### `node_modules` the workspace tracks
+
+An install is host state, so a glob never walks a `node_modules` directory by
+default, whether the directory lies below the pattern's static prefix or on
+it. A fixture can still track paths inside one, such as a link standing in for
+an installed package. Git tracks them only because a `.gitignore` negation
+rule un-ignores the directory, and the walk follows the same rule:
+
+```gitignore
+# consumer/.gitignore
+!node_modules/
+node_modules/*
+!node_modules/agent
+```
+
+With that file, `glob("consumer/**")` lists `consumer/node_modules/agent` and
+nothing else inside `consumer/node_modules`. Without a negation rule the walk
+skips the directory, as it always has: a workspace whose `.gitignore` says
+nothing about an install cannot tell an install from tracked content, and
+digesting an install would key every installed file.
 
 ### The walk stays inside the workspace
 
@@ -155,14 +182,24 @@ are refused; without that, a FIFO nobody writes to would block planning forever.
 ### Symbolic links
 
 A symbolic link is followed only when its whole resolution stays inside the
-canonical workspace root and ends at a regular file.
+canonical workspace root and ends at a regular file. Such a link is content:
+`file()` and a glob digest it identically, so the two never disagree about a
+target's inputs.
 
-- A `file()` declaration naming a link that leaves the workspace fails. The
-  declaration named it, so the refusal is explicit.
-- A link inside a glob's walk that leaves the workspace is skipped. A walk
-  surveys a tree; it does not assert anything about one named path.
-- A link that stays inside is content either way, and both paths digest it
-  identically, so a glob and a `file()` never disagree about a target's inputs.
+Every other link (to a directory, dangling, or resolving outside the
+workspace) is never followed:
+
+- A `file()` declaration naming a link to a directory fails with
+  `link_input_refused` and names `link()` as the constructor that declares
+  it. One naming a link that leaves the workspace fails by name. A dangling
+  one is recorded as absent, as a missing file is.
+- A glob that is a target's declared input lists it as a link input, keyed by
+  its target string (see [Symbolic link inputs](#symbolic-link-inputs)), and
+  fails with `link_input_refused`, naming the link, when that string is
+  absolute or leaves the workspace. A tracked path is never silently dropped
+  from a target's key.
+- Every other caller of glob expansion, such as a lint rule listing the files
+  it reads, skips it: there are no bytes at a link to a directory to read.
 
 A `PACKAGE.ts` that is a link is a package marker exactly when the workspace index
 would import it: when it resolves, inside the workspace, to a regular file. A
@@ -219,6 +256,77 @@ names what is missing. An install with no identity is never granted.
 `smthrs affected` selects the target when the manifest or a lockfile changes.
 The declaration is an input of the target that reads the install, not a
 `Filegroup` member; share one constant between the targets that need it.
+
+## Symbolic link inputs
+
+```ts
+const agent = Smithers.link("consumer/node_modules/agent")
+```
+
+`link(path)` returns `{ _tag: "Link", path }`. `path` names a tracked symbolic
+link (git mode `120000`). A test whose meaning depends on a link, such as a
+fixture whose `node_modules/agent` points at a sibling package, declares the
+link itself.
+
+| Part                          | Role                                              |
+| ----------------------------- | ------------------------------------------------- |
+| The link's target string      | Key material                                      |
+| The link, at its path         | Present under confinement, with the same target   |
+| What the link points at       | Neither keyed nor readable unless declared itself |
+
+The identity is the target string `readlink` returns, never the content
+behind it. Retargeting the link re-keys the target. Editing files behind the
+link re-keys it only when those files are declared themselves, as any other
+input would. Declare both to read through the link:
+
+```ts
+const test = S.Shell.Test({
+  shell: "node consumer/run.js",
+  data: [S.link("consumer/node_modules/agent"), S.glob("consumer/agent/**")]
+})
+```
+
+The planner refuses with `link_input_refused`, naming the path, when:
+
+- the path is not a symbolic link,
+- the target is absolute, or
+- the target, resolved lexically from the link's directory, leaves the
+  workspace.
+
+An absolute or escaping target names something outside the tree the key
+covers: the key would say nothing about what the link reaches on another
+checkout, and the sandbox would need to grant a host path to make the link
+resolve. `nodeModules()` draws the same line from the other side: it admits a
+linked tree only when the link resolves to a real install with a manifest and
+a lockfile, and otherwise fails closed. A dangling link inside the workspace is
+admitted, because its target string is still the whole of its identity.
+
+Under confinement the run sees the link as a link: bubblewrap creates it in
+the workspace tmpfs, and seatbelt grants the link itself as a literal path.
+Neither grants anything through it. Docker binds paths, and a bind of the link
+would grant what it points at, so a Docker-confined target with a link input
+fails closed.
+
+A link input never becomes an output, and remote caching is unchanged: inputs
+are key material, never uploaded. A link a tool produces is an output only
+inside a declared `outDirs` directory, where it is captured and restored as a
+link; a link whose target leaves that directory is refused at capture. A
+declared output file that is a link fails the target and names `outDirs`.
+
+`smthrs affected` selects the target when the link's path changes, which is
+how git and jj report a retarget. A change behind the link selects the targets
+that declare the changed file, not the target that declares the link.
+
+### Why a constructor of its own
+
+Two designs were compared. Teaching `file()` to admit a link would give one
+constructor two identities: a link to a file keys the file's content, as it
+always has, while a link to a directory would key a string. A link that is
+retargeted from a file to a directory would silently change what its
+declaration means, and the confinement for `file()` grants a read while a link
+must grant nothing. `link()` names the one identity it has, keeps every
+existing `file()` key unchanged, and makes the refusal for a link `file()`
+cannot read point at the declaration that can.
 
 ## Sharing declarations
 

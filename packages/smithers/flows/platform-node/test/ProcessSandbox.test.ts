@@ -2246,3 +2246,112 @@ describe("destination broker aliases", () => {
     }
   })
 })
+
+describe("link inputs", () => {
+  const alias = { path: "consumer/alias", target: "agent" }
+
+  it("plans a link at its absolute path with its target string, and never as a read", () => {
+    const plan = planned(linux, { links: [alias] })
+    expect(plan.links).toEqual([{ path: "/work/ws/consumer/alias", target: "agent" }])
+    expect(plan.reads).not.toContain("/work/ws/consumer/alias")
+  })
+
+  it.each([
+    ["an absolute target", { path: "consumer/alias", target: "/etc" }],
+    ["a target that climbs out of the workspace", { path: "consumer/alias", target: "../../outside" }],
+    ["a Windows drive target", { path: "consumer/alias", target: "C:/tools" }],
+    ["a link path outside the workspace", { path: "../alias", target: "agent" }]
+  ])("refuses %s, naming the link", (_, link) => {
+    const result = ProcessSandbox.plan(
+      { ...request, links: [link] },
+      { workspaceRoot: root, cwd: `${root}/pkg`, tmp: "/work/ws/.flows/sandbox/run1" },
+      linux
+    )
+    expect(ProcessSandbox.isUnenforceable(result)).toBe(true)
+    expect(result).toMatchObject({ message: expect.stringContaining(`${link.path} -> ${link.target}`) })
+  })
+
+  it("refuses links under docker, whose bind would grant what the link points at", () => {
+    const result = ProcessSandbox.plan(
+      { ...request, mechanism: { _tag: "docker", image: "node:22" }, links: [alias] },
+      { workspaceRoot: root, cwd: `${root}/pkg`, tmp: "/work/ws/.flows/sandbox/run1" },
+      host("linux", { docker: "/usr/bin/docker" }, ["/work/ws/src/a.ts"], ["/work/ws/node_modules"])
+    )
+    expect(ProcessSandbox.isUnenforceable(result)).toBe(true)
+    expect(result).toMatchObject({ message: expect.stringContaining("/work/ws/consumer/alias") })
+  })
+
+  it("creates the link in the workspace tmpfs before the read-only remount, and never binds it", () => {
+    const argv = ProcessSandbox.bubblewrap(planned(linux, { links: [alias] }), ["true"], linux)
+    const at = argv.indexOf("--symlink")
+    expect(argv.slice(at, at + 3)).toEqual(["--symlink", "agent", "/work/ws/consumer/alias"])
+    expect(at).toBeGreaterThan(argv.indexOf("/work/ws"))
+    expect(at).toBeLessThan(argv.lastIndexOf("--remount-ro"))
+    expect(argv.join(" ")).not.toContain("--ro-bind /work/ws/consumer/alias")
+  })
+
+  it("leaves a link inside a bound read or write to the host's own copy of it", () => {
+    const facts = host("linux", { bwrap: "/usr/bin/bwrap" }, ["/work/ws/src/a.ts"], [
+      "/work/ws/node_modules",
+      "/work/ws/dist",
+      "/work/ws/consumer"
+    ])
+    const argv = ProcessSandbox.bubblewrap(
+      planned(facts, { reads: ["consumer"], links: [alias, { path: "dist/alias", target: "../consumer" }] }),
+      ["true"],
+      facts
+    )
+    expect(argv).not.toContain("--symlink")
+  })
+
+  it.skipIf(process.platform !== "darwin" && process.platform !== "linux").each([false, true])(
+    "places the link under the native kernel sandbox and grants nothing through it (strict %s)",
+    (strict) => {
+      const { base, workspaceRoot } = writeFixture()
+      try {
+        NodeFs.mkdirSync(NodePath.join(workspaceRoot, "consumer/agent"), { recursive: true })
+        NodeFs.writeFileSync(NodePath.join(workspaceRoot, "consumer/agent/index.js"), "agent")
+        NodeFs.symlinkSync("agent", NodePath.join(workspaceRoot, "consumer/alias"))
+        const tmp = NodePath.join(workspaceRoot, ".tmp")
+        NodeFs.mkdirSync(NodePath.join(tmp, "home"), { recursive: true })
+        const run = (reads: ReadonlyArray<string>, script: string) => {
+          const facts = ProcessSandbox.host()
+          const result = ProcessSandbox.plan(
+            { network: "none", strict, reads, links: [alias], writes: [] },
+            { workspaceRoot, cwd: workspaceRoot, tmp },
+            facts
+          )
+          if (result === undefined || ProcessSandbox.isUnenforceable(result)) {
+            throw new Error("native sandbox unavailable")
+          }
+          const wrapped = ProcessSandbox.wrap(result, ["/bin/sh", "-c", script], {}, facts)
+          return spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
+            cwd: workspaceRoot,
+            encoding: "utf8",
+            timeout: 10_000,
+            env: { ...process.env, ...wrapped.env }
+          })
+        }
+        const link = run([], "readlink consumer/alias")
+        expect(link.status, link.stderr).toBe(0)
+        expect(link.stdout.trim()).toBe("agent")
+        const through = run([], "cat consumer/alias/index.js")
+        expect(through.status).not.toBe(0)
+        expect(through.stdout).not.toContain("agent")
+        const declared = run(["consumer/agent/index.js"], "cat consumer/alias/index.js")
+        expect(declared.status, declared.stderr).toBe(0)
+        expect(declared.stdout).toBe("agent")
+      } finally {
+        NodeFs.rmSync(base, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it("grants seatbelt the link itself as a literal, and nothing below it", () => {
+    const profile = ProcessSandbox.seatbelt(planned(darwin, { links: [alias] }), linux)
+    expect(profile).toContain("(allow file-read* (literal \"/work/ws/consumer/alias\"))")
+    expect(profile).toContain("(literal \"/work/ws/consumer\")")
+    expect(profile).not.toContain("(subpath \"/work/ws/consumer/alias\")")
+    expect(profile).not.toContain("/work/ws/consumer/agent")
+  })
+})

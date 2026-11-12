@@ -119,12 +119,30 @@ export const NodeModules = Schema.TaggedStruct("NodeModules", {
 export type NodeModules = typeof NodeModules.Type
 
 /**
+ * Schema for one declared symbolic link input.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Link = Schema.TaggedStruct("Link", {
+  path: Schema.NonEmptyString
+})
+
+/**
+ * One declared symbolic link, keyed by its own target string.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Link = typeof Link.Type
+
+/**
  * Schema for every declared input value the planner understands.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Declared = Schema.Union([Glob, File, GitDiff, PnpmWorkspace, NodeModules])
+export const Declared = Schema.Union([Glob, File, GitDiff, PnpmWorkspace, NodeModules, Link])
 
 /**
  * Every declared input value the planner understands.
@@ -137,7 +155,9 @@ export type Declared = typeof Declared.Type
 /**
  * A workspace-relative file path and the sha256 digest of its content.
  *
- * `digest` is undefined when the file does not exist.
+ * `digest` is undefined when the file does not exist. A row for a symbolic
+ * link input carries the link's own target string in `link`, and its digest
+ * is the digest of that string, never of the content behind the link.
  *
  * @category models
  * @since 0.1.0
@@ -145,6 +165,8 @@ export type Declared = typeof Declared.Type
 export interface FileDigest {
   readonly path: string
   readonly digest: string | undefined
+  /** The target string of a symbolic link input, exactly as `readlink` returns it. */
+  readonly link?: string | undefined
 }
 
 /**
@@ -290,6 +312,121 @@ export const pnpmWorkspace = (path: string): PnpmWorkspace => PnpmWorkspace.make
 export const nodeModules = (path: string): NodeModules => NodeModules.make({ path })
 
 /**
+ * Declares a symbolic link input without reading the filesystem.
+ *
+ * `path` names a tracked symbolic link (git mode `120000`). The link's
+ * identity is its own target string: retargeting it re-keys the target, and
+ * changing files behind it re-keys the target only when those files are
+ * declared themselves. Under confinement the link exists at the same path
+ * with the same target and grants nothing: what it points at is readable
+ * only when declared. A target that is absolute, or that leaves the
+ * workspace, is refused, because the key would then name something no
+ * checkout of the workspace reproduces. A path that is not a symbolic link
+ * is refused too.
+ *
+ * @example
+ * ```ts
+ * import { Smithers } from "@smthrs/targets"
+ *
+ * const linked = Smithers.link("consumer/node_modules/agent")
+ * ```
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const link = (path: string): Link => Link.make({ path })
+
+/**
+ * A declared symbolic link that cannot be an input: the path is not a
+ * symbolic link, or its target is absolute or leaves the workspace.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class LinkRefused extends Error {
+  readonly _tag = "smithers-build/LinkRefused"
+  /** The workspace-relative path of the declared link. */
+  readonly path: string
+  /** The link's target string, when the path is a link. */
+  readonly target: string | undefined
+  /** Why the link is refused. */
+  readonly reason: "not-a-link" | "absolute" | "escapes"
+  constructor(path: string, target: string | undefined, reason: "not-a-link" | "absolute" | "escapes") {
+    super(
+      reason === "not-a-link"
+        ? `declared link input ${path} is not a symbolic link`
+        : `declared link input ${path} -> ${target} ${
+          reason === "absolute" ? "is absolute" : "leaves the workspace"
+        }; a link input must name a relative target inside the workspace`
+    )
+    this.path = path
+    this.target = target
+    this.reason = reason
+  }
+}
+
+/**
+ * Checks a link's target string against the workspace, lexically: the target
+ * is never resolved, because a link input is never followed.
+ *
+ * @category validation
+ * @since 1.0.0
+ */
+export const linkTargetRefusal = (path: string, target: string): LinkRefused | undefined => {
+  if (NodePath.posix.isAbsolute(target) || /^[A-Za-z]:|^\\/.test(target)) {
+    return new LinkRefused(path, target, "absolute")
+  }
+  const resolved = NodePath.posix.normalize(NodePath.posix.join(NodePath.posix.dirname(path), target))
+  if (resolved === ".." || resolved.startsWith("../")) return new LinkRefused(path, target, "escapes")
+  return undefined
+}
+
+/** The key row of one link: its path, the digest of its target string, and the string. */
+const linkRow = (path: string, target: string): FileDigest => {
+  const refusal = linkTargetRefusal(path, target)
+  if (refusal !== undefined) throw refusal
+  return { path, digest: digestText(`symlink\0${target}`), link: target }
+}
+
+/**
+ * Measures one declared symbolic link: its target string, never the content
+ * behind it.
+ *
+ * The parent directory is confined to the workspace before the link is read.
+ * A missing link records `digest: undefined`, as a missing file does. A path
+ * that is not a symbolic link, and a link whose target is absolute or leaves
+ * the workspace, fail with {@link LinkRefused}.
+ *
+ * @category digests
+ * @since 1.0.0
+ */
+export const digestLink = async (
+  workspaceRoot: string,
+  path: string,
+  options: { readonly io?: SafeFs.Io | undefined; readonly signal?: AbortSignal | undefined } = {}
+): Promise<FileDigest> => {
+  const io = options.io ?? SafeFs.defaultIo
+  const root = await SafeFs.canonicalRoot(workspaceRoot, io)
+  options.signal?.throwIfAborted()
+  const absolute = NodePath.join(root, path)
+  const parent = NodePath.dirname(absolute)
+  if (parent !== root) {
+    const directory = await SafeFs.resolveDirectory(parent, { root, io, what: directoryNoun, signal: options.signal })
+    if (directory === undefined) return { path, digest: undefined }
+  }
+  let stats: Awaited<ReturnType<SafeFs.Io["lstat"]>>
+  try {
+    stats = await io.lstat(absolute)
+  } catch (cause) {
+    const code = SafeFs.errorCode(cause)
+    if (code === "ENOENT" || code === "ENOTDIR") return { path, digest: undefined }
+    throw cause
+  }
+  if (!stats.isSymbolicLink()) throw new LinkRefused(path, undefined, "not-a-link")
+  return linkRow(path, await (io.readlink ?? SafeFs.defaultReadlink)(absolute))
+}
+
+/**
  * The lockfile names that can carry an install's identity, in the order the
  * planner reads them.
  *
@@ -375,7 +512,8 @@ const declaredFields: Readonly<Record<string, ReadonlyArray<string>>> = {
   Glob: ["_tag", "pattern", "exclude"],
   GitDiff: ["_tag", "base", "paths", "added", "addedLines"],
   PnpmWorkspace: ["_tag", "path"],
-  NodeModules: ["_tag", "path"]
+  NodeModules: ["_tag", "path"],
+  Link: ["_tag", "path"]
 }
 
 /**
@@ -731,6 +869,18 @@ interface Scan {
   readonly sourceFilters: boolean
   readonly repositoryBoundaries: ReadonlyArray<string>
   readonly enteredRepositories: ReadonlySet<string>
+  /**
+   * Whether a symbolic link that is not a link to a workspace file is listed
+   * as a link input. Only a declared input expansion lists them.
+   */
+  readonly links: boolean
+  /**
+   * Link inputs whose target cannot be an input, by path. A walk lists every
+   * link before the pattern filters them, so refusing at discovery would fail
+   * a glob over a link it never selects; the expansion refuses only a link the
+   * pattern matched.
+   */
+  readonly refusedLinks: Map<string, LinkRefused>
   readonly found: Array<string>
   readonly limits: ScanLimits
   readonly signal: AbortSignal | undefined
@@ -950,21 +1100,44 @@ const crossesPackageBoundary = async (
   return false
 }
 
-const isIgnored = (
+/** The last decision any `.gitignore` rule makes about a path, or undefined when none does. */
+const ignoreDecision = (
   scopes: ReadonlyArray<IgnoreScope>,
   path: string,
   isDirectory: boolean
-): boolean => {
-  let ignored = false
+): "ignored" | "unignored" | undefined => {
+  let decision: "ignored" | "unignored" | undefined
   for (const scope of scopes) {
     const relative = scope.base === "" ? path : path.slice(scope.base.length + 1)
     if (relative.length === 0) continue
     // A deeper rule overrides an ancestor only when it makes a decision.
     const result = scope.matcher.test(isDirectory ? `${relative}/` : relative)
-    if (result.ignored || result.unignored) ignored = result.ignored
+    if (result.ignored) decision = "ignored"
+    else if (result.unignored) decision = "unignored"
   }
-  return ignored
+  return decision
 }
+
+const isIgnored = (
+  scopes: ReadonlyArray<IgnoreScope>,
+  path: string,
+  isDirectory: boolean
+): boolean => ignoreDecision(scopes, path, isDirectory) === "ignored"
+
+/**
+ * Reports whether the walk enters a `node_modules` directory.
+ *
+ * An install tree is host state, so the walk skips it, whether it lies below
+ * the static prefix or on it. The one exception is a directory a `.gitignore`
+ * negation rule un-ignores (`!consumer/node_modules/`): that rule says the
+ * workspace tracks what is inside, so skipping it would silently drop
+ * tracked paths. Ordinary ignore rules then apply inside it.
+ */
+const entersNodeModules = (
+  scopes: ReadonlyArray<IgnoreScope>,
+  path: string,
+  isDirectory: boolean
+): boolean => ignoreDecision(scopes, path, isDirectory) === "unignored"
 
 /**
  * Reports whether a symbolic link found during a walk names workspace content.
@@ -994,6 +1167,23 @@ const admitsLink = async (scan: Scan, child: string): Promise<boolean> => {
   return (await scan.io.lstat(target)).isFile()
 }
 
+/**
+ * Classifies one symbolic link a declared input walk found: a link to a
+ * workspace file is that file's content, and every other link is a link
+ * input keyed by its target string, which must be relative and stay inside
+ * the workspace. A link that cannot be either is recorded, and fails the
+ * expansion, naming the link, when the pattern selects it, rather than
+ * vanishing from the target's inputs.
+ */
+const admitsLinkInput = async (scan: Scan, child: string): Promise<boolean> => {
+  if (await admitsLink(scan, child)) return true
+  if (!scan.links) return false
+  const target = await (scan.io.readlink ?? SafeFs.defaultReadlink)(NodePath.join(scan.root, child))
+  const refusal = linkTargetRefusal(child, target)
+  if (refusal !== undefined) scan.refusedLinks.set(child, refusal)
+  return true
+}
+
 const walk = async (
   scan: Scan,
   opened: Opened,
@@ -1019,7 +1209,8 @@ const walk = async (
     const child = relative === "" ? entry.name : `${relative}/${entry.name}`
     const directory = entry.isDirectory()
     if (scan.sourceFilters) {
-      if (entry.name === ".git" || entry.name === "node_modules") continue
+      if (entry.name === ".git") continue
+      if (entry.name === "node_modules" && !entersNodeModules(next, child, directory)) continue
       if (isWorkspaceStatePath(scan.cacheDirectory, child)) continue
       const repository = scan.repositoryBoundaries.find((boundary) => child === boundary)
       if (directory && repository !== undefined && !scan.enteredRepositories.has(repository)) continue
@@ -1036,7 +1227,7 @@ const walk = async (
   }
   await branches(scan, [
     ...links.map((child) => async () => {
-      if (await permitted(scan, () => admitsLink(scan, child))) addFile(scan, child)
+      if (await permitted(scan, () => admitsLinkInput(scan, child))) addFile(scan, child)
     }),
     ...directories.map((child) => async () => {
       const below = await permitted(scan, () => openDirectory(scan, child))
@@ -1049,8 +1240,11 @@ const walk = async (
  * Expands one declared glob against the real filesystem.
  *
  * The walk starts at the pattern's static prefix, honors every `.gitignore`
- * from the workspace root down, and skips `.git`, `node_modules`, and the
- * configured cache directory, and the fixed `.flows/store` directory.
+ * from the workspace root down, and skips `.git`, the configured cache
+ * directory, and the fixed `.flows/store` directory. It skips a
+ * `node_modules` directory, below the static prefix or on it, unless a
+ * `.gitignore` negation rule un-ignores it: an install is host state, but a
+ * tree the workspace says it tracks is not.
  * Skipping host state is unconditional: replayable cache, scratch, and store
  * data must never reach a content digest even when it is not ignored. The
  * result is a sorted list of workspace-relative posix file paths, so repeated
@@ -1082,9 +1276,17 @@ const walk = async (
  * A symbolic link to a file counts as an input on exactly the terms
  * {@link digestFile} applies to a declared file.
  *
+ * With `links: true`, which a declared input expansion passes, every other
+ * symbolic link the pattern matches is listed too, as a link input keyed by
+ * its target string ({@link digestLink}); one whose target is absolute or
+ * leaves the workspace fails the expansion with {@link LinkRefused} naming
+ * it. Without it such links are skipped, because a caller that reads the
+ * listed files as files has nothing to read at a link to a directory.
+ *
  * A pattern whose static prefix does not exist, is not a real directory, or is
  * unreachable through real directories expands to an empty list, as does one
- * containing a `node_modules` segment or landing inside host state.
+ * landing inside host state or inside a `node_modules` no negation rule
+ * un-ignores.
  *
  * @category expansion
  * @since 0.1.0
@@ -1107,6 +1309,8 @@ export const expandGlob = async (
      * `false`: the paths a generator names are its own wherever they live.
      */
     readonly packageScoped?: boolean | undefined
+    /** Whether links that are not links to workspace files are listed as link inputs. */
+    readonly links?: boolean | undefined
     readonly signal?: AbortSignal | undefined
   } = {}
 ): Promise<ReadonlyArray<string>> => {
@@ -1124,7 +1328,6 @@ export const expandGlob = async (
     options.cacheDirectory ?? Config.defaultCacheDirectory
   )
   const start = staticPrefix(resolved)
-  if (start.split("/").includes("node_modules")) return []
   if (isWorkspaceStatePath(cacheDirectory, start)) return []
   const io = options.io ?? SafeFs.defaultIo
   const repositoryBoundaries = [...new Set((options.repositoryBoundaries ?? []).map((path) => resolvePath("", path)))]
@@ -1140,6 +1343,8 @@ export const expandGlob = async (
     sourceFilters: true,
     repositoryBoundaries,
     enteredRepositories,
+    links: options.links ?? false,
+    refusedLinks: new Map(),
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
@@ -1156,22 +1361,27 @@ export const expandGlob = async (
   const packageRoot = resolvedPackage === "." ? "" : resolvedPackage
   if (scan.packageScoped && await crossesPackageBoundary(scan, packageRoot, start, chain)) return []
   const scopes: Array<IgnoreScope> = []
+  const skippedInstall = (relative: string): boolean =>
+    NodePath.posix.basename(relative) === "node_modules" && !entersNodeModules(scopes, relative, true)
   for (const ancestor of chain.slice(0, -1)) {
     // Git never reads rules below an excluded directory, even for a static prefix.
-    if (isIgnored(scopes, ancestor.relative, true)) return []
+    if (isIgnored(scopes, ancestor.relative, true) || skippedInstall(ancestor.relative)) return []
     const matcher = await readIgnore(scan, ancestor.relative)
     if (matcher !== undefined) scopes.push({ base: ancestor.relative, matcher })
   }
-  if (isIgnored(scopes, start, true)) return []
+  if (isIgnored(scopes, start, true) || skippedInstall(start)) return []
   await walk(scan, chain[chain.length - 1]!, scopes, false)
   // One matcher per pattern, not one per discovered path: these strings are
   // constant across the expansion, so compiling them inside the filter repeats
   // the same parse for every file a broad glob reached.
   const included = new Minimatch(resolved, { dot: true })
   const excluded = excludes.map((exclude) => new Minimatch(exclude, { dot: true }))
-  return scan.found
+  const matched = scan.found
     .filter((path) => included.match(path) && !excluded.some((exclude) => exclude.match(path)))
     .sort()
+  const refused = matched.find((path) => scan.refusedLinks.has(path))
+  if (refused !== undefined) throw scan.refusedLinks.get(refused)!
+  return matched
 }
 
 /**
@@ -1217,6 +1427,8 @@ export const discoverFiles = async (
     sourceFilters: true,
     repositoryBoundaries: await declaredSubmodules(root, io, options.signal),
     enteredRepositories: new Set(),
+    links: false,
+    refusedLinks: new Map(),
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
@@ -1263,6 +1475,8 @@ export const listOutputFiles = async (
     // Source-only cache and repository settings are inert for output inventories.
     repositoryBoundaries: [],
     enteredRepositories: new Set(),
+    links: false,
+    refusedLinks: new Map(),
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
@@ -1414,6 +1628,40 @@ export const digestFile = async (
   return SafeFs.digestFile(absolutePath, { root, io, signal: options.signal, what: inputNoun })
 }
 
+/** Whether a path is a symbolic link that does not resolve, inside the root, to a regular file. */
+const isLinkInput = async (root: string, absolute: string, io: SafeFs.Io): Promise<boolean> => {
+  let stats: Awaited<ReturnType<SafeFs.Io["lstat"]>>
+  try {
+    stats = await io.lstat(absolute)
+  } catch (cause) {
+    const code = SafeFs.errorCode(cause)
+    if (code === "ENOENT" || code === "ENOTDIR") return false
+    throw cause
+  }
+  if (!stats.isSymbolicLink()) return false
+  let target: string
+  try {
+    target = await io.realpath(absolute)
+  } catch (cause) {
+    const code = SafeFs.errorCode(cause)
+    if (code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP") return true
+    throw cause
+  }
+  return !SafeFs.inside(root, target) || !(await io.lstat(target)).isFile()
+}
+
+/** One row of {@link digestFiles}: a file's content, or a link input's target string. */
+const digestInput = async (
+  root: string,
+  path: string,
+  io: SafeFs.Io,
+  signal: AbortSignal | undefined
+): Promise<FileDigest> => {
+  const absolute = NodePath.join(root, path)
+  if (await isLinkInput(root, absolute, io)) return digestLink(root, path, { io, signal })
+  return { path, digest: await SafeFs.digestFile(absolute, { root, io, signal, what: inputNoun }) }
+}
+
 /**
  * Maximum files admitted to one digest batch.
  *
@@ -1436,6 +1684,12 @@ export const defaultDigestConcurrency = 32
  * resolves outside it fails rather than contributing another tree's content to
  * this workspace's key material. Ordering is by UTF-16 code unit, which is the
  * same on every host.
+ *
+ * A symbolic link that resolves, inside the root, to a regular file digests
+ * as that file. Every other symbolic link digests as a link input
+ * ({@link digestLink}): its row carries the target string and never the
+ * content behind it, and a target that is absolute or leaves the workspace
+ * fails with {@link LinkRefused}.
  *
  * @category digests
  * @since 0.1.0
@@ -1483,15 +1737,7 @@ export const digestFiles = async (
         if (index >= ordered.length) return
         cursor += 1
         const path = ordered[index]!
-        output[index] = {
-          path,
-          digest: await SafeFs.digestFile(NodePath.join(root, path), {
-            root,
-            io,
-            signal: options.signal,
-            what: inputNoun
-          })
-        }
+        output[index] = await digestInput(root, path, io, options.signal)
       } catch (cause) {
         failure ??= cause
       }

@@ -1204,11 +1204,28 @@ const treeInputFiles = async (
 ): Promise<ReadonlyArray<Input.FileDigest>> => {
   if (declaration._tag === "File") {
     const path = Input.resolvePath(packagePath, declaration.path)
-    const digest = await Input.digestFile(NodePath.join(context.root, path), {
+    const absolute = NodePath.join(context.root, path)
+    const digest = await Input.digestFile(absolute, {
       workspaceRoot: context.root,
       signal: context.signal
+    }).catch(async (cause: unknown) => {
+      // A file() naming a link to a directory is a link the author meant to
+      // declare: say which constructor declares it, not only what it is not.
+      const linked = await Fs.lstat(absolute).then((stats) => stats.isSymbolicLink(), () => false)
+      const directory = linked && await Fs.stat(absolute).then((stats) => stats.isDirectory(), () => false)
+      if (!directory) throw cause
+      throw new PackageError(
+        "link_input_refused",
+        `S.file(${JSON.stringify(declaration.path)}): ${path} is a symbolic link to a directory; ` +
+          `declare the link itself with S.link(${JSON.stringify(declaration.path)})`,
+        { path, cause }
+      )
     })
     return [{ path, digest }]
+  }
+  if (declaration._tag === "Link") {
+    const path = Input.resolvePath(packagePath, declaration.path)
+    return [await linkInput(() => Input.digestLink(context.root, path, { signal: context.signal }))]
   }
   if (declaration._tag === "NodeModules") {
     // The install's identity is its manifest and every lockfile beside it.
@@ -1242,16 +1259,31 @@ const treeInputFiles = async (
     return rows
   }
   const matches = declaration._tag === "Glob"
-    ? await Input.expandGlob(context.root, packagePath, declaration, {
-      cacheDirectory: context.cacheDirectory,
-      repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
-      signal: context.signal
-    })
+    ? await linkInput(() =>
+      Input.expandGlob(context.root, packagePath, declaration, {
+        cacheDirectory: context.cacheDirectory,
+        repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
+        links: true,
+        signal: context.signal
+      })
+    )
     : await Input.expandPnpmWorkspace(context.root, packagePath, declaration, {
       cacheDirectory: context.cacheDirectory,
       signal: context.signal
     })
-  return Input.digestFiles(context.root, matches, { signal: context.signal })
+  return linkInput(() => Input.digestFiles(context.root, matches, { signal: context.signal }))
+}
+
+/** Reports a refused link input as the planner's own error, naming the link. */
+const linkInput = async <A>(measure: () => Promise<A>): Promise<A> => {
+  try {
+    return await measure()
+  } catch (cause) {
+    if (cause instanceof Input.LinkRefused) {
+      throw new PackageError("link_input_refused", cause.message, { path: cause.path, cause })
+    }
+    throw cause
+  }
 }
 
 /**

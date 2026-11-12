@@ -149,6 +149,12 @@ const compileInput = (
       const identity = new Set([paths.manifest, ...paths.lockfiles])
       return (path) => identity.has(path)
     }
+    // A link's identity is its own target string, which changes only as a
+    // change to the link's path; what it points at is never its input.
+    case "Link": {
+      const resolved = Input.resolvePath(packagePath, input.path)
+      return (path) => resolved === path
+    }
     // Ambient inputs affect their target but do not own changed paths.
     case "GitDiff":
     case "PnpmWorkspace":

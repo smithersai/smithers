@@ -271,6 +271,13 @@ export const sandboxRequest = (
   candidateReads: ReadonlyArray<string> = []
 ): ExecSandbox.Request => {
   const reads = new Set<string>()
+  // A link input is placed as a link, never bound: binding its path would
+  // grant whatever it points at, and the link's key covers only its target.
+  const links = new Map<string, string>()
+  const addRow = (file: Input.FileDigest): void => {
+    if (file.link === undefined) reads.add(file.path)
+    else links.set(file.path, file.link)
+  }
   const externalReads = new Set(node.externalReads)
   for (const path of managerFilesOf(workspace)) reads.add(path)
   // A gate judging an agent candidate reads what the candidate may have
@@ -283,7 +290,7 @@ export const sandboxRequest = (
   // Ancestors of declared files are traversable without granting their
   // siblings. Granting packagePath here would expose every undeclared input.
   for (const input of node.declaredInputs) {
-    for (const file of input.files) reads.add(file.path)
+    for (const file of input.files) addRow(file)
   }
   for (const path of node.readSet) reads.add(path)
   const seen = new Set<string>()
@@ -302,7 +309,7 @@ export const sandboxRequest = (
     if (dependency.rule === "Filegroup") {
       for (const input of dependency.declaredInputs) {
         if (input.declaration._tag === "GitDiff") continue
-        for (const file of input.files) reads.add(file.path)
+        for (const file of input.files) addRow(file)
       }
     }
     // A Go.Packages selection has no outputs either: its closure (the module
@@ -357,6 +364,7 @@ export const sandboxRequest = (
     ...(destinationsOf(node) === undefined ? {} : { destinations: destinationsOf(node) }),
     mechanism: workspace.sandboxes?.sandboxes["default"],
     reads: [...reads],
+    ...(links.size === 0 ? {} : { links: [...links].map(([path, target]) => ({ path, target })) }),
     writes: [...writes],
     writeFiles: [...writeFiles],
     readOnly: [`${cacheDirectory}/cache`],
@@ -788,6 +796,22 @@ export const executeEffect = (
                     (yield* joined(() => Fs.readdir(absolute))).length === 0))) ||
               (node.outFiles.includes(path) && !stat.isFile())
             ) missing.push(path)
+          }
+          // A link is not a file's bytes and a file entry restores bytes only;
+          // name the shape so the declaration can move to its directory.
+          const linked: Array<string> = []
+          for (const path of override === undefined ? node.outFiles : []) {
+            const absolute = NodePath.join(workspaceRoot, ...path.split("/"))
+            if (yield* joined(() => Fs.lstat(absolute).then((stats) => stats.isSymbolicLink(), () => false))) {
+              linked.push(path)
+            }
+          }
+          if (linked.length > 0) {
+            return {
+              ok: false as const,
+              error: `${node.label} declared output file is a symbolic link: ${linked.join(", ")}; ` +
+                "declare its directory in outDirs to capture it as a link"
+            }
           }
           if (missing.length > 0) {
             return {

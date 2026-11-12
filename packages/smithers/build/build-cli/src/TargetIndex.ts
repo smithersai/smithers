@@ -103,6 +103,8 @@ const inputOf = (packagePath: string, declared: Input.Declared): TargetIndexRule
       return { kind: "pnpm-workspace", path: Input.resolvePath(packagePath, declared.path) }
     case "NodeModules":
       return { kind: "node-modules", path: Input.nodeModulesPaths(packagePath, declared).directory || "." }
+    case "Link":
+      return { kind: "link", path: Input.resolvePath(packagePath, declared.path) }
     case "GitDiff":
       return {
         kind: "git-diff",

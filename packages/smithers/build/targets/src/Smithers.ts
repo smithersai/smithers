@@ -94,6 +94,8 @@ export const file = (path: string): InputModule.File => InputModule.file(path)
 export { label } from "./Reference.ts"
 /** @category constructors @since 0.1.0 */
 export { gitDiff, glob, nodeModules, pnpmWorkspace } from "./Input.ts"
+/** @category constructors @since 1.0.0 */
+export { link } from "./Input.ts"
 /** @category constructors @since 0.1.0 */
 export { Workspace } from "./WorkspaceDeclaration.ts"
 /** @category constructors @since 0.1.0 */

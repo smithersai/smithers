@@ -112,7 +112,20 @@ export interface Io {
   readonly lstat: (path: string) => Promise<Stats>
   readonly readdir: (path: string, limit?: number) => Promise<ReadonlyArray<NodeFs.Dirent>>
   readonly open: (path: string) => Promise<OpenFile>
+  /**
+   * Reads a symbolic link's own target string. Optional so an existing seam
+   * keeps compiling; {@link defaultReadlink} answers when it is absent.
+   */
+  readonly readlink?: ((path: string) => Promise<string>) | undefined
 }
+
+/**
+ * Reads a symbolic link's target string through `node:fs`, never following it.
+ *
+ * @category execution
+ * @since 1.0.0
+ */
+export const defaultReadlink = (path: string): Promise<string> => Fs.readlink(path)
 
 /**
  * Flags every confined read opens with.
@@ -136,6 +149,7 @@ const openFlags = NodeFs.constants.O_RDONLY |
  */
 export const defaultIo: Io = {
   realpath: (path) => Fs.realpath(path),
+  readlink: defaultReadlink,
   lstat: (path) => Fs.lstat(path, { bigint: true }),
   readdir: async (path, limit = maximumDirectoryEntries) => {
     const directory = await Fs.opendir(path)

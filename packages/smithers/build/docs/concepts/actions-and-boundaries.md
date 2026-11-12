@@ -203,6 +203,15 @@ and nothing else in the directory. A tree that is a link to a shared install
 is admitted only when the link resolves to a directory named `node_modules`;
 a link to any other directory fails the target closed.
 
+A declared symbolic link is admitted as a link, not as what it points at.
+`S.link("consumer/node_modules/agent")` keys the link's target string, and the
+confined run sees the link at the same path with the same target. Bubblewrap
+creates it in the workspace tmpfs; seatbelt grants the link itself and nothing
+below it. What the link points at is readable only when a read declares it.
+Docker binds paths, and a bind of the link would grant its target, so a
+confined Docker target with a link input fails with `sandbox_unenforceable`.
+See [Inputs](inputs.md#symbolic-link-inputs).
+
 An undeclared workspace read is missing or refused, and an undeclared write
 fails at the kernel. Native host reads outside the admitted runtime and explicit
 grants are also refused; redirecting `HOME` alone would not enforce that boundary.

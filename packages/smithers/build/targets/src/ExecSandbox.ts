@@ -162,6 +162,11 @@ export interface Request {
   readonly policy: Policy | undefined
   readonly mechanism?: WorkspaceDeclaration.SandboxDeclaration | undefined
   readonly reads: ReadonlyArray<string>
+  /**
+   * Symbolic link inputs, each placed at its workspace-relative path with its
+   * declared target and granting nothing through it.
+   */
+  readonly links?: ReadonlyArray<ProcessSandbox.Link> | undefined
   readonly writes: ReadonlyArray<string>
   /**
    * Declared outputs whose leaf is a file rather than a directory. A file
@@ -224,6 +229,7 @@ const lower = (request: Request): ProcessSandbox.Request => {
       ? { mechanism: { _tag: "docker", image: declared.image } }
       : { mechanism: { _tag: "bubblewrap" } }),
     reads: request.reads,
+    ...(request.links === undefined ? {} : { links: request.links }),
     writes: request.writes,
     writeFiles: request.writeFiles,
     readOnly: request.readOnly,
