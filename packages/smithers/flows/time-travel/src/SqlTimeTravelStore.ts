@@ -478,9 +478,10 @@ export const make: Effect.Effect<
      * either projection table, so the event payload is the only durable link
      * between a truncated record and the row it created.
      */
-    const deleteProjectedWaits = (runId: string, afterSeq: number) =>
+    const deleteProjectedWaits = (runId: string, afterSeq: number, tables: ReadonlySet<string>) =>
       Effect.gen(function*() {
-        yield* sql`
+        if (tables.has("flows_deferred_completions")) {
+          yield* sql`
           DELETE FROM flows_deferred_completions
           WHERE execution_id = ${runId}
             AND EXISTS (
@@ -489,17 +490,19 @@ export const make: Effect.Effect<
                 AND event.seq > ${afterSeq}
                 AND event.event_type = ${EventTypes.deferredCompleted}
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")
-        } = flows_deferred_completions.flow_name
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")
+          } = flows_deferred_completions.flow_name
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
-        } = flows_deferred_completions.execution_id
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+          } = flows_deferred_completions.execution_id
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.deferredName")
-        } = flows_deferred_completions.deferred_name
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.deferredName")
+          } = flows_deferred_completions.deferred_name
             )
         `
-        yield* sql`
+        }
+        if (tables.has("flows_clock_deadlines")) {
+          yield* sql`
           DELETE FROM flows_clock_deadlines
           WHERE execution_id = ${runId}
             AND EXISTS (
@@ -509,17 +512,19 @@ export const make: Effect.Effect<
                 AND event.event_type = ${EventTypes.clockScheduled}
                 AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")} = flows_clock_deadlines.flow_name
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
-        } = flows_clock_deadlines.execution_id
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+          } = flows_clock_deadlines.execution_id
                 AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.clockName")} = flows_clock_deadlines.clock_name
             )
         `
+        }
         // A completion or consumption recorded in the suffix is undone on the
         // row that survives it, so the rows keep matching the journal the
         // deferred/clock fold rebuilds them from (issue #2054). A clock whose
         // completion is archived is pending again and fires, which is what a
         // clock whose deferred completion was archived already had to do.
-        yield* sql`
+        if (tables.has("flows_clock_deadlines")) {
+          yield* sql`
           UPDATE flows_clock_deadlines
           SET completed_at_ms = NULL
           WHERE execution_id = ${runId}
@@ -531,12 +536,14 @@ export const make: Effect.Effect<
                 AND event.event_type = ${EventTypes.clockCompleted}
                 AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")} = flows_clock_deadlines.flow_name
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
-        } = flows_clock_deadlines.execution_id
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+          } = flows_clock_deadlines.execution_id
                 AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.clockName")} = flows_clock_deadlines.clock_name
             )
         `
-        yield* sql`
+        }
+        if (tables.has("flows_deferred_completions")) {
+          yield* sql`
           UPDATE flows_deferred_completions
           SET consumed_at_ms = NULL
           WHERE execution_id = ${runId}
@@ -547,16 +554,17 @@ export const make: Effect.Effect<
                 AND event.seq > ${afterSeq}
                 AND event.event_type = ${EventTypes.deferredConsumed}
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")
-        } = flows_deferred_completions.flow_name
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")
+          } = flows_deferred_completions.flow_name
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
-        } = flows_deferred_completions.execution_id
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+          } = flows_deferred_completions.execution_id
                 AND ${
-          Dialect.jsonText(sql, sql`event.payload_json`, "$.deferredName")
-        } = flows_deferred_completions.deferred_name
+            Dialect.jsonText(sql, sql`event.payload_json`, "$.deferredName")
+          } = flows_deferred_completions.deferred_name
             )
         `
+        }
       }).pipe(Effect.mapError(mapError))
 
     /**
@@ -923,6 +931,9 @@ export const make: Effect.Effect<
                       )
                     }
                   }
+                  // The journal and run-store ladders are sufficient. Only
+                  // touch wait projections installed by the optional engine ladder.
+                  const tables = new Set((yield* Dialect.tables(sql)).map((row) => row.name))
                   const nowMs = yield* Clock.currentTimeMillis
                   const parentGeneration = yield* currentGeneration(runId)
                   const parentResult = yield* sql`
@@ -941,7 +952,7 @@ export const make: Effect.Effect<
                   ON CONFLICT (run_id) DO UPDATE SET generation = flows_journal_generations.generation + 1, after_seq = excluded.after_seq
                 `
                   yield* sql`DELETE FROM flows_time_travel_snapshots WHERE run_id = ${runId} AND seq > ${frame.seq}`
-                  yield* deleteProjectedWaits(runId, frame.seq)
+                  yield* deleteProjectedWaits(runId, frame.seq, tables)
                   yield* sql`
             DELETE FROM flows_journal_events
             WHERE run_id = ${runId} AND seq > ${frame.seq}
@@ -958,21 +969,19 @@ export const make: Effect.Effect<
                    * (`attemptsAtFrame`), and the two now agree about which attempts
                    * a prefix can explain.
                    */
-                  const hasAttempts = (yield* Dialect.tables(sql)).some((row) => row.name === "flows_attempts")
-                  if (hasAttempts) {
-                    const survivors = yield* attemptsAtFrame(runId, frame)
-                    // One statement for the whole run rather than one round trip
-                    // per unexplained row while the writer lock is held.
-                    yield* sql`
+                  const survivors = yield* attemptsAtFrame(runId, frame)
+                  // One statement for the whole run rather than one round trip
+                  // per unexplained row while the writer lock is held.
+                  yield* sql`
             DELETE FROM flows_attempts
             WHERE run_id = ${runId}
               AND (step_key_digest, attempt) NOT IN (${attemptRefsSelect(survivors)})
           `
-                    // A retained crossing settles from the row's executable
-                    // outcome, even before attempt-finished. Otherwise adoption
-                    // must re-run the reverted body, with no future crossing flag.
-                    const completed = yield* attemptsAtFrame(runId, frame, EventTypes.attemptFinished)
-                    const succeededCrossing = sql`EXISTS (
+                  // A retained crossing settles from the row's executable
+                  // outcome, even before attempt-finished. Otherwise adoption
+                  // must re-run the reverted body, with no future crossing flag.
+                  const completed = yield* attemptsAtFrame(runId, frame, EventTypes.attemptFinished)
+                  const succeededCrossing = sql`EXISTS (
                       SELECT 1 FROM flows_journal_events AS events
                       WHERE events.run_id = ${runId} AND events.seq <= ${frame.seq}
                         AND events.event_type = ${EffectBoundary.eventType}
@@ -981,16 +990,16 @@ export const make: Effect.Effect<
                           ${Dialect.jsonText(sql, sql`events.payload_json`, "$.effect.runId")} || ':' ||
                           flows_attempts.step_key_digest || ':' || flows_attempts.attempt
                     )`
-                    // Normal completion replaces the crossing metadata, so
-                    // rebuilding a running row also restores its retained flag.
-                    const succeededCrossingMeta = Dialect.isPostgres(sql)
-                      ? sql`jsonb_set(meta_json::jsonb, '{effectCrossing}', '"succeeded"'::jsonb)::text`
-                      : sql`json_set(meta_json, '$.effectCrossing', 'succeeded')`
-                    const clearedCrossingMeta = Dialect.isPostgres(sql)
-                      ? sql`CASE WHEN jsonb_typeof(meta_json::jsonb) = 'object'
+                  // Normal completion replaces the crossing metadata, so
+                  // rebuilding a running row also restores its retained flag.
+                  const succeededCrossingMeta = Dialect.isPostgres(sql)
+                    ? sql`jsonb_set(meta_json::jsonb, '{effectCrossing}', '"succeeded"'::jsonb)::text`
+                    : sql`json_set(meta_json, '$.effectCrossing', 'succeeded')`
+                  const clearedCrossingMeta = Dialect.isPostgres(sql)
+                    ? sql`CASE WHEN jsonb_typeof(meta_json::jsonb) = 'object'
                           THEN (meta_json::jsonb - 'effectCrossing')::text ELSE meta_json END`
-                      : sql`json_remove(meta_json, '$.effectCrossing')`
-                    yield* sql`
+                    : sql`json_remove(meta_json, '$.effectCrossing')`
+                  yield* sql`
                     UPDATE flows_attempts
                     SET state = 'running', finished_at_ms = NULL, heartbeat_at_ms = NULL,
                         checkpoint_json = NULL, error_json = NULL,
@@ -999,11 +1008,10 @@ export const make: Effect.Effect<
                     WHERE run_id = ${runId}
                       AND (step_key_digest, attempt) NOT IN (${attemptRefsSelect(completed)})
                   `
-                  }
                   for (const childRunId of descendants.attachedRunIds) {
                     // An archived child's journal no longer explains any attempt,
                     // so none of its attempt rows may survive it.
-                    if (hasAttempts) yield* sql`DELETE FROM flows_attempts WHERE run_id = ${childRunId}`
+                    yield* sql`DELETE FROM flows_attempts WHERE run_id = ${childRunId}`
                     const childGeneration = yield* currentGeneration(childRunId)
                     const childResult = yield* sql`
               INSERT INTO flows_time_travel_archive
@@ -1020,7 +1028,7 @@ export const make: Effect.Effect<
                     ON CONFLICT (run_id) DO UPDATE SET generation = flows_journal_generations.generation + 1, after_seq = -1
                   `
                     yield* sql`DELETE FROM flows_time_travel_snapshots WHERE run_id = ${childRunId}`
-                    yield* deleteProjectedWaits(childRunId, -1)
+                    yield* deleteProjectedWaits(childRunId, -1, tables)
                     yield* sql`DELETE FROM flows_journal_events WHERE run_id = ${childRunId}`
                   }
                   for (const edge of descendants.attached) {
@@ -1341,6 +1349,10 @@ export const make: Effect.Effect<
               const children = rebinding?.children ?? []
               if (children.length > 0) {
                 const edges = yield* edgesUnder(parentRunId)
+                // The control-plane database has no engine spawn-edge table;
+                // the carried child's `parent_run_id` and fork edge still name
+                // its parent there, the same relations `refuseLiveAncestry` walks.
+                const recordsSpawnEdges = yield* hasRunParents
                 for (const child of children) {
                   const edge = edges.find((candidate) =>
                     candidate.kind === "child" &&
@@ -1438,8 +1450,10 @@ export const make: Effect.Effect<
                   yield* sql`
                     INSERT INTO flows_runs(run_id, status, created_at_ms, parent_run_id, state_json, lineage_id, round_ordinal)
                     VALUES(${child.to}, 'pending', ${nowMs}, ${runId}, ${childStateJson}, ${child.to}, 0)`
-                  yield* sql`INSERT INTO flows_run_parents(child_id, parent_id, seq)
-                    SELECT ${child.to}, ${runId}, COALESCE(MAX(seq), 0) + 1 FROM flows_run_parents`
+                  if (recordsSpawnEdges) {
+                    yield* sql`INSERT INTO flows_run_parents(child_id, parent_id, seq)
+                      SELECT ${child.to}, ${runId}, COALESCE(MAX(seq), 0) + 1 FROM flows_run_parents`
+                  }
                   yield* sql`
                     INSERT INTO flows_journal_events
                       (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)

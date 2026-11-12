@@ -197,3 +197,16 @@ the one you probably meant to write.
   of.
 - [Replay a run into a view](./replay-a-run.md): what the fold does with the
   records you seeded.
+
+## Minimal schemas and refused forks
+
+`TypedEventsComposition.test.ts` truncates parent and child history and carries
+a completed child after applying only the journal and run-store migration sets.
+The storage operations also exercise each engine wait projection being absent
+independently.
+
+`Fork.test.ts` rejects missing records, sequence holes and the wrong lineage
+through `TimeTravel.fork`, asserting no fork intent and no workspace was created.
+`ForkCrashRecovery.e2e.test.ts` invalidates a frame after the preliminary read,
+then checks the real store refuses it and the real jj workspace and directory
+are removed. An injected filesystem failure preserves the fork's original error.

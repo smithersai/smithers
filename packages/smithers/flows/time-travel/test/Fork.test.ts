@@ -174,6 +174,41 @@ describe("fork workspace identity", () => {
       expect(lanes[0]!.name).toMatch(/^smithers-fork-parent-fork-0-1-[0-9a-f]{8}$/)
     }))
 
+  it.effect("refuses a frame that addresses no record before it reserves an id or provisions a lane", () =>
+    Effect.gen(function*() {
+      const { lanes, result } = yield* runForks((timeTravel, sql) =>
+        Effect.gen(function*() {
+          yield* insertParent(sql, "parent")
+          for (const seq of [0, 1, 3]) {
+            yield* sql`INSERT INTO flows_journal_events
+              (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+              VALUES ('parent', ${seq}, ${`parent-${seq}`}, 'source', ${seq}, ${seq}, 'test', '{}',
+                      ${JSON.stringify({ lineageId: "main" })})`
+          }
+          const pastTail = yield* Effect.flip(
+            timeTravel.fork({ runId: "parent", frame: { lineageId: "main", seq: 5 } })
+          )
+          const otherLineage = yield* Effect.flip(
+            timeTravel.fork({ runId: "parent", frame: { lineageId: "other", seq: 1 } })
+          )
+          const hole = yield* Effect.flip(
+            timeTravel.fork({ runId: "parent", frame: { lineageId: "main", seq: 2 } })
+          )
+          const intents = yield* sql`SELECT child_run_id FROM flows_time_travel_fork_intents`
+          return { hole, intents, otherLineage, pastTail }
+        })
+      )
+
+      expect(result.pastTail).toMatchObject({ code: "not_found", message: "frame main@5 is not a record of parent" })
+      expect(result.otherLineage).toMatchObject({
+        code: "not_found",
+        message: "frame other@1 is not a record of parent"
+      })
+      expect(result.hole).toMatchObject({ code: "not_found", message: "frame main@2 is not a record of parent" })
+      expect(result.intents).toEqual([])
+      expect(lanes).toEqual([])
+    }))
+
   it.effect("gives run ids that differ only in a sanitized character distinct workspaces", () =>
     Effect.gen(function*() {
       const { lanes, result } = yield* runForks((timeTravel, sql) =>

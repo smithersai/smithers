@@ -310,9 +310,13 @@ const readGeneration = (
  * The same rule {@link validate} applies, re-asked under the claim: a peer
  * rewind can leave the tail exactly where validation saw it while the
  * requested coordinate now belongs to another lineage or no longer exists.
- * Frame zero stays the one frame that is always addressable.
+ * Frame zero stays the one frame that is always addressable. A fork asks it
+ * before it mints or provisions anything.
+ *
+ * @since 0.1.0
+ * @category predicates
  */
-const frameStillAddressed = (
+export const frameStillAddressed = (
   journal: Journal.Service,
   runId: string,
   frame: Frame

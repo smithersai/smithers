@@ -4,12 +4,14 @@
  * and the retried fork must land under a fresh id rather than asking jj for
  * the name the leftover on disk still holds.
  */
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { execFileSync, spawn } from "node:child_process"
-import { mkdirSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Fork from "../src/internal/Fork.ts"
@@ -26,6 +28,61 @@ const workspaceNames = (repository: string): ReadonlyArray<string> =>
     .filter((name) => name.length > 0)
 
 describe.skipIf(!jjInstalled)("fork crash recovery over file SQLite", () => {
+  for (const removalFails of [false, true]) {
+    it.effect(
+      `cleans a refused fork checkout through the injected filesystem (removal fails: ${removalFails})`,
+      () =>
+        Effect.gen(function*() {
+          const hostFileSystem = yield* FileSystem.FileSystem
+          yield* withRealFixture("flows-fork-refused-", (fixture) =>
+            runReal(
+              fixture.databaseFile,
+              Effect.gen(function*() {
+                const sql = yield* SqlClient.SqlClient
+                yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+                VALUES ('parent', 'suspended', 0, ${runState("RefusedFork")})`
+                yield* sql`INSERT INTO flows_journal_events
+                (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+                VALUES ('parent', 1, 'parent-1', 'source', 1, 0, 'test', '{}', '{"lineageId":"parent"}')`
+                const timeTravel = yield* TimeTravel
+                const failure = yield* Effect.flip(timeTravel.fork({
+                  runId: "parent",
+                  frame: { lineageId: "parent", seq: 1 }
+                }, {
+                  retainWorkspace: true,
+                  rebind: () =>
+                    // Another writer invalidates the frame after the preliminary
+                    // read. The transaction must remain the final authority.
+                    sql`DELETE FROM flows_journal_events WHERE run_id = 'parent'`.pipe(
+                      Effect.orDie,
+                      Effect.as({})
+                    )
+                }))
+                const workspaceName = Fork.workspaceNameFor("parent:fork:1:1")
+                const directory = join(fixture.repository, ".flows", "forks", workspaceName)
+                expect(failure).toMatchObject({
+                  code: "not_found",
+                  message: "frame parent@1 is not a record of parent"
+                })
+                expect(workspaceNames(fixture.repository)).not.toContain(workspaceName)
+                expect(existsSync(directory)).toBe(removalFails)
+                expect(yield* sql`SELECT run_id FROM flows_runs WHERE parent_run_id = 'parent'`).toEqual([])
+                expect(yield* sql`SELECT child_run_id FROM flows_time_travel_edges`).toEqual([])
+              })
+            ).pipe(Effect.provideService(
+              FileSystem.FileSystem,
+              removalFails
+                ? {
+                  ...hostFileSystem,
+                  remove: () => Effect.die("injected removal failure")
+                }
+                : hostFileSystem
+            )))
+        }).pipe(Effect.provide(NodeFileSystem.layer)),
+      { timeout: 60_000 }
+    )
+  }
+
   // The finite budget covers one real child process, SIGKILL, and two fresh service builds.
   it.effect(
     "reclaims the orphaned lane and retries under a fresh id after a real process death",

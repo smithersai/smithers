@@ -35,7 +35,11 @@ journal writes.
 Building the layer applies pending time-travel migration rungs over a database
 the journal and run-store ladders have already migrated. Missing
 `flows_journal_events` or `flows_runs` fails with a typed `TimeTravelError`
-naming the table. Use `Migrations.run` below for a fresh database. The ladder
+naming the table. The journal and run-store ladders alone support truncation
+and carrying a child into a fork. Engine wait projections
+(`flows_deferred_completions` and `flows_clock_deadlines`) and the
+`flows_run_parents` spawn table are updated only when present.
+Use `Migrations.run` below for a fresh database. The ladder
 creates six time-travel tables and initializes the shared journal generations
 table:
 

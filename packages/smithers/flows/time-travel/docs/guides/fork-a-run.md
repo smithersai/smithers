@@ -56,6 +56,12 @@ The parent is never mutated and keeps running.
 
 ## The workspace is derived, not supplied
 
+Before reserving a child id or provisioning its workspace, a fork checks that
+the frame addresses a journal record on the selected lineage. A missing record,
+a hole, or the wrong lineage fails with `not_found` and creates no reservation
+or directory. Frame zero remains valid even when the journal is empty.
+The store checks again in its commit transaction to detect concurrent changes.
+
 The fork mints the child run id first and names the Jujutsu lane after it:
 `smithers-fork-`, the sanitized child id capped at 64 characters, then a short
 digest of the raw id. The lane and the run it holds therefore carry one
@@ -76,6 +82,12 @@ By default, the lane is forgotten when the time-travel service's scope is releas
 not when the call returns. Set `retainWorkspace: true` to keep the lane registered
 for a later process; the caller then owns its cleanup. `forkWorkspaceName(childRunId)`
 from `@smthrs/time-travel/TimeTravel` returns the derived workspace name.
+If the store refuses the commit after provisioning, the fork forgets its workspace
+and removes its directory through the host's injected `FileSystem` service.
+Provide that service when building `TimeTravel.layer` to enable directory cleanup.
+An absent filesystem or a removal failure logs a warning and preserves the original
+fork error. Successful forks retain their files when their registration is forgotten.
+
 If the frame has no recorded anchor, the fork still
 succeeds and reports a warning naming the workspace it could not restore.
 

@@ -1650,20 +1650,6 @@ describe("SqlTimeTravelStore attempt statements", () => {
     ))
 })
 
-it.effect("truncates when the optional engine attempts table is absent", () =>
-  run((store, sql) =>
-    Effect.gen(function*() {
-      yield* insertOwnedRun(sql, "run")
-      yield* insertRun(sql, "optional-child", { status: "completed" })
-      yield* sql`INSERT INTO flows_time_travel_edges (parent_run_id, parent_seq, child_run_id, kind, attached)
-      VALUES ('run', 1, 'optional-child', 'child', 1)`
-      yield* sql`DROP TABLE flows_attempts`
-      expect(yield* store.archiveAndTruncate("run", { lineageId: "run/root", seq: 0 }, [], owner)).toMatchObject({
-        archived: 0
-      })
-    })
-  ))
-
 it.effect("rewind discards attempt results and checkpoints from beyond the frame", () =>
   run((store, sql) =>
     Effect.gen(function*() {
@@ -1778,3 +1764,15 @@ it.effect("rewind preserves only outcomes explained by a matching retained succe
       }
     })
   ))
+
+for (const table of ["flows_deferred_completions", "flows_clock_deadlines"] as const) {
+  it.effect(`truncates with only the optional ${table} projection missing`, () =>
+    run((store, sql) =>
+      Effect.gen(function*() {
+        yield* insertOwnedRun(sql, "run")
+        yield* sql`DROP TABLE ${sql(table)}`
+        expect(yield* store.archiveAndTruncate("run", { lineageId: "run/root", seq: 0 }, [], owner))
+          .toMatchObject({ archived: 0 })
+      })
+    ))
+}

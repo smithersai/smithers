@@ -17,15 +17,24 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
 import type * as Scope from "effect/Scope"
 import * as EffectBoundary from "../EffectBoundary.ts"
 import type { Frame } from "../Frame.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
-import { type Fork as ForkRecord, type Rebinding, type StepOverride, TimeTravelStore } from "../TimeTravelStore.ts"
+import {
+  type Fork as ForkRecord,
+  forkFrameMessage,
+  type Rebinding,
+  type StepOverride,
+  TimeTravelStore
+} from "../TimeTravelStore.ts"
 import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
+import { frameStillAddressed } from "./Rewind.ts"
 import * as StepHook from "./StepHook.ts"
 
 /**
@@ -234,6 +243,29 @@ const forgetLane = (jj: Jj, workspaceName: string, when: string): Effect.Effect<
   )
 
 /**
+ * Removes a refused fork's checkout through the host's injected filesystem.
+ * A missing or failing filesystem is reported without hiding the commit error.
+ * Successful forks keep their checkout when their registration is forgotten.
+ */
+const removeRefusedDirectory = (directory: string, workspaceName: string): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const fileSystem = yield* Effect.serviceOption(FileSystem.FileSystem)
+    if (Option.isNone(fileSystem)) {
+      yield* Effect.logWarning("time-travel: refused fork directory needs removal; no FileSystem was provided").pipe(
+        Effect.annotateLogs({ workspaceName })
+      )
+      return
+    }
+    yield* fileSystem.value.remove(directory, { recursive: true, force: true }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("time-travel: could not remove refused fork directory", cause).pipe(
+          Effect.annotateLogs({ workspaceName })
+        )
+      )
+    )
+  })
+
+/**
  * Turns a boundary assessment into fork warnings.
  *
  * Smithers' `normalizeBranchReport` is the prior art: blocking and revertible
@@ -311,12 +343,14 @@ export interface Result extends ForkRecord {
  *
  * Refuses with `live_parent` if the parent is still running, claimed, or
  * owned — a fork copies a settled prefix, and a live parent has no settled
- * prefix to copy. Otherwise it reads the journal suffix past the frame,
+ * prefix to copy — and with `not_found` if the frame addresses no record of
+ * its lineage. Otherwise it reads the journal suffix past the frame,
  * assesses the effects in it, normalizes every classification to a warning
  * (see the module header), mints the child's run id, provisions that child's
  * jj workspace under {@link ForkOptions.workspaceRoot}, and only then asks the
  * store to commit the fork in one transaction — so a failed provision leaves
- * nothing durable, and a failed commit forgets the lane it provisioned. The
+ * no child run, and a failed commit forgets the lane it provisioned and
+ * removes its directory through the injected filesystem. The
  * parent is never mutated.
  *
  * @since 0.1.0
@@ -378,6 +412,18 @@ export const fork = (
       }
       const store = yield* TimeTravelStore
       const journal = yield* Journal.Journal
+      /**
+       * THE FRAME IS CHECKED BEFORE THE MINT.
+       *
+       * `createFork` refuses a frame that addresses no record, but only after
+       * the mint reserved an id and jj checked out the child's lane. The same
+       * one-record read a rewind re-asks under its claim refuses a mistyped seq
+       * or a lineage the run is not on here, with the store's own message;
+       * the store's check stays the authority.
+       */
+      if (!(yield* frameStillAddressed(journal, options.parentRunId, options.frame))) {
+        return yield* Effect.fail(error("not_found", forkFrameMessage(options.parentRunId, options.frame)))
+      }
       if (options.refreshAnchors !== undefined) yield* options.refreshAnchors
 
       // Assessment BEFORE any mutation, exactly as a rewind does — the fork
@@ -460,7 +506,11 @@ export const fork = (
               rebinding
             )
           ),
-          Effect.onError(() => forgetLane(jj, workspaceName, "after a refused commit")),
+          Effect.onError(() =>
+            forgetLane(jj, workspaceName, "after a refused commit").pipe(
+              Effect.andThen(removeRefusedDirectory(`${options.workspaceRoot}/${workspaceName}`, workspaceName))
+            )
+          ),
           Effect.tap(() =>
             options.retainWorkspace === true
               ? Effect.void
