@@ -84,7 +84,9 @@ export type AgentPolicy = typeof AgentPolicy.Type
 
 /**
  * Schema for one per-glob policy override, matched against paths relative
- * to the declaring package, first match wins.
+ * to the declaring package, first match wins. Overrides are ordered most
+ * restrictive first (`deny`, then `human-approve`, then `auto-land`), so a
+ * path whose globs name two policies resolves to the stricter one.
  *
  * @category schemas
  * @since 0.1.0
@@ -95,7 +97,8 @@ export const PolicyOverride = Schema.Struct({
 })
 
 /**
- * Schema for the normalized agent policy: a default plus ordered overrides.
+ * Schema for the normalized agent policy: a default plus overrides ordered
+ * most restrictive first.
  *
  * @category schemas
  * @since 0.1.0
@@ -285,7 +288,9 @@ const normalizeAgents = (value: unknown): Agents => {
     throw new Error(`Owners agents default is not auto-land, human-approve, or deny: ${JSON.stringify(fallback)}`)
   }
   const overrides: Array<{ readonly pattern: string; readonly policy: AgentPolicy }> = []
-  for (const policy of ["auto-land", "human-approve", "deny"] as const) {
+  // Most restrictive first: the resolver returns the first matching override,
+  // so a path matching both a `deny` and an `auto-land` glob is denied.
+  for (const policy of ["deny", "human-approve", "auto-land"] as const) {
     const patterns = value[policy]
     if (patterns === undefined) continue
     for (const pattern of patternList(patterns, `agents ${policy}`)) overrides.push({ pattern, policy })

@@ -47,14 +47,26 @@ describe("Owners.declare", () => {
     expect(declaration.agents).toEqual({
       default: "human-approve",
       overrides: [
+        { pattern: "migrations/**", policy: "deny" },
         { pattern: "*.md", policy: "auto-land" },
-        { pattern: "docs/**", policy: "auto-land" },
-        { pattern: "migrations/**", policy: "deny" }
+        { pattern: "docs/**", policy: "auto-land" }
       ]
     })
     expect(declaration.upstream).toEqual({ mode: "approve", packages: ["//lib", "//packages/..."] })
     expect(Owners.teamReferences(declaration)).toEqual(["data", "platform"])
     expect(Owners.declare(declaration)).toBe(declaration)
+  })
+
+  it("orders overrides most restrictive first whatever order the author wrote them in", () => {
+    const declaration = Owners.declare({
+      owners: ["will"],
+      agents: { "auto-land": ["*.md"], "human-approve": ["docs/internal/**"], deny: ["migrations/**"] }
+    })
+    expect(declaration.agents?.overrides.map((override) => override.policy)).toEqual([
+      "deny",
+      "human-approve",
+      "auto-land"
+    ])
   })
 
   it("accepts the short forms and defaults", () => {

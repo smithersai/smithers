@@ -93,7 +93,7 @@ export const Package = S.Package({
   owners: {
     owners: ["libby"],
     perFile: { "*.sql": ["team:data"] },
-    agents: { deny: ["migrations/**"] },
+    agents: { "auto-land": ["*.md"], deny: ["migrations/**"] },
   },
   targets: { srcs },
 })
@@ -187,6 +187,12 @@ describe("owners resolution", () => {
     const root = await fixture()
     const denied = await ownersJson(root, ["lib/migrations/001.sql"])
     expect(denied.touched_paths[0]!.agent_policy).toBe("deny")
+    // `*.md` auto-lands under //lib, but a denied subtree wins over it: deny
+    // precedes auto-land in the override list, whatever the author's key order.
+    const deniedNotes = await ownersJson(root, ["lib/migrations/0001-notes.md"])
+    expect(deniedNotes.touched_paths[0]!.agent_policy).toBe("deny")
+    const libReadme = await ownersJson(root, ["lib/README.md"])
+    expect(libReadme.touched_paths[0]!.agent_policy).toBe("auto-land")
     // //lib/inner lists its own srcs, which nothing depends on, so neither
     // upstream claim reaches it; inheritance still does.
     const inner = await ownersJson(root, ["lib/inner/deep.ts"])
@@ -269,6 +275,7 @@ describe("owners resolution", () => {
         "per-file *.sql = team:data",
         "agents: human-approve",
         "agents: deny migrations/**",
+        "agents: auto-land *.md",
         "reviewers: appy, team:platform  # upstream-of //app",
         "dan  # upstream-of //data",
         ""
