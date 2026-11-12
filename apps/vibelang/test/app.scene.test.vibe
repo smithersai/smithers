@@ -3,7 +3,7 @@ import { Command, click, expect, given, placeholder, role, scene, Subscription, 
 import { describe, expect as assert, it } from "@effect/vitest"
 import { newClient } from "../src/core/conversation.vibe"
 import {
-  ClosePalette, CONTRIBUTE_URL, EndTourCommand, FocusComposer, HOME_CONVERSATION, Message, type Model, PostMessage, ShowPalette,
+  ClosePalette, CONTRIBUTE_URL, EndTourCommand, FocusComposer, HOME_CONVERSATION, Message, type Model, PostMessage, ShowPalette, signedOut,
   StartTourCommand, update,
 } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
@@ -31,6 +31,10 @@ const home: Model = {
   tour: false,
   tourError: "",
   docs: "pane",
+  account: signedOut,
+  sandboxRequest: 0,
+  wikiSerial: 0,
+  wikiEditRequest: 0,
 }
 
 describe("the splash", () => {

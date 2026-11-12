@@ -153,8 +153,8 @@ describe("a message before its part of the model exists", () => {
   it("a sandbox pane that was never opened stays closed", () => {
     expect(update(without(chat, "sandboxPane"), Message.MaximizedSandboxes()).model.sandboxPane).toBe(update({ ...chat, sandboxPane: "closed" }, Message.MaximizedSandboxes()).model.sandboxPane)
   })
-  it("a sandbox answer needs a request of its own", () => {
-    const fresh: Model = { ...without(chat, "sandboxRequest"), sandboxBusy: true }
+  it("a sandbox answer to the page's first request applies", () => {
+    const fresh: Model = { ...chat, sandboxBusy: true }
     expect(update(fresh, Message.FailedSandbox({ conversation: fresh.conversation, request: 0, reason: "x" })).model).toMatchObject({ sandboxError: "x", sandboxBusy: false })
   })
   it("wiki answers with no edit open are ignored", () => {
@@ -162,8 +162,8 @@ describe("a message before its part of the model exists", () => {
     expect(update(noEdit, Message.CompletedWikiEdit({ request: 1, page: "index", source: "", revision: "", review: "" })).model).toBe(noEdit)
     expect(update(noEdit, Message.BeganWikiEdit({ request: 1, page: "index", source: "", draft: "" })).model).toBe(noEdit)
   })
-  it("an editor whose request was never numbered ignores any answer", () => {
-    const editing: Model = { ...without(chat, "wikiEditRequest"), wikiEdit: { page: "index", base: "a", text: "a", busy: false, error: "" } }
+  it("an editor at the page's first request ignores an answer to another", () => {
+    const editing: Model = { ...chat, wikiEdit: { page: "index", base: "a", text: "a", busy: false, error: "" } }
     expect(update(editing, Message.CompletedWikiEdit({ request: 1, page: "index", source: "", revision: "", review: "" })).model).toBe(editing)
     expect(update(editing, Message.BeganWikiEdit({ request: 1, page: "index", source: "", draft: "" })).model).toBe(editing)
   })

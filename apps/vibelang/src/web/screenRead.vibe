@@ -57,9 +57,9 @@ export function streamScreen(model: Model): StreamScreen {
 
 /** The sandbox's screen: no pane is closed, no operation or error is empty, not busy, and no request is request 0. */
 //@ verify
-//@ ensures \result == { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest ?? 0, draft: model.terminalDraft ?? "" }
+//@ ensures \result == { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest, draft: model.terminalDraft ?? "" }
 export function sandboxScreen(model: Model): SandboxScreen {
-  return { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest ?? 0, draft: model.terminalDraft ?? "" }
+  return { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest, draft: model.terminalDraft ?? "" }
 }
 
 /** What a sandbox result reads, with the same defaults as the screen. */

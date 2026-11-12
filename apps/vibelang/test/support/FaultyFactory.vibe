@@ -7,7 +7,7 @@ import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { recordedWikiStore } from "./recordedWiki.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale"
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -78,6 +78,11 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
+ * `issue-connect`, `issue-fork` and `issue-install` refuse the first issue write before it happens, as the live Worker does
+ * for a person whose GitHub is not connected, who has no fork, or whose fork lacks the App. `wiki-forbidden`, `wiki-conflict`,
+ * `wiki-connect`, `wiki-fork` and `wiki-install` refuse the first wiki save with that reason, as the live wiki host does.
+ * `post-empty`, `post-duplicate`, `post-not-replying` and `post-full` refuse the first post with that refusal, as the
+ * sequencer answers another client's post.
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
  * Each fault happens once.
  */
@@ -86,6 +91,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     const base = try Factory
     const released = try Deferred.make<void>()
     const completions = try Queue.unbounded<void>()
+    const wikiRefusal = fault.startsWith("wiki-") && fault !== "wiki-edit" && fault !== "wiki-repository" ? fault.slice("wiki-".length) : undefined
+    const setup = fault === "issue-connect" ? "connect" : fault === "issue-fork" ? "fork" : fault === "issue-install" ? "install" : undefined
     observation.release = () => fault === "streaming"
       ? Effect.asVoid(Queue.offer(completions, undefined))
       : Effect.asVoid(Deferred.succeed(released, undefined))
@@ -127,6 +134,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         // `wiki-edit`: the first save or proposal fails before anything is written; later ones are real.
         act: effect (request) => {
           if (request.op !== "read" && first("wiki-edit:act")) throw new WikiFailure({ reason: "unavailable", unwritten: true })
+          if (wikiRefusal !== undefined && request.op !== "read" && first(fault)) throw new WikiFailure({ reason: wikiRefusal })
           return try base.wiki!.act(request)
         },
       } }),
@@ -139,12 +147,14 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         },
         act: effect (request) => {
           if (request.op === "read" && request.number > 0 && first("live-details:read")) throw new IssueFailure({ reason: "unavailable" })
+          if (setup !== undefined && request.op !== "read" && first(fault)) throw new IssueFailure({ reason: setup })
           const result = try base.issues!.act(request)
           if (fault === "issue-write" && request.op !== "read" && !observation.faulted) { observation.faulted = true; throw new IssueFailure({ reason: "unavailable" }) }
           return result
         },
       } }),
       post: effect (conversation, clientId, name, text) => {
+        if (fault.startsWith("post-") && first(fault)) throw new Refused({ refusal: fault.slice("post-".length) as "empty" | "duplicate" | "not-replying" | "full" })
         if (fault === "refuse" && !observation.faulted) {
           try sync(() => { observation.faulted = true })
           throw new Unavailable({ reason: "Factory closed" })

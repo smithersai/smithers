@@ -90,6 +90,7 @@ brick                                   state         proof
   and removal of unread wiki cache writes. The Sol resume adds client-path, durable action admission/replay/cancellation, optional
   Container graph and emitted wiki-command tests. Whole-app strict gates remain red. Bundled attribution has both VibeLang and plain-JS
   reproductions; the installed workerd inspector cannot enable precise collection. No runtime source is excluded.
+  Session 24: unit 7/202 files below 100%, all named in 0016; browser 477 checks green, 1,820 of 6,307 branches open.
 
 - **Unit coverage, second lane (0016, lane vl-coverage2): partial.** `worker/Http.vibe`, `src/web/backend.vibe`,
   `src/actions/MockActions.vibe`, `src/actions/execution.vibe`, `src/core/conversation.vibe` and `src/core/LiveWiki.vibe`

@@ -76,7 +76,7 @@ export schema AccountState {
   readonly from: number
 }
 export const signedOut: AccountState = { identity: viewer, menu: false, people: "closed", members: [], target: "", targetRole: "community", pending: false, error: "", retry: "sign-in", notice: "", ledger: Machine.newClient, epoch: 0, from: 0 }
-export function accountOf(model: Model): AccountState { return model.account ?? signedOut }
+export function accountOf(model: Model): AccountState { return model.account }
 export function issueStateOf(model: Model): IssuesUi {
   const ui = model.issues ?? initialIssues
   return { ...ui, keyPrefix: model.session, role: accountOf(model).identity.role, connection: initialIssues.connection + (ui.retry === undefined ? "" : `?resume-op=${ui.retry.op}&resume-key=${ui.retry.key}` + (ui.retry.recovery === undefined ? "" : `&resume-recovery=${ui.retry.recovery}`)) }
@@ -85,7 +85,7 @@ export function issueStateOf(model: Model): IssuesUi {
 // MODEL
 
 export schema Model {
-  readonly account?: AccountState
+  readonly account: AccountState
   readonly issues?: IssuesUi
 
   /** `splash`: the home page fills the window. `chat`: the conversation, with the home page as its first pane. */
@@ -137,7 +137,7 @@ export schema Model {
   readonly sandbox?: SandboxSnapshot
   readonly sandboxOperation?: "start" | "stop" | "command" | ""
   readonly sandboxBusy?: boolean
-  readonly sandboxRequest?: number
+  readonly sandboxRequest: number
   readonly sandboxError?: string
   readonly terminalDraft?: string
   readonly minuteNotice?: string
@@ -153,8 +153,8 @@ export schema Model {
   readonly wikiPages?: ReadonlyArray<{ readonly id: string; readonly source: string; readonly revision: string }>
   /** The person's open review change for a page, linked until they navigate away. */
   readonly wikiReview?: { readonly page: string; readonly url: string } | undefined
-  readonly wikiSerial?: number
-  readonly wikiEditRequest?: number
+  readonly wikiSerial: number
+  readonly wikiEditRequest: number
   readonly actions?: ActionView
 }
 
@@ -309,6 +309,9 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory | Acti
       recoverTour: flags.resumeTour ?? false,
       tourError: "",
       docs: "pane",
+      sandboxRequest: 0,
+      wikiSerial: 0,
+      wikiEditRequest: 0,
       ...(flags.openIssues ? { issues: initialIssues } : {}),
       actions: initialActions,
     },
@@ -331,7 +334,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const { ledger: snapshot, ...person } = identity
       const ledger = { conversation: snapshot ?? Machine.empty, pending: [], gap: false }
       const account = accountOf(model)
-      const step = ModelDecision.accountLoaded({ id: account.identity.id, role: account.identity.role, target: account.target, error: account.error, people: account.people, epoch: account.epoch, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest ?? 0, sandboxRequest: model.sandboxRequest ?? 0 }, person.id, person.login, person.role, ledger.conversation.seq)
+      const step = ModelDecision.accountLoaded({ id: account.identity.id, role: account.identity.role, target: account.target, error: account.error, people: account.people, epoch: account.epoch, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest, sandboxRequest: model.sandboxRequest }, person.id, person.login, person.role, ledger.conversation.seq)
       const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.changedAccount ? [LoadActions({ flow: actionsOf(model).selected, epoch: step.actionsEpoch })] : [])]
       return {
         model: { ...ModelWrite.scopeWrite(model, actionsOf(model), step.changedAccount, step.actionsEpoch, step.wikiEditRequest, step.sandboxRequest), ...(step.changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: step.name, account: {
@@ -362,7 +365,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const ledger = Machine.receive(account.ledger, event)
       const grant = event.type === "RoleGranted" ? event : undefined
       const step = ModelDecision.roleReceived(
-        { role: account.identity.role, target: account.target, pending: account.pending, notice: account.notice, epoch: account.epoch, from: account.from, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest ?? 0, sandboxRequest: model.sandboxRequest ?? 0 },
+        { role: account.identity.role, target: account.target, pending: account.pending, notice: account.notice, epoch: account.epoch, from: account.from, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest, sandboxRequest: model.sandboxRequest },
         { gap: ledger.gap, granted: grant !== undefined, seq: ledger.conversation.seq, previousSeq: account.ledger.conversation.seq, roles: ledger.conversation.roles.length, previousRoles: account.ledger.conversation.roles.length, mine: event.id === account.identity.id, participation: grant?.mode === "participation", person: grant?.mode === "person", peopleOpen: account.people !== "closed", ledgerRole: Machine.roleOf(ledger.conversation.roles, account.identity.id), roleName: grant === undefined ? "" : roleLabel(grant.role), name: account.members.find(person => person.id === event.id)?.login ?? event.id },
       )
       if (step.replay) return { model: { ...model, account: { ...account, ledger: Machine.resume(ledger), epoch: step.state.epoch, from: step.state.from } } }
@@ -449,7 +452,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     UpdatedTerminal: ({ value }) => ({ model: { ...model, terminalDraft: value } }),
     SubmittedTerminal: () => sandboxAction(model, "command"),
     LoadedSandbox: ({ conversation, request, snapshot, polled }) => {
-      if (!currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0)) return { model }
+      if (!currentSandbox(conversation, model.conversation, request, model.sandboxRequest)) return { model }
       const zero = ModelDecision.sandboxOutOfMinutes(snapshot.remaining, snapshot.id, snapshot.status)
       const low = ModelDecision.sandboxLowMinutes(snapshot.remaining, model.warnedMonth ?? null, snapshot.resetAt)
       const opens = ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null)
@@ -457,7 +460,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const notice = PaneDecision.sandboxNotice(zero, low, model.sandbox?.resetAt !== snapshot.resetAt)
       return { model: { ...ModelWrite.sandboxResultWrite(model, result), sandbox: snapshot, minuteNotice: minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), warnedMonth: PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0) } }
     },
-    FailedSandbox: ({ conversation, request, reason, polled }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = polled === true ? PaneDecision.polledFailure(sandboxResult(model), reason) : PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: ModelWrite.sandboxFailureWrite(model, result) } })(),
+    FailedSandbox: ({ conversation, request, reason, polled }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest) ? { model } : (() => { const result = polled === true ? PaneDecision.polledFailure(sandboxResult(model), reason) : PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: ModelWrite.sandboxFailureWrite(model, result) } })(),
     ClickedEditWiki: () => beginWikiEdit(model),
     ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
     // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
@@ -470,19 +473,19 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const op = PaneDecision.wikiSubmitPlan(editing.busy, editing.text, editing.base, Machine.wikiPermission(role, "save"), Machine.wikiPermission(role, "propose"))
       if (op === "ignore" || op === "refuse") return { model }
       if (op === "no-changes") return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.noWikiChanges(wikiEditScreen(editing)) } } }
-      const serial = model.wikiSerial ?? 0
+      const serial = model.wikiSerial
       const step = WikiEditorDecision.submittedWikiEdit(wikiEditScreen(editing), op, serial, editing.submission !== undefined, wikiDraft(editing.submission), `${model.session}-wiki-${serial + 1}`, `${model.session}-wiki-retry-${serial + 1}`)
       const request = wikiRequest(step.submission)
-      return { model: { ...model, wikiSerial: step.serial, wikiEdit: { ...editing, ...step.editing, submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest ?? 0 })] }
+      return { model: { ...model, wikiSerial: step.serial, wikiEdit: { ...editing, ...step.editing, submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest })] }
     },
     BeganWikiEdit: ({ request, page, source, draft, stale }) => {
       const editing = model.wikiEdit
-      if (editing === undefined || !PaneDecision.wikiBeginApplies(editing.busy, Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest ?? 0))) return { model }
+      if (editing === undefined || !PaneDecision.wikiBeginApplies(editing.busy, Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest))) return { model }
       return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft), ...(stale === undefined ? {} : { stale }) } }, commands: [FocusWikiEditor({})] }
     },
-    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest ?? 0) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: WikiEditorDecision.savedWikiPages(model.wikiPages ?? [], page, source, revision), ...(WikiEditorDecision.wikiReviewLinks(review) ? { wikiReview: { page, url: review } } : {}) } }),
+    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: WikiEditorDecision.savedWikiPages(model.wikiPages ?? [], page, source, revision), ...(WikiEditorDecision.wikiReviewLinks(review) ? { wikiReview: { page, url: review } } : {}) } }),
     FailedWikiEdit: ({ request, reason, unwritten }) => {
-      if (model.wikiEdit === undefined || !PaneDecision.wikiEditFailureApplies(request, model.wikiEditRequest ?? null)) return { model }
+      if (model.wikiEdit === undefined || !PaneDecision.wikiEditFailureApplies(request, model.wikiEditRequest)) return { model }
       const step = PaneDecision.failedWikiEdit(wikiEditScreen(model.wikiEdit), PaneDecision.wikiEditErrorText(reason), unwritten === true)
       return { model: { ...model, wikiEdit: { ...model.wikiEdit, ...step.state, ...(step.submission === "clear" ? { submission: undefined } : {}) } } }
     },
@@ -918,7 +921,7 @@ function beginWikiEdit(model: Model, draft?: string): Update.Return<Model, Messa
   const plan = WikiEditorDecision.wikiBeginPlan(model.wikiEdit?.submission !== undefined, page !== undefined, draft !== undefined, Machine.wikiPermission(role, "save"), Machine.wikiPermission(role, "propose"), Machine.wikiPermission(role, "draft"), page !== undefined && wikiEditable(page))
   if (plan === "reopen") return visitWiki(model, model.wikiEdit!.page)
   if (plan === "none" || page === undefined) return { model }
-  const { editing, request } = WikiEditorDecision.openedWikiEditor(page, knownWikiSource(model, page), model.wikiEditRequest ?? 0)
+  const { editing, request } = WikiEditorDecision.openedWikiEditor(page, knownWikiSource(model, page), model.wikiEditRequest)
   if (plan === "open") return { model: ModelWrite.wikiEditorWrite(model, editing, request), commands: [OpenWikiEditor({ page, request })] }
   const visit = visitWiki(model, page)
   return { model: ModelWrite.wikiEditorWrite(visit.model, editing, request), commands: [...visit.commands, OpenWikiEditor({ page, request })] }
@@ -1196,7 +1199,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       {
         modelToDependencies: (model: Model) => ({
           conversation: model.conversation,
-          request: model.sandboxRequest ?? 0,
+          request: model.sandboxRequest,
           active: model.surface === "chat" && !model.sandboxBusy,
           live: model.sandbox?.status === "running" || (model.sandboxPane !== undefined && model.sandboxPane !== "closed"),
           finished: model.client.conversation.entries.filter((entry) => entry.done).length,

@@ -90,3 +90,27 @@ test("a failed post offers Retry, preserving its identity and neutral wire name"
   expect(entries[1]!.inReplyTo).toBe(entries[0]!.id)
   await expect(page.locator("[data-role='user'] .sui-chat-message-label")).toHaveText("You")
 })
+
+for (const [fault, text] of [["post-empty", "Empty message"], ["post-duplicate", "Already sent"], ["post-not-replying", "Answer unavailable"], ["post-full", "Conversation full"]] as const) {
+  test(`a post the sequencer refuses as ${fault.slice(5)} says "${text}" and offers Retry`, async ({ page }) => {
+    await page.goto(`/e2e/runtime/index.html?fault=${fault}`)
+    await page.getByRole("button", { name: "Ask the agent" }).click()
+    const prompt = page.getByRole("textbox", { name: "Message" })
+    await prompt.fill("install")
+    await prompt.press("Enter")
+    const pending = page.locator("[data-pending='true']")
+    await expect(pending).toContainText(text)
+    await expect(pending.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+  })
+}
+
+test("a post longer than 8,000 characters is refused as too long and kept to retry", async ({ page }) => {
+  await page.goto("/?agent=mock")
+  await page.getByRole("button", { name: "Ask the agent" }).click()
+  const prompt = page.getByRole("textbox", { name: "Message" })
+  await prompt.fill("a".repeat(8001))
+  await prompt.press("Enter")
+  const pending = page.locator("[data-pending='true']")
+  await expect(pending).toContainText("Message too long")
+  await expect(pending.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+})

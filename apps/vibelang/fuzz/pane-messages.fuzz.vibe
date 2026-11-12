@@ -39,7 +39,8 @@ type Item = typeof Message.IssuesLoaded.Type["data"]["items"][number]
 
 type Restore = Extract<Step, { kind: "restore-editor" }>
 function restored(model: Model, step: Restore): Model {
-  const { wikiEditRequest: _request, wikiSerial: _serial, ...rest } = model
+  // An editor the page never recorded starts from the page's first counters.
+  const rest: Model = { ...model, wikiEditRequest: 0, wikiSerial: 0 }
   const editor = {
     page: step.page, base: "# Page", text: "# Draft", busy: step.busy, error: step.error,
     ...(step.submitting ? { submission: { op: "save" as const, page: step.page, base: "# Page", text: "# Draft", key: "k-1" } } : {}),

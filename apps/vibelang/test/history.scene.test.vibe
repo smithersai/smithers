@@ -11,13 +11,14 @@ import {
 } from "../src/web/historyApp.vibe"
 import { refusalText, view } from "../src/web/historyView.vibe"
 import { newClient } from "../src/core/conversation.vibe"
-import { HOME_CONVERSATION, type Model as ChatModel, update as chatUpdate } from "../src/web/main.vibe"
+import { HOME_CONVERSATION, type Model as ChatModel, signedOut, update as chatUpdate } from "../src/web/main.vibe"
 import { view as chatView } from "../src/web/view.vibe"
 
 const chatHome: ChatModel = {
   surface: "splash", palette: false, draft: "", session: "s1", name: "Ada", reducedMotion: false, sent: 0,
   conversation: HOME_CONVERSATION, client: newClient, mode: "mock", stream: "open", epoch: 0, from: 0, following: true,
   followIntent: 0, answer: "", announced: 0, connection: "", tour: false, tourError: "", docs: "pane",
+  account: signedOut, sandboxRequest: 0, wikiSerial: 0, wikiEditRequest: 0,
   theatre: { step: 1, paused: false, sound: false, target: "splash" },
 }
 

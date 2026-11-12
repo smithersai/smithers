@@ -41,7 +41,7 @@ Named browser sites and status:
 | `src/web/wikiView.vibe:88` (`toHtml`) | `toHtml` runs since session 19: the GitHub-recorded repository copy differs from the build. Its link resolver still never runs: the recorded page has no links (session 21). |
 | `src/web/main.vibe:391`–`394` and `issueRecovered`, `issueRecoveredView` (`issueDecision.vibe`) | Closed in session 20: the browser uses production issue routes on workerd over recorded GitHub. Pending new issues and VIPs restore their forms; completed and unwritten-refused comments restore their issue. |
 | `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
-| `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code. |
+| `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code: 28 of the file's browser branch arms. It becomes a `spec function` when the compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`, session 24). |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
 
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
@@ -120,11 +120,90 @@ Named, not closed (unit):
 | `issuesViewDecision.vibe:76`, `digits("")` | `compactAge`, its only caller, passes a string of length 1 or more. Closes with `//@ requires text.length > 0` on `digits` and the line deleted, which changes another lane's proof. |
 | `worker/mainLogDecision.vibe:73`, `at === undefined` | The inner loop pops every top that `bySha` lacks, so `at` is always defined. The arm only satisfies the type; the proof module owns it. |
 | `MockFactory.vibe:114`, `:122` | Unchanged from session 22. |
-| `issueGraphDecision.vibe`, `core/replayDecision.vibe` | Proof helpers that the fuzz suite also calls as oracles (`fuzz/core-issue-graph.node.fuzz.vibe`, `fuzz/conversation.fuzz.vibe`). VibeLang now has `spec function` (VIP-43), but making them spec functions would break the fuzz suite's oracles, which belong to `vl-fuzzpkg`. |
+| `issueGraphDecision.vibe`, `core/replayDecision.vibe` | Proof helpers that the fuzz suite also calls as oracles (`fuzz/core-issue-graph.node.fuzz.vibe`, `fuzz/conversation.fuzz.vibe`). VIP-43 specifies `spec function`, but no VibeLang compiler parses it yet (session 24: 0.0.12 and effectscript `0363c8ab8e` reject it with TS1434; `~/vl/vibelang-bugs/spec-only-function/`). Once one does, making these spec functions would still break the fuzz suite's oracles, which belong to `vl-fuzzpkg`. |
 | `core/flows.vibe:343`, `history/tools.vibe:93` (VL-37) | Unchanged. |
 
 Browser gate on this session's first change (box playwright): 423 passed, 9 failed (the fixture above), 12 skipped.
 101 of 123 files below 100%. Lines 4591/5549, branches 4412/6341, functions 1985/2356, statements 5475/7068.
+
+### Required counters, refused writes and empty lists in the browser (session 24, 2026-11-11)
+
+Both gates ran on `main` `fcb8e086` before this change and on this change, in the same boxes (unit: node26; browser:
+playwright, 4 vCPU, 3 workers).
+
+| Gate | Checks | Files below 100% | Lines | Branches | Functions | Statements |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Unit, main → this change | 2,516 → 2,519 passed; workerd 86 | 8/202 → 7/202 | 8815/8832 → 8815/8832 | 9113/9145 → 9084/9115 | 3380/3396 → 3380/3396 | 11186/11206 → 11187/11206 |
+| Browser, main → this change | 428 passed, 4 failed → 477 passed, 0 failed (12 opt-in skips each) | 101/123 → 101/123 | 4606/5550 → 4618/5550 | 4430/6337 → 4487/6307 | 1989/2356 → 1995/2356 | 5496/7068 → 5522/7068 |
+
+| `src/web` file (browser) | Branches, main → this change |
+| --- | ---: |
+| `main.vibe` | 628/750 → 614/722 |
+| `issuesView.vibe` | 245/285 → 258/285 |
+| `issuesViewDecision.vibe` | 163/198 → 182/198 |
+| `viewDecision.vibe` | 122/150 → 130/150 |
+| `paneDecision.vibe` | 36/48 → 42/48 |
+| `screenRead.vibe` | 31/40 → 29/38 |
+| `wikiView.vibe` | 77/82 → 80/82 |
+
+**Deleted: four optional `Model` fields.** `init` always set `account`. `sandboxRequest`, `wikiSerial` and
+`wikiEditRequest` stayed undefined until a scope change or a save wrote them, and every reader treated undefined as 0.
+All four are now required, `init` sets the counters to 0, and 15 fallbacks (`?? 0`, `?? null`, `?? signedOut`) are gone from `main.vibe` and `screenRead.vibe`
+(30 branch arms in each gate). The fallbacks disagreed: a wiki save sent `wikiEditRequest ?? 0` and its failure was
+matched against `wikiEditRequest ?? null`, so a failure on a page whose counter was never written would have been
+dropped. No product path reached it, because every role that may edit first changes the account, which writes the
+counter. Two unit tests and two fuzz scenarios had built the deleted states by removing the fields; they now start
+from the page's first request, 0. Proofs: `pnpm verify src/web/modelWrite.vibe src/web/updateDecision.vibe` (33, 17
+and 13 verified) and `src/web/screenRead.vibe` (13 verified), 0 errors.
+
+**Faults that refuse a write, as the live hosts do** (`test/support/FaultyFactory.vibe`, `e2e/runtime/entry.vibe`):
+
+| Fault | Refuses | Journey | Credits |
+| --- | --- | --- | --- |
+| `issue-connect`, `issue-fork`, `issue-install` | the first issue write, before it happens | `e2e/issues.spec.ts` "a comment refused with …" | `main.vibe` 411's three texts; `issuesView` `failureAction` and `connect` |
+| `wiki-forbidden`, `wiki-conflict`, `wiki-connect`, `wiki-fork`, `wiki-install` | the first wiki save | `e2e/fault-paths.spec.ts` "a save refused with …" | `paneDecision` `wikiEditErrorText`; `wikiView` 55's steps |
+| `post-empty`, `post-duplicate`, `post-not-replying`, `post-full` | the first post, with that refusal | `e2e/recovery.spec.ts` "a post the sequencer refuses …" | `viewDecision` `postFailure` |
+
+A post of 8,001 characters is refused as `too-long` by the mock's real sequencer, with no fault
+(`e2e/recovery.spec.ts`). New journeys without faults (`e2e/issues.spec.ts`): a search with no match and a Tasks list
+with every task uncommitted (`emptyTitle`, 0 calls before); Split and Link open their dialogs; the kinds' left arrow
+wraps; a key other than j, k or an arrow moves nothing; a closed issue reads Closed.
+
+**Still unreachable from a mock browser** (named, not closed):
+
+| Site | Why |
+| --- | --- |
+| `view.vibe` `docsPane`, `viewDecision` `docsAddress` | Only the live model's docs tool (`worker/WikiTools.vibe`) opens a non-wiki page; the mock agent never does. Needs a recorded model reply (VL-36, `vl-record-replay`). |
+| `markdown.vibe` 114–145 (tables, lists, quotes) | No scripted mock reply holds them, and the wiki pages are compiled at build time. Needs a recorded model reply, or a wiki fixture whose repository copy holds them. |
+| `viewDecision` `failureOf`, `view.vibe` 263 | A failed reply. The mock fails a reply only when a reload interrupts it, and only tour and demo conversations persist across a reload. |
+| `emptyTitle` "No VIPs in review", "No … issues" | The fixture always has an open VIP (#44, accepted) and open and closed issues. |
+
+**`e2e/source-map.spec.ts` timed out in all three projects on `main`** (120 s). Its `measure` call compiled the
+whole app project to seed three fixture sources: 36 s alone on a box, more than 120 s under the gate's load. `measure`
+takes the compiling project as a parameter (the gate's reporter keeps the app's), and the spec passes
+`e2e/coverage-fixtures/tsconfig.json`, which extends the app's options and includes only the fixtures: 1.2 s on a box,
+with the spec's assertions unchanged.
+
+**`e2e/live-issues.spec.ts` "a VIP whose save was lost…" failed once** on `main` (dark): after Retry, the address
+kept its resume keys at the 5 s default. The address clears once the Worker's write settles and never returns, so the
+three such waits are bounded by 20 s.
+
+**Unit:** `sandboxMeter.vibe:40` read uncovered again because `main` moved the overflow guard to line 37; line 40 is
+now the stored next-month bucket's domain check, and `test/sandboxMeterEdges.coverage.test.vibe` refuses a negative,
+fractional and unsafe bucket. The seven files left are named above (session 23) and below.
+
+**Correction.** Session 23 wrote that VibeLang has `spec function`. VIP-43 specifies it, but no compiler parses it
+(0.0.12 and effectscript `0363c8ab8e` reject it with TS1434); `~/vl/vibelang-bugs/spec-only-function/` records it.
+
+### Two unit waits that timed out under load (session 24, 2026-11-11)
+
+vl-proveall2's node26 run (job `fd1974b6`, 2026-11-11) had two `vi.waitFor` timeouts that passed on rerun. Both are
+fixed in the test; neither is a product bug.
+
+| Test | What it waited on | Why it timed out | Fix |
+| --- | --- | --- | --- |
+| `test/historyStartup.test.vibe` "?agent=live forgets a stored mock choice and asks the server" | The page `pending` while its health probe was in flight. The probe failed at once and the page then fell back to `mock`, so the state it polled for ended on its own. | The run failed with `expected 'mock' not to be 'mock'`: the page had already fallen back before a poll saw `pending`. A trace on nyc-01 put the probe at 611 ms and the fallback at 4,262 ms; a loaded host can miss that window. | The test holds health with `test/support/heldHealth.vibe` and its deadline clock. The page stays `pending` until the test answers, then the answer `mock` is asserted, with exactly one probe. Removing the storage clear in `historyStartup.vibe` fails it. |
+| `test/scroll.runtime.test.vibe` "ArrowUp, intent-first" | The runtime's first animation-frame request (`host.pending() > 0`). | A requested frame stays until the test runs it, so the state cannot be missed, only reached late. The first render took longer than `vi.waitFor`'s 1 s default. | Every wait in the file is bounded by 20 s, inside the 30 s test budget. |
 
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 

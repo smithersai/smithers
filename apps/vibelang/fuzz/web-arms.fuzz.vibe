@@ -533,8 +533,8 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const stale = 1_762_782_000_000 + input.seek
       const began = update(opened.model, Message.BeganWikiEdit({ request, page, source: "# A", draft: "", ...(scenario === "began-stale" ? { stale } : {}) }))
       if (scenario === "began-stale") return valid(began.model) && began.model.wikiEdit?.stale === stale && names(began).includes("FocusWikiEditor")
-      const { wikiEditRequest: _, ...rest } = update(began.model, Message.UpdatedWikiEdit({ value: `# B${input.text}` })).model
-      model = rest
+      // The page's first wiki-edit request: a submit names serial 0.
+      model = { ...update(began.model, Message.UpdatedWikiEdit({ value: `# B${input.text}` })).model, wikiEditRequest: 0 }
       const next = update(model, Message.SubmittedWikiEdit())
       const submits = (next.commands ?? []).filter((entry) => entry.name === "SubmitWikiEdit")
       return valid(next.model) && submits.length === 1 && (submits[0]!.args as { serial?: number }).serial === 0

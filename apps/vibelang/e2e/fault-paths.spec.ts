@@ -52,3 +52,28 @@ test("a pause the server doesn't take is visible during the tour", async ({ page
   await expect(bar).toHaveAttribute("data-paused", "true")
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible()
 })
+
+for (const [fault, error, step, href] of [
+  ["wiki-forbidden", "Not allowed.", "", ""],
+  ["wiki-conflict", "The page changed. Reload the editor.", "", ""],
+  ["wiki-connect", "Connect GitHub.", "Connect GitHub", ""],
+  ["wiki-fork", "Fork on GitHub.", "Fork", "https://github.com/smithersai/smithers/fork"],
+  ["wiki-install", "Install Smithers on your fork.", "Install", "/api/auth/install"],
+] as const) {
+  test(`a save refused with "${error}" keeps the text and names it`, async ({ page }) => {
+    await page.goto(`${local}/e2e/runtime/index.html?fault=${fault}`)
+    await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+    await page.getByRole("button", { name: "Wiki", exact: true }).click()
+    await wiki(page).getByRole("button", { name: "Edit", exact: true }).click()
+    const editor = wiki(page).getByRole("textbox", { name: "Edit Home" })
+    const text = (await editor.inputValue()) + "\nRefused.\n"
+    await editor.fill(text)
+    await wiki(page).getByRole("button", { name: "Save", exact: true }).click()
+    const alert = wiki(page).locator(".vl-wiki-edit-error")
+    await expect(alert).toContainText(error)
+    await expect(editor).toHaveValue(text)
+    if (step === "Connect GitHub") await expect(alert.getByRole("button", { name: step, exact: true })).toBeVisible()
+    else if (step !== "") await expect(alert.getByRole("link", { name: step, exact: true })).toHaveAttribute("href", href)
+    else await expect(alert.getByRole("link")).toHaveCount(0)
+  })
+}
