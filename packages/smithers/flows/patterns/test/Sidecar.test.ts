@@ -60,6 +60,17 @@ const invalidScores = [
   }
 ] as const
 
+const scoreComparisons = [
+  { primary: 0.1 + 0.2, shadow: 0.3, difference: 0, cheaperWins: true },
+  { primary: 0.8, shadow: 0.7999999999999, difference: 0, cheaperWins: true },
+  { primary: 0.3, shadow: 0.1 + 0.2, difference: -0, cheaperWins: true },
+  { primary: 0.5, shadow: 0.5, difference: 0, cheaperWins: true },
+  { primary: 4e-13, shadow: 0, difference: 0, cheaperWins: true },
+  { primary: 0, shadow: 4e-13, difference: -0, cheaperWins: true },
+  { primary: 6e-13, shadow: 0, difference: 1e-12, cheaperWins: false },
+  { primary: 0, shadow: 6e-13, difference: -1e-12, cheaperWins: true }
+] as const
+
 describe("Sidecar", () => {
   it("declares the primary and the shadow as one concurrent All", () => {
     const pattern = Sidecar.make({ primary, shadow })
@@ -290,6 +301,26 @@ describe("Sidecar", () => {
       expect(ordinary.delta).toEqual({ primary: 0.8, shadow: 0.5, difference: 0.3, cheaperWins: false })
       expect(Object.is(negativeZero.delta?.difference, -0)).toBe(true)
       expect(negativeZero.delta?.cheaperWins).toBe(true)
+    }))
+
+  it.each(scoreComparisons)(
+    "uses the rounded score comparison for delta($primary, $shadow)",
+    ({ primary, shadow, difference, cheaperWins }) => {
+      expect(Sidecar.delta(primary, shadow)).toEqual({ primary, shadow, difference, cheaperWins })
+    }
+  )
+
+  it.effect("uses the rounded score comparison at runtime", () =>
+    Effect.gen(function*() {
+      for (const expected of scoreComparisons) {
+        const result = yield* Sidecar.run("prompt", {
+          primary: () => Effect.succeed("answer"),
+          shadow: () => Effect.succeed("cheap answer"),
+          score: () => Effect.succeed({ primary: expected.primary, shadow: expected.shadow })
+        })
+
+        expect(result.delta).toEqual(expected)
+      }
     }))
 
   it("computes a delta that survives floating-point subtraction", () => {

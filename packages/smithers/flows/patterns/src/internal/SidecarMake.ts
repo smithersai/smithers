@@ -170,12 +170,10 @@ export const scoreRefusal = (primary: number, shadow: number): PatternError | un
  * @since 0.1.0
  * @private
  */
-export const measuredDelta = (primary: number, shadow: number): Delta => ({
-  primary,
-  shadow,
-  difference: Number((primary - shadow).toFixed(12)),
-  cheaperWins: shadow >= primary
-})
+export const measuredDelta = (primary: number, shadow: number): Delta => {
+  const difference = Number((primary - shadow).toFixed(12))
+  return { primary, shadow, difference, cheaperWins: difference <= 0 }
+}
 
 /**
  * Compares two scores.

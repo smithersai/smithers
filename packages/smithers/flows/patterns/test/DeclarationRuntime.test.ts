@@ -183,6 +183,31 @@ describe("ported pattern declaration execution", () => {
     })
   })
 
+  it.each([
+    { primary: 0.1 + 0.2, shadow: 0.3, difference: 0, cheaperWins: true },
+    { primary: 0.8, shadow: 0.7999999999999, difference: 0, cheaperWins: true },
+    { primary: 0.3, shadow: 0.1 + 0.2, difference: -0, cheaperWins: true },
+    { primary: 6e-13, shadow: 0, difference: 1e-12, cheaperWins: false },
+    { primary: 0, shadow: 6e-13, difference: -1e-12, cheaperWins: true }
+  ])("uses the rounded score comparison in a declared sidecar: $primary, $shadow", async (expected) => {
+    const fields = {
+      input: Schema.Unknown,
+      primary: Schema.optional(Schema.Unknown),
+      shadow: Schema.optional(Schema.Unknown)
+    }
+    const primary = member("primary", () => "expensive", fields)
+    const shadow = member("shadow", () => "cheap", fields)
+    const score = member("score", () => ({ primary: expected.primary, shadow: expected.shadow }), fields)
+
+    expect(
+      await execute(Sidecar.make({ primary, shadow, score }), { input: "prompt" }, "sidecar-rounded-delta")
+    ).toEqual({
+      primary: "expensive",
+      shadow: { quarantined: false, value: "cheap" },
+      delta: expected
+    })
+  })
+
   it("keys a batched merge queue's landings by member id", async () => {
     const land = member("land", (payload: { readonly id: string }) => payload.id, {
       id: Schema.Unknown,
