@@ -28,6 +28,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
+import * as SpanFailure from "../internal/SpanFailure.ts"
 import { CurrentInvocationKey } from "./Context.ts"
 
 /**
@@ -272,4 +273,4 @@ export const once = <A, E, R>(
         return yield* Effect.fail(made.failure)
       })
     )
-  }).pipe(Effect.withSpan("Action.once"))
+  }).pipe(SpanFailure.withSpan("Action.once"))

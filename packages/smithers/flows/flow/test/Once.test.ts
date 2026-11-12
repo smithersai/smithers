@@ -15,6 +15,9 @@ import { layerWired } from "./MemoryFlowRuntime.ts"
 
 class Refused extends Schema.TaggedError<Refused>()("Once/Refused", { reason: Schema.String }) {}
 
+/** A provider rejection whose message quotes the request, as a provider's own error does. */
+class Rejected extends Schema.TaggedError<Rejected>()("Once/Rejected", { message: Schema.String }) {}
+
 /** A provider that keeps what it was asked to make, by key, and can be told to fail. */
 interface Provider {
   readonly made: Map<string, string>
@@ -305,6 +308,38 @@ describe("Action.once", () => {
       expect(spans).toHaveLength(1)
       expect(logs).toHaveLength(1)
       expect(JSON.stringify({ spans: spans.map((s) => [...s.attributes]), logs })).not.toContain(name)
+    }))
+
+  it.effect("ends its span on a failed write's tag, never the provider's text", () =>
+    Effect.gen(function*() {
+      const text = "422: comment body quotes customer-record-7c41"
+      const spans: Array<Tracer.NativeSpan> = []
+      const exit = yield* Effect.exit(Action.once(
+        "refused",
+        Action.keyed({
+          find: () => Effect.succeed(Option.none<string>()),
+          perform: () => Effect.fail(new Rejected({ message: text }))
+        }),
+        { key: "refused-key" }
+      )).pipe(
+        Effect.provideService(
+          Tracer.Tracer,
+          Tracer.make({
+            span(options) {
+              const span = new Tracer.NativeSpan(options)
+              spans.push(span)
+              return span
+            }
+          })
+        )
+      )
+      // The caller still reads the failure as it was raised.
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ message: text })
+      const span = spans.find((candidate) => candidate.name === "Action.once")
+      const ended = span?.status._tag === "Ended" ? span.status.exit : undefined
+      const errors = ended !== undefined && Exit.isFailure(ended) ? Cause.prettyErrors(ended.cause) : []
+      expect(errors.map((error) => `${error.name}: ${error.message}`)).toEqual(["Once/Rejected: redacted"])
+      expect(errors.map((error) => error.stack).join("\n")).not.toContain(text)
     }))
 
   /** Runs `once` inside one dispatch of `Writer`, against `p`. */

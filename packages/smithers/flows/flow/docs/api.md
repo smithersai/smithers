@@ -509,7 +509,7 @@ Recording functions need no host service and have no typed failure. They use Eff
 
 ## `SpanFailure`
 
-A failed span exports its failure's tag and, for a tagged failure, a lowercase token `code`, never its message or stack. `exit` maps one exit to what a span records; `tracer`, `effect`, `stream` and `fn` withhold every span opened under them; `withSpan` withholds one span alone. `Action.execute`, each flow's `<tag>.execute` span, and the durable engine's dispatch span end this way, so an action's failure text, such as a provider error quoting a prompt, never reaches a trace. The caller still receives the original failure.
+A failed span exports its failure's tag and, for a tagged failure, a lowercase token `code`, never its message or stack. `exit` maps one exit to what a span records; `tracer`, `effect`, `stream` and `fn` withhold every span opened under them; `withSpan` withholds one span alone. `Action.execute`, `Action.once`, each flow's `<tag>.execute` span, and the durable engine's dispatch span end this way, so an action's failure text, such as a provider error quoting a prompt, never reaches a trace. The caller still receives the original failure.
 
 ## `StepIdentity`
 
