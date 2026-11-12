@@ -2289,10 +2289,26 @@ Records one answer to a human task. `token` is the value the run parked with. Th
 
 ### `HumanTask.decode`
 
-- **Signature:** `decode<S extends Schema.ConstraintDecoder<unknown>>(schema: S): <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>) => Node.Node<S["Type"], E, R>`
+- **Signature:** `decode<S extends Schema.ConstraintDecoder<unknown>>(schema: S, options?: DecodeOptions): <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>) => Node.Node<S["Type"], E, R>`
 - **Since:** `0.1.0`
 
 Gives an answer the caller's own type. The schema here and the question's own schema description must agree; a disagreement surfaces as a defect rather than a failure a body could catch.
+
+The decoder is a captured callback, so `Interpreter.layerWithImplementations` admits it. Its identity is the schema's JSON Schema document, so changing the schema changes the identity. `options.version` replaces the document as the identity: pass it for a schema with no JSON Schema form, or for a transformation that changes what the schema decodes without changing that document, and change it whenever the decoder's behaviour changes. Without a version, a schema with no JSON Schema form throws `DecodeIdentityError`.
+
+### `HumanTask.DecodeOptions`
+
+- **Type:** `interface` with field `version?: string`
+- **Since:** `0.1.0`
+
+What `HumanTask.decode` accepts besides the schema. `version` is the decoder's identity in place of the schema's JSON Schema document.
+
+### `HumanTask.DecodeIdentityError`
+
+- **Type:** `Schema.TaggedError` with field `message: string`
+- **Since:** `0.1.0`
+
+Thrown by `HumanTask.decode` when the schema has no JSON Schema form and no `version` was given. The message names the schema's refusal and asks for `HumanTask.decode(schema, { version })`.
 
 ## Interpreter
 
@@ -5262,32 +5278,32 @@ Every other export of `Smithers.ts`, in source order:
 
 Every tagged error and coded refusal the package defines, with the module each one lives in named in the Sources section. The first nineteen are `Schema.TaggedError` classes or a tagged schema; the last six are `Error` subclasses carrying a `name` and a `code` or a field, not a `_tag`:
 
-| Tag                                   | Raised when                                                                                                                                                             | Fields                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `smithers-build/AgentSessionError`    | An agent execution fails while resolving, diffing, reading, spawning, parsing, applying, gating, settling, or consulting the verdict cache.                             | `phase`, `message`                                              |
-| `smithers-build/AgentNeedsInput`      | A required payload input is missing or invalid, before any session spawn.                                                                                               | `field`, `expected`, `message`                                  |
-| `smithers-build/AgentMcpUnreachable`  | A declared MCP server does not answer the reachability precheck, before any session spawn.                                                                              | `name`, `url`, `message`                                        |
-| `smithers-build/AgentWriteEscape`     | A session proposes a write outside its declared write-set. The candidate is rejected whole.                                                                             | `path`, `writeSet`, `message`                                   |
-| `smithers-build/AgentFindingsError`   | A check-mode `Agent.Lint` completes and the agent reports findings.                                                                                                     | `findings`, `message`                                           |
-| `smithers-build/AgentRoundsExhausted` | The candidate and gate loop uses `maxRounds` without a green gate set.                                                                                                  | `rounds`, `diff`, `gateReport`, `message`                       |
-| `smithers-build/AgentPrSettleRefused` | An `Agent.Pr` loop converges and the pull-request settle action is not bound.                                                                                           | `diff`, `gateReport`, `message`                                 |
-| `smithers-build/ImportClosureError`   | An import closure cannot be resolved: an entry is missing, a file is unreadable, the resolver configuration is invalid, or a bound is hit.                              | `message`                                                       |
-| `smithers-build/FilesTestError`       | A file-algebra assertion fails, or cannot be answered completely.                                                                                                       | `message`, `leftover`, `unresolved`, `dynamic`                  |
-| `smithers-build/FilegroupError`       | Expanding a group's declared sources fails on a filesystem error.                                                                                                       | `message`                                                       |
-| `smithers-build/DocsParityError`      | A package's documentation is missing or too thin to describe the package.                                                                                               | `path`, `message`                                               |
-| `smithers-build/DriftError`           | A checked-in generated file is missing, drifted, or unreadable.                                                                                                         | `path`, `message`, `reason`                                     |
-| `smithers-build/WriteFileError`       | A generated file cannot be written.                                                                                                                                     | `path`, `message`                                               |
-| `smithers-build/OutputError`          | Digesting one declared output fails.                                                                                                                                    | `path`, `message`                                               |
-| `smithers-build/ModelCliMissing`      | The engine CLI executable is not found on the host.                                                                                                                     | `engine`, `executable`, `message`                               |
-| `smithers-build/LlmReviewError`       | A review round fails before producing findings, in the `diff`, `read`, `review`, or `parse` phase.                                                                      | `phase`, `message`                                              |
-| `smithers-build/FindingsError`        | A review completes and at least one finding meets the `failOn` threshold.                                                                                               | `failOn`, `findings`                                            |
-| `smithers-build/NotImplemented`       | A catalog stub is executed under a bare Flow runtime instead of the package executor.                                                                                   | `target`, `message`                                             |
-| `smithers-build/ExecError`            | A tool run fails. `code` is one of `invalid_payload`, `spawn_failed`, `timed_out`, `signaled`, `stream_failed`, `secret_proxy_failed`, or `exit_status`.                | `argv`, `cwd`, `exitCode`, `stdout`, `stderr`, `code`, `signal` |
-| `smithers-build/Refused`              | An outward invocation is refused before any outward action, with `code` `missing_secret` or `approval_unsatisfied`.                                                     | `rule`, `code`, `detail`                                        |
-| `smithers-build/SecretUnavailable`    | A declared secret has no value on this host.                                                                                                                            | `env`                                                           |
-| `smithers-build/SecretAudienceDenied` | A placeholder is used for an origin the declaration does not authorize.                                                                                                 | `env`, `audience`                                               |
-| `smithers-build/SecretValueInvalid`   | A host value cannot safely cross an HTTP request boundary.                                                                                                              | `env`                                                           |
-| `smithers-build/WorkflowParseError`   | A workflow file cannot be read as a GitHub Actions workflow. `reason` is one of `too_large`, `invalid_yaml`, `unsupported`, `duplicate`, `missing`, or `invalid_shape`. | `line`, `reason`, `detail`                                      |
+| Tag                                   | Raised when                                                                                                                                                                                          | Fields                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `smithers-build/AgentSessionError`    | An agent execution fails while resolving, diffing, reading, spawning, parsing, applying, gating, settling, or consulting the verdict cache.                                                          | `phase`, `message`                                              |
+| `smithers-build/AgentNeedsInput`      | A required payload input is missing or invalid, before any session spawn.                                                                                                                            | `field`, `expected`, `message`                                  |
+| `smithers-build/AgentMcpUnreachable`  | A declared MCP server does not answer the reachability precheck, before any session spawn.                                                                                                           | `name`, `url`, `message`                                        |
+| `smithers-build/AgentWriteEscape`     | A session proposes a write outside its declared write-set. The candidate is rejected whole.                                                                                                          | `path`, `writeSet`, `message`                                   |
+| `smithers-build/AgentFindingsError`   | A check-mode `Agent.Lint` completes and the agent reports findings.                                                                                                                                  | `findings`, `message`                                           |
+| `smithers-build/AgentRoundsExhausted` | The candidate and gate loop uses `maxRounds` without a green gate set.                                                                                                                               | `rounds`, `diff`, `gateReport`, `message`                       |
+| `smithers-build/AgentPrSettleRefused` | An `Agent.Pr` loop converges and the pull-request settle action is not bound.                                                                                                                        | `diff`, `gateReport`, `message`                                 |
+| `smithers-build/ImportClosureError`   | An import closure cannot be resolved: an entry is missing, a file is unreadable, the resolver configuration is invalid, or a bound is hit.                                                           | `message`                                                       |
+| `smithers-build/FilesTestError`       | A file-algebra assertion fails, or cannot be answered completely.                                                                                                                                    | `message`, `leftover`, `unresolved`, `dynamic`                  |
+| `smithers-build/FilegroupError`       | Expanding a group's declared sources fails on a filesystem error.                                                                                                                                    | `message`                                                       |
+| `smithers-build/DocsParityError`      | A package's documentation is missing or too thin to describe the package.                                                                                                                            | `path`, `message`                                               |
+| `smithers-build/DriftError`           | A checked-in generated file is missing, drifted, or unreadable.                                                                                                                                      | `path`, `message`, `reason`                                     |
+| `smithers-build/WriteFileError`       | A generated file cannot be written.                                                                                                                                                                  | `path`, `message`                                               |
+| `smithers-build/OutputError`          | Digesting one declared output fails.                                                                                                                                                                 | `path`, `message`                                               |
+| `smithers-build/ModelCliMissing`      | The engine CLI executable is not found on the host.                                                                                                                                                  | `engine`, `executable`, `message`                               |
+| `smithers-build/LlmReviewError`       | A review round fails before producing findings, in the `diff`, `read`, `review`, or `parse` phase.                                                                                                   | `phase`, `message`                                              |
+| `smithers-build/FindingsError`        | A review completes and at least one finding meets the `failOn` threshold.                                                                                                                            | `failOn`, `findings`                                            |
+| `smithers-build/NotImplemented`       | A catalog stub is executed under a bare Flow runtime instead of the package executor.                                                                                                                | `target`, `message`                                             |
+| `smithers-build/ExecError`            | A tool run fails. `code` is one of `invalid_payload`, `spawn_failed`, `timed_out`, `signaled`, `stream_failed`, `secret_proxy_failed`, `sandbox_unenforceable`, `exit_status`, or `start_timed_out`. | `argv`, `cwd`, `exitCode`, `stdout`, `stderr`, `code`, `signal` |
+| `smithers-build/Refused`              | An outward invocation is refused before any outward action, with `code` `missing_secret` or `approval_unsatisfied`.                                                                                  | `rule`, `code`, `detail`                                        |
+| `smithers-build/SecretUnavailable`    | A declared secret has no value on this host.                                                                                                                                                         | `env`                                                           |
+| `smithers-build/SecretAudienceDenied` | A placeholder is used for an origin the declaration does not authorize.                                                                                                                              | `env`, `audience`                                               |
+| `smithers-build/SecretValueInvalid`   | A host value cannot safely cross an HTTP request boundary.                                                                                                                                           | `env`                                                           |
+| `smithers-build/WorkflowParseError`   | A workflow file cannot be read as a GitHub Actions workflow. `reason` is one of `too_large`, `invalid_yaml`, `unsupported`, `duplicate`, `missing`, or `invalid_shape`.                              | `line`, `reason`, `detail`                                      |
 
 ## Example
 
@@ -23834,17 +23850,17 @@ it never moves the refs one request at a time. `refs/notes/<name>` is a ref like
 any other, pointing at a commit whose tree maps each annotated commit's full id
 to a blob, as `git notes` writes it.
 
-| Export                                                                                                                                | Meaning                                                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Repository`                                                                                                                          | The service key, `"@smthrs/jj/Repository"`; durable identity.                                                                                                                         |
-| `make(impl)`                                                                                                                          | Brands an implementation as the service.                                                                                                                                              |
-| `makeMemory(options?)`, `layerMemory(options?)`                                                                                       | Objects and refs in memory, hashed as git hashes them, refs moved in one synchronous turn. `options.commits` holds commits by a given id with only a tree, as a shallow import would. |
-| `makeUnsupported(reason)`, `layerUnsupported(reason)`                                                                                 | Every call fails `unsupported` with `reason`: a host that cannot write, or where writing is switched off.                                                                             |
-| `hashBlob`, `hashTree`, `hashCommit`, `hashObject`, `encodeTree`, `encodeCommit`                                                      | Git's object ids and bodies. A tree sorts as git sorts it: bytewise, a tree's name read as if it ended in `/`, written with mode `40000`.                                             |
-| `requireObjectId`, `requireRevision`, `requireEntries`, `requireCommit`, `requireRefs`, `requireTransaction`, `requireAnswer`         | The checks every adapter runs before a request, each failing `invalid`.                                                                                                               |
-| `isObjectId`, `isRefName`, `EMPTY_TREE`, `MAX_REF_UPDATES`                                                                            | Predicates and constants.                                                                                                                                                             |
-| `ObjectId`, `Mode`, `TreeEntry`, `Person`, `CommitObject`, `CommitHeader`, `RefValue`, `RefUpdate`, `RefTransaction`, `MemoryOptions` | Types.                                                                                                                                                                                |
-| `RepositoryErrorCode`, `RepositoryError`, `repositoryError`, `isRepositoryError`                                                      | `unsupported`, `conflict` (with the `refs` that differed), `not_found`, `invalid`, `unavailable` (with `retryAfterMillis` when the repository asked callers to wait, which a flow step's retry policy honors). The tag `"@smthrs/jj/RepositoryError"` is durable identity.                         |
+| Export                                                                                                                                | Meaning                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Repository`                                                                                                                          | The service key, `"@smthrs/jj/Repository"`; durable identity.                                                                                                                                                                                                              |
+| `make(impl)`                                                                                                                          | Brands an implementation as the service.                                                                                                                                                                                                                                   |
+| `makeMemory(options?)`, `layerMemory(options?)`                                                                                       | Objects and refs in memory, hashed as git hashes them, refs moved in one synchronous turn. `options.commits` holds commits by a given id with only a tree, as a shallow import would.                                                                                      |
+| `makeUnsupported(reason)`, `layerUnsupported(reason)`                                                                                 | Every call fails `unsupported` with `reason`: a host that cannot write, or where writing is switched off.                                                                                                                                                                  |
+| `hashBlob`, `hashTree`, `hashCommit`, `hashObject`, `encodeTree`, `encodeCommit`                                                      | Git's object ids and bodies. A tree sorts as git sorts it: bytewise, a tree's name read as if it ended in `/`, written with mode `40000`.                                                                                                                                  |
+| `requireObjectId`, `requireRevision`, `requireEntries`, `requireCommit`, `requireRefs`, `requireTransaction`, `requireAnswer`         | The checks every adapter runs before a request, each failing `invalid`.                                                                                                                                                                                                    |
+| `isObjectId`, `isRefName`, `EMPTY_TREE`, `MAX_REF_UPDATES`                                                                            | Predicates and constants.                                                                                                                                                                                                                                                  |
+| `ObjectId`, `Mode`, `TreeEntry`, `Person`, `CommitObject`, `CommitHeader`, `RefValue`, `RefUpdate`, `RefTransaction`, `MemoryOptions` | Types.                                                                                                                                                                                                                                                                     |
+| `RepositoryErrorCode`, `RepositoryError`, `repositoryError`, `isRepositoryError`                                                      | `unsupported`, `conflict` (with the `refs` that differed), `not_found`, `invalid`, `unavailable` (with `retryAfterMillis` when the repository asked callers to wait, which a flow step's retry policy honors). The tag `"@smthrs/jj/RepositoryError"` is durable identity. |
 
 Feature detection is by error code, as for `Jj`. `unavailable` from a write
 means its outcome is unknown until read back; `conflict` from `updateRefs`
@@ -35400,7 +35416,8 @@ The optional peer `electrobun` 1.18.1 is loaded only when this layer is built. N
 CEF, restricts navigation to the supplied origin and disables view RPC. The caller owns the Effect scope, which
 closes its windows. A cancelled directory chooser returns `null`; native failures return `DesktopUnavailable`,
 without copying OS messages into diagnostics. The private `#electrobun` import separates the native declaration
-port from Electrobun's source-only TypeScript distribution.
+port from Electrobun's source-only TypeScript distribution. Under the `browser` condition it resolves to a module
+that refuses with `DesktopUnavailable`, so a browser bundle of this package never reaches Electrobun.
 
 `BunServer.layer(port?)` provides the Effect HTTP server and its Bun support services on `127.0.0.1`. The default
 port, zero, asks the OS to choose one. The server closes with the layer's scope. Its Bun adapter is loaded only when
@@ -36455,6 +36472,7 @@ interface Options extends ChildProcess.KillOptions {
   readonly windowsVerbatimArguments?: boolean | undefined
   readonly windowsHide?: boolean | undefined
   readonly startupTimeoutMs?: number | undefined
+  readonly activationTimeoutMs?: number | undefined
 }
 
 interface Handle extends ChildProcessHandle {
@@ -36479,10 +36497,18 @@ termination policy is `SIGTERM`, then `SIGKILL` after 2,000 milliseconds.
 returning an error.
 
 The supervisor must start, listen and report ready within `startupTimeoutMs`,
-5,000 milliseconds by default; otherwise `spawn` fails with a `TimedOut` reason,
-"The machine was too busy to start the process". A command with its own
-deadline passes it here, so a loaded machine spends that budget instead of
-failing early. Smithers build targets pass their `timeout`.
+5,000 milliseconds by default; otherwise `spawn` fails with a `TimedOut` reason
+whose cause has code `startup_timeout`, "The machine was too busy to start the
+process". The command never ran: the supervisor starts it only when asked to,
+after it reports ready, and the supervisor is stopped before the error returns.
+That miss is safe to retry. Smithers build targets retry it; see `Exec.StartupRetry`
+in `@smthrs/targets`.
+
+After the supervisor is asked to start the command, it must confirm the start
+within `activationTimeoutMs`, `startupTimeoutMs` by default. A miss there fails
+`TimedOut` with code `activation_timeout`. The command may have run before it
+was stopped, so it is not a start to retry. A command with its own deadline
+passes that deadline here; Smithers build targets pass their `timeout`.
 
 On POSIX, `handle.pid` identifies the live supervisor and `targetPid` identifies
 the native target for diagnostics. `exitCode` describes the target;

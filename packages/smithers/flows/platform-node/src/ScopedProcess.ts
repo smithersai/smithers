@@ -10,7 +10,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
 import * as PipedProcess from "./internal/PipedProcess.ts"
-import { StartupBudget, targetPidOf } from "./internal/ProcessSupervisor.ts"
+import { ActivationBudget, StartupBudget, targetPidOf } from "./internal/ProcessSupervisor.ts"
 import * as ProcessReaper from "./ProcessReaper.ts"
 
 /**
@@ -27,11 +27,21 @@ export interface Options extends ChildProcess.KillOptions {
   readonly windowsVerbatimArguments?: boolean | undefined
   readonly windowsHide?: boolean | undefined
   /**
-   * Milliseconds the command may wait for its supervisor to start, 5000 by
-   * default. A command with its own deadline passes that deadline, so a
-   * loaded machine slows its start instead of failing it.
+   * Milliseconds each startup step may wait for the supervisor to start,
+   * listen and report ready, 5000 by default. A miss fails `TimedOut` with
+   * fault code `startup_timeout`, and the command never ran: the supervisor
+   * had not been asked to start it, and is stopped before the error returns.
+   * Such a start is safe to retry.
    */
   readonly startupTimeoutMs?: number | undefined
+  /**
+   * Milliseconds the activated command may take to be confirmed started,
+   * `startupTimeoutMs` by default. A miss fails `TimedOut` with fault code
+   * `activation_timeout`; the command may have run before it was stopped. A
+   * command with its own deadline passes that deadline, which it is inside
+   * from activation on.
+   */
+  readonly activationTimeoutMs?: number | undefined
 }
 
 /**
@@ -98,7 +108,10 @@ export const spawn = (
           Scope.provide(scope),
           options.startupTimeoutMs === undefined
             ? (effect) => effect
-            : Effect.provideService(StartupBudget, options.startupTimeoutMs)
+            : Effect.provideService(StartupBudget, options.startupTimeoutMs),
+          options.activationTimeoutMs === undefined
+            ? (effect) => effect
+            : Effect.provideService(ActivationBudget, options.activationTimeoutMs)
         )
       ).pipe(
         Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause)))

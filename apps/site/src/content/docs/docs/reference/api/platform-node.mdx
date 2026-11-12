@@ -152,6 +152,7 @@ interface Options extends ChildProcess.KillOptions {
   readonly windowsVerbatimArguments?: boolean | undefined
   readonly windowsHide?: boolean | undefined
   readonly startupTimeoutMs?: number | undefined
+  readonly activationTimeoutMs?: number | undefined
 }
 
 interface Handle extends ChildProcessHandle {
@@ -176,10 +177,18 @@ termination policy is `SIGTERM`, then `SIGKILL` after 2,000 milliseconds.
 returning an error.
 
 The supervisor must start, listen and report ready within `startupTimeoutMs`,
-5,000 milliseconds by default; otherwise `spawn` fails with a `TimedOut` reason,
-"The machine was too busy to start the process". A command with its own
-deadline passes it here, so a loaded machine spends that budget instead of
-failing early. Smithers build targets pass their `timeout`.
+5,000 milliseconds by default; otherwise `spawn` fails with a `TimedOut` reason
+whose cause has code `startup_timeout`, "The machine was too busy to start the
+process". The command never ran: the supervisor starts it only when asked to,
+after it reports ready, and the supervisor is stopped before the error returns.
+That miss is safe to retry. Smithers build targets retry it; see `Exec.StartupRetry`
+in `@smthrs/targets`.
+
+After the supervisor is asked to start the command, it must confirm the start
+within `activationTimeoutMs`, `startupTimeoutMs` by default. A miss there fails
+`TimedOut` with code `activation_timeout`. The command may have run before it
+was stopped, so it is not a start to retry. A command with its own deadline
+passes that deadline here; Smithers build targets pass their `timeout`.
 
 On POSIX, `handle.pid` identifies the live supervisor and `targetPid` identifies
 the native target for diagnostics. `exitCode` describes the target;

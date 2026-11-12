@@ -1441,10 +1441,26 @@ Records one answer to a human task. `token` is the value the run parked with. Th
 
 ### `HumanTask.decode`
 
-- **Signature:** `decode<S extends Schema.ConstraintDecoder<unknown>>(schema: S): <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>) => Node.Node<S["Type"], E, R>`
+- **Signature:** `decode<S extends Schema.ConstraintDecoder<unknown>>(schema: S, options?: DecodeOptions): <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>) => Node.Node<S["Type"], E, R>`
 - **Since:** `0.1.0`
 
 Gives an answer the caller's own type. The schema here and the question's own schema description must agree; a disagreement surfaces as a defect rather than a failure a body could catch.
+
+The decoder is a captured callback, so `Interpreter.layerWithImplementations` admits it. Its identity is the schema's JSON Schema document, so changing the schema changes the identity. `options.version` replaces the document as the identity: pass it for a schema with no JSON Schema form, or for a transformation that changes what the schema decodes without changing that document, and change it whenever the decoder's behaviour changes. Without a version, a schema with no JSON Schema form throws `DecodeIdentityError`.
+
+### `HumanTask.DecodeOptions`
+
+- **Type:** `interface` with field `version?: string`
+- **Since:** `0.1.0`
+
+What `HumanTask.decode` accepts besides the schema. `version` is the decoder's identity in place of the schema's JSON Schema document.
+
+### `HumanTask.DecodeIdentityError`
+
+- **Type:** `Schema.TaggedError` with field `message: string`
+- **Since:** `0.1.0`
+
+Thrown by `HumanTask.decode` when the schema has no JSON Schema form and no `version` was given. The message names the schema's refusal and asks for `HumanTask.decode(schema, { version })`.
 
 ## Interpreter
 

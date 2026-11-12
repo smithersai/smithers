@@ -34,16 +34,34 @@ const startupMs = 5000
  * report ready: 5 s unless the caller says otherwise.
  *
  * The owner is a fresh runtime process, so on a loaded machine its startup
- * alone can outlast 5 s. A caller whose command has its own deadline (a build
- * target's `timeout: "5m"`) supplies that deadline here, so the machine being
- * busy costs time inside the budget the caller already granted instead of
- * failing a command that had minutes left.
+ * alone can outlast 5 s. A miss fails `startup_timeout`, and the target never
+ * ran: the owner had not been asked to start it, and is stopped before the
+ * error returns. A caller may therefore retry the start, as a build target's
+ * exec action does with growing bounds.
  * @private
  * @since 1.0.0
  */
 export const StartupBudget = Context.Reference<number>("@smthrs/platform-node/ProcessSupervisor/StartupBudget", {
   defaultValue: () => startupMs
 })
+
+/**
+ * How long an activated spawn may wait for its owner to confirm the target
+ * started; the {@link StartupBudget} unless the caller says otherwise.
+ *
+ * Activation is the line after which the target may be running. Every bound
+ * before it fails `startup_timeout`, which a caller may retry because the
+ * owner never received the `start` frame. A miss after it fails
+ * `activation_timeout`: the target may have run before it was stopped, so it
+ * is not a start to retry. A caller whose command has its own deadline
+ * supplies that deadline here, since the target is inside it from activation.
+ * @private
+ * @since 1.0.0
+ */
+export const ActivationBudget = Context.Reference<number | undefined>(
+  "@smthrs/platform-node/ProcessSupervisor/ActivationBudget",
+  { defaultValue: () => undefined }
+)
 const deliveryMs = 500
 // SupervisorProgram sizes its ps bound so the two table observations of an
 // explicit stop fit inside this allowance. Change both together.
@@ -97,7 +115,9 @@ export const failure = (method: string, command: string, cause: unknown): Platfo
     EBUSY: "Busy",
     // Not an errno: the supervisor's own startup bound, typed so a caller can
     // retry a start a loaded machine was too busy to make in time.
-    startup_timeout: "TimedOut"
+    startup_timeout: "TimedOut",
+    // Also a missed bound, but after activation: the target may have run.
+    activation_timeout: "TimedOut"
   }
   return PlatformError.systemError({
     _tag: tags[error.code ?? ""] ?? "Unknown",
@@ -169,7 +189,15 @@ const wait = <A>(value: Promise<A>, method: string, command: string) =>
 
 // Every `spawn` bound waits on a fresh runtime process or a local socket, so a
 // miss there means the machine was too busy, not that the target is broken.
-const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>, millis: number, method: string, command: string) =>
+// Before activation the owner holds no target, so the miss is a start that
+// never happened; after it, the target may have run (`activated`).
+const bounded = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  millis: number,
+  method: string,
+  command: string,
+  activated = false
+) =>
   effect.pipe(
     Effect.timeoutOrElse({
       duration: millis,
@@ -177,9 +205,14 @@ const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>, millis: number, method
         Effect.fail(failure(
           method,
           command,
-          method === "spawn"
-            ? processFault("startup_timeout", `The machine was too busy to start the process within ${millis / 1000} s`)
-            : processFault("supervisor_timeout", `Process supervisor ${method} timed out`)
+          method !== "spawn"
+            ? processFault("supervisor_timeout", `Process supervisor ${method} timed out`)
+            : activated
+            ? processFault(
+              "activation_timeout",
+              `The machine was too busy to confirm the process started within ${millis / 1000} s; it was stopped`
+            )
+            : processFault("startup_timeout", `The machine was too busy to start the process within ${millis / 1000} s`)
         ))
     }),
     Effect.provideService(Clock.Clock, processClock)
@@ -532,6 +565,7 @@ export const prepare = (
   Effect.gen(function*() {
     yield* refuseNul(command)
     const startup = yield* StartupBudget
+    const activation = (yield* ActivationBudget) ?? startup
     const initial = yield* policy(command.options)
     const bun = process.versions.bun !== undefined
     const sea = bun ? false : (yield* Effect.tryPromise({
@@ -689,25 +723,34 @@ export const prepare = (
           // sweep succeeded if its status frames were lost. Startup and natural
           // completion have no such additional contract.
           requireCleanupReceipt = grouped && control.activationSent && !control.spawnFailed && !control.targetDone
-          yield* bounded(
-            wait(
-              control.write({
-                type: "stop",
-                explicit: true,
-                ...requested,
-                // A live target can move out of this group with setsid().
-                // Only an owner whose target was never activated can replace
-                // the requested signal; natural exit has its own fast path.
-                killSignal: !control.activationSent && alone() ? "SIGKILL" : requested.killSignal
-              }),
+          if (control.requestSocket === undefined && !control.activationSent) {
+            // A start that missed its bound before the owner connected: the
+            // owner cannot hear a stop, and it holds nothing but itself, since
+            // it starts the guardian and the target only on `start`. Stop the
+            // still-unreaped owner directly rather than wait out a stop it
+            // never reads, which left it running and failed the cleanup.
+            if (!control.ownerDone) yield* raw.kill({ killSignal: "SIGKILL", forceKillAfter: 0 }).pipe(Effect.ignore)
+          } else {
+            yield* bounded(
+              wait(
+                control.write({
+                  type: "stop",
+                  explicit: true,
+                  ...requested,
+                  // A live target can move out of this group with setsid().
+                  // Only an owner whose target was never activated can replace
+                  // the requested signal; natural exit has its own fast path.
+                  killSignal: !control.activationSent && alone() ? "SIGKILL" : requested.killSignal
+                }),
+                "kill",
+                command.command
+              ),
+              deliveryMs,
               "kill",
               command.command
-            ),
-            deliveryMs,
-            "kill",
-            command.command
-          )
-            .pipe(Effect.catch(() => Effect.sync(() => control.disconnect())))
+            )
+              .pipe(Effect.catch(() => Effect.sync(() => control.disconnect())))
+          }
         }
         yield* finish
       }).pipe(Effect.uninterruptible)
@@ -802,9 +845,16 @@ export const prepare = (
         wait(control.write({ type: "start" }), "spawn", command.command),
         deliveryMs,
         "spawn",
-        command.command
+        command.command,
+        true
       )
-      yield* bounded(wait(control.started.promise, "spawn", command.command), startup, "spawn", command.command)
+      yield* bounded(
+        wait(control.started.promise, "spawn", command.command),
+        activation,
+        "spawn",
+        command.command,
+        true
+      )
     }))
     const unref = Effect.gen(function*() {
       if (referenced) {

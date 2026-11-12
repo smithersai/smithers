@@ -66,7 +66,10 @@ const bounded = async <A>(value: Promise<A>): Promise<A> => {
 interface Settings {
   readonly platform?: "darwin" | "win32"
   readonly job?: "held-ready" | "held-settlement" | "attach-failure" | "cleanup-failure"
-  readonly readiness?: "valid" | "malformed" | "wrong" | "silent" | "absent"
+  /** `unconnected`: a live owner too slow to connect before the bound. */
+  readonly readiness?: "valid" | "malformed" | "wrong" | "silent" | "absent" | "unconnected"
+  /** `silent`: the owner takes `start` and never confirms the target started. */
+  readonly started?: "valid" | "silent"
   readonly stop?: "exit" | "ignore" | "open-channel" | "cleanup-error"
   readonly snapshot?: "empty" | "survivor" | "own-group" | "owner" | "unavailable"
   readonly endOnDisconnect?: boolean
@@ -173,6 +176,7 @@ const fixture = (settings: Settings = {}) => {
         })
       )
       if (settings.readiness === "absent") endOwner()
+      else if (settings.readiness === "unconnected") accepted.resolve()
       else {
         yield* Effect.tryPromise({
           try: async () => {
@@ -198,7 +202,7 @@ const fixture = (settings: Settings = {}) => {
                 const frame = JSON.parse(buffer.slice(0, end)) as Record<string, unknown>
                 buffer = buffer.slice(end + 1)
                 requests.push(frame)
-                if (frame.type === "start") send({ type: "spawned", pid: 900_004 })
+                if (frame.type === "start" && settings.started !== "silent") send({ type: "spawned", pid: 900_004 })
                 if (frame.type === "stop" && settings.stop !== "ignore") {
                   if (settings.stop === "cleanup-error") {
                     send({ type: "cleanup_error", message: "test escaped child could not be verified" })
@@ -300,7 +304,8 @@ const run = async (
   host: ReturnType<typeof fixture>,
   use: (handle: ReturnType<typeof makeHandle>) => Effect.Effect<unknown, unknown> = () => Effect.void,
   options: ChildProcess.CommandOptions = {},
-  startupBudgetMs?: number
+  startupBudgetMs?: number,
+  activationBudgetMs?: number
 ) => {
   const ledger = await Effect.runPromise(
     ProcessLedger.makeMemory({ hostId: "failed-supervisor", ownerPid: process.pid })
@@ -326,6 +331,9 @@ const run = async (
       startupBudgetMs === undefined
         ? (effect) => effect
         : Effect.provideService(Supervisor.StartupBudget, startupBudgetMs),
+      activationBudgetMs === undefined
+        ? (effect) => effect
+        : Effect.provideService(Supervisor.ActivationBudget, activationBudgetMs),
       Effect.scoped,
       Effect.exit
     )
@@ -594,6 +602,56 @@ describe("failed process preparation", () => {
       }
       expect(Date.now() - started).toBeLessThan(4000)
       expect(result.live).toEqual([])
+    } finally {
+      host.dispose()
+    }
+  }, 10_000)
+
+  // The busy-machine failure seen in CI: the owner started too slowly to
+  // connect within the bound, so it never read the stop it was sent, and
+  // cleanup waited it out and failed as a defect instead of the typed miss.
+  it("stops an owner that has not connected when its start misses the bound, as a typed miss", async () => {
+    const host = fixture({ readiness: "unconnected" })
+    const started = Date.now()
+    try {
+      const result = await run(host, () => Effect.void, {}, 400)
+      expect(Exit.isFailure(result.outcome)).toBe(true)
+      if (Exit.isFailure(result.outcome)) {
+        expect(Cause.hasDies(result.outcome.cause)).toBe(false)
+        const error = Cause.squash(result.outcome.cause) as PlatformError.PlatformError
+        expect(error.message).toBe(
+          "TimedOut: ChildProcess.spawn (literal): The machine was too busy to start the process within 0.4 s"
+        )
+        expect(error.reason).toMatchObject({ _tag: "TimedOut", cause: { code: "startup_timeout" } })
+      }
+      expect(Date.now() - started).toBeLessThan(2_000)
+      // Nothing was sent: the owner held no target, so it was stopped directly.
+      expect(host.requests).toEqual([])
+      expect(host.rawKills).toBe(1)
+      expect(result.live).toEqual([])
+      for (const path of host.paths) expect(Fs.existsSync(path)).toBe(false)
+    } finally {
+      host.dispose()
+    }
+  }, 10_000)
+
+  it("reports a miss after activation as activation_timeout, which is no start to retry", async () => {
+    const host = fixture({ started: "silent" })
+    try {
+      const result = await run(host, () => Effect.void, {}, 30_000, 400)
+      expect(Exit.isFailure(result.outcome)).toBe(true)
+      if (Exit.isFailure(result.outcome)) {
+        expect(Cause.hasDies(result.outcome.cause)).toBe(false)
+        const error = Cause.squash(result.outcome.cause) as PlatformError.PlatformError
+        expect(error.message).toBe(
+          "TimedOut: ChildProcess.spawn (literal): " +
+            "The machine was too busy to confirm the process started within 0.4 s; it was stopped"
+        )
+        expect(error.reason).toMatchObject({ _tag: "TimedOut", cause: { code: "activation_timeout" } })
+      }
+      expect(host.requests.map((frame) => frame.type)).toEqual(["configure", "start", "stop"])
+      expect(result.live).toEqual([])
+      expect(host.rawKills).toBe(0)
     } finally {
       host.dispose()
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Sink, Stream } from "effect"
+import { Cause, Effect, Exit, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import * as Redacted from "effect/Redacted"
@@ -343,10 +343,31 @@ describe("supervisor startup budget", () => {
         const handle = yield* ScopedProcess.spawn({ command: "/bin/sh", args: ["-c", "exit 0"], startupTimeoutMs })
         return yield* ScopedProcess.status(handle)
       })))
+    // 1 ms misses before the owner can connect: a typed, retryable miss whose
+    // cleanup stops the owner at once rather than waiting out a stop it
+    // never reads.
+    const began = Date.now()
     const starved = await spawned(1)
+    expect(Date.now() - began).toBeLessThan(2_000)
     expect(Exit.isFailure(starved)).toBe(true)
-    expect(String(starved)).toContain("too busy to start the process within 0.001 s")
+    if (Exit.isFailure(starved)) {
+      expect(Cause.hasDies(starved.cause)).toBe(false)
+      expect(Cause.squash(starved.cause)).toMatchObject({
+        message: "TimedOut: ChildProcess.spawn (/bin/sh): The machine was too busy to start the process within 0.001 s",
+        reason: { _tag: "TimedOut", cause: { code: "startup_timeout" } }
+      })
+    }
     const started = await spawned(120_000)
     expect(Exit.isSuccess(started), String(started)).toBe(true)
+    const activated = await Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
+      const handle = yield* ScopedProcess.spawn({
+        command: "/bin/sh",
+        args: ["-c", "exit 0"],
+        startupTimeoutMs: 120_000,
+        activationTimeoutMs: 120_000
+      })
+      return yield* ScopedProcess.status(handle)
+    })))
+    expect(Exit.isSuccess(activated) && activated.value, String(activated)).toEqual({ code: 0, signal: null })
   }, 60_000)
 })

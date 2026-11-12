@@ -10,13 +10,17 @@ import { Schema } from "effect"
 
 /**
  * Which supervision rule failed. `startup_timeout` is a start that missed its
- * bound, usually a busy machine, and is reported with the `TimedOut` tag so a
- * caller can retry it; `supervisor_timeout` is any other missed bound.
+ * bound before the owner was asked to start the target, usually a busy
+ * machine, and is reported with the `TimedOut` tag so a caller can retry it:
+ * nothing ran. `activation_timeout` is the same miss after that request, also
+ * `TimedOut`, but the target may have run before it was stopped, so it is no
+ * start to retry. `supervisor_timeout` is any other missed bound.
  * @category models
  * @since 1.0.0
  */
 export const ProcessFaultCode = Schema.Literals([
   "startup_timeout",
+  "activation_timeout",
   "supervisor_timeout",
   "runtime_unsupported",
   "identity_mismatch",

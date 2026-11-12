@@ -13,8 +13,11 @@ import { Action, type FlowRuntime } from "@smthrs/flow"
 import type * as Node from "@smthrs/plan/Node"
 import { DestinationProxy } from "@smthrs/platform-node"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
+import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
+import type * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as NodeChildProcess from "node:child_process"
@@ -368,8 +371,51 @@ export const ExecFailureCode = Schema.Literals([
   "stream_failed",
   "secret_proxy_failed",
   "sandbox_unenforceable",
-  "exit_status"
+  "exit_status",
+  "start_timed_out"
 ])
+
+/**
+ * Each start attempt's bound in milliseconds, in order, and the pause before
+ * the second attempt, doubled before each later one. See {@link StartupRetry}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StartupRetryPolicy {
+  readonly attemptsMs: readonly [number, ...Array<number>]
+  readonly backoffMs: number
+}
+
+/**
+ * How a tool's start is retried when the machine is too busy to start it.
+ *
+ * Each spawn's supervisor must start, listen and report ready within the
+ * attempt's bound. A miss there means the tool never ran (the supervisor had
+ * not been asked to start it, and is stopped and reaped before the error
+ * returns), so it is not the tool's result: the start is retried after
+ * `backoffMs`, doubled for each later attempt. Only when every attempt missed
+ * does the run fail, with code `start_timed_out`. The default, 15 s, 30 s and
+ * 60 s with 1 s then 2 s between them, fails a start that never succeeds in
+ * 108 s. A bound never exceeds the tool's own `timeoutMs`, which also bounds
+ * the whole run, retries included. Once the supervisor is asked to start the
+ * tool, the tool's own deadline bounds the rest of its start, and a miss is
+ * never retried: the tool may have run.
+ *
+ * @category configuration
+ * @since 1.0.0
+ */
+export const StartupRetry = Context.Reference<StartupRetryPolicy>("@smthrs/targets/Exec/StartupRetry", {
+  defaultValue: () => ({ attemptsMs: [15_000, 30_000, 60_000], backoffMs: 1_000 })
+})
+
+/** The supervisor missed a bound before it was asked to start the tool, so the tool never ran. */
+const unstarted = (error: PlatformError.PlatformError): boolean =>
+  error.reason._tag === "TimedOut" &&
+  (error.cause as { readonly code?: unknown } | undefined)?.code === "startup_timeout"
+
+// Retry pacing runs on the host's time, like the supervisor's own bounds.
+const hostClock = Clock.Clock.defaultValue()
 
 /**
  * Why one external-tool run failed, as a closed code rather than prose.
@@ -1254,29 +1300,61 @@ const spawnTool = (
         catch: (cause) => failure(failureMessage(cause), "spawn_failed")
       })
       const processService = (yield* Process) ?? ScopedProcess
-      const handle = yield* processService.spawn({
-        command: shape.file,
-        args: shape.args,
-        cwd,
-        env,
-        stdin: "ignore",
-        killSignal: "SIGKILL",
-        forceKillAfter: 0,
-        windowsVerbatimArguments: shape.windowsVerbatimArguments,
-        // The tool's own deadline bounds its start too: a busy machine that
-        // takes 6 s to start the supervisor still leaves a 5m tool its minutes.
-        ...(payload.timeoutMs === "unbounded" ? {} : { startupTimeoutMs: payload.timeoutMs })
-      }).pipe(Effect.mapError((cause) => {
+      const retry = yield* StartupRetry
+      const deadline = payload.timeoutMs === "unbounded" ? Infinity : payload.timeoutMs
+      const attempt = (startupTimeoutMs: number) =>
+        processService.spawn({
+          command: shape.file,
+          args: shape.args,
+          cwd,
+          env,
+          stdin: "ignore",
+          killSignal: "SIGKILL",
+          forceKillAfter: 0,
+          windowsVerbatimArguments: shape.windowsVerbatimArguments,
+          startupTimeoutMs: Math.min(startupTimeoutMs, deadline),
+          // Once asked to start, the tool may be running: its own deadline
+          // bounds the rest, and a miss there is not a start to retry.
+          ...(payload.timeoutMs === "unbounded" ? {} : { activationTimeoutMs: payload.timeoutMs })
+        }).pipe(Effect.result)
+      const began = Date.now()
+      let spawned = yield* attempt(retry.attemptsMs[0])
+      for (let index = 1; spawned._tag === "Failure" && unstarted(spawned.failure); index++) {
+        const bound = retry.attemptsMs[index]
+        if (bound === undefined) {
+          const seconds = Math.round((Date.now() - began) / 1000)
+          return yield* Effect.fail(failure(
+            `the machine was too busy to start the tool: ${index} attempts in ${seconds} s\n` +
+              spawned.failure.message,
+            "start_timed_out"
+          ))
+        }
+        const pause = retry.backoffMs * 2 ** (index - 1)
+        const missed = Math.min(retry.attemptsMs[index - 1]!, deadline) / 1000
+        try {
+          onStderr?.(new TextEncoder().encode(
+            `smthrs: the machine was too busy to start the tool within ${missed} s and it never ran; ` +
+              `starting it again in ${pause / 1000} s (attempt ${index + 1} of ${retry.attemptsMs.length})\n`
+          ))
+        } catch {
+          // Optional progress output cannot change the run.
+        }
+        yield* Effect.annotateCurrentSpan("smithers.exec.startAttempts", index + 1)
+        yield* Effect.sleep(pause).pipe(Effect.provideService(Clock.Clock, hostClock))
+        spawned = yield* attempt(bound)
+      }
+      if (spawned._tag === "Failure") {
         // ENOENT can describe the cwd as well as the executable. Check the cwd
         // explicitly so the first-run diagnostic identifies the missing input.
-        const detail = failureMessage(cause.cause ?? cause)
-        return failure(
+        const detail = failureMessage(spawned.failure.cause ?? spawned.failure)
+        return yield* Effect.fail(failure(
           !NodeFs.existsSync(cwd)
             ? `${detail} (the working directory ${cwd} does not exist)`
             : detail,
           "spawn_failed"
-        )
-      }))
+        ))
+      }
+      const handle = spawned.success
       const consume = (
         source: typeof handle.stdout,
         capture: Capture,

@@ -304,6 +304,27 @@ pnpm exec smithers-build test '//...' --ui plain
 `plain`, because a program is reading. The full resolution order is in
 [Output and renderers](./concepts/output.md).
 
+## A target did not start
+
+A target that reports `command did not start` never ran: the host was too busy
+to start its process within every startup attempt. Before failing, the exec
+action starts the process again with growing bounds (15 s, 30 s, then 60 s), and
+each missed attempt prints `smthrs: the machine was too busy to start the tool`
+in the target's output. A target whose retried start succeeds reports `ran`,
+and its dependents run as usual.
+
+```text
+//packages:runtime-dist  failed  1m48s  command did not start: /bin/sh -c ...
+the machine was too busy to start the tool: 3 attempts in 108 s
+TimedOut: ChildProcess.spawn (/bin/sh): The machine was too busy to start the process within 60 s
+```
+
+Its dependents are skipped, since their input was never built. Treat the run as
+an infrastructure failure, not a red target: reduce `--jobs` or move the run to
+a less loaded host, then run it again. A `command failed (exit -1)` that says
+the machine was too busy to confirm the process started is different: the
+process may have run, so it is not retried.
+
 ## A run will not stop
 
 The first `SIGINT` or `SIGTERM` aborts every running target, reverts write

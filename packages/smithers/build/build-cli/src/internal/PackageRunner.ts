@@ -495,9 +495,12 @@ const filesTestErrorText = (error: Compose.FilesTestError): string =>
 // Both stream tails: a command whose earlier step logs to stderr (Python's
 // unittest) and whose failing step reports on stdout (`go test`) must still
 // name the failure.
+// A command the machine was too busy to start never ran, so its report says
+// so instead of naming an exit status; callers key on the first words.
 const execErrorText = (error: Exec.ExecError): string => {
   const detail = [error.stderr.trim(), error.stdout.trim()].filter((stream) => stream !== "").join("\n")
-  return `command failed (exit ${error.exitCode}): ${error.argv.join(" ")}${detail === "" ? "" : `\n${detail}`}`
+  const head = error.code === "start_timed_out" ? "command did not start" : `command failed (exit ${error.exitCode})`
+  return `${head}: ${error.argv.join(" ")}${detail === "" ? "" : `\n${detail}`}`
 }
 
 type ExecOutcome =

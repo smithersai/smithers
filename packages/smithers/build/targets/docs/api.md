@@ -91,7 +91,8 @@ producing a declared output fails the target.
 
 `Exec` is the sealed action every tool run goes through. Its failures carry a
 closed `code` (`invalid_payload`, `spawn_failed`, `timed_out`, `signaled`,
-`stream_failed`, `secret_proxy_failed`, `exit_status`) and, for a signalled
+`stream_failed`, `secret_proxy_failed`, `sandbox_unenforceable`, `exit_status`,
+`start_timed_out`) and, for a signalled
 child, the `signal` itself, so a caller decides what to do without parsing
 stderr. Timeout errors retain the bounded stderr tail followed by the timeout
 explanation.
@@ -101,6 +102,33 @@ from 1 through 86,400,000 ms. Set it to `"unbounded"` for a process whose lifeti
 is governed by interruption. `Dev` plans this unbounded policy; ordinary exec
 calls retain the bounded default. Both policies kill the process group on
 interruption. A clean process exit completes the action.
+
+A start the machine is too busy to make is not the tool's result. When the
+process supervisor misses its startup bound before it was asked to start the
+tool, the tool never ran, and `Exec.run` starts it again. `Exec.StartupRetry`
+sets the bound of each attempt and the pause before the next:
+
+```ts
+interface StartupRetryPolicy {
+  readonly attemptsMs: readonly [number, ...Array<number>]
+  readonly backoffMs: number
+}
+
+const StartupRetry: Context.Reference<StartupRetryPolicy>
+```
+
+The default is three attempts bounded at 15 s, 30 s and 60 s, with 1 s and then
+2 s between them (the pause doubles), so a start that never succeeds fails after
+about 108 s. A 4-vCPU host running 64 CPU-bound processes started the
+supervisor within 2 s, so the first bound already leaves a wide margin. No bound
+exceeds the payload's `timeoutMs`, which also bounds the whole run, retries
+included. Each missed attempt writes one `smthrs: the machine was too busy to
+start the tool` line to the live stderr view; the captured result is unchanged.
+When every attempt misses, the run fails with code `start_timed_out`, and its
+stderr is `the machine was too busy to start the tool: <n> attempts in <s> s`
+followed by the supervisor's own `TimedOut` sentence. A miss after the
+supervisor was asked to start the tool is never retried, because the tool may
+have run; the tool's own deadline bounds that wait.
 
 Sandbox scratch cleanup covers preparation, execution, and interruption,
 including failures while creating declared write directories or wrapping argv.
