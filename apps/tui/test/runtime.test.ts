@@ -863,8 +863,9 @@ describe("background work", () => {
       expect(f.workspace.read("x").status).toBe("running")
       f.workspace.retry("g")
       expect(f.workspace.read("g").status).toBe("queued")
+      // Quitting keeps it queued for the next session; only Stop cancels it.
       f.workspace.dispose()
-      expect(f.workspace.read("g").status).toBe("cancelled")
+      expect(f.workspace.read("g").status).toBe("queued")
     })
   })
   it("restores custom UI and relaunches a lost local worker", async () => {

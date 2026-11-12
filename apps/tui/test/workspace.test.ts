@@ -563,6 +563,28 @@ describe("custom agents", () => {
     restored.workspace.dispose()
   })
 
+  it("keeps a request queued across quitting and launches it when a restored seat opens", async () => {
+    const first = setup()
+    for (let index = 0; index < seats; index++) {
+      first.workspace.request({ id: `busy-${index}`, title: "Busy", prompt: `Work ${index}.` })
+    }
+    await tick()
+    first.workspace.request({ id: "waiting", title: "Waiting", prompt: "Queued work." })
+    expect(first.workspace.read("waiting").status).toBe("queued")
+    first.workspace.dispose()
+    expect(first.workspace.read("waiting").status).toBe("queued")
+
+    const restored = setup({ cwd: first.host.cwd, restored: Session.restore(first.records).workspace })
+    await tick()
+    expect(restored.workspace.read("waiting").status).toBe("queued")
+    expect(restored.inputs.map((input) => input.source)).not.toContain("waiting")
+    restored.finishes[0]!({ _tag: "done", answer: "Seat released." })
+    await tick()
+    expect(restored.workspace.read("waiting").status).toBe("running")
+    expect(restored.inputs.at(-1)).toMatchObject({ source: "waiting", prompt: "Queued work." })
+    restored.workspace.dispose()
+  })
+
   it("restarts an unfinished continuation despite an earlier completion in the same file", async () => {
     const first = setup()
     first.workspace.request({ id: "fix", title: "Fix", prompt: "Find the cause." })

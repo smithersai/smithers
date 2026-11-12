@@ -1710,10 +1710,8 @@ export class Workspace {
     this.closed = true
     const queued = this.tabs.close()
     this.changed()
-    for (const tab of this.tabs.values()) {
-      if (tab.status === "queued") this.tabs.move({ ...tab, endedAt: Date.now() }, "cancel")
-      this.handles.get(tab.id)?.cancel()
-    }
+    // Queued tabs keep their saved status, so a restart requeues them; only Stop cancels one.
+    for (const tab of this.tabs.values()) this.handles.get(tab.id)?.cancel()
     for (const entry of queued) entry.resume?.()
   }
 }
