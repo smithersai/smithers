@@ -442,7 +442,7 @@ const UPDATES = [
   "sandbox-busy", "retry-run", "people-max", "tour-repeat", "tour-sought-end-fails", "draft-outside-build",
   "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted", "learn-more-palette", "control-clears-error",
   "pane-closes-editor", "scroll-stale", "tour-gap", "sandbox-polled-failure", "chat-from-splash",
-  "account-retries", "sign-in-unavailable", "action-failures",
+  "account-retries", "sign-in-unavailable", "action-failures", "learn-more-same-conversation",
 ] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
@@ -465,7 +465,8 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * and changes nothing while one does; Chat on the splash shrinks it and focuses the composer once the conversation
  * has a message, and does nothing before. Retry repeats the failed account command (people, a grant, sign-out) and
  * resumes a lost role stream under the next epoch, and each failure names its own words; live sign-in the server calls
- * unavailable is refused without a command; a failed action names its input, permission or operation.
+ * unavailable is refused without a command; a failed action names its input, permission or operation. Learn more in the
+ * tour's own conversation keeps its messages; from another conversation it starts with none.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -623,6 +624,14 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       const text = (code: string, op?: "load" | "run" | "cancel") => actionsOf(update(base, Message.FailedActions({ code, ...(op === undefined ? {} : { op }) })).model).error
       return text("input", "run") === "Input isn't valid." && text("forbidden", "cancel") === "Not allowed." && text("fault", "run") === "Couldn't start the run."
         && text("fault", "cancel") === "Couldn't cancel the run." && text("fault") === "Couldn't load runs"
+    }
+    case "learn-more-same-conversation": {
+      const seq = base.client.conversation.seq
+      const posted = update({ ...base, conversation: `demo-${walkthroughSession(base)}`, tour: false }, Message.ReceivedEvent({ event: { type: "Posted", seq: seq + 1, id: "e-1", clientId: "fuzz-other", name: "You", text: "hi" } })).model
+      const again = update({ ...posted, tour: false }, Message.ClickedLearnMore())
+      const elsewhere = update({ ...posted, tour: false, conversation: "fuzz-other" }, Message.ClickedLearnMore())
+      const kept = posted.client.conversation.entries.length
+      return valid(again.model) && again.model.tour === true && kept > 0 && again.model.client.conversation.entries.length === kept && elsewhere.model.client.conversation.entries.length === 0
     }
     case "walkthrough-posted": {
       const seq = base.client.conversation.seq

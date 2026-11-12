@@ -1315,6 +1315,12 @@ draw. `history/command-arms` now plans, starts, notes, approves and folds a comm
 and task fields (each Message named) and checks that a newer outline reads again every epic page the reader has. Seed
 20261254 reaches every one of those lines; a start that reports `busy` after writing is caught (20261255).
 
+The same run left two single arms: `issuesViewDecision.ageText` for a long, non-compact age, and `modelWrite`'s
+`tourStartWrite` keeping the client (Learn more in the tour's own conversation). `web/decision-arms` checks `ageText`
+over blank, "just now", compact and other ages, absolute or not, long or short; `web/update-arms`
+`learn-more-same-conversation` runs Learn more in the demo conversation (its messages kept) and from another (none).
+Seed 20261256 reaches both; mutants caught (20261257): a long unknown age without "ago", and Learn more always fresh.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

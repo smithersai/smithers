@@ -76,6 +76,13 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
     const expected = key === "j" ? Math.min(count - 1, index + 1) : key === "k" ? Math.max(0, index - 1) : -1
     try check(`rowFocus ${index}/${count} ${key}`, IssuesView.rowFocus(index, count, key) === expected)
   }
+  // An event's age: as given when blank, absolute or just now; spelled out when long and compact; else "… ago".
+  for (const absolute of [false, true]) for (const long of [false, true]) for (const age of ["", "just now", "1d", "3d", "1w", "12w", "yesterday", text]) {
+    const compact = /^[0-9]+[dw]$/.test(age)
+    const count = age.slice(0, -1)
+    const expected = age === "" || absolute || age === "just now" ? age : !long || !compact ? `${age} ago` : `${count}${age.endsWith("d") ? " day" : " week"}${count === "1" ? "" : "s"} ago`
+    try check(`ageText ${absolute} ${long} ${age}`, IssuesView.ageText(absolute, age, long) === expected)
+  }
   // Booleans: every combination.
   for (const live of [false, true]) for (const unavailable of [false, true]) try check("signInRefused", ModelD.signInRefused(live, unavailable) === (live && unavailable))
   for (const tour of [false, true]) for (const paused of [false, true]) {
