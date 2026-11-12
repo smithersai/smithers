@@ -8,7 +8,7 @@
 //
 // The build being replaced is `--replacing`, else what https://$APP_DOMAIN/version.json (smithers.sh) serves now. It
 // prints one line per spec and browser, and exits 1 on any problem, naming OLD_BUILD_DIR and the build.
-import { spawnSync } from "node:child_process"
+import { spawnSync, type SpawnSyncReturns } from "node:child_process"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { parseArgs } from "node:util"
@@ -37,31 +37,56 @@ export const oldBuildProblem = (dir: string | undefined, replacing: string): str
 
 interface Suite {
   readonly file?: string
-  readonly specs?: ReadonlyArray<{ readonly tests: ReadonlyArray<{ readonly projectName: string; readonly results: ReadonlyArray<{ readonly status: string }> }> }>
+  readonly specs?: ReadonlyArray<{
+    readonly tests: ReadonlyArray<{ readonly projectName: string; readonly status?: string; readonly results: ReadonlyArray<{ readonly status: string }> }>
+  }>
   readonly suites?: ReadonlyArray<Suite>
 }
 
-/** What is wrong in a Playwright JSON report: each spec and browser that did not run and pass. Empty when all did. */
-export const verdict = (report: { readonly suites?: ReadonlyArray<Suite> }): ReadonlyArray<string> => {
+/** A test's outcome for the check: it passes only when Playwright expected its result and its last run passed. */
+const outcome = (test: { readonly status?: string; readonly results: ReadonlyArray<{ readonly status: string }> }) => {
+  const last = test.results.at(-1)?.status
+  if (last === undefined) return "did not run"
+  if (test.status === "flaky") return "flaky"
+  if (last === "skipped" || test.status === "skipped") return "skipped"
+  return last === "passed" && test.status === "expected" ? "passed" : "failed"
+}
+
+/**
+ * What is wrong in a Playwright JSON report: each spec and browser that did not run and pass, and each error the run
+ * reported outside a test, such as a failed global setup or teardown. Empty when all ran and passed.
+ */
+export const verdict = (
+  report: { readonly suites?: ReadonlyArray<Suite>; readonly errors?: ReadonlyArray<{ readonly message?: string }> },
+): ReadonlyArray<string> => {
   const seen = new Map<string, string>()
   const walk = (suite: Suite, file: string | undefined) => {
     const here = suite.file ?? file
     for (const spec of suite.specs ?? []) {
       for (const each of spec.tests) {
-        const status = each.results.at(-1)?.status ?? "did not run"
         // Playwright names a file from its test directory; the check names it from apps/mvp.
         const key = `${here?.startsWith("e2e/") ? here : `e2e/${here}`} [${each.projectName}]`
-        if (seen.get(key) !== "failed") seen.set(key, status === "passed" ? "passed" : status === "skipped" ? "skipped" : "failed")
+        // A spec's first problem stands: a later passing test in the same file and browser does not clear it.
+        const before = seen.get(key)
+        if (before === undefined || before === "passed") seen.set(key, outcome(each))
       }
     }
     for (const child of suite.suites ?? []) walk(child, here)
   }
   for (const suite of report.suites ?? []) walk(suite, undefined)
-  return SPECS.flatMap((spec) => PROJECTS.flatMap((project) => {
+  const tests = SPECS.flatMap((spec) => PROJECTS.flatMap((project) => {
     const key = `${spec} [${project}]`
     const status = seen.get(key)
     return status === "passed" ? [] : [`${key} ${status ?? "did not run"}`]
   }))
+  return [...tests, ...(report.errors ?? []).map((error) => `Playwright reported an error: ${error.message ?? "no message"}`)]
+}
+
+/** Why the Playwright run itself failed, or undefined when it exited 0. Its report alone can't pass a failed run. */
+export const runProblem = (run: Pick<SpawnSyncReturns<unknown>, "status" | "signal" | "error">): string | undefined => {
+  if (run.error !== undefined) return `Playwright did not start: ${run.error.message}`
+  if (run.signal !== null) return `Playwright was killed by ${run.signal}`
+  return run.status === 0 ? undefined : `Playwright exited ${run.status}`
 }
 
 /** The build production serves now. */
@@ -80,11 +105,15 @@ const main = async () => {
     return 1
   }
   const output = join(process.env.TMPDIR ?? "/tmp", `device-check-${process.pid}.json`)
-  spawnSync("pnpm", ["exec", "playwright", "test", ...SPECS, ...PROJECTS.map((project) => `--project=${project}`), "--reporter=json,line"], {
+  const run = spawnSync("pnpm", ["exec", "playwright", "test", ...SPECS, ...PROJECTS.map((project) => `--project=${project}`), "--reporter=json,line"], {
     stdio: "inherit",
     env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: output },
   })
-  const problems = existsSync(output) ? verdict(JSON.parse(readFileSync(output, "utf8"))) : ["no Playwright report was written"]
+  const failed = runProblem(run)
+  const problems = [
+    ...(existsSync(output) ? verdict(JSON.parse(readFileSync(output, "utf8"))) : ["no Playwright report was written"]),
+    ...(failed === undefined ? [] : [failed]),
+  ]
   for (const spec of SPECS) for (const project of PROJECTS) {
     const failure = problems.find((line) => line.startsWith(`${spec} [${project}]`))
     console.log(`${failure === undefined ? "pass" : "FAIL"}  ${project}  ${spec}${failure === undefined ? "" : `  ${failure.slice(spec.length + project.length + 4)}`}`)

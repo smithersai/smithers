@@ -386,7 +386,7 @@ Once the device's owner is checked, the new build brings the device's OPFS store
      sh -c 'OLD_BUILD_DIR=$HOME/Desktop/smithers-mvp/builds/<build> node e2e/deviceCheck.ts --replacing <build>'
    ```
 
-   `<build>` is what `https://smithers.sh/version.json` serves before the deploy. Each spec skips locally without an old build; `e2e/deviceCheck.ts` fails instead, on a missing or different `OLD_BUILD_DIR` (its `version.json` must name `<build>`) and on any test in either spec that skipped or didn't run, naming `OLD_BUILD_DIR` and the build. "1 passed, 2 skipped" is a failed check.
+   `<build>` is what `https://smithers.sh/version.json` serves before the deploy. Each spec skips locally without an old build; `e2e/deviceCheck.ts` fails instead, on a missing or different `OLD_BUILD_DIR` (its `version.json` must name `<build>`) on any test in either spec that skipped, failed, was flaky or didn't run, and on a Playwright run that exited nonzero or reported an error outside a test, such as a failed global teardown, naming `OLD_BUILD_DIR` and the build. "1 passed, 2 skipped" is a failed check.
 
    **Getting the old build.** Before the deploy, mirror it from the site: every path in its `sw.js` precache list, plus `sw.js`, its `workbox-*.js` and `assets/wa-sqlite-*.wasm`, into `~/Desktop/smithers-mvp/builds/<build>`. The site answers `/index.html` with a redirect, so take `index.html` from `/app`, and check that its MD5 is the revision `sw.js` precaches for it. Once production has moved on, the site no longer serves it: build it from its revision instead, on the mini, and copy `dist` to that path on both machines:
 
