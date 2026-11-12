@@ -565,16 +565,29 @@ describe("SandboxSupervision", () => {
         scripts: { greet: { stdout: "hello" } }
       })
 
-      const logged = yield* Effect.gen(function*() {
+      const logs: Array<{ level: string; message: unknown }> = []
+      const logger = Logger.make((entry) => {
+        logs.push({ level: entry.logLevel, message: entry.message })
+      })
+      yield* Effect.gen(function*() {
         const spawner = yield* ChildProcessSpawner
         yield* spawner.string(ChildProcess.make("greet"))
         yield* TestClock.adjust(interval)
       }).pipe(
         Effect.provide(SandboxSupervision.layer(provider, { interval })),
-        Effect.andThen(Effect.succeed("done"))
+        Effect.provide(Logger.layer([logger]))
       )
 
-      expect(logged).toBe("done")
+      expect(logs).toEqual([{
+        level: "Warn",
+        message: [
+          "sandbox-unhealthy",
+          expect.objectContaining({
+            session: "test-session",
+            reason: "ping_failed"
+          })
+        ]
+      }])
       expect(provider.state.cancellations).toBe(1)
     }))
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Exit } from "effect"
+import { Effect, Exit } from "effect"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
 
@@ -412,11 +412,7 @@ const scriptFixture = () => {
   })
   return { state, provider, job }
 }
-const typedFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.gen(function*() {
-    const exit = yield* Effect.exit(effect)
-    return Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
-  })
+const typedFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.flip(effect)
 
 describe("retained job validation and failures", () => {
   it.each(["relative", "/a/../b", "/a\0b", "/tmp/.smthrs-sbx", "/tmp/.smthrs-sbx/jobs"])(
@@ -430,10 +426,16 @@ describe("retained job validation and failures", () => {
   it.effect("rejects bad keys and reserved files before acquiring", () =>
     Effect.gen(function*() {
       const f = scriptFixture()
-      expect(yield* typedFailure(f.job.start(undefined, " "))).toBeDefined()
+      expect(yield* typedFailure(f.job.start(undefined, " "))).toMatchObject({
+        code: "spawn_error",
+        message: "sandbox-job: key must not be empty"
+      })
       for (const path of ["", "../escape", "/var/lib/smthrs-jobs/metadata", "nul\0file"]) {
         const job = Sandbox.job(f.provider, { command: "true", files: { [path]: new Uint8Array() } })
-        expect(yield* typedFailure(job.start(undefined, f.state.key))).toBeDefined()
+        expect(yield* typedFailure(job.start(undefined, f.state.key))).toMatchObject({
+          code: "spawn_error",
+          message: "sandbox-job: file paths cannot escape the checkout or overwrite job metadata"
+        })
       }
       expect(f.state.acquires).toBe(0)
     }))
@@ -441,9 +443,15 @@ describe("retained job validation and failures", () => {
     Effect.gen(function*() {
       const f = scriptFixture()
       const overlap = Sandbox.job(f.provider, { command: "true", jobDirectory: "/checkout/jobs" })
-      expect(yield* typedFailure(overlap.start(undefined, f.state.key))).toBeDefined()
+      expect(yield* typedFailure(overlap.start(undefined, f.state.key))).toMatchObject({
+        code: "spawn_error",
+        message: "sandbox-job: job directory must be outside the captured checkout"
+      })
       f.state.code = 125
-      expect(yield* typedFailure(f.job.start(undefined, f.state.key))).toBeDefined()
+      expect(yield* typedFailure(f.job.start(undefined, f.state.key))).toMatchObject({
+        code: "spawn_error",
+        message: "sandbox-job: launcher failed (125): remote error"
+      })
     }))
   it.effect("duplicate initialization with no key file still returns a handle", () =>
     Effect.gen(function*() {
@@ -456,11 +464,17 @@ describe("retained job validation and failures", () => {
     Effect.gen(function*() {
       const f = scriptFixture()
       f.state.readFailure = true
-      expect(yield* typedFailure(f.job.start(undefined, f.state.key))).toBeDefined()
+      expect(yield* typedFailure(f.job.start(undefined, f.state.key))).toMatchObject({
+        code: "unavailable",
+        message: "read failed"
+      })
       f.state.readFailure = false
-      expect(yield* typedFailure(f.job.start(undefined, "other#g1"))).toBeDefined()
+      expect(yield* typedFailure(f.job.start(undefined, "other#g1"))).toMatchObject({
+        code: "unknown",
+        message: "sandbox-job: job directory belongs to another key"
+      })
     }))
-  it.effect("status reports all outcomes and refuses corrupt records or mismatched handles", () =>
+  it.effect("status reports all outcomes and distinguishes corrupt records from command failures", () =>
     Effect.gen(function*() {
       const f = scriptFixture()
       const handle = yield* f.job.start(undefined, f.state.key)
@@ -474,19 +488,52 @@ describe("retained job validation and failures", () => {
         expect(yield* f.job.status(handle, f.state.key)).toEqual(result)
       }
       f.state.status = "Exited invalid"
-      expect(yield* typedFailure(f.job.status(handle, f.state.key))).toBeDefined()
+      expect(yield* typedFailure(f.job.status(handle, f.state.key))).toMatchObject({
+        code: "unknown",
+        message: "sandbox-job: invalid job status"
+      })
+      f.state.status = "Running"
       f.state.code = 9
-      expect(yield* typedFailure(f.job.status(handle, f.state.key))).toBeDefined()
-      expect(yield* typedFailure(f.job.status(handle, "other"))).toBeDefined()
-      expect(yield* typedFailure(f.job.cancel(handle, "other"))).toBeDefined()
-      expect(yield* typedFailure(f.job.collect(handle, "other", { _tag: "Exited", exitCode: 0 }))).toBeDefined()
-    }).pipe(Effect.provide(KeyValueStore.layerMemory)))
+      expect(yield* typedFailure(f.job.status(handle, f.state.key))).toMatchObject({
+        code: "unavailable",
+        message: "sandbox-job: status failed: remote error"
+      })
+    }))
+  for (const operation of ["status", "cancel", "collect"] as const) {
+    for (const mismatch of ["key", "id", "directory"] as const) {
+      it.effect(`${operation} refuses a mismatched ${mismatch} before accessing the job`, () =>
+        Effect.gen(function*() {
+          const f = scriptFixture()
+          const handle = yield* f.job.start(undefined, f.state.key)
+          const key = mismatch === "key" ? "other#g1" : f.state.key
+          const foreign = mismatch === "id"
+            ? { ...handle, id: "other#g1" }
+            : mismatch === "directory"
+            ? { ...handle, directory: `/var/lib/smthrs-jobs/${sessionSlug("other#g1")}` }
+            : handle
+          const commandsBefore = f.state.commands.length
+          const result: Effect.Effect<unknown, ProviderError | Sandbox.CaptureError, KeyValueStore.KeyValueStore> =
+            operation === "collect"
+              ? f.job.collect(foreign, key, { _tag: "Exited", exitCode: 0 })
+              : f.job[operation](foreign, key)
+          expect(yield* typedFailure(result)).toMatchObject({
+            code: "unknown",
+            message: "sandbox-job: job key or directory differs from handle"
+          })
+          expect(f.state.commands).toHaveLength(commandsBefore)
+          expect(f.state.destroys).toBe(0)
+        }).pipe(Effect.provide(KeyValueStore.layerMemory)))
+    }
+  }
   it.effect("collect persists before failing destroy and replays without reading a missing machine", () =>
     Effect.gen(function*() {
       const f = scriptFixture()
       const handle = yield* f.job.start(undefined, f.state.key)
       f.state.destroyFailure = true
-      expect(yield* typedFailure(f.job.collect(handle, f.state.key, { _tag: "Exited", exitCode: 0 }))).toBeDefined()
+      expect(yield* typedFailure(f.job.collect(handle, f.state.key, { _tag: "Exited", exitCode: 0 }))).toMatchObject({
+        code: "unavailable",
+        message: "destroy failed"
+      })
       f.state.destroyFailure = false
       f.state.attachFailure = new ProviderError({ code: "not_found", message: "machine gone" })
       expect(yield* f.job.collect(handle, f.state.key, { _tag: "Exited", exitCode: 0 })).toMatchObject({
@@ -501,10 +548,16 @@ describe("retained job validation and failures", () => {
       const f = scriptFixture()
       const handle = yield* f.job.start(undefined, f.state.key)
       f.state.reads.set("exit", "wrong")
-      expect(yield* typedFailure(f.job.collect(handle, f.state.key, { _tag: "Exited", exitCode: 0 }))).toBeDefined()
+      expect(yield* typedFailure(f.job.collect(handle, f.state.key, { _tag: "Exited", exitCode: 0 }))).toMatchObject({
+        code: "unknown",
+        message: "sandbox-job: invalid exit record"
+      })
       const store = yield* KeyValueStore.KeyValueStore
       yield* store.set(`@smthrs/sandbox/job/collected/${encodeURIComponent(f.state.key)}`, "bad json")
-      expect(yield* typedFailure(f.job.collect(handle, f.state.key, { _tag: "Exited", exitCode: 0 }))).toBeDefined()
+      expect(yield* typedFailure(f.job.collect(handle, f.state.key, { _tag: "Exited", exitCode: 0 }))).toMatchObject({
+        code: "unknown",
+        message: "sandbox-job: invalid collected receipt"
+      })
       expect(f.state.destroys).toBe(0)
     }).pipe(Effect.provide(KeyValueStore.layerMemory)))
   it.effect("receipt read and write failures preserve the machine", () =>
@@ -536,11 +589,17 @@ describe("retained job validation and failures", () => {
       const f = scriptFixture()
       const handle = yield* f.job.start(undefined, f.state.key)
       f.state.attachFailure = new ProviderError({ code: "unavailable", message: "uncertain" })
-      expect(yield* typedFailure(f.job.cancel(handle, f.state.key))).toBeDefined()
+      expect(yield* typedFailure(f.job.cancel(handle, f.state.key))).toMatchObject({
+        code: "unavailable",
+        message: "uncertain"
+      })
       expect(f.state.destroys).toBe(0)
       f.state.attachFailure = undefined
       f.state.code = 125
-      expect(yield* typedFailure(f.job.cancel(handle, f.state.key))).toBeDefined()
+      expect(yield* typedFailure(f.job.cancel(handle, f.state.key))).toMatchObject({
+        code: "unavailable",
+        message: "sandbox-job: cancel failed: remote error"
+      })
       expect(f.state.destroys).toBe(0)
       f.state.attachFailure = new ProviderError({ code: "not_found", message: "gone" })
       yield* f.job.cancel(handle, f.state.key)

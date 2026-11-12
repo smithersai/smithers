@@ -5,7 +5,6 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
 import {
-  chmodSync,
   createReadStream,
   existsSync,
   mkdirSync,
@@ -110,6 +109,10 @@ interface Faults {
   stopFailure?: unknown
   /** `readFile` is refused before any stream is handed out. */
   readFailure?: unknown
+  /** The returned file stream fails while being drained. */
+  readStreamFailure?: unknown
+  /** The SDK refuses a file upload after the parent directory is prepared. */
+  writeFailure?: unknown
   /** Every `runCommand` call is refused (the API is unreachable). */
   runFailure?: unknown
   /** Fetching a finished command's stdout fails. */
@@ -188,6 +191,13 @@ const fakeSdk = (faults: Faults = {}): { readonly sdk: Sdk; readonly recorded: R
       if (faults.readFailure !== undefined) throw faults.readFailure
       const at = resolve(path)
       if (!existsSync(at)) return null
+      if (faults.readStreamFailure !== undefined) {
+        const failure = faults.readStreamFailure
+        return (async function*() {
+          yield new Uint8Array([1])
+          throw failure
+        })()
+      }
       if (faults.reuseReadBuffer === true) {
         const content = new Uint8Array(readFileSync(at))
         return (async function*() {
@@ -203,6 +213,7 @@ const fakeSdk = (faults: Faults = {}): { readonly sdk: Sdk; readonly recorded: R
       return faults.textReads === true ? createReadStream(at, "utf8") : createReadStream(at)
     },
     writeFiles: async (files) => {
+      if (faults.writeFailure !== undefined) throw faults.writeFailure
       for (const file of files) {
         const content = typeof file.content === "string" ? encoder.encode(file.content) : file.content
         recorded.writes.push({ path: file.path, content: content.slice() })
@@ -833,24 +844,34 @@ describe("VercelSandbox", () => {
           )
           expect((directoryFailure as ProviderError).code).toBe("unknown")
 
-          // A directory that refuses writes fails the upload itself.
-          mkdirSync(join(work, "sealed-dir"))
-          chmodSync(join(work, "sealed-dir"), 0o555)
-          const writeFailure = yield* Effect.flip(
-            session.writeFile(`${work}/sealed-dir/child`, new Uint8Array([1]))
-          )
-          expect((writeFailure as ProviderError).code).toBe("unknown")
+          faults.writeFailure = new Error("upload refused")
+          const writePath = `${work}/upload/child`
+          const writeFailure = yield* Effect.flip(session.writeFile(writePath, new Uint8Array([1])))
+          expect(writeFailure).toMatchObject({
+            code: "unknown",
+            message: `vercel-sandbox: could not write ${writePath}`,
+            cause: faults.writeFailure
+          })
+          expect(existsSync(join(work, "upload"))).toBe(true)
+          expect(existsSync(writePath)).toBe(false)
+          faults.writeFailure = undefined
 
           faults.readFailure = new Error("read refused")
           const readFailure = yield* Effect.flip(session.readFile(`${work}/anything`))
           expect((readFailure as ProviderError).code).toBe("unknown")
           faults.readFailure = undefined
 
-          // A file that exists but cannot be opened fails while draining.
-          writeFileSync(join(work, "sealed.bin"), "sealed")
-          chmodSync(join(work, "sealed.bin"), 0)
-          const sealed = yield* Effect.flip(session.readFile(join(work, "sealed.bin")))
-          expect(sealed).toMatchObject({ code: "unknown" })
+          // Partial bytes must not turn a stream failure into a successful read.
+          const readPath = join(work, "stream.bin")
+          writeFileSync(readPath, "content")
+          faults.readStreamFailure = new Error("stream interrupted")
+          const streamFailure = yield* Effect.flip(session.readFile(readPath))
+          expect(streamFailure).toMatchObject({
+            code: "unknown",
+            message: `vercel-sandbox: could not drain ${readPath}`,
+            cause: faults.readStreamFailure
+          })
+          faults.readStreamFailure = undefined
 
           // A dying machine reports commands as finished without running them.
           faults.commandFailure = { exitCode: 9 }
