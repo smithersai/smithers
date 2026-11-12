@@ -1,0 +1,73 @@
+import { describe, expect, it } from "@effect/vitest"
+import {
+  accountRoute, admittedRole, bootstrapGrant, brokerPendingAccepted, brokerStateAccepted, callbackAccepted, connectConfirmed,
+  connectRefused, connectReturn, failureAnswer, grantNeedsAuthority, grantUnchanged, originAccepted, ownerRefused, personId,
+  pruned, resumableOp, resumeToken, sameSiteRequest, sandboxOriginAdmitted, secretsAccepted, signedInAndAllowed, stepOutcome,
+  unexpired, writeOriginAdmitted,
+} from "../worker/accountsDecision.vibe"
+
+const SITE = "https://vibelang.example"
+const CALLBACK = "/api/auth/callback"
+
+describe("the account host's admission decisions", () => {
+  it("takes writes only from the site, except the handoff page's same-site callback post", () => {
+    expect(writeOriginAdmitted("GET", undefined, SITE, "/api/roles", undefined)).toBe(true)
+    expect(writeOriginAdmitted("POST", SITE, SITE, "/api/roles", undefined)).toBe(true)
+    expect(writeOriginAdmitted("POST", undefined, SITE, "/api/roles", undefined)).toBe(false)
+    expect(writeOriginAdmitted("POST", "https://evil.example", SITE, CALLBACK, "same-origin")).toBe(false)
+    expect(writeOriginAdmitted("POST", "null", SITE, CALLBACK, "same-origin")).toBe(true)
+    expect(writeOriginAdmitted("POST", "null", SITE, CALLBACK, "cross-site")).toBe(false)
+    expect(writeOriginAdmitted("POST", "null", SITE, "/api/roles", "same-origin")).toBe(false)
+  })
+  it("answers issue, wiki and role routes only on the site's URL, writes only from its pages", () => {
+    expect([sameSiteRequest(SITE, SITE, "GET", undefined), sameSiteRequest("https://other.example", SITE, "GET", SITE), sameSiteRequest(SITE, SITE, "POST", undefined), sameSiteRequest(SITE, SITE, "POST", SITE)]).toEqual([true, false, false, true])
+    expect([sandboxOriginAdmitted("GET", undefined, SITE), sandboxOriginAdmitted("POST", SITE, SITE), sandboxOriginAdmitted("DELETE", "https://evil.example", SITE)]).toEqual([true, true, false])
+  })
+  it("configures sign-in only with a long secret, a decimal first maintainer and an https or loopback origin", () => {
+    expect([secretsAccepted(32, "1"), secretsAccepted(31, "1"), secretsAccepted(64, "0"), secretsAccepted(64, "01"), secretsAccepted(64, "1".repeat(20)), secretsAccepted(64, "1".repeat(21)), secretsAccepted(64, "1a")]).toEqual([true, false, false, false, true, false, false])
+    expect(originAccepted("https:", "vibelang.example", SITE, SITE)).toBe(true)
+    expect(originAccepted("https:", "vibelang.example", SITE, SITE + "/")).toBe(false)
+    expect(["localhost", "127.0.0.1", "[::1]", "example.com"].map((host) => originAccepted("http:", host, `http://${host}`, `http://${host}`))).toEqual([true, true, true, false])
+    expect([bootstrapGrant("42"), bootstrapGrant("042"), bootstrapGrant(""), bootstrapGrant("4 2")]).toEqual([true, false, false, false])
+  })
+  it("names each account route by path and method, the callback's GET a handoff only without code and state", () => {
+    expect(accountRoute("/api/auth/session", "GET", false, false)).toBe("session")
+    expect([accountRoute("/api/auth/device", "GET", false, false), accountRoute("/api/auth/device", "POST", false, false), accountRoute("/api/auth/device", "PUT", false, false)]).toEqual(["device-id", "device", ""])
+    expect([accountRoute(CALLBACK, "GET", false, false), accountRoute(CALLBACK, "GET", true, false), accountRoute(CALLBACK, "GET", false, true), accountRoute(CALLBACK, "POST", true, true)]).toEqual(["handoff", "callback", "callback", "broker-callback"])
+    expect([accountRoute("/api/roles", "GET", false, false), accountRoute("/api/roles", "POST", false, false), accountRoute("/api/roles/events", "GET", false, false), accountRoute("/api/roles/events", "POST", false, false)]).toEqual(["members", "grant", "role-events", ""])
+    expect([accountRoute("/api/auth/connect", "GET", false, false), accountRoute("/api/auth/sign-in", "POST", false, false), accountRoute("/api/auth/nope", "GET", false, false)]).toEqual(["", "", ""])
+  })
+  it("refuses a malformed Connect query and returns to where it started", () => {
+    expect(connectRefused(undefined, true, undefined, undefined, undefined)).toBe(false)
+    expect(connectRefused("Home", false, undefined, undefined, undefined)).toBe(true)
+    expect(connectRefused(undefined, true, "comment", undefined, undefined)).toBe(true)
+    expect(connectRefused(undefined, true, undefined, "k1", undefined)).toBe(true)
+    expect(connectRefused(undefined, true, "approve", "k1", undefined)).toBe(true)
+    expect(connectRefused(undefined, true, "comment", "k 1", undefined)).toBe(true)
+    expect(connectRefused(undefined, true, "comment", "k1", "r1")).toBe(false)
+    expect(connectRefused(undefined, true, undefined, undefined, "r1")).toBe(true)
+    expect(connectRefused(undefined, true, "comment", "k1", "r_1")).toBe(true)
+    expect([resumableOp("decline"), resumableOp("merge"), resumeToken("a".repeat(100)), resumeToken("a".repeat(101)), resumeToken(""), resumeToken("A-z9")]).toEqual([true, false, true, false, false, true])
+    expect(connectReturn("Home", "comment", "k1", undefined)).toBe("/wiki/Home")
+    expect(connectReturn(undefined, undefined, undefined, undefined)).toBe("/?issues=1")
+    expect(connectReturn(undefined, "comment", "k1", undefined)).toBe("/?issues=1&resume-op=comment&resume-key=k1")
+    expect(connectReturn(undefined, "comment", "k1", "r1")).toBe("/?issues=1&resume-op=comment&resume-key=k1&resume-recovery=r1")
+  })
+  it("finishes a sign-in only on its own signed state, before expiry, for the person who pressed it", () => {
+    const nonce = "A".repeat(43)
+    expect([brokerStateAccepted(true, nonce, nonce), brokerStateAccepted(false, nonce, nonce), brokerStateAccepted(true, nonce, "B".repeat(43)), brokerStateAccepted(true, "A".repeat(42), "A".repeat(42))]).toEqual([true, false, false, false])
+    expect([brokerPendingAccepted(SITE, SITE, nonce, nonce, 11, 10), brokerPendingAccepted(SITE, SITE, nonce, nonce, 10, 10), brokerPendingAccepted("https://other.example", SITE, nonce, nonce, 11, 10)]).toEqual([true, false, false])
+    expect([connectConfirmed(true, "s", "s", "7", "7", true, true), connectConfirmed(false, "s", "s", "7", "7", true, true), connectConfirmed(true, "s", "t", "7", "7", true, true), connectConfirmed(true, "s", "s", "7", "8", true, true), connectConfirmed(true, "s", "s", "7", "7", false, true)]).toEqual([true, false, false, false, false])
+    expect([callbackAccepted(true, "x", "x", 4096), callbackAccepted(true, "x", "x", 4097), callbackAccepted(false, "x", "x", 1), callbackAccepted(true, "x", "y", 1)]).toEqual([true, false, false, false])
+    expect([unexpired(11, 10), unexpired(10, 10), pruned(undefined, 10), pruned(10, 10), pruned(11, 10)]).toEqual([true, false, true, true, false])
+    expect([personId(true, 1), personId(true, 0), personId(false, 5)]).toEqual([true, false, false])
+  })
+  it("grants, answers failures and keeps roles only as the policy admits", () => {
+    expect([grantNeedsAuthority("1", "1"), grantNeedsAuthority("1", "2"), grantUnchanged("community", "community"), grantUnchanged("community", "maintainer")]).toEqual([false, true, true, false])
+    expect([failureAnswer(CALLBACK, "POST"), failureAnswer(CALLBACK, "GET"), failureAnswer("/api/auth/sign-in", "GET"), failureAnswer("/api/roles", "POST")]).toEqual(["callback-post", "redirect", "redirect", "unavailable"])
+    expect([stepOutcome(200), stepOutcome(399), stepOutcome(400), stepOutcome(503)]).toEqual(["accepted", "accepted", "refused", "refused"])
+    expect([admittedRole(true, "maintainer"), admittedRole(false, "maintainer")]).toEqual(["maintainer", "viewer"])
+    expect([signedInAndAllowed("1", true), signedInAndAllowed("", true), signedInAndAllowed("1", false)]).toEqual([true, false, false])
+    expect([ownerRefused("", undefined), ownerRefused("a", undefined), ownerRefused("a", "a"), ownerRefused("a", "b")]).toEqual([true, false, false, true])
+  })
+})

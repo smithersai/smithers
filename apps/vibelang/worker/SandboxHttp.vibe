@@ -3,6 +3,8 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Factory, Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
 import { monthOf, nextMonth, millisecondOf } from "../src/core/sandboxMeter.vibe"
 import { observed } from "../src/core/sandboxHost.vibe"
+import { validBodyLength } from "../src/core/protocolDecision.vibe"
+import { refusalStatus, sandboxVerb, sandboxWrite } from "./sandboxWorkerDecision.vibe"
 
 export interface Gateway<R = never> {
   sandbox(conversation: string): SandboxSnapshot!(Unavailable | Refused)!(HttpServerRequest.HttpServerRequest | R)
@@ -33,17 +35,19 @@ export effect function sandboxRequest<R>(gateway: Gateway<R>) {
   const conversation = match[1]!
   const action = match[2]
   return observed(`http-${action ?? "read"}`, effect {
-    if (action === undefined && request.method === "GET") return json(try gateway.sandbox(conversation))
-    if (request.method !== "POST" || action === undefined) return json({ error: "not found" }, 404)
+    const verb = sandboxVerb(action, request.method)
+    if (verb === "read") return json(try gateway.sandbox(conversation))
+    if (verb === "not-found" || action === undefined) return json({ error: "not found" }, 404)
     const length = Number(request.headers["content-length"] ?? "0")
-    if (!Number.isSafeInteger(length) || length < 1 || length > 20000) return json({ error: "body size" }, 413)
+    if (!Number.isSafeInteger(length) || !validBodyLength(length, 20000)) return json({ error: "body size" }, 413)
     const text = request.text catch () => ""
     const body = decode(text) catch () => undefined
     if (body === undefined) return json({ error: "body" }, 400)
-    if (action === "start") return json(try gateway.startSandbox(conversation, body.operationId))
-    if (body.generation === undefined) return json({ error: "generation" }, 400)
-    if (action === "stop") return json(try gateway.stopSandbox(conversation, body.operationId, body.generation))
-    if (body.command === undefined) return json({ error: "command" }, 400)
+    const write = sandboxWrite(action, body.generation !== undefined, body.command !== undefined)
+    if (write === "start") return json(try gateway.startSandbox(conversation, body.operationId))
+    if (write === "generation" || body.generation === undefined) return json({ error: "generation" }, 400)
+    if (write === "stop") return json(try gateway.stopSandbox(conversation, body.operationId, body.generation))
+    if (write === "command-missing" || body.command === undefined) return json({ error: "command" }, 400)
     return json({ output: try gateway.sandboxCommand(conversation, body.operationId, body.command, body.generation) })
-  }) catch (error) => error._tag === "Refused" ? json({ refusal: error.refusal, ...(error.reason === undefined ? {} : { reason: error.reason }) }, error.refusal === "forbidden" ? 403 : 409) : json({ error: "sandbox unavailable" }, 503)
+  }) catch (error) => error._tag === "Refused" ? json({ refusal: error.refusal, ...(error.reason === undefined ? {} : { reason: error.reason }) }, refusalStatus(error.refusal)) : json({ error: "sandbox unavailable" }, 503)
 }

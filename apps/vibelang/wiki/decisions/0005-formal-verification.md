@@ -243,3 +243,8 @@ distinguishes contracted functions from still-unproved logic; the proof gate che
 screen's request routing and the page entry choose every label, variant, button and body through proved decision
 modules; the views only build Html. LemmaScript gained string `lastIndexOf`. Html construction, Unicode casing,
 locale formatting and real division remain named boundaries.
+
+**Server decisions (0018, lane vl-proveall2 worker batch, 2026-11-11).** The account host, the Actions protocol and run
+directory, the sandbox probe, protocol and account objects, the agent drafts and the site Worker now call five proved
+modules (`worker/accountsDecision.vibe`, `actionsDecision`, `sandboxWorkerDecision`, `draftDecision`, `workerDecision`).
+No `worker/` row is left marked not proved; the boundaries that remain are named in 0018's inventory.

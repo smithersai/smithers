@@ -16,6 +16,7 @@ from sources import production_sources, require_proved
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 from web_mutations import cases as web_cases
+from worker_mutations import cases as worker_cases
 from arm_mutations import cases as arm_cases
 # These mutate native adapters and are rejected by behavioral tests, not Dafny.
 # The full verify:broken gate runs both registries and reports their counts separately.
@@ -169,6 +170,7 @@ cases += [
 ('src/core/sandboxDecision.vibe', 'meter-step-count', 'meterStep', 'intervalUsageMilliseconds(count, ', 'intervalUsageMilliseconds(1, ', 'every running sandbox accrues the interval'),
 ]
 cases += web_cases
+cases += worker_cases
 cases += arm_cases
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...]')
 out=pathlib.Path(sys.argv[1]).resolve()

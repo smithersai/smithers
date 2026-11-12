@@ -1,0 +1,94 @@
+// Small server decisions (0018, lane vl-proveall2 worker batch): the site Worker's routes (index.vibe), the object
+// start-up's states and members (ObjectStartup.vibe), a post's owner record (ObjectStorage.vibe), and a VIP review's pull
+// number (Issues.vibe). Each kernel restates an expression
+// those modules used; the callers keep URL parsing, the asset binding, Number, Deferred and Proxy, storage and clients.
+
+export type SiteRoute = "api" | "health" | "fetch" | "not-found"
+
+/** A built asset's path: under /assets or /media, a file name with an extension, no query mark. */
+//@ verify
+//@ ensures \result == \matches("^/(?:assets|media)/[^?]+\\.[^/]+$", path)
+export function assetPath(path: string): boolean {
+  return /^\/(?:assets|media)\/[^?]+\.[^/]+$/.test(path)
+}
+
+/**
+ * The site Worker hands /api/* to the API Worker when it is bound; without it only /api/health answers (mock). Other
+ * paths are fetched from the assets only when they are an app page (home, a wiki page, the history) or a built asset.
+ */
+//@ verify
+//@ ensures path.startsWith("/api/") ==> \result == (hasApi ? "api" : (path == "/api/health" ? "health" : "not-found"))
+//@ ensures !path.startsWith("/api/") ==> \result == ((wiki || path == "/" || path == "/index.html" || path == "/history" || path.startsWith("/history/") || assetPath(path)) ? "fetch" : "not-found")
+export function siteRoute(path: string, hasApi: boolean, wiki: boolean): SiteRoute {
+  if (path.startsWith("/api/")) {
+    if (hasApi) return "api"
+    return path === "/api/health" ? "health" : "not-found"
+  }
+  const page = wiki || path === "/" || path === "/index.html" || path === "/history" || path.startsWith("/history/")
+  if (!page && !assetPath(path)) return "not-found"
+  return "fetch"
+}
+
+/** An asset path the binding answered with HTML (its SPA fallback) is not found: only real files are served. */
+//@ verify
+//@ ensures \result == (asset && html)
+export function assetFallback(asset: boolean, html: boolean): boolean {
+  return asset && html
+}
+
+/** An object's start-up is ready when its program succeeded, else failed. */
+//@ verify
+//@ ensures \result == (success ? "ready" : "failed")
+export function startupAfter(success: boolean): "ready" | "failed" {
+  return success ? "ready" : "failed"
+}
+
+/** A start-up step ends done when its program succeeded, else failed. */
+//@ verify
+//@ ensures \result == (success ? "done" : "failed")
+export function stepEnd(success: boolean): "done" | "failed" {
+  return success ? "done" : "failed"
+}
+
+/** A call after a failed start-up is the person's explicit retry: it starts the object again. Waiting never does. */
+//@ verify
+//@ ensures \result == (startup == "failed")
+export function retriesStartup(startup: string): boolean {
+  return startup === "failed"
+}
+
+export type Member = "none" | "health" | "fetch" | "call"
+
+/** What a property of a starting object is: nothing (a symbol, `then`, an unknown name), health, fetch, or a method. */
+//@ verify
+//@ ensures (!named || property == "then" || !known) ==> \result == "none"
+//@ ensures named && property != "then" && known ==> \result == (property == "health" ? "health" : (property == "fetch" ? "fetch" : "call"))
+export function memberOf(named: boolean, property: string, known: boolean): Member {
+  if (!named || property === "then" || !known) return "none"
+  if (property === "health") return "health"
+  return property === "fetch" ? "fetch" : "call"
+}
+
+/** A failed start-up's log names a defect when its cause died, else a failure. */
+//@ verify
+//@ ensures \result == (dies ? "defect" : "failure")
+export function startupErrorType(dies: boolean): "defect" | "failure" {
+  return dies ? "defect" : "failure"
+}
+
+/** A post's owner is written with the event only for a Posted event whose host knows the owner. */
+//@ verify
+//@ ensures \result == (owner != undefined && type == "Posted")
+export function recordsOwner(owner: string | undefined, type: string): boolean {
+  return owner !== undefined && type === "Posted"
+}
+
+/** The pull number a VIP marker's review link names: after the repository's pull prefix, a positive decimal; "" else. */
+//@ verify
+//@ ensures (review.startsWith(prefix) && \matches("^[1-9][0-9]*$", review.slice(prefix.length))) ==> \result == review.slice(prefix.length)
+//@ ensures !(review.startsWith(prefix) && \matches("^[1-9][0-9]*$", review.slice(prefix.length))) ==> \result == ""
+export function reviewNumberText(review: string, prefix: string): string {
+  if (!review.startsWith(prefix)) return ""
+  const tail = review.slice(prefix.length)
+  return /^[1-9][0-9]*$/.test(tail) ? tail : ""
+}

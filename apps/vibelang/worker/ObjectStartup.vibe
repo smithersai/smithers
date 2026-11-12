@@ -2,6 +2,7 @@
 import { JournalDecode } from "@smthrs/flow"
 import { HttpServerResponse } from "effect/http"
 import type { ObjectState } from "./apiObjects.vibe"
+import { memberOf, retriesStartup, startupAfter, startupErrorType, stepEnd } from "./workerDecision.vibe"
 
 /** A start-up step's fixed name: `initialize` and `begin` are the host's, the rest the bodies' (worker/apiObjects.vibe). */
 export type Step = "initialize" | "begin" | "storage" | "sequencer" | "bootstrap" | "accounts"
@@ -33,7 +34,7 @@ export function step<A, E, R>(name: Step, program: A!E!R): A!E!R {
     if (steps._tag === "None") return try program
     const recorder = steps.value
     try recorder.record(name, "started")
-    return try onExit(program, (result) => recorder.record(name, result._tag === "Success" ? "done" : "failed"))
+    return try onExit(program, (result) => recorder.record(name, stepEnd(result._tag === "Success")))
   }
 }
 
@@ -67,10 +68,10 @@ export effect function make<A extends object, E, R>(objectClass: string, state: 
     const initializer = try Effect.forkIn(withSpan(effect {
       try steps.record("begin", "started")
       const result = try exit(program.pipe(Effect.timeout("5 seconds"), Effect.provideService(JournalDecode.Identity, { objectId, codeVersion }), Effect.provideService(Steps, steps)))
-      const startup = result._tag === "Success" ? "ready" : "failed"
+      const startup = startupAfter(result._tag === "Success")
       status = { ...status, startup }
       try note("initialize", startup)
-      if (result._tag === "Failure") try Effect.logError("vibelang.object.startup.failed").pipe(Effect.annotateLogs({ objectClass, objectId, codeVersion, step: status.step, errorType: Cause.hasDies(result.cause) ? "defect" : "failure" }))
+      if (result._tag === "Failure") try Effect.logError("vibelang.object.startup.failed").pipe(Effect.annotateLogs({ objectClass, objectId, codeVersion, step: status.step, errorType: startupErrorType(Cause.hasDies(result.cause)) }))
       if (result._tag === "Success") try Deferred.succeed(pending, result.value)
       else try Deferred.fail(pending, new ObjectStartupFailed({ objectClass, objectId, codeVersion }))
     }, "vibelang.object.startup").pipe(Effect.provideContext(context)), scope)
@@ -85,7 +86,7 @@ export effect function make<A extends object, E, R>(objectClass: string, state: 
   try start
   // A new call after failure is the person's explicit retry, never a timer or background retry loop.
   const joined = effect {
-    try Semaphore.withPermits(lock, 1)(effect { if (status.startup === "failed") try start })
+    try Semaphore.withPermits(lock, 1)(effect { if (retriesStartup(status.startup)) try start })
     return try Deferred.await(ready).pipe(
       Effect.timeout("5 seconds"),
       Effect.catchTag("TimeoutError", () => effect {
@@ -105,9 +106,10 @@ export effect function make<A extends object, E, R>(objectClass: string, state: 
   const known = new Set<string>(["health", ...Object.keys(members)])
   const api = new Proxy({ health, ...Object.fromEntries(Object.keys(members).map(name => [name, undefined])) }, {
     get: (_target, property: string | symbol) => {
-      if (typeof property !== "string" || property === "then" || !known.has(property)) return undefined
-      if (property === "health") return health
-      if (property === "fetch") return joined.pipe(
+      const member = memberOf(typeof property === "string", typeof property === "string" ? property : "", typeof property === "string" && known.has(property))
+      if (member === "none" || typeof property !== "string") return undefined
+      if (member === "health") return health
+      if (member === "fetch") return joined.pipe(
         Effect.flatMap((service) => (service as { readonly fetch: HttpServerResponse.HttpServerResponse!! }).fetch),
         Effect.provideService(JournalDecode.Identity, { objectId, codeVersion }),
         Effect.catchCause(() => succeed(HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } }))),

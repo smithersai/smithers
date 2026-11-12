@@ -477,3 +477,8 @@ was added. The focused API regression is `test/liveIssues.workerd.test.vibe`; br
 **View decision extraction (0018, lane vl-proveall2).** The existing pane, scene, role and wiki view tests pass
 unchanged over the extracted decisions; `test/actionViewDecision.test.vibe` and `test/paneViewDecisions.test.vibe`
 check each new decision's cases directly. No tool or dependency is added.
+
+**Server decision extraction (0018, lane vl-proveall2 worker batch).** Each new module has a unit test
+(`test/accountsDecision.test.vibe`, `actionsDecision`, `sandboxWorkerDecision`, `draftDecision`, `workerDecision`); the
+account, Actions, sandbox, draft, start-up, site and issue tests pass unchanged over the refactored shells. No tool was
+added.

@@ -3,6 +3,7 @@ import { HttpServerRequest } from "effect/http"
 import type { Action, Role } from "../src/core/conversation.vibe"
 import { postName, type Identity } from "../src/core/roles.vibe"
 import { cookieOf } from "./Accounts.vibe"
+import { admittedRole } from "./accountsDecision.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 export interface Principal { readonly owner: string; readonly role: Role; readonly name?: string; readonly agent?: boolean }
 export const signedOut = { request: () => succeed({ owner: "", role: "viewer" as const }), role: (_owner: string) => succeed("viewer" as const) }
@@ -26,7 +27,7 @@ export function fromAccounts(accounts: Authority, trusted?: { readonly owner: st
       const request = try HttpServerRequest.HttpServerRequest
       const person = try accounts.current(cookieOf(request))
       const admitted = person.id !== "" && (try accounts.allowed(person.id, "action"))
-      return { owner: person.id, name: postName(person), ...(person.agent === true ? { agent: true } : {}), role: admitted ? person.role : "viewer" as const }
+      return { owner: person.id, name: postName(person), ...(person.agent === true ? { agent: true } : {}), role: admittedRole(admitted, person.role) }
     },
     role: effect (owner) => {
       if (owner === "" || !(try accounts.allowed(owner, "action"))) return "viewer" as const

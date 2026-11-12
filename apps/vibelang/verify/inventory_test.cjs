@@ -141,3 +141,11 @@ test('native SQL, storage and clock calls are effect shells while regexp exec an
     ['now', 'effectful shell'], ['pattern', 'pure logic'], ['member', 'pure logic'],
   ]);
 });
+
+test('a nested function\'s own boundary wins over its enclosing function\'s and the file\'s', () => {
+  const file = path.join(app, 'worker/Accounts.vibe');
+  const rows = inventorySource(file, fs.readFileSync(file, 'utf8'));
+  // `make/presented` has its own entry; before the full-label lookup only the top-level `make` key was read.
+  assert.match(rows.find(row => row.label === 'make/presented')?.why ?? '', /^Calls the proved presentedSession with the configured origin/);
+  assert.match(rows.find(row => row.label === 'make/session')?.why ?? '', /^Calls the proved accountsDecision/);
+});

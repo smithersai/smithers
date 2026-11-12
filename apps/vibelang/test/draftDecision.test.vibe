@@ -1,0 +1,15 @@
+import { describe, expect, it } from "@effect/vitest"
+import { agentFailure, draftablePage, draftKept, usageReported } from "../worker/draftDecision.vibe"
+
+describe("the agent drafts' decisions", () => {
+  it("settles reported usage only when a call was made and every call reported", () => {
+    expect([usageReported(1, undefined), usageReported(0, undefined), usageReported(2, 1)]).toEqual([true, false, false])
+  })
+  it("blames the budget for a spent day, else the run", () => {
+    expect([agentFailure(true, "draft"), agentFailure(false, "draft"), agentFailure(false, "review")]).toEqual(["budget", "draft", "review"])
+  })
+  it("keeps a draft only of the page asked, with text, and drafts only known pages but the decision log", () => {
+    expect([draftKept("Home", "Home", false), draftKept("Other", "Home", false), draftKept("Home", "Home", true)]).toEqual([true, false, false])
+    expect([draftablePage(true, "Home"), draftablePage(false, "Home"), draftablePage(true, "decisions")]).toEqual([true, false, false])
+  })
+})

@@ -10,6 +10,8 @@ import { failureReason, type Machines } from "../src/core/sandboxHost.vibe"
 import type { MachineShape, ObjectState } from "./machineObject.vibe"
 import * as Sandboxes from "./Sandboxes.vibe"
 import { signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
+import { ownerRefused, signedInAndAllowed } from "./accountsDecision.vibe"
+import { executionKind, gatewayChoice, leaseRunning, serialized } from "./sandboxWorkerDecision.vibe"
 
 /** Implement this adapter with 0019's Accounts.current and Policy.authorize; only server code can provide it. */
 export service SandboxIdentity {
@@ -36,7 +38,7 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
       if (!answer.ok) throw new Unavailable({ reason: `container-${kind}:${answer.reason}` })
       return answer.output
     }
-    const machines: Machines = { lease: (id, generation, milliseconds) => Effect.map(call(id, "lease", generation, "", String(milliseconds)), (status) => status === "running"), start: (id, generation) => Effect.asVoid(call(id, "start", generation)), stop: (id, generation) => Effect.asVoid(call(id, "stop", generation)), command: (id, generation, operationId, command) => call(id, "command", generation, operationId, command) }
+    const machines: Machines = { lease: (id, generation, milliseconds) => Effect.map(call(id, "lease", generation, "", String(milliseconds)), leaseRunning), start: (id, generation) => Effect.asVoid(call(id, "start", generation)), stop: (id, generation) => Effect.asVoid(call(id, "stop", generation)), command: (id, generation, operationId, command) => call(id, "command", generation, operationId, command) }
     const policy = Layer.succeed(SandboxPolicy, { current: effect () => {
       const owner = (try promise(() => state.raw.storage.get<string>("owner"))) ?? ""
       return { owner, role: try Effect.provideService(identity.role(owner), RuntimeContext, runtime) }
@@ -48,14 +50,14 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
       run: effect (owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
         const work = effect {
           const saved = try promise(() => state.raw.storage.get<string>("owner"))
-          if (owner === "" || saved !== undefined && saved !== owner) throw new Refused({ refusal: "forbidden" })
+          if (ownerRefused(owner, saved)) throw new Refused({ refusal: "forbidden" })
           if (!mayStart(try identity.role(owner))) throw new Refused({ refusal: "forbidden" })
           if (saved === undefined) try promise(() => state.raw.storage.put("owner", owner))
-          const answer = try Sandboxes.execute(id, state.raw.storage, host, kind === "read" ? "meter" : kind, conversation, operationId, generation, command)
+          const answer = try Sandboxes.execute(id, state.raw.storage, host, executionKind(kind), conversation, operationId, generation, command)
           return { ok: true as const, snapshot: try host.snapshot(conversation), output: typeof answer === "string" ? answer : "" }
         }
         // A failed stop is still running in the persisted ledger; no success receipt is returned.
-        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch (error) => error._tag === "Refused" ? { ok: false as const, refusal: error.refusal } : { ok: false as const, refusal: "unavailable", reason: failureReason(error) }
+        return (serialized(kind) ? Semaphore.withPermits(gate, 1)(work) : work) catch (error) => error._tag === "Refused" ? { ok: false as const, refusal: error.refusal } : { ok: false as const, refusal: "unavailable", reason: failureReason(error) }
       },
       alarm: effect () => {
         // Arm the retry BEFORE work: a failed container stop must not strand a running machine.
@@ -71,10 +73,9 @@ export function gatewayOf(namespace: Named<AccountShape>, identity: SandboxIdent
   const request = effect (kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
     const runtime = try RuntimeContext
     const principal = try identity.request()
-    if (principal.owner === "" || !mayStart(principal.role)) {
-      if (kind === "read") return { ok: true as const, snapshot: try signedOutGateway.sandbox(conversation), output: "" }
-      throw new Refused({ refusal: "forbidden" })
-    }
+    const choice = gatewayChoice(signedInAndAllowed(principal.owner, mayStart(principal.role)), kind)
+    if (choice === "signed-out-read") return { ok: true as const, snapshot: try signedOutGateway.sandbox(conversation), output: "" }
+    if (choice === "forbidden") throw new Refused({ refusal: "forbidden" })
     const stub = try Effect.mapError(Effect.try(() => namespace.getByName(principal.owner)), () => new Unavailable({ reason: "sandbox-binding" }))
     const answer = try Effect.provideService(stub.run(principal.owner, kind, conversation, operationId, generation, command), RuntimeContext, runtime)
     if (!answer.ok) throw new Refused({ refusal: answer.refusal, ...(answer.reason === undefined ? {} : { reason: answer.reason }) })

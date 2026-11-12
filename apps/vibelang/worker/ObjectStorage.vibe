@@ -3,6 +3,7 @@
 import type { Event } from "../src/core/conversation.vibe"
 import type { Ledger } from "./Budget.vibe"
 import type { Log } from "./Sequencer.vibe"
+import { recordsOwner } from "./workerDecision.vibe"
 
 /** The slice of `ctx.storage` the log, the ledger and the reply's execution use: its key-value API and alarm. */
 export interface KeyValue {
@@ -32,7 +33,7 @@ export function logOver(storage: KeyValue): Log {
     },
     write: effect (event: Event, owner?: string) => {
       // Ownership and the accepted post commit together, under the sequencer lock. Duplicate client ids cannot reassign it.
-      try promise(() => storage.put(owner !== undefined && event.type === "Posted" ? { [eventKey(event.seq)]: event, [`post-owner/${event.id}`]: owner } : { [eventKey(event.seq)]: event }))
+      try promise(() => storage.put(recordsOwner(owner, event.type) && owner !== undefined ? { [eventKey(event.seq)]: event, [`post-owner/${event.id}`]: owner } : { [eventKey(event.seq)]: event }))
     },
   }
 }

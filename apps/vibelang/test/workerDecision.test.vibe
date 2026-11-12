@@ -1,0 +1,22 @@
+import { describe, expect, it } from "@effect/vitest"
+import { assetFallback, assetPath, memberOf, recordsOwner, retriesStartup, reviewNumberText, siteRoute, startupAfter, startupErrorType, stepEnd } from "../worker/workerDecision.vibe"
+
+describe("small server decisions", () => {
+  it("routes the site: the API when bound, mock health without it, pages and built assets", () => {
+    expect([siteRoute("/api/posts", true, false), siteRoute("/api/health", false, false), siteRoute("/api/posts", false, false)]).toEqual(["api", "health", "not-found"])
+    expect(["/", "/index.html", "/history", "/history/m1", "/assets/app.js", "/media/a.mp3", "/assets/app", "/nope", "/historyx"].map((path) => siteRoute(path, true, false))).toEqual(["fetch", "fetch", "fetch", "fetch", "fetch", "fetch", "not-found", "not-found", "not-found"])
+    expect(siteRoute("/wiki/home", false, true)).toBe("fetch")
+    expect([assetPath("/assets/a.b"), assetPath("/assets/a?.b"), assetPath("/assets/a.b/c"), assetPath("/media/x/y.z")]).toEqual([true, false, false, true])
+    expect([assetFallback(true, true), assetFallback(false, true), assetFallback(true, false)]).toEqual([true, false, false])
+  })
+  it("names the start-up's states and the starting object's members", () => {
+    expect([startupAfter(true), startupAfter(false), stepEnd(true), stepEnd(false), startupErrorType(true), startupErrorType(false)]).toEqual(["ready", "failed", "done", "failed", "defect", "failure"])
+    expect([retriesStartup("failed"), retriesStartup("starting"), retriesStartup("ready")]).toEqual([true, false, false])
+    expect([memberOf(false, "", false), memberOf(true, "then", true), memberOf(true, "post", false), memberOf(true, "health", true), memberOf(true, "fetch", true), memberOf(true, "post", true)]).toEqual(["none", "none", "none", "health", "fetch", "call"])
+  })
+  it("records a post's owner only with its Posted event, and reads a VIP review's pull number", () => {
+    expect([recordsOwner("1", "Posted"), recordsOwner(undefined, "Posted"), recordsOwner("1", "ReplyStarted")]).toEqual([true, false, false])
+    const prefix = "https://github.com/smithersai/vibelang/pull/"
+    expect([reviewNumberText(prefix + "12", prefix), reviewNumberText(prefix + "012", prefix), reviewNumberText(prefix + "12x", prefix), reviewNumberText("https://github.com/other/repo/pull/12", prefix), reviewNumberText(prefix, prefix)]).toEqual(["12", "", "", "", ""])
+  })
+})

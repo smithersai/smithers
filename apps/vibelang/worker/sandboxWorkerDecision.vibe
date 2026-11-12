@@ -1,0 +1,145 @@
+// The server's sandbox decisions (0024; 0018, lane vl-proveall2 worker batch), for sandboxProbeFetch.vibe,
+// SandboxHttp.vibe and accountObject.vibe. The callers keep the token digest, Number, clocks, the route RegExp's capture,
+// Schema decoding and every object call. Each kernel restates an expression those modules used.
+
+/** The longest a probe owner may hold compute, in milliseconds (PROBE_WINDOW_MS). */
+export const PROBE_WINDOW = 600000
+
+/** A probe owner is `probe-` and a 13-digit deadline in milliseconds. */
+//@ verify
+//@ ensures \result == \matches("^probe-[0-9]{13}$", owner)
+export function probeOwnerShaped(owner: string): boolean {
+  return /^probe-[0-9]{13}$/.test(owner)
+}
+
+/** An owner holds compute only before its deadline, and only a deadline within the window is accepted. */
+//@ verify
+//@ ensures \result == (deadline != undefined && now < deadline && deadline - now <= 600000)
+//@ ensures \result ==> deadline != undefined && 0 < deadline - now
+export function probeAdmitted(deadline: number | undefined, now: number): boolean {
+  return deadline !== undefined && now < deadline && deadline - now <= 600000
+}
+
+/** A lease never outlives its owner's deadline (now, for an id with none), nor drops below one second. */
+//@ verify
+//@ ensures \result >= 1000
+//@ ensures \result == Math.max(1000, Math.min(milliseconds, (deadline == undefined ? now : deadline) - now))
+//@ ensures deadline == undefined ==> \result == 1000 || \result == milliseconds && milliseconds <= 1000
+export function leaseMillis(deadline: number | undefined, milliseconds: number, now: number): number {
+  const until = deadline === undefined ? now : deadline
+  return Math.max(1000, Math.min(milliseconds, until - now))
+}
+
+/** A probe request's principal: its owner while its token matches and the owner is admitted, else nobody. */
+//@ verify
+//@ ensures \result == ((authorized && admitted) ? owner : "")
+export function probeOwnerOf(authorized: boolean, admitted: boolean, owner: string): string {
+  return authorized && admitted ? owner : ""
+}
+
+/** A probe owner is a Contributor while admitted, else a Viewer. */
+//@ verify
+//@ ensures \result == (admitted ? "contributor" : "viewer")
+export function probeRole(admitted: boolean): "contributor" | "viewer" {
+  return admitted ? "contributor" : "viewer"
+}
+
+export type ProbeRoute = "sandbox" | "sweep" | "machine" | "container" | "not-found"
+
+/**
+ * The probe Worker serves the product's sandbox protocol and three POST routes: the sweep, the owner's direct machine
+ * and its Container recording; nothing else.
+ */
+//@ verify
+//@ ensures path.startsWith("/api/sandboxes/") ==> \result == "sandbox"
+//@ ensures !path.startsWith("/api/sandboxes/") && method != "POST" ==> \result == "not-found"
+//@ ensures \result == "sweep" <==> !path.startsWith("/api/sandboxes/") && method == "POST" && path == "/api/probe/sweep"
+//@ ensures \result == "machine" <==> !path.startsWith("/api/sandboxes/") && method == "POST" && path == "/api/probe/machine"
+//@ ensures \result == "container" <==> !path.startsWith("/api/sandboxes/") && method == "POST" && path == "/api/probe/container"
+export function probeRoute(path: string, method: string): ProbeRoute {
+  if (path.startsWith("/api/sandboxes/")) return "sandbox"
+  if (method !== "POST") return "not-found"
+  if (path === "/api/probe/sweep") return "sweep"
+  if (path === "/api/probe/machine") return "machine"
+  if (path === "/api/probe/container") return "container"
+  return "not-found"
+}
+
+/** A recording is read only for the probe's two conversations: the live account's and the direct machine's. */
+//@ verify
+//@ ensures \result == (conversation == "live" || conversation == "direct")
+export function probeConversationKnown(conversation: string): boolean {
+  return conversation === "live" || conversation === "direct"
+}
+
+/** A container counts as still running unless its machine answered `stopped`. */
+//@ verify
+//@ ensures \result == (!ok || output != "stopped")
+export function stillRunning(ok: boolean, output: string): boolean {
+  return !ok || output !== "stopped"
+}
+
+export type SandboxVerb = "read" | "write" | "not-found"
+
+/** A sandbox request: GET without an action reads; POST with an action writes; anything else is not found. */
+//@ verify
+//@ ensures \result == ((action == undefined && method == "GET") ? "read" : ((method == "POST" && action != undefined) ? "write" : "not-found"))
+export function sandboxVerb(action: string | undefined, method: string): SandboxVerb {
+  if (action === undefined && method === "GET") return "read"
+  if (method !== "POST" || action === undefined) return "not-found"
+  return "write"
+}
+
+export type SandboxWrite = "start" | "stop" | "command" | "generation" | "command-missing"
+
+/** A decoded write: start needs nothing more; stop needs a generation; a command needs a generation and its text. */
+//@ verify
+//@ ensures action == "start" ==> \result == "start"
+//@ ensures action != "start" && !hasGeneration ==> \result == "generation"
+//@ ensures action == "stop" && hasGeneration ==> \result == "stop"
+//@ ensures action != "start" && action != "stop" && hasGeneration ==> \result == (hasCommand ? "command" : "command-missing")
+export function sandboxWrite(action: string, hasGeneration: boolean, hasCommand: boolean): SandboxWrite {
+  if (action === "start") return "start"
+  if (!hasGeneration) return "generation"
+  if (action === "stop") return "stop"
+  return hasCommand ? "command" : "command-missing"
+}
+
+/** A refused sandbox operation answers 403 when forbidden, else 409. */
+//@ verify
+//@ ensures \result == (refusal == "forbidden" ? 403 : 409)
+export function refusalStatus(refusal: string): number {
+  return refusal === "forbidden" ? 403 : 409
+}
+
+export type GatewayChoice = "ask" | "signed-out-read" | "forbidden"
+
+/** The gateway asks the person's account only for a signed-in principal who may start; others may only read. */
+//@ verify
+//@ ensures signedIn ==> \result == "ask"
+//@ ensures !signedIn ==> \result == (kind == "read" ? "signed-out-read" : "forbidden")
+export function gatewayChoice(signedIn: boolean, kind: string): GatewayChoice {
+  if (signedIn) return "ask"
+  return kind === "read" ? "signed-out-read" : "forbidden"
+}
+
+/** An account's read runs as the meter flow; every other kind runs as itself. */
+//@ verify
+//@ ensures \result == (kind == "read" ? "meter" : kind)
+export function executionKind(kind: "read" | "start" | "stop" | "command"): "meter" | "start" | "stop" | "command" {
+  return kind === "read" ? "meter" : kind
+}
+
+/** Every account operation but a command waits for the account's gate; commands run beside them. */
+//@ verify
+//@ ensures \result == (kind != "command")
+export function serialized(kind: string): boolean {
+  return kind !== "command"
+}
+
+/** A lease reports a live machine only when the machine answered `running`. */
+//@ verify
+//@ ensures \result == (status == "running")
+export function leaseRunning(status: string): boolean {
+  return status === "running"
+}

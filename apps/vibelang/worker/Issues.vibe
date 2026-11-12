@@ -16,6 +16,8 @@ import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { agentRefused, carriesCode, choiceLabel, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
+import { personId } from "./accountsDecision.vibe"
+import { reviewNumberText } from "./workerDecision.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
@@ -47,13 +49,12 @@ const markedVip = /<!-- vibelang:vip path=(docs\/design\/vips\/[A-Za-z0-9._-]+\.
 /** A body marker is only a claim: verify the native PR, its numeric author and document before classifying it. */
 export effect function verifiedVip(repo: Repository, body: string, author: number) {
   const match = Array.from(body.matchAll(markedVip)).at(-1)
-  if (match === undefined || !Number.isSafeInteger(author) || author <= 0) return undefined
+  if (match === undefined || !personId(Number.isSafeInteger(author), author)) return undefined
   const prefix = `https://github.com/${repo.owner}/${repo.name}/pull/`
   const review = match[2]!
-  if (!review.startsWith(prefix)) return undefined
-  const tail = review.slice(prefix.length)
+  const tail = reviewNumberText(review, prefix)
   const number = Number(tail)
-  if (!/^[1-9][0-9]*$/.test(tail) || !Number.isSafeInteger(number)) return undefined
+  if (tail === "" || !Number.isSafeInteger(number)) return undefined
   const observed = try GitHub.Proposals.documentReview(repo.owner, repo.name, number)
   if (Option.isNone(observed) || !Number.isSafeInteger(observed.value.author) || !vipDocumentMatches(author, observed.value.author, match[1]!, observed.value.files)) return undefined
   return { raw: match[0], at: match.index, path: match[1]!, review, number }

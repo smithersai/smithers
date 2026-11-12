@@ -1,0 +1,258 @@
+// The account host's admission decisions (0019; 0018, lane vl-proveall2 worker batch), for Accounts.vibe, accountObject.vibe
+// and ActionIdentity.vibe. The callers keep URL parsing, cookie signing and verification, Schema decoding, storage,
+// clocks, Number and the GitHub calls. Each kernel restates an expression those modules used.
+import type { Role } from "../src/core/conversation.vibe"
+
+export type AccountRoute = "session" | "device-id" | "device" | "install" | "connect" | "disconnect" | "sign-in"
+  | "handoff" | "broker-callback" | "callback" | "sign-out" | "role-events" | "grant" | "members" | ""
+
+/**
+ * A write (any method but GET) comes from the site's own origin. The one exception is the broker's handoff page: it
+ * posts the callback from the same site with Origin "null".
+ */
+//@ verify
+//@ ensures \result == (method == "GET" || origin == site || (path == "/api/auth/callback" && origin == "null" && fetchSite == "same-origin"))
+//@ ensures method != "GET" && origin == undefined ==> !\result
+export function writeOriginAdmitted(method: string, origin: string | undefined, site: string, path: string, fetchSite: string | undefined): boolean {
+  return method === "GET" || origin === site || (path === "/api/auth/callback" && origin === "null" && fetchSite === "same-origin")
+}
+
+/** The issue, wiki and role routes answer only the site's own URL, and take writes only from its own pages. */
+//@ verify
+//@ ensures \result == (urlOrigin == site && (method == "GET" || origin == site))
+export function sameSiteRequest(urlOrigin: string, site: string, method: string, origin: string | undefined): boolean {
+  return urlOrigin === site && (method === "GET" || origin === site)
+}
+
+/** A browser sandbox write binds the request's own origin; reads need no Origin. */
+//@ verify
+//@ ensures \result == (method == "GET" || origin == own)
+export function sandboxOriginAdmitted(method: string, origin: string | undefined, own: string): boolean {
+  return method === "GET" || origin === own
+}
+
+/** Sign-in is configured only with a signing secret of at least 32 characters and a GitHub id for the first maintainer: 1 to 20 digits, no leading zero. */
+//@ verify
+//@ ensures \result == (signingLength >= 32 && \matches("^[1-9][0-9]{0,19}$", initial))
+export function secretsAccepted(signingLength: number, initial: string): boolean {
+  return signingLength >= 32 && /^[1-9][0-9]{0,19}$/.test(initial)
+}
+
+/** The site's origin is https, or a loopback http origin (alchemy dev); either way exactly as configured, with no path. */
+//@ verify
+//@ ensures \result == ((protocol == "https:" || (protocol == "http:" && (hostname == "localhost" || hostname == "127.0.0.1" || hostname == "[::1]"))) && parsedOrigin == configured)
+export function originAccepted(protocol: string, hostname: string, parsedOrigin: string, configured: string): boolean {
+  const loopback = protocol === "http:" && (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]")
+  return (protocol === "https:" || loopback) && parsedOrigin === configured
+}
+
+/** The first maintainer is granted only for a positive decimal id with no leading zero. */
+//@ verify
+//@ ensures \result == \matches("^[1-9][0-9]*$", initial)
+export function bootstrapGrant(initial: string): boolean {
+  return /^[1-9][0-9]*$/.test(initial)
+}
+
+/** Which account route a request names. The callback's GET is the handoff page only without `code` and `state`. */
+//@ verify
+//@ ensures \result == "session" ==> path == "/api/auth/session" && method == "GET"
+//@ ensures \result == "handoff" ==> path == "/api/auth/callback" && method == "GET" && !hasCode && !hasState
+//@ ensures \result == "callback" ==> path == "/api/auth/callback" && method == "GET" && (hasCode || hasState)
+//@ ensures \result == "broker-callback" ==> path == "/api/auth/callback" && method == "POST"
+//@ ensures (\result == "device" || \result == "connect" || \result == "disconnect" || \result == "sign-out" || \result == "grant") ==> method == "POST"
+//@ ensures (\result == "device-id" || \result == "install" || \result == "sign-in" || \result == "role-events" || \result == "members") ==> method == "GET"
+//@ ensures path == "/api/auth/session" && method == "GET" ==> \result == "session"
+//@ ensures path == "/api/auth/device" ==> \result == (method == "GET" ? "device-id" : (method == "POST" ? "device" : ""))
+//@ ensures path == "/api/auth/install" ==> \result == (method == "GET" ? "install" : "")
+//@ ensures path == "/api/auth/connect" ==> \result == (method == "POST" ? "connect" : "")
+//@ ensures path == "/api/auth/disconnect" ==> \result == (method == "POST" ? "disconnect" : "")
+//@ ensures path == "/api/auth/sign-in" ==> \result == (method == "GET" ? "sign-in" : "")
+//@ ensures path == "/api/auth/callback" ==> \result == (method == "POST" ? "broker-callback" : (method == "GET" ? ((hasCode || hasState) ? "callback" : "handoff") : ""))
+//@ ensures path == "/api/auth/sign-out" ==> \result == (method == "POST" ? "sign-out" : "")
+//@ ensures path == "/api/roles/events" ==> \result == (method == "GET" ? "role-events" : "")
+//@ ensures path == "/api/roles" ==> \result == (method == "POST" ? "grant" : (method == "GET" ? "members" : ""))
+export function accountRoute(path: string, method: string, hasCode: boolean, hasState: boolean): AccountRoute {
+  if (path === "/api/auth/session" && method === "GET") return "session"
+  if (path === "/api/auth/device" && method === "GET") return "device-id"
+  if (path === "/api/auth/device" && method === "POST") return "device"
+  if (path === "/api/auth/install" && method === "GET") return "install"
+  if (path === "/api/auth/connect" && method === "POST") return "connect"
+  if (path === "/api/auth/disconnect" && method === "POST") return "disconnect"
+  if (path === "/api/auth/sign-in" && method === "GET") return "sign-in"
+  if (path === "/api/auth/callback" && method === "GET" && !hasCode && !hasState) return "handoff"
+  if (path === "/api/auth/callback" && method === "POST") return "broker-callback"
+  if (path === "/api/auth/callback" && method === "GET") return "callback"
+  if (path === "/api/auth/sign-out" && method === "POST") return "sign-out"
+  if (path === "/api/roles/events" && method === "GET") return "role-events"
+  if (path === "/api/roles" && method === "POST") return "grant"
+  if (path === "/api/roles" && method === "GET") return "members"
+  return ""
+}
+
+/** The issue operations a Connect press may resume after the broker returns. */
+//@ verify
+//@ ensures \result == (op == "new" || op == "comment" || op == "link" || op == "split" || op == "commit" || op == "uncommit" || op == "propose" || op == "accept" || op == "decline")
+export function resumableOp(op: string): boolean {
+  return op === "new" || op === "comment" || op === "link" || op === "split" || op === "commit" || op === "uncommit" || op === "propose" || op === "accept" || op === "decline"
+}
+
+/** Whether `code` is an ASCII letter, digit or hyphen: one unit of `[A-Za-z0-9-]`. */
+//@ verify
+//@ ensures \result == ((48 <= code && code <= 57) || (65 <= code && code <= 90) || (97 <= code && code <= 122) || code == 45)
+export function tokenUnit(code: number): boolean {
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 45
+}
+
+/** A resume key or recovery, `/^[A-Za-z0-9-]{1,100}$/`: 1 to 100 letters, digits and hyphens (a loop: the matcher stops at 64 repeats). */
+//@ verify
+//@ ensures \result == (1 <= text.length && text.length <= 100 && forall(i, 0 <= i && i < text.length ==> tokenUnit(text.charCodeAt(i))))
+export function resumeToken(text: string): boolean {
+  if (text.length < 1 || text.length > 100) return false
+  for (let i = 0; i < text.length; i++) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ invariant forall(j, 0 <= j && j < i ==> tokenUnit(text.charCodeAt(j)))
+    //@ decreases text.length - i
+    if (!tokenUnit(text.charCodeAt(i))) return false
+  }
+  return true
+}
+
+/**
+ * Whether a Connect press's query is refused: a wiki page that is not a wiki file; a resume operation without its key
+ * or the reverse, an operation that cannot resume or a malformed key; a recovery without a key, or malformed.
+ */
+//@ verify
+//@ ensures wikiPage != undefined && !wikiValid ==> \result
+//@ ensures (op != undefined) != (key != undefined) ==> \result
+//@ ensures op != undefined && key != undefined && !resumableOp(op) ==> \result
+//@ ensures op != undefined && key != undefined && !(1 <= key.length && key.length <= 100 && forall(i, 0 <= i && i < key.length ==> tokenUnit(key.charCodeAt(i)))) ==> \result
+//@ ensures recovery != undefined && key == undefined ==> \result
+//@ ensures recovery != undefined && !(1 <= recovery.length && recovery.length <= 100 && forall(i, 0 <= i && i < recovery.length ==> tokenUnit(recovery.charCodeAt(i)))) ==> \result
+//@ ensures (wikiPage == undefined || wikiValid) && op == undefined && key == undefined && recovery == undefined ==> !\result
+//@ ensures (wikiPage == undefined || wikiValid) && op != undefined && key != undefined && resumableOp(op) && (1 <= key.length && key.length <= 100 && forall(i, 0 <= i && i < key.length ==> tokenUnit(key.charCodeAt(i)))) && (recovery == undefined || (1 <= recovery.length && recovery.length <= 100 && forall(i, 0 <= i && i < recovery.length ==> tokenUnit(recovery.charCodeAt(i))))) ==> !\result
+export function connectRefused(wikiPage: string | undefined, wikiValid: boolean, op: string | undefined, key: string | undefined, recovery: string | undefined): boolean {
+  if (wikiPage !== undefined && !wikiValid) return true
+  if (op !== undefined || key !== undefined) {
+    if (op === undefined || key === undefined) return true
+    if (!resumableOp(op) || !resumeToken(key)) return true
+  }
+  if (recovery !== undefined && (key === undefined || !resumeToken(recovery))) return true
+  return false
+}
+
+/** Where a finished Connect returns: the wiki page it started from, else the issues pane, carrying a complete resume. */
+//@ verify
+//@ ensures wikiPage != undefined ==> \result == "/wiki/" + wikiPage
+//@ ensures wikiPage == undefined && (op == undefined || key == undefined) ==> \result == "/?issues=1"
+//@ ensures wikiPage == undefined && op != undefined && key != undefined && recovery == undefined ==> \result == "/?issues=1&resume-op=" + op + "&resume-key=" + key
+//@ ensures wikiPage == undefined && op != undefined && key != undefined && recovery != undefined ==> \result == "/?issues=1&resume-op=" + op + "&resume-key=" + key + "&resume-recovery=" + recovery
+export function connectReturn(wikiPage: string | undefined, op: string | undefined, key: string | undefined, recovery: string | undefined): string {
+  if (wikiPage !== undefined) return "/wiki/" + wikiPage
+  if (op === undefined || key === undefined) return "/?issues=1"
+  const resume = "/?issues=1&resume-op=" + op + "&resume-key=" + key
+  return recovery === undefined ? resume : resume + "&resume-recovery=" + recovery
+}
+
+/** A broker callback's state is the nonce the signed cookie holds: 43 base64url characters. */
+//@ verify
+//@ ensures \result == (verified && state == signed && \matches("^[A-Za-z0-9_-]{43}$", state))
+export function brokerStateAccepted(verified: boolean, state: string, signed: string): boolean {
+  return verified && state === signed && /^[A-Za-z0-9_-]{43}$/.test(state)
+}
+
+/** A stored broker start answers only its own site and nonce, and only before it expires. */
+//@ verify
+//@ ensures \result == (claimsOrigin == site && nonce == state && expires > now)
+export function brokerPendingAccepted(claimsOrigin: string, site: string, nonce: string, state: string, expires: number, now: number): boolean {
+  return claimsOrigin === site && nonce === state && expires > now
+}
+
+/** A Connect finishes only in the browser session that pressed it, for the person the broker confirmed, with a delegation and its expiry. */
+//@ verify
+//@ ensures \result == (live && liveKey == pressedBy && liveId == confirmed && hasDelegation && hasExpiry)
+export function connectConfirmed(live: boolean, liveKey: string, pressedBy: string, liveId: string, confirmed: string, hasDelegation: boolean, hasExpiry: boolean): boolean {
+  return live && liveKey === pressedBy && liveId === confirmed && hasDelegation && hasExpiry
+}
+
+/** A direct GitHub callback carries the state the signed cookie holds and a code of at most 4096 characters. */
+//@ verify
+//@ ensures \result == (verified && state == signed && codeLength <= 4096)
+export function callbackAccepted(verified: boolean, state: string, signed: string, codeLength: number): boolean {
+  return verified && state === signed && codeLength <= 4096
+}
+
+/** A stored session, sign-in or delegation holds only while its expiry is after now. */
+//@ verify
+//@ ensures \result == (expires > now)
+export function unexpired(expires: number, now: number): boolean {
+  return expires > now
+}
+
+/** A pending sign-in row is pruned when its expiry is missing (not a number) or past. */
+//@ verify
+//@ ensures \result == (expires == undefined || expires <= now)
+export function pruned(expires: number | undefined, now: number): boolean {
+  return expires === undefined || expires <= now
+}
+
+/** GitHub's account id becomes a person only when it is a positive safe integer. */
+//@ verify
+//@ ensures \result == (safe && id > 0)
+export function personId(safe: boolean, id: number): boolean {
+  return safe && id > 0
+}
+
+/** Granting someone else a role needs the roles permission; changing one's own does not (the sequencer still decides). */
+//@ verify
+//@ ensures \result == (actor != target)
+export function grantNeedsAuthority(actor: string, target: string): boolean {
+  return actor !== target
+}
+
+/** A grant that names the role the person already has writes nothing. */
+//@ verify
+//@ ensures \result == (current == requested)
+export function grantUnchanged(current: string, requested: string): boolean {
+  return current === requested
+}
+
+export type FailureAnswer = "callback-post" | "redirect" | "unavailable"
+
+/**
+ * What a failed account request answers: the handoff's callback post a JSON 503 that clears the state cookie; the
+ * callback's GET and the sign-in start a redirect home marked failed; everything else a 503.
+ */
+//@ verify
+//@ ensures \result == (path == "/api/auth/callback" && method == "POST" ? "callback-post" : ((path == "/api/auth/callback" || path == "/api/auth/sign-in") ? "redirect" : "unavailable"))
+export function failureAnswer(path: string, method: string): FailureAnswer {
+  if (path === "/api/auth/callback" && method === "POST") return "callback-post"
+  return path === "/api/auth/callback" || path === "/api/auth/sign-in" ? "redirect" : "unavailable"
+}
+
+/** A journaled account step's logged outcome: a response status of 400 or more is refused. */
+//@ verify
+//@ ensures \result == (status >= 400 ? "refused" : "accepted")
+export function stepOutcome(status: number): "refused" | "accepted" {
+  return status >= 400 ? "refused" : "accepted"
+}
+
+/** A principal keeps its role only when the policy admits its action; otherwise it acts as a viewer. */
+//@ verify
+//@ ensures \result == (admitted ? role : "viewer")
+export function admittedRole(admitted: boolean, role: Role): Role {
+  return admitted ? role : "viewer"
+}
+
+/** A person may act at all only when signed in (a nonempty id) and the policy admits them. */
+//@ verify
+//@ ensures \result == (owner != "" && allowed)
+export function signedInAndAllowed(owner: string, allowed: boolean): boolean {
+  return owner !== "" && allowed
+}
+
+/** Who a person's sandbox account belongs to: a signed-in owner equal to the first one stored, if any. */
+//@ verify
+//@ ensures \result == (owner == "" || (saved != undefined && saved != owner))
+export function ownerRefused(owner: string, saved: string | undefined): boolean {
+  return owner === "" || (saved !== undefined && saved !== owner)
+}

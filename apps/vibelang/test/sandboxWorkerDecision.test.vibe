@@ -1,0 +1,33 @@
+import { describe, expect, it } from "@effect/vitest"
+import { executionKind, gatewayChoice, leaseMillis, leaseRunning, probeAdmitted, probeConversationKnown, probeOwnerOf, probeOwnerShaped, probeRole, probeRoute, refusalStatus, sandboxVerb, sandboxWrite, serialized, stillRunning } from "../worker/sandboxWorkerDecision.vibe"
+import { PROBE_WINDOW_MS, deadlineOf, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+
+describe("the server's sandbox decisions", () => {
+  it("reads a probe owner's 13-digit deadline and admits it only inside the window", () => {
+    const now = 1_700_000_000_000
+    expect([probeOwnerShaped(probeOwner(now)), probeOwnerShaped("probe-123"), probeOwnerShaped(`probe-${now}x`), probeOwnerShaped(`owner-${now}`)]).toEqual([true, false, false, false])
+    expect(deadlineOf(probeOwner(now + 5))).toBe(now + 5)
+    expect([probeAdmitted(undefined, now), probeAdmitted(now, now), probeAdmitted(now + 1, now), probeAdmitted(now + PROBE_WINDOW_MS, now), probeAdmitted(now + PROBE_WINDOW_MS + 1, now)]).toEqual([false, false, true, true, false])
+  })
+  it("clamps a lease to the owner's deadline and to at least one second", () => {
+    const now = 1_000_000
+    expect([leaseMillis(now + 60_000, 5_000, now), leaseMillis(now + 2_000, 5_000, now), leaseMillis(now + 10, 5_000, now), leaseMillis(undefined, 5_000, now), leaseMillis(now - 1, 5_000, now)]).toEqual([5_000, 2_000, 1_000, 1_000, 1_000])
+  })
+  it("names the probe's principal, role and routes", () => {
+    expect([probeOwnerOf(true, true, "probe-1"), probeOwnerOf(false, true, "probe-1"), probeOwnerOf(true, false, "probe-1"), probeRole(true), probeRole(false)]).toEqual(["probe-1", "", "", "contributor", "viewer"])
+    expect([probeRoute("/api/sandboxes/live", "GET"), probeRoute("/api/probe/sweep", "POST"), probeRoute("/api/probe/sweep", "GET"), probeRoute("/", "GET")]).toEqual(["sandbox", "sweep", "not-found", "not-found"])
+    expect([probeRoute("/api/probe/machine", "POST"), probeRoute("/api/probe/container", "POST"), probeRoute("/api/probe/machine", "GET"), probeRoute("/api/probe/other", "POST")]).toEqual(["machine", "container", "not-found", "not-found"])
+    expect([probeConversationKnown("live"), probeConversationKnown("direct"), probeConversationKnown(""), probeConversationKnown("other")]).toEqual([true, true, false, false])
+    expect([stillRunning(false, "stopped"), stillRunning(true, "stopped"), stillRunning(true, "running")]).toEqual([true, false, true])
+  })
+  it("reads, writes or refuses a sandbox request and checks what each write needs", () => {
+    expect([sandboxVerb(undefined, "GET"), sandboxVerb("start", "POST"), sandboxVerb(undefined, "POST"), sandboxVerb("start", "GET"), sandboxVerb(undefined, "DELETE")]).toEqual(["read", "write", "not-found", "not-found", "not-found"])
+    expect([sandboxWrite("start", false, false), sandboxWrite("stop", false, true), sandboxWrite("stop", true, false), sandboxWrite("command", true, false), sandboxWrite("command", true, true), sandboxWrite("command", false, true)]).toEqual(["start", "generation", "stop", "command-missing", "command", "generation"])
+    expect([refusalStatus("forbidden"), refusalStatus("allowance")]).toEqual([403, 409])
+  })
+  it("asks the account only for a signed-in starter; commands run beside the gate", () => {
+    expect([gatewayChoice(true, "start"), gatewayChoice(false, "read"), gatewayChoice(false, "stop")]).toEqual(["ask", "signed-out-read", "forbidden"])
+    expect([executionKind("read"), executionKind("start"), executionKind("command")]).toEqual(["meter", "start", "command"])
+    expect([serialized("command"), serialized("stop"), leaseRunning("running"), leaseRunning("stopped")]).toEqual([false, true, true, false])
+  })
+})

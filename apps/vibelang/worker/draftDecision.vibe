@@ -1,0 +1,31 @@
+// The agent drafts' and reviews' decisions (0021, 0022, 0027; 0018, lane vl-proveall2 worker batch), for WikiDraft.vibe,
+// VipDraft.vibe, SpecificationReviewers.vibe and WikiTools.vibe. The callers keep the agent run, the ledger, Schema
+// decoding, trimming (native Unicode whitespace) and the page index. Each kernel restates an expression they used.
+
+/** A run's usage settles as reported only when it made a call and every call reported; otherwise the ceiling is charged. */
+//@ verify
+//@ ensures \result == (calls > 0 && unreported == undefined)
+export function usageReported(calls: number, unreported: number | undefined): boolean {
+  return calls > 0 && unreported === undefined
+}
+
+/** A failed agent run is the budget's failure when the day is spent, else the run's own (`draft` or `review`). */
+//@ verify
+//@ ensures \result == (daySpent ? "budget" : own)
+export function agentFailure(daySpent: boolean, own: "draft" | "review"): "budget" | "draft" | "review" {
+  return daySpent ? "budget" : own
+}
+
+/** A wiki draft is kept only for the page asked and with some text. */
+//@ verify
+//@ ensures \result == (page == requested && !blank)
+export function draftKept(page: string, requested: string, blank: boolean): boolean {
+  return page === requested && !blank
+}
+
+/** The agent drafts only a known page, never the decision log. */
+//@ verify
+//@ ensures \result == (known && page != "decisions")
+export function draftablePage(known: boolean, page: string): boolean {
+  return known && page !== "decisions"
+}

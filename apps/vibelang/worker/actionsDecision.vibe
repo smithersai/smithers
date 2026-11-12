@@ -1,0 +1,91 @@
+// The Actions HTTP protocol's and run directory's decisions (0023; 0018, lane vl-proveall2 worker batch), for
+// ActionsHttp.vibe and ActionDirectory.vibe. The callers keep URL parsing, Number, Schema decoding, JSON comparison,
+// the body read and every engine call. Each kernel restates an expression those modules used.
+
+/** The longest action request body read, in bytes. */
+export const MAX_BODY = 32000
+
+/** A declared body length is refused when it is not all ASCII digits or names more than MAX_BODY bytes. */
+//@ verify
+//@ ensures declared == undefined ==> !\result
+//@ ensures declared != undefined ==> \result == (!\matches("^[0-9]+$", declared) || value > 32000)
+export function declaredTooLarge(declared: string | undefined, value: number): boolean {
+  return declared !== undefined && (!/^[0-9]+$/.test(declared) || value > 32000)
+}
+
+/** A write from another page is refused; a request without Origin (a CLI, a server) is not a browser page. */
+//@ verify
+//@ ensures \result == (method != "GET" && origin != undefined && origin != own)
+export function crossOriginWrite(method: string, origin: string | undefined, own: string): boolean {
+  return method !== "GET" && origin !== undefined && origin !== own
+}
+
+export type ActionsRoute = "flows" | "commands" | "runs" | "start" | "run"
+
+/** Which collection a request names; anything else under the path is a single run's route. */
+//@ verify
+//@ ensures \result == (path == "/api/actions" && method == "GET" ? "flows" : (path == "/api/actions/commands" && method == "GET" ? "commands" : (path == "/api/actions/runs" && method == "GET" ? "runs" : (path == "/api/actions/runs" && method == "POST" ? "start" : "run"))))
+export function actionsRoute(path: string, method: string): ActionsRoute {
+  if (path === "/api/actions" && method === "GET") return "flows"
+  if (path === "/api/actions/commands" && method === "GET") return "commands"
+  if (path === "/api/actions/runs" && method === "GET") return "runs"
+  if (path === "/api/actions/runs" && method === "POST") return "start"
+  return "run"
+}
+
+/** A run id: `a` then 1 to 64 letters, digits and hyphens. */
+//@ verify
+//@ ensures \result == \matches("^a[a-zA-Z0-9-]{1,64}$", id)
+export function runIdValid(id: string): boolean {
+  return /^a[a-zA-Z0-9-]{1,64}$/.test(id)
+}
+
+export type RunRoute = "rerun" | "events" | "read" | "cancel" | ""
+
+/** What a request does to one run, from its method and the path parts after the run id. */
+//@ verify
+//@ ensures \result == (method == "POST" && parts == 2 && second == "rerun" ? "rerun" : (method == "GET" && parts == 2 && second == "events" ? "events" : (method == "GET" && parts == 1 ? "read" : (method == "DELETE" && parts == 1 ? "cancel" : ""))))
+export function runRoute(method: string, parts: number, second: string): RunRoute {
+  if (method === "POST" && parts === 2 && second === "rerun") return "rerun"
+  if (method === "GET" && parts === 2 && second === "events") return "events"
+  if (method === "GET" && parts === 1) return "read"
+  if (method === "DELETE" && parts === 1) return "cancel"
+  return ""
+}
+
+/** A write's status: `accepted` when nothing refused it, 403 when forbidden, else `otherwise`. */
+//@ verify
+//@ ensures refusal == null ==> \result == accepted
+//@ ensures refusal != null ==> \result == (refusal == "forbidden" ? 403 : otherwise)
+export function writeStatus(refusal: string | null, accepted: number, otherwise: number): number {
+  if (refusal === null) return accepted
+  return refusal === "forbidden" ? 403 : otherwise
+}
+
+/** Who started a run: an agent principal, or any principal through the agent door, is the agent; else the person. */
+//@ verify
+//@ ensures \result == ((agent || door == "agent") ? "agent" : "person")
+export function startActor(agent: boolean, door: string | undefined): "agent" | "person" {
+  return agent || door === "agent" ? "agent" : "person"
+}
+
+/** A rerun is the caller's own: an agent principal reruns as the agent, everyone else as a person. */
+//@ verify
+//@ ensures \result == (agent ? "agent" : "person")
+export function callerActor(agent: boolean): "agent" | "person" {
+  return agent ? "agent" : "person"
+}
+
+/** A start whose id already holds a different request is a conflict; the same request again is not. */
+//@ verify
+//@ ensures \result == (original != undefined && original != request)
+export function startConflict(original: string | undefined, request: string): boolean {
+  return original !== undefined && original !== request
+}
+
+/** The flow whose role a cancel needs: a Post's reply child is cancelled as its Post, any other run as itself. */
+//@ verify
+//@ ensures \result == (replyChild ? requestFlow : runFlow)
+export function cancelFlow(replyChild: boolean, requestFlow: string, runFlow: string): string {
+  return replyChild ? requestFlow : runFlow
+}
