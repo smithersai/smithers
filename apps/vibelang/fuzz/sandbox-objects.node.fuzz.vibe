@@ -74,6 +74,30 @@ it.live("sandbox/machine-object", () => run("sandbox/machine-object", MachineInp
     const again = try machine.apply("command", generation, "op-dies", "echo hi")
     if (started.ok && (lost.ok || local.state.executed.length !== ran + 1 || again.ok)) return false
   }
+  // Every execution: a lease the protocol refuses, a repeated operation answered from its receipt (never run again), a
+  // receipt left pending by a failed exec, and a command after its lease ran out (the lease's end moved to the past).
+  {
+    try machine.apply("stop", generation, "op-receipt-stop", "")
+    generation += 1
+    const started = try machine.apply("start", generation, "op-receipt", "")
+    const refusedLease = try machine.apply("lease", generation, "op-receipt", "5")
+    try machine.apply("lease", generation, "op-receipt", "60000")
+    const first = try machine.apply("command", generation, "op-receipt", "echo hi")
+    const ran = local.state.executed.length
+    const repeated = try machine.apply("command", generation, "op-receipt", "echo hi")
+    const changed = try machine.apply("command", generation, "op-receipt", "echo bye")
+    local.faults.add("exec")
+    try machine.apply("command", generation, "op-pending", "echo hi")
+    local.faults.clear()
+    const pending = try machine.apply("command", generation, "op-pending", "echo hi")
+    const saved = storage.kv.get("machine") as Record<string, unknown>
+    try promise(() => storage.put("machine", { ...saved, leaseUntil: Date.now() - 1 }))
+    const expired = try machine.apply("command", generation, "op-expired", "echo hi")
+    const reason = (answer: { readonly ok: boolean }) => "reason" in answer ? answer.reason : ""
+    if (!started.ok || refusedLease.ok || reason(refusedLease) !== "lease-duration" || !first.ok || !repeated.ok || repeated.output !== first.output
+      || changed.ok || reason(changed) !== "receipt-conflict" || pending.ok || reason(pending) !== "receipt-conflict" || local.state.executed.length !== ran
+      || expired.ok || reason(expired) !== "lease-expired") return false
+  }
   for (const step of [...lifecycle, ...faultWalk, ...input.steps]) {
     faulted(local.faults, step.fault)
     const target = step.next ? generation + 1 : step.current ? generation : step.generation

@@ -1544,3 +1544,10 @@ script's timeout word erased. Each machine call runs in its own scope, as a Dura
 execution's scope left a command's exec unsettled, so unrecorded, until the execution ended (a harness artifact; the
 workerd host runs each call through its own `runPromise`). Mutants caught: `recordSlot` keeping one call past the
 limit; the erased word moved from the fourth to the third; the recording read's 503 answered as 502.
+
+`worker/machineObject.vibe` 54, 95 and 97 and `machineDecision.vibe`'s receipt arms waited on draws over real
+processes. `sandbox/machine-object` now stops the machine and starts a new generation every execution, then asks a lease
+of 5 ms (refused `lease-duration`), runs a command, repeats it (answered from its receipt with the same output, never run
+again), changes the command under the same operation (`receipt-conflict`), leaves a receipt pending with a failed exec
+(its retry is `receipt-conflict`) and runs a command after the lease's end is moved to the past (`lease-expired`).
+Mutants caught: a receipt that ignores its command; a lease that ends a second late; a 1 ms lease floor.
