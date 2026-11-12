@@ -11894,10 +11894,10 @@ The trampoline outcomes a link can end with.
 
 - `done(value): Done`: completes the chain with a value. `undefined`
   becomes `null`, the one JSON representation of "no value".
-- `to(script): To`: continues the chain with a successor script. The digest
-  is RE-DERIVED from the text and the caller's is discarded: a script may
-  choose the text it hands on, never the replay identity that text is keyed
-  by.
+- `to(script): To`: continues the chain with successor text, such as
+  `to("return done(1)")`, or an object carrying it, such as
+  `to({ text: "return done(1)" })`. A `digest` field is optional and
+  discarded: the successor's digest is always re-derived from its text.
 - `park(code: ParkCode, message = ""): Park`: suspends the lineage with a
   typed waiting reason.
 

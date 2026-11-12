@@ -72,6 +72,80 @@ describe.each(runners)("runner conformance: %s", (_name, layer) => {
     expect(park).toEqual({ _tag: "Park", reason: { code: "timer", message: "" } })
   })
 
+  it.each([
+    ["text without a digest", "{ text: \"return done(1)\" }", "return done(1)"],
+    ["bare text", "\"return done(1)\"", "return done(1)"],
+    ["empty text", "\"\"", ""],
+    ["Unicode text", "{ text: \"return done(\\\"🌱\\\")\" }", "return done(\"🌱\")"]
+  ])("accepts a successor as %s and derives its digest", async (_case, input, text) => {
+    const outcome = await runWith(layer, `return to(${input})`, echo)
+    expect(outcome).toEqual({ _tag: "To", script: Script.make(text) })
+  })
+
+  it.each([
+    "{ text: \"return done(1)\" }",
+    "\"return done(1)\""
+  ])("runs an inline successor %s without asking the author to repair it", async (input) => {
+    const result = await runChain({
+      author: Author.layerMock([flow(`return to(${input})`)]),
+      runner: layer
+    })
+    expect(result.outcome).toEqual({ _tag: "Done", value: 1 })
+    expect(result.events.filter((event) => event._tag === "LinkAuthored")).toHaveLength(2)
+    expect(result.events.filter((event) => event._tag === "CallSettled" && event.name === "author")).toHaveLength(1)
+  })
+
+  it("reads successor text only once", async () => {
+    const outcome = await runWith(
+      layer,
+      [
+        "var reads = 0",
+        "return to({",
+        "  get text() { reads++; return reads === 1 ? \"return done(1)\" : 42 },",
+        "  digest: \"FORGED\"",
+        "})"
+      ].join("\n"),
+      echo
+    )
+    expect(outcome).toEqual({ _tag: "To", script: Script.make("return done(1)") })
+  })
+
+  it("never re-reads invalid successor text to obtain a valid script", async () => {
+    const failure = await failWith(
+      layer,
+      [
+        "var reads = 0",
+        "return to({",
+        "  get text() { reads++; return reads === 1 ? 42 : \"return done(1)\" },",
+        "  digest: \"\"",
+        "})"
+      ].join("\n"),
+      echo
+    ) as ScriptRunner.ScriptFailure
+    expect(failure).toMatchObject({ code: "invalid_outcome", message: JsonBoundary.notAnOutcome })
+  })
+
+  it("refuses a throwing successor text getter outside the script", async () => {
+    const failure = await failWith(
+      layer,
+      [
+        "try {",
+        "  return to({ get text() { throw new Error(\"bad text\") }, digest: \"\" })",
+        "} catch { return done(\"caught\") }"
+      ].join("\n"),
+      echo
+    ) as ScriptRunner.ScriptFailure
+    expect(failure).toMatchObject({ code: "invalid_outcome", message: JsonBoundary.unserializableOutcome })
+  })
+
+  it.each(["null", "undefined", "42", "{}", "{ text: 42, digest: \"\" }"])(
+    "rejects malformed successor %s at the outcome gate",
+    async (input) => {
+      const failure = await failWith(layer, `return to(${input})`, echo) as ScriptRunner.ScriptFailure
+      expect(failure.code).toBe("invalid_outcome")
+    }
+  )
+
   it("settles race losers durably", async () => {
     const seen: Array<string> = []
     const handler = (request: ScriptRunner.Request) => {

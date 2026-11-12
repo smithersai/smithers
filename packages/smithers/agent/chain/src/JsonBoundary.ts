@@ -16,7 +16,18 @@ import { Option, Schema } from "effect"
 import { isWellFormed } from "./internal/unicode.ts"
 import * as Outcome from "./Outcome.ts"
 
-const decodeOutcomeShape = Schema.decodeUnknownOption(Outcome.Outcome)
+// Authored successors carry text; the persisted outcome carries the digest
+// derived from it. Decode the input only after the single-read JSON copy,
+// then construct the canonical outcome without trusting a supplied digest.
+const decodeOutcomeShape = Schema.decodeUnknownOption(
+  Schema.Union([
+    Outcome.Done,
+    Schema.TaggedStruct("To", {
+      script: Schema.Union([Schema.String, Schema.Struct({ text: Schema.String })])
+    }),
+    Outcome.Park
+  ])
+)
 
 /**
  * Decodes a script's returned value into an outcome; shared by every

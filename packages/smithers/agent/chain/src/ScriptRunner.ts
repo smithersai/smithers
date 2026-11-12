@@ -126,7 +126,7 @@ const runInProcess = <E>(
     let factory: (
       ctx: unknown,
       done: typeof Outcome.done,
-      to: typeof Outcome.to,
+      to: (script: unknown) => unknown,
       park: typeof Outcome.park
     ) => unknown
     try {
@@ -176,7 +176,7 @@ const runInProcess = <E>(
     // gate below re-derives the digest only after the text crossed the JSON
     // boundary, so a text the digest refuses fails the same way in both
     // bindings instead of throwing inside the script.
-    const to = (script: Script.Script): Outcome.To => ({ _tag: "To", script })
+    const to = (script: unknown): unknown => ({ _tag: "To", script })
     // The factory body is `return (async () => {...})()`, so invoking it
     // never throws synchronously — every script error lands in the rejection.
     Promise.resolve(factory(ctx, Outcome.done, to, Outcome.park)).then(

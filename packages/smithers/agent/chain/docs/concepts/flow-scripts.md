@@ -42,9 +42,10 @@ it returns:
   a time, in issue order, and the promise resolves to the journaled result.
 - `done(value)` ends the chain with a JSON value (`undefined` becomes
   `null`).
-- `to(script)` hands off to a successor script. The successor's digest is
-  re-derived from its text: a script chooses the text it hands on, never the
-  replay identity that text is keyed by.
+- `to(script)` hands off to a successor script. Pass its text with
+  `to("return done(1)")` or `to({ text: "return done(1)" })`. The
+  successor's digest is re-derived from its text; any supplied `digest` is
+  discarded.
 - `park(code, message)` suspends the lineage with a typed waiting reason.
 
 Returning anything else, or a value that is not JSON, fails the script with

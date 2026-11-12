@@ -12,6 +12,13 @@ describe("Outcome", () => {
     expect(Outcome.to(script)).toEqual({ _tag: "To", script })
   })
 
+  it.each(["", "return done(1)", "return done(\"🌱\")"])("builds to from text %j", (text) => {
+    const expected = { _tag: "To", script: Script.make(text) }
+    expect(Outcome.to(text)).toEqual(expected)
+    expect(Outcome.to({ text })).toEqual(expected)
+    expect(Outcome.to({ text, digest: "FORGED" })).toEqual(expected)
+  })
+
   it("builds park with and without a message", () => {
     expect(Outcome.park("quota", "over budget")).toEqual({
       _tag: "Park",

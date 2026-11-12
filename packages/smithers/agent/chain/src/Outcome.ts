@@ -165,7 +165,7 @@ export type RunResult = Terminal | ApprovalWait
 export const done = (value: typeof Schema.Json.Type): Done => ({ _tag: "Done", value: value ?? null })
 
 /**
- * Continues the chain with a successor script.
+ * Continues the chain with successor text or an object carrying its text.
  *
  * The digest is RE-DERIVED from the text and the caller's is discarded.
  * Scripts are model-authored and `to` is in their scope, so a script that
@@ -178,7 +178,10 @@ export const done = (value: typeof Schema.Json.Type): Done => ({ _tag: "Done", v
  * @since 0.1.0
  * @slop
  */
-export const to = (script: Script.Script): To => ({ _tag: "To", script: Script.make(script.text) })
+export const to = (script: string | { readonly text: string; readonly digest?: string }): To => ({
+  _tag: "To",
+  script: Script.make(typeof script === "string" ? script : script.text)
+})
 
 /**
  * Suspends the lineage with a typed waiting reason.
