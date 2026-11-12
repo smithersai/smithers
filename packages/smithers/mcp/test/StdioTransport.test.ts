@@ -1,10 +1,12 @@
+import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Deferred, Effect, Fiber, Queue, Ref, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
+import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, ProcessId } from "effect/process/ChildProcessSpawner"
 import { describe, expect, it, vi } from "vitest"
 import * as Rpc from "../src/internal/Rpc.ts"
 import * as StdioTransport from "../src/internal/StdioTransport.ts"
-import { fakeProcess, provideSpawner } from "./fixtures/FakeProcess.ts"
+import { fakeHandle, fakeProcess, provideSpawner } from "./fixtures/FakeProcess.ts"
 import { respondToEcho, withFakeServer } from "./fixtures/FakeServer.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
@@ -601,5 +603,36 @@ describe("StdioTransport limits and terminal state", () => {
     expect(errors).toHaveLength(3)
     expect(errors.every((error) => error === errors[0])).toBe(true)
     expect(errors[0]).toMatchObject({ code: "connection_closed", server: "pending" })
+  })
+})
+
+describe("StdioTransport bootstrap environment", () => {
+  it("spawns on a host without a process environment, handing the child only its declared env", async () => {
+    const commands: Array<ChildProcess.Command> = []
+    const spawner = ChildProcessSpawner.makeNoop({
+      spawn: (command) => {
+        commands.push(command)
+        return Effect.succeed(fakeHandle({ pid: ProcessId(21) }))
+      }
+    })
+    // A browser or worker host has no `process.env`. The transport takes its
+    // bootstrap names from the injected spawner's host, never the global.
+    const ambient = process.env
+    process.env = undefined as never
+    try {
+      await execute(Effect.scoped(provideSpawner(
+        StdioTransport.connect({ server: "portable", command: "mcp", args: [], env: { MCP_FIXTURE: "declared" } }),
+        spawner
+      )))
+    } finally {
+      process.env = ambient
+    }
+
+    expect(commands).toHaveLength(1)
+    const command = commands[0]!
+    expect(command._tag).toBe("StandardCommand")
+    if (command._tag !== "StandardCommand") return
+    expect(command.options.extendEnv).toBe(false)
+    expect(command.options.env).toEqual({ MCP_FIXTURE: "declared" })
   })
 })

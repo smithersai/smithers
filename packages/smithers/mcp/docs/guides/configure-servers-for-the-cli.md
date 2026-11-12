@@ -27,8 +27,9 @@ env -u GITHUB_TOKEN -u GITHUB_PERSONAL_ACCESS_TOKEN npm ci --prefix /path/to/mcp
 ```
 
 Both npm commands remove the GitHub credential variables from their environment.
-Launch the installed executable directly and supply the token only in the
-server's `env`. This server reads `GITHUB_PERSONAL_ACCESS_TOKEN`.
+Launch the installed executable directly and name the variable that holds the
+token in the server's `envFrom`; the token itself is never written in the file.
+This server reads `GITHUB_PERSONAL_ACCESS_TOKEN`.
 
 ## The file
 
@@ -41,7 +42,7 @@ server (`url`), never both, plus `McpFlows.ProjectionOptions`:
     "server": "github",
     "command": "/path/to/mcp-servers/node_modules/.bin/mcp-server-github",
     "args": [],
-    "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..." },
+    "envFrom": { "GITHUB_PERSONAL_ACCESS_TOKEN": "GITHUB_TOKEN" },
     "exclude": ["delete_repository"],
     "namePrefix": "github"
   },
@@ -55,14 +56,20 @@ server (`url`), never both, plus `McpFlows.ProjectionOptions`:
 ]
 ```
 
+`envFrom` maps a variable the child reads to the variable the CLI reads it
+from: export `GITHUB_TOKEN` from your secret store in the shell that runs
+`smthrs`. `env` holds plain values a server needs, never a credential. The
+child inherits the bootstrap names (`PATH`, `HOME`, `USER`, `LANG`, `LC_*`,
+`TERM`, `TMPDIR`, `SHELL`) plus `env` and the resolved `envFrom` values.
+
 By default, tools arrive as flows named `mcp/<server>/<tool>`. With the custom
 `namePrefix` above, GitHub tools arrive as `github/<tool>`.
 
 ## Remote servers
 
 A remote server takes a `url` instead of a `command`. Its bearer token is
-never written in the file: `bearerTokenEnv` names the environment variable the
-CLI reads it from.
+never written in the file either: `bearerTokenEnv` names the environment
+variable the CLI reads it from.
 
 ```json
 [
@@ -90,16 +97,17 @@ built. A bad file is a usage error naming the flag and path.
 
 A stdio entry:
 
-| Field                                                               | Requirement                       |
-| ------------------------------------------------------------------- | --------------------------------- |
-| `server`, `command`                                                 | Required non-empty strings.       |
-| `args`                                                              | Required array of strings.        |
-| `cwd`                                                               | Optional non-empty string.        |
-| `env`                                                               | Optional object of string values. |
-| `handshakeTimeoutMs`, `requestTimeoutMs`                            | Optional positive integers.       |
-| `queueCapacity`, `maxFrameBytes`, `maxOutboundFrameBytes`           | Optional positive integers.       |
-| `maxStderrBytes`, `maxTools`, `maxToolNameBytes`, `maxCatalogPages` | Optional positive integers.       |
-| `maxToolDocumentBytes`                                              | Optional positive integer.        |
+| Field                                                               | Requirement                                                                                                                 |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `server`, `command`                                                 | Required non-empty strings.                                                                                                 |
+| `args`                                                              | Required array of strings.                                                                                                  |
+| `cwd`                                                               | Optional non-empty string.                                                                                                  |
+| `env`                                                               | Optional object of string values.                                                                                           |
+| `envFrom`                                                           | Optional object mapping a child variable name to the host variable name it is read from; each set and non-empty at startup. |
+| `handshakeTimeoutMs`, `requestTimeoutMs`                            | Optional positive integers.                                                                                                 |
+| `queueCapacity`, `maxFrameBytes`, `maxOutboundFrameBytes`           | Optional positive integers.                                                                                                 |
+| `maxStderrBytes`, `maxTools`, `maxToolNameBytes`, `maxCatalogPages` | Optional positive integers.                                                                                                 |
+| `maxToolDocumentBytes`                                              | Optional positive integer.                                                                                                  |
 
 An HTTP entry:
 
@@ -115,8 +123,8 @@ An HTTP entry:
 Four failures are usage errors that name the path: the file is missing, it
 cannot be read, it is not valid JSON, or it is not an array of entries accepted
 by the schemas. For example, `maxTools: 0` fails here before connecting a server.
-An unset `bearerTokenEnv` variable is a usage error naming the server and the
-variable.
+An unset or empty `envFrom` source or `bearerTokenEnv` variable is a usage
+error naming the server and the variable.
 
 ## Select and name tools
 

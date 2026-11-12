@@ -154,11 +154,28 @@ const isHttp = (options: ConnectOptions): options is HttpConnectOptions => optio
 
 const PositiveInteger = Schema.Int.check(Schema.isGreaterThan(0))
 
+const environmentVariableName = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** An environment variable name: a persisted entry names where a credential comes from, never its value. */
+const EnvironmentVariableName = Schema.String.check(Schema.isPattern(environmentVariableName))
+
+/** `envFrom`: child variable name to host variable name. `Schema.Record` checks values, not keys, so keys are filtered here. */
+const EnvironmentNames = Schema.Record(Schema.String, EnvironmentVariableName).check(
+  Schema.makeFilter((names) => Object.keys(names).every((name) => environmentVariableName.test(name)), {
+    expected: "environment variable names"
+  })
+)
+
 /**
  * Authoritative decoder for a persisted stdio MCP server entry.
  *
  * The schema requires non-empty server and command names, string arguments,
- * a plain string-valued environment record, and positive-integer limits.
+ * a plain string-valued environment record, and positive-integer limits. A
+ * credential is never stored in the entry: `envFrom` maps a variable the
+ * child reads to the environment variable holding its value. Like
+ * `bearerTokenEnv`, it is for the host that loads the entry: the host reads
+ * each source and adds the value to `env` before calling {@link connect},
+ * which does not read `envFrom` itself.
  *
  * @category schemas
  * @since 1.0.0-rc.0
@@ -169,6 +186,7 @@ export const ConnectOptionsSchema = Schema.Struct({
   args: Schema.Array(Schema.String),
   cwd: Schema.optional(Schema.NonEmptyString),
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  envFrom: Schema.optionalKey(EnvironmentNames),
   handshakeTimeoutMs: Schema.optional(PositiveInteger),
   requestTimeoutMs: Schema.optional(PositiveInteger),
   queueCapacity: Schema.optional(PositiveInteger),
@@ -204,7 +222,7 @@ const isEndpoint = (url: string): boolean => {
 export const HttpConnectOptionsSchema = Schema.Struct({
   server: Schema.NonEmptyString,
   url: Schema.String.check(Schema.makeFilter(isEndpoint, { expected: "an http: or https: URL without credentials" })),
-  bearerTokenEnv: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/))),
+  bearerTokenEnv: Schema.optionalKey(EnvironmentVariableName),
   handshakeTimeoutMs: Schema.optional(PositiveInteger),
   requestTimeoutMs: Schema.optional(PositiveInteger),
   maxFrameBytes: Schema.optional(PositiveInteger),

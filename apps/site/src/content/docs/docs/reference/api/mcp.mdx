@@ -180,6 +180,7 @@ const ConnectOptionsSchema = Schema.Struct({
   args: Schema.Array(Schema.String),
   cwd: Schema.optional(Schema.NonEmptyString),
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  envFrom: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)), // variable names on both sides
   // every limit, each a positive integer
   handshakeTimeoutMs: Schema.optional(PositiveInteger)
   // ...
@@ -188,8 +189,13 @@ const ConnectOptionsSchema = Schema.Struct({
 
 The authoritative decoder for a persisted stdio MCP server entry. It requires
 non-empty `server` and `command` strings, string `args`, an optional
-string-valued `env` record, and positive integers for every limit. Use it
-wherever connection options arrive from a file or a database.
+string-valued `env` record, and positive integers for every limit. The entry
+never holds a credential: `envFrom` maps a variable the child reads to the
+environment variable holding its value. Like `bearerTokenEnv`, it is for the
+host that loads the entry: read each source, add the value to `env`, then call
+`connect`, which does not read `envFrom` itself (the CLI's `--mcp-config`
+loader does this). Use the schema wherever connection options arrive from a
+file or a database.
 
 ### McpClient.HttpConnectOptionsSchema
 

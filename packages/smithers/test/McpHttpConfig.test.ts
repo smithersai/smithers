@@ -1,7 +1,7 @@
 /**
- * `--mcp-config` Streamable HTTP entries, end to end: the flag's decoder, the
- * `bearerTokenEnv` credential source, and the shipped executor connecting a
- * real loopback MCP server through its guarded egress client.
+ * `--mcp-config` entries, end to end: the flag's decoder, the `bearerTokenEnv`
+ * and `envFrom` credential sources, and the shipped executor connecting a real
+ * loopback MCP server through its guarded egress client.
  */
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
@@ -224,5 +224,51 @@ describe("--mcp-config Streamable HTTP entries", () => {
     const exit = await boot(mcpServers!, grants)
     expect(Exit.isFailure(exit)).toBe(true)
     expect(remote.hits).toEqual([])
+  })
+})
+
+describe("--mcp-config stdio entries", () => {
+  it("resolves envFrom sources into the child's env, so the file never holds the credential", async () => {
+    const file = await configFile([{
+      server: "github",
+      command: "/path/to/mcp-servers/node_modules/.bin/mcp-server-github",
+      args: [],
+      env: { LOG_LEVEL: "info" },
+      envFrom: { GITHUB_PERSONAL_ACCESS_TOKEN: "GITHUB_TOKEN" },
+      namePrefix: "github"
+    }])
+    expect(NodeControl.makeConfig(["--mcp-config", file], { GITHUB_TOKEN: "secret-token" }, "/work").mcpServers)
+      .toEqual([{
+        server: "github",
+        command: "/path/to/mcp-servers/node_modules/.bin/mcp-server-github",
+        args: [],
+        env: { LOG_LEVEL: "info", GITHUB_PERSONAL_ACCESS_TOKEN: "secret-token" },
+        namePrefix: "github"
+      }])
+  })
+
+  it("refuses an unset or empty envFrom source by name, never echoing a value", async () => {
+    const file = await configFile([{
+      server: "github",
+      command: "mcp-server-github",
+      args: [],
+      envFrom: { GITHUB_PERSONAL_ACCESS_TOKEN: "GITHUB_TOKEN" }
+    }])
+    const error = new CliError.UsageError({
+      message: `--mcp-config ${file}: server "github" needs GITHUB_TOKEN set for its GITHUB_PERSONAL_ACCESS_TOKEN`
+    })
+    expect(() => NodeControl.makeConfig(["--mcp-config", file], {}, "/work")).toThrow(error)
+    expect(() => NodeControl.makeConfig(["--mcp-config", file], { GITHUB_TOKEN: "" }, "/work")).toThrow(error)
+  })
+
+  it.each([
+    { envFrom: { GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_..." } },
+    { envFrom: { "GITHUB-TOKEN": "GITHUB_TOKEN" } },
+    { envFrom: "GITHUB_TOKEN" }
+  ])("rejects an invalid stdio entry at flag parse time: %o", async (overrides) => {
+    const file = await configFile([{ server: "local", command: "local-mcp", args: [], ...overrides }])
+    expect(() => NodeControl.makeConfig(["--mcp-config", file], { GITHUB_TOKEN: "unused" }, "/work")).toThrow(
+      usage(file)
+    )
   })
 })

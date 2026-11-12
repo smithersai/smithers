@@ -144,10 +144,10 @@ abort release the input pipe and listeners. The default uses process stdio.
 `--mcp-config <path>` is not this feature. It names a JSON array of MCP servers
 that the local executor connects at startup and projects into a run's flow
 catalog, so a flow can call them. The file is an array of
-`{ server, command, args, cwd?, env?, handshakeTimeoutMs?, requestTimeoutMs?,
-queueCapacity?, maxFrameBytes? }` entries. A path that is missing, unreadable,
-malformed, or wrongly shaped is a usage error naming the flag, never a silent
-change to the executor's tool catalog.
+`{ server, command, args, cwd?, env?, envFrom?, handshakeTimeoutMs?,
+requestTimeoutMs?, queueCapacity?, maxFrameBytes? }` entries. A path that is
+missing, unreadable, malformed, or wrongly shaped is a usage error naming the
+flag, never a silent change to the executor's tool catalog.
 
 It is meaningless under `--remote`, where the executor is not this process's to
 configure.

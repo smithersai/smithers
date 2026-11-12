@@ -574,7 +574,7 @@ describe("McpClient.connect", () => {
   })
 
   it("bounds every numeric ConnectOptionsSchema field before spawning", async () => {
-    const nonNumeric = ["server", "command", "args", "cwd", "env"]
+    const nonNumeric = ["server", "command", "args", "cwd", "env", "envFrom"]
     const numeric = Object.keys(McpClient.ConnectOptionsSchema.fields).filter((name) => !nonNumeric.includes(name))
     expect(numeric).toHaveLength(10)
 
@@ -1375,7 +1375,8 @@ describe("McpClient.ConnectOptionsSchema", () => {
       command: "node",
       args: ["server.mjs"],
       cwd: "/workspace",
-      env: { TOKEN: "redacted" },
+      env: { LOG_LEVEL: "info" },
+      envFrom: { GITHUB_PERSONAL_ACCESS_TOKEN: "GITHUB_TOKEN" },
       handshakeTimeoutMs: 1,
       requestTimeoutMs: 2,
       queueCapacity: 3,
@@ -1392,6 +1393,19 @@ describe("McpClient.ConnectOptionsSchema", () => {
 
   it.each([
     ["an array environment", { server: "fixture", command: "node", args: [], env: ["A", "B"] }],
+    ["an envFrom source that is not a variable name", {
+      server: "fixture",
+      command: "node",
+      args: [],
+      envFrom: { GITHUB_PERSONAL_ACCESS_TOKEN: "ghp_..." }
+    }],
+    ["an envFrom child name that is not a variable name", {
+      server: "fixture",
+      command: "node",
+      args: [],
+      envFrom: { "GITHUB-TOKEN": "GITHUB_TOKEN" }
+    }],
+    ["an envFrom that is not an object", { server: "fixture", command: "node", args: [], envFrom: "GITHUB_TOKEN" }],
     ["an empty server", { server: "", command: "node", args: [] }],
     ["an empty command", { server: "fixture", command: "", args: [] }],
     ["a non-integer limit", { server: "fixture", command: "node", args: [], handshakeTimeoutMs: 1.5 }],

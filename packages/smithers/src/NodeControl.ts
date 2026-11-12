@@ -119,14 +119,14 @@ const McpServerEntry = Schema.Union([
  * Reads and validates the MCP servers named by `--mcp-config`/`SMITHERS_MCP_CONFIG`.
  *
  * The file is a JSON array of `McpClient.ConnectOptionsSchema` (stdio) and
- * `McpClient.HttpConnectOptionsSchema` (Streamable HTTP) entries. An HTTP
- * entry's `bearerTokenEnv` is read from the environment here, so an unset
- * credential is a usage error before any layer is built; the token itself is
- * only ever held as a `Redacted` value. Projection fields are preserved for
- * `McpFlows.connected` to check and apply. Omitting the setting configures no
- * MCP servers. Missing, unreadable, malformed, or incorrectly shaped files
- * raise a flag-specific usage error rather than silently changing the
- * executor's tool catalog.
+ * `McpClient.HttpConnectOptionsSchema` (Streamable HTTP) entries. A stdio
+ * entry's `envFrom` sources and an HTTP entry's `bearerTokenEnv` are read
+ * from the environment here, so an unset credential is a usage error before
+ * any layer is built; a bearer token is only ever held as a `Redacted` value.
+ * Projection fields are preserved for `McpFlows.connected` to check and
+ * apply. Omitting the setting configures no MCP servers. Missing, unreadable,
+ * malformed, or incorrectly shaped files raise a flag-specific usage error
+ * rather than silently changing the executor's tool catalog.
  *
  * @category constructors
  * @since 0.1.0
@@ -162,6 +162,21 @@ const mcpServersFromArguments = (
     })
   }
   return decoded.success.map((entry): McpClient.ConnectOptions => {
+    if ("envFrom" in entry) {
+      const { envFrom, ...stdio } = entry
+      if (envFrom === undefined) return stdio
+      const env: Record<string, string | undefined> = { ...stdio.env }
+      for (const [name, source] of Object.entries(envFrom)) {
+        const value = Environment_.read(environment, source)
+        if (value === undefined) {
+          throw new CliError.UsageError({
+            message: `--mcp-config ${path}: server "${entry.server}" needs ${source} set for its ${name}`
+          })
+        }
+        env[name] = value
+      }
+      return { ...stdio, env }
+    }
     if (!("bearerTokenEnv" in entry)) return entry
     const { bearerTokenEnv, ...http } = entry
     // Without exactOptionalPropertyTypes (apps/tui compiles this file) the key may hold undefined.

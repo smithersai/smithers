@@ -18,10 +18,10 @@
 
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
+import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Deferred, Effect, Exit, Fiber, HashMap, Option, Queue, Ref, Stream } from "effect"
 import type { Scope } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
-import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { McpError } from "../McpError.ts"
 import * as DiagnosticReporter from "./DiagnosticReporter.ts"
 import * as JsonLimits from "./JsonLimits.ts"
@@ -177,7 +177,7 @@ const frames = (
  */
 export const connect = (
   options: ConnectOptions
-): Effect.Effect<Transport.Transport, McpError, ChildProcessSpawner | Scope.Scope> =>
+): Effect.Effect<Transport.Transport, McpError, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
   Effect.gen(function*() {
     const diagnostic = yield* DiagnosticReporter.make(options.server)
     const requestTimeoutMs = options.requestTimeoutMs ?? Transport.defaultRequestTimeoutMs
@@ -193,9 +193,12 @@ export const connect = (
       ["maxStderrBytes", maxStderrBytes]
     ])
 
+    // The bootstrap names come from the kernel's ambient accessor, never the
+    // `process` global: a host without one (a browser, a worker) spawns with
+    // only the declared env instead of failing on the global.
     const handle = yield* ChildProcess.make(options.command, options.args, {
       cwd: options.cwd,
-      env: ChildProcessEnvironment.make(process.env, options.env),
+      env: ChildProcessEnvironment.make(ChildProcessSpawner.ambientEnvironment(), options.env),
       extendEnv: false,
       stdin: "pipe",
       stdout: "pipe",

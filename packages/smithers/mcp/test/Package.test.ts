@@ -1,3 +1,4 @@
+import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import { existsSync, readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
@@ -53,8 +54,26 @@ describe("package manifest and README", () => {
     expect(document).toMatch(/command"?: "\/path\/to\/mcp-servers\/node_modules\/\.bin\/mcp-server-github"/)
     expect(document).toMatch(/args"?: \[\]/)
     expect(document).toMatch(
-      /env"?: \{ GITHUB_PERSONAL_ACCESS_TOKEN: process\.env\.GITHUB_TOKEN \}|env": \{ "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_\.\.\." \}/
+      /env"?: \{ GITHUB_PERSONAL_ACCESS_TOKEN: process\.env\.GITHUB_TOKEN \}|envFrom": \{ "GITHUB_PERSONAL_ACCESS_TOKEN": "GITHUB_TOKEN" \}/
     )
+  })
+
+  it.each([
+    "../README.md",
+    "../docs/guides/connect-a-server.md",
+    "../docs/guides/configure-servers-for-the-cli.md"
+  ])("never writes a credential by value into a persisted server entry in %s", (path) => {
+    const document = readFileSync(new URL(path, import.meta.url), "utf8")
+    expect(document).not.toMatch(/ghp_/)
+    const files = [...document.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => JSON.parse(match[1]!) as unknown)
+    for (const entries of files) {
+      expect(Array.isArray(entries)).toBe(true)
+      for (const entry of entries as ReadonlyArray<{ readonly env?: Record<string, string> }>) {
+        for (const name of Object.keys(entry.env ?? {})) {
+          expect(ChildProcessEnvironment.isCredentialName(name), `${name} is held by value in ${path}`).toBe(false)
+        }
+      }
+    }
   })
 
   it("ships the whole docs tree, never a partial glob of it", () => {
