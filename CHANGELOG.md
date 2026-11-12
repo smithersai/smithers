@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.18 -->
 
-3975 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+4000 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
@@ -455,6 +455,15 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **flows:** keep the quickstart on the published rc.16 cohort ([de46f39cd8](https://github.com/smithersai/smithers/commit/de46f39cd8a2695c3cbfdb9178fd6380a252c685))
+- **sandbox:** CommandSandbox acquire reports a transport that could not run its probe ([a7106c8f7e](https://github.com/smithersai/smithers/commit/a7106c8f7e292fdbae1859fa7141fe265475fc9a))
+- **sandbox:** a concurrent Sandbox.job start checks the owner's liveness before the settlement ([1d86c5cf0c](https://github.com/smithersai/smithers/commit/1d86c5cf0c3ebf1cd97db20da9bb971f176b58de))
+- **cli:** the runner status page shows a refused read without a raw Error ([c30de8bf42](https://github.com/smithersai/smithers/commit/c30de8bf4298f2571fdee081baaa206948678cb3))
+- **cli:** a runner's prestart output limit is a ResourceLimitError ([03cbebd9a7](https://github.com/smithersai/smithers/commit/03cbebd9a7539278b44a24c5da054327e0b9c0b2))
+- **cli:** runner workspace link checks throw WorkspaceError ([c32c9474cc](https://github.com/smithersai/smithers/commit/c32c9474cc7bd9cde66335177e9bd07db0f6a84c))
+- **cli:** runner job stores fail AgentJobsUnavailable, not a "corrupt" string ([796cd71b0a](https://github.com/smithersai/smithers/commit/796cd71b0a2442e47fcb13cb5fa8fc1324a92061))
+- **cli:** preload VibeLang's Bun plugin for a checkout `smthrs tui` launch ([1d8a09f88d](https://github.com/smithersai/smithers/commit/1d8a09f88ddd2d624ffcb50591b49913308fbe4c))
+- **cli:** keep bundle warnings out of a checkout `smthrs tui` launch's stderr ([227d076f91](https://github.com/smithersai/smithers/commit/227d076f9141e9fc4b24b38dfdcc30520e35ad1d))
 - **platform-bun:** resolve #electrobun to a refusing module under the browser condition ([c9ea83722d](https://github.com/smithersai/smithers/commit/c9ea83722de32ae1c76ecaa9a6c4c6f34b628f86))
 - **migrate:** roll back a unit whose archive directory is a file ([df8a7903e0](https://github.com/smithersai/smithers/commit/df8a7903e06719d8c7b835b017ef11b5afa4e8c4))
 - **std:** release a mutation lock without recursion ([301f13c94b](https://github.com/smithersai/smithers/commit/301f13c94ba53a907d37982845cde7492ea106ea))
@@ -2707,6 +2716,9 @@ the release notes at
 
 ### 📝 Documentation
 
+- **cli:** describe the optional electrobun peer ([d7426e8dfc](https://github.com/smithersai/smithers/commit/d7426e8dfc1b45d4783a428c89b14486622a30d6))
+- **cli:** name Agents.serverEnvironment in the README export table ([05e86da363](https://github.com/smithersai/smithers/commit/05e86da3635464ec4f12be46e992f6f5aab7a471))
+- **cli:** list RunnerJobs in the README export table ([3b4b875718](https://github.com/smithersai/smithers/commit/3b4b87571882b72c4517c9f2d6de139c22cc21e4))
 - **sandbox:** record the Sandbox.job launch wait and the batched lock retry ([abe7cf5d9f](https://github.com/smithersai/smithers/commit/abe7cf5d9f93ff892b08fbe20d49fea7c26bcecb))
 - **targets:** define the gate flow the trigger example imports ([fa8d1a5d99](https://github.com/smithersai/smithers/commit/fa8d1a5d99aa88ec94ed42fc7b466e83ad999437))
 - **repo-targets:** register the five unexplained test pins ([91c45c70e3](https://github.com/smithersai/smithers/commit/91c45c70e357b93c074abae3903f1f6162c5ecc2))
@@ -3140,6 +3152,19 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(cli):** expect one container process per bash call in the host timing journal ([b88127fa7d](https://github.com/smithersai/smithers/commit/b88127fa7dd01571e69e5623684acf5e15a4ecde))
+- **test(cli):** keep installed packages in node_modules/<name> in the absent-SDK fixture ([144d361e15](https://github.com/smithersai/smithers/commit/144d361e157a093585e542f660e70825472636a2))
+- **test(cli):** skill path check skips jj's own state directory ([08a56b9862](https://github.com/smithersai/smithers/commit/08a56b9862be839281c170d6053944ea2d17fe4b))
+- **test(cli):** review the detached admission deadline's abort reason ([df205ddb66](https://github.com/smithersai/smithers/commit/df205ddb66b341a28e9f740accd110ca2da946bb))
+- **test(cli):** expect runs logs to hand Bridge.events the whole watch cursor ([a56c7d5e1d](https://github.com/smithersai/smithers/commit/a56c7d5e1d6fd11b6745360e5691b57e3488f4c8))
+- **test(cli):** expect runs show to resolve the requested id before reading its row ([317f896977](https://github.com/smithersai/smithers/commit/317f89697722c301c00950ac915b4feceac379a5))
+- **test(cli):** expect flow start to load only the requested flow body ([a6c48c3d8a](https://github.com/smithersai/smithers/commit/a6c48c3d8a1552d353e9b2b348e1f8387377a360))
+- **test(cli):** expect a fresh resume key from each resume spelling ([27c77e8eb6](https://github.com/smithersai/smithers/commit/27c77e8eb6c5498956252d71cac7d7df61a0244b))
+- **test(cli):** pin runs signal's canonical-only --wait and --timeout in the flag parity walk ([2d58d2a3b3](https://github.com/smithersai/smithers/commit/2d58d2a3b3795444369f4f6d8aaad89206880cd1))
+- **test(cli):** expect runs retry and runs signals in the runs help children ([43f93488c1](https://github.com/smithersai/smithers/commit/43f93488c1132669760648297710ecd53b529481))
+- **test(cli):** expect the unavailable-origin hint to name where the origin came from ([e7de6f5f9a](https://github.com/smithersai/smithers/commit/e7de6f5f9a66efedf6b1c4ebd402468843128a6f))
+- **test(cli):** count the trigger-approvals block in control.db tests ([ae53b4ae95](https://github.com/smithersai/smithers/commit/ae53b4ae95fa6f276db8aae26a9693dcdc5ba821))
+- **test(cli):** expect the --package helper build hint in doctor checks ([d7a84fb4e0](https://github.com/smithersai/smithers/commit/d7a84fb4e04608a7c3772dd2ddad3d5ff3182421))
 - **style(build):** format the S.link input documentation ([f2d9e1f1b6](https://github.com/smithersai/smithers/commit/f2d9e1f1b65381d37d9e922db48787558d3acf8d))
 - **style(jj,integrations):** format the rate-limit retry change ([c3904da81b](https://github.com/smithersai/smithers/commit/c3904da81b6d863b861eaa97249b1ba79ccd58f2))
 - **style(platform-cloudflare):** format the continueHere lifecycle page and test ([20e62b3aff](https://github.com/smithersai/smithers/commit/20e62b3aff0cbb3b60ac1a5796200966bf9eb23c))
