@@ -9,6 +9,7 @@ import { canCharge, chargeKeyOf } from "../worker/budgetDecision.vibe"
 import { finishDispatch, probeDispatch } from "../worker/liveDispatchDecision.vibe"
 import { completion } from "../worker/replyProgressDecision.vibe"
 import { connectReturn, resumeToken } from "../worker/accountsDecision.vibe"
+import { sandboxConversation } from "../src/core/sandboxHostDecision.vibe"
 import { run, Int } from "./run.vibe"
 
 const OPS = ["new", "propose", "split", "link", "commit", "comment", "accept", "decline", "uncommit"] as const
@@ -92,5 +93,13 @@ it.live("decisions/account-tokens", () => run("decisions/account-tokens", Accoun
   if (resumeToken(token) !== /^[A-Za-z0-9-]{1,100}$/.test(token)) return false
   const resume = input.op === undefined || input.key === undefined ? "/?issues=1" : `/?issues=1&resume-op=${input.op}&resume-key=${input.key}${input.recovery === undefined ? "" : `&resume-recovery=${input.recovery}`}`
   return connectReturn(input.wiki, input.op, input.key, input.recovery) === (input.wiki !== undefined ? `/wiki/${input.wiki}` : resume)
+}))
+
+const ConversationId = Schema.Array(Schema.Literals(["a", "Z", "0", ".", "_", "-", " ", "/", "\u00e9", "x".repeat(59), "x".repeat(60)])).check(Schema.isMaxLength(4))
+
+/** A sandbox's conversation id (src/core/sandboxHostDecision.vibe) is exactly `/^[a-zA-Z0-9._-]{1,120}$/`, empty and 121 units included. */
+it.live("decisions/sandbox-conversation", () => run("decisions/sandbox-conversation", ConversationId, (parts) => {
+  const id = parts.join("")
+  return sandboxConversation(id) === /^[a-zA-Z0-9._-]{1,120}$/.test(id)
 }))
 

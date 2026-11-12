@@ -10,6 +10,8 @@ import {
   decisionLabel, digitsEnd, feedFrom, findDate, findDigitsEnd, findFeed, findFolded, findHeading, findKey, findLineEnd, findRulingEnd, findRulings,
   firstDate, firstHeading, foldedAt, foldedIncludes, headingTitle, keyFrom, lineEnd, rulingEnd, rulingsFrom,
 } from "../src/core/wikiBuildDecision.vibe"
+import { foldedPrefix } from "../src/core/wikiLinkDecision.vibe"
+import { sectionAnchor } from "../src/core/wikiPageDecision.vibe"
 import { run, Int } from "./run.vibe"
 
 const WORDS = ["", "a", "ab", "b", "decisions", "designs", "designs/index", "index", "rulings", "a/b"] as const
@@ -109,3 +111,31 @@ it.live("decisions/wiki-build", () => run("decisions/wiki-build", BuildInput, (i
   if (findDate(text) !== date || firstDate(text, 0) !== date || firstDate(text, at) !== (at < 0 ? "" : /2026-[0-9]{2}-[0-9]{2}/.exec(text.slice(at))?.[0] ?? "")) return false
   return decisionLabel(input.id) === (input.id.length >= 10 ? input.id.slice(10).replace(/^([0-9]{4})-/, "$1 ") : "")
 }))
+
+const LinkInput = Schema.Struct({
+  hash: Schema.Array(Schema.Literals(["a", "z", "0", "-", "A", "_", " ", "#"])).check(Schema.isMaxLength(4)),
+  parts: Schema.Array(Schema.Literals(["", ".", "..", "a", "b", "decisions"])).check(Schema.isMaxLength(8)), count: Int,
+})
+
+/**
+ * A link's section is exactly `/^[a-z0-9-]+$/` (src/core/wikiPageDecision.vibe `sectionAnchor`), and a link's folded
+ * path (src/core/wikiLinkDecision.vibe `foldedPrefix`) has no empty or `.` segment and a `..` only after another `..`,
+ * each `..` climbing out of the segment before it.
+ */
+it.live("decisions/wiki-links", () => run("decisions/wiki-links", LinkInput, ({ hash, parts, count }) => {
+  const section = hash.join("")
+  if (sectionAnchor(section) !== /^[a-z0-9-]+$/.test(section)) return false
+  const n = count % (parts.length + 1)
+  const folded = foldedPrefix(parts, n)
+  if (n === 0 && folded.length !== 0) return false
+  if (folded.some((part, at) => part === "" || part === "." || (part === ".." && at > 0 && folded[at - 1] !== ".."))) return false
+  // Climbing: the folded path has as many named segments as the parts name minus those a `..` took back, never fewer than none.
+  let depth = 0
+  let above = 0
+  for (const part of parts.slice(0, n)) {
+    if (part === "" || part === ".") continue
+    if (part === "..") { if (depth > 0) depth -= 1; else above += 1 } else depth += 1
+  }
+  return folded.filter((part) => part === "..").length === above && folded.filter((part) => part !== "..").length === depth
+}))
+

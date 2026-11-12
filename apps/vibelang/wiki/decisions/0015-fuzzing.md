@@ -1703,3 +1703,10 @@ starts with one.
 `src/core/MockFactory.vibe` 470: `mock/factory-edges` now opens a project wiki page (`index`, which must open) and a
 page the wiki doesn't have (refused as `empty`, never a defect) every execution. Mutant caught: the empty refusal
 removed.
+
+The proof lanes' newer regular-expression kernels, each held to the expression its doc names: `decisions/sandbox-
+conversation` holds `sandboxConversation` (src/core/sandboxHostDecision.vibe) to `/^[a-zA-Z0-9._-]{1,120}$/` on
+drawn ids from empty to 121 units and past; `decisions/wiki-links` holds `sectionAnchor` (wikiPageDecision.vibe) to
+`/^[a-z0-9-]+$/`, and `foldedPrefix` (wikiLinkDecision.vibe) to its doc: no empty or `.` segment, a `..` only after
+another, and exactly as many `..` and named segments as the parts leave. Mutants caught: a 121-unit limit; an empty
+section accepted; a `..` climbing out of another `..`.
