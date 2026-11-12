@@ -22,12 +22,63 @@ describe("TypeScript workspace regressions", () => {
     }
   })
 
-  it.effect("marks a final oversized loaded batch partial", () =>
+  it.effect("refuses a file larger than the size budget left", () =>
     Effect.gen(function*() {
       const workspace = make({ "/main.ts": "export const value = 1" }, { files: 10, bytes: 1 })
-      yield* workspace.documentSymbols("/main.ts")
-      expect(workspace.loaded()).toEqual({ files: 1, partial: true })
+      const failure = yield* Effect.flip(workspace.documentSymbols("/main.ts"))
+      expect(failure.code).toBe("response_too_large")
+      expect(workspace.loaded()).toEqual({ files: 0, partial: true })
     }))
+
+  it.effect("keeps one widening within the size limit", () =>
+    Effect.gen(function*() {
+      const text = `export const value = 1\n${"// padding\n".repeat(600)}`
+      const files: Record<string, string> = {}
+      for (let index = 0; index < 300; index++) files[`/f${index}.ts`] = text
+      const reads: Array<number> = []
+      const workspace = Workspace.make(ts, Object.keys(files), {
+        read: (paths) =>
+          Effect.sync(() => {
+            reads.push(paths.length)
+            return paths.map((path) => [path, files[path]!] as const)
+          }),
+        lib: () => Effect.succeed(undefined)
+      }, { files: 2000, bytes: 10_000 })
+      yield* workspace.references("/f0.ts", { line: 0, character: 13 })
+      expect(workspace.loaded()).toEqual({ files: Math.floor(10_000 / text.length), partial: true })
+      expect(reads.reduce((sum, count) => sum + count, 0)).toBeLessThanOrEqual(1 + 32)
+    }))
+
+  it.effect("keeps the files an interrupted load read", () =>
+    Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      let block = true
+      const files: Record<string, string> = {
+        "/a.ts": "import { b } from \"./b\"\nexport const a = b",
+        "/b.ts": "import { c } from \"./c\"\nexport const b = c",
+        "/c.ts": "export const c = 1"
+      }
+      const reads: Array<ReadonlyArray<string>> = []
+      const workspace = Workspace.make(ts, Object.keys(files), {
+        lib: () => Effect.succeed(undefined),
+        read: (paths) =>
+          Effect.gen(function*() {
+            reads.push(paths)
+            if (block && paths.includes("/c.ts")) {
+              yield* Deferred.succeed(entered, undefined)
+              return yield* Effect.never
+            }
+            return paths.map((path) => [path, files[path] ?? null] as const)
+          })
+      })
+      const request = yield* Effect.forkChild(workspace.documentSymbols("/a.ts"))
+      yield* Deferred.await(entered)
+      yield* Fiber.interrupt(request)
+      block = false
+      yield* workspace.documentSymbols("/a.ts")
+      expect(reads).toEqual([["/a.ts"], ["/b.ts"], ["/c.ts"], ["/c.ts"]])
+      expect(workspace.loaded()).toEqual({ files: 3, partial: false })
+    }).pipe(Effect.scoped))
 
   it.effect("loads imports added by an overlay, including new files", () =>
     Effect.gen(function*() {

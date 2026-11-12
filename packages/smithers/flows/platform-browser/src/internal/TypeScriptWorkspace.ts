@@ -90,6 +90,8 @@ export const ENVIRONMENT_CODES: ReadonlySet<number> = new Set([
 const SCRIPT = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/
 const CONFIGS = ["tsconfig.json", "jsconfig.json"]
 const MAX_EXTENDS = 4
+// The most files one read asks for.
+const SLICE = 32
 
 /**
  * A file's text by absolute path, or `null` for one that can't be read as text.
@@ -363,6 +365,8 @@ export const make = (
   const registry = ts.createDocumentRegistry()
   let bytes = 0
   let partial = false
+  // Set once a read file did not fit the bytes left; no load reads after that.
+  let full = false
 
   const textOf = (path: string): string | undefined => overlays.get(path) ?? texts.get(path) ?? libs.get(path)
   const startsOf = (path: string, text: string): ReadonlyArray<number> => {
@@ -421,50 +425,49 @@ export const make = (
       }
     })
 
-  /** Loads `wanted` and everything they import, within the caps. */
+  /**
+   * Loads `wanted` and everything they import, within the caps. Files are read
+   * `SLICE` at a time and each slice is stored before the next is asked
+   * for, so the byte cap bounds a load and an interrupted load keeps what it
+   * read. A file that does not fit the bytes left is refused and ends loading.
+   */
   const load = (wanted: ReadonlyArray<string>, options: TS.CompilerOptions): Effect.Effect<void> =>
-    Effect.suspend(() => {
-      const added: Array<string> = []
-      const initialBytes = bytes
-      const initialPartial = partial
-      return Effect.gen(function*() {
-        const visited = new Set<string>()
-        let frontier = [...new Set(wanted)]
-        while (frontier.length > 0) {
-          const pending = frontier.filter(needsLoad)
-          const room = Math.max(0, limits.files - texts.size)
-          if (pending.length > room || (pending.length > 0 && bytes >= limits.bytes)) partial = true
-          const batch = bytes >= limits.bytes ? [] : pending.slice(0, room)
-          const read = batch.length === 0 ? [] : yield* loader.read(batch)
+    Effect.gen(function*() {
+      const visited = new Set<string>()
+      let frontier = [...new Set(wanted)]
+      while (frontier.length > 0) {
+        const pending = frontier.filter(needsLoad)
+        let at = 0
+        while (at < pending.length) {
+          const room = Math.min(SLICE, limits.files - texts.size)
+          if (room <= 0 || full) {
+            partial = true
+            break
+          }
+          const slice = pending.slice(at, at + room)
+          at += slice.length
           // Reserve every admitted file before asynchronous import discovery can load manifests.
-          for (const [path, text] of read) {
-            if (text === null) {
-              unreadable.add(path)
-              continue
+          for (const [path, text] of yield* loader.read(slice)) {
+            if (text === null) unreadable.add(path)
+            else if (bytes + text.length > limits.bytes) {
+              full = true
+              partial = true
+            } else {
+              texts.set(path, text)
+              bytes += text.length
             }
-            texts.set(path, text)
-            added.push(path)
-            bytes += text.length
-            if (bytes > limits.bytes) partial = true
           }
-          const next = new Set<string>()
-          for (const path of frontier) {
-            visited.add(path)
-            const text = textOf(path)
-            // Cached text is not evidence that an interrupted request finished its imports.
-            if (text === undefined || !SCRIPT.test(path)) continue
-            for (const imported of yield* importsOf(path, text, options)) next.add(imported)
-          }
-          frontier = [...next].filter((path) => !visited.has(path))
         }
-      }).pipe(Effect.onInterrupt(() =>
-        Effect.sync(() => {
-          // A cached root must never hide an unfinished import closure on retry.
-          for (const path of added) texts.delete(path)
-          bytes = initialBytes
-          partial = initialPartial
-        })
-      ))
+        const next = new Set<string>()
+        for (const path of frontier) {
+          visited.add(path)
+          const text = textOf(path)
+          // Cached text is not evidence that an interrupted request finished its imports.
+          if (text === undefined || !SCRIPT.test(path)) continue
+          for (const imported of yield* importsOf(path, text, options)) next.add(imported)
+        }
+        frontier = [...next].filter((path) => !visited.has(path))
+      }
     })
 
   /** A config's own `compilerOptions`, converted against its directory, under those of what it extends. */
