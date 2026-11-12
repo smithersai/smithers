@@ -586,6 +586,10 @@ interface Service {
   readonly status: Stream.Stream<Status>
   readonly retryNow: Effect.Effect<void>
   readonly withdraw: (idempotencyKey: string) => Effect.Effect<void, NotWithdrawn>
+  readonly handoff: <E, R>(
+    idempotencyKey: string,
+    accept: Effect.Effect<void, E, R>
+  ) => Effect.Effect<void, E | NotWithdrawn, R>
   readonly parked: Effect.Effect<ReadonlyArray<Parked>>
   readonly discard: (id: string) => Effect.Effect<void>
 }
@@ -617,7 +621,8 @@ interface Status {
 | `status`    | The outbox's state now, then each change: whether this program leads, whether an owned stored write is held (`held`), and whether the last send failed on the `network` (no status) or at the `server`; null once a send gets through.                                                                                                                                                                         |
 | `retryNow`  | Sends every waiting write now instead of waiting out its backoff: the network detector's `notifyOnline`.                                                                                                                                                                                                                                                                                                       |
 | `withdraw`  | Takes back a write not sent yet, by its idempotency key: deletes it from the storage, so it is never sent, and rolls back its optimistic rows. Fails with `NotWithdrawn` when it can't. See below.                                                                                                                                                                                                             |
-| `parked`    | The writes parked now: ones an older build stored that this build can't send as they were meant, with the mutation's `name`, the `reason` and the rows as stored, which no schema checked. A storage that can't be read reads as none, logged as `outbox couldn't read its parked writes` with `error`.                                                                                                        |
+| `handoff`   | Takes back a write not sent yet into a durable home `accept` writes, such as a draft, so a crash between the two loses neither. See below.                                                                                                                                                                                                                                                                     |
+| `parked`    | The writes parked now: ones an older build stored that this build can't send as they were meant, and unfinished `handoff`s (reason `withdrawn`), with the mutation's `name`, the `reason` and the rows as stored, which no schema checked. A storage that can't be read reads as none, logged as `outbox couldn't read its parked writes` with `error`.                                                        |
 | `discard`   | Deletes parked write `id`, logged as `outbox write discarded` at Info level with its `name`. One that isn't parked changes nothing; a storage that fails is logged as `outbox couldn't discard a parked write` with `error`.                                                                                                                                                                                   |
 
 `Write.admitted` succeeds once the write is stored, and fails with
@@ -659,6 +664,21 @@ another tab in the moment of the withdraw is not covered by it.
 | `gone`                | No stored write waiting to be sent has that key: it was sent or refused already, isn't stored yet (`admitted` hasn't succeeded), or was never made.                                          |
 | `sending`             | The write's mutation is running now, or the write was just sent or refused and the library is deleting it. It settles as usual.                                                              |
 | `storage`             | Reading or deleting the storage failed. The write is sent as usual, and the failure is logged as `outbox write not withdrawn` at Warn level with `reason`. Other reasons log at Debug level. |
+
+`handoff(idempotencyKey, accept)` takes a write back the same way into a new
+durable home, such as the draft a person edits it in. Before the write leaves
+the storage, the outbox parks a copy with reason `withdrawn`; a write parked so
+is never sent, even when deleting it failed or the program stopped. `accept`
+runs next, and must succeed only once its own copy is durable. Its success
+deletes the parked copy. When `accept` fails or is interrupted, `handoff` fails
+with its error and the write stays parked: `Options.parked` takes it as the
+outbox next starts, so the feature can save it again. When the outbox couldn't
+park the write, `handoff` fails with `NotWithdrawn` as `withdraw` does,
+`accept` doesn't run, and the write is sent as usual.
+
+```ts
+yield * outbox.handoff(question.id, saveDraft(question.text))
+```
 
 A withdraw is a span, `outbox.withdraw`, with `outcome` (`withdrawn` or the
 reason), and a success is logged as `outbox write withdrawn` at Info level with

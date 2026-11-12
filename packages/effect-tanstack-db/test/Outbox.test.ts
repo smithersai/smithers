@@ -444,6 +444,160 @@ describe("admission", () => {
   })
 })
 
+describe("handoff", () => {
+  test("keeps recovery until the recipient's durable receipt, without sending the original", async () => {
+    const world = await setup(["ok"])
+    const online = offline()
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world, online })
+      const write = yield* save(outbox, notes, note("a", 1))
+      yield* write.admitted
+      const entered = yield* Deferred.make<void>()
+      const persisted = yield* Deferred.make<void>()
+      const handoff = yield* outbox.handoff(
+        "a",
+        Effect.andThen(Deferred.succeed(entered, undefined), Deferred.await(persisted))
+      )
+        .pipe(Effect.forkScoped)
+      yield* Deferred.await(entered)
+      expect(world.storage.entries.has(`tx:${write.id}`)).toBe(false)
+      expect(yield* outbox.parked).toMatchObject([{ id: write.id, reason: "withdrawn", rows: [note("a", 1)] }])
+      online.connect()
+      yield* outbox.retryNow
+      expect(world.sent).toEqual([])
+      yield* Deferred.succeed(persisted, undefined)
+      yield* Fiber.join(handoff)
+      expect(yield* outbox.parked).toEqual([])
+      expect(retainedKeys(world.storage)).toEqual([])
+    }))
+  })
+
+  test.each(["failure", "interruption"] as const)(
+    "a recipient %s leaves recovery across restart, never a sendable write",
+    async (failure) => {
+      const world = await setup(["ok"])
+      await scoped(Effect.gen(function*() {
+        const { outbox, notes } = yield* start({ ...world, online: offline() })
+        yield* (yield* save(outbox, notes, note("a", 1))).admitted
+        if (failure === "failure") {
+          expect(yield* Effect.flip(outbox.handoff("a", Effect.fail("disk full")))).toBe("disk full")
+        } else {
+          const entered = yield* Deferred.make<void>()
+          const fiber = yield* outbox.handoff("a", Effect.andThen(Deferred.succeed(entered, undefined), Effect.never))
+            .pipe(Effect.forkScoped)
+          yield* Deferred.await(entered)
+          yield* Fiber.interrupt(fiber)
+        }
+        expect(yield* outbox.parked).toMatchObject([{ reason: "withdrawn", rows: [note("a", 1)] }])
+      }))
+      const recovered: Array<unknown> = []
+      await scoped(Effect.gen(function*() {
+        const { outbox, notes } = yield* start({
+          ...world,
+          parked: {
+            save: (write) =>
+              Effect.sync(() => {
+                recovered.push(...write.rows)
+                return true
+              })
+          }
+        })
+        expect(yield* notes.toArray).toEqual([])
+        expect(yield* outbox.parked).toEqual([])
+        expect(retainedKeys(world.storage)).toEqual([])
+      }))
+      expect(recovered).toEqual([note("a", 1)])
+      expect(world.sent).toEqual([])
+    }
+  )
+
+  test("a crash after recovery is recorded but before removal cannot resend on reload", async () => {
+    const world = await setup(["ok"])
+    let refuse = false
+    const storage = {
+      ...world.storage,
+      delete: (key: string) =>
+        refuse && key.startsWith("tx:") ? Promise.reject(new Error("disk unavailable")) : world.storage.delete(key)
+    }
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world, storage, online: offline() })
+      const write = yield* save(outbox, notes, note("a", 1))
+      yield* write.admitted
+      refuse = true
+      const failure = yield* Effect.flip(outbox.handoff("a", Effect.die("recipient must not run")))
+      expect(failure).toMatchObject({ reason: "storage" })
+      expect(world.storage.entries.has(`tx:${write.id}`)).toBe(true)
+      expect(yield* outbox.parked).toHaveLength(1)
+    }))
+    const recovered: Array<unknown> = []
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({
+        ...world,
+        parked: {
+          save: (write) =>
+            Effect.sync(() => {
+              recovered.push(...write.rows)
+              return true
+            })
+        }
+      })
+      expect(yield* notes.toArray).toEqual([])
+      expect(yield* outbox.parked).toEqual([])
+      expect(retainedKeys(world.storage)).toEqual([])
+    }))
+    expect(recovered).toEqual([note("a", 1)])
+    expect(world.sent).toEqual([])
+  })
+
+  test("refusing the recovery record leaves the original queued and does not run the recipient", async () => {
+    const world = await setup(["ok"])
+    const storage = {
+      ...world.storage,
+      set: (key: string, value: string) =>
+        key.startsWith("parked:") ? Promise.reject(new Error("disk full")) : world.storage.set(key, value)
+    }
+    const online = offline()
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world, storage, online })
+      const write = yield* save(outbox, notes, note("a", 1))
+      yield* write.admitted
+      expect(yield* Effect.flip(outbox.handoff("a", Effect.die("recipient must not run")))).toMatchObject({
+        reason: "storage"
+      })
+      expect(yield* outbox.parked).toEqual([])
+      expect(world.storage.entries.has(`tx:${write.id}`)).toBe(true)
+      online.connect()
+      yield* write.settled
+    }))
+    expect(world.sent).toMatchObject([{ idempotencyKey: "a" }])
+  })
+
+  test.each(
+    [
+      ["gone", () => Promise.resolve(null)],
+      ["storage", () => Promise.reject(new Error("disk unavailable"))]
+    ] as const
+  )("a recovery read that finds the write %s leaves it queued, and the recipient doesn't run", async (reason, read) => {
+    const world = await setup(["ok"])
+    // The outbox's own read finds the write; the next read, for the recovery record, finds it deleted or fails.
+    let reads: number | undefined
+    const storage = {
+      ...world.storage,
+      get: (key: string) =>
+        reads !== undefined && key.startsWith("tx:") && reads++ > 0 ? read() : world.storage.get(key)
+    }
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world, storage, online: offline() })
+      const write = yield* save(outbox, notes, note("a", 1))
+      yield* write.admitted
+      reads = 0
+      expect(yield* Effect.flip(outbox.handoff("a", Effect.die("recipient must not run")))).toMatchObject({ reason })
+      expect(yield* outbox.parked).toEqual([])
+      expect(world.storage.entries.has(`tx:${write.id}`)).toBe(true)
+    }))
+  })
+})
+
 describe("withdraw", () => {
   const keys = (sent: ReadonlyArray<{ readonly idempotencyKey: string }>) =>
     sent.map(({ idempotencyKey }) => idempotencyKey)

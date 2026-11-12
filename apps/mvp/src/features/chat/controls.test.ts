@@ -235,6 +235,76 @@ describe("Edit on a queued question", () => {
     await until(() => expect(again.composer()).toMatchObject({ draft: "next" }))
   })
 
+  test.each([false, true])("Edit awaits a durable draft and recovers a refused save after reload (navigated: %s)", async (navigate) => {
+    const { api, device, network } = await openOffline()
+    let armed = false
+    let refuse = false
+    let release!: () => void
+    let started!: () => void
+    const saving = new Promise<void>((resolve) => { started = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const faulty = {
+      ...device,
+      persistence: {
+        ...device.persistence,
+        open: async () => {
+          const database = await device.persistence.open()
+          return { ...database, execute: async <T>(sql: string, params?: ReadonlyArray<unknown>) => {
+            if (armed && /INSERT INTO/i.test(sql)) {
+              started()
+              await gate
+              if (refuse) throw new Error("SQLITE_FULL")
+            }
+            return database.execute<T>(sql, params)
+          } }
+        },
+      },
+    } as NodeDevice
+    const tab = await openOn(api, faulty)
+    // Open both windows before pausing the draft's database transaction.
+    await tab.run(show("other-conversation"))
+    await tab.run(show(null))
+    const asked = await tab.actions.ask("recover this question")
+    if (!asked.asked) throw new Error(asked.reason)
+    await until(() => expect(tab.shown()).toEqual(["user queued recover this question"]))
+    armed = true
+    let finished = false
+    const editing = tab.run(takeBack(asked.questionId)).then((outcome) => { finished = true; return outcome })
+    try {
+      await saving
+      await until(() => expect(tab.shown()).toEqual([]))
+      expect(finished).toBe(false)
+      expect(device.stored("chat-drafts")).toBe(0)
+      const recovery = await tab.run(tab.store.outbox.parked)
+      expect(recovery).toMatchObject([{ reason: "withdrawn", rows: [{ text: "recover this question" }] }])
+      if (navigate) {
+        await tab.run(show("other-conversation"))
+        expect(tab.composer()).toMatchObject({ draft: "" })
+      }
+      refuse = true
+      release()
+      expect(await editing).toBe("failed")
+      expect(await tab.run(tab.store.outbox.parked)).toHaveLength(1)
+      if (navigate) expect(tab.composer()).toMatchObject({ draft: "" })
+      await tab.close()
+
+      // The next tab recovers only from durable storage, before the network can send anything.
+      const again = await openOn(api, device)
+      await until(() => expect(again.composer()).toMatchObject({ draft: "recover this question" }))
+      expect(device.storedRows("chat-drafts")).toMatchObject([{ id: HOME_DRAFT, text: "recover this question" }])
+      expect(await again.run(again.store.outbox.parked)).toEqual([])
+      network.online()
+      await again.run(again.store.outbox.retryNow)
+      expect((await again.run(api.rows)).filter(({ text }) => text === "recover this question")).toEqual([])
+      await again.run(show("other-conversation"))
+      expect(again.composer()).toMatchObject({ draft: "" })
+    } finally {
+      refuse = true
+      release()
+      await editing
+    }
+  })
+
   test("Edit from the button, and /edit, take the latest waiting question, queued or unsent", async () => {
     const { api, device, network } = await openOffline()
     network.online()

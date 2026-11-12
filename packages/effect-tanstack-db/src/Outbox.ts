@@ -299,7 +299,19 @@ export interface Service {
    * storage can't be read or deleted from. Each call is a span, `outbox.withdraw`, with `outcome`.
    */
   readonly withdraw: (idempotencyKey: string) => Effect.Effect<void, NotWithdrawn>
-  /** The writes parked now: ones an older build made that this build can't send as they were meant. */
+  /**
+   * Takes back a write not sent yet, as `withdraw` does, into a new durable home that `accept` writes, such as a
+   * draft: before the write leaves the storage it is parked with reason `withdrawn`, which also keeps it from being
+   * sent. `accept` runs next and must succeed only once its own copy is durable; its success deletes the parked write.
+   * When `accept` fails or is interrupted, or the program stops first, the write stays parked, never sent, and
+   * `Options.parked` takes it as the outbox next starts. Fails with `accept`'s error, or `NotWithdrawn` as `withdraw`
+   * does, when no parked write was recorded and `accept` didn't run.
+   */
+  readonly handoff: <E, R>(
+    idempotencyKey: string,
+    accept: Effect.Effect<void, E, R>
+  ) => Effect.Effect<void, E | NotWithdrawn, R>
+  /** The writes parked now: ones an older build made that this build can't send as they were meant, and `handoff`s. */
   readonly parked: Effect.Effect<ReadonlyArray<Parked>>
   /** Deletes parked write `id`, logged as `outbox write discarded` with its name; one that isn't parked is no-op. */
   readonly discard: (id: string) => Effect.Effect<void>
@@ -546,6 +558,8 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       let inFlight: { readonly id: string; readonly retry: boolean } | undefined
       // Writes `withdraw` took back that the library hasn't reached yet: when it does, the send settles them unsent.
       const withdrawn = new Set<string>()
+      // Writes a `handoff` parked, until `discard` retires them: never sent, even when deleting the write failed.
+      const handedOff = new Set<string>()
       // Each write this program made, until it settles: `withdraw` waits for it, so its rows are gone when it returns.
       const live = new Map<string, Promise<void>>()
 
@@ -561,6 +575,11 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         run(
           Effect.logWarning("outbox write sealed").pipe(Effect.annotateLogs({ name: readWrite(stored).name, stage }))
         )
+      // A recovery record is also a tombstone: even a crash before deleting the sendable copy cannot replay it.
+      const handingOff = async (id: string) => {
+        const stored = await options.storage.get(`${PARKED_PREFIX}${id}`)
+        return stored !== null && (JSON.parse(stored) as StoredParked).reason === "withdrawn"
+      }
       const ownKeys = async (migrated = true) => {
         // Replay must wait for the same recovery barrier as admission after a leadership transfer.
         await sequenceReady
@@ -570,9 +589,14 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         // The library loads only writes at this build's versions: one the upgrade pass didn't reach stays stored
         // for a later start to carry.
         const upgrade = migrated ? options.upgrade : undefined
-        if (options.principal === undefined && upgrade === undefined) return keys
+        const parked = new Set(
+          keys.filter((key) => key.startsWith(PARKED_PREFIX)).map((key) => key.slice(PARKED_PREFIX.length))
+        )
+        if (options.principal === undefined && upgrade === undefined && parked.size === 0) return keys
         const own: Array<string> = []
         for (const key of keys) {
+          const id = key.slice(KEY_PREFIX.length)
+          if (key.startsWith(KEY_PREFIX) && parked.has(id) && await handingOff(id)) continue
           const stored = key.startsWith(KEY_PREFIX) ? await options.storage.get(key) : null
           if (sealed(key, stored)) seal(stored!, "load")
           else if (stored === null || upgrade === undefined || upgrade.write(stored)._tag === "Current") own.push(key)
@@ -972,7 +996,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         // Under the permit, so `withdraw` sees this write either taken back, and it settles here unsent, or in flight.
         // A write queued by another principal than this program's now is never sent: it is sealed.
         const claim = permit.withPermit(Effect.gen(function*() {
-          if (withdrawn.delete(id)) return "withdrawn" as const
+          if (
+            withdrawn.delete(id) || handedOff.has(id)
+          ) return "withdrawn" as const
           if (!(yield* stored)) return "sent_elsewhere" as const
           if (!owns(options.principal, metadata.principal)) return "sealed" as const
           inFlight = { id, retry: false }
@@ -1213,7 +1239,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         }).pipe(Semaphore.withPermits(creating, 1))
 
       const notWithdrawn = (reason: NotWithdrawn["reason"]) => new NotWithdrawn({ reason })
-      const withdraw: Service["withdraw"] = (idempotencyKey) =>
+      const takeBack = (idempotencyKey: string, retain = false) =>
         permit.withPermit(Effect.uninterruptible(Effect.gen(function*() {
           // A follower's view of the storage is no lock: the leader may be sending the write.
           if (!executor.isOfflineEnabled) return yield* notWithdrawn("follower")
@@ -1225,6 +1251,19 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           if (write === undefined) return yield* notWithdrawn("gone")
           // A write with an `outboxPhase` was sent or refused, and only its deletion is left.
           if (write.outboxPhase !== undefined || inFlight?.id === write.id) return yield* notWithdrawn("sending")
+          if (retain) {
+            const stored = yield* Effect.tryPromise({
+              try: () => options.storage.get(`${KEY_PREFIX}${write.id}`),
+              catch: () => notWithdrawn("storage")
+            })
+            if (stored === null) return yield* notWithdrawn("gone")
+            const parked: StoredParked = { reason: "withdrawn", name: write.mutationFnName, write: stored }
+            yield* Effect.tryPromise({
+              try: () => options.storage.set(`${PARKED_PREFIX}${write.id}`, JSON.stringify(parked)),
+              catch: () => notWithdrawn("storage")
+            })
+            handedOff.add(write.id)
+          }
           yield* Effect.tryPromise({
             try: () => executor.removeFromOutbox(write.id),
             catch: () => notWithdrawn("storage")
@@ -1250,7 +1289,6 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               )
             ], { discard: true })
           ),
-          Effect.asVoid,
           Effect.withSpan("outbox.withdraw")
         )
 
@@ -1260,7 +1298,12 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const stored = yield* Effect.tryPromise(() => options.storage.get(key))
           if (stored === null) return
           if (!owns(options.principal, stampOf((JSON.parse(stored) as StoredParked).write))) return
+          // The recovery tombstone outlives any leftover sendable copy, including a failed withdrawal deletion.
+          if ((JSON.parse(stored) as StoredParked).reason === "withdrawn") {
+            yield* Effect.tryPromise(() => storage.delete(`${KEY_PREFIX}${id}`))
+          }
           yield* Effect.tryPromise(() => options.storage.delete(key))
+          handedOff.delete(id)
           yield* Effect.logInfo("outbox write discarded").pipe(
             Effect.annotateLogs({ name: (JSON.parse(stored) as StoredParked).name })
           )
@@ -1302,7 +1345,13 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           void recover()
           executor.getOnlineDetector().notifyOnline()
         }),
-        withdraw,
+        withdraw: (key) => Effect.asVoid(takeBack(key)),
+        handoff: (key, accept) =>
+          Effect.gen(function*() {
+            const write = yield* takeBack(key, true)
+            yield* accept
+            yield* discard(write.id)
+          }),
         parked: parkedIn(options.storage, options.principal),
         discard
       })

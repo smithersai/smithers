@@ -1,13 +1,15 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Context, Deferred, Effect, Layer, Metric, Option, Schema } from "effect"
+import { codeOf } from "../../errorCode"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { ChatDraftsStore, ChatUnsentStore, outboxUpgrade } from "../../device/registry"
 import { held, OutboxWrites } from "../../outbox"
 import { FormValues } from "../views/schema"
 import { ChatClient } from "./api"
 import { answerCannotFinish } from "./answerEnd"
+import { saveTakenBack } from "./draftWrite"
 import { askFailures, writesReadyMs } from "./metrics"
-import { Asking, Source, type Unsent, type UnsentReason } from "./schema"
+import { Asking, type ChatDraft, HOME_DRAFT, Source, type Unsent, type UnsentReason } from "./schema"
 import type { ChatHost } from "./store"
 
 /** The Web Lock the tab leading the outbox holds. */
@@ -69,6 +71,29 @@ export const keepParked = (unsent: Collection.Collection<Unsent, string>, write:
     yield* Effect.logWarning("question parked").pipe(Effect.annotateLogs({ reason: write.reason, questionId: row.value.id }))
     return true
   })
+
+/**
+ * Puts a question an Edit took back, which the outbox kept parked (`Outbox.handoff`) because the device hadn't stored
+ * its draft, back as the draft of the conversation it was asked in: true once the device has stored it, false when its
+ * row doesn't say its text or the device still refuses, so it stays parked for the next opening.
+ */
+export const restoreTakenBack = (drafts: Collection.Collection<ChatDraft, string>, write: Outbox.Parked) =>
+  Effect.gen(function* () {
+    const row = Schema.decodeUnknownOption(ParkedQuestion)(write.rows[0])
+    if (Option.isNone(row)) return false
+    yield* drafts.restored
+    yield* saveTakenBack(drafts, row.value.conversationId ?? HOME_DRAFT, row.value.text)
+    yield* Effect.logInfo("question taken back restored").pipe(Effect.annotateLogs({ questionId: row.value.id }))
+    return true
+  }).pipe(
+    // expected: a device still refusing keeps the parked question for the next opening
+    Effect.catch((error) =>
+      Effect.as(
+        Effect.logWarning("question taken back not restored").pipe(Effect.annotateLogs({ errorCode: codeOf(error) })),
+        false,
+      )
+    ),
+  )
 
 // Local writes are available before any repository or conversation display store is evaluated. Only confirmation of
 // a question the server took waits for chat's read side; initializing the outbox and saving a draft never do.
@@ -174,7 +199,11 @@ const make = (host: ChatHost) => Effect.gen(function* () {
         // Writes an older build stored are upgraded before the outbox loads them, or parked (decision 0021 §4): a
         // parked question shows Not sent, with Retry and Discard.
         upgrade: outboxUpgrade,
-        parked: { ...others.parked, ask: (write) => keepParked(unsent, write) },
+        // A question an Edit took back whose draft the device didn't store (`withdrawn`) becomes that draft again.
+        parked: {
+          ...others.parked,
+          ask: (write) => write.reason === "withdrawn" ? restoreTakenBack(drafts, write) : keepParked(unsent, write),
+        },
       }),
     ),
     Outbox.Outbox,

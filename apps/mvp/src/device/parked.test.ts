@@ -1,11 +1,14 @@
-import { Collection, type Outbox } from "@smthrs/effect-tanstack-db"
+import { Collection, type Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { type Unsent, Unsent as UnsentRow } from "../features/chat/schema"
+import { HOME_DRAFT, type Unsent, Unsent as UnsentRow } from "../features/chat/schema"
 import { keepParked as keepParkedQuestion } from "../features/chat/store"
+import { restoreTakenBack } from "../features/chat/writes"
 import { type Requested, Requested as RequestedRow } from "../features/issues/schema"
 import { keepParked as keepParkedWrite } from "../features/issues/writes"
+import { nodeDevice } from "../test/chatApi"
 import { plain } from "../test/deviceFixture"
+import { ChatDraftsStore } from "./registry"
 
 // A write the outbox parked, one an older build stored that this build can't send as it meant (decision 0021 §4),
 // goes to its feature, which shows it Not sent: a question as an `unsent` row, an issue write as a `not_sent` request.
@@ -36,6 +39,47 @@ describe("a parked question", () => {
       return yield* keepParkedQuestion(unsent, parked("ask", { id: "q1" }))
     }))
     expect(took).toBe(false)
+  })
+})
+
+describe("a question an Edit took back before its draft was stored", () => {
+  const question = { id: "q1", answerId: "a1", text: "Edit me after the reload", queuedAt: 1, v: 1 }
+  const withdrawn = (row: unknown): Outbox.Parked => ({ id: "tx-1", name: "ask", reason: "withdrawn", rows: [row] })
+
+  // The device's database refuses draft writes once the drafts are open, when `refuse` (test.faults-by-injection).
+  const restore = async (row: unknown, refuse: boolean) => {
+    const host = nodeDevice()
+    let refusing = false
+    const persistence = Persistence.layer({
+      ...host.persistence,
+      open: async () => {
+        const database = await host.persistence.open()
+        return { ...database, execute: <T>(sql: string, params?: ReadonlyArray<unknown>) =>
+          refusing && /INSERT INTO/i.test(sql) ? Promise.reject(new Error("SQLITE_FULL")) : database.execute<T>(sql, params) }
+      },
+    })
+    const took = await run(Effect.gen(function* () {
+      const drafts = yield* Collection.persisted(ChatDraftsStore)
+      yield* drafts.restored
+      refusing = refuse
+      return yield* restoreTakenBack(drafts, withdrawn(row))
+    }).pipe(Effect.provide(persistence), Effect.orDie))
+    const stored = host.storedRows("chat-drafts")
+    await host.wipe()
+    return { took, stored }
+  }
+
+  test("becomes the draft of the conversation it was asked in, stored on the device", async () => {
+    expect(await restore({ ...question, conversationId: "c1" }, false)).toMatchObject({
+      took: true,
+      stored: [{ id: "c1", text: "Edit me after the reload" }],
+    })
+    expect(await restore(question, false)).toMatchObject({ took: true, stored: [{ id: HOME_DRAFT }] })
+  })
+
+  test("stays parked while the device refuses its draft, or when its row doesn't say its text", async () => {
+    expect(await restore(question, true)).toEqual({ took: false, stored: [] })
+    expect(await restore({ id: "q1" }, false)).toEqual({ took: false, stored: [] })
   })
 })
 

@@ -4,7 +4,7 @@ import { Clipboard } from "../../clipboard"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { MAX_QUESTION_LENGTH } from "./contract"
-import { persistDraft } from "./draftWrite"
+import { persistDraft, saveTakenBack } from "./draftWrite"
 import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "./metrics"
 import {
   type Asking,
@@ -124,25 +124,6 @@ const keepDraft = (draft: string, awaitPersistence = false) =>
     // Admission cleanup awaits this actual transaction; ordinary typing continues to save in the background.
     if (awaitPersistence) yield* persisted
     else yield* persisted.pipe(Effect.ignore, Effect.forkIn(scope))
-  }).pipe(Effect.orDie)
-
-/**
- * Keeps `draft` on the device for conversation `key`, which this tab no longer shows: the composer and the shown
- * conversation's prompt stay as they are, and showing `key` again finds it. `submit` rejects an empty question.
- */
-const keepDraftAway = (key: string, draft: string) =>
-  Effect.gen(function* () {
-    const { drafts, scope } = yield* ChatStore
-    const kept = yield* drafts.get(key)
-    const write = Option.isSome(kept)
-      ? kept.value.text === draft
-        ? undefined
-        : yield* drafts.update(key, (row) => { row.text = draft; delete row.generation })
-      : yield* drafts.insert({ id: key, text: draft })
-    const persisted = write === undefined
-      ? Effect.void
-      : persistDraft(write, key).pipe(Effect.ignore, Effect.forkIn(scope))
-    yield* persisted
   }).pipe(Effect.orDie)
 
 /** The draft the device kept for the conversation this tab shows; empty when none. */
@@ -514,9 +495,11 @@ const editable = (questionId?: string) =>
 /**
  * The tab's side of `chat/edit` (src/features/chat/tab.ts): takes a question that Smithers doesn't have yet back into
  * the composer, which opens with its text. An unsent question goes as its Edit does (`editUnsent`). A queued one leaves
- * the outbox first, under the outbox's own lock (`Outbox.withdraw`): it is taken back before it is sent, or sent and
- * not taken back, never both. A tab that doesn't lead the outbox takes the lead first. Answers `edited`, `not_found`,
- * `sent` when the outbox is sending it or has sent it, or `failed` when the outbox couldn't take it back.
+ * the outbox first, under the outbox's own lock (`Outbox.handoff`): it is taken back before it is sent, or sent and
+ * not taken back, never both. The outbox keeps it parked until the device has stored it as the draft of the conversation
+ * it was asked in, so a refused save or a closed tab loses nothing: the next opening restores that draft (`writes.ts`).
+ * A tab that doesn't lead the outbox takes the lead first. Answers `edited`, `not_found`, `sent` when the outbox is
+ * sending it or has sent it, or `failed` when the outbox couldn't take it back or the device didn't store the draft.
  */
 export const takeBack = (questionId?: string): Effect.Effect<EditAnswer["outcome"], never, ChatStore> =>
   Effect.gen(function* () {
@@ -530,21 +513,25 @@ export const takeBack = (questionId?: string): Effect.Effect<EditAnswer["outcome
       yield* editUnsent(question.id)
       return "edited"
     }
-    const withdraw = store.outbox.withdraw(question.id)
+    const accept = Effect.gen(function* () {
+      // Keep a private copy even on a shared prompt, whose collaboration receipt is not a device draft receipt.
+      yield* saveTakenBack(store.drafts, from, question.text)
+      if (((yield* placeNow) ?? HOME_DRAFT) === from) {
+        yield* setDraft(question.text, undefined, true)
+        yield* openComposer("button")
+      }
+    })
+    const withdraw = store.outbox.handoff(question.id, accept)
     const outcome = yield* withdraw.pipe(
       // expected: a follower tab takes the lead and withdraws again
-      Effect.catchIf((error) => error.reason === "follower", () => Effect.andThen(store.lead, withdraw)),
+      Effect.catchIf((error) => error._tag === "NotWithdrawn" && error.reason === "follower", () => Effect.andThen(store.lead, withdraw)),
       Effect.as("edited" as const),
       // expected: the edit logs this outcome as its own line
       Effect.catchTag("NotWithdrawn", ({ reason }) =>
         Effect.succeed(reason === "gone" || reason === "sending" ? "sent" as const : "failed" as const)),
+      // expected: a failed draft save retains the outbox's recovery record and reports no completed edit
+      Effect.catch(() => Effect.succeed("failed" as const)),
     )
-    if (outcome === "edited") {
-      if (((yield* placeNow) ?? HOME_DRAFT) === from) {
-        yield* setDraft(question.text)
-        yield* openComposer("button")
-      } else yield* keepDraftAway(from, question.text)
-    }
     yield* Effect.logWithLevel(outcome === "failed" ? "Warn" : "Info")("queued question taken back").pipe(
       Effect.annotateLogs({ questionId: question.id, outcome }),
     )
