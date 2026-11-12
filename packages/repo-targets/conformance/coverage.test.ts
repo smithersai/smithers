@@ -113,12 +113,12 @@ describe("coverage conformance", () => {
   // shapes only a live model run reaches, and those three cases are pinned in
   // `packages/repo-targets/contracts/test-pins.md` rather than run by the default gate.
   // `control` and `testing` left the set on 2026-09-01: both now pin 100 in
-  // every category (`6b3e0142e4`, `d1012596b6`).
+  // every category (`6b3e0142e4`, `d1012596b6`). `build` left it on
+  // 2026-11-11 for the same reason (`bde0da03c9`).
   const coverageFloorDeferred = new Set([
     "smithers",
     "smithers/agent/memory",
     "smithers/agent/std",
-    "smithers/build",
     "smithers/build/build-cli",
     "smithers/build/targets",
     "smithers/agent/integrations",
