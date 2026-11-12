@@ -1,10 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
+import type { Action } from "@smthrs/capability/Capability"
 import * as Capability from "@smthrs/capability/Capability"
 import { permissionDenied } from "@smthrs/capability/Permission"
 import * as HostJj from "@smthrs/jj"
 import { Deferred, Effect, Fiber, FileSystem as EffectFileSystem, Path } from "effect"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
-import { GrantStore } from "../src/GrantStore.ts"
+import { GrantStore, type Service as GrantStoreService } from "../src/GrantStore.ts"
 import * as Jj from "../src/Jj.ts"
 import * as Workspace from "../src/Workspace.ts"
 
@@ -25,6 +26,106 @@ const scriptedStore = (checks: Array<Capability.Capability>) =>
 const fileSystem = EffectFileSystem.makeNoop({
   realPath: (path) => Effect.succeed(path)
 })
+
+/** What the recording host answers to each of the nine guarded operations. */
+const answers = {
+  status: "status",
+  diff: "diff",
+  snapshot: { commitId: "commit", changeId: "change" },
+  restore: undefined,
+  workspaceAdd: undefined,
+  workspaceForget: undefined,
+  root: "/repository",
+  revert: { reverted: ["src/a.ts"] },
+  opRestore: undefined
+} as const
+
+type OperationName = keyof typeof answers
+
+/** A capability as the rows spell it: the action and resource a check must carry. */
+interface Requested {
+  readonly action: Action
+  readonly resource: string
+}
+
+/**
+ * One timeline for both sides of the decorator. A check and the host call it
+ * guards land in the same log, so the assertion is on their order, not on two
+ * lists that would both still be complete if the call ran first.
+ */
+type Event =
+  | { readonly event: "check"; readonly capability: Requested }
+  | { readonly event: "call"; readonly operation: OperationName }
+
+/** One row per guarded operation: the call, and the capabilities it must ask for first, in order. */
+interface Operation {
+  readonly name: OperationName
+  readonly checks: ReadonlyArray<Requested>
+  readonly call: (jj: HostJj.Jj) => Effect.Effect<unknown, unknown>
+}
+
+const operations: ReadonlyArray<Operation> = [
+  { name: "status", checks: [{ action: "jj:status", resource: "." }], call: (jj) => jj.status() },
+  { name: "diff", checks: [{ action: "jj:diff", resource: "from:to" }], call: (jj) => jj.diff("from", "to") },
+  { name: "snapshot", checks: [{ action: "jj:snapshot", resource: "message" }], call: (jj) => jj.snapshot("message") },
+  { name: "restore", checks: [{ action: "jj:restore", resource: "change" }], call: (jj) => jj.restore("change") },
+  {
+    name: "workspaceAdd",
+    checks: [{ action: "jj:workspace-add", resource: "/work/lane" }, { action: "fs:write", resource: "/work/lane" }],
+    call: (jj) => jj.workspaceAdd("lane", "/work/lane")
+  },
+  {
+    name: "workspaceForget",
+    checks: [{ action: "jj:workspace-forget", resource: "lane" }],
+    call: (jj) => jj.workspaceForget("lane")
+  },
+  {
+    name: "root",
+    checks: [{ action: "jj:root", resource: "/repository/lane" }],
+    call: (jj) => jj.root!("/repository/lane")
+  },
+  { name: "revert", checks: [{ action: "jj:revert", resource: "change" }], call: (jj) => jj.revert!("change") },
+  {
+    name: "opRestore",
+    checks: [{ action: "jj:op-restore", resource: "abc123" }],
+    call: (jj) => jj.opRestore!("abc123")
+  }
+]
+
+/** A backend implementing all nine operations, each of which logs its call and answers {@link answers}. */
+const recordingHost = (log: Array<Event>): HostJj.Jj => {
+  const answer = <Name extends OperationName>(operation: Name) => () =>
+    Effect.sync(() => {
+      log.push({ event: "call", operation })
+      return answers[operation]
+    })
+  return HostJj.make({
+    status: answer("status"),
+    diff: answer("diff"),
+    snapshot: answer("snapshot"),
+    restore: answer("restore"),
+    workspaceAdd: answer("workspaceAdd"),
+    workspaceForget: answer("workspaceForget"),
+    root: answer("root"),
+    revert: answer("revert"),
+    opRestore: answer("opRestore")
+  })
+}
+
+const guarded = <A, E>(
+  effect: Effect.Effect<A, E, Jj.Jj>,
+  host: HostJj.Jj,
+  store: GrantStoreService,
+  realPaths: EffectFileSystem.FileSystem = fileSystem
+) =>
+  effect.pipe(
+    Effect.provide(Jj.layer),
+    Effect.provideService(HostJj.Jj, host),
+    Effect.provideService(EffectFileSystem.FileSystem, realPaths),
+    Effect.provide(Path.layer),
+    Effect.provide(Workspace.layer("/workspace")),
+    Effect.provideService(GrantStore, store)
+  )
 
 describe("Jj", () => {
   for (const length of [4096, 4097]) {
@@ -64,107 +165,54 @@ describe("Jj", () => {
     })
   }
 
-  itEffect("checks every host operation before delegating it", () => {
-    const calls: Array<string> = []
-    const checks: Array<Capability.Capability> = []
-    const host = HostJj.makeNoop({
-      status: () =>
-        Effect.sync(() => {
-          calls.push("status")
-          return "status"
-        }),
-      diff: () =>
-        Effect.sync(() => {
-          calls.push("diff")
-          return "diff"
-        }),
-      snapshot: () =>
-        Effect.sync(() => {
-          calls.push("snapshot")
-          return { commitId: "commit", changeId: "change" }
-        }),
-      restore: () =>
-        Effect.sync(() => {
-          calls.push("restore")
-        }),
-      workspaceAdd: () =>
-        Effect.sync(() => {
-          calls.push("workspaceAdd")
-        }),
-      workspaceForget: () =>
-        Effect.sync(() => {
-          calls.push("workspaceForget")
-        })
-    })
-
-    return Effect.gen(function*() {
-      const jj = yield* Jj.Jj
-      expect(yield* jj.status()).toBe("status")
-      expect(yield* jj.diff("from", "to")).toBe("diff")
-      expect(yield* jj.snapshot("message")).toEqual({ commitId: "commit", changeId: "change" })
-      yield* jj.restore("change")
-      yield* jj.workspaceAdd("lane", "/work/lane")
-      yield* jj.workspaceForget("lane")
-      expect(calls).toEqual(["status", "diff", "snapshot", "restore", "workspaceAdd", "workspaceForget"])
-      expect(checks).toEqual([
-        { action: "jj:status", resource: "." },
-        { action: "jj:diff", resource: "from:to" },
-        { action: "jj:snapshot", resource: "message" },
-        { action: "jj:restore", resource: "change" },
-        { action: "jj:workspace-add", resource: "/work/lane" },
-        { action: "fs:write", resource: "/work/lane" },
-        { action: "jj:workspace-forget", resource: "lane" }
-      ])
-    }).pipe(
-      Effect.provide(Jj.layer),
-      Effect.provideService(HostJj.Jj, host),
-      Effect.provideService(EffectFileSystem.FileSystem, fileSystem),
-      Effect.provide(Path.layer),
-      Effect.provide(Workspace.layer("/workspace")),
-      Effect.provideService(GrantStore, scriptedStore(checks))
+  itEffect("asks for every operation's capabilities before delegating it", () => {
+    const log: Array<Event> = []
+    return guarded(
+      Effect.gen(function*() {
+        const jj = yield* Jj.Jj
+        for (const operation of operations) {
+          expect(yield* operation.call(jj), operation.name).toEqual(answers[operation.name])
+        }
+        expect(log).toEqual(operations.flatMap((operation) => [
+          ...operation.checks.map((capability) => ({ event: "check", capability })),
+          { event: "call", operation: operation.name }
+        ]))
+      }),
+      recordingHost(log),
+      GrantStore.of({
+        ...scriptedStore([]),
+        check: (capability) => {
+          log.push({ event: "check", capability })
+          return Effect.void
+        }
+      })
     )
   })
 
-  itEffect("checks the optional operations a backend does implement", () => {
-    const calls: Array<string> = []
-    const checks: Array<Capability.Capability> = []
-    const host = HostJj.makeNoop({
-      root: (from) =>
-        Effect.sync(() => {
-          calls.push(`root:${from}`)
-          return "/repository"
+  for (const operation of operations) {
+    itEffect(`refuses ${operation.name} before the host sees it`, () => {
+      const log: Array<Event> = []
+      return guarded(
+        Effect.gen(function*() {
+          const jj = yield* Jj.Jj
+          expect(yield* Effect.flip(operation.call(jj))).toMatchObject({
+            code: "permission_denied",
+            capability: operation.checks[0],
+            reason: "denied by test"
+          })
+          expect(log).toEqual([{ event: "check", capability: operation.checks[0] }])
         }),
-      revert: (changeId) =>
-        Effect.sync(() => {
-          calls.push(`revert:${changeId}`)
-          return { reverted: ["src/a.ts"] }
-        }),
-      opRestore: (operationId) =>
-        Effect.sync(() => {
-          calls.push(`opRestore:${operationId}`)
+        recordingHost(log),
+        GrantStore.of({
+          ...scriptedStore([]),
+          check: (capability) => {
+            log.push({ event: "check", capability })
+            return Effect.fail(permissionDenied(capability, "denied by test"))
+          }
         })
+      )
     })
-
-    return Effect.gen(function*() {
-      const jj = yield* Jj.Jj
-      expect(yield* jj.root!("/repository/lane")).toBe("/repository")
-      expect(yield* jj.revert!("change")).toEqual({ reverted: ["src/a.ts"] })
-      yield* jj.opRestore!("abc123")
-      expect(calls).toEqual(["root:/repository/lane", "revert:change", "opRestore:abc123"])
-      expect(checks).toEqual([
-        { action: "jj:root", resource: "/repository/lane" },
-        { action: "jj:revert", resource: "change" },
-        { action: "jj:op-restore", resource: "abc123" }
-      ])
-    }).pipe(
-      Effect.provide(Jj.layer),
-      Effect.provideService(HostJj.Jj, host),
-      Effect.provideService(EffectFileSystem.FileSystem, fileSystem),
-      Effect.provide(Path.layer),
-      Effect.provide(Workspace.layer("/workspace")),
-      Effect.provideService(GrantStore, scriptedStore(checks))
-    )
-  })
+  }
 
   itEffect("runs `root` in the canonical directory it was authorized for", () => {
     // A symlink is the whole attack: check `jj:root` on the name the caller
@@ -300,46 +348,6 @@ describe("Jj", () => {
       Effect.provide(Path.layer),
       Effect.provide(Workspace.layer("/workspace")),
       Effect.provideService(GrantStore, scriptedStore([]))
-    )
-  })
-
-  itEffect("does not delegate when a Jj capability is denied", () => {
-    let invoked = false
-    const checks: Array<Capability.Capability> = []
-    const store = GrantStore.of({
-      policy: closedPolicy,
-      check: (capability) => {
-        checks.push(capability)
-        return Effect.fail(permissionDenied(capability, "denied by test"))
-      },
-      reply: () => Effect.die("not used by decorator tests"),
-      list: Effect.succeed([]),
-      grantEnvelope: () => Effect.void
-    })
-    const host = HostJj.makeNoop({
-      status: () =>
-        Effect.sync(() => {
-          invoked = true
-          return "status"
-        })
-    })
-
-    return Effect.gen(function*() {
-      const jj = yield* Jj.Jj
-      expect(yield* Effect.flip(jj.status())).toMatchObject({
-        code: "permission_denied",
-        capability: { action: "jj:status", resource: "." },
-        reason: "denied by test"
-      })
-      expect(invoked).toBe(false)
-      expect(checks).toEqual([{ action: "jj:status", resource: "." }])
-    }).pipe(
-      Effect.provide(Jj.layer),
-      Effect.provideService(HostJj.Jj, host),
-      Effect.provideService(EffectFileSystem.FileSystem, fileSystem),
-      Effect.provide(Path.layer),
-      Effect.provide(Workspace.layer("/workspace")),
-      Effect.provideService(GrantStore, store)
     )
   })
 })

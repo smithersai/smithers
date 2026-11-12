@@ -70,6 +70,7 @@ export const FileSystemOperations = [
   "glob",
   "exists",
   "link",
+  "lstat",
   "makeDirectory",
   "makeTempDirectory",
   "makeTempDirectoryScoped",
@@ -77,6 +78,7 @@ export const FileSystemOperations = [
   "makeTempFileScoped",
   "open",
   "readDirectory",
+  "readDirectoryEntries",
   "readFile",
   "readFileString",
   "readLink",
@@ -92,7 +94,7 @@ export const FileSystemOperations = [
   "watch",
   "writeFile",
   "writeFileString"
-] as const
+] as const satisfies ReadonlyArray<keyof FileSystem.FileSystem>
 
 /**
  * One method of Effect's closed filesystem service.
@@ -164,7 +166,7 @@ export interface JjSuccess {
   /** Path whose repository root the host must resolve. */
   readonly rootFrom?: string | undefined
   /** Optional methods this otherwise available backend explicitly refuses. */
-  readonly unsupported?: Partial<Record<"root" | "revert", JjErrorCode>> | undefined
+  readonly unsupported?: Partial<Record<"root" | "revert" | "opRestore", JjErrorCode>> | undefined
 }
 
 /**
@@ -180,8 +182,9 @@ export const JjOperations = [
   "workspaceForget",
   "status",
   "root",
-  "revert"
-] as const
+  "revert",
+  "opRestore"
+] as const satisfies ReadonlyArray<keyof Jj>
 
 /**
  * One method of the closed Jj host service.
@@ -367,6 +370,12 @@ const fileSystemProbe = (
       return Effect.tap(fs.exists(source), (exists) => Effect.sync(() => expect(exists).toBe(true)))
     case "link":
       return fs.link(source, at("hard-link.txt"))
+    case "lstat":
+      return Effect.tap(fs.lstat(source), (info) =>
+        Effect.sync(() => {
+          expect(info.size).toBe(BigInt(bytes.length))
+          expect(info.type).toBe("File")
+        }))
     case "makeDirectory":
       return fs.makeDirectory(at("directory"), { recursive: true })
     case "makeTempDirectory":
@@ -384,6 +393,13 @@ const fileSystemProbe = (
         Effect.sync(() => {
           expect(Array.isArray(entries)).toBe(true)
           expect(entries.every((entry) => typeof entry === "string")).toBe(true)
+        }))
+    case "readDirectoryEntries":
+      return Effect.tap(fs.readDirectoryEntries(root), (entries) =>
+        Effect.sync(() => {
+          expect(Array.isArray(entries)).toBe(true)
+          expect(entries.every((entry) => typeof entry.name === "string" && typeof entry.type === "string")).toBe(true)
+          expect(entries).toContainEqual(expect.objectContaining({ name: "source.txt" }))
         }))
     case "readFile":
       return Effect.gen(function*() {
@@ -488,9 +504,9 @@ const defaultInterruptCommand = ChildProcess.pipeTo(
 /**
  * Registers the shared Host contract with Vitest.
  *
- * Every invocation creates ten cases: complete service presence,
- * FileSystem, Path, five child-process lifecycle cases, Jj, and
- * HttpClient.
+ * Every invocation creates eleven cases: complete service presence,
+ * FileSystem, Path, six child-process lifecycle cases (buffered, streaming,
+ * cwd and env options, stdin, pipeline, interruption), Jj, and HttpClient.
  *
  * @category testing
  * @since 1.0.0-rc.0
@@ -699,8 +715,10 @@ export const runHostContract = (
             const jj = yield* JjService.Jj
             const root = jj.root
             const revert = jj.revert
+            const opRestore = jj.opRestore
             expect(root).toBeTypeOf("function")
             expect(revert).toBeTypeOf("function")
+            expect(opRestore).toBeTypeOf("function")
             yield* Effect.forEach([
               jj.snapshot("host contract"),
               jj.restore("host-contract-change"),
@@ -709,7 +727,8 @@ export const runHostContract = (
               jj.workspaceForget("host-contract"),
               jj.status(),
               root!("/host-contract"),
-              revert!("host-contract-change")
+              revert!("host-contract-change"),
+              opRestore!("0123456789abcdef")
             ], (probe) =>
               assertFailure(probe, jjCap.code), { discard: true })
           })
@@ -717,8 +736,10 @@ export const runHostContract = (
             const jj = yield* JjService.Jj
             const root = jj.root
             const revert = jj.revert
+            const opRestore = jj.opRestore
             expect(root).toBeTypeOf("function")
             expect(revert).toBeTypeOf("function")
+            expect(opRestore).toBeTypeOf("function")
             yield* (jjCap.prepareChange?.("first") ?? Effect.void)
             const first = yield* jj.snapshot("host contract first")
             expect(first.changeId.length).toBeGreaterThan(0)
@@ -751,6 +772,16 @@ export const runHostContract = (
               expect((yield* root!(rootFrom)).length).toBeGreaterThan(0)
             } else {
               yield* assertFailure(root!(rootFrom), rootCode)
+            }
+            // Restore only after forgetting the temporary workspace. The
+            // snapshot predates it, so no workspace is left pointing at a
+            // repository view that no longer contains it.
+            const opRestoreCode = jjCap.unsupported?.opRestore
+            if (opRestoreCode === undefined) {
+              expect(second.operationId).toBeTypeOf("string")
+              yield* opRestore!(second.operationId!)
+            } else {
+              yield* assertFailure(opRestore!(second.operationId ?? "0123456789abcdef"), opRestoreCode)
             }
           }),
         layer

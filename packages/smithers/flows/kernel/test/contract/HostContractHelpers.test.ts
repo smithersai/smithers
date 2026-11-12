@@ -5,11 +5,36 @@
  * capability declared unsupported quietly succeed.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { JjError } from "@smthrs/jj"
-import { Cause, Effect, Exit } from "effect"
+import { type Jj, JjError } from "@smthrs/jj"
+import { Cause, Effect, Exit, type FileSystem } from "effect"
 import { tmpdir } from "node:os"
 import { isAbsolute, relative, sep } from "node:path"
-import { assertFailure, defaultScratchPath, errorCode } from "./HostContract.ts"
+import { expectTypeOf } from "vitest"
+import {
+  assertFailure,
+  defaultScratchPath,
+  errorCode,
+  type FileSystemOperation,
+  FileSystemOperations,
+  type JjOperation,
+  JjOperations
+} from "./HostContract.ts"
+
+describe("operation lists", () => {
+  // Type-level: the lists are the services' method names, no more and no
+  // less, so a method Effect or `@smthrs/jj` adds fails compilation here
+  // instead of passing the contract unprobed. The one non-method key is the
+  // `~`-prefixed type id Effect brands its services with.
+  it("names every method of Effect's filesystem service exactly once", () => {
+    expectTypeOf<FileSystemOperation>().toEqualTypeOf<Exclude<keyof FileSystem.FileSystem, `~${string}`>>()
+    expect(new Set(FileSystemOperations).size).toBe(FileSystemOperations.length)
+  })
+
+  it("names every method of the Jj service exactly once", () => {
+    expectTypeOf<JjOperation>().toEqualTypeOf<keyof Jj>()
+    expect(new Set(JjOperations).size).toBe(JjOperations.length)
+  })
+})
 
 describe("errorCode", () => {
   it("prefers a string `code` field", () => {

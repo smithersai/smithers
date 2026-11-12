@@ -122,7 +122,7 @@ const layerJjSupported: Layer.Layer<Jj> = Layer.succeed(JjService.Jj)(
     snapshot: () =>
       Effect.sync(() => {
         const id = `change-${++nextChange}`
-        return { commitId: id, changeId: id }
+        return { commitId: id, changeId: id, operationId: `operation-${nextChange}` }
       }),
     restore: () => Effect.void,
     diff: () => Effect.succeed("diff"),
@@ -130,7 +130,8 @@ const layerJjSupported: Layer.Layer<Jj> = Layer.succeed(JjService.Jj)(
     workspaceForget: () => Effect.void,
     status: () => Effect.succeed("The working copy is clean"),
     root: () => Effect.succeed("/host-contract"),
-    revert: () => Effect.succeed({ reverted: ["host-contract.txt"] })
+    revert: () => Effect.succeed({ reverted: ["host-contract.txt"] }),
+    opRestore: () => Effect.void
   })
 )
 
@@ -147,7 +148,8 @@ const layerJjPartial: Layer.Layer<Jj> = Layer.succeed(JjService.Jj)(
     workspaceForget: () => Effect.void,
     status: () => Effect.succeed("The working copy is clean"),
     root: () => Effect.fail(JjService.jjError({ code: "not_installed", method: "root" })),
-    revert: () => Effect.fail(JjService.jjError({ code: "not_installed", method: "revert" }))
+    revert: () => Effect.fail(JjService.jjError({ code: "not_installed", method: "revert" })),
+    opRestore: () => Effect.fail(JjService.jjError({ code: "not_installed", method: "opRestore" }))
   })
 )
 
@@ -251,7 +253,7 @@ runHostContract(
       prepareChange: () => Effect.void,
       workspacePath: "/explicit-jj-workspace",
       rootFrom: "/explicit-jj-root",
-      unsupported: { root: "not_installed", revert: "not_installed" }
+      unsupported: { root: "not_installed", revert: "not_installed", opRestore: "not_installed" }
     },
     httpClient: httpClientCaps
   }
