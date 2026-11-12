@@ -192,13 +192,16 @@ def check_transport_and_containment() -> None:
         plue_env._EXEC_REATTACH_BACKOFF_SEC = (0, 0)  # reattach twice, then give up
         try:
             ops = fake_ops(cli)
-            for command in ("connectfail", "dropped"):
+            for command in ("dropped",):
                 try:
                     asyncio.run(ops._plue_exec(command))
                 except plue_env.PlueError as error:
                     assert error.code == "ssh_transport", (command, error.code)
                 else:
                     raise AssertionError(f"{command}: an SSH client transport failure is a PlueError")
+            assert asyncio.run(ops._plue_exec("connectfail")) == (
+                "", "ssh: connect to host ssh.jjhub.tech port 22: Operation timed out\r\n", 255), \
+                "a completed command may itself run SSH and fail"
             assert asyncio.run(ops._plue_exec("own255")) == ("", "fatal: bad object\n", 255), "the command's own 255 is its exit"
             try:
                 asyncio.run(ops._plue_exec("notjson"))
@@ -480,6 +483,44 @@ def check_shim_durable_exec() -> None:
         assert len(calls.read_text().splitlines()) == 3
 
 
+
+def check_shim_completed_ssh() -> None:
+    """A command with a completed exit status keeps both output streams,
+    including when that command ran SSH and exited 255."""
+    import subprocess as sp
+    import plue_docker
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        cli, calls = root / "smithers", root / "calls"
+        shim = plue_docker.shim_directory(root, {
+            "repo": "acme/bench", "cli": str(cli), "env": {}, "reattach_backoff_sec": [0, 0],
+        })
+        for message in ("ssh: connect to host example.invalid port 22: Connection refused\n",
+                        "Connection closed by 192.0.2.1 port 22\n"):
+            for nested in (False, True):
+                for stdin in (False, True):
+                    calls.write_text("")
+                    payload = {"exit_code": 255, "stdout": "partial output\n", "stderr": message}
+                    data = {"data": payload} if nested else payload
+                    cli.write_text("#!/usr/bin/env python3\nimport pathlib, sys\n"
+                                   f"with pathlib.Path({str(calls)!r}).open('a') as f: f.write('exec\\n')\n"
+                                   f"print({json.dumps(data)!r})\nsys.exit(255)\n")
+                    cli.chmod(0o755)
+                    run = sp.run([sys.executable, str(shim / "docker"), "exec", *(["-i"] if stdin else []),
+                                  "--", "ws-1", "sh", "-c", "ssh example.invalid"],
+                                 capture_output=True, text=True, input="" if stdin else None, timeout=10)
+                    assert run.returncode == 255, run
+                    assert run.stdout == payload["stdout"] and run.stderr == message, run
+                    assert calls.read_text().splitlines() == ["exec"], "completed commands never reattach"
+        # An actual CLI transport failure still preserves already delivered output.
+        cli.write_text("#!/usr/bin/env python3\nimport json, sys\n"
+                       "print(json.dumps({'data': {'exit_code': 255, 'stdout': 'partial', 'stderr': ''}}))\n"
+                       "print('Connection closed by 192.0.2.1 port 22', file=sys.stderr)\nsys.exit(255)\n")
+        run = sp.run([sys.executable, str(shim / "docker"), "exec", "-i", "--", "ws-1", "cat"],
+                     capture_output=True, text=True, input="x", timeout=10)
+        assert run.returncode == 255 and run.stdout == "partial", run
+        assert "Connection closed by" in run.stderr, run
+
 def check_guest_prelude() -> None:
     """Every exec runs under umask 022, what `docker exec` gets on a stock rootful Docker host. Intel OpenMP asserts in kmp_affinity.cpp(642) on the plue guest's CPU
     topology (each vCPU its own socket): vllm-deepseek-streaming's oracle
@@ -740,13 +781,30 @@ def check_requeue_and_health() -> None:
             if data.get("finished_at"):
                 data["finished_at"] = recent
             (job / name / "result.json").write_text(json.dumps(data))
+        for name, content in (("truncated__g", b'{"task_name":"x","finis'),
+                              ("unreadable__h", b"\xff"), ("denied__i", b"{}")):
+            (job / name).mkdir()
+            (job / name / "result.json").write_bytes(content)
+        denied = job / "denied__i/result.json"
+        denied.chmod(0)
+        # A privileged runner can still read mode-000 files.
+        denied_read = os.access(denied, os.R_OK)
+        if denied_read:
+            denied.unlink()
+            denied.parent.rmdir()
         out = Path(directory) / "health.md"
         assert health.main([directory, str(out), "tb4-X"]) == 3, "2 infra of 5 finished in the hour trips"
         assert "TRIPPED" in out.read_text()
         moved = requeue.requeue(job)
-        assert sorted(moved) == ["killed__f", "ssh__c", "verify__d"], moved
+        expected = ["killed__f", "ssh__c", "truncated__g", "unreadable__h", "verify__d"]
+        if not denied_read:
+            expected.insert(0, "denied__i")
+        assert sorted(moved) == expected, moved
         assert sorted(t.name for t in job.iterdir()) == ["agent__b", "gpu__e", "graded__a"]
         assert (Path(directory) / "tb4-X.infra" / "ssh__c" / "result.json").is_file(), "evidence is kept"
+        assert (Path(directory) / "tb4-X.infra/truncated__g/result.json").read_bytes() == b'{"task_name":"x","finis'
+        assert (Path(directory) / "tb4-X.infra/unreadable__h/result.json").read_bytes() == b"\xff"
+        assert requeue.requeue(job) == [], "requeue is idempotent and leaves scored trials alone"
         assert health.main([directory, str(out), "tb4-X"]) == 3, "infra moved aside still counts for its hour"
         # A CancelledError is the harness process being stopped (a pause, a
         # restart, a crash the liveness check sees): retried, but it does not
@@ -980,6 +1038,7 @@ if __name__ == "__main__":
     check_trial_containment()
     check_durable_exec_and_workdir()
     check_shim_durable_exec()
+    check_shim_completed_ssh()
     check_guest_prelude()
     check_disk_request_preservation()
     check_retried_attempts_are_kept()

@@ -1081,10 +1081,11 @@ class _PlueOps:
             # The gateway lost the session; the command may still be running
             # or may never have started. Not the command's exit status.
             raise PlueError(failure, "ssh_session_failed", result.args)
-        client = outcome.ssh_transport_error(stderr + "\n" + result.stderr.decode(errors="replace"))
+        cli_stderr = result.stderr.decode(errors="replace")
+        client = outcome.ssh_transport_error(cli_stderr if "exit_code" in payload else stderr + "\n" + cli_stderr)
         if code == 255 and client:
-            # OpenSSH exits 255 on its own errors: connect timeout, the remote
-            # closing the connection, a dead read. Not the command's status.
+            # A completed command's stderr belongs to that command, including
+            # SSH failures it encountered. Only the CLI can lose the transport.
             raise PlueError(client, "ssh_transport", result.args)
         return payload.get("stdout", "") or "", stderr, code
 

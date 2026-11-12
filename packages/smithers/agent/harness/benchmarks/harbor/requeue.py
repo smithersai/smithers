@@ -40,7 +40,7 @@ def requeue(job: Path) -> list[str]:
         try:
             data = json.loads(result.read_text())
         except (OSError, ValueError):
-            continue
+            data = {}
         if outcome.classify(data) not in ("infra", "running"):
             continue
         # Keep attempts discoverable until cleanup succeeds.

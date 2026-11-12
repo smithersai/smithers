@@ -801,6 +801,113 @@ def check_drive() -> None:
                 assert gone(int((root / "pid").read_text())), "a run over its budget is killed"
 
 
+
+def check_commit_work() -> None:
+    """Run the real fallback shell command against repositories created with jj.
+    Clean, dirty, staging failure and commit-hook failure have distinct receipts."""
+    import asyncio
+    import subprocess
+    import types
+
+    class LocalShell:
+        session_id = "commit-fixture"
+
+        async def exec(self, command, cwd=None, timeout_sec=30, **_):
+            result = await agent.run_child(["sh", "-c", command], cwd=cwd,
+                                           capture_output=True, timeout=timeout_sec)
+            return types.SimpleNamespace(return_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
+
+    def jj(cwd: Path, *args: str) -> str:
+        return subprocess.run(["jj", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        checkout = root / "checkout"
+        jj(root, "git", "init", "--colocate", str(checkout))
+        jj(checkout, "config", "set", "--repo", "user.name", "Fixture")
+        jj(checkout, "config", "set", "--repo", "user.email", "fixture@example.invalid")
+        (checkout / "work").write_text("base\n")
+        jj(checkout, "commit", "-m", "base")
+        smithers = agent.SmithersAgent(logs_dir=root, model_name="openai/gpt-6-sol")
+        shell = LocalShell()
+        base = jj(checkout, "log", "-r", "@-", "--no-graph", "-T", "commit_id")
+        clean = asyncio.run(smithers._commit_work(shell, str(checkout)))
+        assert jj(checkout, "log", "-r", "@-", "--no-graph", "-T", "commit_id") == base
+        (checkout / "work").write_text("changed\n")
+        dirty = asyncio.run(smithers._commit_work(shell, str(checkout)))
+        assert dirty == {"returnCode": 0, "stdout": "smithers_agent: committed remaining work\n", "stderr": ""}, dirty
+        assert jj(checkout, "file", "show", "-r", "@-", "work") == "changed"
+        assert jj(checkout, "log", "-r", "@-", "--no-graph", "-T", "commit_id") != base
+
+        # A genuine lock failure tests staging, without replacing any command.
+        lock = checkout / ".git/index.lock"
+        lock.write_text("")
+        stage = asyncio.run(smithers._commit_work(shell, str(checkout)))
+        assert stage["returnCode"] != 0 and "committed remaining work" not in stage["stdout"], stage
+
+        logs = root / "logs"
+        logs.mkdir()
+        synthetic_journal(root / "journal.db")
+        (logs / "stub.py").write_text("import pathlib, shutil\npathlib.Path('.flows').mkdir()\n"
+                                     f"shutil.copyfile({str(root / 'journal.db')!r}, '.flows/control.db')\n")
+        saved = os.environ.get("SMITHERS_BENCH_CONTAINER")
+        os.environ["SMITHERS_BENCH_CONTAINER"] = "c1"
+        try:
+            for failure in ("stage", "hook"):
+                if failure == "hook":
+                    lock.unlink()
+                    (checkout / "work").write_text("uncommitted\n")
+                    hook = checkout / ".git/hooks/pre-commit"
+                    hook.write_text("#!/bin/sh\necho commit-hook-refused >&2\nexit 1\n")
+                    hook.chmod(0o755)
+                trial = logs / failure
+                trial.mkdir()
+                smithers = Stubbed(logs_dir=trial, model_name="openai/gpt-6-sol", commit=True, cwd=str(checkout), budget_sec=60)
+                context = types.SimpleNamespace()
+                try:
+                    asyncio.run(smithers.run("repair work", shell, context))
+                except accounts.ContainerUnreachable as error:
+                    assert "commit" in str(error).lower(), error
+                else:
+                    raise AssertionError(f"{failure}: a failed fallback commit must be infrastructure")
+                record = json.loads((trial / "smithers-run.json").read_text())
+                assert record["commitResult"]["returnCode"] != 0, record
+                assert (trial / "trajectory.json").is_file(), "commit failure keeps the completed trajectory"
+                assert (context.n_input_tokens, context.n_output_tokens) == (3000, 120), vars(context)
+                assert context.metadata["container_commands"]["succeeded"] > 0, vars(context)
+                assert smithers._summary is not None, "commit failure keeps the run summary"
+                assert "committed remaining work" not in record["commitResult"]["stdout"], record
+                if failure == "hook":
+                    assert "commit-hook-refused" in record["commitResult"]["stderr"], record
+            # Commit mode disabled leaves the same changed tree and hook alone.
+            trial = logs / "no-commit"
+            trial.mkdir()
+            smithers = Stubbed(logs_dir=trial, model_name="openai/gpt-6-sol", commit=False, cwd=str(checkout), budget_sec=60)
+            asyncio.run(smithers.run("repair work", shell, types.SimpleNamespace()))
+            assert "commitResult" not in json.loads((trial / "smithers-run.json").read_text())
+            # A prior model-seat failure stays the primary cause even if
+            # committing also fails; its retry must retain the reset time.
+            script = logs / "stub.py"
+            script.write_text(script.read_text() + "print('usage limit reset_at=2099-01-01T00:00:00Z')\n")
+            trial = logs / "seat-and-commit"
+            trial.mkdir()
+            smithers = Stubbed(logs_dir=trial, model_name="openai/gpt-6-sol",
+                               commit=True, cwd=str(checkout), budget_sec=60)
+            try:
+                asyncio.run(smithers.run("repair work", shell, types.SimpleNamespace()))
+            except accounts.SeatExhausted as error:
+                assert error.reset_at == "2099-01-01T00:00+00:00", error
+            else:
+                raise AssertionError("commit failure must preserve the primary seat failure")
+            assert json.loads((trial / "smithers-run.json").read_text())["commitResult"]["returnCode"] != 0
+        finally:
+            if saved is None:
+                os.environ.pop("SMITHERS_BENCH_CONTAINER", None)
+            else:
+                os.environ["SMITHERS_BENCH_CONTAINER"] = saved
+        assert clean == {"returnCode": 0, "stdout": "smithers_agent: nothing left to commit\n", "stderr": ""}, clean
+
+
 def check_drive_cancelled() -> None:
     """A cancelled trial stops its CLI. Harbor cancels `run()` at the agent
     timeout or a job stop; on nyc-02 (2026-10-14) a runner hung until its CLI
@@ -1191,6 +1298,7 @@ if __name__ == "__main__":
     check_container_survival()
     check_judge_preflight()
     check_drive()
+    check_commit_work()
     check_drive_cancelled()
     check_accounts()
     revision = check_harness_revision()

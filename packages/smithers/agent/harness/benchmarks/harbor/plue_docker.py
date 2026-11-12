@@ -206,7 +206,8 @@ def main(argv: list[str]) -> int:
         except ValueError:
             data = {}
         payload = data.get("data", data) if isinstance(data, dict) else {}
-        stderr = (payload.get("stderr") or "") + "\n" + result.stderr.decode(errors="replace")
+        cli_stderr = result.stderr.decode(errors="replace")
+        stderr = (payload.get("stderr") or "") + "\n" + cli_stderr
         if "exit_code" not in payload and plue_env.auth_denied(json.dumps(data) + stderr) \
                 and time.monotonic() < auth_deadline:
             # The SSH gateway refused the login (an IP ban); not the command's result.
@@ -219,8 +220,12 @@ def main(argv: list[str]) -> int:
             if wait is None or not plue_env.reattachable(lost):
                 sys.stderr.write(f"plue exec failed: {error.get('code', '')} {error.get('message', '')}\n")
                 return 126
-        elif int(payload.get("exit_code", result.returncode)) == 255 and outcome.ssh_transport_error(stderr):
+        elif int(payload.get("exit_code", result.returncode)) == 255 and outcome.ssh_transport_error(
+                cli_stderr if "exit_code" in payload else stderr):
+            # A completed command may itself run SSH; only the CLI's stderr
+            # can invalidate its reported exit status.
             if wait is None:
+                sys.stdout.write(payload.get("stdout") or "")
                 sys.stderr.write(stderr.strip() + "\n")
                 return 255
             lost = True

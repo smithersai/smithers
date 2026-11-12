@@ -168,6 +168,10 @@ to its own verifier, whose `reserve()` also runs before Harbor's build timer.
 A workspace SSH session the gateway lost (`ssh_session_failed`) or OpenSSH's
 own exit 255 (`ssh_transport`: connect timeout, remote closed, dead read)
 raises `PlueError` instead of passing the command a meaningless status.
+A completed command's `exit_code` and `stderr` belong to that command: if it
+runs SSH and exits `255`, both output streams and its status pass through
+without reattaching. A transport match in the CLI's own `stderr` still
+identifies a lost connection.
 
 A task is untrusted. A Dockerfile-only task is accepted when it is `FROM`,
 `COPY` and `RUN chmod` alone: a `COPY` source must resolve, symlinks included,
@@ -240,9 +244,10 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
   agent outcome) is infrastructure: re-run, never scored. Run with `-r 3` and
   one `--retry-include` per name in `outcome.INFRA_EXCEPTIONS`; after the
   harbor process exits, `requeue.py <job>` moves the remaining infra and
-  unfinished trials to `<job>.infra/` and `harbor jobs resume -p <job>`
-  re-runs them. `health.py` trips when infra is over 20% of a job's trials
-  finished in the last hour. `PlueUnplaceable` is neither retried nor
+  unfinished trials, including unreadable or truncated `result.json` files,
+  to `<job>.infra/` and `harbor jobs resume -p <job>` re-runs them. Their
+  original result files stay with the saved attempts. `health.py` trips when infra is
+  over 20% of a job's trials finished in the last hour. `PlueUnplaceable` is neither retried nor
   scored: the guest cannot fit this cluster.
 - When no healthy account is left the pool PAUSES: a lease waits
   (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
@@ -279,7 +284,11 @@ PYTHONPATH=$PWD pier run -p <deep-swe>/deep-swe-1-1/<task> \
 
 DeepSWE grades `git diff <base>..HEAD`, so under Pier the prompt tells the
 model to commit and the adapter commits whatever is left afterwards
-(`--ak commit=1` does the same under Harbor).
+(`--ak commit=1` does the same under Harbor). A clean tree reports only
+`nothing left to commit`. If staging or committing fails, `commitResult` in
+`smithers-run.json` keeps the exit code and output, and the adapter raises
+`ContainerUnreachable` so the trial is retried as infrastructure rather than
+graded against an incomplete `HEAD`.
 
 ### The network seal under Pier
 

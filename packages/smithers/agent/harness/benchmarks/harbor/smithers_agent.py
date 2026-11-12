@@ -1218,6 +1218,10 @@ class SmithersAgent(BaseAgent):
             raise accounts.ModelRouteError(cause or "model route failed")
         if kind == "seat":
             raise accounts.SeatExhausted(record["account"] or "?", cause or "usage limit", reset_at)
+        if self._commit and record["commitResult"]["returnCode"] != 0:
+            raise accounts.ContainerUnreachable(
+                f"fallback commit failed (exit {record['commitResult']['returnCode']}); "
+                "see commitResult in smithers-run.json")
         if reached["succeeded"] == 0:
             raise accounts.ContainerUnreachable(
                 f"no command reached {container} with exit 0 ({reached['attempted']} attempted)")
@@ -1255,9 +1259,9 @@ class SmithersAgent(BaseAgent):
         no-op; nothing here changes file contents."""
         command = (
             "git add -A && "
-            "(git diff --cached --quiet && echo 'smithers_agent: nothing left to commit' || "
+            "if git diff --cached --quiet; then echo 'smithers_agent: nothing left to commit'; else "
             "git -c user.name=smithers -c user.email=smithers@localhost commit -q -m 'smithers: task work' "
-            "&& echo 'smithers_agent: committed remaining work')"
+            "&& echo 'smithers_agent: committed remaining work'; fi"
         )
         result = await environment.exec(command=command, cwd=cwd, timeout_sec=300)
         return {"returnCode": result.return_code, "stdout": (result.stdout or "")[-2000:],
