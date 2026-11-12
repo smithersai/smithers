@@ -1223,6 +1223,28 @@ epoch, sign-in refused only in mock, a maintainer ranked as a contributor, the c
 below 40 pixels, and a saved wiki page kept twice. `compactAge` without its length check is an equivalent mutant: a
 lone `d` or `w` leaves no digits, and `digits("")` is false.
 
+### `src/web/historyView.vibe` and its decisions: every page state, chosen (eighteenth session)
+
+`history/view-models` renders arbitrary `HistoryModel`s, so the two runs left 32 items of `historyView.vibe`, 17 of
+`historyViewDecision.vibe` and 3 of `historyDecision.vibe` to the draw (the epic page, a failed commit read, notes by a
+person, the timeline's task, the Plan dialog's target and new epic, the epic header's keys; epic pages merged after the
+first was never run). `screens/history-states` (`fuzz/history-states.fuzz.vibe`) renders the page over fixed states in
+every execution, with drawn titles and note text:
+
+| States | Oracle |
+| --- | --- |
+| the list with an export, a failure, one epic open before its page and one with more commits; Enter, Space and `x` on an epic header | the export badge; the failure in the page and in the Plan dialog; a busy list and Show more; ToggledEpic twice, then Settled |
+| a filter whose matches have and have not answered | 1 row and not busy; no rows and busy |
+| an epic's hash; a commit hash read and failed, read and pending | the epic's heading and title; the alert and no heading; no alert |
+| a landed commit for a viewer, a contributor and a maintainer; the section choice | the bootstrap's notes have no byline, a person's do; 4 notes; the note form only from contributor; no timeline without a task; Insert and Amend for a maintainer; UpdatedNoteSection evidence, superseded, tried |
+| a commit outside the outline's epics in each state, with and without a task; the Plan dialog over it, over another commit and for a new epic | no epic crumb; 4 timeline steps, the task in the first; Amend only when landed; the target's title, else its id; the new epic field and its UpdatedForm |
+| epic pages in order, older, and detached | the epic extended; unchanged; unchanged |
+
+Coverage of this target alone hits every listed arm at seeds 20261229 and 20261230. Mutations, each caught
+(20261231): Space not toggling, a stale page merged, the bootstrap signing its notes, a failed commit read left
+loading, and `superseded` filed as tried. `timelineAt` of a state outside `CommitState` is a contract arm (the type
+admits none); the target calls it directly.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

@@ -1,0 +1,129 @@
+// src/web/historyView.vibe, historyViewDecision.vibe and historyDecision.vibe's arms that `history/view-models` reaches
+// only by some draws: the page rendered over fixed states in every execution (the list with an export, a failure, an
+// epic open before its page, matches answered and waiting; an epic's page; a commit read that failed or is still read;
+// commits in every state with notes, tasks, lanes and real commits, for each role that changes them; the Plan dialog
+// for each kind of plan), the epic header's keys, the note section's choice, and epic pages read in order, stale or
+// detached (0015, eighteenth session).
+import { it } from "@effect/vitest"
+import { scene, given, change, keydown, findAll, getAllByRole, textContent, type as typeInto, type SceneSimulation } from "foldkit/scene"
+import type { Commit } from "../src/history/mythical.vibe"
+import type { CommitPage, EpicCount, EpicPage, Head } from "../src/history/pages.vibe"
+import { HistoryMessage, HistoryModel, init, NEW_EPIC, update } from "../src/web/historyApp.vibe"
+import { view } from "../src/web/historyView.vibe"
+import * as V from "../src/web/historyViewDecision.vibe"
+import { run, same, Finding, Text } from "./run.vibe"
+
+const Input = Schema.Struct({ title: Text, text: Text })
+
+const EPICS: ReadonlyArray<EpicCount> = [{ id: "e1", title: "Compiler", commits: 3, folds: 3 }, { id: "e2", title: "Docs", commits: 1, folds: 0 }]
+function head(id: string, state: Head["state"], title: string): Head {
+  return { id, epic: "e1", rank: Number(id.slice(1)), title, state, task: state === "landed" ? "" : `task-${id}`, lane: "", notes: state === "landed" ? 1 : 0, folds: state === "landed" ? 2 : 0 }
+}
+
+/** The page over a loaded outline: `role`, `hash` and the rest of `change` chosen per state. */
+function loaded(role: HistoryModel["role"], change: Partial<HistoryModel>): HistoryModel {
+  const base = init({ mode: "mock", role, hash: "" }).model
+  const open = [head("m2", "planned", "Check")]
+  return { ...base, status: "ready", outline: { seq: 5, main: "abc1234def", epics: EPICS, open }, ...change }
+}
+
+/** A read commit page for `commit`, with real commits when it has folded any. */
+function read(commit: Commit): Pick<HistoryModel, "hash" | "commitId" | "commit"> {
+  const real = commit.state === "landed" ? [{ sha: "0123456789ab", change: "", title: "the real one", mythical: commit.id }] : []
+  const page: CommitPage = { seq: 5, commit, real }
+  return { hash: commit.id, commitId: commit.id, commit: page }
+}
+
+/** What the page rendered and the Messages its interactions sent. */
+effect function render(model: HistoryModel, ...steps: ReadonlyArray<(simulation: SceneSimulation<HistoryModel, HistoryMessage>) => SceneSimulation<HistoryModel, HistoryMessage>>) {
+  const seen: Array<HistoryMessage> = []
+  let html: SceneSimulation<HistoryModel, HistoryMessage>["html"] | undefined = undefined
+  const capture = (simulation: SceneSimulation<HistoryModel, HistoryMessage>) => { html = simulation.html; return simulation }
+  try Effect.try(() => scene({ update: (current: HistoryModel, message: HistoryMessage) => { seen.push(message); return { model: current } }, view }, given(model), capture, ...steps))
+  const at = html!
+  return {
+    seen,
+    all: (selector: string) => findAll(at, selector),
+    texts: (selector: string) => findAll(at, selector).map(textContent),
+    buttons: () => getAllByRole("button")(at).map(textContent),
+  }
+}
+
+/** A Finding named `name` unless `holds`. */
+effect function check(name: string, holds: boolean) {
+  if (!holds) throw new Finding({ report: `history state ${name}` })
+}
+
+/**
+ * The list shows the export's badge, a failure in the page's words, an epic opened before its page arrives as busy and
+ * one with more commits with Show more; Enter and Space on an epic's header toggle it and other keys settle; matches
+ * show once they answer the filter and are busy before. An epic's hash shows its page; a commit hash whose read failed
+ * shows the failure and one still read shows loading. A landed commit shows its notes (the bootstrap's without a
+ * byline), its real commits, the note form for a contributor and no timeline without a task; a commit outside the
+ * outline's epics has no epic crumb; a maintainer may insert before any commit and amend a landed one; the timeline
+ * marks each state's step and shows the task and lane; the Plan dialog names its target (the shown commit's title when
+ * it is the target) and asks for a new epic's title; a viewer gets no note form and no dialog. Epic pages read in order extend the epic; an older or detached
+ * one changes nothing.
+ */
+it.live("screens/history-states", () => run("screens/history-states", Input, ({ title, text }) => effect {
+  const pages: ReadonlyArray<EpicPage> = [{ seq: 5, epic: "e1", from: 0, total: 3, commits: [head("m1", "landed", title), head("m2", "planned", "Check")] }]
+  // The list.
+  const keys = try Effect.try(() => [keydown(".sui-collapsible-header", "Enter"), keydown(".sui-collapsible-header", " "), keydown(".sui-collapsible-header", "x")])
+  const list = try render(loaded("maintainer", { exported: "0123456789", error: "unavailable", open: ["e1", "e2"], pages }), ...keys)
+  try check("export badge", same(list.texts(".sui-badge-success"), ["mythical 0123456"]))
+  try check("failure", list.all(".mh-pane-body [role='alert']").length === 1 && list.all("#mh-plan [role='alert']").length === 1)
+  try check("busy epic", list.all("ul[aria-busy='true']").length === 1 && list.buttons().includes("Show more"))
+  const toggled = try Effect.try(() => [HistoryMessage.ToggledEpic({ id: "e1" }), HistoryMessage.ToggledEpic({ id: "e1" }), HistoryMessage.Settled()])
+  try check("header keys", same(list.seen, toggled))
+  for (const answered of [false, true]) {
+    const matches = try render(loaded("viewer", { filter: "par", matches: { seq: 5, query: answered ? "par" : "", commits: [head("m1", "landed", title)] } }))
+    try check(`matches ${answered}`, matches.all("ul[aria-label='Matching commits'] li").length === (answered ? 1 : 0) && matches.all("ul[aria-busy='true']").length === (answered ? 0 : 1))
+  }
+  // An epic, and a commit not read yet.
+  const epic = try render(loaded("viewer", { hash: "e1", pages }))
+  try check("epic page", same(epic.texts("h1"), ["Compiler"]))
+  try check("epic title", V.historyTitle(false, "", true, "Compiler") === "Compiler · History")
+  for (const failed of [false, true]) {
+    const unread = try render(loaded("viewer", { hash: "m7", error: failed ? "unavailable" : "" }))
+    try check(`unread commit ${failed}`, unread.all("[role='alert']").length === (failed ? 1 : 0) && unread.all("h1").length === 0)
+  }
+  // Commits.
+  const notes = [{ section: "tried" as const, text: "first", by: "bootstrap" }, { section: "evidence" as const, text, by: "ada" }, { section: "superseded" as const, text: "old", by: "ada" }]
+  const landed: Commit = { id: "m1", epic: "e1", rank: 1, title, state: "landed", task: "", lane: "", notes }
+  const choices = try Effect.try(() => [change("select[aria-label='Section']", "evidence"), change("select[aria-label='Section']", "superseded"), change("select[aria-label='Section']", "other")])
+  const contributor = try render(loaded("contributor", read(landed)), ...choices)
+  try check("landed notes", same(contributor.texts(".mh-by"), [" · ada", " · ada"]) && contributor.all(".mh-note-list li").length === 4)
+  try check("landed controls", contributor.all("input[aria-label='Note']").length === 1 && contributor.all("ul[aria-label='Progress']").length === 0 && !contributor.buttons().includes("Insert before…"))
+  const sections = try Effect.try(() => [HistoryMessage.UpdatedNoteSection({ value: "evidence" }), HistoryMessage.UpdatedNoteSection({ value: "superseded" }), HistoryMessage.UpdatedNoteSection({ value: "tried" })])
+  try check("note section", same(contributor.seen, sections))
+  const viewer = try render(loaded("viewer", read(landed)))
+  try check("viewer", viewer.all("input[aria-label='Note']").length === 0 && viewer.all("#mh-plan").length === 0)
+  const untasked = try render(loaded("contributor", read({ ...landed, id: "m5", state: "planned", task: "" })))
+  try check("untasked", untasked.texts(".sui-activity-title")[0] === "Planned")
+  const maintainer = try render(loaded("maintainer", read(landed)))
+  try check("amend", maintainer.buttons().includes("Insert before…") && maintainer.buttons().includes("Amend…"))
+  for (const [index, state] of (["planned", "working", "approved", "landed"] as const).entries()) {
+    const commit: Commit = { id: "m3", epic: "e9", rank: 3, title: "Elsewhere", state, task: "write it", lane: "lane-3", notes: [] }
+    const page = try render(loaded("maintainer", { ...read(commit), dialog: true, form: { how: "insert", title: "", epic: "", newEpic: "", target: "m3", task: "" } }))
+    try check(`timeline ${state}`, V.timelineAt(state) === index && page.all("[data-status-class]").length === 4 && page.texts(".sui-activity-title")[0] === "Planned · write it")
+    try check(`no epic crumb ${state}`, !page.texts("nav[aria-label='Breadcrumbs']").join(" ").includes("Compiler") && page.buttons().includes("Insert before…") && page.buttons().includes("Amend…") === (state === "landed"))
+    try check(`plan target ${state}`, page.texts("#mh-plan .mh-mono").includes("m3 Elsewhere"))
+  }
+  try check("unknown state", V.timelineAt(text === "planned" || text === "working" || text === "approved" || text === "landed" ? "" : text) === -1)
+  // The Plan dialog over a target the page does not show, and over a new epic.
+  const other = try render(loaded("contributor", { dialog: true, form: { how: "amend", title: "", epic: "", newEpic: "", target: "m9", task: "" } }))
+  try check("plain target", other.texts("#mh-plan .mh-mono").includes("m9"))
+  const named = try Effect.try(() => typeInto("#mh-plan-new-epic", title))
+  const fresh = try render(loaded("contributor", { dialog: true, form: { how: "append", title: "", epic: NEW_EPIC, newEpic: text, target: "", task: "" } }), named)
+  const typed = try Effect.try(() => HistoryMessage.UpdatedForm({ field: "newEpic", value: title }))
+  try check("new epic", fresh.all("#mh-plan-new-epic").length === 1 && same(fresh.seen, [typed]))
+  // Epic pages: in order, stale, detached.
+  const base = loaded("viewer", { pages })
+  const third = head("m4", "planned", "Third")
+  const got = (page: EpicPage) => Effect.try(() => update(base, HistoryMessage.GotEpic({ page })).model.pages)
+  const next = try got({ seq: 6, epic: "e1", from: 2, total: 3, commits: [third] })
+  try check("next page", same(next[0]!.commits.map((each) => each.id), ["m1", "m2", "m4"]))
+  try check("stale page", same(try got({ seq: 4, epic: "e1", from: 0, total: 3, commits: [third] }), pages))
+  try check("detached page", same(try got({ seq: 6, epic: "e1", from: 5, total: 9, commits: [third] }), pages))
+  return true
+}))
