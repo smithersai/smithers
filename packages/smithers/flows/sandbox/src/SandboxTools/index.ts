@@ -36,6 +36,7 @@ import { Fault } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import { encodeBase64 } from "../internal/base64.ts"
 import { ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../Sandbox/Session.ts"
@@ -93,12 +94,17 @@ export const Run = Schema.Struct({
 })
 
 /**
- * Read the text of the file at `path`.
+ * Read the text of the file at `path`, or with `encoding: "base64"` its exact
+ * bytes as base64, for a file that may not be UTF-8 text.
  *
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Read = Schema.Struct({ tool: Schema.Literal("read"), path: GuestPath })
+export const Read = Schema.Struct({
+  tool: Schema.Literal("read"),
+  path: GuestPath,
+  encoding: Schema.optional(Schema.Literal("base64"))
+})
 
 /**
  * Write `content` to the file at `path`, making its directories; it replaces
@@ -205,7 +211,8 @@ export const RunResult = Schema.Struct({
 })
 
 /**
- * A file's text: its first `limits.fileBytes` bytes as UTF-8, its size, and
+ * A file's text: its first `limits.fileBytes` bytes as UTF-8, or as base64
+ * when the read asked for `encoding: "base64"`, its size in bytes, and
  * whether it was cut. `path` is relative to the workdir.
  *
  * @category schemas
@@ -698,7 +705,7 @@ const read = (session: Session, call: typeof Read.Type) =>
     return {
       tool: "read",
       path: relative(session.workdir, path),
-      content: text(body),
+      content: call.encoding === "base64" ? encodeBase64(body) : text(body),
       bytes,
       truncated: bytes > max
     } satisfies typeof ReadResult.Type

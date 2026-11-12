@@ -395,6 +395,31 @@ describe("SandboxTools read and write", () => {
     slow
   )
 
+  it.effect(
+    "reads a file's exact bytes as base64, where its text would replace bytes that aren't UTF-8",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          // A PNG signature: 0x89 alone is no UTF-8, and a text read answers U+FFFD for it.
+          const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff])
+          writeFileSync(join(session.workdir, "logo.png"), png)
+          const read = yield* exec(session, { tool: "read", path: "logo.png", encoding: "base64" })
+          expect(read).toEqual({
+            tool: "read",
+            path: "logo.png",
+            content: png.toString("base64"),
+            bytes: png.length,
+            truncated: false
+          })
+          const text = yield* exec(session, { tool: "read", path: "logo.png" }) as Effect.Effect<
+            typeof SandboxTools.ReadResult.Type
+          >
+          expect(Buffer.from(text.content, "utf8").equals(png)).toBe(false)
+        })
+      ),
+    slow
+  )
+
   it.effect("reads the first fileBytes of a larger file", () =>
     onMachine((session) =>
       Effect.gen(function*() {

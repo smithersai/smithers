@@ -27,16 +27,6 @@ export class ChangeRefused extends Schema.TaggedError<ChangeRefused>()("@smthrs/
 /** The machine couldn't answer, or lost the call: a step tries again. */
 export class ChangeUnavailable extends Schema.TaggedError<ChangeUnavailable>()("@smthrs/mvp/branch/ChangeUnavailable", {}) {}
 
-/** Text as base64 of its UTF-8 bytes, as `createCommitOnBranch` takes a file's contents. */
-export const base64Of = (text: string): string => {
-  const bytes = new TextEncoder().encode(text)
-  let binary = ""
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
-  }
-  return btoa(binary)
-}
-
 /** A git status entry that says the file is gone from the working copy. */
 const deleted = (entry: { readonly index: string; readonly worktree: string }) => entry.worktree === "D" || entry.index === "D"
 
@@ -78,10 +68,11 @@ export const collect = (collecting: Collecting) =>
         deletions.push(entry.path)
         continue
       }
-      const read = (yield* tool(`read:${entry.path}`, { tool: "read", path: entry.path })) as typeof SandboxTools.ReadResult.Type
+      // Its exact bytes as base64: a text read would replace bytes that aren't UTF-8, as in an image or a font.
+      const read = (yield* tool(`read:${entry.path}`, { tool: "read", path: entry.path, encoding: "base64" })) as typeof SandboxTools.ReadResult.Type
       if (read.truncated) return yield* new ChangeRefused({ reason: "too_large" })
       bytes += read.bytes
-      additions.push({ path: entry.path, contents: base64Of(read.content) })
+      additions.push({ path: entry.path, contents: read.content })
     }
     if (bytes > collecting.maxBytes) return yield* new ChangeRefused({ reason: "too_large" })
     return { additions, deletions } satisfies Change

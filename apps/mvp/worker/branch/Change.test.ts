@@ -2,16 +2,20 @@
 // service that answers each tool call as a branch's machine does: the change, and each reason it can't be committed.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, Effect, Exit, Layer } from "effect"
+import { Base64 } from "effect/encoding"
 import { describe, expect, test } from "vitest"
-import { base64Of, ChangeRefused, ChangeUnavailable, collect } from "./Change.ts"
+import { ChangeRefused, ChangeUnavailable, collect } from "./Change.ts"
 import { Machines } from "./Machines.ts"
 
 const BASE = "a".repeat(40)
 
-/** A machine whose status lists `entries` and whose reads answer `files`; `fail` names a tool that fails with a tag. */
+/**
+ * A machine whose status lists `entries` and whose reads answer `files`, each text or bytes, as `sandbox/read` does: its
+ * bytes as base64 when the call asks, else as UTF-8 text. `fail` names a tool that fails with a tag.
+ */
 const machine = (
   entries: ReadonlyArray<{ readonly path: string; readonly index: string; readonly worktree: string }>,
-  files: Readonly<Record<string, string>>,
+  files: Readonly<Record<string, string | Uint8Array>>,
   options: { readonly fail?: { readonly tool: string; readonly tag: string }; readonly truncated?: boolean } = {},
 ) => {
   const calls: Array<{ readonly callId: string; readonly call: SandboxTools.Call }> = []
@@ -22,9 +26,11 @@ const machine = (
         if (options.fail?.tool === call.tool) return Effect.fail({ _tag: options.fail.tag } as never)
         if (call.tool === "status") return Effect.succeed({ result: { tool: "status", branch: null, entries: [...entries] }, generation: 1 })
         if (call.tool === "read") {
-          const content = files[call.path]!
+          const file = files[call.path]!
+          const bytes = typeof file === "string" ? new TextEncoder().encode(file) : file
+          const content = call.encoding === "base64" ? Base64.encode(bytes) : new TextDecoder().decode(bytes)
           return Effect.succeed({
-            result: { tool: "read", path: call.path, content, bytes: new TextEncoder().encode(content).length, truncated: options.truncated ?? false },
+            result: { tool: "read", path: call.path, content, bytes: bytes.length, truncated: options.truncated ?? false },
             generation: 1,
           })
         }
@@ -61,7 +67,7 @@ describe("Change.collect", () => {
       { "README.md": "héllo\n", "new.md": "new\n" },
     )
     expect(await read(fake)).toEqual({
-      additions: [{ path: "README.md", contents: base64Of("héllo\n") }, { path: "new.md", contents: base64Of("new\n") }],
+      additions: [{ path: "README.md", contents: Base64.encode("héllo\n") }, { path: "new.md", contents: Base64.encode("new\n") }],
       deletions: ["gone.md", "staged-gone.md"],
     })
     expect(fake.calls.map(({ callId, call }) => [callId, call.tool === "status" ? call.base : call.tool])).toEqual([
@@ -89,9 +95,21 @@ describe("Change.collect", () => {
     },
   )
 
-  test("base64 of UTF-8, in chunks, for a file larger than one chunk", () => {
-    expect(base64Of("é\n")).toBe(btoa(String.fromCharCode(0xc3, 0xa9, 0x0a)))
-    const big = "é".repeat(0x9000)
-    expect(base64Of(big)).toBe(Buffer.from(big, "utf8").toString("base64"))
+  test("a file that isn't UTF-8 text, an image or Latin-1 text, is committed byte for byte and counted by its bytes", async () => {
+    // A PNG signature: 0x89 alone is no UTF-8, and a text read answers U+FFFD for it.
+    const png = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff)
+    const latin1 = Uint8Array.of(0x63, 0x61, 0x66, 0xe9, 0x0a) // "café\n" in Latin-1
+    const entries = [{ path: "logo.png", index: "?", worktree: "?" }, { path: "menu.txt", index: " ", worktree: "M" }]
+    const fake = machine(entries, { "logo.png": png, "menu.txt": latin1 })
+    expect(await read(fake)).toEqual({
+      additions: [{ path: "logo.png", contents: Base64.encode(png) }, { path: "menu.txt", contents: Base64.encode(latin1) }],
+      deletions: [],
+    })
+    expect(fake.calls.filter(({ call }) => call.tool === "read").map(({ call }) => call)).toEqual([
+      { tool: "read", path: "logo.png", encoding: "base64" },
+      { tool: "read", path: "menu.txt", encoding: "base64" },
+    ])
+    expect(await read(machine(entries, { "logo.png": png, "menu.txt": latin1 }), { maxBytes: png.length + latin1.length - 1 }))
+      .toEqual(new ChangeRefused({ reason: "too_large" }))
   })
 })

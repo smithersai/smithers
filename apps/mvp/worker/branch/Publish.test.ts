@@ -506,6 +506,26 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     expect(exit._tag === "Failure" && Cause.squash(exit.cause)).toBeInstanceOf(Publish.PublishUnavailable)
   })
 
+  test("publishing again reads a reverted file back as its exact bytes, so a file that isn't UTF-8 text survives", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const { built, machine, maya, branchId } = await published(github)
+    const copy = machine.copies.get(branchId)!
+    copy.files.set("README.md", copy.initial.get("README.md")!)
+    const real = Context.get(await Effect.runPromise(Layer.build(machine.layer).pipe(Effect.scoped)), Machines)
+    const reads: Array<Parameters<Machines["Service"]["tool"]>[3]> = []
+    const recording = Layer.succeed(Machines, Machines.of({
+      ...real,
+      tool: (branch, owner, callId, call) => {
+        if (call.tool === "read") reads.push(call)
+        return real.tool(branch, owner, callId, call)
+      },
+    }))
+    const back = await publishing(maya, branchId)
+    expect((await runtime.runPromise(Publish.steps(built).publish({ writeId: back }).pipe(Effect.provide(recording)))).status).toBe("done")
+    expect(reads).toContainEqual({ tool: "read", path: "README.md", encoding: "base64" })
+    expect(reads.filter((call) => call.tool === "read" && call.encoding !== "base64")).toEqual([])
+  })
+
   test("the paths GitHub changed: each file's, and a renamed file's old one", () => {
     expect([...Publish.changedPaths([{ filename: "a.md" }, { filename: "new.md", previous_filename: "old.md" }])]).toEqual(["a.md", "new.md", "old.md"])
   })

@@ -22,7 +22,7 @@ import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { permissionOf } from "../github/RepoRoles.ts"
 import * as Store from "../github/Store.ts"
 import type { SandboxTools } from "@smthrs/sandbox"
-import { base64Of, type Change, collect } from "./Change.ts"
+import { type Change, collect } from "./Change.ts"
 import type { Forge } from "./Forge.ts"
 import { Machines } from "./Machines.ts"
 import { resync, ResyncRefused, ResyncUnavailable } from "./Resync.ts"
@@ -533,11 +533,11 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
       const restoring: { additions: Array<Change["additions"][number]>; deletions: Array<string> } = { additions: [], deletions: [] }
       for (const path of restored) {
         const read = yield* Effect.flatMap(input.callId(`restore:${path}`), (callId) =>
-          machines.tool(input.machine, write.actorId, callId, { tool: "read", path })).pipe(Effect.result)
+          machines.tool(input.machine, write.actorId, callId, { tool: "read", path, encoding: "base64" })).pipe(Effect.result)
         if (read._tag === "Success") {
           const file = read.success.result as typeof SandboxTools.ReadResult.Type
           if (file.truncated) return yield* new Refused({ failure: "too_large" })
-          restoring.additions.push({ path, contents: base64Of(file.content) })
+          restoring.additions.push({ path, contents: file.content })
         } else if (read.failure._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" && read.failure.reason === "not_found") {
           restoring.deletions.push(path)
         } else if (read.failure._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" || read.failure._tag === "@smthrs/mvp/branch/CheckoutFailed") {

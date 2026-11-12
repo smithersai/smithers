@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `SandboxTools`' `read` takes `encoding: "base64"` and answers the file's
+  exact bytes as base64. A text read decodes the bytes as UTF-8, so an image,
+  a font, an archive or text in another encoding came back with its invalid
+  bytes replaced by U+FFFD, and a caller that committed it committed the
+  damage.
+
 ### Fixed
 
 - A batched commit of several files lands every file on a BusyBox guest

@@ -311,7 +311,7 @@ caller reads `stdout` without checking `tool`.
 | Tool     | Input (`Call`)                       | Output (`Result`)                                                    |
 | -------- | ------------------------------------ | -------------------------------------------------------------------- |
 | `run`    | `command`, `cwd?`, `timeoutSeconds?` | exit code, whether the timeout stopped it, each stream's first bytes |
-| `read`   | `path`                               | the file's text, its size, whether it was cut                        |
+| `read`   | `path`, `encoding?`                  | text, or bytes as base64 (`encoding`); its size; whether it was cut  |
 | `write`  | `path`, `content`                    | the path and its size; directories are made                          |
 | `list`   | `path?`                              | entries `{ name, kind, bytes }` in name order                        |
 | `status` | none                                 | the branch (`null` when detached) and git's short status per path    |

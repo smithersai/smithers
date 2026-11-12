@@ -5,6 +5,7 @@
 // evals/todo-steer.eval.ts use it.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer } from "effect"
+import { Base64 } from "effect/encoding"
 import { Machines } from "../branch/Machines.ts"
 import { instantCommands } from "./commands.ts"
 import type { ScriptedGitHub } from "../github/test/scriptedGitHub.ts"
@@ -46,7 +47,13 @@ export const machines = (
             if (content === undefined) {
               return Effect.fail({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "not_found" } as never)
             }
-            return done({ tool: "read", path: call.path, content, bytes: content.length, truncated: false })
+            return done({
+              tool: "read",
+              path: call.path,
+              content: call.encoding === "base64" ? Base64.encode(content) : content,
+              bytes: content.length,
+              truncated: false,
+            })
           }
           case "status": {
             const paths = [...new Set([...initial.keys(), ...files.keys()])].sort()
