@@ -1,5 +1,6 @@
 // Which issue and wiki operations are sealed, keyed, offered to the model, and bounded by a read deadline
 // (0018, third-lane batch 18). `issueFlows.vibe` and `wikiFlows.vibe` build every flow from these.
+import type { IssueOperation, WikiOperation } from "./conversation.vibe"
 
 export type OperationTier = "sealed" | "irreversible"
 
@@ -45,4 +46,32 @@ export function wikiModelInvocable(op: string): boolean {
 //@ ensures \result ==> operationTier(op) == "sealed"
 export function readDeadline(op: string): boolean {
   return op === "read"
+}
+
+/** Every issue operation, in the order `issueFlows.vibe` builds their flows. */
+//@ verify
+//@ ensures \result.includes("read") && \result.includes("new") && \result.includes("comment") && \result.includes("link") && \result.includes("split") && \result.includes("commit") && \result.includes("uncommit") && \result.includes("propose") && \result.includes("accept") && \result.includes("decline") && \result.includes("draft") && \result.includes("spec-revise") && \result.includes("spec-review")
+export function issueOperations(): ReadonlyArray<IssueOperation> {
+  return ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"]
+}
+
+/** Where `op` is in `issueOperations()`. Every operation is listed, so `issueFlow` always finds its flow. */
+//@ verify
+//@ ensures 0 <= \result && \result < issueOperations().length && issueOperations()[\result] == op
+export function issueOperationIndex(op: IssueOperation): number {
+  return issueOperations().indexOf(op)
+}
+
+/** Every wiki operation, in the order `wikiFlows.vibe` builds their flows. */
+//@ verify
+//@ ensures \result.includes("read") && \result.includes("save") && \result.includes("propose") && \result.includes("draft")
+export function wikiOperations(): ReadonlyArray<WikiOperation> {
+  return ["read", "save", "propose", "draft"]
+}
+
+/** Where `op` is in `wikiOperations()`. Every operation is listed, so `wikiEditFlow` always finds its flow. */
+//@ verify
+//@ ensures 0 <= \result && \result < wikiOperations().length && wikiOperations()[\result] == op
+export function wikiOperationIndex(op: WikiOperation): number {
+  return wikiOperations().indexOf(op)
 }

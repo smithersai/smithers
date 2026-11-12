@@ -6,6 +6,14 @@ export function cookieName(secure: boolean): string {
   return secure ? "__Host-vibelang-session" : "vibelang-session"
 }
 
+/** The session cookie an origin uses: the host-prefixed one exactly when the origin is HTTPS. */
+//@ verify
+//@ ensures origin.startsWith("https:") ==> \result === "__Host-vibelang-session"
+//@ ensures !origin.startsWith("https:") ==> \result === "vibelang-session"
+export function sessionCookieOf(origin: string): string {
+  return cookieName(origin.startsWith("https:"))
+}
+
 /** Whether a URL's host is this machine, where plain HTTP is allowed. */
 //@ verify
 //@ ensures \result == (http && (hostname == "localhost" || hostname == "127.0.0.1" || hostname == "[::1]"))

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { agentRefused, issueModelInvocable, keyedOperation, operationTier, readDeadline, wikiModelInvocable } from "../src/core/flowPolicyDecision.vibe"
+import { agentRefused, issueModelInvocable, issueOperationIndex, issueOperations, keyedOperation, operationTier, readDeadline, wikiModelInvocable, wikiOperationIndex, wikiOperations } from "../src/core/flowPolicyDecision.vibe"
+import { issueFlow } from "../src/core/issueFlows.vibe"
+import { wikiEditFlow } from "../src/core/wikiFlows.vibe"
+import type { IssueOperation, WikiOperation } from "../src/core/conversation.vibe"
 
 const issueOps = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"]
 const wikiOps = ["read", "save", "propose", "draft"]
@@ -22,5 +25,17 @@ describe("issue and wiki flow policies", () => {
   })
   it("bounds only reads by a deadline", () => {
     expect([...issueOps, ...wikiOps].filter(readDeadline)).toEqual(["read", "read"])
+  })
+  it("lists every operation once and finds each one's own flow", () => {
+    expect(issueOperations()).toEqual(issueOps)
+    expect(wikiOperations()).toEqual(wikiOps)
+    for (const op of issueOps as ReadonlyArray<IssueOperation>) {
+      expect(issueOperations()[issueOperationIndex(op)]).toBe(op)
+      expect(issueFlow(op)._tag).toBe(`vibelang/issues/${op}`)
+    }
+    for (const op of wikiOps as ReadonlyArray<WikiOperation>) {
+      expect(wikiOperations()[wikiOperationIndex(op)]).toBe(op)
+      expect(wikiEditFlow(op)._tag).toBe(`vibelang/wiki/${op}`)
+    }
   })
 })

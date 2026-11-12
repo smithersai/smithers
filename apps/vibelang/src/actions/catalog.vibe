@@ -7,9 +7,8 @@ import * as HistoryTools from "../history/tools.vibe"
 import { Bundled } from "@smthrs/registry"
 import { EndTour, Post, Reply, StartTour, Tour, SandboxStart, SandboxStop, SandboxCommand } from "../core/flows.vibe"
 import { Approve, Bootstrap, Fold, Note, Plan, Start } from "../history/flows.vibe"
-import { mayRun } from "../core/conversation.vibe"
 import type { Registered, Role } from "./Actions.vibe"
-import { inputOf, leastRoleOf, type Tags } from "./catalogDecision.vibe"
+import { entryAllowed, inputOf, leastRoleOf, type Tags } from "./catalogDecision.vibe"
 
 const declarations: ReadonlyArray<unknown> = [...Object.values(CoreFlows), ...Object.values(HistoryFlows), ...Object.values(HistoryTools), ...issueFlows]
 export const flows = declarations.filter(Flow.isFlow)
@@ -31,7 +30,7 @@ export function registration(name: string): Registered {
   }
 }
 
-/** One role decision serves list controls, slash filtering and the dispatch boundary. */
+/** One role decision serves list controls, slash filtering and the dispatch boundary (catalogDecision, proved). */
 export function allowed(role: Role, entry: Registered): boolean {
-  return mayRun(role, entry.least === "viewer", entry.least === "maintainer", !entry.runnable)
+  return entryAllowed(role, entry.least, entry.runnable)
 }

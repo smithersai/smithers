@@ -2,7 +2,8 @@
 // mockDecision, accountCookieDecision and catalogDecision, as mockReplies, accountCookies and catalog use them.
 import { describe, expect, it } from "@effect/vitest"
 import { registration } from "../src/actions/catalog.vibe"
-import { cookieAccepted, localOrigin } from "../src/core/accountCookieDecision.vibe"
+import { entryAllowed } from "../src/actions/catalogDecision.vibe"
+import { cookieAccepted, localOrigin, sessionCookieOf } from "../src/core/accountCookieDecision.vibe"
 import { validSessionCookie } from "../src/core/accountCookies.vibe"
 import { EndTour, Post, Tour } from "../src/core/flows.vibe"
 import { chunks } from "../src/core/mockReplies.vibe"
@@ -36,5 +37,25 @@ describe("the action catalog", () => {
   it("lets anyone tour, only a maintainer approve or fold, and a contributor the rest", () => {
     expect([Tour, EndTour, Approve, Fold, Plan, Post].map((flow) => registration(flow._tag).least)).toEqual(["viewer", "viewer", "maintainer", "maintainer", "contributor", "contributor"])
     expect([Post, Tour, Plan].map((flow) => registration(flow._tag).input)).toEqual(["text", "none", "json"])
+  })
+})
+
+describe("who may run a catalog entry", () => {
+  const roles = ["viewer", "new", "community", "contributor", "maintainer"]
+  it("is anyone for a viewer's entry, a maintainer for a maintainer's, else a contributor or maintainer", () => {
+    expect(roles.filter((role) => entryAllowed(role, "viewer", true))).toEqual(roles)
+    expect(roles.filter((role) => entryAllowed(role, "maintainer", true))).toEqual(["maintainer"])
+    expect(roles.filter((role) => entryAllowed(role, "contributor", true))).toEqual(["contributor", "maintainer"])
+    expect(roles.filter((role) => entryAllowed(role, "community", true))).toEqual(["contributor", "maintainer"])
+  })
+  it("is nobody for an internal entry", () => {
+    expect(roles.filter((role) => entryAllowed(role, "viewer", false))).toEqual([])
+  })
+})
+
+describe("the session cookie's name", () => {
+  it("is host-prefixed exactly for an HTTPS origin", () => {
+    expect(["https://vibelang.sh", "http://localhost:5178", "http://https.example"].map(sessionCookieOf))
+      .toEqual(["__Host-vibelang-session", "vibelang-session", "vibelang-session"])
   })
 })

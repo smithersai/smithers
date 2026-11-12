@@ -248,3 +248,7 @@ locale formatting and real division remain named boundaries.
 directory, the sandbox probe, protocol and account objects, the agent drafts and the site Worker now call five proved
 modules (`worker/accountsDecision.vibe`, `actionsDecision`, `sandboxWorkerDecision`, `draftDecision`, `workerDecision`).
 No `worker/` row is left marked not proved; the boundaries that remain are named in 0018's inventory.
+
+**Catalog gate, session cookie and flow lookups (0018, lane vl-proveall2, 2026-11-12).** The catalog's `allowed`,
+the session cookie's name and the issue and wiki flow lookups call proved decisions (`entryAllowed`,
+`sessionCookieOf`, `issueOperationIndex`, `wikiOperationIndex`).

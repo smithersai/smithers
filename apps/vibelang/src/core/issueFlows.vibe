@@ -2,14 +2,14 @@
 import { Digest, SecureRandom } from "effect/crypto"
 import { Action, Flow, FlowRuntime, RetryPolicy, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { issueModelInvocable, keyedOperation, operationTier, readDeadline } from "./flowPolicyDecision.vibe"
+import { issueModelInvocable, keyedOperation, issueOperationIndex, issueOperations, operationTier, readDeadline } from "./flowPolicyDecision.vibe"
 import { IssueFailure, IssueRequest, IssuesState } from "./issueSchemas.vibe"
 import { issuePermission, type Role, type IssueOperation } from "./conversation.vibe"
 
 export service IssueHost {
   perform(request: IssueRequest): typeof IssuesState.Type!IssueFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
 }
-const operations: ReadonlyArray<IssueOperation> = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"]
+const operations = issueOperations()
 const retries = RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 60_000, expirationMs: 120_000, retryable: [{ tag: "IssueFailure", code: "unavailable" }, { tag: "IssueFailure", code: "rate-limited" }, { tag: "IssueFailure", code: "unknown" }] })
 /** A cold issue list walks GitHub cursors sequentially; keep it bounded without requiring a failed warming read. */
 export const issueReadDeadline = "12 seconds"
@@ -31,8 +31,8 @@ const definitions = operations.map((op) => {
   return { action, flow, op }
 })
 export const issueFlows = definitions.map(({ flow }) => flow)
-/** The flow that runs one operation. `definitions` maps every operation, so the lookup always finds one. */
-export function issueFlow(op: IssueOperation) { return definitions.find((definition) => definition.op === op)!.flow }
+/** The flow that runs one operation: `definitions` maps `issueOperations()`, where `issueOperationIndex` finds every one (proved). */
+export function issueFlow(op: IssueOperation) { return definitions[issueOperationIndex(op)]!.flow }
 export const issueRegistration = Layer.unwrap(effect {
   const host = try IssueHost
   return Layer.mergeAll(Layer.empty, ...definitions.map(({ action, flow, op }) => Interpreter.layerWithImplementations(flow,

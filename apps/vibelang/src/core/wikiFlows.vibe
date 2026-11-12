@@ -2,7 +2,7 @@
 import { Digest, SecureRandom } from "effect/crypto"
 import { Action, Flow, FlowRuntime, RetryPolicy, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { wikiModelInvocable, keyedOperation, operationTier, readDeadline } from "./flowPolicyDecision.vibe"
+import { wikiModelInvocable, keyedOperation, wikiOperationIndex, wikiOperations, operationTier, readDeadline } from "./flowPolicyDecision.vibe"
 import { wikiSubmissionAllowed } from "./wikiDecision.vibe"
 import { WikiFailure, WikiRequest, WikiState } from "./wikiSchemas.vibe"
 import { wikiPermission, type Role, type WikiOperation } from "./conversation.vibe"
@@ -10,7 +10,7 @@ import { wikiPermission, type Role, type WikiOperation } from "./conversation.vi
 export service WikiHost {
   perform(request: WikiRequest): typeof WikiState.Type!WikiFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
 }
-const operations: ReadonlyArray<WikiOperation> = ["read", "save", "propose", "draft"]
+const operations = wikiOperations()
 const retries = RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 60_000, expirationMs: 120_000, retryable: [{ tag: "WikiFailure", code: "unavailable" }, { tag: "WikiFailure", code: "rate-limited" }, { tag: "WikiFailure", code: "unknown" }] })
 /** A read answers a waiting person: past this the engine settles it and the page shows Retry (0015). Writes keep the full retry window. */
 export const wikiReadDeadline = "5 seconds"
@@ -32,8 +32,8 @@ const definitions = operations.map((op) => {
   return { action, flow, op }
 })
 export const wikiEditFlows = definitions.map(({ flow }) => flow)
-/** The flow that runs one operation. `definitions` maps every operation, so the lookup always finds one. */
-export function wikiEditFlow(op: WikiOperation) { return definitions.find((definition) => definition.op === op)!.flow }
+/** The flow that runs one operation: `definitions` maps `wikiOperations()`, where `wikiOperationIndex` finds every one (proved). */
+export function wikiEditFlow(op: WikiOperation) { return definitions[wikiOperationIndex(op)]!.flow }
 export const wikiEditRegistration = Layer.unwrap(effect {
   const host = try WikiHost
   return Layer.mergeAll(Layer.empty, ...definitions.map(({ action, flow, op }) => Interpreter.layerWithImplementations(flow,

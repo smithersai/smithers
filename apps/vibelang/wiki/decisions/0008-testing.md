@@ -499,3 +499,7 @@ The resume 10 per-file receipt is 8,942/9,184 src/worker lines (97.36%), with al
 242 positions still uncovered. The public-wiki read benchmark's removed page-KV assumption is corrected to the
 request-local response and actual private draft storage; 2/2 checks pass and a wrong-owner control fails. See
 0017 for source-identical cohort composition and the unchanged strict gate.
+
+**Rows outside `worker/` (0018, lane vl-proveall2, 2026-11-12).** `test/flowPolicyDecision.test.vibe` checks that each
+issue and wiki operation finds its own flow; `test/chunkCookieCatalog.test.vibe` checks who may run each catalog
+entry and the session cookie's name by scheme. No tool was added.

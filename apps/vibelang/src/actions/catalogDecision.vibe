@@ -3,6 +3,7 @@
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005).
+import { mayRun } from "../core/conversation.vibe"
 
 /** The tags of the flows the catalog treats specially. */
 export interface Tags {
@@ -33,4 +34,18 @@ export function leastRoleOf(name: string, tags: Tags): "viewer" | "maintainer" |
 //@ ensures name != tags.post && name != tags.tour ==> \result == "json"
 export function inputOf(name: string, tags: Tags): "text" | "none" | "json" {
   return name === tags.post ? "text" : name === tags.tour ? "none" : "json"
+}
+
+/**
+ * Whether a person with `role` may run a catalog entry (0019): never an internal entry (not runnable); a viewer's
+ * entry, anyone; a maintainer's entry, a maintainer; any other least role, a contributor or a maintainer. One decision,
+ * the shared `mayRun`, serves list controls, slash filtering and every dispatch boundary.
+ */
+//@ verify
+//@ ensures !runnable ==> !\result
+//@ ensures runnable && least == "viewer" ==> \result
+//@ ensures runnable && least == "maintainer" ==> \result == (role == "maintainer")
+//@ ensures runnable && least != "viewer" && least != "maintainer" ==> \result == (role == "contributor" || role == "maintainer")
+export function entryAllowed(role: string, least: string, runnable: boolean): boolean {
+  return mayRun(role, least === "viewer", least === "maintainer", !runnable)
 }

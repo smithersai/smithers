@@ -1,6 +1,6 @@
-import { cookieAccepted, cookieName, localOrigin } from "./accountCookieDecision.vibe"
+import { cookieAccepted, localOrigin, sessionCookieOf } from "./accountCookieDecision.vibe"
 export const SESSION = "__Host-vibelang-session"
-export const sessionCookieName = (origin: string) => cookieName(origin.startsWith("https:"))
+export const sessionCookieName = sessionCookieOf
 
 /** Local HTTP has no Secure cookie; production accepts only the host-prefixed cookie. */
 export function validSessionCookie(origin: string, cookie: string): boolean {

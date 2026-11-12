@@ -1,4 +1,4 @@
-"""Executable mutations of the server's decision modules (lane vl-proveall2, worker batch, 0018); contracts are never edited."""
+"""Executable mutations of decision modules proved by lane vl-proveall2 (worker batch and the rows outside worker/, 0018); contracts are never edited."""
 A = 'worker/accountsDecision.vibe'
 cases = [
 (A, 'acct-write-get', 'writeOriginAdmitted', 'return method === "GET" ||', 'return method !== "POST" ||', 'every method but GET is a write'),
@@ -141,4 +141,14 @@ cases += [
 (W, 'storage-owner-posted', 'recordsOwner', ' && type === "Posted"', '', 'only a post has an owner'),
 (W, 'vip-review-zero', 'reviewNumberText', '/^[1-9][0-9]*$/', '/^[0-9]+$/', 'a pull number has no leading zero'),
 (W, 'vip-review-prefix', 'reviewNumberText', 'if (!review.startsWith(prefix)) return ""', 'if (review === "") return ""', 'the review is in the repository'),
+# Rows outside worker/ (0018, vl-proveall2 resume 2026-11-12).
+('src/actions/catalogDecision.vibe', 'catalog-allowed-internal', 'entryAllowed', ', !runnable)', ', runnable)', 'an internal entry is never run'),
+('src/actions/catalogDecision.vibe', 'catalog-allowed-viewer', 'entryAllowed', 'least === "viewer"', 'least === "contributor"', 'anyone runs a viewer\'s entry'),
+('src/actions/catalogDecision.vibe', 'catalog-allowed-maintainer', 'entryAllowed', 'least === "maintainer"', 'least === "contributor"', 'only a maintainer runs a maintainer\'s entry'),
+('src/core/accountCookieDecision.vibe', 'cookie-session-scheme', 'sessionCookieOf', 'startsWith("https:")', 'startsWith("http")', 'plain HTTP uses the plain cookie'),
+('src/core/accountCookieDecision.vibe', 'cookie-session-flip', 'sessionCookieOf', 'cookieName(origin', 'cookieName(!origin', 'HTTPS uses the host prefix'),
+('src/core/flowPolicyDecision.vibe', 'flow-issue-ops-missing', 'issueOperations', ', "spec-review"]', ']', 'every issue operation has a flow'),
+('src/core/flowPolicyDecision.vibe', 'flow-issue-ops-index', 'issueOperationIndex', 'return issueOperations().indexOf(op)', 'return 0', 'each operation finds its own flow'),
+('src/core/flowPolicyDecision.vibe', 'flow-wiki-ops-missing', 'wikiOperations', ', "draft"]', ']', 'every wiki operation has a flow'),
+('src/core/flowPolicyDecision.vibe', 'flow-wiki-ops-index', 'wikiOperationIndex', 'return wikiOperations().indexOf(op)', 'return wikiOperations().length - 1', 'each operation finds its own flow'),
 ]
