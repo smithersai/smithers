@@ -655,7 +655,7 @@ describe("parseWorkflow", () => {
     // SCOPE-3 (82b5490d) retired the legacy-app and Go jobs.
     expect(workflow.jobs.map((job) => job.id)).toEqual([
       "test",
-      ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`),
+      ...Array.from({ length: 8 }, (_, index) => `test-${index + 2}`),
       "repository",
       "scripts",
       "docs",
@@ -665,7 +665,7 @@ describe("parseWorkflow", () => {
       "wasm-repro",
       "browser",
       "packages",
-      ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)
+      ...Array.from({ length: 8 }, (_, index) => `packages-${index + 2}`)
     ])
     // The platform matrix parses as ONE job whose runner is the matrix
     // expression, not as three copy-pasted jobs.
@@ -685,7 +685,7 @@ describe("parseWorkflow", () => {
     const source = await readReal()
     const required = [
       "test",
-      ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`),
+      ...Array.from({ length: 8 }, (_, index) => `test-${index + 2}`),
       "repository",
       "scripts",
       "docs",
@@ -695,7 +695,7 @@ describe("parseWorkflow", () => {
       "wasm-repro",
       "browser",
       "packages",
-      ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)
+      ...Array.from({ length: 8 }, (_, index) => `packages-${index + 2}`)
     ]
     expect(missingRequiredJobs(parseWorkflow(source), required)).toEqual([])
     const skipped = source.replace(/^ {2}"browser":$/m, "  \"browser\":\n    if: false")
