@@ -47,6 +47,24 @@
 
 ### Fixed
 
+- `branch-doctor` runs a planned command only when the planner marks it safe
+  and it is on the new `runnable` list of git status and abort commands. The
+  planner's prompt carries repository text, so its `safe` flag alone let a
+  hostile repository run any shell command.
+- `defending-code` slugs model-authored subsystem ids before they reach a
+  PoC path or a harness command, and refuses a `runId` that is not a plain
+  name, so neither can leave `runs/` or end the command.
+- `extract-prompt` settles a draft the drafter marks `resolved` after the
+  person answers, so a person who says to ship it is no longer asked empty
+  questions until the bound. A first draft's claim still asks the person.
+- `compliance-evidence-collector` keys its fetch and normalize members by
+  position and stamps each item with the control and source it was asked
+  about, so a repeated source or an agent that echoes the wrong ids no longer
+  drops evidence.
+- `gastown` checks a planned bead's priority against P0-P4 at the mayor's
+  answer, so an out-of-range priority is an agent failure instead of a defect
+  at the tracker write.
+
 - `StandardFlows.shell` hands the cell what a timed-out `bash` command printed
   as `error.output`, and its message says so: "The command timed out;
   error.output holds what it printed before it was stopped." It used to answer

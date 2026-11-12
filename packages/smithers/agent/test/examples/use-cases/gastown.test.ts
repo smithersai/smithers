@@ -50,6 +50,8 @@ interface Town {
   readonly polecats: Readonly<Record<string, "completed" | "escalated" | "deferred" | "broken">>
   /** The phase the refinery reports per bead. */
   readonly merges?: Readonly<Record<string, "merged" | "rejected" | "failed" | "broken">>
+  /** A priority every bead the mayor plans claims, in place of its position. */
+  readonly priority?: number
 }
 
 /**
@@ -69,7 +71,7 @@ const script = (town: Town, log: Array<string>) => {
           title: `task ${id}`,
           description: `do ${id}`,
           files: [`src/${id}.ts`],
-          priority: index,
+          priority: town.priority ?? index,
           acceptanceCriteria: "tests pass"
         }))
       }
@@ -269,4 +271,20 @@ it.effect("fails the run on a merge that fails twice, before anything behind it 
         false
       )
     expect(log).not.toContain("report")
+  }))
+
+it.effect("fails the plan as the mayor's answer when a bead's priority is outside P0-P4", () =>
+  Effect.gen(function*() {
+    const log: Array<string> = []
+    const { answer } = script({ polecats: { "gt-1": "completed" }, priority: 5 }, log)
+    const failure = yield* Effect.flip(Kit.run(Gastown, { directory: ".", goal: "add retries" }, {
+      filename: join(directory, "out-of-range.sqlite"),
+      executionId: "gastown-out-of-range",
+      script: answer,
+      actions: Layer.mergeAll(layer, tracker(log))
+    }))
+
+    // A typed agent failure at the mayor, not a defect at the tracker write.
+    expect(failure._tag).toMatch(/StructuredOutputFailure$/)
+    expect(log.every((entry) => entry === "mayor")).toBe(true)
   }))

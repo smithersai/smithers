@@ -6,12 +6,13 @@
  * cached entry; neither asks a model. Otherwise a drafter agent fills the
  * R-C-T-F slots (role, context, task, format) and scores its own draft. A
  * draft that reaches the threshold (1.0 for high stakes, 0.7 for low, or an
- * explicit `threshold`) settles the flow; below it, the person answers the
+ * explicit `threshold`), or that the drafter marks `resolved` because the
+ * person said to ship it, settles the flow; otherwise the person answers the
  * draft's one Socratic question and the drafter refines, for at most
  * `maxTurns` drafts (default 10), settling with the last draft at the bound.
  *
  * 0.x's drafter asked the person itself through an `ask-user` bash script; here the flow asks the draft's `nextQuestion` as a `HumanTask` and hands the answer to the next draft.
- * 0.x's loop ended on the score alone, so a draft the person overrode below the threshold still asks again until the bound; kept.
+ * 0.x's loop ended on the score alone, so a draft the person overrode below the threshold asked again until the bound; here a `resolved` draft settles.
  * 0.x's cache I/O (`MarkdownPromptCache`, `SqlitePromptCache`) was the caller's job, so the flow takes the cache hit as `cached`; the optional `scorers` observability hook is not ported.
  * 0.x's slot fields had zod defaults; here the drafter fills every slot, and `AgentAction` renders and enforces the output schema instead of the prompt's JSON instruction.
  */
@@ -289,8 +290,8 @@ interface Loop {
 }
 
 /**
- * Draft `turn`: settle once the draft reaches the threshold or the bound,
- * otherwise ask the person the draft's question and draft again with the
+ * Draft `turn`: settle once the draft is resolved after an answer, reaches
+ * the threshold or reaches the bound, otherwise ask the person the draft's question and draft again with the
  * answer.
  */
 const extract = (
@@ -302,8 +303,9 @@ const extract = (
   Node.branch(
     Draft.call({ context: loop.context, threshold: loop.threshold, stakes: loop.stakes, priorDraft, answer }),
     {
-      if: Node.capture({ threshold: loop.threshold }, function(draft: RctfPrompt) {
-        return draft.score >= this.threshold
+      // `resolved` counts only once the person has answered: before that, nobody could have said to ship it.
+      if: Node.capture({ threshold: loop.threshold, answered: answer !== undefined }, function(draft: RctfPrompt) {
+        return (this.answered && draft.resolved) || draft.score >= this.threshold
       }),
       then: Node.capture({}, (draft) => Node.succeed(draft)),
       else: Node.capture({ loop, turn }, (draft) =>

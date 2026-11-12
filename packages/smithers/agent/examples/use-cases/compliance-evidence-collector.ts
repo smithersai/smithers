@@ -7,7 +7,9 @@
  * `maxConcurrency` (default 5) at a time with a `timeoutMs` (default 60 s)
  * bound each, and a failed fetch drops only its own evidence. Once every fetch
  * has settled, a normalizer agent extracts a finding from each evidence item
- * at the same bound, and a packet agent assembles per-control verdicts.
+ * at the same bound, and a packet agent assembles per-control verdicts. Every
+ * evidence item and finding carries the control and source it was asked for,
+ * whatever ids the agent echoed.
  *
  * 0.x re-rendered its tree once the plan and then the evidence landed; here each fan-out runs in a `.child()` flow whose body plans over the real list.
  * `MapReduce` does not fit: its reducer sees only the shards and their results, not the framework and plan the packet reads, and 0.x normalizes only after every fetch has settled.
@@ -148,6 +150,15 @@ a final review packet with per-control verdicts, evidence references, and recomm
     }`
 })
 
+/** The control and source one agent call is asked about. */
+type Pair = { readonly controlId: string; readonly sourceId: string }
+
+/** Stamps an agent's answer with the control and source it was asked about. */
+const attributed = (pair: Pair) =>
+  Node.capture(pair, function<A extends Pair>(this: Pair, answer: A): A {
+    return { ...answer, controlId: this.controlId, sourceId: this.sourceId }
+  })
+
 /**
  * Fetches every control and source pair in the plan. It runs as a child
  * execution, so its payload is the real plan when its body plans the fan-out.
@@ -157,17 +168,21 @@ export const FetchEvidence = Flow.make("examples/ComplianceEvidenceCollector/Fet
   success: Schema.Array(EvidenceItem),
   body: ({ concurrency, controls, timeoutMs }) => {
     // 0.x `continueOnFail`: a failed fetch settles as null instead of failing its siblings.
-    const members = Object.fromEntries(controls.flatMap((control) =>
-      control.sources.map((source) => [
-        `fetch-${control.controlId}-${source.sourceId}`,
+    // Members are keyed by position: the plan may list a source twice, and ids may concatenate alike.
+    const members = Object.fromEntries(controls.flatMap((control, c) =>
+      control.sources.map((source, s) => [
+        `fetch-${c}-${s}`,
         Node.catch(
-          Fetch.call({
-            controlId: control.controlId,
-            sourceId: source.sourceId,
-            endpoint: source.endpoint,
-            method: source.preferredMethod,
-            timeoutMs
-          }),
+          Node.map(
+            Fetch.call({
+              controlId: control.controlId,
+              sourceId: source.sourceId,
+              endpoint: source.endpoint,
+              method: source.preferredMethod,
+              timeoutMs
+            }),
+            attributed({ controlId: control.controlId, sourceId: source.sourceId })
+          ),
           { onFailure: () => Node.succeed(null) }
         )
       ])
@@ -185,14 +200,17 @@ export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector
   error: AgentAction.AgentFailure,
   body: ({ concurrency, evidence }) => {
     if (evidence.length === 0) return Node.succeed([])
-    const members = Object.fromEntries(evidence.map((item: EvidenceItem) => [
-      `normalize-${item.controlId}-${item.sourceId}`,
-      Normalize.call({
-        controlId: item.controlId,
-        sourceId: item.sourceId,
-        rawPayload: item.rawPayload,
-        method: item.method
-      })
+    const members = Object.fromEntries(evidence.map((item: EvidenceItem, index) => [
+      `normalize-${index}`,
+      Node.map(
+        Normalize.call({
+          controlId: item.controlId,
+          sourceId: item.sourceId,
+          rawPayload: item.rawPayload,
+          method: item.method
+        }),
+        attributed({ controlId: item.controlId, sourceId: item.sourceId })
+      )
     ]))
     const joined = Bounded.all(members, { concurrency })
     return Node.map(

@@ -4,10 +4,12 @@
  * Port of the 0.x `branch-doctor.jsx`. An inspector agent reports the raw
  * branch state, a diagnosis agent names the root cause and severity, and a
  * planner agent lists the recovery commands, each marked safe or not. Only
- * when the caller sets `autoExecute` do the safe commands run, and the unsafe
- * ones are skipped; otherwise the plan has no execution step at all. A summary
+ * when the caller sets `autoExecute` do commands run, and then only the ones
+ * the planner marks safe that are also on the {@link runnable} list; the rest
+ * are skipped. Otherwise the plan has no execution step at all. A summary
  * reports the diagnosis, the plan and what ran.
  *
+ * 0.x trusted the planner's `safe` flag; here a command must also be on {@link runnable}, because the planner's prompt carries repository text that can talk it into marking anything safe.
  * 0.x ran the safe commands with an agent told to skip the rest; here the flow splits them and a deterministic `Action` a host implements runs them, because the 1.0 completion brake refuses an agent's report of commands its run never recorded.
  * `Intervene` does not fit: it has one propose step where 0.x diagnoses and then plans, and 0.x gates execution on an input flag, not an approval.
  * 0.x's `.mdx` prompts were placeholders that printed their props; the prompts here state the same props.
@@ -68,7 +70,9 @@ export const Execution = Schema.Struct({
     exitCode: Schema.Number,
     output: Schema.String
   })).annotate({ description: "Commands that were actually run" }),
-  skippedUnsafe: Schema.Array(Schema.String).annotate({ description: "Commands skipped because they were not safe" }),
+  skippedUnsafe: Schema.Array(Schema.String).annotate({
+    description: "Commands skipped because they were not safe or not runnable"
+  }),
   success: Schema.Boolean.annotate({ description: "Whether all executed commands succeeded" })
 })
 
@@ -131,10 +135,10 @@ export const Executed = Schema.Struct({ command: Schema.String, exitCode: Schema
 
 /**
  * Runs `commands` in order in the repository and reports each one's exit code
- * and output. The flow hands it only the safe commands. A host implements it
- * with its shell; the tests implement it with a deterministic layer. It changes
- * the repository, so it is compensable: a retry starts from the first attempt's
- * workspace.
+ * and output. The flow hands it only safe commands on {@link runnable}. A host
+ * implements it with its shell; the tests implement it with a deterministic
+ * layer. It changes the repository, so it is compensable: a retry starts from
+ * the first attempt's workspace.
  */
 export const Execute = Action.make("examples/BranchDoctor/Execute", {
   payload: { commands: Schema.Array(Schema.String), repoPath: Schema.String },
@@ -142,10 +146,28 @@ export const Execute = Action.make("examples/BranchDoctor/Execute", {
   tier: "compensable"
 })
 
-/** Splits the plan into the commands that may run and the ones 0.x skipped as unsafe. */
+/**
+ * The only commands {@link Execute} may run, compared after collapsing
+ * whitespace. Each ends an interrupted git operation or reads state, and none
+ * takes an argument a model could steer.
+ */
+export const runnable: ReadonlySet<string> = new Set([
+  "git status",
+  "git cherry-pick --abort",
+  "git rebase --abort",
+  "git merge --abort",
+  "git am --abort",
+  "git revert --abort"
+])
+
+const normalized = (command: string) => command.trim().split(/\s+/).join(" ")
+
+const mayRun = (c: typeof Command.Type) => c.safe && runnable.has(normalized(c.command))
+
+/** Splits the plan into the commands that may run, as listed in {@link runnable}, and the ones skipped as unsafe. */
 const partition = ({ commands }: RecoveryPlan) => ({
-  safe: commands.filter((c) => c.safe).map((c) => c.command),
-  unsafe: commands.filter((c) => !c.safe).map((c) => c.command)
+  safe: commands.filter(mayRun).map((c) => normalized(c.command)),
+  unsafe: commands.filter((c) => !mayRun(c)).map((c) => c.command)
 })
 
 /** What ran, in 0.x's execution shape. */

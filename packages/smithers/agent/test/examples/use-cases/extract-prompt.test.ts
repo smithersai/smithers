@@ -54,10 +54,12 @@ const slots = (task: string) => ({
 /**
  * A drafter whose `n`-th draft scores `scores[n - 1]`, numbers itself in
  * `scoreReason`, folds the person's last answer into its task slot, and asks a
- * numbered question. Each draft request is recorded with the prior draft's
+ * numbered question. Told to "ship it", it resolves as an override, keeping
+ * its score and asking nothing. With `claimsResolved`, every other draft
+ * claims to be resolved too. Each draft request is recorded with the prior draft's
  * number, the banner it was shown and the answer it was handed.
  */
-const script = (scores: ReadonlyArray<number>) => {
+const script = (scores: ReadonlyArray<number>, options: { readonly claimsResolved?: boolean } = {}) => {
   const drafts: Array<{ readonly prior: string; readonly banner: string; readonly answer: string | undefined }> = []
   const answer: Kit.Script = (asked) => {
     if (!asked.includes("You are a prompt extraction agent")) return undefined
@@ -68,6 +70,19 @@ const script = (scores: ReadonlyArray<number>) => {
     const n = priorDraft === undefined ? 1 : Number(/draft (\d+)/.exec(priorDraft.scoreReason)![1]) + 1
     drafts.push({ prior: priorDraft === undefined ? "none" : priorDraft.scoreReason, banner, answer: reply })
     const score = scores[n - 1]!
+    if (reply === "ship it") {
+      return {
+        prompt: "You are a release engineer. write release notes.",
+        structured: slots("write release notes"),
+        score,
+        scoreReason: `draft ${n}`,
+        nextQuestion: "",
+        nextPrinciple: "none",
+        resolved: true,
+        overridden: true,
+        overrideReason: reply
+      }
+    }
     const task = reply === undefined ? "write release notes" : `write release notes for ${reply}`
     return {
       prompt: `You are a release engineer. ${task}.`,
@@ -76,7 +91,7 @@ const script = (scores: ReadonlyArray<number>) => {
       scoreReason: `draft ${n}`,
       nextQuestion: `Question ${n}: who reads the notes?`,
       nextPrinciple: "definition",
-      resolved: false,
+      resolved: options.claimsResolved === true,
       overridden: false,
       overrideReason: null
     }
@@ -188,4 +203,40 @@ it.live("settles with the last draft when high stakes are not met by the bound",
     ])
     expect(draft.scoreReason).toBe("draft 2")
     expect(draft.score).toBe(0.95)
+  }), { timeout: 60_000 })
+
+it.live("settles an overridden draft below the threshold without asking again", () =>
+  Effect.gen(function*() {
+    const { answer, drafts } = script([0.4, 0.5, 0.6])
+    const questions: Array<string> = []
+    const executionId = "extract-prompt-override"
+    const draft = yield* Kit.run(ExtractPrompt, { maxTurns: 3 }, {
+      filename: join(directory, "override.sqlite"),
+      executionId,
+      script: answer,
+      // A second answer is ready, so a loop that kept going would be answered rather than park.
+      actions: Layer.mergeAll(layer, person(executionId, ["ship it", "engineers"], questions))
+    })
+
+    expect(questions).toEqual(["Question 1: who reads the notes?"])
+    expect(drafts).toHaveLength(2)
+    expect(draft).toMatchObject({ scoreReason: "draft 2", score: 0.5, overridden: true, overrideReason: "ship it" })
+  }), { timeout: 60_000 })
+
+it.live("asks the person even when the first draft claims to be resolved", () =>
+  Effect.gen(function*() {
+    const { answer, drafts } = script([0.4, 0.9], { claimsResolved: true })
+    const questions: Array<string> = []
+    const executionId = "extract-prompt-unasked"
+    const draft = yield* Kit.run(ExtractPrompt, {}, {
+      filename: join(directory, "unasked.sqlite"),
+      executionId,
+      script: answer,
+      actions: Layer.mergeAll(layer, person(executionId, ["engineers"], questions))
+    })
+
+    // Nobody had been asked yet, so the first draft's claim could not settle the flow.
+    expect(questions).toEqual(["Question 1: who reads the notes?"])
+    expect(drafts).toHaveLength(2)
+    expect(draft.scoreReason).toBe("draft 2")
   }), { timeout: 60_000 })

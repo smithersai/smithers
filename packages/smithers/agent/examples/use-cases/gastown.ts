@@ -105,7 +105,8 @@ export const PlannedBead = Schema.Struct({
   title: Schema.String,
   description: Schema.String,
   files: Schema.Array(Schema.String),
-  priority: Schema.Number,
+  // The tracker's range, so an out-of-range answer is refused here, where the mayor can be asked again.
+  priority: Priority.annotate({ description: "P0-P4" }),
   acceptanceCriteria: Schema.String
 })
 

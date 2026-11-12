@@ -34,12 +34,16 @@ const accessControls = [
  * A planner that answers with `controls`, a fetcher that answers off-schema
  * for any source in `unreachable`, a normalizer that calls evidence compliant
  * when its payload says "enforced" and answers off-schema for any source in
- * `garbled`, and a packet agent that grades each control from the findings it
+ * `garbled`, a fetcher that names a source in `misnamed` as its mapped id, and a packet agent that grades each control from the findings it
  * is handed. Each request is recorded in order.
  */
 const script = (
   controls: ReadonlyArray<unknown>,
-  options: { readonly unreachable?: ReadonlyArray<string>; readonly garbled?: ReadonlyArray<string> } = {}
+  options: {
+    readonly unreachable?: ReadonlyArray<string>
+    readonly garbled?: ReadonlyArray<string>
+    readonly misnamed?: Readonly<Record<string, string>>
+  } = {}
 ) => {
   const turns: Array<string> = []
   const answer: Kit.Script = (asked) => {
@@ -56,7 +60,7 @@ const script = (
       turns.push(`fetch ${controlId}/${sourceId}`)
       if (options.unreachable?.includes(sourceId)) return { unexpected: true }
       return {
-        sourceId,
+        sourceId: options.misnamed?.[sourceId] ?? sourceId,
         controlId,
         title: `${sourceId} export`,
         rawPayload: sourceId === "okta" ? "MFA enforced for all users" : "2 unreviewed alerts",
@@ -177,4 +181,35 @@ it.effect("fails without a packet when a normalize fails", () =>
     expect(Exit.isFailure(exit)).toBe(true)
     expect(turns).toContain("normalize CC7.2/siem")
     expect(turns).not.toContain("packet SOC2")
+  }))
+
+it.effect("keeps every planned pair's evidence when ids repeat or an answer misnames its source", () =>
+  Effect.gen(function*() {
+    const { answer, turns } = script([{
+      controlId: "CC6.1",
+      description: "Logical access is restricted",
+      sources: [
+        { sourceId: "okta", endpoint: "https://okta.test/api/v1/policies", preferredMethod: "api" },
+        { sourceId: "okta", endpoint: "https://okta.test/api/v1/factors", preferredMethod: "api" },
+        { sourceId: "github", endpoint: "github://org/settings", preferredMethod: "mcp" }
+      ]
+    }], { misnamed: { github: "okta" } })
+    const packet = yield* Kit.run(ComplianceEvidenceCollector, {}, {
+      filename: join(directory, "repeated.sqlite"),
+      executionId: "compliance-repeated",
+      script: answer,
+      actions: layer
+    })
+
+    expect(turns.filter((turn) => turn.startsWith("fetch")).sort()).toEqual([
+      "fetch CC6.1/github",
+      "fetch CC6.1/okta",
+      "fetch CC6.1/okta"
+    ])
+    expect(turns.filter((turn) => turn.startsWith("normalize")).sort()).toEqual([
+      "normalize CC6.1/github",
+      "normalize CC6.1/okta",
+      "normalize CC6.1/okta"
+    ])
+    expect([...packet.findings[0]!.evidence].sort()).toEqual(["github", "okta", "okta"])
   }))

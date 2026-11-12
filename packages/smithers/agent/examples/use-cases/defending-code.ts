@@ -32,6 +32,16 @@ export const targetSource = "targets/card-parser/src/card_parser.c"
 
 const Count = Schema.Int
 
+/**
+ * A model-authored id as it may appear in a path or a command: lowercase
+ * letters, digits and single dashes, so it cannot leave the run's directory or
+ * end the command.
+ */
+const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+
+/** The run's name, which becomes the `runs/` directory the build writes into. */
+export const RunId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9_-]*$/i))
+
 /** The ASAN build of the run's working copy. */
 export const Build = Schema.Struct({
   ok: Schema.Boolean,
@@ -199,7 +209,7 @@ The input is a line-based "contact card":
 Steps:
 1. Read ${work}/card_parser.c and study how the "${subsystem.id}" field is parsed.
 2. Write a candidate input that targets the "${subsystem.id}" field to
-   ${work}/poc-${subsystem.id}.card
+   ${work}/poc-${slug(subsystem.id)}.card
 3. Run it through the harness. If STATUS is not CRASH, refine (longer values,
    more list items) and try again.
 4. Once it crashes, run it 3 more times and confirm it crashes all 3 times.
@@ -231,9 +241,9 @@ The proof-of-concept input is:
 ${find.pocInput}
 -----
 
-1. Write that exact input to ${work}/verify-${find.subsystemId}.card
+1. Write that exact input to ${work}/verify-${slug(find.subsystemId)}.card
 2. Run it through the harness THREE times in fresh processes:
-       sh harness/run_target.sh ${binary} ${work}/verify-${find.subsystemId}.card
+       sh harness/run_target.sh ${binary} ${work}/verify-${slug(find.subsystemId)}.card
 3. Report reproduced=true only if all 3 runs print STATUS=CRASH with the same
    ASAN class. Report the class, the crash site, how many of the 3 runs crashed,
    and subsystemId="${find.subsystemId}".`
@@ -323,8 +333,6 @@ Report filesChanged, the unified diff, a bugsFixed entry per bug (bugId +
 pocNoLongerCrashes), rebuildOk, smokeTestOk, allValidated (true only if rebuild +
 smoke + every PoC fixed), and a one-line note.`
 })
-
-const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 
 /**
  * Keeps the first item per key. 0.x keyed its fan-out task ids by model-authored
@@ -472,7 +480,7 @@ const triage = (
 
 /** The seven-stage pipeline. */
 export const DefendingCode = Flow.make("examples/DefendingCode", {
-  payload: { runId: Schema.String, fanout: Schema.optional(Fanout) },
+  payload: { runId: RunId, fanout: Schema.optional(Fanout) },
   success: Summary,
   error: Schema.Union([AgentAction.AgentFailure, BuildFailed]),
   body: ({ fanout = 3, runId }) => {
