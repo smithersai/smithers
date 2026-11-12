@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { ApplyPatch, Edit, Ls, Read, Write } from "@smthrs/std"
-import { Context, Effect, Fiber, FileSystem, Path, Stream } from "effect"
+import { Context, Effect, Fiber, FileSystem, Path, Result, Stream } from "effect"
 import * as Base64 from "effect/encoding/Base64"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawnSync } from "node:child_process"
@@ -377,6 +377,8 @@ describe.skipIf(!linuxUserland)("the std file flows on a real Linux userland", (
         const files: NonNullable<Read.BatchedFileSystem[typeof Read.Batched]> =
           linuxFileSystem(session, "container")[Batched]
         const [absent] = yield* files.snapshot(["bin/blob"])
+        // `bin` is missing too, and stat says so: the path is absent, not unreadable.
+        expect(Result.isFailure(absent!.info) && absent!.info.failure.reason._tag).toBe("NotFound")
         const committed = yield* files.commit([{ path: "bin/blob", content: bytes, version: absent!.version }])
         const [written] = yield* files.snapshot(["bin/blob"], { read: ["bin/blob"] })
         return { committed, written, scripts }

@@ -324,8 +324,43 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
     const deleted: Array<string> = []
     const prepared = new Map<ApplyPatchText.Hunk, string>()
 
+    // Check every target before the first write, so a patch that cannot
+    // finish changes no file: a delete needs a file to remove, and an add or a
+    // move may replace a file but never a directory. A batched host answers
+    // from the snapshot it already took.
+    const typeOf = (target: string) => {
+      const info: Effect.Effect<{ readonly type: FileSystem.File.Type }, PlatformError.PlatformError> = batched
+        ? Effect.fromResult(mutation.seen!(target).info)
+        : fileSystem.stat(target)
+      return info.pipe(
+        Effect.map((found): FileSystem.File.Type | undefined => found.type),
+        Effect.catch((error) => error.reason._tag === "NotFound" ? Effect.succeed(undefined) : Effect.fail(error)),
+        Effect.mapError(FsFailure.reading(target, `File not found: ${target}`))
+      )
+    }
+    const refuse = (code: StdError.Code, message: string, target: string) =>
+      Effect.fail(new StdError.StdError({ code, message, path: target }))
+
     for (const hunk of parsed.hunks) {
-      if (hunk.kind !== "update") continue
+      if (hunk.kind === "delete") {
+        const type = yield* typeOf(hunk.path)
+        if (type === undefined) {
+          return yield* refuse("not_found", `Failed to delete file ${hunk.path}: it does not exist`, hunk.path)
+        }
+        if (type !== "File") {
+          return yield* refuse("not_a_file", `Failed to delete file ${hunk.path}: it is not a file`, hunk.path)
+        }
+        continue
+      }
+      if (hunk.kind === "add") {
+        if ((yield* typeOf(hunk.path)) === "Directory") {
+          return yield* refuse("not_a_file", `Failed to write file ${hunk.path}: it is a directory`, hunk.path)
+        }
+        continue
+      }
+      if (hunk.movePath !== undefined && (yield* typeOf(hunk.movePath)) === "Directory") {
+        return yield* refuse("not_a_file", `Failed to write file ${hunk.movePath}: it is a directory`, hunk.movePath)
+      }
       const bytes = yield* mutation.read(
         hunk.path,
         FsFailure.reading(hunk.path, `Failed to read file to update ${hunk.path}`)
@@ -435,7 +470,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
         for (const hunk of parsed.hunks) {
           switch (hunk.kind) {
             case "add": {
-              yield* fileSystem.writeFile(hunk.path, encoder.encode(hunk.contents)).pipe(
+              yield* Preserve.writeFile(fileSystem, hunk.path, encoder.encode(hunk.contents)).pipe(
                 Effect.mapError(failureOf("add", hunk.path))
               )
               added.push(hunk.path)

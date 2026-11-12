@@ -115,6 +115,7 @@ Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an
 
 | Code                       | Meaning                                                       |
 | -------------------------- | ------------------------------------------------------------- |
+| `stale_read`               | A write named a file changed since this session read it.      |
 | `not_found`                | The named path or ref does not exist.                         |
 | `not_a_file`               | A file operation was aimed at something that is not a file.   |
 | `not_a_directory`          | A directory operation was aimed at something that is not one. |
@@ -133,9 +134,11 @@ Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an
 | `timeout`                  | The call exceeded its wall-clock budget.                      |
 | `rate_limited`             | Provider rate limit reached; back off before retrying.        |
 | `provider_unavailable`     | No host bound the service this flow needs, or it refused.     |
+| `moved_off`                | The versioned host's branch moved off this call's work.       |
 | `unsupported`              | The service or host cannot serve this query or destination.   |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
 | `response_too_large`       | The response or file exceeded the byte cap before decoding.   |
+| `outside_container`        | A sealed `bash` was asked to run outside its one container.   |
 
 Six services are injected, and a flow whose service a host has not bound gets a `makeNoop` refusal rather than a silent success: `Search` for `grep` and `glob`, `Container` for a containerised `bash` or `test`, `TestRunner` for `test`, `Checkpoints` for agent-side pinning, `WebSearch` for `websearch`, and `LanguageServer` for `lsp`. Refusing loudly is the contract, because a flow that appears to work while doing nothing costs a model the frames it takes to notice.
 

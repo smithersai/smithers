@@ -136,8 +136,9 @@ construct. A `root` that does not exist is `not_found`.
 
 ## What a walk never enters
 
-Twelve directory names are skipped during descent, including `.git`,
-`node_modules`, `__pycache__`, and `.venv`. Skipping applies to descent only, so
+Twenty-four directory names are skipped during descent, including `.git`,
+`.jj`, `node_modules`, `__pycache__`, `.venv`, and this package's own checkpoint
+and test-baseline scratch directories. Skipping applies to descent only, so
 naming one of them as the `root` searches it. An entry the process cannot read
 is skipped and the walk continues.
 

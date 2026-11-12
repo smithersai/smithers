@@ -65,13 +65,13 @@ That is the difference between serializing every read in the workspace and
 serializing the two calls that touch one file. Seven flows narrow to something
 smaller than their declaration:
 
-| Flow           | What the narrowing says                                                                                                     |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `read`, `ls`   | reads the one `path` the input names                                                                                        |
-| `write`        | writes the one `path` the input names                                                                                       |
-| `edit`         | reads and writes the one `path` the input names                                                                             |
-| `glob`, `grep` | reads the `root` subtree, or `/**` when no root is given                                                                    |
-| `bash`         | in `hermetic` mode, `compensable` with the caller's own `reads` and `writes`; in `unhermetic` mode, the declared worst case |
+| Flow           | What the narrowing says                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `read`, `ls`   | reads the one `path` the input names                                                                                         |
+| `write`        | writes the one `path` the input names                                                                                        |
+| `edit`         | reads and writes the one `path` the input names                                                                              |
+| `glob`, `grep` | reads the `root` subtree, or `/**` when no root is given                                                                     |
+| `bash`         | in `hermetic` mode, `irreversible` with the caller's own `reads` and `writes`; in `unhermetic` mode, the declared worst case |
 
 The other ten return their static envelope, and each says why in its own doc
 comment. `apply_patch` is the interesting one: a patch names its files inside

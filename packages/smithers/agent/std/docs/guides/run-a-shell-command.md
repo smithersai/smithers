@@ -43,13 +43,15 @@ failure that eats a quote out of
 script as arguments rather than as interpolated text.
 
 `interpreter` defaults to `bash`. `bash`, `zsh`, `sh`, and `dash` are told to
-read the program with `-s`; `python` and `python3` with `-`; `node`, `ruby`,
-`perl`, and anything else are given no file, which is how they read a program
-from standard input.
+read the program with `-s --`; `python`, `python3`, `node`, `ruby`, and `perl`
+with `-`. Every other interpreter is refused, including a path such as
+`/usr/bin/python3` and a versioned name such as `python3.11`.
 
-Six input combinations are refused with `invalid_input`, each naming the fix:
+Eight input combinations are refused with `invalid_input`, each naming the fix:
 `command` with `script`, neither of the two, `script` with `stdin`, `command`
-with `args`, `command` with `interpreter`, and a hermetic containerised call.
+with `args`, `command` with `interpreter`, a hermetic containerised call, a
+hermetic `script` whose interpreter is not a shell, and a `script` whose
+interpreter is not one of the nine above.
 
 ## Declare the environment
 
@@ -125,9 +127,10 @@ const result = Bash.run({
 ```
 
 A token outside the declaration fails with `outside_declared_reads` or
-`outside_declared_writes` before anything runs, and the narrowed envelope makes
-the call `compensable` instead of `irreversible`, so a scheduler can run it
-beside work that touches other paths.
+`outside_declared_writes` before anything runs, and the narrowed envelope names
+only the declared paths, so a scheduler can run the call beside work that
+touches other paths. The tier stays `irreversible`: a lexical pre-check does not
+make a shell command undoable.
 
 Read [Hermetic mode is a pre-check, not a sandbox](../concepts/effects-and-capabilities.md#hermetic-mode-is-a-pre-check-not-a-sandbox)
 before you rely on this. The check is lexical: it bounds what the caller
@@ -161,13 +164,13 @@ A non-zero exit code is an ordinary value, not a failure. Only a timeout, a
 spawn failure, a permission refusal, and the hermetic pre-check use the error
 channel.
 
-| Field                                      | Meaning                                                     |
-| ------------------------------------------ | ----------------------------------------------------------- |
-| `exitCode`                                 | The command's exit code.                                    |
-| `stdout`, `stderr`                         | The captured streams; start and end when truncated.         |
-| `stdoutTruncated`, `stderrTruncated`       | Whether that stream is a fragment.                          |
-| `stdoutDroppedBytes`, `stderrDroppedBytes` | Bytes omitted from the middle.                              |
-| `invalidProbe`                             | Present when the shell refused to start the command at all. |
+| Field                                      | Meaning                                             |
+| ------------------------------------------ | --------------------------------------------------- |
+| `exitCode`                                 | The command's exit code.                            |
+| `stdout`, `stderr`                         | The captured streams; start and end when truncated. |
+| `stdoutTruncated`, `stderrTruncated`       | Whether that stream is a fragment.                  |
+| `stdoutDroppedBytes`, `stderrDroppedBytes` | Bytes omitted from the middle.                      |
+| `invalidProbe`                             | Reserved; `bash` never sets it.                     |
 
 Each stream is bounded at 30,000 bytes: its first 15,000 and its last 15,000.
 A search prints its matches first and a failing command prints its verdict
@@ -217,7 +220,7 @@ about the command it was handed. When a command names a test, a file, a module,
 an environment, or a program that does not exist, the runner never reaches any
 code and still exits non-zero.
 
-`invalidProbe` names that case, with a `reason` from a closed list
+On a `test` result, `invalidProbe` names that case, with a `reason` from a closed list
 (`unknown-command`, `unknown-test`, `unknown-path`, `unknown-module`,
 `unknown-environment`), the `evidence` it rests on, and a `message` stating
 what the result does and does not prove.
@@ -229,9 +232,9 @@ if (result.invalidProbe !== undefined) {
 }
 ```
 
-`bash` does not infer a launch failure from exit code 126 or 127: a launched
-runner can return either status after running a check. It returns the captured
-command result without `invalidProbe` when launch cannot be established. The
+`bash` never sets `invalidProbe`. Exit code 126 or 127 does not prove the
+shell refused to launch the command: a launched runner can return either status
+after running a check. The
 `test` flow asks the attribution judge whether a non-zero exit describes the
 code under test or an unresolved name. See
 [Run the test suite](./run-the-test-suite.md#who-the-failure-belongs-to).

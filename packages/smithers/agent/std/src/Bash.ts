@@ -154,12 +154,12 @@ export type Input = typeof Input.Type
 /**
  * Output schema for the bash flow.
  *
- * `invalidProbe` is present when the shell itself refused to start the
- * command, which its exit code says outright: 127 for a program it could not
- * find, 126 for one it could not execute. Only that. Reading a runner's own
- * wording is a judgment rather than a fact, and `Probe.classify` makes it with
- * Jev for the `test` flow, whose caller is asking about a suite; a shell call
- * is any command at all and stays free of the gateway. See `Probe`.
+ * `invalidProbe` is reserved: `bash` never sets it. Exit code 126 or 127
+ * does not prove the shell refused to launch the command, because a launched
+ * runner can return either status after running a check. Reading a runner's
+ * own wording is a judgment rather than a fact, and `Probe.classify` makes it
+ * with Jev for the `test` flow, whose caller is asking about a suite; a shell
+ * call is any command at all and stays free of the gateway. See `Probe`.
  *
  * The `<stream>Truncated` flags are a wire convention, not a display detail.
  * A truncated capture is a fragment of what the process printed, and the

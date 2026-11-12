@@ -659,15 +659,97 @@ describe("ApplyPatch.run", () => {
     expect(result.missed).toBe("present\n")
   })
 
+  // Every target is checked before the first write, so a patch that cannot
+  // finish leaves nothing half-applied for the model to repair, and the same
+  // patch can be sent again once it is fixed.
+  it.each(
+    [
+      { header: "Delete File", path: "/missing.txt", body: "", code: "not_found" },
+      { header: "Delete File", path: "/dir", body: "", code: "not_a_file" },
+      { header: "Add File", path: "/dir", body: "\n+over", code: "not_a_file" },
+      { header: "Update File: /b.txt\n*** Move to", path: "/dir", body: "\n@@\n-b\n+B", code: "not_a_file" }
+    ] as const
+  )("refuses $header $path before writing anything", async ({ header, path, body, code }) => {
+    const patch = wrap(`*** Update File: /a.txt\n@@\n-old\n+new\n*** ${header}: ${path}${body}`)
+    const result = await execute(Effect.provide(
+      Effect.gen(function*() {
+        const exit = yield* Effect.exit(ApplyPatch.run({ input: patch }))
+        const fileSystem = yield* FileSystem.FileSystem
+        return { exit, a: yield* fileSystem.readFileString("/a.txt") }
+      }),
+      layer({ files: { "/a.txt": "old\n", "/b.txt": "b\n", "/dir/inside.txt": "x\n" } })
+    ))
+    const failure = Exit.isFailure(result.exit)
+      ? Option.getOrUndefined(Cause.findErrorOption(result.exit.cause))
+      : undefined
+    expect(failure).toMatchObject({ code, path })
+    expect(failure?.message).not.toContain("applied before failure")
+    expect(result.a).toBe("old\n")
+  })
+
+  it("names a denied look at a delete target as permission_denied, removing nothing", async () => {
+    let removes = 0
+    const host = FileSystem.makeNoop({
+      makeDirectory: () => Effect.void,
+      realPath: (path) => Effect.succeed(path),
+      remove: () => Effect.sync(() => removes++),
+      stat: (path) =>
+        Effect.fail(PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "stat",
+          pathOrDescriptor: path
+        }))
+    })
+    const exit = await executeExit(Effect.provide(
+      Effect.provideService(
+        ApplyPatch.run({ input: wrap("*** Delete File: /locked.txt") }),
+        FileSystem.FileSystem,
+        host
+      ),
+      layer()
+    ))
+    const failure = Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined
+    expect(failure).toMatchObject({ code: "permission_denied", path: "/locked.txt" })
+    // Only the lock directory is released; the file itself is never removed.
+    expect(removes).toBe(1)
+  })
+
+  it("replaces an existing file named by Add File through a sibling, never in place", async () => {
+    const writes: Array<string> = []
+    const renames: Array<readonly [string, string]> = []
+    const host = FileSystem.makeNoop({
+      makeDirectory: () => Effect.void,
+      realPath: (path) => Effect.succeed(path),
+      remove: () => Effect.void,
+      stat: () => Effect.succeed(fileInfo()),
+      writeFile: (path) => Effect.sync(() => writes.push(path)),
+      rename: (from, to) => Effect.sync(() => renames.push([from, to]))
+    })
+    await execute(Effect.provide(
+      Effect.provideService(
+        ApplyPatch.run({ input: wrap("*** Add File: /a.txt\n+replacement") }),
+        FileSystem.FileSystem,
+        host
+      ),
+      layer()
+    ))
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toMatch(/^\/\.smithers-.+\.tmp$/)
+    expect(renames).toEqual([[writes[0], "/a.txt"]])
+  })
+
   it("reports completed paths when a later write fails", async () => {
     let writes = 0
     const host = FileSystem.makeNoop({
       realPath: (path) => Effect.succeed(path),
       remove: () => Effect.void,
       makeDirectory: () => Effect.void,
+      rename: () => Effect.void,
+      // Each add is staged in a sibling, so the second staged write is the second file's.
       writeFile: (path) => {
         writes++
-        return path === "/second.txt"
+        return writes === 2
           ? Effect.fail(PlatformError.systemError({
             _tag: "PermissionDenied",
             module: "FileSystem",

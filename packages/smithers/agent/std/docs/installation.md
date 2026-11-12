@@ -82,7 +82,7 @@ Smithers CLI does.
 | `ShellCommand.run`                          | `ChildProcessSpawner`                                                          |
 | `Fetch.run`, `HttpPost.run`, `WebFetch.run` | `HttpClient`, `GrantStore`                                                     |
 | `WebSearch.run`                             | `WebSearch`                                                                    |
-| `Lsp.run`                                   | `LanguageServer`                                                               |
+| `Lsp.run`                                   | `LanguageServer`, `FileSystem`                                                 |
 | `UpdatePlan.run`                            | none                                                                           |
 
 ## The six injected services

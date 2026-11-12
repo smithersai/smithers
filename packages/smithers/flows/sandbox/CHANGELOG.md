@@ -12,6 +12,10 @@
 
 ### Fixed
 
+- A batched snapshot of a path whose parent directory is missing reports
+  `NotFound`, as `stat` on the container filesystem does. It reported
+  `Unknown`, which a caller reads as a failed look rather than an absent
+  path.
 - Conformance checks now report an unproven kill when the survivor probe cannot run or exits with a status other than
   `0` or `1`, including guests without `pgrep`, instead of accepting a kill that may leave child processes alive.
 

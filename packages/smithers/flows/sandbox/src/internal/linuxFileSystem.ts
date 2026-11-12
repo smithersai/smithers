@@ -12,7 +12,7 @@ import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import type { Session } from "../Sandbox/Session.ts"
-import { Batched, type BatchedFiles, batchedFiles, fileType, gather, refusal } from "./linuxBatch.ts"
+import { Batched, type BatchedFiles, batchedFiles, fileType, gather, refusal, statAbsent } from "./linuxBatch.ts"
 
 const encoder = new TextEncoder()
 const validMode = (mode: number): boolean => Number.isInteger(mode) && mode >= 0 && mode <= 0o7777
@@ -46,10 +46,7 @@ export const linuxFileSystem = (
           method,
           path,
           stderr,
-          method === "stat" && code === 1 && stderr.startsWith("stat: ") &&
-            stderr.trimEnd().endsWith(": No such file or directory") ?
-            9 :
-            code
+          method === "stat" && code === 1 && statAbsent(stderr) ? 9 : code
         ))
     )
   const stat: FileSystem.FileSystem["stat"] = (path) =>

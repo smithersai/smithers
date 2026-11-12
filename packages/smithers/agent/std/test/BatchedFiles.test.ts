@@ -518,6 +518,38 @@ describe("apply_patch on a batched host", () => {
     })
   })
 
+  it.each(
+    [
+      ["Delete File", "missing.txt", "", "not_found"],
+      ["Delete File", "dir", "", "not_a_file"],
+      ["Add File", "dir", "\n+over", "not_a_file"]
+    ] as const
+  )("refuses %s %s from the snapshot, before any commit", async (header, name, body, code) => {
+    await fixture(async (root) => {
+      const { calls, result } = await run(ApplyPatch.run({
+        input: `*** Begin Patch\n*** Update File: ${join(root, "a.txt")}\n@@\n-beta\n+BETA\n*** ${header}: ${
+          join(root, name)
+        }${body}\n*** End Patch`
+      }))
+      expect(refusal(result)).toMatchObject({ code, path: join(root, name) })
+      expect(calls.commit).toEqual([])
+      expect(await readFile(join(root, "a.txt"), "utf8")).toBe("alpha\nbeta\n")
+    })
+  })
+
+  it("refuses a move onto a directory from the snapshot, before any commit", async () => {
+    await fixture(async (root) => {
+      const { calls, result } = await run(ApplyPatch.run({
+        input: `*** Begin Patch\n*** Update File: ${join(root, "move.txt")}\n*** Move to: ${
+          join(root, "dir")
+        }\n@@\n-moving\n+moved\n*** End Patch`
+      }))
+      expect(refusal(result)).toMatchObject({ code: "not_a_file", path: join(root, "dir") })
+      expect(calls.commit).toEqual([])
+      expect(await readFile(join(root, "move.txt"), "utf8")).toBe("moving\n")
+    })
+  })
+
   it("commits nothing when any file changed after the snapshot", async () => {
     await fixture(async (root) => {
       const { result } = await run(ApplyPatch.run({ input: patch(root) }), {

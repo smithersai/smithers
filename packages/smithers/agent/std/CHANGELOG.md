@@ -30,6 +30,21 @@
   descendants in native and in-process searches. Remote searches retain every
   hard-linked filename instead of silently skipping later names for the same file.
 
+- `apply_patch` checks every target before its first write. A
+  `*** Delete File:` naming a missing path (`not_found`) or something other
+  than a file (`not_a_file`), or an `*** Add File:` or `*** Move to:` naming a
+  directory (`not_a_file`), now refuses the whole patch. Before, the earlier
+  sections were already written, and sending the same patch again failed on
+  them. A delete target is checked through symbolic links, so a dangling link
+  is `not_found` and a link to a directory is `not_a_file`. An
+  `*** Add File:` over an existing file replaces it through a sibling, as an
+  update does, instead of truncating it in place.
+- The docs now match the code: a hermetic `bash` call is `irreversible`, an
+  interpreter outside the nine listed is refused, `bash` never sets
+  `invalidProbe`, a walk skips twenty-four directory names, `Lsp.run` needs
+  `FileSystem`, the failure-code tables list all twenty-four codes, and a file
+  whose owner the process cannot assign is rewritten in place.
+
 - `grep` skips and counts NUL-bearing UTF-16 files on every host and rejects
   them when named as the root. Bare CR boundaries now match the same way in
   native and in-process searches, including `^` and `$` anchors.

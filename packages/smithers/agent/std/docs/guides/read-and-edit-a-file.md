@@ -236,12 +236,16 @@ It preserves the file's mode, and it refuses to write over a directory with
 `command_failed`. Prefer `edit` for a targeted change: a whole-file write of a
 file you only partly know is how an unrelated region disappears.
 
-On ordinary filesystem hosts, `write`, `edit`, and `apply_patch` updates stage replacement bytes in a unique
-sibling file, preserve existing permission bits and ownership, then rename it
-over the destination. A failure before rename leaves the original bytes intact.
-Existing symlinks continue to target the same file. Hard links to the old inode
-keep its old contents. The host must support exclusive creation and atomic
-rename; unsupported operations fail without falling back to truncation.
+On ordinary filesystem hosts, `write`, `edit`, and every `apply_patch` add or
+update stage replacement bytes in a unique sibling file, preserve existing
+permission bits and ownership, then rename it over the destination. A failure
+before rename leaves the original bytes intact. Existing symlinks continue to
+target the same file. Hard links to the old inode keep its old contents. The
+host must support exclusive creation and atomic rename. One case gives up
+atomicity: a file owned by a user this process cannot hand the sibling to, such
+as another user's file on a bind mount, is rewritten in place, keeping its
+inode, owner, and mode, so a failure partway through that write can leave it
+cut short.
 
 Temporary files are removed on failure and Effect interruption. Process death
 can leave an unused temporary file. This is per-file atomicity, not a transaction
@@ -274,6 +278,13 @@ rather than applied by halves. Every update hunk is derived from the file as it
 is on disk, so the second section would start from an original the first has
 already replaced. A file needing several changes carries several `@@` chunks
 inside one section.
+
+Every target is checked before the first write: each update's context must
+match, each `*** Delete File:` must name an existing file, following symbolic
+links (`not_found` or `not_a_file` otherwise), and an `*** Add File:` or a
+`*** Move to:` may replace a file but not a directory (`not_a_file`). A patch
+that fails a check leaves every file as it was, so the same patch can be sent
+again once it is fixed.
 
 An update changes only the lines its chunks change. Patch text carries no line
 endings: a written line takes the ending of the lines it replaces, so a CRLF

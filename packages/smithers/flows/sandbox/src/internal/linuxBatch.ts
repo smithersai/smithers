@@ -109,6 +109,17 @@ const types: Readonly<Record<number, FileSystem.File.Type>> = {
 export const fileType = (mode: number): FileSystem.File.Type => types[mode & 0o170000] ?? "Unknown"
 
 /**
+ * Whether a failed `stat`, run with its language pinned to `C`, said nothing
+ * is at the path: its own diagnostic for a missing leaf or ancestor. A shell
+ * that could not run `stat` at all words its failure differently.
+ *
+ * @category utils
+ * @since 1.0.0-rc.18
+ */
+export const statAbsent = (stderr: string): boolean =>
+  stderr.startsWith("stat: ") && stderr.trimEnd().endsWith(": No such file or directory")
+
+/**
  * A guest refusal. The reserved exits name their reason (9 absent, 10
  * occupied, 11 the wrong kind of entry, 12 unreadable); otherwise a utility's
  * `Permission denied` is `PermissionDenied` and anything else `Unknown`.
@@ -205,7 +216,7 @@ q() {
   fi
   n=
   if [ ! -e "$1" ] && [ ! -L "$1" ] && [ -x "$a" ]; then s=N
-  elif s=$(stat -L -c '%f %s' -- "$1" 2>&1); then n=\${s#* }; s=S$s
+  elif s=$(LC_ALL=C stat -L -c '%f %s' -- "$1" 2>&1); then n=\${s#* }; s=S$s
   else s=E$s
   fi
   printf '%s\\0%s\\0%s\\0' "$c" "$(v "$1")" "$s"
@@ -425,7 +436,9 @@ export const batchedFiles = (session: Session, guest: string): BatchedFiles => {
     const info: Snapshot["info"] = stat === "N"
       ? Result.fail(refusal("stat", path, `\`${path}\`: nothing is there in the ${guest}`, 9))
       : !stat!.startsWith("S")
-      ? Result.fail(refusal("stat", path, stat!.slice(1).trim()))
+      // A missing parent leaves the script unsure the leaf is absent, so stat
+      // itself is asked, and its diagnostic says so.
+      ? Result.fail(refusal("stat", path, stat!.slice(1).trim(), statAbsent(stat!.slice(1)) ? 9 : 1))
       : fields.length !== 2 || !/^[0-9a-f]+$/i.test(fields[0]!) || !Number.isSafeInteger(size) || size < 0
       ? Result.fail(refusal("stat", path, `${guest} stat returned invalid metadata`))
       : Result.succeed({ type: fileType(mode), size })

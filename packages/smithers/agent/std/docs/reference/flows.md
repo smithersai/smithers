@@ -41,7 +41,7 @@ answer an open question.
 | `explore`       | `Explore`      | no handler                                                |
 | `webfetch`      | `WebFetch`     | `HttpClient`, `GrantStore`                                |
 | `websearch`     | `WebSearch`    | `WebSearch`                                               |
-| `lsp`           | `Lsp`          | `LanguageServer`                                          |
+| `lsp`           | `Lsp`          | `LanguageServer`, `FileSystem`                            |
 
 ## read
 
@@ -340,7 +340,11 @@ A clone of the Codex CLI freeform patch tool: the V4A grammar
 | `deleted`  | array of string | Paths deleted by the patch.                 |
 
 A patch naming one path in two sections is refused whole rather than applied by
-halves. Fails with `invalid_input` for a parse or preflight failure, `not_found`,
+halves. Every target is checked before the first write, so a patch that fails a
+check leaves every file as it was. Fails with `invalid_input` for a parse or
+preflight failure, `not_found` for a missing update or delete target,
+`not_a_file` for a delete target that is not a file or an add or move target
+that is a directory,
 `binary_file`, or `no_match` when a hunk's context is not in the file.
 
 `ApplyPatch.paths(patch)` returns every path a patch writes, a move's
@@ -544,6 +548,7 @@ all values.
 
 | Code                       | Meaning                                                       |
 | -------------------------- | ------------------------------------------------------------- |
+| `stale_read`               | A write named a file changed since this session read it.      |
 | `not_found`                | The named path or ref does not exist.                         |
 | `not_a_file`               | A file operation was aimed at something that is not a file.   |
 | `not_a_directory`          | A directory operation was aimed at something that is not one. |
@@ -562,15 +567,16 @@ all values.
 | `timeout`                  | The call exceeded its wall-clock budget.                      |
 | `rate_limited`             | Provider rate limit reached; back off before retrying.        |
 | `provider_unavailable`     | No host bound the service this flow needs, or it refused.     |
+| `moved_off`                | The versioned host's branch moved off this call's work.       |
 | `unsupported`              | The service or host cannot serve this query or destination.   |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
 | `response_too_large`       | The response or file exceeded the byte cap before decoding.   |
 | `outside_container`        | A sealed `bash` was asked to run outside its one container.   |
 
 The list is closed and stable, and it is the vocabulary a host binding its own
-handler or its own `Search` peer answers in, `not_a_file` and `not_modified`
-included: both are available to a handler that needs them, and the handlers
-shipped here have no occasion to raise either.
+handler or its own `Search` peer answers in, `not_modified` included: it is
+available to a handler that needs it, and the handlers shipped here have no
+occasion to raise it.
 
 For what to do about each one, see [Troubleshooting](../troubleshooting.md).
 

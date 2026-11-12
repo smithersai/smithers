@@ -15,6 +15,7 @@ import * as Path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Std from "../src/index.ts"
+import * as StdError from "../src/StdError.ts"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
 const readme = Fs.readFileSync(Path.join(packageRoot, "README.md"), "utf8")
@@ -123,5 +124,17 @@ describe("docs/api.md", () => {
       "Twenty"
     ]
     expect(count).toBe(words[flowModules.length])
+  })
+})
+
+describe("failure code tables", () => {
+  // Both tables called the list closed and stable while missing codes
+  // `StdError.Code` already carried.
+  it.each([
+    ["README.md", readme],
+    ["docs/reference/flows.md", Fs.readFileSync(Path.join(packageRoot, "docs", "reference", "flows.md"), "utf8")]
+  ])("%s lists exactly the codes StdError.Code declares", (_name, text) => {
+    const documented = tableUnder(text, "## Failures").map((row) => row[0]!.replaceAll("`", ""))
+    expect([...documented].sort()).toEqual([...StdError.Code.literals].sort())
   })
 })
