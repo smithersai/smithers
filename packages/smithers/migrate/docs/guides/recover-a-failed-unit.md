@@ -28,6 +28,11 @@ unit's files are already back as the checkpoint found them: every recorded file
 restored byte for byte, every path added since removed, and the archive copies
 of restored files deleted.
 
+If the rollback itself fails, for example on a source a command replaced with a
+symbolic link, the unit entry says `the unit could not finish` with the
+rollback error and does not claim a restoration. Restore that unit from its
+`pending-unit.json` before you rerun it.
+
 The `Appendix: restoring a checkpoint` section still prints the version-control
 command for each unit, because the working copy around the unit is yours:
 

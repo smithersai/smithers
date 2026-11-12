@@ -513,6 +513,8 @@ export const finishAction = Action.make("smithers/migrate-v1/Finish", {
     verification: Schema.NullOr(Report.VerificationResult),
     /** Why the agent failed, when it did. */
     failure: Schema.optional(Schema.String),
+    /** The tool's own error that stopped the unit before this step, when one did. */
+    error: Schema.optional(MigrateError),
     repairRounds: Schema.Int
   },
   success: UnitOutcome,
@@ -986,6 +988,10 @@ const archiveDir = (options: Options.MigrateOptions): string => `${options.root}
 
 const backupDir = (options: Options.MigrateOptions): string => `${options.root}/${Options.reportDir(options)}/backup`
 
+/** A `MigrateError` as one report reason: its code, its message, and its details. */
+const failureReason = (failure: MigrateError): string =>
+  `${failure.code}: ${failure.message}${failure.details === undefined ? "" : `\n${failure.details}`}`
+
 const canonical = (input: {
   readonly payload: typeof finishAction.payloadSchema.Type
   readonly status: "migrated" | "failed"
@@ -1018,6 +1024,13 @@ const canonical = (input: {
         file: payload.outline.sources[0] ?? payload.outline.id,
         line: 1,
         suggestion: "Read the failure, then rerun this unit with --unit " + payload.outline.id
+      }]),
+      ...(payload.error === undefined ? [] : [{
+        construct: "the unit could not finish",
+        reason: failureReason(payload.error),
+        file: payload.outline.sources[0] ?? payload.outline.id,
+        line: 1,
+        suggestion: "Read the failure, fix its cause, then rerun this unit with --unit " + payload.outline.id
       }]),
       ...failedChecks.flatMap((check) =>
         check.findings.map((finding) => ({
@@ -1167,12 +1180,15 @@ const unaccounted = (
  * The settle step: record a unit that failed with this package's own error
  * before its finish step could write an outcome.
  *
- * A checkpoint that cannot be taken, a verification that cannot spawn, an
- * archive that cannot move a file: each fails its unit's execution with a
- * `MigrateError` after the unit's restoring scope has put its files back. The
- * error is the operator's evidence, so it is written into the unit's own
- * artifact as the reason the unit failed, and the run goes on to the next
- * unit; every finished unit keeps its outcome and the report exits nonzero.
+ * Every `MigrateError` after a unit's checkpoint is first sent to the finish
+ * step, which restores the checkpoint and records the unit. What reaches this
+ * step is what that could not absorb: a checkpoint that could not be taken, a
+ * rollback that failed, or a unit artifact that could not be written. So this
+ * step never claims the files were restored; it points at the pending
+ * checkpoint instead. The error is the operator's evidence, so it is written
+ * into the unit's own artifact as the reason the unit failed, and the run goes
+ * on to the next unit; every finished unit keeps its outcome and the report
+ * exits nonzero.
  *
  * One code is not a unit's failure: `no-vcs` is a refusal of the whole run
  * before it has written anything, so it is raised again unchanged and the
@@ -1219,12 +1235,12 @@ export const settle = (payload: {
       decisions: [],
       unresolved: [{
         construct: "the unit could not finish",
-        reason: `${failure.code}: ${failure.message}${failure.details === undefined ? "" : `\n${failure.details}`}`,
+        reason: failureReason(failure),
         file: outline.sources[0] ?? outline.id,
         line: 1,
-        suggestion: `The unit's files were restored from its checkpoint. Read ${
+        suggestion: `The unit's files may not match its checkpoint. Read ${
           Options.reportDir(options)
-        }/pending-unit.json if it exists, fix the cause, then rerun with --unit ${outline.id}`
+        }/pending-unit.json if it exists, restore its checkpoint, fix the cause, then rerun with --unit ${outline.id}`
       }],
       unsupported: [],
       repairRounds: 0,
@@ -1388,54 +1404,88 @@ export const unit = Flow.make(unitTag, {
             repairRounds: attemptedRepairs
           })
 
+        // The tool's own error after the checkpoint is a unit that failed
+        // too: a capture that cannot read a source, a rewrite whose host
+        // fails, a finish that could not write its artifact. Finish restores
+        // the checkpoint and records the unit, so the files the agent or a
+        // command already changed are put back before the unit is reported.
+        // A finish that fails here is retried by each enclosing round's scope,
+        // then reaches the parent's Settle.
+        const settleBroken = (
+          error: Planned.Planned<MigrateError>,
+          attemptedRepairs: number
+        ): Node.Node<UnitOutcome, MigrateError, UnitRequires> =>
+          finishAction.call({
+            options,
+            outline,
+            checkpoint,
+            runStateRoots,
+            result: null,
+            verification: null,
+            error,
+            repairRounds: attemptedRepairs
+          })
+
+        const restoring = <E>(
+          node: Node.Node<UnitOutcome, E, UnitRequires>,
+          attempt: number
+        ): Node.Node<UnitOutcome, E | MigrateError, UnitRequires> =>
+          Node.catch(node, { error: MigrateError, onFailure: (error) => settleBroken(error, attempt) })
+
         const round = (
           attempt: number,
           rewrite: Node.Node<Transform.UnitResult, MigrateError | AgentAction.AgentFailure, UnitRequires>
         ): Node.Node<UnitOutcome, MigrateError | AgentAction.AgentFailure, UnitRequires> =>
-          Node.catch(
-            Node.bindPlanned(rewrite, (result) =>
-              Node.branch(
-                Verify.action.call({
-                  root: options.root,
-                  commands: outline.commands,
-                  changedFiles: result.changedFiles,
-                  expectFlows: outline.expectFlows
-                }),
-                {
-                  if: (verification) => Verify.verdict(verification) === "pass",
-                  then: (verification) => settleWith(result, verification, attempt),
-                  else: (verification) =>
-                    attempt >= rounds
-                      ? settleWith(result, verification, attempt)
-                      : Node.bindPlanned(
-                        // A repair round is shown the sources as they are now,
-                        // not as the unit found them: the previous round edited
-                        // them, and a prompt that hid that would ask for the
-                        // same rewrite again. `current` is what says so; without
-                        // it the capture answers from the checkpoint's copy, and
-                        // the payload would be the round-0 payload byte for byte.
-                        Transform.captureAction.call({ outline, checkpoint, current: true }),
-                        (brief) =>
-                          round(
-                            attempt + 1,
-                            Repair.action.call({
-                              unit: brief,
-                              round: attempt + 1,
-                              failures: verification
-                            })
-                          )
-                      )
-                }
-              )),
-            {
-              error: AgentAction.AgentFailure,
-              onFailure: (failure) => settleUnrun(failure.message, attempt)
-            }
+          restoring(
+            Node.catch(
+              Node.bindPlanned(rewrite, (result) =>
+                Node.branch(
+                  Verify.action.call({
+                    root: options.root,
+                    commands: outline.commands,
+                    changedFiles: result.changedFiles,
+                    expectFlows: outline.expectFlows
+                  }),
+                  {
+                    if: (verification) => Verify.verdict(verification) === "pass",
+                    then: (verification) => settleWith(result, verification, attempt),
+                    else: (verification) =>
+                      attempt >= rounds
+                        ? settleWith(result, verification, attempt)
+                        : Node.bindPlanned(
+                          // A repair round is shown the sources as they are now,
+                          // not as the unit found them: the previous round edited
+                          // them, and a prompt that hid that would ask for the
+                          // same rewrite again. `current` is what says so; without
+                          // it the capture answers from the checkpoint's copy, and
+                          // the payload would be the round-0 payload byte for byte.
+                          Transform.captureAction.call({ outline, checkpoint, current: true }),
+                          (brief) =>
+                            round(
+                              attempt + 1,
+                              Repair.action.call({
+                                unit: brief,
+                                round: attempt + 1,
+                                failures: verification
+                              })
+                            )
+                        )
+                  }
+                )),
+              {
+                error: AgentAction.AgentFailure,
+                onFailure: (failure) => settleUnrun(failure.message, attempt)
+              }
+            ),
+            attempt
           )
 
-        const settled = Node.bindPlanned(
-          Transform.captureAction.call({ outline, checkpoint }),
-          (brief) => round(0, Transform.action.call({ unit: brief }))
+        const settled = restoring(
+          Node.bindPlanned(
+            Transform.captureAction.call({ outline, checkpoint }),
+            (brief) => round(0, Transform.action.call({ unit: brief }))
+          ),
+          0
         )
         // A schema-filtered catch conservatively retains its input errors:
         // refinements can reject values without narrowing their TypeScript type.
@@ -1494,11 +1544,12 @@ export const flow = Flow.make(tag, {
                 return writeReportAction.call({ options: approved, report, unitIds, after })
               }
               // A unit that fails is a unit that failed, not a migration that
-              // stopped. An agent failure already settles its unit, and a
-              // `MigrateError` raised by the checkpoint, the verification, the
-              // archive, or the artifact write is settled the same way here:
-              // the unit's restoring scope has already put its files back, the
-              // next unit runs, and the report is written. A unit with no
+              // stopped. An agent failure or a `MigrateError` after the
+              // checkpoint already settles its unit through Finish, which
+              // restores it. A `MigrateError` that escapes the unit (a
+              // checkpoint that could not be taken, a rollback or artifact
+              // write that failed) is settled here: the next unit runs, and
+              // the report is written. A unit with no
               // recorded outcome is reported `failed` by `writeReport`, so the
               // run still exits nonzero and the operator reads what happened
               // in the report instead of losing every finished unit with it.

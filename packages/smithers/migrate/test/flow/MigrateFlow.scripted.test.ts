@@ -16,15 +16,20 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
+import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import * as Checkpoint from "@smthrs/migrate/flow/Checkpoint"
 import * as Command from "@smthrs/migrate/flow/Command"
 import * as Layers from "@smthrs/migrate/flow/Layers"
 import * as Lock from "@smthrs/migrate/flow/Lock"
 import * as MigrateFlow from "@smthrs/migrate/flow/MigrateFlow"
 import * as Transform from "@smthrs/migrate/flow/Transform"
+import { make } from "@smthrs/migrate/MigrateError"
 import * as Effect from "effect/Effect"
+import type * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
+import type * as Path from "effect/Path"
 import { execFileSync, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -90,10 +95,12 @@ const script = (root: string, written: Array<string>): Layers.Script => (asked) 
   ].join("\n")
 }
 
-const apply = (
+const apply = <Faulted = never>(
   root: string,
   overrides: Partial<Command.MigrateOptions> = {},
-  scripted?: (root: string, written: Array<string>) => Layers.Script
+  scripted?: (root: string, written: Array<string>) => Layers.Script,
+  /** An action implementation that replaces the production one, to inject a fault. */
+  fault?: Layer.Layer<Faulted, never, FlowRuntime.FlowRuntime | FileSystem.FileSystem | Path.Path>
 ) =>
   Effect.gen(function*() {
     const written: Array<string> = []
@@ -101,16 +108,17 @@ const apply = (
     const surveyed = yield* Command.survey(chosen).pipe(
       Effect.provide(Layers.layerNodeScanned({ root, evaluator: ScriptedJudge.layer }))
     )
+    const composition = Layers.layerScripted({
+      root,
+      commands: surveyed.commands,
+      // The same list `Layers.layerNodeScanned` gives a real run, so the
+      // grant rules a scripted test exercises are the production ones rather
+      // than a broader stand-in.
+      runStatePaths: Transform.runStatePaths(surveyed.scan),
+      script: (scripted ?? script)(root, written)
+    })
     const report = yield* Command.run(chosen).pipe(
-      Effect.provide(Layers.layerScripted({
-        root,
-        commands: surveyed.commands,
-        // The same list `Layers.layerNodeScanned` gives a real run, so the
-        // grant rules a scripted test exercises are the production ones rather
-        // than a broader stand-in.
-        runStatePaths: Transform.runStatePaths(surveyed.scan),
-        script: (scripted ?? script)(root, written)
-      }))
+      Effect.provide(fault === undefined ? composition : fault.pipe(Layer.provideMerge(composition)))
     )
     return { report, written }
   })
@@ -574,6 +582,85 @@ describe("apply over a single-file JSX project", () => {
         expect(existsSync(join(root, ".smithers-migrate", "report.md"))).toBe(true)
       })
   )
+
+  it.effect("restores the edits of a unit whose repair round fails with the tool's own error", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      committed(root)
+      const before = hashTree(root)
+      // The tests rewrite the unit's own source and fail, so the unit reaches
+      // a repair round with its source edited. That round's capture then fails
+      // with the tool's own `io` error, injected here: the unit never reaches
+      // the finish step that judges its rewrite.
+      const rewrite = [
+        "require('fs').writeFileSync('simple-workflow.jsx', 'partially migrated content')",
+        "process.exit(1)"
+      ].join("; ")
+      const failingRepairCapture = Transform.captureAction.toLayer(
+        ({ checkpoint, current, outline }) =>
+          current === true
+            ? Effect.fail(make("io", `could not capture the sources of unit "${outline.id}"`))
+            : Transform.capture(outline, checkpoint),
+        { override: true }
+      )
+
+      const { report } = yield* apply(
+        root,
+        {
+          units: ["workflow:simple-workflow"],
+          maxRepairRounds: 1,
+          commands: { typecheck: [], test: `node -e "${rewrite}"` }
+        },
+        () => (asked) => emptyAnswer(unitOf(asked)),
+        failingRepairCapture
+      )
+
+      const workflow = report.units.find((unit) => unit.id === "workflow:simple-workflow")
+      expect(workflow?.status).toBe("failed")
+      const recorded = workflow?.unresolved.find((entry) => entry.construct === "the unit could not finish")
+      expect(recorded?.reason).toBe(`io: could not capture the sources of unit "workflow:simple-workflow"`)
+      expect(recorded?.suggestion).toContain("--unit workflow:simple-workflow")
+      // The command's edit is undone, and nothing is left pending.
+      expect(readFileSync(join(root, "simple-workflow.jsx"), "utf8")).not.toBe("partially migrated content")
+      expect(hashTree(root).get("simple-workflow.jsx")).toBe(before.get("simple-workflow.jsx"))
+      expect(existsSync(join(root, ".smithers-migrate", "pending-unit.json"))).toBe(false)
+    }))
+
+  it.effect("never claims a restoration its rollback refused", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      committed(root)
+      // The tests replace the unit's own source with a link to a directory and
+      // fail. The repair round cannot read the source, and the rollback will
+      // not restore a file through a link, so the unit ends with the link in
+      // place. Its report has to say so rather than call the unit restored.
+      const sabotage = [
+        "const fs = require('fs')",
+        "fs.rmSync('simple-workflow.jsx', { force: true })",
+        "fs.symlinkSync('.', 'simple-workflow.jsx')",
+        "process.exit(1)"
+      ].join("; ")
+
+      const { report } = yield* apply(
+        root,
+        {
+          units: ["workflow:simple-workflow"],
+          maxRepairRounds: 1,
+          commands: { typecheck: [], test: `node -e "${sabotage}"` }
+        },
+        () => (asked) => emptyAnswer(unitOf(asked))
+      )
+
+      const workflow = report.units.find((unit) => unit.id === "workflow:simple-workflow")
+      expect(workflow?.status).toBe("failed")
+      const recorded = workflow?.unresolved.find((entry) => entry.construct === "the unit could not finish")
+      expect(recorded?.reason).toMatch(
+        /^checkpoint-failed: declared migration path "simple-workflow.jsx" is a symbolic link/
+      )
+      expect(recorded?.suggestion).not.toContain("were restored")
+      expect(recorded?.suggestion).toContain("restore its checkpoint")
+      expect(lstatSync(join(root, "simple-workflow.jsx")).isSymbolicLink()).toBe(true)
+    }))
 
   guarded("accepts a file copy as the checkpoint when the operator says so", () =>
     Effect.gen(function*() {
