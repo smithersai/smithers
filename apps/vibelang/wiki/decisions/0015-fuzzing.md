@@ -1238,3 +1238,13 @@ and every namespace's unbound and faulty walk: the route answers 200 whatever is
 commit (none for a build without one), and calls exactly the unreachable objects `unreachable` (an object lost after N
 calls may be either, so it is not checked). Mutants caught: an unreachable object reported `ready`; a build without a
 commit named `unknown`. From `api-objects` alone `apiObjects.vibe` is at 100%.
+
+`worker/SandboxTools.vibe` (6 lines) was reached by no target: no host provides `SandboxAgent`, so a reply binds the
+closed tools, and no scripted cell called them. `reply/sandbox-tools` (in `model-writers`) runs a reply whose cell
+starts a sandbox, runs one command twice and stops it, three ways each execution: closed (every call `forbidden`, the
+Factory never reached); a viewer's mock Factory (each call reaches it once, refused `forbidden`); a contributor's (the
+start runs generation N, both commands answer, the stop stops N). Every call names the reply's conversation and a
+distinct `agent/` operation id, the repeated command included. Mutants caught: the stop sent to another conversation;
+the closed command refused `unavailable`; the call's ordinal left out of its operation id (caught only once the cell
+repeated a command). Alone it reaches all of `SandboxTools.vibe`. A tool answers its value, or `{ ok: false, error }`
+when refused (`QuickJSSandbox.ts`), not a thrown error.

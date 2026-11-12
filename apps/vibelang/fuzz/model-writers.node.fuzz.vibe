@@ -1,5 +1,5 @@
-// The wiki draft writer and the specification reviewers on the real durable engine. Faults replace the agent or the
-// budget; a model bound to a refused local port walks the live path as far as the provider call.
+// The wiki draft writer, the specification reviewers and the reply's tools on the real durable engine. Faults replace
+// the agent or the budget; a model bound to a refused local port walks the live path as far as the provider call.
 import { it } from "@effect/vitest"
 import { HostModel } from "@smthrs/model-host"
 import { WikiWriter } from "../src/core/WikiWriter.vibe"
@@ -18,7 +18,9 @@ import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
-import { MockFactory } from "../src/core/MockFactory.vibe"
+import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { SandboxAgent } from "../worker/SandboxTools.vibe"
 
 type HostModelService = HostModel["Service"]
 
@@ -235,6 +237,54 @@ it.live("reply/actions-bound", () => run("reply/actions-bound", ActionsInput, (i
   if (!answer.includes("vibelang/Post")) return false
   if (!input.start) return announced.length === 0
   return announced.length === 1 && answer.includes(announced[0]!)
+})))
+
+const SandboxInput = Schema.Struct({ agent: Schema.Literals(["closed", "viewer", "contributor"]), command: Schema.Literals(["echo hi", "pwd", "ls"]) })
+
+/**
+ * The reply's sandbox tools: with no resolved identity they are closed and every call is refused `forbidden`; with
+ * one, each call reaches the Factory once for the reply's own conversation, under a distinct operation id (the same
+ * command twice is two operations), and only a contributor's start runs a machine.
+ */
+effect function sandboxReply(input: typeof SandboxInput.Type) {
+  const log = { finished: [] as Array<string>, failed: [] as Array<string> }
+  const calls: Array<{ readonly conversation: string; readonly operation: string }> = []
+  const record = (conversation: string, operation: string) => sync(() => { calls.push({ conversation, operation }) })
+  // A tool answers its value, or { ok: false, error } when refused; a refused start leaves generation 1 to try.
+  const code = "```cell\nvar out = {};\n"
+    + "out.start = await ctx.call(\"vibelang/sandbox/start\", {});\n"
+    + "var generation = out.start.ok === false ? 1 : out.start.generation;\n"
+    + `out.command = await ctx.call("vibelang/sandbox/command", { generation: generation, command: ${JSON.stringify(input.command)} });\n`
+    + `out.again = await ctx.call("vibelang/sandbox/command", { generation: generation, command: ${JSON.stringify(input.command)} });\n`
+    + "out.stop = await ctx.call(\"vibelang/sandbox/stop\", { generation: generation });\n"
+    + "ctx.done(JSON.stringify(out));\n```"
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [code], prompt: 3, completion: 4 }])
+  let layer = replyServices(scripted.model, log)
+  if (input.agent !== "closed") {
+    const factory = Context.get(try Layer.build(mockFactoryFor(input.agent)), Factory)
+    const tools: SandboxAgent.Shape["factory"] = {
+      startSandbox: (conversation, operation) => Effect.andThen(record(conversation, operation), factory.startSandbox(conversation, operation)),
+      stopSandbox: (conversation, operation, generation) => Effect.andThen(record(conversation, operation), factory.stopSandbox(conversation, operation, generation)),
+      sandboxCommand: (conversation, operation, command, generation) => Effect.andThen(record(conversation, operation), factory.sandboxCommand(conversation, operation, command, generation)),
+    }
+    layer = Layer.mergeAll(layer, Layer.succeed(SandboxAgent, { factory: tools, conversation: "fuzz-room" }))
+  }
+  const exit = try Effect.exit(within(layer, Effect.as(Effect.orDie(answerPost("m1")), "settled") as never))
+  if (exit._tag === "Failure" || log.finished.length !== 1 || log.failed.length !== 0) return false
+  type Answer = { readonly ok?: unknown; readonly error?: { readonly message?: unknown }; readonly generation?: unknown; readonly status?: unknown }
+  const out = try Effect.try(() => JSON.parse(log.finished[0]!) as { readonly start: Answer; readonly command: Answer | string; readonly again: Answer | string; readonly stop: Answer })
+  const refused = (answer: Answer | string) => typeof answer === "object" && answer.ok === false && String(answer.error?.message).endsWith("failed: forbidden")
+  if (input.agent === "closed") return calls.length === 0 && refused(out.start) && refused(out.command) && refused(out.again) && refused(out.stop)
+  // The same command twice in one cell is two operations.
+  if (calls.length !== 4 || calls.some((call) => call.conversation !== "fuzz-room" || !/^agent\/[0-9a-f]+$/.test(call.operation))) return false
+  if (new Set(calls.map((call) => call.operation)).size !== 4) return false
+  if (input.agent === "viewer") return refused(out.start) && refused(out.command) && refused(out.again) && refused(out.stop)
+  return typeof out.start.generation === "number" && out.start.status === "running" && typeof out.command === "string" && typeof out.again === "string" && out.stop.generation === out.start.generation && out.stop.status === "stopped"
+}
+
+it.live("reply/sandbox-tools", () => run("reply/sandbox-tools", SandboxInput, (input) => scoped(effect {
+  for (const agent of ["closed", "viewer", "contributor"] as const) if (!(try sandboxReply({ ...input, agent }))) return false
+  return true
 })))
 
 /**
