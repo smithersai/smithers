@@ -12,6 +12,18 @@
 
 ### Fixed
 
+- `Sandbox.job` starts a job on a loaded host. The launcher gave the detached
+  worker 200 polls, about 2 s, to publish its pid and then abandoned the
+  start, so a healthy start failed with `launcher failed (125):` and an empty
+  stderr. It now waits while the launch it started is alive, up to 6000
+  polls; a cancel tombstone or a removed job directory ends the wait, and a
+  launch that ended without a pid keeps the 200 polls for a redelivered copy.
+
+- A batched commit that loses a race for a file's lock is refused as stale.
+  When the lock's holder released it between the refused `mkdir` and the
+  check that the lock is there, the commit failed with `command_failed`; it
+  now tries the lock again, three attempts in all.
+
 - A batched snapshot of a path whose parent directory is missing reports
   `NotFound`, as `stat` on the container filesystem does. It reported
   `Unknown`, which a caller reads as a failed look rather than an absent
