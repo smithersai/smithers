@@ -1059,6 +1059,15 @@ because no target chose its state. All are now chosen in every execution; none i
 Mutation: `ControlTour` treating `Unavailable` as the kept failure is falsified by `control-tour` in the first
 execution (seed 20261173).
 
+The full run at seed 20261178 then left 10 more arms open that earlier runs had reached only by draw. They are chosen
+now too: `wiki-bare` (the editor's read and write without a wiki service fail unavailable), `wiki-unlisted` (a write
+answered without its page or a review completes with neither), `details-bare`, `sign-in-mock` (no accounts: the
+viewer; failing accounts: `AccountFailed`), `wiki-link` (a left click on a wiki link opens it; one elsewhere does
+nothing), `read-action` also answers a start from an earlier actions epoch (nothing changes), and `web/update-arms`
+gains `learn-more-palette` (a tour that starts closes the palette first) and `control-clears-error`. Two oracle
+mistakes found on the way: `wiki-unlisted` sent a lone surrogate the editor never sends (it stores well-formed text),
+and `learn-more-palette` assumed every drawn page starts a tour.
+
 ### `budget/physical-calls` after DUR-2 (sixteenth session)
 
 `d94d65cc` (2026-11-11, another lane) removed the meter's own ledger retries: each operation is attempted once and a
