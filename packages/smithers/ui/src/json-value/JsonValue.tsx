@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { ComponentProps } from "react";
+import { type ComponentProps, useMemo } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { formatBytes, type JsonValueData, jsonValueText } from "./jsonValueText";
@@ -15,10 +15,13 @@ export type JsonValueProps = Omit<ComponentProps<"details">, "children" | "open"
 /**
  * A redacted, clipped value as text in a disclosure: its label and size, a
  * `Clipped` marker when the host cut it, and the text in a `<pre>`,
- * pretty-printed when it is whole JSON. Never renders the value as markup.
+ * pretty-printed when it is whole JSON no deeper than `MAX_JSON_DEPTH`. Never
+ * renders the value as markup. The text is computed once per value, not on
+ * every render of a page that re-renders as its run's journal grows.
  */
 export function JsonValue({ value, label, defaultOpen = false, className, ...props }: JsonValueProps) {
   useInjectUiCss();
+  const text = useMemo(() => jsonValueText(value), [value.text, value.clipped]);
   return (
     <details
       data-slot="json-value"
@@ -32,7 +35,7 @@ export function JsonValue({ value, label, defaultOpen = false, className, ...pro
         <span className="sui-json-value-size">{formatBytes(value.bytes)}</span>
         {value.clipped ? <span className="sui-json-value-clipped">Clipped</span> : null}
       </summary>
-      <pre className="sui-json-value-text">{jsonValueText(value)}</pre>
+      <pre className="sui-json-value-text">{text}</pre>
     </details>
   );
 }

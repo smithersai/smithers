@@ -46,8 +46,10 @@ import { Button, RunHeader, RunJournal, RunWaterfall, SpanDetail, SpanTree, Tabs
 
 Every value is a `JsonValueData`: `text`, the value's `bytes` before any clip,
 and whether the host `clipped` it. Redact and clip on the host's read, before
-the value reaches the page. `JsonValue` pretty-prints whole JSON and shows a
-clipped value exactly as cut, with a `Clipped` marker:
+the value reaches the page. `JsonValue` pretty-prints whole JSON no deeper
+than `MAX_JSON_DEPTH` (12 levels; deeper JSON shows as written, since its
+indentation would grow quadratically) and shows a clipped value exactly as
+cut, with a `Clipped` marker:
 
 ```tsx
 <JsonValue label="Output" value={{ text: '{"length":5}', bytes: 12, clipped: false }} defaultOpen />

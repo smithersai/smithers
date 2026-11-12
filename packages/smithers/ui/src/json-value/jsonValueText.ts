@@ -3,6 +3,7 @@
  * inputs and outputs): JSON text cut at the host's bound, its size before the
  * cut, and whether it was cut. Framework-free, so a terminal reads it the same.
  */
+import { MAX_JSON_DEPTH } from "../agentic/formatJsonSafe";
 
 /** One value as the host hands it over: `text` is never HTML and never parsed for markup. */
 export interface JsonValueData {
@@ -13,15 +14,32 @@ export interface JsonValueData {
   readonly clipped: boolean;
 }
 
+/** Whether a parsed value holds anything deeper than `maxDepth` levels, the root at depth zero. */
+const nestsBeyond = (parsed: unknown, maxDepth: number): boolean => {
+  let level: unknown[] = [parsed];
+  for (let depth = 0; level.length > 0; depth += 1) {
+    if (depth > maxDepth) return true;
+    const next: unknown[] = [];
+    for (const item of level) {
+      if (typeof item === "object" && item !== null) for (const child of Object.values(item)) next.push(child);
+    }
+    level = next;
+  }
+  return false;
+};
+
 /**
- * The text a value shows: pretty-printed when it parses as JSON and wasn't
- * clipped (a clipped value is a cut string, so it shows as is), else the text.
+ * The text a value shows: pretty-printed when it parses as JSON, wasn't
+ * clipped (a clipped value is a cut string, so it shows as is) and nests no
+ * deeper than `MAX_JSON_DEPTH`, else the text. Indentation grows with depth,
+ * so a deeper value's print would take space quadratic in its size.
  */
 export const jsonValueText = (value: JsonValueData): string => {
   if (value.clipped) return value.text;
   try {
     const parsed: unknown = JSON.parse(value.text);
-    return typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+    if (typeof parsed === "string") return parsed;
+    return nestsBeyond(parsed, MAX_JSON_DEPTH) ? value.text : JSON.stringify(parsed, null, 2);
   } catch {
     return value.text;
   }

@@ -277,9 +277,18 @@ const securityReview = Smithers.SecurityReview({
         "Recursion in parseAgentOutput, formatPartialJson, or SchemaDisplay without the MAX_*_DEPTH, property, or seen-set guards.",
         "Markdown document blockquotes rescanning beyond MAX_DOCUMENT_DEPTH, or renderFlow building unbounded HTML frames.",
         "A regex over agent text or diffs with nested quantifiers that backtracks catastrophically.",
-        "diff-paginate or diff-hunks materializing an unbounded hunk or line list for one render."
+        "diff-paginate or diff-hunks materializing an unbounded hunk or line list for one render.",
+        "jsonValueText pretty-printing a value nested beyond MAX_JSON_DEPTH (indentation makes the print quadratic in the value), or JsonValue reformatting its value on every render instead of once per value."
       ],
-      paths: ["src/agentic/**", "src/artifacts/SchemaDisplay.tsx", "src/diff*.ts", "src/diff-hunks.tsx", "src/vault/**", "src/primitives/markdown.tsx"]
+      paths: [
+        "src/agentic/**",
+        "src/artifacts/SchemaDisplay.tsx",
+        "src/diff*.ts",
+        "src/diff-hunks.tsx",
+        "src/json-value/**",
+        "src/vault/**",
+        "src/primitives/markdown.tsx"
+      ]
     },
     {
       id: "generated-view-frame",

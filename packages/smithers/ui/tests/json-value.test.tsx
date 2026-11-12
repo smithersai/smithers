@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { formatBytes, JsonValue, jsonValueText, smithersUiCss } from "../src";
+import { MAX_JSON_DEPTH } from "../src/agentic/formatJsonSafe";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -47,6 +48,30 @@ describe("jsonValueText", () => {
     expect(jsonValueText({ text: '{"a":1}', bytes: 40_000, clipped: true })).toBe('{"a":1}');
     expect(jsonValueText({ text: '{"a":"tru', bytes: 40_000, clipped: true })).toBe('{"a":"tru');
   });
+
+  test("pretty-prints JSON nested up to MAX_JSON_DEPTH levels and shows anything deeper as written", () => {
+    const arrays = (count: number) => "[".repeat(count) + "]".repeat(count);
+    const atBound = arrays(MAX_JSON_DEPTH + 1);
+    expect(jsonValueText({ text: atBound, bytes: atBound.length, clipped: false })).toBe(
+      JSON.stringify(JSON.parse(atBound), null, 2),
+    );
+    const pastBound = arrays(MAX_JSON_DEPTH + 2);
+    expect(jsonValueText({ text: pastBound, bytes: pastBound.length, clipped: false })).toBe(pastBound);
+    const deepObject = '{"a":'.repeat(MAX_JSON_DEPTH + 1) + "1" + "}".repeat(MAX_JSON_DEPTH + 1);
+    expect(jsonValueText({ text: deepObject, bytes: deepObject.length, clipped: false })).toBe(deepObject);
+  });
+
+  test("a 16,000-deep value stays its own size: indentation would make the print quadratic", () => {
+    const deep = "[".repeat(16_000) + "]".repeat(16_000);
+    const shown = jsonValueText({ text: deep, bytes: deep.length, clipped: false });
+    expect(shown).toBe(deep);
+    expect(shown.length).toBeLessThanOrEqual(deep.length);
+  });
+
+  test("a wide value pretty-prints whatever its size", () => {
+    const wide = JSON.stringify(Array.from({ length: 4_000 }, (_, i) => i));
+    expect(jsonValueText({ text: wide, bytes: wide.length, clipped: false }).split("\n")).toHaveLength(4_002);
+  });
 });
 
 describe("formatBytes", () => {
@@ -86,6 +111,12 @@ describe("JsonValue", () => {
     expect($("details")!.dataset.clipped).toBe("true");
     expect($(".sui-json-value-clipped")!.textContent).toBe("Clipped");
     expect($(".sui-json-value-size")!.textContent).toBe("39 KB");
+  });
+
+  test("shows a deeply nested value as written", async () => {
+    const deep = "[".repeat(16_000) + "]".repeat(16_000);
+    await render(<JsonValue label="Output" defaultOpen value={{ text: deep, bytes: deep.length, clipped: false }} />);
+    expect($("pre")!.textContent).toBe(deep);
   });
 
   test("renders markup in a value as text, never as elements", async () => {
