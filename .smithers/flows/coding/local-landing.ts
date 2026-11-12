@@ -65,7 +65,7 @@ const CheckRows = Schema.Array(Schema.Struct({ name: Schema.String, bucket: Sche
   Schema.isMaxLength(256)
 )
 
-/** A stack commit's slow-check verdict: no receipt, or only an outage, is `unknown`. */
+/** A stack commit's slow-check verdict: no receipt, or only an outage (`fault: "infra"`), is `unknown`. */
 export type Verdict = "passed" | "failed" | "unknown"
 /**
  * The newest commit of `stack` (the line main fast-forwards along, oldest
@@ -87,10 +87,10 @@ export const greenPrefix = (
 /**
  * Fold receipts into verdicts for the commits in `trees`. Only slow and
  * delivery receipts of a `required` check count; superseded ones never do. A
- * real failure of any required check fails the commit; a commit passes once
- * every required check has a passed receipt; anything else, including a check
- * whose only receipt is an outage (`fault`), is no verdict yet. A receipt for
- * another tree refuses.
+ * real failure of any required check, any failure without `fault: "infra"`,
+ * fails the commit; a commit passes once every required check has a passed
+ * receipt; anything else, including a check whose only receipt is an outage
+ * (`fault: "infra"`), is no verdict yet. A receipt for another tree refuses.
  */
 const verdictsOf = (
   receipts: ReadonlyArray<Receipt>,
@@ -109,7 +109,7 @@ const verdictsOf = (
     }
     if (receipt.status === "passed") {
       passed.set(receipt.commitId, (passed.get(receipt.commitId) ?? new Set()).add(receipt.checkId))
-    } else if (receipt.fault === undefined) failed.add(receipt.commitId)
+    } else if (receipt.fault !== "infra") failed.add(receipt.commitId)
   }
   const verdicts = new Map<string, Verdict>()
   for (const commitId of trees.keys()) {
@@ -325,7 +325,7 @@ export const make = (options: Options) =>
         const offLine = [
           ...new Set(
             input.receipts.filter((receipt) =>
-              receipt.tier !== "fast" && receipt.status === "failed" && receipt.fault === undefined &&
+              receipt.tier !== "fast" && receipt.status === "failed" && receipt.fault !== "infra" &&
               input.required.includes(receipt.checkId) && commit.test(receipt.commitId) &&
               !stack.includes(receipt.commitId)
             ).map((receipt) => receipt.commitId)

@@ -696,7 +696,8 @@ test("green prefix: a branch merged into the stack blocks from its merge up, not
   const blocked = [
     ...unknown,
     verdictOf(old, "failed"),
-    verdictOf(side, "failed"),
+    // A command check records a real failure as fault factory; it blocks a merge like a fault-less one.
+    verdictOf(side, "failed", { fault: "factory" }),
     verdictOf(c2, "passed"),
     verdictOf(second, "passed")
   ]
@@ -768,6 +769,33 @@ test("green prefix: a failed commit below holds main under it, never moving back
   })
 })
 
+test("green prefix: a command check's real failure (fault factory) is a veto", async (t) => {
+  const { root, main, stack } = await stackRepository(t)
+  const lander = await landerOf(root, "fast-forward")
+  const [c1, c2, c3] = stack as [Revision, Revision, Revision]
+  // checks.ts records every ordinary nonzero exit as `fault: "factory"`: c1 failed, so c2's pass moves nothing.
+  const below = [verdictOf(c1, "failed", { fault: "factory" }), verdictOf(c2, "passed")]
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: below })), {
+    status: "unchanged",
+    main,
+    reason: `${c1.commitId} failed above main`
+  })
+  assert.equal(commitOf(root, "main"), main)
+  // A real failure stays a veto even beside a passing rerun of the same check on the same commit.
+  const rerun = [
+    verdictOf(c1, "passed"),
+    verdictOf(c2, "failed", { fault: "factory" }),
+    verdictOf(c2, "passed"),
+    verdictOf(c3, "passed")
+  ]
+  assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required, tip: "vibe", receipts: rerun })), {
+    status: "advanced",
+    from: main,
+    to: c1.commitId,
+    above: 3
+  })
+})
+
 test("green prefix: refusals leave main where it is", async (t) => {
   const { root, main, stack } = await stackRepository(t)
   const lander = await landerOf(root, "fast-forward")
@@ -821,7 +849,7 @@ test("green prefix: a commit is green once every required check passed on it", a
     verdictOf(c2, "failed", { checkId: "bench" }),
     // An outage alone is no verdict: c3 is untested for lint.
     verdictOf(c3, "passed"),
-    verdictOf(c3, "failed", { ...lint, fault: "factory" })
+    verdictOf(c3, "failed", { ...lint, fault: "infra" })
   ]
   assert.deepEqual(await Effect.runPromise(lander.advanceGreenPrefix({ required: both, tip: "vibe", receipts })), {
     status: "advanced",

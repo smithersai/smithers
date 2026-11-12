@@ -332,7 +332,7 @@ for commits outside `main..tip`, are ignored. A commit's verdict:
 
 | Receipts of its required checks                        | Verdict |
 | ------------------------------------------------------ | ------- |
-| any failure without a `fault`                          | failed  |
+| any failure without `fault: "infra"`                   | failed  |
 | a pass for every required check                        | passed  |
 | anything else (a check not run yet, or only an outage) | none    |
 
