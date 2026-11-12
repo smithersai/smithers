@@ -11,12 +11,13 @@ import { pages, wikiEditable } from "../src/core/wiki.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
 import {
-  accountOf, ActOnIssue, Flags, GrantRole, init, LoadIssues, LoadPeople, Message, Model, OpenWikiEditor, RefreshIssueProjection, RevealWiki,
-  SandboxAction, SignInAccount, SignOutAccount, StartTourCommand, subscriptions, update, WikiLocation,
+  accountOf, ActOnIssue, ControlTourCommand, Flags, GrantRole, init, issueStateOf, LoadActions, LoadIssues, LoadPeople, Message, Model, OpenWikiEditor,
+  ReadAction, RefreshIssueProjection, RevealWiki, SandboxAction, SignInAccount, SignOutAccount, StartTourCommand, subscriptions, update,
+  walkthroughSession, WikiLocation,
 } from "../src/web/main.vibe"
 import { backend, backendChanged, Role } from "./web-backends.vibe"
 import { TOUR_ID, tourStop } from "./web-tab.vibe"
-import { run, stepped, Finding, Int, REPLAY_FLOOR, Text } from "./run.vibe"
+import { run, same, stepped, Finding, Int, REPLAY_FLOOR, Text } from "./run.vibe"
 
 const fault = (reason: string) => fail(new Unavailable({ reason }))
 const refuse = (refusal: string) => fail(new Refused({ refusal }))
@@ -65,9 +66,13 @@ effect function answer(make: () => AnyCommand) {
 const SCENARIOS = [
   "load-bare", "load-faulty", "load-roleless", "load-resumed", "act-live-kept", "act-live", "act-bare", "refresh-bare", "refresh-faulty", "grant",
   "sign-out-bare", "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-bare", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
+  "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
 ] as const
 
-type Entries = Record<string, { readonly dependenciesToStream: (dependencies: unknown, read: () => unknown) => Stream.Stream<Message, never, Factory | Actions> }>
+type Entries = Record<string, {
+  readonly modelToDependencies: (model: Model) => unknown
+  readonly dependenciesToStream: (dependencies: unknown, read: () => unknown) => Stream.Stream<Message, never, Factory | Actions>
+}>
 
 /** One subscription's stream for `dependencies`, as the runtime starts it over this page. */
 effect function subscription(name: string, dependencies: unknown) {
@@ -75,6 +80,35 @@ effect function subscription(name: string, dependencies: unknown) {
   const entry = (subscriptions(document, document) as unknown as Entries)[name]!
   return entry.dependenciesToStream(dependencies, () => dependencies)
 }
+/** A subscription's stream as the runtime starts it for `model`. */
+effect function subscriptionOf(name: string, model: Model) {
+  const document = try (try Experimental.Document.Document).current
+  const entry = (subscriptions(document, document) as unknown as Entries)[name]!
+  const dependencies = entry.modelToDependencies(model)
+  return entry.dependenciesToStream(dependencies, () => dependencies)
+}
+
+/** The stream's first Message while `fire` runs every millisecond: firing until it answers outlasts the listener's attach. */
+effect function firstWhileFiring(stream: Stream.Stream<Message, never, never>, fire: () => void) {
+  const fiber = fork Stream.runHead(stream)
+  const got = try Effect.timeoutOption(effect {
+    while (fiber.pollUnsafe() === undefined) {
+      try Effect.try(fire)
+      try sleep("1 millis")
+    }
+    return try Fiber.join(fiber)
+  }, "5 seconds")
+  if (Option.isNone(got)) {
+    try Fiber.interrupt(fiber)
+    throw new Finding({ report: "a subscription answered nothing within 5 seconds" })
+  }
+  return got.value
+}
+
+const FLAGS: typeof Flags.Type = { session: "00000000-0000-4000-8000-000000000000", mode: "mock", name: "fuzz" }
+
+type DomConstructors = Record<"KeyboardEvent" | "MouseEvent", new (type: string, init?: object) => Event>
+
 const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literals(["k-1", "k-2", "resume-k"]), recovery: Schema.Literals(["r-1", "s-9"]), text: Text })
 
 /**
@@ -85,7 +119,12 @@ const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literal
  * signing out without accounts answers the viewer; signing in live goes to the sign-in route; an unreachable tour
  * names its reason and a refused one its refusal; a refused sandbox read names its refusal; another page's draft
  * never fills the editor; a role stream without an accounts service sends nothing, and a failing or ended one sends
- * FailedRoles once; a lost action follow follows again after two seconds and delivers the run.
+ * FailedRoles once; a lost action follow follows again after two seconds and delivers the run. A tour control that is
+ * done or refused keeps the tour's connection, and one unreachable or without controls loses it; reading a started run
+ * answers it; a failing actions load names its epoch; an issue write answered without a role takes the mode's default.
+ * Over the page: a left click on a chat draft link of a built page reviews that draft, and one of another page does
+ * nothing; during a tour Tab, Space and the arrows move, pause and step it and Command-K focuses the prompt, while
+ * other keys do nothing; the automatic tour starts after its delay; a lost tour stream follows again two seconds later.
  */
 effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof CommandArms.Type) {
   const role = input.role
@@ -187,6 +226,86 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         return follows === 2 && Option.isSome(got) && got.value._tag === "ChangedAction" && got.value.run.id === id
       }
     }
+    case "control-tour": {
+      const action = (["pause", "resume", "seek"] as const)[input.number % 3]!
+      const answers: Array<string> = []
+      for (const control of [() => Effect.void, () => refuse("busy"), () => fault("fault"), undefined]) {
+        const got = try Effect.provide(answer(() => ControlTourCommand({ conversation: "fuzz-tour", action, step: input.number % 10 + 1 })), backendChanged(role, () => ({ controlTour: control })))
+        answers.push(got._tag)
+      }
+      return same(answers, ["FocusedPrompt", "FocusedPrompt", "FailedTourEvents", "FailedTourEvents"])
+    }
+    case "read-action": {
+      provide backend("mock", "maintainer") {
+        const id = try (try Actions).start("vibelang/Post", { text: "q" }, "button")
+        const got = try answer(() => ReadAction({ id }))
+        return got._tag === "ChangedAction" && got.run.id === id
+      }
+    }
+    case "actions-faulty-epoch": {
+      const got = try Effect.provide(answer(() => LoadActions({ flow: "", epoch: input.number })), backend("faulty", role))
+      return got._tag === "FailedActions" && got.code === "fault" && got.epoch === input.number
+    }
+    case "act-roleless": {
+      provide backend("roleless", "maintainer") {
+        const request = { op: "comment" as const, number: try issueNumber(input.number), parent: 0, title: "", text: "Looks right.", assignee: "", example: "", prior: "", key: input.key }
+        const got = try answer(() => ActOnIssue({ request }))
+        return got._tag === "IssuesLoaded" && got.role === "maintainer"
+      }
+    }
+    case "draft-link": {
+      const document = try (try Experimental.Document.Document).current
+      const window = try (try Experimental.Window.Window).current
+      const editable = pages.filter((entry) => wikiEditable(entry.id))
+      const page = editable[input.number % editable.length]!.id
+      const links = try acquireRelease(Effect.try(() => {
+        const bubble = document.createElement("div")
+        bubble.className = "sui-chat-bubble"
+        bubble.innerHTML = `<a href="#wiki-draft-not-a-page">n</a><a href="#wiki-draft-${page}">d</a>`
+        document.body.append(bubble)
+        return { bubble, other: bubble.querySelectorAll("a")[0]!, draft: bubble.querySelectorAll("a")[1]! }
+      }), (links) => sync(() => links.bubble.remove()))
+      const dom = window as unknown as DomConstructors
+      const stream = Stream.provide(try subscriptionOf("wikiDraftLinks", init(FLAGS).model), backend("mock", role))
+      const got = try firstWhileFiring(stream, () => {
+        links.other.dispatchEvent(new dom.MouseEvent("click", { button: 0, bubbles: true, cancelable: true }))
+        links.draft.dispatchEvent(new dom.MouseEvent("click", { button: 0, bubbles: true, cancelable: true }))
+      })
+      return Option.isSome(got) && got.value._tag === "ClickedWikiDraft" && got.value.page === page
+    }
+    case "theatre-keys": {
+      const document = try (try Experimental.Document.Document).current
+      const window = try (try Experimental.Window.Window).current
+      const dom = window as unknown as DomConstructors
+      const backward = input.number % 2 === 1
+      const presses = [
+        [{ key: "Tab", shiftKey: backward }, "MovedTourFocus"], [{ key: " " }, "ClickedPauseTour"], [{ key: "ArrowLeft" }, "ClickedBackStop"],
+        [{ key: "ArrowRight" }, "ClickedSkipStop"], [{ key: "k", metaKey: true }, "FocusedPrompt"],
+      ] as const
+      const touring: Model = { ...init(FLAGS).model, tour: true }
+      for (const [press, expected] of presses) {
+        const stream = Stream.provide(try subscriptionOf("theatreKeys", touring), backend("mock", role))
+        const key = (init: object) => document.dispatchEvent(new dom.KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true }))
+        // Control-A and a plain letter come first each time; only the press itself may answer.
+        const got = try firstWhileFiring(stream, () => { key({ key: "a", ctrlKey: true }); key({ key: "a" }); key(press) })
+        if (Option.isNone(got) || got.value._tag !== expected) return false
+        if (got.value._tag === "MovedTourFocus" && got.value.backward !== backward) return false
+      }
+      return true
+    }
+    case "auto-tour": {
+      const stream = try subscription("autoTour", { active: true })
+      const got = try stepped(Effect.provide(Stream.runHead(stream), backend("mock", role)), 3)
+      return Option.isSome(got) && got.value._tag === "AutoTour"
+    }
+    case "tour-events": {
+      let follows = 0
+      const event = { type: "TourStarted" as const, seq: 1, id: TOUR_ID }
+      const lostOnce = backendChanged(role, () => ({ events: () => follows++ === 0 ? Stream.fail(new Unavailable({ reason: "fault" })) : Stream.make(event) }))
+      const stream = try subscription("tourEvents", { active: true, session: `s${input.number}`, epoch: 0 })
+      const got = try stepped(Effect.provide(Stream.runHead(stream), lostOnce), 5)
+      return follows === 2 && Option.isSome(got) && got.value._tag === "ReceivedTourEvent" && same(got.value.event, event)
+    }
     case "editor-other-draft": {
       // Only an editable page has a source to edit (the decisions index is built, not stored).
       const editable = pages.filter((entry) => wikiEditable(entry.id))
@@ -199,14 +318,17 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
 
 /**
  * Every scenario runs in every execution, so no arm depends on what a short budget happens to draw. One execution runs
- * 26 Commands and takes about a second under coverage, hence the floor.
+ * 34 scenarios (Commands and subscriptions) and takes about a second under coverage, hence the floor.
  */
 it.live("web/command-arms", () => run("web/command-arms", CommandArms, (input) => Effect.provide(effect {
   for (const scenario of SCENARIOS) if (!(try commandHolds(scenario, input))) throw new Finding({ report: `${scenario} does not hold` })
   return true
 }, Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)), undefined, { minimum: REPLAY_FLOOR }))
 
-const UPDATES = ["sandbox-busy", "retry-run", "people-max", "tour-repeat", "tour-sought-end-fails", "draft-outside-build"] as const
+const UPDATES = [
+  "sandbox-busy", "retry-run", "people-max", "tour-repeat", "tour-sought-end-fails", "draft-outside-build",
+  "assignees-without-agent", "submit-without-request", "began-stale", "walkthrough-posted",
+] as const
 const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
 
 function names(result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }): ReadonlyArray<string> {
@@ -218,7 +340,10 @@ function names(result: { readonly commands?: ReadonlyArray<{ readonly name: stri
  * starts nothing; Run on screen retries the shown run; a wiki pane opening over maximized people shrinks them to the
  * pane; a tour event already applied changes nothing; an end that never reached the agent while a sought stop shows
  * presents that stop at its own target; a draft review for a page outside the build opens no editor, even when the
- * repository's overlay holds the page.
+ * repository's overlay holds the page. A load whose assignees hold neither the saved assignee nor the agent assigns
+ * nobody; a submission from an editor whose request number is gone submits under request 0; an editor's fresh read
+ * that names a confirmation time keeps it and focuses the editor; the walkthrough's second stop asks the agent unless
+ * the walkthrough's own message is already in the conversation.
  */
 function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
   const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
@@ -271,6 +396,36 @@ function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.
       if (!valid(next.model)) return false
       // Only a page the build holds is editable, even when the repository's overlay has the page.
       return next.model.wikiEdit === undefined && names(next).every((name) => name === "MeasureTheatre")
+    }
+    case "assignees-without-agent": {
+      const model: Model = { ...base, issues: { ...issueStateOf(base), open: true, assignee: "gone" } }
+      const next = update(model, Message.IssuesLoaded({ data: { seq: 1, items: [], assignees: [{ login: "maya", label: "Maya" }] }, created: false, role: "maintainer" }))
+      return valid(next.model) && next.model.issues?.assignee === ""
+    }
+    case "submit-without-request": case "began-stale": {
+      const page = pages.filter((entry) => wikiEditable(entry.id))[input.step % 2]!.id
+      const account = accountOf(base)
+      let model: Model = { ...base, account: { ...account, identity: { ...account.identity, id: "p1", role: "maintainer" } }, client: { ...base.client, conversation: { ...base.client.conversation, pane: `/wiki/${page}` } } }
+      const opened = update(model, Message.ClickedEditWiki())
+      const open = (opened.commands ?? []).find((entry) => entry.name === "OpenWikiEditor")
+      if (open === undefined) return false
+      const request = (open.args as { request: number }).request
+      const stale = 1_762_782_000_000 + input.seek
+      const began = update(opened.model, Message.BeganWikiEdit({ request, page, source: "# A", draft: "", ...(scenario === "began-stale" ? { stale } : {}) }))
+      if (scenario === "began-stale") return valid(began.model) && began.model.wikiEdit?.stale === stale && names(began).includes("FocusWikiEditor")
+      const { wikiEditRequest: _, ...rest } = update(began.model, Message.UpdatedWikiEdit({ value: `# B${input.text}` })).model
+      model = rest
+      const next = update(model, Message.SubmittedWikiEdit())
+      const submits = (next.commands ?? []).filter((entry) => entry.name === "SubmitWikiEdit")
+      return valid(next.model) && submits.length === 1 && (submits[0]!.args as { serial?: number }).serial === 0
+    }
+    case "walkthrough-posted": {
+      const seq = base.client.conversation.seq
+      const clientId = input.overlay ? `${walkthroughSession(base)}-walkthrough` : "fuzz-other"
+      let model = update(base, Message.ReceivedEvent({ event: { type: "Posted", seq: seq + 1, id: "e-1", clientId, name: "You", text: "hi" } })).model
+      let last: ReadonlyArray<string> = []
+      for (const message of tourStop(model, 2)) { const next = update(model, message); model = next.model; last = names(next) }
+      return valid(model) && last.includes("PostMessage") === !input.overlay
     }
   }
 }

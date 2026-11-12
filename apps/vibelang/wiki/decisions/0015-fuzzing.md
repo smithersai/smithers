@@ -1031,6 +1031,34 @@ editor even when the repository's overlay holds it.
 | An issue write answered `created` with no `selected` and no items set `selected` to `Math.max()` of nothing, `-Infinity`; the next request's `number` left the schema | `web/pane-messages`, 20261156 | product | `newestIssue`: the highest listed number, or 0 (no issue) | `test/mainRemainder.coverage.test.vibe` "a created answer that names no issue and lists none selects no issue": red (`-Infinity`), green after; saved value `e8f3efd8f9cb7485` |
 | `act-live` assumed issue 1 exists; `follow-lost` started a run as a community member; `draft-outside-build` ignored the tour's `MeasureTheatre` | `web/command-arms`, `web/update-arms` | target | pick a listed issue; start as a maintainer; allow only `MeasureTheatre` | the targets pass at 20261150 to 20261157 |
 
+### `src/web/main.vibe`: the last 14 arms (sixteenth session)
+
+The fifteenth session's full run (seed 20261160) failed in `web/command-arms` on two findings: an issues-pane input
+holding a lone surrogate was stored as is and the next request left `DurableText` (`9cb84ea7`: `IssueUi` stores
+`value.toWellFormed()`, as `UpdatedWikiEdit` does), and `editor-other-draft` drew the decisions index, which is built,
+not stored, and has no source to edit (it draws only `wikiEditable` pages).
+
+A coverage run of the ten web targets (seed 20261171) then left 14 arms and functions of `main.vibe` open, each only
+because no target chose its state. All are now chosen in every execution; none is dead:
+
+| Arm | Reached by | Oracle |
+| --- | --- | --- |
+| `ControlTour` (refusal kept, failure lost) | `web/command-arms` `control-tour`: controls that succeed, refuse, fail, or are absent | `FocusedPrompt`, `FocusedPrompt`, `FailedTourEvents`, `FailedTourEvents` |
+| `ReadAction` answered | `read-action`: a maintainer starts a run, then reads it | `ChangedAction` for that run |
+| a failing actions load with its epoch | `actions-faulty-epoch` | `FailedActions` names the code and epoch |
+| an issue write answered without a role | `act-roleless` | `IssuesLoaded` with the mock's default role |
+| a chat draft link | `draft-link`: a happy-dom bubble with a link to a built page and one to no page | the first answer is `ClickedWikiDraft` for the built page |
+| tour keys | `theatre-keys`: Tab (with or without Shift), Space, the arrows, Command-K, each after Control-A and a plain letter | exactly the key's Message; Shift moves backward |
+| automatic tour | `auto-tour`, virtual time | `AutoTour` after the delay |
+| a lost tour stream | `tour-events`: the first follow fails, the second delivers one event | two follows; the event arrives as `ReceivedTourEvent` |
+| assignees without the agent or the saved assignee | `web/update-arms` `assignees-without-agent` | nobody is assigned |
+| an editor without a request number | `submit-without-request` | one `SubmitWikiEdit` under request 0 |
+| a fresh read naming a confirmation time | `began-stale` | the editor keeps the time and is focused |
+| the walkthrough's message already posted | `walkthrough-posted`: a posted entry with or without the walkthrough's client id | step 2 posts the question only when it is not there |
+
+Mutation: `ControlTour` treating `Unavailable` as the kept failure is falsified by `control-tour` in the first
+execution (seed 20261173).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
