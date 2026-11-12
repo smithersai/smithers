@@ -1,6 +1,7 @@
 import { SandboxTools } from "@smthrs/sandbox"
 import { Schema } from "effect"
 import { CALL_FAILURES } from "./contract"
+import { ToolResult } from "./results"
 
 // What ChatApi's sandbox call routes answer (docs/features/sandbox-tools.md#the-routes): how a call stands. The
 // tools' own inputs and results are `@smthrs/sandbox`'s `SandboxTools` schemas.
@@ -8,7 +9,7 @@ import { CALL_FAILURES } from "./contract"
 /** How a call stands: running on the machine, done with the tool's result, or failed with why. */
 export const Standing = Schema.Union([
   Schema.Struct({ callId: Schema.String, status: Schema.Literal("running") }),
-  Schema.Struct({ callId: Schema.String, status: Schema.Literal("done"), result: SandboxTools.Result }),
+  Schema.Struct({ callId: Schema.String, status: Schema.Literal("done"), result: ToolResult }),
   Schema.Struct({ callId: Schema.String, status: Schema.Literal("failed"), failure: Schema.Literals(CALL_FAILURES) }),
 ])
 export type Standing = typeof Standing.Type

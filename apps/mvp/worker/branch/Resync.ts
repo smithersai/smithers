@@ -5,7 +5,7 @@ import { Clock, Effect, Metric, Option, Schema } from "effect"
 import { Base64 } from "effect/encoding"
 import { SqlClient, SqlError } from "effect/sql"
 import { TEXT_NAMESPACE, textName } from "../../src/features/coedit/contract.ts"
-import { SAVED_MARK, savedMarkOf } from "../../src/features/coedit/saved.ts"
+import { savedMarkOf, savedOf } from "../../src/features/coedit/saved.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Repository } from "../github/Config.ts"
 import { Forge } from "./Forge.ts"
@@ -77,7 +77,7 @@ export interface Resyncing {
 interface Found {
   readonly textId: string
   readonly content: string
-  readonly saved: string | undefined
+  readonly saved: ReturnType<typeof savedOf>
   readonly updates: ReadonlyArray<Uint8Array>
 }
 
@@ -116,12 +116,12 @@ const textsOf = (branchId: string, paths: ReadonlyArray<string>) =>
     return found
   })
 
-/** A replica holding `updates`: its text and its `saved` mark. */
+/** A replica holding `updates`: its text and its newest Save's mark. */
 const replicaOf = (updates: ReadonlyArray<Uint8Array>) =>
   Effect.scoped(Effect.gen(function* () {
     const replica = yield* SharedText.make
     for (const update of updates) yield* Effect.ignore(replica.apply(update))
-    return { content: yield* replica.text, saved: (yield* replica.marks).get(SAVED_MARK) }
+    return { content: yield* replica.text, saved: savedOf(yield* replica.marks) }
   }))
 
 /**
@@ -133,7 +133,9 @@ const updatesTo = (found: Found, next: string) =>
     const replica = yield* SharedText.make
     for (const update of found.updates) yield* Effect.ignore(replica.apply(update))
     const edit = yield* replica.replace(next)
-    const mark = found.saved === savedMarkOf(found.content) ? yield* replica.mark(SAVED_MARK, savedMarkOf(next)) : undefined
+    const mark = found.saved.value === savedMarkOf(found.content)
+      ? yield* replica.mark(found.saved.name, savedMarkOf(next))
+      : undefined
     return [edit, mark].filter((update): update is Uint8Array => update !== undefined)
   }))
 

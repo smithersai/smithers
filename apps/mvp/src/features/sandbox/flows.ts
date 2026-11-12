@@ -3,6 +3,7 @@ import { Node, Placement } from "@smthrs/plan"
 import { SandboxCommand, SandboxTools } from "@smthrs/sandbox"
 import { Schema } from "effect"
 import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "./contract"
+import { WriteResult } from "./results"
 
 // The sandbox tools (decision 0005 §5, docs/features/sandbox-tools.md): one flow per tool, run on this device's engine
 // by a person's slash command, the agent's `ctx.call` and the API alike. Each is two steps:
@@ -176,7 +177,7 @@ export const Read = tool("read", {
 /** `sandbox/write { path, content }`. */
 export const Write = tool("write", {
   fields: { path, content: SandboxTools.Write.fields.content },
-  success: SandboxTools.WriteResult,
+  success: WriteResult,
   description: "Write a file in the branch's checkout, making its folders; it replaces what was there. Answers " +
     "{ path, bytes }. The path is relative to the checkout.",
 })

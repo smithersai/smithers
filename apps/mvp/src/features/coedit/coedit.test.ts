@@ -44,7 +44,7 @@ import { Commands } from "../commands/commands"
 import { postUpdate, TextsClient, UpdateNotTaken } from "./api"
 import { TEXTS_ROUTE, textRoute, textRoomRoute } from "./contract"
 import { sends } from "./metrics"
-import { CoeditStore, decodeCursor, encodeCursor, SAVED_MARK, savedMarkOf } from "./store"
+import { CoeditStore, decodeCursor, encodeCursor, savedMarkOf, savedNameOf } from "./store"
 import { answerOf, fileOf, openAnswerOf, promptOf, saveLabelOf } from "./view"
 import { TextWrites } from "./writes"
 
@@ -477,7 +477,7 @@ describe("a shared file", () => {
     expect(write.call).toEqual({ tool: "write", path: "styles.css", content: merged })
     await opened.run(settle(write.callId, {
       status: "done",
-      result: { tool: "write", path: "styles.css", bytes: merged.length },
+      result: { tool: "write", path: "styles.css", bytes: merged.length, sequence: 1 },
       generation: 1,
     }))
     await saving
@@ -499,7 +499,7 @@ describe("a shared file", () => {
     expect(benWrite.call).toEqual({ tool: "write", path: "styles.css", content: benEdit })
     await opened.run(settle(benWrite.callId, {
       status: "done",
-      result: { tool: "write", path: "styles.css", bytes: benEdit.length },
+      result: { tool: "write", path: "styles.css", bytes: benEdit.length, sequence: 2 },
       generation: 1,
     }))
     await benSaving
@@ -522,7 +522,7 @@ describe("a shared file", () => {
     await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")?.text).toBe(late))
     await opened.run(settle(lateWrite.callId, {
       status: "done",
-      result: { tool: "write", path: "styles.css", bytes: beforeLate.length },
+      result: { tool: "write", path: "styles.css", bytes: beforeLate.length, sequence: 3 },
       generation: 1,
     }))
     await lateSave
@@ -631,7 +631,7 @@ describe("a shared file", () => {
     const saving = owner.coedit.save(fileId)
     const write = await call(opened, "write")
     expect(write.call).toEqual({ tool: "write", path: "notes/new.md", content: "# New\n" })
-    await opened.run(settle(write.callId, { status: "done", result: { tool: "write", path: "notes/new.md", bytes: 6 }, generation: 1 }))
+    await opened.run(settle(write.callId, { status: "done", result: { tool: "write", path: "notes/new.md", bytes: 6, sequence: 1 }, generation: 1 }))
     await saving
     expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ saving: false, saveFailed: false, saved: true })
   }, WITHIN)
@@ -672,14 +672,14 @@ describe("a shared file", () => {
     const retry = owner.coedit.save(fileId)
     await until(() => expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: true, saveFailed: false }))
     const retried = await call(opened, "write", 2)
-    await opened.run(settle(retried.callId, { status: "done", result: { tool: "write", path: "ok.txt", bytes: 2 }, generation: 1 }))
+    await opened.run(settle(retried.callId, { status: "done", result: { tool: "write", path: "ok.txt", bytes: 2, sequence: 1 }, generation: 1 }))
     await retry
     expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: false, saved: true })
     expect(saveLabelOf(fileOf(owner.texts(), conversation, "ok.txt")!)).toBe("Saved")
   }, WITHIN)
 
-  test.fails("a Save's mark follows when each tab heard its write was done, not the machine's write order (broken)", async () => {
-    // Overlapping Saves mark completion order instead of write order: docs/features/coedit.md#saved.
+  test("overlapping Saves: the machine's newest write says what is saved, whichever Save heard back last", async () => {
+    // docs/features/coedit.md#saved: each write's mark is named for its place in the machine's writes.
     const opened = await open()
     const { owner, benTab } = opened
     const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
@@ -719,29 +719,54 @@ describe("a shared file", () => {
     const ownerWrite = await call(opened, "write", 2)
     expect(ownerWrite.call).toEqual({ tool: "write", path: "styles.css", content: x })
 
-    // The machine wrote X then Y, leaving Y on disk; X's slow checkpoint settles last.
+    // The machine wrote X then Y, leaving Y on disk; Y's Save hears back first, X's slow checkpoint settles last.
     await opened.run(settle(benWrite.callId, {
       status: "done",
-      result: { tool: "write", path: "styles.css", bytes: y.length },
+      result: { tool: "write", path: "styles.css", bytes: y.length, sequence: 2 },
       generation: 1,
     }))
     await benSaving
-    // The later completion must observe the earlier mark, rather than race concurrent CRDT marks.
-    await until(async () => expect((await owner.marks(fileId)).get(SAVED_MARK)).toBe(savedMarkOf(y)))
+    await until(async () => expect((await owner.marks(fileId)).get(savedNameOf(2))).toBe(savedMarkOf(y)))
     await opened.run(settle(ownerWrite.callId, {
       status: "done",
-      result: { tool: "write", path: "styles.css", bytes: x.length },
+      result: { tool: "write", path: "styles.css", bytes: x.length, sequence: 1 },
       generation: 1,
     }))
     await ownerSaving
+    // Both marks reach everyone; the second write's names what the working copy holds, Y, so X isn't saved.
     await until(async () => {
-      expect((await owner.marks(fileId)).get(SAVED_MARK)).toBe(savedMarkOf(x))
-      expect((await benTabOpen.marks(fileId)).get(SAVED_MARK)).toBe(savedMarkOf(x))
+      for (const tab of [owner, benTabOpen]) {
+        const marks = await tab.marks(fileId)
+        expect(marks.get(savedNameOf(1))).toBe(savedMarkOf(x))
+        expect(marks.get(savedNameOf(2))).toBe(savedMarkOf(y))
+      }
     })
     await until(() => {
-      expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ text: x, saved: false })
+      expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ text: x, saved: false, saving: false })
       expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ text: x, saved: false })
     }, 10_000)
+    expect(saveLabelOf(fileOf(owner.texts(), conversation, "styles.css")!)).toBe("Save")
+
+    // A machine that answers a write without its number can't place it among the others: it marks nothing.
+    const unnumbered = owner.coedit.save(fileId)
+    const old = await call(opened, "write", 3)
+    await opened.run(settle(old.callId, { status: "done", result: { tool: "write", path: "styles.css", bytes: x.length }, generation: 1 }))
+    await unnumbered
+    expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ saving: false, saveFailed: false, saved: false })
+
+    // Saving X again is the newest write: everyone says Saved.
+    const again = owner.coedit.save(fileId)
+    const newest = await call(opened, "write", 4)
+    await opened.run(settle(newest.callId, {
+      status: "done",
+      result: { tool: "write", path: "styles.css", bytes: x.length, sequence: 3 },
+      generation: 1,
+    }))
+    await again
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")?.saved).toBe(true)
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.saved).toBe(true)
+    })
   }, WITHIN)
 
   test.fails("a reload during a Save leaves no mark: the write finishes, but nobody's screen says Saved (broken)", async () => {

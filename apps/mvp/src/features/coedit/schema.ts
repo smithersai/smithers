@@ -48,7 +48,7 @@ export type Collaborator = typeof Collaborator.Type
  * - `stored` once every update this tab made is in the device's outbox, so a reload finds it;
  * - `text`, this person's `selection` as it now stands, and everyone else's carets (`collaborators`);
  * - `saving` while this tab's Save of a file runs, `saveFailed` when it last failed, and `saved` while the text is what
- *   the last Save, anyone's, wrote: the text's `saved` mark (`savedMarkOf`) is this text's.
+ *   the newest write, anyone's Save, wrote: the newest Save's mark (`savedOf`) is this text's `savedMarkOf`.
  */
 export const Shared = Schema.Struct({
   id: Schema.String,

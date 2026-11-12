@@ -18,7 +18,7 @@ import * as Database from "../../db/Database.ts"
 import type { SqlClient } from "effect/sql"
 import { resyncExecutionId } from "../../src/features/branch/contract.ts"
 import { TEXT_NAMESPACE, textName } from "../../src/features/coedit/contract.ts"
-import { SAVED_MARK, savedMarkOf } from "../../src/features/coedit/saved.ts"
+import { SAVED_MARK, savedMarkOf, savedNameOf, savedOf } from "../../src/features/coedit/saved.ts"
 import { admit, database, REPOSITORY, reset, services, signedIn, sql, writeRow } from "../github/test/fixtures.ts"
 import { type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Box from "../test/box.ts"
@@ -237,16 +237,16 @@ const withText = async <A>(textId: string, use: (replica: SharedText.SharedText)
   })))
 }
 
-/** A text as every device reads it: its contents and its `saved` mark. */
+/** A text as every device reads it: its contents and its newest Save's mark. */
 const textOf = (textId: string) =>
   withText(textId, (replica) =>
     Effect.gen(function* () {
-      return { content: yield* replica.text, saved: (yield* replica.marks).get(SAVED_MARK) }
+      return { content: yield* replica.text, saved: savedOf(yield* replica.marks).value }
     }))
 
-/** Someone's Save of the text as `content`: its `saved` mark, as the editor sets it. */
-const marked = async (t: Tracked, textId: string, content: string) =>
-  insertUpdate(t, textId, (await withText(textId, (replica) => replica.mark(SAVED_MARK, savedMarkOf(content))))!)
+/** Someone's Save of the text as `content`: its mark `name`, as the editor sets it. */
+const marked = async (t: Tracked, textId: string, content: string, name = SAVED_MARK) =>
+  insertUpdate(t, textId, (await withText(textId, (replica) => replica.mark(name, savedMarkOf(content))))!)
 
 /** Someone types in the text, to `next`, without saving. */
 const typed = async (t: Tracked, textId: string, next: string) =>
@@ -332,9 +332,11 @@ describe("resync", { timeout: 60_000 }, () => {
     expect(w.head()).toBe(w.base)
     expect((await textOf(guide)).content).toBe("one\ntwo\nthree\nfour\n")
 
-    // Saved, it is the working copy's: the merge takes main's change into it, and every editor still says Saved.
+    // Saved, it is the working copy's: the merge takes main's change into it, and every editor still says Saved. Two
+    // Saves marked it, the machine's second write last: that write's mark moves along, the older one stays as it was.
     write(w.workdir, { [GUIDE]: "one\ntwo\nthree\nfour\n" })
-    await marked(t, guide, "one\ntwo\nthree\nfour\n")
+    await marked(t, guide, "one\ntwo\nthree\nfour\n", savedNameOf(2))
+    await marked(t, guide, "one\n", savedNameOf(1))
     // README's text is open, saved, and GitHub didn't change it: it stays as it is.
     const readme = await opened(t, "README.md", "# Widgets\n\nA line\n", { saved: true })
     // Someone opened the file main adds before the working copy had it: empty, it takes main's contents.
@@ -342,6 +344,10 @@ describe("resync", { timeout: 60_000 }, () => {
     expect((await resyncing(t, head, w.layer())).exit).toEqual(Exit.succeed({ state: "synced", sha: head }))
     expect(w.read(GUIDE)).toBe("one\ntwo main\nthree\nfour\n")
     expect(await textOf(guide)).toEqual({ content: "one\ntwo main\nthree\nfour\n", saved: savedMarkOf("one\ntwo main\nthree\nfour\n") })
+    expect(await withText(guide, (replica) => replica.marks)).toEqual(new Map([
+      [savedNameOf(2), savedMarkOf("one\ntwo main\nthree\nfour\n")],
+      [savedNameOf(1), savedMarkOf("one\n")],
+    ]))
     expect(await textOf(readme)).toEqual({ content: "# Widgets\n\nA line\n", saved: savedMarkOf("# Widgets\n\nA line\n") })
     expect(await textOf(fresh)).toEqual({ content: "new\n", saved: undefined })
   })

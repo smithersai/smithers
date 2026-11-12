@@ -5,7 +5,7 @@
 // answers its root commands (provisioning a person's user, the idle probe) from the test, because they need root, tmux
 // and Linux's /proc. worker/branch/Machine.test.ts and the command job's tests use it.
 import { RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
-import { Effect, Stream } from "effect"
+import { Effect, Ref, Stream } from "effect"
 import { spawn } from "node:child_process"
 import type { Readable } from "node:stream"
 import * as Machine from "../branch/Machine.ts"
@@ -96,6 +96,7 @@ export const boxAt = (options: BoxOptions) => {
   const sessions: Array<string> = []
   const state = { running: true, destroyed: 0 }
   const box: Machine.Box<never> = {
+    writing: Ref.makeUnsafe(false),
     sessionAs: (user) =>
       Effect.sync(() => {
         sessions.push(user)

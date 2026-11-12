@@ -1,5 +1,6 @@
 import { type SandboxCommand, SandboxTools } from "@smthrs/sandbox"
 import { Context, Effect, Schema } from "effect"
+import { ToolResult } from "../../src/features/sandbox/results.ts"
 import { checkoutDetails, CheckoutFailed, CheckoutOutcome, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.ts"
 
 // What a branch's machine does for the sandbox tools and its own lifecycle (decision 0005 §2-§3,
@@ -9,7 +10,7 @@ import { checkoutDetails, CheckoutFailed, CheckoutOutcome, type SandboxBranch, S
 
 /** How a tool call ended on the machine, as it crosses a Durable Object's RPC: plain data, no class. */
 export const ToolOutcome = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Done"), result: SandboxTools.Result, generation: Schema.Number }),
+  Schema.Struct({ _tag: Schema.Literal("Done"), result: ToolResult, generation: Schema.Number }),
   Schema.Struct({ _tag: Schema.Literal("Refused"), reason: SandboxTools.ToolRefused.fields.reason }),
   Schema.Struct({ _tag: Schema.Literal("Lost") }),
   CheckoutOutcome,
@@ -72,7 +73,7 @@ export type SleepOutcome = (typeof SLEEP_OUTCOMES)[number]
 
 /** A tool call's success on the machine: the tool's result, and the machine generation it ran on. */
 export interface Ran {
-  readonly result: SandboxTools.Result
+  readonly result: ToolResult
   readonly generation: number
 }
 

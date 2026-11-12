@@ -4,6 +4,7 @@ import { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
+import { ToolResult } from "../../src/features/sandbox/results.ts"
 import { Machines } from "../branch/Machines.ts"
 import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
@@ -67,7 +68,7 @@ const payload = { callId: CallId, ownerId: Schema.String, branch: SandboxBranch,
 
 /** How a call ended: done with the tool's result on a generation of the machine, or failed and why. */
 export const Outcome = Schema.Union([
-  Schema.Struct({ status: Schema.Literal("done"), result: SandboxTools.Result, generation: Schema.optional(Schema.Number) }),
+  Schema.Struct({ status: Schema.Literal("done"), result: ToolResult, generation: Schema.optional(Schema.Number) }),
   Schema.Struct({ status: Schema.Literal("failed"), failure: Schema.Literals(CALL_FAILURES) }),
 ])
 export type Outcome = typeof Outcome.Type

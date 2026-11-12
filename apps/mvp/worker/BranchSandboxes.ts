@@ -3,7 +3,7 @@ import { Logger } from "@smthrs/observability"
 import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } from "@smthrs/platform-cloudflare"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
-import { Cause, Clock, Config, Effect, Fiber, Layer, Option, Schema, Scope } from "effect"
+import { Cause, Clock, Config, Effect, Fiber, Layer, Option, Ref, Schema, Scope } from "effect"
 import { FetchHttpClient, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
@@ -715,6 +715,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
 
       // The machine as its tools and lifecycle use it (worker/branch/Machine.ts, docs/features/sandbox-tools.md).
       const machine: Machine.Box<RuntimeContext> = {
+        writing: yield* Ref.make(false),
         sessionAs: (name) =>
           Effect.gen(function*() {
             const placeholders = yield* environmentNow

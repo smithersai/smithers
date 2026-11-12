@@ -7,7 +7,7 @@ import { Base64 } from "effect/encoding"
 import * as Socket from "effect/socket/Socket"
 import { scopeOf, scopeParams, TEXT_NAMESPACE, textName, type TextOf, textRoomRoute, TEXTS_SHAPE_ROUTE, type TextScope } from "./contract"
 import { opens } from "./metrics"
-import { SAVED_MARK, savedMarkOf } from "./saved"
+import { savedMarkOf, savedOf } from "./saved"
 import { type Collaborator, type Selection, Shared, TextUpdate } from "./schema"
 import { TextWrites } from "./writes"
 
@@ -68,7 +68,7 @@ export const textIdOf = (of: TextOf) =>
 export const keyOf = (of: TextOf) =>
   of.kind === "prompt" ? of.conversation : of.kind === "file" ? `${of.conversation}/${of.path}` : `${of.run}/${of.version}`
 
-export { SAVED_MARK, savedMarkOf } from "./saved"
+export { SAVED_MARK, savedMarkOf, savedNameOf } from "./saved"
 
 /** Whether `text` is what the `saved` mark `mark` says a Save wrote. */
 const isSaved = (mark: string | undefined, text: string): boolean =>
@@ -153,8 +153,8 @@ const make = Effect.fnUntraced(function* (config: CoeditConfig) {
         if (Option.isSome(at)) collaborators.push({ id: participant.id, name: participant.name, ...at.value })
       }
       const row = Option.getOrThrow(yield* texts.get(live.id))
-      // Whoever saved, every tab reads it from the mark; a text changed since, by anyone, isn't saved.
-      const saved = isSaved((yield* live.replica.marks).get(SAVED_MARK), text)
+      // Whoever saved, every tab reads it from the newest write's mark; a text changed since, by anyone, isn't saved.
+      const saved = isSaved(savedOf(yield* live.replica.marks).value, text)
       const same = row.text === text && row.saved === saved && JSON.stringify(row.selection) === JSON.stringify(selection) &&
         JSON.stringify(row.collaborators) === JSON.stringify(collaborators)
       if (same) return

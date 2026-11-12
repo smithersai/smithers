@@ -1,5 +1,5 @@
 import { type Sandbox, SandboxTools } from "@smthrs/sandbox"
-import { Cause, Clock, Duration, Effect, Metric } from "effect"
+import { Cause, Clock, Duration, Effect, Metric, Ref } from "effect"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "./Machines.ts"
@@ -13,6 +13,9 @@ import { provisionArgv, userOf } from "./Users.ts"
 // - A tool call runs as the person's own user, with `@smthrs/sandbox`'s `SandboxTools`, its command fenced in that
 //   user's home so it runs at most once, and by generation in the object's storage, so a machine that restarted never
 //   runs it again either.
+// - Writes run one at a time, each numbered after it lands (`writeSequence` in the object's storage, never reused), so a
+//   higher number is a later write to disk however the answers travel. A write asked while another runs is
+//   unavailable, and its call tries again.
 // - The working copy outlives the machine: after a call that changes it, and before the machine sleeps, the object
 //   saves a checkpoint (`SandboxTools.checkpoint`: the commit, a binary patch, and a bundle of the commits no remote
 //   has) in its storage, and the first wake of the next generation puts it back. A machine whose checkpoint can't be
@@ -31,6 +34,8 @@ export interface Store<R> {
 
 /** One branch's machine as its object holds it. */
 export interface Box<R> {
+  /** Whether a write is running: the machine takes one at a time (`tool`). */
+  readonly writing: Ref.Ref<boolean>
   /** A session on the running container as `user`, in /workspace. */
   readonly sessionAs: (user: string) => Effect.Effect<Sandbox.Session, never, R>
   /** Runs `argv` as `user`: its exit code. */
@@ -229,6 +234,23 @@ export const restore = <R>(box: Box<R>, generation: number) =>
     return outcome
   }).pipe(Effect.withSpan("sandbox.checkpoint.restore", { attributes: { "smithers.sandbox.generation": generation } }))
 
+/** The next write's number: one more than the last write's, kept in the object's storage across generations. */
+const numbered = <R>(box: Box<R>) =>
+  Effect.gen(function* () {
+    const sequence = ((yield* box.storage.get<number>("writeSequence")) ?? 0) + 1
+    yield* box.storage.put("writeSequence", sequence)
+    return sequence
+  })
+
+/** Runs the write `run` unless another is running, which leaves it unavailable to try again. */
+const oneWriteAtATime = <R>(box: Box<R>, run: Effect.Effect<ToolOutcome, never, R>) =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.flatMap(Ref.getAndSet(box.writing, true), (busy) =>
+      busy
+        ? Effect.succeed<ToolOutcome>({ _tag: "Unavailable" })
+        : restore(run).pipe(Effect.ensuring(Ref.set(box.writing, false))))
+  )
+
 /**
  * Runs `call` on generation `generation` as person `ownerId`'s own user, made on first use, then saves the working
  * copy when the call changed it. The machine is awake and checked out already.
@@ -271,8 +293,9 @@ export const tool = <R>(
         ? { _tag: "Lost" } as const
         : { _tag: "Unavailable" } as const
     }
+    const result = ran.success.tool === "write" ? { ...ran.success, sequence: yield* numbered(box) } : ran.success
     if (SandboxTools.mutates(options.call.tool)) yield* save(box, options.generation)
-    return { _tag: "Done", result: ran.success, generation: options.generation } as const
+    return { _tag: "Done", result, generation: options.generation } as const
   }).pipe(
     Effect.catchCause((cause) =>
       Effect.as(
@@ -280,6 +303,7 @@ export const tool = <R>(
         { _tag: "Unavailable" } as const,
       )
     ),
+    (run: Effect.Effect<ToolOutcome, never, R>) => options.call.tool === "write" ? oneWriteAtATime(box, run) : run,
     Effect.withSpan("sandbox.object.tool", { attributes: { "smithers.sandbox.tool": options.call.tool } }),
   )
 

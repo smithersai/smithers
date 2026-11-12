@@ -6,7 +6,7 @@
 // root commands, provisioning a person's user and the idle probe, from the test, because they need root, tmux and
 // Linux's /proc; this host has none of them.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Effect, Exit, Fiber, Logger, Metric } from "effect"
+import { Effect, Exit, Fiber, Logger, Metric, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
@@ -93,6 +93,30 @@ const saved = (map: Map<string, unknown>) =>
   map.get("checkpoint") as { generation: number; head: string; seq: number; pieces: number; bytes: number; bundleBytes?: number }
 
 describe("tool", () => {
+  test("numbers each write after it lands, across generations, and takes one write at a time", async () => {
+    const machine = boxOf({ store: memory({ writeSequence: 6 }) })
+    const write = (content: string) => tool(machine.box, { tool: "write", path: "hello.txt", content })
+    // The object kept the last write's number from an earlier generation: the next is one more, never one reused.
+    expect(await Effect.runPromise(write("one\n"))).toMatchObject({ _tag: "Done", result: { tool: "write", sequence: 7 } })
+    expect(await Effect.runPromise(write("two\n"))).toMatchObject({ _tag: "Done", result: { tool: "write", sequence: 8 } })
+    expect(machine.map.get("writeSequence")).toBe(8)
+    // A read is no write: it has no number and takes none.
+    expect(await Effect.runPromise(tool(machine.box, { tool: "read", path: "hello.txt" }))).not.toHaveProperty("result.sequence")
+    expect(machine.map.get("writeSequence")).toBe(8)
+
+    // While one write runs, another is unavailable, and its call tries again; the first stopping frees the machine.
+    const hung = boxOf({ hungFor: [USER] })
+    await Effect.runPromise(Effect.gen(function* () {
+      const first = yield* Effect.forkChild(tool(hung.box, { tool: "write", path: "a.txt", content: "a\n" }))
+      yield* Effect.yieldNow
+      expect(yield* Ref.get(hung.box.writing)).toBe(true)
+      expect(yield* tool(hung.box, { tool: "write", path: "b.txt", content: "b\n" })).toEqual({ _tag: "Unavailable" })
+      yield* Fiber.interrupt(first)
+      expect(yield* Ref.get(hung.box.writing)).toBe(false)
+    }))
+    expect(hung.map.has("writeSequence")).toBe(false)
+  })
+
   test("base-relative status includes agent commits and pending edits, and excludes reverted work", async () => {
     const machine = boxOf()
     writeFileSync(join(machine.workdir, "slept.txt"), "committed\n")
@@ -113,7 +137,7 @@ describe("tool", () => {
     await Effect.runPromise(Machine.restore(machine.box, 1))
 
     const wrote = await observed(tool(machine.box, { tool: "write", path: "hello.txt", content: "hi\n" }))
-    expect(wrote.value).toEqual({ _tag: "Done", result: { tool: "write", path: "hello.txt", bytes: 3 }, generation: 1 })
+    expect(wrote.value).toEqual({ _tag: "Done", result: { tool: "write", path: "hello.txt", bytes: 3, sequence: 1 }, generation: 1 })
     expect(machine.runs).toEqual([{ argv: provisionArgv(USER), user: "root" }])
     expect(machine.sessions).toEqual([USER, SANDBOX_USER])
     expect(wrote.counted("save", "saved")).toBe(1)

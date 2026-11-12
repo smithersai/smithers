@@ -14,7 +14,7 @@ import { CONVERSATION_NAMESPACE } from "../branch/contract"
 import type { TextOf } from "./contract"
 import { saves } from "./metrics"
 import type { Selection, Sending, Shared } from "./schema"
-import { CoeditStore, encodeCursor, type Live, SAVED_MARK, savedMarkOf } from "./store"
+import { CoeditStore, encodeCursor, type Live, savedMarkOf, savedNameOf } from "./store"
 import { TEXT_UPDATE, TextWrites } from "./writes"
 
 // What a person does with a text they edit together with others (decision 0013 §4, docs/features/coedit.md): type in
@@ -294,8 +294,9 @@ const seed = (live: Live, conversation: string, path: string) =>
 /**
  * Save on an open file: what everyone typed is written to the branch's working copy through `sandbox/write`, the
  * sandbox tools' one write path. This tab's row says it is saving until the write settles, and that it failed if it
- * did. A written text gets the text's `saved` mark, which reaches everyone with it: every tab whose text is still what
- * was written says Saved, and an edit anyone makes after says Save again.
+ * did. A written text gets a `saved` mark named for the machine's write sequence, which reaches everyone with it: every
+ * tab whose text is what the newest write wrote says Saved, whichever Save finished first, and an edit anyone makes
+ * after says Save again.
  */
 export const save = (textId: string) =>
   Effect.gen(function* () {
@@ -312,8 +313,12 @@ export const save = (textId: string) =>
     const written = yield* Effect.result(
       flows.dispatch("sandbox/write", { path, content, conversationId: conversation }, { door: "button", executionId }),
     )
-    const outcome = written._tag === "Success" && written.success._tag === "Done" ? "saved" : "failed"
-    if (outcome === "saved") yield* send(live, yield* live.replica.mark(SAVED_MARK, savedMarkOf(content)))
+    const done = written._tag === "Success" && written.success._tag === "Done" ? written.success.value : undefined
+    const outcome = done === undefined ? "failed" : "saved"
+    // A write a machine answered unnumbered can't be placed among the others: it marks nothing, so Save stays.
+    if (done?.sequence !== undefined) {
+      yield* send(live, yield* live.replica.mark(savedNameOf(done.sequence), savedMarkOf(content)))
+    }
     yield* setRow(live, { saving: false, saveFailed: outcome === "failed" })
     yield* store.refresh(live)
     yield* Metric.update(Metric.withAttributes(saves, { outcome }), 1)
