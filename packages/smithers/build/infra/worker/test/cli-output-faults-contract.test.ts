@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   type CachedResult,
   findMissingTimeoutLimit,
-  openCache
+  initialRemoteTransferConcurrency,
+  openCache,
+  remoteTransferConcurrency
 } from "../../../build-cli/src/Cache.ts"
 import * as Tree from "../../../build-cli/src/PackageTree.ts"
 import { createHandler } from "../protocol.ts"
@@ -135,9 +137,99 @@ describe("remote output failure boundaries", () => {
     await Promise.all(results.map(result => publisher.put(result.key, result)))
     const reader = await f.open(f.b)
     expect((await Promise.all(results.map(result => reader.get(result.key)))).every(Boolean), f.warnings.join("\n")).toBe(true)
-    expect(f.peak()).toBe(1)
+    expect(f.peak()).toBeGreaterThan(1)
+    expect(f.peak()).toBeLessThanOrEqual(remoteTransferConcurrency)
     expect(f.warnings).toEqual([])
   })
+  it("restores a many-file output with concurrent fetches inside the handle's bound", async () => {
+    const f = await fixture()
+    await Fs.mkdir(Path.join(f.a, "out"))
+    for (let i = 0; i < 160; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), "artifact-" + i)
+    const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
+    const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
+    await (await f.open(f.a)).put(result.key, result)
+    // Every download waits 25ms in the transport, as a distant service does.
+    let gets = 0
+    f.setFault(async request => {
+      if (request.method !== "GET" || !new URL(request.url).pathname.startsWith("/cas/")) return f.handler(request)
+      gets++
+      await new Promise(resolve => setTimeout(resolve, 25))
+      return f.handler(request)
+    })
+    const started = performance.now()
+    expect(await (await f.open(f.b)).get(result.key)).not.toBeNull()
+    const seconds = (performance.now() - started) / 1000
+    expect(gets).toBe(160)
+    // Admission grows past its start after a run of admitted exchanges.
+    expect(f.peak()).toBeGreaterThan(initialRemoteTransferConcurrency)
+    expect(f.peak()).toBeLessThanOrEqual(remoteTransferConcurrency)
+    // One at a time is 160 x 25ms = 4s of waiting alone.
+    expect(seconds).toBeLessThan(2.5)
+    expect(await Tree.verifyManifestBlobs(f.b, ".flows", manifest)).toBeUndefined()
+    expect(f.warnings).toEqual([])
+  }, 30000)
+  it("settles at a service that admits two transfers and restores without a miss", async () => {
+    // The hosted Worker admits two artifact transfers per isolate and answers
+    // the rest with 429, as this transport does.
+    const f = await fixture()
+    await Fs.mkdir(Path.join(f.a, "out"))
+    for (let i = 0; i < 160; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), "artifact-" + i)
+    const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
+    const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
+    await (await f.open(f.a)).put(result.key, result)
+    let admitted = 0, refused = 0, served = 0
+    f.setFault(async request => {
+      if (request.method !== "GET" || !new URL(request.url).pathname.startsWith("/cas/")) return f.handler(request)
+      if (admitted >= 2) {
+        refused++
+        return new Response(null, { status: 429, headers: { "retry-after": "1" } })
+      }
+      admitted++
+      try {
+        await new Promise(resolve => setTimeout(resolve, 10))
+        served++
+        return await f.handler(request)
+      } finally {
+        admitted--
+      }
+    })
+    expect(await (await f.open(f.b)).get(result.key)).not.toBeNull()
+    expect(served).toBe(160)
+    // Admission halves on the first refusals, so most exchanges are never refused.
+    expect(refused).toBeLessThan(160)
+    expect(await Tree.verifyManifestBlobs(f.b, ".flows", manifest)).toBeUndefined()
+    expect(f.warnings).toEqual([])
+  }, 30000)
+  it("assembles a chunked file from concurrently fetched chunks and verifies it", async () => {
+    const f = await fixture()
+    // Three distinct chunks plus a tail, so chunk order matters.
+    const size = 3 * 16 * 1024 * 1024 + 5
+    const handle = await Fs.open(Path.join(f.a, "program"), "w")
+    try {
+      for (let offset = 0; offset < size; offset += 1024 * 1024) {
+        await handle.write(Buffer.alloc(Math.min(1024 * 1024, size - offset), (offset >> 20) % 251))
+      }
+    } finally {
+      await handle.close()
+    }
+    const file = await Tree.captureFile(f.a, ".flows", "program")
+    const result = { ...f.result, output: { kind: "build", manifests: [], files: [file] } }
+    await (await f.open(f.a)).put(result.key, result)
+    f.setFault(async request => {
+      if (request.method !== "GET" || !new URL(request.url).pathname.startsWith("/cas/")) return f.handler(request)
+      // Later chunks answer first, so arrival order is not file order.
+      const digest = new URL(request.url).pathname.slice(5)
+      const bytes = f.contentStore.objects.get(digest)
+      await new Promise(resolve => setTimeout(resolve, bytes === undefined ? 0 : 200 - (bytes[0] ?? 0)))
+      return f.handler(request)
+    })
+    expect(await (await f.open(f.b)).get(result.key)).not.toBeNull()
+    expect(f.peak()).toBeGreaterThan(1)
+    expect(await Tree.verifyFileManifest(f.b, ".flows", file)).toBeUndefined()
+    await Tree.materializeFile(f.b, ".flows", file)
+    expect(await Tree.digestFileBytes(Path.join(f.b, "program"))).toBe(file.digest)
+    expect(f.warnings).toEqual([])
+  }, 60000)
 })
 
 it("skips an over-limit publication and keeps remote operations available", async () => {

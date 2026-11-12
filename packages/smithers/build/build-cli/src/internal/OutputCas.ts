@@ -76,26 +76,37 @@ interface ChunkIndex {
   readonly chunks: ReadonlyArray<{ readonly digest: string; readonly size: number }>
 }
 
-/** Opens only a regular, non-symlink CAS artifact, including after an open race. */
+/**
+ * Opens only a regular, non-symlink CAS artifact, including after an open race.
+ *
+ * A concurrent writer of the same digest publishes by renaming its verified
+ * copy onto the path, which changes the inode between the `lstat` and the
+ * open. That is a race, not a refusal: every writer of one digest writes the
+ * same verified bytes, so the open is retried. Every caller verifies the
+ * bytes it reads against the digest, so a retry cannot widen what is accepted.
+ */
 const openBlob = async (cas: string, digest: string, maximumBytes = fileLimit) => {
   if (!hex.test(digest)) throw new Error("invalid CAS digest")
   const path = Path.join(cas, digest)
-  const before = await Fs.lstat(path)
-  if (!before.isFile()) throw new Error("CAS artifact is not a regular file")
-  const handle = await Fs.open(
-    path,
-    NodeFs.constants.O_RDONLY | optionalOpenFlag("O_NOFOLLOW") | optionalOpenFlag("O_NONBLOCK")
-  )
-  try {
-    const after = await handle.stat()
-    if (!after.isFile() || before.ino !== after.ino || before.dev !== after.dev) {
-      throw new Error("CAS artifact changed while opening")
+  for (let attempt = 1;; attempt += 1) {
+    const before = await Fs.lstat(path)
+    if (!before.isFile()) throw new Error("CAS artifact is not a regular file")
+    const handle = await Fs.open(
+      path,
+      NodeFs.constants.O_RDONLY | optionalOpenFlag("O_NOFOLLOW") | optionalOpenFlag("O_NONBLOCK")
+    )
+    try {
+      const after = await handle.stat()
+      if (!after.isFile() || before.ino !== after.ino || before.dev !== after.dev) {
+        throw new Error("CAS artifact changed while opening")
+      }
+      if (after.size > maximumBytes) throw new OutputLimitError("CAS artifact exceeds its file bound")
+      return handle
+    } catch (cause) {
+      await handle.close()
+      if (attempt < 3 && cause instanceof Error && cause.message === "CAS artifact changed while opening") continue
+      throw cause
     }
-    if (after.size > maximumBytes) throw new OutputLimitError("CAS artifact exceeds its file bound")
-    return handle
-  } catch (cause) {
-    await handle.close()
-    throw cause
   }
 }
 
@@ -298,8 +309,118 @@ export const prepare = async (cas: string, output: unknown): Promise<{ output: u
 }
 
 /**
+ * Runs one unit of artifact work inside a shared concurrency bound.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Limiter = <A>(run: () => Promise<A>) => Promise<A>
+
+/**
+ * A {@link Limiter} whose admission follows the service's answers.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface AdaptiveLimiter extends Limiter {
+  /** Halves admission, never below one: the service refused work as busy. */
+  readonly busy: () => void
+  /** Records one admitted exchange; enough in a row admit one more. */
+  readonly admitted: () => void
+  /** How many units may run at once now. */
+  readonly capacity: () => number
+}
+
+/**
+ * Creates a counting semaphore that admits up to `maximum` units of work.
+ *
+ * Admission starts at `initial` (default `maximum`), halves on
+ * {@link AdaptiveLimiter.busy}, and grows by one after eight times the current
+ * capacity of consecutive {@link AdaptiveLimiter.admitted} calls, so it
+ * settles at what the service admits and rarely probes past it.
+ * Waiters start in arrival order. A unit's failure releases its permit.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const makeLimiter = (maximum: number, initial = maximum): AdaptiveLimiter => {
+  if (
+    !Number.isSafeInteger(maximum) || maximum < 1 || !Number.isSafeInteger(initial) || initial < 1 ||
+    initial > maximum
+  ) throw new TypeError("limiter permits must be a positive integer")
+  let capacity = initial
+  let active = 0
+  let streak = 0
+  const waiting: Array<() => void> = []
+  const wake = (): void => {
+    while (active < capacity && waiting.length > 0) {
+      active += 1
+      waiting.shift()!()
+    }
+  }
+  const limiter = async <A>(run: () => Promise<A>): Promise<A> => {
+    if (active < capacity && waiting.length === 0) active += 1
+    else await new Promise<void>((resolve) => waiting.push(resolve))
+    try {
+      return await run()
+    } finally {
+      active -= 1
+      wake()
+    }
+  }
+  return Object.assign(limiter, {
+    busy: (): void => {
+      capacity = Math.max(1, Math.ceil(capacity / 2))
+      streak = 0
+    },
+    admitted: (): void => {
+      streak += 1
+      if (capacity < maximum && streak >= capacity * 8) {
+        capacity += 1
+        streak = 0
+        wake()
+      }
+    },
+    capacity: () => capacity
+  })
+}
+
+/**
+ * Visits every item inside `limit` and reports whether every visit succeeded.
+ *
+ * The first `false` or failure stops visits that have not started yet. Every
+ * started visit settles before this returns, so no write outlives the call.
+ * The first failure is rethrown after that.
+ */
+const visitAll = async <T>(
+  items: Iterable<T>,
+  limit: Limiter,
+  visit: (item: T) => Promise<boolean>
+): Promise<boolean> => {
+  let ok = true
+  let failure: { readonly cause: unknown } | undefined
+  await Promise.all([...items].map((item) =>
+    limit(async () => {
+      if (!ok || failure !== undefined) return
+      try {
+        if (!await visit(item)) ok = false
+      } catch (cause) {
+        failure ??= { cause }
+      }
+    })
+  ))
+  if (failure !== undefined) throw failure.cause
+  return ok
+}
+
+/**
  * Fetches missing artifacts and assembles large files in a sibling temporary
  * file. A missing/corrupt chunk never publishes a partial whole file.
+ *
+ * `limit` bounds every fetch, local verification, and assembly. Share one
+ * limiter across concurrent hydrations to bound the whole process: each unit
+ * holds at most one 16 MiB artifact in memory. The default runs one unit at a
+ * time. The first missing artifact stops the work that has not started.
  *
  * @category artifacts
  * @since 1.0.0
@@ -307,7 +428,8 @@ export const prepare = async (cas: string, output: unknown): Promise<{ output: u
 export const hydrate = async (
   cas: string,
   output: unknown,
-  fetchBlob: (digest: string) => Promise<boolean>
+  fetchBlob: (digest: string) => Promise<boolean>,
+  limit: Limiter = makeLimiter(1)
 ): Promise<boolean> => {
   const files = new Map<string, FileReference>()
   await mapFiles(output, async (file) => {
@@ -315,26 +437,31 @@ export const hydrate = async (
     return file
   })
   const complete = new Set<string>()
-  for (const file of files.values()) {
+  await visitAll(files.values(), limit, async (file) => {
     if (await hasFile(cas, file.digest)) complete.add(file.digest)
-  }
+    return true
+  })
   if (complete.size === files.size) return true
 
-  // Inspect every index and account for all unique whole files before a
-  // large assembly begins. Reused chunks cannot amplify disk writes beyond
-  // the same aggregate bound capture applies to an output tree.
-  const indexes = new Map<string, ChunkIndex>()
+  // Account every direct reference before the first fetch, then every unique
+  // whole file and chunk reference before a chunk is fetched or a large
+  // assembly begins. Reused chunks cannot amplify disk writes beyond the same
+  // aggregate bound capture applies to an output tree.
   const budget = makeOutputBudget()
+  const missing = [...files.values()].filter((file) => !complete.has(file.digest))
+  for (const file of missing) budget.reference(file.index ?? file.digest)
+  const fetchedDirect = await visitAll(missing, limit, async (file) => {
+    if (file.index === undefined) return fetchBlob(file.digest)
+    return await hasFile(cas, file.index) || fetchBlob(file.index)
+  })
+  if (!fetchedDirect) return false
+
+  const indexes = new Map<string, ChunkIndex>()
   for (const file of files.values()) {
-    if (complete.has(file.digest)) {
+    if (complete.has(file.digest) || file.index === undefined) {
+      // A fetched blob was verified against its digest before it was written.
       budget.file(file.digest, (await Fs.lstat(Path.join(cas, file.digest))).size)
-    } else if (file.index === undefined) {
-      budget.reference(file.digest)
-      if (!await fetchBlob(file.digest)) return false
-      budget.file(file.digest, (await readBlob(cas, file.digest)).length)
     } else {
-      budget.reference(file.index)
-      if (!await hasFile(cas, file.index) && !await fetchBlob(file.index)) return false
       const index = await readIndex(cas, file.index)
       indexes.set(file.digest, index)
       budget.file(file.digest, index.size)
@@ -342,14 +469,20 @@ export const hydrate = async (
     }
   }
 
-  for (const [digest, index] of indexes) {
+  const chunks = new Set<string>()
+  for (const index of indexes.values()) for (const chunk of index.chunks) chunks.add(chunk.digest)
+  const fetchedChunks = await visitAll(chunks, limit, async (digest) => await hasFile(cas, digest) || fetchBlob(digest))
+  if (!fetchedChunks) return false
+
+  return visitAll(indexes, limit, async ([digest, index]) => {
     const temporary = Path.join(cas, digest + ".tmp-" + randomUUID())
     try {
       const handle = await Fs.open(temporary, "wx", 0o600)
       try {
         const whole = createHash("sha256")
         for (const chunk of index.chunks) {
-          if (!await hasFile(cas, chunk.digest) && !await fetchBlob(chunk.digest)) return false
+          // readBlob verifies the chunk's SHA-256 again; a chunk replaced on
+          // disk since it was fetched fails here.
           const bytes = await readBlob(cas, chunk.digest)
           if (bytes.length !== chunk.size) throw new Error("CAS chunk size differs from index")
           whole.update(bytes)
@@ -364,6 +497,6 @@ export const hydrate = async (
     } finally {
       await Fs.rm(temporary, { force: true })
     }
-  }
-  return true
+    return true
+  })
 }

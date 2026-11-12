@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import { performance } from "node:perf_hooks"
 import { openCache } from "../../../../../build-cli/src/Cache.ts"
 import * as Tree from "../../../../../build-cli/src/PackageTree.ts"
 import { createHandler as worker } from "../../../../../infra/worker/protocol.ts"
@@ -178,6 +179,37 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
         expect(await Tree.verifyFileManifest(f.b, ".flows", other)).toBeUndefined()
       })
     }, 30000)
+
+    test("restores 520 files with bounded concurrent fetches", async () => {
+      await run(1, async (f) => {
+        await Fs.mkdir(Path.join(f.a, "out"))
+        for (let i = 0; i < 520; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), "artifact-" + i)
+        const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
+        const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
+        await (await f.open(f.a)).put(result.key, result)
+        let active = 0, peak = 0
+        f.setFault(async (req) => {
+          if (req.method !== "GET" || !new URL(req.url).pathname.startsWith("/cas/")) return f.handler(req)
+          active++
+          peak = Math.max(peak, active)
+          try {
+            // A distant service: every download waits 20ms in transport.
+            await new Promise((resolve) => setTimeout(resolve, 20))
+            return await f.handler(req)
+          } finally {
+            active--
+          }
+        })
+        const started = performance.now()
+        expect(await (await f.open(f.b)).get(result.key)).not.toBeNull()
+        // One at a time is 520 x 20ms = 10.4s of waiting alone.
+        expect(performance.now() - started).toBeLessThan(6000)
+        expect(peak).toBeGreaterThan(1)
+        expect(peak).toBeLessThanOrEqual(8)
+        expect(await Tree.verifyManifestBlobs(f.b, ".flows", manifest)).toBeUndefined()
+        expect(f.warnings).toEqual([])
+      })
+    }, 60000)
 
     for (const kind of ["missing", "corrupt", "busy", "down", "reader"]) {
       test(kind + " retains local data and never publishes a partial result", async () => {

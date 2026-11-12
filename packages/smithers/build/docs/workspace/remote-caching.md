@@ -134,9 +134,19 @@ across unique whole files; entries that exceed a bound stay local. A reader
 checks aggregate index sizes before assembling large files. Complete legacy
 local results remain usable above the remote limits.
 
-One CAS transfer runs at a time per cache handle, across concurrent targets.
+A cache handle runs its CAS exchanges concurrently across targets, through one
+shared admission bound. It starts at two exchanges, which both services admit,
+halves after a `429`, and grows by one after a long run of admitted exchanges,
+up to eight. A restore fetches an entry's missing files, indexes, and chunks
+through that bound; targets that share bytes fetch each digest once. Local
+verification, chunking, and assembly share a second fixed bound of eight units.
+Each unit holds at most one 16 MiB artifact in memory, so a handle holds a
+bounded amount however many targets restore at once.
 Files are streamed while hashing and split into bounded buffers; downloads are
-bounded to one artifact before verification and atomic CAS publication. Request
+bounded to one artifact before verification and atomic CAS publication. Every
+chunk is verified again when a large file is assembled, and the whole file is
+verified before it enters the CAS. The first missing artifact of a restore stops
+fetches that have not started, and the entry is a miss. Request
 deadlines cover the response body and are real races. No large file is buffered
 whole. Previously written whole-file manifests remain locally restorable.
 

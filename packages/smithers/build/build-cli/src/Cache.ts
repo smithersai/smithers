@@ -10,6 +10,7 @@
  * is not a failure: it costs only the request it answered, after a short
  * bounded retry for content-store exchanges. A `findMissing` probe that
  * outlives its deadline after the same retry costs only that publication.
+ * Content-store exchanges of one handle run with bounded concurrency.
  *
  * Every read on both sides is an untrusted read. A local entry file may have
  * been replaced by a symbolic link, a FIFO, or four gigabytes of noise; a
@@ -112,6 +113,34 @@ export const remoteTimeouts = { get: 3_000, put: 8_000 } as const
 // Artifact exchanges include up to 16 MiB plus verification and fsync.
 const remoteArtifactTimeouts = { get: 60_000, put: 60_000 } as const
 const remoteFileResultTimestamp = "1970-01-01T00:00:00.000Z"
+
+/**
+ * The most content-store exchanges one cache handle runs at once, across all
+ * target workers.
+ *
+ * Each exchange holds at most one 16 MiB artifact in memory, so a handle
+ * holds at most this many. A restore of many small files is bound by round
+ * trips and a large file by per-stream throughput, so both scale with it.
+ * Admission starts at {@link initialRemoteTransferConcurrency}; a `429`
+ * halves it and a long run of admitted exchanges raises it by one, so the
+ * handle settles at what the service admits.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const remoteTransferConcurrency = 8
+
+/**
+ * How many content-store exchanges a fresh cache handle admits at first.
+ *
+ * Both cache services admit two artifact transfers at once per isolate or
+ * process and answer the rest with `429`, so a handle starts there and only
+ * probes higher after a long run of admitted exchanges.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const initialRemoteTransferConcurrency = 2
 
 /**
  * How one busy or slow content-store exchange is retried before it is given
@@ -1280,17 +1309,16 @@ class RemoteStore {
     this.slowWarned = true
     this.warn("smthrs: remote cache findMissing timed out; skipped one publication")
   }
-  // One CAS exchange at a time per cache handle, across all target workers.
-  // Metadata requests retain their existing independent concurrency.
-  private blobQueue: Promise<void> = Promise.resolve()
+  // Every content-store exchange of this handle, across all target workers,
+  // shares one adaptive bound. Metadata requests keep their own concurrency.
+  private readonly transfers = OutputCas.makeLimiter(remoteTransferConcurrency, initialRemoteTransferConcurrency)
+  // Local artifact work (verification, chunking, assembly, and the exchanges
+  // it waits on) shares a fixed bound, which bounds the memory it holds.
+  private readonly work = OutputCas.makeLimiter(remoteTransferConcurrency)
   private findMissingTimeouts = 0
   private slowWarned = false
-
-  private blobs<A>(run: () => Promise<A>): Promise<A> {
-    const pending = this.blobQueue.then(run)
-    this.blobQueue = pending.then(() => undefined, () => undefined)
-    return pending
-  }
+  // Concurrent restores of targets that share bytes fetch each digest once.
+  private readonly downloads = new Map<string, Promise<boolean>>()
 
   /**
    * Runs one exchange, retrying a `429` (and, when `retryTimeout`, a
@@ -1307,7 +1335,9 @@ class RemoteStore {
       let outcome: number | "timeout"
       let retryAfterMs = 0
       try {
-        const answer = await run()
+        // Each attempt takes its own permit, so a lowered admission holds
+        // back retries too, and a backoff wait holds no permit.
+        const answer = await this.transfers(run)
         outcome = answer.status
         const seconds = answer.retryAfter === undefined || answer.retryAfter === null
           ? Number.NaN
@@ -1317,7 +1347,11 @@ class RemoteStore {
         if (!(retryTimeout && cause instanceof RemoteTimeout)) throw cause
         outcome = "timeout"
       }
-      if (outcome !== 429 && outcome !== "timeout") return outcome
+      if (outcome === 429) this.transfers.busy()
+      else if (outcome !== "timeout") {
+        if (outcome < 500) this.transfers.admitted()
+        return outcome
+      }
       if (this.degraded) return outcome
       const policy = outcome === "timeout" ? remoteTransferRetry.slow : remoteTransferRetry.busy
       const next = RetryPolicy.nextDelay(policy, attempt, { random: Math.random(), elapsedMs: waited })
@@ -1330,15 +1364,19 @@ class RemoteStore {
 
   /** Reads missing outputs into the CAS; never writes a declared output path. */
   async hydrate(cas: string, output: unknown): Promise<boolean> {
-    return this.blobs(async () => {
-      try {
-        return await OutputCas.hydrate(cas, output, (digest) => this.download(cas, digest))
-      } catch (cause) {
-        if (cause instanceof OutputCas.OutputLimitError) this.skipLimit()
-        else this.degrade("GET", { cause })
-        return false
-      }
-    })
+    try {
+      return await OutputCas.hydrate(cas, output, (digest) => {
+        const pending = this.downloads.get(digest)
+        if (pending !== undefined) return pending
+        const download = this.download(cas, digest).finally(() => this.downloads.delete(digest))
+        this.downloads.set(digest, download)
+        return download
+      }, this.work)
+    } catch (cause) {
+      if (cause instanceof OutputCas.OutputLimitError) this.skipLimit()
+      else this.degrade("GET", { cause })
+      return false
+    }
   }
 
   /** Fetches one verified artifact into the CAS. */
@@ -1377,30 +1415,32 @@ class RemoteStore {
       // capped by the artifact budget (including an explicit timeout override).
       const milliseconds = Math.min(this.artifactTimeouts.get, this.timeouts.put + batch.length * 25)
       let missing: Array<string> = []
-      const status = await this.retrying(true, () =>
-        withDeadline("findMissing", milliseconds, async (signal) => {
-          const response = await this.fetch(`${this.endpoint}/cas/findMissing`, {
-            method: "POST",
-            headers: this.headers("write"),
-            body: JSON.stringify({ digests: batch }),
-            redirect: "error",
-            signal
-          })
-          if (response.status !== 200) {
-            cancelBody(response.body)
-            return { status: response.status, retryAfter: response.headers.get("retry-after") }
-          }
-          const text = await readBoundedBody(response, 128 * 1024)
-          if (text === undefined) throw new Error("invalid remote CAS missing-digest body")
-          const value = JSON.parse(text) as { missing?: unknown }
-          if (
-            value === null || !Array.isArray(value.missing) || value.missing.length > batch.length ||
-            !value.missing.every((digest: unknown) => typeof digest === "string" && batch.includes(digest)) ||
-            new Set(value.missing).size !== value.missing.length
-          ) throw new Error("invalid remote CAS missing-digest list")
-          missing = value.missing as Array<string>
-          return { status: 200 }
-        }))
+      const status = await this.work(() =>
+        this.retrying(true, () =>
+          withDeadline("findMissing", milliseconds, async (signal) => {
+            const response = await this.fetch(`${this.endpoint}/cas/findMissing`, {
+              method: "POST",
+              headers: this.headers("write"),
+              body: JSON.stringify({ digests: batch }),
+              redirect: "error",
+              signal
+            })
+            if (response.status !== 200) {
+              cancelBody(response.body)
+              return { status: response.status, retryAfter: response.headers.get("retry-after") }
+            }
+            const text = await readBoundedBody(response, 128 * 1024)
+            if (text === undefined) throw new Error("invalid remote CAS missing-digest body")
+            const value = JSON.parse(text) as { missing?: unknown }
+            if (
+              value === null || !Array.isArray(value.missing) || value.missing.length > batch.length ||
+              !value.missing.every((digest: unknown) => typeof digest === "string" && batch.includes(digest)) ||
+              new Set(value.missing).size !== value.missing.length
+            ) throw new Error("invalid remote CAS missing-digest list")
+            missing = value.missing as Array<string>
+            return { status: 200 }
+          }))
+      )
       if (status === "timeout") {
         // A slow batch is a busy server, not a dead one: it costs this entry.
         // Only a run of them with no answer between disables the remote.
@@ -1429,10 +1469,9 @@ class RemoteStore {
       this.findMissingTimeouts = 0
       for (const digest of missing) {
         if (this.degraded || this.publishDenied) return false
-        const bytes = await OutputCas.readBlob(cas, digest)
-        const putStatus = await this.retrying(
-          false,
-          () =>
+        const putStatus = await this.work(async () => {
+          const bytes = await OutputCas.readBlob(cas, digest)
+          return this.retrying(false, () =>
             withDeadline("put", this.artifactTimeouts.put, async (signal) => {
               const headers = this.headers("write")
               headers.set("content-type", "application/octet-stream")
@@ -1445,8 +1484,8 @@ class RemoteStore {
               })
               cancelBody(response.body)
               return { status: response.status, retryAfter: response.headers.get("retry-after") }
-            })
-        )
+            }))
+        })
         if (putStatus === 200 || putStatus === 201) continue
         if (putStatus === 401 || putStatus === 403) this.denyPublication()
         else if (putStatus === 429) this.skipBusy()
@@ -1666,7 +1705,10 @@ class RemoteStore {
       // the entry a trusted build reads is byte-identical whoever publishes it.
       // File indexes carry no timestamps or machine identity. The stored
       // result's timestamp is canonical too, so identical publishers agree.
-      const prepared = await this.blobs(async () => {
+      // Preparation chunks large files and holds one chunk at a time, so it
+      // shares the work bound. The upload takes its own permits per
+      // exchange; holding this one across it could exhaust the bound.
+      const prepared = await this.work(async () => {
         if (this.degraded || this.publishDenied) return undefined
         const value = await OutputCas.prepare(cas, result.output)
         const remoteResult = value.digests.length === 0 ? result : {
@@ -1690,10 +1732,11 @@ class RemoteStore {
         if (Buffer.byteLength(body, "utf8") > remoteEntryLimit) {
           throw new OutputCas.OutputLimitError(`remote cache request exceeds its ${remoteEntryLimit}-byte limit`)
         }
-        return await this.upload(cas, value.digests) ? body : undefined
+        return { body, digests: value.digests }
       })
       if (prepared === undefined || this.degraded || this.publishDenied) return
-      const body = prepared
+      if (!await this.upload(cas, prepared.digests) || this.degraded || this.publishDenied) return
+      const body = prepared.body
       const status = await withDeadline("put", this.timeouts.put, async (signal) => {
         const response = await this.fetch(this.url(published), {
           method: "PUT",

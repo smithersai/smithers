@@ -7,6 +7,7 @@ import {
   chunkBytes,
   hasFile,
   hydrate,
+  makeLimiter,
   makeOutputBudget,
   prepare,
   readBlob,
@@ -446,4 +447,66 @@ it("refuses a descriptor whose inode was swapped after the path was inspected", 
     await worker.terminate()
   }
   expect(refused).toBe(true)
+})
+
+it("admits at most its capacity, halves on busy, and grows back one at a time", async () => {
+  const limit = makeLimiter(8)
+  let active = 0, peak = 0
+  const unit = () =>
+    limit(async () => {
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      active--
+    })
+  await Promise.all(Array.from({ length: 40 }, unit))
+  expect(peak).toBe(8)
+  limit.busy()
+  limit.busy()
+  expect(limit.capacity()).toBe(2)
+  peak = 0
+  await Promise.all(Array.from({ length: 40 }, unit))
+  expect(peak).toBe(2)
+  limit.busy()
+  limit.busy()
+  expect(limit.capacity()).toBe(1)
+  for (let n = 0; n < 7; n++) limit.admitted()
+  expect(limit.capacity()).toBe(1)
+  limit.admitted()
+  expect(limit.capacity()).toBe(2)
+  for (let n = 0; n < 16; n++) limit.admitted()
+  expect(limit.capacity()).toBe(3)
+  for (let n = 0; n < 1000; n++) limit.admitted()
+  expect(limit.capacity()).toBe(8)
+  const started = makeLimiter(8, 2)
+  expect(started.capacity()).toBe(2)
+  expect(() => makeLimiter(0)).toThrow("positive integer")
+  expect(() => makeLimiter(2, 3)).toThrow("positive integer")
+})
+
+it("starts waiters in arrival order and releases a failed unit's permit", async () => {
+  const limit = makeLimiter(1), order: Array<number> = []
+  await Promise.all([
+    limit(async () => {
+      order.push(0)
+      throw new Error("unit failed")
+    }).catch(() => undefined),
+    ...[1, 2, 3].map((n) => limit(async () => void order.push(n)))
+  ])
+  expect(order).toEqual([0, 1, 2, 3])
+})
+
+it("stops fetching after the first missing artifact of a concurrent restore", async () => {
+  const cas = await fresh()
+  const files = Array.from({ length: 32 }, (_, n) => ({ path: String(n), digest: hash(Buffer.from(String(n))) }))
+  let fetched = 0
+  expect(
+    await hydrate(cas, { kind: "build", manifests: [], files }, async () => {
+      fetched++
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      return false
+    }, makeLimiter(4))
+  ).toBe(false)
+  // Only the units already admitted when the first miss lands fetch.
+  expect(fetched).toBeLessThanOrEqual(4)
 })
