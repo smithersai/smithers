@@ -840,7 +840,11 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
     server.on("connect", (request, socket: NodeNet.Socket, head: Buffer) => {
       // A refused CONNECT still holds its socket open until the child reads
       // the answer, so the accepted socket is proxy-owned from the start.
+      // The server gave up its own error listener before handing the socket
+      // over; without one here a child that resets instead of reading the
+      // refusal would raise an uncaught exception in the build process.
       const release = () => socket.destroy()
+      socket.on("error", release)
       tunnels.add(release)
       socket.once("close", () => tunnels.delete(release))
       const authority = parseConnectAuthority(request.url ?? "")

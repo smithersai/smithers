@@ -95,6 +95,41 @@ it("forwards CONNECT bytes coalesced with the handshake and closes the tunnel", 
   expect(answer.endsWith("tunnel-payload")).toBe(true)
 })
 
+const refusedConnect = async (service: Proxy.Proxy, target: string): Promise<string> => {
+  const endpoint = new URL(service.endpoint)
+  return new Promise<string>((resolve, reject) => {
+    const socket = Net.connect({ host: endpoint.hostname, port: Number(endpoint.port) })
+    socket.setTimeout(5000, () => socket.destroy(new Error("local CONNECT timed out")))
+    socket.on("error", reject)
+    socket.once("data", (chunk) => {
+      // The child drops the connection the moment the refusal arrives, without
+      // reading the proxy's close: a reset, as a killed tool produces.
+      socket.resetAndDestroy()
+      resolve(chunk.toString("utf8"))
+    })
+    socket.once("connect", () => socket.write("CONNECT " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"))
+  })
+}
+
+it("survives a client reset after a refused CONNECT", async () => {
+  const vault = Proxy.makeVault({ read: () => "fixture-value" })
+  vault.mint(Secret.HttpSecret(Secret.Secret("AUDIENCE_TOKEN"), ["http://127.0.0.1:1"]))
+  const service = await proxy(vault)
+  const uncaught: Array<unknown> = []
+  const capture = (error: unknown) => uncaught.push(error)
+  process.on("uncaughtException", capture)
+  try {
+    expect(await refusedConnect(service, "not-an-authority")).toContain("400 Bad Request")
+    expect(await refusedConnect(service, "127.0.0.1:1")).toContain("501 Not Implemented")
+    // The proxy only sees each reset once its event loop turns again; a
+    // further refusal round trip proves it did and is still serving.
+    expect(await refusedConnect(service, "not-an-authority")).toContain("400 Bad Request")
+  } finally {
+    process.off("uncaughtException", capture)
+  }
+  expect(uncaught).toEqual([])
+})
+
 it("rejects an oversized request before contacting its upstream", async () => {
   let contacts = 0
   const upstream = Http.createServer((_request, response) => {
