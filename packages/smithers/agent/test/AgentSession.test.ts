@@ -17,6 +17,7 @@ import { expectTypeOf } from "vitest"
  * from a recording, and that the recording is consumed in full.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as Capability from "@smthrs/capability/Capability"
 import { Control, ControlError, ControlExecutor, ControlLive, ControlRuntime, ControlSchema } from "@smthrs/control"
 import { DurableEngineState, type Service as EngineStateService } from "@smthrs/engine-store/DurableEngineState"
 import * as RunInspection from "@smthrs/engine-store/RunInspection"
@@ -29,6 +30,7 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Jj from "@smthrs/jj"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
+import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelError from "@smthrs/model/ModelError"
@@ -211,11 +213,12 @@ const memoryFlows: ReadonlyArray<ControlRuntime.MemoryFlow> = [
     executionDigest: Descriptor.executionDigest(agentDescriptor),
     description: "The notes agent.",
     deployClass: false,
-    // One valid wildcard, one valid exact pattern, and three malformed
-    // entries the composition must drop rather than widen: no resource, a
-    // pattern-less name, and an action outside the vocabulary.
+    // One valid read pattern and three malformed entries the composition
+    // must drop rather than widen: no resource, a pattern-less name, and an
+    // action outside the vocabulary. Nothing here grants `fs:write`, which
+    // the envelope cases below rely on.
     envelope: {
-      capabilities: ["*:**", "fs:read:**", "fs:read", "single", "zz:yy:**"],
+      capabilities: ["fs:read:**", "fs:read", "single", "zz:yy:**"],
       flows: [],
       budget: {}
     }
@@ -349,6 +352,8 @@ interface StackOptions {
   readonly gate: Deferred.Deferred<void>
   /** Completes when the test tool enters its gate, before its side effect. */
   readonly toolStarted?: Deferred.Deferred<void> | undefined
+  /** Host flow sources bound beside the note and check flows. */
+  readonly hostFlows?: ReadonlyArray<FlowBinding.Source> | undefined
   /** Omit the host flow sources entirely, exercising the executor's default. */
   readonly maxFrames?: number | undefined
   readonly promptRunner?: CellCalls.PromptRunner | undefined
@@ -424,7 +429,7 @@ const stack = (options: StackOptions) => {
     reentryCheckpoint: options.reentryCheckpoint,
     quotaPolicy: Safety.quotaPolicy,
     budget: Safety.budget,
-    flows: options.bare === true ? undefined : [noteSource, checkSource],
+    flows: options.bare === true ? undefined : [noteSource, checkSource, ...(options.hostFlows ?? [])],
     limits: { memoryBytes: 64 * 1024 * 1024, steps: 5_000_000 },
     maxFrames: options.maxFrames ?? 4,
     promptRunner: options.promptRunner,
@@ -3429,6 +3434,133 @@ describe("AgentSession on a host nobody answers", () => {
     expect(parked).toBe(true)
     expect(run.trail.some((entry) => entry.eventType.includes("approval.requested"))).toBe(true)
   })
+})
+
+/**
+ * A host flow that declares one capability and records that its handler ran.
+ *
+ * The envelope cases need a flow the approved envelope covers and one it does
+ * not; the note and check flows declare nothing, so any envelope admits them.
+ */
+const declaring = (name: string, capability: string, ran: Array<string>) =>
+  FlowBinding.make({
+    flow: {
+      capabilities: [capability],
+      name,
+      description: `Needs ${capability}.`,
+      input: Schema.Struct({}),
+      output: Schema.Struct({ ran: Schema.Boolean }),
+      effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }
+    },
+    handler: () =>
+      Effect.sync(() => {
+        ran.push(name)
+        return { ran: true }
+      })
+  })
+
+const readAndWrite = `const results = []
+for (const flow of ["probe/read", "probe/write"]) {
+  const result = await ctx.call(flow, {})
+  results.push(flow + ": " + (result.ok === false ? result.error.message : "ran"))
+}
+ctx.done(results.join(" | "))`
+
+describe("AgentSession capability envelope", () => {
+  it("confines a launched agent run's host flows to the plan card's envelope", async () => {
+    // `agents/notes` is approved with `fs:read:**` and three malformed
+    // entries. A malformed entry that widened, or a launch that ran under
+    // anything but the card's envelope, would let `probe/write` run.
+    const ran: Array<string> = []
+    const run = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        const captured: Array<Captured> = []
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/notes", input: {} })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:envelope"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected an accepted run")
+          }
+          yield* awaitStatus(runtime, receipt.runId, "completed")
+          yield* journal.flush
+          const page = yield* journal.entries({ runId: JournalEvent.RunId.make(receipt.runId), limit: 1_000 })
+          return { envelope: card.envelope.capabilities, trail: page.entries }
+        }).pipe(Effect.provide(stack({
+          resolve: seat(scripted([readAndWrite], captured)),
+          notes: [],
+          gate,
+          hostFlows: [
+            FlowBinding.source("test/envelope", [
+              declaring("probe/read", "fs:read:**", ran),
+              declaring("probe/write", "fs:write:**", ran)
+            ])
+          ]
+        })))
+      }).pipe(Effect.scoped)
+    )
+
+    expect(run.envelope).not.toContain("*:**")
+    expect(ran).toEqual(["probe/read"])
+    // The refusal is decided before the call's durable boundary opens, so it
+    // reaches the cell as the call's failure and journals no settled call.
+    const resolved = run.trail.filter((entry) => entry.eventType === "control.agent.resolved")
+      .map((entry) => (entry.payload as { readonly text: string }).text)
+    expect(resolved).toEqual([
+      "probe/read: ran | probe/write: Flow probe/write needs fs:write:**, which is outside this run's capability envelope."
+    ])
+    const settled = run.trail.filter((entry) => entry.eventType === "control.agent.cell-call-settled")
+      .map((entry) => (entry.payload as { readonly flowName: string }).flowName)
+    expect(settled).not.toContain("probe/write")
+  }, 30_000)
+
+  it("runs a module body under the plan card's envelope", async () => {
+    // `agents/module` is approved with `fs:read:**` alone. An action inside
+    // its body reads the ambient authority the launch left it.
+    const seen: Array<{ readonly read: boolean; readonly write: boolean }> = []
+    const Probe = Action.make("test/EnvelopeProbe", {
+      payload: { input: Schema.Json },
+      success: Schema.Json,
+      error: Schema.Never
+    })
+    const flow = Flow.make("agents/module", {
+      payload: Executable.Payload,
+      success: moduleResult,
+      error: moduleResult,
+      body: ({ input }) => Probe.call({ input: input ?? null })
+    })
+    await Effect.runPromise(
+      moduleRun({
+        flow,
+        idempotencyKey: "run:module-envelope",
+        registration: Layer.mergeAll(
+          Interpreter.layer(flow),
+          Probe.toLayer(() =>
+            Effect.map(CapabilitySet.current, (granted) => {
+              const allowed = {
+                read: CapabilitySet.allows(granted, Capability.make("fs:read", "/notes/a.txt")),
+                write: CapabilitySet.allows(granted, Capability.make("fs:write", "/notes/a.txt"))
+              }
+              seen.push(allowed)
+              return allowed
+            })
+          )
+        )
+      })
+    )
+
+    expect(seen).toEqual([{ read: true, write: false }])
+  }, 30_000)
 })
 
 describe("AgentSession markdown children", () => {

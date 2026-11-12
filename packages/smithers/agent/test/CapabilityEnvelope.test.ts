@@ -1,11 +1,13 @@
 /**
  * The capability envelope parsed from a plan card's formatted strings.
  *
- * A live run in `AgentSession.test.ts` covers the ordinary
- * action-and-resource forms. The bare `*` is what a markdown-declared flow
- * carries when its frontmatter names no capabilities at all; the capability
- * grammar owns that token, so `patterns` delegates every entry to
- * `Capability.parsePattern` with no special case.
+ * The "AgentSession capability envelope" cases in `AgentSession.test.ts`
+ * launch live runs under ordinary action-and-resource forms and malformed
+ * entries, and prove that a host flow or module body needing more is refused.
+ * The bare `*` is what a markdown-declared flow carries when its frontmatter
+ * names no capabilities at all; the capability grammar owns that token, so
+ * `patterns` delegates every entry to `Capability.parsePattern` with no
+ * special case.
  */
 import * as Capability from "@smthrs/capability/Capability"
 import { Option } from "effect"
