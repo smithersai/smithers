@@ -68,6 +68,7 @@ collector GET .../feeds/answers?after=   pushes `answered`; the decision leaves 
 ```
 
 - **Choices.** A decision without `options` gets the old factory's two: Accept (`choice: "accept"`, key `a`) and Change (`choice: "change"`, key `c`), each with the note, which may be empty, as the collector already reads them. A `for_will` element that lists `options` gets one button per option instead, keyed `1`–`9` (`item.chooses`).
+- **Per repository.** Each repository keeps its own selected decision. Only the repository For you shows moves the strip: a repository opened earlier keeps following its decisions in the background without retargeting the strip, and showing it again gives the strip its selection back.
 - **Once.** A second press while one is on its way does nothing; a press after it went, before the collector reports it, sends the same answer id, so the server keeps one answer. The first answer stands until the collector pushes a new version of the decision.
 - **Who.** For you and `/decide` are a maintainer's (`minimum: "maintainer"`, the floor `feed/answer` sets); ChatApi checks the person is a Maintainer or Admin of the repository, in person.
 - **Past answers** show from the collector's `answered` document. Smithers' own record of answers is the collector's to read (with its key); no core query shows it.
@@ -79,7 +80,7 @@ collector GET .../feeds/answers?after=   pushes `answered`; the decision leaves 
 ## Tests
 
 - `plugins/factory/src/model.test.ts`: every view-model over `status.sample.json`, a trimmed real status with hosts' paths and accounts removed, and over empty and malformed documents.
-- `plugins/factory/src/tab.test.ts`: the tab over an injected `PluginHost` (TEST-7): each repository's status from its own documents, a refused feed, an opened document followed only while it shows, ask selection (only what waits), navigation.
+- `plugins/factory/src/tab.test.ts`: the tab over an injected `PluginHost` (TEST-7): each repository's status from its own documents, a refused feed, an opened document followed only while it shows, ask selection (only what waits), each repository's own selection with only the shown one moving the strip, navigation.
 - `src/plugins/facts.test.ts`: the manifest loads with nothing refused; For you's events are person-only and a maintainer's.
 - `src/plugins/factory.test.ts`: For you on a real device: the strip answers by option and note, once however often pressed, then the next decision by `c` (Change); the collector reads each answer once.
 - `e2e/factory-plugin.spec.ts`: pushes the sample through `POST /api/repos/<owner>/<name>/feeds`, then opens Factory, a lane's transcript, a commit's diff, For you with its strip (answered locally), and a 390 px phone, saving a screenshot of each (`factory-*.png` beside the results). Locally it uses `alchemy dev`'s development feed key on the dev server's own repository ([feeds.md](feeds.md#development)); on a deployment it needs `E2E_FEED_REPOSITORY` and `E2E_FEED_KEY` (need `feedKey`) and leaves the decision unanswered.

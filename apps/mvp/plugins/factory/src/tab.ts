@@ -58,8 +58,11 @@ export interface FactoryTab {
     readonly feed: (repository: Host.Repository) => Watched<Feed>
     /** A repository's asks that wait on a maintainer, in the order the collector lists them, live. */
     readonly asks: (repository: Host.Repository) => Watched<ReadonlyArray<AskRow>>
-    /** The ask the strip answers: the person's pick, else the first open one. */
-    readonly selected: Watched<string | null>
+    /**
+     * A repository's ask the strip answers: the person's pick, else the first open one. Only a repository a view
+     * shows (one that has a listener) moves the host's strip, and it moves it back to its own pick when it shows again.
+     */
+    readonly selected: (repository: Host.Repository) => Watched<string | null>
     /** The document opened beside the view, if any. */
     readonly opened: Watched<Opened | null>
     /** A repository's agent runs on Smithers itself, live; none when the host refused them. */
@@ -135,15 +138,50 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
         Effect.catch((refused) => Effect.sync(() => set({ _tag: "Refused", reason: refused.reason }))),
       ))
 
-    const selected = cell<string | null>(null)
-    const select = (ask: AskRow) => {
-      selected.set(ask.key)
-      run(Effect.ignore(feeds.select(ask)))
+    // Each repository keeps its own pick. Every repository opened stays followed, so one no view shows keeps its pick
+    // current without moving the strip, which answers the ask of the repository shown.
+    const cursor = () => {
+      const value = cell<string | null>(null)
+      let picked: AskRow | undefined
+      let shown = 0
+      const publish = () => {
+        if (picked !== undefined && shown > 0) run(Effect.ignore(feeds.select(picked)))
+      }
+      const watched: Watched<string | null> = {
+        current: value.current,
+        // A view showing the repository listens: the strip answers its pick again.
+        subscribe: (listener) => {
+          const stop = value.subscribe(listener)
+          shown++
+          publish()
+          return () => {
+            shown--
+            stop()
+          }
+        },
+      }
+      return {
+        watched,
+        pick: (ask: AskRow) => {
+          picked = ask
+          value.set(ask.key)
+          publish()
+        },
+      }
     }
+    const cursors = new Map<string, ReturnType<typeof cursor>>()
+    const cursorOf = (repository: Host.Repository) => {
+      const key = repoOf(repository)
+      const known = cursors.get(key) ?? cursor()
+      cursors.set(key, known)
+      return known
+    }
+    const selected = (repository: Host.Repository) => cursorOf(repository).watched
+    const select = (ask: AskRow) => cursorOf({ owner: ask.owner, name: ask.name }).pick(ask)
     // When the selected ask leaves (answered here or on another device), the strip moves to the first one open.
-    const settle = (rows: ReadonlyArray<AskRow>) => {
+    const settle = (repository: Host.Repository) => (rows: ReadonlyArray<AskRow>) => {
       const first = rows[0]
-      if (first !== undefined && !rows.some((row) => row.key === selected.current())) select(first)
+      if (first !== undefined && !rows.some((row) => row.key === selected(repository).current())) select(first)
       return rows
     }
     // An ask waits until the collector reports it decided or answered: the status says which, so both are followed.
@@ -162,7 +200,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
               }
             },
           }
-          return Effect.andThen(Scope.provide(follow(both, set, settle), scope), Effect.void)
+          return Effect.andThen(Scope.provide(follow(both, set, settle(repository)), scope), Effect.void)
         }),
         Effect.ignore,
       ))

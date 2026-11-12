@@ -123,7 +123,7 @@ describe("a repository's feed", () => {
     await withTab(hostWith([INDEX, ASKS]), async (built) => {
       await vi.waitFor(() => expect(built.queries.feed(vibelang).current()).toEqual({ _tag: "Refused", reason: "undeclared_query" }))
       expect(built.queries.asks(vibelang).current()).toEqual([])
-      expect(built.queries.selected.current()).toBeNull()
+      expect(built.queries.selected(vibelang).current()).toBeNull()
     })
   })
 })
@@ -194,25 +194,27 @@ describe("the asks the strip answers", () => {
     const key = (item: string) => `smithersai/vibelang:for_will:${item}`
     const params = { repo: "smithersai/vibelang", name: "for_will" }
     await withTab(host, async (built) => {
+      // For you shows the repository: its view listens to the repository's pick.
+      built.queries.selected(vibelang).subscribe(() => {})
       const asks = built.queries.asks(vibelang)
       expect(built.queries.asks(vibelang)).toBe(asks)
       await vi.waitFor(() => expect(asks.current()).toEqual([]))
-      expect(built.queries.selected.current()).toBeNull()
+      expect(built.queries.selected(vibelang).current()).toBeNull()
       // Only what the status says waits: `d` the agent decided.
       host.push(INDEX, decisions("smithersai/vibelang", ["a", "b", "c"], ["d"]))
       host.push(ASKS, ask("a"), ask("b"), ask("d"), ask("x", "octo/hello"))
       await vi.waitFor(() => expect(asks.current().map((row) => row.item)).toEqual(["a", "b"]))
-      await vi.waitFor(() => expect(built.queries.selected.current()).toBe(key("a")))
+      await vi.waitFor(() => expect(built.queries.selected(vibelang).current()).toBe(key("a")))
       built.actions.select(ask("b"))
-      expect(built.queries.selected.current()).toBe(key("b"))
+      expect(built.queries.selected(vibelang).current()).toBe(key("b"))
       host.push(ASKS, ask("c"))
-      expect(built.queries.selected.current()).toBe(key("b"))
+      expect(built.queries.selected(vibelang).current()).toBe(key("b"))
       // Answered: the collector reports it, and the strip moves to the first one waiting.
       host.push(INDEX, doc("smithersai/vibelang", "answered", { b: { choice: "accept", text: "", at: 1 } }))
       expect(asks.current().map((row) => row.item)).toEqual(["a", "c"])
-      expect(built.queries.selected.current()).toBe(key("a"))
+      expect(built.queries.selected(vibelang).current()).toBe(key("a"))
       host.drop(ASKS, (row: AskRow) => row.item !== "a")
-      expect(built.queries.selected.current()).toBe(key("c"))
+      expect(built.queries.selected(vibelang).current()).toBe(key("c"))
       await vi.waitFor(() =>
         expect(host.asked.filter((entry) => "select" in (entry as object))).toEqual([
           { select: { query: ASKS, key: key("a"), params } },
@@ -224,13 +226,51 @@ describe("the asks the strip answers", () => {
     })
   })
 
+  test("each repository keeps its own pick, and only the one shown moves the strip", async () => {
+    const host = hostWith()
+    const selects = () => host.asked.filter((entry) => "select" in (entry as object))
+    const strip = (repo: string, item: string) => ({
+      select: { query: ASKS, key: `${repo}:for_will:${item}`, params: { repo, name: "for_will" } },
+    })
+    await withTab(host, async (built) => {
+      host.push(INDEX, decisions("smithersai/vibelang", ["a1", "a2"]), decisions("octo/hello", ["b1"]))
+      host.push(ASKS, ask("a1"), ask("a2"), ask("b1", "octo/hello"))
+      // For you on vibelang, then on octo/hello: each view listens to its own repository's pick.
+      const leaveA = built.queries.selected(vibelang).subscribe(() => {})
+      built.queries.asks(vibelang)
+      await vi.waitFor(() => expect(built.queries.selected(vibelang).current()).toBe("smithersai/vibelang:for_will:a1"))
+      leaveA()
+      const leaveB = built.queries.selected(other).subscribe(() => {})
+      built.queries.asks(other)
+      await vi.waitFor(() => expect(built.queries.selected(other).current()).toBe("octo/hello:for_will:b1"))
+      await vi.waitFor(() => expect(selects()).toEqual([strip("smithersai/vibelang", "a1"), strip("octo/hello", "b1")]))
+      // vibelang's pick is answered on another device while octo/hello shows: its pick moves, the strip stays on b1.
+      host.drop(ASKS, (row: AskRow) => row.item !== "a1")
+      expect(built.queries.selected(vibelang).current()).toBe("smithersai/vibelang:for_will:a2")
+      expect(built.queries.selected(other).current()).toBe("octo/hello:for_will:b1")
+      // Back on vibelang, the strip answers its pick again; back on octo/hello, its own.
+      leaveB()
+      const leaveA2 = built.queries.selected(vibelang).subscribe(() => {})
+      leaveA2()
+      built.queries.selected(other).subscribe(() => {})
+      await vi.waitFor(() =>
+        expect(selects()).toEqual([
+          strip("smithersai/vibelang", "a1"),
+          strip("octo/hello", "b1"),
+          strip("smithersai/vibelang", "a2"),
+          strip("octo/hello", "b1"),
+        ])
+      )
+    })
+  })
+
   test("asks wait for the status: none while the feed is loading or refused", async () => {
     const host = hostWith([INDEX])
     await withTab(host, async (built) => {
       host.push(ASKS, ask("a"))
       await vi.waitFor(() => expect(built.queries.feed(vibelang).current()).toMatchObject({ _tag: "Refused" }))
       expect(built.queries.asks(vibelang).current()).toEqual([])
-      expect(built.queries.selected.current()).toBeNull()
+      expect(built.queries.selected(vibelang).current()).toBeNull()
     })
   })
 })

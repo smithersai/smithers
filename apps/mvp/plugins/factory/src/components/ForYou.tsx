@@ -59,7 +59,7 @@ function Waiting(
     readonly waiting: ReadonlyArray<Decision>
   },
 ) {
-  const selected = useWatched(tab.queries.selected)
+  const selected = useWatched(tab.queries.selected(repository))
   const asks = useWatched(tab.queries.asks(repository))
   return waiting.map((decision) => {
     const ask = asks.find((row) => row.item === decision.id)

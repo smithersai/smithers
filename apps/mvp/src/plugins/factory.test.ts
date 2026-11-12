@@ -86,12 +86,14 @@ describe("the factory's For you", { timeout: WITHIN * 2 }, () => {
       },
     })
     const tab = (await a.plugins.actions.tab("factory")) as FactoryTab
+    // For you shows the repository: its view listens to the repository's pick, so the pick moves the strip.
+    tab.queries.selected(REPO).subscribe(() => {})
     const asks = tab.queries.asks(REPO)
     // Only what waits: the decided one is past.
     await until(() => expect(asks.current().map((row) => row.item)).toEqual(["catch", "list"]))
     const [catchAsk] = asks.current()
     await until(() => expect(a.state()).toMatchObject({ query: "core/feed-items", item: catchAsk!.key }))
-    expect(tab.queries.selected.current()).toBe(catchAsk!.key)
+    expect(tab.queries.selected(REPO).current()).toBe(catchAsk!.key)
 
     // A decision with options: a button per option, keyed 1 and 2, and the note.
     const view = viewById(a.plugins.contributions, VIEW)!
