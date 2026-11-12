@@ -1619,13 +1619,21 @@ export const digestFile = async (
     readonly workspaceRoot?: string | undefined
     readonly io?: SafeFs.Io | undefined
     readonly signal?: AbortSignal | undefined
+    /** Digests already read; see {@link SafeFs.DigestIndex}. */
+    readonly digests?: SafeFs.DigestIndex | undefined
   } = {}
 ): Promise<string | undefined> => {
   const io = options.io ?? SafeFs.defaultIo
   const root = options.workspaceRoot === undefined
     ? undefined
     : await SafeFs.canonicalRoot(options.workspaceRoot, io)
-  return SafeFs.digestFile(absolutePath, { root, io, signal: options.signal, what: inputNoun })
+  return SafeFs.digestFile(absolutePath, {
+    root,
+    io,
+    signal: options.signal,
+    what: inputNoun,
+    digests: options.digests
+  })
 }
 
 /** Whether a path is a symbolic link that does not resolve, inside the root, to a regular file. */
@@ -1655,11 +1663,12 @@ const digestInput = async (
   root: string,
   path: string,
   io: SafeFs.Io,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  digests: SafeFs.DigestIndex | undefined
 ): Promise<FileDigest> => {
   const absolute = NodePath.join(root, path)
   if (await isLinkInput(root, absolute, io)) return digestLink(root, path, { io, signal })
-  return { path, digest: await SafeFs.digestFile(absolute, { root, io, signal, what: inputNoun }) }
+  return { path, digest: await SafeFs.digestFile(absolute, { root, io, signal, what: inputNoun, digests }) }
 }
 
 /**
@@ -1702,6 +1711,8 @@ export const digestFiles = async (
     readonly signal?: AbortSignal | undefined
     readonly concurrency?: number | undefined
     readonly maximumFiles?: number | undefined
+    /** Digests already read; see {@link SafeFs.DigestIndex}. */
+    readonly digests?: SafeFs.DigestIndex | undefined
   } = {}
 ): Promise<ReadonlyArray<FileDigest>> => {
   const concurrency = options.concurrency ?? defaultDigestConcurrency
@@ -1737,7 +1748,7 @@ export const digestFiles = async (
         if (index >= ordered.length) return
         cursor += 1
         const path = ordered[index]!
-        output[index] = await digestInput(root, path, io, options.signal)
+        output[index] = await digestInput(root, path, io, options.signal, options.digests)
       } catch (cause) {
         failure ??= cause
       }

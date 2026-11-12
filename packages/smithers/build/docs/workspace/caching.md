@@ -436,7 +436,9 @@ failure behavior, and retention.
 
 ## Planning versus caching
 
-The planner computes the key but consults no cache. `--plan` output still reports
+The planner computes the key but consults no result cache; it reuses only the
+file digests an earlier plan read, while each file's status is unchanged (see
+[Remembered digests](../concepts/inputs.md#remembered-digests)). `--plan` output still reports
 `cacheLookup: "not-wired"` and `wouldRun: true` for every target. Those two
 fields are stale relative to the executor, which performs the real lookup at
 execution time.

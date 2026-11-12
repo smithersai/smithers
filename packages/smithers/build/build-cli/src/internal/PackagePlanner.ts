@@ -21,6 +21,7 @@ import type * as NodeArtifact from "@smthrs/targets/NodeArtifact"
 import type * as NpmTarget from "@smthrs/targets/NpmTarget"
 import * as RepoTarget from "@smthrs/targets/RepoTarget"
 import * as RustToolchain from "@smthrs/targets/RustToolchain"
+import type * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Secret from "@smthrs/targets/Secret"
 import * as Shell from "@smthrs/targets/Shell"
 import * as Target from "@smthrs/targets/Target"
@@ -70,6 +71,7 @@ import * as ApprovalBridge from "./ApprovalBridge.ts"
 import { collectTargets } from "./Attrs.ts"
 import * as CoreRuleSelection from "./CoreRuleSelection.ts"
 import { declarationLabels } from "./DeclarationLabels.ts"
+import * as DigestIndexFile from "./DigestIndexFile.ts"
 import { gitPathspecBatches } from "./GitPathspecBatches.ts"
 import * as HostProbes from "./HostProbes.ts"
 import { inputPackage } from "./InputPackage.ts"
@@ -305,6 +307,8 @@ interface PlanContext {
   storeWarned: boolean
   /** The remote cache the plan-time store reads through, when one is declared. */
   readonly remoteCache: Workspace.RemoteCacheAccess | undefined
+  /** File digests already read, by this plan, an earlier plan of the invocation, or the last invocation. */
+  readonly digests: SafeFs.DigestIndex
   /** Package and declared tree input → its digested rows (plan-time, memoized). */
   readonly treeInputs: Map<string, Promise<Pick<Workspace.ExpandedInput, "files" | "digest">>>
   /** ImportClosure label → canonical result digest (plan-time, memoized). */
@@ -1108,7 +1112,7 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
                   _tag: "Executable",
                   source: portable,
                   path: portable,
-                  digest: await Input.digestFile(script, { signal: context.signal }),
+                  digest: await Input.digestFile(script, { signal: context.signal, digests: context.digests }),
                   interpreters: []
                 }
               }
@@ -1207,7 +1211,8 @@ const treeInputFiles = async (
     const absolute = NodePath.join(context.root, path)
     const digest = await Input.digestFile(absolute, {
       workspaceRoot: context.root,
-      signal: context.signal
+      signal: context.signal,
+      digests: context.digests
     }).catch(async (cause: unknown) => {
       // A file() naming a link to a directory is a link the author meant to
       // declare: say which constructor declares it, not only what it is not.
@@ -1236,7 +1241,8 @@ const treeInputFiles = async (
     for (const path of [paths.manifest, ...paths.lockfiles]) {
       const digest = await Input.digestFile(NodePath.join(context.root, path), {
         workspaceRoot: context.root,
-        signal: context.signal
+        signal: context.signal,
+        digests: context.digests
       })
       if (digest !== undefined) rows.push({ path, digest })
     }
@@ -1271,7 +1277,7 @@ const treeInputFiles = async (
       cacheDirectory: context.cacheDirectory,
       signal: context.signal
     })
-  return linkInput(() => Input.digestFiles(context.root, matches, { signal: context.signal }))
+  return linkInput(() => Input.digestFiles(context.root, matches, { signal: context.signal, digests: context.digests }))
 }
 
 /** Reports a refused link input as the planner's own error, naming the link. */
@@ -1381,7 +1387,7 @@ const expandGitDiff = async (
     return true
   })
   const paths = selected.map((entry) => entry.path).sort()
-  const files = await Input.digestFiles(context.root, paths, { signal: context.signal })
+  const files = await Input.digestFiles(context.root, paths, { signal: context.signal, digests: context.digests })
   const patches: Array<string> = []
   let patchBytes = 0
   for (const batch of gitPathspecBatches(paths)) {
@@ -1539,7 +1545,8 @@ const visit = async (
     // it a fetch that declares no `outFiles` would contribute a constant.
     if (depRule === "Cargo.Fetch" && rule !== "Clean" && planned.refusal === undefined) {
       const delivered = await Input.digestFiles(context.root, [...fetchOutFiles(context, dependency)], {
-        signal: context.signal
+        signal: context.signal,
+        digests: context.digests
       })
       const home = fetchCargoHome(context, dependency) ?? null
       depKey = `cargo-fetch:${Input.digestText(JSON.stringify({ home, delivered }))}`
@@ -3036,7 +3043,7 @@ const visit = async (
         repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
         signal: context.signal
       })
-      const files = await Input.digestFiles(context.root, matches, { signal: context.signal })
+      const files = await Input.digestFiles(context.root, matches, { signal: context.signal, digests: context.digests })
       states.push({ pattern, digest: Input.digestText(JSON.stringify(files)) })
     }
     writeSetState = states
@@ -3480,7 +3487,8 @@ const globPresent = async (
     if (first === -1) {
       const digest = await Input.digestFile(NodePath.join(context.root, alternative), {
         workspaceRoot: context.root,
-        signal: context.signal
+        signal: context.signal,
+        digests: context.digests
       })
       if (digest !== undefined) return true
       continue
@@ -3563,7 +3571,8 @@ const absentInputsOf = async (
         if (generated.has(path)) continue
         const digest = await Input.digestFile(NodePath.join(context.root, path), {
           workspaceRoot: context.root,
-          signal: context.signal
+          signal: context.signal,
+          digests: context.digests
         })
         if (digest === undefined) absent(path)
       } else if (declaration._tag === "Glob") {
@@ -3911,6 +3920,9 @@ const planWithServices = async (
       signal: options.signal,
       log
     })
+  // An invocation that plans several verbs passes one index to all of them
+  // and saves it itself; a lone plan loads and saves its own.
+  const digests = options.digests ?? await DigestIndexFile.load(index.root, options.cacheDirectory, log)
   const context: PlanContext = {
     root: index.root,
     cacheDirectory: options.cacheDirectory,
@@ -3954,6 +3966,7 @@ const planWithServices = async (
     store: undefined,
     storeWarned: false,
     remoteCache: options.remoteCache,
+    digests,
     treeInputs: new Map(),
     crateSets: new Map(),
     closureDigests: new Map(),
@@ -3976,6 +3989,7 @@ const planWithServices = async (
   } finally {
     // The plan-time store is scoped to planning; execution opens its own.
     if (context.store !== undefined) await context.store.close()
+    if (options.digests === undefined) await DigestIndexFile.save(index.root, options.cacheDirectory, digests, log)
   }
   // The work list is the closure of the roots over execution edges only;
   // key-only dependencies (a Clean's targets, a refused rule's attrs) stay

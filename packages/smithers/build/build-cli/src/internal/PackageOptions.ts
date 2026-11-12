@@ -5,6 +5,7 @@
  */
 
 import type * as Compose from "@smthrs/targets/Compose"
+import type * as SafeFs from "@smthrs/targets/SafeFs"
 import type * as Target from "@smthrs/targets/Target"
 import type * as Executor from "../Executor.ts"
 import type * as PackageIndexModule from "../PackageIndex.ts"
@@ -170,6 +171,12 @@ export interface RunOptions {
   readonly packageName?: string | undefined
   /** Durable approvals for `approval: "required"` targets; without them those targets refuse. */
   readonly approvals?: TargetApprovals | undefined
+  /**
+   * File digests shared by every plan of one invocation. The caller that
+   * passes one loads and saves it; without one, a plan loads the workspace's
+   * saved index and saves it when planning ends.
+   */
+  readonly digests?: SafeFs.DigestIndex | undefined
 }
 
 /**

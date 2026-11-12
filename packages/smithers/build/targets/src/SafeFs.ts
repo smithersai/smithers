@@ -330,6 +330,106 @@ export interface Options {
   readonly signal?: AbortSignal | undefined
   /** Whether a symbolic link in the final path component may be followed. */
   readonly symlinks?: "follow" | "reject" | undefined
+  /** Digests already read, answered while a file's status is unchanged. See {@link DigestIndex}. */
+  readonly digests?: DigestIndex | undefined
+}
+
+/**
+ * One remembered digest: the status of the file it was read from, its
+ * SHA-256, and whether the file had settled when it was read.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DigestRow {
+  readonly status: string
+  readonly digest: string
+  readonly settled: boolean
+}
+
+/**
+ * Digests already read, by canonical path, reused while a file's status is
+ * the status it was read at.
+ *
+ * A file's status is its device, inode, size, modification time and
+ * status-change time, at the host's full resolution. Every write and every
+ * `utimes` advances the status-change time, which no unprivileged process can
+ * set back, so an equal status names the bytes that were read. Any other
+ * difference, including a new link that moves the status-change time, reads
+ * the file again.
+ *
+ * A row is `settled` when both times were at least {@link settledNanoseconds}
+ * old when its read began. Only settled rows outlive the invocation: a write
+ * in the same timestamp tick as the read could leave the status equal and
+ * the bytes different, so a recently changed file is read again by every
+ * invocation until it settles. Within one invocation every row is reused, as
+ * one plan already reuses a declaration's rows for every target.
+ *
+ * `used` holds every path looked up or remembered since the index was made,
+ * so a saved index can keep what the current tree still names first. `now`
+ * is the wall clock in nanoseconds that a read's start is measured on.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DigestIndex {
+  readonly rows: Map<string, DigestRow>
+  readonly used: Set<string>
+  readonly now: () => bigint
+}
+
+/**
+ * How old a file's modification and status-change times must be, when its
+ * read begins, for its digest to outlive the invocation: two seconds, the
+ * coarsest timestamp resolution a supported filesystem has.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const settledNanoseconds = 2_000_000_000n
+
+/**
+ * Makes a digest index, empty or from remembered rows.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const makeDigestIndex = (
+  rows: Iterable<readonly [string, DigestRow]> = [],
+  now: () => bigint = () => BigInt(Date.now()) * 1_000_000n
+): DigestIndex => ({
+  rows: new Map(rows),
+  used: new Set(),
+  now
+})
+
+/** A time in nanoseconds since the epoch, from bigint stats or milliseconds. */
+const nanoseconds = (stats: Stats, kind: "mtime" | "ctime"): bigint | undefined => {
+  if ("mtimeNs" in stats && "ctimeNs" in stats) return kind === "mtime" ? stats.mtimeNs : stats.ctimeNs
+  const value = kind === "mtime" ? stats.mtimeMs : stats.ctimeMs
+  return Number.isFinite(value) ? BigInt(Math.trunc(value * 1_000_000)) : undefined
+}
+
+/**
+ * The status a remembered digest is valid for, or undefined when the stats
+ * cannot identify the file.
+ *
+ * @category digests
+ * @since 1.0.0
+ */
+export const digestStatus = (stats: Stats): string | undefined => {
+  const mtime = nanoseconds(stats, "mtime")
+  const ctime = nanoseconds(stats, "ctime")
+  if (mtime === undefined || ctime === undefined) return undefined
+  return `${identity(stats)}:${sizeOf(stats)}:${mtime}:${ctime}`
+}
+
+/** Whether a file with these stats changed long enough before `startedNs` for its digest to be remembered. */
+const settled = (stats: Stats, startedNs: bigint): boolean => {
+  const mtime = nanoseconds(stats, "mtime")
+  const ctime = nanoseconds(stats, "ctime")
+  return mtime !== undefined && ctime !== undefined &&
+    mtime + settledNanoseconds <= startedNs && ctime + settledNanoseconds <= startedNs
 }
 
 /** Throws the caller's interruption before another filesystem operation starts. */
@@ -628,6 +728,10 @@ const checkedRead = async (handle: OpenFile, buffer: Uint8Array, what: string): 
  * a permission error, a FIFO, a device, a link out of the workspace, a file
  * that changed while it was read — is reported.
  *
+ * With `options.digests`, an entry whose status equals a remembered row's is
+ * answered from the row without opening the file, and a file read here is
+ * remembered ({@link DigestIndex}).
+ *
  * @category digests
  * @since 0.1.0
  */
@@ -650,6 +754,15 @@ export const digestEntry = async (
   if (maximumBytes !== undefined && sizeOf(entry.stats) > BigInt(maximumBytes)) {
     throw new Error(`${what} is larger than ${maximumBytes} bytes: ${entry.path}`)
   }
+  const index = options.digests
+  const status = index === undefined ? undefined : digestStatus(entry.stats)
+  if (index !== undefined && status !== undefined) {
+    index.used.add(entry.path)
+    const row = index.rows.get(entry.path)
+    if (row !== undefined && row.status === status) return row.digest
+    index.rows.delete(entry.path)
+  }
+  const startedNs = index?.now() ?? 0n
   return withOpen(entry, options, async (handle, before) => {
     if (maximumBytes !== undefined && sizeOf(before) > BigInt(maximumBytes)) {
       throw new Error(`${what} is larger than ${maximumBytes} bytes: ${entry.path}`)
@@ -671,7 +784,11 @@ export const digestEntry = async (
     if (!stable(before, after, total)) {
       throw new Error(`${what} changed while it was being digested: ${entry.path}`)
     }
-    return hash.digest("hex")
+    const read = hash.digest("hex")
+    if (index !== undefined && status !== undefined && digestStatus(after) === status) {
+      index.rows.set(entry.path, { status, digest: read, settled: settled(after, startedNs) })
+    }
+    return read
   })
 }
 

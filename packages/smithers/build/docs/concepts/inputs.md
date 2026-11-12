@@ -179,6 +179,31 @@ producing a digest of a file that never existed.
 A declared input is a regular file. A FIFO, a socket, a device, and a directory
 are refused; without that, a FIFO nobody writes to would block planning forever.
 
+### Remembered digests
+
+Planning reads each file once per invocation, however many targets and verbs
+declare it, and remembers each digest for the next invocation in
+`<cache directory>/plan/file-digests.json`. A remembered digest is used only
+when the file's `lstat` status equals the status it was read at: device, inode,
+size, modification time and status-change time, at full resolution. Every write
+and every `utimes` call moves the status-change time, which an unprivileged
+process cannot set back, so an equal status names the same bytes. Any other
+status reads the file again.
+
+A digest is saved for the next invocation only when both times are at least two
+seconds older than the start of the read. A write in the same timestamp tick as
+a read could leave the status unchanged, so a recently changed file is read by
+every invocation until it settles; within one invocation it is read once, as
+one plan already reads a shared declaration once for all its targets. Confinement and the regular-file checks run before the index is
+consulted, so a remembered row never admits a path the read would refuse.
+
+The `plan` directory holds a `.gitignore` that ignores its own contents, so a
+plan leaves no untracked file in a checkout that does not ignore the cache
+directory. The index is a cache, not key material: keys are the same with or
+without it.
+A missing, malformed or corrupt index, or one of another format, is ignored and
+every file is read. Deleting the file is always safe.
+
 ### Symbolic links
 
 A symbolic link is followed only when its whole resolution stays inside the

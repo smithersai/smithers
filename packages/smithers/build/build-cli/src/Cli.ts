@@ -36,6 +36,7 @@ import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
 import { CacheCredentials } from "./internal/CacheCredentials.ts"
+import * as DigestIndexFile from "./internal/DigestIndexFile.ts"
 import * as GoCache from "./internal/GoCache.ts"
 import * as RemoteCi from "./internal/RemoteCi.ts"
 import * as Shards from "./internal/Shards.ts"
@@ -949,46 +950,53 @@ const runCi = async (
     const packagePlans: Array<{ readonly kind: (typeof ciKinds)[number]; readonly plan: PackageExec.PackagePlan }> = []
     const refusals: Array<Planner.UnsupportedVerbError> = []
     const accepted = new Set<string>()
-    for (const kind of ciKinds) {
-      let remaining = [...patterns]
-      while (remaining.length > 0) {
-        try {
-          packagePlans.push({
-            kind,
-            plan: await PackageExec.plan({
-              index,
-              cacheDirectory,
-              ...(remoteCache === undefined ? {} : { remoteCache }),
-              verb: kind,
-              patterns: remaining,
-              plan: flags.plan,
-              includeExclusive: flags.includeExclusive,
-              lifecycle: flags.lifecycle,
-              jobs: flags.jobs,
-              readCache: flags.cache,
-              signal: config.signal,
-              reporter,
-              environment: config.environment,
-              approvals: config.approvals,
-              // CI never spawns an agent: the docs-verb page writers stay out.
-              unattended: true
+    // The four verb plans read the same tree: each file is read once for all of them.
+    const digests = await DigestIndexFile.load(index.root, cacheDirectory, reporter.note)
+    try {
+      for (const kind of ciKinds) {
+        let remaining = [...patterns]
+        while (remaining.length > 0) {
+          try {
+            packagePlans.push({
+              kind,
+              plan: await PackageExec.plan({
+                index,
+                cacheDirectory,
+                ...(remoteCache === undefined ? {} : { remoteCache }),
+                verb: kind,
+                patterns: remaining,
+                plan: flags.plan,
+                includeExclusive: flags.includeExclusive,
+                lifecycle: flags.lifecycle,
+                jobs: flags.jobs,
+                readCache: flags.cache,
+                signal: config.signal,
+                reporter,
+                environment: config.environment,
+                approvals: config.approvals,
+                // CI never spawns an agent: the docs-verb page writers stay out.
+                unattended: true,
+                digests
+              })
             })
-          })
-          for (const pattern of remaining) accepted.add(pattern)
-          break
-        } catch (cause) {
-          if (
-            !(cause instanceof Planner.UnsupportedVerbError) || cause.verb !== kind ||
-            !remaining.includes(cause.pattern)
-          ) {
-            throw cause
+            for (const pattern of remaining) accepted.add(pattern)
+            break
+          } catch (cause) {
+            if (
+              !(cause instanceof Planner.UnsupportedVerbError) || cause.verb !== kind ||
+              !remaining.includes(cause.pattern)
+            ) {
+              throw cause
+            }
+            // One incompatible exact selector must not discard this kind's
+            // compatible roots. Keep planning their union so overlaps run once.
+            refusals.push(cause)
+            remaining = remaining.filter((pattern) => pattern !== cause.pattern)
           }
-          // One incompatible exact selector must not discard this kind's
-          // compatible roots. Keep planning their union so overlaps run once.
-          refusals.push(cause)
-          remaining = remaining.filter((pattern) => pattern !== cause.pattern)
         }
       }
+    } finally {
+      await DigestIndexFile.save(index.root, cacheDirectory, digests, reporter.note)
     }
     const unsupported = patterns.find((pattern) => !accepted.has(pattern))
     if (unsupported !== undefined) {
