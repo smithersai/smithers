@@ -513,7 +513,13 @@ export const make = (
           Effect.provideService(SecureRandom.SecureRandom, random),
           Effect.provideService(FlowRuntime.FlowInstance, parent.value)
         )
-        let attempt = 0
+        // Each check parks on the clock of its poll slot: the interval since the
+        // journaled start that the check falls in. A re-drive derives its slot
+        // from the time, so it reads the child once and arms one clock instead
+        // of replaying every earlier check and clock before reaching its own.
+        const started = deadline - Duration.toMillis(timeout)
+        const interval = Duration.toMillis(pollInterval)
+        let nextSlot = 0
         while (true) {
           const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
           const remaining = deadline - now
@@ -527,9 +533,16 @@ export const make = (
             Effect.timeoutOrElse({ duration: remaining, orElse: expired })
           )
           if (Option.isSome(outcome)) return outcome.value
+          // A zero interval re-reads at once, without a clock or a park.
+          if (interval === 0) continue
+          // A clock that fired early leaves the time inside its own slot, so
+          // the next check moves past it rather than waking on it again.
+          const slot = Math.max(nextSlot, Math.floor((now - started) / interval))
+          nextSlot = slot + 1
+          const checked = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
           yield* DurableClock.sleep({
-            name: `${key}/${attempt++}`,
-            duration: Math.min(Duration.toMillis(pollInterval), remaining),
+            name: `${key}/${slot}`,
+            duration: Math.max(0, Math.min(started + nextSlot * interval, deadline) - checked),
             inMemoryThreshold: 0
           }).pipe(
             Effect.provideService(FlowRuntime.FlowRuntime, runtime),

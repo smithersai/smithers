@@ -855,6 +855,63 @@ describe("EngineChildren.await", () => {
       }).pipe(Effect.provide(TestClock.layer()))
     ))
 
+  it("regression: each wake of a parked await reads the child once and arms one new clock", () =>
+    run(
+      Effect.gen(function*() {
+        const runtime = yield* engine("await-slots")
+        const store = yield* RunStore.RunStore
+        const parent = "await-slots-parent"
+        const child = EngineChildren.childExecutionId(parent, "worker")
+        yield* store.create(
+          child,
+          JSON.stringify({ version: 1, flowName: Worker._tag, payload: {}, capabilityCeilings: [[]] }),
+          { lineageId: child, roundOrdinal: 0 }
+        )
+        yield* runtime.register(Worker, () => Effect.succeed("finished"))
+        let polls = 0
+        const clocks: Array<string> = []
+        const observed: FlowRuntime.FlowRuntime["Service"] = {
+          ...runtime,
+          poll: (flow, id) => runtime.poll(flow, id).pipe(Effect.tap(() => Effect.sync(() => polls++))),
+          scheduleClock: (flow, options) =>
+            runtime.scheduleClock(flow, options).pipe(
+              Effect.tap(() => Effect.sync(() => clocks.push(options.clock.name)))
+            )
+        }
+        const port = yield* children({ pollInterval: "1 second", awaitTimeout: "6 seconds" }).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, observed)
+        )
+        yield* runtime.register(Parent, () =>
+          port.await({ child }).pipe(
+            Effect.map((value) => value.output),
+            Effect.catch((error) => Effect.succeed(error.code))
+          ))
+        yield* runtime.execute(Parent, { executionId: parent, payload: {}, discard: true })
+        // Fire one clock at a time and wait for the woken round to park again.
+        let parked = 0
+        let row = yield* store.get(parent)
+        while (row.status !== "completed") {
+          row = yield* store.get(parent).pipe(
+            Effect.repeat({
+              while: (row) => row.status !== "completed" && !(row.status === "suspended" && clocks.length > parked)
+            })
+          )
+          parked = clocks.length
+          if (row.status !== "completed") yield* TestClock.adjust("1 second")
+        }
+        expect(yield* runtime.poll(Parent, parent)).toMatchObject({
+          _tag: "Some",
+          value: { _tag: "Complete", exit: { _tag: "Success", value: "still_running" } }
+        })
+        // Six drives inside the deadline, one read and one clock each, and one
+        // last read at the deadline. Replaying the earlier checks would make the
+        // clock count 1 + 2 + ... + 6 = 21.
+        expect(polls).toBe(7)
+        expect(clocks).toHaveLength(6)
+        expect(new Set(clocks).size).toBe(6)
+      }).pipe(Effect.provide(TestClock.layer()))
+    ))
+
   it.each([undefined, "parent-dispatch"])(
     "keeps an await deadline across a suspended parent's re-drive (dispatch=%s)",
     (dispatch) =>

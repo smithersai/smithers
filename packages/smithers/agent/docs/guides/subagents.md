@@ -197,9 +197,10 @@ than the one that spawned the child. A string child answers with its own text;
 any other value is answered as JSON.
 
 `await` waits by re-reading the child's run row on an interval (`pollInterval`,
-default 250 ms) rather than suspending the run, so a cell that awaits a long
-child holds its round open. That is a bounded, honest cost of the port's shape.
-The distinct endings:
+default 250 ms). Inside a flow it parks the run on a durable clock between
+reads, one clock per interval since the call's journaled start, so a re-driven
+round reads the child once and arms one clock rather than replaying every
+earlier read. Outside a flow it polls in memory. The distinct endings:
 
 - A cancelled child is `ChildError { code: "failed" }`.
 - A failed child is `failed` with the rendered cause, bounded to 2,048

@@ -355,6 +355,20 @@ const readPendingClocks = (root: string, runId: string): ReadonlyArray<{ readonl
   }
 }
 
+/** The reason of every `wake-scheduled` run decision the engine journaled for a run, in order. */
+const readWakeReasons = (root: string, runId: string): ReadonlyArray<string> => {
+  const database = new DatabaseSync(join(root, "engine.db"), { readOnly: true })
+  try {
+    return (database.prepare(
+      `SELECT json_extract(payload_json, '$.reason') AS reason FROM flows_journal_events
+       WHERE run_id = ? AND event_type = 'flows.engine.run-decision'
+       AND json_extract(payload_json, '$.decision') = 'wake-scheduled' ORDER BY rowid`
+    ).all(runId) as unknown as ReadonlyArray<{ readonly reason: string }>).map((row) => row.reason)
+  } finally {
+    database.close()
+  }
+}
+
 /**
  * Moves a run's pending clock deadlines into the past, between two processes.
  *
@@ -973,7 +987,9 @@ describe("a parked run resumed by a later process", () => {
     )
 
     expect(settled.status).toBe("completed")
-    expect(notes).toContain("engine-park-second:decision=true")
+    // The first process parked before `note/save`, so one wake writes one note.
+    expect(notes).toEqual(["engine-park-second:decision=true"])
+    expect(readWakeReasons(root, parked.runId)).toEqual(["delegated"])
   }, 180_000)
 })
 
@@ -1105,7 +1121,9 @@ describe("a run parked on a durable clock that fell due while its process was do
     )
 
     expect(settled.status).toBe("completed")
-    expect(notes).toContain("engine-park-second:woke")
+    // The first process parked before `note/save`, so one wake writes one note.
+    expect(notes).toEqual(["engine-park-second:woke"])
+    expect(readWakeReasons(root, runId)).toEqual(["clock"])
   }, 120_000)
 })
 
