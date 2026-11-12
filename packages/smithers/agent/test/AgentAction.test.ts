@@ -2127,12 +2127,16 @@ describe("AgentAction seat auto", () => {
           engine === undefined ? FlowEngine.layerMemory : Layer.succeed(FlowRuntime.FlowRuntime)(engine)
         )
       })
+    // Every wait below is a bounded count of scheduler turns, never a duration:
+    // each turn lets the engine's own I/O commit, and a loaded host spends
+    // more turns, not more milliseconds, before a correct run gets there.
+    const turns = 20_000
     const settle = <A, E>(running: Fiber.Fiber<A, E>) =>
       Effect.gen(function*() {
         if (mode === "memory") return yield* Fiber.join(running)
-        for (let step = 0; step < 500; step++) {
+        for (let turn = 0; turn < turns; turn++) {
           if (running.pollUnsafe() !== undefined) return yield* Fiber.join(running)
-          yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
+          yield* Effect.yieldNow
           yield* TestClock.adjust("1 second")
         }
         return yield* Effect.die(new Error("the routed run did not settle after its recorded wake"))
@@ -2148,7 +2152,7 @@ describe("AgentAction seat auto", () => {
             Effect.forkChild({ startImmediately: true })
           )
           let parked = false
-          for (let step = 0; step < 500 && !parked; step++) {
+          for (let turn = 0; turn < turns && !parked; turn++) {
             if (mode === "memory") {
               const result = yield* RoutedFlow.poll(executionId).pipe(Effect.provideContext(context))
               parked = Option.isSome(result) && result.value._tag === "Suspended"
@@ -2158,8 +2162,7 @@ describe("AgentAction seat auto", () => {
             }
             const exit = running.pollUnsafe()
             if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
-            if (mode === "memory") yield* Effect.yieldNow
-            else yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
+            yield* Effect.yieldNow
           }
           expect(parked).toBe(true)
           expect(calls).toEqual(["sonnet"])

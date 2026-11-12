@@ -1183,12 +1183,21 @@ const onTestClock = <A, E>(
     Effect.scoped(Effect.provide(body, Layer.merge(NodeCrypto.layer, TestClock.layer()))).pipe(Effect.orDie)
   )
 
-/** Advances the test clock until one forked run settles, then joins it. */
+/**
+ * How many scheduler turns a wait below may take before it reports a hang.
+ *
+ * Every turn is one read plus a macrotask, which lets the database commit
+ * without advancing the clock. A correct run on a loaded host spends turns,
+ * not seconds, so the budget is generous and costs an unloaded run nothing.
+ */
+const turns = 20_000
+
+/** Advances the test clock, one turn at a time, until one forked run settles, then joins it. */
 const settle = <A, E>(fiber: Fiber.Fiber<A, E>): Effect.Effect<A, E> =>
   Effect.gen(function*() {
-    for (let step = 0; step < 500; step++) {
+    for (let turn = 0; turn < turns; turn++) {
       if (fiber.pollUnsafe() !== undefined) return yield* Fiber.join(fiber)
-      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
+      yield* Effect.yieldNow
       yield* TestClock.adjust("1 second")
     }
     return yield* Effect.die(new Error("the resumed run did not settle after its recorded wake"))
@@ -1197,17 +1206,17 @@ const settle = <A, E>(fiber: Fiber.Fiber<A, E>): Effect.Effect<A, E> =>
 /**
  * The timer waits, once the run has parked between its two steps.
  *
- * Real I/O turns let the database commit without advancing the clock and waking
- * the run this case means to kill.
+ * Scheduler turns let the database commit without advancing the clock and
+ * waking the run this case means to kill.
  */
 const waitForTimer = (state: DurableEngineState.Service, running: Fiber.Fiber<unknown, unknown>) =>
   Effect.gen(function*() {
-    for (let attempt = 0; attempt < 500; attempt++) {
+    for (let turn = 0; turn < turns; turn++) {
       const exit = running.pollUnsafe()
       if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
       const rows = yield* state.waitingRuns({ reason: "timer" })
       if (rows.length > 0) return rows
-      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
+      yield* Effect.yieldNow
     }
     return yield* Effect.die(new Error("the run never persisted its timer park"))
   })

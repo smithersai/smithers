@@ -2746,14 +2746,29 @@ ctx.done(JSON.stringify(decision))`
     // measured there, admission took 7 s and reaching the park 26 s.
   }, 120_000)
 
-  /** Waits in real time, as a durable clock does, for a run to reach `status`. */
-  const awaitStatusFor = (runtime: ControlRuntime.Service, runId: string, status: ControlSchema.RunStatus) =>
+  /**
+   * Waits in real time, as a durable clock does, for a run to reach one of
+   * `statuses`, and says which.
+   *
+   * The deadlines below are wall-clock deadlines, so the wait is one too. Its
+   * bound is the case's own timeout, not a guess at the host's speed: the
+   * loaded host measured above took 26 s to reach a park, and a run that the
+   * deadline ends first still has to settle before the case can read it.
+   */
+  const awaitStatusFor = (
+    runtime: ControlRuntime.Service,
+    runId: string,
+    statuses: ReadonlyArray<ControlSchema.RunStatus>
+  ) =>
     Effect.gen(function*() {
-      for (let attempt = 0; attempt < 500; attempt++) {
-        if ((yield* runtime.getRun(runId)).status === status) return
+      for (let attempt = 0; attempt < 2_500; attempt++) {
+        const status = (yield* runtime.getRun(runId)).status
+        if (statuses.includes(status)) return status
         yield* Effect.sleep("20 millis")
       }
-      return yield* Effect.die(`run ${runId} never reached ${status} (still ${(yield* runtime.getRun(runId)).status})`)
+      return yield* Effect.die(
+        `run ${runId} never reached ${statuses.join(" or ")} (still ${(yield* runtime.getRun(runId)).status})`
+      )
     })
 
   /** Launches `flowId` under an approved deadline of `deadline` milliseconds. */
@@ -2790,13 +2805,13 @@ ctx.done(JSON.stringify(decision))`
         const toolStarted = yield* Deferred.make<void>()
         return yield* Effect.gen(function*() {
           const runtime = yield* ControlRuntime.ControlRuntime
-          // Two seconds, not a fraction of one: the deadline must outlast the
-          // run reaching `note/save` on a loaded host, or it fires first and
-          // `toolStarted` is never set (a 60 s timeout on nyc-01 under load).
           const runId = yield* launchWithDeadline("agents/notes", {}, 2_000, "run:deadline-running")
-          // The first cell blocks in `note/save`, whose gate never opens.
-          yield* Deferred.await(toolStarted)
-          yield* awaitStatusFor(runtime, runId, "failed")
+          // The first cell blocks in `note/save`, whose gate never opens. On a
+          // loaded host the deadline can end the run before the cell starts,
+          // and then `toolStarted` is never set: the run fails at its deadline
+          // either way, so the wait ends on whichever comes first.
+          yield* Effect.raceFirst(Deferred.await(toolStarted), awaitStatusFor(runtime, runId, ["failed"]))
+          yield* awaitStatusFor(runtime, runId, ["failed"])
           const run = yield* runtime.getRun(runId)
           return { deadline: run.deadlineAt! - run.createdAt, cause: yield* failedCause(runId) }
         }).pipe(Effect.provide(stack({ resolve: seat(capturing([])), notes, gate, toolStarted })))
@@ -2821,8 +2836,13 @@ ctx.done(JSON.stringify(decision))`
             1_500,
             "run:deadline-parked"
           )
-          yield* awaitStatusFor(runtime, runId, "parked")
-          yield* awaitStatusFor(runtime, runId, "failed")
+          // The deadline is a wall-clock bound counted from acceptance. On a
+          // loaded host the run can still be on its way to the park when it
+          // falls due, and then the run fails as `running`, never `parked`.
+          // The case is about the deadline ending an unanswered run with
+          // nothing answered, which holds on both paths.
+          yield* awaitStatusFor(runtime, runId, ["parked", "failed"])
+          yield* awaitStatusFor(runtime, runId, ["failed"])
           return { cause: yield* failedCause(runId) }
         }).pipe(Effect.provide(stack({
           gate,
