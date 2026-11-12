@@ -978,7 +978,7 @@ export type WatchCursor = typeof WatchCursor.Type
 export const WatchFilter = Schema.Struct({
   runId: Schema.optional(RunId),
   /** Resume after a fully consumed source entry, including all its deltas. Requires `runId`. */
-  afterSequence: Schema.optional(Schema.Number),
+  afterSequence: Schema.optional(WatchCursor.fields.sequence),
   /** Resume after one emitted event, even inside an expansion. Requires `runId`. Cannot be combined with `afterSequence`. */
   afterCursor: Schema.optional(WatchCursor),
   follow: Schema.optional(Schema.Boolean)

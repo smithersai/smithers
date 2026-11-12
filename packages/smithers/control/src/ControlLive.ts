@@ -427,17 +427,19 @@ export const layer: Layer.Layer<
       eventType: string,
       payload: ControlEvent["payload"]
     ): Effect.Effect<number, PersistenceError> =>
-      // Unfenced: the control plane mutates runs it does not own — that is
-      // the point of a control plane — so its event records are
-      // first-writer-wins admissions, not owner-fenced lifecycle writes.
-      journal.emitDurableUnfenced(
-        new JournalEvent.Input({
-          runId: JournalEvent.RunId.make(runId),
-          sourceId,
-          eventType,
-          payload: json(payload)
-        })
-      ).pipe(
+      Effect.try({
+        try: () =>
+          new JournalEvent.Input({
+            runId: JournalEvent.RunId.make(runId),
+            sourceId,
+            eventType,
+            payload: json(payload)
+          }),
+        catch: (cause) => cause
+      }).pipe(
+        // Unfenced: the control plane mutates runs it does not own, so these
+        // records are first-writer-wins admissions, not lifecycle writes.
+        Effect.flatMap((input) => journal.emitDurableUnfenced(input)),
         Effect.map((receipt) => receipt.seq),
         Effect.mapError((cause) =>
           new PersistenceError({
@@ -1752,6 +1754,12 @@ export const layer: Layer.Layer<
 
     /** Expands each source row in stable order and checkpoints individual members. */
     const watchAll = (filter: WatchFilter): Stream.Stream<ControlEvent, ControlError> => {
+      if (filter.runId !== undefined && !Schema.is(JournalEvent.RunId)(filter.runId)) {
+        return Stream.fail(invalid("runId: must be 1 to 1024 well-formed, NUL-free code units"))
+      }
+      if (filter.afterSequence !== undefined && !Schema.is(JournalEvent.Seq)(filter.afterSequence)) {
+        return Stream.fail(invalid("afterSequence: must be a nonnegative safe journal integer"))
+      }
       if (filter.afterSequence !== undefined && filter.runId === undefined) {
         return Stream.fail(invalid("afterSequence: a watch cursor resumes one run, so it requires runId"))
       }
