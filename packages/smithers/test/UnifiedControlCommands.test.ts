@@ -585,7 +585,11 @@ describe("unified control dispatch", () => {
     ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("other"), run] }))
     ports.watch.mockReturnValue(Stream.fromIterable(approvalEvents))
     const result = await invoke(["runs", "show", "run-1", "--root", "/fixture", "--json"])
-    expect(ports.list).toHaveBeenCalledExactlyOnceWith({ _tag: "runs", filters: { runId: "run-1" } })
+    // The first read resolves the requested id to its owning run (8e01a3d4); the second reads that run's row.
+    expect(ports.list.mock.calls).toEqual([
+      [{ _tag: "runs", filters: { runId: "run-1" }, limit: 1 }],
+      [{ _tag: "runs", filters: { runId: "run-1" } }]
+    ])
     expect(ports.watch).toHaveBeenCalledExactlyOnceWith({ runId: "run-1", follow: false })
     const output = JSON.parse(result.stdout)
     expect(output).toEqual({
@@ -938,7 +942,11 @@ describe("unified control dispatch", () => {
     const result = await invoke(["runs", "show", "run-1", "--json"])
     expect(result.codes, result.stdout).toEqual([])
     expect(JSON.parse(result.stdout).history.currentNode).toBe("current")
-    expect(ports.list).toHaveBeenCalledTimes(1)
+    // Resolving the requested id (8e01a3d4) and reading its row are the only reads: no execution batch.
+    expect(ports.list.mock.calls).toEqual([
+      [{ _tag: "runs", filters: { runId: "run-1" }, limit: 1 }],
+      [{ _tag: "runs", filters: { runId: "run-1" } }]
+    ])
   })
 
   it.each(["completed", "failed", "cancelled"] as const)(
