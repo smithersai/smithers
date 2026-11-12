@@ -8,7 +8,7 @@ import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged"
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -82,7 +82,9 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
  * `issue-connect`, `issue-fork` and `issue-install` refuse the first issue write before it happens, as the live Worker does
- * for a person whose GitHub is not connected, who has no fork, or whose fork lacks the App. `wiki-forbidden`, `wiki-conflict`,
+ * for a person whose GitHub is not connected, who has no fork, or whose fork lacks the App. `issue-forbidden`, `issue-closed`
+ * and `issue-no-model` refuse it with that reason, as the live host does for a role it refuses, a closed issue and a
+ * review with no model. `wiki-forbidden`, `wiki-conflict`,
  * `wiki-connect`, `wiki-fork` and `wiki-install` refuse the first wiki save with that reason, as the live wiki host does.
  * `post-empty`, `post-duplicate`, `post-not-replying` and `post-full` refuse the first post with that refusal, as the
  * sequencer answers another client's post.
@@ -98,7 +100,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     const forging = forgery()
     if (fault === "forged") observation.forgery = forging
     const wikiRefusal = fault.startsWith("wiki-") && fault !== "wiki-edit" && fault !== "wiki-repository" ? fault.slice("wiki-".length) : undefined
-    const setup = fault === "issue-connect" ? "connect" : fault === "issue-fork" ? "fork" : fault === "issue-install" ? "install" : undefined
+    const setup = fault === "issue-connect" ? "connect" : fault === "issue-fork" ? "fork" : fault === "issue-install" ? "install" : fault === "issue-forbidden" ? "forbidden" : fault === "issue-closed" ? "closed" : fault === "issue-no-model" ? "no-model" : undefined
     observation.release = () => fault === "streaming"
       ? Effect.asVoid(Queue.offer(completions, undefined))
       : Effect.asVoid(Deferred.succeed(released, undefined))

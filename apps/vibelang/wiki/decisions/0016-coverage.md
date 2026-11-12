@@ -187,11 +187,18 @@ and 13 verified) and `src/web/screenRead.vibe` (13 verified), 0 errors.
 | `issue-connect`, `issue-fork`, `issue-install` | the first issue write, before it happens | `e2e/issues.spec.ts` "a comment refused with …" | `main.vibe` 411's three texts; `issuesView` `failureAction` and `connect` |
 | `wiki-forbidden`, `wiki-conflict`, `wiki-connect`, `wiki-fork`, `wiki-install` | the first wiki save | `e2e/fault-paths.spec.ts` "a save refused with …" | `paneDecision` `wikiEditErrorText`; `wikiView` 55's steps |
 | `post-empty`, `post-duplicate`, `post-not-replying`, `post-full` | the first post, with that refusal | `e2e/recovery.spec.ts` "a post the sequencer refuses …" | `viewDecision` `postFailure` |
+| `issue-forbidden`, `issue-closed`, `issue-no-model` | the first issue write, with that reason | `e2e/issue-paths.spec.ts` "a comment the host refuses …" | `issueDecision` `issueFailureText` (session 25) |
 
 A post of 8,001 characters is refused as `too-long` by the mock's real sequencer, with no fault
 (`e2e/recovery.spec.ts`). New journeys without faults (`e2e/issues.spec.ts`): a search with no match and a Tasks list
 with every task uncommitted (`emptyTitle`, 0 calls before); Split and Link open their dialogs; the kinds' left arrow
 wraps; a key other than j, k or an arrow moves nothing; a closed issue reads Closed.
+
+Session 25 (`e2e/issue-paths.spec.ts`, no fault unless named): each VIP step names its missing field and Back keeps the
+typed fields (`issueStepError`, the `back` arm); an issue linked under itself is refused by the mock host's own tree
+rule (`Choose another parent.`); with `issue-write`, a saved write that lost its answer holds New issue and Link until
+Retry (`issueAction`'s `blocked` arms). The form's own submit is disabled while a write waits, so only the list's
+New issue and the issue's Link reach those arms.
 
 **Still unreachable from a mock browser** (named, not closed):
 
