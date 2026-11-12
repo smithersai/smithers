@@ -1030,12 +1030,23 @@ describe("turnOptions", () => {
     const options = Host.turnOptions(base, "/repo", standard)
     expect(await names(options.flows)).toEqual(["read", "write", "grep", "bash"])
     expect(options.capabilityEnvelope.map(String)).toEqual([
-      String(new Capability.CapabilityPattern({ action: "*", resource: "*" }))
+      String(new Capability.CapabilityPattern({ action: "*", resource: "**" }))
     ])
     expect(options.reasoningEffort).toBeUndefined()
     expect(options.system.some((part) => part.includes("You review changes."))).toBe(false)
     expect(options.system).not.toContain(Host.approvalTeaching)
   })
+
+  test.each(["worker", "coordinator"] as const)(
+    "the default %s envelope covers filesystem flow resource patterns",
+    (role) => {
+      const envelope = Host.turnOptions({ ...base, role }, "/repo", standard).capabilityEnvelope
+      for (const action of ["fs:read", "fs:write", "proc:spawn"] as const) {
+        const request = new Capability.CapabilityPattern({ action, resource: "/repo/**" })
+        expect(envelope.some((pattern) => Capability.subsumes(pattern, request))).toBe(true)
+      }
+    }
+  )
 
   test("a worker under ask learns how a command runs unasked and that a denial is final for the run", () => {
     expect(Host.turnOptions(base, "/repo", standard, true).system).toContain(Host.approvalTeaching)
