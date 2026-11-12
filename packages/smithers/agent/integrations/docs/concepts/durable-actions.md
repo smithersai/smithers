@@ -15,8 +15,8 @@ see [flows, actions, and plans](/docs/concepts/flows-actions-plans/) and
 ## Declaration, call, layer
 
 Each provider declares its actions with `Action.make`: its tag, its payload
-schema, its success schema, and `Core.ActionFailure.IntegrationFailure` as
-its error schema.
+schema, its success schema, and `Core.ActionFailure.Failure` as its error
+schema.
 
 | Action                           | Tag                                    |
 | -------------------------------- | -------------------------------------- |
@@ -61,7 +61,8 @@ owns is the classification that policy reads:
   comment twice. A caller that knows its endpoint is idempotent opts in with
   `retryUnsafeWrites` on `GitHubClient.request`.
 
-`Core.IssueSync.make(...).ingest` also makes one request per call. An intake
+`make(...).ingest` from `@smthrs/integrations/core/IssueSync` also makes one
+request per call. An intake
 conflict rejects with `status: 409` and preserves the response's `retryAfter`
 header; it neither acknowledges the event nor calls `onMessage`. A durable
 caller decides whether to retry and supplies the same provider delivery

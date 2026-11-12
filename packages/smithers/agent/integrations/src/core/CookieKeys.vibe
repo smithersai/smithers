@@ -4,7 +4,10 @@ import * as Signature from "./Signature.ts"
 /** An opaque value verified against one configured signing key. */
 export interface Verified { readonly value: string; readonly keyId: string }
 
-/** Purpose-bound, rotating HMAC cookies. Host sessions own expiry and one-time consumption. */
+/**
+ * Purpose-bound, rotating HMAC cookies. Host sessions own expiry and one-time consumption. `verify` accepts only the
+ * lowercase hex MAC `sign` writes, so a signed value has one spelling and a host may key single use on it.
+ */
 export effect function make(secrets: Readonly<Record<string, Redacted.Redacted<string>>>, preferred = "legacy") {
   const keyIds = Object.keys(secrets).sort()
   const signature = (purpose: string, value: string, keyId: string) =>
@@ -22,9 +25,11 @@ export effect function make(secrets: Readonly<Record<string, Redacted.Redacted<s
       const dot = signed?.lastIndexOf(".") ?? -1
       if (signed === undefined || dot <= 0) return Option.none<Verified>()
       const value = signed.slice(0, dot)
+      const mac = signed.slice(dot + 1)
+      if (!/^[0-9a-f]{64}$/.test(mac)) return Option.none<Verified>()
       for (const keyId of keyIds) {
         const ok = try Signature.verifySignature({
-          payload: `${purpose}:${value}`, secret: Redacted.value(secrets[keyId]!), signature: signed.slice(dot + 1), prefix: "",
+          payload: `${purpose}:${value}`, secret: Redacted.value(secrets[keyId]!), signature: mac, prefix: "",
         })
         if (ok) return Option.some({ value, keyId })
       }

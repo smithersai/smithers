@@ -195,5 +195,5 @@ export effect function comment(env: Environment, input: typeof GitHub.Actions.Co
 
 ## Next steps
 
-- [GitHub guide](./guides/github.md): receive webhooks, reconcile declared
-  hooks, and paginate.
+- [GitHub guide](./guides/github.md): authenticate as the App, paginate, stay
+  inside rate limits, and write issues and comments idempotently.

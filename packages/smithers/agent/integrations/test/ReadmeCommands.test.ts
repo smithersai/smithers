@@ -1,4 +1,5 @@
 import * as Channels from "@smthrs/control/Channels"
+import { InvalidInput, PersistenceError, Unauthorized } from "@smthrs/control/ControlError"
 import { Effect, Layer, Redacted } from "effect"
 import { readFileSync } from "node:fs"
 import { createServer, request as httpRequest, type Server } from "node:http"
@@ -46,7 +47,7 @@ const runFence = (document: string, needle: string, result: string, host: Record
     .map((match) => match[1]!)
     .find((code) => code.includes(needle))
   if (!fence) throw new Error(`Missing doc fence: ${needle}`)
-  const bindings = { Channels, Core, Effect, Redacted, createServer, ...host }
+  const bindings = { Channels, Core, Effect, InvalidInput, Redacted, Unauthorized, createServer, ...host }
   const code =
     transpileModule(fence.replace(/^import .*$/gm, ""), { compilerOptions: { target: ScriptTarget.ESNext } }).outputText
   return new Function(...Object.keys(bindings), `${code}\nreturn ${result}`)(...Object.values(bindings))
@@ -144,6 +145,32 @@ it("keys a generic delivery on its signed body, not its delivery header", async 
       .map(([call]) => call.raw.idempotencyKey)
     const expected = await Effect.runPromise(Core.Channel.signedBodyKey(new TextEncoder().encode("{}")))
     expect(keys).toEqual([expected, expected])
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  }
+})
+
+// #4883: a wrong secret, an unreadable body and a broken host are three
+// different answers, so a provider or operator can tell them apart.
+it.each([
+  ["a bad signature", new Unauthorized({ message: "signature" }), 401],
+  ["an unreadable body", new InvalidInput({ issue: "body" }), 400],
+  ["a failing store", new PersistenceError({ operation: "ingest", message: "store" }), 500]
+])("answers %s with its own status", async (_name, error, status) => {
+  const channelsLayer = Layer.succeed(Channels.Channels, {
+    register: () => Effect.void,
+    lookup: () => Effect.die("unused"),
+    ingest: () => Effect.fail(error),
+    project: () => Effect.die("unused")
+  })
+  const server = runFence(receiverGuide, "const server =", "server", { channelsLayer }) as Server
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("Missing fixture address")
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}`, { method: "POST", body: "{}" })
+    await response.body?.cancel()
+    expect(response.status).toBe(status)
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }

@@ -1,6 +1,7 @@
 import * as Core from "../core.ts"
 import { forCredentials, isSecureEndpoint } from "../core/CredentialHttp.ts"
 import * as GitHubClient from "./GitHubClient.ts"
+import { requireFullNamePath } from "./Repository.ts"
 import type { HttpClient } from "effect/http"
 import { HttpClient as Client } from "effect/http"
 
@@ -263,8 +264,9 @@ const make = effect (options: {
         |> Effect.provide(%, context),
     permission: (accessToken, repository) =>
       (do { const catchProgram = (asPerson(accessToken)
+        // An `owner/repo` that is not a name GitHub issues is `invalid-config`: `misconfigured`, with no request.
         |> Effect.flatMap(%, (client) =>
-          client.request("GET", `/repos/${repository}`, undefined, { schema: Repository })
+          Effect.flatMap(requireFullNamePath(repository), (path) => client.request("GET", `/repos/${path}`, undefined, { schema: Repository }))
         )
         |> Effect.map(%, ({ permissions }): Permission =>
           permissions === undefined

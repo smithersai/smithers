@@ -47,6 +47,11 @@ describe("examples/github-webhook", () => {
     const push = JSON.stringify({ ref: "refs/heads/main", repository: { full_name: "octo/repo" } })
     expect(await read({ body: push, signature: sign(push) }, SECRET)).toBeUndefined()
   })
+
+  it("refuses a signed form-encoded body instead of failing on it", async () => {
+    const form = `payload=${encodeURIComponent(body)}`
+    expect(await read({ body: form, signature: sign(form) }, SECRET)).toBeUndefined()
+  })
 })
 
 describe("examples/list-open-issues", () => {

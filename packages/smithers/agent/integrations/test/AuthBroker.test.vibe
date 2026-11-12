@@ -47,6 +47,25 @@ it.effect("signs origin, nonce and PKCE state and refuses tampering, cross-origi
     expect([changed, crossed, wrong, expired].every(value => value._tag === "Failure")).toBe(true)
   })
 })
+// #4883: start keys its single use on the signed string, so a signed value must have one spelling.
+it.effect("start accepts one spelling of a signed return_to: case, whitespace and base64 forms of its MAC are refused", () => effect {
+  const { broker, client } = try fixture()
+  const pending = try client.begin()
+  const dot = pending.returnTo.lastIndexOf(".")
+  const value = pending.returnTo.slice(0, dot)
+  const mac = pending.returnTo.slice(dot + 1)
+  const base64 = btoa(String.fromCharCode(...mac.match(/../g)!.map((pair) => parseInt(pair, 16))))
+  const variants = [value + "." + mac.toUpperCase(), pending.returnTo + " ", value + ".\t" + mac, value + "." + base64]
+  const admitted = try Effect.forEach(variants, (signed) => broker.admits.start(origin, signed))
+  const started = try Effect.forEach(variants, (signed) => exit(broker.start(origin, signed)))
+  const first = try exit(broker.start(origin, pending.returnTo))
+  try Effect.try(() => {
+    expect(mac).toMatch(/[a-f]/)
+    expect(admitted).toEqual(variants.map(() => false))
+    expect(started.map((outcome) => outcome._tag)).toEqual(variants.map(() => "Failure"))
+    expect(first._tag).toBe("Success")
+  })
+})
 it.effect("allows only declared exact HTTPS origins: foreign, lookalike, http, userinfo, port and path tricks fail", () => effect {
   const bad = ["https://evil.test", "https://undeclared.smithers.sh", "https://vibelang.smithers.sh.evil.test", "https://evilsmithers.sh", "http://vibelang.smithers.sh", origin + "/", origin + "/..", origin + "?next=evil", origin + "#evil", "https://evil.test@vibelang.smithers.sh", origin + ":444", "https://VIBELANG.smithers.sh", origin + "\\@evil.test"]
   try Effect.try(() => {

@@ -24,7 +24,8 @@ export interface IssueComment {
   readonly body: string
 }
 
-const decodeIssueComment = Schema.decodeUnknownOption(GitHub.Payload.IssueCommentEvent)
+// A verified body that is not JSON, such as a form-encoded delivery, decodes to none.
+const decodeIssueComment = Schema.decodeUnknownOption(Schema.fromJsonString(GitHub.Payload.IssueCommentEvent))
 
 /**
  * Verifies a GitHub `issue_comment` delivery, then reads the comment from it.
@@ -48,7 +49,7 @@ export const readIssueComment = (delivery: Delivery, secret: string): Effect.Eff
   }).pipe(
     Effect.map((verified) => {
       if (!verified) return undefined
-      const event = decodeIssueComment(JSON.parse(delivery.body))
+      const event = decodeIssueComment(delivery.body)
       if (Option.isNone(event)) return undefined
       return {
         repository: event.value.repository.full_name,

@@ -33,7 +33,7 @@ carries either.
 
 ```ts
 const app = yield * GitHub.GitHubClient.make({ clientCredentials: { clientId, clientSecret } }, {})
-// Revokes a user's token: 204, or 404 or 422 when GitHub no longer has it.
+// Revokes a user's token: 204, or 404 when GitHub no longer has it; 422 is a failed revocation.
 yield * app.request("DELETE", `/applications/${clientId}/token`, { access_token })
 ```
 
@@ -302,7 +302,7 @@ const openIssue = (writeId: string, since: string, retry: boolean) =>
 
 ## Add another endpoint
 
-The three actions are declarations over the client, not a closed set. Write
+The five actions are declarations over the client, not a closed set. Write
 your own `Action.make` over `GitHubClient` for any other endpoint; the client
 carries the rate-limit, pagination, and credential behavior, and the action
 makes it journaled. [Durable actions](../concepts/durable-actions.md) shows

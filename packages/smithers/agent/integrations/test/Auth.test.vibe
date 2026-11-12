@@ -196,9 +196,13 @@ describe("shared GitHub user authentication over a real token endpoint", () => {
       const invisible = try auth.permission(token, "o/r")
       current = { status: 500, body: { message: "boom" } }
       const failure = try Effect.flip(auth.permission(token, "o/r"))
+      const before = fixture.requests.length
+      const traversals = try Effect.forEach(["acme/widgets/../../other/repo", "../user", "acme/..", "acme"], (repository) => Effect.flip(auth.permission(token, repository)))
       try Effect.try(() => {
         expect(invisible).toBe("none")
         expect([failure.step, failure.reason]).toEqual(["permission", "unavailable"])
+        expect(traversals.map((refusal) => [refusal.step, refusal.reason])).toEqual(traversals.map(() => ["permission", "misconfigured"]))
+        expect(fixture.requests.length).toBe(before)
       })
     }
     try promise(() => fixture.close())

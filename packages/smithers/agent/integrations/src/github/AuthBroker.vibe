@@ -352,20 +352,30 @@ export effect function make(options: {
       try fresh(pending.expires, REQUEST_TTL)
       if (!allowedOrigin(pending.claims.origin, options.sites, options.localDevelopment)) throw refused()
       const tokens = try checked(options.github.exchange({ code: Redacted.make(code), codeVerifier: Redacted.make(pending.verifier), redirectUri: options.origin + CALLBACK }))
-      // A sign-in keeps no token. A connection keeps this one unless the person lookup fails.
-      const person = try (pending.claims.connect === undefined ? ensuring(checked(options.github.user(tokens.accessToken)), discard(options.github, tokens.accessToken)) : Effect.tapError(checked(options.github.user(tokens.accessToken)), () => discard(options.github, tokens.accessToken)))
-      if (!Number.isSafeInteger(person.id) || person.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(person.login)) throw refused()
-      try observePerson(person.id, referer, pending.claims.connect === undefined ? "hosted_sign_in" : "connect", pending.claims.connect === undefined || person.id !== pending.claims.connect.person)
-      if (pending.claims.connect !== undefined) {
-        // GitHub keeps ten tokens per person and App: every token the connection does not keep is revoked.
-        if (person.id !== pending.claims.connect.person) { try discard(options.github, tokens.accessToken); throw refused() }
+      const lookup = effect {
+        const person = try checked(options.github.user(tokens.accessToken))
+        if (!Number.isSafeInteger(person.id) || person.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(person.login)) throw refused()
+        return person
+      }
+      const connect = pending.claims.connect
+      // A sign-in keeps no token.
+      if (connect === undefined) {
+        const person = try ensuring(lookup, discard(options.github, tokens.accessToken))
+        try observePerson(person.id, referer, "hosted_sign_in", true)
+        return try writeHandoff(pending.claims, { id: person.id, login: person.login })
+      }
+      // GitHub keeps ten tokens per person and App: a connection keeps this one only once its consent record holds it,
+      // and any failure before that revokes it.
+      return try Effect.tapError(effect {
+        const person = try lookup
+        try observePerson(person.id, referer, "connect", person.id !== connect.person)
+        if (person.id !== connect.person) throw refused()
         const consent = try options.keys.token
         const consentKey = "consent/" + (try hash(consent))
         const consentExpires = (try Clock.currentTimeMillis) + REQUEST_TTL
         if (!(try options.store.insert(consentKey, try hash(consent), try seal(consentKey, { claims: pending.claims, expires: consentExpires, person: { id: person.id, login: person.login }, access: Redacted.value(tokens.accessToken), refresh: tokens.refreshToken === null ? null : Redacted.value(tokens.refreshToken), tokenExpires: tokens.expiresAt }), consentExpires))) throw refused()
         return options.origin + CONSENT + "?" + new URLSearchParams({ consent })
-      }
-      return try writeHandoff(pending.claims, { id: person.id, login: person.login })
+      }, () => discard(options.github, tokens.accessToken))
     }),
     exchange: (origin: string, signed: string) => observed("exchange", effect {
       const { claims, now } = try redemptionClaims(origin, signed)

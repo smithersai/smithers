@@ -15,6 +15,7 @@ timestamps in the body.
 
 ```ts
 import * as Channels from "@smthrs/control/Channels"
+import { InvalidInput, Unauthorized } from "@smthrs/control/ControlError"
 import { Core } from "@smthrs/integrations"
 import { Effect } from "effect"
 import { createServer } from "node:http"
@@ -60,9 +61,15 @@ const server = createServer((request, response) => {
         }
       })
     })
-    Effect.runPromise(Effect.provide(program, channelsLayer)).then(
-      () => response.writeHead(200).end(),
-      () => response.writeHead(401).end()
+    // A bad signature is 401, a body the channel cannot read is 400, and a
+    // failing host is 500, so a provider can tell a wrong secret from an outage.
+    const status = Effect.match(program, {
+      onSuccess: () => 200,
+      onFailure: (error) => error instanceof Unauthorized ? 401 : error instanceof InvalidInput ? 400 : 500
+    })
+    Effect.runPromise(Effect.provide(status, channelsLayer)).then(
+      (code) => response.writeHead(code).end(),
+      () => response.writeHead(500).end()
     )
   })
 })

@@ -76,5 +76,5 @@ A delivery decodes to one event with one correlation.
 key from the signed body with `Core.Channel.signedBodyKey` and puts it on
 `RawInbound` before ingestion; an unsigned delivery header would let a captured
 delivery replay under a new id.
-Leaving the field unset allows a retry to start work twice. The
+`Channels.ingest` refuses a request whose key is missing or empty. The
 [receiver guide](../guides/webhook-ingress.md) bounds the body before ingestion.

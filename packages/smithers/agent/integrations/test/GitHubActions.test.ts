@@ -643,6 +643,30 @@ describe("LinkPullRequest", () => {
   })
 
   it.each([
+    ["no data", { data: null, errors: [{ message: "private provider content" }] }],
+    ["no receipt", { data: { addCloseIssueReferences: null }, errors: [{ type: "FORBIDDEN" }] }],
+    ["an answer without data", { errors: [{ message: "Field 'addCloseIssueReferences' doesn't exist" }] }]
+  ])("reports a mutation GitHub refused with %s as a definite refusal, once", async (_name, body) => {
+    github = await startGitHub()
+    let posts = 0
+    const { transport } = faultingTransport(({ path }) =>
+      path === "/graphql" && ++posts % 2 === 0 ? { status: 200, body } : undefined
+    )
+    const error = await rejected(
+      runAction(
+        Actions.LinkPullRequest,
+        payload,
+        gitHubLayerOver(transport, { token: "t", apiBaseUrl: github.fixture.origin })
+      )
+    )
+    expect(error).toBeInstanceOf(IntegrationFailure)
+    expect(error).toMatchObject({ reason: "delivery-failed", retryable: false })
+    expect(error.outcomeUnknown).not.toBe(true)
+    expect(error.message).not.toContain("private provider content")
+    expect(posts).toBe(2)
+  })
+
+  it.each([
     ["a missing receipt", { data: null }],
     ["mutation errors", { data: { addCloseIssueReferences: { issue: { id: "o/r#7" } } }, errors: [{}] }],
     ["the wrong issue", { data: { addCloseIssueReferences: { issue: { id: "o/r#8" } } }, errors: [] }]

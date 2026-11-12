@@ -251,3 +251,23 @@ it.effect("an unreadable expired consent is dropped without a revoke, and the ca
     expect(left).toEqual([])
   })
 })
+
+// #4883: every failure after the code exchange, until the consent record holds the token, revokes it.
+it.effect("a Connect callback that fails after the code exchange revokes the token it was handed", () => effect {
+  const faulty = effect (fault: "refused" | "insert" | "history") => {
+    const real = try Broker.memoryStore()
+    const store: Broker.Store = {
+      ...real,
+      insert: (key, binding, value, expires) => !key.startsWith("consent/") ? real.insert(key, binding, value, expires) : fault === "refused" ? succeed(false) : fault === "insert" ? fail(new Broker.BrokerRefused()) : real.insert(key, binding, value, expires),
+      take: (key, binding, now) => fault === "history" && key.startsWith("person/") ? fail(new Broker.BrokerRefused()) : real.take(key, binding, now),
+    }
+    return try fixtureWith(store)
+  }
+  const cases = [try faulty("refused"), try faulty("insert"), try faulty("history"), try fixture(0)]
+  const outcomes = try Effect.forEach(cases, (f) => exit(f.broker.callback(f.state, "code", f.start.cookie)))
+  try Effect.try(() => {
+    expect(outcomes.map((outcome) => outcome._tag)).toEqual(cases.map(() => "Failure"))
+    expect(cases.map((f) => f.revoked)).toEqual(cases.map(() => ["private-github-token"]))
+    expect(cases.flatMap((f) => f.installed)).toEqual([])
+  })
+})

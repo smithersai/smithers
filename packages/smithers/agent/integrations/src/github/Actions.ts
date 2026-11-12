@@ -703,6 +703,9 @@ const decodeLinked = Schema.decodeUnknownOption(Schema.Struct({
   data: Schema.Struct({ addCloseIssueReferences: Schema.Struct({ issue: NodeId }) }),
   errors: Schema.optionalKey(Schema.Array(Schema.Unknown))
 }))
+const decodeGraphqlErrors = Schema.decodeUnknownOption(Schema.Struct({
+  errors: Schema.NonEmptyArray(Schema.Unknown)
+}))
 
 /**
  * Implements {@link LinkPullRequest} over the client in context.
@@ -764,10 +767,12 @@ export const layerLinkPullRequest: Layer.Layer<
         variables: { input: { issueId, pullRequestIds: [targetPull.id] } }
       })
       const decoded = decodeLinked(answer)
-      if (
-        Option.isNone(decoded) || (decoded.value.errors?.length ?? 0) > 0 ||
-        decoded.value.data.addCloseIssueReferences.issue.id !== issueId
-      ) {
+      const confirmed = Option.isSome(decoded) && decoded.value.data.addCloseIssueReferences.issue.id === issueId
+      // GraphQL errors with no confirmation are a refusal: an older server or a token without the mutation.
+      if (!confirmed && Option.isSome(decodeGraphqlErrors(answer))) {
+        return yield* Effect.fail(refused("link-pr", "GitHub refused to add the closing reference."))
+      }
+      if (!confirmed || (decoded.value.errors?.length ?? 0) > 0) {
         return yield* Effect.fail(
           new IntegrationError("decode-failed", "GitHub did not confirm the closing reference.", {
             operation: "link-pr",
