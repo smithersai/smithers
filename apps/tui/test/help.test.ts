@@ -167,7 +167,7 @@ it("withdraws the ask when the worker is retried another way, or its parent stop
   failWith(retried.controls, "plan/impl", unresolved)
   await tick()
   expect(retried.workspace.asks.list()).toHaveLength(1)
-  retried.workspace.retry("plan/impl")
+  retried.workspace.retry("plan/impl", "user")
   await tick()
   expect(retried.workspace.asks.list()).toEqual([])
   const stopped = await setup()

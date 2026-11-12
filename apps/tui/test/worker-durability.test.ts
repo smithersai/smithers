@@ -333,7 +333,7 @@ describe("worker durability", () => {
     append(3, { _tag: "model-delta", delta: { type: "text-delta", text: "```js\nprint(1)\n```" } })
     append(4, { _tag: "cell-produced", cell: { text: "print(1)" } })
     append(5, { _tag: "cell-printed", text: "one" })
-    f.workspace.retry(request.id)
+    f.workspace.retry(request.id, "user")
     await tick()
     expect(inputs[1]?.seat).toBe("openai:gpt-6.1-sol")
     expect(
@@ -439,7 +439,7 @@ describe("worker durability", () => {
     })
     first.workspace.request(request)
     await tick()
-    first.workspace.retry(request.id)
+    first.workspace.retry(request.id, "user")
     await tick()
     expect(launches).toHaveLength(2)
     const restored = fixture((input) => {
@@ -549,7 +549,7 @@ describe("worker durability", () => {
         code: "rate_limited"
       })
     )
-    f.workspace.retry(request.id)
+    f.workspace.retry(request.id, "user")
     await tick()
     expect(cancelled).toBe(1)
     expect(inputs).toHaveLength(2)
@@ -644,7 +644,7 @@ describe("worker durability", () => {
       at: Date.now(),
       event: { _tag: "cell-produced", cell: { text: "inspect final file" } } as never
     })
-    f.workspace.retry(request.id)
+    f.workspace.retry(request.id, "user")
     await tick()
     const answer = inputs[1]!.history.find((entry) => entry.kind === "exchange" && entry.user === request.prompt)
     expect(answer?.kind === "exchange" ? answer.answer : "").toContain("IMPORTANT PRINTED RESULT")

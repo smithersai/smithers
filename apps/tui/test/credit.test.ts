@@ -515,7 +515,7 @@ describe("a worker whose model has no credit", () => {
         seat: "opus",
         status: "failed"
       })
-      f.workspace.retry("named")
+      f.workspace.retry("named", "user")
       expect(await f.settled("named")).toMatchObject({ status: "failed", seat: "opus", pinned: true })
       expect(f.calls).toEqual(["opus", "opus"])
       expect(f.switches("named")).toEqual([])
@@ -576,7 +576,7 @@ describe("a worker whose model has no credit", () => {
       expect(f.host.credit!.instead(sol, "anthropic:claude-opus-5-5")).toEqual({ from: sol, to: qwen })
 
       // Resume on the failed one falls back too.
-      f.workspace.retry("first")
+      f.workspace.retry("first", "user")
       expect(await f.settled("first")).toMatchObject({ status: "done", seat: qwen })
       expect(f.calls).toEqual([sol, qwen, qwen])
     } finally {
@@ -595,15 +595,15 @@ describe("a worker whose model has no credit", () => {
       expect(f.switches("mine")).toEqual([])
       expect(f.calls).toEqual([sol, sol])
       // Resuming a pinned tab keeps its pin.
-      f.workspace.retry("mine")
+      f.workspace.retry("mine", "user")
       expect(await f.settled("mine")).toMatchObject({ status: "failed", seat: sol, pinned: true })
       expect(f.calls).toEqual([sol, sol, sol])
 
       // `m` picks a model for the failed tab: it runs there, whatever the tab asked for before.
-      f.workspace.retry("first", sol)
+      f.workspace.retry("first", "user", sol)
       expect(await f.settled("first")).toMatchObject({ status: "failed", seat: sol, pinned: true })
       expect(f.tab("first").model).toBeUndefined()
-      f.workspace.retry("first", qwen)
+      f.workspace.retry("first", "user", qwen)
       expect(await f.settled("first")).toMatchObject({ status: "done", seat: qwen })
       expect(f.calls).toEqual([sol, sol, sol, sol, qwen])
 
@@ -687,7 +687,7 @@ describe("a worker whose model has no credit", () => {
       expect(f.switches("mine")).toEqual([])
       expect(f.calls).toEqual(["opus", sol, "opus"])
       // Picked again with `m`, Opus runs alone again.
-      f.workspace.retry("mine", "opus")
+      f.workspace.retry("mine", "user", "opus")
       expect(await f.settled("mine")).toMatchObject({ status: "failed", seat: "opus", pinned: true })
       expect(f.calls).toEqual(["opus", sol, "opus", "opus"])
     } finally {

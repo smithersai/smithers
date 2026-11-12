@@ -60,7 +60,7 @@ async function fixture() {
     Runtime.source({
       publish: () => {},
       delegate: workspace.request,
-      retry: workspace.retry,
+      retry: (id) => workspace.retry(id, "agent"),
       read: workspace.read,
       list: () => workspace.snapshot().tabs
     }).bindings()

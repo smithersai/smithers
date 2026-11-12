@@ -101,7 +101,7 @@ describe("workers across a fork", () => {
     const { chat, worker, forked, workspace } = session("requested", "tests red")
     const sourceChat = readFileSync(chat.file, "utf8")
     const sourceWorker = readFileSync(worker.file, "utf8")
-    workspace.retry("fix")
+    workspace.retry("fix", "user")
     await Promise.resolve()
     const file = workspace.snapshot().tabs[0]?.file
     expect(file).not.toBe(worker.file)

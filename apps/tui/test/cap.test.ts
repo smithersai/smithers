@@ -50,7 +50,7 @@ it("resumes a worker stopped at its run cap with the chosen allowance, for it al
   expect(runs.at(-1)!.caps).toBeUndefined()
   stop("w")
   await tick()
-  workspace.retry("w")
+  workspace.retry("w", "user")
   await tick()
   expect(runs.at(-1)!.caps).toEqual({ times: 2 })
 })

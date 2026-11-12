@@ -583,6 +583,31 @@ test("Stop confirmation cannot follow a failed worker into its retry", async () 
   expect(frame()).not.toContain("Stop Retry review?")
 })
 
+test("the model's tab.retry cannot start a person-only agent it requested before discovery", async () => {
+  const gate = await remountUndiscovered()
+  await command("Coordinate manual")
+  await waitFor(() => turns.length === 1)
+  const runtime = turns[0]!.input.runtime!
+  expect(runtime.delegate!({ id: "manual-run", title: "Manual", prompt: "Run it", agent: "manual" }))
+    .toMatchObject({ status: "requested" })
+  await act(async () => {
+    gate.resolve(listed)
+    await setImmediate()
+  })
+  await waitFor(() => bodies.length === 1)
+  await act(async () => {
+    bodies[0]!.gate.resolve({ ...body("Run it."), descriptor: listed[1]! })
+    await setImmediate()
+  })
+  await waitFor(() => tabs().at(-1)!.tab.status === "failed")
+  expect(tabs().at(-1)!.tab).toMatchObject({ code: "not_invocable", by: "agent" })
+  expect(() => runtime.retry!("manual-run")).toThrow("manual is for a person to start")
+  await render()
+  expect(tabs().at(-1)!.tab).toMatchObject({ status: "failed", code: "not_invocable" })
+  expect(bodies).toHaveLength(1)
+  expect(turns).toHaveLength(1)
+})
+
 test("an unresolved discovery run opens from Chat, restores, stops, and never dispatches afterward", async () => {
   const stale = await remountUndiscovered()
   let starts = 0

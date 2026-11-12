@@ -74,6 +74,11 @@ export interface Tab {
   readonly pinned?: true
   /** The custom agent this tab runs; `digest` is recorded once its body is read. */
   readonly agent?: { readonly name: string; readonly digest?: string }
+  /**
+   * Who requested this run; a restart relaunches it with the same authority, so only a person's request
+   * starts a `disable-model-invocation` agent. Absent, as in older sessions, means `agent`.
+   */
+  readonly by?: "user" | "agent"
   /** A typed agent failure. */
   readonly code?: Agents.Code
   /** Conversation captured with the request so a queued launch survives restart. */
@@ -229,7 +234,7 @@ export class Workspace {
         }
         if (next.writer === undefined || tab.file !== next.writer.file) return
         const requested = this.tabs.move(tab, "admit")!
-        queueMicrotask(() => this.start(requested, next.writer!, next.history ?? [], next.by ?? "user"))
+        queueMicrotask(() => this.start(requested, next.writer!, next.history ?? [], next.by ?? "agent"))
       }
     })
     for (const saved of options.restored?.tabs ?? []) {
@@ -317,7 +322,11 @@ export class Workspace {
           Lifecycle.ending[settled.status as keyof typeof Lifecycle.ending]
         )}
       if (settled.status === "queued") {
-        this.tabs.enqueue(tab.id, { writer: Session.reopen(tab.file), history: tab.history ?? [], by: "user" })
+        this.tabs.enqueue(tab.id, {
+          writer: Session.reopen(tab.file),
+          history: tab.history ?? [],
+          by: tab.by ?? "agent"
+        })
       }
       if (settled === tab && (active(tab) || tab.status === "waiting" || tab.status === "parked")) {
         this.scheduleResume(tab)
@@ -551,6 +560,7 @@ export class Workspace {
         seed
       }
     )
+    const by = request.by ?? "agent"
     const history = prior === undefined
       ? this.boundedHistory(this.options.history())
       : this.workerHistory(prior, records)
@@ -577,6 +587,7 @@ export class Workspace {
         ? { pinned: true as const }
         : {}),
       ...(request.agent === undefined ? {} : { agent: { name: request.agent } }),
+      by,
       ...(prior?.caps === undefined ? {} : { caps: prior.caps }),
       ...(request.harness !== undefined
         ? { harness: { vendor: request.harness } }
@@ -589,7 +600,6 @@ export class Workspace {
     })
     void this.describe(tab)
     this.transcripts.set(tab.id, { ...this.transcript(tab.id), modelSwitch: undefined })
-    const by = request.by ?? "agent"
     if (tab.status === "queued") this.tabs.enqueue(tab.id, { writer, history, by })
     else queueMicrotask(() => this.start(tab, writer, history, by))
     return { id: tab.id, status: tab.status }
@@ -700,12 +710,20 @@ export class Workspace {
           continuationId: randomUUID()
         })
         this.transcripts.set(tab.id, { ...this.transcript(tab.id), modelSwitch: undefined })
-        if (next.status === "queued") this.tabs.enqueue(next.id, { writer, history, by: "user" })
-        else queueMicrotask(() => this.start(next, writer, history, "user"))
+        const by = tab.by ?? "agent"
+        if (next.status === "queued") this.tabs.enqueue(next.id, { writer, history, by })
+        else queueMicrotask(() => this.start(next, writer, history, by))
         return
       }
       this.open(
-        { id: tab.id, title: tab.title, prompt: tab.prompt, model: tab.model, agent: tab.agent?.name, by: "user" },
+        {
+          id: tab.id,
+          title: tab.title,
+          prompt: tab.prompt,
+          model: tab.model,
+          agent: tab.agent?.name,
+          by: tab.by ?? "agent"
+        },
         tab,
         tab.parent,
         tab.depth,
@@ -1366,7 +1384,10 @@ export class Workspace {
     )
       .then((answer) => {
         unsubscribe()
-        if (answer.trim().toLowerCase() === "retry" && this.tabs.get(id)?.status === "failed") this.retry(id)
+        if (answer.trim().toLowerCase() === "retry" && this.tabs.get(id)?.status === "failed") {
+          // The parent agent may be the one answering, so the retry carries an agent's authority.
+          this.retry(id, "agent")
+        }
       })
       .catch((reason: unknown) => {
         unsubscribe()
@@ -1631,6 +1652,7 @@ export class Workspace {
       continuedFrom: records.length,
       continuationId: randomUUID(),
       startedAt: Date.now(),
+      by: "user",
       ...(tab.harness === undefined ? {} : { harness: { ...tab.harness, prompt } })
     })
     void this.describe(next)
@@ -1639,8 +1661,11 @@ export class Workspace {
     else queueMicrotask(() => this.start(next, writer, history, "user"))
     return { id, status: next.status }
   }
-  /** Runs a failed or stopped tab's task again, on the seat it asked for. */
-  retry = (id: string, seat?: string): { id: string; status: Tab["status"] } => {
+  /**
+   * Runs a failed or stopped tab's task again, on the seat it asked for. `by` is who asks for the retry:
+   * the model's `tab.retry` passes `agent`, so it cannot start a `disable-model-invocation` agent.
+   */
+  retry = (id: string, by: "user" | "agent", seat?: string): { id: string; status: Tab["status"] } => {
     const tab = this.tabs.get(id)
     if (tab === undefined) throw new TabError("unknown_tab", "Unknown tab", id)
     if (tab.status !== "failed" && tab.status !== "cancelled" && tab.status !== "parked") {
@@ -1661,7 +1686,7 @@ export class Workspace {
           prompt: tab.prompt,
           model: seat === undefined ? tab.model : undefined,
           agent: tab.agent?.name,
-          by: "user"
+          by
         },
         seat === undefined ? tab : { seat, pinned: true },
         tab.parent,
@@ -1685,7 +1710,7 @@ export class Workspace {
     }
     this.tabs.put({ ...tab, caps })
     try {
-      return this.retry(id)
+      return this.retry(id, "user")
     } catch (error) {
       this.tabs.put(tab)
       throw error

@@ -681,7 +681,7 @@ describe("background work", () => {
     await tick()
     f.complete({ _tag: "failed", message: "boom", detail: "boom" })
     await tick()
-    expect(f.workspace.retry(request.id)).toEqual({ id: request.id, status: "requested" })
+    expect(f.workspace.retry(request.id, "user")).toEqual({ id: request.id, status: "requested" })
     await tick()
     expect(f.workspace.snapshot().tabs[0]?.seat).toBe(Models.delegateModels.sol)
     expect(f.input().seat).toBe(Models.delegateModels.sol)
@@ -691,9 +691,9 @@ describe("background work", () => {
 
   it("refuses to retry an unknown or unsettled tab with a reason", async () => {
     const f = setup()
-    expect(() => f.workspace.retry("nope")).toThrow("Unknown tab")
+    expect(() => f.workspace.retry("nope", "user")).toThrow("Unknown tab")
     f.workspace.request(request)
-    expect(() => f.workspace.retry(request.id)).toThrow("Only a failed or stopped tab can be retried")
+    expect(() => f.workspace.retry(request.id, "user")).toThrow("Only a failed or stopped tab can be retried")
     await tick()
     f.complete({ _tag: "done", answer: "Done" })
     await tick()
@@ -766,7 +766,7 @@ describe("background work", () => {
     await tick()
     expect(f.workspace.read("fix")).toMatchObject({ status: "failed", message: "Error: Launch refused" })
     fail = false
-    f.workspace.retry("fix")
+    f.workspace.retry("fix", "user")
     expect(f.workspace.read("fix").status).toBe("requested")
     await tick()
     expect(f.workspace.read("fix").status).toBe("done")
@@ -861,7 +861,7 @@ describe("background work", () => {
       f.workspace.request(f.job("x"))
       await tick()
       expect(f.workspace.read("x").status).toBe("running")
-      f.workspace.retry("g")
+      f.workspace.retry("g", "user")
       expect(f.workspace.read("g").status).toBe("queued")
       // Quitting keeps it queued for the next session; only Stop cancels it.
       f.workspace.dispose()

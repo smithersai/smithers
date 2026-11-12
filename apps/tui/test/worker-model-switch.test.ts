@@ -191,7 +191,7 @@ test.each(["continue", "retry", "request"] as const)(
     expect(settled.card().modelSwitch).toBe("↪ switched to GPT-6 Luna")
     settled.workspace.dispose()
     if (action === "continue") f.workspace.continue("fix", "Next")
-    else if (action === "retry") f.workspace.retry("fix")
+    else if (action === "retry") f.workspace.retry("fix", "user")
     else f.workspace.request({ ...request, prompt: "New task" })
     expect(f.card().modelSwitch).toBeUndefined()
     // Persisted pending attempt must also exclude seeded history, before it launches.
@@ -242,7 +242,7 @@ test("a failed preparation after a switch remains clear after restore, even with
   f.inputs[0]!.onEvent(failover())
   f.done[0]!.resolve({ _tag: "cancelled" })
   await setImmediate()
-  f.workspace.retry("fix")
+  f.workspace.retry("fix", "user")
   const pending = f.current()
   // A preparation can fail before launch writes the next user event.
   f.workspace.dispose()
@@ -342,7 +342,7 @@ test.each(["continue", "retry", "request"] as const)(
     expect(before.card().modelSwitch).toBe(notice)
     before.workspace.dispose()
     if (action === "continue") f.workspace.continue("fix", "Next")
-    else if (action === "retry") f.workspace.retry("fix")
+    else if (action === "retry") f.workspace.retry("fix", "user")
     else f.workspace.request({ ...request, prompt: "New", model: "cerebras:qwen-3.8-27b" })
     expect(f.card().modelSwitch).toBeUndefined()
     const pending = fixture(f.workspace.snapshot())

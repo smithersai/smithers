@@ -785,7 +785,7 @@ export function App(props: AppProps) {
         )
       case "retry":
         try {
-          workspace.retry(tab.id)
+          workspace.retry(tab.id, "user")
           return
         } catch (error) {
           return setStatus(Failures.line("retry", error), "warning")
@@ -1271,7 +1271,7 @@ export function App(props: AppProps) {
         delegate: workspace.request,
         read: (id) => (runs.has(id) ? runs.read(id) : workspace.read(id)),
         list: () => [...workspace.snapshot().tabs, ...runs.snapshot()],
-        retry: (id) => (runs.has(id) ? runs.retry(id) : workspace.retry(id)),
+        retry: (id) => (runs.has(id) ? runs.retry(id) : workspace.retry(id, "agent")),
         monitors,
         ...(props.flows === undefined ? {} : {
           flows: {
@@ -1975,7 +1975,7 @@ export function App(props: AppProps) {
       return
     }
     if (open.kind === "model") return switchSeat(value)
-    if (open.kind === "worker-model") return workspace.retry(open.id, value)
+    if (open.kind === "worker-model") return workspace.retry(open.id, "user", value)
     if (open.kind === "flows") {
       command(`/flow ${value}`)
       return
