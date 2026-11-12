@@ -12,6 +12,11 @@ import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Verb from "../src/Verb.ts"
 
+// The case runs every generated gate step as a real process: 11 s alone on an
+// idle host, 17 s pinned to one core, 8.5 s inside the full suite on two cores,
+// and over the 30 s suite default inside the release gates job, which runs two
+// targets at once on 4 vCPUs (dry run 43293593020). 90 s is five times the
+// slowest local run.
 it("runs generated Windows matrix gates and retains distinct passing and failing receipts", async () => {
   const runtime = Runtime.Node({ version: ">=26.4.0" })
   const packageManager = PackageManager.Pnpm({ version: "11.25.0", runtime })
@@ -120,4 +125,4 @@ export const Package = S.Package({ targets: {
   } finally {
     await Fs.rm(root, { recursive: true, force: true })
   }
-})
+}, 90_000)
