@@ -19,6 +19,11 @@
 
 ### Fixed
 
+- `ScanFixVerify.make` confirms the result with a final scan after its last
+  allowed fix round, so fixing everything at the retry bound reports
+  `resolved: true` and `remaining` contains only issues still present
+  ([#4708](https://github.com/smithersai/smithers/issues/4708)).
+
 - `Burndown.round` admits one freed slot at a time and counts an admitted item
   as in flight the moment it is taken, so slots that free within one `capacity`
   round trip no longer all launch on an `Available` answer that allows fewer

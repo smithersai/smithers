@@ -47,8 +47,9 @@ const violations = (current: ReadonlyMap<string, number>): ReadonlyArray<Violati
  * fixes two settings concurrently and the verifier reports them resolved. That
  * verdict does not end the loop: the second round rescans, finds nothing, and
  * that empty scan is the terminal. Two rounds, one of them a confirmation.
- * `remaining` is empty on a clean exit and lists the last scan's issues when
- * the retry bound stopped the loop, which is the signal an operator acts on.
+ * At the retry bound, a final confirming scan still runs, without more fixes
+ * or verification and without increasing `iterations`. `remaining` lists that
+ * scan's issues, so the operator sees only what is still left to fix.
  */
 const Violation = Schema.Struct({ key: Schema.String, value: Schema.Number, limit: Schema.Number })
 const Scan = Action.make("bounded-loops/scan", {

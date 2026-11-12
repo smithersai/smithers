@@ -7,7 +7,8 @@
  * one artifact; here each issue gets its own fix.
  *
  * The retry bound and fan-out bound are declared, so the plan shows the worst
- * case. The engine fixes only issues the scanner returned.
+ * case, including a confirming scan after the last allowed fix round. The
+ * engine fixes only issues the scanner returned.
  *
  * @see https://smithers.sh/docs/reference/api/patterns
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
@@ -107,7 +108,9 @@ const validate = (options: {
  * Each fix slot is its own `Node.branch` on whether the scan
  * returned an issue at that index, so a run pays for exactly the fixes the
  * scan asked for, and `verify` is handed the fixes of the issues that exist.
- * Issues past `maxIssues` wait for the next round's rescan. Very large retry
+ * Issues past `maxIssues` wait for the next round's rescan. After the last
+ * allowed fix round, one confirming scan settles the report without more fixes
+ * or verification. That scan does not increase `iterations`. Very large retry
  * and issue bounds build a very large graph before anything runs.
  *
  * @category constructors
@@ -136,8 +139,12 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
     ): Node.Node<unknown, unknown, R> =>
       Node.branch(callMember(stages.scan, { input, iteration }), {
         if: clean,
-        then: () => Node.succeed({ iterations: iteration, remaining: [], resolved: true, verifications }),
-        else: (issues) => fixAll(iteration, issues, verifications)
+        then: () =>
+          Node.succeed({ iterations: Math.min(iteration, maxRetries), remaining: [], resolved: true, verifications }),
+        else: (issues) =>
+          iteration > maxRetries
+            ? Node.succeed({ iterations: maxRetries, remaining: issues, resolved: false, verifications })
+            : fixAll(iteration, issues, verifications)
       })
     const fixAll = (
       iteration: number,
@@ -182,14 +189,7 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
             Node.bindPlanned(
               callMember(stages.verify, { input, issues, fixes: fixed, iteration }),
               Node.capture({ ...captures, iteration }, (verification) =>
-                iteration >= maxRetries
-                  ? Node.succeed({
-                    iterations: iteration,
-                    remaining: issues,
-                    resolved: false,
-                    verifications: [...verifications, verification]
-                  })
-                  : visit(iteration + 1, [...verifications, verification]))
+                visit(iteration + 1, [...verifications, verification]))
             ))
         )
       }

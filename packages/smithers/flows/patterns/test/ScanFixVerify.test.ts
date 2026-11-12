@@ -47,7 +47,7 @@ describe("ScanFixVerify", () => {
     const graph = Graph.build(pattern, { input: { path: "src" } })
 
     expect(Flow.isFlow(pattern)).toBe(true)
-    expect(callsTo(graph, "sfv/scan")).toHaveLength(2)
+    expect(callsTo(graph, "sfv/scan")).toHaveLength(3)
     expect(callsTo(graph, "sfv/fix")).toHaveLength(6)
     expect(callsTo(graph, "sfv/verify")).toHaveLength(2)
     expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(4)
@@ -161,6 +161,34 @@ describe("ScanFixVerify", () => {
         expect(peak).toBe(concurrency)
       }))
 
+    it("fails when the final confirming scan fails", async () => {
+      const calls: Array<string> = []
+      const Scan = Action.make("sfv/confirmation-scan", {
+        payload: { input: Schema.Unknown, iteration: Schema.Number },
+        success: Schema.Array(Schema.String),
+        error: Schema.String
+      })
+      const pattern = ScanFixVerify.make({
+        scan: Scan,
+        fix: flowNamed("sfv/confirmation-fix"),
+        verify: flowNamed("sfv/confirmation-verify"),
+        maxRetries: 1,
+        maxIssues: 1,
+        concurrency: 1
+      })
+
+      await expect(execute(
+        pattern,
+        { input: "repo" },
+        "sfv-confirmation-failure",
+        Scan.toLayer(({ iteration }) => {
+          calls.push(`scan/${iteration}`)
+          return iteration === 1 ? Effect.succeed(["issue-a"]) : Effect.fail("confirming scan unavailable")
+        })
+      )).rejects.toThrow("confirming scan unavailable")
+      expect(calls).toEqual(["scan/1", "scan/2"])
+    })
+
     // Each stage records an observation through a declared action on the engine.
     const observe = Action.make("sfv/observe", {
       payload: { pattern: Schema.String },
@@ -211,14 +239,18 @@ describe("ScanFixVerify", () => {
       ({ iteration }) => `verify/${iteration}`,
       ({ fixes, iteration }) => ({ fixes, iteration, resolved: true })
     )
-    const executed = async (script: ReadonlyArray<ReadonlyArray<string>>, executionId: string) => {
+    const executed = async (
+      script: ReadonlyArray<ReadonlyArray<string>>,
+      executionId: string,
+      maxRetries = 2
+    ) => {
       called.length = 0
       rounds = script
       const pattern = ScanFixVerify.make({
         scan: scanStage,
         fix: fixStage,
         verify: verifyStage,
-        maxRetries: 2,
+        maxRetries,
         maxIssues: 3,
         concurrency: 3
       })
@@ -244,16 +276,40 @@ describe("ScanFixVerify", () => {
       expect(report).toEqual({ iterations: 1, remaining: [], resolved: true, verifications: [] })
     })
 
+    it.each([1, 2, 3])("reports success when the last of %i allowed rounds fixes everything", async (maxRetries) => {
+      const script = [...Array.from({ length: maxRetries }, () => ["issue-a"]), []]
+      const { report, calls } = await executed(script, `sfv-clean-bound-${maxRetries}`, maxRetries)
+
+      expect(calls).toEqual([
+        ...Array.from({ length: maxRetries }, (_, index) => [
+          `scan/${index + 1}`,
+          `fix/${index + 1}/0`,
+          `verify/${index + 1}`
+        ]).flat(),
+        `scan/${maxRetries + 1}`
+      ])
+      expect(report).toEqual({
+        iterations: maxRetries,
+        remaining: [],
+        resolved: true,
+        verifications: Array.from({ length: maxRetries }, (_, index) => ({
+          fixes: ["fixed issue-a"],
+          iteration: index + 1,
+          resolved: true
+        }))
+      })
+    })
+
     it("reports the remaining issues and every verification at the retry bound", async () => {
-      const script = [["issue-a", "issue-b"], ["issue-b"]]
+      const script = [["issue-a", "issue-b"], ["issue-b"], ["issue-c"]]
       const { report, calls } = await executed(script, "sfv-bound")
 
       expect([...calls].sort()).toEqual(
-        ["fix/1/0", "fix/1/1", "fix/2/0", "scan/1", "scan/2", "verify/1", "verify/2"]
+        ["fix/1/0", "fix/1/1", "fix/2/0", "scan/1", "scan/2", "scan/3", "verify/1", "verify/2"]
       )
       expect(report).toEqual({
         iterations: 2,
-        remaining: ["issue-b"],
+        remaining: ["issue-c"],
         resolved: false,
         verifications: [
           { fixes: ["fixed issue-a", "fixed issue-b"], iteration: 1, resolved: true },

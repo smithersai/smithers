@@ -80,15 +80,19 @@ const report = yield* repair.execute({ input: { path: "src" } }, { executionId: 
 `scan` receives `{ input, iteration }` and returns an array of issues. `fix`
 receives `{ issue, index, iteration }`. `verify` receives
 `{ input, issues, fixes, iteration }`. `ScanFixVerify.resolved` reads `true`
-or an object's own `resolved: true` from a verification.
+or an object's own `resolved: true` from a verification. The final confirming
+scan receives `iteration: maxRetries + 1`.
 
-An empty scan is the only terminal. Even a verification that reports success
+An empty scan settles `resolved: true`. Even a verification that reports success
 is followed by a confirming rescan. A clean first scan runs no fix or verify.
 The flow returns `{ iterations, remaining, resolved, verifications }`.
-`remaining` is empty on a clean exit and holds the last scan's issues at the
-retry bound. `verifications` records each round that had issues, in order.
+After the last allowed fix round, one final scan confirms whether anything
+remains, without running more fixes or verification. `remaining` holds that
+scan's issues, and `resolved` is true exactly when it is empty. This final
+confirmation does not increase `iterations`, which counts rounds entered up
+to `maxRetries`. `verifications` records each round that had issues, in order.
 
-The declaration reserves `maxRetries` scans, `maxRetries * maxIssues` fix
+The declaration reserves `maxRetries + 1` scans, `maxRetries * maxIssues` fix
 slots in `concurrency`-sized batches, and `maxRetries` verifications. A fix slot
 runs only when its scan returned an issue at that index. The verifier receives
 only the fixes for those issues. Keep `maxIssues` at or above what the scanner
