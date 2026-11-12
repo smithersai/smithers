@@ -944,7 +944,13 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
         ty = (isBigInt(left.ty) || isBigInt(right.ty)) ? { kind: "int", big: true } : { kind: "real" };
       }
       else if (["+", "-", "*", "%"].includes(e.op)) {
-        ty = (left.ty.kind === "real" || right.ty.kind === "real") ? { kind: "real" } : left.ty;
+        // A natural left operand stays natural only where the result cannot go negative: `a - b`
+        // can, and so can `+` or `*` with a signed or untyped right operand. A stale `nat` would
+        // skip JSRem, and Euclidean `(1 - 4) % 2` is 1 where JavaScript gives -1. `%` takes the
+        // dividend's sign.
+        const signed = left.ty.kind === "nat" && (e.op === "-" || (e.op !== "%" && right.ty.kind !== "nat"));
+        ty = (left.ty.kind === "real" || right.ty.kind === "real") ? { kind: "real" }
+          : signed ? { ...left.ty, kind: "int" } : left.ty;
       }
       return { kind: "binop", op: e.op, left, right, ty };
     }
