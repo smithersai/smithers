@@ -109,7 +109,7 @@ describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, ()
     expect(await world.fixer((fixer) => fixer.answer(1, 1))).toEqual({ _tag: "fixed" })
     expect(await world.fixer((fixer) => fixer.answer(1, 1))).toEqual({ _tag: "fixed" })
     expect(JSON.parse(readFileSync(join(world.briefs, "1-1.brief.json"), "utf8"))).toEqual(brief(1))
-    const built = await world.base.runPromise(world.repository.candidate([{ id: 1, rev: 1 }]))
+    const built = await world.base.runPromise(world.repository.candidate([{ id: 1, rev: 1 }], 0))
     expect(built._tag).toBe("built")
     await world.base.runPromise(world.repository.advance([], [{ id: 1, rev: 1 }]))
     expect(world.jj("file", "show", "-r", "main", "one.txt")).toBe("fixed\n")
@@ -226,7 +226,7 @@ describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, ()
     )
     const runtime = ManagedRuntime.make(layer)
     runtimes.push(runtime)
-    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
+    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [], settled: 0 }
     for (let rounds = 0; rounds < 300; rounds++) {
       const outcome = await runtime.runPromise(Driver.round(config, position))
       position = outcome

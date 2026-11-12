@@ -7,11 +7,11 @@ import { Driver, empty, QueueSchema, run, sameTree, strip, TargetDiverged, Unava
 import { random } from "./support/Generate.ts"
 import { steps } from "./support/Theorems.ts"
 import type { Script, World } from "./support/World.ts"
-import { makeWorld, statusesOf } from "./support/World.ts"
+import { makeWorld, statusesOf, wholeTree } from "./support/World.ts"
 
 const config: Config = { required: [1, 2], maxAttempts: 2, maxBatch: 4, maxRuns: 2, window: 5, defaultDuration: 60 }
 
-const start: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
+const start: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [], settled: 0 }
 
 const statuses = statusesOf
 
@@ -62,7 +62,7 @@ const expectSound = (world: World, settings: Config = config): void => {
     expect(strip(world.targets[index - 1]!, world.targets[index]!)).toBeDefined()
   }
   for (const tree of world.pushed) {
-    const tested = [...world.runs.values()].filter((record) => sameTree(record.job.tree, tree))
+    const tested = [...world.runs.values()].filter((record) => sameTree(record.tree, tree))
     expect(
       tested.some((record) =>
         settings.required.every((check) =>
@@ -300,8 +300,10 @@ describe("everything is rebased on the tip of the target", () => {
     world.foreign(900)
     position = await round(config, world, position)
     expect(world.pushed).toEqual([])
-    expect(show(position.state.main)).toEqual(["900.0"])
-    expect(position.state.runs.map((run) => [show(run.base), show(run.batch)])).toEqual([[["900.0"], ["1.0"]]])
+    expect(show(wholeTree(world, position))).toEqual(["900.0"])
+    // The foreign commit is behind every run the queue holds, so it is cut: the new run's base is empty.
+    expect(position.settled).toBe(1)
+    expect(position.state.runs.map((run) => [show(run.base), show(run.batch)])).toEqual([[[], ["1.0"]]])
     position = await during(world, position, () => {
       world.finish(1, 2)
       world.close()
@@ -320,7 +322,7 @@ describe("everything is rebased on the tip of the target", () => {
     await Effect.runPromise(Driver.sync(Driver.commands(config, position.state)).pipe(Effect.provide(world.layer)))
     world.foreign(901)
     position = await round(config, world, position)
-    expect(show(position.state.main)).toEqual(["1.0", "901.0"])
+    expect(show(wholeTree(world, position))).toEqual(["1.0", "901.0"])
     expect(statuses(world, position)).toEqual({ 1: "merged", 901: "merged" })
     expectSound(world)
   })
@@ -335,17 +337,35 @@ describe("everything is rebased on the tip of the target", () => {
     world.enqueue(2)
     world.close()
     const end = await drain(world, position)
-    expect(show(end.state.main)).toEqual(["900.0", "1.0", "901.0", "2.0"])
+    expect(show(wholeTree(world, end))).toEqual(["900.0", "1.0", "901.0", "2.0"])
     expectSound(world)
   })
 
   it("fails the round, changing nothing, when the target's history was rewritten", async () => {
+    // Below the parts the queue has settled: the target has no tree to speak of any more.
     const world = makeWorld(config)
     world.enqueue(1)
     world.close()
     const end = await drain(world)
+    expect(end.settled).toBe(1)
     world.rewrite([])
-    const exit = await roundExit(config, world, end)
+    const below = await Effect.runPromise(Effect.flip(Driver.round(config, end)).pipe(Effect.provide(world.layer)))
+    expect(below).toMatchObject({ _tag: "@smthrs/merge-queue/Unavailable", service: "target" })
+
+    // Among the parts the queue still holds: the tip does not extend the tree the queue knows.
+    const other = makeWorld(config, { auto: false })
+    other.enqueue(1)
+    other.enqueue(2)
+    let position: Driver.Position = await round(config, other, start)
+    // One run tests change 1 alone and lands it; the other, on both changes, was built on the empty tree and is held.
+    position = await during(other, position, () => {
+      const alone = [...other.runs.values()].find((record) => record.job.tree.length === 1)!
+      other.finish(alone.job.run, 2)
+    })
+    position = await until(other, position, (outcome) => statuses(other, outcome)[1] === "merged")
+    expect([position.settled, show(position.state.main)]).toEqual([0, ["1.0"]])
+    other.rewrite([])
+    const exit = await roundExit(config, other, position)
     expect(Exit.isFailure(exit) && String(exit.cause)).toContain("TargetDiverged")
   })
 
@@ -407,7 +427,9 @@ describe("everything is rebased on the tip of the target", () => {
           if (outcome.done) end = outcome
         }
         expect(end, `seed ${seed}`).toBeDefined()
-        expect(sameTree(end!.state.main, world.targets.at(-1)!), `seed ${seed}`).toBe(true)
+        expect(sameTree(wholeTree(world, end!), world.targets.at(-1)!), `seed ${seed}`).toBe(true)
+        // With no run left, everything on the target is settled and the state's tree is empty.
+        expect([end!.settled, end!.state.main], `seed ${seed}`).toEqual([world.targets.at(-1)!.length, []])
         expect(
           Object.values(statuses(world, end!)).every((status) =>
             ["merged", "unmergeable", "withdrawn"].includes(status)
@@ -431,19 +453,31 @@ describe("what the queue carries between rounds", () => {
     })
     let position: Driver.Position = start
     let live = 0
+    let longest = 0
+    let largest = 0
     for (let id = 1; id <= 120; id++) {
       world.enqueue(id)
       if (id % 10 === 0) world.withdraw(id)
       position = await round(settings, world, position)
       expect(position.state.changes.every((change) => ["queued", "fixing"].includes(change.status._tag))).toBe(true)
       expect(position.state.landed).toEqual([])
+      // The state's tree is what the target holds after the parts the queue settled.
+      expect(wholeTree(world, position)).toEqual(world.targets.at(-1))
       live = Math.max(live, position.state.changes.length)
+      longest = Math.max(longest, position.state.main.length)
+      largest = Math.max(largest, JSON.stringify(position).length)
     }
     world.close()
     const end = await drain(world, position, settings)
     expect(world.endings).toHaveLength(120)
-    // At most a handful of changes are in the queue at once, so the state never holds more than that.
+    expect(world.targets.at(-1)!.length).toBeGreaterThan(100)
+    expect(end.settled).toBe(world.targets.at(-1)!.length)
+    // At most a handful of changes are in the queue at once, so the state never holds more than that:
+    // not the changes that ended, not the tree they landed in. What a host records stays a few kilobytes
+    // while 120 changes go through.
     expect(live).toBeLessThan(12)
+    expect(longest).toBeLessThan(12)
+    expect(largest).toBeLessThan(6_000)
     expectRecorded(world, end, settings)
     expectSound(world, settings)
   })
@@ -584,7 +618,7 @@ describe("waiting", () => {
     position = await during(world, position, () => world.answer(1, 1, { _tag: "gaveUp", detail: "no" }))
     expect(statuses(world, position)).toEqual({ 1: "unmergeable" })
     position = await during(world, position, () => world.foreign(7))
-    expect(show(position.state.main)).toEqual(["7.0"])
+    expect(show(wholeTree(world, position))).toEqual(["7.0"])
     expect((await during(world, position, () => world.close())).done).toBe(true)
   })
 })
@@ -629,7 +663,7 @@ describe("failures of the world", () => {
       }
       expect(failures).toBeGreaterThan(0)
       const expected = await drain(calm)
-      expect(end?.state.main).toEqual(expected.state.main)
+      expect(end && wholeTree(world, end)).toEqual(wholeTree(calm, expected))
       expect(statuses(world, end!)).toEqual(statuses(calm, expected))
       expectSound(world)
     }
@@ -672,7 +706,7 @@ describe("crash and restart", () => {
         if (exit.value.done) end = exit.value
       }
       expect(crashed, `crash at call ${crashAt}`).toBe(1)
-      expect(end?.state.main, `crash at call ${crashAt}`).toEqual(expected.state.main)
+      expect(end && wholeTree(world, end), `crash at call ${crashAt}`).toEqual(wholeTree(calm, expected))
       expect(statuses(world, end!)).toEqual(statuses(calm, expected))
       expect(world.targets.at(-1)).toEqual(calm.targets.at(-1))
       expectSound(world)
@@ -694,7 +728,9 @@ describe("commands", () => {
     expect(issued.advance).toBeNull()
     expect(issued.briefs).toEqual([{ id: 2, rev: 0, attempt: 1, failures: [1], ahead: [] }])
     expect(issued.jobs).toEqual([])
-    expect(Driver.commands(config, empty)).toEqual({ advance: null, jobs: [], briefs: [] })
+    expect(Driver.commands(config, empty)).toEqual({ settled: 0, advance: null, jobs: [], briefs: [] })
+    expect(Driver.commands(config, position.state, 7)).toMatchObject({ settled: 7, jobs: [] })
+    expect(Driver.job(config, pushing.state, 0, 7)).toMatchObject({ run: 0, from: 7 })
     expect(Driver.drained(position.state)).toBe(false)
     expect(Driver.drained(empty)).toBe(true)
   })

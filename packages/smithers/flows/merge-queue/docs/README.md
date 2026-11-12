@@ -103,7 +103,8 @@ record of how each change ended).
 
 ```text
 record   write the changes the round before ended into the record of endings
-sync     make the world match the state: fast-forward the target onto the
+sync     make the world match the state: have the target settle the parts
+         the queue cut from its trees, fast-forward the target onto the
          tree being pushed (compare-and-swap from the tip it was tested on),
          keep exactly the wanted CI runs and fix agents going
 gather   read the target's tip, new letters, every finished check, lost
@@ -112,6 +113,7 @@ gather   read the target's tip, new letters, every finished check, lost
 fold     apply those events and let the policy settle, dropping each change
          as it ends
 check    the state's tree must be exactly the tip that was read
+cut      drop from the state's trees the parts every run was built on
 ```
 
 The state a round returns is pruned: after every event the driver drops the
@@ -123,6 +125,20 @@ decides exactly what a queue that keeps everything decides (`pruned_plan`,
 never used again.** The queue no longer holds an ended change, so it cannot
 refuse its id; the file inbox does, by passing over an `enqueue` line whose id
 an earlier line enqueued.
+
+The target's tree only grows, so the round also cuts it. The parts every run
+the queue holds was built on are behind the queue for good; the round drops
+them from the target's tree and from every run's base (`settled`, `cut`) and
+adds their number to `Position.settled`. The next round begins by telling the
+target that count (`Target.settle`), and the target then speaks of trees from
+there too. For a jj repository that moves the ledger's starting commit forward
+and drops the ledger entries only the settled parts needed. A CI job carries
+the count its tree was named at (`Job.from`), so a candidate still being built
+when the start moves is the same commit afterwards. The reference proves that
+the cut queue decides what the full queue decides (`cut_plan`, `cut_step`,
+`kept_round`) and that what the driver cuts is always a shared prefix
+(`settled_onPrefix`). With both prunings, what a host records each round is a
+few kilobytes however many changes have gone through.
 
 A round returns the changes it ended (`Outcome.ended`), and the next round
 records them. The record therefore holds only a decision the host kept: a
@@ -158,7 +174,7 @@ const layer = Layer.mergeAll(QueueFlow.layer, Interpreter.layer(QueueFlow.Queue)
   Layer.provideMerge(engine)
 )
 QueueFlow.Queue.execute(
-  { config, state: empty, cursor: 0, closed: false, ended: [], round: 0 },
+  { config, state: empty, cursor: 0, closed: false, ended: [], settled: 0, round: 0 },
   { executionId: "main" }
 )
 ```
@@ -181,7 +197,7 @@ smthrs flow start merge-queue --data @start.json
 ```
 
 `start.json` is `{ "config": {...}, "state": <the empty state>, "cursor": 0,
-"closed": false, "ended": [], "round": 0 }`. Hand a change in by appending one line to
+"closed": false, "ended": [], "settled": 0, "round": 0 }`. Hand a change in by appending one line to
 `$MQ_STATE/inbox.jsonl`:
 
 ```json

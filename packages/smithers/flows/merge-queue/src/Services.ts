@@ -86,6 +86,8 @@ export class Inbox extends Context.Service<
  */
 export interface Job {
   readonly run: number
+  /** How many parts the queue had settled when it named `tree`: the tree is spoken of from there. */
+  readonly from: number
   readonly tree: Tree
   readonly checks: ReadonlyArray<number>
   readonly eta: number
@@ -171,13 +173,24 @@ export class Fixer extends Context.Service<
  * The target branch. The queue rebases everything on its tip and only ever
  * fast-forwards it.
  *
+ * A tree is the parts on the branch after a starting commit. The queue moves
+ * that start forward as parts settle (`settle`), so the trees it exchanges
+ * with the target stay short however long the branch grows.
+ *
  * @category services
  * @since 0.1.0
  */
 export class Target extends Context.Service<
   Target,
   {
-    /** The tree the target branch is on now. */
+    /**
+     * Makes the target speak of trees from `count` parts after the commit the
+     * queue started on: the first `count` parts it has ever reported are
+     * settled and no tree names them again. `count` never decreases; asking
+     * for a count the target is already at changes nothing.
+     */
+    readonly settle: (count: number) => Effect.Effect<void, Unavailable>
+    /** The tree the target branch is on now, from the settled parts on. */
     readonly tip: Effect.Effect<Tree, Unavailable>
     /**
      * Fast-forwards the target from `from` to `to`, only if it is on `from`

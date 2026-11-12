@@ -89,7 +89,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
     expect(await run(queue.tip)).toEqual([])
-    expect(await run(queue.candidate([]))).toEqual({ _tag: "built", commit: repo.head() })
+    expect(await run(queue.candidate([], 0))).toEqual({ _tag: "built", commit: repo.head() })
   })
 
   it("builds a candidate by replaying each change on the tip, and lands exactly that commit", async () => {
@@ -98,13 +98,13 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
     await run(queue.register({ id: 2, rev: 0 }, repo.change("two.txt", "two\n")))
     const base = repo.head()
-    const built = await run(queue.candidate(tree([1, 0], [2, 0])))
+    const built = await run(queue.candidate(tree([1, 0], [2, 0]), 0))
     expect(built._tag).toBe("built")
     const commit = built._tag === "built" ? built.commit : ""
     expect(repo.jj("log", "--no-graph", "-r", `${base}..${commit}`, "-T", "commit_id ++ \"\\n\"").trim().split("\n"))
       .toHaveLength(2)
     expect(repo.head()).toBe(base)
-    expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual(built)
+    expect(await run(queue.candidate(tree([1, 0], [2, 0]), 0))).toEqual(built)
     await run(queue.advance([], tree([1, 0], [2, 0])))
     expect(repo.head()).toBe(commit)
     expect(repo.files()).toEqual(["base.txt", "one.txt", "two.txt"])
@@ -116,8 +116,8 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     const queue = await run(JjRepository.make(repo.options))
     await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
     await run(queue.register({ id: 2, rev: 0 }, repo.change("two.txt", "two\n")))
-    const long = await run(queue.candidate(tree([1, 0], [2, 0])))
-    const short = await run(queue.candidate(tree([1, 0])))
+    const long = await run(queue.candidate(tree([1, 0], [2, 0]), 0))
+    const short = await run(queue.candidate(tree([1, 0]), 0))
     const commit = (candidate: JjRepository.Candidate): string => candidate._tag === "built" ? candidate.commit : ""
     expect(repo.jj("log", "--no-graph", "-r", `${commit(short)} & ::${commit(long)}`, "-T", "commit_id").trim())
       .toBe(commit(short))
@@ -140,7 +140,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
     await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
-    await run(queue.candidate(tree([1, 0])))
+    await run(queue.candidate(tree([1, 0]), 0))
     const before = repo.head()
     await run(queue.advance(tree([9, 0]), tree([1, 0])))
     expect(repo.head()).toBe(before)
@@ -153,13 +153,13 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
     await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
-    await run(queue.candidate(tree([1, 0])))
+    await run(queue.candidate(tree([1, 0]), 0))
     repo.jj("bookmark", "set", "main", "-r", repo.change("other.txt", "theirs\n"))
     const foreign = JjRepository.firstForeign
     expect(await run(queue.tip)).toEqual(tree([foreign, 0]))
     expect(await run(queue.tip)).toEqual(tree([foreign, 0]))
-    expect(await run(queue.candidate(tree([1, 0])))).toEqual({ _tag: "stale" })
-    const rebuilt = await run(queue.candidate(tree([foreign, 0], [1, 0])))
+    expect(await run(queue.candidate(tree([1, 0]), 0))).toEqual({ _tag: "stale" })
+    const rebuilt = await run(queue.candidate(tree([foreign, 0], [1, 0]), 0))
     expect(rebuilt._tag).toBe("built")
     await run(queue.advance(tree([foreign, 0]), tree([foreign, 0], [1, 0])))
     expect(repo.files()).toEqual(["base.txt", "one.txt", "other.txt"])
@@ -170,7 +170,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     const queue = await run(JjRepository.make(repo.options))
     await run(queue.register({ id: 1, rev: 0 }, repo.change("same.txt", "mine\n")))
     await run(queue.register({ id: 2, rev: 0 }, repo.change("same.txt", "yours\n")))
-    expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
+    expect(await run(queue.candidate(tree([1, 0], [2, 0]), 0))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
     const exit = await runExit(queue.advance([], tree([1, 0], [2, 0])))
     expect(Exit.isFailure(exit) && String(exit.cause)).toContain("Unavailable")
   })
@@ -183,7 +183,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     const second = repo.on(first, "two.txt", "two\n")
     await run(queue.register({ id: 1, rev: 0 }, `${first} | ${second}`))
     await run(queue.register({ id: 2, rev: 0 }, repo.change("three.txt", "three\n")))
-    const built = await run(queue.candidate(tree([1, 0])))
+    const built = await run(queue.candidate(tree([1, 0]), 0))
     const commit = built._tag === "built" ? built.commit : ""
     expect(repo.jj("log", "--no-graph", "-r", `${base}..${commit}`, "-T", "description").trim().split("\n"))
       .toEqual(["change two.txt", "change one.txt"])
@@ -201,7 +201,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     const left = repo.change("left.txt", "left\n")
     const right = repo.change("right.txt", "right\n")
     await run(queue.register({ id: 1, rev: 0 }, `${left} | ${right}`))
-    expect(await run(queue.candidate(tree([1, 0])))).toEqual({ _tag: "conflict", part: { id: 1, rev: 0 } })
+    expect(await run(queue.candidate(tree([1, 0]), 0))).toEqual({ _tag: "conflict", part: { id: 1, rev: 0 } })
     expect(
       repo.jj(
         "log",
@@ -231,10 +231,10 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     await run(queue.register({ id: 1, rev: 0 }, repo.change("same.txt", "mine\n")))
     await run(queue.register({ id: 2, rev: 0 }, repo.change("same.txt", "yours\n")))
     await run(queue.register({ id: 3, rev: 0 }, repo.change("three.txt", "three\n")))
-    expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
+    expect(await run(queue.candidate(tree([1, 0], [2, 0]), 0))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
     // The refusal is remembered: the other runs that contain the change are answered without replaying it.
-    expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
-    expect(await run(queue.candidate(tree([1, 0], [2, 0], [3, 0]))))
+    expect(await run(queue.candidate(tree([1, 0], [2, 0]), 0))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
+    expect(await run(queue.candidate(tree([1, 0], [2, 0], [3, 0]), 0)))
       .toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
     expect(readFileSync(join(repo.path, "finish-calls.txt"), "utf8").trim().split("\n")).toEqual(["false", "true"])
     await run(queue.advance([], tree([1, 0], [3, 0])))
@@ -258,7 +258,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
       }))
       await run(queue.register({ id: 1, rev: 0 }, one))
       await run(queue.register({ id: 2, rev: 0 }, two))
-      return detail(queue.candidate(trees))
+      return detail(queue.candidate(trees, 0))
     }
     expect(await answering("echo nonsense")(tree([1, 0]))).toContain("not a clean line")
     expect(await answering("true")(tree([1, 0]))).toContain("gave no commit")
@@ -271,7 +271,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
       finish: () => ({ command: join(repo.path, "no-such-program"), args: [] })
     }))
     await run(missing.register({ id: 1, rev: 0 }, one))
-    expect(await detail(missing.candidate(tree([1, 0])))).toContain("could not run")
+    expect(await detail(missing.candidate(tree([1, 0]), 0))).toContain("could not run")
     const elsewhere = await run(JjRepository.make({ ...repo.options, binary: join(repo.path, "no-such-jj") }))
     expect(await detail(elsewhere.tip)).toContain("could not run")
   })
@@ -291,7 +291,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
       run(Effect.map(Effect.flip(effect), (error) => error.detail))
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
-    expect(await detail(queue.candidate(tree([5, 0])))).toContain("no commit registered for 5.0")
+    expect(await detail(queue.candidate(tree([5, 0]), 0))).toContain("no commit registered for 5.0")
     const none = await run(
       JjRepository.make({ ...repo.options, bookmark: "absent", ledger: join(repo.path, "none.json") })
     )
@@ -344,7 +344,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
       Effect.gen(function*() {
         const muted = yield* JjRepository.make({ ...repo.options, ledger: join(root, "mute.json") })
         yield* muted.register({ id: 1, rev: 0 }, repo.head())
-        return yield* Effect.map(Effect.flip(muted.candidate(tree([1, 0]))), (error) => error.detail)
+        return yield* Effect.map(Effect.flip(muted.candidate(tree([1, 0]), 0)), (error) => error.detail)
       }).pipe(Effect.provide(mute)) as Effect.Effect<string>
     )
     expect(unreadable).toContain("printed no new commit")
@@ -393,6 +393,118 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     expect(woke).toBe(true)
   })
 
+  it("settles parts: the starting commit moves forward, trees are spoken of from there, and the ledger forgets", async () => {
+    const repo = repository()
+    const queue = await run(JjRepository.make(repo.options))
+    const ledger = (): typeof JjRepository.Ledger.Type => JSON.parse(readFileSync(repo.options.ledger, "utf8"))
+    for (const id of [1, 2, 3, 4]) {
+      await run(queue.register({ id, rev: 0 }, repo.change(`${id}.txt`, `${id}\n`)))
+    }
+    // A candidate the bookmark will pass by, and one that conflicts where it stands.
+    await run(queue.register({ id: 9, rev: 0 }, repo.change("1.txt", "nine\n")))
+    await run(queue.candidate(tree([4, 0]), 0))
+    expect(await run(queue.candidate(tree([1, 0], [9, 0]), 0))).toEqual({ _tag: "conflict", part: { id: 9, rev: 0 } })
+    await run(queue.advance([], tree([1, 0])))
+    await run(queue.advance(tree([1, 0]), tree([1, 0], [2, 0])))
+    const two = repo.head()
+    // A run in flight on the whole tree, named before anything was settled.
+    const inFlight = await run(queue.candidate(tree([1, 0], [2, 0], [3, 0]), 0))
+    expect(inFlight._tag).toBe("built")
+    // And a longer one, whose last change is applied on a commit that is not on the bookmark yet.
+    const longer = await run(queue.candidate(tree([1, 0], [2, 0], [3, 0], [4, 0]), 0))
+    const commitOf = (candidate: JjRepository.Candidate): string => candidate._tag === "built" ? candidate.commit : ""
+    const before = ledger()
+    expect(before).toMatchObject({ settled: 0 })
+    expect(before.candidates).toHaveLength(5)
+    expect(before.refused).toHaveLength(1)
+
+    // Nothing to do, and too much to do.
+    await run(queue.settle(0))
+    expect(ledger()).toEqual(before)
+    const past = await runExit(queue.settle(3))
+    expect(Exit.isFailure(past) && String(past.cause)).toContain("Unavailable")
+    expect(ledger()).toEqual(before)
+
+    await run(queue.settle(2))
+    const after = ledger()
+    expect(after).toMatchObject({ genesis: two, settled: 2 })
+    // What only the settled parts needed is gone: their sources and commits, the candidate on the
+    // old start and the refusal on a commit now behind the start. The candidate in flight stays.
+    expect(after.sources.map((entry) => entry.id).sort()).toEqual([3, 4, 9])
+    expect(after.candidates).toEqual([
+      { onto: two, id: 3, rev: 0, commit: commitOf(inFlight) },
+      { onto: commitOf(inFlight), id: 4, rev: 0, commit: commitOf(longer) }
+    ])
+    expect(after.refused).toEqual([])
+    expect(after.pinned.map((entry) => entry.id)).toEqual([3, 4])
+    // Settling again, as a round that runs twice does, changes nothing.
+    await run(queue.settle(2))
+    await run(queue.settle(1))
+    expect(ledger()).toEqual(after)
+    // So does a host that starts over the same ledger and is told the count it already holds.
+    const restarted = await run(JjRepository.make(repo.options))
+    await run(restarted.settle(2))
+    await run(restarted.settle(2))
+    expect(ledger()).toEqual(after)
+
+    // Trees are spoken of from the new start.
+    expect(await run(queue.tip)).toEqual([])
+    // The run in flight was named with nothing settled: its first two parts are dropped, and it is the same commit.
+    expect(await run(queue.candidate(tree([1, 0], [2, 0], [3, 0]), 0))).toEqual(inFlight)
+    expect(await run(queue.candidate(tree([3, 0]), 2))).toEqual(inFlight)
+    expect(await run(queue.candidate(tree([1, 0], [2, 0], [3, 0], [4, 0]), 0))).toEqual(longer)
+    // A tree named for a later start than the ledger's cannot be read.
+    expect(await run(queue.candidate(tree([3, 0]), 3))).toEqual({ _tag: "stale" })
+    // It lands as the commit that was tested, and a foreign commit after it is numbered on from the counter.
+    await run(queue.advance([], tree([3, 0])))
+    expect(repo.head()).toBe(commitOf(inFlight))
+    repo.jj("bookmark", "set", "main", "-r", repo.on("main", "theirs.txt", "theirs\n"))
+    expect(await run(queue.tip)).toEqual(tree([3, 0], [JjRepository.firstForeign, 0]))
+    await run(queue.settle(4))
+    expect(await run(queue.tip)).toEqual([])
+    expect(ledger()).toMatchObject({ genesis: repo.head(), settled: 4, candidates: [], pinned: [], interior: [] })
+    expect(await run(queue.candidate(tree([4, 0]), 4))).toMatchObject({ _tag: "built" })
+    await run(queue.advance([], tree([4, 0])))
+    expect(repo.files()).toEqual(["1.txt", "2.txt", "3.txt", "4.txt", "base.txt", "theirs.txt"])
+  })
+
+  it("is unavailable, and says why, when the bookmark no longer descends from the starting commit", async () => {
+    const detail = (effect: Effect.Effect<unknown, Unavailable, any>): Promise<string> =>
+      run(Effect.map(Effect.flip(effect), (error) => error.detail))
+    const repo = repository()
+    const queue = await run(JjRepository.make(repo.options))
+    await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
+    await run(queue.advance([], tree([1, 0])))
+    await run(queue.settle(1))
+    expect(await run(queue.tip)).toEqual([])
+    // History is rewritten: the bookmark goes back to the base, behind the commit the queue settled.
+    repo.jj("bookmark", "set", "main", "-r", "root()+", "--allow-backwards")
+    for (const effect of [queue.tip, queue.settle(2), queue.candidate([], 1), queue.advance([], tree([1, 0]))]) {
+      expect(await detail(effect)).toContain("no longer descends from the queue's starting commit")
+    }
+    // A commit on a line that never held the starting commit is no better.
+    repo.jj("bookmark", "set", "main", "-r", repo.on("root()+", "elsewhere.txt", "elsewhere\n"), "--allow-backwards")
+    expect(await detail(queue.tip)).toContain("its history was rewritten")
+  })
+
+  it("settles a stack with the commits below its last one", async () => {
+    const repo = repository()
+    const queue = await run(JjRepository.make(repo.options))
+    const first = repo.change("a.txt", "a\n")
+    const second = repo.on(first, "b.txt", "b\n")
+    await run(queue.register({ id: 1, rev: 0 }, `${first} | ${second}`))
+    await run(queue.register({ id: 2, rev: 0 }, repo.change("c.txt", "c\n")))
+    await run(queue.advance([], tree([1, 0])))
+    const ledger = (): typeof JjRepository.Ledger.Type => JSON.parse(readFileSync(repo.options.ledger, "utf8"))
+    expect(ledger().interior).toHaveLength(1)
+    expect(await run(queue.tip)).toEqual(tree([1, 0]))
+    await run(queue.settle(1))
+    expect(ledger()).toMatchObject({ genesis: repo.head(), settled: 1, interior: [] })
+    expect(await run(queue.tip)).toEqual([])
+    await run(queue.advance([], tree([2, 0])))
+    expect(repo.files()).toEqual(["a.txt", "b.txt", "base.txt", "c.txt"])
+  })
+
   it("drives the queue on a real repository: changes land as fast-forwards, around someone else's commit", async () => {
     const config: Config = { required: [1], maxAttempts: 1, maxBatch: 4, maxRuns: 4, window: 3, defaultDuration: 1 }
     const repo = repository()
@@ -404,7 +516,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 
     world.enqueue(2)
     world.close()
     const layer = Layer.merge(world.layer, JjRepository.target(queue, "5 millis"))
-    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
+    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [], settled: 0 }
     const heads = [repo.head()]
     for (let rounds = 0; rounds < 60; rounds++) {
       if (rounds === 1) repo.jj("bookmark", "set", "main", "-r", repo.change("other.txt", "theirs\n"))

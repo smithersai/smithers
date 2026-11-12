@@ -104,7 +104,7 @@ const make = (
 
     const start = (job: Job, record: Running): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const candidate = yield* repository.candidate(job.tree)
+        const candidate = yield* repository.candidate(job.tree, job.from)
         if (candidate._tag === "conflict") {
           record.finished.push(...job.checks.map((id): Finished => ({ check: id, verdict: "fail", duration: 0 })))
           return

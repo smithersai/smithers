@@ -16,7 +16,7 @@ import { makeWorld, statusesOf } from "./support/World.ts"
 
 const config: Config = { required: [1, 2], maxAttempts: 2, maxBatch: 4, maxRuns: 2, window: 5, defaultDuration: 60 }
 
-const start = { config, state: empty, cursor: 0, closed: false, ended: [], round: 0 }
+const start = { config, state: empty, cursor: 0, closed: false, ended: [], settled: 0, round: 0 }
 
 const threeIsBroken: Script = {
   failing: (entry) => entry.id === 3 && entry.rev === 0 ? [2] : [],
@@ -70,7 +70,8 @@ describe("the queue as a durable flow", () => {
     expect(Exit.isSuccess(exit)).toBe(true)
     const state = Exit.isSuccess(exit) ? exit.value : empty
     expect(statuses(world, state)).toEqual({ 1: "merged", 2: "merged", 3: "merged", 4: "merged" })
-    expect(sameTree(state.main, world.targets.at(-1)!)).toBe(true)
+    // Nothing is left in the queue: every part on the target is settled and the state's tree is empty.
+    expect([state.main, world.settled()]).toEqual([[], world.targets.at(-1)!.length])
     expect(world.endings.map((ending) => [ending.id, ending.rev, ending.status._tag]).sort()).toEqual([
       [1, 0, "merged"],
       [2, 0, "merged"],
@@ -87,7 +88,8 @@ describe("the queue as a durable flow", () => {
     world.close()
     const exit = await run(world, memory, "queue-2")
     const state = Exit.isSuccess(exit) ? exit.value : empty
-    expect(state.main.map((entry) => entry.id)).toEqual([900, 1])
+    expect(state.main).toEqual([])
+    expect(world.targets.at(-1)!.map((entry) => entry.id)).toEqual([900, 1])
     expectSound(world)
   })
 

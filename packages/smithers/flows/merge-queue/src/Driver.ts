@@ -13,6 +13,10 @@
  * queue's decision. A round that ran twice after a crash may decide
  * differently the second time; only the decision that was kept is written.
  *
+ * A round ends by cutting the parts of the target's tree that every run was
+ * built on (`settled`, `cut`), and the next round begins by telling the
+ * target to settle the same parts, so the trees in the state stay short.
+ *
  * The round keeps only what the queue still needs: after every event it drops
  * the changes that ended and the landings (`runPruned`, `settlePruned`). They
  * are in the record of endings by the next round, so the state a host carries
@@ -34,7 +38,7 @@
 import * as Effect from "effect/Effect"
 import type { Config, Event, State, Tree } from "./Basic.ts"
 import { isTerminal, sameTree, tree } from "./Basic.ts"
-import { runPruned, settlePruned } from "./Compact.ts"
+import { cut, runPruned, settled, settlePruned } from "./Compact.ts"
 import type { FixBrief } from "./Policy.ts"
 import { fixBriefs, plan, wantsCi } from "./Policy.ts"
 import { eta, remaining } from "./Predict.ts"
@@ -57,6 +61,12 @@ export interface Position {
   readonly closed: boolean
   /** The changes the round before ended. This round writes them into the record. */
   readonly ended: ReadonlyArray<Ending>
+  /**
+   * How many parts of the target's tree the queue has cut from its state since
+   * it started. The state's trees are spoken of from there, and each round
+   * first makes the target speak of them from there too.
+   */
+  readonly settled: number
 }
 
 /**
@@ -67,6 +77,8 @@ export interface Position {
  * @since 0.1.0
  */
 export interface Commands {
+  /** The parts the target must have settled, so that it speaks of the same trees as the state. */
+  readonly settled: number
   /** The fast-forward under way: from the tip the run was tested on, to the tested tree. */
   readonly advance: { readonly from: Tree; readonly to: Tree } | null
   /** Exactly the CI runs that must be running. */
@@ -85,15 +97,17 @@ export interface Commands {
 export const settleFuel = 1024
 
 /**
- * The CI job for a run: its tree, its remaining checks slowest first, and its ETA.
+ * The CI job for a run: its tree, its remaining checks slowest first, and its
+ * ETA. `from` is how many parts the queue has cut from the state's trees.
  *
  * @category commands
  * @since 0.1.0
  */
-export const job = (config: Config, state: State, id: number): Job | undefined => {
+export const job = (config: Config, state: State, id: number, from = 0): Job | undefined => {
   const found = state.runs.find((entry) => entry.id === id)
   return found === undefined ? undefined : {
     run: found.id,
+    from,
     tree: tree(found),
     checks: remaining(config, state.history, found.results),
     eta: eta(config, state.history, found.results)
@@ -104,16 +118,18 @@ const wanted = (config: Config, state: State): ReadonlyArray<number> =>
   state.runs.filter((entry) => wantsCi(config, state, entry)).map((entry) => entry.id)
 
 /**
- * The commands a state implies.
+ * The commands a state implies. `from` is how many parts the queue has cut
+ * from the state's trees (`Position.settled`).
  *
  * @category commands
  * @since 0.1.0
  */
-export const commands = (config: Config, state: State): Commands => {
+export const commands = (config: Config, state: State, from = 0): Commands => {
   const pushed = pushingRun(state)
   return {
+    settled: from,
     advance: pushed === undefined ? null : { from: state.main, to: tree(pushed) },
-    jobs: wanted(config, state).map((id) => job(config, state, id)!),
+    jobs: wanted(config, state).map((id) => job(config, state, id, from)!),
     briefs: fixBriefs(state)
   }
 }
@@ -296,8 +312,8 @@ export const waitForNews = (
   })
 
 /**
- * Makes the world match a state: the fast-forward under way, the CI runs and
- * the fix agents. Safe to run again.
+ * Makes the world match a state: the parts the target has settled, the
+ * fast-forward under way, the CI runs and the fix agents. Safe to run again.
  *
  * @category rounds
  * @since 0.1.0
@@ -307,6 +323,7 @@ export const sync = (issued: Commands): Effect.Effect<void, Unavailable, Ci | Fi
     const target = yield* Target
     const ci = yield* Ci
     const fixer = yield* Fixer
+    yield* target.settle(issued.settled)
     if (issued.advance !== null) yield* target.advance(issued.advance.from, issued.advance.to)
     yield* ci.reconcile(issued.jobs)
     yield* fixer.reconcile(issued.briefs)
@@ -321,8 +338,9 @@ export const sync = (issued: Commands): Effect.Effect<void, Unavailable, Ci | Fi
 export interface Outcome extends Position {
   /**
    * Whether the queue is finished: closed, every change ended, no run left,
-   * and every ending in the record. A round that ends a change is never the
-   * last one: the round after it records the ending.
+   * every ending in the record and every cut told to the target. A round that
+   * ends a change or cuts its trees is never the last one: the round after it
+   * records the ending and has the target settle the parts.
    */
   readonly done: boolean
 }
@@ -345,7 +363,7 @@ export const round = (
 ): Effect.Effect<Outcome, Unavailable | TargetDiverged, Inbox | Ci | Fixer | Target | Endings> =>
   Effect.gen(function*() {
     if (position.ended.length > 0) yield* (yield* Endings).record(position.ended)
-    yield* sync(commands(config, position.state))
+    yield* sync(commands(config, position.state, position.settled))
     let news = yield* gather(config, position)
     const idle = news.events.length === 0 && news.closed === position.closed
       && plan(config, position.state) === undefined
@@ -353,8 +371,14 @@ export const round = (
       yield* waitForNews(config, position, news.tip)
       news = yield* gather(config, position)
     }
-    const { ended: finished, state } = advance(config, position.state, news.events)
-    if (!sameTree(state.main, news.tip)) return yield* new TargetDiverged({ known: state.main, found: news.tip })
+    const { ended: finished, state: advanced } = advance(config, position.state, news.events)
+    if (!sameTree(advanced.main, news.tip)) {
+      return yield* new TargetDiverged({ known: advanced.main, found: news.tip })
+    }
+    // Every part that every run was built on is behind the queue for good. The
+    // next round tells the target before it reads or moves it.
+    const behind = settled(advanced)
+    const state = cut(advanced, behind)
     yield* Effect.logInfo("merge queue round").pipe(
       Effect.annotateLogs({
         events: news.events.length,
@@ -366,7 +390,8 @@ export const round = (
         ended: finished.length,
         runs: state.runs.length,
         fixing: fixBriefs(state).length,
-        main: state.main.length
+        main: state.main.length,
+        settled: position.settled + behind
       })
     )
     return {
@@ -374,6 +399,7 @@ export const round = (
       cursor: news.cursor,
       closed: news.closed,
       ended: finished,
-      done: news.closed && drained(state) && finished.length === 0
+      settled: position.settled + behind,
+      done: news.closed && drained(state) && finished.length === 0 && behind === 0
     }
   }).pipe(Effect.withSpan("merge-queue.round"))

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Config, Event, State } from "../src/index.ts"
 import {
+  cut,
   Driver,
   empty,
   fresh,
@@ -12,6 +13,7 @@ import {
   run,
   runPruned,
   settle,
+  settled,
   settlePruned,
   step
 } from "../src/index.ts"
@@ -191,6 +193,87 @@ describe("what the queue keeps", () => {
       }
       expect(rounds).toBeGreaterThan(2_500)
       expect(ended).toBeGreaterThan(500)
+    },
+    240_000
+  )
+
+  it("the settled parts are the ones every run was built on, and cutting drops them from the tree and every base", () => {
+    const base = { id: 1, rev: 0 }
+    const two = { id: 2, rev: 0 }
+    const three = { id: 3, rev: 0 }
+    const run = (id: number, onto: ReadonlyArray<typeof base>) => ({ id, base: onto, batch: [three], results: [] })
+    const state: State = { ...empty, main: [base, two], runs: [run(0, [base]), run(1, [base, two])], pushing: 0 }
+    expect(settled(empty)).toBe(0)
+    expect(settled({ ...state, runs: [] })).toBe(2)
+    expect(settled(state)).toBe(1)
+    expect(cut(state, 0)).toEqual(state)
+    expect(cut(state, 1)).toEqual({ ...state, main: [two], runs: [run(0, []), run(1, [two])] })
+    expect(settled(cut(state, 1))).toBe(0)
+  })
+
+  it(
+    "random rounds: the queue that also cuts the settled parts decides what the queue that keeps everything decides",
+    () => {
+      let rounds = 0
+      let cuts = 0
+      for (let seed = 1; seed <= 150; seed++) {
+        let settings = initialConfig
+        let full = empty
+        let kept = empty
+        // How many parts the kept queue has cut since it started.
+        let behind = 0
+        let events: Array<Event> = []
+        let arriving = empty
+        const close = (context: string): void => {
+          const next = settle(settings, Driver.settleFuel, run(settings, full, events))
+          const advanced = Driver.advance(settings, kept, events).state
+          const more = settled(advanced)
+          kept = cut(advanced, more)
+          behind += more
+          cuts += more > 0 ? 1 : 0
+          full = next
+          // The kept state is the full state, cut and pruned: the two never drift.
+          expect(kept, context).toEqual(pruned(cut(full, behind)))
+          // What was cut is the front of the full target's tree and of every base the full queue holds.
+          expect(behind, context).toBeLessThanOrEqual(settled(full))
+          // The next decision is the same, and the world is told the same, with every tree spoken of from the cut.
+          expect(plan(settings, kept), context).toEqual(plan(settings, full))
+          const whole = Driver.commands(settings, full)
+          expect(Driver.commands(settings, kept, behind), context).toEqual({
+            settled: behind,
+            advance: whole.advance === null
+              ? null
+              : { from: whole.advance.from.slice(behind), to: whole.advance.to.slice(behind) },
+            jobs: whole.jobs.map((job) => ({ ...job, from: behind, tree: job.tree.slice(behind) })),
+            briefs: whole.briefs
+          })
+          rounds += 1
+          arriving = full
+          events = []
+        }
+        for (const text of trace(seed, 160)) {
+          const line = parseLine(text)
+          if (line === undefined) continue
+          if (line._tag === "config") {
+            settings = line.config
+            full = empty
+            kept = empty
+            behind = 0
+            arriving = empty
+            events = []
+            continue
+          }
+          if (line._tag === "plan") {
+            close(`seed ${seed}, round ${rounds}`)
+            continue
+          }
+          if (!fresh(arriving, line.event)) continue
+          events.push(line.event)
+          arriving = step(settings, arriving, line.event)
+        }
+      }
+      expect(rounds).toBeGreaterThan(2_500)
+      expect(cuts).toBeGreaterThan(200)
     },
     240_000
   )

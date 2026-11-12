@@ -187,13 +187,14 @@ describe("the inbox as a file", () => {
       path,
       "{\"_tag\":\"enqueue\",\"id\":1,\"priority\":0}\ngarbage\n{\"_tag\":\"enqueue\",\"id\":2,\"priority\":0}\n{\"_tag\":\"close\"}\n"
     )
-    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
+    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [], settled: 0 }
     for (let rounds = 0; rounds < 50; rounds++) {
       const outcome = await Effect.runPromise(Driver.round(config, position).pipe(Effect.provide(layer)))
       position = outcome
       if (outcome.done) break
     }
     expect(position.cursor).toBe(4)
-    expect(position.state.main.map((entry) => entry.id)).toEqual([1, 2])
+    expect(world.targets.at(-1)!.map((entry) => entry.id)).toEqual([1, 2])
+    expect([position.settled, position.state.main]).toEqual([2, []])
   })
 })

@@ -105,6 +105,7 @@ const tree = (...parts: ReadonlyArray<readonly [number, number]>): Tree => parts
 
 const job = (run: number, parts: Tree, checks: ReadonlyArray<number> = [1, 2]): Job => ({
   run,
+  from: 0,
   tree: parts,
   checks,
   eta: 0
@@ -235,7 +236,7 @@ describe.skipIf(!jjInstalled)("CI as commands on candidate commits", { timeout: 
     const fake = makeWorld(config, { fix: () => undefined })
     for (const id of [1, 2, 3]) fake.enqueue(id)
     fake.close()
-    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [] }
+    let position: Driver.Position = { state: empty, cursor: 0, closed: false, ended: [], settled: 0 }
     let fixedIt = false
     for (let rounds = 0; rounds < 200; rounds++) {
       if (!fixedIt && fake.briefs.some((brief) => brief.id === 2)) {

@@ -11,7 +11,11 @@
  * sideways. There is no side branch.
  *
  * A ledger file records which commit each change revision came from and which
- * commits each candidate made. What is on the bookmark is read from the
+ * commit each change became when it was applied on another. A tree is the
+ * parts on the bookmark after the ledger's starting commit. The queue moves
+ * that commit forward as parts settle (`settle`), and the ledger then forgets
+ * what only the settled parts needed, so neither the trees nor the ledger
+ * grow with the branch. What is on the bookmark is read from the
  * repository every time, never from memory: a commit the queue did not put
  * there is reported as a part of its own, which the driver turns into a
  * `foreign` event.
@@ -93,16 +97,25 @@ const Pinned = Schema.Struct({ id: Natural, rev: Natural, commit: Schema.String 
  * @since 0.1.0
  */
 export const Ledger = Schema.Struct({
-  /** The bookmark's commit when the queue started. The queue's tree is what follows it. */
+  /**
+   * The commit the queue's trees start after: the bookmark's commit when the
+   * queue started, moved forward by `settle`.
+   */
   genesis: Schema.String,
+  /** How many parts have been settled since the queue started: `genesis` is the commit of the last of them. */
+  settled: Natural,
   /** The commits each change revision was handed in as: one commit, or a jj revset of a stack. */
   sources: Schema.Array(Pinned),
   /** The commit each part became in a candidate, and foreign commits. */
   pinned: Schema.Array(Pinned),
-  /** The candidate commit built for each tree. A tree's prefixes have entries of their own. */
-  candidates: Schema.Array(Schema.Struct({ tree: Schema.String, commit: Schema.String })),
-  /** Trees whose last change could not be applied on the changes before it. */
-  refused: Schema.Array(Schema.String),
+  /**
+   * The commit a part became when it was applied on the commit `onto`. A
+   * candidate for a tree is a chain of these, one per part, so two runs that
+   * test the same parts in the same order test the same commits.
+   */
+  candidates: Schema.Array(Schema.Struct({ onto: Schema.String, id: Natural, rev: Natural, commit: Schema.String })),
+  /** Parts that could not be applied on the commit `onto`. */
+  refused: Schema.Array(Schema.Struct({ onto: Schema.String, id: Natural, rev: Natural })),
   /** Commits of a stack below its last one. On the bookmark they belong to the part that follows them. */
   interior: Schema.Array(Schema.String),
   /** The id the next foreign commit gets. */
@@ -140,17 +153,27 @@ export type Candidate =
 export interface Repository {
   /** Records the commits a change revision was handed in as: a commit id, or a jj revset of a stack. */
   readonly register: (part: Part, commit: string) => Effect.Effect<void, Unavailable>
-  /** The tree on the bookmark now. */
+  /**
+   * Moves the starting commit forward so that `count` parts are settled since
+   * the queue started, and forgets what only those parts needed. Does nothing
+   * when that many are settled already.
+   */
+  readonly settle: (count: number) => Effect.Effect<void, Unavailable>
+  /** The tree on the bookmark now, from the settled parts on. */
   readonly tip: Effect.Effect<Tree, Unavailable>
-  /** Builds, or finds, the candidate commit for a tree that starts at the bookmark's tip. */
-  readonly candidate: (tree: Tree) => Effect.Effect<Candidate, Unavailable>
+  /**
+   * Builds, or finds, the candidate commit for a tree that starts at the
+   * bookmark's tip. `from` is how many parts were settled when the tree was
+   * named; parts settled since are dropped from its front.
+   */
+  readonly candidate: (tree: Tree, from: number) => Effect.Effect<Candidate, Unavailable>
   /** Moves the bookmark from `from` onto the candidate for `to`, only if it is on `from`. */
   readonly advance: (from: Tree, to: Tree) => Effect.Effect<void, Unavailable>
 }
 
 const unavailable = (detail: string) => new Unavailable({ service: "target", detail })
 
-const key = (tree: Tree): string => tree.map((part) => `${part.id}.${part.rev}`).join(",")
+const show = (tree: Tree): string => tree.map((part) => `${part.id}.${part.rev}`).join(",")
 
 const decodeLedger = Schema.decodeUnknownEffect(Schema.fromJsonString(Ledger))
 
@@ -218,6 +241,7 @@ export const make = (
       // Written at once: the queue's tree is what follows this commit, for good.
       const created = {
         genesis,
+        settled: 0,
         sources: [],
         pinned: [],
         candidates: [],
@@ -240,20 +264,33 @@ export const make = (
         Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(error.message)))
       )
 
-    /** The bookmark's commits after genesis, oldest first, each as its part. New commits are pinned as foreign. */
+    /**
+     * The bookmark's commits after the starting commit, oldest first, each as
+     * its part. New commits are pinned as foreign. The starting commit must
+     * still be behind the bookmark: the queue's trees are what follows it, so
+     * a bookmark that no longer descends from it has no tree to speak of.
+     */
     const read = Effect.gen(function*() {
       const ledger = yield* load
-      const commits = lines(
+      const bookmark = `bookmarks(exact:"${options.bookmark}")`
+      const behindTip = lines(
         yield* jj([
           "log",
           "--no-graph",
           "--reversed",
           "-r",
-          `${ledger.genesis}..bookmarks(exact:"${options.bookmark}")`,
+          `(${ledger.genesis}..${bookmark}) | (${ledger.genesis} & ::${bookmark})`,
           "-T",
           "commit_id ++ \"\\n\""
         ])
       )
+      if (!behindTip.includes(ledger.genesis)) {
+        return yield* unavailable(
+          `the bookmark ${options.bookmark} no longer descends from the queue's starting commit ${ledger.genesis}: `
+            + "its history was rewritten"
+        )
+      }
+      const commits = behindTip.filter((commit) => commit !== ledger.genesis)
       let foreign = ledger.foreign
       const pinned = [...ledger.pinned]
       const parts = commits.filter((commit) => !ledger.interior.includes(commit)).map((commit): typeof Pinned.Type => {
@@ -317,21 +354,24 @@ export const make = (
      * One step towards the candidate for a tree: the answer when the ledger
      * already has it, or else one more change applied, with `more` to come.
      *
-     * There is one commit per prefix of the tree, shared by every candidate
-     * that starts with that prefix. So two runs that test the same parts in
-     * the same order test the same commit, and a longer candidate descends
+     * There is one commit per part applied on a commit, shared by every
+     * candidate that reaches that commit. So two runs that test the same parts
+     * in the same order test the same commit, and a longer candidate descends
      * from a shorter one: landing the shorter never strands the longer. A
-     * prefix whose last change could not be applied is remembered too, so the
-     * other runs that contain it are answered at once.
+     * part that could not be applied on a commit is remembered too, so the
+     * other runs that contain it there are answered at once. Entries name
+     * commits, never trees, so they stay true when the starting commit moves.
      */
-    const extend = (parts: ReadonlyArray<typeof Pinned.Type>, batch: Tree, tree: Tree) =>
+    const extend = (parts: ReadonlyArray<typeof Pinned.Type>, batch: Tree) =>
       Effect.gen(function*() {
         const ledger = yield* load
         let onto = parts.at(-1)?.commit ?? ledger.genesis
-        for (const [index, part] of batch.entries()) {
-          const prefix = key(tree.slice(0, parts.length + index + 1))
-          if (ledger.refused.includes(prefix)) return { _tag: "conflict", part } as const
-          const made = ledger.candidates.find((entry) => entry.tree === prefix)
+        for (const part of batch) {
+          const here = onto
+          if (ledger.refused.some((entry) => entry.onto === here && samePart(entry, part))) {
+            return { _tag: "conflict", part } as const
+          }
+          const made = ledger.candidates.find((entry) => entry.onto === here && samePart(entry, part))
           if (made !== undefined) {
             onto = made.commit
             continue
@@ -340,12 +380,12 @@ export const make = (
           if (source === undefined) return yield* unavailable(`no commit registered for ${part.id}.${part.rev}`)
           const applied = yield* apply(source.commit, onto)
           if (applied === undefined) {
-            yield* save({ ...ledger, refused: [...ledger.refused, prefix] })
+            yield* save({ ...ledger, refused: [...ledger.refused, { onto, id: part.id, rev: part.rev }] })
             return { _tag: "conflict", part } as const
           }
           yield* save({
             ...ledger,
-            candidates: [...ledger.candidates, { tree: prefix, commit: applied.commit }],
+            candidates: [...ledger.candidates, { onto, id: part.id, rev: part.rev, commit: applied.commit }],
             pinned: [...ledger.pinned, { ...part, commit: applied.commit }],
             interior: [...ledger.interior, ...applied.interior]
           })
@@ -353,6 +393,9 @@ export const make = (
         }
         return { _tag: "built", commit: onto } as const
       })
+
+    // The count this process knows the ledger has settled. Only this process moves it.
+    let settledHere = 0
 
     // One operation at a time: each reads the ledger, may run jj, and writes the
     // ledger back, and CI builds candidates for several runs at once.
@@ -364,15 +407,51 @@ export const make = (
     // kept waiting behind a long one that shares its first changes. The tip is
     // read once: a candidate built while the bookmark moves is merely stale,
     // and a stale commit cannot land, since the bookmark only moves forwards.
-    const build = (tree: Tree): Effect.Effect<Candidate, Unavailable> =>
-      Effect.flatMap(one(read), ({ parts }) => {
-        const batch = strip(parts, tree)
+    //
+    // A tree named when fewer parts were settled starts with the parts settled
+    // since: the queue only settles parts every run it holds was built on.
+    // They are dropped, which leaves the tree as the ledger speaks of it now.
+    const build = (tree: Tree, from: number): Effect.Effect<Candidate, Unavailable> =>
+      Effect.flatMap(one(read), ({ ledger, parts }) => {
+        const batch = from > ledger.settled ? undefined : strip(parts, tree.slice(ledger.settled - from))
         if (batch === undefined) return Effect.succeed({ _tag: "stale" } as const)
         const next: Effect.Effect<Candidate, Unavailable> = Effect.flatMap(
-          one(extend(parts, batch, tree)),
+          one(extend(parts, batch)),
           (step) => step._tag === "more" ? next : Effect.succeed(step)
         )
         return next
+      })
+
+    /**
+     * Settles the first `more` parts on the bookmark: the last of them becomes
+     * the starting commit. The ledger keeps only what a commit after it can
+     * still need: entries whose commits are on the bookmark after the new
+     * start or on a candidate built there, and the sources of changes that
+     * have not landed among the settled parts.
+     */
+    const settleMore = (ledger: typeof Ledger.Type, parts: ReadonlyArray<typeof Pinned.Type>, more: number) =>
+      Effect.gen(function*() {
+        const gone = parts.slice(0, more)
+        const genesis = gone.at(-1)!.commit
+        // What can still matter descends from the new start: the commits on
+        // the bookmark after it, and the candidates built on those. A
+        // candidate built on a tip the bookmark has left does not.
+        const heads = [
+          `bookmarks(exact:"${options.bookmark}")`,
+          ...ledger.candidates.map((entry) => `present(${entry.commit})`)
+        ]
+        const alive = new Set(yield* ids(`(${genesis}::(${heads.join(" | ")})) ~ ${genesis}`))
+        const standing = (commit: string): boolean => commit === genesis || alive.has(commit)
+        yield* save({
+          ...ledger,
+          genesis,
+          settled: ledger.settled + more,
+          sources: ledger.sources.filter((entry) => !gone.some((part) => part.id === entry.id)),
+          pinned: ledger.pinned.filter((entry) => alive.has(entry.commit)),
+          candidates: ledger.candidates.filter((entry) => standing(entry.onto) && alive.has(entry.commit)),
+          refused: ledger.refused.filter((entry) => standing(entry.onto)),
+          interior: ledger.interior.filter((commit) => alive.has(commit))
+        })
       })
 
     return {
@@ -382,17 +461,31 @@ export const make = (
             ...ledger,
             sources: [...ledger.sources.filter((entry) => !samePart(entry, part)), { ...part, commit }]
           }))),
+      settle: (count) =>
+        one(Effect.gen(function*() {
+          // Asked every round, and nearly always for the count already reached: answer that without reading.
+          if (count <= settledHere) return
+          const { ledger, parts } = yield* read
+          const more = count - ledger.settled
+          if (more > parts.length) {
+            return yield* unavailable(
+              `cannot settle ${count} parts: ${ledger.settled} are settled and the bookmark holds ${parts.length} more`
+            )
+          }
+          if (more > 0) yield* settleMore(ledger, parts, more)
+          settledHere = Math.max(count, ledger.settled)
+        })),
       tip: one(tip),
       candidate: build,
       advance: (from, to) =>
         Effect.gen(function*() {
-          const current = yield* one(tip)
-          if (!sameTree(current, from)) {
+          const { ledger, parts } = yield* one(read)
+          if (!sameTree(parts.map((part) => ({ id: part.id, rev: part.rev })), from)) {
             return
           }
-          const built = yield* build(to)
+          const built = yield* build(to, ledger.settled)
           if (built._tag !== "built") {
-            return yield* unavailable(`no candidate to land for ${key(to)}`)
+            return yield* unavailable(`no candidate to land for ${show(to)}`)
           }
           // jj moves a bookmark only forwards, and the candidate descends from
           // the tip it was built on: if the bookmark moved meanwhile, this fails.
@@ -411,6 +504,7 @@ export const target = (repository: Repository, poll: Duration.Input): Layer.Laye
   Layer.succeed(
     Target,
     Target.of({
+      settle: repository.settle,
       tip: repository.tip,
       advance: repository.advance,
       wait: (tree) =>

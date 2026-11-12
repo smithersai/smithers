@@ -30,6 +30,8 @@ export interface Script {
 
 interface RunRecord {
   job: Job
+  /** The whole tree the job tests: the parts settled when it was named, then the job's tree. */
+  tree: Tree
   /** The checks not yet released, in the order CI started them. */
   waiting: Array<number>
   finished: Array<Finished>
@@ -46,10 +48,12 @@ export interface World {
   readonly endings: Array<Ending>
   /** Every command that changed something, in order. */
   readonly log: Array<string>
-  /** Every tree the target has been on, in order, starting empty. */
+  /** Every tree the target has been on, in order, starting empty. Whole trees, settled parts included. */
   readonly targets: Array<Tree>
-  /** The trees the queue itself moved the target onto. */
+  /** The whole trees the queue itself moved the target onto. */
   readonly pushed: Array<Tree>
+  /** How many parts the queue has told the target are settled. */
+  readonly settled: () => number
   readonly send: (letter: Letter) => void
   readonly enqueue: (id: number, priority?: number) => void
   readonly withdraw: (id: number) => void
@@ -99,6 +103,15 @@ export const statusesOf = (
     ...at.state.changes.map((change) => [change.id, change.status._tag])
   ])
 
+/**
+ * The whole tree a position stands for: the parts the queue has settled, read
+ * from the target, then the tree its state holds.
+ */
+export const wholeTree = (
+  world: { readonly targets: ReadonlyArray<Tree> },
+  at: { readonly state: { readonly main: Tree }; readonly settled: number }
+): Tree => [...world.targets.at(-1)!.slice(0, at.settled), ...at.state.main]
+
 /** Builds a world for a queue config. */
 export const makeWorld = (config: Config, script: Script = {}): World => {
   const letters: Array<Letter> = []
@@ -114,6 +127,9 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
   const faults: Record<Service, number> = { inbox: 0, ci: 0, fixer: 0, target: 0, endings: 0 }
   let calls = 0
   let failAt = -1
+  let settled = 0
+  /** The parts the queue has settled, as they were on the target when it settled them. */
+  let behind: Tree = []
   let waiters: Array<() => void> = []
 
   const bump = (): void => {
@@ -143,13 +159,19 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
       const check = record.waiting.shift()!
       record.finished.push({
         check,
-        verdict: verdict(record.job.tree, check),
+        verdict: verdict(record.tree, check),
         duration: script.duration?.(check) ?? 10
       })
     }
   }
   const key = (id: number, attempt: number): string => `${id}#${attempt}`
   const current = (): Tree => targets[targets.length - 1]!
+  /** The target's tree as the queue is told it: from the settled parts on. */
+  const spoken = (): Tree => current().slice(settled)
+  /** Whether the target still starts with the settled parts. A rewritten history may not. */
+  const descends = (): boolean =>
+    current().length >= behind.length && sameTree(current().slice(0, behind.length), behind)
+  const rewritten = () => new Unavailable({ service: "target", detail: "the target's history was rewritten" })
   const show = (tree: Tree): string => tree.map((entry) => `${entry.id}.${entry.rev}`).join(",")
 
   const inbox = Inbox.of({
@@ -163,7 +185,14 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
         for (const job of jobs) {
           if (runs.has(job.run)) continue
           log.push(`ci.start ${job.run}`)
-          const record: RunRecord = { job, waiting: [...job.checks], finished: [], lost: false, stopped: false }
+          const record: RunRecord = {
+            job,
+            tree: [...current().slice(0, job.from), ...job.tree],
+            waiting: [...job.checks],
+            finished: [],
+            lost: false,
+            stopped: false
+          }
           runs.set(job.run, record)
           if (script.auto ?? true) release(record, record.waiting.length)
         }
@@ -215,16 +244,29 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
   })
 
   const target = Target.of({
-    tip: call("target", current),
+    settle: (count) =>
+      Effect.flatMap(call("target", () => count <= current().length && descends()), (possible) => {
+        if (!possible) return Effect.fail(rewritten())
+        if (count > settled) {
+          settled = count
+          behind = current().slice(0, count)
+        }
+        return Effect.void
+      }),
+    tip: Effect.flatMap(
+      call("target", descends),
+      (still) => still ? Effect.succeed(spoken()) : Effect.fail(rewritten())
+    ),
     advance: (from, to) =>
       call("target", () => {
-        if (!sameTree(current(), from)) return
-        log.push(`target.advance ${show(from)} -> ${show(to)}`)
-        targets.push(to)
-        pushed.push(to)
+        if (!sameTree(spoken(), from)) return
+        const whole = [...current().slice(0, settled), ...to]
+        log.push(`target.advance ${show(current())} -> ${show(whole)}`)
+        targets.push(whole)
+        pushed.push(whole)
         bump()
       }),
-    wait: (tree) => until(() => !sameTree(current(), tree))
+    wait: (tree) => until(() => !sameTree(spoken(), tree))
   })
 
   const endings = Endings.of({
@@ -255,6 +297,7 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
     log,
     targets,
     pushed,
+    settled: () => settled,
     send,
     enqueue: (id, priority = 0) => send({ _tag: "event", event: { _tag: "enqueue", id, priority } }),
     withdraw: (id) => send({ _tag: "event", event: { _tag: "withdraw", id } }),

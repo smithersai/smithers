@@ -36,6 +36,8 @@ export const Payload = Schema.Struct({
   closed: Schema.Boolean,
   /** The changes the round before ended, for this round to record. Start with none. */
   ended: Schema.Array(Ending),
+  /** How many parts of the target's tree the queue has cut from its state. Start with 0. */
+  settled: Natural,
   round: Natural
 })
 
@@ -50,6 +52,7 @@ export const Outcome = Schema.Struct({
   cursor: Natural,
   closed: Schema.Boolean,
   ended: Schema.Array(Ending),
+  settled: Natural,
   done: Schema.Boolean
 })
 
@@ -93,8 +96,8 @@ export const Round = Action.make("@smthrs/merge-queue/Round", {
  * @category layers
  * @since 0.1.0
  */
-export const layer = Round.toLayer(({ closed, config, cursor, ended, state }) =>
-  Driver.round(config, { state, cursor, closed, ended })
+export const layer = Round.toLayer(({ closed, config, cursor, ended, settled, state }) =>
+  Driver.round(config, { state, cursor, closed, ended, settled })
 )
 
 /**
@@ -122,7 +125,7 @@ export type QueueFlow<Tag extends string = "@smthrs/merge-queue/Queue"> = Flow.F
 
 /**
  * The queue. Start it with `{ config, state: empty, cursor: 0, closed: false,
- * ended: [], round: 0 }`; it succeeds with the final state once the inbox is
+ * ended: [], settled: 0, round: 0 }`; it succeeds with the final state once the inbox is
  * closed, every change has ended and every ending is in the record.
  *
  * @category flows
@@ -148,6 +151,7 @@ export const Queue: QueueFlow = Flow.make("@smthrs/merge-queue/Queue", {
             cursor: outcome.cursor,
             closed: outcome.closed,
             ended: outcome.ended,
+            settled: outcome.settled,
             round: payload.round + 1
           })
       })
