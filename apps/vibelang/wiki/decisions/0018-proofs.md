@@ -6322,3 +6322,48 @@ The companion-contract change (`f_ensures` before each callee call) met three pr
 
 Checks on the rebased tree before the last rebase: `pnpm verify` 61/61 files; 180/180 mutations of the eight
 modules this lane's range touches rejected by their own contracts; LemmaScript 383 tests and the fixture suite pass.
+
+## Stranded nyc-02 fixtures and the journal-order mutant (vl-proveall, 2026-11-12)
+
+The stranded-commit audit found two 2026-11-10 commits only on nyc-02: `vrrllury` (read update's constructors, string
+methods, copied constants and clashing names) and `zvkvpsyp` (read the web app's Model, schema modules and Foldkit
+commands). Main had taken the schema translation instead (`f6f93b6a`, `b68a1b53`, `e8ffc55b`). Each fixture ran
+against main's LemmaScript; none was judged by line overlap.
+
+| Fixture | On main | Outcome |
+| --- | --- | --- |
+| `exact-optional-field/` | proves; wrong twin fails | covered by `f6f93b6a` (optional through the resolved symbol) |
+| `declared-return-record`, `index-signature-field` | on main | covered by `b68a1b53` |
+| `structural/` (+ `tests/structural.test.ts`) | Dafny type error `expected Client, found ChosenResult`; 2/2 unit tests fail | ported, fixed |
+| `host-extern/` | Dafny parse error on `Decide.Screen`, `Hostlib.Command<string>` | ported, fixed |
+| `update-returns/` (3 cases, 8 wrong twins) | every case stops before a proof obligation | ported, fixed |
+| `update-shapes/` | `destructure the message in the parameter` | ported, fixed |
+| harness value import through a declaration | main stages value imports as copies, by design (`declarations.py`) | not ported: no proved module value-imports a non-TypeScript module, and such an import fails closed |
+
+What LemmaScript now reads, each with its fixture and a wrong twin that must fail on a proof obligation:
+
+- TypeScript's structural types: a record or tagged union LemmaScript synthesized is the declared type of the same
+  structure; a record passes where a record with a subset of its fields is expected, in a list element by element;
+  an imported function's arguments are coerced to its parameters.
+- A project's own declaration file: a bodiless constant is a fixed value of its type; a declared value (a Foldkit
+  command) is an opaque extern of a record of its arguments; a value with a type of the same name is the type.
+- Host types: every object type a package's typings declare is the one opaque `Host`; a host alias of a plain object
+  type (`Update.Return`) is a record with `never` fields dropped.
+- Message constructors, string methods given a regular expression and unmodelled pure string methods (opaque
+  externs: equal inputs, equal results, nothing more), string-union receivers, generated tables, namespace types and
+  constants, values whose names a type also declares (emitted as `Name_value`).
+- Match arms that bind the whole payload; `x === undefined || rest ? a : b`; an optional field path narrowed on the
+  false side of an absence check (else-branch and after an early return; new fixture `optional-path-else`, red on
+  main).
+
+The commands remain the boundary this decision records: reading them lets a proof pass a command along and compare
+it, not state what it does.
+
+### The journal-order mutant
+
+The full `verify:broken` on `5e409bb3` (job `full50`, 15,182 s) rejected every mutant but one: `record-journal-order`
+(`log: [decision.event, ...log]` in `recordedConversation`) failed only at the replay-prefix lemma's call
+precondition, which this decision does not count, and on a later base it timed out. Dafny assumes an unmet call
+precondition afterwards, which hid the postcondition. The proof step now asserts the prefix before the call
+(`verify/proof_additions.py`); the mutant fails the postcondition `\result.log[i] == log[i]` directly, and the real
+module still proves.

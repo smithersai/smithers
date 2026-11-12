@@ -313,6 +313,9 @@ REPLAY_CONVERSATION_STEPS = [
     ('lemma recordedConversation_ensures(initial: Conversation, conversation: Conversation, log: seq<Event>, intent: Intent)',
      '''  var recorded := recordedConversation(initial, conversation, log, intent);
   if recorded.decision.true_? && conversation == replayedLog(initial, log, |log|) {
+    // Asserted, not left to the lemma call: an unmet call precondition is assumed afterwards, which hid the
+    // record-journal-order mutant behind a precondition failure or a timeout (0018).
+    assert forall i :: 0 <= i < |log| ==> recorded.log[i] == log[i];
     replayedLogPrefix_ensures(initial, log, recorded.log, |log|);
     assert replayedLog(initial, recorded.log, |recorded.log|) == conversationStep(replayedLog(initial, recorded.log, |log|), recorded.log[|log|]);
   }
