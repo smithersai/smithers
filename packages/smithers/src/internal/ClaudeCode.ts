@@ -248,6 +248,8 @@ const usageOf = (raw: {
   readonly output_tokens?: number | null
   readonly cache_read_input_tokens?: number | null
   readonly cache_creation_input_tokens?: number | null
+  /** How much of `output_tokens` was thinking. Claude Code hands the thinking itself to no one. */
+  readonly output_tokens_details?: { readonly thinking_tokens?: number | null } | null
 }): Usage => {
   const read = raw.cache_read_input_tokens ?? undefined
   const written = raw.cache_creation_input_tokens ?? undefined
@@ -256,9 +258,11 @@ const usageOf = (raw: {
     ? undefined
     : (input ?? 0) + (read ?? 0) + (written ?? 0)
   const outputTokens = raw.output_tokens ?? undefined
+  const reasoningTokens = raw.output_tokens_details?.thinking_tokens ?? undefined
   return {
     ...(inputTokens === undefined ? {} : { inputTokens }),
     ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
     ...(read === undefined ? {} : { cachedInputTokens: read }),
     ...(written === undefined ? {} : { cacheWriteTokens: written }),
     ...(inputTokens === undefined && outputTokens === undefined

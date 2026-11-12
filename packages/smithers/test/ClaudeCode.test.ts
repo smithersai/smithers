@@ -15,7 +15,8 @@ import * as ClaudeCode from "../src/internal/ClaudeCode.ts"
 import * as Providers from "../src/Providers.ts"
 
 type Reply =
-  | { readonly text: string }
+  /** `thought` is how many of the turn's output tokens Claude spent thinking, when the API says. */
+  | { readonly text: string; readonly thought?: number | null }
   | { readonly error: Sdk.SDKAssistantMessageError }
   /** A turn Claude Code reported as failed on its result, with the API status it saw. */
   | { readonly reported: string; readonly status?: number }
@@ -87,7 +88,15 @@ const scripted = (answer: (turn: string) => Reply | Promise<Reply>, hangInterrup
           is_error: "error" in reply || "reported" in reply,
           result: said,
           stop_reason: "end_turn",
-          usage: { input_tokens: 10, cache_read_input_tokens: 90, cache_creation_input_tokens: 5, output_tokens: 7 },
+          usage: {
+            input_tokens: 10,
+            cache_read_input_tokens: 90,
+            cache_creation_input_tokens: 5,
+            output_tokens: 7,
+            ...("thought" in reply
+              ? { output_tokens_details: reply.thought === null ? null : { thinking_tokens: reply.thought } }
+              : {})
+          },
           // Claude Code's running estimate for the session: a quarter dollar a turn.
           total_cost_usd: 0.25 * record.turns.length,
           ...("reported" in reply && reply.status !== undefined ? { api_error_status: reply.status } : {})
@@ -202,6 +211,26 @@ describe("ClaudeCode.make", () => {
     })
   })
 
+  it("reports how much of a turn's output was thinking", async () => {
+    const usage = async (reply: Reply) =>
+      (await run(model(scripted(() => reply).start), request([user("do the task")]))).find((event) =>
+        event.type === "usage"
+      )
+
+    expect(await usage({ text: "ok", thought: 5 })).toEqual({
+      type: "usage",
+      inputTokens: 105,
+      outputTokens: 7,
+      reasoningTokens: 5,
+      cachedInputTokens: 90,
+      cacheWriteTokens: 5,
+      totalTokens: 112,
+      costUsd: 0.25
+    })
+    // A turn with no thinking says zero; a Claude Code that reports no split says nothing.
+    expect(await usage({ text: "ok", thought: 0 })).toHaveProperty("reasoningTokens", 0)
+    expect(await usage({ text: "ok", thought: null })).not.toHaveProperty("reasoningTokens")
+  })
   it("withholds the host's API credentials and injected Node settings from Claude Code", async () => {
     const claude = scripted(() => ({ text: "ok" }))
     await run(

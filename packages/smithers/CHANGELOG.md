@@ -85,6 +85,10 @@
 
 ### Fixed
 
+- A `claude-code:` seat reports how many of a turn's output tokens Claude spent
+  thinking, as the usage event's `reasoningTokens`. It reported none, so a run's
+  records showed a seat thinking at `xhigh` as not thinking at all.
+
 - Building the CLI no longer fails on esbuild's optional Yarn Plug'n'Play probe.
   Other undeclared TUI bundle imports still fail the build.
 
