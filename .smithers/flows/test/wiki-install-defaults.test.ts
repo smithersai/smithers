@@ -209,3 +209,64 @@ test("generated summaries keep complete files within the byte budget and retain 
   await symlink(join(root, ".env"), join(root, "leak.ts"))
   await assert.rejects(collect(), /Private\/runtime path/)
 })
+
+test("generated pages collect and cite VibeLang sources, and a .vibe edit refreshes the page", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "wiki-install-vibe-")), root = join(directory, "repo")
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  await mkdir(join(root, "src"), { recursive: true })
+  await writeFile(join(root, "src/answer.vibe"), "export effect function answer(): number {\n  return 42\n}\n")
+  const spec = {
+    id: "package-api",
+    title: "API",
+    purpose: "Describe the code with source citations",
+    kind: "current" as const,
+    document: "",
+    sourceDirectory: "src",
+    inputs: [],
+    related: []
+  }
+  const ops = operations({ root, output: join(directory, "wiki") })
+  const collect = () => Effect.runPromise(ops.collect(spec).pipe(Effect.provide(platform)))
+  const only = await collect()
+  assert.deepEqual(only.sources.map((source) => source.path), ["src/answer.vibe"])
+  assert.equal(
+    only.markdown,
+    "# API\n\n## src/answer.vibe\n\n- `export effect function answer(): number {` [src/answer.vibe:1](../sources/src/answer.vibe#L1)\n"
+  )
+  await writeFile(join(root, "src/answer.vibe"), "export effect function answer(): number {\n  return 999\n}\n")
+  assert.notEqual((await collect()).inputDigest, only.inputDigest)
+
+  // A mixed package cites each VibeLang declaration form beside its TypeScript declarations.
+  await writeFile(
+    join(root, "src/model.vibe"),
+    [
+      "import { Schema } from \"effect\"",
+      "export schema Answer {",
+      "  value: number",
+      "}",
+      "export schema error Missing {}",
+      "export error Refused {}",
+      "export service Oracle {}",
+      ""
+    ].join("\n")
+  )
+  await writeFile(join(root, "src/types.ts"), "export interface Reply {\n  value: number\n}\n")
+  const mixed = await collect()
+  assert.deepEqual(mixed.sources.map((source) => source.path), [
+    "src/answer.vibe",
+    "src/model.vibe",
+    "src/types.ts"
+  ])
+  assert.match(mixed.markdown, /## src\/model\.vibe\n\n- `export schema Answer \{` \[src\/model\.vibe:2\]/)
+  for (
+    const [line, declaration] of [
+      [5, "export schema error Missing {}"],
+      [6, "export error Refused {}"],
+      [7, "export service Oracle {}"]
+    ] as const
+  ) {
+    assert.ok(mixed.markdown.includes(`- \`${declaration}\` [src/model.vibe:${line}]`), declaration)
+  }
+  assert.ok(mixed.markdown.includes("- `export interface Reply {` [src/types.ts:1]"))
+  assert.doesNotMatch(mixed.markdown, /import \{ Schema \}/)
+})

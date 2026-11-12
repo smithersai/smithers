@@ -156,7 +156,9 @@ export const operations = (
           const info = yield* fs.stat(path.join(absolute, entry))
           if (info.type === "Directory") {
             pending.push(relative)
-          } else if (info.type === "File" && /\.(?:md|mdx|ts|tsx|js|jsx|go|rs|py|json|toml|yaml|yml)$/.test(entry)) {
+          } else if (
+            info.type === "File" && /\.(?:md|mdx|ts|tsx|js|jsx|vibe|go|rs|py|json|toml|yaml|yml)$/.test(entry)
+          ) {
             files.push(relative)
           }
         }
@@ -170,7 +172,7 @@ export const operations = (
   ) => {
     const sections = sources.flatMap((source) => {
       const symbols = source.text.split(/\r?\n/).flatMap((line, index) =>
-        /^\s*(?:export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|interface|type)|func\s|pub\s|(?:async\s+)?def\s|class\s)/
+        /^\s*(?:export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|interface|type|effect\s+function|schema|service|error)|func\s|pub\s|(?:async\s+)?def\s|class\s)/
             .test(line)
           ? [
             `- \`${line.trim().replace(/`/g, "'")}\` [${source.path}:${index + 1}](../sources/${source.path}#L${
