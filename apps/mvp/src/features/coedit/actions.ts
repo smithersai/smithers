@@ -153,22 +153,37 @@ export const shownConversation = Effect.gen(function* () {
 
 /**
  * Moves into `conversation`'s prompt what the person typed in it before it opened: `typed`, the whole draft the
- * composer showed, else the draft the device kept for it while it wasn't shared (chat's `chat-drafts`), which the device
- * then forgets. It is typed from an empty base, so it merges with whatever the prompt holds, stored or arriving: neither
- * the draft nor anyone's text is lost.
+ * composer showed, else the draft the device kept for it while it wasn't shared (chat's `chat-drafts`). It is typed from
+ * an empty base, so it merges with whatever the prompt holds, stored or arriving: neither the draft nor anyone's text is
+ * lost. The device forgets the kept draft only once the prompt is `stored`, its update in the outbox's storage: a draft
+ * whose update the storage refused stays on the device, goes with the next edit, and goes into the prompt again after a
+ * reload. `adopting` holds the conversations whose kept draft is in this tab's prompt and waits to be stored, so showing
+ * the prompt again doesn't type it twice.
  */
-const adoptDraft = (conversation: string, live: Live, typed: string) =>
+const adoptDraft = (conversation: string, live: Live, typed: string, adopting: Ref.Ref<ReadonlySet<string>>) =>
   Effect.gen(function* () {
     const { drafts } = yield* ChatStore
+    const store = yield* CoeditStore
     // A tab that opens on a shared branch reads the kept draft once the device store has it.
     yield* Effect.ignore(drafts.restored)
-    const kept = Option.getOrUndefined(yield* drafts.get(conversation))
+    const kept = (yield* Ref.get(adopting)).has(conversation)
+      ? undefined
+      : Option.getOrUndefined(yield* drafts.get(conversation))
     // The composer showed the kept draft, so what was typed holds it already.
     const draft = typed !== "" ? typed : kept?.text
-    if (kept !== undefined) yield* Effect.orDie(drafts.delete(conversation))
     if (draft === undefined) return
     yield* type(live.id, draft, { base: "" })
     yield* Effect.logInfo("coedit.draft adopted").pipe(Effect.annotateLogs({ textId: live.id, chars: draft.length }))
+    if (kept === undefined) return
+    yield* Ref.update(adopting, (keys) => new Set(keys).add(conversation))
+    yield* store.texts.changes({ initial: true }).pipe(
+      Stream.filter((changes) => changes.some((change) => change.key === live.id && change.value.stored)),
+      Stream.take(1),
+      Stream.runDrain,
+      Effect.andThen(Effect.orDie(drafts.delete(conversation))),
+      Effect.ensuring(Ref.update(adopting, (keys) => new Set([...keys].filter((key) => key !== conversation)))),
+      Effect.forkIn(store.scope),
+    )
   })
 
 /** Leaves the room of the prompt shown: the composer's draft is the person's own again. */
@@ -190,6 +205,7 @@ export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending:
   Effect.gen(function* () {
     const chat = yield* ChatStore
     const store = yield* CoeditStore
+    const adopting = yield* Ref.make<ReadonlySet<string>>(new Set())
     yield* chat.place.changes({ initial: true }).pipe(
       Stream.flatMap((changes) => Stream.fromIterable(changes)),
       Stream.map((change) => (change.value.shared ? change.value.conversationId : null)),
@@ -203,7 +219,7 @@ export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending:
           }
           const live = yield* showOnly({ kind: "prompt", conversation }, (row) => row.kind === "prompt")
           yield* Ref.set(current, { conversation, textId: live.id })
-          yield* adoptDraft(conversation, live, yield* Ref.getAndSet(pending, ""))
+          yield* adoptDraft(conversation, live, yield* Ref.getAndSet(pending, ""), adopting)
           yield* mirrorDraft((yield* rowOf(live)).text)
         })
       ),

@@ -237,6 +237,49 @@ describe("whose prompt is shared", () => {
     await until(() => expect(owner.saved()).toBe(true))
     expect(await storedUpdates(opened)).toBe(sent)
   }, WITHIN)
+
+  test("a kept draft stays on the device until its update is stored: a refused one goes with the next edit, once", async () => {
+    const opened = await open()
+    const device = nodeDevice({ agent: opened.api })
+    let full = false
+    const { storage } = device.outbox
+    const owner = await opened.ownTab({
+      ...device,
+      outbox: {
+        ...device.outbox,
+        storage: {
+          ...storage,
+          setMany: (entries) => full ? Promise.reject(new Error("quota exceeded")) : storage.setMany(entries),
+        },
+      },
+    })
+    const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
+    owner.type("before sharing", { anchor: 14, head: 14 })
+    await until(() => expect(device.stored("chat-drafts")).toBe(1))
+
+    // Shared while the outbox's storage is full: the draft is in the prompt, its update isn't stored, and the device
+    // keeps the draft.
+    full = true
+    await shareWith(opened, branchId, "edit")
+    await until(() => expect(showsPrompt(owner)).toBe(true))
+    await until(() => expect(owner.prompt()).toMatchObject({ text: "before sharing", stored: false }))
+    // Showing the prompt again doesn't type the kept draft into it twice.
+    await owner.branch.actions.open("octo", "hello", "feature/two")
+    await until(() => expect(owner.prompt()).toBeUndefined())
+    await owner.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(showsPrompt(owner)).toBe(true))
+    expect(owner.prompt()?.text).toBe("before sharing")
+    expect(device.stored("chat-drafts")).toBe(1)
+
+    // The storage has room again: the next edit takes the refused update with it, and the device forgets the draft.
+    full = false
+    owner.type("before sharing!", { anchor: 15, head: 15 })
+    await until(() => expect(owner.prompt()?.stored).toBe(true))
+    await until(() => expect(device.stored("chat-drafts")).toBe(0))
+    const ben = await opened.benTab()
+    await ben.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(ben.draft()).toBe("before sharing!"))
+  }, WITHIN)
 })
 
 describe("the shared prompt", () => {

@@ -35,7 +35,7 @@ A composer's draft is the person's own, as Slack, Linear and GitHub keep a draft
 | The home conversation, a team branch (`main`, branches tracked before sharing), a person's own branch nobody shares | the person's own, kept on the device per conversation (`chat-drafts`) and never sent: a reload, or a tab that opens the conversation later, finds it; another open tab never shows it as it is typed |
 
 - **Which.** `POST /api/branches` answers `shared`: the branch has an owner and at least one share (`branchAccess` in `worker/branch/Access.ts`). The branch's page hands it to chat (`show`), whose `place` row holds it; `followPrompt` opens the prompt only then, and the composer's edits go to it (`SharedPrompt`) or to the device (`keepDraft`).
-- **Live for the owner.** The owner's tab follows the branch's permission list (`followShares` in `src/features/branch/actions.ts`, its owner's only): their first share makes the draft the prompt at once, the draft the device kept typed into it; taking the last share away keeps the composer's text as theirs, on the device, and nothing more is sent.
+- **Live for the owner.** The owner's tab follows the branch's permission list (`followShares` in `src/features/branch/actions.ts`, its owner's only): their first share makes the draft the prompt at once, the draft the device kept typed into it, which the device forgets only once the prompt's update is in the outbox's storage (a refused one keeps the draft, goes with the next edit, and a reload types the draft in again); taking the last share away keeps the composer's text as theirs, on the device, and nothing more is sent.
 
 ## The routes
 
