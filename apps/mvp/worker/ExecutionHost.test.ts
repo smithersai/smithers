@@ -553,8 +553,9 @@ describe("ExecutionHost over the compose Postgres", () => {
     const answerId = crypto.randomUUID()
     const asked = await h.ask({ id: crypto.randomUUID(), answerId, text: "Asked, then the phone was shut" })
     expect(asked.status).toBe(202)
-    // ChatApi started the expiry, as it asks the Durable Object to: one execution per answer.
-    const executionId = Expire.executionId(answerId)
+    // ChatApi started the expiry, as it asks the Durable Object to: the execution of the attempt that stored the answer.
+    const executionId = h.starts[0]!.executionId
+    expect(executionId).toMatch(new RegExp(`^${Expire.executionId(answerId)}-\\d+$`))
     expect(h.starts).toEqual([{ flow: "chat/Expire", executionId, payload: { answerId } }])
     // Use the production expiry: a shortened deadline can enter the host's five-second hold during setup.
     const services = await appServices()

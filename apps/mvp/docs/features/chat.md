@@ -36,7 +36,7 @@ service worker: the app's shell, cached for offline; never /api/* and never the 
 - **Postgres** holds the conversation (`messages`). It is the only source of truth, and its `position` column orders it.
 - **Electric** streams the `messages` table to every device. Browsers reach it only through ChatApi's shape proxy, so the Electric URL and secret stay on the server.
 - **ChatApi** (`worker/ChatApi.ts`) is an Alchemy Effect-native Worker. It reaches Postgres through Hyperdrive. It answers nothing itself.
-  - For a signed-in Member or above, it inserts the question and an empty `streaming` answer in one statement, starts the answer's expiry (`chat/Expire`, [agent.md](agent.md#settling)), and answers 202 with the transaction id once the start is recorded.
+  - For a signed-in Member or above, it inserts the question and an empty `streaming` answer in one statement, starts the answer's expiry inside that transaction (`chat/Expire`, [agent.md](agent.md#settling)), and commits and answers 202 with the transaction id once the start is recorded.
   - It serves the routes the browser's agent answers through: the metered model endpoint, `POST /api/model/<role>` ([model-endpoint.md](model-endpoint.md)), and the answer routes, `GET` and `POST /api/answers/<id>` ([agent.md](agent.md#the-answer-routes)).
   - Its code: `Chat.ts` (routes and the shape proxy, `ShapeProxy` from `@smthrs/effect-electric`), `Messages.ts` (asking and the history), `Answers.ts` (the answer routes).
 - **The browser's agent answers.** Once ChatApi takes a question, the asking tab dispatches `chat/Answer { answerId }` on this browser's durable engine, with the answer's id as its execution id ([agent.md](agent.md), decision [0011](../decisions/0011-the-agent-runs-in-the-browser.md)), and the send waits until the engine has recorded the run, so the outbox keeps the question until a run exists to answer it: a tab closed in between leaves the question in the outbox, and the next page sends it again and starts the run. The engine's starts are idempotent by execution id, so a resend starts no second run. A reload or a killed tab resumes the run from its journal when the app opens again; a model call that sealed is never made again.
@@ -130,7 +130,7 @@ Rules:
   | `413` | | body over 64 KB, declared or streamed |
   | `500` | | a defect in ChatApi; logged by the defect's name, never its message |
   | `503` | `{ "message" }` | Postgres can't be reached (for sessions or the insert), or refuses the insert for another reason; nothing is written |
-  | `503` | `{ "message": "Smithers couldn't take the question. Try again." }` | the question is stored, but the remote host didn't record its expiry's start; the outbox sends it again, and the resend (`200`) starts it |
+  | `503` | `{ "message": "Smithers couldn't take the question. Try again." }` | the remote host didn't record its expiry's start, so the question isn't stored; the outbox sends it again |
 
   The client validates both success bodies before starting an answer: a `200` must carry
   `{ "txid": null, "existing": true }`. Malformed or incomplete bodies are `invalid_response`;

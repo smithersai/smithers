@@ -666,11 +666,13 @@ export interface Source {
  *   this very question (a resend); the form becomes `{ submitted: true, values, questionId }` with the question;
  * - a generated view's event: one its module declares as `message`.
  * The view must be in the question's conversation. Anything else is `SourceRefused`, and nothing is written.
+ * `admit` is `Messages.ask`'s: it runs once the question is inserted, and its failure writes nothing here either.
  */
-export const askFrom = (
+export const askFrom = <E, R>(
   question: Parameters<typeof Messages.ask>[0],
   source: Source,
   data: FormValues | undefined,
+  admit: (attempt: string) => Effect.Effect<void, E, R>,
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
@@ -697,7 +699,7 @@ export const askFrom = (
         if (view.state?.submitted === true && view.state.questionId !== question.id) {
           return yield* new SourceRefused({ status: 409, code: "submitted" })
         }
-        const asked = yield* Messages.ask({ ...question, source, data: values })
+        const asked = yield* Messages.ask({ ...question, source, data: values }, admit)
         if (asked.txid !== null) {
           yield* sql`
             UPDATE views SET state = ${JSON.stringify({ submitted: true, values, questionId: question.id })}::jsonb,
@@ -707,7 +709,7 @@ export const askFrom = (
         return asked
       }
       if (view.template === "generated" && view.interactions?.[source.event]?.kind === "message") {
-        return yield* Messages.ask({ ...question, source, ...(data === undefined ? {} : { data }) })
+        return yield* Messages.ask({ ...question, source, ...(data === undefined ? {} : { data }) }, admit)
       }
       return yield* new SourceRefused({ status: 400, code: "undeclared" })
     }))

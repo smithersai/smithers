@@ -3,7 +3,7 @@ import * as WriteAdmission from "./WriteAdmission.ts"
 // (worker/test/harness.ts). ChatApi stores questions and never answers them: the browser's agent does
 // (src/features/agent/agent.test.ts). The contract is docs/features/chat.md; the records, docs/observability.md.
 import { Metric as OtlpMetric } from "@smthrs/observability"
-import { Data, Deferred, Effect, Layer, Redacted } from "effect"
+import { Data, Deferred, Duration, Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
@@ -14,7 +14,7 @@ import * as ChatMetrics from "./ChatMetrics.ts"
 import * as Flows from "./Flows.ts"
 import * as Expire from "./flows/Expire.ts"
 import { shared, tracked } from "./test/branch.ts"
-import { answers, harness, recorded, row, rowCount, testFile, uuid } from "./test/harness.ts"
+import { answers, eventually, harness, recorded, row, rowCount, testFile, uuid } from "./test/harness.ts"
 
 const runtime = testFile("chat")
 
@@ -397,8 +397,11 @@ describe("chat/Expire", () => {
     executionId: Expire.executionId(answerId),
     payload: { answerId },
   })
+  /** The execution id of one attempt to store the answer: the answer's, then the storing transaction's id. */
+  const attemptOf = (answerId: string) =>
+    expect.stringMatching(new RegExp(`^${Expire.executionId(answerId)}-\\d+$`)) as unknown as string
 
-  test("asking starts the answer's expiry, one execution per answer; a resend starts the same one again", async () => {
+  test("asking starts the expiry of the attempt that stores the answer; a resend starts the answer's one execution", async () => {
     const h = await asMember()
     const ids = { id: uuid(), answerId: uuid() }
     const other = { id: uuid(), answerId: uuid() }
@@ -407,18 +410,23 @@ describe("chat/Expire", () => {
     expect((await h.ask({ ...ids, text: "Asked" })).status).toBe(200)
     expect((await h.ask({ ...other, text: "Asked too" })).status).toBe(202)
 
-    // The Durable Object treats the same intent again as a no-op, so the resend's start changes nothing; it is what
-    // starts the expiry when the first request's start was lost.
-    expect(h.starts).toEqual([expiryOf(ids.answerId), expiryOf(ids.answerId), expiryOf(other.answerId)])
+    // The Durable Object treats the same intent again as a no-op, so a second resend's start changes nothing; it is
+    // what gives an expiry to an answer stored before expiries started inside the ask.
+    expect(h.starts).toEqual([
+      { ...expiryOf(ids.answerId), executionId: attemptOf(ids.answerId) },
+      expiryOf(ids.answerId),
+      { ...expiryOf(other.answerId), executionId: attemptOf(other.answerId) },
+    ])
     expect(h.line("chat.question").map((line) => line.annotations.expiry)).toEqual(["started", "started", "started"])
   })
 
-  // An ask is acknowledged only once its expiry is admitted: an answer with no expiry and no device would stream forever
-  // (Codex review 4, P2). A refused start is a 503, which the browser's outbox sends again with the same ids.
+  // An ask is stored only once its expiry is admitted: an answer with no expiry and no device would stream forever
+  // (Codex review 4, P2; #5299). A refused start is a 503 that stores nothing, which the browser's outbox sends again
+  // with the same ids.
   test.each([
     ["unavailable", new Flows.StartUnavailable({ errorCode: "rpc" }), "rpc"],
     ["a conflict", new Flows.StartConflict(), "conflict"],
-  ])("a start the remote host refuses (%s) is 503, and the outbox's resend starts it", async (_, error, code) => {
+  ])("a start the remote host refuses (%s) is 503 and stores nothing, and the outbox's resend asks it", async (_, error, code) => {
     const started: Array<string> = []
     let refuse = true
     const h = await asMember({
@@ -433,7 +441,8 @@ describe("chat/Expire", () => {
 
     expect(refused.status).toBe(503)
     expect(await refused.json()).toEqual({ message: "Smithers couldn't take the question. Try again." })
-    expect(await row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
+    expect(await row(runtime, ids.id)).toBeUndefined()
+    expect(await row(runtime, ids.answerId)).toBeUndefined()
     expect(h.only("chat.answer.expire")).toMatchObject({
       level: "WARN",
       annotations: { answerId: ids.answerId, outcome: "not_started", errorCode: code },
@@ -447,12 +456,78 @@ describe("chat/Expire", () => {
     refuse = false
     const resent = await h.ask({ ...ids, text: "Asked" })
 
-    expect(resent.status).toBe(200)
-    expect(started).toEqual([Expire.executionId(ids.answerId)])
-    expect(h.line("chat.question").at(-1)!.annotations).toMatchObject({ status: 200, existing: true, expiry: "started" })
+    expect(resent.status).toBe(202)
+    expect(started).toEqual([attemptOf(ids.answerId)])
+    expect(await row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
+    expect(h.line("chat.question").at(-1)!.annotations).toMatchObject({ status: 202, expiry: "started" })
   })
 
-  test("a caller that goes away after the question is stored still gets its expiry started", async () => {
+  // The Worker dies around the start (#5299): the question's transaction never commits, so there is no stored answer
+  // for a lost start to miss, and nothing waits on a resend that may never come.
+  test("a Worker lost once the start is recorded stores no answer; a later resend's attempt starts its own expiry", async () => {
+    const started: Array<string> = []
+    let lose = true
+    const h = await asMember({
+      starter: Flows.FlowStarter.of({
+        start: (_, { executionId }) =>
+          Effect.suspend(() => {
+            started.push(executionId)
+            return lose ? Effect.die(new Error("Worker lost")) : Effect.void
+          }),
+      }),
+    })
+    const ids = { id: uuid(), answerId: uuid() }
+
+    const lost = await h.ask({ ...ids, text: "Asked" })
+
+    expect(lost.status).toBe(500)
+    expect(await row(runtime, ids.id)).toBeUndefined()
+    expect(await row(runtime, ids.answerId)).toBeUndefined()
+    // The lost attempt's execution finds no answer and ends, so the same start again would be a no-op.
+    expect(await runtime.runPromise(Expire.abandon(ids.answerId, Duration.zero))).toEqual({ outcome: "missing" })
+
+    lose = false
+    const resent = await h.ask({ ...ids, text: "Asked" })
+
+    expect(resent.status).toBe(202)
+    expect(started).toEqual([attemptOf(ids.answerId), attemptOf(ids.answerId)])
+    expect(started[1]).not.toBe(started[0])
+    expect(await row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
+  })
+
+  test("an expiry that runs before the question commits waits for the commit, and finds the answer", async () => {
+    /** Whether a transaction waits for the answer's ask lock (worker/Messages.ts `lockAsk`). */
+    const waits = (answerId: string) =>
+      runtime.runPromise(
+        Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql<{ readonly n: number }>`
+            SELECT count(*)::int AS n FROM pg_locks
+            WHERE locktype = 'advisory' AND NOT granted
+              AND ((classid::bigint << 32) | objid::bigint) = hashtextextended(${answerId}, 0)`),
+      ).then(([found]) => found!.n > 0)
+    let round: Promise<unknown> = Promise.resolve()
+    const h = await asMember({
+      starter: Flows.FlowStarter.of({
+        start: (_, { payload }) =>
+          Effect.promise(async () => {
+            // The execution's first round runs at once, while the ask that started it still holds its transaction.
+            const { answerId } = payload as { readonly answerId: string }
+            let ended = false
+            round = runtime.runPromise(Expire.abandon(answerId, Duration.hours(1))).finally(() => (ended = true))
+            await eventually(async () => ended || (await waits(answerId)), 5_000)
+          }),
+      }),
+    })
+    const ids = { id: uuid(), answerId: uuid() }
+
+    expect((await h.ask({ ...ids, text: "Asked" })).status).toBe(202)
+
+    // It read the answer only once the ask committed: still streaming, its queue not yet still for the expiry.
+    expect(await round).toEqual({ outcome: "waiting" })
+    expect(await row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
+  })
+
+  test("a caller that goes away while the expiry starts still gets the question stored with its expiry", async () => {
     const reached = Effect.runSync(Deferred.make<void>())
     const release = Effect.runSync(Deferred.make<void>())
     const started: Array<string> = []
@@ -475,13 +550,14 @@ describe("chat/Expire", () => {
       signal: caller.signal,
     })
     await Effect.runPromise(Deferred.await(reached))
-    // The question is stored and its expiry is being started when the caller goes away.
-    expect(await row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
+    // The question's transaction is open and its expiry is being started when the caller goes away: nothing shows yet.
+    expect(await row(runtime, ids.answerId)).toBeUndefined()
     caller.abort()
     await Effect.runPromise(Deferred.succeed(release, undefined))
     await response.catch(() => undefined)
 
-    await expect.poll(() => started).toEqual([Expire.executionId(ids.answerId)])
+    await expect.poll(() => started).toEqual([attemptOf(ids.answerId)])
+    await expect.poll(() => row(runtime, ids.answerId)).toMatchObject({ status: "streaming" })
   })
 
   test("a question ChatApi doesn't take starts nothing", async () => {

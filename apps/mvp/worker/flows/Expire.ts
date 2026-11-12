@@ -4,13 +4,16 @@ import { Config, Duration, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ANSWER_SETTLE_WITHIN, ANSWER_TURN_WAIT } from "../../src/features/agent/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { withAnswerConversation } from "../Messages.ts"
+import { lockAsk, withAnswerConversation } from "../Messages.ts"
 import * as Notifications from "../Notifications.ts"
 
 // `chat/Expire { answerId }` (docs/features/remote-flows.md, docs/features/agent.md#settling): settles an answer whose
 // run never did. A run belongs to the browser that asked (decision 0011), so an answer whose device never comes back,
-// or whose run ended in a defect, would stream forever. ChatApi starts this flow when it takes a question, one
-// execution per answer (`chat-expire-<answerId>`), and acknowledges the ask only once the start is recorded. Once the
+// or whose run ended in a defect, would stream forever. ChatApi starts this flow inside the transaction that stores a
+// question, one execution per attempt to store the answer (`chat-expire-<answerId>-<attempt>`), and commits and
+// acknowledges the ask only once the start is recorded: an answer is never stored without its expiry, whenever the
+// Worker is lost. An attempt that never commits leaves an execution that ends `missing`. A round takes the answer's
+// ask lock before it looks, so one started inside an ask still open waits for its commit (worker/Messages.ts). Once the
 // answer's queue (the answer itself, and every earlier answer in its conversation) hasn't moved for `ANSWER_EXPIRY`,
 // it settles the answer `failed`, `abandoned`, only if it is still `streaming`; an answer that settled is left as it is.
 // A device that comes back later finds its writes refused as settled (`AnswerSettled`).
@@ -41,8 +44,14 @@ export const DEFAULT_EXPIRY = Duration.sum(
 /** `ANSWER_EXPIRY`: a duration such as `25 minutes`, {@link DEFAULT_EXPIRY} when unset. */
 export const expiry = Config.Duration("ANSWER_EXPIRY").pipe(Config.withDefault(DEFAULT_EXPIRY))
 
-/** The execution id of `chat/Expire` for one answer: one execution per answer, so starting it again is a no-op. */
-export const executionId = (answerId: string) => `chat-expire-${answerId}`
+/**
+ * The execution id of `chat/Expire` for one answer. With `attempt`, the id of the transaction that stores the answer,
+ * it is that attempt's own: an earlier attempt that never committed, whose execution ended `missing`, can't make this
+ * one's start a no-op. Without it, it is the answer's one execution a resend starts for an answer already stored, a
+ * no-op once started.
+ */
+export const executionId = (answerId: string, attempt?: string) =>
+  attempt === undefined ? `chat-expire-${answerId}` : `chat-expire-${answerId}-${attempt}`
 
 /**
  * What a round did: settled a streaming answer, found it settled already, found no such answer, or found its queue
@@ -163,7 +172,8 @@ export const expiresIn = (answerId: string, after: Duration.Duration) =>
 /**
  * Settles `answerId` as `abandoned` if it still streams and its queue has been still for `after`, against the
  * `SqlClient` in context. One statement: the check and the update read the same snapshot. In the same transaction, an
- * abandoned answer's run fails, and the feed folds it.
+ * abandoned answer's run fails, and the feed folds it. It takes the answer's ask lock first, so it reads the answer
+ * only once an ask storing it has committed or rolled back.
  */
 export const abandon = (answerId: string, after: Duration.Duration) =>
   Effect.gen(function* () {
@@ -199,7 +209,11 @@ export const abandon = (answerId: string, after: Duration.Duration) =>
       ? "waiting"
       : "settled"
     return { outcome } satisfies Expired
-  }).pipe((effect) => withAnswerConversation(answerId, effect))
+  }).pipe(
+    (effect) => withAnswerConversation(answerId, effect),
+    (effect) =>
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.andThen(lockAsk(answerId), effect))),
+  )
 
 /**
  * One step over `database`, with its records: a `chat.answer.expire` log line and span when it fails, and when it

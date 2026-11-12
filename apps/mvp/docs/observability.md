@@ -302,7 +302,7 @@ Logs (`worker/Chat.ts`, and `ShapeProxy` from `@smthrs/effect-electric`, mounted
 | Message | When | Level | Fields |
 |---|---|---|---|
 | `chat.question` | every `POST /api/questions` | Info 2xx, Warn 4xx, Error 5xx | `status`, `bytes` (body bytes read, absent when a declared length was refused), `durationMs`; `questionId`, `answerId` once the body is valid; `role`, the asker's on the conversation's repository, which decides (`none` for no role; ruling AUTH-8); `existing: true` for a retry; `expiry: started` for a question ChatApi acknowledged; `errorCode` for every 4xx and 5xx (below), and `defect`, the defect's name, for 500 |
-| `chat.answer.expire` | ChatApi stored a question but couldn't start its `chat/Expire`, and answered `503` | Warn | `answerId`, `outcome: not_started`, `errorCode` (the remote host's code, or `conflict`) |
+| `chat.answer.expire` | ChatApi couldn't start a question's `chat/Expire`, so it stored nothing and answered `503` | Warn | `answerId`, `outcome: not_started`, `errorCode` (the remote host's code, or `conflict`) |
 | `chat.shape` | every shape request, once it has ended | Error 5xx or a failed body, Warn other 4xx, Info otherwise | `status` (499 when the browser left before Electric answered), `live`, `durationMs` (to the body's end), `bytes` (body bytes sent), `outcome` (`complete`, `aborted` or `failed`) |
 | `chat.view.add` | every `POST /api/views` ([web pages](features/web-pages.md#the-views-table)) | Info 2xx, Warn 4xx, Error 5xx | `status`, `bytes`, `durationMs`; `viewId`, `template` once the body is valid; `reason` for a page it refused; `existing: true` for the same add again; `errorCode` for 503. Never the URL |
 | `chat.views.shape` | every `GET /api/shapes/views`, once it has ended | as `chat.shape` | as `chat.shape` |
@@ -323,7 +323,7 @@ Every ChatApi line also carries `trace_id` and `span_id` when it is logged insid
 | 409 | `id_taken` (the question's id), `answer_id_taken` (the answer's id) |
 | 413 | `too_large` |
 | 500 | `defect`, with the defect's name as `defect`: a tagged value's tag, an error's name, or its type; `unknown` when that isn't an identifier |
-| 503 | `sql:<reason>` (Postgres unreachable, or refusing the insert, such as a position taken), `database` (another failure building the client), `@smthrs/mvp/auth/SessionsUnavailable` (sessions couldn't be read), `expiry_not_started` (the question is stored, but its expiry's start wasn't recorded; `chat.answer.expire` has the host's code) |
+| 503 | `sql:<reason>` (Postgres unreachable, or refusing the insert, such as a position taken), `database` (another failure building the client), `@smthrs/mvp/auth/SessionsUnavailable` (sessions couldn't be read), `expiry_not_started` (the expiry's start wasn't recorded, so the question isn't stored; `chat.answer.expire` has the host's code) |
 
 Spans:
 

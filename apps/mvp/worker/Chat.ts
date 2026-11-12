@@ -272,22 +272,29 @@ export const make = <E, R>(
           "smithers.chat.question_id": question.id,
           "smithers.chat.answer_id": question.answerId,
         })
-        // The ask is acknowledged only once its expiry is admitted, so no answer is left with neither a device nor a
-        // server to settle it. A start the host refuses is a 503, which the outbox sends again: the resend finds the
-        // question stored and starts the same execution, a no-op once one started. The write and the start run as one
-        // uninterruptible unit, so a caller that goes away between them can't leave a stored ask without its expiry.
+        // The ask is stored only once its expiry is admitted, so no answer is left with neither a device nor a server
+        // to settle it. The expiry starts inside the question's transaction, before it commits, under that attempt's
+        // own execution id: a Worker lost on either side of the start leaves at most an expiry with no answer, which
+        // ends `missing`, never a stored answer with no expiry. A start the host refuses rolls the question back and
+        // is a 503, which the outbox sends again. The unit is uninterruptible, so a caller that goes away can't stop
+        // it half way.
+        const admit = (attempt: string) =>
+          Effect.map(expire(question.answerId, attempt), (expiry) => void (fields.expiry = expiry))
         const asked = yield* Effect.uninterruptible(
           Effect.gen(function* () {
             const asked = yield* (decoded.source === undefined
-              ? Messages.ask(question)
+              ? Messages.ask(question, admit)
               : Views.askFrom(
                 question,
                 { viewId: decoded.source.viewId.toLowerCase(), event: decoded.source.event },
                 decoded.data,
+                admit,
               )).pipe(
                 Effect.provide(database),
                 Effect.mapError((error) =>
-                  error instanceof Views.SourceRefused
+                  error instanceof Refusal
+                    ? error
+                    : error instanceof Views.SourceRefused
                     ? new Refusal({ status: error.status, errorCode: error.code, explanation: refusedSource[error.code] })
                     : refuseStore(error)
                 ),
@@ -296,8 +303,12 @@ export const make = <E, R>(
               Effect.provide(database),
               Effect.catchCause(() => Effect.logWarning("conversation.asked.failed")),
             )
-            if (asked.txid === null) fields.existing = true
-            fields.expiry = yield* expire(question.answerId)
+            // A resend of a question already stored starts the answer's one execution, a no-op once started: it gives
+            // an expiry to an answer stored before expiries started inside the ask.
+            if (asked.txid === null) {
+              fields.existing = true
+              fields.expiry = yield* expire(question.answerId)
+            }
             return asked
           }),
         )
@@ -432,15 +443,17 @@ export const make = <E, R>(
   })
 
 /**
- * Starts `chat/Expire` for an answer ChatApi took (worker/flows/Expire.ts), on the remote host through
- * `Flows.FlowStarter`, without waiting for it: one execution per answer, so starting it again is a no-op. It settles
- * the answer if no device ever does. A start the host can't record is a `chat.answer.expire` line and a count,
- * `not_started`, and refuses the ask with a 503, so the outbox sends it again.
+ * Starts `chat/Expire` for an answer ChatApi takes (worker/flows/Expire.ts), on the remote host through
+ * `Flows.FlowStarter`, without waiting for it: the execution of the `attempt` storing the answer, or, without one, the
+ * one execution of an answer already stored, which starting again is a no-op. It settles the answer if no device ever
+ * does. A start the host can't record is a `chat.answer.expire` line and a count, `not_started`, and refuses the ask
+ * with a 503, so the outbox sends it again.
  */
-const expire = (answerId: string) =>
+const expire = (answerId: string, attempt?: string) =>
   Effect.flatMap(
     Flows.FlowStarter,
-    (starter) => starter.start(Expire.Expire, { executionId: Expire.executionId(answerId), payload: { answerId } }),
+    (starter) =>
+      starter.start(Expire.Expire, { executionId: Expire.executionId(answerId, attempt), payload: { answerId } }),
   ).pipe(
     Effect.as("started"),
     Effect.catch((error) =>
@@ -460,7 +473,7 @@ const expire = (answerId: string) =>
     ),
   )
 
-/** The 503 message when ChatApi stored a question but couldn't start its expiry. */
+/** The 503 message when ChatApi couldn't start a question's expiry, so didn't store it. */
 const notTaken = "Smithers couldn't take the question. Try again."
 
 /** The 503 message when Postgres, or the sessions in it, can't be read. */
