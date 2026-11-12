@@ -174,12 +174,15 @@ cases += [
 cases += web_cases
 cases += worker_cases
 cases += arm_cases
-if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...]')
+if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...] [--check]')
 out=pathlib.Path(sys.argv[1]).resolve()
 args=sys.argv[2:]; modules=set(); names=[]
+# --check names every case whose production text no longer matches exactly once, and writes no mutant.
+check=False; stale=[]
 while args:
     arg=args.pop(0)
-    if arg=='--module':
+    if arg=='--check': check=True
+    elif arg=='--module':
         if not args: raise SystemExit('--module needs a source path')
         modules.add(args.pop(0))
     else: names.append(arg)
@@ -219,11 +222,16 @@ for module,name,fn,old,new,claim in cases:
     source=(root.parent/module).read_text()
     if selected and name not in selected: continue
     span=function_span(source,fn)
-    if not span: raise SystemExit(f'Missing function {fn}')
+    if not span:
+        if check: stale.append(f'{name}: missing function {fn} in {module}'); continue
+        raise SystemExit(f'Missing function {fn}')
     start,end=span
     body=source[start:end]
     matches=executable_matches(body,old)
-    if len(matches)!=1: raise SystemExit(f'{name}: expected 1 executable match, found {len(matches)}')
+    if len(matches)!=1:
+        if check: stale.append(f'{name}: expected 1 executable match in {module} {fn}, found {len(matches)}'); continue
+        raise SystemExit(f'{name}: expected 1 executable match, found {len(matches)}')
+    if check: continue
     at=matches[0]
     edited=body[:at]+new+body[at+len(old):]
     broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+edited+source[end:]
@@ -232,6 +240,9 @@ for module,name,fn,old,new,claim in cases:
     (out/f'{name}.ts').write_text(lower_spec_functions(broken))
     stage_dependencies(broken,dependencies,out)
     manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
+if check:
+    if stale: raise SystemExit('Stale mutations:\n'+'\n'.join(stale))
+    print(f'{len(cases)} mutation cases each match one executable site'); sys.exit(0)
 if modules and not manifest: raise SystemExit('No mutations in: '+', '.join(sorted(modules)))
 # Beside the mutants, not among them: the mutant typecheck reads every .ts under OUT.
 stage_declarations(root.parent, declarations, out.with_name(out.name+'.declarations'))

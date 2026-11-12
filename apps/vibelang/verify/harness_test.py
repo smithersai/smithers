@@ -317,6 +317,14 @@ class TargetedInvariants(unittest.TestCase):
         self.assertTrue(INVARIANTS)
         self.assertLessEqual(set(INVARIANTS), names)
 
+class MutationRegistry(unittest.TestCase):
+    def test_every_mutation_matches_one_executable_site(self):
+        # A production edit can leave a case's text behind; the full verify:broken then stops before any mutant runs.
+        with tempfile.TemporaryDirectory() as out:
+            run = subprocess.run([sys.executable, str(ROOT / 'mutations.py'), out, '--check'], text=True, capture_output=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertEqual(os.listdir(out), [])
+
 class MutantTimeLimits(unittest.TestCase):
     def test_a_named_slow_mutant_gets_its_own_limit_and_others_keep_thirty_seconds(self):
         from mutation_targets import TIME_LIMITS, time_limit

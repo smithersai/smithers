@@ -1,7 +1,11 @@
 """Production postconditions selected for expensive negative cases; positive proofs still check every obligation."""
 # Exact production clauses, not generated line numbers. Positive verification checks all clauses.
 # Prefix mutations keep whole-function checking because an earlier checked assertion is the earliest failure.
-POSTCONDITIONS = {'apply-advance': '((res.seq_ == conversation.seq_) || (res.seq_ == (conversation.seq_ + 1)))',
+POSTCONDITIONS = {# Without the detached-page guard the whole mergedPages_ensures lemma times out (120 s, 2026-11-12); the clause
+ # it breaks, a detached page changes nothing, is checked alone (vl-proveall2).
+ 'history-merge-detached': '((epicIndex(pages, page.epic) >= 0) ==> ((page.seq_ < pages[epicIndex(pages, page.epic)].seq_) || '
+                           '(page.from > |pages[epicIndex(pages, page.epic)].commits|)) ==> (mergedPages(pages, page) == pages))',
+ 'apply-advance': '((res.seq_ == conversation.seq_) || (res.seq_ == (conversation.seq_ + 1)))',
  'apply-agent-name': '((event.seq_ == (conversation.seq_ + 1)) ==> event.ReplyStarted? ==> '
                      '(!conversation.agent.working?) ==> (event.id != "") ==> (forall i: int :: ((0 <= i) ==> (i '
                      '< |conversation.entries|) ==> (conversation.entries[i].id != event.id))) ==> '

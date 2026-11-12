@@ -747,6 +747,25 @@ their entries and proves the three decisions they describe as unchecked claims:
 | `accountCookieDecision.sessionCookieOf` | An origin starting `https:` uses the host-prefixed session cookie; any other, the plain one. `accountCookies.sessionCookieName` is this function. |
 | `flowPolicyDecision.issueOperations`, `wikiOperations`, `issueOperationIndex`, `wikiOperationIndex` | Every issue operation (13) and wiki operation (4) is in its list (each list's own postcondition, so dropping one fails the list), at an index in range that holds it. `issueFlow` and `wikiEditFlow` index the flows they build from those lists, so their `!` never fails. Before, the inventory said the `find` had exactly one match, but TypeScript did not check that the hand-written lists covered the operation types. |
 
+**Tool fix (`packages/lemmascript`).** Stating each list's completeness needed `\result.includes("read")` on a
+`ReadonlyArray<IssueOperation>`. LemmaScript emitted the literal as a Dafny `string` searched for in `seq<Op>`, a type
+error, though TypeScript reads it as the union member. A value searched for with `includes` or `indexOf` now takes
+the array's element type, as `push` and `with` already did. Red first: `union-search.test.ts` 1/2 and the fixture
+failed with the same type errors; after, 2/2, the fixture proves (4 obligations) and its `-wrong` twin, a list that
+lacks a member it claims, fails. A typed quantifier (`forall(op: IssueOperation, \result.includes(op))`) does not
+prove: Dafny does not split the enum under the binder. Arrays' `lastIndexOf` is still unsupported by the emitter.
+
+**Stale and uncountable mutations.** `d1c7cc2f` nested `newCommitOrder`'s unreached-cursor test under
+`cursor !== ""`, so `main-order-unreached` (`extended_mutations.py`) matched nothing and the full `verify:broken`
+stopped before any mutant ran. It now makes the nested branch answer `[]` and fails its own postcondition; the old edit
+(`at < -1`) would read `fetched[-1]` first, an index error rather than a contract failure. `history-merge-detached`
+(`web_mutations.py`) timed out in the whole `mergedPages_ensures` lemma at 30 s and at 120 s, with or without this
+batch's LemmaScript change; it is now checked against the one clause it breaks (a detached page changes nothing,
+`mutation_targets.POSTCONDITIONS`) and rejected there. `mutations.py --check` names every case whose text no longer
+matches exactly once and writes no mutant; `harness_test.py` runs it (about a second), so `pnpm verify` reports a stale
+case. It failed on the stale `screen-sandbox-request` (since fixed on main by vl-proveall3) and passes on every case.
+
+
 **Obligations and mutations.** catalogDecision 4, accountCookieDecision 8 and flowPolicyDecision 11 Dafny obligations,
 every one verified. Nine new mutations in `verify/worker_mutations.py` (3 entryAllowed, 2 sessionCookieOf, 4 operation
 lists and indexes), each rejected. Red first: on main the new functions do not exist, so the new tests in

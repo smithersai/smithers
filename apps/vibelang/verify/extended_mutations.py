@@ -5743,7 +5743,7 @@ cases.extend([('worker/mainLogDecision.vibe', *case) for case in [
 ('main-group-last', 'groupOrder', 'bySha.get(sha) === k', 'bySha.get(sha) !== undefined', 'each id is taken once, at its own index'),
 ('main-order-empty', 'newCommitOrder', 'return cursor === "" ? [] : undefined', 'return []', 'an empty listing never reaches a cursor'),
 ('main-order-cycle', 'newCommitOrder', 'if (onSpine.has(sha)) return undefined', 'if (onSpine.has(sha)) break', 'a repeated commit is not a history'),
-('main-order-unreached', 'newCommitOrder', 'if (cursor !== "" && at < 0) return undefined', 'if (at < -1) return undefined', 'an unreached cursor is undefined'),
+('main-order-unreached', 'newCommitOrder', 'if (at < 0) return undefined', 'if (at < 0) return []', 'an unreached cursor is undefined'),
 ('main-order-seen', 'newCommitOrder', 'seen.add(fetched[side[g]!]!.sha)', 'seen.add(fetched[step]!.sha)', 'a side commit is taken once'),
 ('main-page-status', 'pageAccepted', 'return status === 200', 'return status < 300', 'only 200 is a page'),
 ('main-page-full', 'readsAnotherPage', 'count >= perPage && ', '', 'a short page is the last'),
