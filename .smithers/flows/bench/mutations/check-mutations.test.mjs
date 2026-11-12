@@ -53,7 +53,7 @@ test("mutation failures cannot be overwritten or reused as fresh evidence", () =
 
 test("a runner that ends without its report is diagnosed by mutant, ending and log", () => {
   for (const [runner, ending] of [
-    ["process.exit(1)", /exit status 1/],
+    ["process.stderr.write('fixture runner stderr'); process.exit(1)", /exit status 1/],
     ["process.kill(process.pid, 'SIGKILL')", /signal SIGKILL/],
     ["process.stdout.write('x'.repeat(5 * 1024 * 1024))", /ENOBUFS.*signal SIGTERM/]
   ]) {
@@ -71,7 +71,81 @@ test("a runner that ends without its report is diagnosed by mutant, ending and l
       const log = join(artifacts, "fixture-baseline.log").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
       const diagnosis = new RegExp(`fixture-baseline: runner ended by .*${ending.source}.* without a complete report; log ${log}`)
       assert.throws(() => runMutations(artifacts, [mutant]), diagnosis)
+      if (runner.includes("fixture runner stderr")) {
+        assert.match(readFileSync(join(artifacts, "failure.json"), "utf8"), /fixture runner stderr/)
+      }
       assert.match(JSON.parse(readFileSync(join(artifacts, "failure.json"), "utf8")).message, diagnosis)
     } finally { rmSync(directory, { recursive: true, force: true }) }
   }
+})
+
+
+test("a real mutation baseline loads migrated dependencies and the mutant trips its behavioral assertion", { timeout: 180_000 }, () => {
+  const witness = mutants.find((mutant) => mutant.id === "event-byte-equality")
+  assert.ok(witness)
+  const directory = mkdtempSync(join(tmpdir(), "smithers-mutation-loader-"))
+  try {
+    const result = runMutations(directory, [witness])
+    assert.equal(result.status, "passed")
+    assert.equal(result.results.length, 1)
+    assert.equal(result.results[0].id, witness.id)
+    assert.equal(result.results[0].status, "killed")
+    assert.ok(result.results[0].assertions.some((entry) => entry.status === "failed"))
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test("malformed and incomplete mutation reports retain attempt and artifact context", () => {
+  for (const contents of ["{", "{}"]) {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-mutation-report-"))
+    try {
+      const pkg = join(directory, "package")
+      mkdirSync(join(pkg, "src"), { recursive: true })
+      mkdirSync(join(pkg, "node_modules", "vitest"), { recursive: true })
+      writeFileSync(join(pkg, "package.json"), "{}")
+      writeFileSync(join(pkg, "src", "site.mjs"), "export const over = (a, b) => a > b\n")
+      writeFileSync(join(pkg, "node_modules", "vitest", "package.json"), "{}")
+      writeFileSync(join(pkg, "node_modules", "vitest", "vitest.mjs"),
+        "import { writeFileSync } from 'node:fs'; const path = process.argv.find(arg => arg.startsWith('--outputFile=')).slice('--outputFile='.length); writeFileSync(path, " + JSON.stringify(contents) + ");")
+      const artifacts = join(directory, "artifacts")
+      const mutant = { id: "fixture", package: pkg, source: "src/site.mjs", original: "a > b", replacement: "a >= b", file: "site.test.mjs", test: "fixture oracle" }
+      assert.throws(() => runMutations(artifacts, [mutant]), (error) => {
+        assert.match(String(error), /fixture-baseline:/)
+        assert.ok(String(error).includes(join(artifacts, "fixture-baseline.json")))
+        assert.ok(String(error).includes(join(artifacts, "fixture-baseline.log")))
+        return true
+      })
+      assert.match(JSON.parse(readFileSync(join(artifacts, "failure.json"), "utf8")).message, /fixture-baseline:/)
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  }
+})
+
+
+test("long runner logs retain both assertion diagnostics and the stderr tail", () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-mutation-diagnostics-"))
+  try {
+    const pkg = join(directory, "package")
+    mkdirSync(join(pkg, "src"), { recursive: true })
+    mkdirSync(join(pkg, "node_modules", "vitest"), { recursive: true })
+    writeFileSync(join(pkg, "package.json"), "{}")
+    writeFileSync(join(pkg, "src", "site.mjs"), "export const over = (a, b) => a > b\n")
+    writeFileSync(join(pkg, "node_modules", "vitest", "package.json"), "{}")
+    const report = { success: false, testResults: [{ status: "failed", message: "",
+      assertionResults: [{ status: "failed", fullName: "fixture oracle",
+        failureMessages: ["AssertionError: fixture assertion detail"] }] }] }
+    writeFileSync(join(pkg, "node_modules", "vitest", "vitest.mjs"),
+      "import { writeFileSync } from 'node:fs'; const path = process.argv.find(arg => arg.startsWith('--outputFile=')).slice('--outputFile='.length);"
+      + "writeFileSync(path, " + JSON.stringify(JSON.stringify(report)) + ");"
+      + "process.stderr.write('x'.repeat(9000) + 'fixture stderr tail'); process.exit(1);")
+    const artifacts = join(directory, "artifacts")
+    const mutant = { id: "fixture", package: pkg, source: "src/site.mjs", original: "a > b", replacement: "a >= b", file: "site.test.mjs", test: "fixture oracle" }
+    assert.throws(() => runMutations(artifacts, [mutant]), (error) => {
+      assert.match(String(error), /fixture assertion detail/)
+      assert.match(String(error), /fixture stderr tail/)
+      assert.ok(String(error).length < 9000)
+      return true
+    })
+    const failure = JSON.parse(readFileSync(join(artifacts, "failure.json"), "utf8")).message
+    assert.match(failure, /fixture assertion detail/)
+    assert.match(failure, /fixture stderr tail/)
+  } finally { rmSync(directory, { recursive: true, force: true }) }
 })

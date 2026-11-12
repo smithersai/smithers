@@ -1718,6 +1718,14 @@
         "exclude": []
       },
       {
+        "kind": "file",
+        "path": "tsconfig.base.json"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.json"
+      },
+      {
         "kind": "glob",
         "pattern": ".smithers/flows/bench/**/*",
         "exclude": []
@@ -1740,7 +1748,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//.smithers/flows:automationModules"
+    ],
     "source": {
       "file": ".smithers/flows/PACKAGE.ts"
     }
@@ -4901,10 +4911,20 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.base.json"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//.smithers/flows:automationModules"
+    ],
     "source": {
       "file": ".smithers/flows/PACKAGE.ts"
     }

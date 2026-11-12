@@ -6,6 +6,7 @@ import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKA
 import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 import codingProject from "../coding-project.json" with { type: "json" }
+import { mutants as behavioralMutations } from "./bench/mutations/manifest.mjs"
 
 const pack = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//.smithers/flows/pack.test.mjs")]),
@@ -665,16 +666,26 @@ const benchSources = [
   runModuleSource,
   Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
 ]
-const gatewaySources = Smithers.Filegroup({
-  cwd: "packages/smithers/gateway",
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")]
-})
+const mutationSubjects = [...new Set(behavioralMutations.map((mutant) => mutant.package))].map((cwd) =>
+  Smithers.Filegroup({
+    cwd,
+    srcs: [
+      Smithers.glob("src/**"),
+      Smithers.glob("test/**"),
+      Smithers.file("tsconfig.json"),
+      ...(existsSync(new URL(`../../${cwd}/tsconfig.test.json`, import.meta.url))
+        ? [Smithers.file("tsconfig.test.json")]
+        : []),
+      Smithers.file("package.json")
+    ]
+  })
+)
 
 /** Required fast behavioral mutation tier, including both exact-byte guards. */
 const mutationGate = Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/bench/mutations/check-mutations.mjs")),
-  srcs: benchSources,
-  deps: [gatewaySources]
+  srcs: [...benchSources, Smithers.file("//tsconfig.base.json"), Smithers.file("//tsconfig.json")],
+  deps: [...mutationSubjects, ...codingDependencies]
 })
 
 /** Deterministic scheduler and journal cost regressions, after output validation. */
@@ -716,11 +727,13 @@ const campaignVerifiers = Smithers.NodeTest({
   ]),
   srcs: [
     sources,
+    Smithers.file("//tsconfig.base.json"),
+    Smithers.file("//tsconfig.json"),
     ...benchSources,
     Smithers.file("//.smithers/flows/release/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/reliability.yml")
   ],
-  deps: [],
+  deps: [...mutationSubjects, ...codingDependencies],
   cwd
 })
 

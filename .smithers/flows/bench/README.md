@@ -154,3 +154,18 @@ Limitations:
   failures are never cached. The native gates were not executed (no JJ export
   helper on the measuring host).
 - Wall times are single samples on a developer laptop, not controlled runs.
+
+## Mutation checks
+
+The mutation runner at `.smithers/flows/bench/mutations/check-mutations.mjs`
+creates a separate Vitest configuration for each baseline and mutant. Both
+configurations load the workflow package's declared `vibelang-vite` plugin
+against the subject package's test project. This compiles migrated dependencies
+with the declared plugin while retaining the mutation tier's isolated Vitest settings.
+
+A baseline must execute and pass its selected assertions. A mutant must load
+its recorded source replacement and fail the named behavioral assertion;
+missing modules, empty selections, crashes and unrelated failures refuse the
+gate. Each attempt logs its mutation ID, phase, exit status, JSON report and
+captured log path. Failure receipts preserve those paths and the successfully
+completed mutations; existing evidence is never overwritten.

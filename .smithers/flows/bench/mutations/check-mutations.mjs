@@ -46,6 +46,7 @@ export function runMutations(artifacts = mkdtempSync(join(tmpdir(), "smithers-mu
   const before = new Map(mutants.map((mutant) => { const path = resolve(root, mutant.package, mutant.source); return [path, hash(path)] }))
   const results = []
   try {
+    const compilerPlugin = import.meta.resolve("vibelang-vite")
     for (const mutant of mutants) {
       const cwd = resolve(root, mutant.package)
       const source = resolve(cwd, mutant.source)
@@ -57,17 +58,19 @@ export function runMutations(artifacts = mkdtempSync(join(tmpdir(), "smithers-mu
         const config = join(artifacts, `${name}.config.mjs`)
         const reportPath = join(artifacts, `${name}.json`)
         const marker = join(artifacts, `${name}.applied`)
-        writeFileSync(config, `import { writeFileSync } from 'node:fs';
+        writeFileSync(config, `import vibelang from ${JSON.stringify(compilerPlugin)};
+import { writeFileSync } from 'node:fs';
 export default {
-  plugins: ${baseline ? "[]" : `[{ name: ${JSON.stringify(mutant.id)}, enforce: 'pre', transform(code, id) {
+  plugins: [vibelang({ project: ${JSON.stringify(join(cwd, existsSync(join(cwd, "tsconfig.test.json")) ? "tsconfig.test.json" : "tsconfig.json"))} }), ...${baseline ? "[]" : `[{ name: ${JSON.stringify(mutant.id)}, enforce: 'pre', transform(code, id) {
     if (id.split('?')[0] !== ${JSON.stringify(source)}) return null;
     const original = ${JSON.stringify(mutant.original)};
     if (code.split(original).length !== 2) throw new Error('Mutation site must occur exactly once');
     writeFileSync(${JSON.stringify(marker)}, 'applied');
     return code.replace(original, ${JSON.stringify(mutant.replacement)});
-  }}]`},
+  }}]`}],
   test: { environment: 'node', maxWorkers: 1, testTimeout: 30000, hookTimeout: 30000, coverage: { enabled: false } }
 };\n`)
+        console.log(name + ": started")
         const ran = spawnSync(process.execPath, [vitest, "run", mutant.file, "--config", config,
           "--testNamePattern", escapeRegex(mutant.test), "--reporter=json", `--outputFile=${reportPath}`], {
           cwd, encoding: "utf8", timeout: 90_000, maxBuffer: 4 * 1024 * 1024
@@ -75,9 +78,22 @@ export default {
         const log = join(artifacts, `${name}.log`)
         writeFileSync(log, `${ran.stdout ?? ""}${ran.stderr ?? ""}`)
         const ending = [ran.error?.message, ran.signal && `signal ${ran.signal}`, ran.status !== null && `exit status ${ran.status}`].filter(Boolean).join(", ")
-        assert.ok(!ran.error && !ran.signal && existsSync(reportPath), `${name}: runner ended by ${ending} without a complete report; log ${log}`)
-        const report = JSON.parse(readFileSync(reportPath, "utf8"))
-        const assertions = verifyOutcome({ ...ran, report, applied: existsSync(marker) }, baseline, mutant)
+        let assertions
+        let report
+        try {
+          assert.ok(!ran.error && !ran.signal && existsSync(reportPath), `${name}: runner ended by ${ending} without a complete report; log ${log}`)
+          console.log(name + ": " + ending + "; report " + reportPath + "; log " + log)
+          report = JSON.parse(readFileSync(reportPath, "utf8"))
+          assertions = verifyOutcome({ ...ran, report, applied: existsSync(marker) }, baseline, mutant)
+        } catch (error) {
+          const failures = Array.isArray(report?.testResults) ? report.testResults.flatMap((file) => [
+            file.message,
+            ...(Array.isArray(file.assertionResults) ? file.assertionResults.flatMap((entry) => entry.failureMessages ?? []) : [])
+          ]).filter(Boolean).join("\n") : ""
+          const detail = [failures.slice(0, 4000), readFileSync(log, "utf8").slice(-4000)].filter(Boolean).join("\n")
+          throw new Error(name + ": " + String(error) + "; report " + reportPath + "; log " + log
+            + "\nAttempt diagnostics:\n" + (detail || "No readable attempt diagnostics were written."), { cause: error })
+        }
         if (!baseline) results.push({ ...mutant, status: "killed", assertions })
       }
       console.log(`${mutant.id}: killed`)

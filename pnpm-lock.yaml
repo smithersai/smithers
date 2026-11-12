@@ -344,6 +344,9 @@ importers:
       vibelang:
         specifier: 0.0.12
         version: 0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c))
+      vibelang-vite:
+        specifier: 0.0.12
+        version: 0.0.12(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=4a17bc9f99b9479cb68e3fa970a1c0f4a43386ac5960f7c43aba1d98a1af3e9c)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   .smithers/flows/coding: {}
 
