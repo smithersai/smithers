@@ -1059,6 +1059,14 @@ because no target chose its state. All are now chosen in every execution; none i
 Mutation: `ControlTour` treating `Unavailable` as the kept failure is falsified by `control-tour` in the first
 execution (seed 20261173).
 
+### `budget/physical-calls` after DUR-2 (sixteenth session)
+
+`d94d65cc` (2026-11-11, another lane) removed the meter's own ledger retries: each operation is attempted once and a
+failure is `AccountingUnavailable` (DUR-2, decision 0030). `budget/physical-calls` still expected three retries and
+failed on its first execution at every seed, which stopped the full run at seed 20261175 before its report. Its
+oracle now names `RETRIES = 0`; it passes at 20261175, 20261176 and 1, and a meter given back one retry is falsified
+in the first execution (seed 20261177).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

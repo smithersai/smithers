@@ -1,7 +1,7 @@
 // The physical-call meter (worker/CallBudget.vibe) over a daily ledger whose operations fail a drawn number of times
 // and admit or refuse, with any answer ceiling and any usage, in virtual time. Oracle: each call first hands over the
-// parent run's reservation; a call with no safe positive ceiling is refused before admission; a ledger that still
-// fails after three retries is AccountingUnavailable; a refused admission is the spent daily budget; a receipt names
+// parent run's reservation; a call with no safe positive ceiling is refused before admission; a ledger operation is
+// attempted once and a failure is AccountingUnavailable (DUR-2: the flow engine owns retries, decision 0030); a refused admission is the spent daily budget; a receipt names
 // the day, one fresh model key and the ceiling; settling it charges exactly the counted tokens; a foreign receipt
 // charges nothing.
 import { it } from "@effect/vitest"
@@ -23,9 +23,11 @@ const USAGES: ReadonlyArray<readonly [Record<string, number>, boolean, number, b
 const Faults = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 5 }))
 const Case = Schema.Struct({ max: Int, parent: Faults, admit: Faults, admits: Schema.Boolean, record: Faults, usage: Int, tamper: Schema.Boolean })
 type Case = typeof Case.Type
+/** The meter's own retries of a ledger operation: none since d94d65cc (DUR-2). */
+const RETRIES = 0
 const base = ModelRequest.ModelRequest.make({ modelId: "test", system: [], messages: [], tools: [], params: ModelRequest.GenerationParams.make({ maxTokens: 32 }) })
 
-/** Every execution walks each refusal, each recovery inside the retries, and every usage shape before the drawn case. */
+/** Every execution walks each refusal, each ledger outage, and every usage shape before the drawn case. */
 const ok: Case = { max: 5, parent: 0, admit: 0, admits: true, record: 0, usage: 0, tamper: false }
 const WALK: ReadonlyArray<Case> = [
   { ...ok, parent: 4 }, { ...ok, parent: 3 }, { ...ok, admit: 4 }, { ...ok, admit: 2, admits: false }, { ...ok, admits: false },
@@ -64,18 +66,18 @@ effect function check(c: Case) {
   const request = { ...base, params: { ...base.params, maxTokens: maximum } } as unknown as ModelRequest.ModelRequest
   const day = new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10)
   const reserved = try exit(meter.reserveCall!(request))
-  // The handover is tried once and retried at most three times, whatever follows.
+  // The handover is tried once and retried at most RETRIES times, whatever follows.
   const handovers = calls.filter((call) => call.startsWith("spend "))
-  if (handovers.length !== Math.min(c.parent, 3) + 1 || handovers.some((call) => call !== "spend 2026-11-10 run 0 true 100")) return false
+  if (handovers.length !== Math.min(c.parent, RETRIES) + 1 || handovers.some((call) => call !== "spend 2026-11-10 run 0 true 100")) return false
   const admissions = calls.filter((call) => call.startsWith("admit "))
-  if (c.parent > 3) return unavailable(reserved) && admissions.length === 0
+  if (c.parent > RETRIES) return unavailable(reserved) && admissions.length === 0
   if (maximum === undefined || !USABLE.includes(maximum)) return refused(reserved, false) && admissions.length === 0
   const ceiling = 32_768 + maximum
-  // Every retry asks for the same key, so a retried admission holds once.
+  // A retried admission would ask for the same key, so it would hold once.
   const [, admittedDay, key, cap] = admissions[0]?.split(" ") ?? []
-  if (admissions.length !== Math.min(c.admit, 3) + 1 || admissions.some((call) => call !== admissions[0])) return false
+  if (admissions.length !== Math.min(c.admit, RETRIES) + 1 || admissions.some((call) => call !== admissions[0])) return false
   if (admittedDay !== day || key === undefined || !/^model\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(key) || cap !== String(ceiling)) return false
-  if (c.admit > 3) return unavailable(reserved)
+  if (c.admit > RETRIES) return unavailable(reserved)
   if (!c.admits) return refused(reserved, true)
   if (reserved._tag !== "Success") return false
   const receipt = (try Effect.orDie(Effect.try(() => JSON.parse(reserved.value)))) as Record<string, unknown>
@@ -84,8 +86,8 @@ effect function check(c: Case) {
   const recorded = try exit(meter.recordCall!(c.tamper ? "not a receipt" : reserved.value, usage, settled))
   const charges = calls.filter((call) => call.startsWith(`spend ${day} model/`))
   if (c.tamper) return unavailable(recorded) && charges.length === 0
-  if (charges.length !== Math.min(c.record, 3) + 1 || charges.some((call) => call !== `spend ${day} ${key} ${used} ${reported} ${ceiling}`)) return false
-  return c.record > 3 ? unavailable(recorded) : recorded._tag === "Success"
+  if (charges.length !== Math.min(c.record, RETRIES) + 1 || charges.some((call) => call !== `spend ${day} ${key} ${used} ${reported} ${ceiling}`)) return false
+  return c.record > RETRIES ? unavailable(recorded) : recorded._tag === "Success"
 }
 
 it.live("budget/physical-calls", () => run("budget/physical-calls", Case, (drawn) => stepped(effect {
