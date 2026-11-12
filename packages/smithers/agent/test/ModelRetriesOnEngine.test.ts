@@ -265,7 +265,9 @@ describe("a model step's transient failure on the durable engine", () => {
     expect(attempts).toEqual([1, 2, 2])
     expect(Exit.isSuccess(observed.exit)).toBe(true)
     // The failed first attempt was charged before the restart, and is still.
-    expect(observed.usage).toEqual({ tokens: 420, calls: 2, largestCall: 300 })
+    // The attempt the restart cut off was a physical call whose usage never
+    // arrived: it counts, as unreported, so `tokens` is a lower bound.
+    expect(observed.usage).toEqual({ tokens: 420, calls: 3, largestCall: 300, unreported: 1 })
     expect(observed.rows.map((row) => [row.attempt, row.state])).toEqual([[1, "failed"], [2, "succeeded"]])
     expect(observed.rows[1]!.outcome_json).toContain("\"totalTokens\":120")
   }, 60_000)
