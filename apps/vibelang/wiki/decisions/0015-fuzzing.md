@@ -1277,3 +1277,10 @@ last revision (both `protocol`, then restored); an injected host answering revis
 `issues/http-surface` posts every body kind before its drawn request, so a body that is not JSON and an oversized one
 reach the server each execution. Mutants caught: the unlisted issue not added; its refused read ignored; the saved
 revision's room unchecked; GitHub's revision range unchecked. The seven lines are reached from `issues` alone.
+
+`worker/PublicReads.vibe` 30-31 and 37-39 (a configured read setup; the cache store's storage failures) had no target.
+`public/reads` reads the setup from drawn configuration (through smithers.sh only with both `VIBELANG_ORIGIN` and
+`AUTH_BROKER_SITE_SECRET`, at `https://smithers.sh` unless `AUTH_BROKER_ORIGIN` names another) and walks the store
+over storage whose get, put, delete or all operations reject: each failure is a miss, never a failed read. Mutants
+caught: a failed get or remove failing the read; another default broker. The setup's both-or-nothing condition admits
+no compiling mutant (`.value` needs both options narrowed). About 2,000 executions in 3 s.

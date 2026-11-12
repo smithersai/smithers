@@ -1,0 +1,51 @@
+// Signed-out reads' setup and cache store (worker/PublicReads.vibe), against decision 0031: reads go through
+// smithers.sh only with both the site's origin and its broker key, at smithers.sh unless another broker is named; the
+// object's storage as the read cache turns every storage failure into a miss, never a failed read.
+import { it } from "@effect/vitest"
+import { readSetup, storeOver } from "../worker/PublicReads.vibe"
+import type { KeyValue } from "../worker/ObjectStorage.vibe"
+import { run, Text } from "./run.vibe"
+
+const BROKEN = ["none", "get", "put", "delete", "all"] as const
+const Input = Schema.Struct({ origin: Schema.Boolean, broker: Schema.Boolean, secret: Schema.Boolean, broken: Schema.Literals(BROKEN), key: Text, value: Text })
+
+/** Object storage in memory whose `broken` operations reject, as a lost storage does. */
+function memory(broken: typeof BROKEN[number]): KeyValue {
+  const map = new Map<string, unknown>()
+  const fails = (op: string) => broken === op || broken === "all"
+  const lost = () => Promise.reject(new Error("storage lost"))
+  const put = (key: string | Record<string, unknown>, value?: unknown): Promise<void> => {
+    if (fails("put")) return lost()
+    if (typeof key === "string") map.set(key, value)
+    return Promise.resolve()
+  }
+  return {
+    get: (key) => fails("get") ? lost() : Promise.resolve(map.get(key)),
+    put,
+    delete: (key) => fails("delete") ? lost() : Promise.resolve(map.delete(key)),
+    list: () => Promise.resolve(new Map()),
+    setAlarm: () => Promise.resolve(),
+    deleteAlarm: () => Promise.resolve(),
+  }
+}
+
+it.live("public/reads", () => run("public/reads", Input, (input) => effect {
+  const values = {
+    ...(input.origin ? { VIBELANG_ORIGIN: "https://vibelang.example" } : {}),
+    ...(input.broker ? { AUTH_BROKER_ORIGIN: "https://broker.example" } : {}),
+    ...(input.secret ? { AUTH_BROKER_SITE_SECRET: "site-secret" } : {}),
+  }
+  const setup = try Effect.provide(readSetup(), ConfigProvider.layer(ConfigProvider.fromUnknown(values)))
+  if (!input.origin || !input.secret) {
+    if (setup !== undefined) return false
+  } else if (setup?.origin !== "https://vibelang.example" || setup.brokerOrigin !== (input.broker ? "https://broker.example" : "https://smithers.sh") || Redacted.value(setup.secret) !== "site-secret") return false
+  for (const broken of [...BROKEN, input.broken]) {
+    const store = storeOver(memory(broken))
+    try store.put(input.key, input.value)
+    const stored = broken === "none" || broken === "delete"
+    if ((try store.get(input.key)) !== (stored ? input.value : undefined)) return false
+    try store.remove(input.key)
+    if ((try store.get(input.key)) !== (broken === "delete" ? input.value : undefined)) return false
+  }
+  return true
+}))
