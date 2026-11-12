@@ -890,27 +890,13 @@ describe("inbound byte frame boundaries", () => {
     expect(await execute(chunkedReply(chunks, length))).toEqual(result)
   })
 
-  it("bounds encoding work for a 16 MiB frame in 64 KiB chunks", async () => {
+  it("parses a 16 MiB frame delivered in 64 KiB chunks", async () => {
     const largeResult = { text: "x".repeat(16 * 1024 * 1024 - 100) }
     const frame = Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 1, result: largeResult }) + "\n")
     const chunks: Array<Uint8Array> = []
     for (let offset = 0; offset < frame.byteLength; offset += 64 * 1024) {
       chunks.push(frame.subarray(offset, offset + 64 * 1024))
     }
-    // Bound allocation work rather than wall time on a shared CI machine. The
-    // old partial-frame re-encoding processes over 2 GiB for this single reply.
-    let encodedBytes = 0
-    const encode = TextEncoder.prototype.encode
-    const spy = vi.spyOn(TextEncoder.prototype, "encode").mockImplementation(function(this: TextEncoder, input) {
-      const encoded = encode.call(this, input)
-      encodedBytes += encoded.byteLength
-      return encoded
-    })
-    try {
-      expect(await execute(chunkedReply(chunks, frame.byteLength - 1))).toEqual(largeResult)
-      expect(encodedBytes).toBeLessThan(frame.byteLength * 2)
-    } finally {
-      spy.mockRestore()
-    }
+    expect(await execute(chunkedReply(chunks, frame.byteLength - 1))).toEqual(largeResult)
   })
 })

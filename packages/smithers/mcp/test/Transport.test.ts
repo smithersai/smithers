@@ -25,6 +25,10 @@ describe("Transport.lines", () => {
     expect(await split(["a\rb\r", "\nc\r\n\r", "d", "\n"], true)).toEqual(["a", "b", "c", "", "d"])
   })
 
+  it("keeps a pending CR across an empty chunk, so a split CRLF still ends one line", async () => {
+    expect(await split(["data: a\r", "", "\ndata: b\r\n\r\n"], true)).toEqual(["data: a", "data: b", ""])
+  })
+
   it("fails a line longer than the bound in either mode", async () => {
     for (const crTerminates of [false, true]) {
       await expect(split(["12345", "6\r"], crTerminates, 5)).rejects.toMatchObject({

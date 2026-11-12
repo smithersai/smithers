@@ -144,6 +144,8 @@ export const lines = <E>(
     Stream.mapAccumEffect(
       (): PartialLine => ({ pieces: [], bytes: 0, skipLf: false }),
       (partial, chunk) => {
+        // An empty chunk carries no bytes, so it cannot complete a pending CRLF.
+        if (chunk.byteLength === 0) return Effect.succeed([partial, []] as const)
         const complete: Array<string> = []
         const append = (piece: Uint8Array): boolean => {
           if (piece.byteLength === 0) return true

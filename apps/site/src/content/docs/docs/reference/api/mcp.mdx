@@ -372,10 +372,13 @@ Projects a connected session's tool catalog as an ordinary
 ### McpFlows.connected
 
 ```ts
-const connected: (
-  options: McpClient.ConnectOptions & ProjectionOptions
-) => Effect.Effect<FlowBinding.Source, McpError, ChildProcessSpawner | Scope.Scope>
+const connected: <O extends McpClient.ConnectOptions>(
+  options: O & ProjectionOptions
+) => Effect.Effect<FlowBinding.Source, McpError, McpClient.Requirements<O> | Scope.Scope>
 ```
+
+Requires the same services as `McpClient.connect`: a `Scope`, plus
+`ChildProcessSpawner` for `command` or `HttpClient` for `url`.
 
 Connects and projects in one step. This is the checked entry point: it validates
 the projection options against the freshly fetched catalog, failing with

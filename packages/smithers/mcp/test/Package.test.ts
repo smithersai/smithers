@@ -7,8 +7,8 @@ describe("package manifest and README", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
 
     // npm renders this file, so every reference has to resolve for a reader who
-    // has only the tarball. A relative `docs/` path does not: `docs/` is not
-    // published, and its pages link on into `guides/` and `concepts/` anyway.
+    // has only the tarball. A relative `docs/` path does not: npm's README view
+    // resolves it against the registry page, not the shipped `docs/` tree.
     expect(readme).toContain("https://github.com/smithersai/smithers/tree/main/packages/smithers/mcp/docs")
     expect(readme).not.toMatch(/\]\(\.\/docs\//)
 

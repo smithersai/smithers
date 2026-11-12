@@ -28,15 +28,16 @@ The package ships as both ESM and CommonJS with TypeScript declarations. The
 `@smthrs/*` packages the adapter composes are ordinary dependencies and install
 with it.
 
-## Provide a process spawner
+## Provide the connection services
 
-Every constructor that opens a connection requires two services from the
-caller's environment:
+Every constructor that opens a connection requires a `Scope`, plus one service
+for its transport:
 
-| Requirement           | Why                                                                                     |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| `ChildProcessSpawner` | An MCP server is a subprocess. The spawner is Effect's process port, not a Node import. |
-| `Scope`               | The connection is scoped. Closing the scope tears the server process down.              |
+| Requirement           | When              | Why                                                                                      |
+| --------------------- | ----------------- | ---------------------------------------------------------------------------------------- |
+| `ChildProcessSpawner` | `command` options | A stdio server is a subprocess. The spawner is Effect's process port, not a Node import. |
+| `HttpClient`          | `url` options     | A Streamable HTTP session sends every request through the `HttpClient` in context.       |
+| `Scope`               | always            | The connection is scoped. Closing the scope ends the session.                            |
 
 On Node, `@effect/platform-node` provides the spawner:
 
@@ -81,7 +82,7 @@ const failure = new McpError.McpError({ code: "timeout", message: "...", server:
 
 Two subpath forms are not public: `@smthrs/mcp/internal/*` and
 `@smthrs/mcp/*/index`. Both are blocked in the package's export map, so the
-JSON-RPC codec and the stdio transport are not importable.
+JSON-RPC codec and the stdio and HTTP transports are not importable.
 `@smthrs/mcp/package.json` is exported.
 
 ## What a host composition adds

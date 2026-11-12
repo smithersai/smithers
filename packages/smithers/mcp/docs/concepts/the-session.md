@@ -5,9 +5,10 @@ sidebar:
   order: 2
 ---
 
-An MCP session is a subprocess. Everything surprising about this package follows
-from that: the process has to be started, negotiated with, bounded, and torn
-down, and any of those steps can end the session in the middle of a call.
+An MCP session is a subprocess or a Streamable HTTP session. Everything
+surprising about this package follows from that: the session has to be started,
+negotiated with, bounded, and torn down, and any of those steps can end it in
+the middle of a call.
 
 ## Starting
 

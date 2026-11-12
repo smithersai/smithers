@@ -128,9 +128,10 @@ ambient names are withheld.
 ```
 
 The server answers with the revision it chose. Any answer outside that list
-fails with `protocol_error` naming both sides, because this client decodes the
-`tools/list` and `tools/call` shapes of those three revisions and cannot
-honestly claim a fourth.
+fails with `protocol_error` naming the revisions this client speaks, because
+this client decodes the `tools/list` and `tools/call` shapes of those three
+revisions and cannot honestly claim a fourth. The message withholds the
+server's revision string: it is untrusted server text.
 
 The server must also declare a `tools` capability in its `initialize` result. A
 server that serves only resources or prompts is refused: this package projects

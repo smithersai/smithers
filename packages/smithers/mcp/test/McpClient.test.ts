@@ -1,14 +1,23 @@
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import { Cause, Effect, Exit, Layer, Redacted, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Redacted, Scheduler, Schema } from "effect"
 import { readFileSync } from "node:fs"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as Diagnostics from "../src/Diagnostics.ts"
 import * as Rpc from "../src/internal/Rpc.ts"
 import * as StdioTransport from "../src/internal/StdioTransport.ts"
 import * as Transport from "../src/internal/Transport.ts"
 import * as McpClient from "../src/McpClient.ts"
 import { McpError } from "../src/McpError.ts"
-import { fakeServer, respondToEcho, respondWithStructured, TOOLS, withFakeServer } from "./fixtures/FakeServer.ts"
+import { countingScheduler } from "./fixtures/CountingScheduler.ts"
+import { provideSpawner } from "./fixtures/FakeProcess.ts"
+import {
+  fakeServer,
+  respondToEcho,
+  respondWithStructured,
+  TOOLS,
+  trackedServer,
+  withFakeServer
+} from "./fixtures/FakeServer.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
 
@@ -579,11 +588,13 @@ describe("McpClient.connect", () => {
     expect(numeric).toHaveLength(10)
 
     for (const name of numeric) {
-      const error = await withFakeServer(
-        respondToEcho,
-        Effect.flip(McpClient.connect({ server: "schema-limit", command: "mcp", args: [], [name]: 0 }))
-      )
+      const { counts, spawner } = trackedServer(respondToEcho)
+      const error = await execute(Effect.scoped(provideSpawner(
+        Effect.flip(McpClient.connect({ server: "schema-limit", command: "mcp", args: [], [name]: 0 })),
+        spawner
+      )))
 
+      expect(counts.acquired).toBe(0)
       expect(error).toMatchObject({
         code: "protocol_error",
         server: "schema-limit",
@@ -1079,8 +1090,24 @@ describe("McpClient.connect", () => {
     })
   })
 
-  it("snapshots the 1 MiB probe argument with one descriptor batch per container", async () => {
-    const args = {
+  it("snapshots the 1 MiB probe argument reading each member once and running no getter", async () => {
+    const reads = { keys: 0, descriptors: 0, gets: 0 }
+    const counted = <T extends object>(target: T): T =>
+      new Proxy(target, {
+        ownKeys(object) {
+          reads.keys += 1
+          return Reflect.ownKeys(object)
+        },
+        getOwnPropertyDescriptor(object, key) {
+          reads.descriptors += 1
+          return Reflect.getOwnPropertyDescriptor(object, key)
+        },
+        get(object, key, receiver) {
+          if (typeof key === "string") reads.gets += 1
+          return Reflect.get(object, key, receiver)
+        }
+      })
+    const plain = {
       rows: Array.from({ length: 12_000 }, (_, i) => ({
         id: i,
         name: `row-${i}`,
@@ -1089,8 +1116,9 @@ describe("McpClient.connect", () => {
         score: i / 7
       }))
     }
-    const encoded = JSON.stringify(args)
+    const encoded = JSON.stringify(plain)
     expect(encoded.length).toBe(985_531)
+    const args = { rows: plain.rows.map(counted) }
     let sent: unknown
     await withFakeServer(
       (request) => {
@@ -1102,23 +1130,13 @@ describe("McpClient.connect", () => {
       },
       Effect.gen(function*() {
         const client = yield* McpClient.connect({ server: "snapshot-budget", command: "mcp", args: [] })
-        const descriptors = vi.spyOn(Object, "getOwnPropertyDescriptor")
-        const batches = vi.spyOn(Object, "getOwnPropertyDescriptors")
-        descriptors.mockClear()
-        let call: ReturnType<typeof client.callTool>
-        let perMemberCalls: number
-        let batchCalls: number
-        try {
-          call = client.callTool("add", args)
-          perMemberCalls = descriptors.mock.calls.length
-          batchCalls = batches.mock.calls.length
-        } finally {
-          descriptors.mockRestore()
-          batches.mockRestore()
-        }
-        expect(perMemberCalls).toBe(0)
-        expect(batchCalls).toBe(24_002)
+        const call = client.callTool("add", args)
+        // The snapshot is taken when the call is built: per row, two key
+        // listings (symbols, then descriptors), one descriptor read per member,
+        // and no getter invocation.
+        expect(reads).toEqual({ keys: 24_000, descriptors: 60_000, gets: 0 })
         yield* call
+        expect(reads).toEqual({ keys: 24_000, descriptors: 60_000, gets: 0 })
       })
     )
     expect(JSON.stringify(sent)).toBe(encoded)
@@ -1137,10 +1155,12 @@ describe("McpClient.connect", () => {
       respondWithStructured(outputSchema, { rows }),
       Effect.gen(function*() {
         const client = yield* McpClient.connect({ server: "enum-budget", command: "mcp", args: [] })
-        const start = performance.now()
-        const result = yield* client.callTool("add", {})
+        const { counts, scheduler } = countingScheduler()
+        const result = yield* client.callTool("add", {}).pipe(Effect.provideService(Scheduler.Scheduler, scheduler))
         expect(result.structuredContent).toEqual({ rows })
-        expect(performance.now() - start).toBeLessThan(1_000)
+        // Validation yields every 1,024 steps. Indexed membership takes a few
+        // steps per row; a scan of the 10,000 members per row would take 10^8.
+        expect(counts.tasks).toBeLessThan(100)
       })
     )
   })
@@ -1178,44 +1198,50 @@ describe("McpClient.connect", () => {
     )
   })
 
-  it("lets a host timer interrupt structured validation", async () => {
-    const rows = Array(100_000).fill(999)
+  it("lets a host signal interrupt structured validation", async () => {
     const outputSchema = {
-      required: ["validationStart"],
       properties: {
         rows: { items: { enum: Array.from({ length: 1_000 }, (_, i) => i) } }
       }
     }
-    const controller = new AbortController()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let started = 0
-    const hasOwn = Object.hasOwn
-    try {
-      await withFakeServer(
-        respondWithStructured(outputSchema, { validationStart: true, rows }),
+    // Count the calling fiber's yields for a reply with nothing to validate,
+    // then for the full reply: the difference is validation's own yields.
+    const tasksFor = (rows: ReadonlyArray<number>) =>
+      withFakeServer(
+        respondWithStructured(outputSchema, { rows }),
         Effect.gen(function*() {
           const client = yield* McpClient.connect({ server: "enum-interrupt", command: "mcp", args: [] })
-          // Arm only when the validator checks required, after transport parsing.
-          const reflection = vi.spyOn(Object, "hasOwn").mockImplementation((value, key) => {
-            if (key === "validationStart" && started === 0) {
-              started = performance.now()
-              timer = setTimeout(() => controller.abort(), 25)
-            }
-            return hasOwn(value, key)
-          })
-          const exit = yield* Effect.promise(() =>
-            Effect.runPromiseExit(client.callTool("add", {}), {
-              signal: controller.signal
-            })
-          ).pipe(Effect.ensuring(Effect.sync(() => reflection.mockRestore())))
-          expect(started).toBeGreaterThan(0)
-          expect(Exit.isFailure(exit)).toBe(true)
-          expect(performance.now() - started).toBeLessThan(1_000)
+          const { counts, scheduler } = countingScheduler()
+          yield* client.callTool("add", {}).pipe(Effect.provideService(Scheduler.Scheduler, scheduler))
+          return counts.tasks
         })
       )
-    } finally {
-      clearTimeout(timer)
-    }
+    const rows = Array(100_000).fill(999)
+    const reply = await tasksFor([])
+    const full = await tasksFor(rows)
+    expect(full - reply).toBeGreaterThan(100)
+
+    // Abort once validation has yielded a few times; the call must stop there.
+    const controller = new AbortController()
+    const abortAt = reply + 10
+    const { counts, scheduler } = countingScheduler((tasks) => {
+      if (tasks === abortAt) controller.abort()
+    })
+    const exit = await withFakeServer(
+      respondWithStructured(outputSchema, { rows }),
+      Effect.gen(function*() {
+        const client = yield* McpClient.connect({ server: "enum-interrupt", command: "mcp", args: [] })
+        return yield* Effect.promise(() =>
+          Effect.runPromiseExit(
+            client.callTool("add", {}).pipe(Effect.provideService(Scheduler.Scheduler, scheduler)),
+            { signal: controller.signal }
+          )
+        )
+      })
+    )
+    expect(controller.signal.aborted).toBe(true)
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    expect(counts.tasks).toBeLessThan(abortAt + 10)
   })
 
   it("supports every documented outputSchema type and type arrays", async () => {
