@@ -10,7 +10,7 @@ import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
 import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged" | MachineFault
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "sandbox-clock" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -81,7 +81,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
  * fails every sandbox read; `sandbox-start` fails the first start; each `machine-*` fault fails the mock sandbox's
  * machine once (faultyMachines.vibe); `sandbox-low` and `sandbox-out` move the sandbox
- * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
+ * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it;
+ * `sandbox-clock` makes that clock read before 1970 for the first sandbox call after the first start; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
  * `issue-connect`, `issue-fork` and `issue-install` refuse the first issue write before it happens, as the live Worker does
@@ -120,20 +121,25 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     // jump when the first sandbox starts, at most a contributor's 600 minutes, never crosses into the next month.
     const wall = try Clock.Clock
     const skewed = fault === "sandbox-low" || fault === "sandbox-out"
+    const clockFault = fault === "sandbox-clock"
+    let broken = false
     const built = new Date(wall.currentTimeMillisUnsafe())
     let skew = skewed ? Date.UTC(built.getUTCFullYear(), built.getUTCMonth(), 15) - built.getTime() : 0
     let skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
     let jumped = false
     const clock: Clock.Clock = {
-      currentTimeMillisUnsafe: () => wall.currentTimeMillisUnsafe() + skew,
-      currentTimeMillis: sync(() => wall.currentTimeMillisUnsafe() + skew),
-      currentTimeNanosUnsafe: () => wall.currentTimeNanosUnsafe() + skewNanos,
-      currentTimeNanos: sync(() => wall.currentTimeNanosUnsafe() + skewNanos),
+      currentTimeMillisUnsafe: () => broken ? -1 : wall.currentTimeMillisUnsafe() + skew,
+      currentTimeMillis: sync(() => broken ? -1 : wall.currentTimeMillisUnsafe() + skew),
+      currentTimeNanosUnsafe: () => broken ? -1_000_000n : wall.currentTimeNanosUnsafe() + skewNanos,
+      currentTimeNanos: sync(() => broken ? -1_000_000n : wall.currentTimeNanosUnsafe() + skewNanos),
       monotonicTimeNanosUnsafe: () => wall.monotonicTimeNanosUnsafe(),
       monotonicTimeNanos: wall.monotonicTimeNanos,
       sleep: (duration) => wall.sleep(duration),
     }
-    const metered = <A, E, R>(run: Effect.Effect<A, E, R>) => skewed ? Effect.provideService(run, Clock.Clock, clock) : run
+    // `sandbox-clock`: the call that reads the broken clock mends it when it ends.
+    const metered = <A, E, R>(run: Effect.Effect<A, E, R>) => skewed || clockFault
+      ? Effect.provideService(clockFault ? Effect.ensuring(run, sync(() => { if (broken) { broken = false; jumped = true } })) : run, Clock.Clock, clock)
+      : run
     return {
       mode: fault === "live-header" || fault === "live-details" ? "live" : base.mode,
       ...(base.accounts === undefined ? {} : { accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "roles-gap" ? rolesGapFault(base.accounts, () => first("roles-gap")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts }),
@@ -207,6 +213,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       startSandbox: effect (conversation, operationId) => {
         if (first("sandbox-start")) throw new Unavailable({ reason: "sandbox unavailable" })
         const started = try metered(base.startSandbox(conversation, operationId))
+        if (clockFault && !jumped && !broken) {
+          broken = true
+          try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
+        }
         if (skewed && !jumped) {
           jumped = true
           skew += (fault === "sandbox-low" ? started.remaining - 5 : started.remaining + 1) * 60_000
