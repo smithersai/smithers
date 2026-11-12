@@ -237,6 +237,40 @@ test("Cloudflare Workflows are caught by name, on a namespace and as a qualified
   ])
 })
 
+test("Cloudflare Workflows are caught through export *, a string key, a destructuring, import() and require()", () => {
+  const cf = [
+    "export * from \"cloudflare:workers\"",
+    "export { DurableObject } from \"cloudflare:workers\""
+  ].join("\n")
+  assert.deepEqual(bansIn(cf, "apps/chat/worker/cf.ts"), [
+    "1 re-exports every name of \"cloudflare:workers\" (Cloudflare Workflows)"
+  ])
+  const text = [
+    "import * as W from \"cloudflare:workers\"",
+    "const { WorkflowEntrypoint, DurableObject } = W",
+    "class A extends W[\"WorkflowEntrypoint\"] {}",
+    "class B extends W[\"DurableObject\"] {}",
+    "const { WorkflowEvent } = await import(\"cloudflare:workers\")",
+    "const step = require(\"cloudflare:workers\").WorkflowStep",
+    "const entry = createRequire(import.meta.url)(\"cloudflare:workers\")",
+    "const keys = Object.keys(W)",
+    "const env = (await import(\"cloudflare:workers\")).env",
+    "const workflows = await import(\"cloudflare:workflows\", { with: {} })",
+    "const banned = module.require(\"inngest\")"
+  ].join("\n")
+  assert.deepEqual(bansIn(text), [
+    "2 uses W.WorkflowEntrypoint from \"cloudflare:workers\" (Cloudflare Workflows)",
+    "3 uses W.WorkflowEntrypoint from \"cloudflare:workers\" (Cloudflare Workflows)",
+    "5 loads \"cloudflare:workers\" without naming what it takes (Cloudflare Workflows)",
+    "6 loads \"cloudflare:workers\" without naming what it takes (Cloudflare Workflows)",
+    "7 loads \"cloudflare:workers\" without naming what it takes (Cloudflare Workflows)",
+    "8 uses W from \"cloudflare:workers\" without naming what it takes (Cloudflare Workflows)",
+    "9 loads \"cloudflare:workers\" without naming what it takes (Cloudflare Workflows)",
+    "10 imports \"cloudflare:workflows\" (Cloudflare Workflows)",
+    "11 imports \"inngest\" (Inngest)"
+  ])
+})
+
 test("Alchemy's Cloudflare Workflows are caught and its other resources are not", () => {
   const text = [
     "import * as Cloudflare from \"@alchemy.run/cloudflare\"",

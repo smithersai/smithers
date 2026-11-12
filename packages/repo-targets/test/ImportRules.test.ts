@@ -163,6 +163,59 @@ describe("check: forbidNames", () => {
     ])
   })
 
+  it("fails a name taken by string key or destructuring, and any use that takes the module without naming what", () => {
+    expect(violations([rule], {
+      "src/Hooks.tsx": [
+        'import React from "react"',
+        'const [draft] = React["useState"]("")',
+        "const { useEffect, useMemo } = React",
+        "const { useState: local } = await import(\"react\")",
+        "register(React)",
+        'export * from "react"',
+        "const hooks = React[name]",
+        "React.useMemo(() => 1)"
+      ].join("\n")
+    })).toEqual([
+      'src/Hooks.tsx:1 imports default from "react" (forbidNames) #0',
+      'src/Hooks.tsx:2 uses React.useState from "react" (forbidNames) #0',
+      'src/Hooks.tsx:3 uses React.useEffect from "react" (forbidNames) #0',
+      'src/Hooks.tsx:4 imports every name of "react" (forbidNames) #0',
+      'src/Hooks.tsx:5 uses React from "react" without naming what it takes (forbidNames) #0',
+      'src/Hooks.tsx:6 re-exports every name of "react" (forbidNames) #0',
+      'src/Hooks.tsx:7 uses React from "react" without naming what it takes (forbidNames) #0'
+    ])
+    expect(violations([{ ...rule, allowTypeOnly: true }], { "src/Types.tsx": 'export type * from "react"' })).toEqual([])
+  })
+
+  it.each(["ts", "vibe"])("refuses dynamic default values and aliases in .%s when only a member name is banned", (extension) => {
+    const rule: ImportRule = { kind: "forbidNames", modules: ["react"], names: ["useState"], because }
+    const path = `src/Hooks.${extension}`
+    expect(violations([rule], {
+      [path]: [
+        'const a = (await import("react")).default.useState(0)',
+        'const { default: R } = await import("react")',
+        'const b = require("react").default.useState(0)',
+        'const { default: S } = require("react")'
+      ].join("\n")
+    })).toEqual([1, 2, 3, 4].map((line) => `${path}:${line} imports every name of "react" (forbidNames) #0`))
+  })
+
+  it("allows a local namespace export only when its type-only form is allowed", () => {
+    const rule: ImportRule = { kind: "forbidNames", modules: ["react"], names: ["FC"], because }
+    const source = {
+      "src/Types.ts": [
+        'import * as W from "react"',
+        "export type { W }",
+        "export { type W as Types }",
+        "export { W as Values }"
+      ].join("\n")
+    }
+    expect(violations([{ ...rule, allowTypeOnly: true }], source)).toEqual([
+      'src/Types.ts:4 uses W from "react" without naming what it takes (forbidNames) #0'
+    ])
+    expect(violations([rule], source)).toHaveLength(3)
+  })
+
   it("lets type-only names through only when the rule allows them", () => {
     const typeRule: ImportRule = { kind: "forbidNames", modules: ["react"], names: ["FC"], because }
     const source = {

@@ -113,9 +113,9 @@ Every rule takes:
 
 | Kind | Field | Fails on |
 | --- | --- | --- |
-| `forbid` | `modules`: specifier globs (`effect` is the root, `effect/*` one level, `effect/**` every subpath) | A static import, a re-export, `import x = require()`, `import()`, `require()` or an `import()` type of a matching module. |
+| `forbid` | `modules`: specifier globs (`effect` is the root, `effect/*` one level, `effect/**` every subpath) | A static import, a re-export, `import x = require()`, `import()` (with or without import attributes), a `require()` or an `import()` type of a matching module. A `require()` is any call or constructor that loads the module its first string argument names: `require`, `module.require`, `process.getBuiltinModule`, and the function `createRequire` returns. |
 | `forbidHostModules` | none | A parsed import of a Node builtin or a Node/Bun module scheme. |
-| `forbidNames` | `modules`, and `names`: exported names matched exactly | A named import or re-export of a name, a default import (`default`), or a member read through a namespace or default binding, such as `React.useState`. |
+| `forbidNames` | `modules`, and `names`: exported names matched exactly | A named import or re-export of a name, a default import (`default`), a member read through a namespace or default binding (`React.useState`, `React["useState"]`, `const { useState } = React`), or any `import()` or `require()`. Also any use that takes the module's exports without naming them, since the rule cannot see which it takes: `export *`, or a binding passed on or indexed by a variable. |
 | `rootImportsOnly` | `packages`: package-name globs, such as `@smthrs/*` | A specifier naming a subpath of a matching package, such as `@smthrs/model/ModelError`. |
 | `forbidCalls` | `callees`: callee texts matched exactly, such as `Model.stream`, or `*.<member>`, such as `*.route` | A call whose callee reads as an exact entry, or ends in an entry's `<member>` whatever the receiver. See [Callees](#callees). |
 

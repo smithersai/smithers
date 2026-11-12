@@ -18,6 +18,14 @@ const names = (file: string, text: string): ReadonlyArray<string> =>
     )
   ])
 
+/** Every use that takes a module whole: `<line> <specifier>[ via <binding>][ type]`. */
+const unnamed = (file: string, text: string): ReadonlyArray<string> =>
+  analyze(file, text).references.flatMap((reference) =>
+    reference.unnamed.map((use) =>
+      `${use.line} ${reference.specifier}${use.binding === undefined ? "" : ` via ${use.binding}`}${use.typeOnly ? " type" : ""}`
+    )
+  )
+
 const calls = (file: string, text: string): ReadonlyArray<string> =>
   analyze(file, text).calls.map((call) => `${call.line} ${call.callee}`)
 
@@ -60,16 +68,14 @@ describe("analyze: module references", () => {
     ])
   })
 
-  it("reads import(), require() and import() types, and only with one string argument", () => {
+  it("reads import(), require() and import() types whose module is a string", () => {
     const text = [
       "const a = await import(\"inngest\")",
       "const b = await import(`ai`)",
       "const c = await import(name)",
       "const d = require(\"@temporalio/client\")",
       "const e = require(name)",
-      "const f = require(\"x\", \"y\")",
       "const g = load(\"not-a-require\")",
-      "const h = registry.require(\"not-a-require\")",
       "type I = typeof import(\"@langchain/langgraph\")",
       "type J = import(\"@alchemy.run/cloudflare\").Workflows.Workflow",
       "type K = import(42)",
@@ -79,10 +85,63 @@ describe("analyze: module references", () => {
       "1 dynamic-import inngest",
       "2 dynamic-import ai",
       "4 require @temporalio/client",
-      "9 import-type @langchain/langgraph type",
-      "10 import-type @alchemy.run/cloudflare type"
+      "7 import-type @langchain/langgraph type",
+      "8 import-type @alchemy.run/cloudflare type"
     ])
-    expect(names("b.ts", text)).toEqual(["10 @alchemy.run/cloudflare Workflows type"])
+    expect(names("b.ts", text)).toEqual(["8 @alchemy.run/cloudflare Workflows type"])
+  })
+
+  it("reads import() with attributes and every call that loads a module, whatever follows the specifier", () => {
+    const text = [
+      "function early() { return late(\"tinyglobby\") }",
+      "const a = await import(\"ai\", { with: {} })",
+      "const b = require(\"inngest\", 0)",
+      "const c = createRequire(import.meta.url)(\"@temporalio/client\")",
+      "const d = module.require(\"langchain\")",
+      "const e = module[\"require\"](\"@mastra/core\")",
+      "const f = process.getBuiltinModule(\"node:child_process\")",
+      "const g = Module.createRequire(here)(\"yaml\")",
+      "const late = createRequire(import.meta.url)",
+      "const h = require.resolve(\"resolved-not-loaded\")",
+      "const i = late.resolve(\"resolved-not-loaded\")",
+      "const j = other(\"not-a-loader\")",
+      "const k = make()(\"not-a-loader\")",
+      "const l = new require(\"mastra\", 0)",
+      "const m = new module.require(\"@inngest/sdk\")",
+      "const n = new (createRequire(import.meta.url))(\"ai\")"
+    ].join("\n")
+    expect(references("loaders.mjs", text)).toEqual([
+      "1 require tinyglobby",
+      "2 dynamic-import ai",
+      "3 require inngest",
+      "4 require @temporalio/client",
+      "5 require langchain",
+      "6 require @mastra/core",
+      "7 require node:child_process",
+      "8 require yaml",
+      "14 require mastra",
+      "15 require @inngest/sdk",
+      "16 require ai"
+    ])
+  })
+
+  it("treats every import() and require() as taking the module whole", () => {
+    const text = [
+      "const { WorkflowEntrypoint, Other: alias, \"quoted\": q } = await import(\"x\")",
+      "const read = (await import(\"x\")).Read",
+      "const keyed = require(\"x\")[\"Keyed\"]",
+      "const { Required } = require(\"x\") as Module",
+      "const { ...rest } = require(\"x\")",
+      "const held = await import(\"x\")",
+      "import(\"x\").then(use)",
+      "await import(\"x\")",
+      "require(\"x\")",
+      "const spread = { ...require(\"x\") }"
+    ].join("\n")
+    expect(names("taken.ts", text)).toEqual([])
+    expect(unnamed("taken.ts", text)).toEqual([
+      "1 x", "2 x", "3 x", "4 x", "5 x", "6 x", "7 x", "8 x", "9 x", "10 x"
+    ])
   })
 
   it("lists references in source order, and reads imports nested in an ambient module", () => {
@@ -139,6 +198,71 @@ describe("analyze: members through a binding", () => {
       "6 react ReactNode via React type",
       "9 react useEffect via React type",
       "7 lib make via Lib"
+    ])
+  })
+
+  it("reads a string key and a destructuring as members, and marks every other use of a binding as taking all", () => {
+    const text = [
+      "import * as W from \"cloudflare:workers\"",
+      "import React from \"react\"",
+      "export * from \"./all.ts\"",
+      "export * as Every from \"./every.ts\"",
+      "export type * from \"./types.ts\"",
+      "class A extends W[\"WorkflowEntrypoint\"] {}",
+      "const { WorkflowEvent, \"WorkflowStep\": Step, [\"Keyed\"]: k } = W",
+      "const { useState, ...hooks } = React",
+      "register(W)",
+      "const picked = W[name]",
+      "const bag = { W }",
+      "export { React }",
+      "const view = <React />",
+      "const fine = { W: 1, React: other.W }",
+      "type T = typeof W",
+      "let t: React",
+      "label: for (;;) break label",
+      "const { [key]: computed } = W",
+      "const wrapped = (W as Workers)[\"WorkflowStep\"]"
+    ].join("\n")
+    expect(names("g.tsx", text).filter((name) => name.includes(" via "))).toEqual([
+      "6 cloudflare:workers WorkflowEntrypoint via W",
+      "7 cloudflare:workers WorkflowEvent via W",
+      "7 cloudflare:workers WorkflowStep via W",
+      "7 cloudflare:workers Keyed via W",
+      "19 cloudflare:workers WorkflowStep via W"
+    ])
+    expect(unnamed("g.tsx", text)).toEqual([
+      "9 cloudflare:workers via W",
+      "10 cloudflare:workers via W",
+      "11 cloudflare:workers via W",
+      "18 cloudflare:workers via W",
+      "8 react via React",
+      "12 react via React",
+      "13 react via React",
+      "3 ./all.ts",
+      "4 ./every.ts",
+      "5 ./types.ts type"
+    ])
+  })
+})
+
+describe("analyze: binding uses", () => {
+  it.each(["ts", "vibe"])("reads computed and literal destructuring keys as values and skips declarations in .%s", (extension) => {
+    const text = [
+      'import D from "react"',
+      "function parameter(D) {}",
+      "function array([D]) {}",
+      "function rest(...D) {}",
+      "function defaulted(D = 0) {}",
+      "function bindings() { const { local: D } = object; const [...other] = array }",
+      "const { [D]: value } = object",
+      "const { [D.method]: member } = object",
+      "D: for (;;) break D",
+      "const bag = { D: 0, value: D }",
+      'const { "useState": hook, 0: zero } = D'
+    ].join("\n")
+    expect(unnamed(`Binding.${extension}`, text)).toEqual(["7 react via D", "10 react via D"])
+    expect(names(`Binding.${extension}`, text)).toEqual([
+      "1 react default", "8 react method via D", "11 react useState via D", "11 react 0 via D"
     ])
   })
 })
@@ -352,7 +476,35 @@ describe("analyze: a .vibe module and its .ts twin", () => {
     "other.read",
     "import D from \"d\"\nD.read",
     "page.context().route()",
-    "export { \"a-b\" as c } from \"x\""
+    "export { \"a-b\" as c } from \"x\"",
+    "require(\"r\", 0)",
+    "const a = createRequire(import.meta.url)(\"r\")",
+    "f(() => load(\"r\"))\nconst load = createRequire(import.meta.url)",
+    "module.require(\"r\")",
+    "new require(\"r\", 0)",
+    "new module.require(\"r\")",
+    "new (createRequire(import.meta.url))(\"r\")",
+    "const load = (createRequire(import.meta.url) as Require)\nload(\"r\")",
+    "import * as W from \"w\"\n(W as Workers).Allowed\n(W!).Allowed",
+    "import * as W from \"w\"\nexport type { W }\nexport { type W }",
+    "import * as W from \"w\"\nfunction f([W]) {}\nfunction g(...W) {}\nfunction h(W = 0) {}",
+    "import * as W from \"w\"\nfunction f() { const [...W] = array; const { prop: W2 } = object }",
+    "import * as W from \"w\"\nconst { [W]: value } = object\nconst { [W.field]: other } = object",
+    "import * as W from \"w\"\ntype T = import(\"x\").W\ntype U = Other.W",
+    "import * as W from \"w\"\nexport { W } from \"other\"",
+    "import * as W from \"w\"\nconst {} = W\nW: for (;;) break W",
+    "const r = registry[key]()\nr(\"r\")\nmake()()(\"r\")",
+    "import * as W from \"w\"\nW`tag`",
+    "process[\"getBuiltinModule\"](\"node:fs\")",
+    "const { A, \"B\": b, [\"C\"]: c, 0: d } = await import(\"x\")",
+    "const { ...all } = require(\"x\")",
+    "const m = (await import(\"x\")!).A",
+    "const n = require(\"x\")?.[\"B\"]",
+    "const p = import(\"x\")",
+    "import * as W from \"w\"\nW[\"A\"]\nW[k]\nconst { B, ...rest } = W\nf(W)\nexport { W as V }",
+    "import * as W from \"w\"\nconst o = { W, W: 1, [W]: 2 }\nfunction g(p = W) {}\nclass C { W = 1; W() {} }\nlabel: W",
+    "import * as W from \"w\"\nx[W]\nconst { [k]: v } = W\nother(\"x\")",
+    "import D from \"d\"\nconst { E } = D\nlet x: D\ntype Y = typeof D\nexport default D"
   ])("reads the same facts as TypeScript from %s", (text) => {
     expect(analyze("Form.vibe", text)).toEqual(analyze("Form.ts", text))
   })

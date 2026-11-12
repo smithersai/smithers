@@ -23,8 +23,13 @@ import { parseESTree } from "vibelang/eslint"
  *
  * `import` and `export` are declarations with a `from` clause (and
  * `import "x"`); `import-equals` is `import x = require("x")`;
- * `dynamic-import` is `import("x")`; `require` is `require("x")`;
- * `import-type` is an `import("x")` type.
+ * `dynamic-import` is `import("x")`, with or without import attributes;
+ * `require` is a call or constructor that loads the module its first argument names:
+ * `require("x")`, a member named `require` or `getBuiltinModule`
+ * (`module.require("x")`, `process.getBuiltinModule("node:fs")`), or the
+ * function `createRequire` returns, called directly
+ * (`createRequire(import.meta.url)("x")`) or through a variable it
+ * initializes; `import-type` is an `import("x")` type.
  *
  * @category models
  * @since 0.1.0
@@ -59,6 +64,25 @@ export interface MemberName extends ReferencedName {
 }
 
 /**
+ * A place a source takes a module's exports without naming the ones it uses,
+ * so a rule about names cannot tell which it takes: `export *` and
+ * `export * as x`; any `import()` or `require()`; and a
+ * namespace or default binding used other than for a member read, a string
+ * key or a destructuring, as in `f(React)`, `React[key]` or `export { React }`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface UnnamedUse {
+  /** The namespace or default binding used, `React` above; absent for `export *`, `import()` and `require()`. */
+  readonly binding?: string
+  /** Whether only types are taken: `export type *` or `export type { Namespace }`. */
+  readonly typeOnly: boolean
+  /** The 1-based line it appears on. */
+  readonly line: number
+}
+
+/**
  * One place a source names a module.
  *
  * @category models
@@ -79,8 +103,13 @@ export interface ModuleReference {
   readonly typeOnly: boolean
   /** Names imported or re-exported by name, and an `import()` type's qualifier. */
   readonly names: ReadonlyArray<ReferencedName>
-  /** Names read through this declaration's namespace or default binding. */
+  /**
+   * Names read through this declaration's namespace or default binding:
+   * `React.useState`, `React["useState"]`, `const { useState } = React`.
+   */
   readonly members: ReadonlyArray<MemberName>
+  /** Every place the source takes this module's exports without naming them. */
+  readonly unnamed: ReadonlyArray<UnnamedUse>
 }
 
 /**
@@ -138,8 +167,17 @@ interface Entry {
     readonly typeOnly: boolean
     readonly names: Array<ReferencedName>
     readonly members: Array<MemberName>
+    readonly unnamed: Array<UnnamedUse>
   }
 }
+
+/** Whether a callee, as {@link calleeText} reads it, loads the module its call's first argument names. */
+const isLoader = (callee: string): boolean =>
+  callee === "require" || callee.endsWith(".require") || callee.endsWith(".getBuiltinModule")
+
+/** Whether a callee, as {@link calleeText} reads it, is `createRequire`. */
+const isCreateRequire = (callee: string | undefined): boolean =>
+  callee === "createRequire" || (callee?.endsWith(".createRequire") ?? false)
 
 /** An expression with its parentheses and type and non-null assertions removed. */
 const unwrap = (expression: ts.Expression): ts.Expression =>
@@ -190,7 +228,9 @@ const calleeText = (expression: ts.Expression): string | undefined => {
  *
  * A member is recorded only through a binding a top-level import declares,
  * and shadowing is not tracked: a local variable with the binding's name
- * reads as the binding.
+ * reads as the binding. A use the walk cannot name, such as a binding passed
+ * to a function, is recorded in {@link ModuleReference.unnamed}, so a rule
+ * about names can refuse what it cannot see.
  *
  * @category analysis
  * @since 0.1.0
@@ -205,6 +245,10 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
   const calls: Array<Call> = []
   const bindings = new Map<string, Entry["reference"]>()
   const declared = new Set<ts.Node>()
+  /** Variables `createRequire(...)` initializes, which load like `require`. */
+  const loaders = new Set<string>()
+  /** Calls through a name with a string first argument, kept until every loader variable is known. */
+  const pending: Array<{ readonly node: ts.CallExpression | ts.NewExpression; readonly callee: string; readonly specifier: string }> = []
 
   const add = (
     node: ts.Node,
@@ -213,7 +257,7 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
     typeOnly: boolean,
     names: Array<ReferencedName> = []
   ): Entry["reference"] => {
-    const reference = { specifier, form, line: lineOf(node), typeOnly, names, members: [] }
+    const reference = { specifier, form, line: lineOf(node), typeOnly, names, members: [], unnamed: [] }
     entries.push({ position: node.getStart(source), reference })
     return reference
   }
@@ -268,13 +312,87 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
     declared.add(statement)
   }
 
-  const member = (node: ts.Node, binding: string, name: string): void => {
-    bindings.get(binding)?.members.push({
-      name,
-      binding,
-      typeOnly: ts.isQualifiedName(node),
-      line: lineOf(node)
-    })
+  /** The names an object pattern takes, or undefined when it takes the rest or a computed key. */
+  const patternNames = (pattern: ts.ObjectBindingPattern): Array<ReferencedName> | undefined => {
+    const names: Array<ReferencedName> = []
+    for (const element of pattern.elements) {
+      const key = element.propertyName ?? element.name
+      const name = element.dotDotDotToken !== undefined
+        ? undefined
+        : ts.isIdentifier(key) || ts.isStringLiteralLike(key) || ts.isNumericLiteral(key)
+        ? key.text
+        : ts.isComputedPropertyName(key) && ts.isStringLiteralLike(key.expression)
+        ? key.expression.text
+        : undefined
+      if (name === undefined) return undefined
+      names.push({ name, typeOnly: false, line: lineOf(element) })
+    }
+    return names
+  }
+
+  /**
+   * The names the source takes from a module value: a member read, a string
+   * key, or a destructuring. Undefined when it uses the value any other way.
+   */
+  const taken = (value: ts.Node): Array<ReferencedName> | undefined => {
+    const parent = value.parent
+    if (ts.isPropertyAccessExpression(parent) && parent.expression === value) {
+      return [{ name: parent.name.text, typeOnly: false, line: lineOf(parent) }]
+    }
+    if (ts.isElementAccessExpression(parent) && parent.expression === value) {
+      const key = parent.argumentExpression
+      return ts.isStringLiteralLike(key) ? [{ name: key.text, typeOnly: false, line: lineOf(parent) }] : undefined
+    }
+    if (ts.isVariableDeclaration(parent) && parent.initializer === value && ts.isObjectBindingPattern(parent.name)) {
+      return patternNames(parent.name)
+    }
+    return undefined
+  }
+
+  /** The node an expression's value leaves through, past parentheses and type and non-null assertions. */
+  const outermost = (node: ts.Node): ts.Node =>
+    ts.isParenthesizedExpression(node.parent) ||
+    ts.isNonNullExpression(node.parent) ||
+    ts.isAsExpression(node.parent) ||
+    ts.isSatisfiesExpression(node.parent) ||
+    ts.isTypeAssertionExpression(node.parent)
+      ? outermost(node.parent)
+      : node
+
+  /** A dynamic load can expose any export, including through a default value or a later alias. */
+  const load = (node: ts.CallExpression | ts.NewExpression, specifier: string, form: "dynamic-import" | "require"): void => {
+    const reference = add(node, specifier, form, false)
+    reference.unnamed.push({ typeOnly: false, line: reference.line })
+  }
+
+  /** Whether an identifier refers to a value, rather than naming a declaration, a property or a label, or a type. */
+  const isReference = (node: ts.Identifier): boolean => {
+    const parent = node.parent as ts.Node & {
+      readonly name?: ts.Node
+      readonly propertyName?: ts.Node
+      readonly label?: ts.Node
+    }
+    if (ts.isShorthandPropertyAssignment(parent)) return true
+    if (ts.isExportSpecifier(parent)) {
+      return parent.parent.parent.moduleSpecifier === undefined && (parent.propertyName ?? parent.name) === node
+    }
+    if (ts.isQualifiedName(parent)) return parent.left === node
+    if (ts.isTypeReferenceNode(parent) || ts.isTypeQueryNode(parent) || ts.isImportTypeNode(parent)) return false
+    return parent.name !== node && parent.propertyName !== node && parent.label !== node
+  }
+
+  /** Records a use of a namespace or default binding: the members it reads, or that it takes them all. */
+  const use = (node: ts.Identifier, reference: Entry["reference"]): void => {
+    if (!isReference(node)) return
+    const binding = node.text
+    const typeOnly = ts.isExportSpecifier(node.parent) && (node.parent.isTypeOnly || node.parent.parent.parent.isTypeOnly)
+    if (ts.isQualifiedName(node.parent)) {
+      reference.members.push({ name: node.parent.right.text, binding, typeOnly: true, line: lineOf(node.parent) })
+      return
+    }
+    const names = taken(outermost(node))
+    if (names === undefined) reference.unnamed.push({ binding, typeOnly, line: lineOf(node) })
+    else reference.members.push(...names.map((name) => ({ ...name, binding })))
   }
 
   const visit = (node: ts.Node): void => {
@@ -295,7 +413,10 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
           })
         }
       }
-      add(node, node.moduleSpecifier.text, "export", node.isTypeOnly, names)
+      const reference = add(node, node.moduleSpecifier.text, "export", node.isTypeOnly, names)
+      if (node.exportClause === undefined || ts.isNamespaceExport(node.exportClause)) {
+        reference.unnamed.push({ typeOnly: node.isTypeOnly, line: reference.line })
+      }
     } else if (ts.isImportTypeNode(node)) {
       if (ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
         let qualifier = node.qualifier
@@ -308,26 +429,37 @@ const analyzeTypeScript = (file: string, text: string): Analysis => {
           qualifier === undefined ? [] : [{ name: qualifier.text, typeOnly: true, line: lineOf(node) }]
         )
       }
-    } else if (ts.isCallExpression(node)) {
-      const argument = node.arguments.length === 1 ? node.arguments[0]! : undefined
+    } else if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+      const argument = node.arguments?.[0]
       const literal = argument !== undefined && ts.isStringLiteralLike(argument) ? argument.text : undefined
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-        if (literal !== undefined) add(node, literal, "dynamic-import", false)
+        if (literal !== undefined) load(node, literal, "dynamic-import")
       } else {
-        if (literal !== undefined && ts.isIdentifier(node.expression) && node.expression.text === "require") {
-          add(node, literal, "require", false)
-        }
         const callee = calleeText(node.expression)
-        if (callee !== undefined) calls.push({ callee, line: lineOf(node) })
+        const inner = unwrap(node.expression)
+        if (literal !== undefined) {
+          if (callee !== undefined && isLoader(callee)) load(node, literal, "require")
+          else if (ts.isCallExpression(inner) && isCreateRequire(calleeText(inner.expression))) load(node, literal, "require")
+          else if (ts.isIdentifier(inner)) pending.push({ node, callee: inner.text, specifier: literal })
+        }
+        if (callee !== undefined && ts.isCallExpression(node)) calls.push({ callee, line: lineOf(node) })
       }
-    } else if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
-      member(node, node.expression.text, node.name.text)
-    } else if (ts.isQualifiedName(node) && ts.isIdentifier(node.left)) {
-      member(node, node.left.text, node.right.text)
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      ts.isCallExpression(unwrap(node.initializer)) &&
+      isCreateRequire(calleeText((unwrap(node.initializer) as ts.CallExpression).expression))
+    ) {
+      loaders.add(node.name.text)
+    } else if (ts.isIdentifier(node)) {
+      const reference = bindings.get(node.text)
+      if (reference !== undefined) use(node, reference)
     }
     ts.forEachChild(node, visit)
   }
   visit(source)
+  for (const call of pending) if (loaders.has(call.callee)) load(call.node, call.specifier, "require")
 
   return {
     references: entries.sort((a, b) => a.position - b.position).map((entry) => entry.reference),
@@ -345,13 +477,13 @@ interface EsNode {
 const isEsNode = (value: unknown): value is EsNode =>
   typeof value === "object" && value !== null && typeof (value as EsNode).type === "string" && Array.isArray((value as EsNode).range)
 
-/** A node's children, in source order, so a walk reads calls outermost first as the TypeScript walk does. */
-const esChildren = (node: EsNode): ReadonlyArray<EsNode> =>
+/** A node's children with the keys that hold them, in source order, so a walk reads calls outermost first as the TypeScript walk does. */
+const esChildren = (node: EsNode): ReadonlyArray<readonly [string, EsNode]> =>
   Object.entries(node)
     .filter(([key]) => key !== "parent")
-    .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
-    .filter(isEsNode)
-    .sort((a, b) => a.range[0] - b.range[0] || b.range[1] - a.range[1])
+    .flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).map((child): readonly [string, unknown] => [key, child]))
+    .filter((entry): entry is readonly [string, EsNode] => isEsNode(entry[1]))
+    .sort(([, a], [, b]) => a.range[0] - b.range[0] || b.range[1] - a.range[1])
 
 /** The string a literal or a template with no substitutions holds. */
 const esString = (node: EsNode | null | undefined): string | undefined => {
@@ -398,6 +530,10 @@ const analyzeVibe = (file: string, text: string): Analysis => {
   const calls: Array<Call> = []
   const bindings = new Map<string, Entry["reference"]>()
   const declared = new Set<EsNode>()
+  /** Each visited node's parent and the key that holds it; VibeLang's nodes carry no parent. */
+  const parents = new Map<EsNode, { readonly node: EsNode; readonly key: string }>()
+  const loaders = new Set<string>()
+  const pending: Array<{ readonly node: EsNode; readonly callee: string; readonly specifier: string }> = []
 
   const add = (
     node: EsNode,
@@ -406,7 +542,7 @@ const analyzeVibe = (file: string, text: string): Analysis => {
     typeOnly: boolean,
     names: Array<ReferencedName> = []
   ): Entry["reference"] => {
-    const reference = { specifier, form, line: lineOf(node), typeOnly, names, members: [] }
+    const reference = { specifier, form, line: lineOf(node), typeOnly, names, members: [], unnamed: [] }
     entries.push({ position: node.range[0], reference })
     return reference
   }
@@ -448,8 +584,91 @@ const analyzeVibe = (file: string, text: string): Analysis => {
     declared.add(statement)
   }
 
-  const member = (node: EsNode, binding: string, name: string, typeOnly: boolean): void => {
-    bindings.get(binding)?.members.push({ name, binding, typeOnly, line: lineOf(node) })
+  /** The names an object pattern takes, or undefined when it takes the rest or a computed key. */
+  const patternNames = (pattern: EsNode): Array<ReferencedName> | undefined => {
+    const names: Array<ReferencedName> = []
+    for (const property of pattern.properties as ReadonlyArray<EsNode>) {
+      const key = property.key
+      const name = property.type !== "Property"
+        ? undefined
+        : property.computed
+        ? esString(key)
+        : key.type === "Identifier"
+        ? key.name
+        : String(key.value)
+      if (name === undefined) return undefined
+      names.push({ name, typeOnly: false, line: lineOf(property) })
+    }
+    return names
+  }
+
+  /** {@link analyzeTypeScript}'s `taken`: the names a member read, a string key or a destructuring takes from a module value. */
+  const taken = (value: EsNode): Array<ReferencedName> | undefined => {
+    const parent = parents.get(value)
+    if (parent?.node.type === "MemberExpression" && parent.key === "object") {
+      const name = parent.node.computed ? esString(parent.node.property) : parent.node.property.name
+      return name === undefined ? undefined : [{ name, typeOnly: false, line: lineOf(parent.node) }]
+    }
+    if (parent?.node.type === "VariableDeclarator" && parent.key === "init" && parent.node.id.type === "ObjectPattern") {
+      return patternNames(parent.node.id)
+    }
+    return undefined
+  }
+
+  const outermost = (node: EsNode): EsNode => {
+    const parent = parents.get(node)?.node
+    return parent !== undefined &&
+        ["ChainExpression", "TSNonNullExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion"].includes(parent.type)
+      ? outermost(parent)
+      : node
+  }
+
+  /** {@link analyzeTypeScript}'s `load`. */
+  const load = (node: EsNode, specifier: string, form: "dynamic-import" | "require"): void => {
+    const reference = add(node, specifier, form, false)
+    reference.unnamed.push({ typeOnly: false, line: reference.line })
+  }
+
+  /** {@link analyzeTypeScript}'s `isReference`, from the key that holds the identifier. */
+  const isReference = (node: EsNode): boolean => {
+    const { node: parent, key } = parents.get(node)!
+    switch (parent.type) {
+      case "MemberExpression":
+        return key === "object" || parent.computed
+      case "TSQualifiedName":
+        return key === "left"
+      case "Property":
+        return (parent.computed && key === "key") ||
+          (parents.get(parent)?.node.type !== "ObjectPattern" && key === "value")
+      case "ExportSpecifier":
+        return key === "local" && (parents.get(parent)?.node.source ?? null) === null
+      case "TSTypeReference":
+      case "TSTypeQuery":
+      case "TSImportType":
+      case "ArrayPattern":
+      case "RestElement":
+        return false
+      case "AssignmentPattern":
+        return key === "right"
+    }
+    return !["id", "params", "label", "key", "name", "local", "imported", "exported", "meta", "property"].includes(key) ||
+      (key === "key" && parent.computed === true)
+  }
+
+  /** {@link analyzeTypeScript}'s `use`. */
+  const use = (node: EsNode, reference: Entry["reference"]): void => {
+    if (!isReference(node)) return
+    const binding: string = node.name
+    const parent = parents.get(node)!.node
+    const typeOnly = parent.type === "ExportSpecifier" &&
+      (parent.exportKind === "type" || parents.get(parent)?.node.exportKind === "type")
+    if (parent.type === "TSQualifiedName") {
+      reference.members.push({ name: parent.right.name, binding, typeOnly: true, line: lineOf(parent) })
+      return
+    }
+    const names = taken(outermost(node))
+    if (names === undefined) reference.unnamed.push({ binding, typeOnly, line: lineOf(node) })
+    else reference.members.push(...names.map((name) => ({ ...name, binding })))
   }
 
   const visit = (node: EsNode): void => {
@@ -467,28 +686,45 @@ const analyzeVibe = (file: string, text: string): Analysis => {
       }))
       add(node, node.source.value, "export", typeOnly, names)
     } else if (node.type === "ExportAllDeclaration") {
-      add(node, node.source.value, "export", node.exportKind === "type")
+      const typeOnly = node.exportKind === "type"
+      add(node, node.source.value, "export", typeOnly).unnamed.push({ typeOnly, line: lineOf(node) })
     } else if (node.type === "TSImportType") {
       let qualifier = node.qualifier
       while (qualifier?.type === "TSQualifiedName") qualifier = qualifier.left
       add(node, node.source.value, "import-type", true, qualifier ? [{ name: qualifier.name, typeOnly: true, line: lineOf(node) }] : [])
     } else if (node.type === "ImportExpression") {
       const specifier = esString(node.source)
-      if (specifier !== undefined && (node.options ?? null) === null) add(node, specifier, "dynamic-import", false)
-    } else if (node.type === "CallExpression" && !isSynthesized(node)) {
-      const callee = esUnwrap(node.callee)
-      const literal = node.arguments.length === 1 ? esString(node.arguments[0]) : undefined
-      if (literal !== undefined && callee.type === "Identifier" && callee.name === "require") add(node, literal, "require", false)
-      const name = esCallee(node.callee)
-      if (name !== undefined) calls.push({ callee: name, line: lineOf(node) })
-    } else if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier") {
-      member(node, node.object.name, node.property.name, false)
-    } else if (node.type === "TSQualifiedName" && node.left.type === "Identifier") {
-      member(node, node.left.name, node.right.name, true)
+      if (specifier !== undefined) load(node, specifier, "dynamic-import")
+    } else if ((node.type === "CallExpression" || node.type === "NewExpression") && !isSynthesized(node)) {
+      const callee = esCallee(node.callee)
+      const inner = esUnwrap(node.callee)
+      const literal = esString(node.arguments[0])
+      if (literal !== undefined) {
+        if (callee !== undefined && isLoader(callee)) load(node, literal, "require")
+        else if (inner.type === "CallExpression" && !isSynthesized(inner) && isCreateRequire(esCallee(inner.callee))) {
+          load(node, literal, "require")
+        } else if (inner.type === "Identifier") pending.push({ node, callee: inner.name, specifier: literal })
+      }
+      if (callee !== undefined && node.type === "CallExpression") calls.push({ callee, line: lineOf(node) })
+    } else if (
+      node.type === "VariableDeclarator" &&
+      node.id.type === "Identifier" &&
+      node.init != null &&
+      esUnwrap(node.init).type === "CallExpression" &&
+      isCreateRequire(esCallee(esUnwrap(node.init).callee))
+    ) {
+      loaders.add(node.id.name)
+    } else if (node.type === "Identifier" && parents.has(node)) {
+      const reference = bindings.get(node.name)
+      if (reference !== undefined) use(node, reference)
     }
-    esChildren(node).forEach(visit)
+    for (const [key, child] of esChildren(node)) {
+      parents.set(child, { node, key })
+      visit(child)
+    }
   }
   ;(program.body as ReadonlyArray<EsNode>).forEach(visit)
+  for (const call of pending) if (loaders.has(call.callee)) load(call.node, call.specifier, "require")
 
   return {
     references: entries.sort((a, b) => a.position - b.position).map((entry) => entry.reference),

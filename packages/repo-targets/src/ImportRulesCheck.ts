@@ -77,8 +77,11 @@ export interface ForbidRule extends RuleScope, TypeOnlyOption {
 
 /**
  * Forbids taking names from modules: a named import, a re-export, a default
- * import (`default`), or a member read through a namespace or default binding
- * (`React.useState`).
+ * import (`default`), a member read through a namespace or default binding
+ * (`React.useState`, `React["useState"]`, `const { useState } = React`), or a
+ * dynamic `import()` or `require()`. A use that takes the module's exports
+ * without naming them (`export *`, a binding passed on or indexed by a
+ * variable) fails too, because the rule cannot see which names it takes.
  *
  * @category models
  * @since 0.1.0
@@ -363,6 +366,15 @@ const breaches = (
         if (rule.names.includes(name.name) && !(allowTypeOnly && name.typeOnly)) {
           found.push({ line: name.line, usage: `uses ${name.binding}.${name.name} from "${specifier}"` })
         }
+      }
+      for (const use of reference.unnamed) {
+        if (allowTypeOnly && use.typeOnly) continue
+        found.push({
+          line: use.line,
+          usage: use.binding !== undefined
+            ? `uses ${use.binding} from "${specifier}" without naming what it takes`
+            : `${verb(reference)} every name of "${specifier}"`
+        })
       }
       continue
     }

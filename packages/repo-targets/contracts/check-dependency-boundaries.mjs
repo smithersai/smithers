@@ -176,6 +176,18 @@ function bannedRuntimeForName(specifier, name) {
   return workflowModules.find((module) => module.names?.test(name) && module.matches(specifier))?.runtime ?? null
 }
 
+/**
+ * The runtime whose names the durable-flow rule bans from `specifier`, or
+ * null. A use that takes the module's exports without naming them could take
+ * a banned one, so it is banned too.
+ *
+ * @param {string} specifier
+ * @returns {string | null}
+ */
+function bannedRuntimeForUnnamed(specifier) {
+  return workflowModules.find((module) => module.names !== undefined && module.matches(specifier))?.runtime ?? null
+}
+
 /** @typedef {{ file: string; line: number; specifier: string; name?: string; usage: string; runtime: string }} BannedImport */
 
 /** @typedef {{ dir: string; name: string; manifestPath: string; manifest: Record<string, unknown> }} WorkspacePackage */
@@ -387,8 +399,12 @@ export function packageSourceReachedBy(file, specifier, packageDirs) {
  * `cloudflare:workers`, or one imported from or read off `@alchemy.run/cloudflare`
  * (with Alchemy's workflow step functions `task`, `sleep`, `sleepUntil` and
  * `waitForEvent`), whether named in the import, accessed on a namespace or
- * default import, or used as a qualified type. A string or comment that
- * merely mentions one is not an import.
+ * default import, read with a string key or destructured off one, or used as
+ * a qualified type. A dynamic `import()` or `require()` of a module with a
+ * banned name is banned whole, as is any use whose names cannot be checked:
+ * `export *`, or a namespace or default binding
+ * passed on, indexed or spread. A string or comment that merely mentions one
+ * is not an import.
  *
  * @param {string} file Repo-relative path, used for the script kind and in each result.
  * @param {string} text The file's source.
@@ -423,6 +439,16 @@ export function scanSource(file, text) {
           runtime: named
         })
       }
+    }
+    const unnamedRuntime = bannedRuntimeForUnnamed(specifier)
+    if (unnamedRuntime === null) continue
+    for (const { binding, line } of reference.unnamed) {
+      const usage = binding !== undefined
+        ? `uses ${binding} from "${specifier}" without naming what it takes`
+        : reference.form === "export"
+        ? `re-exports every name of "${specifier}"`
+        : `loads "${specifier}" without naming what it takes`
+      banned.push({ file, line, specifier, usage, runtime: unnamedRuntime })
     }
   }
   return { specifiers: specifiers(analysis), banned: banned.sort((a, b) => a.line - b.line) }
