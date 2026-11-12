@@ -34,6 +34,9 @@ const test = Smithers.Vitest({
   sources: [
     Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
+    Smithers.glob("test/fixtures/**/*"),
+    Smithers.file("docs/api.md"),
+    Smithers.file("docs/guides/model-backed-steps.md"),
     Smithers.file("docs/quickstart.md"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),

@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/agent: the Agent service, the AgentSession and AgentAction adapters, seats, the quota and budget policies, the capability catalog, and the durable engine port."
 ---
 
-`@smthrs/agent` exports thirty-one modules from its root entry point, and each is
+`@smthrs/agent` exports thirty-two modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts

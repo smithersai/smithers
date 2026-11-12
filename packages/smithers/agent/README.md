@@ -706,12 +706,13 @@ The store is also the last place an id is still text, so `FlowStore.validateId` 
 The root entry point exports these namespaces, and each is also importable from
 `@smthrs/agent/<Module>`:
 
-`Agent`, `AgentAction`, `AgentSession`, `Budget`, `CellPlugin`, `Checkpointed`,
-`ChildFlows`, `EngineChildren`, `EventSink`, `FlowEngineLike`, `FlowStore`,
-`InMemoryWorkspaceSandbox`, `Memory`, `MemoryCalibration`, `MemoryMine`,
-`MemorySnapshotRecorder`, `ModelStep`, `PromoteFlows`, `QuotaPolicy`,
-`RunawayGuard`, `ScriptedJudge`, `Seat`, `SeatResolver`, `SeatRouter`,
-`SmithersPlugin`, `StandardFlows`, `WorkspaceObservation`, `WorkspaceSandbox`.
+`Acp`, `Agent`, `AgentAction`, `AgentRunner`, `AgentSession`, `Budget`,
+`CellPlugin`, `Checkpointed`, `ChildFlows`, `EngineChildren`, `EventSink`,
+`ExternalAgent`, `FlowEngineLike`, `FlowStore`, `InMemoryWorkspaceSandbox`,
+`Memory`, `MemoryCalibration`, `MemoryMine`, `MemorySnapshotRecorder`,
+`ModelStep`, `PromoteFlows`, `QuotaPolicy`, `RunawayGuard`, `ScriptedJudge`,
+`Seat`, `SeatResolver`, `SeatRouter`, `SmithersPlugin`, `StandardFlows`,
+`Transcript`, `WorkspaceObservation`, `WorkspaceSandbox`.
 
 Every export of every one of them, with its signature and its errors, is
 documented on [the API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md).

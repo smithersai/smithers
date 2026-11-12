@@ -5428,7 +5428,7 @@ https://smithers.sh/docs/reference/api/agent/
 
 > **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
 
-`@smthrs/agent` exports thirty-one modules from its root entry point, and each is
+`@smthrs/agent` exports thirty-two modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts
@@ -20459,7 +20459,8 @@ evidence do not acquire invented phases, successful checks, or file changes.
   Running or completed execution status alone never settles a wait. Repeated registrations retain the opening timestamp, generations
   have separate identities, and replay hides settlements beyond its cursor;
   callers price `meter` dispatches as described above.
-- `inspectLabel(tag)` reads the build-generated Appendix C Inspect rendering.
+- `inspectLabel(tag)` reads the hand-kept Appendix C Inspect label; an agent
+  tool call is labeled by what it did ("Read a file", "Ran a command").
   Coding call and native execution spans use the same labels. Dynamic
   `<cell-call:flow>` wrappers use the wrapped action's rendering; unknown
   historical tags keep their recorded id. Inspection and replay read data only.

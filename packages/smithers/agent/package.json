@@ -53,6 +53,7 @@
     "./MemoryCalibration": "./src/MemoryCalibration.ts",
     "./MemoryMine": "./src/MemoryMine.ts",
     "./MemorySnapshotRecorder": "./src/MemorySnapshotRecorder.ts",
+    "./ModelStep": "./src/ModelStep.ts",
     "./PromoteFlows": "./src/PromoteFlows.ts",
     "./QuotaPolicy": "./src/QuotaPolicy.ts",
     "./RunawayGuard": "./src/RunawayGuard.ts",
@@ -258,6 +259,16 @@
         "require": {
           "types": "./dist/cjs/MemorySnapshotRecorder.d.ts",
           "default": "./dist/cjs/MemorySnapshotRecorder.js"
+        }
+      },
+      "./ModelStep": {
+        "import": {
+          "types": "./dist/esm/ModelStep.d.ts",
+          "default": "./dist/esm/ModelStep.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelStep.d.ts",
+          "default": "./dist/cjs/ModelStep.js"
         }
       },
       "./PromoteFlows": {
