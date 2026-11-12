@@ -63,6 +63,8 @@ function walkExpr(e: TExpr, ctx: CondCtx): TExpr {
   if (e.kind === "conditional") markWhole(e.cond);
   if (e.kind === "binop" && e.op === "&&") { markWhole(e.left); markWhole(e.right); }
   const premise = narrowedElsewhere.has(e);
+  const absent = ruleOrOptional(e, ctx);
+  if (absent) return absent;
   const r = recurseExpr(e, ctx);
   return ruleNullish(r, ctx) ?? ruleNullishIndex(r) ?? ruleOptChainIndex(r) ?? ruleOptChain(r, ctx) ?? ruleImplOptional(r, ctx) ?? (premise ? null : ruleAndOptional(r, ctx)) ?? ruleImplArrayIsArray(r, ctx) ?? ruleConditionalArrayIsArray(r, ctx) ?? ruleConditionalAndArrayIsArray(r, ctx) ?? ruleConditionalAndOptional(r, ctx) ?? ruleConditionalOptionalSimple(r, ctx) ?? ruleConditionalInMap(r, ctx) ?? ruleConditionalOptionalTruthy(r, ctx) ?? r;
 }
@@ -369,6 +371,47 @@ function ruleAndOptional(e: TExpr, ctx: CondCtx): TExpr | null {
     binder: check.binder,
     someBody: walkExpr(innerBody, ctx),
     noneBody: { kind: "bool", value: false, ty: { kind: "bool" } },
+    ty: { kind: "bool" },
+  };
+}
+
+const COMPARISONS = new Set(["<", "<=", ">", ">=", "===", "!==", "==", "!="]);
+
+/** Whether `e` reads `path` where only its inner value will do. A direct comparison with the optional
+ *  (`x < opt`, `opt === k`) is not such a read: the emitter already compares an Option (mirroring the operator
+ *  when the optional is on the right), and that shape is kept. */
+function mentions(e: unknown, path: TExpr): boolean {
+  if (e === null || typeof e !== "object") return false;
+  const node = e as { kind?: string; op?: string; left?: TExpr; right?: TExpr };
+  if (typeof node.kind === "string" && exprEqual(e as TExpr, path)) return true;
+  if (node.kind === "binop" && COMPARISONS.has(node.op ?? "") && node.left && node.right) {
+    if (exprEqual(node.left, path)) return mentions(node.right, path);
+    if (exprEqual(node.right, path)) return mentions(node.left, path);
+  }
+  return Object.entries(e).some(([key, value]) => key !== "ty" && (Array.isArray(value) ? value.some(v => mentions(v, path)) : mentions(value, path)));
+}
+
+/** Driver (expression): `path === undefined || rest` — absence fact on the left of a boolean disjunction. The right
+ *  operand runs only when the value is present, so it reads the narrowed value, as TypeScript narrows it.
+ *  → `someMatch path { Some(_p_val) => rest, None => true }`. A longer chain `a === undefined || b === undefined || P`
+ *  nests one match per leading absence fact. Runs before the children are walked, so the chain is still whole.
+ *  Fires only when `rest` reads the checked value: a disjunction that never reads it keeps its emitted shape.
+ *  Boolean only; the truthiness form `!x || rest` is left alone (a present falsy value would take the None arm). */
+function ruleOrOptional(e: TExpr, ctx: CondCtx): TExpr | null {
+  if (e.kind !== "binop" || e.op !== "||" || e.ty.kind !== "bool") return null;
+  const [first, ...others] = flattenOr(e);
+  if (first === undefined || others.length === 0) return null;
+  const fact = presentFact(first);
+  if (!fact || !fact.negated || fact.truthiness) return null;
+  const rest = others.reduce((left, right): TExpr => ({ kind: "binop", op: "||", left, right, ty: { kind: "bool" } }));
+  if (!mentions(rest, fact.scrutinee) || matchesOn(rest, fact.scrutinee)) return null;
+  const check = bindPresentFact(fact, ctx);
+  return {
+    kind: "someMatch",
+    scrutinee: check.scrutinee, binderTy: check.innerTy,
+    binder: check.binder,
+    someBody: walkExpr(rest, ctx),
+    noneBody: { kind: "bool", value: true, ty: { kind: "bool" } },
     ty: { kind: "bool" },
   };
 }

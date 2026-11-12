@@ -89,6 +89,16 @@ if ! grep -Fq 'function SafeSlice' "$fixture_dir/legacy-safe-slice.dfy.gen"; the
 fi
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-binder-collisions.ts"
 
+# `x === undefined || P(x)` reads x narrowed on the right; the false-for-absent twin must fail.
+cp tools/fixtures/optional-or-narrowing.ts tools/fixtures/optional-or-narrowing-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-or-narrowing.ts"
+expect_failure \
+  "Dafny accepted an absent-or disjunction that answers false for an absent value" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-or-narrowing-wrong.ts"
+# A presence check on a value its arm bound is a constant; a loop's measure reads the bound value.
+cp tools/fixtures/narrowed-presence.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/narrowed-presence.ts"
+
 # Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
 for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record quantifier-names real-minmax string-last-index; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"

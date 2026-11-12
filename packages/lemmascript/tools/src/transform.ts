@@ -159,9 +159,12 @@ function mapTStmt(s: TStmt, f: (e: TExpr) => TExpr | null): TStmt {
     case "break": case "continue": case "throw": return s;
     case "expr": return { ...s, expr: r(s.expr) };
     case "if": return { ...s, cond: r(s.cond), then: s.then.map(t => mapTStmt(t, f)), else: s.else.map(t => mapTStmt(t, f)) };
-    case "while": return { ...s, cond: r(s.cond), invariants: s.invariants.map(r), body: s.body.map(t => mapTStmt(t, f)) };
+    case "while": return { ...s, cond: r(s.cond), invariants: s.invariants.map(r),
+      decreases: s.decreases ? r(s.decreases) : null, doneWith: s.doneWith ? r(s.doneWith) : null,
+      body: s.body.map(t => mapTStmt(t, f)) };
     case "switch": return { ...s, expr: r(s.expr), cases: s.cases.map(c => ({ ...c, body: c.body.map(t => mapTStmt(t, f)) })), defaultBody: s.defaultBody.map(t => mapTStmt(t, f)) };
-    case "forof": return { ...s, iterable: r(s.iterable), invariants: s.invariants.map(r), body: s.body.map(t => mapTStmt(t, f)) };
+    case "forof": return { ...s, iterable: r(s.iterable), invariants: s.invariants.map(r),
+      doneWith: s.doneWith ? r(s.doneWith) : null, body: s.body.map(t => mapTStmt(t, f)) };
     case "ghostLet": return { ...s, init: r(s.init) };
     case "ghostAssign": return { ...s, value: r(s.value) };
     case "assert": return { ...s, expr: r(s.expr), ...(s.witness ? { witness: r(s.witness) } : {}) };
@@ -2280,18 +2283,27 @@ function matchesAccessPath(e: TExpr, path: AccessPath): boolean {
 }
 
 /** Replace every TExpr matching `path` with `var(binder, binderTy)`. */
+/** Inside the arm that bound `path` to `binder` the value is present: a presence check on the path itself
+ *  (`path !== undefined`, `path === undefined`) is a constant, and every other read of it is the binder. Replacing the
+ *  path inside the check would compare the inner value with None, which Dafny refuses. */
+function presentPath(path: AccessPath, binder: string, binderTy: Ty): (e: TExpr) => TExpr | null {
+  return e => {
+    if (e.kind === "binop" && (e.op === "===" || e.op === "!==" || e.op === "==" || e.op === "!=")) {
+      const other = e.right.kind === "var" && e.right.name === "undefined" ? e.left
+        : e.left.kind === "var" && e.left.name === "undefined" ? e.right : null;
+      if (other && matchesAccessPath(other, path)) return { kind: "bool", value: e.op === "!==" || e.op === "!=", ty: { kind: "bool" } } as TExpr;
+    }
+    return matchesAccessPath(e, path) ? { kind: "var", name: binder, ty: binderTy } as TExpr : null;
+  };
+}
+
 function replacePathInTExpr(expr: TExpr, path: AccessPath, binder: string, binderTy: Ty): TExpr {
-  return mapTExpr(expr, e =>
-    matchesAccessPath(e, path)
-      ? { kind: "var", name: binder, ty: binderTy } as TExpr : null
-  );
+  return mapTExpr(expr, presentPath(path, binder, binderTy));
 }
 
 function replacePathInTStmts(stmts: TStmt[], path: AccessPath, binder: string, binderTy: Ty): TStmt[] {
-  return stmts.map(s => mapTStmt(s, e =>
-    matchesAccessPath(e, path)
-      ? { kind: "var", name: binder, ty: binderTy } as TExpr : null
-  ));
+  const replace = presentPath(path, binder, binderTy);
+  return stmts.map(s => mapTStmt(s, replace));
 }
 
 /** Unwrap optional type on match-bound variables in TExpr.
