@@ -582,7 +582,7 @@ const trustedRoot = (stateDir: string): string => {
   for (const part of real.slice(path.length).split(sep).filter((each) => each !== "")) {
     path = join(path, part)
     const stat = lstatSync(path)
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("the state directory isn't a real directory")
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new WorkspaceError({ step: "fetch" })
   }
   return real
 }
@@ -1020,8 +1020,9 @@ const parseSummary = (line: string): { readonly added: Array<string>; readonly d
  * `root`, read without following a symbolic link at any component: a followed
  * link would upload its target, such as a file outside the checkout, as the
  * path's contents, and the change protocol carries no links. `undefined` for a
- * path that is not a regular file. Throws on a link in any component, and when
- * the path changed between its checks and its read.
+ * path that is not a regular file. Throws a `read` {@link WorkspaceError} on a
+ * link in any component, and when the path changed between its checks and its
+ * read.
  */
 const readRegular = (root: string, path: string): Buffer | undefined => {
   const file = join(root, path)
@@ -1030,10 +1031,10 @@ const readRegular = (root: string, path: string): Buffer | undefined => {
     let dir = root
     for (const part of path.split("/").slice(0, -1)) {
       dir = join(dir, part)
-      if (!lstatSync(dir).isDirectory()) throw new Error(`${dir} isn't a real directory`)
+      if (!lstatSync(dir).isDirectory()) throw new WorkspaceError({ step: "read" })
     }
     const stat = lstatSync(file)
-    if (stat.isSymbolicLink()) throw new Error(`${file} is a symbolic link`)
+    if (stat.isSymbolicLink()) throw new WorkspaceError({ step: "read" })
     return stat
   }
   if (!unlinked().isFile()) return undefined
@@ -1044,7 +1045,7 @@ const readRegular = (root: string, path: string): Buffer | undefined => {
     const opened = fstatSync(fd)
     const reached = unlinked()
     if (!opened.isFile() || opened.dev !== reached.dev || opened.ino !== reached.ino) {
-      throw new Error(`${file} changed while it was read`)
+      throw new WorkspaceError({ step: "read" })
     }
     return readFileSync(fd)
   } finally {
