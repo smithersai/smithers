@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer, Option } from "effect"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
@@ -39,6 +39,44 @@ for (
     }
   })
 }
+
+it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "\ud800"])(
+  "names the node whose payload has no canonical representation: %s",
+  async (value) => {
+    const exit = await Effect.runPromiseExit(drive(Node.all({
+      valid: Node.succeed({ value: 1 }),
+      invalid: Node.succeed({ nested: [value] })
+    })))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.squash(exit.cause)
+      expect(error).toMatchObject({
+        _tag: "@smthrs/flow/InterpreterError",
+        code: "uncanonical_payload",
+        node: "root.all.invalid",
+        message: expect.stringContaining("canonical JSON")
+      })
+      expect(Interpreter.refusalCode(exit.cause)).toEqual(Option.some("uncanonical_payload"))
+    }
+  }
+)
+
+it("retains a plan identity refusal for invalid non-payload metadata", async () => {
+  const exit = await Effect.runPromiseExit(withCrypto(
+    Interpreter.interpret(Node.succeed(1), {}, { resolveLayers: () => ["\ud800"] }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, makeInstance(host, "bad-layer")),
+      Effect.provide(layerWired(Layer.empty))
+    )
+  ))
+  expect(Exit.isFailure(exit)).toBe(true)
+  if (Exit.isFailure(exit)) {
+    expect(Cause.squash(exit.cause)).toMatchObject({
+      code: "incomplete_graph",
+      node: "root",
+      message: expect.stringContaining("Cannot identify recorded plan")
+    })
+  }
+})
 
 it("refuses a cycle in an untaken branch before dispatching an independent action", async () => {
   let calls = 0

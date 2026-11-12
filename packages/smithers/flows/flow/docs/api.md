@@ -264,7 +264,7 @@ remains a separate release requirement.
 | `defectOf`         | the first defect in a cause: its tag and code, its message cut to 500 characters, and the node it arose in    |
 | `DefectSite`       | the annotation a node's defect carries: the innermost node that died with it, and that node's action          |
 
-`InterpreterError` codes name what the run cannot recover from on its own: `incomplete_graph` for topology the build reported, `duplicate_node_id` for two nodes answering to one dispatch address, `unresolved_action` for an action with no implementation wired up, `unresolved_reference` for a payload reading a node this graph does not hold, `unsupported_call` for a call whose declaration did not survive serialization, `missing_operation` for a deferred function that did not either, `plan_changed` for a durable resume that rebuilt a different plan than the run recorded, and `payload_changed` for a durable resume whose build no longer decodes the payload the run recorded. A refused run keeps its code in its stored result, so `refusalCode` reads it from `poll` or `result` in any process.
+`InterpreterError` codes name what the run cannot recover from on its own: `incomplete_graph` for topology the build reported, `uncanonical_payload` for a payload with no canonical JSON representation (naming its node before recorded-plan dispatch), `duplicate_node_id` for two nodes answering to one dispatch address, `unresolved_action` for an action with no implementation wired up, `unresolved_reference` for a payload reading a node this graph does not hold, `unsupported_call` for a call whose declaration did not survive serialization, `missing_operation` for a deferred function that did not either, `plan_changed` for a durable resume that rebuilt a different plan than the run recorded, and `payload_changed` for a durable resume whose build no longer decodes the payload the run recorded. A refused run keeps its code in its stored result, so `refusalCode` reads it from `poll` or `result` in any process.
 
 A node whose execution dies, with anything but a refusal or an interruption, settles `failed` with the value `{ defect: { _tag, code, message, causes } }` rather than reading as skipped, and the interpreter annotates the defect with `DefectSite`, so `defectOf` on the run's cause names the node. The durable engine writes the same, with the message redacted, as `defect` on the failed run's `transitioned` decision and as the `flow.run.defect` log line.
 
@@ -290,6 +290,12 @@ A payload names exactly one deadline: a relative `millis`, or an absolute `until
 | `missing_deadline`   | the payload named neither `millis` nor `until`                                                                                                                                                       |
 | `ambiguous_deadline` | it named both, which are the same fact stated two ways                                                                                                                                               |
 | `invalid_deadline`   | it named a number that is not a length of time: a non-finite or negative `millis`, a non-finite `until`, an addition that overflows, or a deadline after epoch millisecond `Number.MAX_SAFE_INTEGER` |
+
+A runtime that records plans refuses a literal non-finite sleep payload before
+dispatch with `InterpreterError` code `uncanonical_payload`, naming the sleep
+node. This is a plan-recording refusal, so `Node.catch` cannot recover it.
+Without plan recording, the action validates the request and returns
+`SleepRequestInvalid`. Use finite numbers for recorded payloads.
 
 Two waits of the same length are two waits: each call is its own node with its own identity, so `sleep` followed by `sleep` waits twice. A deadline that has already passed settles the node instead of parking it, because a run that resumes after its own deadline has to make progress.
 

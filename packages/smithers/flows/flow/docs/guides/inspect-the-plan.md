@@ -208,6 +208,7 @@ topology exists to avoid.
 | Code                              | What it means                                                                        |
 | --------------------------------- | ------------------------------------------------------------------------------------ |
 | `incomplete_graph`                | The build reported topology it could not complete.                                   |
+| `uncanonical_payload`             | A recorded payload has no canonical JSON representation; `node` identifies it.       |
 | `duplicate_node_id`               | Two nodes answer to one dispatch address.                                            |
 | `unresolved_action`               | An action the body names has no implementation wired up.                             |
 | `implementation_version_mismatch` | A declaration and its registered implementation disagree on `implementationVersion`. |

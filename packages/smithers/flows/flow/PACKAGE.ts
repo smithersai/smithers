@@ -5,7 +5,9 @@
  * These targets are executable and must stay equivalent to what
  * `BuildAndCheckTypeScriptPackage({ cwd: "packages/smithers/flows/flow", deps: [plan, crypto, keys, canonical, capability], examples })`
  * emits, with `examples` holding the quickstart page to its VibeLang tab; the file exists to show
- * the expansion, not to diverge from it.
+ * the expansion. Check and test also depend on the engine's source-only
+ * file group: their suites and examples execute it, while depending on the
+ * engine library would create a cycle through this package's library.
  */
 import {
   CircularImports,
@@ -19,6 +21,7 @@ import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } fro
 import { Package as canonicalPackage } from "../canonical/PACKAGE.ts"
 import { Package as capabilityPackage } from "../capability/PACKAGE.ts"
 import { Package as cryptoPackage } from "../crypto/PACKAGE.ts"
+import { engineSourceInputs } from "../engine/SourceInputs.ts"
 import { Package as keysPackage } from "../keys/PACKAGE.ts"
 import { Package as planPackage } from "../plan/PACKAGE.ts"
 
@@ -56,7 +59,7 @@ const lib = Smithers.TsBuild({
 
 const check = Smithers.Typecheck({
   srcs: [sources, examples, Smithers.glob("test/**/*.{ts,vibe}")],
-  deps: [lib, plan, crypto, keys, canonical, capability],
+  deps: [lib, plan, crypto, keys, canonical, capability, engineSourceInputs],
   tsconfig: Smithers.file("tsconfig.test.json"),
   buildMode: false,
   incremental: false,
@@ -65,8 +68,13 @@ const check = Smithers.Typecheck({
 
 const test = Smithers.Vitest({
   tests: [tests],
-  sources: [sources, examples],
-  deps: [lib, plan, crypto, keys, canonical, capability],
+  sources: [
+    sources,
+    examples,
+    Smithers.file("PACKAGE.ts"),
+    Smithers.file("//packages/smithers/flows/engine/SourceInputs.ts")
+  ],
+  deps: [lib, plan, crypto, keys, canonical, capability, engineSourceInputs],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,

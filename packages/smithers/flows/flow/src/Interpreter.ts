@@ -42,7 +42,7 @@
  * @since 0.1.0
  */
 
-import { Canonical, isRecord } from "@smthrs/canonical"
+import { Canonical, canonicalize, isRecord } from "@smthrs/canonical"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DerivedKey, digest } from "@smthrs/keys"
 import { isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
@@ -489,6 +489,38 @@ const identityDrafts = (graph: Graph.Graph, root: RootInput | undefined): Return
     }
   )
 
+/**
+ * Names an unrecordable payload when no declaration explains the refusal.
+ * Successful identities avoid this second traversal of the inputs.
+ *
+ * @private
+ */
+const identityRefusal = (
+  flow: string,
+  graph: Graph.Graph,
+  root: RootInput | undefined,
+  cause: unknown
+): InterpreterError => {
+  for (const draft of identityDrafts(graph, root)) {
+    try {
+      canonicalize(draft.material.inputs)
+    } catch {
+      return new InterpreterError({
+        code: "uncanonical_payload",
+        flow,
+        node: draft.id,
+        message: `Payload at "${draft.id}" has no canonical JSON representation.`
+      })
+    }
+  }
+  return new InterpreterError({
+    code: "incomplete_graph",
+    flow,
+    node: "root",
+    message: `Cannot identify recorded plan: ${String(cause)}`
+  })
+}
+
 /** The content identity of the plan a graph records. @private */
 const planIdentity = (
   flow: string,
@@ -504,12 +536,7 @@ const planIdentity = (
     Effect.flatMap(refusedLiteral(graph), (refused) =>
       refused === undefined
         ? Effect.fail(
-          new InterpreterError({
-            code: "incomplete_graph",
-            flow,
-            node: "root",
-            message: `Cannot identify recorded plan: ${String(cause)}`
-          })
+          identityRefusal(flow, graph, root, cause)
         )
         : Effect.die(refused))
   ))

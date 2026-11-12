@@ -1089,8 +1089,9 @@ describe("HumanTask gives up", () => {
               _tag: "Fail",
               error: {
                 _tag: "@smthrs/flow/InterpreterError",
-                code: "incomplete_graph",
-                message: expect.stringContaining("Cannot identify recorded plan")
+                code: "uncanonical_payload",
+                node: "root.all.unrecordable",
+                message: expect.stringContaining("canonical JSON")
               }
             })
           }

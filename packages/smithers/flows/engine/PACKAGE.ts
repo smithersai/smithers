@@ -17,6 +17,8 @@ import { docsWriter, referenceStyle } from "../../../../PACKAGE.ts"
 import { Package as capabilityPackage } from "../capability/PACKAGE.ts"
 import { Package as flowPackage } from "../flow/PACKAGE.ts"
 
+import { engineSourceInputs } from "./SourceInputs.ts"
+
 const flow = flowPackage.lib
 
 const standard = BuildAndCheckTypeScriptPackage({
@@ -237,6 +239,7 @@ export const Package = Smithers.Package({
     check,
     circular,
     dependencyPolicy,
+    sourceInputs: engineSourceInputs,
     docs,
     docsFiles,
     fmt,

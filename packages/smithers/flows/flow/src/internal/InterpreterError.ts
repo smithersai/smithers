@@ -25,7 +25,9 @@ import * as Schema from "effect/Schema"
  * declaration sites are not a difference: only the plan's digest is compared.
  * `payload_changed` refuses a durable resume whose recorded payload no longer
  * decodes with the resuming build's payload schema, such as one a deploy
- * added a required field to.
+ * added a required field to. `uncanonical_payload` names the node whose
+ * payload cannot be represented as canonical JSON when recording a plan,
+ * before any action dispatches.
  *
  * A run refused this way settles failed with the error as its defect, and
  * keeps it: `Flow.Result` stores the error's fields and decodes them back
@@ -50,6 +52,7 @@ export class InterpreterError extends Schema.TaggedError<InterpreterError>()(
       "node_record_too_large",
       "plan_changed",
       "payload_changed",
+      "uncanonical_payload",
       "join_mismatch"
     ]),
     flow: Schema.String,

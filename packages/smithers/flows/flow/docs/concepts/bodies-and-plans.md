@@ -22,7 +22,12 @@ process-local callback policy permits inspection but does not promise the same
 plan across processes. Stable node addresses alone do not prove unchanged
 behavior.
 
-The durable interpreter records the whole graph's digest before dispatch. A
+The durable interpreter records the whole graph's digest before dispatch.
+When no declared payload schema supplies a more specific refusal, a payload
+with no canonical JSON representation fails with `uncanonical_payload` and
+the offending node's id. Non-finite numbers and lone surrogates have no
+canonical representation. This interpreter refusal cannot be recovered with
+`Node.catch`. A
 resume that rebuilds a different digest fails with `plan_changed`; it does not
 run the edited steps. Declaration sites are not part of the digest, and a
 callback enters it by its shape: its source with every binding renamed by the

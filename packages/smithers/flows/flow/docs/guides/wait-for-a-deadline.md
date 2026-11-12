@@ -68,6 +68,12 @@ failure:
 | `ambiguous_deadline` | It named both, which are the same fact stated twice.                                                                                                                                                  |
 | `invalid_deadline`   | It named a number that is not a length of time: a non-finite or negative `millis`, a non-finite `until`, an addition that overflows, or a deadline after epoch millisecond `Number.MAX_SAFE_INTEGER`. |
 
+A literal `NaN` or infinity has no canonical JSON representation. A runtime
+that records plans refuses it before dispatch with `InterpreterError` code
+`uncanonical_payload` and the offending node's id. `Node.catch` does not catch
+interpreter refusals. Without plan recording, the sleep action reports the
+declared `SleepRequestInvalid` instead.
+
 Two behaviors are worth knowing before you write the body:
 
 - **Two waits of the same length are two waits.** Each call is its own node with

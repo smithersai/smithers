@@ -75024,6 +75024,25 @@
     }
   },
   {
+    "label": "//packages/smithers/flows/engine:sourceInputs",
+    "package": "packages/smithers/flows/engine",
+    "name": "sourceInputs",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/engine/src/**/*.{ts,vibe}",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/flows/journal:lib"
+    ]
+  },
+  {
     "label": "//packages/smithers/flows/engine:test",
     "package": "packages/smithers/flows/engine",
     "name": "test",
@@ -75157,6 +75176,7 @@
       "//packages/smithers/flows/canonical:lib",
       "//packages/smithers/flows/capability:lib",
       "//packages/smithers/flows/crypto:lib",
+      "//packages/smithers/flows/engine:sourceInputs",
       "//packages/smithers/flows/flow:lib",
       "//packages/smithers/flows/keys:lib",
       "//packages/smithers/flows/plan:lib"
@@ -75720,6 +75740,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/flow/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/engine/SourceInputs.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/flow/vitest.config.ts"
       }
     ],
@@ -75728,6 +75756,7 @@
       "//packages/smithers/flows/canonical:lib",
       "//packages/smithers/flows/capability:lib",
       "//packages/smithers/flows/crypto:lib",
+      "//packages/smithers/flows/engine:sourceInputs",
       "//packages/smithers/flows/flow:lib",
       "//packages/smithers/flows/keys:lib",
       "//packages/smithers/flows/plan:lib"

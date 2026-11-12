@@ -384,9 +384,28 @@ describe("Sleep refusals", () => {
               } :
               {
                 _tag: "@smthrs/flow/InterpreterError",
-                code: "incomplete_graph",
-                message: expect.stringContaining("Cannot identify recorded plan")
+                code: "uncanonical_payload",
+                node: "root",
+                message: expect.stringContaining("canonical JSON")
               })
+          }
+        })
+      }
+    }))
+
+  effect("names a nested sleep whose payload cannot be recorded before recovery runs", () =>
+    Effect.gen(function*() {
+      for (const payload of [{ millis: Number.NaN }, { until: Number.POSITIVE_INFINITY }]) {
+        const recoverable = Sleep.action.call(payload).pipe(Node.catch({
+          error: Sleep.SleepRequestInvalid,
+          onFailure: () => Node.succeed(undefined)
+        }))
+        expect(yield* refusal(Node.all({ before: Node.succeed(1), timer: recoverable }))).toMatchObject({
+          error: {
+            _tag: "@smthrs/flow/InterpreterError",
+            code: "uncanonical_payload",
+            node: "root.all.timer.protected",
+            message: expect.stringContaining("canonical JSON")
           }
         })
       }
@@ -415,8 +434,9 @@ describe("Sleep refusals", () => {
         expect(yield* refusal(Sleep.action.call({ until }))).toMatchObject({
           error: {
             _tag: "@smthrs/flow/InterpreterError",
-            code: "incomplete_graph",
-            message: expect.stringContaining("Cannot identify recorded plan")
+            code: "uncanonical_payload",
+            node: "root",
+            message: expect.stringContaining("canonical JSON")
           }
         })
       }

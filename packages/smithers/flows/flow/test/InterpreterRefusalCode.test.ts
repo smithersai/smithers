@@ -35,7 +35,7 @@ describe("Interpreter.refusalCode", () => {
     expect(Interpreter.refusalCode(Cause.fail(refused))).toEqual(Option.some("plan_changed"))
   })
 
-  it.each(["plan_changed", "payload_changed"] as const)(
+  it.each(["plan_changed", "payload_changed", "uncanonical_payload"] as const)(
     "reads %s from a refusal written and read back, twice",
     (code) => {
       const once = stored(
