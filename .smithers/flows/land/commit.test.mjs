@@ -579,6 +579,14 @@ test("a concurrent commit waits for the shared lock; a land publishes only what 
     ok(remote, "git", ["init", "--bare", "-b", "main"])
     ok(directory, "git", ["remote", "add", "origin", remote])
     ok(directory, "git", ["push", "origin", "main"])
+    // `jj config set --repo` keeps the identity under the fixture's HOME, but
+    // landWorkspace below runs jj in this process under the real HOME, where a
+    // runner has no identity: its rebase would leave an empty committer, which
+    // jj refuses to push. Both see the same identity through the environment.
+    const identity = { JJ_USER: process.env.JJ_USER, JJ_EMAIL: process.env.JJ_EMAIL }
+    t.after(() => { for (const [name, value] of Object.entries(identity)) if (value === undefined) delete process.env[name]; else process.env[name] = value })
+    process.env.JJ_USER = "Commit test"
+    process.env.JJ_EMAIL = "test@example.com"
     ok(directory, "jj", ["git", "init", "--colocate"])
     ok(directory, "jj", ["config", "set", "--repo", "user.name", "Commit test"])
     ok(directory, "jj", ["config", "set", "--repo", "user.email", "test@example.com"])
@@ -605,6 +613,7 @@ test("a concurrent commit waits for the shared lock; a land publishes only what 
       })
     })
     assert.equal(ok(remote, "git", ["log", "main", "-1", "--format=%s"]).split("\n")[0], "fix: what the gate checked")
+    assert.equal(ok(remote, "git", ["log", "main", "-1", "--format=%ce"]), "test@example.com")
     assert.match(ok(remote, "git", ["show", "main:reviewed.txt"]), /reviewed/)
     assert.equal(ok(remote, "git", ["ls-tree", "--name-only", "main", ".smithers/flows/land/late.mjs"]), "")
     assert.equal(await closed, 0)
