@@ -53,7 +53,14 @@ afterAll(() => {
 //   delivers the detached launch twice, as a faulty transport can.
 // - withoutSetsid gives the launcher a PATH holding every host command but
 //   setsid, as on macOS.
-const fixture = (mode: { readonly replayLaunch?: boolean; readonly withoutSetsid?: boolean } = {}) =>
+// - delayLaunch starts the detached launch late, as a loaded host can: a
+//   sleep first on PATH counts the launcher's polls, and a setsid first on
+//   PATH waits for 210 of them before it performs the real syscall and runs
+//   the launch once. It gives up, as the worker would, when the job
+//   directory is gone or another process holds the worker fence.
+const fixture = (
+  mode: { readonly replayLaunch?: boolean; readonly withoutSetsid?: boolean; readonly delayLaunch?: boolean } = {}
+) =>
   Effect.gen(function*() {
     const root = mkdtempSync(join(tmpdir(), "sandbox-job-test-"))
     roots.push(root)
@@ -94,6 +101,31 @@ for child in children:
 open(${JSON.stringify(replayed)}, "w").write("done")
 `
       )
+      chmodSync(join(bin, "setsid"), 0o755)
+      path = `${bin}:${process.env.PATH}`
+    }
+    if (mode.delayLaunch === true) {
+      const polls = join(root, "polls")
+      const sleep = execFileSync("/bin/sh", ["-c", "command -v sleep"], { encoding: "utf8" }).trim()
+      writeFileSync(
+        join(bin, "sleep"),
+        `#!/bin/sh\nprintf . >>${CommandLine.quote(polls)}\nexec ${CommandLine.quote(sleep)} "$@"\n`
+      )
+      writeFileSync(
+        join(bin, "setsid"),
+        `#!/usr/bin/env python3
+import os,sys,time
+polls, directory = ${JSON.stringify(polls)}, ${JSON.stringify(join(root, "jobs", sessionSlug(key)))}
+fence = os.path.join(directory, "worker")
+while (not os.path.exists(polls) or os.path.getsize(polls) < 210) and os.path.isdir(directory) and not os.path.isdir(fence):
+    time.sleep(0.005)
+if not os.path.isdir(directory) or os.path.isdir(fence):
+    sys.exit(0)
+os.setsid()
+os.execvp(sys.argv[1],sys.argv[1:])
+`
+      )
+      chmodSync(join(bin, "sleep"), 0o755)
       chmodSync(join(bin, "setsid"), 0o755)
       path = `${bin}:${process.env.PATH}`
     }
@@ -217,6 +249,32 @@ describe("retained directory process conformance", () => {
         exitCode: 7,
         work: { _tag: "Changed" }
       })
+    })))
+  it.live("a detached launch that starts after 210 of the launcher's polls still starts once", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture({ delayLaunch: true })
+      const job = Sandbox.job(f.provider, f.options)
+      const handle = yield* job.start(undefined, f.key)
+      expect(yield* exited(job, handle, f.key)).toEqual({ _tag: "Exited", exitCode: 7 })
+      expect(readFileSync(join(f.checkout, "starts"), "utf8")).toBe("worker")
+      expect(readFileSync(join(handle.directory, "launches"), "utf8").trim().split("\n")).toHaveLength(1)
+      expect(readFileSync(join(handle.directory, "launch.err"), "utf8")).toBe("")
+    })))
+  it.live("a cancel tombstone ends a start whose launch has not begun, and nothing runs", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture({ delayLaunch: true })
+      const job = Sandbox.job(f.provider, f.options)
+      const starting = yield* Effect.forkChild(Effect.exit(job.start(undefined, f.key)))
+      const polls = join(f.root, "polls")
+      for (let i = 0; i < 2000 && !(existsSync(polls) && readFileSync(polls).length >= 20); i++) {
+        yield* Effect.sleep("5 millis")
+      }
+      writeFileSync(join(f.directory, "cancelled"), "")
+      expect(Exit.isFailure(yield* Fiber.join(starting))).toBe(true)
+      expect(readFileSync(polls).length).toBeLessThan(210)
+      expect(existsSync(join(f.directory, "worker"))).toBe(true)
+      expect(existsSync(join(f.directory, "pid"))).toBe(false)
+      expect(existsSync(join(f.checkout, "starts"))).toBe(false)
     })))
   it.live("concurrent starts launch once, survive their scopes, and replay collected work after destruction", () =>
     withPlatform(Effect.gen(function*() {

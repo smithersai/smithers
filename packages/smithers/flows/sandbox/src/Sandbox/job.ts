@@ -172,17 +172,26 @@ fi
 printf '%s\n' "$code" >${at("exit.tmp")} && mv ${at("exit.tmp")} ${at("exit")}`
         // The worker leads a session of its own where the guest has setsid, and
         // otherwise a process group of its own where /bin/sh has job control, as
-        // macOS's does.
+        // macOS's does. `launched` is a child of the launcher that lives exactly
+        // as long as the detached launch: the worker itself, which setsid execs
+        // in place, or the job-control subshell, which waits for its job.
         const detach = `if command -v setsid >/dev/null 2>&1; then
 setsid /bin/sh -c ${q(worker)} </dev/null >/dev/null 2>>${at("launch.err")} &
 else
-(set -m 2>/dev/null; /bin/sh -c ${q(worker)} </dev/null >/dev/null 2>>${at("launch.err")} &)
-fi`
+(set -m 2>/dev/null; /bin/sh -c ${q(worker)} </dev/null >/dev/null 2>>${
+          at("launch.err")
+        } & wait $! 2>/dev/null) </dev/null >/dev/null 2>>${at("launch.err")} &
+fi
+launched=$!`
         // The mkdir winner records its launcher pid as `owner`. Any failure
         // before the worker claims its fence takes that fence, so no delayed
         // worker can run, and removes the directory, so a retry with this key
         // launches again. A tombstoned directory stays. A later start that finds
         // an unsettled directory whose owner is dead takes it over the same way.
+        // The launcher waits for the worker's pid while the detached launch
+        // runs, for up to 6000 polls, however slowly a loaded host schedules
+        // it; a cancel tombstone or a removed directory ends the wait. Once the launch has ended
+        // without a pid, a forked or redelivered copy has 200 polls to publish.
         const script = `mkdir -p ${q(root)} || exit 125
 abandon() {
 cat ${at("launch.err")} >&2 2>/dev/null
@@ -198,7 +207,12 @@ cd ${q(checkout)} && git rev-parse --verify ${q(`${options.capture?.base ?? "HEA
 ${writes}
 if test ! -e ${at("cancelled")}; then
 ${detach}
-i=0; while test ! -f ${at("pid")}; do i=$((i+1)); test "$i" -lt 200 || abandon; sleep 0.01; done
+i=0; j=0; while test ! -f ${at("pid")}; do
+test -d ${q(directory)} && test ! -e ${at("cancelled")} || abandon
+if kill -0 "$launched" 2>/dev/null; then j=$((j+1)); test "$j" -lt 6000 || abandon
+else i=$((i+1)); test "$i" -lt 200 || abandon; fi
+sleep 0.01
+done
 fi
 }
 settled() { test -f ${at("pid")} || test -f ${at("exit")} || test -e ${at("cancelled")}; }
