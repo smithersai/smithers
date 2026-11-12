@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Logger, Path, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { TestClock } from "effect/testing"
 import {
   chmodSync,
   createReadStream,
@@ -373,6 +374,61 @@ describe("VercelSandbox", () => {
       yield* acquired(VercelSandbox.make({ sdk: short.sdk, workdir, timeoutMs: 2 * 60_000 }), () => Effect.void)
       yield* acquired(VercelSandbox.make({ sdk: short.sdk, workdir, limits: { timeoutSecs: 900 } }), () => Effect.void)
       expect(short.recorded.extended).toEqual([13 * 60_000])
+    }))
+
+  it.effect.each([240_000, 300_000])(
+    "extends a stopped short session to %s milliseconds",
+    (timeoutMs) =>
+      Effect.gen(function*() {
+        const { sdk, recorded } = fakeSdk()
+        const workdir = dir("short-resume")
+        yield* acquired(VercelSandbox.make({ sdk, workdir, timeoutMs: 120_000 }), () => Effect.void)
+        expect(recorded.extended).toEqual([])
+        yield* acquired(VercelSandbox.make({ sdk, workdir, timeoutMs }), () => Effect.void)
+        expect(recorded.extended).toEqual([timeoutMs - 120_000])
+        expect(recorded.commands.map((command) => command.cmd)).toEqual(["mkdir", "mkdir"])
+      })
+  )
+
+  it.effect.each([120_000, 300_000])(
+    "renews a running session for %s milliseconds from reacquisition",
+    (timeoutMs) =>
+      Effect.gen(function*() {
+        const { sdk, recorded } = fakeSdk()
+        const workdir = dir("running-resume")
+        yield* acquired(VercelSandbox.make({ sdk, workdir }), () =>
+          Effect.gen(function*() {
+            yield* TestClock.adjust("290 seconds")
+            yield* acquired(VercelSandbox.make({ sdk, workdir, timeoutMs }), () => Effect.void)
+            expect(recorded.extended).toEqual([timeoutMs - 10_000])
+          }))
+      })
+  )
+
+  it.effect("fills a fresh session's reported deadline shortfall after acquisition latency", () =>
+    Effect.gen(function*() {
+      const { sdk, recorded } = fakeSdk()
+      // The SDK reports a server deadline of epoch + timeout; observing it a
+      // second later still owes the full lifetime from the acquire boundary.
+      yield* TestClock.adjust("1 second")
+      yield* acquired(
+        VercelSandbox.make({ sdk, workdir: dir("acquire-latency"), timeoutMs: 120_000 }),
+        () => Effect.void
+      )
+      expect(recorded.extended).toEqual([1000])
+    }))
+
+  it.effect("does not extend a session already reaching its requested lifetime", () =>
+    Effect.gen(function*() {
+      const { sdk, recorded } = fakeSdk()
+      const workdir = dir("sufficient-lifetime")
+      yield* acquired(VercelSandbox.make({ sdk, workdir }), () =>
+        acquired(VercelSandbox.make({ sdk, workdir, timeoutMs: 120_000 }), () => Effect.void))
+      expect(recorded.extended).toEqual([])
+      const blind = fakeSdk({ hideExpiry: true })
+      yield* acquired(VercelSandbox.make({ sdk: blind.sdk, workdir, timeoutMs: 120_000 }), () =>
+        Effect.void)
+      expect(blind.recorded.extended).toEqual([])
     }))
 
   it("refuses limits Vercel cannot enforce when make is called", () => {

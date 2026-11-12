@@ -42,7 +42,15 @@ export const linuxFileSystem = (
     Effect.flatMap(
       gather(session, method, path, script, stdin),
       ({ code, stderr, stdout }) =>
-        code === 0 ? Effect.succeed(stdout) : Effect.fail(refusal(method, path, stderr, code))
+        code === 0 ? Effect.succeed(stdout) : Effect.fail(refusal(
+          method,
+          path,
+          stderr,
+          method === "stat" && code === 1 && stderr.startsWith("stat: ") &&
+            stderr.trimEnd().endsWith(": No such file or directory") ?
+            9 :
+            code
+        ))
     )
   const stat: FileSystem.FileSystem["stat"] = (path) =>
     Effect.gen(function*() {
@@ -50,7 +58,9 @@ export const linuxFileSystem = (
       const text = yield* run(
         "stat",
         path,
-        `p=$(dirname -- ${quoted}; printf x); if [ ! -e ${quoted} ] && [ ! -L ${quoted} ] && [ -x "\${p%?x}" ]; then exit 9; fi; stat -L -c '%f %s %u %g %d %i %h %Y' -- ${quoted}`
+        // stat follows links and diagnoses missing ancestors as well as leaves.
+        // Pin its diagnostic language; status 1 alone also means a denial.
+        `LC_ALL=C stat -L -c '%f %s %u %g %d %i %h %Y' -- ${quoted}`
       )
       const fields = text.trim().split(/\s+/)
       const mode = Number.parseInt(fields[0]!, 16)

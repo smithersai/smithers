@@ -276,7 +276,7 @@ export const make = (options: VercelSandboxOptions): Provider => {
           `could not apply the network policy to ${name}`
         )
         const extension = expiresAt === undefined ? desiredMs - createMs : deadline - expiresAt
-        if (desiredMs > createMs && extension > 0) {
+        if (extension > 0) {
           yield* attempt(
             () => sandbox.extendTimeout(extension),
             "unavailable",

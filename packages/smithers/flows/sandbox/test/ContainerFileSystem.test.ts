@@ -1,8 +1,13 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Option, Stream } from "effect"
+import { Effect, FileSystem, Option, Stream } from "effect"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Scope } from "effect/Scope"
+import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
 import { linuxFileSystem } from "../src/internal/linuxFileSystem.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import * as Sandbox from "../src/Sandbox/index.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
+import { rawPlatform } from "./helpers/containedPlatform.ts"
 
 const bytes = new TextEncoder()
 const fixture = (
@@ -91,6 +96,23 @@ describe("container native filesystem", () => {
       const other = "chown: /file: invalid group"
       expect((yield* Effect.flip(fixture("", 1, false, other).fs.chown!("/file", 0, 0))).reason._tag).toBe("Unknown")
     }))
+  it.effect.each(
+    [
+      [1, "stat: cannot statx '/file': No such file or directory", "NotFound"],
+      [1, "stat: can't stat '/file': No such file or directory", "NotFound"],
+      [127, "env: 'sh': No such file or directory", "Unknown"],
+      [127, "sh: /usr/bin/stat: No such file or directory", "Unknown"],
+      [1, "sh: cd: /workspace: No such file or directory", "Unknown"],
+      [127, "stat: No such file or directory", "Unknown"]
+    ] as const
+  )(
+    "distinguishes stat absence from a broken utility or transport: %s %s",
+    ([code, stderr, reason]) =>
+      Effect.gen(function*() {
+        expect((yield* Effect.flip(fixture("", code, false, stderr).fs.stat!("/file"))).reason._tag).toBe(reason)
+      })
+  )
+
   it.effect("does not turn a disconnected container into an absent file", () =>
     Effect.gen(function*() {
       const { fs } = fixture("", 0, true)
@@ -140,4 +162,57 @@ describe("container native filesystem", () => {
       }
       expect(commands).toHaveLength(5)
     }))
+})
+
+// Run the native adapter's actual shell program against the same tree as
+// NodeFileSystem, so an exit-code fixture cannot conceal a broken probe.
+describe.skipIf(process.platform !== "linux")("container stat on a real Linux tree", () => {
+  const withFiles = <A, E>(
+    body: (guest: FileSystem.FileSystem, host: FileSystem.FileSystem, root: string) => Effect.Effect<A, E, Scope>
+  ) =>
+    Effect.scoped(Effect.gen(function*() {
+      const host = yield* FileSystem.FileSystem
+      const spawner = yield* ChildProcessSpawner
+      const root = yield* host.makeTempDirectoryScoped()
+      const session = ContainerSandbox.existing({
+        container: "stat-test",
+        workdir: root,
+        spawner,
+        transport: { exec: (request) => Effect.succeed({ file: request.file, args: request.args }) }
+      })
+      return yield* body(Sandbox.fileSystem(session), host, root)
+    })).pipe(Effect.provide(rawPlatform))
+
+  it.effect.each(["missing", "missing/parent/file", "dangling", "dangling/child", "quoted '\n/absent/file"])(
+    "agrees with NodeFileSystem for absent path %s",
+    (relative) =>
+      withFiles((guest, host, root) =>
+        Effect.gen(function*() {
+          yield* host.symlink(`${root}/missing-target`, `${root}/dangling`)
+          yield* host.makeDirectory(`${root}/quoted '\n`)
+          const path = `${root}/${relative}`
+          const reference = yield* Effect.flip(host.stat(path))
+          const actual = yield* Effect.flip(guest.stat(path))
+          expect(reference.reason._tag).toBe("NotFound")
+          expect(actual.reason._tag).toBe(reference.reason._tag)
+          expect(actual.reason.method).toBe("stat")
+          expect(actual.reason).toMatchObject({ pathOrDescriptor: path })
+        })
+      )
+  )
+
+  it.effect.skipIf(process.getuid?.() === 0)(
+    "preserves a search-permission refusal",
+    () =>
+      withFiles((guest, host, root) =>
+        Effect.gen(function*() {
+          const parent = `${root}/No such file or directory`
+          yield* host.makeDirectory(parent)
+          yield* Effect.acquireRelease(host.chmod(parent, 0), () => Effect.orDie(host.chmod(parent, 0o700)))
+          const path = `${parent}/missing/child`
+          expect((yield* Effect.flip(host.stat(path))).reason._tag).toBe("PermissionDenied")
+          expect((yield* Effect.flip(guest.stat(path))).reason._tag).toBe("PermissionDenied")
+        })
+      )
+  )
 })
