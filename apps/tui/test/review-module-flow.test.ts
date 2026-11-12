@@ -51,7 +51,9 @@ it("discovers, plans, starts and observes ordinary review with shared host servi
     console.log("REVIEW_SHARED_HOST_RECEIPT " + JSON.stringify({ runId, status: answer.review.status, ui: answer.ui.kind }))
    } finally { await port.dispose(); await host.dispose() }
   `
-    const result = spawnSync(process.execPath, ["-e", script], {
+    // The child runs in a project outside the repository, where apps/tui's bunfig.toml
+    // preload does not apply, so it loads the compiler preload itself.
+    const result = spawnSync(process.execPath, ["--preload", import.meta.resolve("vibelang/bun"), "-e", script], {
       cwd: root,
       env: {
         SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,
