@@ -25,6 +25,7 @@ const testSupport = "published test support: its failure fails the caller's test
 /** Reviewed files, with the number of raw sites each keeps and why. */
 const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string]> = [
   ["database/src/postgres/PostgresDatabase.ts", 1, wrappedCause],
+  ["database/src/TestSchemas.ts", 2, testSupport],
   ["database/src/test/TestDatabase.ts", 1, testSupport],
   ["engine-store/src/PlanScheduler.ts", 1, invariantDefect],
   ["engine-store/src/StepBoundary.ts", 3, wrappedCause],
@@ -43,17 +44,27 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
   ["journal/src/RedactedLogger.ts", 1, "an empty Error clone that receives redacted fields; never thrown"],
   ["kernel/src/HttpClient.ts", 1, wrappedCause],
   ["kernel/src/test/HostContract.ts", 1, testSupport],
+  ["platform-browser/src/BrowserSqlite.ts", 1, wrappedCause],
+  [
+    "platform-node/src/EgressHttpClient.ts",
+    1,
+    "a refused dispatch, which Undici rejects and the Effect HTTP client reports as a tagged TransportError"
+  ],
+  ["platform-node/src/OwnerPrivate.ts", 1, wrappedCause],
   [
     "platform-node/src/ProcessConfinement.ts",
-    6,
+    8,
     "validation throws immediately wrapped by Effect.try into a typed PlatformError"
   ],
   [
     "platform-node/src/ProcessSandbox.ts",
-    4,
-    "pure renderers reject a mismatched mechanism or an unrenderable loopback plan; programmer errors"
+    5,
+    "pure renderers reject a mismatched mechanism or an unrenderable loopback plan, programmer errors; " +
+    "hiddenEntries refuses an unlistable directory, which ProcessConfinement wraps in a typed PermissionDenied"
   ],
   ["platform-node/src/ScopedProcess.ts", 1, wrappedCause],
+  ["platform-node/src/TestNodeRuntime.ts", 1, testSupport],
+  ["platform-node/src/internal/DestinationBrokerRoot.ts", 1, wrappedCause],
   [
     "platform-node/src/internal/SandboxedFlowGuest.ts",
     1,
