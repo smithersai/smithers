@@ -99,6 +99,13 @@ expect_failure \
 cp tools/fixtures/narrowed-presence.ts "$fixture_dir/"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/narrowed-presence.ts"
 
+# A string literal searched for in a string-union array is the union's member; the twin missing one must fail.
+cp tools/fixtures/union-search.ts tools/fixtures/union-search-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/union-search.ts"
+expect_failure \
+  "Dafny accepted a string-union list that lacks a member it claims" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/union-search-wrong.ts"
+
 # Object spreads of conditionals and field subsets, exhaustive tagged-message tables, and string-union truthiness.
 for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union string-union-truthiness safe-slice-suffix map-index real-field generic-record quantifier-names real-minmax string-last-index; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"

@@ -1097,6 +1097,11 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       if (fn.kind === "field" && fn.field === "with" && fn.obj.ty.kind === "array" && args.length === 2) {
         args = [args[0], coerceToTargetTy(args[1], fn.obj.ty.elem, ctx.typeDecls)];
       }
+      // `arr.includes(x)` and `arr.indexOf(x)` search for an element: a string literal searched for in a string-union
+      // array is that union's member, as TypeScript reads it (`tests/union-search.test.ts`).
+      if (fn.kind === "field" && (fn.field === "includes" || fn.field === "indexOf") && fn.obj.ty.kind === "array" && args.length >= 1) {
+        args = [coerceToTargetTy(args[0], fn.obj.ty.elem, ctx.typeDecls), ...args.slice(1)];
+      }
       let ty = inferMethodReturnTy(fn, args, ctx);
       // For same-file function calls, use the known return type
       if (ty.kind === "unknown" && fn.kind === "var" && ctx.fnReturns.has(fn.name)) {
