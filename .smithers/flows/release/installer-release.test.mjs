@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import test from "node:test"
 
 import { archiveName, packInstaller, publishInstallerRelease, signInstallerRelease, verifyInstallerRelease } from "./installer-release.mjs"
@@ -147,6 +148,17 @@ test("release workflow builds all four native archives before tag-bound signing 
   assert.equal(steps.includes("Publish verified archives and update latest last"), false)
   assert.match(publish.steps.find((step) => step.name === "Require the exact tag-bound signing identity").run, /GITHUB_WORKFLOW_REF.*refs\/tags/)
   assert.equal(publish.steps.find((step) => step.name === "Install trusted Cosign v3").with["cosign-release"], "v3.0.2")
+})
+
+test("the signing step's inline imports resolve from the checkout root and export what it imports", async () => {
+  const release = parseWorkflow(await readFile(join(repoRoot, ".github", "workflows", "release.yml"), "utf8"))
+  const sign = release.jobs["installer-publish"].steps.find((step) => step.name === "Sign and self-verify the complete archive set")
+  const imports = [...sign.run.matchAll(/import \{([^}]+)\} from "(\.[^"]+)"/g)]
+  assert.ok(imports.length > 0)
+  for (const [, names, specifier] of imports) {
+    const module = await import(pathToFileURL(join(repoRoot, specifier)).href)
+    for (const name of names.split(",").map((part) => part.trim())) assert.equal(typeof module[name], "function", `${specifier} exports ${name}`)
+  }
 })
 
 test("signing requires the exact trusted GitHub tag context and all four archives", () => temp(async (root) => {

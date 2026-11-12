@@ -777,7 +777,7 @@ jobs:
         run: |
           INSTALLER_CANDIDATE_INTEGRITY="$(node --input-type=module -e '
             import { readFile } from "node:fs/promises";
-            import { candidateIntegrity, verifyLocalCandidate } from "./flows/release/publish-release.mjs";
+            import { candidateIntegrity, verifyLocalCandidate } from "./.smithers/flows/release/publish-release.mjs";
             const candidate = JSON.parse(await readFile(process.env.PACK_DIR + "/release-manifest.json", "utf8"));
             await verifyLocalCandidate(process.env.PACK_DIR, candidate);
             console.log(candidateIntegrity(candidate));
