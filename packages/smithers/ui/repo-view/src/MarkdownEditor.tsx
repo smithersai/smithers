@@ -290,10 +290,19 @@ const releaseTab = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
   event.stopPropagation();
 };
 
-/** The ATX heading on one source line, or undefined. */
+/**
+ * The ATX heading on one source line, or undefined. The opening sequence is
+ * the only regex; the text and its closing `#`s are trimmed in linear code,
+ * because a pattern whose quantifiers overlap backtracks cubically on a line
+ * of spaces that ends in `\r`, and repository content is anyone's to write.
+ */
 const headingOf = (source: string): { readonly depth: number; readonly text: string } | undefined => {
-  const match = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(source);
-  return match ? { depth: match[1]!.length, text: match[2]!.trim() } : undefined;
+  const match = /^(#{1,6})\s/.exec(source);
+  if (match === null) return undefined;
+  const text = source.slice(match[1]!.length).trim();
+  let end = text.length;
+  while (end > 0 && text[end - 1] === "#") end--;
+  return { depth: match[1]!.length, text: text.slice(0, end).trim() };
 };
 
 const collapse = (text: string): string => text.replace(/\s+/g, " ").trim();
@@ -621,6 +630,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   }, [resetKey, readOnly, useFallback]);
 
   const followLink = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    // `auxclick` fires for every non-primary button; only the middle one follows a link, a right click opens the menu.
+    if (event.type === "auxclick" && event.button !== 1) return;
     if (!onLinkClick || !(event.target instanceof Element)) return;
     const anchor = event.target.closest("a[href]");
     if (anchor === null || !event.currentTarget.contains(anchor)) return;

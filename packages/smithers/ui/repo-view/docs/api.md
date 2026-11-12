@@ -66,7 +66,9 @@ Markdown document.
 - **The host owns the location.** `location` says where the view is, `href`
   builds every link, and `onNavigate` takes a plain click on any of them,
   including a relative link in a Markdown document, which resolves against the
-  repository as GitHub resolves it. One view therefore serves a routed page
+  repository as GitHub resolves it: a path the files sit under, one of
+  `directories`, or one written with a trailing `/` opens the folder. A
+  document whose `contents` change at the same path shows the new text. One view therefore serves a routed page
   and a conversation.
 - **`size`:** `full` (the default) puts the tree beside the content. `inline`
   drops the tree and bounds the content's height. Below 720 px of its own
@@ -157,9 +159,11 @@ A language server's answers draw through the rest, with no state of their own:
 signal to keep your own plain text. Until the highlighter paints, the component
 renders a plain `<pre>`.
 
-The views share one worker pool per page. `currentCodeViewPool` and
-`subscribeCodeViewPool` read its state; `disposeCodeViewPool` releases it after
-a page unmounts its code views.
+Each theme on a page has its own worker pool, because pierre paints every file
+in a pool with that pool's theme: a dark view beside a light one keeps its own
+colors. `currentCodeViewPool` and `subscribeCodeViewPool` read the page's pool
+state, which one failed worker ends for every pool; `disposeCodeViewPool`
+releases them all after a page unmounts its code views.
 
 ## Symbols pane
 
@@ -238,8 +242,9 @@ a re-seed when the host switches documents. `loadEditor`
 a host with its own build drives the rich path. `escapeTabOrder` defaults to
 true so Tab moves focus out rather than trapping a keyboard user. `fallback`
 forces the textarea or the rich editor, overriding the
-`supportsRichTextEditing` probe. `onLinkClick` receives a clicked link's
-`href` as written in the markdown; returning true stops the browser from
+`supportsRichTextEditing` probe. `onLinkClick` receives a clicked or
+middle-clicked link's `href` as written in the markdown (a right click leaves
+the link to the browser's menu); returning true stops the browser from
 following it, which is how a host opens a document's relative links itself.
 `readOnly` shows the document without editing, and an HTML node in it shows as
 its text. `MarkdownEditorHandle` exposes `getMarkdown` and the imperative seams.

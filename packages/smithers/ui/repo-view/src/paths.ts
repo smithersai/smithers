@@ -6,10 +6,12 @@ import type { DirectoryEntry } from "@smthrs/ui";
  * draw the tree, list a directory and resolve a README's relative links.
  */
 
+const collator = new Intl.Collator("en");
+
 /** Names sort case-insensitively, as GitHub lists them; the raw name breaks ties. */
 export function compareNames(a: string, b: string): number {
-  const lower = a.toLowerCase().localeCompare(b.toLowerCase(), "en");
-  return lower !== 0 ? lower : a.localeCompare(b, "en");
+  const lower = collator.compare(a.toLowerCase(), b.toLowerCase());
+  return lower !== 0 ? lower : collator.compare(a, b);
 }
 
 /** The directory holding `path`; `""` is the root. */
@@ -57,21 +59,39 @@ export function directoryEntries(
   );
 }
 
-/** Paths in the order the tree shows them: directories before files at every level. */
+/** A directory while the tree's order is built: its subdirectories and its files, each by name. */
+type OrderNode = {
+  readonly directories: Map<string, OrderNode>;
+  readonly files: Array<{ readonly name: string; readonly path: string }>;
+};
+
+/**
+ * Paths in the order the tree shows them: directories before files at every level. Each path is split once into a
+ * directory trie, and each directory sorts its own names once, so a repository of 100,000 files orders in one pass
+ * rather than re-splitting whole paths on every comparison.
+ */
 export function treeOrder(paths: ReadonlyArray<string>): ReadonlyArray<string> {
-  return [...paths].sort((a, b) => {
-    const left = a.split("/");
-    const right = b.split("/");
-    for (let index = 0; index < Math.min(left.length, right.length); index++) {
-      const leftIsDirectory = index < left.length - 1;
-      const rightIsDirectory = index < right.length - 1;
-      if (leftIsDirectory !== rightIsDirectory) return leftIsDirectory ? -1 : 1;
-      const order = compareNames(left[index]!, right[index]!);
-      if (order !== 0) return order;
+  const root: OrderNode = { directories: new Map(), files: [] };
+  for (const path of paths) {
+    const parts = path.split("/");
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      let next = node.directories.get(part);
+      if (next === undefined) {
+        next = { directories: new Map(), files: [] };
+        node.directories.set(part, next);
+      }
+      node = next;
     }
-    // Git never holds a path that is both a file and a directory, so only a duplicate gets here.
-    return 0;
-  });
+    node.files.push({ name: parts[parts.length - 1]!, path });
+  }
+  const ordered: Array<string> = [];
+  const emit = (node: OrderNode): void => {
+    for (const name of [...node.directories.keys()].sort(compareNames)) emit(node.directories.get(name)!);
+    for (const file of node.files.sort((a, b) => compareNames(a.name, b.name))) ordered.push(file.path);
+  };
+  emit(root);
+  return ordered;
 }
 
 /** Whether a file name is an HTML page, which the view can show live beside its source. */
@@ -114,11 +134,18 @@ const decode = (segment: string): string | undefined => {
  * the way GitHub does: relative to the document's directory, or to the root
  * when it starts with `/`. A link with a scheme, a protocol-relative link, a
  * bare `#anchor` and a link that climbs above the root resolve to nothing:
- * the browser follows those itself. A path naming a directory opens the tree;
- * any other path opens as a file, so a broken link shows "not found" in the
- * view rather than the browser resolving it against the app's own URL.
+ * the browser follows those itself. A path naming a directory (one the files
+ * sit under, one of `folders`, known without their files, or any path written
+ * with a trailing `/`) opens the tree; any other path opens as a file, so a
+ * broken link shows "not found" in the view rather than the browser resolving
+ * it against the app's own URL.
  */
-export function resolveLink(from: string, href: string, paths: ReadonlyArray<string>): LinkTarget | undefined {
+export function resolveLink(
+  from: string,
+  href: string,
+  paths: ReadonlyArray<string>,
+  folders: ReadonlyArray<string> = [],
+): LinkTarget | undefined {
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href) || href.startsWith("//")) return undefined;
   const bare = href.replace(/[?#].*$/s, "");
   if (bare === "") return undefined;
@@ -136,6 +163,6 @@ export function resolveLink(from: string, href: string, paths: ReadonlyArray<str
     resolved.push(segment);
   }
   const path = resolved.join("/");
-  if (path === "" || paths.some((file) => file.startsWith(`${path}/`))) return { kind: "tree", path };
+  if (path === "" || bare.endsWith("/") || directoriesOf(paths, folders).has(path)) return { kind: "tree", path };
   return { kind: "blob", path };
 }

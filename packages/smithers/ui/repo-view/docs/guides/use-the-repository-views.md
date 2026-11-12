@@ -122,15 +122,15 @@ the nearest scrolling ancestor; changing it moves the mark and scrolls again.
 Until the highlighter has painted, the component renders a plain `<pre>`, so
 there is no blank frame.
 
-`CodeFileView` automatically starts the shared worker pool on first use. The
+`CodeFileView` automatically starts the worker pool for its theme on first use. The
 package supplies Bun and browser worker factories, with a 15-second
 initialization deadline (`CODE_VIEW_POOL_DEADLINE_MS`). Highlighting falls back
 to the main thread only when workers are unavailable or the pool fails: a
 worker error or a missed initialization deadline.
 
 For embedded page teardown, call `disposeCodeViewPool` after unmounting its
-code views, while its DOM still exists. This releases the shared pool so the
-next page can start a fresh one.
+code views, while its DOM still exists. This releases the page's pools so the
+next page can start fresh ones.
 
 ## Edit markdown
 

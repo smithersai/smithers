@@ -301,6 +301,40 @@ describe("RepoView", () => {
     expect(moves).toEqual([{ kind: "blob", path: "src/router.ts" }, { kind: "tree", path: "src" }]);
   });
 
+  test("a README link to a folder known only by name opens the folder", async () => {
+    const moves: Array<RepoViewLocation> = [];
+    await render(
+      <RepoView
+        name="Spoon-Knife"
+        tree={{ state: "ready", paths: ["README.md"], directories: ["docs", "packages"] }}
+        location={{ kind: "tree", path: "" }}
+        readme={{ path: "README.md", file: text("# Spoon-Knife\n") }}
+        href={href}
+        onNavigate={(next) => moves.push(next)}
+        markdownEditor={{ fallback: false, loadEditor: crepeWithLinks(["./packages", "docs/", "missing/", "missing"]) }}
+      />,
+    );
+    await act(async () => {
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    });
+    for (const link of all(".sui-markdown-editor a")) expect(await click(link)).toBe(false);
+    expect(moves).toEqual([
+      { kind: "tree", path: "packages" },
+      { kind: "tree", path: "docs" },
+      { kind: "tree", path: "missing" },
+      { kind: "blob", path: "missing" },
+    ]);
+  });
+
+  test("a Markdown file whose contents change at the same path shows the new contents", async () => {
+    const { element } = view({ location: { kind: "blob", path: "docs/guide.md" }, file: text("# Guide\n") });
+    await render(element());
+    expect(q<HTMLTextAreaElement>("article textarea")!.value).toBe("# Guide\n");
+    // An agent edits the file being read; the host hands the new text in without a loading pass.
+    await render(element({ file: text("# Guide\n\nEdited.\n") }));
+    expect(q<HTMLTextAreaElement>("article textarea")!.value).toBe("# Guide\n\nEdited.\n");
+  });
+
   test("each file state: loading, binary, too large, empty and failed", async () => {
     const { element } = view({ location: { kind: "blob", path: "assets/logo.png" } });
     await render(element());

@@ -92,25 +92,29 @@ describe("code view page lifetime", () => {
     }
   });
 
-  test("a retired theme request's rejection cannot fail its successor", async () => {
+  test("views with different themes highlight in pools of their own themes", async () => {
     holdWorkers();
-    const first = codeViewWorkerPool("github-dark");
-    let rejectTheme!: (error: Error) => void;
-    const pending = new Promise<void>((_resolve, reject) => { rejectTheme = reject; });
-    const theme = spyOn(first.manager!, "setRenderOptions").mockImplementation(() => pending);
+    const dark = codeViewWorkerPool("github-dark");
+    const light = codeViewWorkerPool("github-light");
+    // pierre paints every file in a pool with the pool's theme, so a shared pool would repaint the dark view light.
+    expect(light.manager).toBeDefined();
+    expect(light.manager).not.toBe(dark.manager);
+    expect(codeViewWorkerPool("github-dark").manager).toBe(dark.manager);
+    expect(codeViewWorkerPool("github-light").manager).toBe(light.manager);
+    expect(dark.manager!.getFileRenderOptions().theme).toBe("github-dark");
+    expect(light.manager!.getFileRenderOptions().theme).toBe("github-light");
+    await waitFor(() => HeldWorker.instances.length === 2);
+    // One failure ends the page's pools together.
     const warning = spyOn(console, "warn").mockImplementation(() => {});
+    const error = spyOn(console, "error").mockImplementation(() => {});
     try {
-      codeViewWorkerPool("github-light");
-      disposeCodeViewPool();
-      const next = codeViewWorkerPool("github-dark");
-      rejectTheme(new Error("old theme request failed"));
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(currentCodeViewPool()).toBe(next);
-      expect(warning).not.toHaveBeenCalled();
+      HeldWorker.instances[1]!.dispatchEvent(new Event("error"));
+      await waitFor(() => currentCodeViewPool().state === "failed");
+      expect(HeldWorker.instances.map((worker) => worker.terminated)).toEqual([true, true]);
+      expect(codeViewWorkerPool("github-light")).toEqual({ state: "failed", manager: undefined });
     } finally {
-      theme.mockRestore();
       warning.mockRestore();
+      error.mockRestore();
     }
   });
 

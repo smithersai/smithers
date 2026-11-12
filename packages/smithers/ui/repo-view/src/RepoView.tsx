@@ -4,7 +4,8 @@ import { cn } from "@smthrs/ui-css";
 import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
 import { CodeFileView, type CodeFileViewProps, type CodeViewMode } from "./CodeFileView";
 import { HtmlPreview } from "./HtmlPreview";
-import { MarkdownEditor, type MarkdownEditorProps } from "./MarkdownEditor";
+import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
+import type { MarkdownEditorProps } from "./MarkdownEditor";
 import {
   ancestorsOf,
   directoriesOf,
@@ -218,7 +219,7 @@ function FileBody({
   if (file.contents === "") return <div className="sui-repo-note">Empty file</div>;
   if (isMarkdown(path) && markdownMode === "preview") {
     return (
-      <MarkdownEditor
+      <LiveMarkdownEditor
         {...markdownEditor}
         value={file.contents}
         resetKey={path}
@@ -373,7 +374,7 @@ export function RepoView({
 
   const openTarget = (target: DirectoryTarget) => go({ kind: target.kind === "directory" ? "tree" : "blob", path: target.path });
   const linkFrom = (files: ReadonlyArray<string>, from: string) => (link: string): boolean => {
-    const target = resolveLink(from, link, files);
+    const target = resolveLink(from, link, files, folders);
     if (target === undefined) return false;
     go(target);
     return true;

@@ -25,7 +25,7 @@ describe("documented view contracts", () => {
 
   test("the file guide describes automatic workers, bounded startup, fallback and teardown", () => {
     const section = guide.split("## Render one file")[1]!.split("## Edit markdown")[0]!.replace(/\s+/g, " ");
-    expect(section).toMatch(/`CodeFileView` automatically starts the shared worker pool/);
+    expect(section).toMatch(/`CodeFileView` automatically starts the worker pool for its theme/);
     expect(section).toContain("Bun and browser worker factories");
     const source = readFileSync(join(import.meta.dir, "../src/workerPool.ts"), "utf8");
     const deadline = Number(source.match(/CODE_VIEW_POOL_DEADLINE_MS = ([\d_]+)/)![1]!.replaceAll("_", ""));

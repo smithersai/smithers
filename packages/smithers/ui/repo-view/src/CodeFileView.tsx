@@ -8,7 +8,7 @@ import { diffsThemeForMode, type PierreDiffMode } from "./PierreDiffView";
 import { useInjectRepoViewCss } from "./styles";
 import { type CodeSymbol, CURSOR_KEYS, type CursorKey, isSymbolText, moveCursor } from "./symbols";
 import { registerVibe } from "./vibe";
-import { codeViewWorkerPool, currentCodeViewPool, subscribeCodeViewPool } from "./workerPool";
+import { codeViewThemeKey, codeViewWorkerPool, currentCodeViewPool, subscribeCodeViewPool } from "./workerPool";
 
 registerVibe();
 
@@ -306,14 +306,15 @@ export function CodeFileView({
   const theme = diffsThemeForMode(resolvedMode, resolvedPalette);
 
   /*
-   * The worker pool, started on the first view and told this view's theme
-   * (pierre renders every pooled file with the pool's theme). The live state
-   * is an external store: a pool that fails its probe flips `manager` to
-   * undefined, and the `key` below remounts pierre on the main thread.
+   * The worker pool for this view's theme, started on the first view with it
+   * (pierre renders every pooled file with the pool's theme, so each theme
+   * has its own). The live state is an external store: a pool that fails its
+   * probe flips the state to failed, and the `key` below remounts pierre on
+   * the main thread; a theme change remounts it onto that theme's pool.
    */
-  codeViewWorkerPool(theme);
+  const themed = codeViewWorkerPool(theme);
   const pool = useSyncExternalStore(subscribeCodeViewPool, currentCodeViewPool, currentCodeViewPool);
-  const manager = pool.state === "starting" || pool.state === "ready" ? pool.manager : undefined;
+  const manager = pool.state === "starting" || pool.state === "ready" ? themed.manager : undefined;
 
   /*
    * The anchor last scrolled to. pierre calls onPostRender on the passes
@@ -488,7 +489,7 @@ export function CodeFileView({
       <pre className="sui-code-view-plain">{contents}</pre>
       <WorkerPoolContext.Provider value={manager}>
         <File<AnnotationMeta, undefined>
-          key={manager === undefined ? "main-thread" : "worker"}
+          key={manager === undefined ? "main-thread" : `worker:${codeViewThemeKey(theme)}`}
           file={file}
           selectedLines={selectedLines}
           options={options}

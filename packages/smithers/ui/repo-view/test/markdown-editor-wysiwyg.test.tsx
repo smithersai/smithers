@@ -382,6 +382,30 @@ describe("MarkdownEditor scrollToLine (WYSIWYG path)", () => {
     }
   });
 
+  test("a heading line built to backtrack resolves at once", async () => {
+    const stub = headingStub();
+    const seen: string[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      seen.push(`${this.tagName.toLowerCase()}:${this.textContent}`);
+    };
+    try {
+      let handle: MarkdownEditorHandle | null = null;
+      // Spaces then a lone carriage return: a pattern whose quantifiers overlap backtracks cubically here, for
+      // tens of seconds at this length.
+      const hostile = `# x${" ".repeat(3_000)}\ry`;
+      await render(
+        <MarkdownEditor ref={(h) => { handle = h; }} value={`# Top\n\n${hostile}\n\n## Below`} fallback={false} loadEditor={stub.load} />,
+      );
+      const started = performance.now();
+      expect(handle!.scrollToLine(5)).toBe(true);
+      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(seen).toEqual(["h2:Below"]);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
   test("a line above every heading scrolls the host to the top; nothing scrolls before the editor is ready", async () => {
     const stub = headingStub();
     let handle: MarkdownEditorHandle | null = null;
@@ -520,6 +544,22 @@ describe("MarkdownEditor links", () => {
     // A modified click would open the same app-relative URL in a new tab.
     expect(click(renderedLink("docs/"), { metaKey: true }).defaultPrevented).toBe(true);
     expect(opened).toEqual(["LICENSE", "docs/"]);
+  });
+
+  test("a right click leaves the link to the browser's menu; a middle click follows it", async () => {
+    const stub = stubEditor();
+    const opened: string[] = [];
+    await render(<MarkdownEditor value="[guide](docs/guide.md)" readOnly fallback={false} loadEditor={stub.load}
+      onLinkClick={(href) => { opened.push(href); return true; }} />);
+    const auxClick = (button: number): boolean => {
+      const event = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button });
+      renderedLink("docs/guide.md").dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(auxClick(2)).toBe(false);
+    expect(opened).toEqual([]);
+    expect(auxClick(1)).toBe(true);
+    expect(opened).toEqual(["docs/guide.md"]);
   });
 
   test("a link the host declines keeps the browser's own behavior", async () => {
