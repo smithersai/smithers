@@ -4,7 +4,10 @@
 // (0015, eighteenth session).
 import { it } from "@effect/vitest"
 import * as AccountView from "../src/web/accountViewDecision.vibe"
-import { completions, initial as initialActions, resultText } from "../src/web/actionModel.vibe"
+import { actionsOf, completions, initial as initialActions, resultText } from "../src/web/actionModel.vibe"
+import { accountOf, init, type Model } from "../src/web/main.vibe"
+import { escapeWrite, escapeWritesIssues, screenKept } from "../src/web/modelWrite.vibe"
+import { escapeScreen } from "../src/web/screenRead.vibe"
 import { initialIssues, issuesUpdate } from "../src/web/issues.vibe"
 import { historyRefusal } from "../src/history/flowMachine.vibe"
 import * as IssuesView from "../src/web/issuesViewDecision.vibe"
@@ -116,6 +119,21 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   // A specification revision is sent with the revision it revises (0 before any).
   const revise = issuesUpdate({ ...initialIssues, role: "maintainer", status: "ready", screen: "specification", comment: other || "x" }, "spec-revise", other || "x")
   try check(`spec-revise ${JSON.stringify(revise.request ?? null)}`, revise.request?.op === "spec-revise" && revise.request.revision === 0)
+  // The two proof lemmas of modelWrite: Escape writes the issues screen exactly when the proved write changes one the
+  // page has; writing back the screen just read changes nothing.
+  const home = init({ session: "pane", mode: "mock", name: other }).model
+  const screens: ReadonlyArray<Model> = [
+    (({ issues: _issues, ...rest }) => rest)(home), { ...home, issues: { ...initialIssues, open: true, dialog: "" } },
+    { ...home, issues: { ...initialIssues, open: true, dialog: "split" } }, { ...home, issues: { ...initialIssues, open: false, dialog: "" } },
+  ]
+  for (const [index, page] of screens.entries()) for (const route of ["tour", "palette", "docs", "splash"] as const) for (const wikiPane of [false, true]) {
+    const account = accountOf(page)
+    const actions = actionsOf(page)
+    const written = escapeWrite(page, account, actions, page.issues ?? initialIssues, UpdateD.pressedEscape(escapeScreen(page, account, actions), route, wikiPane))
+    const changes = page.issues !== undefined && JSON.stringify(written.issues) !== JSON.stringify(page.issues)
+    try check(`escapeWritesIssues ${index} ${route} ${wikiPane}`, escapeWritesIssues(page, account, actions, route, wikiPane) === changes)
+    try check(`screenKept ${index}`, same(screenKept(page), page))
+  }
   // A saved page replaces what was known of it and comes last, once.
   const pages: ReadonlyArray<WikiEditor.WikiPage> = [{ id: "a", source: "A", revision: "1" }, { id: "p", source: "P", revision: "1" }, { id: "b", source: text, revision: "2" }]
   try check("savedWikiPages", same(WikiEditor.savedWikiPages(pages, "p", other, "3"), [pages[0], pages[2], { id: "p", source: other, revision: "3" }]))

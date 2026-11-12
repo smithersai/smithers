@@ -1301,6 +1301,12 @@ has one), `resultText` of a refusal, and a specification revision sent with revi
 (20261243, 20261244) reach every listed arm. Mutations caught (20261245, 20261247): Install offering nothing, relative
 wiki links left unresolved, and Enter moving the menu.
 
+`modelWrite.vibe`'s `escapeWritesIssues` and `screenKept` are proof lemmas (decision 0018) with no app caller; the full
+runs never called them. `web/decision-arms` now holds both to the code they specify, as `test/modelWrite.test.vibe`
+does: `escapeWritesIssues` is true exactly when the proved `escapeWrite` changes an issues screen the page has (four
+screens, every Escape route, with and without the wiki pane), and `screenKept` returns the Model unchanged. Seed
+20261248 reaches both; Escape over an open list not counted as a write is caught (20261249).
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
