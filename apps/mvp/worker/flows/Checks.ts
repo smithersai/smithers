@@ -446,19 +446,34 @@ export const steps = <E, R>(
           error._tag === "@smthrs/mvp/branch/SandboxUnavailable" ? Effect.fail(error) : Effect.succeed("failed" as const)
         ),
       )
-      if (synced !== "synced") {
-        yield* Effect.logWarning("checks.sync").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, outcome: synced }))
+      // The head's scripts: only a checks directory that isn't there means a head with none. A machine that couldn't
+      // answer the listing is tried again; a listing it refused or lost otherwise fails the checkout check too, never
+      // passing a head whose scripts nobody read.
+      const listed = synced !== "synced" ? synced : yield* tool("list", { tool: "list", path: CHECKS_DIRECTORY }).pipe(
+        // A tool answers its own call's result.
+        Effect.map((result) => Option.some(result as typeof SandboxTools.ListResult.Type)),
+        Effect.catch((error) =>
+          error._tag === "@smthrs/mvp/branch/SandboxUnavailable" || error._tag === "@smthrs/mvp/branch/SandboxStartTimedOut"
+            ? Effect.fail(error)
+            : Effect.succeed(
+              error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused" && error.reason === "not_found"
+                ? Option.none<typeof SandboxTools.ListResult.Type>()
+                : "unlisted" as const,
+            )
+        ),
+      )
+      if (typeof listed === "string") {
+        yield* Effect.logWarning("checks.sync").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, outcome: listed }))
         const id = yield* checkRunIdOf(request, CHECKOUT_CHECK)
         yield* started(request, id, CHECKOUT_CHECK)
         yield* ended(id, "failed")
         yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: "failed" }), 1)
         return { checks: [{ name: CHECKOUT_CHECK, status: "failed" as const }] } satisfies Checked
       }
-      const listed = yield* tool("list", { tool: "list", path: CHECKS_DIRECTORY }).pipe(Effect.option)
       const found = Option.match(listed, {
         onNone: () => [],
         onSome: (result) =>
-          (result as typeof SandboxTools.ListResult.Type).entries.filter((entry) => entry.kind === "file" && entry.name.endsWith(".sh"))
+          result.entries.filter((entry) => entry.kind === "file" && entry.name.endsWith(".sh"))
             .map((entry) => entry.name.slice(0, -3)).filter((name) => CHECK_NAME.test(name)).sort(),
       })
       const names = found.filter((name) => !BUILT_IN_CHECKS.has(name))

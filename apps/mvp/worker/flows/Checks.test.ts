@@ -20,7 +20,7 @@ import { checkExecutionId } from "../../src/features/pulls/contract.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { instantCommands, noCommands } from "../test/commands.ts"
-import { CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { CheckoutFailed, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { finding, judgeSeat, REPOSITORY, reset, reviewing, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Box from "../test/box.ts"
@@ -445,6 +445,40 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     expect(exit._tag === "Failure" && String(exit.cause)).toContain("ChecksUnavailable")
     expect(await runs()).toEqual([])
     expect(sleeps).toEqual([])
+  })
+
+  test("a checks directory the machine couldn't list is never a head with no scripts", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const synced = { tool: "run", exitCode: 0, timedOut: false, stdout: "", stderr: "", stdoutBytes: 0, stderrBytes: 0, truncated: false } as const
+    /** A machine whose checkout syncs and whose listing of the checks directory fails with `failure`. */
+    const unlisted = (failure: () => Effect.Effect<never, unknown>) =>
+      Layer.succeed(
+        Machines,
+        Machines.of({
+          commands: () => noCommands,
+          tool: (_branch, _owner, _callId, call) =>
+            call.tool === "list" ? failure() as never : Effect.succeed({ result: synced, generation: 1 }),
+          sleepIfIdle: () => Effect.die("a job whose scripts weren't read never sleeps"),
+        }),
+      )
+    // A machine that stopped answering, or didn't start in time, fails the step for its retry policy.
+    for (const failure of [() => Effect.fail(new SandboxUnavailable({ reason: "exec" })), () => Effect.fail(new SandboxStartTimedOut())]) {
+      const exit = await Effect.runPromise(
+        Effect.exit(Checks.steps({ ...services, reviewerFor: () => seat }).scripts({ request })).pipe(Effect.provide(unlisted(failure))),
+      )
+      expect(exit._tag === "Failure" && String(exit.cause)).toContain("ChecksUnavailable")
+      expect(await runs()).toEqual([])
+    }
+    // A listing the machine lost fails the head's checkout check: its scripts were never read.
+    await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, reviewerFor: () => seat })).pipe(
+      Layer.provide(unlisted(() => Effect.fail(new SandboxTools.ToolLost()))),
+    ))
+    expect((await runs()).map(({ flow, status }) => [flow, status])).toEqual([["checks/checkout", "failed"], ["checks/review", "done"]])
+    expect(github.shownStatuses(request.sha)).toMatchObject({ "smithers/checkout": "failure" })
   })
 
   test("two repositories whose names split differently never share a job machine", () => {
