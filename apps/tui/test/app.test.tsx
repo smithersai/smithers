@@ -417,9 +417,17 @@ test("background flow launch acknowledges durably while both launch and remote c
   expect(starts).toEqual([{}])
   expect(watches).toEqual([])
   const flowRecords = () => records().filter((record) => record.type === "flow").map((record) => record.run)
-  expect(flowRecords().map((run) => ({ status: run.status, pendingCommand: run.pendingCommand }))).toEqual([
-    { status: "requested", pendingCommand: true },
-    { status: "requested", pendingCommand: undefined }
+  // The launch key is saved before planning, so a lost receipt is found again under it (#5217).
+  expect(
+    flowRecords().map((run) => ({
+      status: run.status,
+      pendingCommand: run.pendingCommand,
+      keyed: run.launchKey !== undefined
+    }))
+  ).toEqual([
+    { status: "requested", pendingCommand: true, keyed: false },
+    { status: "requested", pendingCommand: undefined, keyed: false },
+    { status: "requested", pendingCommand: undefined, keyed: true }
   ])
   await type("Chat during launch")
   expect(await draw()).toContain("Chat during launch")
@@ -554,9 +562,14 @@ test("agent repeated flow request ID is deduplicated and changed input is refuse
     records().filter((record) => record.type === "flow").map((record) => ({
       id: record.run.id,
       input: record.run.input,
-      status: record.run.status
+      status: record.run.status,
+      keyed: record.run.launchKey !== undefined
     }))
-  ).toEqual([{ id: "review-owned", input: {}, status: "requested" }])
+  ).toEqual([
+    { id: "review-owned", input: {}, status: "requested", keyed: false },
+    // The same run again, with the launch key saved before planning (#5217).
+    { id: "review-owned", input: {}, status: "requested", keyed: true }
+  ])
   expect(starts).toEqual([{}])
   expect(turns[0]?.settled).toBe(false)
 })
@@ -668,13 +681,16 @@ test("required flow input parks in a visible form and only valid submission reac
   expect(
     records().filter((record) => record.type === "flow").map((record) => ({
       status: record.run.status,
-      pendingCommand: record.run.pendingCommand
+      pendingCommand: record.run.pendingCommand,
+      keyed: record.run.launchKey !== undefined
     }))
   ).toEqual([
-    { status: "requested", pendingCommand: true },
-    { status: "requested", pendingCommand: undefined },
-    { status: "input", pendingCommand: undefined },
-    { status: "requested", pendingCommand: undefined }
+    { status: "requested", pendingCommand: true, keyed: false },
+    { status: "requested", pendingCommand: undefined, keyed: false },
+    { status: "input", pendingCommand: undefined, keyed: false },
+    { status: "requested", pendingCommand: undefined, keyed: false },
+    // Only the filled-in launch plans, under a key saved first (#5217).
+    { status: "requested", pendingCommand: undefined, keyed: true }
   ])
 })
 
