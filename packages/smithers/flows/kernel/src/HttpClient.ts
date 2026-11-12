@@ -199,10 +199,38 @@ export const fromHttpClientError = (
     : Option.none()
 
 /**
+ * The host has no HTTP: the request was refused before it left the process.
+ *
+ * {@link makeNoop} carries it as the `TransportError` reason's `cause`. A live
+ * client that fails to connect raises the same `TransportError` reason, so
+ * this cause is what tells "no HTTP here" apart from "the network failed";
+ * test it with {@link isUnavailable}.
+ *
+ * @category errors
+ * @since 1.0.0-rc.19
+ */
+export class HttpUnavailable extends Schema.TaggedError<HttpUnavailable>()(
+  "@smthrs/kernel/HttpUnavailable",
+  { message: Schema.String }
+) {}
+
+/**
+ * Whether `error` is a refusal from a host with no HTTP ({@link makeNoop})
+ * rather than a failure of a request that really went out.
+ *
+ * @category refinements
+ * @since 1.0.0-rc.19
+ */
+export const isUnavailable = (error: unknown): boolean =>
+  error instanceof HttpClientError.HttpClientError && error.reason._tag === "TransportError" &&
+  Schema.is(HttpUnavailable)(error.reason.cause)
+
+/**
  * Constructs an unavailable HTTP client stub.
  *
  * Every request reports the missing host as a `TransportError` naming the
- * request, so an unconfigured capability answers rather than vanishing.
+ * request, with an {@link HttpUnavailable} cause, so an unconfigured
+ * capability answers rather than vanishing.
  *
  * @category constructors
  * @since 1.0.0-rc.0
@@ -213,7 +241,7 @@ export const makeNoop = (): EffectHttpClient.HttpClient =>
       new HttpClientError.HttpClientError({
         reason: new HttpClientError.TransportError({
           request,
-          cause: new Error("HTTP is unavailable on this host")
+          cause: new HttpUnavailable({ message: "HTTP is unavailable on this host" })
         })
       })
     )

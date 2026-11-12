@@ -522,7 +522,31 @@ describe("HttpClient", () => {
       const client = yield* EffectHttpClient.HttpClient
       const failure = yield* Effect.flip(client.get("https://example.test/path"))
       expect(String(failure.reason.cause)).toContain("HTTP is unavailable on this host")
+      expect(failure.reason.cause).toBeInstanceOf(HttpClient.HttpUnavailable)
+      expect(HttpClient.isUnavailable(failure)).toBe(true)
     }).pipe(Effect.provide(HttpClient.layerNoop())))
+
+  it("does not mistake a failed live request for a host without HTTP", () => {
+    const request = HttpClientRequest.get("https://example.test/path")
+    const transport = (cause: unknown) =>
+      new HttpClientErrorModule.HttpClientError({
+        reason: new HttpClientErrorModule.TransportError({ request, cause })
+      })
+    expect(HttpClient.isUnavailable(undefined)).toBe(false)
+    expect(HttpClient.isUnavailable({ code: "TransportError" })).toBe(false)
+    // What a fetch client raises when DNS or the connection fails.
+    expect(HttpClient.isUnavailable(transport(new TypeError("fetch failed")))).toBe(false)
+    expect(HttpClient.isUnavailable(transport(new Error("HTTP is unavailable on this host")))).toBe(false)
+    expect(HttpClient.isUnavailable(transport(new HttpClient.HttpUnavailable({ message: "no HTTP" })))).toBe(true)
+    expect(HttpClient.isUnavailable(
+      new HttpClientErrorModule.HttpClientError({
+        reason: new HttpClientErrorModule.InvalidUrlError({
+          request,
+          cause: new HttpClient.HttpUnavailable({ message: "no HTTP" })
+        })
+      })
+    )).toBe(false)
+  })
 
   it("re-exports Effect's own tag rather than declaring a second one", () => {
     expect(HttpClient.HttpClient).toBe(EffectHttpClient.HttpClient)

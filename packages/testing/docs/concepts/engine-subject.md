@@ -53,6 +53,12 @@ A submission that conflicts with an existing execution's flow or payload fails
 with `ExecutionConflictError`. A new idempotency key on that refused submission
 remains available for a later run.
 
+If the underlying runtime refuses a new submission, `FlowEngineLike` removes
+its execution metadata and idempotency claim. A later `run` with the same
+execution id or idempotency key submits again; `result` reports the refused
+execution as unavailable rather than suspended. `FlowCycleDetected` remains
+a typed failure, and other submission failures become `EngineUnavailableError`.
+
 ## What `sealed` selects
 
 `sealed` selects a step's **identity**, not whether a replay may reuse a

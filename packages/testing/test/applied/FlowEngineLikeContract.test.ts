@@ -105,6 +105,20 @@ const rejectsSubmission = decorated(() => ({
   execute: ((_flow, _options) => Effect.fail(submissionError)) as Runtime["execute"]
 }))
 
+// Refuses a bounded number of submissions before using the real runtime.
+const refusesSubmissions = (count: number, error: unknown) =>
+  decorated((real) => {
+    let remaining = count
+    return {
+      execute: ((flow, options) =>
+        Effect.suspend(() => {
+          if (remaining === 0) return real.execute(flow, options)
+          remaining -= 1
+          return Effect.fail(error)
+        })) as Runtime["execute"]
+    }
+  })
+
 const cancelled = (executionId: string) =>
   Effect.gen(function*() {
     const engine = yield* EngineSubject.EngineSubject
@@ -321,6 +335,103 @@ describe("FlowEngineLike preserves typed submission failures", () => {
         path: ["parent", "child", "parent"]
       })
     }).pipe(Effect.provide(rejectsSubmission)))
+})
+
+describe("FlowEngineLike forgets a refused submission", () => {
+  const flow = { ...settling, name: "testing/engine-like/contract/resubmitted" }
+
+  for (
+    const failure of [
+      { error: new Error("submission refused"), code: "engine_unavailable" },
+      {
+        error: new FlowRuntime.FlowCycleDetected({ path: ["parent", "child", "parent"] }),
+        code: "flow_cycle_detected"
+      }
+    ]
+  ) {
+    for (const identity of ["executionId", "idempotencyKey"] as const) {
+      it.scoped(`submits again under the same ${identity} after ${failure.code}`, () =>
+        Effect.gen(function*() {
+          const engine = yield* EngineSubject.EngineSubject
+          const id = `resubmitted-${identity}-${failure.code}`
+          const options = { flow, payload: undefined, [identity]: id }
+
+          for (const _ of [1, 2]) {
+            const refused = yield* engine.run(options).pipe(Effect.flip)
+            expect(refused).toMatchObject({ code: failure.code })
+            if (failure.error instanceof FlowRuntime.FlowCycleDetected) expect(refused).toBe(failure.error)
+            if (identity === "executionId") {
+              // The engine never accepted the execution, so there is nothing to report.
+              expect(yield* engine.result(id).pipe(Effect.flip))
+                .toMatchObject({ code: "engine_unavailable" })
+            }
+          }
+
+          const completed = yield* engine.run(options)
+          expect(completed).toMatchObject({ status: "completed", value: "done" })
+          expect(yield* engine.result(completed.executionId)).toEqual(completed)
+          expect(yield* engine.run(options)).toEqual(completed)
+        }).pipe(Effect.provide(refusesSubmissions(2, failure.error))))
+
+      it.scoped(`wakes concurrent ${identity} joiners after ${failure.code}`, () =>
+        Effect.gen(function*() {
+          const entered = yield* Latch.make()
+          const release = yield* Latch.make()
+          const id = `concurrent-${identity}-${failure.code}`
+          const retainedId = `${id}-retained`
+          let submissions = 0
+          const runtime = decorated((real) => ({
+            execute: ((flow, options) =>
+              Effect.suspend(() => {
+                if (options.executionId === retainedId) return real.execute(flow, options)
+                submissions += 1
+                return submissions === 1
+                  ? Effect.andThen(entered.open, Effect.andThen(release.await, Effect.fail<unknown>(failure.error)))
+                  : real.execute(flow, options)
+              })) as Runtime["execute"]
+          }))
+          yield* Effect.gen(function*() {
+            const engine = yield* EngineSubject.EngineSubject
+            const options = {
+              flow,
+              payload: undefined,
+              executionId: id,
+              ...(identity === "idempotencyKey" ? { idempotencyKey: `${id}-key` } : {})
+            }
+            const retainedOptions = { flow, payload: undefined, executionId: retainedId, idempotencyKey: retainedId }
+            const retained = yield* engine.run(retainedOptions)
+            const first = yield* engine.run(options).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+            yield* entered.await
+            const joiner = yield* engine.run({
+              ...options,
+              executionId: identity === "idempotencyKey" ? `${id}-ignored` : id
+            }).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+            const alias = `${id}-alias`
+            const aliasJoiner = yield* engine.run({ ...options, idempotencyKey: alias })
+              .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+            expect(submissions).toBe(1)
+            yield* release.open
+            for (const fiber of [first, joiner, aliasJoiner]) {
+              const exit = yield* Fiber.join(fiber)
+              expect(Exit.isFailure(exit)).toBe(true)
+              if (Exit.isFailure(exit)) {
+                const error = Cause.squash(exit.cause)
+                expect(error).toMatchObject({ code: failure.code })
+                if (failure.error instanceof FlowRuntime.FlowCycleDetected) expect(error).toBe(failure.error)
+              }
+            }
+            expect(yield* engine.result(id).pipe(Effect.flip)).toMatchObject({ code: "engine_unavailable" })
+            expect(yield* engine.run(options)).toMatchObject({ status: "completed", value: "done" })
+            expect(submissions).toBe(2)
+            // The refused attempt releases aliases added by concurrent callers,
+            // while claims belonging to other executions remain idempotent.
+            expect(yield* engine.run({ flow, payload: "different", idempotencyKey: alias }))
+              .toMatchObject({ status: "completed", value: "done" })
+            expect(yield* engine.run(retainedOptions)).toEqual(retained)
+          }).pipe(Effect.provide(runtime))
+        }))
+    }
+  }
 })
 
 describe("FlowEngineLike Web Crypto", () => {

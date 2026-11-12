@@ -1375,7 +1375,23 @@ const layerNoop: () => Layer.Layer<HttpClient>
 ```
 
 An unavailable client. Every request fails with a `TransportError` naming the
-request and the cause `"HTTP is unavailable on this host"`.
+request, whose cause is an `HttpUnavailable` with the message `"HTTP is
+unavailable on this host"`.
+
+### HttpClient.HttpUnavailable and isUnavailable
+
+```ts
+class HttpUnavailable extends Schema.TaggedError<HttpUnavailable>()(
+  "@smthrs/kernel/HttpUnavailable",
+  { message: Schema.String }
+) {}
+const isUnavailable: (error: unknown) => boolean
+```
+
+`HttpUnavailable` marks a request a host without HTTP refused before it left
+the process. A live client that fails to connect raises the same
+`TransportError` reason, so `isUnavailable` checks the cause: it returns `true`
+only for a `TransportError` whose cause is an `HttpUnavailable`.
 
 ### HttpClient.layer
 

@@ -67,7 +67,10 @@ The profile states the stable code the operation raises, the suite asserts that
 code, and a wrong code is reported through the typed `expectedCode` and
 `actualCode` fields rather than encoded into a message. HTTP additionally
 requires an explicit probe request when it is supported, so the shared suite
-never invents a live network call.
+never invents a live network call. When HTTP is unsupported, the refusal must
+carry the kernel's `HttpClient.HttpUnavailable` cause: a live client that
+fails to connect raises the same `TransportError` tag, and the suite must not
+certify "no HTTP" for a host that sent the request.
 
 Three details keep the suite honest about the things a layer type cannot express:
 

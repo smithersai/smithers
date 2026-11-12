@@ -7,8 +7,12 @@
  * whole "tickets, not exceptions" rule rests on -- never executed, and neither
  * did the mismatched-code report.
  */
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as TestHost from "@smthrs/testing/TestHost"
-import { Cause, Effect, Exit, FileSystem } from "effect"
+import { Cause, Effect, Exit, FileSystem, Layer } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
 import { describe, expect, it } from "vitest"
 import * as HostSuite from "../../src/HostSuite.ts"
 import * as TestLayers from "../../src/TestLayers.ts"
@@ -91,6 +95,64 @@ describe("a capability declared unsupported must fail with its declared code", (
       expectedCode: "not-the-code-it-raises",
       actualCode: "NotFound"
     })
+  })
+})
+
+// A live fetch client that cannot resolve `example.invalid` fails with the same
+// `TransportError` reason a host without HTTP raises, so matching the reason
+// tag alone certified "no HTTP" for a bundle that really reached the network.
+describe("a bundle that really sends HTTP cannot declare it unsupported", () => {
+  const refusing = (cause: unknown, defect = false): HostSuite.HostBundle =>
+    Layer.merge(
+      TestHost.TestHost,
+      Layer.succeed(HttpClient.HttpClient)(
+        HttpClient.make((request) => {
+          const error = new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({ request, cause })
+          })
+          return defect ? Effect.die(error) : Effect.fail(error)
+        })
+      )
+    )
+
+  const httpCase = (bundle: HostSuite.HostBundle) =>
+    HostSuite.hostSuite(bundle, declaredUnsupported).find((suiteCase) =>
+      suiteCase.name === "HttpTransport has a declared capability result"
+    )!
+
+  it("reports the capability for a bundle wired to the real fetch client", async () => {
+    // `example.invalid` never resolves, so the real lookup fails without a reply.
+    expect(await outcome(httpCase(Layer.merge(TestHost.TestHost, FetchHttpClient.layer)))).toMatchObject({
+      _tag: "CapabilityContractError",
+      capability: "HttpTransport",
+      operation: "execute"
+    })
+  })
+
+  it("reports the capability when any client's request failed in the network", async () => {
+    expect(await outcome(httpCase(refusing(new TypeError("fetch failed"))))).toMatchObject({
+      _tag: "CapabilityContractError",
+      capability: "HttpTransport",
+      operation: "execute"
+    })
+  })
+
+  it("rejects a transport defect without the kernel refusal", async () => {
+    expect(await outcome(httpCase(refusing(new TypeError("fetch failed"), true)))).toMatchObject({
+      _tag: "CapabilityContractError",
+      capability: "HttpTransport",
+      operation: "execute"
+    })
+  })
+
+  it("accepts a structured refusal delivered as a defect", async () => {
+    expect(await outcome(httpCase(refusing(new KernelHttpClient.HttpUnavailable({ message: "no HTTP" }), true))))
+      .toBe("passed")
+  })
+
+  it("accepts the kernel refusal from any client", async () => {
+    expect(await outcome(httpCase(refusing(new KernelHttpClient.HttpUnavailable({ message: "no HTTP" })))))
+      .toBe("passed")
   })
 })
 

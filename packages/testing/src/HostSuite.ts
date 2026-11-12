@@ -10,6 +10,7 @@
 
 import type { Jj, JjFailure } from "@smthrs/jj"
 import { Jj as JjTag } from "@smthrs/jj"
+import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import { Clock, Deferred, Effect, Fiber, FileSystem, Path, Random, Stream } from "effect"
 import type { Layer } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
@@ -401,8 +402,17 @@ export const hostSuite = (bundle: HostBundle, profile: HostProfile): ReadonlyArr
     : provide(
       Effect.gen(function*() {
         const transport = yield* HttpClient.HttpClient
+        const probe = Effect.scoped(transport.execute(HttpClientRequest.get("https://example.invalid/host-suite")))
+          .pipe(
+            Effect.catchDefect((defect) => Effect.fail(defect)),
+            // A live client that cannot resolve the probe address raises the
+            // same `TransportError` a host without HTTP declares. Only the
+            // kernel's `HttpUnavailable` refusal shows the request never left,
+            // so any other HTTP failure counts as the host performing it.
+            Effect.catchIf((error) => !KernelHttpClient.isUnavailable(error), () => Effect.void)
+          )
         yield* assertCapabilityError(
-          Effect.scoped(transport.execute(HttpClientRequest.get("https://example.invalid/host-suite"))),
+          probe,
           "HttpTransport",
           "execute",
           capabilityCode(httpExpectation)

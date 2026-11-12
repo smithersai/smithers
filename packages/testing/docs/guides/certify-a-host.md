@@ -35,6 +35,12 @@ capability is unsupported. The suite asserts that exact code, and a wrong one
 is reported through the typed `expectedCode` and `actualCode` fields of
 `CapabilityContractError` rather than encoded into a message.
 
+An unsupported `httpTransport` must also refuse without sending: the failure's
+`TransportError` reason has to carry the kernel's `HttpClient.HttpUnavailable`
+cause, which `HttpClient.layerNoop()` supplies. A live client that fails to
+reach the probe address raises the same reason tag, so the suite reports that
+host as having HTTP.
+
 ## Run the suite
 
 Each case is a value with a `name` and a `run`, so registration is a loop:

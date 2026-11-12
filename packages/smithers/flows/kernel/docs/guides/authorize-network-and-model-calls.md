@@ -108,9 +108,11 @@ A body that is neither immutable nor copyable fails with
 ## Hosts with no network
 
 `HttpClient.layerNoop()` provides a client whose every request fails with a
-`TransportError` naming the request and the cause
-`"HTTP is unavailable on this host"`. Use it for a host that genuinely cannot
-reach the network, so an unconfigured capability answers rather than vanishing.
+`TransportError` naming the request, whose cause is an `HttpClient.HttpUnavailable`
+with the message `"HTTP is unavailable on this host"`. Use it for a host that
+genuinely cannot reach the network, so an unconfigured capability answers rather
+than vanishing. `HttpClient.isUnavailable(error)` tells that refusal apart from
+a live request that failed in the network, which raises the same reason tag.
 `@smthrs/testing/TestHost` composes it.
 
 ## Related

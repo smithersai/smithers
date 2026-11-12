@@ -251,6 +251,8 @@ const raceStep = (
  * Each `run` registers the spec's flow (scoped to the construction
  * scope), starts the execution with `discard`, and then polls the engine
  * until the execution settles as completed, aborted, failed, or suspended.
+ * A refused submission is forgotten, so its execution id or idempotency key
+ * can be submitted again.
  *
  * `interrupt` uses the engine's cooperative `FlowRuntime.interrupt`, which
  * delivers the interruption to the live body fiber. It is the durable engine's
@@ -291,12 +293,14 @@ export const make = (): Effect.Effect<
     // after a delay (a timer, an external signal) costs one suspension rather
     // than an unbounded busy-poll that never yields the CPU to the sleeping
     // step.
-    const settlements = new Map<string, Deferred.Deferred<ExecutionResult>>()
+    const settlements = new Map<string, Deferred.Deferred<ExecutionResult, EngineSubjectError>>()
     let nextExecutionId = 0
 
-    const arm = (executionId: string): Effect.Effect<void> =>
+    const arm = (executionId: string): Effect.Effect<Deferred.Deferred<ExecutionResult, EngineSubjectError>> =>
       Effect.sync(() => {
-        settlements.set(executionId, Deferred.makeUnsafe<ExecutionResult>())
+        const pending = Deferred.makeUnsafe<ExecutionResult, EngineSubjectError>()
+        settlements.set(executionId, pending)
+        return pending
       })
 
     const settle = (executionId: string, result: ExecutionResult): Effect.Effect<void> =>
@@ -362,11 +366,11 @@ export const make = (): Effect.Effect<
           : Effect.succeed(meta)
       })
 
-    const awaitResult = (executionId: string): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
+    const awaitResult = (executionId: string): Effect.Effect<ExecutionResult, EngineSubjectError> =>
       Effect.gen(function*() {
         const meta = yield* requireMeta(executionId)
         const deferred = settlements.get(executionId)
-        /* v8 ignore next 3 -- Every path to awaitResult arms a settlement after recording execution metadata, and settlements are never removed. */
+        /* v8 ignore next 3 -- Every path to awaitResult arms a settlement after recording execution metadata, and a settlement is removed only together with that metadata. */
         if (deferred === undefined) {
           return yield* Effect.fail(unavailable(`Execution ${executionId} has no pending settlement`))
         }
@@ -432,7 +436,7 @@ export const make = (): Effect.Effect<
           journalFor(executionId)
           // Armed before submission so the body can never settle a latch that
           // does not exist yet.
-          yield* arm(executionId)
+          const pending = yield* arm(executionId)
           yield* engine.execute(flow, {
             executionId,
             // Omitted rather than set to `undefined`: see `payloadSchema`.
@@ -448,6 +452,21 @@ export const make = (): Effect.Effect<
               cause instanceof FlowRuntime.FlowCycleDetected
                 ? cause
                 : unavailable(`Execution ${executionId} could not be submitted to the flow engine: ${String(cause)}`)
+            ),
+            // Wake callers already joining this attempt before releasing its
+            // identity, so both existing joiners and later retries can finish.
+            Effect.onError((cause) =>
+              Effect.andThen(
+                Deferred.failCause(pending, cause),
+                Effect.sync(() => {
+                  executions.delete(executionId)
+                  settlements.delete(executionId)
+                  journals.delete(executionId)
+                  for (const [key, claimedId] of idempotencyIndex) {
+                    if (claimedId === executionId) idempotencyIndex.delete(key)
+                  }
+                })
+              )
             )
           )
         }
