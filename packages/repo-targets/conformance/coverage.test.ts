@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from "node:path"
 import { describe, it } from "node:test"
 import { pathToFileURL } from "node:url"
 import { readWorkspaceInventory } from "./readWorkspaceInventory.ts"
@@ -14,6 +14,23 @@ describe("coverage conformance", () => {
     } catch {
       return false
     }
+  }
+  const readText = (path: string) => isFile(path) ? readFileSync(path, "utf8") : ""
+  /** Every `.ts` or `.vibe` module under a directory, or none when it is absent. */
+  const sourcesUnder = (directory: string): Array<string> => {
+    let entries
+    try {
+      entries = readdirSync(directory, { withFileTypes: true })
+    } catch {
+      return []
+    }
+    return entries.flatMap((entry) =>
+      entry.isDirectory()
+        ? sourcesUnder(join(directory, entry.name))
+        : /\.(?:ts|vibe)$/.test(entry.name)
+        ? [join(directory, entry.name)]
+        : []
+    )
   }
   it("finds every package's vitest config", () => {
     const names = configs.map((config) => config.name)
@@ -216,6 +233,50 @@ describe("coverage conformance", () => {
       thresholds.replace(/\b(?:branches|functions|lines|statements):\s*100\s*,?/g, "").trim() === ""
   }
 
+  /**
+   * Whether one coverage exclusion hands a tree only Bun can load to the
+   * package's own Bun coverage gate.
+   *
+   * v8 measures what Node executes, and a module that imports `bun:sqlite`
+   * never runs under Node without a shim; a shim is how issue #4504 shipped a
+   * guard bypass with a green suite. Such a tree is measured where it runs
+   * instead. `src/<tree>/**` may leave the v8 denominator only when the
+   * package's `bunfig.toml` turns `bun test` coverage on at the scalar 100%
+   * threshold (Bun 1.4.0 accepts the table form and never enforces it),
+   * ignores none of the tree's files, and `PACKAGE.ts` declares the
+   * Bun-runtime `bunTest` suite that runs under that config.
+   */
+  const bunCoverage = (
+    name: string,
+    pattern: string,
+    files: { readonly bunfig: string; readonly declaration: string } = {
+      bunfig: readText(join(packagesDir, name, "bunfig.toml")),
+      declaration: readText(join(packagesDir, name, "PACKAGE.ts"))
+    }
+  ): boolean => {
+    const tree = /^src\/([A-Za-z0-9_-]+)\/\*\*$/.exec(pattern)?.[1]
+    if (tree === undefined) return false
+    const measured = sourcesUnder(join(packagesDir, name, "src", tree)).map((path) =>
+      relative(join(packagesDir, name), path).split(sep).join("/")
+    )
+    if (measured.length === 0) return false
+    const settings: Array<string> = []
+    let inTest = false
+    for (const line of files.bunfig.split("\n")) {
+      if (/^\s*#/.test(line)) continue
+      if (/^\[[^\]]+\]\s*$/.test(line)) inTest = line.trim() === "[test]"
+      else if (inTest) settings.push(line)
+    }
+    const test = settings.join("\n")
+    const ignored = [...(/^coveragePathIgnorePatterns\s*=\s*\[([^\]]*)\]/m.exec(test)?.[1] ?? "").matchAll(/"([^"]+)"/g)]
+      .map((match) => match[1]!)
+    return /^coverage\s*=\s*true\s*$/m.test(test) && /^coverageThreshold\s*=\s*1(?:\.0+)?\s*$/m.test(test) &&
+      !measured.some((file) => ignored.some((glob) => matchesGlob(file, glob))) &&
+      /\bconst bunTest = Smithers\.NodeTest\(\{\s*runtime: Smithers\.Runtime\.Bun\(/.test(files.declaration) &&
+      /\brunner: Smithers\.testSuite\(\[/.test(files.declaration) &&
+      /\btargets: \{[^}]*\bbunTest\b/.test(files.declaration)
+  }
+
   const assertCoverageDenominator = (name: string, source: string) => {
     const coverage = block(source, "coverage")
     assert.notEqual(coverage, null, `packages/${name}/vitest.config.ts has no readable coverage block`)
@@ -272,10 +333,13 @@ describe("coverage conformance", () => {
       `packages/${name}/vitest.config.ts declares a coverage exclusion this cell cannot read`
     )
     assert.deepEqual(
-      excluded.filter((entry) => excludedPackage(name, entry) === null && !delegatedCoverage(name, entry)),
+      excluded.filter((entry) =>
+        excludedPackage(name, entry) === null && !delegatedCoverage(name, entry) && !bunCoverage(name, entry)
+      ),
       [],
       `packages/${name}/vitest.config.ts carries an unowned coverage exclusion; ` +
-        "an exclusion must name another package's tree or the checked HostContract handoff"
+        "an exclusion must name another package's tree, the checked HostContract handoff, " +
+        "or a Bun-only tree the package's Bun coverage gate holds at 100%"
     )
     assert.doesNotMatch(source, /\bautoUpdate\s*:/)
     assert.doesNotMatch(source, /\ball\s*:/)
@@ -354,6 +418,41 @@ describe("coverage conformance", () => {
     ) {
       assert.equal(delegatedCoverage("smithers/flows/kernel", "src/test/HostContract.ts", mutated), false)
     }
+  })
+
+  it("hands a Bun-only tree to the package's own Bun coverage gate, and nothing else", () => {
+    const name = "smithers/flows/database"
+    const files = {
+      bunfig: readFileSync(join(packagesDir, name, "bunfig.toml"), "utf8"),
+      declaration: readFileSync(join(packagesDir, name, "PACKAGE.ts"), "utf8")
+    }
+    assert.equal(bunCoverage(name, "src/bun/**", files), true)
+    assertCoverageDenominator(name, configs.find((config) => config.name === name)!.source)
+    // The handoff names one whole tree the Bun gate measures, never a file,
+    // a glob, the Node lane's own trees or a tree that does not exist.
+    for (const pattern of ["src/bun/BunDatabase.ts", "src/bun/*.ts", "src/**", "src/internal/**", "src/missing/**"]) {
+      assert.equal(bunCoverage(name, pattern, files), false, pattern)
+    }
+    for (
+      const bunfig of [
+        "",
+        files.bunfig.replace("coverage = true", "coverage = false"),
+        files.bunfig.replace("[test]", "[install]"),
+        files.bunfig.replace("coverageThreshold = 1", "coverageThreshold = 0.9"),
+        // The table form parses and is never enforced.
+        files.bunfig.replace("coverageThreshold = 1", "coverageThreshold = { lines = 1.0, functions = 1.0 }"),
+        files.bunfig.replace("coveragePathIgnorePatterns = [", "coveragePathIgnorePatterns = [\n  \"src/bun/**\","),
+        files.bunfig.replace("coveragePathIgnorePatterns = [", "coveragePathIgnorePatterns = [\n  \"src/**\",")
+      ]
+    ) assert.equal(bunCoverage(name, "src/bun/**", { ...files, bunfig }), false, bunfig)
+    for (
+      const declaration of [
+        "",
+        files.declaration.replace("Smithers.Runtime.Bun(", "Smithers.Runtime.Node("),
+        files.declaration.replace("runner: Smithers.testSuite([", "runner: Smithers.entrypoint(["),
+        files.declaration.replace("    bunTest,\n", "")
+      ]
+    ) assert.equal(bunCoverage(name, "src/bun/**", { ...files, declaration }), false)
   })
 
   /**

@@ -2,7 +2,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
   plugins: [vibelang({ project: "tsconfig.test.json" })],
@@ -13,6 +13,9 @@ export default defineConfig({
       fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
     ],
     include: ["test/**/*.test.{ts,vibe}"],
+    // `test/bun` is the `bunTest` target's suite: it imports `bun:test` and
+    // `bun:sqlite`, and runs under Bun (`bunfig.toml`).
+    exclude: [...configDefaults.exclude, "test/bun/**"],
     environment: "node",
     // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
     // asserts on elapsed time — each is bounded by an explicit iteration,
@@ -37,9 +40,10 @@ export default defineConfig({
       reportsDirectory: join(tmpdir(), `flows-database-coverage-${process.pid}`),
       include: ["src/**"],
       // `src/bun/**` imports `bun:sqlite`, which Node cannot load, so no suite
-      // in this Node lane can execute it without a shim. BunDatabase.test.ts
-      // runs it under real Bun instead, where v8 coverage cannot see it
-      // (issue #4504: the shim that used to cover it hid a guard bypass).
+      // in this Node lane can execute it without a shim (issue #4504: the shim
+      // that used to cover it hid a guard bypass). The `bunTest` target runs
+      // `test/bun` under real Bun and holds this tree to 100% of lines and
+      // functions there (`bunfig.toml`).
       exclude: ["src/bun/**"],
       thresholds: {
         branches: 100,

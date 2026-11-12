@@ -32,6 +32,30 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   ]
 })
 
+/**
+ * `src/bun/**` under real Bun, the one runtime that loads `bun:sqlite`.
+ *
+ * The Vitest gate excludes that tree from its v8 denominator; this suite is
+ * its coverage gate instead. `bunfig.toml` turns coverage on for every
+ * `bun test` here and fails the run below 100% of the tree's lines and
+ * functions.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const bunTest = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["./test/bun"]),
+  srcs: [
+    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("test/**/*.ts"),
+    Smithers.file("bunfig.toml"),
+    Smithers.file("package.json")
+  ],
+  deps: [],
+  cwd: "packages/smithers/flows/database"
+})
+
 /** The named volume holding `adapterPostgresDatabase`'s Unix socket. */
 const postgresSocket = "smithers-database-test-postgres-socket"
 
@@ -240,6 +264,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    bunTest,
     check,
     circular,
     docs,

@@ -1,5 +1,7 @@
-// Runs in real Bun so the adapter configures the native synchronous driver.
+// The adapter configures Bun's native synchronous driver, so its busy timeout
+// is read back from a real Bun connection.
 import { Database } from "bun:sqlite"
+import { afterAll, describe, expect, test } from "bun:test"
 import { Duration, Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -27,22 +29,38 @@ const configurations: ReadonlyArray<{
 ]
 
 const root = mkdtempSync(join(tmpdir(), "flows-bun-busy-timeout-"))
-const filename = join(root, "database.sqlite")
-try {
-  const db = new Database(filename)
-  db.run("CREATE TABLE flows_migrations (migration_id INTEGER PRIMARY KEY)")
-  db.close()
-  const result: Record<string, unknown> = {}
-  for (const { name, options } of configurations) {
-    result[name] = await Effect.runPromise(
-      Effect.scoped(
-        Effect.flatMap(SqlClient.SqlClient, (sql) => sql`PRAGMA busy_timeout`).pipe(
-          Effect.provide(BunDatabase.layer({ ...options, filename }))
+afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+describe("Bun database busy timeout under real Bun", () => {
+  test("matches Node defaults and honors explicit timeout precedence", async () => {
+    const filename = join(root, "database.sqlite")
+    const db = new Database(filename)
+    db.run("CREATE TABLE flows_migrations (migration_id INTEGER PRIMARY KEY)")
+    db.close()
+    const result: Record<string, unknown> = {}
+    for (const { name, options } of configurations) {
+      result[name] = await Effect.runPromise(
+        Effect.scoped(
+          Effect.flatMap(SqlClient.SqlClient, (sql) => sql`PRAGMA busy_timeout`).pipe(
+            Effect.provide(BunDatabase.layer({ ...options, filename }))
+          )
         )
       )
-    )
-  }
-  console.log(JSON.stringify(result))
-} finally {
-  rmSync(root, { recursive: true, force: true })
-}
+    }
+    expect(result).toEqual({
+      writable: [{ timeout: 0 }],
+      readOnly: [{ timeout: 1_000 }],
+      sqliteReadOnly: [{ timeout: 1_000 }],
+      explicitWritable: [{ timeout: 0 }],
+      readOnlyWins: [{ timeout: 1_000 }],
+      topLevelDuration: [{ timeout: 7 }],
+      nestedDuration: [{ timeout: 11 }],
+      topLevelWins: [{ timeout: 13 }],
+      topLevelZeroWins: [{ timeout: 0 }],
+      readOnlyOverride: [{ timeout: 19 }],
+      readOnlyNestedOverride: [{ timeout: 23 }],
+      sqliteReadOnlyOverride: [{ timeout: 29 }],
+      readOnlyZeroWins: [{ timeout: 0 }]
+    })
+  }, 30_000)
+})

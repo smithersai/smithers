@@ -49,6 +49,16 @@
       "run": 43208913043,
       "job": 131160235998,
       "platform": "ubuntu-latest"
+    },
+    {
+      "revision": "fa88d1601d6a5fefb0db93e47d7a2467d5c25546",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-12",
+      "command": "pnpm exec smthrs test //packages/smithers/flows/database:bunTest",
+      "label": "//packages/smithers/flows/database:bunTest",
+      "durationMs": 7669,
+      "exitCode": 0
     }
   ],
   "method": "Maximum completed elapsed milliseconds per target, including failures, or an unfinished target's observed elapsed lower bound at cancellation. Service lifetimes are excluded from censored target costs. These observations are workload estimates, not upper wall-time bounds; no cache hits assumed.",
@@ -468,6 +478,7 @@
     "//packages/smithers/flows/crypto:lib": 3000,
     "//packages/smithers/flows/crypto:lint": 5075,
     "//packages/smithers/flows/crypto:test": 10900,
+    "//packages/smithers/flows/database:bunTest": 7669,
     "//packages/smithers/flows/database:check": 2521,
     "//packages/smithers/flows/database:circular": 2800,
     "//packages/smithers/flows/database:docs": 101,

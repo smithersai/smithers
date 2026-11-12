@@ -1,5 +1,9 @@
-// Runs under real Bun (spawned by BunDatabase.test.ts): no shim or Node SQLite.
+// The adapter imports `bun:sqlite`, which Node cannot load, so only a real Bun
+// process shows what it does: its guard probe, its owner-only pre-create and
+// its read-only opens all run on Bun's own driver. A Node shim once passed a
+// `file:` open of a 0.x database that real Bun let through (issue #4504).
 import { Database } from "bun:sqlite"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { Cause, Effect, Exit } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
@@ -119,8 +123,8 @@ const observe = () =>
 
 /**
  * An open whose settings forbid creation is left to the driver: a read-only or
- * `create: false` open of a missing file fails, and `readwrite: false` lets Bun
- * create it under the umask (0644 here), not the adapter's owner-only 0600.
+ * `create: false` open of a missing file fails, and `readwrite: false` leaves
+ * the file to Bun, never to the adapter's owner-only 0600 pre-create.
  */
 const driverOwned = async (options: Omit<BunDatabase.BunDatabaseOptions, "filename">) => {
   const filename = fresh()
@@ -139,36 +143,84 @@ const corrupt = () => {
   return open({ filename })
 }
 
-try {
-  const migrated = seedFlows(fresh())
+beforeAll(() => {
   mkdirSync(join(root, "database is locked"))
   mkdirSync(join(root, "database is busy"))
-  const result = {
-    memory: await open({ filename: ":memory:" }),
-    created: await open({ filename: fresh() }),
-    lockNamedPaths: {
+})
+afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+const selected = { value: [{ value: 1 }] }
+
+describe("Bun database adapter under real Bun", () => {
+  test("opens missing paths containing lock text on native Bun", async () => {
+    expect({
       locked: await open({ filename: join(root, "database is locked.db") }),
       busy: await open({ filename: join(root, "database is busy.db") }),
       lockedParent: await open({ filename: join(root, "database is locked", "fresh.db") }),
       busyParent: await open({ filename: join(root, "database is busy", "fresh.db") })
-    },
-    lockNamedMissingParents: {
+    }).toEqual({ locked: selected, busy: selected, lockedParent: selected, busyParent: selected })
+  }, 30_000)
+
+  test("reports missing parents containing lock text on native Bun", async () => {
+    const failed = { refused: "failed", created: false }
+    expect({
       locked: await missingParent("database is locked"),
       busy: await missingParent("database is busy")
-    },
-    directory: await open({ filename: root }),
-    zeroX: await zeroX(),
-    lockedZeroX: await lockedZeroX(),
-    migrated: { path: await open({ filename: migrated }), uri: await open({ filename: `file:${migrated}` }) },
-    modes: await modes(),
-    observe: await observe(),
-    readOnlyMissing: await driverOwned({ readOnly: true }),
-    sqliteReadOnlyMissing: await driverOwned({ sqlite: { readonly: true } }),
-    createDisabled: await driverOwned({ sqlite: { create: false } }),
-    readWriteDisabled: await driverOwned({ sqlite: { readwrite: false } }),
-    corrupt: await corrupt()
-  }
-  console.log(JSON.stringify(result))
-} finally {
-  rmSync(root, { recursive: true, force: true })
-}
+    }).toEqual({ locked: failed, busy: failed })
+  }, 30_000)
+
+  test("leaves a name the probe cannot stat to the driver, never reading its text as a lock", async () => {
+    // A 300-byte component fails the probe's stat with ENAMETOOLONG; the open
+    // then fails on its own, and the lock text in the name is no contention.
+    expect(await open({ filename: join(root, `database is locked ${"x".repeat(300)}.db`) })).toEqual({
+      refused: "failed"
+    })
+  }, 30_000)
+
+  test("guards, creates and opens read-only on Bun's own driver", async () => {
+    const refused = { refused: "unsupported_database_file" }
+    const migrated = seedFlows(fresh())
+    expect({
+      memory: await open({ filename: ":memory:" }),
+      created: await open({ filename: fresh() }),
+      directory: await open({ filename: root }),
+      zeroX: await zeroX(),
+      lockedZeroX: await lockedZeroX(),
+      migrated: { path: await open({ filename: migrated }), uri: await open({ filename: `file:${migrated}` }) },
+      modes: await modes(),
+      observe: await observe(),
+      readOnlyMissing: await driverOwned({ readOnly: true }),
+      sqliteReadOnlyMissing: await driverOwned({ sqlite: { readonly: true } }),
+      createDisabled: await driverOwned({ sqlite: { create: false } }),
+      corrupt: await corrupt()
+    }).toEqual({
+      memory: selected,
+      created: selected,
+      // A directory is not a database: the open fails, and is not a refusal.
+      directory: { refused: "failed" },
+      // A `file:` URI names the same 0.x file as its path, whatever its query.
+      zeroX: {
+        path: refused,
+        uri: refused,
+        absoluteUri: refused,
+        readWriteUri: refused,
+        readOnly: refused,
+        tables: ["_smithers_runs"]
+      },
+      lockedZeroX: refused,
+      migrated: { path: selected, uri: selected },
+      modes: { value: [0o600, 0o600, 0o600] },
+      observe: { value: { readOnly: true, written: false } },
+      readOnlyMissing: { refused: "failed", mode: "missing" },
+      sqliteReadOnlyMissing: { refused: "failed", mode: "missing" },
+      createDisabled: { refused: "failed", mode: "missing" },
+      corrupt: { refused: "failed" }
+    })
+    // `readwrite: false` rules out the adapter's owner-only pre-create, so the
+    // file is Bun's to create or refuse: Bun 1.4.2 creates it under the umask
+    // (0644 here) and Bun 1.4.4 refuses the open. It is never the adapter's 0600.
+    const readWriteDisabled = await driverOwned({ sqlite: { readwrite: false } })
+    expect(readWriteDisabled.mode).not.toBe(0o600)
+    expect([0o644, "missing"]).toContain(readWriteDisabled.mode)
+  }, 30_000)
+})

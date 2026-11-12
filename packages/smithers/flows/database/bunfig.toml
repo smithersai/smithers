@@ -1,0 +1,24 @@
+# The coverage gate for `src/bun/**`, the driver adapter that imports
+# `bun:sqlite`. Node cannot load that module, so the Vitest gate excludes the
+# tree (`vitest.config.ts`) and the `bunTest` target measures it here, under
+# real Bun, at 100% of lines and functions.
+#
+# The threshold is the scalar form: Bun 1.4.0 parses the table form without
+# enforcing it (`packages/smithers/ui/ui-styleguide/bunfig.toml`).
+#
+# Every other tree the suites load is the Vitest gate's, so it is ignored
+# here. A new directory under `src/` that this suite loads is measured until
+# someone names its owner.
+[test]
+coverage = true
+coverageThreshold = 1
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = [
+  "src/*.ts",
+  "src/internal/**",
+  "src/node/**",
+  "src/postgres/**",
+  "src/test/**",
+  "test/**",
+  "../**"
+]
