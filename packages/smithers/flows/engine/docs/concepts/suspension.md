@@ -25,6 +25,12 @@ A nested execution, a flow running inside another flow, does not poll. Its
 suspension propagates: the parent suspends too, and the whole tree parks
 together on one record.
 
+In the in-memory engine, a completion that lands after a live child has read
+its wait is delivered when that child parks. A root keeps the same wake for
+its follower's next elapsed poll. It does not start an extra round merely
+because its live body completed a deferred, such as a race result, before
+parking on a later step.
+
 A top-level caller runs a re-drive loop. It sleeps a delay derived from the
 attempt count, calls `resume`, and re-drives. Deriving the delay from a count
 rather than holding a schedule object is what lets the backoff survive a

@@ -158,7 +158,8 @@ interface Memory {
   /**
    * Executions a resume found with a live round, since that round was driven.
    * A completion recorded then is one the round may park without reading, so
-   * only a re-drive can deliver it; a follower's poll does that.
+   * only a re-drive can deliver it; a root follower polls, while a child
+   * watcher re-drives it after the live round parks.
    */
   readonly missedWakes: Set<string>
 }
@@ -526,10 +527,17 @@ const resumeUnlocked = Effect.fnUntraced(function*(
   admittedEntry?: Registration
 ): Effect.fn.Return<void> {
   wake(memory, executionId)
-  // Only the first drive and a suspended round are driven: a live round
-  // keeps running, and every other settlement is terminal.
+  // Only the first drive and a suspended round are driven. A root's
+  // follower handles a wake that lands while its round runs on its next
+  // elapsed poll. A child has no polling follower, so retain one watcher
+  // to deliver that wake after the live child round parks.
   if (state.fiber !== undefined && !settledSuspended(state)) {
-    if (state.fiber.pollUnsafe() === undefined) memory.missedWakes.add(executionId)
+    if (state.fiber.pollUnsafe() === undefined && !memory.missedWakes.has(executionId)) {
+      memory.missedWakes.add(executionId)
+      if (memory.parents.has(executionId)) {
+        yield* Effect.forkIn(Effect.andThen(Fiber.await(state.fiber), resume(memory, executionId)), memory.scope)
+      }
+    }
     return
   }
   // The latest still-open registration serves every drive, so a re-drive
