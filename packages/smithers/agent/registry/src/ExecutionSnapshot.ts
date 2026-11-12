@@ -74,6 +74,14 @@ const fail = (code: ExecutionSnapshotError["code"], message: string, cause?: unk
 const address = (value: string) => /^[a-f0-9]{64}$/.test(value)
 
 /**
+ * The closure records that name a module. A record without a digest is not a
+ * location: it says the closure computes the target of a load, which the
+ * loader admits only under a run-time guard and no snapshot can hold.
+ */
+const measuredImports = (body: Descriptor.BodyRefModule): ReadonlyArray<Descriptor.ModuleImport> =>
+  (body.imports ?? []).filter((module) => module.contentDigest !== undefined)
+
+/**
  * Refuses a module whose executable text or static links are not what its
  * measured bytes give. The links are rewritten into the text that is imported,
  * so they are recomputed from the verified bytes rather than believed: a
@@ -201,7 +209,7 @@ export const makeFileSystem = (options: { readonly root: string; readonly store?
           return yield* Effect.fail(fail("corrupt", "Execution entry digest differs"))
         }
         if (manifest.descriptor.body._tag === "Module") {
-          const expected = manifest.descriptor.body.imports ?? []
+          const expected = measuredImports(manifest.descriptor.body)
           if (modules.size !== expected.length + 1) {
             return yield* Effect.fail(fail("corrupt", "Execution closure size differs"))
           }
@@ -247,7 +255,7 @@ export const makeFileSystem = (options: { readonly root: string; readonly store?
           return yield* Effect.fail(fail("corrupt", "Verified entry bytes changed before admission"))
         }
         if (executable.descriptor.body._tag === "Module") {
-          for (const module of executable.descriptor.body.imports ?? []) {
+          for (const module of measuredImports(executable.descriptor.body)) {
             const bytes = source.modules.get(path.resolve(path.dirname(source.entry), module.path))?.bytes
             if (bytes === undefined || Digest.digest(bytes) !== module.contentDigest) {
               return yield* Effect.fail(fail("corrupt", "Verified helper bytes changed before admission"))

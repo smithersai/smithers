@@ -9,7 +9,8 @@ with what its failures always carry and what they carry only when the failure
 is about a file. Find the code and read the matching section.
 
 The three failure types are `DiscoveryError`, `RegistryError`, and
-`ExecutableError`. Each carries a `_tag` prefixed `flows/registry/`, which is
+`ExecutableError`. A load a host refuses at run time is a fourth,
+`UnmeasuredLoadError`. Each carries a `_tag` prefixed `flows/registry/`, which is
 the stable schema identifier a decoder matches on, so
 `flows/registry/DiscoveryError` is this package's error and not another
 package's.
@@ -205,6 +206,13 @@ match the digest discovery recorded.
 **What to change.** The same as the registry code of that name: refresh the
 registry to adopt an edited body, or restore the file.
 
+A message that says the flow `runs code this host cannot pin` names a load
+discovery could not measure. When the reason is that a module `computes the
+target of ... import() or require() call(s)`, the flow needs a host that checks
+loads at run time: provide `NodeLoadGuard.layer` and leave `Options.load` unset,
+or run it with `smthrs` on Node. For every other reason, make the load a
+relative static import of a file that exists.
+
 ### load_timeout
 
 **What happened.** The catalog deadline expired while loading an entry. This
@@ -256,6 +264,19 @@ delegate the host registered (including `agent`), a tag starting with
 `registry/`, or a tag another loaded entry already declared. The runtime runs a
 tag's newest registration, so registering the module would replace that flow.
 Rename the tag to the registry name or to a tag nothing else uses.
+
+## UnmeasuredLoadError
+
+**What happened.** A flow that computes the target of a load asked, while it
+ran, for a file under its own source root that was not measured for the run.
+`path` is the real path of that file and `root` the source root. The
+`import()` or `require()` call that asked for it throws the error, so the run
+fails with it. The live file of a measured helper is refused too: a measured
+module runs only as its measured copy.
+
+**What to change.** Import the file statically so the pin measures it, or keep
+code a flow loads by a computed path outside `.smithers/flows`. A file of the
+repository the flow works on loads without a change.
 
 ## The catalog reports instead of raising
 

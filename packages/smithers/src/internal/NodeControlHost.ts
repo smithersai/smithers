@@ -13,6 +13,7 @@ import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { NodeRuntime as NodeFlowsRuntime } from "@smthrs/platform-node"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
+import * as NodeLoadGuard from "@smthrs/registry/node/NodeLoadGuard"
 import { Effect, Layer, type Scope } from "effect"
 import * as ControlDatabase from "./ControlDatabase.ts"
 import * as ControlFileSystem from "./ControlFileSystem.ts"
@@ -111,7 +112,8 @@ export const platform: NativeControl.Platform = {
     ControlFileSystem.layer(),
     Layer.provideMerge(
       NodeChildProcessSpawner.layer,
-      Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer, NodeStdio.layer)
+      // The guard is what lets a flow load code by a computed path (#4718).
+      Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer, NodeStdio.layer, NodeLoadGuard.layer)
     )
   ),
   crypto: NodeCrypto.layer,

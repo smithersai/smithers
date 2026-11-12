@@ -81,6 +81,7 @@ import { readVerifiedBody } from "./internal/Body.ts"
 import * as Declared from "./internal/Declared.ts"
 import { isLegacyObjectModule } from "./internal/LegacyModule.ts"
 import * as ModuleClosure from "./internal/ModuleClosure.ts"
+import * as LoadGuard from "./LoadGuard.ts"
 import * as MarkdownFlow from "./MarkdownFlow.ts"
 import * as Registry from "./Registry.ts"
 import type { DiscoveryError, RegistryError } from "./RegistryError.ts"
@@ -517,6 +518,12 @@ export const fileSpecifier = (path: string): string => {
   return normalized.startsWith("/") ? `file://${escaped}` : `file:///${escaped}`
 }
 
+/** Whether `file` is `root` or lies beneath it, as the two paths are spelled. */
+const beneath = (path: Path.Path, root: string, file: string): boolean => {
+  const suffix = path.relative(root, file)
+  return suffix !== ".." && !suffix.startsWith(`..${path.sep}`) && !path.isAbsolute(suffix)
+}
+
 /**
  * Distinguishes one load's private sibling from another's within a process.
  *
@@ -615,6 +622,9 @@ const removeStaleSiblings = (
  * host's module cache with the exports of an earlier version, and cycles
  * stay cycles among the siblings. The siblings are removed once the import
  * settles.
+ *
+ * Where the host provides a {@link module:LoadGuard}, each sibling is named to
+ * it as a measured copy for as long as the sibling exists.
  */
 const importModule = (
   path: string,
@@ -623,11 +633,15 @@ const importModule = (
     readonly contentDigest: string
     readonly modules: ReadonlyMap<string, ClosureModule>
   },
-  sourceRoot?: Options["sourceRoot"]
+  sourceRoot?: Options["sourceRoot"],
+  /** The source root a flow that computes loads is held to; see {@link loadModule}. */
+  held?: string
 ): Effect.Effect<unknown, unknown, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const platformPath = yield* Path.Path
+    const guard = yield* Effect.serviceOption(LoadGuard.LoadGuard)
+    const heldReal = held === undefined ? undefined : yield* fs.realPath(held)
     const sourcePath = path.startsWith("file:") ? yield* platformPath.fromFileUrl(new URL(path)) : path
     // The closure is keyed by absolute path and always holds the entry.
     const entryPath = platformPath.resolve(sourcePath)
@@ -662,6 +676,24 @@ const importModule = (
             )
           )
       )
+      // The guard decides by real path. A module spelled beneath the source
+      // root but reached through a symbolic link that leaves it would run, and
+      // load its unmeasured neighbours, where the guard holds nothing.
+      if (
+        held !== undefined && beneath(platformPath, held, original) &&
+        !beneath(platformPath, heldReal!, yield* fs.realPath(reserved))
+      ) {
+        return yield* Effect.fail(
+          new LoadGuard.LoadGuardError({
+            path: original,
+            message:
+              `"${original}" is reached through a symbolic link that leaves the flow source root "${held}", where loads cannot be held to that root`
+          })
+        )
+      }
+      // A guard holding this source root for another flow lets the measured
+      // copy load, and stops letting it once the copy is removed.
+      if (Option.isSome(guard)) yield* guard.value.permit(reserved)
       siblings.set(original, reserved)
     }
     for (const [original, module] of modules) {
@@ -975,6 +1007,46 @@ const loadMarkdown = (
   })
 
 /**
+ * The first closure record this load cannot run under: one nothing measured,
+ * unless it is a computed load and this load checks those at run time.
+ */
+const unpinned = (
+  imports: ReadonlyArray<Descriptor.ModuleImport>,
+  admitsComputed: boolean
+): Descriptor.ModuleImport | undefined =>
+  imports.find((entry) => entry.contentDigest === undefined && !(admitsComputed && entry.computed === true))
+
+const cannotPin = (
+  descriptor: Descriptor.FlowDescriptor,
+  path: string,
+  entry: Descriptor.ModuleImport
+): ExecutableError =>
+  refuse({
+    code: "body_unavailable",
+    flow: descriptor.name,
+    path,
+    message: `flow "${descriptor.name}" runs code this host cannot pin: ${entry.path}. ${
+      entry.computed === true
+        ? "A load whose target is computed runs only where the host checks loads at run time, which takes a LoadGuard and the default loader. On this host every"
+        : "Every"
+    } module a flow's entry loads from beside itself has to be measurable before it runs`
+  })
+
+/** The refusal for a flow the load guard could not hold to its source root. */
+const unheld = (
+  descriptor: Descriptor.FlowDescriptor,
+  path: string,
+  cause: LoadGuard.LoadGuardError
+): ExecutableError =>
+  refuse({
+    code: "body_unavailable",
+    flow: descriptor.name,
+    path,
+    message: `flow "${descriptor.name}" cannot be held to its source root: ${cause.message}`,
+    cause
+  })
+
+/**
  * Re-measures what the entry loads from beside itself, refuses when it is not
  * what discovery recorded, and returns the measured closure.
  *
@@ -994,12 +1066,18 @@ const loadMarkdown = (
  * BARE SPECIFIERS ARE NOT MEASURED. `@smthrs/flow`, `effect`, and every other
  * package resolve into installed code, which is the host's own code under the
  * host's own trust.
+ *
+ * A COMPUTED LOAD IS NOT MEASURED EITHER, and is admitted only with
+ * `admitsComputed`: {@link loadModule} then has the host's
+ * {@link module:LoadGuard} refuse, at run time, every unmeasured file inside
+ * the flow's source root.
  */
 const verifyImports = (
   descriptor: Descriptor.FlowDescriptor,
   path: string,
   bytes: Uint8Array,
-  recorded: ReadonlyArray<Descriptor.ModuleImport>
+  recorded: ReadonlyArray<Descriptor.ModuleImport>,
+  admitsComputed: boolean
 ): Effect.Effect<ReadonlyMap<string, ClosureModule>, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -1009,30 +1087,20 @@ const verifyImports = (
         Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url))
       )
       : platformPath.normalize(path)
-    const cannotPin = (entry: Descriptor.ModuleImport) =>
-      Effect.fail(
-        refuse({
-          code: "body_unavailable",
-          flow: descriptor.name,
-          path,
-          message:
-            `flow "${descriptor.name}" runs code this host cannot pin: ${entry.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
-        })
-      )
-    // Discovery already refused to measure this load, for instance one that
-    // leaves a pack's root. Measuring it here would read the file it declined.
-    const unmeasured = recorded.find((entry) => entry.contentDigest === undefined)
-    if (unmeasured !== undefined) return yield* cannotPin(unmeasured)
     const { imports: measured, modules, unsupported } = yield* ModuleClosure.snapshot(
       fs,
       platformPath,
       entryPath,
       bytes
     )
-    const unpinnable = measured.find((entry) => entry.contentDigest === undefined)
-    if (unpinnable !== undefined) return yield* cannotPin(unpinnable)
+    const unpinnable = unpinned(measured, admitsComputed)
+    if (unpinnable !== undefined) return yield* Effect.fail(cannotPin(descriptor, path, unpinnable))
     const pinned = new Map(recorded.map((entry) => [entry.path, entry.contentDigest] as const))
-    const changed = measured.find((entry) => pinned.get(entry.path) !== entry.contentDigest)?.path ??
+    // A record discovery never made is a change too: a module that gained a
+    // computed load carries no digest to differ by.
+    const changed = measured.find((entry) =>
+      !pinned.has(entry.path) || pinned.get(entry.path) !== entry.contentDigest
+    )?.path ??
       [...pinned.keys()].find((recordedPath) => measured.every((entry) => entry.path !== recordedPath))
     if (changed !== undefined) {
       return yield* Effect.fail(
@@ -1110,9 +1178,19 @@ const loadModule = (
         )
       )
       : Effect.succeed(platformPath.resolve(path))
+    // Computed loads are decided when they run, so they need a guard, and the
+    // guard can name only the copies the default loader writes. The check is
+    // made on every way to a source, a restored snapshot included. Any other
+    // record without a digest is a load discovery refused to measure, for
+    // instance one that leaves a pack's root; measuring it now would read the
+    // file discovery declined.
+    const guard = yield* Effect.serviceOption(LoadGuard.LoadGuard)
+    const admitsComputed = Option.isSome(guard) && options.load === undefined
+    const unmeasured = unpinned(recorded, admitsComputed)
+    if (unmeasured !== undefined) return yield* Effect.fail(cannotPin(descriptor, path, unmeasured))
     const source = yield* Effect.gen(function*() {
       const bytes = yield* sourceBytes(descriptor, path)
-      const modules = yield* verifyImports(descriptor, path, bytes, recorded)
+      const modules = yield* verifyImports(descriptor, path, bytes, recorded, admitsComputed)
       const entry = yield* located
       return { entry, bytes, modules, loadPath: path.startsWith("file:") ? path : platformPath.resolve(path) }
     }).pipe(Effect.catch((error) =>
@@ -1134,15 +1212,33 @@ const loadModule = (
         message: "Retained Core object-form module cannot execute: migrate to @smthrs/flow Flow.make(tag, options)"
       }))
     }
+    // The source root is the directory discovery scanned for this flow. An
+    // entry that is not beneath it leaves nothing to hold the flow to.
+    const held = Option.isSome(guard) && recorded.some((entry) => entry.computed === true)
+      ? platformPath.resolve(descriptor.provenance.root)
+      : undefined
+    if (held !== undefined) {
+      if (!beneath(platformPath, held, source.entry)) {
+        return yield* Effect.fail(refuse({
+          code: "body_unavailable",
+          flow: descriptor.name,
+          path,
+          message:
+            `flow "${descriptor.name}" computes the target of a load, and its entry is outside its source root "${held}", so this host cannot hold its loads to that root`
+        }))
+      }
+      yield* Option.getOrThrow(guard).protect(held).pipe(Effect.mapError((cause) => unheld(descriptor, path, cause)))
+    }
     const load = options.load ??
-      ((path: string, source: Parameters<typeof importModule>[1]) => importModule(path, source, options.sourceRoot))
+      ((path: string, source: Parameters<typeof importModule>[1]) =>
+        importModule(path, source, options.sourceRoot, held))
     const loaded = yield* load(loadPath, {
       bytes,
       contentDigest: descriptor.body.contentDigest!,
       modules
     }).pipe(
       Effect.mapError((cause) =>
-        refuse({
+        cause instanceof LoadGuard.LoadGuardError ? unheld(descriptor, path, cause) : refuse({
           code: cause instanceof TypeError && /\bmake\b/.test(cause.message) ? "invalid_module" : "body_unavailable",
           flow: descriptor.name,
           path,

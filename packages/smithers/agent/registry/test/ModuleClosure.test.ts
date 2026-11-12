@@ -600,6 +600,25 @@ describe("resolving a specifier to a file", () => {
       expect(found).toHaveLength(1)
       expect(found[0]!.contentDigest).toBeUndefined()
       expect(found[0]!.path).toContain("the entry computes the target")
+      expect(found[0]!.computed).toBe(true)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("does not mark source it could not read to its end as a computed load", () =>
+    Effect.gen(function*() {
+      // An unterminated template can hide a static import as well as a computed one.
+      const root = yield* tree({
+        "flow.ts": `import "./torn.ts"`,
+        "torn.ts": "export const torn = `never closed"
+      })
+
+      const found = yield* walk(root, "flow.ts")
+      expect(found.filter((entry) => entry.contentDigest === undefined)).toEqual([
+        { path: "\"torn.ts\" computes the target of 1 import() or require() call(s)" }
+      ])
+      const entry = yield* tree({ "flow.ts": "export const torn = `never closed" })
+      expect(yield* walk(entry, "flow.ts")).toEqual([
+        { path: "the entry computes the target of 1 import() or require() call(s)" }
+      ])
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
   it.effect("records a computed import inside a reached module, not only the entry", () =>
@@ -982,7 +1001,7 @@ describe("the walk", () => {
 
       const found = yield* walk(root, "flow.ts")
       expect(found).toEqual([
-        { path: collision },
+        { path: collision, computed: true },
         { path: collision, contentDigest: Digest.digest(new TextEncoder().encode(source)) }
       ])
       expect(found.some((entry) => entry.contentDigest === undefined)).toBe(true)

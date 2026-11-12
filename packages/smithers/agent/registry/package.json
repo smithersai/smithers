@@ -49,7 +49,9 @@
     "./index": "./src/index.ts",
     "./Prompt": "./src/Prompt.ts",
     "./Prompt/jsx-runtime": "./src/Prompt/jsx-runtime.ts",
-    "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts"
+    "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts",
+    "./LoadGuard": "./src/LoadGuard.ts",
+    "./node/NodeLoadGuard": "./src/node/NodeLoadGuard.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -210,6 +212,26 @@
         "require": {
           "types": "./dist/cjs/ExecutionSnapshot.d.ts",
           "default": "./dist/cjs/ExecutionSnapshot.js"
+        }
+      },
+      "./LoadGuard": {
+        "import": {
+          "types": "./dist/esm/LoadGuard.d.ts",
+          "default": "./dist/esm/LoadGuard.js"
+        },
+        "require": {
+          "types": "./dist/cjs/LoadGuard.d.ts",
+          "default": "./dist/cjs/LoadGuard.js"
+        }
+      },
+      "./node/NodeLoadGuard": {
+        "import": {
+          "types": "./dist/esm/node/NodeLoadGuard.d.ts",
+          "default": "./dist/esm/node/NodeLoadGuard.js"
+        },
+        "require": {
+          "types": "./dist/cjs/node/NodeLoadGuard.d.ts",
+          "default": "./dist/cjs/node/NodeLoadGuard.js"
         }
       }
     }

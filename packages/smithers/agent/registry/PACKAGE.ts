@@ -65,10 +65,24 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "loadModule importing before both readVerifiedBody and verifyImports succeed.",
         "ModuleClosure.specifiersOf missing an import form (export * from, dynamic import with template, require) so a sibling runs unpinned.",
-        "An unpinnable closure entry (no contentDigest) that does not refuse execution.",
+        "An unpinnable closure entry (no contentDigest) that runs, other than a computed load admitted with a LoadGuard in context and the default loader.",
         "verifyImports comparing only measured entries and ignoring recorded paths that disappeared, or vice versa."
       ],
       paths: ["src/Executable.ts", "src/internal/ModuleClosure.ts", "src/internal/Body.ts"]
+    },
+    {
+      id: "run-time-load-guard",
+      title: "A flow that computes a load cannot run an unmeasured file from inside its own source root",
+      threat:
+        "A flow author, or anyone who can write the project tree after approval, has an approved flow load a file beside it that no approval measured, by a computed path, a .. segment, or a symbolic link.",
+      lookFor: [
+        "loadModule admitting a computed closure record without a LoadGuard, with a host-supplied Options.load, or on the snapshot-restore path.",
+        "protect called after the entry is imported, or with a root the entry is not beneath.",
+        "NodeLoadGuard deciding on the specifier, the parent URL, or the resolved URL as spelled instead of the real path of the resolved file.",
+        "A containment test that a sibling directory sharing the root as a name prefix passes, or that a permit outlives the measured copy it names.",
+        "ModuleClosure marking source the lexer could not finish reading as computed, which would admit a hidden static load."
+      ],
+      paths: ["src/Executable.ts", "src/LoadGuard.ts", "src/node/NodeLoadGuard.ts", "src/internal/ModuleClosure.ts"]
     },
     {
       id: "load-sibling-files",

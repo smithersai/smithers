@@ -254,6 +254,11 @@ export class BodyRefMarkdown
  * closure past its bound. Such an entry is not a location and
  * must not be treated as one; it exists so the refusal can say what stopped it.
  *
+ * `computed` marks the one reason a host can still admit: the module computes
+ * the target of a load, so the file is named only when the load runs. A host
+ * that checks loads at run time ({@link module:LoadGuard}) runs such a flow;
+ * every other host refuses it like any other unpinned entry.
+ *
  * @category models
  * @since 1.0.0-rc.0
  */
@@ -265,7 +270,8 @@ export class ModuleImport extends Schema.Class<ModuleImport>("flows/registry/Mod
         expected: "a 64-character lowercase hexadecimal SHA-256 digest"
       })
     )
-  )
+  ),
+  computed: Schema.optional(Schema.Literal(true))
 }) {}
 
 /**

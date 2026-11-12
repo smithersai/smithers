@@ -1426,6 +1426,38 @@
       "reason": "Required execution snapshot recovery already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No implementation or declaration change. #3389."
     },
     {
+      "name": "@smthrs/registry",
+      "subpath": "./LoadGuard",
+      "development": "./src/LoadGuard.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/LoadGuard.d.ts",
+          "default": "./dist/esm/LoadGuard.js"
+        },
+        "require": {
+          "types": "./dist/cjs/LoadGuard.d.ts",
+          "default": "./dist/cjs/LoadGuard.js"
+        }
+      },
+      "reason": "Public host port for run-time module load decisions: the service a host provides so Executable admits a flow that computes the target of a load, and the typed UnmeasuredLoadError a refused load throws. Documented in the registry API reference. #4718."
+    },
+    {
+      "name": "@smthrs/registry",
+      "subpath": "./node/NodeLoadGuard",
+      "development": "./src/node/NodeLoadGuard.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/node/NodeLoadGuard.d.ts",
+          "default": "./dist/esm/node/NodeLoadGuard.js"
+        },
+        "require": {
+          "types": "./dist/cjs/node/NodeLoadGuard.d.ts",
+          "default": "./dist/cjs/node/NodeLoadGuard.js"
+        }
+      },
+      "reason": "Node implementation of the LoadGuard port over node:module registerHooks, kept on a node/ subpath so the portable registry entrypoints import no Node builtin. Documented in the registry API reference. #4718."
+    },
+    {
       "name": "@smthrs/flow",
       "subpath": "./ExternalJob",
       "development": "./src/ExternalJob.ts",

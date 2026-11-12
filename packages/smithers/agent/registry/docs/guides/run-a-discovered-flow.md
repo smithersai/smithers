@@ -89,6 +89,42 @@ loading settles, and also sweeps stale siblings left by an interrupted load.
 It still checks the original closure before importing and rewrites every static
 project import to that load's measured copy. A helper edit requires refresh.
 
+## Load code from the repository a flow works on
+
+A codemod or migration flow has to load the target repository's own compiler,
+linters and bundler configuration, by a path it only knows when it runs:
+
+```js
+// .smithers/flows/load/tool.mjs
+import { createRequire } from "node:module"
+import { join } from "node:path"
+// The repository the flow works on brings its own TypeScript.
+export const version = (target) => createRequire(join(target, "package.json"))("typescript").version
+```
+
+No scan can measure a file that is named at run time, so discovery records that
+`tool.mjs` computes the target of a load, and the host decides each such load
+when it happens. A Node host that provides `NodeLoadGuard.layer` from
+`@smthrs/registry/node/NodeLoadGuard` admits the flow; `smthrs` does. The guard
+holds the flow to its source root, `<project>/.smithers/flows`:
+
+- A file outside the source root loads: the target repository's packages and
+  configuration, and those of the repository that holds the flow.
+- An installed package loads, as a static package import does.
+- A file under the source root that was not measured is refused. The call that
+  asked for it throws `UnmeasuredLoadError`, which names the file, and the run
+  fails. That includes the live file of a measured helper.
+
+The check reads the real path of the file that was resolved, so a `..` path or a
+symbolic link that leads back under the source root is refused like a direct
+load. A flow directory that is itself a symbolic link out of the source root is
+refused before it runs. Import the flow's own helpers statically, so that they are measured and an
+approval covers them.
+
+A host without a guard (Bun, a host that passes its own `Options.load`) refuses
+the flow before it evaluates anything: `runs code this host cannot pin: "tool.mjs"
+computes the target of ...`.
+
 ## Register everything runnable
 
 `Executable.layer(options)` is the layer a host passes as its registration

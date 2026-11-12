@@ -261,6 +261,7 @@ class BodyRefMarkdown {
 class ModuleImport {
   readonly path: string
   readonly contentDigest?: string
+  readonly computed?: true
 }
 
 class BodyRefModule {
@@ -306,6 +307,15 @@ specifier, a `#` specifier with no relative `imports` target, a self-import of
 the flow's own package through `exports`, or a closure past its bound. Its `path` then carries that reason instead of a
 location, and `Executable.fromDescriptor` refuses to run such a module.
 
+One of those reasons is different in kind. A module that computes the target of
+a load (`import(name)`, `createRequire(...)`, `require` passed as a value, an
+import of `node:module`) names its file only when the load runs, which is how a
+flow loads the TypeScript, linter or bundler configuration of the repository it
+works on. Its record carries `computed: true`, and `Executable.fromDescriptor`
+runs it on a host that provides a [`LoadGuard`](#loadguard) and uses the default
+loader. Every other host refuses it like any other unpinned record. Source the
+scan could not read to its end is never `computed`: it can hide a static load.
+
 `hostImports` names builtins, relative native `.node` addons and external package
 specifiers found in that project closure. The native host projects this sorted
 inventory into `envelope.hostImports` on plan and approval cards, bound to their
@@ -318,6 +328,9 @@ sandbox: a module that hides a load from the scan, for example behind
 `eval`, `new Function`, or a member access whose name is computed at run time,
 loads a file the pin does not measure. That hiding code is itself in the
 digested source the approver reviews.
+
+A computed load is decided when it runs instead, by the host's
+[`LoadGuard`](#loadguard).
 
 ### Descriptor.FlowBody, FlowBodyPrompt, FlowBodyModule
 
@@ -1756,6 +1769,84 @@ The constructors. Each formats `message` as
 whether a caller prints the message or branches on the fields. `module`
 defaults to `Discovery` and `Registry` respectively.
 
+## LoadGuard
+
+```ts
+import * as LoadGuard from "@smthrs/registry/LoadGuard"
+import * as NodeLoadGuard from "@smthrs/registry/node/NodeLoadGuard"
+
+class LoadGuard extends Context.Service<LoadGuard, {
+  readonly protect: (root: string) => Effect.Effect<void, LoadGuardError>
+  readonly permit: (file: string) => Effect.Effect<void, LoadGuardError, Scope.Scope>
+}>()("flows/registry/LoadGuard") {}
+
+class UnmeasuredLoadError { readonly path: string; readonly root: string; readonly message: string }
+class LoadGuardError { readonly path: string; readonly message: string; readonly cause?: unknown }
+
+NodeLoadGuard.layer: Layer.Layer<never>
+NodeLoadGuard.layerWith(register: RegisterHooks | undefined): Layer.Layer<never>
+```
+
+The run-time half of a module flow's pin. Discovery measures every module an
+entry reaches through a specifier it can read. A load whose target is computed
+names its file only when it runs, so the host decides it there.
+
+`Executable.fromDescriptor` reads the service optionally. With it, and with the
+default loader, a flow whose closure records a `computed` load is admitted, and
+before its entry is imported the loader calls `protect` with the flow's source
+root: the directory discovery scanned for it (`<project>/.smithers/flows` for a
+project flow, the scanned root of a pack or skill library otherwise). The loader
+names each measured copy it writes with `permit`, for as long as the copy
+exists. From then on the guard decides every module load on that thread by the
+real path of the file the load resolved to:
+
+| The load resolves to                         | Decision                                            |
+| -------------------------------------------- | --------------------------------------------------- |
+| A measured copy the loader wrote             | Loads.                                              |
+| Any other file under a protected source root | Refused with `UnmeasuredLoadError` naming the file. |
+| A path through `node_modules` under the root | Loads, as a static package import does.             |
+| Any file outside every protected source root | Loads with the host's authority.                    |
+
+The second row includes the original of a measured module: its live bytes are
+not the bytes that were measured, so it runs only as its copy, through a static
+import. The last row is what lets a flow load code from the repository it works
+on, including the repository that holds the flow: its packages, its compiler,
+its linters and its bundler configuration are the material the run operates on,
+in the same trust class as an installed package. Keep code that belongs to the
+flow under the source root and import it statically, so that it is measured.
+
+The decision never reads the text that named the file. A `..` segment, an
+absolute path, a `file:` URL with a query, or a symbolic link that leads back
+inside a protected root reaches the same real path and the same refusal. A
+symbolic link beside the flow that names a file outside the root is that outside
+file. The refusal is thrown from the `import()` or `require()` call that asked
+for the file, so a run that makes one fails with it.
+
+A flow directory, or a directory of one of its measured modules, that is a
+symbolic link out of the source root is refused before anything is imported:
+its copies would run at a real path the guard does not hold.
+
+`NodeLoadGuard.layer` implements the service with a synchronous `node:module`
+resolve hook, which Node consults for `import`, `import()`, `require()`,
+`require.resolve()`, `import.meta.resolve()` and every loader `createRequire`
+returns. It registers the hook when the first root is protected. What it holds
+belongs to the process: every layer built in the process shares it, and a root
+stays held after the layer that protected it closes, because the code of a
+loaded flow can still run. `protect` fails with `LoadGuardError` when the root
+cannot be resolved, and when the runtime accepts the hook and does not call it.
+On a runtime without `registerHooks` (Bun, Node before 22.15) the layer provides
+no service and the refusal stands. A host that passes its own `Options.load`
+keeps the refusal too: the guard can name only the copies the default loader
+writes. For the same reason, once a root is held, a flow under it that such a
+loader imports from its original path is refused at run time.
+
+The guard is not a sandbox. It does not hold code that reads a file and
+evaluates its text (`eval`, `new Function`, `node:vm`), code that loads a native
+addon with `process.dlopen`, code that installs module hooks of its own, or a
+worker thread or child process the flow starts, which has its own module system. The code that does any of these is in the
+measured source an approver reviews. A module evaluated before its root was
+protected can be returned from the host's module cache without a new decision.
+
 ## ExecutionSnapshot
 
 `makeFileSystem({ root, store? })` and `layerFileSystem({ root, store? })` require
@@ -1768,6 +1859,9 @@ discovering or loading a catalog does not pin it. `descriptor(digest)` recovers
 the approved metadata; `restore(digest)` returns that descriptor, entry path,
 entry bytes, and the complete source module map including compiled source and
 static import links. Both verify the manifest and project lockfile identity.
+A closure record without a digest names no module, so a snapshot holds none for
+it: a flow that computes a load is restored under the same `LoadGuard` rule as
+its live source.
 
 `roots(digests)` returns manifest and source blob addresses for nonterminal
 executions. Lockfile drift does not remove these roots. Missing or corrupt

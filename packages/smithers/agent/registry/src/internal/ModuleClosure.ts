@@ -26,6 +26,12 @@
  * cannot map and a self-import as unpinnable. What is left resolves into
  * installed packages and is not measured.
  *
+ * A COMPUTED LOAD IS DECIDED WHEN IT RUNS. `createRequire(...)` and
+ * `import(name)` name their file only at run time, so the walk records the
+ * module as one that computes loads ({@link ModuleImport} `computed`) and the
+ * loader admits it only on a host whose {@link module:LoadGuard} refuses, at
+ * run time, every unmeasured file inside the flow's source root.
+ *
  * THE PIN IS NOT A SANDBOX. It covers the loads this scan can read. A module
  * that hides a load behind `eval`, `new Function`, or a member access whose
  * name is computed at run time loads a file the pin does not measure; the
@@ -191,7 +197,9 @@ export interface StaticSpecifier {
  * and every import of `module` or `node:module`, since each yields a loader
  * whose calls this scan cannot follow. The target of one is decided at run time, so
  * no static walk can pin it, and a module carrying one is reported as
- * unpinnable rather than as pinned. `absolute` lists the literal specifiers
+ * unpinnable rather than as pinned. `unparsed` says the count includes source
+ * the lexer could not read to its end, which can hide any load at all, a
+ * static one included. `absolute` lists the literal specifiers
  * that name a file by absolute path or `file:` URL; the pin records paths
  * relative to the entry and does not follow them, so they are unpinnable too.
  * `bare` lists every other literal specifier except `node:` and `bun:`
@@ -224,6 +232,7 @@ export const specifiersOf = (source: string): Specifiers => {
   return {
     relative: union(likely.relative, alternate.relative),
     opaque: Math.max(likely.opaque, alternate.opaque),
+    unparsed: likely.unparsed || alternate.unparsed,
     absolute: union(likely.absolute, alternate.absolute),
     bare: union(likely.bare, alternate.bare),
     builtins: union(likely.builtins, alternate.builtins),
@@ -235,6 +244,7 @@ export const specifiersOf = (source: string): Specifiers => {
 interface Specifiers {
   readonly relative: ReadonlyArray<string>
   readonly opaque: number
+  readonly unparsed: boolean
   readonly absolute: ReadonlyArray<string>
   readonly bare: ReadonlyArray<string>
   readonly builtins: ReadonlyArray<string>
@@ -250,6 +260,7 @@ const scan = (tokens: ReadonlyArray<Token>): Specifiers => {
   const runtime: Array<string> = []
   const statics: Array<StaticSpecifier> = []
   let opaque = 0
+  let unparsed = false
   const recordStatic = (token: Token) => {
     const literal = stringLiteral(token.value)
     if (literal !== undefined) statics.push({ literal, start: token.start, end: token.end })
@@ -269,6 +280,7 @@ const scan = (tokens: ReadonlyArray<Token>): Specifiers => {
     const token = tokens[index]!
     if (token.kind === "unparsed") {
       opaque++
+      unparsed = true
       continue
     }
     // `host["require"]` reaches the loader through a computed member access
@@ -332,7 +344,7 @@ const scan = (tokens: ReadonlyArray<Token>): Specifiers => {
       recordStatic(tokens[index + 1]!)
     }
   }
-  return { relative, opaque, absolute, bare, builtins, runtime, statics }
+  return { relative, opaque, unparsed, absolute, bare, builtins, runtime, statics }
 }
 
 /**
@@ -671,6 +683,7 @@ export interface Cache {
     readonly size: number
     readonly specifiers: ReadonlyArray<string>
     readonly opaque: number
+    readonly unparsed: boolean
     readonly absolute: ReadonlyArray<string>
     readonly bare: ReadonlyArray<string>
     readonly builtins: ReadonlyArray<string>
@@ -708,6 +721,14 @@ export const cache = (): Cache => ({
 
 /** The record for a specifier nothing could be pinned for. */
 const unpinnable = (description: string): ModuleImport => ({ path: description })
+
+/**
+ * The record for a module that computes the target of a load. Source the
+ * lexer could not finish reading may hide a static load as well, so it stays
+ * an ordinary unpinnable record that no host admits.
+ */
+const computedLoads = (description: string, unparsed: boolean): ModuleImport =>
+  unparsed ? unpinnable(description) : { path: description, computed: true }
 
 /**
  * Every module one entry reaches through relative specifiers and through the
@@ -820,10 +841,10 @@ const walk = (
     const reportBuiltins = (specifiers: ReadonlyArray<string>) => {
       for (const specifier of specifiers) hostImports.add(specifier)
     }
-    const reportOpaque = (importer: string, count: number) => {
+    const reportOpaque = (importer: string, count: number, unparsed: boolean) => {
       if (count === 0) return
       const description = `${importer} computes the target of ${count} import() or require() call(s)`
-      found.set(description, unpinnable(description))
+      found.set(description, computedLoads(description, unparsed))
     }
     const reportAbsolute = (importer: string, specifiers: ReadonlyArray<string>) => {
       for (const specifier of specifiers) {
@@ -859,11 +880,11 @@ const walk = (
           if (!mapped) hostImports.add(specifier)
         }
       })
-    const { absolute, bare, builtins, opaque, relative } = specifiersOf(entrySource)
+    const { absolute, bare, builtins, opaque, relative, unparsed } = specifiersOf(entrySource)
     if (opaque > 0) {
       found.set(
         normalizedEntryPath,
-        unpinnable(`the entry computes the target of ${opaque} import() or require() call(s)`)
+        computedLoads(`the entry computes the target of ${opaque} import() or require() call(s)`, unparsed)
       )
     }
     reportAbsolute("the entry", absolute)
@@ -925,7 +946,7 @@ const walk = (
           break
         }
         found.set(recorded, { path: recorded, contentDigest: cached.contentDigest })
-        reportOpaque(`"${recorded}"`, cached.opaque)
+        reportOpaque(`"${recorded}"`, cached.opaque, cached.unparsed)
         reportAbsolute(`"${recorded}"`, cached.absolute)
         reportBuiltins(cached.builtins)
         enqueue(resolved, path.dirname(resolved), cached.specifiers)
@@ -970,7 +991,7 @@ const walk = (
       const source = compiled.success
       reads?.set(resolved, { bytes: contents, source })
       const specifiers = specifiersOf(source)
-      reportOpaque(`"${recorded}"`, specifiers.opaque)
+      reportOpaque(`"${recorded}"`, specifiers.opaque, specifiers.unparsed)
       reportAbsolute(`"${recorded}"`, specifiers.absolute)
       reportBuiltins(specifiers.builtins)
       memo.files.set(resolved, {
@@ -978,6 +999,7 @@ const walk = (
         size: contents.length,
         specifiers: specifiers.relative,
         opaque: specifiers.opaque,
+        unparsed: specifiers.unparsed,
         absolute: specifiers.absolute,
         bare: specifiers.bare,
         builtins: specifiers.builtins

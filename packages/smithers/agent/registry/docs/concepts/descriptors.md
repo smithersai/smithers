@@ -67,6 +67,14 @@ outlive temporary cleanup. Use relative static imports or a package `imports`
 key naming one static target. Installed packages without project mappings and
 Node/Bun builtins retain host trust.
 
+A load whose target is computed (`createRequire(...)`, `import(name)`) cannot be
+measured before the run. Discovery records that the module computes it, and a
+host with a `LoadGuard` admits the flow and decides each such load when it
+happens: a file outside the flow's source root loads, which is how a flow loads
+the compiler and configuration of the repository it works on, and an unmeasured
+file under the source root is refused by name. A host without a guard refuses
+the flow.
+
 Body paths may be filesystem paths or `file:` URLs. Verification decodes file
 URLs, including percent-encoded filenames, through the host `Path` service.
 Custom module loaders receive the original URL plus the verified bytes, their
