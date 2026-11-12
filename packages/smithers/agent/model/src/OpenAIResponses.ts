@@ -151,8 +151,8 @@ type FunctionTool = typeof FunctionTool.Type
 
 const OpenAIEvent = Schema.Struct({
   type: Schema.String,
-  code: Schema.optional(Schema.String),
-  message: Schema.optional(Schema.String),
+  code: Schema.optional(Schema.NullOr(Schema.String)),
+  message: Schema.optional(Schema.NullOr(Schema.String)),
   param: Schema.optional(Schema.NullOr(Schema.String)),
   item_id: Schema.optional(Schema.String),
   delta: Schema.optional(Schema.String),

@@ -10,7 +10,7 @@ import * as Auth from "../src/Auth.ts"
 import * as Endpoint from "../src/Endpoint.ts"
 import * as Framing from "../src/Framing.ts"
 import * as Model from "../src/Model.ts"
-import { ModelError } from "../src/ModelError.ts"
+import { isTerminalRefusal, ModelError } from "../src/ModelError.ts"
 import * as ModelEvent from "../src/ModelEvent.ts"
 import * as ModelRequest from "../src/ModelRequest.ts"
 import * as Protocol from "../src/Protocol.ts"
@@ -1176,6 +1176,52 @@ describe("Route.stream", () => {
     )
     expect(Array.from(events)).toEqual([])
     expect(beats).toBe(chunks.length)
+  })
+})
+
+describe("Route.stream nullable Responses errors", () => {
+  it.each(
+    [
+      ["Internal server error", "provider_internal", true],
+      ["Rate limit exceeded", "rate_limited", true],
+      ["server had an error", "unknown", false]
+    ] as const
+  )("preserves a null-code failure: %s", async (message, code, retryable) => {
+    const route = Result.getOrThrow(Route.openai({ apiKey: Redacted.make("secret") }))
+    const client = HttpClient.make((sent) =>
+      Effect.succeed(HttpClientResponse.fromWeb(
+        sent,
+        sseResponse([
+          JSON.stringify({ type: "response.output_text.delta", item_id: "msg_1", delta: "partial" }),
+          JSON.stringify({ type: "error", code: null, message, param: null, sequence_number: 1 })
+        ])
+      ))
+    )
+    const events: Array<ModelEvent.ModelEvent> = []
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Route.toModel(route).pipe(
+          Effect.flatMap((model) =>
+            model.stream(request).pipe(
+              Stream.tap((event) => Effect.sync(() => events.push(event))),
+              Stream.runDrain,
+              Effect.flip
+            )
+          ),
+          Effect.provide(RequestExecutor.layer),
+          Effect.provide(kernelHttpClientLayer(client)),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+
+    expect(events).toEqual([
+      { type: "text-start", id: "msg_1" },
+      { type: "text-delta", id: "msg_1", text: "partial" }
+    ])
+    expect(error).toBeInstanceOf(ModelError)
+    expect(error).toMatchObject({ code, message, providerCode: undefined, retryable })
+    expect(isTerminalRefusal(error as ModelError)).toBe(false)
   })
 })
 

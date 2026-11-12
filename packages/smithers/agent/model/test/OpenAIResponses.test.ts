@@ -643,6 +643,64 @@ describe("OpenAIResponses", () => {
     }
   })
 
+  it.each([OpenAIResponses.protocol, OpenAIResponses.chatgptProtocol])(
+    "classifies nullable streamed error fields through $id",
+    (protocol) => {
+      for (
+        const [fields, expected] of [
+          [
+            { code: null, message: "Internal server error" },
+            { code: "provider_internal", providerCode: undefined, message: "Internal server error", retryable: true }
+          ],
+          [
+            { code: null, message: "Rate limit exceeded" },
+            { code: "rate_limited", providerCode: undefined, message: "Rate limit exceeded", retryable: true }
+          ],
+          [
+            { code: null, message: "server had an error" },
+            { code: "unknown", providerCode: undefined, message: "server had an error", retryable: false }
+          ],
+          [
+            { code: "server_error", message: null },
+            {
+              code: "provider_internal",
+              providerCode: "server_error",
+              message: "OpenAI Responses stream failed",
+              retryable: true
+            }
+          ],
+          [
+            { code: null, message: null },
+            { code: "unknown", providerCode: undefined, message: "OpenAI Responses stream failed", retryable: false }
+          ],
+          [
+            {
+              code: null,
+              message: null,
+              error: { type: "usage_limit_reached", message: "usage limit", resets_at: 1790300000 }
+            },
+            {
+              code: "rate_limited",
+              providerCode: "usage_limit_reached",
+              message: "usage limit",
+              resetAtEpochMillis: 1_790_300_000_000,
+              resetSource: "stream.error.resets_at",
+              retryable: true
+            }
+          ]
+        ] as const
+      ) {
+        const event = Schema.decodeUnknownSync(protocol.stream.event)(
+          JSON.stringify({ type: "error", param: null, sequence_number: 1, ...fields })
+        )
+        const error = Effect.runSync(
+          protocol.stream.step(protocol.stream.initial(streamRequest), event).pipe(Effect.flip)
+        )
+        expect(error).toMatchObject(expected)
+      }
+    }
+  )
+
   it("classifies streamed failures from the event, the response, or neither", () => {
     expect(
       replayDataError(["{\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}}"])
