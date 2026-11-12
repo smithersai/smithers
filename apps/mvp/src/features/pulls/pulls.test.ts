@@ -673,6 +673,36 @@ describe("Merge", () => {
       expect.objectContaining({ severity: "Warn", outcome: "unavailable", errorCode: "PullsRequestFailed" }),
     )
   }, WITHIN)
+
+  test("a late answer for a pull request the route left changes nothing on the next one, whose own merge is on its way", async () => {
+    // Each press waits for the test to answer it, so pull 2's answer arrives while pull 3's press is still out.
+    const answers: Array<Deferred.Deferred<never, PullsRequestFailed>> = []
+    const held = Layer.succeed(PullsClient, PullsClient.of({
+      merge: () => Effect.suspend(() => {
+        const answer = Deferred.makeUnsafe<never, PullsRequestFailed>()
+        answers.push(answer)
+        return Deferred.await(answer)
+      }),
+      compare: () => Effect.die("unused"),
+      review: () => Effect.die("unused"),
+    }))
+    const tab = await open({ replace: held })
+    await tab.actions.open(OWNER, NAME, 2)
+    expect(tab.actions.merge(SHA_HEAD, SHA_BASE, 2)).toBe(true)
+    await tab.actions.open(OWNER, NAME, 3)
+    expect(tab.actions.merge(SHA_HEAD, SHA_BASE, 3)).toBe(true)
+    const writeId = tab.view()!.mergeWriteId!
+    await until(() => expect(answers).toHaveLength(2))
+    // Pull 2's merge is refused: pull 3 stays merging, with no refusal, and a second press still sends nothing.
+    await Effect.runPromise(Deferred.fail(answers[0]!, new PullsRequestFailed({ status: 403 })))
+    await until(() => expect(tab.count({ outcome: "403" })).toBe(1))
+    expect(tab.view()).toMatchObject({ number: 3, merging: true, mergeWriteId: writeId, mergeRefused: null })
+    expect(tab.actions.merge(SHA_HEAD, SHA_BASE, 3)).toBe(false)
+    expect(answers).toHaveLength(2)
+    // Pull 3's own answer still lands.
+    await Effect.runPromise(Deferred.fail(answers[1]!, new PullsRequestFailed({ status: 503 })))
+    await until(() => expect(tab.view()).toMatchObject({ merging: false, mergeWriteId: writeId, mergeRefused: "unavailable" }))
+  }, WITHIN)
 })
 
 describe("Review (decision 0129)", () => {

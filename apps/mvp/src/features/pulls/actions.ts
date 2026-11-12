@@ -95,7 +95,8 @@ export const loadFiles = (owner: string, name: string, base: string, head: strin
 /**
  * Merge on the routed pull request, bound to the head and base this device shows: a new write id, sent at once in the
  * person's session; never queued, since a merge that waited offline would skip what the person saw. A refusal stays on
- * the page.
+ * the page. The answer lands only while the page still follows this write: a late answer after the route moved to
+ * another pull request, whose own merge may be on its way, changes nothing there.
  */
 export const merge = (headSha: string, baseSha: string, number: number) =>
   Effect.gen(function* () {
@@ -126,10 +127,14 @@ export const merge = (headSha: string, baseSha: string, number: number) =>
             errorCode: codeOf(error),
             ...(error.status === undefined ? {} : { status: error.status }),
           }))),
-          Effect.andThen(store.view.update(VIEW, (row) => void (row.mergeRefused = refused))),
+          Effect.andThen(store.view.update(VIEW, (row) => {
+            if (row.mergeWriteId === writeId) row.mergeRefused = refused
+          })),
         )
       }),
-      Effect.ensuring(Effect.ignore(store.view.update(VIEW, (row) => void (row.merging = false)))),
+      Effect.ensuring(Effect.ignore(store.view.update(VIEW, (row) => {
+        if (row.mergeWriteId === writeId) row.merging = false
+      }))),
       Effect.forkIn(store.scope),
     )
     return true
