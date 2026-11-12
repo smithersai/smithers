@@ -1,0 +1,121 @@
+// The history page's test hosts, shared by test/historyStartup.test.vibe and fuzz/history-startup.fuzz.vibe: a real
+// happy-dom window with the page's root, a faulty Window without storage, a small seed, and the project's API (health,
+// the real Accounts object and the Worker's history routes) on the scope's loopback server.
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
+import { Core, GitHub } from "@smthrs/integrations"
+import * as LiveAccounts from "../../src/core/LiveAccounts.vibe"
+import { intentsOf, replay, seedOf } from "../../src/history/seed.vibe"
+import * as Accounts from "../../worker/Accounts.vibe"
+import { handle } from "../../worker/Http.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+import { container, remove } from "./browser.ts"
+import { histories, unavailableConversations } from "./historyHttpHost.vibe"
+import { objectStorage } from "./objectStorage.ts"
+
+/** An actual window with the page's root; restore this host's URL, storage and styles when it closes. */
+export effect function host() {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const window = node.ownerDocument.defaultView!
+  const before = try Effect.try(() => ({ url: window.location.href, state: window.history.state, title: node.ownerDocument.title, role: window.localStorage.getItem("vibelang.role"), agent: window.localStorage.getItem("vibelang.agent"), styles: [...node.ownerDocument.head.querySelectorAll("style")] }))
+  try Effect.addFinalizer(() => sync(() => {
+    window.history.replaceState(before.state, "", before.url)
+    node.ownerDocument.title = before.title
+    for (const [key, value] of [["vibelang.role", before.role], ["vibelang.agent", before.agent]] as const) {
+      if (value === null) window.localStorage.removeItem(key)
+      else window.localStorage.setItem(key, value)
+    }
+    for (const style of node.ownerDocument.head.querySelectorAll("style")) if (!before.styles.includes(style)) style.remove()
+  }))
+  try sync(() => {
+    const root = node.ownerDocument.createElement("div")
+    root.id = "root"
+    node.append(root)
+  })
+  return { node, window }
+}
+
+/** A faulty Window service over the real host: storage is unavailable; other host operations still use it. */
+export effect function withoutStorage(window: Window) {
+  let reads = 0
+  const add = try Effect.try(() => window.addEventListener.bind(window))
+  const remove = try Effect.try(() => window.removeEventListener.bind(window))
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  const current = try Effect.try(() => new Proxy(window, {
+    get(target, property) {
+      if (property === "localStorage") { reads++; return undefined }
+      if (property === "addEventListener") return add
+      if (property === "removeEventListener") return remove
+      return target[property as keyof Window]
+    },
+  }))
+  return {
+    layer: Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => current, computedStyle: style })),
+    reads: () => reads,
+  }
+}
+
+/** The compiler (m1), then Docs (m2), landed: a small history for the live page to read. */
+export const small = () => succeed(replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : ["000000000001"],
+})), []))).history)
+
+/**
+ * The project's API on the scope's loopback server: health live, the real Accounts object over stored sessions (host
+ * fixture state, as test/accountsClientHttp.test.vibe sets it) for sign-in and roles, and the Worker's history routes
+ * over the product mock. Answers the origin, a native client, the session cookie of a new person, and the first
+ * maintainer's own Accounts client for the grants a test makes while a page is open.
+ */
+export effect function serveApi() {
+  const address = (try HttpServer.HttpServer).address
+  const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+  const signingSecret = Redacted.make("fixture-only-signing-secret-32-chars")
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Storage
+  const github = Context.get(try Layer.build(GitHub.Auth.layer({ clientId: "fixture", clientSecret: Redacted.make("fixture-only") })), GitHub.Auth.GitHubAuth)
+  const keys = try Core.CookieKeys.make({ primary: signingSecret }, "primary")
+  const expires = (try Clock.currentTimeMillis) + 60_000
+  effect function session(person: { readonly id: string; readonly login: string }) {
+    const token = try keys.token
+    try promise(() => storage.put("session/" + token, { ...person, expires }))
+    try promise(() => storage.put("person/" + person.id, person))
+    return Accounts.SESSION + "=" + (try keys.sign("session", token))
+  }
+  const will = try session({ id: "1", login: "will" })
+  const ada = try session({ id: "7", login: "ada" })
+  // Another person, whose grants the page must not take as its own.
+  try session({ id: "8", login: "bo" })
+  const accounts = try Accounts.make("history-startup", storage, {
+    origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github,
+  })
+  const history = try histories()
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = new URL(request.url, origin).pathname
+    return path.startsWith("/api/auth/") || path.startsWith("/api/roles") ? try accounts.fetch : try handle(unavailableConversations, history)
+  })
+  const native = Context.get(try Layer.build(NodeHttpClient.layerNodeHttp), HttpClient.HttpClient)
+  const maintainer = try Effect.provideService(LiveAccounts.make(origin), HttpClient.HttpClient, HttpClient.mapRequest(native, (request) => HttpClientRequest.setHeader(request, "cookie", will)))
+  return { origin, native, ada, maintainer }
+}
+
+/**
+ * The page's client: requests to its own origin reach the loopback API with the browser's session cookie (none when
+ * `cookie` is empty). Each path in `faults` fails once, as a lost transport would, before any request is sent.
+ */
+export function pageClient(native: HttpClient.HttpClient, origin: string, cookie: string, faults: Array<string> = []) {
+  const asked: Array<string> = []
+  const routed = HttpClient.mapRequest(native, (request) => {
+    const url = new URL(request.url)
+    const toApi = HttpClientRequest.setUrl(request, origin + url.pathname + url.search)
+    return cookie === "" ? toApi : HttpClientRequest.setHeader(toApi, "cookie", cookie)
+  })
+  const client = HttpClient.transform(routed, (response, request) => {
+    const path = new URL(request.url).pathname
+    asked.push(path)
+    const at = faults.indexOf(path)
+    if (at < 0) return response
+    faults.splice(at, 1)
+    return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+  })
+  return { layer: Layer.succeed(HttpClient.HttpClient, client), asked: (path: string) => asked.filter((each) => each === path).length, faults }
+}

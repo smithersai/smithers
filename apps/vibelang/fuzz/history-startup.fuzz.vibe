@@ -1,0 +1,138 @@
+// src/web/historyStartup.vibe: the history page's own startup over a real happy-dom window, each path chosen in every
+// execution: the mock role from the query and storage (storage present or unavailable), the agent choice from the
+// query and storage, and live, the session's role over the project's real Accounts object on a loopback server: signed
+// in and granted, a grant to someone else, a visitor, and a session and grant stream each lost once (0015, seventeenth
+// session).
+import { it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpClient, HttpClientError } from "effect/http"
+import { Runtime } from "foldkit"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { ROLES } from "../src/history/roles.vibe"
+import { historyMain, mockRole } from "../src/web/historyStartup.vibe"
+import { page } from "../src/web/startup.vibe"
+import { host, pageClient, serveApi, small, withoutStorage } from "../test/support/historyApi.vibe"
+import { run, Finding } from "./run.vibe"
+
+const Role = Schema.Literals(ROLES)
+
+/** Polls `check` every 20 ms; a Finding named `what` after `ms`. */
+effect function until(what: string, check: () => boolean, ms = 5000) {
+  const deadline = (try Clock.currentTimeMillis) + ms
+  while (!(try Effect.try(check))) {
+    if ((try Clock.currentTimeMillis) > deadline) throw new Finding({ report: `${what} within ${ms} ms` })
+    try sleep("20 millis")
+  }
+}
+
+/** A transport that is offline, counting what the page asks of it. */
+function offline() {
+  let probes = 0
+  const client = HttpClient.make((request) => {
+    probes++
+    return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+  })
+  return { layer: Layer.succeed(HttpClient.HttpClient, client), probes: () => probes }
+}
+
+/** Mounts the page's startup at `url` with `services` on the host's window; its flags and its frame. */
+effect function mount(node: HTMLElement, window: Window, url: string, services: Layer.Layer<HttpClient.HttpClient | Experimental.Window.Window> | Layer.Layer<HttpClient.HttpClient>) {
+  try sync(() => window.history.replaceState(null, "", url))
+  provide Layer.mergeAll(page, services) {
+    const { application, flags } = try historyMain()
+    try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    return {
+      flags,
+      frame: (attribute: string) => node.querySelector("[data-surface='history']")?.getAttribute(attribute) ?? "",
+      buttons: () => Array.from(node.querySelectorAll("button"), (button) => button.textContent ?? ""),
+    }
+  }
+}
+
+const Input = Schema.Struct({ asked: Role, stored: Role })
+
+/**
+ * The mock role is the query's when it names a role, else storage's when the query is empty and storage names one, else
+ * maintainer, with storage present or unavailable. `?agent=mock` starts the mock without asking the server even when
+ * storage refuses to remember it; `?agent=live` forgets a stored mock choice and asks; a stored mock choice starts the
+ * mock without asking; with no query and no storage the page asks. Live, a signed-in person plays the session's role
+ * and a grant changes it, while a grant to someone else does not; a visitor is a viewer and follows no grants; a session and a grant stream each lost once
+ * leave a viewer who is asked about again, then plays the role and follows later grants.
+ */
+it.live("history/startup", () => run("history/startup", Input, ({ asked, stored }) => effect {
+  // The mock role, over every kind of query and stored value, with and without storage.
+  for (const query of ["", `?role=${asked}`, "?role=unknown", "?role="]) for (const kept of [null, stored, "viewer "]) for (const denied of [false, true]) {
+    const got = try scoped(effect {
+      const { window } = try host()
+      try sync(() => {
+        window.history.replaceState(null, "", `/history${query}`)
+        if (kept === null) window.localStorage.removeItem("vibelang.role")
+        else window.localStorage.setItem("vibelang.role", kept)
+      })
+      if (!denied) return mockRole(window)
+      const faulty = try withoutStorage(window)
+      provide faulty.layer { return mockRole(try (try Experimental.Window.Window).current) }
+    })
+    const named = new URLSearchParams(query).get("role") ?? ""
+    const chosen = named !== "" ? named : denied ? "" : kept ?? ""
+    const expected = (ROLES as ReadonlyArray<string>).includes(chosen) ? chosen : "maintainer"
+    if (got !== expected) throw new Finding({ report: `mock role for ${query || "no query"}, ${kept ?? "nothing"} stored${denied ? ", storage unavailable" : ""}: ${got}` })
+  }
+  // The agent choice.
+  for (const [url, storedAgent, denied, asks] of [["/history?agent=mock", null, true, false], ["/history?agent=live", "mock", false, true], ["/history", "mock", false, false], ["/history", null, true, true]] as const) {
+    try scoped(effect {
+      const { node, window } = try host()
+      try sync(() => {
+        window.localStorage.removeItem("vibelang.role")
+        if (storedAgent === null) window.localStorage.removeItem("vibelang.agent")
+        else window.localStorage.setItem("vibelang.agent", storedAgent)
+      })
+      const client = offline()
+      const faulty = try withoutStorage(window)
+      const mounted = try mount(node, window, url, denied ? Layer.merge(client.layer, faulty.layer) : client.layer)
+      if (mounted.flags.mode !== "pending") throw new Finding({ report: `${url} starts ${mounted.flags.mode}` })
+      if (asks) try until(`${url} asks the server`, () => client.probes() > 0)
+      else try until(`${url} starts the mock`, () => mounted.frame("data-mode") === "mock")
+      if (!asks && client.probes() !== 0) throw new Finding({ report: `${url} asked the server` })
+      if (url.includes("agent=live") && (try Effect.try(() => window.localStorage.getItem("vibelang.agent"))) !== null) throw new Finding({ report: "?agent=live kept the stored mock choice" })
+    })
+  }
+  // Live: the session decides who you are.
+  // Each scenario has its own loopback server and history, as each serves its own API once.
+  for (const scenario of ["signed-in", "visitor", "lost-once"] as const) {
+    provide NodeHttpServer.layerTest, MockMythical({ role: "maintainer", name: "Ada", agent: false }, small) {
+      try scoped(effect {
+        const { node, window } = try host()
+        try sync(() => window.localStorage.removeItem("vibelang.role"))
+        const api = try serveApi()
+        try api.maintainer.grant("7", "contributor")
+        const client = pageClient(api.native, api.origin, scenario === "visitor" ? "" : api.ada, scenario === "lost-once" ? ["/api/auth/session", "/api/roles/events"] : [])
+        const mounted = try mount(node, window, "/history?agent=live", client.layer)
+        try until(`${scenario}: live`, () => mounted.frame("data-mode") === "live")
+        if (scenario === "visitor") {
+          try until("a visitor's session", () => client.asked("/api/auth/session") === 1)
+          if (mounted.frame("data-role") !== "viewer" || client.asked("/api/roles/events") !== 0) throw new Finding({ report: "a visitor plays a role or follows grants" })
+          return
+        }
+        if (scenario === "lost-once") {
+          try until("a lost session", () => client.asked("/api/auth/session") === 1)
+          if (mounted.frame("data-role") !== "viewer") throw new Finding({ report: "a lost session plays a role" })
+          try until("the session asked again", () => mounted.frame("data-role") === "contributor" && client.asked("/api/roles/events") >= 1)
+          try until("the grant stream followed again", () => client.asked("/api/roles/events") === 2)
+        } else {
+          try until("the session's role", () => mounted.frame("data-role") === "contributor")
+          // Bo's grant names someone else: it reaches the page's stream within milliseconds on loopback, and Ada stays a
+          // contributor.
+          try api.maintainer.grant("8", "community")
+          try sleep("500 millis")
+          if (mounted.frame("data-role") !== "contributor") throw new Finding({ report: `a grant to someone else made Ada ${mounted.frame("data-role")}` })
+        }
+        try api.maintainer.grant("7", "maintainer")
+        try until(`${scenario}: the grant`, () => mounted.frame("data-role") === "maintainer" && mounted.buttons().includes("Fold"))
+        if (scenario === "signed-in" && client.asked("/api/auth/session") !== 1) throw new Finding({ report: "the session was read again" })
+      })
+    }
+  }
+  return true
+// Eleven page startups, two of them waiting out a two-second retry: several seconds per execution.
+}, undefined, { minimum: "30 seconds" }))
