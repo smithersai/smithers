@@ -326,6 +326,9 @@ export const scanFile = (
   // `smithers-orchestrator` in the same file, so the factory has to be judged
   // by where it came from, not by its name.
   const foreign = new Set<string>()
+  // The local names an old namespace import binds: `import * as Old from
+  // "smthrs"` makes `<Old.Worktree>` the catalog's `Worktree`.
+  const namespaces = new Set<string>()
   for (const record of Ts.imports(source)) {
     if (Detect.foreignAuthoringApis.includes(record.specifier)) {
       for (const [local] of record.names) foreign.add(local)
@@ -354,6 +357,31 @@ export const scanFile = (
     }
     if (!old) continue
     for (const [local, imported] of record.names) bound.set(local, imported)
+    if (record.namespace !== undefined) namespaces.add(record.namespace)
+  }
+
+  /** The catalog name a `Namespace.Name` access reaches through an old namespace import. */
+  const qualified = (text: string): string | undefined => {
+    const [head, ...rest] = text.split(".")
+    return rest.length > 0 && namespaces.has(head ?? "") ? rest.join(".") : undefined
+  }
+
+  /** The catalog name a JSX tag resolves to, through an import, a factory, or a namespace. */
+  const componentOf = (tag: string): string | undefined => {
+    const through = qualified(tag)
+    if (through !== undefined) return through
+    const resolved = bound.get(tag) ?? bound.get(tag.split(".")[0] ?? "")
+    return resolved === undefined
+      ? undefined
+      : tag.includes(".")
+      ? `${resolved}.${tag.split(".").slice(1).join(".")}`
+      : resolved
+  }
+
+  /** The name a call or constructor invokes, with an old namespace stripped. */
+  const calleeOf = (expression: ts.Expression): string => {
+    const text = expression.getText()
+    return qualified(text) ?? text
   }
 
   // The `createSmithers` output-table schemas, by key, so `output={outputs.x}`
@@ -366,7 +394,7 @@ export const scanFile = (
       ts.isObjectBindingPattern(node.name) &&
       node.initializer !== undefined &&
       ts.isCallExpression(node.initializer) &&
-      options.factories.has(Ts.calleeName(node.initializer)) &&
+      options.factories.has(calleeOf(node.initializer.expression)) &&
       // A foreign `createSmithers` hands back a foreign `Workflow` and a
       // foreign `Task`. Binding them would file that project's props against
       // 0.x components that never declared them.
@@ -546,7 +574,7 @@ export const scanFile = (
         ? node
         : undefined
       if (opening !== undefined) {
-        const construct = bound.get(Ts.tagName(opening))
+        const construct = componentOf(Ts.tagName(opening))
         if (construct !== undefined && Constructs.isComponent(construct)) {
           // Only a literal id. An id the source computes — Plue's
           // `id={`${id}:review-claude`}` — is not a name this tool may print,
@@ -641,13 +669,7 @@ export const scanFile = (
   Ts.forEachNode(source, (node) => {
     // JSX elements whose tag resolves to a catalog component.
     if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
-      const tag = Ts.tagName(node)
-      const resolved = bound.get(tag) ?? bound.get(tag.split(".")[0] ?? "")
-      const construct = resolved === undefined
-        ? undefined
-        : tag.includes(".")
-        ? `${resolved}.${tag.split(".").slice(1).join(".")}`
-        : resolved
+      const construct = componentOf(Ts.tagName(node))
       if (construct === undefined || !Constructs.isComponent(construct)) return
       const present = Ts.attributeNames(node).filter((name) => name !== "...")
       const detail = attributeDetail(node, present)
@@ -760,8 +782,11 @@ export const scanFile = (
     }
 
     // Agent constructors.
-    if (ts.isNewExpression(node) && ts.isIdentifier(node.expression)) {
-      const resolved = bound.get(node.expression.text)
+    if (
+      ts.isNewExpression(node) && (ts.isIdentifier(node.expression) || ts.isPropertyAccessExpression(node.expression))
+    ) {
+      const name = node.expression.getText()
+      const resolved = bound.get(name) ?? qualified(name)
       if (resolved !== undefined && agentNames.has(resolved)) {
         const options = node.arguments?.[0]
         const props = options !== undefined && ts.isObjectLiteralExpression(options)
@@ -786,9 +811,12 @@ export const scanFile = (
     }
 
     // Runtime, store, and tool calls.
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      const name = node.expression.text
-      const resolved = bound.get(name) ?? (options.factories.has(name) ? "createSmithers" : undefined)
+    if (
+      ts.isCallExpression(node) && (ts.isIdentifier(node.expression) || ts.isPropertyAccessExpression(node.expression))
+    ) {
+      const name = node.expression.getText()
+      const resolved = bound.get(name) ?? qualified(name) ??
+        (options.factories.has(name) ? "createSmithers" : undefined)
       if (
         resolved !== undefined &&
         (runtimeCalls.has(resolved) || agentNames.has(resolved) || factoryCalls.has(resolved))

@@ -255,3 +255,40 @@ describe("Inventory.scan over mixed-api", () => {
       expect(count(hits, "Task")).toBe(1)
     }))
 })
+
+describe("Inventory.scanFile over a namespace import", () => {
+  it("resolves components, agents, runtime calls, and factory bindings through the namespace", () => {
+    // `import * as Old from "smthrs"` is the old public API as much as a named
+    // import is. Losing it hid an unsupported `<Old.Worktree>` from the gate.
+    const source = [
+      "/** @jsxImportSource smthrs */",
+      "import * as Old from \"smthrs\"",
+      "const { Workflow, Task, outputs } = Old.createSmithers({ value: z.object({ v: z.string() }) })",
+      "const agent = new Old.ClaudeCodeAgent({ model: \"claude-fable-5\" })",
+      "export default <Workflow name=\"w\"><Old.Worktree path=\".\"><Task id=\"a\" output={outputs.value} agent={agent}>x</Task></Old.Worktree></Workflow>",
+      "Old.runWorkflow(flow, {})"
+    ].join("\n")
+    const factories = Inventory.factoryNames(new Map([["w.tsx", source]]))
+
+    const hits = Inventory.scanFile("w.tsx", source, { factories })
+
+    expect(count(hits, "Worktree")).toBe(1)
+    expect(hits.find((hit) => hit.construct === "Worktree")?.detail?.["childConstructs"]).toBe("Task:a")
+    expect(count(hits, "ClaudeCodeAgent")).toBe(1)
+    expect(count(hits, "runWorkflow")).toBe(1)
+    expect(count(hits, "createSmithers")).toBe(1)
+    expect(count(hits, "Workflow")).toBe(1)
+    expect(count(hits, "Task")).toBe(1)
+    expect(count(hits, "outputs.<key>")).toBe(1)
+  })
+
+  it("leaves a namespace of an unrelated package alone", () => {
+    const source = [
+      "import * as Other from \"other-ui\"",
+      "export default <Other.Worktree path=\".\" />",
+      "new Other.ClaudeCodeAgent({})"
+    ].join("\n")
+
+    expect(Inventory.scanFile("w.tsx", source, { factories: new Set(["createSmithers"]) })).toEqual([])
+  })
+})
