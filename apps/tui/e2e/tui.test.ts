@@ -332,7 +332,10 @@ describe("composer mode", () => {
     it(`keeps typing when leaving Summary focus in one burst (${JSON.stringify(close)})`, async () => {
       const { tui } = await start()
       await tui.press(key.ctrlS)
-      await tui.until((screen) => screen.includes("No turns yet"), 5_000, "summary focus")
+      await tui.until((screen) => screen.includes("No turns yet"), 5_000, "summary")
+      // Summary opens with the composer focused; Tab gives its rows the keys (#3682).
+      await tui.press(key.tab)
+      await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary focus")
       await tui.press(close + "keep-all-characters")
       await tui.until((screen) => /┃\s+keep-all-characters/.test(screen), 5_000, "complete draft after focus change")
     }, 60_000)
@@ -511,46 +514,39 @@ describe("ctrl+c and ctrl+d", () => {
 })
 
 describe("tabs", () => {
+  // Summary opens with the composer focused (#3682): its footer's Ctrl+S goes back to Chat,
+  // and Chat's opens Summary.
+  const inSummary = (screen: string) => screen.includes("ctrl+s Chat")
+  const inChat = (screen: string) => screen.includes("ctrl+s Summary")
+
   it("shows the back hint on Ctrl+S Summary and returns to Chat", async () => {
     const { tui } = await start()
     await tui.press(key.ctrlS)
-    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary back hint")
+    await tui.until(inSummary, 5_000, "summary back hint")
     await tui.press(key.ctrlS)
-    await tui.until(
-      (screen) => !screen.includes("esc Chat") && screen.includes("ctrl+k Search"),
-      5_000,
-      "chat after ctrl+s"
-    )
+    await tui.until(inChat, 5_000, "chat after ctrl+s")
     await tui.press(key.ctrlS)
-    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary again")
+    await tui.until(inSummary, 5_000, "summary again")
     await tui.press(key.escape)
-    await tui.until(
-      (screen) => !screen.includes("esc Chat") && screen.includes("ctrl+k Search"),
-      5_000,
-      "chat after esc"
-    )
+    await tui.until(inChat, 5_000, "chat after esc")
   }, 60_000)
 
   it("switches Chat and Summary by clicking a tab title", async () => {
     const { tui } = await start()
     await tui.click("Summary")
-    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary focused footer")
+    await tui.until(inSummary, 5_000, "summary footer")
     await tui.click("Chat")
-    await tui.until((screen) => !screen.includes("esc Chat") && screen.includes("ctrl+k Search"), 5_000, "chat footer")
+    await tui.until(inChat, 5_000, "chat footer")
   }, 60_000)
 
   it("cycles tabs with ctrl+] and ctrl+left", async () => {
     const { tui } = await start()
     await tui.press(key.ctrlBracket)
-    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary after ctrl+]")
+    await tui.until(inSummary, 5_000, "summary after ctrl+]")
     await tui.press(key.ctrlBracket)
-    await tui.until(
-      (screen) => !screen.includes("esc Chat") && screen.includes("ctrl+k Search"),
-      5_000,
-      "chat after ctrl+]"
-    )
+    await tui.until(inChat, 5_000, "chat after ctrl+]")
     await tui.press(key.ctrlLeft)
-    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary after ctrl+left")
+    await tui.until(inSummary, 5_000, "summary after ctrl+left")
   }, 60_000)
 
   it("steps once per ctrl+] even when two arrive before the next render", async () => {
@@ -558,7 +554,7 @@ describe("tabs", () => {
     // One PTY write: the second ctrl+] is handled before the first one's tab has drawn.
     await tui.press(`${key.ctrlBracket}${key.ctrlBracket}`)
     await tui.press(key.ctrlBracket)
-    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary after three ctrl+]")
+    await tui.until(inSummary, 5_000, "summary after three ctrl+]")
   }, 60_000)
 })
 
@@ -1132,7 +1128,8 @@ describe("completion", () => {
     await tui.until((screen) => /┃\s+\/summ/.test(screen) && screen.includes("/summary"), 5_000, "menu")
     // The rest of the word and Enter arrive before the next render, as they do under load.
     await tui.press("ary" + key.enter)
-    await tui.until((screen) => screen.includes("enter Expand row"), 5_000, "summary")
+    // Summary opens with the composer focused (#3682); its Ctrl+S goes back to Chat.
+    await tui.until((screen) => screen.includes("ctrl+s Chat") && screen.includes("No turns yet"), 5_000, "summary")
   }, 60_000)
 
   it("esc closes the menu without clearing the draft", async () => {
@@ -1440,7 +1437,10 @@ describe("runtime views", () => {
       await successfulAnswer(started)
       await tui.type("/summary")
       await tui.press(key.enter)
-      await tui.until((screen) => screen.includes("enter Expand row") && screen.includes("Asked:"), 5_000, "summary")
+      await tui.until((screen) => screen.includes("Asked:"), 5_000, "summary")
+      // Summary opens with the composer focused; Tab gives its rows the keys (#3682).
+      await tui.press(key.tab)
+      await tui.until((screen) => screen.includes("enter Expand row"), 5_000, "summary rows")
       await tui.type("jl")
       await tui.until(
         (screen) => screen.includes("ctx.call(\"ls\"") && /› .*Ran node check\.mjs \(exit 1\)/.test(screen),
@@ -1477,11 +1477,10 @@ describe("runtime views", () => {
     await successfulAnswer(started)
     await started.tui.type("/summary")
     await started.tui.press(key.enter)
-    await started.tui.until(
-      (screen) => screen.includes("u Undo") && screen.includes("Asked:"),
-      5_000,
-      "summary"
-    )
+    await started.tui.until((screen) => screen.includes("Asked:"), 5_000, "summary")
+    // Summary opens with the composer focused; Tab gives its rows the keys (#3682).
+    await started.tui.press(key.tab)
+    await started.tui.until((screen) => screen.includes("u Undo"), 5_000, "summary rows")
     for (let step = 0; step < 8 && !/› .*Updated math\.js/.test(started.tui.screen()); step++) {
       await started.tui.type("j")
       await new Promise((resolve) => setTimeout(resolve, 150))
@@ -1575,7 +1574,9 @@ console.log("reverted");`,
     await successfulAnswer(started, "reverted")
     await tui.type("/summary")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("u Undo") && screen.includes("Asked:"), 5_000, "summary")
+    await tui.until((screen) => screen.includes("Asked:"), 5_000, "summary")
+    await tui.press(key.tab)
+    await tui.until((screen) => screen.includes("u Undo"), 5_000, "summary rows")
     for (let step = 0; step < 8 && !/› .*Updated math\.js/.test(tui.screen()); step++) {
       await tui.type("j")
       await new Promise((resolve) => setTimeout(resolve, 150))
@@ -1613,6 +1614,8 @@ console.log("reverted");`,
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("esc Interrupt"), 10_000, "running turn")
     await tui.press(key.ctrlS)
+    // Summary opens with the composer focused; Tab gives its rows the keys (#3682).
+    await tui.press(key.tab)
     // Nothing can be undone while the turn runs, so the footer offers no u.
     await tui.until((screen) => screen.includes("enter Expand row") && !screen.includes("u Undo"), 5_000, "summary")
     await tui.type("u")
@@ -1644,6 +1647,8 @@ console.log("reverted");`,
     await tui.type("/summary")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Undone: Updated math.js"), 5_000, "restored row")
+    await tui.press(key.tab)
+    await tui.until((screen) => screen.includes("enter Expand row"), 5_000, "summary rows")
     for (let step = 0; step < 8 && !/› .*Undone: Updated math\.js/.test(tui.screen()); step++) {
       await tui.type("j")
       await new Promise((resolve) => setTimeout(resolve, 150))
@@ -2130,6 +2135,8 @@ describe("worker tabs", () => {
     await tui.until(workerTab("Investigation"), 5_000, "enter opens the worker")
     await tui.press("\x19")
     await tui.press(key.ctrlS)
+    // Summary opens with the composer focused; the first Tab focuses its rows (#3682).
+    await tui.press(key.tab)
     await tui.until(
       (screen) => screen.includes("tree") && /Chat/.test(screen) && screen.includes("tab Pane"),
       5_000,
@@ -2144,6 +2151,8 @@ describe("worker tabs", () => {
   it("opens the Summary on the worker with ctrl+s and returns to its tab", async () => {
     const tui = await launch()
     await tui.press(key.ctrlS)
+    // Summary opens with the composer focused; Tab focuses its rows (#3682).
+    await tui.press(key.tab)
     // The cards pane is the selected row's: the worker's, not the chat's review.
     await tui.until(
       (screen) => screen.includes("tab Pane") && /[◐◓◑◒] Investigation ·/.test(screen),

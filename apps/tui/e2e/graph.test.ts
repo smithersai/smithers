@@ -30,6 +30,8 @@ it("draws a worker and the agent it spawned as boxes joined by an edge, and togg
     )
     await tui.press(key.ctrlS)
     await tui.until((screen) => screen.includes("Working"), 5_000, "overview")
+    // Summary opens with the composer focused; its rows take keys after Tab (#3682).
+    await tui.press(key.tab)
     // j moves the selection while the graph shows it: stop at the audit worker, which spawned "Check the refresh path".
     await tui.press("g")
     const forest = (screen: string) => /│ . Audit auth/.test(screen) && /▶│ . Check the refresh/.test(screen)

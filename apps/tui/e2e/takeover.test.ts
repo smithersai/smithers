@@ -84,6 +84,8 @@ it("takes over a worker with t from the Summary overview, where it waits under N
     await tui.until((screen) => screen.includes("implement/session ·"), 5_000, "worker card")
     await tui.press(key.ctrlS)
     await tui.until((screen) => screen.includes("Working 1"), 5_000, "overview")
+    // Summary opens with the composer focused; its rows take keys after Tab (#3682).
+    await tui.press(key.tab)
     await tui.press("t")
     await tui.until((screen) => screen.includes("⇄ you took over"), 5_000, "taken over from the overview")
     await tui.click("Summary")

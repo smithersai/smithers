@@ -41,11 +41,10 @@ it("opens a capped worker's host card, then raises its cap from the worker view"
     )
     // From a failed worker's tab, Summary opens Failed on that row (84c3ec1408, #3040).
     await tui.press(key.ctrlS)
-    await tui.until(
-      (screen) => /✗ Failed 1\s/.test(screen) && screen.includes("space Peek") && !screen.includes("200 of 200"),
-      5_000,
-      "overview"
-    )
+    await tui.until((screen) => /✗ Failed 1\s/.test(screen) && !screen.includes("200 of 200"), 5_000, "overview")
+    // Summary opens with the composer focused; its rows take keys after Tab (#3682).
+    await tui.press(key.tab)
+    await tui.until((screen) => screen.includes("space Peek"), 5_000, "focused rows")
     await tui.press(" ")
     // The peek names the outcome and its cause (tabs.ts outcome).
     await tui.until(

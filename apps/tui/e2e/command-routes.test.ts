@@ -142,7 +142,10 @@ it("/resume restores the named conversation; /chat and ? act locally", async () 
   )
 
   await submit("/summary")
-  await tui!.until((screen) => screen.includes("esc Chat") && screen.includes("Asked:"), 5_000, "summary")
+  await tui!.until((screen) => screen.includes("Asked:"), 5_000, "summary")
+  // Summary opens with the composer focused; Tab focuses its rows and i returns (#3682).
+  await tui!.press(key.tab)
+  await tui!.until((screen) => screen.includes("esc Chat"), 5_000, "summary rows")
   await tui!.type("i")
   await tui!.until(
     (screen) => screen.includes("Asked: remember route") && !screen.includes("esc Chat"),

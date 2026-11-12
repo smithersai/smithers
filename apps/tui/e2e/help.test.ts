@@ -30,6 +30,8 @@ it.each([24, 12])("answers a wrapped question with keyboard choices at 80x%i", a
     await tui.until((screen) => screen.includes("implement/api ·"), 5_000, "worker card")
     await tui.press(key.ctrlS)
     await tui.until((screen) => screen.includes("Needs you 1"), 5_000, "needs you")
+    // Summary opens with the composer focused; its rows take keys after Tab (#3682).
+    await tui.press(key.tab)
     await tui.press("a")
     const form = await tui.until((screen) => screen.includes("> Session cookie"), 5_000, "answer form")
     expect(form).toContain("remote workspace?")
@@ -72,6 +74,7 @@ it("answers a worker's ask with a from the overview, and the worker finishes wit
     // The selected ask's card shows its choices; only the form puts a cursor on one.
     await tui.until((screen) => screen.includes("1 Session cookie  2 Bearer"), 5_000, "card")
     expect(tui.screen()).not.toContain("> Session cookie")
+    await tui.press(key.tab)
     await tui.press("a")
     await tui.until((screen) => screen.includes("> Session cookie"), 5_000, "form")
     await tui.press(key.down)
@@ -105,6 +108,7 @@ it("raises a capped worker's token cap with a from the overview, and it resumes"
     await tui.press(key.ctrlS)
     // A capped worker failed: it waits under the closed Failed group, not Needs you.
     await tui.until((screen) => screen.includes("Failed 1 ›") && !screen.includes("Needs you"), 5_000, "capped")
+    await tui.press(key.tab)
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("flaky seat queue"), 5_000, "failed open")
     await tui.press(key.down)
