@@ -84,8 +84,14 @@ fn with(h: u64, f: impl FnOnce(&mut Document) -> Result<Vec<u8>>) -> Result<Vec<
     let mut doc = doc.lock().map_err(|_| 3u32)?;
     f(&mut doc)
 }
+// Every accepted state must reopen: code states share ld_open's input bound.
 fn validate_state_size(root: &str, doc: &Doc) -> Result<()> {
-    if root == "markdown" && core::state(doc).len() > MAX_WIKI_STATE {
+    let limit = if root == "markdown" {
+        MAX_WIKI_STATE
+    } else {
+        MAX_BYTES
+    };
+    if core::state(doc).len() > limit {
         return Err(1);
     }
     Ok(())
@@ -311,19 +317,17 @@ pub unsafe extern "C" fn ld_set_author(
                 }
                 return Ok(vec![0, 0]);
             }
-            // Metadata also counts toward the persisted wiki-state bound.
+            // Metadata also counts toward the persisted state bound.
             // Check the candidate before allocating an authenticated client id.
-            if e.root == "markdown" {
-                let candidate = core::document(Some(e.doc.client_id().get()));
-                core::apply(&candidate, decode(&core::state(&e.doc)).map_err(|_| 2u32)?)
-                    .map_err(|_| 2u32)?;
-                candidate.get_or_insert_map("authors").insert(
-                    &mut candidate.transact_mut(),
-                    client.to_string(),
-                    actor,
-                );
-                validate_state_size(e.root, &candidate)?;
-            }
+            let candidate = core::document(Some(e.doc.client_id().get()));
+            core::apply(&candidate, decode(&core::state(&e.doc)).map_err(|_| 2u32)?)
+                .map_err(|_| 2u32)?;
+            candidate.get_or_insert_map("authors").insert(
+                &mut candidate.transact_mut(),
+                client.to_string(),
+                actor,
+            );
+            validate_state_size(e.root, &candidate)?;
             let mut txn = e.doc.transact_mut();
             map.insert(&mut txn, client.to_string(), actor);
             Ok(txn.encode_update_v1())
@@ -473,6 +477,54 @@ mod tests {
             unsafe { ld_open(1, oversized.as_ptr(), oversized.len()) },
             0
         );
+        take(ld_close(h)).unwrap();
+    }
+
+    #[test]
+    fn code_state_limit_keeps_every_accepted_state_reopenable() {
+        // Author metadata grows a code state past its 16 MiB reopen bound
+        // while its visible text stays empty.
+        let doc = core::document(Some(42));
+        doc.get_or_insert_text("content");
+        let authors = doc.get_or_insert_map("authors");
+        authors.insert(&mut doc.transact_mut(), "11", "alice");
+        authors.insert(
+            &mut doc.transact_mut(),
+            "42",
+            "x".repeat(MAX_BYTES - 64 * 1024),
+        );
+        let mut state = core::state(&doc);
+        let h = unsafe { ld_open(0, state.as_ptr(), state.len()) };
+        assert_ne!(h, 0);
+        let actor = "a".repeat(4096);
+        let mut accepted = 0;
+        let refused = loop {
+            let client = 100 + accepted;
+            match take(unsafe { ld_set_author(h, client, actor.as_ptr(), actor.len()) }) {
+                Ok(_) => accepted += 1,
+                Err(status) => break status,
+            }
+            state = take(ld_state(h)).unwrap();
+            assert!(state.len() <= MAX_BYTES);
+            let reopened = unsafe { ld_open(0, state.as_ptr(), state.len()) };
+            assert_ne!(reopened, 0, "accepted state {accepted} must reopen");
+            take(ld_close(reopened)).unwrap();
+        };
+        assert_eq!(refused, 1);
+        assert!(accepted > 0);
+        assert_eq!(take(ld_state(h)).unwrap(), state);
+        // Browser edits and trusted peer merges obey the same bound atomically.
+        let client = core::document(Some(11));
+        core::apply(&client, core::decode(&state).unwrap()).unwrap();
+        let text = client.get_or_insert_text("content");
+        let update = delta(&client, |txn| text.insert(txn, 0, &"a".repeat(64 * 1024)));
+        assert_eq!(apply(h, 11, &update), Err(1));
+        assert_eq!(take(ld_state(h)).unwrap(), state);
+        assert_eq!(
+            take(unsafe { ld_peer(h, update.as_ptr(), update.len()) }),
+            Err(1)
+        );
+        assert_eq!(take(ld_state(h)).unwrap(), state);
         take(ld_close(h)).unwrap();
     }
 

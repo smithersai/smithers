@@ -9,7 +9,8 @@
  * Open and set_author are trusted-host operations. Apply requires a registered
  * authenticated client id. Missing causal updates refuse without mutation: sync
  * and retry. Awareness must already be identity-stamped by the host.
- * No function acknowledges persistence. Limits: text 1 MiB, input 16 MiB.
+ * No function acknowledges persistence. Limits: text 1 MiB, input 16 MiB,
+ * state 16 MiB (code) or 8 MiB (wiki); a mutation past its bound refuses.
  */
 typedef struct { uint8_t *data; size_t len; uint32_t status; } LdResult;
 uint64_t ld_open(uint32_t kind, const uint8_t *state, size_t len);
