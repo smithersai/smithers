@@ -11,6 +11,7 @@ import { globSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import { Package as PluginPackage } from "../../smithers/agent/plugin/PACKAGE.ts"
+import { Package as StepCachePackage } from "../../smithers/flows/step-cache/PACKAGE.ts"
 import { BuildAndCheckTypeScriptPackage } from "../src/BuildAndCheckTypeScriptPackage.ts"
 import { plannedArgv, plannedCalls } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"
@@ -251,16 +252,39 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
     expect(Target.metadata(empty.test).inputs).toEqual(Target.metadata(standard.test).inputs)
   })
 
-  it("declares both artifact fixtures executed by the plugin suite", () => {
-    const metadata = Target.metadata(PluginPackage.test)
-    const cwd = resolve(import.meta.dirname, "../../..", attrsOf<Vitest.Attrs>(PluginPackage.test).cwd)
-    const paths = metadata.inputs.flatMap((input) => {
+  /** Every package-relative file a test target's inputs name, with its globs expanded against the checkout. */
+  const declaredInputs = (test: Target.AnyTarget): ReadonlyArray<string> => {
+    const cwd = resolve(import.meta.dirname, "../../..", attrsOf<{ readonly cwd: string }>(test).cwd)
+    return Target.metadata(test).inputs.flatMap((input) => {
       if (input._tag === "Glob") return globSync(input.pattern, { cwd, exclude: [...input.exclude] })
       if (input._tag === "File") return [input.path]
       return []
     }).map((path) => path.replaceAll("\\", "/"))
+  }
+
+  it("declares both artifact fixtures executed by the plugin suite", () => {
+    const paths = declaredInputs(PluginPackage.test)
     expect(paths).toContain("test/fixtures/artifact-esm.mjs")
     expect(paths).toContain("test/fixtures/artifact-cjs.cjs")
+  })
+
+  it("declares the docs and fixtures the step-cache suite reads", () => {
+    // Three suites assert on the text of the README and the docs, and one
+    // executes the artifact fixtures. A file a suite reads that is not an
+    // input lets a cached pass survive an edit to it.
+    const paths = declaredInputs(StepCachePackage.test)
+    for (
+      const read of [
+        "README.md",
+        "docs/troubleshooting.md",
+        "docs/concepts/admission.md",
+        "docs/concepts/tiers.md",
+        "docs/guides/implement-a-shared-tier.md",
+        "docs/guides/share-results-across-machines.md",
+        "test/fixtures/artifact-esm.mjs",
+        "test/fixtures/artifact-cjs.cjs"
+      ]
+    ) expect(paths).toContain(read)
   })
 })
 

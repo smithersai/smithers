@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `sweepExpired` refuses a bound left out. An `olderThanMs` a JavaScript caller
+  or an unset configuration value passed through a cast omitted made a `NaN`
+  floor, which deleted nothing on SQLite and would delete every head on
+  PostgreSQL; it now fails with `invalid_cache` like a negative bound.
+
 - Shared-cache reads now import only the reusable head. A shared entry
   claiming a local event's identity can no longer create immutable history
   that conflicts with the event's real recording or survives head eviction.

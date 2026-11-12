@@ -1009,11 +1009,14 @@ describe("retention", () => {
       expect(tier.calls).toEqual([])
     }))
 
-  it.effect("still reports a bound no row could satisfy", () =>
+  it.effect("still reports a bound that is missing, negative, or not a safe integer", () =>
     Effect.gen(function*() {
       const tier = tierOf(() => new Response(null, { status: 204 }))
-      const exit = yield* Effect.exit(Effect.flatMap(tier.store, (store) => store.sweepExpired(-1)))
-      expect(errorOf(exit).code).toBe("invalid_cache")
+      for (const bound of [undefined as unknown as number, Number.NaN, -1, 1.5]) {
+        const exit = yield* Effect.exit(Effect.flatMap(tier.store, (store) => store.sweepExpired(bound)))
+        expect(errorOf(exit).code).toBe("invalid_cache")
+      }
+      expect(tier.calls).toEqual([])
     }))
 })
 

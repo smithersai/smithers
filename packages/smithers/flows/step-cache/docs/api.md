@@ -451,7 +451,9 @@ const validateAge: (
 
 Refuses an age bound that is not a non-negative safe integer, and returns the
 checked primitive so an operation computes its floor from the value it
-validated.
+validated. `undefined` is an optional bound left out and passes through.
+`sweepExpired` requires its bound, so an `olderThanMs` left out fails with
+`invalid_cache` like a negative one.
 
 ### snapshotEntry
 

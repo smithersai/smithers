@@ -46,7 +46,10 @@ an ordinary "nothing matched". `CacheStore.validateRecordedBy` and
 `olderThanMs must be a non-negative safe integer`.
 
 **What happened.** A lookup bound or a sweep bound was negative, fractional, or
-past `Number.MAX_SAFE_INTEGER`.
+past `Number.MAX_SAFE_INTEGER`, or the sweep bound was left out. `sweepExpired`
+has no default bound: an absent `olderThanMs`, which a JavaScript caller or an
+unset configuration value passed through a cast can produce, would compute a
+`NaN` floor, so it is refused before any statement is issued.
 
 **What to change.** Pass whole milliseconds. Zero is legal and means "only a
 row recorded at or after this instant". A duration in seconds is the usual

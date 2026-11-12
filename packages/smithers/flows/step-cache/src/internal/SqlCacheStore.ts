@@ -28,6 +28,7 @@ import {
   maximumJsonBytes,
   snapshotEntry,
   validateAge,
+  validateBound,
   validateFence,
   validateKey,
   validateRecordedBy
@@ -293,8 +294,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
 
   const sweepExpired: Service["sweepExpired"] = Effect.fn("CacheStore.sweepExpired")((olderThanMs, options) =>
     Effect.gen(function*() {
-      yield* validateAge("olderThanMs", olderThanMs)
-      const floorMs = (yield* Clock.currentTimeMillis) - olderThanMs
+      const bound = yield* validateBound("olderThanMs", olderThanMs)
+      const floorMs = (yield* Clock.currentTimeMillis) - bound
       yield* Effect.annotateCurrentSpan({ floorMs })
       const canReclaimRecorded = options?.canReclaimRecorded
       const deleted = yield* writer.write(Effect.gen(function*() {

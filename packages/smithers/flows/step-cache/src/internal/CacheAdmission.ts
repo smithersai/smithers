@@ -186,11 +186,29 @@ export const validateFence = (
 ): Effect.Effect<RecordedBy | undefined, CacheStoreError> => validateRecordedBy(fence, "eviction fence")
 
 /**
- * Refuses an age bound no row could satisfy before any statement is issued.
- * A negative or fractional millisecond count is a caller mistake, and running
- * it anyway would report that mistake as an ordinary miss.
- * It returns the checked primitive (or `undefined`) so an operation reads an
- * option accessor once and computes its age floor from that same value.
+ * Refuses an age bound the operation requires and no row could satisfy, before
+ * any statement is issued. A negative or fractional millisecond count is a
+ * caller mistake, and running it anyway would report that mistake as an
+ * ordinary miss. A bound left out is the same mistake: `sweepExpired` has no
+ * default, and a floor computed from an absent bound is `NaN`, which deletes
+ * nothing on SQLite and every head on PostgreSQL, where `NaN` orders above
+ * every number. It returns the checked primitive so an operation computes its
+ * floor from the value it validated.
+ *
+ * @category validation
+ * @since 0.1.0
+ */
+export const validateBound = (field: string, value: number): Effect.Effect<number, CacheStoreError> =>
+  Number.isSafeInteger(value) && value >= 0
+    ? Effect.succeed(value)
+    : Effect.fail(error("invalid_cache", `${field} must be a non-negative safe integer`))
+
+/**
+ * Refuses an optional age bound no row could satisfy before any statement is
+ * issued. `undefined` is the option left out and passes through, so an
+ * operation reads an option accessor once and computes its age floor from
+ * that same value. An operation whose bound is required uses
+ * {@link validateBound}.
  *
  * @category validation
  * @since 1.0.0-rc.0
@@ -199,9 +217,7 @@ export const validateAge = (
   field: string,
   value: number | undefined
 ): Effect.Effect<number | undefined, CacheStoreError> =>
-  value === undefined || (Number.isSafeInteger(value) && value >= 0)
-    ? Effect.succeed(value)
-    : Effect.fail(error("invalid_cache", `${field} must be a non-negative safe integer`))
+  value === undefined ? Effect.succeed(value) : validateBound(field, value)
 
 /**
  * Takes an inert, detached snapshot of a cache entry at effect start.

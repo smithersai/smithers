@@ -12,6 +12,9 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     example: Smithers.file("examples/quickstart.vibe"),
     test: Smithers.file("test/quickstart.test.vibe")
   }],
+  // Three suites assert on the README and the docs, and one executes the
+  // artifact fixtures; an edit to any of them re-runs the suite.
+  testData: ["README.md", "docs/**/*.md", "test/fixtures/*.mjs", "test/fixtures/*.cjs"],
   cwd: "packages/smithers/flows/step-cache"
 })
 

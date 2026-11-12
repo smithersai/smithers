@@ -508,7 +508,7 @@ export const make = (
         // same reason `CombinedCacheStore.evict` never reaches across. The
         // argument is still validated, so a caller mistake is reported here
         // rather than silently absorbed.
-        Effect.as(CacheAdmission.validateAge("olderThanMs", olderThanMs), 0)
+        Effect.as(CacheAdmission.validateBound("olderThanMs", olderThanMs), 0)
     )
 
     return { get, put, evict, sweepExpired }

@@ -255,11 +255,22 @@ describe("expiry sweeps", () => {
       expect(remaining[0]!.count).toBe(2)
     })))
 
-  it.effect("refuses a negative sweep bound", () =>
+  it.effect("refuses a sweep bound that is missing, negative, or not a safe integer", () =>
     withStore(Effect.gen(function*() {
+      // `sweepExpired` has no default bound. A JavaScript caller, or an unset
+      // configuration value passed through a cast, can leave it out, and a
+      // floor computed from it is `NaN`: SQLite then deletes nothing, while
+      // PostgreSQL orders `NaN` above every number and deletes every head.
+      // Each malformed bound is refused before any statement is issued.
       const cache = yield* CacheStore
-      const exit = yield* Effect.exit(cache.sweepExpired(-1))
-      const reason = Exit.isFailure(exit) ? exit.cause.reasons[0]! : undefined
-      expect(reason?._tag === "Fail" ? reason.error.code : undefined).toBe("invalid_cache")
+      yield* cache.put(entry("kept", 0))
+      yield* TestClock.adjust("10 seconds")
+      const bounds = [undefined as unknown as number, Number.NaN, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]
+      for (const bound of bounds) {
+        const exit = yield* Effect.exit(cache.sweepExpired(bound))
+        const reason = Exit.isFailure(exit) ? exit.cause.reasons[0]! : undefined
+        expect(reason?._tag === "Fail" ? reason.error.code : undefined).toBe("invalid_cache")
+      }
+      expect(Option.isSome(yield* cache.get("kept"))).toBe(true)
     })))
 })
