@@ -60,7 +60,7 @@ import { Clock, Duration, Effect, Option, Redacted, Ref, Schema, Semaphore } fro
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type { AccessTokenSource } from "./AccessToken.ts"
-import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.ts"
+import { forCredentials, isSecureEndpoint, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.ts"
 import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
 import { redactedError } from "./RedactedError.ts"
 
@@ -195,7 +195,7 @@ export type ClientAuthentication = "body" | "basic"
  * @since 1.0.0
  */
 export interface Endpoint {
-  /** An absolute `http:` or `https:` token endpoint URL. */
+  /** An absolute HTTPS token endpoint URL (HTTP only on loopback). */
   readonly tokenUrl: string
   readonly clientId: string
   readonly clientSecret?: Redacted.Redacted<string> | undefined
@@ -303,11 +303,15 @@ const invalidConfig = (message: string, details: Record<string, unknown>): Integ
 const resolveEndpoint = (endpoint: Endpoint): Resolved => {
   const provider = endpoint.provider ?? "OAuth"
   if (typeof endpoint.tokenUrl !== "string" || !URL.canParse(endpoint.tokenUrl)) {
-    throw invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider })
+    throw invalidConfig(`${provider} tokenUrl must be an absolute HTTPS URL (HTTP is allowed only on loopback).`, {
+      provider
+    })
   }
   const url = new URL(endpoint.tokenUrl)
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider })
+  if (!isSecureEndpoint(url)) {
+    throw invalidConfig(`${provider} tokenUrl must be an absolute HTTPS URL (HTTP is allowed only on loopback).`, {
+      provider
+    })
   }
   if (typeof endpoint.clientId !== "string" || endpoint.clientId.trim().length === 0) {
     throw new IntegrationError("credentials-missing", `${provider} OAuth client id is not configured.`, {

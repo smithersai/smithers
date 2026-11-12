@@ -4,6 +4,8 @@
  * @since 1.0.0
  */
 
+import { isSecureEndpoint } from "./CredentialHttp.ts"
+
 /**
  * One authorization request.
  *
@@ -60,8 +62,7 @@ const parseEndpoint = (authorizationEndpoint: string): URL => {
   } catch {
     throw invalid()
   }
-  const loopback = url.hostname === "localhost" || url.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(url.hostname)
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw invalid()
+  if (!isSecureEndpoint(url)) throw invalid()
   return url
 }
 

@@ -37,6 +37,8 @@ const app = yield * GitHub.GitHubClient.make({ clientCredentials: { clientId, cl
 yield * app.request("DELETE", `/applications/${clientId}/token`, { access_token })
 ```
 
+API base URLs require HTTPS; HTTP is allowed only on loopback for local fixtures.
+
 ## Authenticate as the App
 
 `GitHub.AppAuth` signs a GitHub App's JWT and mints installation tokens.
@@ -210,6 +212,9 @@ SMITHERS_GITHUB_PROXY=http://192.168.64.1:47821 \
 SMITHERS_GITHUB_PROXY_CAPABILITY_FILE=~/.config/smithers/github-proxy-capability \
   node .smithers/flows/issue-claim/github-proxy.mjs
 ```
+
+SDK clients reaching a non-loopback proxy require an HTTPS URL. A TLS frontend
+must also rewrite the proxy's `Link` headers to its public HTTPS origin for pagination.
 
 The `SMITHERS_GITHUB_*` variables listed under `RateLimit.resolveLimits` in
 the [API reference](../api.md#githubratelimit) tune the limits.

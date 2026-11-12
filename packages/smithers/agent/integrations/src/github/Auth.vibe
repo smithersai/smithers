@@ -1,4 +1,5 @@
 import * as Core from "../core.ts"
+import { forCredentials, isSecureEndpoint } from "../core/CredentialHttp.ts"
 import * as GitHubClient from "./GitHubClient.ts"
 import type { HttpClient } from "effect/http"
 import { HttpClient as Client } from "effect/http"
@@ -209,25 +210,33 @@ const make = effect (options: {
 
   /**
    * One form POST to a GitHub device-flow endpoint with the client id and never the secret, decoded as JSON.
+   * Credential HTTP settings refuse redirects and trace propagation; the 30-second deadline covers headers and body.
    * A JSON `device_flow_disabled`, `incorrect_client_credentials`, `unauthorized_client` or `invalid_client`
    * error is `misconfigured` at any status, as are 401/404. Other non-2xx or malformed answers are `unavailable`.
    */
-  const deviceJson = effect (path: string, form: Record<string, string>) => {
+  const deviceJson = (path: string, form: Record<string, string>) => (effect {
+    const misconfigured = () => new GitHubRefused({ step: "device", reason: "misconfigured" })
+    const url = try Effect.mapError(Effect.try(() => new URL(web + path)), misconfigured)
+    if (!isSecureEndpoint(url)) throw misconfigured()
     const http = try Client.HttpClient
     const body = new URLSearchParams({ client_id: options.clientId, ...form }).toString()
-    const request = HttpClientRequest.post(web + path).pipe(
+    const request = HttpClientRequest.post(url.toString()).pipe(
       HttpClientRequest.setHeader("accept", "application/json"),
       HttpClientRequest.bodyText(body, "application/x-www-form-urlencoded"),
     )
     const unavailable = () => new GitHubRefused({ step: "device", reason: "unavailable" })
-    const response = try Effect.mapError(http.execute(request), unavailable)
+    const credentialHttp = try Effect.mapError(Effect.try(() => forCredentials(http)), unavailable)
+    const response = try Effect.mapError(credentialHttp.execute(request), unavailable)
     const text = try Effect.mapError(response.text, unavailable)
     if (response.status === 401 || response.status === 404) throw new GitHubRefused({ step: "device", reason: "misconfigured" })
     const answer = try Effect.mapError(Effect.try(() => JSON.parse(text) as unknown), unavailable)
     if (isDeviceMisconfigured(answer)) throw new GitHubRefused({ step: "device", reason: "misconfigured" })
     if (response.status < 200 || response.status >= 300) throw unavailable()
     return answer
-  }
+  }) |> timeoutOrElse(%, {
+    duration: Core.OAuthToken.DEFAULT_REQUEST_TIMEOUT,
+    orElse: effect () => { throw new GitHubRefused({ step: "device", reason: "unavailable" }) },
+  })
 
   return GitHubAuth.of({
     authorizeUrl: ({ state, codeChallenge, redirectUri }) =>

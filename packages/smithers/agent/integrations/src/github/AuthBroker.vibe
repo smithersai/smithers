@@ -5,6 +5,7 @@ import type * as Auth from "./Auth.vibe"
 import * as CookieKeys from "../core/CookieKeys.vibe"
 import * as Pkce from "../core/Pkce.ts"
 import { forCredentials } from "../core/CredentialHttp.ts"
+import { DEFAULT_REQUEST_TIMEOUT } from "../core/OAuthToken.ts"
 import { WebCryptoCipher } from "@smthrs/control"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse, UrlParams } from "effect/http"
 
@@ -169,7 +170,7 @@ export effect function site(options: { readonly origin: string; readonly brokerO
     redemption: (pending: { readonly claims: Claims; readonly verifier: string }, code: string) => sign("broker_exchange", {
       origin: options.origin, nonce: pending.claims.nonce, verifier: pending.verifier, code, expires: pending.claims.expires,
     }),
-    exchange: (signed: string) => observed("site_exchange", effect {
+    exchange: (signed: string) => observed("site_exchange", (effect {
       const ambient = try HttpClient.HttpClient
       const http = try checked(Effect.try(() => forCredentials(ambient)))
       const response = try checked(http.execute(HttpClientRequest.post(options.brokerOrigin + EXCHANGE).pipe(
@@ -179,7 +180,10 @@ export effect function site(options: { readonly origin: string; readonly brokerO
       const identity = try checked(Schema.decodeUnknownEffect(Identity)(try checked(response.json)))
       if (!Number.isSafeInteger(identity.id) || identity.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(identity.login)) throw refused()
       return identity
-    }).pipe(Effect.provideService(HttpClient.TracerDisabledWhen, () => true)),
+    }) |> timeoutOrElse(%, {
+      duration: DEFAULT_REQUEST_TIMEOUT,
+      orElse: effect () => { throw refused() },
+    })).pipe(Effect.provideService(HttpClient.TracerDisabledWhen, () => true)),
   }
 }
 

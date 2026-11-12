@@ -29,7 +29,7 @@ WebCrypto, and HTTP is the Effect `HttpClient` you provide, usually
 `FetchHttpClient.layer`. A test provides its own client to inject a transport
 fault. GitHub requests identify the client with `GitHub.GitHubClient.USER_AGENT`; hosts
 use the same exported value for GitHub OAuth, git HTTP and other direct requests.
-The client never follows a redirect. A host without a process
+API base URLs require HTTPS, except on loopback. The client never follows a redirect. A host without a process
 environment, such as a Worker, passes the token in the config or an `env`
 record.
 
@@ -95,8 +95,8 @@ live suite requires an explicit test repository and credentials.
 [Quickstart](docs/quickstart.md) · [GitHub](docs/guides/github.md) · [Telegram](docs/guides/telegram.md) ·
 [API](docs/api.md) · [Durable actions](docs/concepts/durable-actions.md)
 
-PKCE helpers return lazy Effects and fail validation during execution. Authorization
-URLs require HTTPS, except on loopback. `Core.Source.runWithCursor` requires a flow
+PKCE helpers return lazy Effects and fail validation during execution. Authorization URLs
+and token endpoints require HTTPS, except on loopback. `Core.Source.runWithCursor` requires a flow
 execution: poll, handler and commit receipts are journaled and spacing uses the
 durable clock. See [the API](docs/api.md) for its turn budget and recovery contract.
 
@@ -108,7 +108,9 @@ contains origin, nonce, S256 challenge and a ten-minute deadline. `site().begin(
 starts GitHub PKCE using the broker's existing callback. `callback()` revokes the temporary provider access token after identity
 lookup and returns an opaque sixty-second code in the site's fixed callback fragment. `site().redemption()` signs
 the code, nonce and saved verifier; `site().exchange()` posts it server-to-server and returns only numeric ID/login.
-The site sets its own session and owns authorization.
+The site sets its own session and owns authorization. Device-flow requests and site exchanges
+use a 30-second deadline for the response headers and body, refuse redirects, and send no trace headers.
+A device-flow timeout fails `unavailable`; a site-exchange timeout fails `BrokerRefused`.
 
 The alternative is an audience-bound identity assertion, verified with a distinct per-site HMAC key or the
 broker's public key. Each site would consume its pending nonce to prevent replay and enforce issuer/key rotation;

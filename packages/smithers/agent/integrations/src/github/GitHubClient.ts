@@ -50,6 +50,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import {
   forCredentials,
+  isSecureEndpoint,
   MAX_RETRY_AFTER_MS,
   retryAfterHeader,
   transportCause,
@@ -431,15 +432,15 @@ const build = (
   if (!URL.canParse(baseUrl)) {
     throw integrationError(
       "invalid-config",
-      "GitHub apiBaseUrl must be a valid HTTP or HTTPS URL.",
+      "GitHub apiBaseUrl must be a valid HTTPS URL (HTTP is allowed only on loopback).",
       { apiBaseUrl: resolved.apiBaseUrl, retryable: false }
     )
   }
   const parsedBaseUrl = new URL(baseUrl)
-  if (parsedBaseUrl.protocol !== "http:" && parsedBaseUrl.protocol !== "https:") {
+  if (!isSecureEndpoint(parsedBaseUrl)) {
     throw integrationError(
       "invalid-config",
-      "GitHub apiBaseUrl must be a valid HTTP or HTTPS URL.",
+      "GitHub apiBaseUrl must be a valid HTTPS URL (HTTP is allowed only on loopback).",
       { apiBaseUrl: resolved.apiBaseUrl, retryable: false }
     )
   }

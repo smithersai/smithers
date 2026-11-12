@@ -18,6 +18,18 @@ import type * as HttpClientError from "effect/http/HttpClientError"
 const ANSWER_REDIRECTS: globalThis.RequestInit = { redirect: "manual" }
 
 /**
+ * Whether an endpoint protects credentials in transit, allowing local HTTP fixtures.
+ *
+ * @throws {never}
+ * @since 1.0.0
+ * @private
+ */
+export const isSecureEndpoint = (url: URL): boolean => {
+  const loopback = url.hostname === "localhost" || url.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(url.hostname)
+  return url.protocol === "https:" || (url.protocol === "http:" && loopback)
+}
+
+/**
  * `client`, configured for a request that carries a credential.
  *
  * - **Redirects are answered, not followed.** A followed redirect re-sends the

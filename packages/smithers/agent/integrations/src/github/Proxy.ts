@@ -79,7 +79,9 @@ export interface ProxyOptions {
   /**
    * A secret every caller must send as `Authorization: Bearer <capability>`.
    * Required when the proxy listens beyond loopback, so only the sandboxes
-   * handed the capability spend the operator's credential.
+   * handed the capability spend the operator's credential. SDK clients reaching
+   * a non-loopback proxy require HTTPS; a TLS frontend must also rewrite Link
+   * headers to its public HTTPS origin.
    */
   readonly capability?: string | undefined
   /** Limits for every principal; see {@link RateLimit.DEFAULT_LIMITS}. */

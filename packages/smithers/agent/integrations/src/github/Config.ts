@@ -63,7 +63,7 @@ export interface GitHubConfig {
    */
   readonly clientCredentials?: ClientCredentials | undefined
   /**
-   * REST base URL, for GitHub Enterprise or a fixture server. Falls back to
+   * REST base URL: HTTPS, or HTTP on loopback for a fixture server. Falls back to
    * `SMITHERS_GITHUB_API_BASE_URL`.
    */
   readonly apiBaseUrl?: string | undefined

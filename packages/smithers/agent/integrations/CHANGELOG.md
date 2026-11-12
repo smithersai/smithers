@@ -73,6 +73,11 @@
 
 ### Fixed
 
+- OAuth and GitHub API credentials no longer travel over non-loopback HTTP. Device
+  sign-in refuses redirects and trace headers; device requests and hosted-site
+  exchanges end after 30 seconds, including stalled response bodies
+  ([#4882](https://github.com/smithersai/smithers/issues/4882)).
+
 - `Core.OAuthToken.make` keeps a rotated refresh token whose write to the
   `RefreshTokenStore` failed or was interrupted, and writes it before the
   next `token` serves or exchanges anything. It used to drop it, leaving the
