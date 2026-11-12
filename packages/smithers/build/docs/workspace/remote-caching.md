@@ -140,6 +140,9 @@ halves after a `429`, and grows by one after a long run of admitted exchanges,
 up to eight. A restore fetches an entry's missing files, indexes, and chunks
 through that bound; targets that share bytes fetch each digest once. Local
 verification, chunking, and assembly share a second fixed bound of eight units.
+Both bounds admit restores in the order they were requested, so the first
+target to ask for its outputs finishes first rather than every target sharing
+the bound until all finish together.
 Each unit holds at most one 16 MiB artifact in memory, so a handle holds a
 bounded amount however many targets restore at once.
 Files are streamed while hashing and split into bounded buffers; downloads are

@@ -1320,6 +1320,9 @@ class RemoteStore {
   private slowWarned = false
   // Concurrent restores of targets that share bytes fetch each digest once.
   private readonly downloads = new Map<string, Promise<boolean>>()
+  // Restores take permits in the order they were requested, so the first
+  // target to ask finishes first instead of every target finishing last.
+  private restores = 0
 
   /**
    * Runs one exchange, retrying a `429` (and, when `retryTimeout`, a
@@ -1329,7 +1332,8 @@ class RemoteStore {
    */
   private async retrying(
     retryTimeout: boolean,
-    run: () => Promise<{ readonly status: number; readonly retryAfter?: string | null | undefined }>
+    run: () => Promise<{ readonly status: number; readonly retryAfter?: string | null | undefined }>,
+    priority = 0
   ): Promise<number | "timeout"> {
     let waited = 0
     for (let attempt = 1;; attempt += 1) {
@@ -1338,7 +1342,7 @@ class RemoteStore {
       try {
         // Each attempt takes its own permit, so a lowered admission holds
         // back retries too, and a backoff wait holds no permit.
-        const answer = await this.transfers(run)
+        const answer = await this.transfers(run, priority)
         outcome = answer.status
         const seconds = answer.retryAfter === undefined || answer.retryAfter === null
           ? Number.NaN
@@ -1365,14 +1369,17 @@ class RemoteStore {
 
   /** Reads missing outputs into the CAS; never writes a declared output path. */
   async hydrate(cas: string, output: unknown): Promise<boolean> {
+    // Publications keep priority zero; each restore takes the next ticket.
+    this.restores += 1
+    const ticket = this.restores
     try {
       return await OutputCas.hydrate(cas, output, (digest) => {
         const pending = this.downloads.get(digest)
         if (pending !== undefined) return pending
-        const download = this.download(cas, digest).finally(() => this.downloads.delete(digest))
+        const download = this.download(cas, digest, ticket).finally(() => this.downloads.delete(digest))
         this.downloads.set(digest, download)
         return download
-      }, this.work)
+      }, (run) => this.work(run, ticket))
     } catch (cause) {
       if (cause instanceof OutputCas.OutputLimitError) this.skipLimit()
       else this.degrade("GET", { cause })
@@ -1381,7 +1388,7 @@ class RemoteStore {
   }
 
   /** Fetches one verified artifact into the CAS. */
-  private async download(cas: string, digest: string): Promise<boolean> {
+  private async download(cas: string, digest: string, priority: number): Promise<boolean> {
     if (this.degraded) return false
     const status = await this.retrying(false, () =>
       withDeadline("get", this.artifactTimeouts.get, async (signal) => {
@@ -1400,7 +1407,7 @@ class RemoteStore {
         signal.throwIfAborted()
         await OutputCas.writeBlob(cas, digest, bytes, signal)
         return { status: 200 }
-      }))
+      }), priority)
     if (status === 200) return true
     if (status === 429) this.skipBusy()
     else if (status !== 404) this.degrade("GET", { status: status as number })

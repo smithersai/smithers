@@ -314,7 +314,7 @@ export const prepare = async (cas: string, output: unknown): Promise<{ output: u
  * @category models
  * @since 1.0.0
  */
-export type Limiter = <A>(run: () => Promise<A>) => Promise<A>
+export type Limiter = <A>(run: () => Promise<A>, priority?: number) => Promise<A>
 
 /**
  * A {@link Limiter} whose admission follows the service's answers.
@@ -338,7 +338,8 @@ export interface AdaptiveLimiter extends Limiter {
  * {@link AdaptiveLimiter.busy}, and grows by one after eight times the current
  * capacity of consecutive {@link AdaptiveLimiter.admitted} calls, so it
  * settles at what the service admits and rarely probes past it.
- * Waiters start in arrival order. A unit's failure releases its permit.
+ * Waiters start lowest `priority` first (default zero), and in arrival order
+ * within one priority. A unit's failure releases its permit.
  *
  * @category constructors
  * @since 1.0.0
@@ -351,16 +352,23 @@ export const makeLimiter = (maximum: number, initial = maximum): AdaptiveLimiter
   let capacity = initial
   let active = 0
   let streak = 0
-  const waiting: Array<() => void> = []
+  // Sorted by priority, then arrival; a new waiter goes after its equals.
+  const waiting: Array<{ readonly priority: number; readonly start: () => void }> = []
   const wake = (): void => {
     while (active < capacity && waiting.length > 0) {
       active += 1
-      waiting.shift()!()
+      waiting.shift()!.start()
     }
   }
-  const limiter = async <A>(run: () => Promise<A>): Promise<A> => {
+  const limiter = async <A>(run: () => Promise<A>, priority = 0): Promise<A> => {
     if (active < capacity && waiting.length === 0) active += 1
-    else await new Promise<void>((resolve) => waiting.push(resolve))
+    else {
+      await new Promise<void>((start) => {
+        let index = waiting.length
+        while (index > 0 && waiting[index - 1]!.priority > priority) index -= 1
+        waiting.splice(index, 0, { priority, start })
+      })
+    }
     try {
       return await run()
     } finally {

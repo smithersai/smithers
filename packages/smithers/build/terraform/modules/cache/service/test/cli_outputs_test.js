@@ -244,7 +244,8 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
             expect((await Fs.readdir(Path.join(f.b, ".flows/cas"))).some((p) => p.includes(".tmp-"))).toBe(false)
           }
         })
-      })
+        // A busy service is retried for up to 8 seconds before the entry is skipped.
+      }, 30000)
     }
   })
 }

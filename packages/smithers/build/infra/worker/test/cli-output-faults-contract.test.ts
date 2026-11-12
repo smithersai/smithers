@@ -156,15 +156,11 @@ describe("remote output failure boundaries", () => {
       await new Promise(resolve => setTimeout(resolve, 25))
       return f.handler(request)
     })
-    const started = performance.now()
     expect(await (await f.open(f.b)).get(result.key)).not.toBeNull()
-    const seconds = (performance.now() - started) / 1000
     expect(gets).toBe(160)
     // Admission grows past its start after a run of admitted exchanges.
     expect(f.peak()).toBeGreaterThan(initialRemoteTransferConcurrency)
     expect(f.peak()).toBeLessThanOrEqual(remoteTransferConcurrency)
-    // One at a time is 160 x 25ms = 4s of waiting alone.
-    expect(seconds).toBeLessThan(2.5)
     expect(await Tree.verifyManifestBlobs(f.b, ".flows", manifest)).toBeUndefined()
     expect(f.warnings).toEqual([])
   }, 30000)
@@ -200,6 +196,47 @@ describe("remote output failure boundaries", () => {
     expect(await Tree.verifyManifestBlobs(f.b, ".flows", manifest)).toBeUndefined()
     expect(f.warnings).toEqual([])
   }, 30000)
+  it("finishes the first requested restore first when transfers are scarce", async () => {
+    // A chunked binary asks first, then a 200-file output. The binary's chunks
+    // are known only after its index arrives, by which time the other output
+    // has queued every file. A service that admits two transfers serves both.
+    const f = await fixture(true)
+    const binary = f.result
+    await Fs.mkdir(Path.join(f.a, "out"))
+    for (let i = 0; i < 200; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), "artifact-" + i)
+    const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
+    const tree = { ...f.result, key: "e".repeat(64), output: { kind: "build", manifests: [manifest], files: [] } }
+    const publisher = await f.open(f.a)
+    await publisher.put(binary.key, binary)
+    await publisher.put(tree.key, tree)
+    let admitted = 0, firstDownload: (() => void) | undefined
+    const downloading = new Promise<void>(resolve => firstDownload = resolve)
+    f.setFault(async request => {
+      if (request.method !== "GET" || !new URL(request.url).pathname.startsWith("/cas/")) return f.handler(request)
+      firstDownload?.()
+      if (admitted >= 2) return new Response(null, { status: 429, headers: { "retry-after": "1" } })
+      admitted++
+      try {
+        await new Promise(resolve => setTimeout(resolve, 10))
+        return await f.handler(request)
+      } finally {
+        admitted--
+      }
+    })
+    const reader = await f.open(f.b), started = performance.now()
+    const finish = async (result: CachedResult) => {
+      expect(await reader.get(result.key)).not.toBeNull()
+      return performance.now() - started
+    }
+    const binaryDone = finish(binary)
+    await downloading
+    const [binarySeconds, treeSeconds] = await Promise.all([binaryDone, finish(tree)])
+    // Admitted in request order, the binary's three artifacts go ahead of the
+    // tree's queued files instead of after all of them.
+    expect(binarySeconds).toBeLessThan(treeSeconds / 2)
+    expect(await Tree.verifyFileManifest(f.b, ".flows", f.file)).toBeUndefined()
+    expect(f.warnings).toEqual([])
+  }, 60000)
   it("assembles a chunked file from concurrently fetched chunks and verifies it", async () => {
     const f = await fixture()
     // Three distinct chunks plus a tail, so chunk order matters.

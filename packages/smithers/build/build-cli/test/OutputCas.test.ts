@@ -496,6 +496,22 @@ it("starts waiters in arrival order and releases a failed unit's permit", async 
   expect(order).toEqual([0, 1, 2, 3])
 })
 
+it("starts the lowest priority waiter first and keeps arrival order within a priority", async () => {
+  const limit = makeLimiter(1), order: Array<string> = []
+  let release!: () => void
+  const held = limit(() => new Promise<void>((resolve) => release = resolve))
+  const queued = [
+    limit(async () => void order.push("late restore"), 2),
+    limit(async () => void order.push("first restore a"), 1),
+    limit(async () => void order.push("publication"), 0),
+    limit(async () => void order.push("first restore b"), 1)
+  ]
+  release()
+  await held
+  await Promise.all(queued)
+  expect(order).toEqual(["publication", "first restore a", "first restore b", "late restore"])
+})
+
 it("stops fetching after the first missing artifact of a concurrent restore", async () => {
   const cas = await fresh()
   const files = Array.from({ length: 32 }, (_, n) => ({ path: String(n), digest: hash(Buffer.from(String(n))) }))
