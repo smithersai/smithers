@@ -199,9 +199,13 @@ describe.skipIf(process.platform === "win32")("watch process-group containment",
     expect(started).toBe(2)
   })
 
-  it.each(["default", "ignores TERM", "exits zero"])(
+  // The cases below start real process groups. A fixture that never reports
+  // is stopped by the test's own timeout through its `signal`, not by a fixed
+  // wall-clock abort: under a parallel file pool on 4 vCPUs a 15 s abort fired
+  // before the fixture's leader had printed its pids.
+  it.for(["default", "ignores TERM", "exits zero"])(
     "awaits the resistant descendant before reporting cancellation (leader %s)",
-    async (leader) => {
+    async (leader, { signal }) => {
       const root = await fixture(
         resistantDescendant + (leader === "default" ? "" : leader === "ignores TERM"
           ? "\nprocess.on(\"SIGTERM\", () => {});"
@@ -213,41 +217,36 @@ describe.skipIf(process.platform === "win32")("watch process-group containment",
       let leaderPid = 0
       let completed = false
       let errors = ""
-      const deadline = setTimeout(() => controller.abort(), 15_000)
-      try {
-        const result = await Watch.run({
-          root,
-          args: [],
-          ignored: [basename(root), "src", "package.json"],
-          debounceMs: 20,
-          once: false,
-          signal: controller.signal,
-          stdout: (text) => {
-            pending += text
-            if (!pending.includes("\n")) return
-            const message = JSON.parse(pending)
-            descendant = message.descendant
-            leaderPid = message.leader
-            pids.push(descendant, leaderPid)
-            expect(alive(descendant)).toBe(true)
-            controller.abort()
-          },
-          stderr: (text) => {
-            errors += text
-          },
-          cycleCompleted: () => {
-            expect(descendant, errors).toBeGreaterThan(1)
-            expect(alive(descendant)).toBe(false)
-            expect(alive(leaderPid)).toBe(false)
-            expect(alive(-leaderPid)).toBe(false)
-            completed = true
-          }
-        })
-        expect(result).toEqual({ cycles: 1, exitCode: 1, stopped: true })
-        expect(completed).toBe(true)
-      } finally {
-        clearTimeout(deadline)
-      }
+      const result = await Watch.run({
+        root,
+        args: [],
+        ignored: [basename(root), "src", "package.json"],
+        debounceMs: 20,
+        once: false,
+        signal: AbortSignal.any([controller.signal, signal]),
+        stdout: (text) => {
+          pending += text
+          if (!pending.includes("\n")) return
+          const message = JSON.parse(pending)
+          descendant = message.descendant
+          leaderPid = message.leader
+          pids.push(descendant, leaderPid)
+          expect(alive(descendant)).toBe(true)
+          controller.abort()
+        },
+        stderr: (text) => {
+          errors += text
+        },
+        cycleCompleted: () => {
+          expect(descendant, errors).toBeGreaterThan(1)
+          expect(alive(descendant)).toBe(false)
+          expect(alive(leaderPid)).toBe(false)
+          expect(alive(-leaderPid)).toBe(false)
+          completed = true
+        }
+      })
+      expect(result).toEqual({ cycles: 1, exitCode: 1, stopped: true })
+      expect(completed).toBe(true)
     }
   )
 
@@ -278,78 +277,67 @@ describe.skipIf(process.platform === "win32")("watch process-group containment",
     expect(alive(descendant)).toBe(false)
   })
 
-  it("waits for group cleanup before surfacing a watcher error", async () => {
+  it("waits for group cleanup before surfacing a watcher error", async ({ signal }) => {
     const root = await fixture(resistantDescendant)
     const failure = new Error("fixture watch failed")
     let descendant = 0
     let pending = ""
-    const controller = new AbortController()
-    const deadline = setTimeout(() => controller.abort(), 15_000)
-    try {
-      await expect(Watch.run({
-        root,
-        args: [],
-        ignored: [basename(root), "src", "package.json"],
-        debounceMs: 20,
-        once: false,
-        signal: controller.signal,
-        stdout: (text) => {
-          pending += text
-          if (!pending.includes("\n")) return
-          const message = JSON.parse(pending)
-          descendant = message.descendant
-          pids.push(descendant, message.leader)
-          fixtureEntry.watcher!.emit("error", failure)
-        },
-        stderr: () => {}
-      })).rejects.toBe(failure)
-      expect(descendant).toBeGreaterThan(1)
-      expect(alive(descendant)).toBe(false)
-    } finally {
-      clearTimeout(deadline)
-    }
+    await expect(Watch.run({
+      root,
+      args: [],
+      ignored: [basename(root), "src", "package.json"],
+      debounceMs: 20,
+      once: false,
+      signal,
+      stdout: (text) => {
+        pending += text
+        if (!pending.includes("\n")) return
+        const message = JSON.parse(pending)
+        descendant = message.descendant
+        pids.push(descendant, message.leader)
+        fixtureEntry.watcher!.emit("error", failure)
+      },
+      stderr: () => {}
+    })).rejects.toBe(failure)
+    expect(descendant).toBeGreaterThan(1)
+    expect(alive(descendant)).toBe(false)
   })
 
-  it("does not launch a replacement until the stale cycle's descendant is gone", async () => {
+  it("does not launch a replacement until the stale cycle's descendant is gone", async ({ signal }) => {
     const root = await fixture(resistantDescendant)
     const controller = new AbortController()
-    const deadline = setTimeout(() => controller.abort(), 25_000)
     let firstDescendant = 0
     let frames = 0
     let pending = ""
     let changed: Promise<void> | undefined
-    try {
-      const result = await Watch.run({
-        root,
-        args: [],
-        ignored: [basename(root), "src", "package.json"],
-        debounceMs: 20,
-        once: false,
-        signal: controller.signal,
-        stdout: (text) => {
-          pending += text
-          if (!pending.includes("\n")) return
-          const message = JSON.parse(pending)
-          pending = ""
-          pids.push(message.descendant, message.leader)
-          frames += 1
-          if (frames === 1) {
-            firstDescendant = message.descendant
-            changed = Fs.writeFile(join(root, "changed.txt"), "new input")
-          } else {
-            expect(alive(firstDescendant)).toBe(false)
-            controller.abort()
-          }
-        },
-        stderr: () => {}
-      })
-      await changed
-      expect(frames).toBe(2)
-      expect(result).toEqual({ cycles: 2, exitCode: 1, stopped: true })
-      expect(pids.every((pid) => !alive(pid))).toBe(true)
-    } finally {
-      clearTimeout(deadline)
-    }
+    const result = await Watch.run({
+      root,
+      args: [],
+      ignored: [basename(root), "src", "package.json"],
+      debounceMs: 20,
+      once: false,
+      signal: AbortSignal.any([controller.signal, signal]),
+      stdout: (text) => {
+        pending += text
+        if (!pending.includes("\n")) return
+        const message = JSON.parse(pending)
+        pending = ""
+        pids.push(message.descendant, message.leader)
+        frames += 1
+        if (frames === 1) {
+          firstDescendant = message.descendant
+          changed = Fs.writeFile(join(root, "changed.txt"), "new input")
+        } else {
+          expect(alive(firstDescendant)).toBe(false)
+          controller.abort()
+        }
+      },
+      stderr: () => {}
+    })
+    await changed
+    expect(frames).toBe(2)
+    expect(result).toEqual({ cycles: 2, exitCode: 1, stopped: true })
+    expect(pids.every((pid) => !alive(pid))).toBe(true)
   })
 
   it("rescans and replaces the cycle when the notifier drops an edit", async () => {

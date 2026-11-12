@@ -74,7 +74,7 @@ describe.skipIf(process.platform === "win32")("affected contained git", () => {
     })
   })
 
-  it("times out an injected hung git and waits for its death", async () => {
+  it("times out an injected hung git and waits for its death", async ({ signal }) => {
     const { root, environment } = await fixture(`
 require("node:fs").writeFileSync("pid", String(process.pid));
 process.on("SIGTERM", () => {});
@@ -85,13 +85,13 @@ setInterval(() => {}, 1000);
       _tag: "smithers-build/AffectedGitError",
       code: "timed_out"
     })
-    const pid = await waitPid(root)
+    const pid = await waitPid(root, signal)
     pids.push(pid)
     await assertion
     expect(alive(pid)).toBe(false)
   })
 
-  it("cancels mid-run, preserves the reason, and launches no later git command", async () => {
+  it("cancels mid-run, preserves the reason, and launches no later git command", async ({ signal }) => {
     const { root, environment } = await fixture(`
 require("node:fs").appendFileSync("pid", String(process.pid));
 process.on("SIGTERM", () => {});
@@ -105,7 +105,7 @@ setInterval(() => {}, 1000);
       code: "cancelled",
       cause: { cause: reason }
     })
-    const pid = await waitPid(root)
+    const pid = await waitPid(root, signal)
     pids.push(pid)
     controller.abort(reason)
     await assertion
@@ -124,13 +124,17 @@ setInterval(() => {}, 1000);
   })
 })
 
-const waitPid = async (root: string) => {
-  for (let attempt = 0; attempt < 400; attempt++) {
+/**
+ * The fixture git's pid, once it has written it. The test's own timeout bounds
+ * the wait through `signal`: a fixed 10 s cap ran out before the fixture's Node
+ * process started under a parallel file pool on 4 vCPUs.
+ */
+const waitPid = async (root: string, signal: AbortSignal) => {
+  for (;;) {
     const text = await Fs.readFile(join(root, "pid"), "utf8").catch(() => "")
     if (text !== "") return Number(text)
-    await delay(25)
+    await delay(25, undefined, { signal })
   }
-  throw new Error("git fixture did not start")
 }
 
 it("explicit files need no git process", async () => {

@@ -75,7 +75,7 @@ The API reference is derived from the JSDoc on the exported declarations in
 ## Testing
 
 Run `pnpm run check`, `pnpm run test --run`, and `pnpm run coverage --run`
-under a supported Node version. The suite uses one Vitest worker by default.
+under a supported Node version. The suite runs two Vitest workers by default.
 Append `--fsModuleCache` to reuse transforms between runs. Coverage floors
 remain enabled. Execution tests start real child CLIs and create temporary
 repositories outside this checkout, so cold process startup is part of their

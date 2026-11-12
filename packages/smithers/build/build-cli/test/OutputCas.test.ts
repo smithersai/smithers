@@ -240,7 +240,11 @@ it("refuses a large local file filed under another digest", async () => {
   await expect(prepare(cas, fileOutput(digest))).rejects.toThrow("changed during chunking")
 })
 
-it("fails closed while another real filesystem writer truncates and regrows artifacts", async () => {
+// The two races below read while a worker thread rewrites the file, until a
+// read observes the rewrite. The test's own timeout bounds that loop through
+// `signal`: a fixed 512 attempts ran out on a 4-vCPU box running four test
+// files at once, where the reader and the worker seldom ran at the same time.
+it("fails closed while another real filesystem writer truncates and regrows artifacts", async ({ signal }) => {
   const { Worker } = await import("node:worker_threads")
   const { once } = await import("node:events")
   const cas = await fresh(), size = chunkBytes, digest = hash(Buffer.alloc(size))
@@ -271,7 +275,7 @@ it("fails closed while another real filesystem writer truncates and regrows arti
   const failures = new Set<string>()
   let truncated = false
   try {
-    for (let attempt = 0; attempt < 512 && !truncated; attempt++) {
+    while (!truncated && !signal.aborted) {
       try {
         expect(hash(await readBlob(cas, digest))).toBe(digest)
       } catch (cause) {
@@ -411,7 +415,7 @@ it("transports the Go module-cache archive envelope through the same verified CA
   expect(await readBlob(b, digest)).toEqual(bytes)
 })
 
-it("refuses a descriptor whose inode was swapped after the path was inspected", async () => {
+it("refuses a descriptor whose inode was swapped after the path was inspected", async ({ signal }) => {
   const { Worker } = await import("node:worker_threads")
   const { once } = await import("node:events")
   const cas = await fresh(), bytes = Buffer.from("data"), digest = hash(bytes), path = Path.join(cas, digest)
@@ -434,7 +438,7 @@ it("refuses a descriptor whose inode was swapped after the path was inspected", 
   await once(worker, "message")
   let refused = false
   try {
-    for (let attempt = 0; attempt < 512 && !refused; attempt++) {
+    while (!refused && !signal.aborted) {
       try {
         expect(await readBlob(cas, digest)).toEqual(bytes)
       } catch (cause) {

@@ -15,9 +15,17 @@ export default defineConfig({
     include: ["test/**/*.test.{ts,vibe}"],
     // Execution fixtures launch real toolchains, containers, and child CLIs;
     // planner fixtures copy and fingerprint production implementation trees.
-    // Keep the file pool serial so the package does not multiply host-wide
-    // contention. Test and cleanup budgets still bound external operations.
-    maxWorkers: 1,
+    // The time is spread over 183 files: on a 4-vCPU box the serial pool took
+    // 1,863 s, the slowest file 147 s and the ten slowest 600 s of it. Two
+    // workers took 1,180 s in the same box (2026-11-12). Four took 661 to 744 s,
+    // but WatchContainment's "leader ignores TERM" case then failed in 2 of 4
+    // runs: when its cycle reported completion, a fixture process still
+    // answered `kill(pid, 0)`. Raise the bound once that race is found. A fixed bound
+    // rather than the host's core count keeps a large workstation from
+    // multiplying the contention these fixtures create. Tests that wait on a
+    // process they start are bounded by the test's own timeout through
+    // `signal`, not by a wall-clock cap the pool can exceed.
+    maxWorkers: 2,
     testTimeout: 120_000,
     hookTimeout: 120_000,
     coverage: {
