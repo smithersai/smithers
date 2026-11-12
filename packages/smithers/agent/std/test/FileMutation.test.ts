@@ -133,6 +133,28 @@ describe("file mutation lock lifecycle", () => {
     expect(acquired[0]).toBe(acquired[1])
   })
 
+  it.each(
+    [
+      // A kernel-guarded host removes an empty directory without recursion, and
+      // refuses a recursive removal whenever a deny or ask rule may select
+      // something under the directory, as `deny **/.env*` does under every one.
+      "recursive",
+      // Node's `fs.rm` removes a directory only recursively.
+      "narrow"
+    ] as const
+  )("releases its lock on a host that refuses a %s directory removal", async (refused) => {
+    const { fs, held } = host()
+    const exit = await Effect.runPromiseExit(Effect.scoped(FileMutation.acquire({
+      ...fs,
+      remove: (path, options) =>
+        (options?.recursive === true) === (refused === "recursive")
+          ? failure("PermissionDenied", "remove")
+          : fs.remove(path)
+    }, ["/file"])))
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(held.size).toBe(0)
+  })
+
   it("surfaces release failure instead of reporting a clean success", async () => {
     const { fs } = host()
     const exit = await Effect.runPromiseExit(

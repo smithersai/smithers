@@ -440,7 +440,18 @@ export const acquire = (
                 path
               })))
         ),
-        () => fileSystem.remove(lock, { recursive: true }).pipe(Effect.orDie)
+        // The lock is the empty directory made above, so its release asks for
+        // no recursion first. The kernel's descriptor-relative hosts remove an
+        // empty directory that way, and refuse a recursive removal whenever a
+        // deny or ask rule may select something under the directory, as
+        // `deny **/.env*` does under every one. Effect's portable FileSystem
+        // has no rmdir and Node's `fs.rm` removes a directory only
+        // recursively, so a host that refuses the narrow removal gets that one.
+        () =>
+          fileSystem.remove(lock).pipe(
+            Effect.catch(() => fileSystem.remove(lock, { recursive: true })),
+            Effect.orDie
+          )
       )
     }
     return {
