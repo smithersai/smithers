@@ -53,6 +53,20 @@ Named browser sites and status:
 | `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code: 28 of the file's browser branch arms. It becomes a `spec function` when the compiler parses VIP-43 (`~/vl/vibelang-bugs/spec-only-function/`, session 24). |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
+| `src/core/conversation.vibe` `apply`: `event.seq !== conversation.seq + 1` | Every browser caller goes through `receive`, which drops a repeated event and marks a gap before calling `apply`. The Worker's sequencer reaches it; the unit gate measures it. |
+| `src/core/conversation.vibe` `apply`: a fractional or negative walkthrough `step`, `duration` or seek | The page decodes every event with `EventSchema`, whose `Seq` is a non-negative integer, so such an event fails decoding first (vl-coverage-core: the forged fault crashed Foldkit's schema check when it sent one). The contracts keep the checks because Dafny's numbers are not integers. |
+| `src/core/conversation.vibe` `hasClientId("")` | `apply` refuses an empty client id before calling it, and `post` before that. |
+
+### A backend that breaks the conversation's rules (vl-coverage-core, 2026-11-12)
+
+`fault=forged` (`test/support/forgedEvents.vibe`) inserts schema-valid events that `apply` must ignore into the real
+mock's stream: 33 in the home conversation (8 while a reply streams: another reply or tour, pane and tour moves by the
+wrong id; 25 after it: repeated, empty and id-less posts, replies to nothing, moves of no reply, tour or run, refused
+grants) and 6 in a tour (a pause before any walkthrough, out-of-range steps, an empty target, out-of-range seeks).
+Each takes the next sequence number, so the page applies it rather than replaying a gap; the real events after it are
+renumbered, and a subscription that resumes inside an insertion gets the rest of it first. `e2e/core-conversation.spec.ts`
+asserts the client's conversation equals the real one but for `seq`, one question and one answer show, no forged text
+shows, and the tour stays on its real step and still moves on.
 
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 

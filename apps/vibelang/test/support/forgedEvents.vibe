@@ -1,0 +1,182 @@
+// A backend that breaks the conversation's rules (`fault=forged`, test/support/FaultyFactory.vibe): over the real mock's
+// stream it inserts schema-valid events that the conversation machine (src/core/conversation.vibe `apply`) must ignore.
+// In the home conversation: while the first reply streams and after it finishes. In a tour conversation: after the tour
+// starts and after its first walkthrough step. Each forged event takes the next sequence number, so the browser applies
+// it rather than treating it as a gap; the real events after it are renumbered past the insertions.
+import type { Event } from "../../src/core/conversation.vibe"
+
+/**
+ * One conversation's forging, shared by every subscription to it: the entries it forges against and, by the real
+ * sequence number each follows, the events inserted there. The first subscription to reach a trigger decides its
+ * insertion; later subscriptions, including replays, insert the same events at the same place.
+ */
+export interface Lane {
+  post: string
+  clientId: string
+  reply: string
+  streaming: boolean
+  settled: boolean
+  tour: string
+  driven: boolean
+  readonly insertions: Map<number, ReadonlyArray<Event>>
+}
+
+/** The forging transport's lanes, by conversation. */
+export interface Forgery { readonly lanes: Map<string, Lane> }
+
+export function forgery(): Forgery {
+  return { lanes: new Map() }
+}
+
+/** Whether the forging transport forges in this conversation: the home conversation and every tour. */
+export function forges(conversation: string): boolean {
+  return conversation === "home" || conversation.startsWith("tour-")
+}
+
+/** Every forged event's browser sequence number, by conversation, for the page's read-only observation. */
+export function forgedSeqs(forgery: Forgery | undefined): Record<string, number[]> {
+  if (forgery === undefined) return {}
+  return Object.fromEntries([...forgery.lanes].map(([conversation, lane]) => {
+    const seqs: number[] = []
+    let shift = 0
+    for (const [real, events] of [...lane.insertions].sort((a, b) => a[0] - b[0])) {
+      for (let index = 0; index < events.length; index++) seqs.push(real + shift + index + 1)
+      shift += events.length
+    }
+    return [conversation, seqs]
+  }))
+}
+
+function laneOf(forgery: Forgery, conversation: string): Lane {
+  const known = forgery.lanes.get(conversation)
+  if (known !== undefined) return known
+  const lane: Lane = { post: "", clientId: "", reply: "", streaming: false, settled: false, tour: "", driven: false, insertions: new Map() }
+  forgery.lanes.set(conversation, lane)
+  return lane
+}
+
+/** How many forged events come before real event `seq` in the browser's numbering. */
+function shiftBefore(lane: Lane, seq: number): number {
+  let shift = 0
+  for (const [real, events] of lane.insertions) if (real < seq) shift += events.length
+  return shift
+}
+
+/** Events a streaming reply must ignore: another reply or tour while one works, and pane or tour moves by the wrong id. */
+function whileStreaming(post: string, reply: string): ReadonlyArray<Event> {
+  return [
+    { type: "ReplyStarted", seq: 0, id: "forged-reply", inReplyTo: post },
+    { type: "TourStarted", seq: 0, id: "forged-tour" },
+    { type: "ReplyDelta", seq: 0, id: "forged-reply", text: "forged" },
+    { type: "PaneOpened", seq: 0, id: "forged-reply", url: "/docs/forged" },
+    { type: "PaneOpened", seq: 0, id: reply, url: "" },
+    { type: "WalkthroughDriven", seq: 0, id: reply, step: 1, target: "forged", at: 0, duration: 0 },
+    { type: "TourPaused", seq: 0, id: reply, at: 0 },
+    { type: "TourEnded", seq: 0, id: reply },
+  ]
+}
+
+/** Events a settled conversation must ignore: repeated or empty posts, replies to nothing, and moves of no tour or run. */
+function afterSettled(post: string, clientId: string, reply: string): ReadonlyArray<Event> {
+  return [
+    { type: "Posted", seq: 0, id: "forged-post", clientId, name: "Forger", text: "forged" },
+    { type: "Posted", seq: 0, id: "forged-post", clientId: "forged-client", name: "Forger", text: "" },
+    { type: "Posted", seq: 0, id: "forged-post", clientId: "", name: "Forger", text: "forged" },
+    { type: "Posted", seq: 0, id: post, clientId: "forged-client", name: "Forger", text: "forged" },
+    { type: "Posted", seq: 0, id: "", clientId: "forged-client", name: "Forger", text: "forged" },
+    { type: "ReplyStarted", seq: 0, id: reply, inReplyTo: post },
+    { type: "ReplyStarted", seq: 0, id: "forged-reply", inReplyTo: post },
+    { type: "ReplyStarted", seq: 0, id: "forged-reply", inReplyTo: "" },
+    { type: "ReplyStarted", seq: 0, id: "forged-reply", inReplyTo: "forged-missing" },
+    { type: "ReplyDelta", seq: 0, id: reply, text: "forged" },
+    { type: "ReplyRestarted", seq: 0, id: reply },
+    { type: "ReplyFinished", seq: 0, id: reply },
+    { type: "ReplyFailed", seq: 0, id: reply, reason: "forged" },
+    { type: "TourStarted", seq: 0, id: reply },
+    { type: "TourEnded", seq: 0, id: "forged-missing" },
+    { type: "WalkthroughDriven", seq: 0, id: "forged-missing", step: 1, target: "forged", at: 0, duration: 0 },
+    { type: "TourSought", seq: 0, id: "forged-missing", at: 0, step: 1 },
+    { type: "TourResumed", seq: 0, id: "forged-missing", at: 0 },
+    { type: "PaneOpened", seq: 0, id: "", url: "" },
+    { type: "RoleGranted", seq: 0, id: "", by: "forged", role: "maintainer", mode: "person" },
+    { type: "RoleGranted", seq: 0, id: "forged-person", by: "forged", role: "viewer", mode: "person" },
+    { type: "ActionAuthorized", seq: 0, id: "forged-person", by: "forged", action: "read" },
+    { type: "ActionRequested", seq: 0, id: "", flow: "forged", door: "button", actor: "forged", at: 0 },
+    { type: "ActionStep", seq: 0, id: "forged-run", key: "forged", name: "forged", attempt: 1, state: "running", at: 0 },
+    { type: "ActionSettled", seq: 0, id: "forged-run", state: "passed", result: "", at: 0 },
+  ]
+}
+
+/** A tour that shows no walkthrough yet must ignore a pause. */
+function beforeWalkthrough(tour: string): ReadonlyArray<Event> {
+  return [{ type: "TourPaused", seq: 0, id: tour, at: 0 }]
+}
+
+/**
+ * A tour that shows a walkthrough must ignore steps outside 1 to 10, an empty target and seeks outside 1 to 11. Every
+ * number stays a `Seq` (a non-negative integer, `schemas.vibe`): the page decodes events with that schema, so a
+ * fractional or negative step or duration never reaches it.
+ */
+function afterWalkthrough(tour: string): ReadonlyArray<Event> {
+  const driven = { type: "WalkthroughDriven", seq: 0, id: tour, step: 2, target: "forged", at: 0, duration: 0 } as const
+  return [
+    { ...driven, step: 0 },
+    { ...driven, step: 11 },
+    { ...driven, target: "" },
+    { type: "TourSought", seq: 0, id: tour, at: 0, step: 0 },
+    { type: "TourSought", seq: 0, id: tour, at: 0, step: 12 },
+  ]
+}
+
+/** The events this real event triggers, decided once per conversation. */
+function triggered(lane: Lane, event: Event): ReadonlyArray<Event> {
+  const recorded = lane.insertions.get(event.seq)
+  if (recorded !== undefined) return recorded
+  if (event.type === "Posted" && lane.post === "") {
+    lane.post = event.id
+    lane.clientId = event.clientId
+  }
+  let inserted: ReadonlyArray<Event> = []
+  if (event.type === "ReplyStarted" && event.inReplyTo === lane.post && !lane.streaming) {
+    lane.streaming = true
+    lane.reply = event.id
+    inserted = whileStreaming(lane.post, lane.reply)
+  } else if (event.type === "ReplyFinished" && event.id === lane.reply && !lane.settled) {
+    lane.settled = true
+    inserted = afterSettled(lane.post, lane.clientId, lane.reply)
+  } else if (event.type === "TourStarted" && lane.tour === "") {
+    lane.tour = event.id
+    inserted = beforeWalkthrough(lane.tour)
+  } else if (event.type === "WalkthroughDriven" && event.id === lane.tour && !lane.driven) {
+    lane.driven = true
+    inserted = afterWalkthrough(lane.tour)
+  }
+  if (inserted.length > 0) lane.insertions.set(event.seq, inserted)
+  return inserted
+}
+
+/** The real event in the browser's numbering, then the forged events that follow it, numbered after it. */
+export function forge(forgery: Forgery, conversation: string, event: Event): ReadonlyArray<Event> {
+  const lane = laneOf(forgery, conversation)
+  const seq = event.seq + shiftBefore(lane, event.seq)
+  const forged = triggered(lane, event).map((inserted, index) => ({ ...inserted, seq: seq + index + 1 }))
+  return [{ ...event, seq }, ...forged]
+}
+
+/**
+ * Where a subscription from browser cursor `after` starts: the real cursor to ask the mock for, and the forged events
+ * after `after` that belong before the mock's next event (a cursor can fall inside an insertion).
+ */
+export function resumeAt(forgery: Forgery, conversation: string, after: number): { readonly cursor: number; readonly first: ReadonlyArray<Event> } {
+  const lane = laneOf(forgery, conversation)
+  let shift = 0
+  for (const [real, events] of [...lane.insertions].sort((a, b) => a[0] - b[0])) {
+    const at = real + shift
+    if (after < at) break
+    if (after < at + events.length) {
+      return { cursor: real, first: events.slice(after - at).map((inserted, index) => ({ ...inserted, seq: after + index + 1 })) }
+    }
+    shift += events.length
+  }
+  return { cursor: Math.max(0, after - shift), first: [] }
+}
