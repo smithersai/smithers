@@ -63,8 +63,8 @@ import { machineOf } from "./TodoMachine.ts"
 // Every writer call is fenced by the TODO and the attempt (`Stack.report`), so a dropped TODO's run stops at its next
 // one. GitHub is written only at Publish, so an attempt that publishes nothing leaves nothing on GitHub (ruling GH-11).
 // Every GitHub write goes through `Action.once` with a `GitHub.Once` adapter: it carries its key (the branch's name
-// suffix, from the attempt, `branchKeyOf`, which Begin reserves; the commit's `Smithers-Write` trailer and the pull
-// request's marker, the step's own), and a step that runs again after a lost answer or a crash finds its write by that
+// suffix, from the attempt, `branchKeyOf`, which Begin reserves; the commit's `Smithers-Write` trailer, the step's own;
+// the pull request's marker, from the attempt, `pullKeyOf`, so `todo/Drop` finds one never reported), and a step that runs again after a lost answer or a crash finds its write by that
 // key, never by a name, a message or a parent that only look alike (docs/proposals/durable-external-effects.md).
 // Nothing here merges, approves or forces a ref: a person merges (decision 0012 decision 6). Records carry ids, numbers
 // and outcomes, never a title, a prompt or a file.
@@ -403,6 +403,11 @@ export interface Services<E, R> {
   /** The engine's durable cancellation request, including an execution not yet admitted. */
   readonly cancel?: (executionId: string) => Effect.Effect<void, unknown>
   /**
+   * Whether the engine holds execution `executionId` ended (completed, failed or cancelled) or never admitted it, so
+   * none of its steps can still write to GitHub (worker/flows/TodoDrop.ts `runEnded`).
+   */
+  readonly runEnded?: (executionId: string) => Effect.Effect<boolean, unknown>
+  /**
    * Starts a remote execution on its own host: the next TODO's run, a head's checks. The same start again changes
    * nothing. Admission failures reach the step's durable retry policy, which replays the writer's persisted receipt.
    */
@@ -456,6 +461,13 @@ export const branchPrefixOf = (number: number): string => `smithers/t${number}-`
  * by it, so both steps name one branch, and no other attempt's.
  */
 export const branchKeyOf = (attemptId: string): string => digestSync(`smithers/todo-branch/v1\n${attemptId}`)
+
+/**
+ * The key of attempt `attemptId`'s pull request: 64 hex of SHA-256 over a version line and the attempt's id.
+ * `todo/Publish` opens the pull request with its marker, and `todo/Drop` finds by it a pull request the dropped
+ * attempt opened but never recorded (worker/flows/TodoDrop.ts).
+ */
+export const pullKeyOf = (attemptId: string): string => digestSync(`smithers/todo-pull/v1\n${attemptId}`)
 
 /**
  * A TODO's title as a branch name's label, at most 40 characters: accents come off their letters (NFKD, then the
@@ -750,18 +762,23 @@ export const steps = <E, R>(services: Services<E, R>) => {
         )
         // A close arriving during commit must not advance to the next external write.
         yield* assertBase(request, baseOf(begun))
-        // The pull request, found among the branch's by this step's marker, or opened once. Stacked on another TODO's
-        // branch, it opens as a draft, so nobody merges it into that branch by mistake.
-        const pull = yield* Action.once(
-          "pull",
-          GitHub.Once.pull(repository.owner, repository.name, {
-            head: begun.branch,
-            base: baseOf(begun),
-            title: `T${request.number}: ${begun.title}`.slice(0, 256),
-            body: pullBodyOf(begun, closes),
-            draft: baseOf(begun) !== begun.defaultBranch,
-          }),
-        ).pipe(Effect.mapError(failureIn("publish", "pr_refused")))
+        // The pull request, found among the branch's by the attempt's marker (`pullKeyOf`), or opened once. Stacked on
+        // another TODO's branch, it opens as a draft, so nobody merges it into that branch by mistake.
+        const write = GitHub.Once.pull(repository.owner, repository.name, {
+          head: begun.branch,
+          base: baseOf(begun),
+          title: `T${request.number}: ${begun.title}`.slice(0, 256),
+          body: pullBodyOf(begun, closes),
+          draft: baseOf(begun) !== begun.defaultBranch,
+        })
+        // A run that opened its pull request before the attempt keyed it (2026-11-12) marked it with this dispatch's key.
+        const dispatchKey = yield* Action.effectKey("pull")
+        const pull = yield* Action.once("pull", Action.keyed({
+          find: (key) => write.find(key).pipe(
+            Effect.flatMap((found) => Option.isSome(found) ? Effect.succeed(found) : write.find(dispatchKey)),
+          ),
+          perform: write.perform,
+        }), { key: pullKeyOf(request.attemptId) }).pipe(Effect.mapError(failureIn("publish", "pr_refused")))
         // Read it back into the projection, so every device sees it before the webhook rings.
         yield* projectPull(repository, pull.number, yield* fetchPull(repository, pull.number))
         return { headSha, prNumber: pull.number } satisfies Published
@@ -950,6 +967,26 @@ export const steps = <E, R>(services: Services<E, R>) => {
       Effect.withSpan("todo.fail", { attributes: { "smithers.todo.attempt": request.attemptId } }),
     )
 
+  /**
+   * The pull request attempt `request`'s Publish opened from `branch` without reporting it, found by its key alone
+   * (`pullKeyOf`). Until the attempt's run has ended its Publish may still be opening one, so the step retries.
+   */
+  const unreported = (request: TodoRequest, branch: string) =>
+    Effect.gen(function* () {
+      const ended = services.runEnded === undefined ? false : yield* services.runEnded(todoExecutionId(request.attemptId))
+      if (!ended) return yield* new TodoUnavailable({ step: "await" })
+      const repository = repositoryOfRequest(request)
+      const token = yield* tokenFor("await", request, "pulls")
+      const found = yield* GitHub.Pulls.findPullByHead(repository.owner, repository.name, {
+        head: branch,
+        writeId: pullKeyOf(request.attemptId),
+      }).pipe(withToken(token, services.apiBaseUrl))
+      return Option.map(found, (pull) => ({ headSha: pull.head.sha, prNumber: pull.number }) satisfies Published)
+    }).pipe(
+      Effect.provideService(HttpClient.HttpClient, services.http),
+      Effect.mapError(failureIn("await", "pr_refused")),
+    )
+
   // Inspection stays independently testable. The registered action parks, rather than recording StillOpen as
   // failed attempts. There are only two external facts to wait for: the base PR, then this PR.
   const awaitMerge = (payload: typeof Await.payloadSchema.Type) => {
@@ -977,7 +1014,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       })))
   }
 
-  return { begin, collect, wait, received, publish, await: await_, awaitMerge, settle, fail }
+  return { begin, collect, wait, received, publish, await: await_, awaitMerge, unreported, settle, fail }
 }
 
 /**

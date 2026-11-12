@@ -37,6 +37,7 @@ import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as Todo from "./flows/Todo.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as TodoBaseClosed from "./flows/TodoBaseClosed.ts"
+import * as TodoDrop from "./flows/TodoDrop.ts"
 import * as TodoMachine from "./flows/TodoMachine.ts"
 import { pullClosed } from "./flows/TodoWait.ts"
 import * as GitHubApply from "./github/Apply.ts"
@@ -521,6 +522,11 @@ const object = <E, R>(
               overflow: (due: Overflow.Due) => Effect.asVoid(sandboxes.wake(Overflow.boxBranch(due.repoId))),
               cancel: (executionId: string) =>
                 executions.getByName(executionId).cancel().pipe(Effect.provideService(RuntimeContext, runtime)),
+              runEnded: (executionId: string) =>
+                TodoDrop.runEnded(Layer.unwrap(Effect.map(
+                  hyperdrive.connectionString,
+                  (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
+                )))(executionId).pipe(Effect.provideService(RuntimeContext, runtime)),
               start: Todo.admission((flow, options) =>
                 ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never })
                   .pipe(

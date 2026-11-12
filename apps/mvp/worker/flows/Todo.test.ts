@@ -8,6 +8,7 @@ import { TestSchemas } from "@smthrs/database"
 import { Agent } from "@smthrs/agent"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, WaitFor } from "@smthrs/flow"
 import { Database as FlowsDatabase, Journal, RunStore } from "@smthrs/flows"
+import { GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import { Model, type ModelEvent } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
@@ -1092,6 +1093,34 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(ctx.github.seen("POST", /\/git\/refs$/)).toHaveLength(0)
     expect(ctx.github.seen("POST", /^\/graphql$/)).toHaveLength(0)
     expect(ctx.github.pulls.size).toBe(0)
+  })
+
+  test("publish: its PR carries the attempt's key", async () => {
+    const ctx = await setup()
+    const start = (await commit("Keyed", "Do it."))!
+    const begun = ((await step(ctx, (steps) => steps.begin({ request: start }))) as Exit.Success<Todo.Begun>).value
+    const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
+    const published = await dispatched(ctx, (steps) => steps.publish({ request: start, begun, collected }))
+    const prNumber = (published as Exit.Success<Todo.Published>).value.prNumber
+    expect(GitHub.Issues.writeIdOf(ctx.github.issues.get(prNumber)!.body ?? "")).toBe(Todo.pullKeyOf(start.attemptId))
+  })
+
+  test("publish: a PR its dispatch's key marked before the attempt keyed it is adopted, opening no second", async () => {
+    const ctx = await setup()
+    const start = (await commit("Earlier", "Do it."))!
+    const begun = ((await step(ctx, (steps) => steps.begin({ request: start }))) as Exit.Success<Todo.Begun>).value
+    const collected = { additions: [{ path: "A.md", contents: btoa("a\n") }], deletions: [] }
+    let opened = 0
+    // A run that opened its PR before 2026-11-12 and lost the answer runs the same dispatch again.
+    const adopted = await dispatched(ctx, (steps) => Effect.gen(function* () {
+      const pull = ctx.github.openPull(begun.branch, "T1: Earlier")
+      ctx.github.issues.get(pull.number)!.body = GitHub.Issues.withWriteMarker("Do it.", yield* Action.effectKey("pull"))
+      opened = pull.number
+      return yield* steps.publish({ request: start, begun, collected })
+    }))
+    expect(failure(adopted)).toBeUndefined()
+    expect((adopted as Exit.Success<Todo.Published>).value.prNumber).toBe(opened)
+    expect(ctx.github.seen("POST", /\/pulls$/)).toHaveLength(0)
   })
 
   test("publish: a run begun before Publish made branches commits onto the branch its Begin made, creating none", async () => {

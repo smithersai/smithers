@@ -1,9 +1,13 @@
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Scope, Tracer } from "effect"
+import { GitHub } from "@smthrs/integrations"
+import { Cause, Context, Deferred, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
+import * as TestDatabase from "../../db/TestDatabase.ts"
+import { todoExecutionId } from "../../src/features/pulls/contract.ts"
+import * as ExecutionHost from "../ExecutionHost.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Stack from "../stack/Stack.ts"
@@ -157,6 +161,77 @@ test("cancelling a dropped attempt still closes its recorded PR through durable 
     expect(cleaned.exit).toEqual(Exit.succeed({ outcome: "closed" }))
     expect(cleaned.status).toBe("completed")
     expect(ctx.github.issues.get(ctx.pull.number)!.state).toBe("closed")
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+  }
+})
+
+/** A dropped attempt whose publish opened its PR from `feature` but never reported it, beside an unmarked PR there. */
+const unreported = async () => {
+  const ctx = await setup()
+  await ctx.drop()
+  await sql(runtime, `UPDATE todos SET pr_number = NULL, head_sha = NULL WHERE id = '${ctx.stop.todoId}'`)
+  await sql(runtime, `UPDATE todo_attempts SET branch = 'feature' WHERE id = '${ctx.stop.attemptId}'`)
+  ctx.github.issues.get(ctx.pull.number)!.body = GitHub.Issues.withWriteMarker("Make a change.", Todo.pullKeyOf(ctx.stop.attemptId))
+  const lookalike = ctx.github.openPull("feature", "Someone else's")
+  return { ...ctx, lookalike }
+}
+
+test("cleanup closes the PR a dropped attempt's publish opened but never reported, by its key, once its run ended", async () => {
+  const ctx = await unreported()
+  const asked: Array<string> = []
+  let ended = false
+  const services = { ...ctx.services, runEnded: (executionId: string) => Effect.sync(() => (asked.push(executionId), ended)) }
+  const calls = ctx.github.calls.length
+  // Its publish may still be opening it: the step retries, and asks GitHub nothing yet.
+  const running = await runtime.runPromise(Effect.exit(TodoDrop.cleanup(services)(ctx.stop)))
+  expect(Exit.isFailure(running) && Cause.squash(running.cause)).toEqual(new Todo.TodoUnavailable({ step: "await" }))
+  expect(ctx.github.calls).toHaveLength(calls)
+  ended = true
+  expect(await runtime.runPromise(TodoDrop.cleanup(services)(ctx.stop))).toEqual({ outcome: "closed" })
+  expect(asked).toEqual([todoExecutionId(ctx.stop.attemptId), todoExecutionId(ctx.stop.attemptId)])
+  expect(ctx.github.issues.get(ctx.pull.number)!.state).toBe("closed")
+  // A PR from the same branch without the attempt's marker is not the attempt's.
+  expect(ctx.github.issues.get(ctx.lookalike.number)!.state).toBe("open")
+  expect(await sql(runtime, "SELECT state, pr_number FROM todos")).toEqual([{ state: "dropped", pr_number: null }])
+})
+
+test("cleanup of an unreported PR waits without the engine's answer and skips when the attempt opened none", async () => {
+  const ctx = await unreported()
+  const blind = await runtime.runPromise(Effect.exit(TodoDrop.cleanup(ctx.services)(ctx.stop)))
+  expect(Exit.isFailure(blind) && Cause.squash(blind.cause)).toEqual(new Todo.TodoUnavailable({ step: "await" }))
+  ctx.github.issues.get(ctx.pull.number)!.body = "Make a change."
+  const services = { ...ctx.services, runEnded: () => Effect.succeed(true) }
+  expect(await runtime.runPromise(TodoDrop.cleanup(services)(ctx.stop))).toEqual({ outcome: "skipped" })
+  expect(ctx.github.seen("PATCH", /\/pulls\/\d+$/)).toHaveLength(0)
+  expect(ctx.github.issues.get(ctx.pull.number)!.state).toBe("open")
+})
+
+test("runEnded reads the engine: a settled or unknown run has ended, a parked one has not", { timeout: 120_000 }, async () => {
+  const Parked = Action.make("test/TodoDropParked", { payload: { park: Schema.Boolean }, success: Schema.Void })
+  const probe = Flow.make("test/TodoDropProbe", {
+    payload: { park: Schema.Boolean }, success: Schema.Void,
+    body: Node.capture({ parked: Parked.name }, ({ park }) => Parked.call({ park })),
+  })
+  const parking = Effect.runSync(Deferred.make<void>())
+  const registration = Interpreter.layerWithImplementations(probe,
+    Parked.toLayer(({ park }) => park ? Deferred.await(parking) : Effect.void),
+  ).pipe(Layer.provideMerge(Action.layerImplementations))
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const { context, engine } = await Effect.runPromise(build(registration).pipe(Effect.provideService(Scope.Scope, scope)))
+    const ended = TodoDrop.runEnded(ExecutionHost.readDatabase((await Effect.runPromise(TestDatabase.serverUrl)).toString(), engine.schema))
+    const flows = Context.get(context, FlowRuntime.FlowRuntime)
+    const done = crypto.randomUUID()
+    await Effect.runPromise(flows.execute(probe, { executionId: done, payload: { park: false } }).pipe(Effect.provide(context)))
+    const parked = crypto.randomUUID()
+    await Effect.runPromise(flows.execute(probe, { executionId: parked, payload: { park: true }, discard: true }).pipe(Effect.provide(context)))
+    await eventually(async () => (await Effect.runPromise(engine.status(parked))) === "running", 20_000)
+    expect(await Effect.runPromise(ended(done))).toBe(true)
+    expect(await Effect.runPromise(ended(parked))).toBe(false)
+    expect(await Effect.runPromise(ended(crypto.randomUUID()))).toBe(true)
+    await Effect.runPromise(flows.interrupt(probe, parked).pipe(Effect.provide(context)))
+    await eventually(async () => await Effect.runPromise(ended(parked)), 20_000)
   } finally {
     await Effect.runPromise(Scope.close(scope, Exit.void))
   }
