@@ -317,6 +317,44 @@ describe("Mapping.classify", () => {
     expect(raised.reason).toContain("hijack")
   })
 
+  it("treats a JSX spread as able to supply every escalating prop", () => {
+    const task = (attributes: string) => {
+      const source = [
+        "/** @jsxImportSource smthrs */",
+        "import { createSmithers } from \"smthrs\"",
+        "import { z } from \"zod\"",
+        "const { outputs, Task } = createSmithers({ result: z.string() })",
+        `export const go = <Task id="go" output={outputs.result} ${attributes}>{() => 'ok'}</Task>`
+      ].join("\n")
+      const factories = Inventory.factoryNames(new Map([["flow.tsx", source]]))
+      return Inventory.scanFile("flow.tsx", source, { factories }).find((entry) => entry.construct === "Task")!
+    }
+
+    const plain = task("")
+    const explicit = task("hijack={true}")
+    const spread = task("{...{ hijack: true }}")
+    const shared = task("{...common}")
+
+    expect(Mapping.classify(plain)).toBe("automatic")
+    expect(Mapping.classify(explicit)).toBe("unsafe")
+    expect(spread.props).toEqual(["...", "id", "output"])
+    expect(Mapping.classifyWithReason(spread)).toMatchObject({ class: "unsafe" })
+    expect(Mapping.classifyWithReason(spread).reason).toContain("spread")
+    expect(Mapping.classify(shared)).toBe("unsafe")
+    expect(Mapping.snippet(plain)).toBeDefined()
+    expect(Mapping.snippet(spread)).toBeUndefined()
+  })
+
+  it("keeps a spread on a construct with no escalation from an automatic rewrite", () => {
+    const raised = Mapping.classifyWithReason(hit("Sequence", ["..."], {
+      childConstructs: "Task:one,Task:two",
+      childPayloads: "{\"one\":{},\"two\":{}}"
+    }))
+
+    expect(raised.class).toBe("guided")
+    expect(raised.reason).toContain("spread")
+  })
+
   it("raises an unbounded Loop but leaves a bounded one alone", () => {
     const unbounded = Mapping.classifyWithReason(
       hit("Loop", ["maxIterations", "until"], { maxIterations: "Infinity", until: "false" })

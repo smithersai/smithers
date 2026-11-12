@@ -1041,10 +1041,14 @@ export const classifyWithReason = (
   const base = byConstruct(hit.construct)?.class ?? "unsafe"
   let result: MappingClass = base
   const reasons: Array<string> = []
+  // A JSX spread can supply any prop, so every escalation of the construct
+  // applies to it: `{...{ hijack: true }}` hijacks as surely as `hijack`.
+  const spread = hit.props.includes("...")
+  if (spread) reasons.push("a `{...spread}` attribute can supply props the scan cannot read")
   for (const escalation of escalations) {
     if (escalation.construct !== hit.construct) continue
-    if (!escalation.props.some((prop) => hit.props.includes(prop))) continue
-    if (escalation.when !== undefined && !escalation.when(hit)) continue
+    if (!spread && !escalation.props.some((prop) => hit.props.includes(prop))) continue
+    if (!spread && escalation.when !== undefined && !escalation.when(hit)) continue
     // An escalation at the table's own class still explains itself: `<Loop>` is
     // guided either way, but `maxIterations={Infinity}` is why this one is.
     if (order[escalation.to] < order[base]) continue
@@ -1344,6 +1348,9 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
   // A `skipIf` makes the call conditional, and none of the rewrites below
   // prints a condition: an unconditional call would run what the source skips.
   if (hit.props.includes("skipIf")) return undefined
+  // A spread can override any captured prop, so no rewrite built from the
+  // captured ones is mechanical.
+  if (hit.props.includes("...")) return undefined
   const detail = hit.detail ?? {}
   switch (hit.construct) {
     case "Task": {

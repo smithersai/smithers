@@ -44,7 +44,10 @@ export interface InventoryEntry {
    * the project's own key in `detail`.
    */
   readonly construct: string
-  /** Prop or argument names present at this hit, sorted. */
+  /**
+   * Prop or argument names present at this hit, sorted. A JSX spread attribute
+   * is recorded as `...`, because the scan cannot read the props it supplies.
+   */
   readonly props: ReadonlyArray<string>
   /**
    * Source text worth carrying into a mapping decision.
@@ -690,7 +693,8 @@ export const scanFile = (
     if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
       const construct = componentOf(Ts.tagName(node))
       if (construct === undefined || !Constructs.isComponent(construct)) return
-      const present = Ts.attributeNames(node).filter((name) => name !== "...")
+      const names = Ts.attributeNames(node)
+      const present = names.filter((name) => name !== "...")
       const detail = attributeDetail(node, present)
 
       const parent = node.parent
@@ -770,7 +774,9 @@ export const scanFile = (
       }
 
       hits.push(
-        entry(file, source, node, construct, present, Object.keys(detail).length === 0 ? undefined : detail)
+        // A spread stays in the props as `...`: it can supply any prop, and
+        // the classifier must see that it is there.
+        entry(file, source, node, construct, names, Object.keys(detail).length === 0 ? undefined : detail)
       )
       return
     }

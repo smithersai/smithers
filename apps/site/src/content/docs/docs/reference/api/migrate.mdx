@@ -178,6 +178,9 @@ that target lives in, the rule that governs the rewrite, and a class:
 is automatic, `<Parallel maxConcurrency>` is guided, `<Task hijack>` is unsafe,
 and `<Loop maxIterations={Infinity}>` is guided _with a reason_, because
 bounded recursion needs a bound and the migration has to choose one.
+A JSX spread can supply any prop, so the inventory records it as `...` and
+the hit takes every escalation its construct has: `<Task {...props}>` is
+unsafe, like `<Task hijack>`, and a spread hit never gets a snippet.
 
 `Mapping.snippet(hit)` is the rewrite text for a hit whose construct is
 automatic: a compilable fragment carrying the hit's own identifiers, not a
