@@ -92,6 +92,17 @@
 set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
 
+# The checks import workspace sources, some of them VibeLang (.vibe), which Node
+# loads only through vibelang/register. A shell script is not a program the
+# declared runtime starts, so it hands Node the loader itself: an absolute URL
+# in NODE_OPTIONS reaches every node below and every process those start, in
+# whatever directory they run. Each tier loads it once its own prerequisites
+# hold, so a missing prerequisite still fails with its own message.
+source_loader() {
+  NODE_OPTIONS="--import=$(cd "$S" && node -p 'require("node:url").pathToFileURL(require.resolve("vibelang/register")).href')${NODE_OPTIONS:+ $NODE_OPTIONS}"
+  export NODE_OPTIONS
+}
+
 # The CI tier is self-contained after the workspace install. Operator checks
 # fail explicitly when their prerequisites are absent; they never silently skip.
 case "${1:---offline}" in
@@ -105,6 +116,7 @@ case "${1:---offline}" in
       echo "verify.sh: run ./bootstrap.sh to provision the evaluator venv first" >&2
       exit 1
     fi
+    source_loader
     node "$S/fixtures/check-subject.mjs"
     node "$S/fixtures/check-cli-commands.mjs" --real
     node "$S/fixtures/check-prompt-bytes.mjs"
@@ -113,6 +125,8 @@ case "${1:---offline}" in
     ;;
   *) echo "usage: verify.sh [--offline|--prerequisites]" >&2; exit 2 ;;
 esac
+
+source_loader
 
 node "$S/fixtures/check-offline-target.mjs"
 
