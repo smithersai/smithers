@@ -9,6 +9,9 @@ import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
 import { escapeScreen, screenOf } from "./screenRead.vibe"
 import type { ScreenState } from "./screenDecision.vibe"
+import type { IssueScreen } from "./issueDecision.vibe"
+
+type Issues = NonNullable<Model["issues"]>
 
 /** The Model after an account step: `surface` and `docs` from the step, the account's screen fields over `base` (the
  *  current account, or the signed-out one), and every other field of the Model and of `base` unchanged. */
@@ -291,4 +294,52 @@ export function actionsLoadedWrite(model: Model, actions: ActionView, entries: A
 //@ ensures \result == { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actions, step: selection.step, run: selection.run, selected: selection.selected, open: selection.open, maximized: selection.maximized, starting: false, runs: runs, error: "" } }
 export function actionStartedWrite(model: Model, actions: ActionView, selection: RunSelection, runs: ActionView["runs"]): Model {
   return { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actions, ...selection, starting: false, runs, error: "" } }
+}
+
+/** The Model after an issues-screen step (`openedIssueCard`, `issueDetailsFailed`): the step's screen fields over `ui`
+ *  (the current issues screen, or the initial one); every other field of the Model and of `ui` unchanged. */
+//@ verify
+//@ ensures \result == { ...model, issues: { ...ui, open: state.open, screen: state.screen, kind: state.kind, state: state.state, query: state.query, selected: state.selected, dialog: state.dialog, status: state.status, busy: state.busy, title: state.title, summary: state.summary, example: state.example, prior: state.prior, comment: state.comment, parent: state.parent, assignee: state.assignee, step: state.step, error: state.error, serial: state.serial } }
+export function issueScreenWrite(model: Model, ui: Issues, state: IssueScreen): Model {
+  return { ...model, issues: { ...ui, ...state } }
+}
+
+/** The Model after an issues response (a list, a recovery read or a failure): the step's screen fields over `ui`, the
+ *  data, role and key prefix written, and the saved retry cleared or kept (`kept`) as the step decided; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, issues: { ...ui, open: state.open, screen: state.screen, kind: state.kind, state: state.state, query: state.query, selected: state.selected, dialog: state.dialog, status: state.status, busy: state.busy, title: state.title, summary: state.summary, example: state.example, prior: state.prior, comment: state.comment, parent: state.parent, assignee: state.assignee, step: state.step, error: state.error, serial: state.serial, data: data, role: role, keyPrefix: keyPrefix, retry: clearRetry ? undefined : kept } }
+export function issueResponseWrite(model: Model, ui: Issues, state: IssueScreen, data: Issues["data"], role: Issues["role"], keyPrefix: string, clearRetry: boolean, kept: Issues["retry"]): Model {
+  return { ...model, issues: { ...ui, ...state, data, role, keyPrefix, retry: clearRetry ? undefined : kept } }
+}
+
+/** The Model after a newer issues projection: its data, ready, and the role it names; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, issues: { ...ui, data: data, status: "ready", role: role } }
+export function issueProjectionWrite(model: Model, ui: Issues, data: Issues["data"], role: Issues["role"]): Model {
+  return { ...model, issues: { ...ui, data, status: "ready", role } }
+}
+
+/** The Model with the issues list open over `ui`; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, issues: { ...ui, open: true } }
+export function issuesOpenedWrite(model: Model, ui: Issues): Model {
+  return { ...model, issues: { ...ui, open: true } }
+}
+
+/** The Model after a selected issue's details load: their data over the issues screen; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, issues: { ...issues, data: data } }
+export function issueDetailsWrite(model: Model, issues: Issues, data: Issues["data"]): Model {
+  return { ...model, issues: { ...issues, data } }
+}
+
+/** The Model after an issues-screen action: the screen `ui` the action produced, with the request serial `serial` when
+ *  the action bumps it, and the chat when it moves there; nothing else. */
+//@ verify
+//@ ensures bumpSerial ==> \result.issues == { ...ui, serial: serial }
+//@ ensures !bumpSerial ==> \result.issues == ui
+//@ ensures \result.surface == (toChat ? "chat" : model.surface)
+//@ ensures \result == { ...model, surface: \result.surface, issues: \result.issues }
+export function issueUiWrite(model: Model, ui: Issues, bumpSerial: boolean, serial: number, toChat: boolean): Model {
+  return { ...model, issues: bumpSerial ? { ...ui, serial } : ui, ...(toChat ? { surface: "chat" } : {}) }
 }

@@ -376,16 +376,16 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     FailedRoles: () => runAccount(model, ModelDecision.failedRoles(accountScreen(model))),
     RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : runAccount(model, ModelDecision.retriedAccount(accountScreen(model), accountOf(model).ledger.conversation.seq)),
     DismissedAccountError: () => runAccount(model, ModelDecision.dismissedAccountError(accountScreen(model))),
-    OpenIssueCard: ({ number }) => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), ...IssueDecision.openedIssueCard(issueScreen(model.issues ?? initialIssues), number) } }, commands: [LoadIssues({}), ...(IssueDecision.issueCardLoadsDetails(model.mode) ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
-    IssueProjectionLoaded: ({ data }) => !IssueDecision.issueProjectionApplies(data.seq, model.issues?.data.seq ?? 0) ? { model } : { model: { ...model, issues: { ...(model.issues ?? { ...initialIssues, open: false }), data, status: "ready", role: data.role ?? IssueDecision.issueDefaultRole(model.mode) } } },
-    ClickedIssues: () => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true } }, commands: IssueDecision.clickedIssuesLoads(model.issues?.busy === true) ? [LoadIssues({})] : [] }),
+    OpenIssueCard: ({ number }) => ({ model: ModelWrite.issueScreenWrite(model, model.issues ?? initialIssues, IssueDecision.openedIssueCard(issueScreen(model.issues ?? initialIssues), number)), commands: [LoadIssues({}), ...(IssueDecision.issueCardLoadsDetails(model.mode) ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
+    IssueProjectionLoaded: ({ data }) => !IssueDecision.issueProjectionApplies(data.seq, model.issues?.data.seq ?? 0) ? { model } : { model: ModelWrite.issueProjectionWrite(model, model.issues ?? { ...initialIssues, open: false }, data, data.role ?? IssueDecision.issueDefaultRole(model.mode)) },
+    ClickedIssues: () => ({ model: ModelWrite.issuesOpenedWrite(model, model.issues ?? initialIssues), commands: IssueDecision.clickedIssuesLoads(model.issues?.busy === true) ? [LoadIssues({})] : [] }),
     IssueUi: ({ action, value }) => {
       const before = issueStateOf(model)
       // An input's value may hold a lone surrogate; every request text is DurableText (as UpdatedWikiEdit guards).
       const text = value.toWellFormed()
       const result = issuesUpdate(before, action, text)
       const effects = IssueDecision.issueUiEffects(action, text, model.mode === "live", before.dialog, result.ui.dialog)
-      return { model: { ...model, issues: effects.bumpSerial ? { ...result.ui, serial: before.serial + 1 } : result.ui, ...(effects.toChat ? { surface: "chat" } : {}) }, commands: [
+      return { model: ModelWrite.issueUiWrite(model, result.ui, effects.bumpSerial, before.serial + 1, effects.toChat), commands: [
         ...(effects.details ? [LoadIssueDetails({ number: Number(value), key: `${model.session}-detail-${before.serial + 1}` })] : []),
         ...(result.request === undefined ? [] : [ActOnIssue({ request: result.request })]),
         ...(effects.focus === "" ? [] : [FocusIssueControl({ id: effects.focus })]),
@@ -401,21 +401,21 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
         // The recovery read returns the list; a restored detail view still needs its comments and timeline.
         const commands = step.state.screen === "detail" && selected > 0 && IssueDecision.issueCardLoadsDetails(model.mode)
           ? [LoadIssueDetails({ number: selected, key: `${model.session}-restored-${selected}` })] : []
-        return { model: { ...model, issues: { ...ui, ...step.state, keyPrefix: model.session, data, role, retry: step.clearRetry ? undefined : request } }, commands }
+        return { model: ModelWrite.issueResponseWrite(model, ui, step.state, data, role, model.session, step.clearRetry, request), commands }
       }
       const settled = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
       const assignee = data.assignees === undefined ? ui.assignee : IssueDecision.issueAssigneeAfter(data.assignees.some((a) => a.login === ui.assignee), ui.assignee, data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "")
       const step = IssueDecision.issueLoaded(issueScreen(ui), settled, created, data.draft !== undefined, data.draft?.title ?? "", data.draft?.summary ?? "", data.draft?.example ?? "", data.draft?.prior ?? "", assignee, data.selected ?? newestIssue(data.items))
-      return { model: { ...model, issues: { ...ui, ...step.state, data: IssueDecision.issueDataApplies(data.draft !== undefined, data.seq, ui.data.seq) ? data : ui.data, role, retry: step.clearRetry ? undefined : ui.retry } }, commands: step.closeDialog ? [CloseIssueDialog({})] : [] }
+      return { model: ModelWrite.issueResponseWrite(model, ui, step.state, IssueDecision.issueDataApplies(data.draft !== undefined, data.seq, ui.data.seq) ? data : ui.data, role, ui.keyPrefix, step.clearRetry, ui.retry), commands: step.closeDialog ? [CloseIssueDialog({})] : [] }
     },
     IssuesFailed: ({ reason, op, key, unwritten }) => {
       const ui = model.issues ?? initialIssues
       const relevant = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
       const step = IssueDecision.issueFailed(issueScreen(ui), ui.data.items.length === 0, relevant, unwritten === true, reason === "connect" ? "Connect GitHub." : reason === "fork" ? "Fork on GitHub." : reason === "install" ? "Install Smithers on your fork." : IssueDecision.issueFailureText(reason))
-      return { model: { ...model, issues: { ...ui, ...step.state, retry: step.clearRetry ? undefined : ui.retry } } }
+      return { model: ModelWrite.issueResponseWrite(model, ui, step.state, ui.data, ui.role, ui.keyPrefix, step.clearRetry, ui.retry) }
     },
-    IssueDetailsLoaded: ({ data, number }) => model.issues === undefined || !ModelDecision.issueDetailsApply(model.issues.selected, number, data.seq, model.issues.data.seq) ? { model } : { model: { ...model, issues: { ...model.issues, data } } },
-    IssueDetailsFailed: ({ number }) => model.issues === undefined || !ModelDecision.issueDetailsFailureShows(model.issues.selected, number, model.issues.retry !== undefined) ? { model } : { model: { ...model, issues: { ...model.issues, ...IssueDecision.issueDetailsFailed(issueScreen(model.issues)) } } },
+    IssueDetailsLoaded: ({ data, number }) => model.issues === undefined || !ModelDecision.issueDetailsApply(model.issues.selected, number, data.seq, model.issues.data.seq) ? { model } : { model: ModelWrite.issueDetailsWrite(model, model.issues, data) },
+    IssueDetailsFailed: ({ number }) => model.issues === undefined || !ModelDecision.issueDetailsFailureShows(model.issues.selected, number, model.issues.retry !== undefined) ? { model } : { model: ModelWrite.issueScreenWrite(model, model.issues, IssueDecision.issueDetailsFailed(issueScreen(model.issues))) },
     IssueDialogFocused: () => ({ model }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),

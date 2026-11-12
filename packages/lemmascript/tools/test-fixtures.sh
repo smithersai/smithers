@@ -201,6 +201,13 @@ cp tools/fixtures/optional-path-else.ts tools/fixtures/optional-path-else-wrong.
 expect_proof_failure \
   "an absent path verified as narrowed (optional-path-else)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-path-else-wrong.ts"
+# A record whose name a string union also uses as a constructor is built with its qualified constructor
+# (record-ctor-clash).
+cp tools/fixtures/record-ctor-clash.ts tools/fixtures/record-ctor-clash-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/record-ctor-clash.ts"
+expect_proof_failure \
+  "a wrong twin verified (record-ctor-clash)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/record-ctor-clash-wrong.ts"
 # Unicode case mapping changes non-ASCII text and its length; the model must not prove otherwise.
 cp tools/fixtures/string-case-length-wrong.ts "$fixture_dir/"
 expect_proof_failure \

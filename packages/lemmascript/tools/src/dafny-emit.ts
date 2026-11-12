@@ -808,10 +808,10 @@ function emitExpr(e: Expr): string {
             if (sf.type.kind === "optional") { needPreamble("OptionType"); return "None"; }
             return `/* missing: ${sf.name} */`;
           });
-          return `${ctorName}(${vals.join(", ")})`;
+          return `${recordCtor(ctorName)}(${vals.join(", ")})`;
         }
         const vals = e.fields.map(f => emitExpr(f.value));
-        return `${ctorName}(${vals.join(", ")})`;
+        return `${recordCtor(ctorName)}(${vals.join(", ")})`;
       }
       if (e.fields.length === 0) return `map[]`;
       const vals = e.fields.map(f => emitExpr(f.value));
@@ -2131,6 +2131,10 @@ function buildRecordCtorMap(decls: Decl[]) {
     if (d.kind === "structure") {
       _declaredTypes.add(d.name);
       _structureDecls.set(d.name, d.fields);
+      // A record's constructor shares Dafny's constructor namespace too: a record named like a union member
+      // (`Issues` beside `IssueKind`'s `Issues`) makes both ambiguous (fixtures/record-ctor-clash.ts).
+      if (ctorSeen.has(d.name)) _ambiguousCtors.add(d.name);
+      ctorSeen.add(d.name);
       if (d.fields.length > 0) _recordCtors.set(d.fields[0].name, d.name);
     }
     if (d.kind === "inductive") {
@@ -2186,6 +2190,11 @@ function resolveTy(ty: Ty): Ty {
 function dafnyCtorName(name: string): string {
   if (name === "") return "empty_string";
   return escapeName(name.replace(/[^A-Za-z0-9_'?]/g, "_"));
+}
+
+/** A record's constructor, qualified by its datatype when another datatype has a constructor of that name. */
+function recordCtor(name: string): string {
+  return _ambiguousCtors.has(name) ? `${escapeName(name)}.${name}` : name;
 }
 
 function qualifyCtor(name: string, type?: string): string {
