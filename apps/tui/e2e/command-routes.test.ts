@@ -1,6 +1,6 @@
 /** Typed command routes through the real terminal and their durable receipts. */
 import { afterEach, expect, it } from "bun:test"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { bunCommand, drawn, key, Tui } from "./tmux.ts"
@@ -68,6 +68,7 @@ interface Record {
 }
 
 const files = (where: ReturnType<typeof project>): ReadonlyArray<string> => {
+  if (!existsSync(where.sessions)) return []
   const folder = readdirSync(where.sessions, { withFileTypes: true }).find((entry) => entry.isDirectory())
   if (folder === undefined) return []
   return readdirSync(join(where.sessions, folder.name)).filter((name) => name.endsWith(".jsonl")).map((name) =>
@@ -76,6 +77,16 @@ const files = (where: ReturnType<typeof project>): ReadonlyArray<string> => {
 }
 const records = (file: string): ReadonlyArray<Record> =>
   readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record)
+/**
+ * The turn for `prompt` saved its done outcome. The screen cannot say so:
+ * the composer's `replay pong.jsonl` line shows "pong" from the first draw.
+ */
+const answered = (where: ReturnType<typeof project>, prompt: string): boolean =>
+  files(where).some((file) =>
+    records(file).some((record) =>
+      record.type === "outcome" && record.outcome?._tag === "done" && record.prompt === prompt
+    )
+  )
 
 it("Ctrl+K stop and resume settle and restart the named worker; the removed /retry keeps its line", async () => {
   const where = project()
@@ -119,14 +130,18 @@ it("/resume restores the named conversation; /chat and ? act locally", async () 
   await start(where, `${bunCommand} ${join(app, "src", "main.tsx")} ${where.cwd}`)
   await submit("/name saved route")
   await submit("remember route")
-  await tui!.until((screen) => screen.includes("pong") && !screen.includes("esc Interrupt"), 15_000, "first answer")
+  await tui!.until(
+    (screen) => !screen.includes("esc Interrupt") && answered(where, "remember route"),
+    15_000,
+    "first answer"
+  )
   const [saved] = files(where)
   expect(saved).toBeDefined()
   await submit("/new")
   await tui!.until((screen) => screen.includes("New conversation started"), 5_000, "new conversation")
   await submit("fresh session")
   await tui!.until(
-    (screen) => screen.includes("fresh session") && screen.includes("pong") && !screen.includes("esc Interrupt"),
+    (screen) => !screen.includes("esc Interrupt") && answered(where, "fresh session"),
     15_000,
     "fresh answer"
   )
@@ -169,7 +184,7 @@ it("/resume restores the named conversation; /chat and ? act locally", async () 
   await tui!.until((screen) => !screen.includes("Pick model"), 5_000, "keys closed")
   await submit("after route")
   await tui!.until(
-    (screen) => screen.includes("after route") && screen.includes("pong") && !screen.includes("esc Interrupt"),
+    (screen) => !screen.includes("esc Interrupt") && answered(where, "after route"),
     15_000,
     "second answer"
   )
