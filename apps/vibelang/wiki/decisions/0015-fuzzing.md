@@ -1284,3 +1284,13 @@ revision's room unchecked; GitHub's revision range unchecked. The seven lines ar
 over storage whose get, put, delete or all operations reject: each failure is a miss, never a failed read. Mutants
 caught: a failed get or remove failing the read; another default broker. The setup's both-or-nothing condition admits
 no compiling mutant (`.value` needs both options narrowed). About 2,000 executions in 3 s.
+
+`worker/WikiDraft.vibe` and `worker/SpecificationReviewers.vibe` share VipDraft's shape. `wiki/writer` now first asks the
+wiki agent directly with no model (`no-model`) and drafts once against a ledger that never takes the final charge;
+`specification/reviewers` first reviews against that ledger, and with a record whose key the deployment lacks
+(`HostModel.make` refuses it, so the reviewer has no model: `no-model`, nothing admitted, no model call). The
+never-charged runs execute in virtual time through `virtually` (`fuzz/run.vibe`, now shared with `vip/writer`): the
+engine retries the charge through `draftSpend`'s 120 s, then the draft is `budget` and
+`vibelang_draft_spend_failures{draft}` counts one. Mutants caught: the wiki and review spend failures not counted;
+the wiki agent's own refusal as `draft`; an unusable reviewer record stopping the reviewers. Both files are reached
+except the unreadable-usage catch (VipDraft above).

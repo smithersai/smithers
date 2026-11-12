@@ -12,7 +12,8 @@ import { HistoryTools } from "../worker/HistoryTools.vibe"
 import { Tours } from "../src/core/flows.vibe"
 import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
 import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
-import { run, Text } from "./run.vibe"
+import { run, Text, virtually } from "./run.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
 import { ledger, within } from "../test/support/durableWriters.vibe"
 import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
@@ -33,8 +34,38 @@ const Admission = Schema.Literals(["admit", "refuse", "fault"])
 const WikiInput = Schema.Struct({ agent: Schema.Literals(["absent", "fails", "drafts", "refused-model", "no-model"]), admission: Admission, ask: Text, page: Text })
 const ReviewerInput = Schema.Struct({ reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), admission: Admission, bound: Schema.Literals(["none", "refused", "broken"]), text: Text, revision: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 9 })) })
 
+const spendFailures = effect (draft: string) => (try Metric.value(Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft }))).count
+
+/** An admitting ledger that never takes a charge. */
+function unchargeable() {
+  const day = ledger("admit")
+  const log = { charges: 0 }
+  const spend: Spend.Shape = { admit: day.spend.admit, spend: effect () => {
+    log.charges += 1
+    throw new Unreachable({ what: "budget" })
+  } }
+  return { log, spend }
+}
+
+/** A wiki draft whose final charge never lands: retried by the engine in virtual time, then `budget`, counted once. */
+effect function wikiSettlementDown(ask: string) {
+  const { log, spend } = unchargeable()
+  const agent = Layer.succeed(WikiDraftAgent, { available: true, run: (request) => succeed({ page: request.page, text: `${request.source}${ask}` }) })
+  const before = try spendFailures("wiki")
+  const outcome = try virtually(within(wikiWriter.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend))), effect {
+    const result = try Effect.result((try WikiWriter).draft({ page: "roadmap", source: "# Page", ask }))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  }), 300)
+  return Option.isSome(outcome) && outcome.value === "budget" && log.charges > 1 && (try spendFailures("wiki")) - before === 1
+}
+
 /** No admission means no agent and no charge; a charge follows exactly one admitted attempt. */
 it.live("wiki/writer", () => run("wiki/writer", WikiInput, (input) => scoped(effect {
+  // The agent itself refuses with no model, even when asked past the writer's own check.
+  const bare = try Effect.provide(WikiDraftAgent, wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "unset" }))))
+  const refusal = try Effect.flip(bare.run({ page: input.page, source: "# Page", ask: input.ask }, undefined as never) as never as Effect<never, WikiFailure>)
+  if (bare.available || refusal.reason !== "no-model") return false
+  if (!(try wikiSettlementDown(input.ask))) return false
   const { log, spend } = ledger(input.admission)
   let agents = 0
   const agent = input.agent === "fails" || input.agent === "drafts" || input.agent === "absent" ? Layer.succeed(WikiDraftAgent, {
@@ -57,8 +88,37 @@ it.live("wiki/writer", () => run("wiki/writer", WikiInput, (input) => scoped(eff
   return input.agent === "drafts" ? answer === "ok" : answer === "draft"
 })))
 
+/** A review whose final charge never lands: retried by the engine in virtual time, then `budget`, counted once. */
+effect function reviewSettlementDown(reviewer: "astra" | "sol" | "fable" | "opus", revision: number) {
+  const { log, spend } = unchargeable()
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ verdict: "LGTM", grade: "A", review: "Fine." }))], prompt: 2, completion: 2 }])
+  const values = { ...scripted.values, [`SPEC_REVIEW_${reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  const spec = { revision, text: "spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  const before = try spendFailures("specification")
+  const outcome = try virtually(within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(reviewer, spec))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  }), 300)
+  return Option.isSome(outcome) && outcome.value === "budget" && log.charges > 1 && (try spendFailures("specification")) - before === 1
+}
+
+/** A reviewer whose record names a key the deployment lacks has no model: `no-model`, nothing admitted. */
+effect function keylessReviewer(reviewer: "astra" | "sol" | "fable" | "opus") {
+  const { log, spend } = ledger("admit")
+  const scripted = try scriptedModel(FAILING)
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ [`SPEC_REVIEW_${reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }))))
+  const spec = { revision: 1, text: "spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  const outcome = try within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(reviewer, spec))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  })
+  return outcome === "no-model" && log.admitted === 0 && (try scripted.calls) === 0
+}
+
 /** A reviewer with no configured model and a refused budget never asks a model; reasons stay within the known set. */
 it.live("specification/reviewers", () => run("specification/reviewers", ReviewerInput, (input) => scoped(effect {
+  if (!(try reviewSettlementDown(input.reviewer, input.revision)) || !(try keylessReviewer(input.reviewer))) return false
   const { log, spend } = ledger(input.admission)
   const name = `SPEC_REVIEW_${input.reviewer.toUpperCase()}`
   const failing = input.bound === "refused" ? try scriptedModel(FAILING) : undefined

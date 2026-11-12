@@ -4,7 +4,6 @@
 // the meter can't read is charged unreported; only an answer the VipDraft schema accepts becomes the draft; a final
 // charge the ledger never takes ends the draft `budget` once the engine's retries expire, and is counted.
 import { it } from "@effect/vitest"
-import { TestClock } from "effect/testing"
 import { VipWriter } from "../src/core/VipWriter.vibe"
 import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
@@ -12,7 +11,7 @@ import { Unreachable } from "../worker/Unreachable.vibe"
 import { agentLayer, DraftAgent, writer } from "../worker/VipDraft.vibe"
 import { ledger, within } from "../test/support/durableWriters.vibe"
 import { cell, scriptedModel } from "./model-server.vibe"
-import { run, Text } from "./run.vibe"
+import { run, Text, virtually } from "./run.vibe"
 
 const Agents = ["absent", "no-model", "fails", "invalid-usage", "model-draft", "model-not-a-draft", "model-prose", "model-failing", "model-day-spent", "model-ledger-down"] as const
 const Input = Schema.Struct({ agent: Schema.Literals(Agents), admission: Schema.Literals(["admit", "refuse", "fault"]), title: Text, text: Text })
@@ -64,14 +63,6 @@ effect function drafts(input: typeof Input.Type) {
   return outcome === "draft"
 }
 
-/** Advances the virtual clock a second at a time, letting the engine's real promises settle between, until `done`. */
-effect function advance(seconds: number, done: () => boolean) {
-  for (let second = 0; second < seconds && !done(); second++) {
-    try TestClock.adjust("1 second")
-    try TestClock.withLive(sleep("2 millis"))
-  }
-}
-
 const spendFailures = effect () => (try Metric.value(Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft: "vip" }))).count
 
 /** A drafted VIP whose final charge always fails: retried by the engine in virtual time, then `budget`, counted once. */
@@ -86,19 +77,15 @@ effect function settlementDown(input: typeof Input.Type) {
   const layer = writer.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend)))
   const request: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title: input.title, text: input.text, example: "e", prior: "p", assignee: "" }
   const before = try spendFailures()
-  let done = false
-  const running = fork within(layer, effect {
+  const outcome = try virtually(within(layer, effect {
     const result = try Effect.result((try VipWriter).draft(request))
     return result._tag === "Success" ? "ok" : result.failure.reason as string
-  }).pipe(Effect.ensuring(sync(() => { done = true })))
-  try advance(300, () => done)
-  if (!done) return false
-  const outcome = join running
-  return outcome === "budget" && charges > 1 && (try spendFailures()) - before === 1
+  }), 300)
+  return Option.isSome(outcome) && outcome.value === "budget" && charges > 1 && (try spendFailures()) - before === 1
 }
 
 it.live("vip/writer", () => run("vip/writer", Input, (input) => scoped(effect {
-  if (!(try Effect.provide(settlementDown(input), TestClock.layer()))) return false
+  if (!(try settlementDown(input))) return false
   // The agent itself refuses with no model, even when asked past the writer's own check.
   const bare = try Effect.provide(DraftAgent, agentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "unset" }))))
   const refusal = try Effect.flip(bare.run({ op: "draft", key: "d1", number: 0, parent: 0, title: input.title, text: input.text, example: "", prior: "", assignee: "" }, undefined as never) as never as Effect<never, IssueFailure>)
