@@ -95,7 +95,7 @@ export const NodeBinary = Target.make("NodeBinary", {
     Exec.runTool({
       cwd: attrs.cwd,
       argv: runArgv(attrs),
-      env: attrs.env,
+      env: Runtime.environment(attrs.runtime, attrs.env),
       ...(attrs.timeout === undefined ? {} : { timeoutMs: Shell.durationMs(attrs.timeout) })
     })
 })

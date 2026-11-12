@@ -189,12 +189,17 @@ versions or a single comparator; unsupported compound ranges and tags refuse.
 `Runtime.Node({ version, imports })` also names modules Node preloads with
 `--import` before every program the runtime runs: `Runtime.run`,
 `Runtime.test`, and `Runtime.evaluate` put `--import=<specifier>` ahead of the
-program, so every `NodeTest` and `NodeBinary` target gets them. A workspace
-whose packages publish VibeLang source declares
-`imports: ["vibelang/register"]`; a bare specifier resolves from the target's
-working directory. Each specifier is at most 256 printable characters, with no
-whitespace and no leading `-`. A runtime without imports runs exactly as
-before, and `Runtime.preloads` returns the flags.
+program, so every `NodeTest` and `NodeBinary` target gets them. Those flags
+reach only that program, so `NodeTest`, `NodeBinary` and `Vitest` also hand the
+preloads to every process it starts: `Runtime.environment` puts them in
+`NODE_OPTIONS`, ahead of any declared value, and the exec boundary rewrites each
+to the module's absolute `file:` URL, resolved from the target's working
+directory, so a child that starts in another directory, such as a test's
+temporary directory, loads the same module. A workspace whose packages publish
+VibeLang source declares `imports: ["vibelang/register"]`; a bare specifier
+resolves from the target's working directory. Each specifier is at most 256
+printable characters, with no whitespace and no leading `-`. A runtime without
+imports runs exactly as before, and `Runtime.preloads` returns the flags.
 
 `Runtime.ResolvedNodeRuntime`, `Runtime.ResolvedBunRuntime`,
 `PackageManager.ResolvedPnpmPackageManager`, and

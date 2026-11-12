@@ -117,7 +117,7 @@ export const Vitest = Target.make("Vitest", {
     Exec.runTool({
       cwd: attrs.cwd,
       timeoutMs: attrs.timeoutMs,
-      env: attrs.env ?? {},
+      env: Runtime.environment(attrs.runtime, attrs.env),
       argv: PackageManager.exec(PackageManager.under(attrs.packageManager, attrs.runtime), [
         "vitest",
         "run",

@@ -30,6 +30,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Changesets from "../src/Changesets.ts"
 import * as Exec from "../src/Exec.ts"
 import * as ExecSandbox from "../src/ExecSandbox.ts"
+import * as Runtime from "../src/Runtime.ts"
 import * as Secret from "../src/Secret.ts"
 import * as Target from "../src/Target.ts"
 
@@ -753,6 +754,75 @@ describe("run", () => {
     )
     if (!Exit.isSuccess(exit)) throw new Error(`expected success: ${JSON.stringify(exit.cause)}`)
     expect(exit.value.stdout).toBe("scripts/generate.mjs")
+  })
+
+  it("hands a runtime's preloads to a grandchild started outside the workspace", async () => {
+    // A test that runs `node child.ts` starts a process that inherits the
+    // environment, not the argv. Node resolves a bare `--import` in
+    // NODE_OPTIONS from each process's own directory, so the placeholder must
+    // become an absolute URL resolved from the target's directory, under the
+    // import conditions `--import` itself uses.
+    const probe = NodePath.join(root, "node_modules", "preload-probe")
+    await Fs.mkdir(probe, { recursive: true })
+    await Fs.writeFile(
+      NodePath.join(probe, "package.json"),
+      JSON.stringify({
+        name: "preload-probe",
+        exports: { "./register": { import: "./register.mjs", require: "./register.cjs" } }
+      })
+    )
+    const mark = (name: string) => `globalThis.preloaded = [...(globalThis.preloaded ?? []), ${JSON.stringify(name)}]\n`
+    await Fs.writeFile(NodePath.join(probe, "register.mjs"), mark("package"))
+    await Fs.writeFile(NodePath.join(probe, "register.cjs"), mark("package required"))
+    await Fs.mkdir(NodePath.join(root, "pkg"))
+    await Fs.writeFile(NodePath.join(root, "pkg", "local.mjs"), mark("local"))
+    // A URL preload with quotes, which NODE_OPTIONS would otherwise strip.
+    const inline = `data:text/javascript,globalThis.preloaded=[...(globalThis.preloaded??[]),"inline"]`
+    const runtime = Runtime.Node({
+      version: ">=26.4.0",
+      executable: process.execPath,
+      imports: ["preload-probe/register", "./local.mjs", inline]
+    })
+    const grandchild = "process.stdout.write(JSON.stringify(globalThis.preloaded ?? null))"
+    const child = `process.stdout.write(JSON.stringify({ own: globalThis.preloaded, grandchild: JSON.parse(` +
+      `require("node:child_process").execFileSync(process.execPath, ["-e", ${JSON.stringify(grandchild)}], ` +
+      `{ cwd: ${JSON.stringify(outside)}, encoding: "utf8" })) }))`
+    // The program itself also gets the argv preloads, as Runtime.run renders
+    // them; each module still loads once.
+    const exit = await run({ workspaceRoot: root }, {
+      ...payload(Runtime.run(runtime, ["-e", child]), "pkg"),
+      env: Runtime.environment(runtime, { NODE_OPTIONS: "--no-warnings" })
+    })
+    if (!Exit.isSuccess(exit)) throw new Error(`expected success: ${JSON.stringify(exit.cause)}`)
+    const loaded = ["package", "local", "inline"]
+    expect(JSON.parse(exit.value.stdout)).toEqual({ own: loaded, grandchild: loaded })
+  })
+
+  it("leaves out a preload its directory cannot resolve rather than failing the run", async () => {
+    // A Vitest run carries no argv preload, so a package that cannot resolve
+    // the loader runs as it did before the preload reached its children.
+    const runtime = Runtime.Node({ version: ">=26.4.0", imports: ["missing-loader/register"] })
+    const exit = await run({ workspaceRoot: root }, {
+      ...payload([process.execPath, "-e", "process.stdout.write(process.env.NODE_OPTIONS)"]),
+      env: Runtime.environment(runtime, { NODE_OPTIONS: "--no-warnings" })
+    })
+    if (!Exit.isSuccess(exit)) throw new Error(`expected success: ${JSON.stringify(exit.cause)}`)
+    expect(exit.value.stdout.trim()).toBe("--no-warnings")
+  })
+
+  it("refuses the run when Node cannot say where a preload resolves", async () => {
+    // A preload is dropped only when no package provides it, never because
+    // the resolution itself failed.
+    const broken = NodePath.join(root, "node_modules", "broken-loader")
+    await Fs.mkdir(broken, { recursive: true })
+    await Fs.writeFile(NodePath.join(broken, "package.json"), "{")
+    const runtime = Runtime.Node({ version: ">=26.4.0", imports: ["broken-loader/register"] })
+    const error = await failed({
+      ...payload([process.execPath, "-e", "0"]),
+      env: Runtime.environment(runtime)
+    })
+    expect(error.code).toBe("invalid_payload")
+    expect(error.stderr).toContain("cannot resolve the runtime preload \"broken-loader/register\"")
   })
 
   it("streams the exact stdout and stderr bytes to declared observers", async () => {

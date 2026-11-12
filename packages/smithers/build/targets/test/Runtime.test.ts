@@ -126,6 +126,27 @@ describe("Runtime declarations", () => {
     expect(Runtime.run(resolved, ["a.mjs"])).toEqual(["node", "--import=vibelang/register", "a.mjs"])
   })
 
+  it("hands a Node runtime's imports to descendant processes through NODE_OPTIONS", () => {
+    // Argv preloads reach only the program the argv starts; a child that
+    // program spawns inherits the environment instead.
+    const runtime = Runtime.Node({ version: ">=26.4.0", imports: ["vibelang/register", "./hooks.mjs"] })
+    const tokens = `${Runtime.importTokenPrefix}vibelang/register} ${Runtime.importTokenPrefix}./hooks.mjs}`
+    expect(Runtime.environment(runtime)).toEqual({ NODE_OPTIONS: tokens })
+    expect(Runtime.environment(runtime, { CI: "1", NODE_OPTIONS: "--no-warnings" })).toEqual({
+      CI: "1",
+      NODE_OPTIONS: `${tokens} --no-warnings`
+    })
+    // The exec boundary refuses two names that differ only in case, and Node
+    // reads only NODE_OPTIONS, so a declared value in another case moves there.
+    expect(Runtime.environment(runtime, { node_options: "--no-warnings" })).toEqual({
+      NODE_OPTIONS: `${tokens} --no-warnings`
+    })
+    for (const plain of [Runtime.Node({ version: ">=26.4.0" }), Runtime.Bun({ version: ">=1.4.0" }), undefined]) {
+      expect(Runtime.environment(plain, { NODE_OPTIONS: "--no-warnings" })).toEqual({ NODE_OPTIONS: "--no-warnings" })
+      expect(Runtime.environment(plain)).toEqual({})
+    }
+  })
+
   it("keeps a runtime without imports exactly as before", () => {
     expect(Runtime.Node({ version: ">=26.4.0", imports: [] })).toEqual(Runtime.Node({ version: ">=26.4.0" }))
     expect(Runtime.Node({ version: ">=26.4.0" })).not.toHaveProperty("imports")

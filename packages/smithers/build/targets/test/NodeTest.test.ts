@@ -5,7 +5,8 @@
  * These replaced the `node --test …` and `node scripts/….mjs` strings a
  * PACKAGE.ts file used to carry. The interpreter comes from the declared runtime,
  * so switching interpreters changes argv. Explicit deadlines reach Exec without
- * changing the default budget or making the test cacheable.
+ * changing the default budget or making the test cacheable. These rules and
+ * Vitest hand the runtime's preloads to the processes their program starts.
  */
 import { describe, expect, it } from "vitest"
 import * as Exec from "../src/Exec.ts"
@@ -14,6 +15,7 @@ import * as NodeBinary from "../src/NodeBinary.ts"
 import * as NodeTest from "../src/NodeTest.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Target from "../src/Target.ts"
+import * as Vitest from "../src/Vitest.ts"
 import { plannedCalls } from "../test-support/plan.ts"
 import { packageManager, runtime } from "./toolchain.ts"
 
@@ -202,6 +204,45 @@ describe("NodeBinary", () => {
       env: { CARGO_TARGET_DIR: "target/scratch" }
     }))
     expect(attrs.env).toEqual({ CARGO_TARGET_DIR: "target/scratch" })
+  })
+
+  it("hands the runtime's preloads to the processes every Node rule starts", () => {
+    // A test or build script that runs `node child.ts` must load what the
+    // target's own program loads, such as vibelang/register for `.vibe`.
+    const loader = Runtime.Node({ version: ">=26.4.0", imports: ["vibelang/register"] })
+    const env = { NODE_OPTIONS: `${Runtime.importTokenPrefix}vibelang/register} --no-warnings`, CI: "1" }
+    const declared = { NODE_OPTIONS: "--no-warnings", CI: "1" }
+    const targets = [
+      NodeTest.NodeTest({
+        runtime: loader,
+        runner: NodeTest.testRunner([Input.file("//a.test.mjs")]),
+        srcs: [],
+        deps: [],
+        env: declared
+      }),
+      NodeBinary.NodeBinary({
+        runtime: loader,
+        entry: Input.file("//build.mjs"),
+        args: [],
+        srcs: [],
+        deps: [],
+        env: declared
+      }),
+      Vitest.Vitest({
+        runtime: loader,
+        packageManager,
+        tests: [],
+        sources: [],
+        deps: [],
+        config: null,
+        environment: "node",
+        passWithNoTests: false,
+        env: declared
+      })
+    ]
+    for (const target of targets) expect(plannedCalls(target)[0]!.payload["env"]).toEqual(env)
+    const plain = NodeBinary.NodeBinary({ runtime, entry: Input.file("//build.mjs"), args: [], srcs: [], deps: [] })
+    expect(plannedCalls(plain)[0]!.payload["env"]).toEqual({})
   })
 
   it("accepts a workspace subtree as a graph dependency", () => {

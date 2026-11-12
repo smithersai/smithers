@@ -17,8 +17,10 @@ import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import * as NodeChildProcess from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as NodePath from "node:path"
+import * as NodeUrl from "node:url"
 import * as NodeUtil from "node:util/types"
 import * as Config from "./Config.ts"
 import * as ExecSandbox from "./ExecSandbox.ts"
@@ -72,6 +74,118 @@ const resolveScriptToken = (value: string): string =>
   value.startsWith(scriptTokenPrefix) && value.endsWith("}")
     ? Input.resolvePath("", value.slice(scriptTokenPrefix.length, -1))
     : value
+
+/**
+ * One `Runtime.importTokenPrefix` placeholder, which stands for one whole
+ * `--import` flag. A specifier has no whitespace, and whitespace separates
+ * `NODE_OPTIONS` entries.
+ */
+const importToken = /(?<=^|\s)\{smthrs:import:(\S+?)\}(?=\s|$)/g
+
+/**
+ * The probe that asks Node where `--import` would load one specifier from its
+ * working directory: `resolved <url>`, or `missing` when no package there
+ * provides it.
+ */
+const importProbe = [
+  "try { process.stdout.write(`resolved ${import.meta.resolve(process.argv[1])}`) }",
+  "catch (cause) {",
+  "  if (cause?.code !== \"ERR_MODULE_NOT_FOUND\" && cause?.code !== \"ERR_PACKAGE_PATH_NOT_EXPORTED\") throw cause",
+  "  process.stdout.write(\"missing\")",
+  "}"
+].join("\n")
+
+/**
+ * The URL Node's `--import` loads for one bare specifier from `cwd`, or
+ * `undefined` when no package there provides it.
+ *
+ * Node has no ESM resolver that takes a parent outside the calling module, and
+ * `require.resolve` applies the `require` export conditions, which can name
+ * another file or none. A probe in `cwd` asks Node itself, under its default
+ * `import` conditions; a `--conditions` flag in the declared `NODE_OPTIONS`
+ * does not reach it. A probe that fails any other way fails with `refuse`'s
+ * error, so a preload is never dropped because a host was too busy to answer.
+ */
+const resolvedBareImport = (
+  specifier: string,
+  cwd: string,
+  refuse: (message: string) => ExecError
+): Effect.Effect<string | undefined, ExecError> =>
+  Effect.callback<string | undefined, ExecError>((resume) => {
+    NodeChildProcess.execFile(
+      process.execPath,
+      ["--input-type=module", "--eval", importProbe, specifier],
+      { cwd, encoding: "utf8", env: inheritedValues(["SYSTEMROOT"]), timeout: 60_000, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error === null && stdout.startsWith("resolved ")) resume(Effect.succeed(stdout.slice("resolved ".length)))
+        else if (error === null && stdout === "missing") resume(Effect.succeed(undefined))
+        else {
+          const reason = error?.message ?? `unexpected probe output ${JSON.stringify(stdout)}`
+          resume(Effect.fail(refuse(
+            `cannot resolve the runtime preload ${JSON.stringify(specifier)} from ${cwd}: ${reason}` +
+              (stderr === "" ? "" : `\n${stderr}`)
+          )))
+        }
+      }
+    )
+  })
+
+/**
+ * The `--import` flag one declared preload becomes in `NODE_OPTIONS`, or
+ * nothing when a bare specifier does not resolve from `cwd`.
+ *
+ * A relative or absolute path becomes a `file:` URL against `cwd`, a URL stays
+ * as written, and a bare specifier becomes the URL Node's own resolution finds
+ * from `cwd`. An unresolved preload is left out rather than failing every
+ * process the target starts: a program that needs it fails on its own import,
+ * as it did before the preload reached descendants. The value is quoted, so a
+ * `"` or `\` in a URL reaches Node intact.
+ */
+const importFlag = (
+  specifier: string,
+  cwd: string,
+  refuse: (message: string) => ExecError
+): Effect.Effect<string, ExecError> =>
+  Effect.map(
+    specifier.startsWith("./") || specifier.startsWith("../") || NodePath.isAbsolute(specifier)
+      ? Effect.succeed(NodeUrl.pathToFileURL(NodePath.resolve(cwd, specifier)).href)
+      : /^[A-Za-z][A-Za-z\d+.-]*:/.test(specifier)
+      ? Effect.succeed(specifier)
+      : resolvedBareImport(specifier, cwd, refuse),
+    (url) => url === undefined ? "" : `--import="${url.replaceAll(/["\\]/g, "\\$&")}"`
+  )
+
+/**
+ * Replaces each declared-preload placeholder in a payload environment with
+ * its `--import` flag, so a descendant process started in any directory loads
+ * the module the target's own working directory resolves. The expanded
+ * environment is held to the same byte bound as the declared one.
+ */
+const expandImports = (
+  env: Readonly<Record<string, string>>,
+  cwd: string,
+  refuse: (message: string) => ExecError
+): Effect.Effect<Record<string, string>, ExecError> =>
+  Effect.gen(function*() {
+    const expandedEnv = Object.create(null) as Record<string, string>
+    let bytes = 0
+    for (const [name, value] of Object.entries(env)) {
+      // An omitted flag leaves a blank between entries, which Node skips.
+      let expanded = ""
+      let end = 0
+      for (const match of value.matchAll(importToken)) {
+        expanded += value.slice(end, match.index) + (yield* importFlag(match[1]!, cwd, refuse))
+        end = match.index + match[0].length
+      }
+      expanded += value.slice(end)
+      expandedEnv[name] = expanded
+      bytes += Buffer.byteLength(name, "utf8") + Buffer.byteLength(expanded, "utf8")
+    }
+    if (bytes > maximumEnvironmentBytes) {
+      return yield* Effect.fail(refuse(`exec environment exceeds ${maximumEnvironmentBytes} bytes`))
+    }
+    return expandedEnv
+  })
 
 /**
  * Maximum length kept for captured stdout and stderr, in UTF-16 code units.
@@ -1346,53 +1460,62 @@ export const run = (
   untrustedPayload: Payload
 ): Effect.Effect<Result, ExecError> => {
   const diagnostic = declaredDiagnostic(untrustedPayload)
+  const refused = (cause: unknown) =>
+    execError({
+      argv: diagnostic.argv,
+      cwd: diagnostic.cwd,
+      exitCode: -1,
+      code: "invalid_payload",
+      stdout: "",
+      stderr: tail(failureMessage(cause))
+    })
+  const prepared = Effect.try({
+    try: () => {
+      const payload = validatedPayload(untrustedPayload)
+      const sensitiveEnv = validatedSensitiveNames(options.sensitiveEnv ?? [])
+      const cacheDirectory = options.cacheDirectory === undefined
+        ? Config.defaultCacheDirectory
+        : Config.normalizeCacheDirectory(options.cacheDirectory)
+      // The token is replaced by a real host directory that a tool will then
+      // write into, so the directory gets the same confinement check every
+      // other path crossing this boundary gets. `normalizeCacheDirectory`
+      // settles the lexical question only: a `.flows` that is a symbolic
+      // link to somewhere else entirely is refused here.
+      const cacheRoot = resolveWorkspacePath(options.workspaceRoot, cacheDirectory)
+      const substitute = (value: string): string =>
+        resolveScriptToken(
+          value.replaceAll(cacheDirectoryToken, cacheRoot).replaceAll(runtimeBinToken, process.execPath)
+        )
+      const cwd = resolveWorkspacePath(options.workspaceRoot, payload.cwd)
+      const [executable, ...args] = payload.argv
+      const resolved: Payload = {
+        ...payload,
+        argv: [substitute(executable), ...args.map(substitute)]
+      }
+      const confinement = options.sandbox === undefined
+        ? undefined
+        : ExecSandbox.plan(
+          options.sandbox,
+          {
+            workspaceRoot: NodeFs.realpathSync(NodePath.resolve(options.workspaceRoot)),
+            cwd,
+            tmp: NodePath.join(cacheRoot, "sandbox", sandboxRunId())
+          },
+          ExecSandbox.host()
+        )
+      return { resolved, sensitiveEnv, cwd, confinement, destinations: options.sandbox?.destinations }
+    },
+    catch: refused
+  })
+  // Resolving a declared preload can start a Node probe, so it runs after the
+  // synchronous checks and never blocks other targets.
+  const expanded = Effect.flatMap(prepared, (values) =>
+    Effect.map(
+      expandImports(values.resolved.env, values.cwd, refused),
+      (env) => ({ ...values, resolved: { ...values.resolved, env } })
+    ))
   return Effect.flatMap(
-    Effect.try({
-      try: () => {
-        const payload = validatedPayload(untrustedPayload)
-        const sensitiveEnv = validatedSensitiveNames(options.sensitiveEnv ?? [])
-        const cacheDirectory = options.cacheDirectory === undefined
-          ? Config.defaultCacheDirectory
-          : Config.normalizeCacheDirectory(options.cacheDirectory)
-        // The token is replaced by a real host directory that a tool will then
-        // write into, so the directory gets the same confinement check every
-        // other path crossing this boundary gets. `normalizeCacheDirectory`
-        // settles the lexical question only: a `.flows` that is a symbolic
-        // link to somewhere else entirely is refused here.
-        const cacheRoot = resolveWorkspacePath(options.workspaceRoot, cacheDirectory)
-        const substitute = (value: string): string =>
-          resolveScriptToken(
-            value.replaceAll(cacheDirectoryToken, cacheRoot).replaceAll(runtimeBinToken, process.execPath)
-          )
-        const [executable, ...args] = payload.argv
-        const resolved: Payload = {
-          ...payload,
-          argv: [substitute(executable), ...args.map(substitute)]
-        }
-        const cwd = resolveWorkspacePath(options.workspaceRoot, resolved.cwd)
-        const confinement = options.sandbox === undefined
-          ? undefined
-          : ExecSandbox.plan(
-            options.sandbox,
-            {
-              workspaceRoot: NodeFs.realpathSync(NodePath.resolve(options.workspaceRoot)),
-              cwd,
-              tmp: NodePath.join(cacheRoot, "sandbox", sandboxRunId())
-            },
-            ExecSandbox.host()
-          )
-        return { resolved, sensitiveEnv, cwd, confinement, destinations: options.sandbox?.destinations }
-      },
-      catch: (cause) =>
-        execError({
-          argv: diagnostic.argv,
-          cwd: diagnostic.cwd,
-          exitCode: -1,
-          code: "invalid_payload",
-          stdout: "",
-          stderr: tail(failureMessage(cause))
-        })
-    }),
+    expanded,
     ({ confinement, cwd, resolved, sensitiveEnv, destinations }) => {
       if (ExecSandbox.isUnenforceable(confinement)) {
         return Effect.fail(

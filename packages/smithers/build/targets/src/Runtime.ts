@@ -492,6 +492,56 @@ export const preloads = (runtime: Runtime | undefined): Array<string> =>
     : []
 
 /**
+ * Prefix of the placeholder that stands for one declared preload's `--import`
+ * flag inside `NODE_OPTIONS`.
+ *
+ * Just before the spawn, the exec boundary replaces
+ * `{smthrs:import:<specifier>}` with `--import` naming the module's absolute
+ * URL, resolved from the target's working directory the way Node resolves
+ * `--import`, and drops the flag when a bare specifier resolves to nothing
+ * there. Node resolves a bare `--import` in `NODE_OPTIONS` from each process's
+ * own working directory, so the bare spelling fails in a child started
+ * anywhere else, such as a temporary directory. The placeholder keeps host
+ * paths out of the declared environment, which is key material.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const importTokenPrefix = "{smthrs:import:"
+
+/**
+ * The environment a program runs with under `runtime`: `env`, with the
+ * runtime's preloads in `NODE_OPTIONS` ahead of any declared value.
+ *
+ * {@link preloads} reach only the program the argv starts. A test that runs
+ * `node child.ts`, or a script that runs `node`, starts processes that inherit
+ * the environment but not that argv, so a child that imports a module only a
+ * preload can load, such as a `.vibe` source through `vibelang/register`,
+ * failed with `ERR_UNKNOWN_FILE_EXTENSION`. `NODE_OPTIONS` is how Node hands
+ * options to every descendant. A declared `NODE_OPTIONS`, in any letter case,
+ * follows the preloads under the name Node reads. A Bun runtime, or a Node
+ * runtime without imports, leaves `env` unchanged.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const environment = (
+  runtime: Runtime | undefined,
+  env: Readonly<Record<string, string>> = {}
+): Record<string, string> => {
+  if (runtime?.name !== "node" || runtime.imports === undefined || runtime.imports.length === 0) return { ...env }
+  const name = Object.keys(env).find((key) => key.toUpperCase() === "NODE_OPTIONS")
+  const declared = name === undefined ? "" : env[name] ?? ""
+  return {
+    ...Object.fromEntries(Object.entries(env).filter(([key]) => key !== name)),
+    NODE_OPTIONS: [
+      ...runtime.imports.map((specifier) => `${importTokenPrefix}${specifier}}`),
+      ...(declared === "" ? [] : [declared])
+    ].join(" ")
+  }
+}
+
+/**
  * Builds the argv that runs one script under the declared runtime.
  *
  * @category constructors
