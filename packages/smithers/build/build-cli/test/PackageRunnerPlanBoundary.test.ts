@@ -793,7 +793,6 @@ describe("planned sandbox authority", () => {
     expect(request.reads).toEqual(expect.arrayContaining([
       "package.json",
       "yarn.lock",
-      "pkg",
       "pkg/config.json",
       "pkg/input.ts",
       "vendor",
@@ -805,6 +804,9 @@ describe("planned sandbox authority", () => {
       "candidate.txt"
     ]))
     expect(request.reads).not.toContain("private-diff-only.ts")
+    // The package directory is never granted whole: that would expose every
+    // undeclared file in it to a confined tool.
+    expect(request.reads).not.toContain("pkg")
     expect(request.reads?.filter((path) => path === "Cargo.lock")).toHaveLength(1)
     expect(new Set(request.writes)).toEqual(new Set([".flows", "dist", "nested/bin", "pkg"]))
     expect(new Set(request.writeFiles)).toEqual(new Set(["bundle.js", "out.txt", "plain.txt"]))
