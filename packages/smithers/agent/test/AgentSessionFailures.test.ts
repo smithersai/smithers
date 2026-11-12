@@ -35,7 +35,7 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
-import { NotificationQueue } from "@smthrs/notifications"
+import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
@@ -61,6 +61,7 @@ import {
   Scope,
   Stream
 } from "effect"
+import * as Semaphore from "effect/Semaphore"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
@@ -3472,6 +3473,7 @@ describe("retained module completion evidence", () => {
             })
           })
       },
+      notifications: { pending: () => Effect.succeed([]) },
       runs: { get: () => Effect.succeed({ ...child, status: mode === "unfinished" ? "running" : "completed" }) },
       journal: {
         entries: () =>
@@ -3523,6 +3525,77 @@ describe("retained module completion evidence", () => {
     }, (executor) => executor.requestComplete!({ runId, receiptId: "owner-merged" }))
     expect(receipt).toEqual({ _tag: "Terminal", runId, status: "completed" })
     expect(record.journaled).toEqual([])
+  })
+
+  /** A person's steer, admitted to the retained run while it waits. */
+  const steer = Notification.humanSteer({
+    runId,
+    id: "late-steer",
+    actor: "person:ben",
+    payload: SteerPayload.encode({ kind: "Message", body: "one more thing" })
+  })
+
+  it("refuses completion while admitted input waits for the next module", async () => {
+    const record = recorder()
+    const refusal = await withExecutor(record, {
+      reenterModules: [flowId],
+      runtime: { getRun: () => Effect.succeed({ ...launchInput.run, status: "parked", planId }) },
+      engineState: { waiting: () => Effect.succeed(Option.some(eventWait)) },
+      notifications: { pending: () => Effect.succeed([steer]) },
+      runs: { get: () => Effect.succeed(child) },
+      journal: { entries: () => Effect.succeed({ entries: [retainedEntry()], hasMore: false }) }
+    }, (executor) => Effect.flip(executor.requestComplete!({ runId, receiptId: "owner-merged" })))
+    expect(refusal.cause).toMatchObject({ message: "The retained module has pending input" })
+    expect(record.journaled).toEqual([])
+  })
+
+  it("holds a steer that arrives during the completion check until the close commits", async () => {
+    const record = recorder()
+    // The durable journal has one writer. A steer admits its input and wakes
+    // the run in one of its transactions, as `Control.steer` does.
+    const writer = Semaphore.makeUnsafe(1)
+    const order: Array<string> = []
+    let status: RunStatus = "parked"
+    let queued: ReadonlyArray<typeof steer> = []
+    const admitted = Deferred.makeUnsafe<Fiber.Fiber<void>>()
+    const admitSteer = writer.withPermits(1)(Effect.sync(() => {
+      queued = [steer]
+      status = "running"
+      order.push("steer")
+    }))
+    const receipt = await withExecutor(record, {
+      reenterModules: [flowId],
+      runtime: { getRun: () => Effect.sync(() => ({ ...launchInput.run, status, planId })) },
+      engineState: { waiting: () => Effect.succeed(Option.some(eventWait)) },
+      notifications: { pending: () => Effect.sync(() => queued) },
+      runs: {
+        // The steer arrives while the close reads the finished child.
+        get: () =>
+          Effect.gen(function*() {
+            yield* Deferred.succeed(admitted, yield* Effect.forkDetach(admitSteer))
+            yield* Effect.sleep("50 millis")
+            return child
+          })
+      },
+      journal: {
+        transact: (effect) => writer.withPermits(1)(effect),
+        entries: () => Effect.succeed({ entries: [retainedEntry()], hasMore: false }),
+        emitDurableUnfenced: (input) =>
+          Effect.sync(() => {
+            order.push(input.eventType)
+            return accepted
+          })
+      }
+    }, (executor) =>
+      Effect.gen(function*() {
+        const receipt = yield* executor.requestComplete!({ runId, receiptId: "owner-merged" })
+        yield* Fiber.join(yield* Deferred.await(admitted))
+        return receipt
+      }))
+    expect(receipt).toEqual({ _tag: "Accepted", receiptId: "owner-merged", runId })
+    // The marker commits before the steer, so the woken body finds the close
+    // first and never launches a module beside it.
+    expect(order).toEqual(["control.module.completion-requested", "steer"])
   })
 
   it("interrupts a completion waiting for its durable park without recording intent", async () => {

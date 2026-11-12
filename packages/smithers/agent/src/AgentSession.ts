@@ -5353,83 +5353,107 @@ export const make = (
           if (["completed", "failed", "cancelled"].includes(run.status)) {
             return { _tag: "Terminal", runId: input.runId, status: run.status } as const
           }
-          if (
-            run.status !== "parked" || Option.isNone(waiting) || waiting.value.reason !== "event" ||
-            !options.reenterModules?.includes(run.flowId)
-          ) {
-            return yield* Effect.fail(
-              new PersistenceError({
-                operation: "AgentSession.requestComplete",
-                message: `Only a retained module event wait can complete: ${run.status}/${
-                  Option.isSome(waiting) ? waiting.value.reason : "none"
-                }/${run.flowId}`
-              })
-            )
-          }
-          if (run.planId === undefined) {
-            return yield* Effect.fail(
-              new PersistenceError({
-                operation: "AgentSession.requestComplete",
-                message: "The retained module has no plan"
-              })
-            )
-          }
-          const plan = yield* runtime.getPlan(run.planId)
-          const digest = plan.card.executionDigest
-          if (digest === undefined) {
-            return yield* Effect.fail(
-              new PersistenceError({
-                operation: "AgentSession.requestComplete",
-                message: "The retained module has no pinned execution digest"
-              })
-            )
-          }
-          let marker:
-            | { readonly ordinal: number; readonly executionDigest: string; readonly executionId: string }
-            | undefined
-          yield* scanRun(journal, input.runId, (entries) => {
-            for (const entry of entries) {
-              if (entry.eventType !== "control.module.launched") {
-                continue
-              }
-              const parsed = Schema.decodeUnknownOption(
-                Schema.Struct({ ordinal: Schema.Int, executionDigest: Schema.String, executionId: Schema.String })
-              )(entry.payload)
-              if (Option.isSome(parsed)) marker = parsed.value
+          // The check, the marker and the resume request commit in one writer
+          // transaction: the one a steer's admission and wake take, and a
+          // drive's claim. Checked outside it, a steer could wake the run in
+          // between, and a body that launched the next module beside this
+          // marker failed the run on every later drive (#4958).
+          const sequence = yield* journal.transact(Effect.gen(function*() {
+            run = yield* runtime.getRun(input.runId)
+            waiting = yield* engineState.waiting(input.runId)
+            if (
+              run.status !== "parked" || Option.isNone(waiting) || waiting.value.reason !== "event" ||
+              !options.reenterModules?.includes(run.flowId)
+            ) {
+              return yield* Effect.fail(
+                new PersistenceError({
+                  operation: "AgentSession.requestComplete",
+                  message: `Only a retained module event wait can complete: ${run.status}/${
+                    Option.isSome(waiting) ? waiting.value.reason : "none"
+                  }/${run.flowId}`
+                })
+              )
             }
-          })
-          if (
-            marker === undefined || marker.executionDigest !== digest || marker.ordinal < 0 ||
-            marker.executionId !== (marker.ordinal === 0
-                ? moduleExecutionId(input.runId, digest)
-                : Digest.digest(Digest.canonical(["control/module/reentry", input.runId, digest, marker.ordinal])))
-          ) {
-            return yield* Effect.fail(
-              new PersistenceError({
-                operation: "AgentSession.requestComplete",
-                message: "The retained module launch is not bound to this run"
-              })
-            )
-          }
-          const child = yield* engineRuns.get(marker.executionId)
-          if (child.status !== "completed") {
-            return yield* Effect.fail(
-              new PersistenceError({
-                operation: "AgentSession.requestComplete",
-                message: "The retained native module has not completed"
-              })
-            )
-          }
-          yield* journal.emitDurableUnfenced(
-            new JournalEvent.Input({
-              runId: JournalEvent.RunId.make(input.runId),
-              sourceId: JournalEvent.SourceId.make("/control/module-completion"),
-              sourceSeq: JournalEvent.SourceSeq.make(marker.ordinal),
-              eventType: "control.module.completion-requested",
-              payload: marker
+            // Admitted input belongs to the next module, not to the close. A
+            // changed flow's steers keep its park and wait for the operator,
+            // so input it will not deliver does not hold the close.
+            const pending = yield* Effect.gen(function*() {
+              const queue = yield* NotificationQueue.NotificationQueue
+              return yield* queue.pending(input.runId)
+            }).pipe(Effect.provide(services))
+            if (pending.length > 0 && (yield* runtime.codeDrift(input.runId)) === undefined) {
+              return yield* Effect.fail(
+                new PersistenceError({
+                  operation: "AgentSession.requestComplete",
+                  message: "The retained module has pending input"
+                })
+              )
+            }
+            if (run.planId === undefined) {
+              return yield* Effect.fail(
+                new PersistenceError({
+                  operation: "AgentSession.requestComplete",
+                  message: "The retained module has no plan"
+                })
+              )
+            }
+            const plan = yield* runtime.getPlan(run.planId)
+            const digest = plan.card.executionDigest
+            if (digest === undefined) {
+              return yield* Effect.fail(
+                new PersistenceError({
+                  operation: "AgentSession.requestComplete",
+                  message: "The retained module has no pinned execution digest"
+                })
+              )
+            }
+            let marker:
+              | { readonly ordinal: number; readonly executionDigest: string; readonly executionId: string }
+              | undefined
+            yield* scanRun(journal, input.runId, (entries) => {
+              for (const entry of entries) {
+                if (entry.eventType !== "control.module.launched") {
+                  continue
+                }
+                const parsed = Schema.decodeUnknownOption(
+                  Schema.Struct({ ordinal: Schema.Int, executionDigest: Schema.String, executionId: Schema.String })
+                )(entry.payload)
+                if (Option.isSome(parsed)) marker = parsed.value
+              }
             })
-          )
-          const sequence = yield* runtime.requestResume(input.runId)
+            if (
+              marker === undefined || marker.executionDigest !== digest || marker.ordinal < 0 ||
+              marker.executionId !== (marker.ordinal === 0
+                  ? moduleExecutionId(input.runId, digest)
+                  : Digest.digest(Digest.canonical(["control/module/reentry", input.runId, digest, marker.ordinal])))
+            ) {
+              return yield* Effect.fail(
+                new PersistenceError({
+                  operation: "AgentSession.requestComplete",
+                  message: "The retained module launch is not bound to this run"
+                })
+              )
+            }
+            const child = yield* engineRuns.get(marker.executionId)
+            if (child.status !== "completed") {
+              return yield* Effect.fail(
+                new PersistenceError({
+                  operation: "AgentSession.requestComplete",
+                  message: "The retained native module has not completed"
+                })
+              )
+            }
+            yield* journal.emitDurableUnfenced(
+              new JournalEvent.Input({
+                runId: JournalEvent.RunId.make(input.runId),
+                sourceId: JournalEvent.SourceId.make("/control/module-completion"),
+                sourceSeq: JournalEvent.SourceSeq.make(marker.ordinal),
+                eventType: "control.module.completion-requested",
+                payload: marker
+              })
+            )
+            return yield* runtime.requestResume(input.runId)
+          }))
           yield* takeUpOfferedResume(input.runId, sequence)
           return { _tag: "Accepted", receiptId: input.receiptId, runId: input.runId } as const
         }).pipe(Effect.mapError((cause) =>
