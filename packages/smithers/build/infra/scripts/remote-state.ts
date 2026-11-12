@@ -26,6 +26,7 @@ import type { Dirent } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { stackName } from "../deployment.ts"
+import { resolveStateRoot } from "./state-root.ts"
 
 /**
  * The R2 bucket holding the deployment's Alchemy state.
@@ -308,24 +309,16 @@ interface StateTree {
   readonly kept: Array<string>
 }
 
-/** Inventory the entire tree before deciding which state entries can be replaced. */
-const stateTree = async (directory: string, prefix = ""): Promise<StateTree> => {
+const walkStateTree = async (directory: string, prefix: string): Promise<StateTree> => {
   const tree: StateTree = { files: [], directories: [], kept: [] }
-  let entries: Array<Dirent>
-  try {
-    entries = await Fs.readdir(NodePath.join(directory, prefix), { withFileTypes: true })
-  } catch (error) {
-    // A stack that has never been deployed has no state directory yet.
-    if (errorCode(error) === "ENOENT") return tree
-    throw error
-  }
+  const entries: Array<Dirent> = await Fs.readdir(NodePath.join(directory, prefix), { withFileTypes: true })
   for (const entry of entries) {
     const relative = prefix === "" ? entry.name : `${prefix}/${entry.name}`
     if (entry.isSymbolicLink()) {
       throw new TypeError(`Alchemy state contains a symbolic link, which a snapshot will not follow: ${relative}`)
     }
     if (entry.isDirectory()) {
-      const child = await stateTree(directory, relative)
+      const child = await walkStateTree(directory, relative)
       tree.directories.push(relative, ...child.directories)
       tree.files.push(...child.files)
       tree.kept.push(...child.kept)
@@ -334,6 +327,16 @@ const stateTree = async (directory: string, prefix = ""): Promise<StateTree> => 
   }
   return tree
 }
+
+/**
+ * Inventory the entire tree before deciding which state entries can be replaced.
+ *
+ * The root is resolved first: a directory reached through a symbolic link is
+ * refused before anything under its target is read. A stack that has never
+ * been deployed has no state directory yet and inventories as empty.
+ */
+const stateTree = async (directory: string): Promise<StateTree> =>
+  (await resolveStateRoot(directory)) === null ? { files: [], directories: [], kept: [] } : walkStateTree(directory, "")
 
 const renderSnapshot = (files: Record<string, string>): string => {
   const sorted = Object.fromEntries(Object.keys(files).sort().map((file) => [file, files[file]!]))
@@ -347,6 +350,8 @@ const renderSnapshot = (files: Record<string, string>): string => {
  * bytes it pulled and publishes nothing. Lock files and Alchemy's temporary
  * siblings are not state and are left out.
  *
+ * @throws A `TypeError` for a relative directory or one reached through a
+ * symbolic link; see {@link resolveStateRoot}.
  * @category utilities
  * @since 0.1.0
  */
@@ -426,7 +431,8 @@ const parseSnapshot = (body: string): {
  * Requires exclusive access to a local POSIX tree; see README.md for the
  * supported filesystem policy. I/O failures during replacement are not atomic.
  *
- * @throws A `TypeError` for invalid snapshots, ambiguous case/Unicode names,
+ * @throws A `TypeError` for a relative directory or one reached through a
+ * symbolic link, invalid snapshots, ambiguous case/Unicode names,
  * file/directory collisions, or topology that would replace a kept local entry.
  * @category utilities
  * @since 0.1.0
@@ -558,9 +564,14 @@ const readMarker = async (path: string): Promise<UnpublishedMarker | undefined> 
  * the remote moved on since that pull as well, the session refuses rather
  * than discard either side.
  *
+ * The state directory is resolved before the lock is taken: one reached
+ * through a symbolic link, in the root or an ancestor, is refused before
+ * anything in the link's target is read or replaced.
+ *
  * @throws An `Error` when the lock is held or local state holds unpublished
- * changes the remote has since diverged from; a `TypeError` for an invalid
- * snapshot or an unreadable unpublished-state marker.
+ * changes the remote has since diverged from; a `TypeError` for a relative or
+ * linked state directory, an invalid snapshot or an unreadable
+ * unpublished-state marker.
  *
  * @category constructors
  * @since 0.1.0
@@ -570,6 +581,7 @@ export const openRemoteState = async (
   directory: string,
   holder: LockHolder
 ): Promise<RemoteStateSession> => {
+  await resolveStateRoot(directory)
   const lockKey = `${remote.key}.lock`
   if (!(await remote.bucket.put(lockKey, JSON.stringify(holder), { ifAbsent: true }))) {
     const current = await remote.bucket.get(lockKey)

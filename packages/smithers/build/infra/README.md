@@ -91,7 +91,11 @@ second production beside the first. The durable copy of the state is therefore
 one object in R2, `smithers-build-infra-state/alchemy/SmithersBuildRemoteCache.json`,
 and the ignored `.alchemy/` directory is a working copy of it.
 
-`scripts/deploy.ts` owns the round trip. Before Alchemy starts it takes a lock
+`scripts/deploy.ts` owns the round trip. The state directory must be an
+absolute path with no symbolic link in it or in any ancestor; the wrapper, the
+snapshot read and write, and redaction each check this before they take
+ownership, pull, or change anything, so a linked directory's target is never
+touched. Before Alchemy starts the wrapper takes a lock
 object (the state key with `.lock` appended) with a conditional write, and
 pulls the snapshot over the local state directory. After Alchemy exits it
 redacts, then publishes the snapshot back with a compare-and-swap on the

@@ -19,6 +19,7 @@ import {
   type RemoteStateSession
 } from "./remote-state.ts"
 import { acquireStateOwnership, type StateOwnership } from "./state-ownership.ts"
+import { resolveStateRoot } from "./state-root.ts"
 
 const infraDirectory = NodePath.dirname(NodePath.dirname(fileURLToPath(import.meta.url)))
 const alchemyCli = NodePath.join(infraDirectory, "node_modules", "alchemy", "bin", "cli.js")
@@ -185,9 +186,11 @@ const runAlchemy = (
  * wrapper takes the remote lock and pulls the R2 snapshot over it; after
  * redaction it publishes the snapshot back, conditioned on the version it
  * pulled, whether or not Alchemy succeeded, because a failed run can still
- * have created resources that only its state records. A held remote lock, or
- * any failure to reach R2, refuses the run before Alchemy starts. State that
- * failed redaction is never published.
+ * have created resources that only its state records. A state directory that
+ * is relative or reached through a symbolic link, a held remote lock, or any
+ * failure to reach R2 refuses the run before Alchemy starts, and the linked
+ * directory is refused before anything is created or pulled into its target.
+ * State that failed redaction is never published.
  *
  * The wrapper owns the state directory from before Alchemy starts until
  * redaction has published its last file, so no other deployment or standalone
@@ -214,6 +217,11 @@ export const deploy = async (
   const target = { cli, cwd }
   let ownership: StateOwnership
   try {
+    // A state directory reached through a symbolic link, in the root or an
+    // ancestor, is refused before anything is created or pulled: the pull
+    // would otherwise replace the link target's files, and redaction's own
+    // refusal would come only after they were lost.
+    await resolveStateRoot(stateDirectory)
     // Alchemy creates the state directory on first use; creating it here lets
     // ownership exist before Alchemy writes anything into it.
     await Fs.mkdir(stateDirectory, { recursive: true })

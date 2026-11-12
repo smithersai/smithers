@@ -16,6 +16,7 @@ import { stackName } from "../deployment.ts"
 import { jsonTextFault } from "../worker/jsonTextFault.ts"
 import { failureMessage } from "./failure-message.ts"
 import { acquireStateOwnership, type StateOwnership } from "./state-ownership.ts"
+import { resolveStateRoot } from "./state-root.ts"
 
 const redacted = "__SMITHERS_CACHE_TOKEN_REDACTED__"
 
@@ -555,30 +556,6 @@ const redactFile = async (
   }
   await writeStateFile(root, file, identity, rendered)
   return true
-}
-
-/** The canonical state root, or `null` when the deployment has no state yet. */
-const resolveStateRoot = async (directory: string): Promise<string | null> => {
-  const requestedRoot = NodePath.resolve(directory)
-  let root: string
-  try {
-    root = await Fs.realpath(requestedRoot)
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") {
-      // Windows also reports ENOENT for file/child. Validate the existing
-      // ancestors before treating this as a deployment with no state.
-      const parent = NodePath.dirname(requestedRoot)
-      if (parent === requestedRoot) throw error
-      await resolveStateRoot(parent)
-      return null
-    }
-    throw error
-  }
-  if (root !== requestedRoot) {
-    throw new TypeError(`symbolic links are not allowed in the Alchemy state root: ${directory}`)
-  }
-  if (!(await Fs.lstat(root)).isDirectory()) throw new TypeError(`Alchemy state root is not a directory: ${root}`)
-  return root
 }
 
 const discoverWorkerStates = async (root: string): Promise<ReadonlyArray<string>> => {

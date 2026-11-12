@@ -92,7 +92,11 @@ describe("state snapshots", () => {
 
   it("reports a state path that is not a directory", async () => {
     await put("file", "x")
-    await expect(readStateSnapshot(NodePath.join(directory, "file"))).rejects.toThrow(/ENOTDIR/)
+    await expect(readStateSnapshot(NodePath.join(directory, "file"))).rejects.toThrow(/not a directory/)
+  })
+
+  it("refuses a relative state directory", async () => {
+    await expect(readStateSnapshot("state")).rejects.toThrow(/Alchemy state directory must be absolute: state/)
   })
 
   it("refuses a state tree reached through a symbolic link", async () => {
@@ -100,6 +104,72 @@ describe("state snapshots", () => {
     await symlink(NodePath.join(directory, "elsewhere"), NodePath.join(directory, "prod"))
 
     await expect(readStateSnapshot(directory)).rejects.toThrow(/symbolic link/)
+  })
+
+  describe("a state directory reached through a symbolic link", () => {
+    const linkedState = async (
+      shape: "root" | "ancestor"
+    ): Promise<{ readonly state: string; readonly link: string; readonly outside: string }> => {
+      const outside = NodePath.join(directory, "outside")
+      await mkdir(NodePath.join(outside, "state", "prod"), { recursive: true })
+      await writeFile(NodePath.join(outside, "important.json"), `{"keep":"me"}`, "utf8")
+      await writeFile(NodePath.join(outside, "state", "prod", "CacheWorker.json"), `{"keep":"too"}`, "utf8")
+      const link = NodePath.join(directory, "linked")
+      await symlink(outside, link)
+      // The state directory exists under the target in both shapes, so the
+      // refusal names it rather than the link it was reached through.
+      return { outside, link, state: shape === "root" ? link : NodePath.join(link, "state") }
+    }
+    const contents = async (root: string): Promise<Array<[string, string]>> => {
+      const result: Array<[string, string]> = []
+      for (const entry of (await readdir(root, { recursive: true, withFileTypes: true }))) {
+        const path = NodePath.join(entry.parentPath, entry.name)
+        result.push([NodePath.relative(root, path), entry.isFile() ? readFileSync(path, "utf8") : "directory"])
+      }
+      return result.sort()
+    }
+    const snapshot = JSON.stringify({
+      format: "smithers-alchemy-state/1",
+      files: { "prod/CacheWorker.json": `{"live":true}` }
+    })
+    const refusal = (link: string): RegExp =>
+      new RegExp(`symbolic links are not allowed in the Alchemy state root: ${link.replaceAll(/[.\\]/g, "\\$&")}$`)
+
+    it.each(["root", "ancestor"] as const)("is refused by a snapshot read when the link is the %s", async (shape) => {
+      const { outside, state } = await linkedState(shape)
+      const before = await contents(outside)
+
+      await expect(readStateSnapshot(state)).rejects.toThrow(refusal(state))
+
+      expect(await contents(outside)).toEqual(before)
+    })
+
+    it.each(["root", "ancestor"] as const)(
+      "is refused by a snapshot write before any file in its target changes, when the link is the %s",
+      async (shape) => {
+        const { outside, state } = await linkedState(shape)
+        const before = await contents(outside)
+
+        await expect(writeStateSnapshot(state, snapshot)).rejects.toThrow(refusal(state))
+
+        expect(await contents(outside)).toEqual(before)
+      }
+    )
+
+    it.each(["root", "ancestor"] as const)(
+      "is refused by a remote state session before the lock is taken, when the link is the %s",
+      async (shape) => {
+        const { outside, state } = await linkedState(shape)
+        const before = await contents(outside)
+        const bucket = memoryStateBucket()
+        await bucket.put(stateObjectKey, snapshot, { ifAbsent: true })
+
+        await expect(openRemoteState({ bucket, key: stateObjectKey }, state, holder)).rejects.toThrow(refusal(state))
+
+        expect(await contents(outside)).toEqual(before)
+        expect([...bucket.objects.keys()]).toEqual([stateObjectKey])
+      }
+    )
   })
 
   it("replaces local state with the snapshot and keeps the ownership lock", async () => {

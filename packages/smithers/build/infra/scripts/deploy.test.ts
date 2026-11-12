@@ -1,6 +1,6 @@
 import { ChildProcess, spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
@@ -877,6 +877,53 @@ describe("deploy wrapper remote state", () => {
     expect(code).toBe(7)
     expect(bucket.objects.has("alchemy/Test.json")).toBe(true)
     expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+  })
+
+  it.each([
+    ["the state directory", (root: string) => ({ link: NodePath.join(root, "state"), state: NodePath.join(root, "state") })],
+    [
+      "an ancestor of the state directory",
+      (root: string) => ({ link: NodePath.join(root, "linked"), state: NodePath.join(root, "linked", "state") })
+    ]
+  ])("refuses to deploy when %s is a symbolic link, before anything in its target changes", async (_name, shape) => {
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "linked-")))
+    const outside = NodePath.join(root, "outside")
+    await mkdir(outside)
+    await writeFile(NodePath.join(outside, "important.json"), `{"keep":"me"}`, "utf8")
+    const { link, state } = shape(root)
+    await symlink(outside, link)
+    const bucket = memoryStateBucket()
+    await bucket.put("alchemy/Test.json", snapshotOf({ "prod/CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
+    const marker = NodePath.join(root, "refused")
+    const errors: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      errors.push(String(chunk))
+      return true
+    })
+    let redactions = 0
+    try {
+      const code = await deployWrapper([marker], {
+        cli: script("ignores-sigterm"),
+        cwd: directory,
+        stateDirectory: state,
+        redact: async () => (redactions += 1, 0),
+        remoteState: async () => ({ bucket, key: "alchemy/Test.json" })
+      })
+
+      expect(code).toBe(1)
+      expect(errors.join("")).toBe(
+        `Alchemy deployment refused: symbolic links are not allowed in the Alchemy state root: ${link}\n`
+      )
+      // Neither Alchemy nor redaction ran, the remote lock was never taken, and
+      // the link's target holds exactly the bytes it held before.
+      expect(existsSync(`${marker}.ready`)).toBe(false)
+      expect(redactions).toBe(0)
+      expect([...bucket.objects.keys()]).toEqual(["alchemy/Test.json"])
+      expect(await readdir(outside, { recursive: true })).toEqual(["important.json"])
+      expect(readFileSync(NodePath.join(outside, "important.json"), "utf8")).toBe(`{"keep":"me"}`)
+    } finally {
+      stderr.mockRestore()
+    }
   })
 
   it("refuses to start Alchemy while another deployment holds the remote lock", async () => {

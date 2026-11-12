@@ -149,6 +149,7 @@ const reviewedSources = [
   Smithers.file("scripts/redact-state.ts"),
   Smithers.file("scripts/remote-state.ts"),
   Smithers.file("scripts/state-ownership.ts"),
+  Smithers.file("scripts/state-root.ts"),
   Smithers.file("deployment.ts"),
   Smithers.file("alchemy.run.ts")
 ]
