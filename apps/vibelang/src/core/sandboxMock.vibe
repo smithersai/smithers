@@ -11,15 +11,17 @@ import { mockPolicy, type SandboxPolicy } from "./sandboxPolicy.vibe"
 import type { Role } from "./sandboxDecision.vibe"
 import { currentLease, mockCommand } from "./sandboxMockDecision.vibe"
 
-/** `engine` is the flow engine the sandbox flows run on; tests pass a faulty one to drive engine failures. */
-export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<SandboxPolicy> = mockPolicy(role), engine: Layer.Layer<FlowRuntime.FlowRuntime> = FlowEngine.layerMemory) {
+/**
+ * `engine` is the flow engine the sandbox flows run on and `machines` the device they drive; tests pass faulty ones to
+ * drive engine and machine failures.
+ */
+export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<SandboxPolicy> = mockPolicy(role), engine: Layer.Layer<FlowRuntime.FlowRuntime> = FlowEngine.layerMemory, machines: Machines = memoryMachines()) {
   const random = try Effect.provide(SecureRandom.SecureRandom, WebCrypto.layer)
   effect function execution(prefix: string) { return `${prefix}/${try random.uuidV4()}` }
   const state = try Ref.make<SandboxState | undefined>(undefined)
   // The host arms an alarm only while a sandbox runs or an operation is pending (sandboxHost.vibe `arm`).
   const armed = try Ref.make<number | null>(null)
   const receipts = new Map<string, Receipt>()
-  const machines = memoryMachines()
   const host = try Effect.provide(makeSandboxHost({ read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))), alarm: (at) => Ref.set(armed, at) }, machines), policy)
   const registered = sandboxRegistration.pipe(
     Layer.provideMerge(engine),

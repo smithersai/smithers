@@ -35,7 +35,8 @@ import type { Principal } from "../history/roles.vibe"
 import { type HistoryPages, show } from "../history/tools.vibe"
 import type { Outline } from "../history/pages.vibe"
 import { matches } from "./mockDecision.vibe"
-import { makeMockSandboxes } from "./sandboxMock.vibe"
+import { makeMockSandboxes, memoryMachines } from "./sandboxMock.vibe"
+import type { Machines } from "./sandboxHost.vibe"
 import type { Role } from "./sandboxDecision.vibe"
 import { SandboxPolicy } from "./sandboxPolicy.vibe"
 import { chunks, HISTORY_WORDS, historyReply, mockReply } from "./mockReplies.vibe"
@@ -190,9 +191,10 @@ interface TourRun {
 
 /**
  * The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. `repository` makes
- * the fixture repository its wiki starts from: the build's pages by default.
+ * the fixture repository its wiki starts from: the build's pages by default. `device` makes each owner's sandbox machines:
+ * the product mock's by default.
  */
-export function mockFactoryFor(role?: Role, repository: Effect.Effect<WikiFixtureStore> = makeWikiStore()) {
+export function mockFactoryFor(role?: Role, repository: Effect.Effect<WikiFixtureStore> = makeWikiStore(), device: () => Machines = memoryMachines) {
 return Layer.effect(Factory, effect {
   const journal = try MockJournal
   const scope = try Effect.scope
@@ -208,7 +210,7 @@ return Layer.effect(Factory, effect {
     let service = sandboxAccounts.get(owner)
     if (service === undefined) {
       const policy = Layer.succeed(SandboxPolicy, { current: effect () => ({ owner, role: try accounts.role(owner) }) })
-      service = try Effect.provideService(makeMockSandboxes(try accounts.role(owner), policy), Scope.Scope, scope)
+      service = try Effect.provideService(makeMockSandboxes(try accounts.role(owner), policy, FlowEngine.layerMemory, device()), Scope.Scope, scope)
       sandboxAccounts.set(owner, service)
     }
     return service

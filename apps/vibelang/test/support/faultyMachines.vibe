@@ -1,0 +1,48 @@
+// Faulty sandbox machines for the browser gate (decision 0016): the product mock's real memoryMachines, with one step
+// failing once per owner. `machine-start` fails the first start, `machine-command` the first command and `machine-stop`
+// the first stop; `machine-lost` answers the first lease as a machine that is gone, as a crashed container's does.
+import { Unavailable } from "../../src/core/Factory.vibe"
+import type { Machines } from "../../src/core/sandboxHost.vibe"
+import { memoryMachines } from "../../src/core/sandboxMock.vibe"
+
+export type MachineFault = "machine-start" | "machine-lost" | "machine-command" | "machine-stop"
+
+/** The machine fault a page's fault names, if it names one. */
+export function machineFault(fault: string): MachineFault | undefined {
+  return fault === "machine-start" || fault === "machine-lost" || fault === "machine-command" || fault === "machine-stop" ? fault : undefined
+}
+
+/** A device maker for `mockFactoryFor`: each owner's machines, failing once at the step `fault` names. */
+export function faultyMachines(fault: MachineFault): () => Machines {
+  return () => {
+    const real = memoryMachines()
+    let failed = false
+    const once = (step: MachineFault) => {
+      if (failed || fault !== step) return false
+      failed = true
+      return true
+    }
+    const machines: Machines = {
+      start: effect (id, generation) => {
+        if (once("machine-start")) throw new Unavailable({ reason: "machine-start" })
+        try real.start(id, generation)
+      },
+      lease: effect (id, generation, milliseconds) => {
+        if (once("machine-lost")) {
+          try real.stop(id, generation)
+          return false
+        }
+        return try real.lease(id, generation, milliseconds)
+      },
+      stop: effect (id, generation) => {
+        if (once("machine-stop")) throw new Unavailable({ reason: "machine-stop" })
+        try real.stop(id, generation)
+      },
+      command: effect (id, generation, operationId, command) => {
+        if (once("machine-command")) throw new Unavailable({ reason: "machine-command" })
+        return try real.command(id, generation, operationId, command)
+      },
+    }
+    return machines
+  }
+}

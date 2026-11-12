@@ -5,10 +5,12 @@ import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
+import { makeWikiStore } from "../../src/core/WikiFactory.vibe"
 import { recordedWikiStore } from "./recordedWiki.vibe"
 import { forge, forgery, forges, resumeAt, type Forgery } from "./forgedEvents.vibe"
+import { faultyMachines, machineFault, type MachineFault } from "./faultyMachines.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged"
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale" | "issue-connect" | "issue-fork" | "issue-install" | "issue-forbidden" | "issue-closed" | "issue-no-model" | "wiki-forbidden" | "wiki-conflict" | "wiki-connect" | "wiki-fork" | "wiki-install" | "post-empty" | "post-duplicate" | "post-not-replying" | "post-full" | "forged" | MachineFault
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -77,7 +79,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
 
 /**
  * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
- * fails every sandbox read; `sandbox-start` fails the first start; `sandbox-low` and `sandbox-out` move the sandbox
+ * fails every sandbox read; `sandbox-start` fails the first start; each `machine-*` fault fails the mock sandbox's
+ * machine once (faultyMachines.vibe); `sandbox-low` and `sandbox-out` move the sandbox
  * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
@@ -93,6 +96,7 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * Each fault happens once.
  */
 export function faultyFactory(fault: Fault, observation: Trace) {
+  const device = machineFault(fault)
   return Layer.effect(Factory, effect {
     const base = try Factory
     const released = try Deferred.make<void>()
@@ -244,5 +248,5 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         return forged ? Stream.concat(Stream.fromIterable(resumed.first), real.pipe(Stream.flatMap((event) => Stream.fromIterable(forge(forging, conversation, event))))) : real
       }),
     }
-  }).pipe(Layer.provide(fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : MockFactory))
+  }).pipe(Layer.provide(fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : device !== undefined ? mockFactoryFor(undefined, makeWikiStore(), faultyMachines(device)) : MockFactory))
 }
