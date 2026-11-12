@@ -5,6 +5,7 @@
  */
 
 import type * as Compose from "@smthrs/targets/Compose"
+import type * as Input from "@smthrs/targets/Input"
 import type * as SafeFs from "@smthrs/targets/SafeFs"
 import type * as Target from "@smthrs/targets/Target"
 import type * as Executor from "../Executor.ts"
@@ -183,6 +184,12 @@ export interface RunOptions {
    * plan expands each declaration once for its own targets.
    */
   readonly treeInputs?: TreeInputReads | undefined
+  /**
+   * Directory reads shared by every glob expansion of one invocation's plans
+   * ({@link Input.WalkCache}). Without one, a plan shares them among its own
+   * expansions.
+   */
+  readonly walks?: Input.WalkCache | undefined
 }
 
 /**

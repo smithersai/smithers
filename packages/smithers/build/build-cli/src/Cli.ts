@@ -955,6 +955,7 @@ const runCi = async (
     // file read once for all of them. Nothing runs between them.
     const digests = await DigestIndexFile.load(index.root, cacheDirectory, reporter.note)
     const treeInputs: TreeInputReads = new Map()
+    const walks = Input.makeWalkCache()
     try {
       for (const kind of ciKinds) {
         let remaining = [...patterns]
@@ -980,7 +981,8 @@ const runCi = async (
                 // CI never spawns an agent: the docs-verb page writers stay out.
                 unattended: true,
                 digests,
-                treeInputs
+                treeInputs,
+                walks
               })
             })
             for (const pattern of remaining) accepted.add(pattern)

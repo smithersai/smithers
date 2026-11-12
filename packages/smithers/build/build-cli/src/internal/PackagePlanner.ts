@@ -312,6 +312,8 @@ interface PlanContext {
   readonly digests: SafeFs.DigestIndex
   /** Package and declared tree input → its digested rows, for this plan or every plan of the invocation. */
   readonly treeInputs: TreeInputReads
+  /** Directory reads every glob expansion of this plan, or of the invocation, shares. */
+  readonly walks: Input.WalkCache
   /** ImportClosure label → canonical result digest (plan-time, memoized). */
   /** Expanded crate sets, memoized per `S.Cargo.AppSet` label. */
   readonly crateSets: Map<string, ReadonlyArray<CrateRow>>
@@ -688,7 +690,8 @@ const appSetCrates = async (
     for (
       const match of await Input.expandGlob(context.root, packagePath, glob, {
         cacheDirectory: context.cacheDirectory,
-        signal: context.signal
+        signal: context.signal,
+        walks: context.walks
       })
     ) paths.add(match)
   }
@@ -1271,7 +1274,8 @@ const treeInputFiles = async (
         cacheDirectory: context.cacheDirectory,
         repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
         links: true,
-        signal: context.signal
+        signal: context.signal,
+        walks: context.walks
       })
     )
     : await Input.expandPnpmWorkspace(context.root, packagePath, declaration, {
@@ -3042,7 +3046,8 @@ const visit = async (
         cacheDirectory: context.cacheDirectory,
         packageScoped: false,
         repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
-        signal: context.signal
+        signal: context.signal,
+        walks: context.walks
       })
       const files = await Input.digestFiles(context.root, matches, { signal: context.signal, digests: context.digests })
       states.push({ pattern, digest: Input.digestText(JSON.stringify(files)) })
@@ -3533,7 +3538,8 @@ const globExpansions = (context: PlanContext): GlobExpansions => {
         cacheDirectory: context.cacheDirectory,
         repositoryBoundaries,
         packageScoped,
-        signal: context.signal
+        signal: context.signal,
+        walks: context.walks
       })
       expansions.set(key, expansion)
     }
@@ -3969,6 +3975,7 @@ const planWithServices = async (
     remoteCache: options.remoteCache,
     digests,
     treeInputs: options.treeInputs ?? new Map(),
+    walks: options.walks ?? Input.makeWalkCache(),
     crateSets: new Map(),
     closureDigests: new Map(),
     closureResults: new Map(),

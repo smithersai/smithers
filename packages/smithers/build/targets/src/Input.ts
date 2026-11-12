@@ -886,6 +886,8 @@ interface Scan {
   readonly signal: AbortSignal | undefined
   /** The permits every filesystem read the walk fans out through must hold. */
   readonly permits: Permits
+  /** Reads shared with the invocation's other expansions, when it shares them. */
+  readonly walks: WalkCache | undefined
   directories: number
   entries: number
   files: number
@@ -899,6 +901,64 @@ interface Opened {
   readonly relative: string
   readonly entry: SafeFs.Entry
   readonly entries: ReadonlyArray<Dirent>
+}
+
+/**
+ * Directory reads every expansion of one invocation shares.
+ *
+ * A graph declares thousands of globs whose walks cross the same directories:
+ * one per test case under a shared `cases/` tree, and source-tree filegroups
+ * that cover every package. Each expansion opened, confined and listed each
+ * directory it crossed and read its `.gitignore` again, so a 4,500-target
+ * plan opened each of 8,000 directories nine times. With a cache, the first
+ * expansion to cross a directory reads it and every later one reuses the
+ * confined listing, the `.gitignore` matcher and the symbolic-link answers.
+ * What is kept is what one directory says about itself, so a walk from any
+ * start, package-scoped or not, sees the same answers as a fresh read. Scan
+ * limits still count every directory, entry and `.gitignore` byte each
+ * expansion crosses.
+ *
+ * Share one cache only across expansions that run while the tree is not
+ * being written: the plans of one invocation, before any target runs. A
+ * cache answers for the filesystem seam it was first used with; an expansion
+ * through another seam reads for itself.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface WalkCache {
+  /** Reads by kind, canonical root and workspace-relative path. */
+  readonly reads: Map<string, Promise<unknown>>
+  /** The filesystem seam the reads went through, once one has. */
+  io: SafeFs.Io | undefined
+}
+
+/**
+ * Makes an empty walk cache.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const makeWalkCache = (): WalkCache => ({ reads: new Map(), io: undefined })
+
+/** The cache an expansion through `io` may share, if any. */
+const walksFor = (walks: WalkCache | undefined, io: SafeFs.Io): WalkCache | undefined => {
+  if (walks === undefined) return undefined
+  walks.io ??= io
+  return walks.io === io ? walks : undefined
+}
+
+/** Runs one read of a directory's own facts once per cache. */
+const shared = <A>(scan: Scan, kind: string, relative: string, read: () => Promise<A>): Promise<A> => {
+  const walks = scan.walks
+  if (walks === undefined) return read()
+  const key = `${kind}\0${scan.root}\0${relative}`
+  let cached = walks.reads.get(key) as Promise<A> | undefined
+  if (cached === undefined) {
+    cached = read()
+    walks.reads.set(key, cached)
+  }
+  return cached
 }
 
 const scanOptions = (scan: Scan, what: string): SafeFs.Options => ({
@@ -937,15 +997,19 @@ const readIgnore = async (
 ): Promise<ReturnType<typeof createIgnore> | undefined> => {
   checkCancelled(scan)
   if (!scan.sourceFilters) return undefined
-  const text = await SafeFs.readText(
-    NodePath.join(scan.root, relative, ".gitignore"),
-    scanOptions(scan, ignoreNoun)
-  )
-  if (text !== undefined) {
-    scan.ignoreBytes += Buffer.byteLength(text, "utf8")
-    within(scan, "ignoreBytes", scan.ignoreBytes)
-  }
-  return text === undefined || text === "" ? undefined : createIgnore().add(text)
+  const read = await shared(scan, "ignore", relative, async () => {
+    const text = await SafeFs.readText(
+      NodePath.join(scan.root, relative, ".gitignore"),
+      scanOptions(scan, ignoreNoun)
+    )
+    return text === undefined
+      ? undefined
+      : { bytes: Buffer.byteLength(text, "utf8"), matcher: text === "" ? undefined : createIgnore().add(text) }
+  })
+  if (read === undefined) return undefined
+  scan.ignoreBytes += read.bytes
+  within(scan, "ignoreBytes", scan.ignoreBytes)
+  return read.matcher
 }
 
 /**
@@ -1036,6 +1100,22 @@ const openDirectory = async (scan: Scan, relative: string): Promise<Opened | und
   within(scan, "depth", depth)
   const absolute = NodePath.join(scan.root, relative)
   const options = scanOptions(scan, directoryNoun)
+  if (scan.walks !== undefined) {
+    // The shared listing is read to the per-directory ceiling; this scan's
+    // own entry budget is enforced on what it crosses, as below.
+    const opened = await shared(scan, "directory", relative, async () => {
+      const entry = await SafeFs.resolveDirectory(absolute, options)
+      if (entry === undefined) return undefined
+      const entries = await SafeFs.listDirectory(absolute, entry, options)
+      return { relative, entry, entries }
+    })
+    if (opened === undefined) return undefined
+    scan.directories += 1
+    within(scan, "directories", scan.directories)
+    scan.entries += opened.entries.length
+    within(scan, "entries", scan.entries)
+    return opened
+  }
   const entry = await SafeFs.resolveDirectory(absolute, options)
   if (entry === undefined) return undefined
   scan.directories += 1
@@ -1153,7 +1233,10 @@ const entersNodeModules = (
  * A genuine I/O failure still propagates: "this link could not be read" is not
  * the same answer as "this link is not an input".
  */
-const admitsLink = async (scan: Scan, child: string): Promise<boolean> => {
+const admitsLink = (scan: Scan, child: string): Promise<boolean> =>
+  shared(scan, "link", child, () => readLink(scan, child))
+
+const readLink = async (scan: Scan, child: string): Promise<boolean> => {
   const absolute = NodePath.join(scan.root, child)
   let target: string
   try {
@@ -1312,6 +1395,8 @@ export const expandGlob = async (
     /** Whether links that are not links to workspace files are listed as link inputs. */
     readonly links?: boolean | undefined
     readonly signal?: AbortSignal | undefined
+    /** Directory reads shared with the invocation's other expansions; see {@link WalkCache}. */
+    readonly walks?: WalkCache | undefined
   } = {}
 ): Promise<ReadonlyArray<string>> => {
   const patternText = typeof pattern === "string" ? pattern : pattern.pattern
@@ -1349,6 +1434,7 @@ export const expandGlob = async (
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
     permits: makePermits(walkConcurrency),
+    walks: walksFor(options.walks, io),
     directories: 0,
     entries: 0,
     files: 0,
@@ -1433,6 +1519,7 @@ export const discoverFiles = async (
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
     permits: makePermits(walkConcurrency),
+    walks: undefined,
     directories: 0,
     entries: 0,
     files: 0,
@@ -1481,6 +1568,7 @@ export const listOutputFiles = async (
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
     permits: makePermits(walkConcurrency),
+    walks: undefined,
     directories: 0,
     entries: 0,
     files: 0,

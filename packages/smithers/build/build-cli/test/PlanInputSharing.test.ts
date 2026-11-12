@@ -96,8 +96,10 @@ describe("one plan reads a shared declared input once", () => {
     const few = await directoryOpens(await workspace(suite(40)), ["//:c0", "//:c1"])
     const many = await directoryOpens(await workspace(suite(40)), ["//..."])
     // `cases/*.mjs` starts at `cases`, so its walk opens every case directory.
-    // Planning all 40 targets adds case 20's own glob and no further walk.
-    expect(many.get("cases/c20")).toBe((few.get("cases/c20") ?? 0) + 1)
+    // Case 20's own glob reuses that listing: planning all 40 targets opens
+    // no directory that planning two did not.
+    expect(many.get("cases/c20")).toBe(few.get("cases/c20"))
+    expect(Math.max(...many.values())).toBe(Math.max(...few.values()))
   })
 
   it("gives every target that shares a glob the rows the glob names", async () => {

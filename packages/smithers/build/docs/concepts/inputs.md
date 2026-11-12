@@ -98,6 +98,12 @@ The walk:
 - removes anything matching an `exclude` pattern,
 - sorts.
 
+One invocation reads each directory once, whatever number of globs and verbs
+cross it: the first walk to reach a directory confines and lists it and reads
+its `.gitignore`, and every later walk in the same invocation reuses those
+answers. Each walk still counts every directory, entry and `.gitignore` byte it
+crosses against its scan limits.
+
 ### Globs are package scoped
 
 Like Bazel, a glob only sees its own package. A recursive pattern declared in
