@@ -204,8 +204,6 @@ cases += [
 (MD, 'md-inline-drop', 'inlinePieces', 'pieces = [...prev, { code: j % 2 === 1, text: parts[j]! }]', 'pieces = prev', 'every nonempty input piece is represented'),
 (MD, 'md-inline-empty', 'inlinePieces', 'if (parts[j]! !== "") {', 'if (true) {', 'no empty inline piece'),
 (MD, 'md-inline-invent', 'inlinePieces', 'pieces = [...prev, { code: j % 2 === 1, text: parts[j]! }]', 'pieces = [...prev, { code: j % 2 === 1, text: parts[j]! + "x" }]', 'a piece is one of the parts'),
-(HV, 'hv-fallback-trim', 'orFallback', 'text.trim() === "" ? fallback', 'text === "" ? fallback', 'a blank name shows its fallback'),
-(HV, 'hv-label-id', 'commitLabel', 'id.trim() !== "" ? id.trim() : "Change"', '"Change"', 'a commit without a title is named by its id'),
 (HV, 'hv-title-epic', 'historyTitle', 'hasEpic ? epicTitle + " · History"', 'hasEpic ? "History · VibeLang"', 'an epic names the page'),
 (HV, 'hv-body-hash', 'historyBody', 'if (commitHash && !answered) return', 'if (commitHash) return', 'an answered commit hash stops loading'),
 (HV, 'hv-body-read-failed', 'historyBody', 'return readFailed ? "commit-failed" : "loading"', 'return "loading"', 'a failed commit read says so'),

@@ -2,23 +2,6 @@
 // groups, each commit's row and page, the timeline, the note form and the Plan work dialog. Role checks arrive as
 // booleans from the proved role thresholds (historyApp `allowed`).
 
-/** A name that is blank shows its fallback instead. */
-//@ verify
-//@ ensures text.trim() == "" ==> \result == fallback
-//@ ensures text.trim() != "" ==> \result == text
-export function orFallback(text: string, fallback: string): string {
-  return text.trim() === "" ? fallback : text
-}
-
-/** A commit link's accessible name: its trimmed title, else its trimmed id, else "Change". Never blank. */
-//@ verify
-//@ ensures title.trim() != "" ==> \result == title.trim()
-//@ ensures title.trim() == "" && id.trim() != "" ==> \result == id.trim()
-//@ ensures title.trim() == "" && id.trim() == "" ==> \result == "Change"
-export function commitLabel(title: string, id: string): string {
-  return title.trim() !== "" ? title.trim() : id.trim() !== "" ? id.trim() : "Change"
-}
-
 /** The document title names the shown commit, else the epic, else the page. */
 //@ verify
 //@ ensures hasCommit ==> \result == commitTitle + " · History"

@@ -65,8 +65,9 @@ function signedRoles(): Stream.Stream<HistoryMessage, never, Accounts> {
     const again = (why: string): Stream.Stream<HistoryMessage, never, Accounts> =>
       Stream.concat(Stream.fromEffect(Effect.andThen(Effect.logWarning(why), Effect.sleep("2 seconds"))).pipe(Stream.drain), Stream.suspend(signedRoles))
     if (identity === undefined) return Stream.concat(asked, again("session unavailable; asking again"))
-    if (identity.id === "") return asked
-    const granted: Stream.Stream<HistoryMessage, never, Accounts> = accounts.events(identity.ledger?.seq ?? 0).pipe(
+    // Signed out there are no grants to follow; signed in, the session carries the ledger its role was read from.
+    if (!("ledger" in identity)) return asked
+    const granted: Stream.Stream<HistoryMessage, never, Accounts> = accounts.events(identity.ledger.seq).pipe(
       Stream.flatMap((event): Stream.Stream<HistoryMessage> =>
         event.type === "RoleGranted" && event.id === identity.id ? Stream.fromEffect(message(() => HistoryMessage.ResolvedRole({ role: event.role }))) : Stream.empty),
       Stream.catch(() => again("role events lost; following again")),

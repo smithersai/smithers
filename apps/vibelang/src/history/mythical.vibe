@@ -605,6 +605,13 @@ export function validRank(rank: number, seq: number): boolean {
   return 0 <= rank && rank < seq
 }
 
+/** A title, id or SHA the history may hold: not blank, as `decide` requires of every title it accepts. */
+//@ verify
+//@ ensures \result == (text.trim() != "")
+export function named(text: string): boolean {
+  return text.trim() !== ""
+}
+
 //@ verify
 //@ ensures \result == forall(i, 0 <= i && i < history.commits.length ==> 0 <= history.commits[i].rank && history.commits[i].rank < history.seq)
 export function validRanks(history: History): boolean {

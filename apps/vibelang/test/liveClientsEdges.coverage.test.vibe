@@ -35,6 +35,23 @@ describe("LiveAccounts", () => {
     }
   })
 
+  it.effect("a session reply naming a person without the ledger their role came from is refused, as is a blank id with a login; a viewer needs none", () => effect {
+    const ledger = { seq: 4, entries: [], agent: "idle", replying: "", pane: "", roles: [{ id: "7", role: "contributor", blocked: false }] }
+    const answering = (body: unknown) => faulty({ "GET /api/auth/session": { status: 200, body: JSON.stringify(body), type: "application/json" } }).client
+    const current = (body: unknown) => Effect.flatMap(LiveAccounts.make("https://a.test"), (accounts) => Effect.result(accounts.current())).pipe(Effect.provideService(HttpClient.HttpClient, answering(body)))
+    const person = { id: "7", login: "ada", role: "contributor" }
+    const bare = try current(person)
+    const signed = try current({ ...person, ledger, available: true })
+    const signedOut = try current({ id: "", login: "", role: "viewer", available: true })
+    const blankPerson = try current({ ...person, id: "", ledger })
+    try Effect.try(() => {
+      expect(bare._tag === "Failure" && bare.failure._tag).toBe("AccountUnavailable")
+      expect(signed._tag === "Success" && "ledger" in signed.success && signed.success.ledger.seq).toBe(4)
+      expect(signedOut._tag === "Success" && !("ledger" in signedOut.success)).toBe(true)
+      expect(blankPerson._tag === "Failure" && blankPerson.failure._tag).toBe("AccountUnavailable")
+    })
+  })
+
   it.effect("a live page never signs in as the agent, and asks nothing to refuse it", () => effect {
     const { client, seen } = faulty({})
     provide Layer.succeed(HttpClient.HttpClient, client) {

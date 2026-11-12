@@ -154,12 +154,7 @@ describe("Markdown renderer decisions", () => {
 })
 
 describe("history page decisions", () => {
-  it("names blanks and commits", () => {
-    expect(Hv.orFallback(" ", "Epic")).toBe("Epic")
-    expect(Hv.orFallback("Tours", "Epic")).toBe("Tours")
-    expect(Hv.commitLabel("  Fix  ", "m1")).toBe("Fix")
-    expect(Hv.commitLabel(" ", " m1 ")).toBe("m1")
-    expect(Hv.commitLabel("", "")).toBe("Change")
+  it("titles the page", () => {
     expect(Hv.historyTitle(true, "Fix", true, "Tours")).toBe("Fix · History")
     expect(Hv.historyTitle(false, "", true, "Tours")).toBe("Tours · History")
     expect(Hv.historyTitle(false, "", false, "")).toBe("History · VibeLang")

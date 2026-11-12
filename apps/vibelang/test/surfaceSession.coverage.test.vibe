@@ -62,7 +62,7 @@ describe("the mock surface", () => {
         const person = try Effect.orDie((try Factory).accounts!.current())
         try Effect.try(() => {
           expect(person).toMatchObject({ role: "maintainer" })
-          expect(person.agent === true).toBe(false)
+          expect("ledger" in person && person.agent === true).toBe(false)
         })
       }
     }

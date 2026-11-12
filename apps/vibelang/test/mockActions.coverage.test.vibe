@@ -10,7 +10,8 @@ import { MockActions, type Principal } from "../src/actions/MockActions.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { SandboxCommand, SandboxStart, SandboxStop } from "../src/core/flows.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
-import { AccountUnavailable, Denied, type Accounts, type Identity } from "../src/core/roles.vibe"
+import { empty } from "../src/core/conversation.vibe"
+import { AccountUnavailable, Denied, type Accounts, type Identity, type SignedIn } from "../src/core/roles.vibe"
 import { overlaid, type Overrides } from "./support/overlaid.vibe"
 import { withCurrent } from "./support/overlaidAccounts.vibe"
 
@@ -82,7 +83,7 @@ describe("mock-mode actions", () => {
   }))
 
   it.live("a person without a login writes history notes as Guest", () => scoped(effect {
-    provide world({ actor: "person" }, (base) => current(base, () => succeed({ id: "p1", login: "", role: "maintainer" }))) {
+    provide world({ actor: "person" }, (base) => current(base, () => succeed({ id: "p1", login: "", role: "maintainer", ledger: empty }))) {
       const actions = try Actions
       const planned = try finished(try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Guests", target: "", title: "docs: guest", task: "t" }, "button"))
       const id = (try json(planned.result)).id as string
@@ -153,7 +154,7 @@ describe("mock-mode actions", () => {
 
   it.live("a run refuses to borrow a person selected after its start", () => scoped(effect {
     let calls = 0
-    const person = (id: string): Identity => ({ id, login: id, role: "maintainer" })
+    const person = (id: string): SignedIn => ({ id, login: id, role: "maintainer", ledger: empty })
     provide world({ actor: "person" }, (base) => current(base, () => sync(() => person(++calls === 1 ? "first" : "second")))) {
       const run = try finished(try (try Actions).start("vibelang/Post", { text: "mine" }, "button"))
       try Effect.try(() => expect([run.state, run.result]).toEqual(["failed", "Action failed"]))

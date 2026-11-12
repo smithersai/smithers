@@ -35,7 +35,7 @@ it.live("reads a real signed session, grants and follows a role, then signs out 
       const me = try client.current()
       const before = try client.members()
       try client.grant("7", "contributor")
-      const events = try Stream.runCollect(client.events(me.ledger?.seq ?? 0).pipe(Stream.take(1)))
+      const events = try Stream.runCollect(client.events("ledger" in me ? me.ledger.seq : 0).pipe(Stream.take(1)))
       const after = try client.members()
       try client.participated()
       const refusedChoice = try Effect.flip(client.choose("new"))

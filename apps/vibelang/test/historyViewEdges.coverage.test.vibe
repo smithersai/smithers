@@ -1,6 +1,6 @@
 // The history page's view at its remaining edges, through the real update and view: an epic opened and closed by
-// keyboard, the folded-through mark, notes by a person and by the bootstrap, untitled and unfiled commits, a folded
-// commit without a sha, and an untitled epic in the plan form.
+// keyboard, the folded-through mark, notes by a person and by the bootstrap, and unfiled commits. Blank titles, ids and
+// SHAs never reach the view: the history's schemas refuse them (test/schemaParity.test.vibe).
 import { click, Command, expect, given, keydown, role, scene, text, title, within } from "foldkit/scene"
 import { describe, it } from "@effect/vitest"
 import { apply, type History } from "../src/history/mythical.vibe"
@@ -43,12 +43,11 @@ describe("the list", () => {
     scene(app, given({ ...model, outline: { ...model.outline, main: " " } }), expect(title("Folded through")).toBeAbsent())
   })
 
-  it("open work without a title is named by its id, or Change with neither, and an unknown epic is left blank", () => {
+  it("open work in an unknown epic is named by its title", () => {
     const model = loaded("viewer")
-    const head = { id: "m9", epic: "e-missing", rank: 9, title: " ", state: "planned" as const, task: "", lane: "", notes: 0, folds: 0 }
-    scene(app, given({ ...model, outline: { ...model.outline, open: [head, { ...head, id: " ", rank: 10 }] } }),
-      expect(role("link", { name: "m9" })).toExist(),
-      expect(role("link", { name: "Change" })).toExist(),
+    const head = { id: "m9", epic: "e-missing", rank: 9, title: "Stray", state: "planned" as const, task: "", lane: "", notes: 0, folds: 0 }
+    scene(app, given({ ...model, outline: { ...model.outline, open: [head] } }),
+      expect(role("link", { name: "Stray" })).toHaveAttr("href", "#m9"),
     )
   })
 
@@ -61,12 +60,12 @@ describe("the list", () => {
     )
   })
 
-  it("an untitled epic is offered as Epic in the plan form", () => {
+  it("the plan form offers each epic by its title", () => {
     const model = loaded("contributor")
-    scene(app, given({ ...model, outline: { ...model.outline, epics: model.outline.epics.map((epic, index) => index === 0 ? { ...epic, title: " " } : epic) } }),
+    scene(app, given(model),
       click(role("button", { name: "Plan work" })),
       Command.resolve(ShowPlan, HistoryMessage.Settled()),
-      expect(role("option", { name: "Epic" })).toExist(),
+      expect(role("option", { name: model.outline.epics[0]!.title })).toExist(),
     )
   })
 })
@@ -91,14 +90,6 @@ describe("a commit's page", () => {
     scene(app, given({ ...model, commit: { ...page, commit: { ...page.commit!, epic: "e-missing" } } }),
       expect(within(role("navigation", { name: "Breadcrumbs" }), role("link", { name: "History" }))).toExist(),
       expect(within(role("navigation", { name: "Breadcrumbs" }), role("link", { name: outlineOf(small).epics[0]!.title }))).toBeAbsent(),
-    )
-  })
-
-  it("a folded commit without a sha is linked as Commit", () => {
-    const model = loaded("viewer", "m1")
-    const page = model.commit!
-    scene(app, given({ ...model, commit: { ...page, real: page.real.map((each) => ({ ...each, sha: "" })) } }),
-      expect(role("link", { name: "Commit" })).toExist(),
     )
   })
 

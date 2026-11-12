@@ -92,7 +92,7 @@ function crumbs(h: H, trail: ReadonlyArray<readonly [string, string]>, current: 
     h.ol([h.Class("sui-breadcrumbs-list")], [
       ...trail.map(([label, hash]) =>
         h.li([h.Class("sui-breadcrumbs-item")], [
-          h.a([h.Class("sui-breadcrumbs-link"), h.Href(`#${hash}`)], [V.orFallback(label, "Epic")]),
+          h.a([h.Class("sui-breadcrumbs-link"), h.Href(`#${hash}`)], [label]),
           h.span([h.Class("sui-breadcrumbs-separator"), h.AriaHidden(true)], ["/"]),
         ])
       ),
@@ -193,7 +193,7 @@ function row(model: HistoryModel, commit: Head, h: H, withEpic: boolean): Html {
   const epic = model.outline.epics.find((each) => each.id === commit.epic)?.title ?? ""
   const shown = V.commitRow(commit.state, commit.notes, commit.folds)
   return h.li([], [
-    h.a([h.Class("mh-commit"), h.AriaLabel(V.commitLabel(commit.title, commit.id)), h.Href(`#${commit.id}`), h.DataAttribute("planned", shown.planned ? "true" : "false")], [
+    h.a([h.Class("mh-commit"), h.AriaLabel(commit.title), h.Href(`#${commit.id}`), h.DataAttribute("planned", shown.planned ? "true" : "false")], [
       ...(!shown.planned ? [] : [h.span([h.Class(`sui-badge ${badgeOf(commit.state)} mh-plane`)], [commit.state])]),
       h.span([h.Class("mh-commit-msg")], [commit.title]),
       h.span([h.Class("mh-commit-meta")], [
@@ -274,7 +274,7 @@ function commitPage(model: HistoryModel, commit: Commit, page: CommitPage, h: H)
         section("Tried", notes("tried")),
         section("Evidence", notes("evidence")),
         section("Folded", real.map((each) =>
-          h.li([], [h.a([h.Href(`${REPOSITORY_URL}/commit/${each.sha}`)], [V.orFallback(each.sha, "Commit")]), ` “${each.title}”`])
+          h.li([], [h.a([h.Href(`${REPOSITORY_URL}/commit/${each.sha}`)], [each.sha]), ` “${each.title}”`])
         )),
         section("Superseded", notes("superseded")),
         ...(allowed(model.role, "contributor") ? [noteForm(model, commit, h)] : []),
@@ -348,7 +348,7 @@ function plan(model: HistoryModel, h: H): Html {
           h.div([h.Class("sui-field")], [
             h.label([h.Class("sui-label"), h.For("mh-plan-epic")], ["Epic"]),
             h.select([h.Class("sui-input"), h.Id("mh-plan-epic"), h.OnChange((value) => HistoryMessage.UpdatedForm({ field: "epic", value }))], [
-              ...model.outline.epics.map((epic) => h.option([h.Value(epic.id), h.Selected(form.epic === epic.id)], [V.orFallback(epic.title, "Epic")])),
+              ...model.outline.epics.map((epic) => h.option([h.Value(epic.id), h.Selected(form.epic === epic.id)], [epic.title])),
               h.option([h.Value(NEW_EPIC), h.Selected(form.epic === NEW_EPIC)], ["New epic…"]),
             ]),
           ]),

@@ -44,6 +44,59 @@ Named browser sites and status:
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code. |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
 
+### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
+
+The lead's two decisions: move `decide`'s non-blank guarantee into the outline's schema, and make the session type
+carry the signed-in person's ledger. Both close their sites by deleting the code, not by testing it.
+
+**History names.** `src/history/schemas.vibe` has a `Name` schema: a string that is not blank, checked by the proved
+`named` (`src/history/mythical.vibe`, `text.trim() != ""`). Every title, id and SHA the history holds uses it:
+`Epic.id` and `.title`, `Commit.id` and `.title`, `Real.sha`, `Head.id` and `.title`, and `EpicCount.id` and `.title`.
+`Outline`, `EpicPage`, `CommitPage`, `Matches`, the stored `History` and the page's `HistoryModel` decode through
+them. So a blank one is refused where it enters, and no view needs a fallback. Deleted:
+
+| Deleted | Was |
+| --- | --- |
+| `historyViewDecision.vibe` `orFallback` | the crumb's and the plan form's blank epic label ("Epic"), the blank SHA link ("Commit") |
+| `historyViewDecision.vibe` `commitLabel` | a blank commit title named by its id, or "Change" |
+| mutations `hv-fallback-trim`, `hv-label-id` (`verify/web_mutations.py`) | the two helpers' mutations |
+| scenes of blank data (`historyViewEdges.coverage`, `history.scene`, `paneViewDecisions`) | data the schemas now refuse |
+
+`decide` already refuses a blank title or id. `apply` refuses an empty fold SHA, and fold SHAs come from git. So no
+history the product writes changes. New mutations `history-named-trim` and `history-named-empty`
+(`verify/extended_mutations.py`) break `named`'s proof.
+
+Tests that failed first, on `main`'s schemas: `test/schemaParity.test.vibe` "refuses a blank history title, id or
+SHA at every decode boundary" and `test/history.scene.test.vibe` "refuses a model whose outline holds a blank epic
+title" (2 failed, 18 passed). Both pass after the change.
+
+**The signed-in ledger (`historyStartup.vibe:69`).** A signed-in person must always have a ledger, and both hosts
+already give one (`worker/Accounts.vibe` `current`, `MockAccounts.vibe` `current`). So the type now guarantees it,
+and the line runs; nothing was deleted. `src/core/roles.vibe` adds `Session = Viewer | SignedIn`. `Viewer` has the
+empty id and no ledger. `SignedIn` has a non-empty id and requires `ledger`. `Accounts.current()` answers a
+`Session`, and the browser's `LiveAccounts` decodes the session route with it. A reply that names a person without
+a ledger, or a blank id with a login, is refused as `AccountUnavailable`. `signedRoles` follows grants from
+`identity.ledger.seq` with no fallback. `Identity`, the member list's type, is unchanged.
+
+TypeScript narrows the union on `"ledger" in identity`, not on `id === ""`: a literal `""` member beside a `string`
+member is not a discriminant (`tsc` probe, this session). `historyStartup.vibe` and `surfaces/backend.vibe` test
+for the ledger.
+
+Test: `test/liveClientsEdges.coverage.test.vibe` "a session reply naming a person without the ledger their role came
+from is refused". Its red is at compile time: `main`'s `LiveAccounts` no longer satisfies `Accounts.Shape`
+(TS2375, `ledger` optional where `Session` requires it).
+
+Unit gate on this tree (box node26, `pnpm typecheck && pnpm test:coverage`): exit 1 on thresholds only. 299 files
+passed, 1 skipped; workerd 20 passed. 12 of 202 files below 100%. `historyStartup.vibe` reaches 100%.
+`issuesViewDecision.vibe` and `view.vibe` are new gaps from `main`'s changes since session 22.
+
+| Gate | Files below 100% | Lines | Branches | Functions | Statements |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| Unit, session 22 → 23 | 12/196 → 12/202 | 8617/8634 → 8814/8831 | 8881/8919 → 9107/9147 | 3271/3287 → 3380/3396 | 10950/10970 → 11185/11206 |
+
+Proofs (box node26): `pnpm verify src/history/mythical.vibe src/web/historyViewDecision.vibe` reports 43 and 16
+verified, 0 errors. `pnpm verify:broken history-named-trim history-named-empty`: BROKEN PASS, 2 of 2 rejected.
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`
@@ -52,7 +105,7 @@ an empty id and a fold with an empty SHA, and the Sequencer's SHAs come from git
 the crumb and in the plan form, a blank commit link name, and a blank SHA. This session deleted them, but on rebase
 `main` had moved them into proved helpers (`historyViewDecision.vibe` `orFallback` and the commit link name, another
 lane's work). They are kept as that lane wrote them, and the unit scenes that reach their fallback arms stay. In the
-browser their blank arms stay uncovered; they close if `decide`'s guarantee is moved into the outline's schema.
+browser their blank arms stay uncovered; session 23 moved `decide`'s guarantee into the outline's schema and deleted them.
 `fuzz/issues-node-fake.vibe` now answers matching refs sorted by name, as GitHub does. The new recording made the
 conformance test (`test/fakeConformance.test.vibe`) fail first: the fake had answered in creation order.
 
@@ -94,7 +147,7 @@ Named, not closed:
 
 | Site | Reason | Closes with |
 | --- | --- | --- |
-| `historyStartup.vibe:69`, `identity.ledger?.seq ?? 0` | Both Accounts (worker and mock) give every signed-in identity a ledger. `Identity.ledger` is optional only because a viewer has none. | `Identity` as a union of a viewer and a signed-in person (vl-roles, 0019) |
+| `historyStartup.vibe:69`, `identity.ledger?.seq ?? 0` | Both Accounts (worker and mock) give every signed-in identity a ledger. `Identity.ledger` is optional only because a viewer has none. | Closed in session 23: `Accounts.current()` answers `Session`, whose signed-in member requires the ledger |
 | `modelDecision.vibe` `slashHighlight` empty, `actionsFailureApplies` no epoch | Unchanged from session 21 | Unchanged |
 | `src/history/flows.vibe:213` (V8), `src/history/tools.vibe:93` (VL-37) | Unchanged | Unchanged |
 

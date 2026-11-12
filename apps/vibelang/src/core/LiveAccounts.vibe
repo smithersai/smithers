@@ -1,11 +1,11 @@
 import * as Sse from "effect/encoding/Sse"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { EventSchema } from "./schemas.vibe"
-import { AccountUnavailable, Denied, Identity, type Accounts } from "./roles.vibe"
+import { AccountUnavailable, Denied, Identity, Session, type Accounts } from "./roles.vibe"
 
 export effect function make(origin: string) {
   const client = try HttpClient.HttpClient
-  const decodeIdentity = Schema.decodeUnknownEffect(Identity)
+  const decodeSession = Schema.decodeUnknownEffect(Session)
   const decodeMembers = Schema.decodeUnknownEffect(Schema.Array(Identity))
   const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
   const failed = () => new AccountUnavailable({ reason: "account unavailable" })
@@ -24,7 +24,7 @@ export effect function make(origin: string) {
     if (response.status !== 200 && response.status !== 204) throw failed()
   }
   const accounts: Accounts.Shape = {
-    current: () => get("/api/auth/session", decodeIdentity).pipe(Effect.mapError(failed)),
+    current: () => get("/api/auth/session", decodeSession).pipe(Effect.mapError(failed)),
     members: () => get("/api/roles", decodeMembers),
     grant: (id, role) => post("/api/roles", { id, role }),
     signOut: () => post("/api/auth/sign-out", {}).pipe(Effect.mapError(failed)),

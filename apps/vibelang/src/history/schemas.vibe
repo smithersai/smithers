@@ -1,9 +1,14 @@
-import { validRank, validRanks } from "./mythical.vibe"
+import { named, validRank, validRanks } from "./mythical.vibe"
 // Schemas for the mythical history's state, events and seed (mythical.vibe, seed.vibe), so the wire, the store, the
 // Foldkit Model and the tests decode and encode them. Each one matches the TypeScript type of the same name.
 
 /** A safe, nonnegative event cursor. */
 export const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+/** A title, id or SHA the history holds: never blank. The proved `decide` (mythical.vibe) refuses a blank title or
+ * id, and fold SHAs come from git, so a blank one at a decode boundary is corrupt data, refused here so no reader
+ * needs a fallback for it. */
+export const Name = Schema.String.check(Schema.makeFilter(named))
 
 export const CommitState = Schema.Literals(["planned", "working", "approved", "landed"])
 export const Section = Schema.Literals(["tried", "evidence", "superseded"])
@@ -12,20 +17,20 @@ export const Section = Schema.Literals(["tried", "evidence", "superseded"])
 export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "unknown", "state", "full"])
 
 export schema Note { readonly section: "tried" | "evidence" | "superseded"; readonly text: string; readonly by: string }
-export schema Epic { readonly id: string; readonly title: string }
+export schema Epic { readonly id: Name; readonly title: Name }
 
 export schema Commit {
-  readonly id: string
+  readonly id: Name
   readonly epic: string
   readonly rank: Seq
-  readonly title: string
+  readonly title: Name
   readonly state: "planned" | "working" | "approved" | "landed"
   readonly task: string
   readonly lane: string
   readonly notes: ReadonlyArray<Note>
 }
 
-export schema Real { readonly sha: string; readonly change: string; readonly title: string; readonly mythical: string }
+export schema Real { readonly sha: Name; readonly change: string; readonly title: string; readonly mythical: string }
 
 schema HistoryFields {
   readonly seq: Seq
@@ -93,17 +98,17 @@ export function decodeStoredHistory(json: string) {
 // ── pages (pages.vibe): what a reader asks for and gets ─────────────────────────────────────────────────────────────
 
 export schema Head {
-  readonly id: string
+  readonly id: Name
   readonly epic: string
   readonly rank: Seq
-  readonly title: string
+  readonly title: Name
   readonly state: "planned" | "working" | "approved" | "landed"
   readonly task: string
   readonly lane: string
   readonly notes: Seq
   readonly folds: Seq
 }
-export schema EpicCount { readonly id: string; readonly title: string; readonly commits: Seq; readonly folds: Seq }
+export schema EpicCount { readonly id: Name; readonly title: Name; readonly commits: Seq; readonly folds: Seq }
 export schema Outline {
   readonly seq: Seq
   readonly main: string

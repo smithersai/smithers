@@ -12,7 +12,26 @@ export schema Identity {
   readonly available?: boolean
   readonly ledger?: Conversation
 }
-export const viewer: Identity = { id: "", login: "", role: "viewer" }
+export const viewer = { id: "", login: "", role: "viewer" } as const satisfies Identity
+
+/** A signed-in person's id is never empty: the empty id is the viewer's. */
+const PersonId = Schema.String.check(Schema.isMinLength(1))
+
+/** Signed out: no person, no grant, no ledger. */
+export schema Viewer { readonly id: ""; readonly login: ""; readonly role: "viewer"; readonly available?: boolean }
+/** Signed in: the person, their role, and the project ledger that role was read from, so a reader can follow grants
+ * from the ledger's cursor. Both hosts (worker/Accounts.vibe, MockAccounts.vibe) answer it with the ledger. */
+export schema SignedIn {
+  readonly id: PersonId
+  readonly login: string
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly agent?: boolean
+  readonly available?: boolean
+  readonly ledger: Conversation
+}
+/** What `Accounts.current()` answers; the session route's reply decodes as one of these or is refused. */
+export const Session = Schema.Union([Viewer, SignedIn])
+export type Session = Viewer | SignedIn
 
 /**
  * The name a post carries, decided by the server from the session, never from the caller (decisions 0019, 0028):
@@ -32,7 +51,7 @@ export error Denied { action: string; least: Role }
 
 /** The identity and grants surface of the Factory core. Mock selection is a product-only method. */
 export service Accounts {
-  current(): Identity!AccountUnavailable
+  current(): Session!AccountUnavailable
   members(): ReadonlyArray<Identity>!(AccountUnavailable | Denied)
   grant(id: string, role: SignedRole): void!(AccountUnavailable | Denied)
   signOut(): void!AccountUnavailable

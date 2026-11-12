@@ -10,7 +10,7 @@ it("uses the same entry codec for client state and snapshots", () => {
   expect(Schema.is(Entry)(entry)).toBe(true)
 })
 
-import { Commit, Head, EpicCount, EpicPage } from "../src/history/schemas.vibe"
+import { Commit, CommitPage, Epic, Head, EpicCount, EpicPage, Outline, Real } from "../src/history/schemas.vibe"
 it("keeps mythical ranks finite nonnegative integers on the JSON wire", () => {
   const commit = { id: "m1", epic: "e1", rank: 0, title: "Fuzz", state: "planned", task: "", lane: "", notes: [] }
   expect(Schema.is(Commit)(commit)).toBe(true)
@@ -29,4 +29,27 @@ it("refuses impossible history page counts and ranks before JSON loses their val
       for (const number of [-Infinity, Infinity, NaN, -1, 0.5]) expect(Schema.is(schema)({ ...valid, [field]: number })).toBe(false)
     }
   }
+})
+
+it("refuses a blank history title, id or SHA at every decode boundary, so no view needs a fallback", () => {
+  const head = { id: "m1", epic: "e1", rank: 0, title: "Change", state: "planned", task: "", lane: "", notes: 0, folds: 0 }
+  const count = { id: "e1", title: "Epic", commits: 0, folds: 0 }
+  const real = { sha: "abc1234", change: "", title: "fix: one", mythical: "m1" }
+  const commit = { id: "m1", epic: "e1", rank: 0, title: "Fuzz", state: "planned", task: "", lane: "", notes: [] }
+  const cases: ReadonlyArray<readonly [Schema.Constraint, Readonly<Record<string, unknown>>, ReadonlyArray<string>]> = [
+    [Head, head, ["id", "title"]],
+    [EpicCount, count, ["id", "title"]],
+    [Epic, { id: "e1", title: "Epic" }, ["id", "title"]],
+    [Commit, commit, ["id", "title"]],
+    [Real, real, ["sha"]],
+  ]
+  for (const [schema, valid, fields] of cases) {
+    expect(Schema.is(schema)(valid)).toBe(true)
+    for (const field of fields) {
+      for (const blank of ["", " ", "\t\n"]) expect(Schema.is(schema)({ ...valid, [field]: blank })).toBe(false)
+    }
+  }
+  expect(Schema.is(Outline)({ seq: 0, main: "", epics: [{ ...count, title: " " }], open: [] })).toBe(false)
+  expect(Schema.is(Outline)({ seq: 0, main: "", epics: [], open: [{ ...head, title: "" }] })).toBe(false)
+  expect(Schema.is(CommitPage)({ seq: 0, commit: null, real: [{ ...real, sha: " " }] })).toBe(false)
 })

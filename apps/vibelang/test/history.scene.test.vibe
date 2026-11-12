@@ -312,7 +312,8 @@ it("refuses an invalid plan method without corrupting the history model", () => 
   assert(Schema.is(HistoryModel)(next)).toBe(true)
 })
 
-it("keeps an epic breadcrumb named when a decoded model has an empty title", () => {
-  const model = { ...loaded("viewer", "m1"), outline: { ...outlineOf(small), epics: outlineOf(small).epics.map((epic) => ({ ...epic, title: "" })) } }
-  scene({ update, view }, given(model), expect(role("link", { name: /^Epic$/ })).toExist())
+it("refuses a model whose outline holds a blank epic title", () => {
+  const model = { ...loaded("viewer", "m1"), outline: { ...outlineOf(small), epics: outlineOf(small).epics.map((epic) => ({ ...epic, title: " " })) } }
+  assert(Schema.is(HistoryModel)(loaded("viewer", "m1"))).toBe(true)
+  assert(Schema.is(HistoryModel)(model)).toBe(false)
 })

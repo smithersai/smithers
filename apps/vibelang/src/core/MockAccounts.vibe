@@ -5,7 +5,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { Digest } from "effect/crypto"
 import { apply, empty, leastRole, roleOf, type Event, type GrantMode, type Role } from "./conversation.vibe"
 import { decide } from "./decide.vibe"
-import { AccountUnavailable, Denied, type Policy, type Accounts, type Identity, viewer } from "./roles.vibe"
+import { AccountUnavailable, Denied, type Policy, type Accounts, type Identity, type SignedIn, viewer } from "./roles.vibe"
 import { afterCursor, fixtureLogin, liveEvent, replayedTo, selfGrant } from "./mockFactoryDecision.vibe"
 
 const grantPayload = { id: Schema.String, by: Schema.String, role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), mode: Schema.Literals(["person", "participation", "bootstrap"]) }
@@ -68,7 +68,7 @@ export effect function make() {
     if (id === "") return viewer
     const person = (try Ref.get(people)).find(p => p.id === id)!
     const ledger = try Ref.get(state)
-    return { ...person, role: roleOf(ledger.roles, id), ...((try Ref.get(agent)) ? { agent: true as const } : {}), ledger } satisfies Identity
+    return { ...person, role: roleOf(ledger.roles, id), ...((try Ref.get(agent)) ? { agent: true as const } : {}), ledger } satisfies SignedIn
   }
   const policy: Policy.Shape = {
     authorize: effect (actor, action) => {
