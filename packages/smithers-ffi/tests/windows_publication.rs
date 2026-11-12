@@ -16,7 +16,12 @@ mod native;
 
 use base64::Engine as _;
 use serde_json::{json, Value};
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    io::Write,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 fn identity(root: &Path) -> String {
     #[cfg(unix)]
@@ -169,4 +174,90 @@ fn private_publication_refuses_aliases_without_changing_their_targets() {
     );
     assert_eq!(fs::read(&target).unwrap(), b"old snapshot");
     assert_eq!(fs::read(root.join("alias")).unwrap(), b"old snapshot");
+}
+
+#[test]
+fn publication_protocol_child() {
+    if std::env::var_os("SMITHERS_PUBLICATION_PROTOCOL_CHILD").is_some() {
+        native::serve().unwrap();
+    }
+}
+
+fn protocol(frame: &[u8]) -> std::process::Output {
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "publication_protocol_child", "--nocapture"])
+        .env("SMITHERS_PUBLICATION_PROTOCOL_CHILD", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(frame).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn framed_publication_entry_point_writes_exact_bytes() {
+    for bytes in [b"".as_slice(), b"private snapshot\n", &[0, 255, 10, 0]] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let body = serde_json::to_vec(&request(&root, bytes)).unwrap();
+        let mut frame = format!("flows-atomic/1 {} 10000 10000 10000\n", body.len()).into_bytes();
+        frame.extend(body);
+        let output = protocol(&frame);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let start = output
+            .stdout
+            .windows(b"flows-atomic/1 ".len())
+            .position(|part| part == b"flows-atomic/1 ")
+            .expect("framed response");
+        let response = &output.stdout[start..];
+        let newline = response.iter().position(|byte| *byte == b'\n').unwrap();
+        let length = std::str::from_utf8(&response[..newline])
+            .unwrap()
+            .split(' ')
+            .nth(1)
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        let value: Value =
+            serde_json::from_slice(&response[newline + 1..newline + 1 + length]).unwrap();
+        assert_eq!(value["ok"], true, "{value}");
+        assert_eq!(
+            fs::read(root.join("private/nested/snapshot")).unwrap(),
+            bytes
+        );
+    }
+}
+
+#[test]
+fn framed_publication_refuses_truncated_or_oversized_requests_before_writing() {
+    for invalid in ["truncated", "over-limit", "trailing"] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let body = serde_json::to_vec(&request(&root, b"must not publish")).unwrap();
+        let limit = if invalid == "over-limit" {
+            body.len() - 1
+        } else {
+            10000
+        };
+        let mut frame = format!("flows-atomic/1 {} {limit} 10000 10000\n", body.len()).into_bytes();
+        frame.extend(body);
+        if invalid == "truncated" {
+            frame.pop();
+        }
+        if invalid == "trailing" {
+            frame.push(0);
+        }
+        let output = protocol(&frame);
+        assert!(!output.status.success(), "{invalid} must fail");
+        assert!(
+            !root.join("private/nested/snapshot").exists(),
+            "{invalid} must not write"
+        );
+    }
 }
