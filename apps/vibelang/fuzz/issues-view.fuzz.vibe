@@ -2,7 +2,7 @@
 // screen, role, filter, failure and connection state. screens/issues-view-names-controls generates whole records, which
 // rarely link to each other, so the detail screen, its tree, notes and actions stayed unrendered.
 import { it } from "@effect/vitest"
-import { all, attr, click, Command as SceneCommand, expectHandled, expectIgnored, find, getAllByRole, findAll, given, keydown, nth, scene, tap, textContent, type Locator, type SceneSimulation } from "foldkit/scene"
+import { all, attr, click, Command as SceneCommand, expectHandled, expectIgnored, find, getAllByRole, findAll, given, keydown, nth, role as locate, scene, tap, textContent, type as typeInto, type Locator, type SceneSimulation } from "foldkit/scene"
 import { Actions } from "../src/actions/Actions.vibe"
 import { backend, Backend } from "./web-backends.vibe"
 import { Factory } from "../src/core/Factory.vibe"
@@ -10,7 +10,7 @@ import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { issuePermission, specificationAccepted } from "../src/core/conversation.vibe"
 import { IssuesUi, initialIssues } from "../src/web/issues.vibe"
 import { Specification, SpecificationEvent } from "../src/core/issueSchemas.vibe"
-import { emptySpecification } from "../src/core/specification.vibe"
+import { emptySpecification, fixtureSpecification } from "../src/core/specification.vibe"
 import { accountOf, Flags, init, Message, Model, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 import { run, Finding, Int, Text } from "./run.vibe"
@@ -344,5 +344,113 @@ it.live("screens/issues-keys", () => scoped(effect {
     if (disabled(button.value)) return !after.ran.some(command => command.name === "ActOnIssue")
     const clicked = try settledOn(input, model, [clickStep(plan.click)])
     return shape(after.html) === shape(clicked.html)
+  })
+}))
+
+/** The value an input or text area holds as rendered. */
+function valueOf(node: Html): unknown {
+  const data = (node as { data?: { attrs?: Record<string, unknown>; props?: Record<string, unknown> } }).data
+  return data?.props?.["value"] ?? data?.attrs?.["value"]
+}
+
+type Chosen = {
+  readonly name: string
+  readonly input: Partial<Input>
+  /** A change to the selected record after it is built. */
+  readonly record?: (item: Item) => Item
+  /** A control to type into, by role and name. */
+  readonly type?: readonly [string, string]
+  readonly holds: (html: Html, ui: IssuesUi) => boolean
+}
+
+const DETAIL = 12
+const NEW = 26
+const VIP = 27
+const SPECIFICATION = 23
+const note = { author: "ada" as const, text: "added the language label" as const, event: true, age: "" as const }
+
+/**
+ * The pane's arms that only a particular record or screen reaches, each run in every execution: Commit for an open
+ * issue and Uncommit for a task; a VIP's approval named without a time; an event note without an age; the VIP form's prior
+ * art step while busy, while a write waits for a retry, and idle; an accepted specification with its suites; and each
+ * field's typed text becoming its value (search, comment, title, prior art, specification text).
+ */
+const CHOSEN: ReadonlyArray<Chosen> = [
+  { name: "commit", input: { screen: DETAIL, role: "maintainer", connected: true, vip: "", task: "", recordState: "open" }, type: ["textbox", "Comment"], holds: (html) => count(html, "button", "Commit") === 1 && count(html, "button", "Uncommit") === 0 },
+  { name: "uncommit", input: { screen: DETAIL, role: "maintainer", connected: true, vip: "", task: "Queued", recordState: "closed" }, holds: (html) => count(html, "button", "Uncommit") === 1 && count(html, "button", "Commit") === 0 },
+  {
+    name: "approved-undated", input: { screen: DETAIL, role: "viewer", approved: true, vip: "Accepted" },
+    record: (item) => { const { approvedAt: _, ...rest } = item; return rest },
+    holds: (html) => findAll(html, "time").some((node) => textContent(node) === ""),
+  },
+  { name: "event-undated", input: { screen: DETAIL, role: "viewer", notes: [note] }, holds: (html) => findAll(html, ".sui-item-conv-event-text").map(textContent).join("|") === "ada added the language label" || (shownText = findAll(html, ".sui-item-conv-event-text").map(textContent).join("|")) === null },
+  { name: "prior-busy", input: { screen: VIP, step: 3, busy: true, role: "maintainer" }, holds: (html) => getAllByRole("textbox", { name: "Prior art" })(html).length === 1 && disabledNode(getAllByRole("textbox", { name: "Prior art" })(html)[0]!) },
+  { name: "prior-retry", input: { screen: VIP, step: 3, busy: false, retry: "propose", role: "maintainer" }, holds: (html) => getAllByRole("textbox", { name: "Prior art" })(html).some(disabledNode) },
+  { name: "prior-idle", input: { screen: VIP, step: 3, busy: false, role: "maintainer" }, type: ["textbox", "Prior art"], holds: (html) => getAllByRole("textbox", { name: "Prior art" })(html).length === 1 },
+  { name: "title", input: { screen: NEW, step: 1, busy: false, role: "maintainer" }, type: ["textbox", "Title"], holds: (html) => getAllByRole("textbox", { name: "Title" })(html).length === 1 },
+  { name: "search", input: { screen: 0, role: "viewer" }, type: ["searchbox", "Search issues"], holds: () => true },
+  {
+    name: "accepted", input: { screen: SPECIFICATION, role: "maintainer", specification: fixtureSpecification, accepted: true }, type: ["textbox", "Specification text"],
+    holds: (html) => findAll(html, ".sui-card-title").some((node) => textContent(node) === "Self-consistency") && getAllByRole("status", { name: "Specification gate" })(html).some((node) => textContent(node) === "Accepted") && findAll(html, "a.sui-badge-outline").length > 0,
+  },
+]
+
+function disabledNode(node: Html): boolean {
+  const data = (node as { data?: { attrs?: Record<string, unknown>; props?: Record<string, unknown> } }).data
+  return data?.attrs?.["disabled"] === true || data?.attrs?.["disabled"] === "" || data?.props?.["disabled"] === true
+}
+
+/** What a failing case rendered, for its report. */
+let shownText = ""
+
+const FLAGS: typeof Flags.Type = { session: "00000000-0000-4000-8000-000000000000", mode: "mock", name: "fuzz" }
+
+const ChosenInput = Schema.Struct({ ...Input.fields, typed: Text })
+
+it.live("screens/issues-chosen", () => scoped(effect {
+  const records = try mockItems()
+  // A parent and its children, and a record with no labels, for the chat's issue cards.
+  const parent = records.find((item) => records.some((child) => child.parent === item.number))
+  if (parent === undefined) throw new Finding({ report: "the mock has no issue with children" })
+  const children = records.filter((child) => child.parent === parent.number)
+  try run("screens/issues-chosen", ChosenInput, (drawn) => effect {
+    for (const chosen of CHOSEN) {
+      // Fixed flags: a drawn tour would add theatre Commands the scene does not resolve.
+      // Idle, with no write waiting for a retry, unless the case says otherwise.
+      const { retry: _, typed: _typed, ...rest } = drawn
+      const input: Input = { ...rest, flags: FLAGS, dialog: 0, status: 0, error: "", pick: 0, busy: false, ...chosen.input }
+      const built = uiOf(input, records)
+      const ui: IssuesUi = chosen.record === undefined ? built : { ...built, data: { ...built.data, items: built.data.items.map((item) => item.number === built.selected ? chosen.record!(item) : item) } }
+      const base = init(input.flags).model
+      const model: Model = { ...base, surface: "chat", issues: ui, account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: input.role } } }
+      const typed = `t${drawn.typed}`
+      const why: Array<string> = []
+      const check = (simulation: SceneSimulation<Model, Message>) => {
+        const html = simulation.html
+        for (const role of ROLES) if (getAllByRole(role)(html).length !== getAllByRole(role, { name: /\S/ })(html).length) why.push(`unnamed ${role}`)
+        if (!chosen.holds(html, ui)) why.push("oracle")
+        if (chosen.type !== undefined && !getAllByRole(chosen.type[0], { name: chosen.type[1] })(html).some((node) => valueOf(node) === typed.toWellFormed())) why.push(`typed value ${JSON.stringify(getAllByRole(chosen.type[0], { name: chosen.type[1] })(html).map(valueOf))}`)
+        return simulation
+      }
+      try Effect.try(() => chosen.type === undefined ? scene({ update, view }, given(model), check) : scene({ update, view }, given(model), typeInto(locate(chosen.type[0], { name: chosen.type[1] }), typed), check))
+      if (why.length > 0) throw new Finding({ report: `${chosen.name} does not hold: ${why.join(", ")} ${shownText}` })
+    }
+    // The chat's issue card: a parent lists its children; a record without labels names only its number and age.
+    for (const [issue, expected] of [[parent, children.length], [{ ...children[0]!, labels: [] }, 0]] as const) {
+      const base = init(FLAGS).model
+      const items = records.map((item) => item.number === issue.number ? issue : item)
+      const entry = { id: "e-1", seq: 1, clientId: "", inReplyTo: "", author: "agent" as const, name: "VibeLang agent", text: `See [this](#issue-${issue.number})`, done: true, error: "" }
+      const model: Model = { ...base, surface: "chat", issues: { ...initialIssues, open: false, data: { seq: 1, items } }, client: { ...base.client, conversation: { ...base.client.conversation, entries: [entry] } } }
+      let holds = true
+      try Effect.try(() => scene({ update, view }, given(model), (simulation: SceneSimulation<Model, Message>) => {
+        const cards = findAll(simulation.html, ".ix-chat-card")
+        if (cards.length !== 1) { holds = false; return simulation }
+        if (findAll(cards[0]!, ".ix-mini").length !== expected) holds = false
+        if (expected === 0 && findAll(cards[0]!, ".sui-card-description").some((node) => textContent(node).split(" · ").length !== 2)) holds = false
+        return simulation
+      }))
+      if (!holds) throw new Finding({ report: `the chat card for #${issue.number} does not hold` })
+    }
+    return true
   })
 }))

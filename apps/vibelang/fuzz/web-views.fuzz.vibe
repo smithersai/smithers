@@ -1,6 +1,6 @@
 // The web views' arms that only a particular state reaches, each chosen in every execution rather than drawn: the
-// Sandboxes pane over every gate, snapshot and failure, and the Actions pane over every layout, control and trace
-// (0015, seventeenth session).
+// Sandboxes pane over every gate, snapshot and failure, the Actions pane over every layout, control and trace, and the
+// issue pane's decisions over every action and failure (0015, seventeenth session).
 import { it } from "@effect/vitest"
 import { attr, findAll, getAllByRole, given, role as locate, scene, textContent, type as typeInto, type SceneSimulation } from "foldkit/scene"
 import type { Html } from "foldkit/html"
@@ -8,6 +8,7 @@ import type { SandboxSnapshot } from "../src/core/Factory.vibe"
 import type { Registered, Run, Step } from "../src/actions/Actions.vibe"
 import { type ActionView, initial as actionsInitial } from "../src/web/actionModel.vibe"
 import { actionTitle, stepKey } from "../src/web/actionViewDecision.vibe"
+import { issueAction, issueAssigneeAfter, issueFailureText, issueKnownAction, issueStepError, type IssueFacts, type IssueScreen } from "../src/web/issueDecision.vibe"
 import { sandboxPaneView } from "../src/web/viewDecision.vibe"
 import { mayStart } from "../src/core/sandboxDecision.vibe"
 import { init, Message, Model, update } from "../src/web/main.vibe"
@@ -263,5 +264,43 @@ let shown = ""
 
 it.live("screens/action-states", () => run("screens/action-states", ActionInput, (input) => effect {
   for (const [index, c] of actionCases(input).entries()) if (!(try Effect.try(() => actionHolds(c, input)))) throw new Finding({ report: `action case ${index} does not hold ${shown}` })
+  return true
+}))
+
+const KNOWN = [
+  "read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise",
+  "retry", "close", "specification", "spec-review", "roles", "list", "select", "kind-key", "kind", "state", "query", "title", "summary", "example", "prior",
+  "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog",
+] as const
+const REASONS = [["no-model", "Review unavailable"], ["forbidden", "Not allowed"], ["tree", "Choose another parent."], ["assignee", "Choose an assignee."], ["closed", "Issue closed."]] as const
+const SCREEN: IssueScreen = { open: true, screen: "detail", kind: "All", state: "open", query: "", selected: 1, dialog: "", status: "ready", busy: false, title: "T", summary: "S", example: "", prior: "", comment: "", parent: "", assignee: "", step: 1, error: "e", serial: 3 }
+const FACTS: IssueFacts = { retryOp: "", retryReviewer: "", retryAllowed: true, allowed: true, specText: "", number: 1, kind: "All", listState: "open", blankTitle: false, blankSummary: false, blankExample: false, blankPrior: false }
+
+const IssueDecisionInput = Schema.Struct({ action: Text, reason: Text, reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), current: Text, agent: Text })
+
+/**
+ * The issue pane's decisions against their contracts, every known action and failure reason in every execution: an
+ * action is known exactly when the pane gives it behavior; a VIP step names its missing field (title, summary,
+ * example, prior art) and only that; each failure reason has its own words and any other reason asks for a retry; a
+ * saved assignee stays while assignable and the agent takes it otherwise; and repeating the operation a write waits
+ * on (or the same reviewer's review) resends the saved request instead of a fresh one.
+ */
+it.live("web/issue-decisions", () => run("web/issue-decisions", IssueDecisionInput, (input) => effect {
+  for (const action of KNOWN) if (!issueKnownAction(action)) throw new Finding({ report: `${action} is not known` })
+  if (issueKnownAction(input.action) !== (KNOWN as ReadonlyArray<string>).includes(input.action)) throw new Finding({ report: "a drawn action" })
+  for (const step of [1, 2, 3, 4]) for (let blanks = 0; blanks < 16; blanks++) {
+    const [title, summary, example, prior] = [1, 2, 4, 8].map((bit) => (blanks & bit) !== 0) as [boolean, boolean, boolean, boolean]
+    const expected = step === 1 ? (title ? "Name the feature." : summary ? "Add a summary." : "") : step === 2 ? (example ? "Add an example." : "") : step === 3 ? (prior ? "Add prior art." : "") : ""
+    if (issueStepError(step, title, summary, example, prior) !== expected) throw new Finding({ report: `step ${step} blanks ${blanks}` })
+  }
+  for (const [reason, text] of REASONS) if (issueFailureText(reason) !== text) throw new Finding({ report: reason })
+  if (!REASONS.some(([reason]) => reason === input.reason) && issueFailureText(input.reason) !== "Couldn't save. Retry.") throw new Finding({ report: "another reason" })
+  if (issueAssigneeAfter(true, input.current, input.agent) !== input.current || issueAssigneeAfter(false, input.current, input.agent) !== input.agent) throw new Finding({ report: "assignee" })
+  const review = issueAction(SCREEN, "spec-review", input.reviewer, { ...FACTS, retryOp: "spec-review", retryReviewer: input.reviewer })
+  if (review.request !== "saved" || !review.state.busy || review.state.error !== "" || review.state.serial !== SCREEN.serial) throw new Finding({ report: "the same reviewer" })
+  for (const op of ["comment", "commit", "accept", "read"] as const) {
+    const again = issueAction(SCREEN, op, "", { ...FACTS, retryOp: op })
+    if (again.request !== "saved" || !again.state.busy || again.state.serial !== SCREEN.serial) throw new Finding({ report: `${op} again` })
+  }
   return true
 }))

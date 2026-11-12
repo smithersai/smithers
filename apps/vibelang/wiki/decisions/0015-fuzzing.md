@@ -1114,6 +1114,22 @@ and a failed start offering no Retry (`sandbox-states` case 7). The slash menu i
 composer and in the closed palette dialog; a closed dialog is outside the accessibility tree, so the oracle expects
 both and is not a finding.
 
+### `src/web/issuesView.vibe`, `issueDecision.vibe`: the issue arms, chosen
+
+The final run of the sixteenth session left `issuesView.vibe` at 266/285 arms and 76/83 functions and
+`issueDecision.vibe` at 220/257 arms and 21/22 functions; `screens/issues-records` reached the rest only by some
+draws. Two targets now choose them in every execution:
+
+| Target | Cases | Oracle |
+| --- | --- | --- |
+| `screens/issues-chosen` (`fuzz/issues-view.fuzz.vibe`) | Commit on an open issue; Uncommit on a task; a VIP's approval with no time; an event note with no age; the VIP form's prior-art step busy, waiting on a retry, and idle; the new-issue title; the list's search; an accepted specification; the chat's card for a parent and for a record with no labels | the case's control or text; every control named; text typed into the comment, title, prior art, search or specification box is its value (stored well formed); the parent's card lists its children; the unlabeled card names only its number and age |
+| `web/issue-decisions` (`fuzz/web-views.fuzz.vibe`) | every action the pane knows and a drawn one; every VIP step with every blank field; every failure reason and a drawn one; an assignee present and gone; a repeated write and the same reviewer's review | each decision's written contract |
+
+`issueKnownAction` runs only in contracts and the unit suite, never in the app, so its target calls it directly; it is
+a contract, not dead code. Coverage runs of each target alone reach every arm and function these two files had open
+(seeds 20261202, 20261203). Mutations, each falsified at seed 20261204: a task offering Commit, a VIP step 3 with blank
+prior art passing, and the same reviewer's review sending a fresh request.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
