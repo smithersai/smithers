@@ -63,6 +63,17 @@ describe("errors and validation", () => {
     expect(Schema.decodeUnknownSync(Repository.RepositoryError)(journaled).refs).toEqual(["refs/heads/a"])
   })
 
+  it("keeps a rate limit's wait as the retry policy's retryAfterMillis, and drops a wait that is not one", () => {
+    const limited = Repository.repositoryError("unavailable", "writeBlob", "rate limited", undefined, 90_000)
+    expect(limited.retryAfterMillis).toBe(90_000)
+    expect(Object.getOwnPropertyDescriptor(limited, "retryAfterMillis")?.value).toBe(90_000)
+    for (const wait of [-1, Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
+      expect(Object.hasOwn(Repository.repositoryError("unavailable", "writeBlob", "x", undefined, wait), "retryAfterMillis")).toBe(false)
+    }
+    const journaled = JSON.parse(JSON.stringify(Schema.encodeUnknownSync(Repository.RepositoryError)(limited)))
+    expect(Schema.decodeUnknownSync(Repository.RepositoryError)(journaled).retryAfterMillis).toBe(90_000)
+  })
+
   it("accepts only refs under refs/ that follow git's rules", () => {
     for (const ref of ["refs/heads/mythical", "refs/notes/mythical", "refs/heads/smithers/history"]) {
       expect(Repository.isRefName(ref)).toBe(true)

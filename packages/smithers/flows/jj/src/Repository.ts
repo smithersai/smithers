@@ -59,9 +59,13 @@ export type RepositoryErrorCode = typeof RepositoryErrorCode.Type
 
 /**
  * A repository failure: its stable `code`, the `method` that failed, a human
- * `message`, and for a `conflict` the refs whose old value differed.
+ * `message`, for a `conflict` the refs whose old value differed, and for an
+ * `unavailable` repository that asked callers to wait (a rate limit) how long,
+ * as `retryAfterMillis`.
  *
- * The tag is durable identity: a flow journals the error.
+ * The tag is durable identity: a flow journals the error. `retryAfterMillis`
+ * is the name `@smthrs/flow`'s retry policy reads, so a step that fails with
+ * it waits at least that long before its next attempt.
  *
  * @category errors
  * @since 1.0.0
@@ -70,11 +74,15 @@ export class RepositoryError extends Schema.TaggedError<RepositoryError>()("@smt
   code: RepositoryErrorCode,
   method: Schema.String,
   message: Schema.String,
-  refs: Schema.optional(Schema.Array(Schema.String))
+  refs: Schema.optional(Schema.Array(Schema.String)),
+  retryAfterMillis: Schema.optional(Schema.Number)
 }) {}
 
 /**
- * Creates a {@link RepositoryError} whose message reads `<code>: Repository.<method>: <description>`.
+ * Creates a {@link RepositoryError} whose message reads `<code>: Repository.<method>: <description>`. A finite,
+ * non-negative `retryAfterMillis` is kept; any other is dropped.
+ *
+ * @throws {never} It only builds the error; a caller fails with it.
  *
  * @category constructors
  * @since 1.0.0
@@ -83,13 +91,17 @@ export const repositoryError = (
   code: RepositoryErrorCode,
   method: string,
   description: string,
-  refs?: ReadonlyArray<string>
+  refs?: ReadonlyArray<string>,
+  retryAfterMillis?: number
 ): RepositoryError =>
   new RepositoryError({
     code,
     method,
     message: `${code}: Repository.${method}: ${description}`,
-    ...(refs === undefined ? {} : { refs: [...refs] })
+    ...(refs === undefined ? {} : { refs: [...refs] }),
+    ...(retryAfterMillis !== undefined && Number.isFinite(retryAfterMillis) && retryAfterMillis >= 0
+      ? { retryAfterMillis }
+      : {})
   })
 
 /**

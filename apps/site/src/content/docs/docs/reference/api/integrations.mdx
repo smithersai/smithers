@@ -654,7 +654,12 @@ failure the refs are read back: a ref off its old value is `conflict`, every ref
 at its new value is success, every ref unmoved is `unavailable` and safe to
 retry. A GitHub without the mutation fails `unsupported`. A short revision
 resolves through GraphQL `object(expression:)`. 404 maps to `not_found`, 422 to
-`invalid`, anything else to `unavailable`.
+`invalid`, anything else to `unavailable`. A rate limit (a 429, or a 403 for the
+primary or secondary limit) is `unavailable` with GitHub's wait as
+`retryAfterMillis`: its `Retry-After` in full, else the client's capped
+`x-ratelimit-reset`. That is the name `@smthrs/flow`'s retry policy reads, so a
+step that writes through the adapter waits at least that long before it tries
+again.
 
 ### GitHub.Refs
 

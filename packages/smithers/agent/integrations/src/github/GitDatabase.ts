@@ -23,7 +23,10 @@
  *   `unsupported`; refs are never moved one request at a time.
  *
  * Errors map from {@link IntegrationError}: 404 is `not_found`, 422
- * `invalid`, anything else `unavailable`.
+ * `invalid`, anything else `unavailable`. A rate limit (a 429, or a 403 for
+ * the primary or secondary limit) is `unavailable` with GitHub's wait as
+ * `retryAfterMillis`: its `Retry-After` in full, else the client's capped
+ * `x-ratelimit-reset`, so a flow step's retry policy waits at least that long.
  *
  * @since 1.0.0
  */
@@ -89,10 +92,18 @@ const fail = (
   refs?: ReadonlyArray<string>
 ) => Effect.fail(Repository.repositoryError(code, method, description, refs))
 
+// How long GitHub asked a caller to wait: its `Retry-After` in full, else the client's capped wait (a spent budget's
+// `x-ratelimit-reset`, or a 5xx's `Retry-After`); undefined when it named none.
+const waitOf = (details: Readonly<Record<string, unknown>> | undefined): number | undefined => {
+  const uncapped = details?.["retryAfterUncappedMillis"]
+  const capped = details?.["retryAfterMillis"]
+  return typeof uncapped === "number" ? uncapped : typeof capped === "number" ? capped : undefined
+}
+
 const fromIntegration = (method: string) => (error: IntegrationError): Repository.RepositoryError => {
   const status = error.details?.["status"]
   const code = status === 404 ? "not_found" : status === 422 ? "invalid" : "unavailable"
-  return Repository.repositoryError(code, method, error.message)
+  return Repository.repositoryError(code, method, error.message, undefined, code === "unavailable" ? waitOf(error.details) : undefined)
 }
 
 const MODES: ReadonlySet<string> = new Set(["100644", "100755", "120000", "040000", "160000"])
