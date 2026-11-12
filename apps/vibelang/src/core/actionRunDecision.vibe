@@ -1,5 +1,5 @@
 // An action run's own decisions on its Conversation object (wiki/decisions/0023-actions.md, 0018 third-lane batch 11):
-// which runs a repeated start or a cancel may touch, which run is a post's reply, and how a run settles.
+// which runs a repeated start may touch (a cancel's, `cancellable`, is in `src/actions/actionHostDecision.vibe`), which run is a post's reply, and how a run settles.
 // `worker/ActionRuns.vibe` calls these; storage, the engine, the sequencer and the trace queue stay outside the proof.
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
@@ -24,13 +24,6 @@ export function isReplyChild(runIsReply: boolean, requestIsPost: boolean, id: st
 //@ ensures \result == (!exists || state == "queued" || (conversational && state == "running"))
 export function startRuns(exists: boolean, state: string, conversational: boolean): boolean {
   return !exists || state === "queued" || (conversational && state === "running")
-}
-
-/** Whether a cancel may still stop a run: only a queued or running one. */
-//@ verify
-//@ ensures \result == (state == "queued" || state == "running")
-export function cancellable(state: string): boolean {
-  return state === "queued" || state === "running"
 }
 
 /** A settled run's state. */

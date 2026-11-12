@@ -13,8 +13,7 @@ import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
 import { Actions, ActionFailure, type Actor, type Door, Run, type Role, splitCommand } from "./Actions.vibe"
 import { allowed, bundled, registration } from "./catalog.vibe"
-import { actionActor, cancelEndsTour, commandInput, guidedTourPassed, matchingFlow, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
-import { cancellable } from "../core/actionRunDecision.vibe"
+import { actionActor, cancelEndsTour, cancellable, commandInput, guidedTourPassed, matchingFlow, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
 
 export interface Principal { readonly role?: Role; readonly actor: Actor; readonly conversation?: string }
 const decodeRun = Schema.decodeUnknownEffect(Run)

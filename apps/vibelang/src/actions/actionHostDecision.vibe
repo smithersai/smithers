@@ -1,6 +1,13 @@
 // Scalar policies used by the live directory and the mock action host (0018, third-lane batch 14).
 // A run that settles itself passes or fails. A cancel interrupts the run's fiber before it can settle and records
 // `cancelled` itself (MockActions.vibe `cancel`), so no settlement here is a cancellation.
+/** Whether a cancel may still stop a run: only a queued or running one. */
+//@ verify
+//@ ensures \result == (state == "queued" || state == "running")
+export function cancellable(state: string): boolean {
+  return state === "queued" || state === "running"
+}
+
 export type MockState = "passed" | "failed"
 
 //@ verify

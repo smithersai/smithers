@@ -5423,8 +5423,6 @@ cases.extend([('src/core/actionRunDecision.vibe', *case) for case in [
 ('run-resume-running', 'startRuns', ' || (conversational && state === "running")', '', 'an interrupted post or tour may resume'),
 ('run-resume-kind', 'startRuns', '(conversational && state === "running")', '(state === "running")', 'only a conversational run resumes while running'),
 ('run-resume-terminal', 'startRuns', '(conversational && state === "running")', 'conversational', 'a conversational run still cannot resume after settlement'),
-('run-cancel-running', 'cancellable', 'return state === "queued" || state === "running"', 'return state === "queued"', 'a running run may be cancelled'),
-('run-cancel-ended', 'cancellable', 'return state === "queued" || state === "running"', 'return state !== "cancelled"', 'an ended run is never cancelled'),
 ('run-settled-state', 'settledState', 'return failed ? "failed" : "passed"', 'return "passed"', 'a failure settles failed'),
 ('run-settled-result', 'settledResult', 'return failed ? "Action failed" : "null"', 'return failed ? "failed" : "null"', 'a failure records Action failed'),
 ('run-start-settles-post', 'startSettles', 'return refused || post', 'return refused', 'a post settles at once'),
@@ -5471,6 +5469,8 @@ cases.extend([('src/history/seedInputDecision.vibe', *case) for case in [
 
 # Lane vl-proveall3, batch 14: action hosts.
 cases.extend([('src/actions/actionHostDecision.vibe', *case) for case in [
+('run-cancel-running', 'cancellable', 'return state === "queued" || state === "running"', 'return state === "queued"', 'a running run may be cancelled'),
+('run-cancel-ended', 'cancellable', 'return state === "queued" || state === "running"', 'return state !== "cancelled"', 'an ended run is never cancelled'),
 ('action-host-success', 'mockState', 'return succeeded && !refusal ? "passed" : "failed"', 'return !succeeded && !refusal ? "passed" : "failed"', 'only an engine success can pass'),
 ('action-host-refusal', 'mockState', 'return succeeded && !refusal ? "passed" : "failed"', 'return succeeded ? "passed" : "failed"', 'a refusal value fails'),
 ('action-host-failure', 'mockState', 'return succeeded && !refusal ? "passed" : "failed"', 'return succeeded && !refusal ? "passed" : "passed"', 'an engine failure does not pass'),

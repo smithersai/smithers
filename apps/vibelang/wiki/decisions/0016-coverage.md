@@ -45,7 +45,7 @@ too (40 browser branch arms, 27 lines). Their proofs and mutations moved with th
 The same holds for `src/core`'s pure decision files (lane vl-coverage-core, 2026-11-12). Each server decision below
 lived in a file the bundle imports for other names, so the browser gate counted it and no browser could run it. Each
 moved with its `//@` contract, unit tests, fuzz and bench calls, mutation rows and 0018 inventory row; `pnpm verify`
-and `pnpm verify:broken` pass on all eight modules, and the unit gate measures every one.
+and `pnpm verify:broken` pass on all nine modules, and the unit gate measures every one.
 
 | Function | Was in (browser loads it for) | Now in | Callers |
 | --- | --- | --- | --- |
@@ -54,15 +54,15 @@ and `pnpm verify:broken` pass on all eight modules, and the unit gate measures e
 | `routeOf`, `decodeSegment`, `Route` | `wire` (paths and schemas: `LiveFactory`, `MockFactory`) | `routes` (new) | `worker/Http` |
 | `nonnegativeCursor`, `responseKind`, `liveHealth`, `validTourStep` | `protocolDecision` | `clientProtocolDecision` (new); `protocolDecision` keeps the Worker's and command hosts' decisions and leaves the bundle | `schemas`, `LiveFactory`, `MockFactory`, `web/backend`, `worker/Http` |
 | `reviewActions`, `vipDocumentMatches`, `VipFile` | `conversation` (the state machine: every screen) | `issueHostDecision` | `worker/Issues` |
+| `cancellable` | `actionRunDecision` (only this name: `MockActions`) | `src/actions/actionHostDecision` | `MockActions`, `worker/ActionRuns` |
 
 Measured on main `6fbe6ee1` (`pnpm e2e:coverage`, base and change on boxes): covered counts are identical
 (branches 4,522, lines 4,643, functions 2,004, statements 5,547), so the browser runs exactly what it ran; the roster
 lost 278 branch arms, 110 lines, 51 functions and 159 statements that no browser ran. `src/core`'s open branches
 went from 862 to 584: `issueHostDecision` (123), `protocolDecision` (52) and `actionRunDecision` (17) left the
 roster, `flowDecision` 83 → 24, `wikiPageDecision` 34 → 11, `wire` 11 → 1, and `clientProtocolDecision` has 6 of 8.
-That measurement also moved `wikiUnwritten` and `wikiRefusalStatus` out of `wikiPageDecision` (its 34 → 11) and
-`cancellable` out of `actionRunDecision` (its 17 → 0); both wait for vl-proveall3's open proofs in those files, so
-until they move, `wikiPageDecision` and `actionRunDecision` keep them.
+That measurement also moved `wikiUnwritten` and `wikiRefusalStatus` out of `wikiPageDecision` (its 34 → 11); they
+wait for vl-proveall3's open proofs in that file, so until they move `wikiPageDecision` keeps them.
 
 Named browser sites and status:
 

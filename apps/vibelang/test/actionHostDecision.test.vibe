@@ -1,9 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
-import { actionActor, cancelEndsTour, commandInput, firstCommand, guidedTourPassed, historyKind, indexedRun, invocationKind, matchingFlow, mockState, outlineByDefault, ownerRefused, refusedAnswer, sameRun } from "../src/actions/actionHostDecision.vibe"
+import { actionActor, cancelEndsTour, cancellable, commandInput, firstCommand, guidedTourPassed, historyKind, indexedRun, invocationKind, matchingFlow, mockState, outlineByDefault, ownerRefused, refusedAnswer, sameRun } from "../src/actions/actionHostDecision.vibe"
 
 describe("action hosts' decisions", () => {
   it("passes only a successful non-refusal; a refusal or an engine failure fails", () => {
     expect([mockState(true, false), mockState(true, true), mockState(false, false), mockState(false, true)]).toEqual(["passed", "failed", "failed", "failed"])
+  })
+  it("cancels only a queued or running run", () => {
+    expect(["queued", "running", "passed", "failed", "cancelled"].map(cancellable)).toEqual([true, true, false, false, false])
   })
   it("allows viewer work across owners and requires the same owner for writes", () => {
     expect([ownerRefused("viewer", "old", "new"), ownerRefused("contributor", "old", "new"), ownerRefused("maintainer", "same", "same")]).toEqual([false, true, false])
