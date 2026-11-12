@@ -43,6 +43,13 @@ string, `NaN` and `Infinity` to `null`, and a revisited object to `"<cycle>"`.
 A legitimate attr value could also produce each of those, so two different
 targets could share one key.
 
+A frozen value whose members are all primitives or frozen values cannot
+change, so its encoding is kept by identity and reused the next time any key
+names it. The planner freezes the file rows of each declared input, which every
+target declaring that input shares; their bytes are encoded once per
+invocation instead of once per target. A reused encoding is byte for byte what
+encoding the value again would produce, so keys are unchanged.
+
 Two substitutions happen inside `inputs.attrs` before hashing:
 
 - A target reference becomes `{_tag: "Target", key: <dependency key>}`. A

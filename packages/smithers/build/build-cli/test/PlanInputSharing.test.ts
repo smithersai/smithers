@@ -114,6 +114,28 @@ describe("one plan reads a shared declared input once", () => {
     }
   })
 
+  it("hands every target sharing a glob the same rows, which nothing can change", async () => {
+    const root = await workspace(suite(3))
+    const plan = await planOf(root, ["//..."])
+    // Keys reuse the encoding of rows that cannot change; a row that could be
+    // edited after one key was taken would make the next key stale.
+    const shared = ["c0", "c1", "c2"].map((name) =>
+      plan.nodes.get(`//:${name}`)!.declaredInputs.find((input) =>
+        input.files.length === 1 && input.files[0]!.path === "cases/helper.mjs" && input.declaration._tag === "Glob"
+      )!.files
+    )
+    expect(shared[1]).toBe(shared[0])
+    expect(shared[2]).toBe(shared[0])
+    expect(Object.isFrozen(shared[0])).toBe(true)
+    expect(Object.isFrozen(shared[0]![0])).toBe(true)
+    for (const node of plan.nodes.values()) {
+      for (const input of node.declaredInputs) {
+        expect(Object.isFrozen(input.files)).toBe(true)
+        for (const row of input.files) expect(Object.isFrozen(row)).toBe(true)
+      }
+    }
+  })
+
   it("keeps one target's key when another target starts sharing its inputs", async () => {
     const root = await workspace(suite(3))
     const alone = await planOf(root, ["//:c1"])

@@ -182,20 +182,7 @@ const step = (path: string, key: string): string => path === "" ? key : `${path}
 
 /** Refuses text whose UTF-8 encoding would replace an unpaired surrogate. */
 const assertWellFormed = (value: string, path: string): void => {
-  for (let index = 0; index < value.length; index += 1) {
-    const unit = value.charCodeAt(index)
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1)
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        index += 1
-        continue
-      }
-      throw new KeyMaterialError(path, "contains an unpaired UTF-16 surrogate")
-    }
-    if (unit >= 0xdc00 && unit <= 0xdfff) {
-      throw new KeyMaterialError(path, "contains an unpaired UTF-16 surrogate")
-    }
-  }
+  if (!value.isWellFormed()) throw new KeyMaterialError(path, "contains an unpaired UTF-16 surrogate")
 }
 
 /** Reads reflective object state without letting a hostile proxy escape as an arbitrary defect. */
@@ -205,6 +192,26 @@ const reflect = <A>(path: string, operation: () => A): A => {
   } catch {
     throw new KeyMaterialError(path, "could not be inspected without executing hostile object behavior")
   }
+}
+
+/**
+ * Encodings of immutable objects, by identity.
+ *
+ * One glob's file rows are shared by every target that declares the glob, and
+ * every one of those targets' keys used to walk all of them again. A frozen
+ * object whose members are all primitives or such objects encodes to the same
+ * bytes for as long as it lives, so its first encoding is reused. Keys do not
+ * change: a reused encoding is byte-for-byte what the walk would produce.
+ */
+const frozenEncodings = new WeakMap<object, string>()
+
+/** Records an immutable object's encoding, the pieces `encode` appended from `start` on. */
+const keep = (object: object, immutable: boolean, out: Array<string>, start: number): boolean => {
+  if (!immutable) return false
+  const text = out.splice(start).join("")
+  out.push(text)
+  frozenEncodings.set(object, text)
+  return true
 }
 
 /**
@@ -224,21 +231,25 @@ const reflect = <A>(path: string, operation: () => A): A => {
  * whose prototype is neither `Object.prototype` nor null (a `Date`, a `Map`, a
  * class instance) are all refused rather than flattened into something that
  * collides with a legitimate value.
+ *
+ * Returns whether the value can never encode differently: a primitive, or a
+ * frozen object whose members all are. Such an object's bytes are kept in
+ * {@link frozenEncodings} and reused the next time any key names it.
  */
-const encode = (value: unknown, out: Array<string>, seen: Set<object>, path: string): void => {
-  if (value === undefined) return void out.push("u")
-  if (value === null) return void out.push("n")
+const encode = (value: unknown, out: Array<string>, seen: Set<object>, path: string): boolean => {
+  if (value === undefined) return out.push("u"), true
+  if (value === null) return out.push("n"), true
   switch (typeof value) {
     case "boolean":
-      return void out.push(value ? "t" : "f")
+      return out.push(value ? "t" : "f"), true
     case "number": {
       if (!Number.isFinite(value)) throw new KeyMaterialError(path, `is the non-finite number ${String(value)}`)
       // Object.is separates -0 from 0; String renders them identically.
-      return void out.push(`d${Object.is(value, -0) ? "-0" : String(value)};`)
+      return out.push(`d${Object.is(value, -0) ? "-0" : String(value)};`), true
     }
     case "string":
       assertWellFormed(value, path)
-      return void out.push(`s${value.length}:${value}`)
+      return out.push(`s${value.length}:${value}`), true
     case "bigint":
       throw new KeyMaterialError(path, "is a bigint, which has no stable encoding here")
     case "symbol":
@@ -251,9 +262,17 @@ const encode = (value: unknown, out: Array<string>, seen: Set<object>, path: str
       throw new KeyMaterialError(path, `is an unsupported ${typeof value} value`)
   }
   const object = value
+  // Only an encoding that succeeded is kept, so a kept object is no Proxy and
+  // closes no cycle: its own walk would have refused either.
+  const kept = frozenEncodings.get(object)
+  if (kept !== undefined) return out.push(kept), true
   if (NodeUtil.isProxy(object)) throw new KeyMaterialError(path, "is a Proxy")
   if (seen.has(object)) throw new KeyMaterialError(path, "closes a reference cycle")
   const prototype = reflect(path, () => Object.getPrototypeOf(object))
+  // Frozen objects cannot gain, lose, or rewrite a property, so the bytes of
+  // one whose members are all immutable are fixed for its whole lifetime.
+  let immutable = Object.isFrozen(object)
+  const start = out.length
   seen.add(object)
   try {
     if (Array.isArray(object)) {
@@ -275,9 +294,9 @@ const encode = (value: unknown, out: Array<string>, seen: Set<object>, path: str
         if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined) {
           throw new KeyMaterialError(memberPath, "is an accessor property")
         }
-        encode(descriptor.value, out, seen, memberPath)
+        immutable = encode(descriptor.value, out, seen, memberPath) && immutable
       }
-      return
+      return keep(object, immutable, out, start)
     }
     if (prototype !== Object.prototype && prototype !== null) {
       throw new KeyMaterialError(path, "is an object whose prototype is not a plain object")
@@ -297,8 +316,9 @@ const encode = (value: unknown, out: Array<string>, seen: Set<object>, path: str
         throw new KeyMaterialError(step(path, key), "is an accessor property")
       }
       out.push(`s${key.length}:${key}`)
-      encode(descriptor.value, out, seen, step(path, key))
+      immutable = encode(descriptor.value, out, seen, step(path, key)) && immutable
     }
+    return keep(object, immutable, out, start)
   } finally {
     // Removing on the way out keeps a value that legitimately appears twice in
     // a tree from being reported as a cycle.

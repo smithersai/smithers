@@ -1373,7 +1373,7 @@ const expandInputs = async (
     let rows = context.treeInputs.get(key)
     if (rows === undefined) {
       rows = treeInputFiles(context, packagePath, declaration).then((files) => ({
-        files,
+        files: frozenRows(files),
         digest: Input.digestText(JSON.stringify(files))
       }))
       context.treeInputs.set(key, rows)
@@ -1381,6 +1381,16 @@ const expandInputs = async (
     expanded.push({ declaration, ...(await rows) })
   }
   return expanded
+}
+
+/**
+ * Freezes one expansion's rows. Every target that declares the input shares
+ * them, and `Planner.keyOf` reuses the encoding of frozen values, so the rows
+ * must not change after the first key is taken.
+ */
+const frozenRows = (files: ReadonlyArray<Input.FileDigest>): ReadonlyArray<Input.FileDigest> => {
+  for (const row of files) Object.freeze(row)
+  return Object.freeze(files)
 }
 
 /** One `git diff --name-status -z` row. */
@@ -1457,7 +1467,7 @@ const expandGitDiff = async (
   const patch = patches.join("")
   return {
     declaration,
-    files,
+    files: frozenRows(files),
     digest: Input.digestText(JSON.stringify({ patch, files, addedLines: declaration.addedLines ?? null }))
   }
 }

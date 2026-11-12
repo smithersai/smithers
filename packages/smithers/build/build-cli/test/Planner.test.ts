@@ -317,6 +317,75 @@ describe("keyOf", () => {
   })
 })
 
+describe("keyOf over shared frozen values", () => {
+  /** Freezes a plain value and every object inside it. */
+  const deepFreeze = <A>(value: A): A => {
+    if (value !== null && typeof value === "object") {
+      for (const member of Object.values(value)) deepFreeze(member)
+      Object.freeze(value)
+    }
+    return value
+  }
+  const rows = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({ path: `src/file-${index}.ts`, digest: "a".repeat(64) }))
+
+  it("encodes a frozen value exactly as its unfrozen copy", () => {
+    const shared = deepFreeze(rows(5))
+    const value = { first: { files: shared }, second: [shared, { files: shared }], tail: "end" }
+    const copy = JSON.parse(JSON.stringify(value))
+    expect(encodeKeyMaterial(material(value))).toBe(encodeKeyMaterial(material(copy)))
+    // A second encoding, after the frozen rows were seen once, still agrees.
+    expect(encodeKeyMaterial(material(value))).toBe(encodeKeyMaterial(material(copy)))
+    expect(keyOf(material(value))).toBe(keyOf(material(copy)))
+  })
+
+  it("inspects a frozen value's members once however many keys name it", () => {
+    const shared = deepFreeze(rows(200))
+    const inspected = vi.spyOn(Object, "getOwnPropertyNames")
+    try {
+      encodeKeyMaterial(material({ files: shared }))
+      const once = inspected.mock.calls.length
+      inspected.mockClear()
+      for (let index = 0; index < 10; index += 1) encodeKeyMaterial(material({ files: shared, index }))
+      // Each later key inspects only its own envelope, not the 200 shared rows.
+      expect(inspected.mock.calls.length).toBeLessThan(10 * 5)
+      expect(once).toBeGreaterThan(200)
+    } finally {
+      inspected.mockRestore()
+    }
+  })
+
+  it("re-encodes a value that is not frozen all the way down after it changes", () => {
+    const inner = { path: "a.ts" }
+    const outer = Object.freeze({ files: Object.freeze([inner]) })
+    const before = encodeKeyMaterial(material(outer))
+    inner.path = "b.ts"
+    const after = encodeKeyMaterial(material(outer))
+    expect(after).not.toBe(before)
+    expect(after).toBe(encodeKeyMaterial(material({ files: [{ path: "b.ts" }] })))
+  })
+
+  it("re-encodes a shared array that is not frozen after it grows", () => {
+    const shared = rows(2)
+    const before = encodeKeyMaterial(material({ files: shared }))
+    shared.push({ path: "src/late.ts", digest: "b".repeat(64) })
+    expect(encodeKeyMaterial(material({ files: shared }))).not.toBe(before)
+  })
+
+  it("still refuses a frozen value it cannot encode, every time", () => {
+    const bad = Object.freeze({ when: Object.freeze(new Date(0)) })
+    expect(() => encodeKeyMaterial(material(bad))).toThrow(KeyMaterialError)
+    expect(() => encodeKeyMaterial(material(bad))).toThrow(KeyMaterialError)
+  })
+
+  it("refuses unpaired surrogates in frozen and unfrozen text alike", () => {
+    expect(() => encodeKeyMaterial(material(Object.freeze(["\ud800"])))).toThrow(KeyMaterialError)
+    expect(() => encodeKeyMaterial(material(["x\udc00"]))).toThrow(KeyMaterialError)
+    expect(() => encodeKeyMaterial(material({ ["\ud83d"]: 1 }))).toThrow(KeyMaterialError)
+    expect(encodeKeyMaterial(material(["😀"]))).toContain("s2:😀")
+  })
+})
+
 describe("implementationFingerprint", () => {
   it("digests the production source trees", async () => {
     await expect(implementationFingerprint()).resolves.toMatch(/^[0-9a-f]{64}$/)
