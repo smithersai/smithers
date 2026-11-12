@@ -22,7 +22,7 @@ const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 const STATE = "__Host-vibelang-sign-in"
 
 const Op = Schema.Struct({
-  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall"]),
+  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost"]),
   person: Schema.Literals(["1", "2", "7", "0"]),
   tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired", "corrupt", "huge"]),
   query: Schema.Literals(["", "?wiki-page=index", "?wiki-page=../x", "?resume-op=new&resume-key=k1", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=r1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"]),
@@ -60,8 +60,14 @@ const inFlow = <R>(body: string!GitHub.Auth.Broker.BrokerRefused!R) => scoped(ef
 interface Answer { readonly status: number; readonly location: string; readonly text: string; readonly cookies: ReadonlyArray<string> }
 type Jar = Map<string, string>
 
-effect function world(slug: boolean, brokered: boolean, named: boolean) {
+effect function world(slug: boolean, brokered: boolean, named: boolean, legacy = false) {
   const storage = try Effect.try(() => objectStorage())
+  // An object that held tokens from the per-site connect path (0165 migration) before this version started.
+  if (legacy) try promise(() => storage.put({ "github/1": { token: "sealed" }, "github/7": { token: "sealed" } }))
+  // The object's storage lost: every read and write rejects until it heals.
+  const healthy = { get: storage.get, put: storage.put, delete: storage.delete, list: storage.list }
+  const rejected = () => Promise.reject(new Error("storage lost"))
+  const setLost = (lost: boolean) => { Object.assign(storage, lost ? { get: rejected, put: rejected, delete: rejected, list: rejected } : healthy) }
   const keys = try Core.CookieKeys.make({ primary: Redacted.make("fixture-only-broker-cookie-key-32-chars") }, "primary")
   let custodian = true
   const broker = try GitHub.Auth.Broker.make({
@@ -108,9 +114,10 @@ effect function world(slug: boolean, brokered: boolean, named: boolean) {
     const text = options.stream !== true && (response.status === 200 || response.status >= 400) ? try promise(() => answer.text()) : ""
     return { status: response.status, location: answer.headers.get("location") ?? "", text, cookies } satisfies Answer
   }
-  return { storage, accounts, ask, jars, setCustodian: (healthy: boolean) => { custodian = healthy } }
+  return { storage, accounts, ask, jars, setLost, setCustodian: (healthy: boolean) => { custodian = healthy } }
 }
 type World = Effect.Success<ReturnType<typeof world>>
+const kvOf = (w: World) => (w.storage as unknown as { readonly kv: ReadonlyMap<string, unknown> }).kv
 
 /** Where the last trip stopped, for a refuted check. */
 let tripStage = 0
@@ -162,13 +169,18 @@ it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Inpu
   if (!(try play(input, true, false, true))) return false
   if (!(try play(input, false, false, true))) return false
   if (!(try play(input, false, true, true))) return false
+  // Lost storage as a fresh brokered world's first step, with no session cookie (0015).
+  if (!(try play({ ...input, ops: [{ kind: "lost", person: "1", tamper: "none", query: "", answer: "connect", install: true, role: "new", body: "valid", n: 0 }] }, true, false, false))) return false
   return try play(input, input.brokered, !input.brokered && input.named, false)
-}), undefined, { minimum: STEERED_FLOOR }), 120_000)
+  // One execution walks three worlds: about 20 s on nyc-01 and over a minute on a 4-vCPU box, after the 30 s floor.
+}), undefined, { minimum: STEERED_FLOOR }), 300_000)
 
 effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean) {
-  const w = try world(input.slug, brokered, named)
+  const w = try world(input.slug, brokered, named, walking)
+  // The migration deletes every per-site token once, before the object answers anything.
+  if (walking && (kvOf(w).has("github/1") || kvOf(w).has("github/7") || kvOf(w).get("migrated/connect-v1") !== true)) throw new Refuted({ kind: "migration", check: 1 })
   const base: Op = { kind: "session", person: "7", tamper: "none", query: "", answer: "connect", install: true, role: "community", body: "valid", n: 0 }
-  const namedWalk: ReadonlyArray<Op> = [{ ...base, kind: "sign-in" }, { ...base, kind: "abandon" }, { ...base, kind: "refusals" }]
+  const namedWalk: ReadonlyArray<Op> = [{ ...base, kind: "sign-in" }, { ...base, kind: "abandon" }, { ...base, kind: "refusals" }, { ...base, kind: "lost" }]
   const walk: ReadonlyArray<Op> = walking && named ? namedWalk : walking ? [
     { ...base, kind: "sign-in" }, { ...base, kind: "connect" }, { ...base, kind: "disconnect" }, { ...base, kind: "connect", answer: "cancel" },
     { ...base, kind: "connect", install: false }, { ...base, kind: "connect", query: "?resume-op=new&resume-key=k1&resume-recovery=r1" },
@@ -184,7 +196,7 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
     // Refusals a draw reaches only by chance (0015): bodies a route cannot take, a corrupt sign-in row, an id GitHub
     // cannot have, each query Connect refuses, a handoff without the session that pressed Connect, and issue and wiki
     // writes by a person and by their agent.
-    { ...base, kind: "refusals" }, { ...base, kind: "stall" }, { ...base, kind: "sign-in", tamper: "corrupt" }, { ...base, kind: "sign-in", tamper: "huge" },
+    { ...base, kind: "lost" }, { ...base, kind: "refusals" }, { ...base, kind: "stall" }, { ...base, kind: "sign-in", tamper: "corrupt" }, { ...base, kind: "sign-in", tamper: "huge" },
     { ...base, kind: "sign-in" }, { ...base, kind: "refusals" }, { ...base, kind: "stall" },
     ...(["?wiki-page=../x", "?resume-op=new", "?resume-recovery=r1", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key", "?wiki-page=index"] as const).map((query) => ({ ...base, kind: "connect" as const, query })),
     { ...base, kind: "disconnect" }, { ...base, kind: "connect", tamper: "cookie" },
@@ -389,6 +401,19 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
       case "elsewhere": {
         const answer = try seen(try w.ask(SITE + "/api/auth/session", { url: "https://evil.example/api/auth/session" }))
         if (answer.status !== 403) return try refute(op.kind, 210)
+        break
+      }
+      case "lost": {
+        w.setLost(true)
+        const callback = try seen(try w.ask(SITE + "/api/auth/callback", { method: "POST", origin: SITE, body: "{}" }))
+        const start = try seen(try w.ask(SITE + "/api/auth/sign-in"))
+        const session = try seen(try w.ask(SITE + "/api/auth/session"))
+        w.setLost(false)
+        // Lost storage fails a request that needs it, never answers it: GitHub's callback is unavailable (the broker's
+        // refuses this body first), sign-in returns to the site marked failed, and a presented session is unavailable.
+        // Without a session cookie the session route answers the viewer and reads nothing.
+        const presented = w.jars.get(SITE)!.has(Accounts.SESSION)
+        if (callback.status !== (brokered ? 400 : 503) || start.status !== 302 || start.location !== `${SITE}/?sign-in=failed` || session.status !== (presented ? 503 : 200)) return try refute(op.kind, 1)
         break
       }
       case "refusals": {

@@ -1420,3 +1420,14 @@ the ledger cannot record (`physicalLedger` in `model-writers`): all three answer
 model's. Each reply execution also starts over once (`corrected`): only the second text is shown. Mutants caught:
 the wiki's refused call reported `draft`; the reviewers' and the reply's ledger outage passed on as the model's
 failure; a reply that never starts over.
+
+`worker/Accounts.vibe` 398 and 480-482 had no world to reach them. The walking worlds of `accounts/broker-sequences`
+now start over storage that holds two per-site tokens from the 0165 connect path; the object deletes both and marks
+the migration before answering anything. A `lost` step makes every storage read and write reject: GitHub's callback
+POST answers 503 (the broker's callback refuses the body first, 400), sign-in returns to `/?sign-in=failed`, and the
+session is 503 when a session cookie is presented and 200 as a viewer without one (it reads nothing). The first gate
+drew `lost` as a fresh brokered world's first step, with no cookie, and refuted an expectation of 503: the property was
+too narrow, not the product. Every execution now also runs that fresh-world step. The target's test timeout is 300 s:
+one execution walks three worlds, about 20 s on nyc-01 and over a minute on a 4-vCPU box, after the 30 s floor, and
+120 s timed out on a box. Mutants caught: the migration keeping the tokens; a failed sign-in returning unmarked. Still unreached: the read-queue deadline (217-220), issue and wiki writes that need
+a reachable GitHub (433-445) and the local-development broker (123).
