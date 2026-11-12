@@ -539,7 +539,7 @@ const strictRotatingProvider = (options: { readonly holdFirst: number }) => {
 const slowWrites = (durable: CredentialStore.Service): CredentialStore.Service =>
   CredentialStore.make({
     ...durable,
-    write: (record) => Effect.andThen(Effect.sleep("150 millis"), durable.write(record))
+    write: (record, previous) => Effect.andThen(Effect.sleep("150 millis"), durable.write(record, previous))
   })
 
 describe("OAuthToken credential store", () => {

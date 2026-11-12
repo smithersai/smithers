@@ -9,13 +9,16 @@
  * Writes are compare-and-set on `version`. A writer that read version *n*
  * commits version *n + 1*; a concurrent writer that read the same *n* is
  * refused with {@link ControlError.CredentialConflict} rather than silently
- * overwriting the winner.
+ * overwriting the winner. A writer that also passes the record it read is
+ * refused when the stored sealed secret is no longer that record's, which
+ * catches a credential removed and recreated at the same version.
  *
  * @since 0.1.0
  */
 
 import { Context, Effect, Layer, Option } from "effect"
 import { CredentialConflict, Unavailable } from "./ControlError.ts"
+import { sealsMatch } from "./internal/sealsMatch.ts"
 
 /**
  * One credential at rest: opaque metadata plus the sealed secret.
@@ -44,8 +47,16 @@ export interface SealedRecord {
 export interface Service {
   readonly list: () => Effect.Effect<ReadonlyArray<SealedRecord>, Unavailable>
   readonly read: (id: string) => Effect.Effect<Option.Option<SealedRecord>, Unavailable>
-  /** Commits `record` only if the stored version is `record.version - 1`. */
-  readonly write: (record: SealedRecord) => Effect.Effect<void, Unavailable | CredentialConflict>
+  /**
+   * Commits `record` only if the stored version is `record.version - 1` and,
+   * with `previous`, the stored ciphertext and nonce are still `previous`'s.
+   * An adapter or wrapper must honor `previous`: dropping it lets a rotation
+   * overwrite a credential revoked and recreated after the rotation's read.
+   */
+  readonly write: (
+    record: SealedRecord,
+    previous?: SealedRecord | undefined
+  ) => Effect.Effect<void, Unavailable | CredentialConflict>
   readonly remove: (id: string) => Effect.Effect<void, Unavailable>
 }
 
@@ -118,11 +129,11 @@ export const makeMemory = (): Service => {
     read: Effect.fn("CredentialStore.read")((id) =>
       Effect.sync(() => Option.map(Option.fromNullishOr(records.get(id)), copy))
     ),
-    write: Effect.fn("CredentialStore.write")((record) =>
+    write: Effect.fn("CredentialStore.write")((record, previous) =>
       Effect.suspend(() => {
         const current = records.get(record.id)
         const actual = current?.version ?? 0
-        if (actual !== record.version - 1) {
+        if (actual !== record.version - 1 || !sealsMatch(current, previous)) {
           return Effect.fail(
             new CredentialConflict({
               id: record.id,

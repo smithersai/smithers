@@ -92,7 +92,9 @@ snapshotted before policy effects run, and a forged or stale `CredentialRef` is
 refused because the snapshotted name must still match the stored record. The
 refusal for a missing credential and the refusal for a denied one are
 deliberately indistinguishable, because telling an unauthorized caller which
-ids exist is itself a leak.
+ids exist is itself a leak. `get`, `resolve`, `rotate`, and `revoke` replace the
+policy's own `Unauthorized` with the missing-credential refusal and log the
+policy's message instead.
 
 ## What is stored, and what is not
 
@@ -119,6 +121,12 @@ Writes are compare-and-set on `version`. A writer that read version _n_ commits
 version _n + 1_; a concurrent writer that read the same _n_ is refused with
 `CredentialConflict` carrying both versions, rather than silently overwriting
 the winner.
+
+A writer can also pass the record it read as `previous`; the write then
+commits only while the stored ciphertext and nonce are still that record's.
+`rotate` always does, so a revoke followed by a create, which stores version 1
+again, refuses a rotation that read the revoked credential. A store adapter, or
+a wrapper around one, must pass `previous` through.
 
 `SqlCredentialStore` does the read and the write in one transaction, so the
 version a writer read and the row it guards cannot interleave.

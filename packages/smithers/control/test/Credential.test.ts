@@ -2,7 +2,7 @@
  * The credential contract: create, resolve, rotate, revoke, unauthorized
  * access, redaction, and encrypted persistence.
  */
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Redacted } from "effect"
 import { describe, expect, it } from "vitest"
 import { Unauthorized } from "../src/ControlError.ts"
 import * as Credential from "../src/Credential.ts"
@@ -79,6 +79,25 @@ const racingStore = (): CredentialStore.Service => {
           ? Effect.void
           : Effect.orDie(inner.write({ ...found.value, version: found.value.version + 1 })))
   })
+}
+
+/**
+ * A memory store that runs `interleave` once, right after the next read
+ * returns, and hands back the store and the slot to arm it.
+ */
+const interleavingStore = () => {
+  const inner = CredentialStore.makeMemory()
+  const slot: { interleave: Effect.Effect<unknown, unknown> | undefined } = { interleave: undefined }
+  const store = CredentialStore.make({
+    ...inner,
+    read: (id) =>
+      Effect.tap(inner.read(id), () => {
+        const run = slot.interleave
+        slot.interleave = undefined
+        return run === undefined ? Effect.void : Effect.orDie(run)
+      })
+  })
+  return { store, slot }
 }
 
 describe("Credential", () => {
@@ -256,6 +275,28 @@ describe("Credential", () => {
     expect(error.actualVersion).toBe(2)
   })
 
+  it("refuses an expected-secret rotation over a credential revoked and recreated after its read", async () => {
+    const outcome = await Effect.runPromise(Effect.gen(function*() {
+      const { store, slot } = interleavingStore()
+      const cipher = yield* WebCryptoCipher.make({ key: hostKey }).pipe(Effect.orDie)
+      const credentials = Credential.make({ store, cipher })
+      const reference = yield* created(credentials, "rt-0")
+      // Lands between `rotate`'s compare and its write, and stores version 1
+      // again under the same id and name, holding a secret never compared.
+      slot.interleave = Effect.andThen(credentials.revoke(reference), created(credentials, "recreated"))
+      const refused = yield* Effect.flip(
+        credentials.rotate(reference, Redacted.make("late"), { expected: Redacted.make("rt-0") })
+      )
+      const secret = yield* credentials.resolve(reference)
+      return { refused, secret: Redacted.value(secret), version: Option.getOrThrow(yield* store.read("exa")).version }
+    }))
+
+    expect(outcome.refused._tag).toBe("/control/CredentialConflict")
+    expect(outcome.refused).toMatchObject({ id: "exa", expectedVersion: 1, actualVersion: 1 })
+    expect(outcome.secret).toBe("recreated")
+    expect(outcome.version).toBe(1)
+  })
+
   it("refuses an expected-secret rotation over a record that does not open, without writing", async () => {
     const { credentials, store } = await Effect.runPromise(boundary())
     const reference = await Effect.runPromise(created(credentials, "rt-0"))
@@ -315,7 +356,7 @@ describe("Credential", () => {
     }))
 
     expect(seen).toEqual(["create", "resolve"])
-    expectUnauthorized(error, "resolve is denied")
+    expectUnauthorized(error, "Credential exa is not available to this caller")
   })
 
   it("resolves the reference snapshot authorized before a caller mutation", async () => {
@@ -451,31 +492,77 @@ describe("Credential", () => {
   })
 
   it("authorizes get against the stored reference without leaking missing ids", async () => {
-    const observed = await Effect.runPromise(Effect.gen(function*() {
-      const { credentials } = yield* boundary({
-        authorize: (operation, reference) => {
-          if (operation !== "get" || Option.isNone(reference) || reference.value.id !== "denied-id") {
-            return Effect.void
+    const logged: Array<unknown> = []
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const { credentials } = yield* boundary({
+          authorize: (operation, reference) => {
+            if (operation !== "get" || Option.isNone(reference) || reference.value.id !== "denied-id") {
+              return Effect.void
+            }
+            return Effect.fail(new Unauthorized({ message: "the host denies this reference" }))
           }
-          return Effect.fail(
-            new Unauthorized({ message: "Credential denied-id is not available to this caller" })
-          )
-        }
-      })
-      yield* credentials.create({ id: "denied-id", name: "Denied", secret: Redacted.make("denied") })
-      yield* credentials.create({ id: "allowed-id", name: "Allowed", secret: Redacted.make("allowed") })
-      const denied = yield* Effect.flip(credentials.get("denied-id"))
-      const allowed = yield* credentials.get("allowed-id")
-      const missing = yield* Effect.flip(credentials.get("missing-id"))
-      return { denied, allowed, missing }
-    }))
+        })
+        yield* credentials.create({ id: "denied-id", name: "Denied", secret: Redacted.make("denied") })
+        yield* credentials.create({ id: "allowed-id", name: "Allowed", secret: Redacted.make("allowed") })
+        const denied = yield* Effect.flip(credentials.get("denied-id"))
+        const allowed = yield* credentials.get("allowed-id")
+        const missing = yield* Effect.flip(credentials.get("missing-id"))
+        return { denied, allowed, missing }
+      }).pipe(
+        Effect.provide(Logger.layer([Logger.map(Logger.formatStructured, (entry) => {
+          logged.push(entry.annotations)
+        })], { mergeWithExisting: false }))
+      )
+    )
 
-    expectUnauthorized(observed.denied as unknown as Record<string, unknown>)
+    expectUnauthorized(
+      observed.denied as unknown as Record<string, unknown>,
+      "Credential denied-id is not available to this caller"
+    )
     expect(observed.allowed).toEqual({ id: "allowed-id", name: "Allowed" })
-    expectUnauthorized(observed.missing as unknown as Record<string, unknown>)
-    expect(observed.denied.message.replace("denied-id", "<id>"))
-      .toBe(observed.missing.message.replace("missing-id", "<id>"))
+    expectUnauthorized(
+      observed.missing as unknown as Record<string, unknown>,
+      "Credential missing-id is not available to this caller"
+    )
+    // The host keeps the policy's own reason; only the caller loses it.
+    expect(logged).toEqual([{ operation: "get", id: "denied-id", reason: "the host denies this reference" }])
   })
+
+  it.each(["resolve", "rotate", "revoke"] as const)(
+    "answers a %s the policy refuses exactly as one naming an absent id",
+    async (operation) => {
+      const observed = await Effect.runPromise(Effect.gen(function*() {
+        const { credentials, store } = yield* boundary({
+          authorize: (asked) =>
+            asked === operation
+              ? Effect.fail(new Unauthorized({ message: "the host denies this reference" }))
+              : Effect.void
+        })
+        const stored = yield* created(credentials)
+        const absent = { id: "nope", name: "Exa search" }
+        const run = (reference: Credential.CredentialRef) =>
+          operation === "resolve"
+            ? credentials.resolve(reference)
+            : operation === "rotate"
+            ? credentials.rotate(reference, Redacted.make("next"))
+            : credentials.revoke(reference)
+        const denied = yield* Effect.flip(run(stored))
+        const missing = yield* Effect.flip(run(absent))
+        return { denied, missing, record: Option.getOrThrow(yield* store.read("exa")) }
+      }))
+
+      expectUnauthorized(
+        observed.denied as unknown as Record<string, unknown>,
+        "Credential exa is not available to this caller"
+      )
+      expectUnauthorized(
+        observed.missing as unknown as Record<string, unknown>,
+        "Credential nope is not available to this caller"
+      )
+      expect(observed.record.version).toBe(1)
+    }
+  )
 
   it("still reports unavailable storage from the noop boundary", async () => {
     expectUnavailable(
@@ -609,6 +696,30 @@ describe("CredentialStore.layerNoop", () => {
       ),
       "credential encryption"
     )
+  })
+
+  it("refuses a memory-store write over a record recreated at the version it replaces", async () => {
+    const observed = await Effect.runPromise(Effect.gen(function*() {
+      const store = CredentialStore.makeMemory()
+      const first: CredentialStore.SealedRecord = {
+        id: "aba",
+        name: "Stored name",
+        ciphertext: "first-ciphertext",
+        nonce: "first-nonce",
+        version: 1,
+        updatedAtMs: 1
+      }
+      yield* store.write(first)
+      yield* store.remove("aba")
+      yield* store.write({ ...first, ciphertext: "second-ciphertext", nonce: "second-nonce" })
+      const refused = yield* Effect.flip(store.write({ ...first, ciphertext: "late", version: 2 }, first))
+      const recreated = Option.getOrThrow(yield* store.read("aba"))
+      yield* store.write({ ...first, ciphertext: "next", nonce: "next-nonce", version: 2 }, recreated)
+      return { refused, stored: Option.getOrThrow(yield* store.read("aba")) }
+    }))
+
+    expect(observed.refused).toMatchObject({ id: "aba", expectedVersion: 1, actualVersion: 1 })
+    expect(observed.stored).toMatchObject({ ciphertext: "next", version: 2 })
   })
 
   it("removes an unknown id from the memory store without failing", async () => {

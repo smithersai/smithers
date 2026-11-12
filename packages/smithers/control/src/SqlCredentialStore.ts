@@ -20,6 +20,7 @@ import { Effect, Layer, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { CredentialConflict, Unavailable } from "./ControlError.ts"
 import * as CredentialStore from "./CredentialStore.ts"
+import { sealsMatch } from "./internal/sealsMatch.ts"
 import { initial } from "./migrations/0001_control_tables.ts"
 
 interface Row {
@@ -83,18 +84,19 @@ export const make: Effect.Effect<
       Effect.mapError(unavailable("read"))
     )
 
-  // One write transaction, so the version this writer read and the row it
-  // guards cannot interleave with a concurrent rotation.
+  // One write transaction, so the version and sealed secret this writer read
+  // and the row it guards cannot interleave with a concurrent rotation.
   const write = (
-    record: CredentialStore.SealedRecord
+    record: CredentialStore.SealedRecord,
+    previous?: CredentialStore.SealedRecord | undefined
   ): Effect.Effect<void, Unavailable | CredentialConflict> =>
     writer.write(Effect.gen(function*() {
-      const rows = yield* sql<{ readonly version: number }>`
-        SELECT version FROM control_credentials WHERE id = ${record.id}
+      const rows = yield* sql<Pick<Row, "version" | "ciphertext" | "nonce">>`
+        SELECT version, ciphertext, nonce FROM control_credentials WHERE id = ${record.id}
       `
       const stored = rows[0]
       const actual = stored === undefined ? 0 : Number(stored.version)
-      if (actual !== record.version - 1) {
+      if (actual !== record.version - 1 || !sealsMatch(stored, previous)) {
         return yield* Effect.fail(
           new CredentialConflict({
             id: record.id,

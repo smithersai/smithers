@@ -12,17 +12,20 @@
  * - {@link CredentialStore} persists an opaque sealed record and enforces
  *   compare-and-set on writes, so concurrent rotations cannot interleave.
  *   `rotate` with `expected` extends that compare to the secret itself: the
- *   secret it checks and the version it writes over come from one read, so a
- *   writer that commits in between, in any process, is refused.
+ *   secret it checks and the sealed record it writes over come from one read,
+ *   so a writer that commits in between, in any process, is refused, including
+ *   a revoke followed by a create that stores the same version again.
  * - {@link CredentialCipher} seals and opens the secret under host-managed
  *   keys. `WebCryptoCipher` is the browser and Node adapter; a host with no
  *   secure key material fails with the typed `Unavailable`.
  *
- * Authorization is a host decision, injected as {@link Options.authorize}. A
- * reference is also authenticated on every operation: caller-owned fields are
- * snapshotted before policy effects run, and a caller cannot present a forged
- * or stale `CredentialRef` because the snapshotted name must still match the
- * stored record.
+ * Authorization is a host decision, injected as {@link Options.authorize}.
+ * `get`, `resolve`, `rotate`, and `revoke` answer a policy refusal with the
+ * same `Unauthorized` as an absent id, so a caller cannot tell which ids
+ * exist; the policy's own reason is logged. A reference is also authenticated
+ * on every operation: caller-owned fields are snapshotted before policy
+ * effects run, and a caller cannot present a forged or stale `CredentialRef`
+ * because the snapshotted name must still match the stored record.
  *
  * @since 0.1.0
  */
@@ -196,6 +199,20 @@ export const make = (options: Options): Credential => {
   const store = options.store
   const cipher = options.cipher
 
+  /** Runs the policy for one id, answering a refusal as {@link missing}. */
+  const authorizeId = (
+    operation: Operation,
+    reference: CredentialRef
+  ): Effect.Effect<void, Unauthorized> =>
+    authorize(operation, Option.some(reference)).pipe(
+      Effect.tapError((refusal) =>
+        Effect.logInfo("Credential policy refused a reference").pipe(
+          Effect.annotateLogs({ operation, id: reference.id, reason: refusal.message })
+        )
+      ),
+      Effect.mapError(() => missing(reference.id))
+    )
+
   /** Reads the record `reference` names, refusing a forged or stale one. */
   const authenticate = (
     operation: Operation,
@@ -203,7 +220,7 @@ export const make = (options: Options): Credential => {
   ): Effect.Effect<CredentialStore.SealedRecord, Unavailable | Unauthorized> =>
     Effect.gen(function*() {
       const snapshot = referenceOf(reference)
-      yield* authorize(operation, Option.some(snapshot))
+      yield* authorizeId(operation, snapshot)
       const record = yield* store.read(snapshot.id)
       if (Option.isNone(record)) return yield* Effect.fail(missing(snapshot.id))
       if (record.value.name !== snapshot.name) return yield* Effect.fail(missing(snapshot.id))
@@ -212,7 +229,8 @@ export const make = (options: Options): Credential => {
 
   const put = (
     record: CredentialStore.SealedRecord,
-    secret: Redacted.Redacted<string>
+    secret: Redacted.Redacted<string>,
+    previous?: CredentialStore.SealedRecord
   ): Effect.Effect<CredentialRef, Unavailable | CredentialConflict | InvalidInput> =>
     Effect.gen(function*() {
       if (!wellFormed(Redacted.value(secret))) {
@@ -223,7 +241,7 @@ export const make = (options: Options): Credential => {
       const context = cipherContextOf(record)
       const sealed = yield* cipher.seal(secret, context)
       const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
-      yield* store.write({ ...record, ...sealed, updatedAtMs: now })
+      yield* store.write({ ...record, ...sealed, updatedAtMs: now }, previous)
       return referenceOf(record)
     })
 
@@ -237,7 +255,7 @@ export const make = (options: Options): Credential => {
       const record = yield* store.read(id)
       if (Option.isNone(record)) return yield* Effect.fail(missing(id))
       const reference = referenceOf(record.value)
-      yield* authorize("get", Option.some(reference))
+      yield* authorizeId("get", reference)
       return reference
     }),
     create: Effect.fn("Credential.create")(function*(input) {
@@ -279,9 +297,9 @@ export const make = (options: Options): Credential => {
           )
         }
       }
-      // `put` writes over exactly the version read above, so the secret just
-      // compared is still the stored one when the write commits.
-      return yield* put({ ...record, version: record.version + 1 }, secret)
+      // `put` writes over exactly the sealed record read above, so the secret
+      // just compared is still the stored one when the write commits.
+      return yield* put({ ...record, version: record.version + 1 }, secret, record)
     }),
     revoke: Effect.fn("Credential.revoke")(function*(reference) {
       const record = yield* authenticate("revoke", reference)

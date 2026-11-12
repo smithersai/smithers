@@ -110,6 +110,23 @@ describe("SqlCredentialStore", () => {
     expect(error.actualVersion).toBe(2)
   })
 
+  it("refuses a write over a record removed and recreated at the version it replaces", async () => {
+    const observed = await withStore((store) =>
+      Effect.gen(function*() {
+        yield* store.write(record())
+        yield* store.remove("exa")
+        yield* store.write(record({ ciphertext: "cmVjcmVhdGVk", nonce: "b3RoZXI=" }))
+        const refused = yield* Effect.flip(store.write(record({ version: 2, ciphertext: "bG9zZXI=" }), record()))
+        const recreated = Option.getOrThrow(yield* store.read("exa"))
+        yield* store.write(record({ version: 2, ciphertext: "c2Vjb25k", nonce: "bmV4dA==" }), recreated)
+        return { refused, stored: Option.getOrThrow(yield* store.read("exa")) }
+      })
+    )
+
+    expect(observed.refused).toMatchObject({ id: "exa", expectedVersion: 1, actualVersion: 1 })
+    expect(observed.stored).toMatchObject({ ciphertext: "c2Vjb25k", version: 2 })
+  })
+
   it("refuses a first write that does not start at version 1", async () => {
     const error = await withStore((store) => Effect.map(Effect.exit(store.write(record({ version: 3 }))), squash))
     expect(error._tag).toBe("/control/CredentialConflict")

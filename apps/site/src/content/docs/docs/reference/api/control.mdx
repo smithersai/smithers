@@ -930,16 +930,19 @@ operation, so a forged or stale one is refused.
 | Export                  | Kind            | Signature                                                      |
 | ----------------------- | --------------- | -------------------------------------------------------------- |
 | `SealedRecord`          | interface       | `{ id; name; ciphertext; nonce; version; updatedAtMs }`        |
-| `Service`               | interface       | `{ list(); read(id); write(record); remove(id) }`              |
+| `Service`               | interface       | `{ list(); read(id); write(record, previous?); remove(id) }`   |
 | `CredentialStore`       | class           | Key `/control/CredentialStore`                                 |
 | `make`                  | function        | `(implementation: Service) => Service`                         |
 | `makeMemory`            | function        | `() => Service`. Process-local and browser-safe.               |
 | `layerMemory`           | layer           | `Layer<CredentialStore>`                                       |
 | `makeNoop`, `layerNoop` | function, layer | Every operation fails `Unavailable`. Accept partial overrides. |
 
-`write` commits `record` only if the stored version is `record.version - 1`,
-and fails `CredentialConflict` otherwise. Plaintext never reaches this
-boundary.
+`write` commits `record` only if the stored version is `record.version - 1`
+and, given `previous`, the stored ciphertext and nonce are still `previous`'s;
+it fails `CredentialConflict` otherwise. `Credential.rotate` passes the record
+it read, so a credential revoked and recreated at the same version refuses the
+rotation. An adapter or a wrapper around one must honor `previous`; dropping it
+reopens that race. Plaintext never reaches this boundary.
 
 ## CredentialCipher
 
