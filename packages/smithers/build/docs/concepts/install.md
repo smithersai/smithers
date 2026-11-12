@@ -286,18 +286,20 @@ While a credential is forwarded, the repository cannot choose how it travels.
 `.npmrc` settings `proxy`, `https-proxy`, `http-proxy`, `noproxy`,
 `strict-ssl`, `ca`, `cafile`, `cert`, and `local-address`, and any `registry`
 or `@scope:registry` that is not `https://`, are refused with
-`unsafe_configuration`. pnpm 10 also reads `httpsProxy`, `httpProxy`, and
-`strictSsl` from `pnpm-workspace.yaml`, where they outrank the environment, so
-`pnpm fetch` and `pnpm install` get `--config.proxy=`,
-`--config.https-proxy=<HTTPS_PROXY>`, `--config.http-proxy=<HTTP_PROXY>`,
-`--config.noproxy=<NO_PROXY>`, `--config.strict-ssl=true`, and `--config.ca=`.
-The proxy values come from the host environment (lowercase names too) or are
-empty, and they appear in the child's argument list.
+`unsafe_configuration`. The corresponding `pnpm-workspace.yaml` settings
+`proxy`, `httpsProxy`, `httpProxy`, `noProxy`, `strictSsl`, `ca`, `cafile`,
+`cert`, and `localAddress` are also refused, including quoted keys, aliases,
+and YAML merges. Collection-valued root keys and invalid YAML are refused
+without including their contents in the diagnostic. Package names inside catalogs and overrides are unaffected.
 
-Two gaps remain, and both need an attacker on the network path, not a server
-the repository names. A `pnpm-workspace.yaml` registry or a lockfile tarball URL
-may use `http://` for an allowed host, which sends the credential in cleartext.
-A `pnpm-workspace.yaml` `cafile` is not pinned.
+The operator's proxy values stay in the child environment (uppercase and
+lowercase names are forwarded); authenticated proxy URLs never enter pnpm's
+argument list. Only `--config.strict-ssl=true` and `--config.ca=` are pinned
+on the command line.
+
+A gap remains: a `pnpm-workspace.yaml` registry or a lockfile tarball URL may
+use `http://` for an allowed host, which sends the credential in cleartext.
+This requires an attacker on the network path.
 
 Only pnpm 10 and earlier expand `${NAME}` in a project `.npmrc`. pnpm 11
 ignores project-level placeholders with a warning, so the forwarded variable

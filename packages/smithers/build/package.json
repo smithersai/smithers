@@ -128,7 +128,8 @@
   "dependencies": {
     "@smthrs/crypto": "1.0.0-rc.18",
     "@smthrs/flow": "1.0.0-rc.18",
-    "@smthrs/plan": "1.0.0-rc.18"
+    "@smthrs/plan": "1.0.0-rc.18",
+    "yaml": "2.9.0"
   },
   "peerDependencies": {
     "effect": "4.1.1"

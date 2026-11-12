@@ -786,71 +786,179 @@ describe("PackageManager.storeRoot", () => {
 
   /**
    * pnpm 10 also reads `httpsProxy`, `httpProxy`, and `strictSsl` from
-   * `pnpm-workspace.yaml`, and there they outrank the environment. Only
-   * command-line settings outrank them, so a forwarded credential pins every
-   * transport setting there, from the operator's own variables.
+   * `pnpm-workspace.yaml`, under camelCase names and after decoding YAML
+   * quoting and escapes, and there they outrank the environment. With a
+   * forwarded credential they are refused like the `.npmrc` spellings, so the
+   * operator's proxy never has to be pinned on the command line.
    */
-  it("pins transport settings on the command line only while a credential is forwarded", async () => {
+  it.each([
+    ["https proxy", "httpsProxy: http://attacker.example:8080/"],
+    ["http proxy", "httpProxy: http://attacker.example:8080/"],
+    ["legacy proxy", "proxy: http://attacker.example:8080/"],
+    ["no proxy", "noProxy: \"*\""],
+    ["strict ssl", "strictSsl: false"],
+    ["ca", "ca: \"-----BEGIN CERTIFICATE-----\""],
+    ["cafile", "cafile: evil.pem"],
+    ["cert", "cert: \"-----BEGIN CERTIFICATE-----\""],
+    ["local address", "localAddress: 10.0.0.9"],
+    ["kebab-case key", "https-proxy: http://attacker.example:8080/"],
+    ["double-quoted key", "\"httpsProxy\": http://attacker.example:8080/"],
+    ["single-quoted key", "'httpsProxy': http://attacker.example:8080/"],
+    ["hex-escaped key", "\"https\\x50roxy\": http://attacker.example:8080/"],
+    ["unicode-escaped key", "\"https\\u0050roxy\": http://attacker.example:8080/"],
+    ["long unicode-escaped key", "\"https\\U00000050roxy\": http://attacker.example:8080/"],
+    ["explicit key", "? httpsProxy\n: http://attacker.example:8080/"],
+    ["tagged key", "!!str httpsProxy: http://attacker.example:8080/"],
+    ["anchored key", "&a httpsProxy: http://attacker.example:8080/"],
+    ["indented mapping", "  packages: []\n  httpsProxy: http://attacker.example:8080/"],
+    ["document start", "---\nhttpsProxy: http://attacker.example:8080/"],
+    ["flow mapping", "{ packages: [], httpsProxy: http://attacker.example:8080/ }"],
+    ["tagged flow mapping", "!!map {httpsProxy: http://attacker.example:8080/}"],
+    ["merged setting", "defaults: &transport {httpsProxy: http://attacker.example:8080/}\n<<: *transport"],
+    ["merged flow setting", "{defaults: &transport {httpsProxy: http://attacker.example:8080/}, <<: *transport}"],
+    ["aliased key", "defaults: &transport httpsProxy\n? *transport\n: http://attacker.example:8080/"],
+    ["quoted flow key", "{\"packages\":[],\"strictSsl\":false}"],
+    ["multi-line flow mapping", "{\n  packages: [],\n  'noProxy': '*'\n}"]
+  ])("refuses a pnpm-workspace.yaml transport setting beside a forwarded credential: %s", async (_label, text) => {
+    await withFixture("package-manager-workspace-transport", async (root) => {
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), "//registry.example/:_authToken=${GITHUB_TOKEN}\n", "utf8")
+      await Fs.writeFile(NodePath.join(root, "pnpm-workspace.yaml"), `${text}\n`, "utf8")
+      const executable = NodePath.join(root, "pnpm.mjs")
+      const marker = NodePath.join(root, "spawned")
+      await writeExecutable(
+        executable,
+        `import { writeFileSync } from "node:fs"\nwriteFileSync(${
+          JSON.stringify(marker)
+        }, String(process.env.GITHUB_TOKEN))`
+      )
+      const manager = await makePnpm(root, executable, {
+        environment: { PATH: process.env.PATH, GITHUB_TOKEN: "host-secret" }
+      })
+      await expect(Effect.runPromise(manager.version)).rejects.toMatchObject({
+        code: "unsafe_configuration",
+        message: expect.stringMatching(/pnpm-workspace\.yaml setting .* changes how a forwarded credential travels/)
+      })
+      await expect(Fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
+    })
+  })
+
+  /**
+   * Only the file's own settings count: a nested key is a package name or an
+   * override, and a quoted key is read as pnpm decodes it.
+   */
+  it.each([
+    ["catalog entry", "catalog:\n  proxy: ^1.0.0\n  ca: ^2.0.0"],
+    ["nested flow catalog", "{ catalog: { proxy: ^1.0.0 }, packages: [] }"],
+    ["package list", "packages:\n  - proxy\n  - cert"],
+    ["override", "overrides:\n  strictSsl: npm:ca@1.0.0"],
+    ["comment", "# httpsProxy: http://attacker.example:8080/\npackages: []"],
+    ["escaped backslash in key", "\"https\\\\Proxy\": []"],
+    ["escaped quote in key", "'https''Proxy': []"],
+    ["empty workspace", ""],
+    ["empty mapping", "{}"],
+    ["nested non-string key", "catalog:\n  false: ^1.0.0"],
+    ["block scalar body", "userAgent: |\n  httpsProxy: http://attacker.example:8080/"]
+  ])(
+    "accepts pnpm-workspace.yaml text that names a transport setting below the top level: %s",
+    async (_label, text) => {
+      await withFixture("package-manager-workspace-transport-nested", async (root) => {
+        await Fs.writeFile(NodePath.join(root, ".npmrc"), "//registry.example/:_authToken=${GITHUB_TOKEN}\n", "utf8")
+        await Fs.writeFile(NodePath.join(root, "pnpm-workspace.yaml"), `${text}\n`, "utf8")
+        const executable = NodePath.join(root, "pnpm.mjs")
+        await writeExecutable(executable, `console.log("11.21.0")`)
+        const manager = await makePnpm(root, executable, {
+          environment: { PATH: process.env.PATH, GITHUB_TOKEN: "host-secret" }
+        })
+        expect(await Effect.runPromise(manager.version)).toBe("11.21.0")
+      })
+    }
+  )
+
+  it.each([
+    "httpsProxy: [invalid-secret",
+    "\"\\UFFFFFFFF\": []",
+    "defaults: *unknown",
+    "? [httpsProxy]\n: http://attacker.example:8080/",
+    "key: &key [httpsProxy]\n? *key\n: http://attacker.example:8080/",
+    "defaults: &transport\n  ? [httpsProxy]\n  : http://attacker.example:8080/\n<<: *transport"
+  ])("refuses unsafe workspace keys and YAML without exposing their values: %s", async (text) => {
+    await withFixture("package-manager-workspace-invalid", async (root) => {
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), "//registry.example/:_authToken=${GITHUB_TOKEN}\n", "utf8")
+      await Fs.writeFile(NodePath.join(root, "pnpm-workspace.yaml"), text, "utf8")
+      const marker = NodePath.join(root, "spawned")
+      const executable = NodePath.join(root, "pnpm.mjs")
+      await writeExecutable(
+        executable,
+        `import { writeFileSync } from "node:fs"\nwriteFileSync(${JSON.stringify(marker)}, "")`
+      )
+      const manager = await makePnpm(root, executable, {
+        environment: { PATH: process.env.PATH, GITHUB_TOKEN: "host-secret" }
+      })
+      await expect(Effect.runPromise(manager.version)).rejects.toMatchObject({
+        code: "unsafe_configuration",
+        message: `${root}/pnpm-workspace.yaml cannot be safely parsed`
+      })
+      await expect(Fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
+    })
+  })
+
+  it("keeps a pnpm-workspace.yaml transport setting when no credential is forwarded", async () => {
+    await withFixture("package-manager-workspace-transport-plain", async (root) => {
+      await Fs.writeFile(
+        NodePath.join(root, "pnpm-workspace.yaml"),
+        "httpsProxy: http://proxy.example:8080/\nstrictSsl: false\n",
+        "utf8"
+      )
+      const executable = NodePath.join(root, "pnpm.mjs")
+      await writeExecutable(executable, `console.log("11.21.0")`)
+      const manager = await makePnpm(root, executable, { environment: { PATH: process.env.PATH } })
+      expect(await Effect.runPromise(manager.version)).toBe("11.21.0")
+    })
+  })
+
+  /**
+   * A proxy URL carries the operator's proxy password. In the environment only
+   * the process owner reads it; on the command line every local user reads it
+   * for the whole fetch (`ps`, `/proc/<pid>/cmdline`). The proxies therefore
+   * travel in the child environment, and only value-free TLS pins stay on the
+   * command line while a credential is forwarded.
+   */
+  it("keeps the operator's proxy off the command line while a credential is forwarded", async () => {
     await withFixture("package-manager-transport-pins", async (root) => {
       const executable = NodePath.join(root, "pnpm.mjs")
       await writeExecutable(
         executable,
         `import { appendFileSync } from "node:fs"\n` +
           `if (process.argv[2] === "--version") { process.stdout.write("11.21.0\\n"); process.exit(0) }\n` +
-          `appendFileSync("calls", JSON.stringify(process.argv.slice(2)) + "\\n")`
-      )
-      await Fs.writeFile(
-        NodePath.join(root, "pnpm-workspace.yaml"),
-        "httpsProxy: http://attacker.example:8080/\nstrictSsl: false\n"
+          `appendFileSync("calls", JSON.stringify({ args: process.argv.slice(2), env: process.env }) + "\\n")`
       )
       const calls = async () =>
         (await Fs.readFile(NodePath.join(root, "calls"), "utf8")).trim().split("\n")
-          .map((line) => JSON.parse(line) as Array<string>)
-      const pins = (args: Array<string>) => args.filter((arg) => arg.startsWith("--config."))
+          .map((line) => JSON.parse(line) as { args: Array<string>; env: Record<string, string> })
+      const pins = (call: { args: Array<string> }) => call.args.filter((arg) => arg.startsWith("--config."))
       await Effect.runPromise((await makePnpm(root, executable, { environment: { PATH: process.env.PATH } })).fetch)
       expect(pins((await calls())[0]!)).toEqual([])
       await Fs.rm(NodePath.join(root, "calls"))
       await Fs.writeFile(NodePath.join(root, ".npmrc"), "//registry.example/:_authToken=${GITHUB_TOKEN}\n", "utf8")
+      const proxy = "http://user:proxy-secret@operator.example:3128/"
       const operator = await makePnpm(root, executable, {
         environment: {
           PATH: process.env.PATH,
           GITHUB_TOKEN: "host-secret",
-          https_proxy: "http://operator.example:3128/",
+          https_proxy: proxy,
           NO_PROXY: "internal.example"
         }
       })
       await Effect.runPromise(operator.fetch)
       await Effect.runPromise(operator.link)
-      const unproxied = await makePnpm(root, executable, {
-        environment: { PATH: process.env.PATH, GITHUB_TOKEN: "host-secret" }
-      })
-      await Effect.runPromise(unproxied.fetch)
-      expect((await calls()).map(pins)).toEqual([
-        [
-          "--config.proxy=",
-          "--config.https-proxy=http://operator.example:3128/",
-          "--config.http-proxy=http://operator.example:3128/",
-          "--config.noproxy=internal.example",
-          "--config.strict-ssl=true",
-          "--config.ca="
-        ],
-        [
-          "--config.proxy=",
-          "--config.https-proxy=http://operator.example:3128/",
-          "--config.http-proxy=http://operator.example:3128/",
-          "--config.noproxy=internal.example",
-          "--config.strict-ssl=true",
-          "--config.ca="
-        ],
-        [
-          "--config.proxy=",
-          "--config.https-proxy=",
-          "--config.http-proxy=",
-          "--config.noproxy=",
-          "--config.strict-ssl=true",
-          "--config.ca="
-        ]
-      ])
+      const recorded = await calls()
+      expect(recorded).toHaveLength(2)
+      for (const call of recorded) {
+        expect(pins(call)).toEqual(["--config.strict-ssl=true", "--config.ca="])
+        expect(call.args.join(" ")).not.toContain("proxy-secret")
+        expect(call.env.https_proxy).toBe(proxy)
+        expect(call.env.NO_PROXY).toBe("internal.example")
+      }
     })
   })
 

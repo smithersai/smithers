@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- With a forwarded `.npmrc` credential, `fetch` and `link` no longer put the
+  operator's proxy URL, password included, on the pnpm command line, where every
+  local user could read it. The proxy travels in the child environment, and
+  `pnpm-workspace.yaml` proxy, TLS, and CA settings are refused with
+  `unsafe_configuration`, as the `.npmrc` spellings already were.
 - `S.nodeModules(directory)` declares an installed dependency tree as a target
   input. The directory's `package.json` and lockfiles key the target, and a
   confined tool may read its `node_modules`. A tool that resolves modules from

@@ -37,6 +37,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
+import * as Yaml from "yaml"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
 import * as Diagnostics from "./internal/diagnostic.ts"
 import { normalizePlatform } from "./internal/platform.ts"
@@ -862,10 +863,13 @@ const registrySetting = /^(?:@[^:]+:)?registry$/i
  * The environment and transport pins a pnpm child runs with.
  *
  * `transportArgs` is empty unless `.npmrc` forwards a credential. Then it pins
- * every proxy, TLS, and CA setting on the command line, which outranks both
- * `.npmrc` and `pnpm-workspace.yaml` (pnpm 10 reads `httpsProxy`, `httpProxy`,
- * and `strictSsl` from the latter). The proxies are the operator's own
- * `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`, or none.
+ * TLS verification and an empty CA on the command line, which outranks both
+ * `.npmrc` and `pnpm-workspace.yaml`. The proxies are the operator's own
+ * `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY` in `env`, or none: a proxy URL
+ * carries the proxy password, which only the process owner reads from the
+ * environment but every local user reads from the command line. The
+ * repository's own proxy settings are refused instead, in `.npmrc` and in
+ * `pnpm-workspace.yaml` alike.
  */
 interface ManagerEnvironment {
   readonly env: Record<string, string>
@@ -888,6 +892,14 @@ const workspacePlaceholder = (text: string): boolean =>
   /\\(?:x24|u0024|U00000024)/i.test(text) ||
   /\$(?:\s|\\\s)*(?:\{|\\(?:x7b|u007b|U0000007b))/i.test(text)
 
+/**
+ * `pnpm-workspace.yaml` settings that choose where, or how safely, a request
+ * travels: the camelCase names pnpm reads from that file, and the `.npmrc`
+ * spellings beside them.
+ */
+const workspaceTransportSetting =
+  /^(?:proxy|https?[-_]?proxy|no[-_]?proxy|strict[-_]?ssl|ca|cafile|cert|local[-_]?address)$/i
+
 /** Selects only bootstrap, network, and project-declared credential variables. */
 const managerEnvironment = (
   fs: FileSystem.FileSystem,
@@ -909,12 +921,10 @@ const managerEnvironment = (
     const workspacePresent = yield* fs.exists(workspacePath).pipe(
       Effect.mapError((cause) => unreadable("manifest_unreadable", workspacePath, cause))
     )
-    if (
-      workspacePresent &&
-      workspacePlaceholder(
-        yield* boundedText(fs, "manifest_unreadable", options.projectRoot, workspacePath, maximumLockfileBytes)
-      )
-    ) {
+    const workspace = workspacePresent
+      ? yield* boundedText(fs, "manifest_unreadable", options.projectRoot, workspacePath, maximumLockfileBytes)
+      : ""
+    if (workspacePlaceholder(workspace)) {
       return yield* Effect.fail(
         new PackageManagerError({
           code: "unsafe_configuration",
@@ -950,6 +960,37 @@ const managerEnvironment = (
               code: "unsafe_configuration",
               message: `${path} setting ${name} changes how a forwarded credential travels; ` +
                 "with a credential placeholder, registries must be https and proxy and TLS settings come from the host"
+            })
+          )
+        }
+      }
+      // Decode quoted keys, aliases and merge keys before checking the settings
+      // pnpm reads. Parser diagnostics can contain source values, so discard them.
+      const unsafeWorkspace = () =>
+        new PackageManagerError({
+          code: "unsafe_configuration",
+          message: `${workspacePath} cannot be safely parsed`
+        })
+      const keys = yield* Effect.try({
+        try: () => {
+          const settings: unknown = Yaml.parse(workspace, { merge: true, mapAsMap: true, logLevel: "error" })
+          if (!(settings instanceof Map)) return []
+          // pnpm coerces collection keys differently. Inspect their original
+          // types so a sequence key cannot become a proxy setting in pnpm.
+          return Array.from(settings.keys(), (key: unknown) => {
+            if (typeof key !== "string") throw unsafeWorkspace()
+            return key
+          })
+        },
+        catch: unsafeWorkspace
+      })
+      for (const key of keys) {
+        if (workspaceTransportSetting.test(key)) {
+          return yield* Effect.fail(
+            new PackageManagerError({
+              code: "unsafe_configuration",
+              message: `${workspacePath} setting ${key} changes how a forwarded credential travels; ` +
+                "with a credential placeholder, proxy and TLS settings come from the host"
             })
           )
         }
@@ -995,21 +1036,7 @@ const managerEnvironment = (
       if (search === "") delete env.PATH
       else env.PATH = search
     }
-    if (referenced.size === 0) return { env, transportArgs: [] }
-    const hostValue = (...names: ReadonlyArray<string>) =>
-      names.map((name) => Validate.sourceValue(source, name, windows)).find((value) => value !== undefined) ?? ""
-    const httpsProxy = hostValue("HTTPS_PROXY", "https_proxy")
-    return {
-      env,
-      transportArgs: [
-        "--config.proxy=",
-        `--config.https-proxy=${httpsProxy}`,
-        `--config.http-proxy=${hostValue("HTTP_PROXY", "http_proxy") || httpsProxy}`,
-        `--config.noproxy=${hostValue("NO_PROXY", "no_proxy")}`,
-        "--config.strict-ssl=true",
-        "--config.ca="
-      ]
-    }
+    return { env, transportArgs: referenced.size === 0 ? [] : ["--config.strict-ssl=true", "--config.ca="] }
   })
 
 /** Constructs a child that receives only explicitly selected capabilities. */

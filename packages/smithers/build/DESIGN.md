@@ -143,9 +143,12 @@ reads `SMITHERS_NPM_CREDENTIAL_HOSTS`), because the repository writes that host.
 `.npmrc` is parsed the way pnpm's `ini` decoder parses it (`\r` line breaks,
 `JSON.parse` for quoted values), because any divergence hides a setting. While
 a credential is forwarded, project proxy, TLS, and CA settings and non-https
-registries are refused, and fetch and link pin those settings on the command
-line to the operator's values, the only source that outranks
-`pnpm-workspace.yaml` in pnpm 10.
+registries are refused, in `.npmrc` and under their camelCase names in
+`pnpm-workspace.yaml` (pnpm 10 reads them from both). The operator's proxies
+travel in the child environment only: a proxy URL carries the proxy password,
+which every local user reads from a command line but only the process owner
+reads from the environment. Fetch and link pin only `strict-ssl=true` and an
+empty `ca` on the command line.
 Process-control variable names are refused. pnpm hooks are pinned to the measured default hook file
 (`.pnpmfile.mjs`, else `.pnpmfile.cjs`)
 (`--pnpmfile`, `--global-pnpmfile=`), or disabled with `--ignore-pnpmfile`.
