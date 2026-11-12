@@ -101,7 +101,9 @@ const evaluate = (directory: string, order: Order, using: string = resolver) =>
   ], {
     encoding: "utf8",
     cwd: directory,
-    env: { ...process.env, VIBELANG_CACHE_DIR: Path.join(directory, ".cache"), VIBELANG_DISABLE_CACHE: "" },
+    // The runner exports its own preloads (vibelang/register) through NODE_OPTIONS;
+    // each case decides what the child loads, so the child inherits none of them.
+    env: { ...process.env, NODE_OPTIONS: "", VIBELANG_CACHE_DIR: Path.join(directory, ".cache"), VIBELANG_DISABLE_CACHE: "" },
     timeout: 60_000
   })
 
