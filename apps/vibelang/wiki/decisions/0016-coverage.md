@@ -2504,6 +2504,13 @@ Which Container each test in `test/sandboxProbe.workerd.test.vibe` runs on:
 `test/sandboxGateway.workerd.test.vibe` and `bench/sandbox-objects.bench.vibe` stay on the benchmark host's memory
 Container: the bench repeats calls no recording holds, and the gateway file asks refusals of bindings, not a box.
 
+**The first recording run** (2026-11-12, main `93a77a10`, lead) passed four of five scripts. `deadline` failed: the
+probe's sweep called `alarm` on the account over RPC, which workerd refuses (decision 0024, "Sweep"). The workerd host
+had sent that call as a fetch, so it never saw the refusal. Now `AccountHost` (`test/workerd/sandbox-probe.vibe`)
+extends workerd's `DurableObject` and the probe reaches it over native RPC through a stub built like Alchemy's
+`makeRpcStub`. On the old sweep the workerd `deadline` test fails with the live run's answer (`running: true, status:
+503`); the sweep now asks the account's `meter`, and it passes.
+
 **`leaseFor`'s `?? now`** (`worker/sandboxProbeFetch.vibe:43`, a lease for a machine whose owner is no probe owner) is
 reached in workerd: the probe host's `/clamped/<name>` route sends a lease through `leaseClamped` for `person-1/live`,
 which is clamped to the one-second floor, and a command 1.1 s later is refused `lease-expired`.

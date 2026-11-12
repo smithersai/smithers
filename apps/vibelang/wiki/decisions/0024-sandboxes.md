@@ -139,9 +139,14 @@ suite (LiveFactory) ── Bearer token, x-vibelang-probe-owner: probe-<deadline
      is the leftover sweeper; it needs no client, so a killed suite leaves nothing running past the deadline.
   3. Every lease is clamped to the deadline, so Cloudflare's inactivity timeout stops the Container even if no alarm
      runs.
-- **Sweep.** `POST /api/probe/sweep` stops the owner's running generation before the deadline, or runs its alarm after
-  it, then answers the Container's own state through the machine's `status` operation, which reads `running` whatever
-  the generation. A sweep it cannot finish answers 503, which the suite counts as still running.
+- **Sweep.** `POST /api/probe/sweep` stops the owner's running generation before the deadline, or asks the account's
+  `meter` after it (what its alarm runs), then answers the Container's own state through the machine's `status`
+  operation, which reads `running` whatever the generation. A sweep it cannot finish answers 503, which the suite
+  counts as still running. The sweep never calls `alarm` on the account: workerd refuses that name over RPC ("'alarm'
+  is a reserved method and cannot be called over RPC"), because it is the object's alarm handler. The first live run
+  of the `deadline` script (2026-11-12, main `93a77a10`) answered 503 for that reason; `meter` fixes it, and the
+  workerd host now reaches its accounts over native RPC, as Alchemy's stub does, so the workerd suite fails the same way
+  if a caller uses `alarm` again.
 - **Suite.** `test/support/sandboxesLive.vibe` starts, writes `keep.txt`, stops (checkpoint), starts (restore), reads
   the file back, stops, checks the metered minutes (used above zero, never above the run's wall time, remaining the
   allowance left rounded up) and sweeps. `pnpm test:sandboxes-live` runs it against the stage; it fails, never skips,

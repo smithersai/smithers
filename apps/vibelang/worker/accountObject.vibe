@@ -24,6 +24,11 @@ export service SandboxGateway { readonly gateway: Gateway<RuntimeContext> }
 type Answer = { readonly ok: true; readonly snapshot: SandboxSnapshot; readonly output: string } | { readonly ok: false; readonly refusal: string; readonly reason?: string }
 export interface AccountShape {
   run(owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string): Answer!!RuntimeContext
+  /**
+   * The SandboxMeter flow over every running generation, as the alarm runs it. A caller outside the object asks for
+   * this: workerd refuses `alarm` over RPC, a name it reserves for the alarm handler.
+   */
+  meter(): void!!RuntimeContext
   alarm(): void!!RuntimeContext
 }
 type Named<Shape> = Pick<Cloudflare.DurableObject<Shape>, "getByName">
@@ -46,6 +51,11 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
     const host = try Effect.provide(Sandboxes.open(state.raw.storage, machines), policy)
     const id = try Effect.orDie(Effect.try(() => state.id.toString()))
     const gate = try Semaphore.make(1)
+    const meter = effect () => {
+      // Arm the retry BEFORE work: a failed container stop must not strand a running machine.
+      try promise(() => state.raw.storage.setAlarm(Date.now() + 1000))
+      try Semaphore.withPermits(gate, 1)(Effect.ignore(Sandboxes.execute(id, state.raw.storage, host, "meter", "", `alarm/${Date.now()}`, 0, "")))
+    }
     return {
       run: effect (owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
         const work = effect {
@@ -59,11 +69,8 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
         // A failed stop is still running in the persisted ledger; no success receipt is returned.
         return (serialized(kind) ? Semaphore.withPermits(gate, 1)(work) : work) catch (error) => error._tag === "Refused" ? { ok: false as const, refusal: error.refusal } : { ok: false as const, refusal: "unavailable", reason: failureReason(error) }
       },
-      alarm: effect () => {
-        // Arm the retry BEFORE work: a failed container stop must not strand a running machine.
-        try promise(() => state.raw.storage.setAlarm(Date.now() + 1000))
-        try Semaphore.withPermits(gate, 1)(Effect.ignore(Sandboxes.execute(id, state.raw.storage, host, "meter", "", `alarm/${Date.now()}`, 0, "")))
-      },
+      meter,
+      alarm: meter,
     }
   }
 }

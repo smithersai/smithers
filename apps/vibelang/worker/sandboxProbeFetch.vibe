@@ -89,8 +89,9 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 
 /**
  * Stops what a probe owner left running and answers whether its container still runs. Before the deadline it stops the
- * running generation through the account's Stop flow; after it, the account's alarm runs SandboxMeter, which stops
- * every generation of an owner who may no longer start. The answer is the container's own state, not the ledger's.
+ * running generation through the account's Stop flow; after it, the account's meter (what its alarm runs) runs
+ * SandboxMeter, which stops every generation of an owner who may no longer start. Never `account.alarm()`: workerd
+ * refuses that name over RPC. The answer is the container's own state, not the ledger's.
  */
 export effect function sweep(accounts: Named<AccountShape>, machines: Named<MachineShape>, owner: string) {
   const account = try Effect.try(() => accounts.getByName(owner))
@@ -98,7 +99,7 @@ export effect function sweep(accounts: Named<AccountShape>, machines: Named<Mach
   if (admitted(owner, now)) {
     const read = try account.run(owner, "read", PROBE_CONVERSATION, `sweep-read/${now}`, 0, "")
     if (read.ok && read.snapshot.status === "running") try account.run(owner, "stop", PROBE_CONVERSATION, `sweep/${read.snapshot.generation}`, read.snapshot.generation, "")
-  } else try account.alarm()
+  } else try account.meter()
   const machine = try Effect.try(() => machines.getByName(`${owner}/${PROBE_CONVERSATION}`))
   const status = try machine.apply("status", 0, "", "")
   return { running: stillRunning(status.ok, status.output) }

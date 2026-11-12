@@ -5,7 +5,8 @@
 // in-memory Container recorded the way the deployed probe records (worker/sandboxProbeContainer.vibe).
 // test/sandboxProbe.workerd.test.vibe runs the real-Container suite against it. `/machine/<name>` reaches a machine
 // object directly, `/clamped/<name>` reaches it through the probe's lease clamp, and the `x-host-fault:
-// account-binding` and `machine-binding` headers break the probe's account and machine bindings.
+// account-binding` and `machine-binding` headers break the probe's account and machine bindings. The probe reaches its
+// accounts over workerd's native RPC, as Alchemy's Durable Object stub does deployed.
 import * as ContainerRecording from "@smthrs/testing/ContainerRecording"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -18,7 +19,16 @@ import { refuseBinding } from "../support/refuseBinding.ts"
 
 interface State { readonly id: { toString(): string }; readonly storage: unknown }
 interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(url: string, init?: RequestInit): Promise<Response> } }
-interface Env { readonly MACHINE: Namespace; readonly ACCOUNT: Namespace }
+type Methods = Record<string, (...args: Array<unknown>) => Promise<unknown>>
+/**
+ * workerd's Durable Object base class: native RPC reaches only a class that extends it. Imported when the module loads,
+ * by a name the bundle leaves to workerd, because the app project this host compiles in has no Cloudflare types
+ * (worker/tsconfig.json has them).
+ */
+type ObjectBase = new <E>(ctx: State, env: E) => { readonly ctx: State; readonly env: E }
+const WORKERS = "cloudflare:workers"
+const { DurableObject } = (await import(WORKERS)) as { readonly DurableObject: ObjectBase }
+interface Env { readonly MACHINE: Namespace; readonly ACCOUNT: { getByName(name: string): Methods } }
 type Box = ContainerRecording.Container<unknown>
 type Apply = [string, number, string, string]
 /** The Container a machine reaches. `max`: how many calls `record` keeps (the probe's MAX_CALLS when absent). */
@@ -39,13 +49,22 @@ function machines(env: Env, broken = false) {
     }),
   }
 }
-/** `broken`: the account binding throws, as workerd's does when the binding is missing. */
+error RpcCallError { method: string; cause: unknown }
+/**
+ * Account objects as Alchemy's Durable Object stub reaches them (`makeRpcStub`, @alchemy.run/cloudflare
+ * src/Workers/Rpc.ts): any method, by name, over workerd's native RPC, a rejection failing as RpcCallError. So a name
+ * workerd reserves for a handler (`alarm`) fails here as it does deployed. `broken`: the account binding throws, as
+ * workerd's does when the binding is missing.
+ */
 function accounts(env: Env, broken = false) {
   return {
-    getByName: (owner: string) => broken ? refuseBinding() : ({
-      run: (...args: Array<unknown>) => post(env.ACCOUNT, owner, "run", args),
-      alarm: () => post(env.ACCOUNT, owner, "alarm", []),
-    }),
+    getByName: (owner: string) => {
+      if (broken) return refuseBinding()
+      const stub = env.ACCOUNT.getByName(owner)
+      return new Proxy({}, {
+        get: (_target, method) => typeof method !== "string" ? undefined : (...args: Array<unknown>) => tryPromise({ try: () => stub[method]!(...args), catch: (cause) => new RpcCallError({ method, cause }) }),
+      })
+    },
   }
 }
 
@@ -97,17 +116,17 @@ export class MachineHost {
   }
 }
 
-export class AccountHost {
+/** The account object over native RPC: its shape's methods, and `alarm` as workerd's alarm handler only. */
+export class AccountHost extends DurableObject<Env> {
   readonly api: ReturnType<typeof this.build>
-  constructor(readonly state: State, readonly env: Env) { this.api = this.build() }
-  build() { return runPromise(Effect.provide(accountObject({ id: this.state.id, raw: this.state } as never, leaseClamped(machines(this.env) as never) as never, identity), runtime)) }
-  async alarm(): Promise<void> { await runPromise(Effect.provide((await this.api).alarm(), runtime)) }
-  async fetch(request: Request): Promise<Response> {
-    const api = await this.api
-    if (new URL(request.url).pathname === "/alarm") return json(await runPromise(Effect.provide(api.alarm(), runtime)) ?? null)
-    const args = await request.json() as [string, "read" | "start" | "stop" | "command", string, string, number, string]
-    return json(await runPromise(Effect.provide(api.run(...args), runtime)))
+  constructor(ctx: State, env: Env) {
+    super(ctx, env)
+    this.api = this.build()
   }
+  build() { return runPromise(Effect.provide(accountObject({ id: this.ctx.id, raw: this.ctx } as never, leaseClamped(machines(this.env) as never) as never, identity), runtime)) }
+  async run(...args: [string, "read" | "start" | "stop" | "command", string, string, number, string]) { return runPromise(Effect.provide((await this.api).run(...args), runtime)) }
+  async meter(): Promise<void> { await runPromise(Effect.provide((await this.api).meter(), runtime)) }
+  async alarm(): Promise<void> { await runPromise(Effect.provide((await this.api).alarm(), runtime)) }
 }
 
 export default {
