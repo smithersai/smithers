@@ -199,10 +199,9 @@ export function IssuesScreen() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const to = actions.edit(write.id)
+                  onClick={() => void actions.edit(write.id).then((to) => {
                     if (to !== undefined) void navigate({ href: to })
-                  }}
+                  })}
                 >
                   {EDIT}
                 </Button>

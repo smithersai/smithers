@@ -157,22 +157,22 @@ export const open = (owner: string, name: string, number?: number, writeId?: str
     })
   }).pipe(Effect.orDie)
 
-/** Changes draft `key`, made empty first if the device has none. */
+/** Changes draft `key`, made empty first if the device has none. Answers the change's transaction. */
 const changeDraft = (key: string, change: Partial<Omit<Draft, "id">>) =>
   Effect.gen(function* () {
     const { drafts } = yield* IssuesStore
-    if (Option.isNone(yield* drafts.get(key))) yield* drafts.insert({ id: key, title: "", body: "", ...change })
-    else yield* drafts.update(key, (draft) => void Object.assign(draft, change))
+    if (Option.isNone(yield* drafts.get(key))) return yield* drafts.insert({ id: key, title: "", body: "", ...change })
+    return yield* drafts.update(key, (draft) => void Object.assign(draft, change))
   }).pipe(Effect.orDie)
 
 export const setNewTitle = (owner: string, name: string, title: string) =>
-  changeDraft(newDraftKey(repoId(owner, name)), { title })
+  Effect.asVoid(changeDraft(newDraftKey(repoId(owner, name)), { title }))
 
 export const setNewBody = (owner: string, name: string, body: string) =>
-  changeDraft(newDraftKey(repoId(owner, name)), { body })
+  Effect.asVoid(changeDraft(newDraftKey(repoId(owner, name)), { body }))
 
 export const setCommentDraft = (owner: string, name: string, number: number, body: string) =>
-  changeDraft(commentDraftKey(repoId(owner, name), number), { body })
+  Effect.asVoid(changeDraft(commentDraftKey(repoId(owner, name), number), { body }))
 
 /** A new issue's draft as `issue/create` takes it: a title that isn't blank, and both within GitHub's limits. */
 export const newIssueOf = (draft: Draft | undefined) => {
@@ -320,7 +320,8 @@ export const pauseTriage = (owner: string, name: string) =>
 /**
  * Edit (`edit`) or Discard on a write that wasn't sent: Edit puts its text back in its draft first. The write goes from
  * the device. Answers where its draft is edited: the new-issue form, or the issue's page; nothing for a write the
- * device doesn't have.
+ * device doesn't have. The write's recovery row is its text's only durable copy, so Edit removes it only once the
+ * device has stored the draft; a draft the device couldn't store leaves the write Not sent, and Edit answers nothing.
  */
 const handle = (writeId: string, action: "edit" | "discard") =>
   Effect.gen(function* () {
@@ -332,11 +333,16 @@ const handle = (writeId: string, action: "edit" | "discard") =>
     const [owner, name] = write.repo.split("/") as [string, string]
     const created = write.op === "issue/create"
     if (action === "edit") {
-      yield* created
+      const draft = created
         ? changeDraft(newDraftKey(write.repoId), { title: write.title, body: write.body })
         : changeDraft(commentDraftKey(write.repoId, write.number), { body: write.body })
-    }
-    yield* Effect.ignore(requested.delete(writeId))
+      const stored = yield* Effect.result(Effect.flatMap(draft, (transaction) => transaction.persisted))
+      if (stored._tag === "Failure") {
+        yield* Effect.logWarning("issues.pending").pipe(Effect.annotateLogs({ writeId, op: write.op, action, outcome: "storage_failed", feature: "issues" }))
+        return undefined
+      }
+      yield* Effect.ignore(Effect.flatMap(requested.delete(writeId), (transaction) => transaction.persisted))
+    } else yield* Effect.ignore(requested.delete(writeId))
     yield* Metric.update(Metric.withAttributes(pendingActions, { action }), 1)
     yield* Effect.logInfo("issues.pending").pipe(Effect.annotateLogs({ writeId, op: write.op, action, feature: "issues" }))
     return created ? newIssuePath(owner, name) : issuePath(owner, name, write.number)

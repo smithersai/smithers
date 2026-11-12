@@ -63,10 +63,9 @@ export function NewIssueScreen() {
           : notSent
           ? (
             <Card><CardContent>
-              <EmptyState title="Not sent" action={<>{retryable ? <Button onClick={() => void actions.retryWrite(writeId)}>Retry</Button> : null}<Button onClick={() => {
-                const href = actions.edit(writeId)
+              <EmptyState title="Not sent" action={<>{retryable ? <Button onClick={() => void actions.retryWrite(writeId)}>Retry</Button> : null}<Button onClick={() => void actions.edit(writeId).then((href) => {
                 if (href !== undefined) void navigate({ href })
-              }}>Edit</Button></>} />
+              })}>Edit</Button></>} />
             </CardContent></Card>
           )
           : (

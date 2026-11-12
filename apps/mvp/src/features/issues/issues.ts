@@ -101,8 +101,8 @@ export interface IssuesActions {
   readonly comment: (owner: string, name: string, number: number) => Promise<boolean>
   /** Discard on a write that wasn't sent. */
   readonly discard: (writeId: string) => void
-  /** Edit on a write that wasn't sent: the path where its text is back in a draft. */
-  readonly edit: (writeId: string) => string | undefined
+  /** Edit on a write that wasn't sent: the path where its text is back in a draft, once the device stored that draft. */
+  readonly edit: (writeId: string) => Promise<string | undefined>
   /** Accept or Not accepted on an issue. */
   readonly triage: (owner: string, name: string, number: number, decision: TriageDecision) => Promise<boolean>
   /** Run triage again on an issue. */
@@ -160,7 +160,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           retryWrite: (writeId) => promise(retryWrite(writeId)),
           comment: (owner, name, number) => promise(comment(owner, name, number)),
           discard: (writeId) => run(discard(writeId)),
-          edit: (writeId) => run(edit(writeId)),
+          edit: (writeId) => promise(edit(writeId)),
           triage: (owner, name, number, decision) => promise(triage(owner, name, number, decision)),
           runTriageAgain: (owner, name, number) => promise(runTriageAgain(owner, name, number)),
           enableTriage: (owner, name) => promise(enableTriage(owner, name)),

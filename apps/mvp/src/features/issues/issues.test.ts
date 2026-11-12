@@ -5,7 +5,7 @@ import { TodosStore } from "../todos/store"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { resumeAdmissions } from "../../resumeAdmissions"
 import { reloadAfter } from "../../test/reloadTiming"
-import { comment as commentAction, create as createAction, open as openAction, retryWrite, search as searchAction, triage as triageAction } from "./actions"
+import { comment as commentAction, create as createAction, edit as editAction, open as openAction, retryWrite, search as searchAction, triage as triageAction } from "./actions"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import { replaceRole, RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
@@ -1226,12 +1226,12 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
     expect(tab.count(sends, { op: "issue/create", outcome: "refused" })).toBe(1)
     expect(await server(tab.api).writes()).toEqual([])
 
-    expect(tab.actions.edit(writeId)).toBe(newIssuePath(OWNER, NAME))
+    expect(await tab.actions.edit(writeId)).toBe(newIssuePath(OWNER, NAME))
     expect(tab.store.drafts.tanstack.get(newDraftKey(REPO_ID))).toMatchObject({ title: "Please fix", body: "Details" })
     expect(tab.list().notSent).toEqual([])
     expect(tab.count(pendingActions, { action: "edit" })).toBe(1)
     // A write the device no longer has: nothing to edit or discard.
-    expect(tab.actions.edit(writeId)).toBeUndefined()
+    expect(await tab.actions.edit(writeId)).toBeUndefined()
     tab.actions.discard(writeId)
     expect(tab.count(pendingActions, { action: "discard" })).toBe(0)
   }, WITHIN)
@@ -1257,12 +1257,47 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
     const [first, second] = tab.comments()
     await tab.actions.retryWrite(first!.id)
 
-    expect(tab.actions.edit(second!.id)).toBe(issuePath(OWNER, NAME, 4))
+    expect(await tab.actions.edit(second!.id)).toBe(issuePath(OWNER, NAME, 4))
     expect(tab.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 4))).toMatchObject({ body: "Second" })
     tab.actions.discard(first!.id)
     await until(() => expect(tab.comments()).toEqual([]))
     expect(tab.count(pendingActions, { action: "discard" })).toBe(1)
     expect(await server(tab.api).writes()).toEqual([])
+  }, WITHIN)
+
+  test("Edit whose draft the device can't store keeps the refused comment Not sent, through a reload", async () => {
+    const client = faultyClient()
+    const opened = await open()
+    await server(opened.api).seed(4, "Flaky test")
+    const host = nodeDevice({ agent: opened.api })
+    const tab = await another(opened.api, { host, replace: client.layer })
+    await tab.actions.open(OWNER, NAME, 4)
+    client.next(409)
+    tab.actions.setCommentDraft(OWNER, NAME, 4, "Only copy")
+    await tab.actions.comment(OWNER, NAME, 4)
+    await until(() => expect(tab.comments()).toEqual([expect.objectContaining({ body: "Only copy", pending: "not_sent", reason: "Conflict" })]))
+    const refused = tab.comments()[0]!
+    const real = tab.store.drafts
+    const full = <E, R>(change: Effect.Effect<Collection.Transaction, E, R>) =>
+      Effect.map(change, (transaction) => ({ ...transaction, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })) }))
+    const drafts = {
+      ...real,
+      insert: (row: Parameters<typeof real.insert>[0]) => full(real.insert(row)),
+      update: (key: string, recipe: Parameters<typeof real.update>[1]) => full(real.update(key, recipe)),
+    }
+    // The device couldn't store the draft: the recovery row stays, so Edit goes nowhere.
+    expect(await tab.runtime.runPromise(editAction(refused.id).pipe(Effect.provideService(IssuesStore, { ...tab.store, drafts })))).toBeUndefined()
+    expect(tab.store.requested.tanstack.get(refused.id)).toMatchObject({ body: "Only copy", status: "not_sent" })
+    expect(tab.count(pendingActions, { action: "edit" })).toBe(0)
+    await tab.runtime.dispose()
+    runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+    const restored = await another(opened.api, { host, replace: client.layer })
+    await restored.actions.open(OWNER, NAME, 4)
+    await until(() => expect(restored.comments()).toEqual([expect.objectContaining({ id: refused.id, body: "Only copy", pending: "not_sent", editable: true })]))
+    // With storage back, Edit stores the draft, then the recovery row goes.
+    expect(await restored.actions.edit(refused.id)).toBe(issuePath(OWNER, NAME, 4))
+    expect(restored.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 4))).toMatchObject({ body: "Only copy" })
+    expect(restored.store.requested.tanstack.get(refused.id)).toBeUndefined()
   }, WITHIN)
 
   test("a write GitHub's flow settled refused or failed turns Not sent with its failure", async () => {
