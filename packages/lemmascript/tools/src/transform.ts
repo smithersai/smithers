@@ -14,7 +14,7 @@ import { parseTsType } from "./types.js";
 import { freshName } from "./names.js";
 import { builtinSpec } from "./builtins.js";
 import { isFalsyCapableTy } from "./condition-facts.js";
-import { declOf, declOfKind, declOfTy, unionDeclOfTy, declWithVariant, tyBaseName } from "./typedecls.js";
+import { declOf, declOfKind, declOfTy, unionDeclOfTy, declWithVariant, hasEmptyStringMember, tyBaseName } from "./typedecls.js";
 
 // ── Generic IR walkers ──────────────────────────────────────
 
@@ -268,7 +268,7 @@ function isRecordType(ty: Ty): boolean {
  *  the always-truthy types so callers can unwrap directly instead of emitting
  *  a redundant guard. */
 function valueTruthyCond(value: Expr, ty: Ty): Expr | null {
-  if (!isFalsyCapableTy(ty)) return null;
+  if (!isFalsyCapableTy(ty, _typeDecls)) return null;
   switch (ty.kind) {
     case "int": case "nat":
       return { kind: "binop", op: "≠", left: value, right: { kind: "num", value: 0 } };
@@ -276,6 +276,8 @@ function valueTruthyCond(value: Expr, ty: Ty): Expr | null {
       return { kind: "binop", op: ">", left: { kind: "field", obj: value, field: "length" }, right: { kind: "num", value: 0 } };
     case "bool":
       return value;
+    case "user":
+      return { kind: "binop", op: "≠", left: value, right: { kind: "constructor", name: "", type: ty.name, args: [] } };
     default:
       return null;
   }
@@ -444,6 +446,9 @@ function asCondition(e: TExpr): TExpr {
     return { kind: "binop", op: ">",
       left: { kind: "field", obj: e, field: "length", ty: { kind: "nat" } },
       right: { kind: "num", value: 0, ty: { kind: "nat" } }, ty: bool };
+  // A string-literal union runs as a string: only its `""` member is falsy.
+  if (hasEmptyStringMember(_typeDecls, e.ty))
+    return { kind: "binop", op: "!==", left: e, right: { kind: "str", value: "", ty: e.ty }, ty: bool };
   // Arrays, objects, maps, sets, tuples are always truthy in JS (even `[]`/`{}`).
   if (["array", "user", "map", "set", "tuple"].includes(e.ty.kind))
     return { kind: "bool", value: true, ty: bool };
@@ -550,6 +555,9 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       // Number truthiness: !n → n == 0
       if (e.op === "!" && (e.expr.ty.kind === "int" || e.expr.ty.kind === "nat"))
         return { kind: "binop", op: "=", left: lowerExpr(e.expr, binds), right: { kind: "num", value: 0 } };
+      // String-union truthiness: !c → c == its `""` member.
+      if (e.op === "!" && e.expr.ty.kind === "user" && hasEmptyStringMember(_typeDecls, e.expr.ty))
+        return { kind: "binop", op: "=", left: lowerExpr(e.expr, binds), right: { kind: "constructor", name: "", type: e.expr.ty.name, args: [] } };
       // Object truthiness: arrays, objects, maps, and sets are always truthy in
       // JS, so `!x` is always false.
       if (e.op === "!" && ["array", "user", "map", "set", "tuple"].includes(e.expr.ty.kind)) {
@@ -726,6 +734,16 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       // the use site — this rule must not add one. Mirrors the `!array` rule above.
       if (e.op === "||" && e.left.ty.kind === "array") {
         return lowerExpr(e.left, binds);
+      }
+      // || on a string union → `c` unless it is the `""` member; a union without one is always truthy.
+      if (e.op === "||" && e.left.ty.kind === "user" && declOfTy(_typeDecls, e.left.ty)?.kind === "string-union" &&
+          tyEqual(e.left.ty, e.right.ty)) {
+        const left = lowerExpr(e.left, binds);
+        const truthy = valueTruthyCond(left, e.left.ty);
+        if (!truthy) return left;
+        const right = lowerBranch(e.right, binds);
+        if (binds && right.body.length > 0) return scopedConditionalResult(binds, e.ty, truthy, [], left, right.body, right.expr);
+        return { kind: "if", cond: truthy, then: left, else: right.expr };
       }
       // || on non-optional string/user → if non-empty then x else default
       if (e.op === "||" && (e.left.ty.kind === "string" ||

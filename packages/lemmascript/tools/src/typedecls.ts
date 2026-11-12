@@ -51,6 +51,13 @@ export function declOfTy(decls: TypeDecls, ty: Ty): TypeDeclInfo | undefined {
   return ty.kind === "user" ? declOf(decls, tyBaseName(ty.name)) : undefined;
 }
 
+/** Whether a user-typed value is a named string-literal union with `""` among its members: at runtime it
+ *  is a plain string, so that member is falsy (`Boolean("")` is false) and every other member is truthy. */
+export function hasEmptyStringMember(decls: TypeDecls, ty: Ty): boolean {
+  const d = declOfTy(decls, ty);
+  return d?.kind === "string-union" && (d.values?.includes("") ?? false);
+}
+
 /** The discriminated-union declaration of a user-typed value, if any. */
 export function unionDeclOfTy(decls: TypeDecls, ty: Ty): TypeDeclInfo | undefined {
   const d = declOfTy(decls, ty);

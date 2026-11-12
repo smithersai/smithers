@@ -99,8 +99,8 @@ expect_failure \
 cp tools/fixtures/narrowed-presence.ts "$fixture_dir/"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/narrowed-presence.ts"
 
-# Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
-for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record quantifier-names real-minmax string-last-index; do
+# Object spreads of conditionals and field subsets, exhaustive tagged-message tables, and string-union truthiness.
+for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union string-union-truthiness safe-slice-suffix map-index real-field generic-record quantifier-names real-minmax string-last-index; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
 done

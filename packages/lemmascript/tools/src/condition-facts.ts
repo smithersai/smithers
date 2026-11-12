@@ -23,7 +23,7 @@
 import type { TExpr, TStmt, Ty } from "./typedir.js";
 import { freshName, freshNameWhere, isUserName } from "./names.js";
 import type { TypeDecls } from "./typedecls.js";
-import { unionDeclOfTy, discriminantOf } from "./typedecls.js";
+import { unionDeclOfTy, discriminantOf, hasEmptyStringMember } from "./typedecls.js";
 
 /** Explicit context: declarations, optChain counter, and scope-local binders. */
 export interface CondCtx {
@@ -128,18 +128,19 @@ export function presentFact(cond: TExpr): PresentFact | null {
   return { scrutinee: e, innerTy: e.ty.inner, negated: cond.op === "===", binder: freshName(hint), truthiness: false };
 }
 
-/** Which types have falsy values in JS (`0`, `""`, `false`); everything else
- *  (array, user type, …) is always truthy. The single home of that set —
- *  transform's `valueTruthyCond` gates on it too. */
-export const isFalsyCapableTy = (ty: Ty): boolean =>
-  ["int", "nat", "string", "bool"].includes(ty.kind);
+/** Which types have falsy values in JS (`0`, `""`, `false`): the primitives, and a
+ *  string-literal union with an `""` member. Everything else (array, record, …) is
+ *  always truthy. The single home of that set — transform's `valueTruthyCond`
+ *  gates on it too. */
+export const isFalsyCapableTy = (ty: Ty, decls: TypeDecls): boolean =>
+  ["int", "nat", "string", "bool"].includes(ty.kind) || hasEmptyStringMember(decls, ty);
 
 // `Some(0)` / `Some("")` / `Some(false)` are falsy, so a truthiness check
 // (`if (o)`, `!o`, `o ? :`) over a nullable primitive must still test the bound
 // value. Nullable objects/arrays are always truthy, and `!== undefined` is a pure
 // presence check — neither needs the gate.
-export const canBeFalsy = (f: PresentFact): boolean =>
-  f.truthiness && isFalsyCapableTy(f.innerTy);
+export const canBeFalsy = (f: PresentFact, decls: TypeDecls): boolean =>
+  f.truthiness && isFalsyCapableTy(f.innerTy, decls);
 export const bound = (f: PresentFact): TExpr =>
   ({ kind: "var", name: f.binder, ty: f.innerTy });
 
@@ -210,7 +211,7 @@ export function noneDetector(leaf: TExpr, ctx: CondCtx): NoneDetector | null {
   const detected = presentFact(leaf);
   if (detected && detected.negated) {
     const f = bindPresentFact(detected, ctx);
-    const residual: TExpr | null = canBeFalsy(f)
+    const residual: TExpr | null = canBeFalsy(f, ctx.decls)
       ? { kind: "unop", op: "!", expr: { kind: "var", name: f.binder, ty: f.innerTy }, ty: { kind: "bool" } }
       : null;
     return { scrutinee: f.scrutinee, innerTy: f.innerTy, binder: f.binder, residual };
@@ -414,7 +415,7 @@ export function presentMatchStmts(f: PresentFact, some: TStmt[], none: TStmt[], 
     kind: "someMatch",
     scrutinee: f.scrutinee, binderTy: f.innerTy,
     binder: f.binder,
-    someBody: canBeFalsy(f) ? [{ kind: "if", cond: bound(f), then: some, else: none }] : some,
+    someBody: canBeFalsy(f, ctx.decls) ? [{ kind: "if", cond: bound(f), then: some, else: none }] : some,
     noneBody: none,
   };
 }
@@ -426,7 +427,7 @@ export function presentMatchExpr(f: PresentFact, some: TExpr, none: TExpr, ty: T
     kind: "someMatch",
     scrutinee: f.scrutinee, binderTy: f.innerTy,
     binder: f.binder,
-    someBody: canBeFalsy(f) ? { kind: "conditional", cond: bound(f), then: some, else: none, ty } : some,
+    someBody: canBeFalsy(f, ctx.decls) ? { kind: "conditional", cond: bound(f), then: some, else: none, ty } : some,
     noneBody: none,
     ty,
   };

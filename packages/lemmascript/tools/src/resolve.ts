@@ -920,6 +920,12 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
           warnRefEq(e.op, left.ty, right.ty);
         }
       }
+      // `c || "red"` over a string union defaults to one of its members, a constructor and not a string.
+      if (e.op === "||" && right.kind === "str") {
+        const leftTy = left.ty.kind === "optional" ? left.ty.inner : left.ty;
+        if (leftTy.kind === "user" && (declOfKind(ctx.typeDecls, leftTy.name, "string-union")?.values?.includes(right.value) ?? false))
+          right = coerceStr(right, leftTy);
+      }
       let ty: Ty = { kind: "unknown" };
       // <==> is bool like the comparisons; unlike ==>, neither side narrows
       // the other (no premise to assume).
