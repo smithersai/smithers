@@ -35,6 +35,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "4.1.1",
+    "@smthrs/engine": "workspace:*",
     "@playwright/test": "1.62.1",
     "@types/node": "26.4.1",
     "esbuild": "0.28.2",

@@ -1162,6 +1162,9 @@ importers:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/engine
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

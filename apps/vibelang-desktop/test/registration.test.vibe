@@ -1,0 +1,74 @@
+// The desktop composition over a real data directory: an undecodable file is set aside, and a save is synced before and after its rename.
+import { expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { BunHost } from "@smthrs/platform-bun"
+import { HttpClient } from "effect/http"
+import { Factory } from "../../vibelang/src/core/Factory.vibe"
+import { Desktop, Preferences, registration } from "../src/host/Factory.vibe"
+import { folderLayer } from "../src/host/Folder.vibe"
+import { localModelsLayer } from "../src/host/LocalModel.vibe"
+
+const initial = { mock: true, folder: null, model: null, tools: [] }
+
+/** Builds registration over `directory`; the host filesystem reports each write, sync and rename to `operations`. */
+effect function start(directory: string, operations: Array<string>) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const label = (name: string) => name === directory ? "directory" : path.basename(name)
+  const recorded: FileSystem.FileSystem = {
+    ...fs,
+    writeFileString: (name, text, options) => { operations.push(`write ${label(name)}`); return fs.writeFileString(name, text, options) },
+    rename: (from, to) => { operations.push(`rename ${label(from)} ${label(to)}`); return fs.rename(from, to) },
+    open: (name, options) => map(fs.open(name, options), (file) => Object.create(file, { sync: { value: Effect.andThen(Effect.sync(() => operations.push(`sync ${label(name)}`)), file.sync) } })),
+  }
+  const offline = HttpClient.make(() => Effect.die("No model provider in this test"))
+  const host = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem, recorded), Layer.succeed(Path.Path, path), BunHost.BunCrypto.layer, Layer.succeed(HttpClient.HttpClient, offline))
+  const preferences = Layer.succeed(Preferences, { directory, chooseDirectory: () => succeed(null), openExternal: () => Effect.void })
+  const composed = registration.pipe(Layer.provide(Layer.mergeAll(folderLayer, localModelsLayer, preferences)), Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(host))
+  const context = try Layer.build(composed)
+  return { desktop: Context.get(context, Desktop), factory: Context.get(context, Factory) }
+}
+
+it.effect("sets an undecodable settings file aside, starts from the default and syncs the next save", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const settings = path.join(directory, "settings.json")
+  try fs.writeFileString(settings, "{\"snapshot\":")
+  const operations: Array<string> = []
+  const { desktop } = try start(directory, operations)
+  const restored = try desktop.snapshot()
+  const aside = (try fs.readDirectory(directory)).filter((name) => name.startsWith("settings.json.corrupt-"))
+  const kept = try fs.readFileString(path.join(directory, aside[0] ?? "missing"))
+  operations.length = 0
+  const changed = try desktop.change("mock")
+  const saved = try fs.readFileString(settings)
+  try Effect.try(() => {
+    expect(restored).toEqual(initial)
+    expect(aside).toHaveLength(1)
+    expect(kept).toBe("{\"snapshot\":")
+    expect(changed).toEqual(initial)
+    expect(JSON.parse(saved)).toEqual({ snapshot: initial, edits: [] })
+    expect(operations.filter((operation) => operation.includes("settings") || operation === "sync directory")).toEqual([
+      "write settings.json.new", "sync settings.json.new", "rename settings.json.new settings.json", "sync directory",
+    ])
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("sets an undecodable conversation aside; it still reads and takes the next post", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectoryScoped()
+  const conversation = path.join(directory, "conversation-home.json")
+  try fs.writeFileString(conversation, "[{")
+  const { factory } = try start(directory, [])
+  const read = try factory.read("home", 0)
+  const aside = (try fs.readDirectory(directory)).filter((name) => name.startsWith("conversation-home.json.corrupt-"))
+  try factory.post("home", "first", "Ada", "hello")
+  const log = try fs.readFileString(conversation)
+  try Effect.try(() => {
+    expect(read.entries).toEqual([])
+    expect(aside).toHaveLength(1)
+    expect(JSON.parse(log)).toEqual(expect.arrayContaining([expect.objectContaining({ clientId: "first", text: "hello" })]))
+  })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))

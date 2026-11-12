@@ -31,6 +31,7 @@ export service Preferences { readonly directory: string; chooseDirectory(): (str
 
 schema EditIntent { readonly key: string; readonly folder: FolderInfo; readonly receipt: ToolReceipt; readonly done: boolean }
 schema Stored { readonly snapshot: Snapshot; readonly edits: ReadonlyArray<EditIntent> }
+const Log = Schema.fromJsonString(Schema.Array(EventSchema))
 schema ReplyConfig { readonly mock: boolean; readonly folder: FolderInfo | null; readonly model: ModelInfo | null }
 
 const Post = Flow.make("vibelang/desktop/Post", { payload: { conversation: Schema.String, clientId: Schema.String, name: Schema.String, text: Schema.String }, success: Schema.NullOr(Schema.String), body: () => Node.succeed(null) })
@@ -62,28 +63,46 @@ export const registration = Layer.effectContext(effect {
   const models = try LocalModels
   const preferences = try Preferences
   const random = try SecureRandom.SecureRandom
-  const state = try Ref.make<Snapshot>({ mock: true, folder: null, model: null, tools: [] })
+  const initial: Snapshot = { mock: true, folder: null, model: null, tools: [] }
+  const state = try Ref.make(initial)
   const edits = try Ref.make<ReadonlyArray<EditIntent>>([])
   const rooms = new Map<string, Sequencer.Sequencer>()
   const roomGate = try Semaphore.make(1)
   const settingsGate = try Semaphore.make(1)
   const settingsFile = path.join(preferences.directory, "settings.json")
-  try fs.makeDirectory(preferences.directory, { recursive: true }).pipe(Effect.orDie)
-  if (try fs.exists(settingsFile).pipe(Effect.orDie)) {
-    const stored = try fs.readFileString(settingsFile).pipe(Effect.orDie)
-    const storedState = try Schema.decodeUnknownEffect(Schema.fromJsonString(Stored))(stored).pipe(Effect.orDie)
-    const saved = storedState.snapshot
-    const opened = saved.folder === null ? null : (folder.restore(saved.folder) catch () => null)
-    // Failed providers stay failed until the person explicitly chooses again.
-    const selected = saved.mock || saved.model === null || saved.model.state !== "ready" ? saved.model : (models.restore(saved.model) catch () => ({ ...saved.model!, state: "failed" as const }))
-    try Ref.set(state, { ...saved, folder: opened, model: selected })
-    try Ref.set(edits, storedState.edits)
+  // Rename can reach the disk before the data it names: sync the file, rename, then sync the directory.
+  effect function sync(name: string) {
+    try scoped(effect { const file = try fs.open(name, { flag: "r" }); try file.sync }).pipe(Effect.orDie)
   }
+  effect function publish(name: string, text: string) {
+    try fs.writeFileString(`${name}.new`, text, { mode: 0o600 }).pipe(Effect.orDie)
+    try sync(`${name}.new`)
+    try fs.rename(`${name}.new`, name).pipe(Effect.orDie)
+    try sync(preferences.directory)
+  }
+  // A torn write or an older format is set aside for the person and never stops the app.
+  effect function load<S extends Schema.Codec<unknown, string>>(name: string, schema: S, empty: S["Type"]) {
+    if (!(try fs.exists(name).pipe(Effect.orDie))) return empty
+    const text = try fs.readFileString(name).pipe(Effect.orDie)
+    const decoded = try exit(Schema.decodeUnknownEffect(schema)(text))
+    if (Exit.isSuccess(decoded)) return decoded.value
+    try fs.rename(name, `${name}.corrupt-${try Clock.currentTimeMillis}`).pipe(Effect.orDie)
+    try Effect.logWarning("vibelang.desktop.corrupt").pipe(Effect.annotateLogs({ file: path.basename(name) }))
+    try Metric.update(Metric.counter("vibelang_desktop_files_set_aside", { incremental: true }), 1)
+    return empty
+  }
+  try fs.makeDirectory(preferences.directory, { recursive: true }).pipe(Effect.orDie)
+  const storedState = try load(settingsFile, Schema.fromJsonString(Stored), { snapshot: initial, edits: [] })
+  const saved = storedState.snapshot
+  const opened = saved.folder === null ? null : (folder.restore(saved.folder) catch () => null)
+  // Failed providers stay failed until the person explicitly chooses again.
+  const selected = saved.mock || saved.model === null || saved.model.state !== "ready" ? saved.model : (models.restore(saved.model) catch () => ({ ...saved.model!, state: "failed" as const }))
+  try Ref.set(state, { ...saved, folder: opened, model: selected })
+  try Ref.set(edits, storedState.edits)
   effect function save() {
     const snapshot = try Ref.get(state)
     const intents = try Ref.get(edits)
-    try fs.writeFileString(`${settingsFile}.new`, JSON.stringify({ snapshot, edits: intents }), { mode: 0o600 }).pipe(Effect.orDie)
-    try fs.rename(`${settingsFile}.new`, settingsFile).pipe(Effect.orDie)
+    try publish(settingsFile, JSON.stringify({ snapshot, edits: intents }))
     return snapshot
   }
   effect function room(conversation: string): Sequencer.Sequencer!! {
@@ -92,17 +111,8 @@ export const registration = Layer.effectContext(effect {
       if (previous !== undefined) return previous
       const filename = path.join(preferences.directory, `conversation-${encodeURIComponent(conversation)}.json`)
       const seq = try Sequencer.make({
-        read: effect () => {
-          if (!(try fs.exists(filename).pipe(Effect.orDie))) return []
-          const text = try fs.readFileString(filename).pipe(Effect.orDie)
-          return try Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(EventSchema)))(text).pipe(Effect.orDie)
-        },
-        write: effect (event: Event) => {
-          const previous = (try fs.exists(filename).pipe(Effect.orDie)) ? try fs.readFileString(filename).pipe(Effect.orDie) : "[]"
-          const log = try Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(EventSchema)))(previous).pipe(Effect.orDie)
-          try fs.writeFileString(`${filename}.new`, JSON.stringify([...log, event]), { mode: 0o600 }).pipe(Effect.orDie)
-          try fs.rename(`${filename}.new`, filename).pipe(Effect.orDie)
-        },
+        read: () => load(filename, Log, []),
+        write: effect (event: Event) => { try publish(filename, JSON.stringify([...(try load(filename, Log, [])), event])) },
       }, {
         start: effect (posts) => {
           const post = posts[0]
