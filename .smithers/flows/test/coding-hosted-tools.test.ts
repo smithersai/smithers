@@ -22,8 +22,9 @@ import * as Write from "@smthrs/std/Write"
 import { Effect, FileSystem, Layer, Option, Path, type PlatformError } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import assert from "node:assert/strict"
+import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import {
   chmod,
   link,
@@ -553,6 +554,119 @@ test("a change made between the base check and the write is refused, not overwri
   assert.equal(exit._tag, "Failure")
   assert.match(JSON.stringify(exit), /stale_read/)
   assert.equal(await readFile(join(ws, "dir", "file"), "utf8"), "theirs")
+})
+
+test("a write made after the write's own compare is refused, not overwritten", { skip: anchored }, async (t) => {
+  const ws = await workspace(t)
+  await writeFile(join(ws, "target.txt"), "old")
+  const original = CodingFileSystem.Anchored.read
+  let reads = 0
+  CodingFileSystem.Anchored.read = async (...args) => {
+    const result = await original(...args)
+    // Read 1 is the batch's base check and read 2 the write's own compare:
+    // another writer lands while the new bytes are being written and synced.
+    if (++reads === 2) await writeFile(join(ws, "target.txt"), "theirs")
+    return result
+  }
+  const exit = await Effect.runPromiseExit(
+    CodingFileSystem.localProvider(ws).commit("run", [
+      { path: "target.txt", base_digest: hash("old"), content: new TextEncoder().encode("mine") }
+    ])
+  ).finally(() => {
+    CodingFileSystem.Anchored.read = original
+  })
+  assert.equal(exit._tag, "Failure")
+  assert.match(JSON.stringify(exit), /stale_read/)
+  assert.equal(await readFile(join(ws, "target.txt"), "utf8"), "theirs")
+  // The refused write leaves no temporary file behind.
+  assert.deepEqual(readdirSync(ws), ["target.txt"])
+})
+
+test("two providers racing one base never both succeed", { skip: anchored }, async (t) => {
+  for (let round = 0; round < 20; round++) {
+    const ws = await workspace(t)
+    await writeFile(join(ws, "target.txt"), "old")
+    const commit = (content: string) =>
+      Effect.runPromiseExit(
+        CodingFileSystem.localProvider(ws).commit("run", [
+          { path: "target.txt", base_digest: hash("old"), content: new TextEncoder().encode(content) }
+        ])
+      )
+    const exits = await Promise.all([commit("first"), commit("second")])
+    assert.deepEqual(exits.map((exit) => exit._tag).sort(), ["Failure", "Success"], `round ${round}`)
+    assert.match(JSON.stringify(exits.find((exit) => exit._tag === "Failure")), /stale_read/)
+    const winner = exits[0]._tag === "Success" ? "first" : "second"
+    assert.equal(await readFile(join(ws, "target.txt"), "utf8"), winner)
+  }
+})
+
+/** Another process holding the workspace's edit lock until `release` is called. */
+const lockHolder = async (t: TestContext, ws: string) => {
+  const holder = spawn("flock", ["-x", ws, "sh", "-c", "echo held; cat"], { stdio: ["pipe", "pipe", "inherit"] })
+  const exited = new Promise<void>((done) => holder.once("exit", () => done()))
+  const release = () => {
+    holder.stdin.end()
+    return exited
+  }
+  // A failed assertion must not leave the holder, and so the test process, alive.
+  t.after(release)
+  await new Promise<void>((held, failed) => {
+    holder.once("error", failed)
+    holder.stdout.once("data", () => held())
+  })
+  return release
+}
+
+test("a commit waits for another process's edit lock, then compares against what that process wrote", {
+  skip: anchored
+}, async (t) => {
+  const ws = await workspace(t)
+  await writeFile(join(ws, "target.txt"), "old")
+  const release = await lockHolder(t, ws)
+  let settled = false
+  const commit = Effect.runPromiseExit(
+    CodingFileSystem.localProvider(ws).commit("run", [
+      { path: "target.txt", base_digest: hash("old"), content: new TextEncoder().encode("mine") }
+    ])
+  ).finally(() => {
+    settled = true
+  })
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  assert.equal(settled, false)
+  assert.equal(await readFile(join(ws, "target.txt"), "utf8"), "old")
+  // The lock's holder finishes its own edit before it lets go.
+  await writeFile(join(ws, "target.txt"), "theirs")
+  await release()
+  const exit = await commit
+  assert.equal(exit._tag, "Failure")
+  assert.match(JSON.stringify(exit), /stale_read/)
+  assert.equal(await readFile(join(ws, "target.txt"), "utf8"), "theirs")
+})
+
+test("a commit that cannot get the edit lock in time changes nothing and says so", { skip: anchored }, async (t) => {
+  const ws = await workspace(t)
+  await writeFile(join(ws, "target.txt"), "old")
+  const release = await lockHolder(t, ws)
+  const original = CodingFileSystem.Anchored.exclusive
+  CodingFileSystem.Anchored.exclusive = (root) => original(root, 200)
+  const exit = await Effect.runPromiseExit(
+    CodingFileSystem.localProvider(ws).commit("run", [
+      { path: "target.txt", base_digest: hash("old"), content: new TextEncoder().encode("mine") }
+    ])
+  ).finally(async () => {
+    CodingFileSystem.Anchored.exclusive = original
+    await release()
+  })
+  assert.equal(exit._tag, "Failure")
+  assert.match(JSON.stringify(exit), /provider_unavailable/)
+  assert.equal(await readFile(join(ws, "target.txt"), "utf8"), "old")
+  // The lock is free again: the same commit now applies.
+  await Effect.runPromise(
+    CodingFileSystem.localProvider(ws).commit("run", [
+      { path: "target.txt", base_digest: hash("old"), content: new TextEncoder().encode("mine") }
+    ])
+  )
+  assert.equal(await readFile(join(ws, "target.txt"), "utf8"), "mine")
 })
 
 /** The box's own read stack: the kernel guard over the descriptor-relative helper. */

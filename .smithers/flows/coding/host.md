@@ -177,6 +177,14 @@ mount that unavailable replacement or create unused batch grants. The standard
 library's versioned-host contract and the backend's exact-batch authorization
 remain independently enforced for their callers.
 
+Until then a hosted box edits through `localProvider`. Each commit holds an
+exclusive `flock` on the workspace root from its first base check to its last
+replace, so provider commits never overwrite each other, and it reads each
+file's digest again just before the rename. A writer that does not take that
+lock, such as a shell in the box, can still be overwritten when it writes
+between that last read and the rename; only #3508's kernel-atomic exchange
+closes that window.
+
 Explicitly enabled Wiki planning also registers the private `coding/WikiCheck` delegate.
 Projects opt into continuous semantic backpressure by declaring `checks/wiki`
 and including it as a required slow check. Its catalog policy is derived from

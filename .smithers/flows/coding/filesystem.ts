@@ -3,6 +3,7 @@ import { Preconditions, type VersionedFileSystem } from "@smthrs/std/Read"
 import { StdError } from "@smthrs/std/StdError"
 import { Cause, Effect, type FileSystem, PlatformError, Sink, Stream } from "effect"
 import { ChildProcess, type ChildProcessSpawner } from "effect/process"
+import { spawn } from "node:child_process"
 import { createHash, randomBytes } from "node:crypto"
 import { constants as fsConstants, existsSync } from "node:fs"
 import { type FileHandle, mkdir, open, rename, unlink } from "node:fs/promises"
@@ -268,6 +269,36 @@ export const Anchored = {
     } finally {
       await file.close()
     }
+  },
+  /** Takes a workspace's one edit lock, waiting up to `waitMillis` for it, and
+   * returns the handle that holds it; closing the handle releases it. The lock
+   * is an exclusive flock(2) on the root directory itself, so nothing is
+   * created in the tree, every provider in every process meets on the same
+   * inode, and the kernel releases it when the holder dies. Node has no
+   * flock, so util-linux's `flock` takes it on the handle it inherits. */
+  exclusive: async (root: string, waitMillis = 30_000): Promise<FileHandle> => {
+    const held = await open(root, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW)
+    try {
+      const status = await new Promise<number | null>((settle, fail) => {
+        const taker = spawn("flock", ["-x", "3"], {
+          stdio: ["ignore", "ignore", "ignore", held.fd],
+          timeout: waitMillis,
+          killSignal: "SIGKILL"
+        })
+        taker.once("error", fail)
+        taker.once("exit", settle)
+      })
+      if (status !== 0) {
+        throw new StdError({
+          code: "provider_unavailable",
+          message: "Another edit still holds the workspace; nothing changed"
+        })
+      }
+      return held
+    } catch (error) {
+      await held.close()
+      throw error
+    }
   }
 }
 
@@ -283,6 +314,16 @@ const close = (handles: ReadonlyArray<FileHandle>) => Promise.all(handles.map((h
  * nothing. Each file is replaced by an fsynced rename inside its anchored
  * directory and keeps its mode. A failure part-way through a batch is reported
  * as a stopped patch, never as stale or success.
+ *
+ * A commit holds the workspace's edit lock ({@link Anchored.exclusive}) from
+ * its first base check to its last replace, so two providers, in one process
+ * or two, never overwrite each other. Each file's digest is read again just
+ * before its rename, and a change seen there is refused as stale. That is the
+ * whole guarantee: Node cannot compare and replace in one kernel step, so a
+ * writer that does not take the lock (a shell in the box, a build) and writes
+ * between that last read and the rename is still overwritten. Closing that
+ * window needs the kernel-atomic exchange of the deferred daemon provider
+ * (https://github.com/smithersai/smithers/issues/3508).
  */
 export const localProvider = (canonicalRoot: string): MutationProvider => {
   const root = resolve(canonicalRoot)
@@ -313,19 +354,24 @@ export const localProvider = (canonicalRoot: string): MutationProvider => {
     try {
       if (!walked.complete) return
       const directory = walked.opened.at(-1)!
-      // Compare again inside the anchored directory, just before the change:
-      // a write that raced the base check is refused, never overwritten.
-      const existing = await Anchored.read(directory, name, path)
-      const observed = existing === undefined ? "absent" : digest(existing.bytes)
-      if (observed !== base) {
-        throw new StdError({
-          code: "stale_read",
-          path,
-          base_digest: base,
-          current_digest: observed,
-          message: `Re-read ${path}`
-        })
+      /** The file as it is now, refused as stale unless it still has the base digest. */
+      const unchanged = async () => {
+        const existing = await Anchored.read(directory, name, path)
+        const observed = existing === undefined ? "absent" : digest(existing.bytes)
+        if (observed !== base) {
+          throw new StdError({
+            code: "stale_read",
+            path,
+            base_digest: base,
+            current_digest: observed,
+            message: `Re-read ${path}`
+          })
+        }
+        return existing
       }
+      // Compare again inside the anchored directory: a write that landed after
+      // the batch's base check is refused before any temporary file is made.
+      const existing = await unchanged()
       if (content === null) {
         if (existing !== undefined) await unlink(Anchored.at(directory, name))
         return
@@ -338,16 +384,23 @@ export const localProvider = (canonicalRoot: string): MutationProvider => {
         mode
       )
       try {
-        await file.writeFile(content)
-        if (existing !== undefined) await file.chmod(mode)
-        await file.sync()
-      } finally {
-        await file.close()
-      }
-      await rename(Anchored.at(directory, temporary), Anchored.at(directory, name)).catch(async (error) => {
+        try {
+          await file.writeFile(content)
+          if (existing !== undefined) await file.chmod(mode)
+          await file.sync()
+        } finally {
+          await file.close()
+        }
+        // Compare once more as the last step before the replace, so a write
+        // made while the new bytes were written and synced is refused too.
+        // A writer outside the edit lock can still land between this read and
+        // the rename and be overwritten (#3508).
+        await unchanged()
+        await rename(Anchored.at(directory, temporary), Anchored.at(directory, name))
+      } catch (error) {
         await unlink(Anchored.at(directory, temporary)).catch(() => {})
         throw error
-      })
+      }
     } finally {
       await close(walked.opened)
     }
@@ -368,22 +421,37 @@ export const localProvider = (canonicalRoot: string): MutationProvider => {
         if (changes.length === 0 || changes.length > MAX_BATCH_FILES || total > MAX_BATCH_BYTES) {
           return yield* unavailable()
         }
-        for (const change of changes) {
-          const bytes = yield* checkedRead(change.path)
-          const observed = bytes === undefined ? "absent" : digest(bytes)
-          if (observed !== change.base_digest) return yield* stale(change.path, change.base_digest, observed)
-        }
-        for (const [applied, change] of changes.entries()) {
-          yield* Effect.tryPromise({
-            try: () => apply(change.path, change.base_digest, change.content),
+        // One lock from the first base check to the last replace: no other
+        // provider's commit runs between this one's compares and its renames.
+        yield* Effect.acquireUseRelease(
+          Effect.tryPromise({
+            try: () => Anchored.exclusive(root),
             catch: (error) =>
-              error instanceof StdError && applied === 0 ? error : new StdError({
-                code: "command_failed",
-                path: change.path,
-                message: `Patch stopped after ${applied} files; re-read all affected paths`
-              })
-          })
-        }
+              error instanceof StdError
+                ? error
+                : new StdError({ code: "provider_unavailable", message: "The workspace edit lock is unavailable" })
+          }),
+          () =>
+            Effect.gen(function*() {
+              for (const change of changes) {
+                const bytes = yield* checkedRead(change.path)
+                const observed = bytes === undefined ? "absent" : digest(bytes)
+                if (observed !== change.base_digest) return yield* stale(change.path, change.base_digest, observed)
+              }
+              for (const [applied, change] of changes.entries()) {
+                yield* Effect.tryPromise({
+                  try: () => apply(change.path, change.base_digest, change.content),
+                  catch: (error) =>
+                    error instanceof StdError && applied === 0 ? error : new StdError({
+                      code: "command_failed",
+                      path: change.path,
+                      message: `Patch stopped after ${applied} files; re-read all affected paths`
+                    })
+                })
+              }
+            }),
+          (held) => Effect.promise(() => held.close())
+        )
       }).pipe(Effect.uninterruptible)
   }
 }
