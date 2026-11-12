@@ -30,6 +30,26 @@ it.live("sandbox/utc-meter-oracle", () => run("sandbox/utc-meter-oracle", MeterI
   return true
 }))
 
+const CorruptInput = Schema.Struct({ delta: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })), count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })), prior: Schema.Literals([-1, 0.5, "NaN", 0, 7]) })
+
+/**
+ * A stored month bucket an older or broken writer left: metering into a month whose bucket is negative, fractional or
+ * not a number fails as `meter-domain`, never a defect and never a charge; a valid bucket accrues each running sandbox's
+ * milliseconds in that month on top of what it held.
+ */
+it.live("sandbox/meter-corrupt-bucket", () => run("sandbox/meter-corrupt-bucket", CorruptInput, ({ delta, count, prior }) => effect {
+  const high = Date.UTC(2026, 10, 30, 23, 59, 59, 990)
+  const december = String(monthOf(high + 10))
+  const ledger = { ...Decision.emptySandboxLedger("u", "contributor", 36000, monthOf(high), high), sandboxes: Array.from({ length: count }, (_, n) => ({ id: `s${n}`, conversation: `c${n}`, running: true })) }
+  const held = prior === "NaN" ? Number.NaN : prior
+  const answer = try exit(meter(ledger, { [december]: held }, high + delta, 36000))
+  const valid = Number.isSafeInteger(held) && held >= 0
+  if (!valid) return answer._tag === "Failure" && !Cause.hasDies(answer.cause) && Cause.findError(answer.cause)._tag === "Success" && (Cause.findError(answer.cause) as { readonly success: { readonly reason?: string } }).success.reason === "meter-domain"
+  // Only crossing into December reads its bucket: 10 ms of November remain.
+  if (answer._tag === "Failure") return false
+  return answer.value.months[december] === (delta > 10 ? held + count * (delta - 10) : held)
+}))
+
 it.live("sandbox/factory-role-replay-and-files", () => run("sandbox/factory-role-replay-and-files", Schema.Struct({ role: Role, value: Schema.Int }), ({ role, value }) => effect {
   provide mockFactoryFor(role) {
     const factory = try Factory

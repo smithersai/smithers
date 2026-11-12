@@ -1658,3 +1658,8 @@ caught: the range ending at 12.
 `worker/Reply.vibe` 355, a reply whose answer has no text: `reply/answers` drew the `empty` and `blank` answers, rare at
 the full run's budget. Each execution now also answers once with `""` and once with spaces, and the reply must fail as
 empty, never finishing blank. Mutant caught: an empty answer reported as failed.
+
+`src/core/sandboxMeter.vibe` 40, a stored month bucket an older or broken writer left: `sandbox/meter-corrupt-bucket`
+meters 1 to 120 ms past November's last 10 ms with 0 to 3 sandboxes running and December's bucket holding -1, 0.5, NaN,
+0 or 7. A broken bucket fails as `meter-domain`, never a defect; a valid one gains each running sandbox's December
+milliseconds. Mutant caught: a negative bucket accepted.
