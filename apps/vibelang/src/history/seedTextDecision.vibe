@@ -5,7 +5,7 @@
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
-import { findUnitFrom, unitFrom } from "./seedDecision.vibe"
+import { findUnitFrom, unitFrom } from "./areaDecision.vibe"
 
 /** A code unit JavaScript's `\s` matches: ECMAScript WhiteSpace and LineTerminator. */
 //@ verify

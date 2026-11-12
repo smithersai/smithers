@@ -5276,10 +5276,12 @@ cases.extend([('src/actions/catalogDecision.vibe', *case) for case in [
 ('catalog-input-post', 'inputOf', 'name === tags.post ? "text"', 'name === tags.tour ? "text"', 'a post takes text'),
 ]])
 # Lane vl-proveall3, batch 4 (0018 "Third-lane batch 4").
-cases.extend([('src/history/seedDecision.vibe', *case) for case in [
+cases.extend([('src/history/areaDecision.vibe', *case) for case in [
 ('seed-area-empty', 'areaIndex', 'if (scope === "") return -1', 'if (false) return -1', 'an empty scope names no area'),
 ('seed-area-first', 'areaIndex', 'if (areas[i]!.scopes.includes(scope)) return i', 'if (areas[i]!.scopes.includes(scope)) return areas.length - 1', 'the first area that names the scope wins'),
 ('seed-area-step', 'areaIndex', '    i++\n', '    i += 2\n', 'every area is read'),
+]])
+cases.extend([('src/history/seedDecision.vibe', *case) for case in [
 ('seed-entry-regenerated', 'entryUse', 'if (regenerated) return "skip"', 'if (false) return "skip"', 'regenerated docs tell nothing'),
 ('seed-entry-landed', 'entryUse', 'if (state === "landed") return "landed"', 'if (state === "landed") return "attempt"', 'a landed entry is claimed'),
 ('seed-entry-withdrawn', 'entryUse', ' || state === "withdrawn"', '', 'a withdrawn entry is an attempt'),
@@ -5782,14 +5784,14 @@ cases.extend([
 
 # Lane vl-proveall3, batch 25: a commit title's scope (src/history/seedDecision.vibe titleScope).
 cases.extend([
-('src/history/seedDecision.vibe', 'scope-lower-step', 'lowerEnd', 'return lowerEnd(text, at + 1)', 'return at + 1', 'the type is every lower-case letter'),
-('src/history/seedDecision.vibe', 'scope-unit-next', 'unitFrom', 'return unitFrom(text, at + 1, unit)', 'return -1', 'the search reads on'),
-('src/history/seedDecision.vibe', 'scope-end-comma', 'scopeEnd', 'comma >= 0 && comma < close ? comma : close', 'close', 'the first scope ends at its comma'),
-('src/history/seedDecision.vibe', 'scope-paren-open', 'parenScope', 'title.charCodeAt(open) !== 40', 'title.charCodeAt(open) !== 41', 'a scope opens with a parenthesis'),
-('src/history/seedDecision.vibe', 'scope-paren-trim', 'parenScope', 'return title.slice(open + 1, end).trim()', 'return title.slice(open + 1, end)', 'a scope is trimmed'),
-('src/history/seedDecision.vibe', 'scope-blank-type', 'titleScope', 'scope !== "" ? scope : title.slice(0, findLowerEnd(title, 0))', 'scope', 'a blank scope falls back to the type'),
-('src/history/seedDecision.vibe', 'scope-prefix-lower', 'titleScope', 'title.slice(0, colon).toLowerCase()', 'title.slice(0, colon)', 'a bare prefix reads in lower case'),
-('src/history/seedDecision.vibe', 'scope-prefix-pattern', 'titleScope', '/^[A-Za-z][\\w./-]*:\\s/', '/^[A-Za-z][\\w./-]*:/', 'a bare prefix is followed by a space'),
+('src/history/areaDecision.vibe', 'scope-lower-step', 'lowerEnd', 'return lowerEnd(text, at + 1)', 'return at + 1', 'the type is every lower-case letter'),
+('src/history/areaDecision.vibe', 'scope-unit-next', 'unitFrom', 'return unitFrom(text, at + 1, unit)', 'return -1', 'the search reads on'),
+('src/history/areaDecision.vibe', 'scope-end-comma', 'scopeEnd', 'comma >= 0 && comma < close ? comma : close', 'close', 'the first scope ends at its comma'),
+('src/history/areaDecision.vibe', 'scope-paren-open', 'parenScope', 'title.charCodeAt(open) !== 40', 'title.charCodeAt(open) !== 41', 'a scope opens with a parenthesis'),
+('src/history/areaDecision.vibe', 'scope-paren-trim', 'parenScope', 'return title.slice(open + 1, end).trim()', 'return title.slice(open + 1, end)', 'a scope is trimmed'),
+('src/history/areaDecision.vibe', 'scope-blank-type', 'titleScope', 'scope !== "" ? scope : title.slice(0, findLowerEnd(title, 0))', 'scope', 'a blank scope falls back to the type'),
+('src/history/areaDecision.vibe', 'scope-prefix-lower', 'titleScope', 'title.slice(0, colon).toLowerCase()', 'title.slice(0, colon)', 'a bare prefix reads in lower case'),
+('src/history/areaDecision.vibe', 'scope-prefix-pattern', 'titleScope', '/^[A-Za-z][\\w./-]*:\\s/', '/^[A-Za-z][\\w./-]*:/', 'a bare prefix is followed by a space'),
 ])
 
 # Lane vl-proveall3, batch 26: the bootstrap's text decisions (src/history/seedTextDecision.vibe).
@@ -5886,10 +5888,10 @@ cases.extend([
 
 # Lane vl-proveall3, batch 30: bounded-loop execution of history scan specifications and nonempty captures.
 cases.extend([
-('src/history/seedDecision.vibe', 'history-lower-loop', 'findLowerEnd', 'return i', 'return at', 'the whole type is scanned'),
-('src/history/seedDecision.vibe', 'history-unit-loop', 'findUnitFrom', 'return i', 'return -1', 'a found delimiter is returned'),
-('src/history/seedDecision.vibe', 'history-scope-loop', 'readScopeEnd', 'return comma >= 0 && comma < close ? comma : close', 'return close', 'the first comma ends the first scope'),
-('src/history/seedDecision.vibe', 'history-scope-trim', 'readParenScope', 'title.slice(open + 1, end).trim()', 'title.slice(open + 1, end)', 'the scope is trimmed'),
+('src/history/areaDecision.vibe', 'history-lower-loop', 'findLowerEnd', 'return i', 'return at', 'the whole type is scanned'),
+('src/history/areaDecision.vibe', 'history-unit-loop', 'findUnitFrom', 'return i', 'return -1', 'a found delimiter is returned'),
+('src/history/areaDecision.vibe', 'history-scope-loop', 'readScopeEnd', 'return comma >= 0 && comma < close ? comma : close', 'return close', 'the first comma ends the first scope'),
+('src/history/areaDecision.vibe', 'history-scope-trim', 'readParenScope', 'title.slice(open + 1, end).trim()', 'title.slice(open + 1, end)', 'the scope is trimmed'),
 ('src/history/seedTextDecision.vibe', 'history-spaces-loop', 'findSpacesEnd', 'return i', 'return at', 'all leading whitespace is scanned'),
 ('src/history/seedTextDecision.vibe', 'history-capture-last', 'captureStart', '? end - 1 : end', '? end : end', 'a nonempty capture retains the final whitespace unit'),
 ('src/history/seedTextDecision.vibe', 'history-capture-loop', 'findCaptureStart', '? end - 1 : end', '? end : end', 'the runtime capture start agrees with its nonempty specification'),

@@ -1,6 +1,7 @@
 // The RegExp tests the history proves (0018 third-lane batch 24) answer as the patterns they replaced, natively.
 import { describe, expect, it } from "@effect/vitest"
-import { ownsLine, sentenceEnded, titleScope } from "../src/history/seedDecision.vibe"
+import { ownsLine, sentenceEnded } from "../src/history/seedDecision.vibe"
+import { titleScope } from "../src/history/areaDecision.vibe"
 import { mythicalName, trailerLine, trailerName, trailerParagraph } from "../src/history/trailerDecision.vibe"
 import { trailerOf } from "../src/history/Sequencer.vibe"
 import { evidenceStart, firstLine, regeneratedTitle, revertedTitle, spaceUnit, wordUnit } from "../src/history/seedTextDecision.vibe"

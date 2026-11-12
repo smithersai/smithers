@@ -37,7 +37,10 @@ measured on, all of it. Such a name moves to a module of its own (session 25). `
 epics' areas, `areaOf` and the `BOOTSTRAP` byline: the sequencer files an outside commit by `areaOf`, and the history
 page hides the byline. Before the move those two imports put all of `src/history/seed.vibe` in the bundle: the
 bootstrap that groups real commits, which only `scripts/mythical-seed.vibe` runs (87 browser branch arms, 154 lines).
-The unit gate still measures `seed.vibe` whole.
+The unit gate still measures `seed.vibe` whole. The same session moved a title's scope and the first area naming it
+(`titleScope`, `areaIndex` and the index walks they call) from `seedDecision.vibe` to `src/history/areaDecision.vibe`:
+`areas.vibe` needs only those, and importing them shipped the bootstrap's queue, join, sentence and evidence decisions
+too (40 browser branch arms, 27 lines). Their proofs and mutations moved with them.
 
 Named browser sites and status:
 

@@ -1,7 +1,7 @@
 // The epics a mythical history tells and the author of its seeded notes (wiki/decisions/0020-mythical-history.md). The
 // sequencer files a new commit under `areaOf` its title and the history page hides the `BOOTSTRAP` byline, so these
 // ship to the browser; the bootstrap that groups real commits (seed.vibe) does not (0016, "Browser gate scope").
-import { type Area, areaIndex, titleScope } from "./seedDecision.vibe"
+import { type Area, areaIndex, titleScope } from "./areaDecision.vibe"
 
 export type { Area }
 
