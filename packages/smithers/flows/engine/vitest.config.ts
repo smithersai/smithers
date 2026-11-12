@@ -38,7 +38,6 @@ export default defineConfig({
       reportsDirectory: join(tmpdir(), `flows-engine-coverage-${process.pid}`),
       // Every production module, including the public barrel, is measured.
       include: ["src/**/*.{ts,vibe}"],
-      exclude: ["src/**/*.d.vibe.ts"],
       // The suite must earn complete coverage in every category.
       thresholds: {
         branches: 100,

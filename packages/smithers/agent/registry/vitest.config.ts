@@ -26,7 +26,6 @@ export default defineConfig({
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-registry-coverage-${process.pid}`),
       include: ["src/**/*.{ts,vibe}"],
-      exclude: ["src/**/*.d.vibe.ts"],
       // All runtime source counters are covered. Keep every category enforced
       // and retain malformed-declaration and diagnostic/path-collision controls.
       thresholds: {
