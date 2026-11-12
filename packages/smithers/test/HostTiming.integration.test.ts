@@ -311,7 +311,7 @@ describe("a run's journal on a sealed host with a subscription seat", () => {
 
     expect(new Set(signIns).size).toBe(2)
     for (const digest of signIns) expect(attempts).toContain(digest)
-    // The one bash call is one step: its three processes share a digest, and it is no model call's.
+    // The one bash call is one step: its process carries the step's digest, and it is no model call's.
     expect(new Set(commands).size).toBe(1)
     expect(attempts).toContain(commands[0])
     expect(signIns).not.toContain(commands[0])
@@ -321,8 +321,9 @@ describe("a run's journal on a sealed host with a subscription seat", () => {
   it("holds one record per process started in the container, its parts adding up", () => {
     const commands = records(Telemetry.commandEvent, Telemetry.Command)
 
-    // The command, and a fingerprint of its working directory before and after it.
-    expect(commands).toHaveLength(3)
+    // One exec: the command runs between two fingerprints of its working
+    // directory in the same process (`TreeFingerprint.around`).
+    expect(commands).toHaveLength(1)
     for (const command of commands) {
       expect([command.spawnMs, command.runMs, command.collectMs, command.totalMs].every(whole)).toBe(true)
       expect(command.spawnMs + command.runMs + command.collectMs).toBe(command.totalMs)

@@ -113,8 +113,9 @@ export const commandEvent = "flows.host.command.v1"
  * standard output and error. `exitCode` is absent for a process stopped before
  * it exited, whose `runMs` then ends where it was stopped.
  *
- * One `bash` call in a container is up to three of these: the command, and a
- * fingerprint of its working directory before and after it.
+ * One `bash` call in a container is one of these: the command runs between
+ * two fingerprints of its working directory in the same process
+ * (`TreeFingerprint.around`).
  *
  * @category records
  * @since 1.0.0
