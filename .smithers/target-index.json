@@ -74764,13 +74764,17 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/engine/src/**/*.ts",
+        "pattern": "packages/smithers/flows/engine/src/**/*.{ts,vibe}",
         "exclude": []
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/engine/test/**/*.ts",
+        "pattern": "packages/smithers/flows/engine/test/**/*.{ts,vibe}",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/engine/knip.config.ts"
       }
     ],
     "outputs": [],

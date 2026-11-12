@@ -44,13 +44,15 @@ const docsFiles = standard.docsFiles
 
 const dependencyPolicy = Smithers.DepsLint({
   packageJson: Smithers.file("package.json"),
-  sources: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")],
+  sources: [
+    Smithers.glob("src/**/*.{ts,vibe}"),
+    Smithers.glob("test/**/*.{ts,vibe}"),
+    Smithers.file("knip.config.ts")
+  ],
   deps: [lib],
   tool: "knip",
   ignoreDependencies: [
     "eslint-plugin-jsdoc",
-    // scripts/build.mjs delegates to buildLibrary, which resolves esbuild from this package's manifest.
-    "esbuild",
     // The circular script runs packages/repo-targets/scripts/circular.mjs, which resolves madge from this package's manifest.
     "madge"
   ],
