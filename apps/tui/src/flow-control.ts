@@ -253,8 +253,8 @@ export const make = (options: {
       if (declared === "module") throw new FlowError("unloaded", `${flow} was added after start`, { subject: flow })
       throw new FlowError("unknown_flow", `Unknown flow ${flow}`, { subject: flow })
     },
-    plan: (flow, input) =>
-      control((service) => service.plan({ flowId: flow, input: input })).then((card) => ({
+    plan: (flow, input, key) =>
+      control((service) => service.plan({ flowId: flow, input, idempotencyKey: key })).then((card) => ({
         // Wildcards take the same y/n/a rows as every consequential envelope, in `start`.
         raw: card
       })),

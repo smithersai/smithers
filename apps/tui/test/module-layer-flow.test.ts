@@ -46,7 +46,7 @@ it("warms, starts and watches an exported action layer using real filesystem and
         assert.equal(Schema.is(input)({ output, value: "child-wrote-this" }), true)
         assert.equal(Schema.is(input)({ value: "child-wrote-this" }), false)
         assert.equal(existsSync(output), false)
-        const runId = await port.start(await port.plan("fixture", { output, value: "child-wrote-this" }))
+        const runId = await port.start(await port.plan("fixture", { output, value: "child-wrote-this" }, "tui:test:fixture"))
         assert.equal(typeof runId, "string")
         const observed = []
         const settled = await port.watch(runId, (event) => observed.push(event.kind)).done

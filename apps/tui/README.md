@@ -543,7 +543,9 @@ in the background, importing modules and opening `<cwd>/.flows` (the store
 `Restart to load`, and `/flow` on it says `Restart to load <name>.`; an edited
 `flow.ts` also needs a restart to run. Do not run `smthrs` executors in the
 same directory at the same time. Restarting marks unfinished runs interrupted;
-retry resumes the durable run. Summary holds run history.
+retry resumes the durable run. A launch interrupted before its run id was saved
+retries under its saved launch key, so the control plane returns the run it
+already admitted instead of starting a second one. Summary holds run history.
 `/smithers` opens the Smithers tab: factory content only. Signed in to
 Smithers Cloud (`smthrs auth login`, or `SMITHERS_TOKEN` with
 `SMITHERS_API_ORIGIN`), it lists the repository's factory issues (the

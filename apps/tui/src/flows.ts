@@ -80,7 +80,11 @@ export interface Port {
   readonly input: (flow: string) => Promise<Schema.Top | undefined>
   /** A markdown flow's body; a module flow is refused. */
   readonly body: (flow: string) => Promise<Body>
-  readonly plan: (flow: string, input: unknown) => Promise<Card>
+  /**
+   * Plans under `key`. The same key returns the same plan, so launching it
+   * again returns the run the control plane already admitted.
+   */
+  readonly plan: (flow: string, input: unknown, key: string) => Promise<Card>
   /** Approves and launches. A signal interrupts approval only; an admitted launch still returns its receipt. */
   readonly start: (card: Card, source?: string, signal?: AbortSignal) => Promise<string>
   readonly resume: (runId: string) => Promise<{ readonly runId: string } | Settled>
@@ -175,6 +179,11 @@ export interface Run {
   readonly stopRequested?: true
   /** A queued admission must resume this durable run, not launch a replacement. */
   readonly resumeRequested?: true
+  /**
+   * The attempt's launch identity, saved before planning. Retrying a launch
+   * interrupted before its receipt was saved plans under it again.
+   */
+  readonly launchKey?: string
 }
 export interface Request {
   readonly id?: string
@@ -642,7 +651,10 @@ export class FlowRuns {
   }
   private async plan(id: string, attempt: number) {
     const run = this.runs.get(id)!
-    const card = await this.options.port!.plan(run.flow, run.input)
+    // Saved FIRST: a launch whose receipt is lost in a crash is found again under this key.
+    const launchKey = run.launchKey ?? `tui:launch:${crypto.randomUUID()}`
+    if (run.launchKey === undefined) this.runs.put({ ...run, launchKey })
+    const card = await this.options.port!.plan(run.flow, run.input, launchKey)
     if (this.attempts.get(id) !== attempt || this.closed) return
     await this.launch(id, attempt, card)
   }
@@ -764,7 +776,7 @@ export class FlowRuns {
     const run = this.runs.get(id)
     if (run?.status !== "input" || this.closed) return
     const attempt = this.attempt(id)
-    this.runs.move({ ...run, input, message: undefined }, "fill")
+    this.runs.move({ ...run, input, message: undefined, launchKey: undefined }, "fill")
     void this.plan(id, attempt).catch((error) => this.fail(id, attempt, error))
   }
   cancel = (id: string): void => {
@@ -815,7 +827,9 @@ export class FlowRuns {
       ...previous,
       attempt: (run.attempt ?? 1) + 1,
       startedAt: Date.now(),
-      resumeRequested: resume ? true as const : undefined
+      resumeRequested: resume ? true as const : undefined,
+      // An interrupted launch with no receipt may have been admitted: keep its key. Other retries are new work.
+      launchKey: run.runId === undefined && run.message === interrupted ? run.launchKey : undefined
     }
     const attempt = this.attempt(id)
     this.watches.get(id)?.close()

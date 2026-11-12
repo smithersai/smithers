@@ -55,6 +55,8 @@ const fake = (
   const calls: Array<string> = []
   const inputs: Array<Pending<Schema.Top | undefined>> = []
   const plans: Array<Pending<Card>> = []
+  /** The key each plan was asked under, in call order. */
+  const keys: Array<string> = []
   const starts: Array<Pending<string>> = []
   const resumes: Array<Pending<{ runId: string } | Settled>> = []
   const watches: Array<{ done: Pending<Settled>; emit: (event: unknown) => void }> = []
@@ -76,8 +78,9 @@ const fake = (
       calls.push(`body:${flow}`)
       throw new FlowError("refused", `${flow} is a module flow`)
     },
-    plan: (flow, input) => {
+    plan: (flow, input, key) => {
       calls.push(`plan:${flow}:${JSON.stringify(input)}`)
+      keys.push(key)
       const next = pending<Card>()
       plans.push(next)
       if (auto.plan) next.resolve({ raw: {} })
@@ -116,7 +119,7 @@ const fake = (
     },
     dispose: async () => {}
   }
-  return { port, calls, inputs, plans, starts, resumes, watches, auto }
+  return { port, calls, inputs, plans, starts, resumes, watches, keys, auto }
 }
 
 const setup = (options: Parameters<typeof fake>[0] & { restored?: ReadonlyArray<Run> } = {}) => {
@@ -596,6 +599,40 @@ describe("flow runs", () => {
     await tick()
     expect(f.calls).toContain("plan:review:{}")
     expect(f.calls.filter((each) => each.startsWith("resume"))).toHaveLength(1)
+  })
+
+  it("recovers a launch whose receipt was lost under the key it planned with; other retries plan anew", async () => {
+    const f = setup()
+    f.auto.start = false
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    // The key is saved before the control plane hears of the plan.
+    const saved = f.records.find((record) => record.type === "flow" && record.run.launchKey !== undefined)
+    expect((saved as { run: Run }).run.status).toBe("requested")
+    const launchKey = (saved as { run: Run }).run.launchKey!
+    expect(launchKey).toBeString()
+    expect(f.keys).toEqual([launchKey])
+    expect(f.calls).toContain("start")
+    // The process dies after the control plane admitted the run and before its receipt was saved.
+    const restored = setup({ restored: f.runs.snapshot() })
+    expect(restored.runs.get("r1")).toMatchObject({ status: "failed", message: interrupted, launchKey })
+    expect(restored.runs.get("r1")?.runId).toBeUndefined()
+    restored.runs.retry("r1")
+    await tick()
+    // The same key: the control plane answers with the run it admitted, not a second one.
+    expect(restored.keys).toEqual([launchKey])
+    expect(restored.calls).toContain("start")
+    restored.starts[0]!.resolve("run-1")
+    await tick()
+    expect(restored.runs.get("r1")).toMatchObject({ status: "running", runId: "run-1", launchKey })
+    // Retrying the run once it fails is new work: a new key, so a new plan.
+    restored.watches[0]!.done.resolve({ kind: "failed", message: "boom" })
+    await tick()
+    restored.runs.retry("r1")
+    await tick()
+    expect(restored.keys).toHaveLength(2)
+    expect(restored.keys[1]).not.toBe(launchKey)
+    expect(restored.runs.get("r1")?.launchKey).toBe(restored.keys[1]!)
   })
 
   it("an agent request for a non-model-invocable flow is refused", async () => {

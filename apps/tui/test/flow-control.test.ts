@@ -11,6 +11,8 @@ import { FlowRuns } from "../src/flows.ts"
 import * as Host from "../src/host.ts"
 
 const root = join(import.meta.dir, "fixtures", "flows-project")
+/** A launch key, as `FlowRuns` saves one for each attempt. */
+const key = () => `tui:test:${crypto.randomUUID()}`
 const stateRoot = mkdtempSync(join(tmpdir(), "tui-flows-"))
 const host = Host.make({ cwd: root, environment: {}, approvals: "ask" })
 const port = FlowControl.make({ cwd: root, environment: {}, stateRoot, approvals: host.approvals! })
@@ -196,7 +198,7 @@ export default Flow.make("${name}", { description: "${name}", capabilities: [], 
 }, 60_000)
 
 it("plans, starts and settles a run from the watch", async () => {
-  const card = await port.plan("echo", { text: "hi" })
+  const card = await port.plan("echo", { text: "hi" }, key())
   const runId = await port.start(card)
   expect(runId).toBeString()
   const events: Array<string> = []
@@ -208,8 +210,18 @@ it("plans, starts and settles a run from the watch", async () => {
   expect(await port.resume(runId)).toEqual({ kind: "done", answer: "hi" })
 }, 120_000)
 
+it("plans, approves and launches once under one key: planning again finds the run already admitted", async () => {
+  const launchKey = key()
+  const first = await port.plan("echo", { text: "once" }, launchKey)
+  const runId = await port.start(first)
+  const again = await port.plan("echo", { text: "once" }, launchKey)
+  expect((again.raw as { planId: string }).planId).toBe((first.raw as { planId: string }).planId)
+  expect(await port.start(again)).toBe(runId)
+  await port.watch(runId, () => {}).done
+}, 120_000)
+
 it("approves a payload the control plane published, and refuses one it did not", async () => {
-  const card = await port.plan("echo", { text: "approved" })
+  const card = await port.plan("echo", { text: "approved" }, key())
   const approval = (card.raw as { approval: unknown }).approval
   // The payload goes back unchanged, as a parked run's budget raise does.
   expect(await port.approve!(approval)).toBeUndefined()
@@ -218,7 +230,7 @@ it("approves a payload the control plane published, and refuses one it did not",
 }, 120_000)
 
 it("lists runs started outside the TUI without opening the flow host", async () => {
-  const runId = await port.start(await port.plan("echo", { text: "listed" }))
+  const runId = await port.start(await port.plan("echo", { text: "listed" }, key()))
   await port.watch(runId, () => {}).done
   // A second port over the same store, as `smthrs flow start` leaves it: never opened here.
   const observer = FlowControl.make({ cwd: root, environment: {}, stateRoot, approvals: host.approvals! })
@@ -244,7 +256,7 @@ it("lists no runs and creates no store where nothing ran", async () => {
 })
 
 it("routes a * envelope through the shared approval rows", async () => {
-  const card = await port.plan("wide", {})
+  const card = await port.plan("wide", {}, key())
   const started = port.start(card).catch((error: unknown) => error)
   for (let n = 0; n < 200 && (await host.approvals!.pending()).length === 0; n++) await Bun.sleep(5)
   const [request] = await host.approvals!.pending()
@@ -326,7 +338,7 @@ for (const mode of ["ask", "deny", "all"] as const) {
 }
 
 it("rejects invalid payload plans and lets the person correct a requested run", async () => {
-  const error = await port.plan("echo", { text: 3 }).catch((error: unknown) => error)
+  const error = await port.plan("echo", { text: 3 }, key()).catch((error: unknown) => error)
   expect(error).toBeInstanceOf(FlowError)
   expect((error as FlowError).code).toBe("invalid_input")
   const watched: Array<string> = []
@@ -360,7 +372,7 @@ it("rejects invalid payload plans and lets the person correct a requested run", 
 }, 60_000)
 
 it("stops a running run through the control plane", async () => {
-  const runId = await port.start(await port.plan("echo", { text: "stop" }))
+  const runId = await port.start(await port.plan("echo", { text: "stop" }, key()))
   // `start` returns before the engine drives the run, so the stop lands first.
   await port.cancel(runId)
   expect(await port.watch(runId, () => {}).done).toEqual({ kind: "cancelled" })

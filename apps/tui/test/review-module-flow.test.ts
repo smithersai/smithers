@@ -39,7 +39,7 @@ it("discovers, plans, starts and observes ordinary review with shared host servi
     const listed = await port.discover()
     assert(listed.some(flow => flow.name === "review" && flow.kind === "module"))
     await port.warm()
-    const runId = await port.start(await port.plan("review", { repo: cwd, runReview: false, narrate: false, verify: false }))
+    const runId = await port.start(await port.plan("review", { repo: cwd, runReview: false, narrate: false, verify: false }, "tui:test:review"))
     const result = await port.watch(runId, () => {}).done
     assert.equal(result.kind, "done", JSON.stringify(result))
     const answer = JSON.parse(result.answer)
