@@ -11,6 +11,8 @@ import { acquireLock, landWorkspace } from "./workspace.mjs"
 import { AffectedIncomplete } from "./affected.mjs"
 import { logLanding, overrideInbox } from "./review.mjs"
 
+const sourceLoader = import.meta.resolve("vibelang/register")
+
 function fixture(t, withMvp = false) {
   const directory = mkdtempSync(join(tmpdir(), "affected-receipt-")), root = join(directory, "root")
   mkdirSync(root)
@@ -341,7 +343,7 @@ export const Package = S.Package({ targets: { targetIndex: S.TargetIndex({}) } }
 export const Package = S.Package({ targets: { test: S.NodeTest({ runner: S.testRunner([S.file("x.ts")]), srcs: [S.glob("**/*.ts")], deps: [] }) } })
 `)
   const generate = () => {
-    const result = spawnSync(process.execPath, [cli, "target", "//:targetIndex", "--write"], { cwd: root, encoding: "utf8", env: { ...process.env, CI: "" } })
+    const result = spawnSync(process.execPath, ["--import", sourceLoader, cli, "target", "//:targetIndex", "--write"], { cwd: root, encoding: "utf8", env: { ...process.env, CI: "", NODE_OPTIONS: "" } })
     assert.equal(result.status, 0, result.stderr + result.stdout)
   }
   generate()
@@ -351,7 +353,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 assert.equal(existsSync(${JSON.stringify(lock)}), true, "projection must run under the lease")
 for (const args of [["target", "//:targetIndex", "--write"], ["lint", "//:targetIndex"]]) {
-  const result = spawnSync(process.execPath, [${JSON.stringify(cli)}, ...args], { encoding: "utf8", env: { ...process.env, CI: "" } })
+  const result = spawnSync(process.execPath, ["--import", ${JSON.stringify(sourceLoader)}, ${JSON.stringify(cli)}, ...args], { encoding: "utf8", env: { ...process.env, CI: "", NODE_OPTIONS: "" } })
   if (result.status !== 0) throw new Error(result.stderr + result.stdout)
 }
 writeFileSync(${JSON.stringify(projected)}, readFileSync(".smithers/target-index.json"))

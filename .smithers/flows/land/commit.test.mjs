@@ -7,6 +7,8 @@ import { test } from "node:test"
 import { pathToFileURL } from "node:url"
 import { overrideInbox } from "./review.mjs"
 
+const sourceLoader = import.meta.resolve("vibelang/register")
+
 const script = resolve(import.meta.dirname, "commit.mjs")
 const { landWorkspace } = await import("./workspace.mjs")
 process.env.PATH = `${resolve(import.meta.dirname, "../../../node_modules/.bin")}:${process.env.PATH}`
@@ -16,7 +18,7 @@ const copyHygiene = (directory) => {
   const gateBin = join(directory, ".git/test-bin")
   mkdirSync(gateBin, { recursive: true })
   writeFileSync(join(gateBin, "smthrs"), `#!/bin/sh
-exec "${process.execPath}" "${resolve(import.meta.dirname, "../../../packages/smithers/build/build-cli/src/main.ts")}" "$@"
+NODE_OPTIONS= exec "${process.execPath}" --import "${sourceLoader}" "${resolve(import.meta.dirname, "../../../packages/smithers/build/build-cli/src/main.ts")}" "$@"
 `, { mode: 0o755 })
   mkdirSync(join(directory, "packages/repo-targets/contracts"), { recursive: true })
   copyFileSync(resolve(import.meta.dirname, "../../../packages/repo-targets/contracts/check-tracked-hygiene.mjs"), join(directory, "packages/repo-targets/contracts/check-tracked-hygiene.mjs"))
@@ -63,7 +65,7 @@ export const Package = S.Package({ targets: {
     `        run: "pnpm exec smthrs lint '//:targetIndex' --verbose"`, ''
   ].join("\n")
   for (const file of ["drift.yml", "ci.yml"]) writeFileSync(join(directory, ".github/workflows", file), workflowBytes)
-  const indexed = spawnSync(process.execPath, [resolve(import.meta.dirname, "../../../packages/smithers/build/build-cli/src/main.ts"), "target", "//:targetIndex", "--write"], { cwd: directory, encoding: "utf8" })
+  const indexed = spawnSync(process.execPath, ["--import", sourceLoader, resolve(import.meta.dirname, "../../../packages/smithers/build/build-cli/src/main.ts"), "target", "//:targetIndex", "--write"], { cwd: directory, encoding: "utf8", env: { ...process.env, NODE_OPTIONS: "" } })
   assert.equal(indexed.status, 0, indexed.stderr + indexed.stdout)
 
 }
@@ -82,7 +84,7 @@ const command = (cwd, bin, args, environment = {}) => {
   }
   // Fixture commands never need a production admission hour. Retain their output
   // and fail with a named case if a nested invocation or publication gets stuck.
-  const result = spawnSync(bin, args, { cwd, encoding: "utf8", timeout: 180000, killSignal: "SIGKILL", env: { ...process.env, ...environment, PATH: `${join(cwd, ".git/test-bin")}:${process.env.PATH}`, HOME: join(cwd, ".git/test-home") } })
+  const result = spawnSync(bin, args, { cwd, encoding: "utf8", timeout: 180000, killSignal: "SIGKILL", env: { ...process.env, ...environment, NODE_OPTIONS: "", PATH: `${join(cwd, ".git/test-bin")}:${process.env.PATH}`, HOME: join(cwd, ".git/test-home") } })
   trace(`finished status=${result.status} error=${result.error?.code ?? "none"} elapsedMs=${Math.round(performance.now() - started)}`)
   if (result.error) result.stderr = `${result.stderr ?? ""}\nFixture command ${number} (${basename(bin)}): ${result.error.code}\n`
   return result
@@ -456,7 +458,7 @@ for (const vcs of ["git", "jj"]) {
           // not substitute for a passing trackedHygiene target contract.
           const label = gate === "workflowInput" ? "//:targetIndex" :
             ["trackedHygiene", "conflictMarkers"].includes(gate) ? `//packages/repo-targets:${gate}` : `//:${gate}`
-          const checked = command(directory, process.execPath, [resolve(import.meta.dirname, "../../../packages/smithers/build/build-cli/src/main.ts"), "lint", label])
+          const checked = command(directory, process.execPath, ["--import", sourceLoader, resolve(import.meta.dirname, "../../../packages/smithers/build/build-cli/src/main.ts"), "lint", label])
           assert.notEqual(checked.status, 0, checked.stdout + checked.stderr)
           const result = command(directory, process.execPath, [script, "--push", ...(mode === "test" ? ["--test", "true"] : ["--no-test", "manual recovery"])])
           assert.notEqual(result.status, 0)

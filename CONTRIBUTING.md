@@ -29,6 +29,9 @@ Repository flow tests that select an explicit Node runtime also declare
 `imports: ["vibelang/register"]`, matching `.smithers/WORKSPACE.ts`. An explicit
 runtime replaces the workspace default, including its preloads; omitting the
 source loader prevents the tests from importing migrated workspace sources.
+Standalone Node children that run the source build CLI also pass `--import` with
+`import.meta.resolve("vibelang/register")`. A parent's `--import` flag does not carry
+through `spawn` or `spawnSync`, and fixtures run outside the repository's cwd.
 
 Before landing on `main`, run every gate:
 
