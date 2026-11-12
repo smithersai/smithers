@@ -9,8 +9,9 @@ const WINDOW = "40 millis"
 /** The deadline for the keyboard probe to answer; it never ends a passing run early. */
 const READY = "5 seconds"
 
+const KINDS = ["keydown", "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "scroll", "click-wiki", "click-draft", "click-outside", "popstate", "popstate-elsewhere", "resize", "orientationchange"] as const
 const DomEvent = Schema.Struct({
-  kind: Schema.Literals(["keydown", "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "scroll", "click-wiki", "click-draft", "click-outside", "popstate", "popstate-elsewhere", "resize", "orientationchange"]),
+  kind: Schema.Literals(KINDS),
   key: Schema.Literals(["k", "K", "Escape", " ", "Tab", "ArrowLeft", "ArrowRight", "PageUp", "Home", "ArrowUp", "a"]),
   meta: Schema.Boolean,
   control: Schema.Boolean,
@@ -103,7 +104,9 @@ it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, bac
     }
   }, READY)
   if (Option.isNone(ready)) throw new Finding({ report: `keyboard: Escape answered no PressedEscape within ${READY}` })
-  try Effect.try(() => { for (const event of events) fire(document, window, links, event) })
+  // Every kind fires once, a finger down then moving, so each listener runs whatever the draw; then the drawn events.
+  const chosen = KINDS.map((kind): DomEvent => ({ kind, key: "a", meta: false, control: false, shift: kind === "touchmove", button: 0 }))
+  try Effect.try(() => { for (const event of [...chosen, ...events]) fire(document, window, links, event) })
   try sleep(WINDOW)
   try Deferred.succeed(done, undefined)
   for (const { name, fiber } of [...running, probe]) {

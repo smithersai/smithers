@@ -51,7 +51,7 @@ effect function check(name: string, holds: boolean) {
  * Each editor failure with a way out offers it (Connect GitHub posts to the connect route; Fork and Install link out)
  * and one without, or no failure, offers none,
  * and typed text reaches the editor; the finder sends its query; a page the repository changed renders its own source
- * with relative links resolved to wiki pages; in the account menu ArrowDown and ArrowUp move focus with FocusedPrompt
+ * with relative links resolved to wiki pages, a missing page shows nothing and a query no page matches says so; in the account menu ArrowDown and ArrowUp move focus with FocusedPrompt
  * and x and Enter send nothing; choosing a person's role sends SelectedRole for that person.
  */
 it.live("screens/wiki-and-people", () => run("screens/wiki-and-people", Schema.Struct({ text: Text }), ({ text }) => effect {
@@ -71,6 +71,12 @@ it.live("screens/wiki-and-people", () => run("screens/wiki-and-people", Schema.S
   const changed = try render(model({ wikiPages: [{ id: PAGE.id, source: `# Changed\n\nSee [the rulings](rulings.md) and [the web](https://example.com).`, revision: "r" }] }))
   const body = changed.inner(".sui-md").join("")
   try check(`observed page ${body.slice(0, 300)}`, body.includes("Changed") && body.includes(`href="https://example.com"`) && /href="[^"]*rulings"/.test(body) && !body.includes("rulings.md"))
+  // A pane on a page the build does not have shows neither a page nor a failure.
+  const missing = try render(model({ client: { ...model({}).client, conversation: { ...model({}).client.conversation, pane: "/wiki/fuzz-missing" } } }))
+  try check("missing page", missing.all(".vl-wiki-content").length === 1 && [".sui-md", ".sui-empty", ".sui-skeleton", ".vl-wiki-meta"].every((part) => missing.all(`.vl-wiki-content ${part}`).length === 0))
+  // A query no page matches says so.
+  const unmatched = try render(model({ wikiQuery: "\u0000no page\u0000" }))
+  try check("no match", unmatched.all(".vl-wiki-content .sui-empty").length === 1 && unmatched.all(".vl-wiki-content .sui-md").length === 0)
   // The account menu's keys.
   for (const [key, moves] of [["ArrowDown", true], ["ArrowUp", true], ["x", false], ["Enter", false]] as const) {
     const pressed = try Effect.try(() => moves ? [keydown("#vl-account-out", key)] : [keydown("#vl-account-out", key), expectIgnored()])

@@ -80,6 +80,8 @@ it.live("screens/history-states", () => run("screens/history-states", Input, ({ 
     const matches = try render(loaded("viewer", { filter: "par", matches: { seq: 5, query: answered ? "par" : "", commits: [head("m1", "landed", title)] } }))
     try check(`matches ${answered}`, matches.all("ul[aria-label='Matching commits'] li").length === (answered ? 1 : 0) && matches.all("ul[aria-busy='true']").length === (answered ? 0 : 1))
   }
+  const whole = try render(loaded("viewer", { open: ["e1"], pages: [{ ...pages[0]!, total: 2 }] }))
+  try check("read epic", whole.all("ul[aria-label='Compiler'] li").length === 2 && !whole.buttons().includes("Show more"))
   // An epic, and a commit not read yet.
   const epic = try render(loaded("viewer", { hash: "e1", pages }))
   try check("epic page", same(epic.texts("h1"), ["Compiler"]))
@@ -132,6 +134,10 @@ it.live("screens/history-states", () => run("screens/history-states", Input, ({ 
   // A newer outline reads again every epic page the reader has.
   const reread = try Effect.try(() => update(loaded("viewer", { pages }), HistoryMessage.GotOutline({ outline: { seq: 6, main: "abc1234def", epics: EPICS, open: [] } })))
   try check("newer outline", (reread.commands ?? []).some((command) => command.name === "ReadEpic"))
+  // An older outline arriving late on a ready page changes nothing and reads nothing.
+  const ready = loaded("viewer", { pages })
+  const late = try Effect.try(() => update(ready, HistoryMessage.GotOutline({ outline: { seq: 4, main: "old", epics: [], open: [] } })))
+  try check("late outline", late.model === ready && (late.commands ?? []).length === 0)
   // Epic pages: in order, stale, detached.
   const base = loaded("viewer", { pages })
   const third = head("m4", "planned", "Third")

@@ -69,7 +69,7 @@ const SCENARIOS = [
   "control-tour", "read-action", "actions-faulty-epoch", "act-roleless", "draft-link", "theatre-keys", "auto-tour", "tour-events",
   "wiki-bare", "wiki-unlisted", "details-bare", "sign-in-mock", "wiki-link",
   "end-tour", "run-without-epoch", "issue-count", "details-mock",
-  "sandbox-poll-unreachable", "open-wiki", "grant-bare", "run-json-blank",
+  "sandbox-poll-unreachable", "open-wiki", "grant-bare", "run-json-blank", "people-bare", "people-faulty",
 ] as const
 
 type Entries = Record<string, {
@@ -193,6 +193,12 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
         const got = try answer(() => GrantRole({ id: member.id, role: role === "viewer" ? "community" : role }))
         return got._tag === "GrantedRole"
       }
+    }
+    case "people-bare": case "people-faulty": {
+      // Without an accounts service there is nobody to list: People loads empty, not as a failure. A service that
+      // fails to list makes People fail.
+      const got = try Effect.provide(answer(() => LoadPeople({})), backend(scenario === "people-bare" ? "bare" : "faulty", role))
+      return scenario === "people-bare" ? got._tag === "LoadedPeople" && got.members.length === 0 : got._tag === "AccountFailed"
     }
     case "sign-out-bare": case "sign-out-faulty": {
       const got = try Effect.provide(answer(() => SignOutAccount({})), backend(scenario === "sign-out-bare" ? "bare" : "faulty", role))
@@ -431,7 +437,7 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
 
 /**
  * Every scenario runs in every execution, so no arm depends on what a short budget happens to draw. One execution runs
- * 39 scenarios (Commands and subscriptions) and takes about a second under coverage, hence the floor.
+ * 45 scenarios (Commands and subscriptions) and takes about a second under coverage, hence the floor.
  */
 it.live("web/command-arms", () => run("web/command-arms", CommandArms, (input) => Effect.provide(effect {
   for (const scenario of SCENARIOS) if (!(try commandHolds(scenario, input))) throw new Finding({ report: `${scenario} does not hold` })

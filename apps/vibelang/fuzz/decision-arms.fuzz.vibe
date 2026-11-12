@@ -126,6 +126,18 @@ it.live("web/decision-arms", () => run("web/decision-arms", Input, ({ text, othe
   // A specification revision is sent with the revision it revises (0 before any).
   const revise = issuesUpdate({ ...initialIssues, role: "maintainer", status: "ready", screen: "specification", comment: other || "x" }, "spec-revise", other || "x")
   try check(`spec-revise ${JSON.stringify(revise.request ?? null)}`, revise.request?.op === "spec-revise" && revise.request.revision === 0)
+  // An action that failed is sent again as saved, with its key and serial, when the reader repeats it.
+  const failed = { ...initialIssues, role: "maintainer" as const, status: "ready" as const, screen: "detail" as const, selected: 3, comment: other || "x", serial: 4 }
+  for (const [action, value, saved] of [
+    ["comment", other, { op: "comment", number: 3, parent: 0, title: "", text: other || "x", example: "", prior: "", assignee: "VibeLang agent", key: "-4" }],
+    ["spec-review", "sol", { op: "spec-review", number: 3, parent: 0, title: "", text: "", example: "", prior: "", assignee: "VibeLang agent", key: "-4", revision: 2, reviewer: "sol" }],
+  ] as const) {
+    const repeated = issuesUpdate({ ...failed, retry: saved }, action, value)
+    try check(`resend ${action}`, repeated.request === saved && repeated.ui.retry === saved && repeated.ui.busy && repeated.ui.serial === 4 && IssuesView.issueUpdatePlan("saved", true) === "resend")
+  }
+  for (const loading of [false, true]) for (const error of [false, true]) for (const matches of [false, true]) for (const found of [false, true]) {
+    try check(`wikiContent ${loading} ${error} ${matches} ${found}`, WikiView.wikiContent(loading, error, matches, found) === (loading ? "loading" : error ? "error" : !matches ? "empty" : found ? "page" : "none"))
+  }
   // The two proof lemmas of modelWrite: Escape writes the issues screen exactly when the proved write changes one the
   // page has; writing back the screen just read changes nothing.
   const home = init({ session: "pane", mode: "mock", name: other }).model

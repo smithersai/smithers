@@ -74,6 +74,8 @@ it.live("history/command-arms", () => run("history/command-arms", Input, (input)
     for (const write of WRITES) { const got = try answer(write); if (got._tag !== "FailedWrite" || got.reason !== refusal) throw new Finding({ report: `refused write ${got._tag}` }) }
   }
   provide MockMythical(MAINTAINER, small) {
+    // Every read over the working mock answers with what it read.
+    for (const read of READS) { const got = try answer(read); if (got._tag === "FailedRead" || got._tag === "FailedWrite") throw new Finding({ report: `mock read ${got._tag}` }) }
     // Every write over the working mock: plan a commit, then start, note and approve it, and fold.
     const planned = try answer(() => PlanCommand({ how: "append", epic: "", newEpic: "Fuzz", target: "", title: "Fuzz", task: "" }))
     if (planned._tag !== "Wrote" || planned.hash === "") throw new Finding({ report: `plan ${planned._tag}` })

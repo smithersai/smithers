@@ -1329,6 +1329,27 @@ target failed at every seed and stopped `pnpm fuzz:coverage` before its report (
 `https://github.test`; the target's client is unreachable, so no request is made. Seed 20261258: red before, 3 tests
 passed after.
 
+### The thirteen arms the eighteenth run left to the draw (nineteenth session)
+
+The eighteenth session's last full run (seed 20261261, `9df38053`) left 13 arms in 8 web files, each reached in its
+other runs only by a broad target's draw. Each is now a chosen case, run in every execution:
+
+| Arm | Case |
+| --- | --- |
+| `historyApp` 223, `historyDecision.outlineArrival` 84: an older outline arriving late | `screens/history-states` "late outline": the ready page and no Command |
+| `historyApp` 319: `ReadOutline` answered | `history/command-arms` runs every read over the working mock; none answers `FailedRead` |
+| `historyView` 159: an epic read to its end | `screens/history-states` "read epic": its commits, no Show more |
+| `issues` 83, `issuesViewDecision` 28: an action repeated after its failure | `web/decision-arms` "resend": `comment` and `spec-review` send the saved request itself, serial unchanged |
+| `main` 1161: a finger moving | `web/subscriptions` fires each of the 14 DOM event kinds once before the drawn events |
+| `main` 1394: People without an accounts service, and one that fails | `web/command-arms` `people-bare` (`LoadedPeople`, empty) and `people-faulty` (`AccountFailed`) |
+| `wikiView` 79, `wikiViewDecision` 81: a pane on a page the build lacks | `screens/wiki-and-people` "missing page" (no page, failure or skeleton), "no match"; `web/decision-arms` checks `wikiContent` over all 16 inputs |
+
+Each changed target alone reaches each of its arms at two seeds (history 20261262/63, web 20261262/63 and
+20261264/65, wiki 20261266/67). Mutants caught (20261268), one per case: a repeated action sent fresh, a late outline
+accepted, Show more on a read epic, a read outline answered as failed, People without accounts failing, a failed
+member list loading empty, a missing page read as no match (caught by both targets), and a moving finger emitting an
+undeclared Message.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
