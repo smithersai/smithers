@@ -1654,3 +1654,7 @@ seek before writing it, so only a log from an older or foreign writer holds one.
 touring conversation through the sequencer, applies a seek to a drawn step (-2 to 14, and 1.5 and 10.5) and holds the
 walkthrough to the contract: unchanged for a step outside the range, `soughtWalkthrough` for one inside. Mutant
 caught: the range ending at 12.
+
+`worker/Reply.vibe` 355, a reply whose answer has no text: `reply/answers` drew the `empty` and `blank` answers, rare at
+the full run's budget. Each execution now also answers once with `""` and once with spaces, and the reply must fail as
+empty, never finishing blank. Mutant caught: an empty answer reported as failed.

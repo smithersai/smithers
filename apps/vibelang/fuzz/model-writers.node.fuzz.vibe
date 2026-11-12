@@ -267,6 +267,11 @@ it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scope
   // charge cannot be recorded, fails the reply as the budget's.
   const corrected = try replyOver(scriptsOf({ ...input, kind: "corrected" }), ledger("admit").spend)
   if (input.text.isWellFormed() && input.text.trim() !== "" && (corrected.restarts !== 1 || corrected.finished[0] !== input.text)) return false
+  // Every execution: an answer with no text fails the reply as empty, never finishing it blank.
+  for (const kind of ["empty", "blank"] as const) {
+    const blank = try replyOver(scriptsOf({ ...input, kind }), ledger("admit").spend)
+    if (blank.finished.length !== 0 || blank.failed[0] !== REASONS.empty) return false
+  }
   for (const physical of ["refuse", "fault"] as const) {
     const refused = try replyOver(scriptsOf({ ...input, kind: "answer" }), physicalLedger(physical))
     if (refused.finished.length !== 0 || refused.failed[0] !== REASONS.budget) return false
