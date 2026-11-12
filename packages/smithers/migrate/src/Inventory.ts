@@ -573,7 +573,8 @@ export const scanFile = (
    * ternary, a `.map` or a call, is recorded without its id. The rewrite would
    * otherwise call it every time, and a step `{false && <Task id="a" />}`
    * guarded off would run. The empty id is how the rewrite is told to leave the
-   * group to the agent.
+   * group to the agent. A step with its own `skipIf` is conditional the same
+   * way, so it is recorded without its id too.
    */
   const componentsIn = (
     nodes: ReadonlyArray<ts.Node>
@@ -596,7 +597,8 @@ export const scanFile = (
           // `id={`${id}:review-claude`}` — is not a name this tool may print,
           // and the empty string is how the rewrite is told so.
           const literal = Ts.attributeLiteral(opening, "id") ?? ""
-          const id = !rendered || /[,:]/.test(literal) ? "" : literal
+          const skipped = Ts.attributeNames(opening).includes("skipIf")
+          const id = !rendered || skipped || /[,:]/.test(literal) ? "" : literal
           found.push({
             construct,
             id,

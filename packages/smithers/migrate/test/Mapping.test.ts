@@ -816,6 +816,64 @@ describe("Mapping rewrites a wait only when WaitFor keeps its meaning", () => {
   })
 })
 
+// Issue #5421: a `skipIf` makes a step conditional, and no rewrite prints the
+// condition, so a hit that carries one, or a group that calls one, has no
+// automatic snippet.
+describe("Mapping never rewrites a skipped step into an unconditional call", () => {
+  const hitsOf = (source: string): ReadonlyArray<Inventory.InventoryEntry> => {
+    const factories = Inventory.factoryNames(new Map([["greeting.tsx", source]]))
+    return Inventory.scanFile("greeting.tsx", source, { factories })
+  }
+  const skipped = greeting.replace("id=\"greet\"", "id=\"greet\" skipIf={true}")
+
+  it("guides a Task with skipIf and prints no action for it", () => {
+    const plain = hitsOf(greeting).find((entry) => entry.construct === "Task")!
+    const task = hitsOf(skipped).find((entry) => entry.construct === "Task")!
+
+    expect(Mapping.classify(plain)).toBe("automatic")
+    expect(Mapping.snippet(plain)).toContain("Greet.toLayer(")
+    expect(task.detail?.["skipIf"]).toBe("true")
+    const classified = Mapping.classifyWithReason(task)
+    expect(classified.class).toBe("guided")
+    expect(classified.reason).toContain("Node.branch")
+    expect(Mapping.snippet(task)).toBeUndefined()
+  })
+
+  it("guides a workflow that calls a skipped step and prints no flow for it", () => {
+    const workflow = workflowHit(skipped)
+
+    // The skipped step is recorded without its id, so no group names it.
+    expect(workflow.detail?.["childConstructs"]).toBe("Task:")
+    expect(Mapping.classify(workflow)).toBe("guided")
+    expect(Mapping.snippet(workflow)).toBeUndefined()
+  })
+
+  it("prints no group or branch call over a skipped step", () => {
+    const groups = [
+      "<Sequence><Task id=\"one\" output={outputs.result} skipIf={ctx.input.done}>{() => ({ message: \"a\" })}</Task>" +
+      "<Task id=\"two\" output={outputs.result}>{() => ({ message: \"b\" })}</Task></Sequence>",
+      "<Parallel><Task id=\"one\" output={outputs.result}>{() => ({ message: \"a\" })}</Task>" +
+      "<Task id=\"two\" output={outputs.result} skipIf={ctx.input.done}>{() => ({ message: \"b\" })}</Task></Parallel>",
+      "<Branch if={true} then={<Task id=\"one\" output={outputs.result} skipIf={ctx.input.done}>" +
+      "{() => ({ message: \"a\" })}</Task>} />"
+    ]
+    for (const group of groups) {
+      const source = greeting
+        .replace("const { Workflow, Task,", "const { Workflow, Task, Sequence, Parallel, Branch,")
+        .replace(/<Task id="greet".*<\/Task>/, group)
+      const hit = hitsOf(source).find((entry) => ["Sequence", "Parallel", "Branch"].includes(entry.construct))!
+
+      expect([hit.construct, Mapping.classify(hit), Mapping.snippet(hit)]).toEqual([hit.construct, "guided", undefined])
+      // The same group without the skip is the automatic rewrite.
+      const plain = hitsOf(source.replace(" skipIf={ctx.input.done}", "")).find((entry) =>
+        entry.construct === hit.construct
+      )!
+      expect([plain.construct, Mapping.classify(plain)]).toEqual([hit.construct, "automatic"])
+      expect(Mapping.snippet(plain)).toContain("One.call(")
+    }
+  })
+})
+
 describe("Mapping threads a sequence the way the golden fixture does", () => {
   it("fills each step's declared payload from the step before it", () => {
     const factories = Inventory.factoryNames(new Map([["context-doctor.tsx", contextDoctor]]))

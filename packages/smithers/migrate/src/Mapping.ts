@@ -959,6 +959,13 @@ const escalations: ReadonlyArray<{
     reason: "graph-level scheduling and failure policy have no plan-level counterpart"
   },
   {
+    construct: "Task",
+    props: ["skipIf"],
+    to: "guided",
+    reason:
+      "a skipped step becomes an explicit `Node.branch`, so the predicate has to be rewritten against the planned value"
+  },
+  {
     construct: "Parallel",
     props: ["maxConcurrency", "subtreeConcurrency", "priority", "failurePolicy"],
     to: "guided",
@@ -1334,6 +1341,9 @@ const sequenced = (
  * @since 1.0.0-rc.0
  */
 export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse): string | undefined => {
+  // A `skipIf` makes the call conditional, and none of the rewrites below
+  // prints a condition: an unconditional call would run what the source skips.
+  if (hit.props.includes("skipIf")) return undefined
   const detail = hit.detail ?? {}
   switch (hit.construct) {
     case "Task": {
