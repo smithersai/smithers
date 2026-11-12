@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect, expectTypeOf, it } from "@effect/vitest"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
@@ -21,7 +21,7 @@ const conflict = new FlowRuntime.ExecutionIdentityConflict({
 const defect = new Error("unrelated defect")
 // This package owns authoring, not execution. Override only its runtime port;
 // the real memory and SQLite admission behavior is covered in engine packages.
-const failing = (cause: Cause.Cause<never>, called: () => void = () => {}) =>
+const failing = (cause: Cause.Cause<FlowRuntime.StoreUnavailable>, called: () => void = () => {}) =>
   Layer.effect(
     FlowRuntime.FlowRuntime,
     Effect.map(FlowRuntime.FlowRuntime, (runtime) =>
@@ -39,6 +39,48 @@ const observe = (cause: Cause.Cause<never>) =>
       Effect.scoped
     )
   )
+
+describe("start and ensure admission refusals", () => {
+  // `start` and `ensure` are `execute` with `discard: true`, so they fail the
+  // ways admission fails. `ensure` exists to reuse a key, and reusing it with
+  // a different payload is the engine's identity conflict.
+  it("declares the admission failures execute declares", () => {
+    type Declared = Effect.Error<ReturnType<typeof flow.start>>
+    type Ensured = Effect.Error<ReturnType<typeof flow.ensure>>
+    type Discarded = Effect.Error<ReturnType<typeof flow.execute<true>>>
+    expectTypeOf<Declared>().toEqualTypeOf<Discarded>()
+    expectTypeOf<Ensured>().toEqualTypeOf<Discarded>()
+    expectTypeOf<FlowRuntime.ExecutionIdentityConflict>().toExtend<Declared>()
+    expectTypeOf<FlowRuntime.StoreUnavailable>().toExtend<Declared>()
+  })
+
+  it.effect("ensure fails with the typed identity conflict a handler can name", () =>
+    Effect.gen(function*() {
+      const outcome = yield* withCrypto(
+        flow.ensure({ value: 2 }, { key: "shared" }).pipe(
+          Effect.catchTag("@smthrs/engine/ExecutionIdentityConflict", (error) => Effect.succeed(error.field)),
+          Effect.exit,
+          Effect.provide(failing(Cause.die(conflict))),
+          Effect.scoped
+        )
+      )
+      expect(outcome).toEqual(Exit.succeed("payload"))
+    }))
+
+  it.effect("start fails with the typed store outage a handler can name", () =>
+    Effect.gen(function*() {
+      const unavailable = new FlowRuntime.StoreUnavailable({ executionId: "fresh" })
+      const outcome = yield* withCrypto(
+        flow.start({ value: 1 }).pipe(
+          Effect.catchTag("@smthrs/flow/StoreUnavailable", (error) => Effect.succeed(error.executionId)),
+          Effect.exit,
+          Effect.provide(failing(Cause.fail(unavailable))),
+          Effect.scoped
+        )
+      )
+      expect(outcome).toEqual(Exit.succeed("fresh"))
+    }))
+})
 
 describe("execute admission refusal conversion", () => {
   it.effect("converts the sole identity defect to the same typed failure", () =>

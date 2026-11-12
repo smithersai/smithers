@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type * as Action from "./Action/Action.ts"
 import { make as makeAction } from "./Action/make.ts"
+import type { CancelRequestFailed } from "./FlowRuntime/CancelRequestFailed.ts"
 import type { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
 import type { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import type { HumanAnswerInvalid, HumanTaskFailed } from "./HumanTask.ts"
@@ -233,6 +234,15 @@ register("@smthrs/flow/InfraInterrupt", "infra")
 // The engine's store could not record a step; the run waits for the next execute.
 register("@smthrs/flow/StoreUnavailable", "infra")
 register("@smthrs/flow/InfraInterruptRetriesExhausted", "infra")
+// A cancellation the store could not record leaves the run cancellable, so the
+// request is retried; asking a durable engine for `interruptUnsafe` is wiring.
+register(
+  "@smthrs/flow/CancelRequestFailed",
+  {
+    cancel_request_failed: "infra",
+    unsafe_interrupt_unsupported: "bug"
+  } satisfies Rows<CancelRequestFailed["code"]>
+)
 register(
   "@smthrs/flow/HumanTaskFailed",
   {
@@ -265,7 +275,6 @@ for (
     "ExecutionIdRequired",
     "EffectKeyUnavailable",
     "FlowCycleDetected",
-    "CancelRequestFailed",
     "Action/DuplicateImplementation",
     "ConcurrentKeylessDispatch",
     "FlowExecutionNotFound",

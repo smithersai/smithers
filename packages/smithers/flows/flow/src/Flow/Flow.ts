@@ -296,10 +296,15 @@ export interface Flow<
    * Starts a fresh execution and returns its id. Equal payloads start independent
    * executions; declared and ambient idempotency policies are intentionally bypassed.
    * Observe the execution with `poll`, or await it using `execute` with this id.
+   *
+   * It is `execute` with `discard: true`, so it fails the same ways admission
+   * can fail: a store that could not record the run is `StoreUnavailable`, and
+   * an execution id already held by another flow or payload is
+   * `ExecutionIdentityConflict`.
    */
   readonly start: (payload: Payload["~type.make.in"]) => Effect.Effect<
     string,
-    Schema.SchemaError | FlowCycleDetected,
+    Schema.SchemaError | FlowCycleDetected | StoreUnavailable | ExecutionIdentityConflict,
     | FlowRuntime
     | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | Requires
@@ -311,7 +316,8 @@ export interface Flow<
   /**
    * Starts or joins the execution identified by this flow tag and an explicit
    * caller key, returning its id. Reusing a key is an explicit retry/reattachment
-   * decision. Existing persisted key encodings remain unchanged.
+   * decision, and reusing it with a different payload fails with
+   * `ExecutionIdentityConflict`. Existing persisted key encodings remain unchanged.
    */
   readonly ensure: (
     payload: Payload["~type.make.in"],

@@ -32,6 +32,16 @@
 
 ### Fixed
 
+- `flow.start` and `flow.ensure` declare `FlowRuntime.StoreUnavailable` and
+  `FlowRuntime.ExecutionIdentityConflict`, the failures they already raised as
+  `execute` with `discard: true`: an `ensure` that reuses a key with a different
+  payload is the conflict, and a store that cannot record the run is the
+  outage. Before, a caller that handled the two declared errors and treated the
+  effect as infallible met a failure it could not have written a handler for.
+- `Fault` classifies `CancelRequestFailed` by code: `cancel_request_failed`, a
+  store that could not record a cancellation the caller can retry, is `infra`,
+  so it is retried and then parked instead of stopping the run as a `bug`;
+  `unsafe_interrupt_unsupported` stays `bug`.
 - Recovered flows could dispatch before their action handlers finished building and report `unresolved_action`. Interpreter registration now waits for its implementation layers.
 
 - Publish node outcomes only after their settlement records persist. Join journal

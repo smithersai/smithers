@@ -4,7 +4,7 @@
  * `respond` is the one ladder over the classes.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, ExternalJob, Fault, Flow, HumanTask } from "@smthrs/flow"
+import { Action, ExternalJob, Fault, Flow, FlowRuntime, HumanTask } from "@smthrs/flow"
 
 const tagged = (tag: string, fields: Record<string, unknown> = {}) => ({ _tag: tag, ...fields })
 
@@ -116,6 +116,21 @@ describe("the flow's own rows", () => {
         message: "deadline elapsed"
       })
     )).toEqual({ class: "policy", tag: "@smthrs/flow/DeadlineExceeded/deadline_exceeded" })
+  })
+
+  it("classifies a cancellation the store could not record as infra, and an unsupported unsafe interrupt as a bug", () => {
+    const refused = (code: FlowRuntime.CancelRequestFailed["code"]) =>
+      new FlowRuntime.CancelRequestFailed({ code, executionId: "run-1", reason: "storage failure" })
+    // The store is the platform: the run is still running and still cancellable,
+    // so a responder retries the request, as it retries `StoreUnavailable`.
+    const unrecorded = Fault.of(refused("cancel_request_failed"))
+    expect(unrecorded).toEqual({ class: "infra", tag: "@smthrs/flow/CancelRequestFailed/cancel_request_failed" })
+    const state = { attempt: 1, seatsLeft: 0, parksLeft: 1, replans: 0, veryHard: false }
+    expect(Fault.respond(unrecorded, state)).toBe("retry")
+    expect(Fault.respond(unrecorded, state))
+      .toBe(Fault.respond(Fault.of(new FlowRuntime.StoreUnavailable({ executionId: "run-1" })), state))
+    expect(Fault.of(refused("unsafe_interrupt_unsupported")))
+      .toEqual({ class: "bug", tag: "@smthrs/flow/CancelRequestFailed/unsafe_interrupt_unsupported" })
   })
 
   it("classifies an attempt that outlived its bound as a dependency fault", () => {

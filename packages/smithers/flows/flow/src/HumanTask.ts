@@ -669,13 +669,18 @@ const budgetOf = (payload: Payload): Effect.Effect<number, HumanTaskFailed> => {
  * The deadline a payload asks for, refused when it is not a length of time.
  *
  * `Duration.millis` takes any number, so an unchecked deadline does not fail —
- * it changes what the question means. `NaN` becomes zero and a negative stays
- * negative, so both are deadlines that have ALREADY passed: the task times out
- * on its first park and nobody is ever really asked. `Infinity` becomes the
- * infinite duration, so the race has a branch that can never win and a question
- * asked with a deadline has none. All three are the same authoring mistake as a
- * `select` with no options, and they are refused in the same place, before the
- * first park, rather than surfacing as a `timeout` nobody waited for.
+ * it changes what the question means. `NaN` is not a length of time at all, and
+ * a negative is a due time before the question was asked. `Infinity` becomes
+ * the infinite duration, so the race has a branch that can never win and a
+ * question asked with a deadline has none. All three are the same authoring
+ * mistake as a `select` with no options, and they are refused in the same
+ * place, before the first park, rather than surfacing as a `timeout` nobody
+ * waited for.
+ *
+ * Zero is a length of time, the documented floor of `timeoutMs`, and is kept:
+ * the question is asked and its deadline has already passed, so it settles as
+ * `timeout` on its first park. A caller that clamps a computed deadline at zero
+ * gets the timeout it computed, not a refusal.
  *
  * @private
  */
