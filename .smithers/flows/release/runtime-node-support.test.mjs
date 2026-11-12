@@ -22,8 +22,15 @@ test("the complete CLI dependency closure declares the supported Node range", ()
   visit("smthrs")
   assert.ok(seen.has("@smthrs/cli"))
   const outside = [...byName.values()].filter(manifest => !seen.has(manifest.name))
-  assert.deepEqual(outside.map(manifest => manifest.name).sort(), ["@smthrs/platform-browser", "@smthrs/platform-cloudflare", "@smthrs/testing"])
-  for (const manifest of outside) assert.equal(manifest.engines.node, ">=26.4.0", manifest.name)
+  // A standalone library can support the same floor without being a CLI dependency.
+  const standaloneRanges = {
+    "@smthrs/fuzz": supported,
+    "@smthrs/platform-browser": ">=26.4.0",
+    "@smthrs/platform-cloudflare": ">=26.4.0",
+    "@smthrs/testing": ">=26.4.0"
+  }
+  assert.deepEqual(outside.map(manifest => manifest.name).sort(), Object.keys(standaloneRanges).sort())
+  for (const manifest of outside) assert.equal(manifest.engines.node, standaloneRanges[manifest.name], manifest.name)
 })
 
 test("the cell and view compilers' parsers accept the supported Node floor", () => {
