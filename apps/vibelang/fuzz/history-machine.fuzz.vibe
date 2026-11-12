@@ -4,7 +4,8 @@
 import { it } from "@effect/vitest"
 import * as M from "../src/history/flowMachine.vibe"
 import * as H from "../src/history/mythical.vibe"
-import { HISTORY_PATH, historyRouteOf, pageRequestOf, pathOf } from "../src/history/wire.vibe"
+import { HISTORY_PATH, pathOf } from "../src/history/wire.vibe"
+import { historyRouteOf, pageRequestOf } from "../src/history/routes.vibe"
 import { run, Int, Text } from "./run.vibe"
 
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])

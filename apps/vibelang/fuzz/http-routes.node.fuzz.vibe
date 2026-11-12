@@ -8,7 +8,8 @@ import { signedOutGateway } from "../worker/SandboxHttp.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { MAX_POST_BYTES, PostBody } from "../src/core/wire.vibe"
 import { validBodyLength } from "../src/core/protocolDecision.vibe"
-import { ApproveBody, ExportBody, FoldBody, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type Write } from "../src/history/wire.vibe"
+import { ApproveBody, ExportBody, FoldBody, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, type Write } from "../src/history/wire.vibe"
+import { statusOf } from "../src/history/routes.vibe"
 import { run, Int, TextOrBoundary } from "./run.vibe"
 
 const Input = Schema.Struct({

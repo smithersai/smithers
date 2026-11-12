@@ -1,7 +1,8 @@
 import { it } from "@effect/vitest"
 import { History } from "../src/history/schemas.vibe"
 import { outlineOf, epicPageOf, commitPageOf, matchesOf, pageOf, PAGE, MATCHES, MAX_QUERY } from "../src/history/pages.vibe"
-import { pathOf, historyRouteOf } from "../src/history/wire.vibe"
+import { pathOf } from "../src/history/wire.vibe"
+import { historyRouteOf } from "../src/history/routes.vibe"
 import { run, Int, TextOrBoundary, same } from "./run.vibe"
 
 export const Request = Schema.Union([

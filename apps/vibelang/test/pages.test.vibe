@@ -9,7 +9,8 @@ import {
 import { History as HistorySchema } from "../src/history/schemas.vibe"
 import { make, memoryStore, type Store } from "../src/history/Sequencer.vibe"
 import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
-import { historyRouteOf, pageRequestOf, pathOf } from "../src/history/wire.vibe"
+import { pathOf } from "../src/history/wire.vibe"
+import { historyRouteOf, pageRequestOf } from "../src/history/routes.vibe"
 
 // Small domains, so commits pile into few epics and pages split often.
 const Id = Schema.Literals(["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8"])

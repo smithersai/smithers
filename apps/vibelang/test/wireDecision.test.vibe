@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { digitUnit, digitsFrom, idAfter, pageKind, routeKind, writeOf } from "../src/history/wireDecision.vibe"
-import { historyRouteOf, pageRequestOf } from "../src/history/wire.vibe"
+import { historyRouteOf, pageRequestOf } from "../src/history/routes.vibe"
 
 // The regular expressions these kernels replaced, kept as the oracle for equal behavior.
 const EPIC = /^\/epics\/(e\d{1,9})$/

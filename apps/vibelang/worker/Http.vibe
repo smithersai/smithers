@@ -15,9 +15,8 @@ import { routeOf, type Route } from "../src/core/routes.vibe"
 import { HistoryEvent as HistoryEventSchema } from "../src/history/schemas.vibe"
 import type { Event as HistoryEvent } from "../src/history/mythical.vibe"
 import type { PageRequest } from "../src/history/pages.vibe"
-import {
-  ApproveBody, ExportBody, FoldBody, historyRouteOf, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type HistoryRoute, type Write,
-} from "../src/history/wire.vibe"
+import { ApproveBody, ExportBody, FoldBody, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, type Write } from "../src/history/wire.vibe"
+import { historyRouteOf, statusOf, type HistoryRoute } from "../src/history/routes.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 
 /** Each conversation's sequencer, as the API reaches its Durable Object. */
