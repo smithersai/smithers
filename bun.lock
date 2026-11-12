@@ -444,6 +444,7 @@
       "devDependencies": {
         "@effect/vitest": "4.1.1",
         "@playwright/test": "1.62.1",
+        "@smthrs/engine": "workspace:*",
         "@types/node": "26.4.1",
         "esbuild": "0.28.2",
         "happy-dom": "20.13.2",
@@ -1423,6 +1424,7 @@
         "@smthrs/crypto": "1.0.0-rc.18",
         "@smthrs/flow": "1.0.0-rc.18",
         "@smthrs/plan": "1.0.0-rc.18",
+        "yaml": "2.9.0",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
