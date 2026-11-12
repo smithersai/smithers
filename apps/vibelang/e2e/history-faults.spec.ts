@@ -152,4 +152,32 @@ test.describe("the history page when the history fails", () => {
     await page.getByRole("button", { name: "Start" }).click()
     await expect(page.locator(".mh-meta .sui-badge").first()).toHaveText("working")
   })
+
+  test("a refused plan or export says why in the page's words", async ({ page }) => {
+    // Thirteen page loads, one per refusal: about 30 s on a 4-vCPU box.
+    test.setTimeout(90_000)
+    const plans = [
+      ["forbidden", "Your role can't do that."], ["too-long", "Too long."], ["duplicate", "Already there."],
+      ["unknown", "No such epic or commit."], ["state", "Not in that state."], ["full", "History full."],
+    ]
+    for (const [refusal, text] of plans) {
+      await open(page, `refused&refusal=${refusal}`)
+      await page.getByRole("button", { name: "Plan work" }).click()
+      const dialog = page.getByRole("dialog", { name: "Plan work" })
+      await dialog.getByLabel("Commit").fill("fix(history): name the refusal")
+      await dialog.getByRole("button", { name: "Plan work" }).click()
+      await expect(dialog.getByRole("alert")).toHaveText(text!)
+    }
+    const exports = [
+      ["unsupported", "Export is off."], ["conflict", "The refs moved. Export again."], ["tree", "The export failed its check."],
+      ["linear", "The export failed its check."], ["notes", "The export failed its check."], ["nothing", "Nothing to export."],
+      ["quota", "quota"],
+    ]
+    for (const [refusal, text] of exports) {
+      await open(page, `refused&refusal=${refusal}`)
+      await page.getByRole("button", { name: "Export", exact: true }).click()
+      await expect(page.getByRole("alert")).toHaveText(text!)
+    }
+  })
 })
+

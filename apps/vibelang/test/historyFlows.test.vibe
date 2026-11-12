@@ -2,7 +2,7 @@
 // the same declarations, sequencer and machine as live, on the in-memory engine. Who may do what, how a task walks
 // from planned to landed, and what folds where.
 import { describe, expect, it } from "@effect/vitest"
-import { landedSha, MockMythical } from "../src/history/MockMythical.vibe"
+import { AFTER_SEED, landedSha, MockMythical } from "../src/history/MockMythical.vibe"
 import type { Commit, Event, History } from "../src/history/mythical.vibe"
 import { Mythical, Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
 import { commitPageOf, outlineOf } from "../src/history/pages.vibe"
@@ -198,5 +198,31 @@ describe("following", () => {
     try mythical.start("m4", "lane")
     const events: ReadonlyArray<Event> = try Fiber.join(seen)
     try Effect.try(() => expect(events.map((event) => [event.type, event.seq])).toEqual([["Planned", seq + 1], ["Started", seq + 2]]))
+  }))
+})
+
+describe("main's commits from outside the queue", () => {
+  it.effect("fold once each, under the epic their scope names, else Foundations, opened when the history has none", () => Effect.provide(effect {
+    const mythical = try Mythical
+    const folded = try mythical.fold()
+    const again = try mythical.fold()
+    const outline = try mythical.outline()
+    const titles: Record<string, ReadonlyArray<string>> = {}
+    for (const epic of outline.epics) titles[epic.title] = (try mythical.epic(epic.id, 0)).commits.map((each) => each.title)
+    try Effect.try(() => {
+      expect([folded, again]).toEqual([3, 0])
+      expect(titles).toEqual({
+        "The compiler": ["fix(compiler): one", "fix(compiler): three", "fix(compiler): preserve reverse-mapped declaration cycle structure"],
+        "Docs, guides and the site": ["docs: two"],
+        Foundations: ["docs(terminal): distinguish line input from raw key events", "📝 docs(vips): add VIP-43, theorem and spec, as open"],
+      })
+      expect(outline.main).toBe("0c6cea2cde78")
+      expect(outline.open).toEqual([])
+    })
+  }, MockMythical(as("maintainer"), () => Effect.succeed(small()), undefined, AFTER_SEED)))
+
+  it.effect("are none on another seed's main", () => withHistory(as("maintainer"), effect {
+    const folded = try (try Mythical).fold()
+    try Effect.try(() => expect(folded).toBe(0))
   }))
 })

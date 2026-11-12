@@ -175,6 +175,13 @@ Landing stays the merge queue's: Approve is the person's decision; the lane enqu
 `Mythical: m<n>` trailer; the queue lands it on `vibe`; the green cut moves `main`; Fold maps it back, into the commit
 the trailer names, else as a new commit appended to the epic of its scope.
 
+The mock's main (`mockMain`, `MockMythical.vibe`) is faithful to that mix: most of VibeLang's 5,703 real commits carry
+no trailer. Before the approved commits it lands `AFTER_SEED`, three real commits of VibeLang's main the seed does not
+hold, without a trailer: `fix(compiler): …` folds into The compiler; `docs(terminal): …` (a scope no area names) and
+`📝 docs(vips): …` (an emoji title, so no scope) go to Foundations. The first Fold in mock mode folds those
+three; a test seed passes its own main and has none (the lead's call, 2026-11-12;
+`test/historyFlows.test.vibe`, `e2e/history-paths.spec.ts`).
+
 The trailer is the first `Mythical: m<n>` line of the message's trailer paragraph: its last paragraph after the title,
 when every line there is a `Key: value` trailer (git's form). A squash body or prose that quotes a trailer names no
 commit (`test/sequencerTrailer.test.vibe`).

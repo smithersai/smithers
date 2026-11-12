@@ -1,5 +1,5 @@
 // Compile the real mock before clocked backend choices; cold transformation is not backend latency.
-import "../src/history/MockMythical.vibe"
+import { AFTER_SEED } from "../src/history/MockMythical.vibe"
 import { expect, it } from "@effect/vitest"
 import { BrowserMythical, HistoryBackend } from "../src/web/historyBackend.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
@@ -39,7 +39,8 @@ it.effect("one history backend choice gates callers; cancelling one leaves selec
     try Effect.try(() => {
       expect(mode).toBe("mock")
       expect(client.mode).toBe("mock")
-      expect(folded).toBe(1)
+      // The real seed's main lands its outside commits before the approved one (decision 0020).
+      expect(folded).toBe(AFTER_SEED.length + 1)
       expect(exported.written).toBeGreaterThan(5000)
       expect(page.commits.some((entry) => entry.id === id)).toBe(true)
       expect(matches.commits.some((entry) => entry.id === id)).toBe(true)

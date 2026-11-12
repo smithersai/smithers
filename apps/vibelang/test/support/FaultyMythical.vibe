@@ -1,17 +1,18 @@
 // A transport fault over the history page's real Mythical (e2e/history-runtime): each fault a page's `?fault=` names
 // happens once, and every read and write after it is real.
-import { Mythical, Unavailable } from "../../src/history/MythicalHistory.vibe"
+import { Mythical, Refused, Unavailable } from "../../src/history/MythicalHistory.vibe"
 import { HistoryBackend } from "../../src/web/historyBackend.vibe"
 
 /**
  * A fault the history fault host injects. `outline` fails the page's first load; `empty` answers a history with no
  * epics; `unfolded` answers one nothing is folded into yet, as a read between the first fold's epic and its fold sees;
  * `reads` fails the first epic, commit and search read, and the first outline read after the load; `events`
- * ends the first event stream; `writes` fails the first plan, start, note, approve, fold and export as unreachable.
+ * ends the first event stream; `writes` fails the first plan, start, note, approve, fold and export as unreachable;
+ * `refused` refuses the first plan and the first export with the refusal `?refusal=` names.
  */
-export type HistoryFault = "outline" | "empty" | "unfolded" | "reads" | "events" | "writes"
+export type HistoryFault = "outline" | "empty" | "unfolded" | "reads" | "events" | "writes" | "refused"
 
-const FAULTS: ReadonlyArray<HistoryFault> = ["outline", "empty", "unfolded", "reads", "events", "writes"]
+const FAULTS: ReadonlyArray<HistoryFault> = ["outline", "empty", "unfolded", "reads", "events", "writes", "refused"]
 
 /** The faults a page's `?fault=` names, comma-separated; an unknown name is ignored. */
 export function historyFaults(search: string): ReadonlyArray<HistoryFault> {
@@ -19,8 +20,13 @@ export function historyFaults(search: string): ReadonlyArray<HistoryFault> {
   return FAULTS.filter((fault) => named.includes(fault))
 }
 
-/** `layer`'s Mythical with `faults` injected; its HistoryBackend passes through. */
-export function faultyMythical<E>(faults: ReadonlyArray<HistoryFault>, layer: Layer.Layer<Mythical | HistoryBackend, E>) {
+/** The refusal a page's `?refusal=` names for the `refused` fault, `unknown` when it names none. */
+export function namedRefusal(search: string): string {
+  return new URLSearchParams(search).get("refusal") ?? "unknown"
+}
+
+/** `layer`'s Mythical with `faults` injected, `refused` answering `refusal`; its HistoryBackend passes through. */
+export function faultyMythical<E>(faults: ReadonlyArray<HistoryFault>, layer: Layer.Layer<Mythical | HistoryBackend, E>, refusal = "unknown") {
   return Layer.effectContext(effect {
     const real = try Mythical
     const backend = try HistoryBackend
@@ -57,6 +63,7 @@ export function faultyMythical<E>(faults: ReadonlyArray<HistoryFault>, layer: La
       events: (after) => Stream.suspend(() => first("events", "events") ? Stream.fail(unreachable()) : real.events(after)),
       plan: effect (request, operation) => {
         if (first("writes", "plan")) throw unreachable()
+        if (first("refused", "plan")) throw new Refused({ refusal })
         return try real.plan(request, operation)
       },
       start: effect (id, lane, operation) => {
@@ -77,6 +84,7 @@ export function faultyMythical<E>(faults: ReadonlyArray<HistoryFault>, layer: La
       },
       publish: effect () => {
         if (first("writes", "publish")) throw unreachable()
+        if (first("refused", "publish")) throw new Refused({ refusal })
         return try real.publish()
       },
     }

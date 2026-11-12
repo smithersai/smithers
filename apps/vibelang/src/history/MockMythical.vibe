@@ -1,7 +1,8 @@
 // The mythical history with no backend and no model (wiki/decisions/0020-mythical-history.md, 0004): the real sequencer
 // over a store in memory, the same flows on `@smthrs/engine`'s engine in memory, bootstrapped from the same snapshot
 // the live History object loads (seed/vibelang.vibe, downloaded only when the mock is built). Its main is the merge
-// queue played by the mock: every approved commit lands on main as a real commit whose message names it. Its repository
+// queue played by the mock: every approved commit lands on main as a real commit whose message names it, after the real
+// commits that reached VibeLang's main from outside the queue since the snapshot (`AFTER_SEED`). Its repository
 // is `@smthrs/jj`'s memory repository, holding each commit of that main with a tree of its own, so an export runs
 // whole with no backend.
 import { WebCrypto } from "@smthrs/crypto"
@@ -29,11 +30,23 @@ export effect function seeded() {
 /** The id the mock's merge queue gives the real commit that lands mythical commit `id` (proved in mockMainDecision). */
 export { landedSha } from "./mockMainDecision.vibe"
 
-/** The mock's main: each approved commit not yet on main lands, oldest first, its message naming it. */
-export function mockMain(sequencer: Sequencer): MainLog.Shape {
+/**
+ * Real commits of VibeLang's main after the seed's snapshot that carry no `Mythical:` trailer, as most of its history
+ * does (0020): a Fold files each under the epic its title's scope names (`areaOf`), or `Foundations`.
+ */
+export const AFTER_SEED: ReadonlyArray<MainCommit> = [
+  { sha: "301689a33565", change: "nqvmoolynsxq", title: "fix(compiler): preserve reverse-mapped declaration cycle structure", message: "fix(compiler): preserve reverse-mapped declaration cycle structure\n" },
+  { sha: "0c40c2c6e9a0", change: "snpryryqvkrx", title: "docs(terminal): distinguish line input from raw key events", message: "docs(terminal): distinguish line input from raw key events\n" },
+  { sha: "0c6cea2cde78", change: "omuptzumoqml", title: "📝 docs(vips): add VIP-43, theorem and spec, as open", message: "📝 docs(vips): add VIP-43, theorem and spec, as open\n" },
+]
+
+/** The mock's main: the `outside` commits, then each approved commit, oldest first, its message naming it. */
+export function mockMain(sequencer: Sequencer, outside: ReadonlyArray<MainCommit> = []): MainLog.Shape {
   return {
-    since: () => Effect.map(sequencer.read(), (history): ReadonlyArray<MainCommit> =>
-      approvedIndices(history.commits).map((index) => landedCommit(history.commits[index]!.id, history.commits[index]!.title))),
+    since: () => Effect.map(sequencer.read(), (history): ReadonlyArray<MainCommit> => [
+      ...outside,
+      ...approvedIndices(history.commits).map((index) => landedCommit(history.commits[index]!.id, history.commits[index]!.title)),
+    ]),
   }
 }
 
@@ -69,8 +82,11 @@ effect function digestOf() {
   }
 }
 
-/** The mock history for `principal`, bootstrapped from `seed` (the real one by default). */
-export function MockMythical(principal: Principal, seed: () => History!! = seeded, current?: () => Principal!!) {
+/**
+ * The mock history for `principal`, bootstrapped from `seed` (the real one by default). Its main holds `outside`
+ * before the approved commits: `AFTER_SEED` with the real seed, none with another.
+ */
+export function MockMythical(principal: Principal, seed: () => History!! = seeded, current?: () => Principal!!, outside: ReadonlyArray<MainCommit> = seed === seeded ? AFTER_SEED : []) {
   return Layer.effect(Mythical, effect {
     const sequencer = try make(try memoryStore())
     const digest = try digestOf()
@@ -79,7 +95,7 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provide(Layer.mergeAll(
         Layer.succeed(Stack, stackOf(sequencer, seed)),
-        Layer.succeed(MainLog, mockMain(sequencer)),
+        Layer.succeed(MainLog, mockMain(sequencer, outside)),
         Layer.succeed(Caller, { principal, ...(current === undefined ? {} : { current }) }),
         Layer.succeed(Repository.Repository, mockRepository(sequencer)),
         Layer.succeed(ExportTarget, { names: REF_NAMES }),
