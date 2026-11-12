@@ -5,12 +5,12 @@ import { createHash } from "node:crypto"
 import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import { DatabaseSync } from "node:sqlite"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { fileURLToPath } from "node:url"
 import * as Input from "../../../../packages/smithers/build/targets/src/Input.ts"
 import * as LlmLint from "../../../../packages/smithers/build/targets/src/LlmLint.ts"
 import { materializeFixture } from "./fixtureRepo.ts"
 import { reportPath, scoreSecurity, type SecurityObservation } from "./security-completion-score.ts"
+import { reproduce } from "./security-reproduction.ts"
 
 const directory = dirname(fileURLToPath(import.meta.url))
 const repeats = Number(process.argv[2] ?? "3")
@@ -45,27 +45,12 @@ for (let repeat = 0; repeat < repeats; repeat++) {
         const file = fixture === "sql-injection" ? "src/users.ts" : "src/search.ts"
         if (!vulnerable) await copyFile(join(corpus, "base", file), join(root, file))
         const source = await readFile(join(root, file), "utf8")
-        // Controlled execution uses an in-memory real SQLite database and synthetic rows only.
-        const db = new DatabaseSync(":memory:")
-        let reproduction: { observedRows: number; expectedRows: number }
-        try {
-          db.exec(
-            "CREATE TABLE users(id TEXT, email TEXT); INSERT INTO users VALUES ('private','secret');" +
-              "CREATE TABLE articles(id TEXT, title TEXT); INSERT INTO articles VALUES ('private','secret');"
-          )
-          const module = await import(pathToFileURL(join(root, file)).href)
-          const query = async (sql: string, params: Array<string> = []) => db.prepare(sql).all(...params)
-          const result = fixture === "sql-injection"
-            ? await module.findUserByEmail({ query }, "' OR 1=1 --")
-            : await module.searchArticles({ query }, "' OR 1=1 --")
-          reproduction = {
-            observedRows: Array.isArray(result) ? result.length : result === null ? 0 : 1,
-            expectedRows: vulnerable ? 1 : 0
-          }
-          if (reproduction.observedRows !== reproduction.expectedRows) throw new Error("fixture reproduction drift")
-        } finally {
-          db.close()
+        // The fixture is contributor code: it runs only in a child with no environment, network, or host files.
+        const reproduction = {
+          ...reproduce(join(root, file), fixture === "sql-injection" ? "findUserByEmail" : "searchArticles"),
+          expectedRows: vulnerable ? 1 : 0
         }
+        if (reproduction.observedRows !== reproduction.expectedRows) throw new Error("fixture reproduction drift")
         const result = await Effect.runPromise(
           LlmLint.review({ workspaceRoot: root, timeoutMs: 60_000 }, {
             base: "HEAD",

@@ -53,6 +53,10 @@ The live run spends inference budget. It reuses the SQL equality and LIKE
 injection corpus pairs, reviewing both vulnerable and fixed versions through
 `LlmLint.review`. A real in-memory SQLite database reproduces each seeded flaw
 with synthetic data and verifies that its fixed version resists the same input.
+The fixture is contributor code, so the run imports it only in a child `node`
+under the permission model: an empty environment, read access to the fixture
+file alone, and no network, child process, or worker authority. The child
+returns only the row count.
 
 The report retains source hashes, implementation hash, revision, provider
 attempts, reproduction outcomes, per-repeat recall, post-reproduction precision,
