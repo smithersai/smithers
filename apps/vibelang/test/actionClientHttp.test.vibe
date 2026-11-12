@@ -71,14 +71,15 @@ describe("LiveActions over real HTTP", () => {
       const product = try Mythical
       provide LiveActions("") {
         const client = try Actions
-        const id = try client.command('/plan {"how":"append","epic":"","newEpic":"Coverage","target":"","title":"HTTP plan","task":"Real flow"}')
+        const id = try client.command('/plan {"how":"append","epic":"","newEpic":"Coverage","target":"","title":"HTTP  plan","task":"Real flow"}')
         try (try w.object(id)).host.alarm(w.spend, w.model, product)
         const page = try product.commit("m1")
         const empty = try code(client.command("/plan"))
         const malformed = try code(client.command("/plan {oops"))
         const unknown = try code(client.command("/nope"))
         try Effect.try(() => {
-          expect(page.commit?.title).toBe("HTTP plan")
+          // The JSON reaches the flow as typed, with the two spaces inside its string (#5341).
+          expect(page.commit?.title).toBe("HTTP  plan")
           expect([empty, malformed, unknown]).toEqual(["input", "input", "unknown-command"])
         })
       }

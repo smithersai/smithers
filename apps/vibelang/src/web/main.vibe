@@ -34,7 +34,7 @@ import * as ArmDecision from "./armDecision.vibe"
 import * as WikiEditorDecision from "./wikiEditorDecision.vibe"
 import { pages, wikiEditable, wikiPage } from "../core/wiki.vibe"
 import { Navigation } from "foldkit"
-import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
+import { Actions, ActionFailure, Registered, Run, splitCommand } from "../actions/Actions.vibe"
 import { ActionView, actionsOf, completions, mergeRuns, initial as initialActions } from "./actionModel.vibe"
 import { transcriptViewport } from "./viewport.vibe"
 
@@ -796,7 +796,7 @@ function launchAction(model: Model, name: string, door: "button" | "slash"): Upd
   const launch = UpdateDecision.launchKind(actions.starting, actions.commands.some((entry) => entry.name === name), name === "vibelang/Tour", door === "slash")
   if (launch === "ignore") return { model }
   if (launch === "tour") return learnMore(model)
-  const text = door === "slash" ? model.draft.trim().split(/\s+/).slice(1).join(" ") : actions.input
+  const text = door === "slash" ? splitCommand(model.draft).rest : actions.input
   return {
     model: ModelWrite.launchWrite(model, actions),
     commands: [RunAction({ name, text, door, ...(actions.epoch === undefined ? {} : { epoch: actions.epoch }), format: actions.commands.find((entry) => entry.name === name)!.input, ...(UpdateDecision.launchRetries(door === "button", actions.run) ? { retry: actions.run } : {}) })],

@@ -31,6 +31,16 @@ export schema Registered {
   readonly input: "none" | "text" | "path" | "json"
 }
 export schema error ActionFailure { code: string }
+
+/**
+ * A slash command's leading token and the rest of the text, verbatim: only the whitespace around the whole text and
+ * the separator after the command go, so a post keeps its newlines and JSON keeps the spaces inside its strings.
+ */
+export function splitCommand(text: string): { readonly command: string; readonly rest: string } {
+  const trimmed = text.trim()
+  const end = trimmed.search(/\s/)
+  return end < 0 ? { command: trimmed, rest: "" } : { command: trimmed.slice(0, end), rest: trimmed.slice(end).trimStart() }
+}
 export service Actions {
   list(): ReadonlyArray<Registered>!ActionFailure
   commands(): ReadonlyArray<Registered>!ActionFailure

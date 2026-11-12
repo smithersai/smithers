@@ -11,7 +11,7 @@ import { Mythical } from "../history/MythicalHistory.vibe"
 import { Caller } from "../history/roles.vibe"
 import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
-import { Actions, ActionFailure, type Actor, type Door, Run, type Role } from "./Actions.vibe"
+import { Actions, ActionFailure, type Actor, type Door, Run, type Role, splitCommand } from "./Actions.vibe"
 import { allowed, bundled, registration } from "./catalog.vibe"
 import { actionActor, matchingFlow, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
 import { cancellable } from "../core/actionRunDecision.vibe"
@@ -166,12 +166,11 @@ export function MockActions(principal: Principal) {
         return try start(previous.flow, previous.input, "button")
       },
       command: effect (text: string, door: Door = "slash") => {
-        const [command, ...words] = text.trim().split(/\s+/)
+        const { command, rest } = splitCommand(text)
         const visible = []
         for (const flow of try catalog.list()) { const entry = registration(flow._tag); if (entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined) visible.push(entry) }
         const entry = visible[0]
         if (entry === undefined) throw new ActionFailure({ code: "unknown-command" })
-        const rest = words.join(" ")
         const input = entry.input === "json" && rest !== "" ? try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(rest), () => new ActionFailure({ code: "input" })) : entry.input === "text" ? { text: rest } : {}
         return try start(entry.name, input, door)
       },

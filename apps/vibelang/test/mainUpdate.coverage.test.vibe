@@ -486,6 +486,8 @@ describe("actions", () => {
     expect(update(menu, Message.PickedSlash({ name: tour.name })).model.tour).toBe(true)
     const worded: Model = { ...open, draft: "/run several words", actions: { ...open.actions!, commands: [{ ...tour, name: "vibelang/Run" }] } }
     expect(update(worded, Message.PickedSlash({ name: "vibelang/Run" })).commands?.[0]).toMatchObject({ args: { text: "several words", door: "slash" } })
+    const multiline: Model = { ...worded, draft: "/run // a comment\nconst x = 1  // spaced" }
+    expect(update(multiline, Message.PickedSlash({ name: "vibelang/Run" })).commands?.[0]).toMatchObject({ args: { text: "// a comment\nconst x = 1  // spaced" } })
   })
 })
 

@@ -5,7 +5,7 @@ import { SecureRandom } from "effect/crypto"
 import { WebCrypto } from "@smthrs/crypto"
 import { apply, empty } from "../core/conversation.vibe"
 import { EventSchema } from "../core/schemas.vibe"
-import { Actions, ActionFailure, type Door, Run, Registered } from "./Actions.vibe"
+import { Actions, ActionFailure, type Door, Run, Registered, splitCommand } from "./Actions.vibe"
 import { ACTIONS_PATH, Failure, Started } from "./wire.vibe"
 const failed = () => new ActionFailure({ code: "unavailable" })
 const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
@@ -46,10 +46,9 @@ export function LiveActions(origin: string) {
         return (try request(Started, "POST", `/runs/${previousId}/rerun`, { id })).id
       },
       command: effect (text, door = "slash") => {
-        const [command, ...words] = text.trim().split(/\s+/)
+        const { command, rest } = splitCommand(text)
         const entry = (try commands()).find((entry) => entry.command === command)
         if (entry === undefined) throw new ActionFailure({ code: "unknown-command" })
-        const rest = words.join(" ")
         const input = entry.input === "json" ? (rest === "" ? {} : try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(rest), () => new ActionFailure({ code: "input" }))) : { text: rest }
         return try start(entry.name, input, door)
       },

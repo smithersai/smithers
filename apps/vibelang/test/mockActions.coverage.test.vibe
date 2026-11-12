@@ -82,6 +82,16 @@ describe("mock-mode actions", () => {
     }
   }))
 
+  it.live("a slash command's JSON reaches the flow as typed, spaces inside its strings included (#5341)", () => scoped(effect {
+    provide world(maintainer) {
+      const actions = try Actions
+      const planned = try finished(try actions.command('/plan {"how":"append","epic":"","newEpic":"Typed","target":"","title":"docs:  two  spaces","task":"t"}'))
+      const id = (try json(planned.result)).id as string
+      const page = try json((try finished(try actions.start("vibelang/history/show", { what: "commit", id }, "button"))).result)
+      try Effect.try(() => expect(page.commit.title).toBe("docs:  two  spaces"))
+    }
+  }))
+
   it.live("a person without a login writes history notes as Guest", () => scoped(effect {
     provide world({ actor: "person" }, (base) => current(base, () => succeed({ id: "p1", login: "", role: "maintainer", ledger: empty }))) {
       const actions = try Actions

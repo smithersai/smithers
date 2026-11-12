@@ -1,0 +1,18 @@
+// A slash command splits at its first whitespace only (#5341): the rest reaches the flow as typed.
+import { describe, expect, it } from "@effect/vitest"
+import { splitCommand } from "../src/actions/Actions.vibe"
+
+describe("splitCommand", () => {
+  it("keeps a post's newlines, so a // comment stays on its own line", () => {
+    const post = "first line\n```vibe\n// a comment\nconst x = 1\n```"
+    expect(splitCommand(`  /post\n${post}\n`)).toEqual({ command: "/post", rest: post })
+  })
+  it("keeps the spaces inside a JSON string", () => {
+    const input = '{"generation":1,"command":"printf \'a  b\'"}'
+    expect(splitCommand(`/sandbox-run   ${input}`)).toEqual({ command: "/sandbox-run", rest: input })
+  })
+  it("reads a bare command and blank text as no input", () => {
+    expect(splitCommand("/tour")).toEqual({ command: "/tour", rest: "" })
+    expect(splitCommand("   ")).toEqual({ command: "", rest: "" })
+  })
+})
