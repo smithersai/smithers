@@ -364,12 +364,13 @@ export const make = <E, R>(
    * Claims the oldest job the runner may take, now, among those claimable for at least `minQueuedSeconds`. The same
    * statement checks the runner's token still names it, that it has room under its registered capacity, that an Admin
    * of its repository registered it by GitHub's role, and that Smithers recorded the App's installation on its
-   * repository (decision 0148).
+   * repository (decision 0148). It holds the runner's row's write lock, so the runner's claims count its claimed jobs
+   * one at a time, each after the last committed: two at once never take more than its capacity.
    */
   const claimOnce = (runner: Runner, claim: string, profiles: ReadonlyArray<string>, minQueuedSeconds: number) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql.withTransaction(Effect.gen(function*() {
-        if (!(yield* lockCurrent(runner))) return undefined
+        if (!(yield* lockCurrent(runner, "write"))) return undefined
         yield* expireOverdue(runner)
         return yield* sql<Claimed>`
         UPDATE agent_jobs SET status = 'claimed', claim = ${claim}::uuid, runner_id = ${runner.id}::uuid,

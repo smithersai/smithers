@@ -282,6 +282,59 @@ describe("the job store and the runner routes", () => {
     expect((await claim(small, { running: ["todo:a#g1"] })).body.job).toBeNull()
   })
 
+  // Issue #5332: two claims of one runner each counted its claimed jobs before the other's committed, under a shared
+  // lock on its row, so a runner with room for one got two jobs.
+  test("two claims of one runner at once never take more jobs than its capacity", async () => {
+    const small = await register("small", ["linux"], 1)
+    const store = await jobs()
+    const { claim } = await routes()
+    await Effect.runPromise(store.start(taskOf(), "todo:a#g1"))
+    await Effect.runPromise(store.start(taskOf(), "todo:b#g1"))
+    // A claim waits on a gate this test holds, after its write and before its commit: the other runs meanwhile.
+    const gate = Math.floor(Math.random() * 2 ** 31)
+    await query(Effect.flatMap(SqlClient.SqlClient, (client) => client.unsafe(`
+      CREATE FUNCTION claim_gate() RETURNS trigger LANGUAGE plpgsql AS
+        $$ BEGIN PERFORM pg_advisory_xact_lock_shared(${gate}); RETURN NEW; END $$`)))
+    await sql`CREATE TRIGGER claim_gate AFTER UPDATE ON agent_jobs FOR EACH ROW
+      WHEN (OLD.status = 'queued' AND NEW.status = 'claimed') EXECUTE FUNCTION claim_gate()`
+    let pid = 0
+    let open = () => {}
+    const opened = new Promise<void>((done) => (open = done))
+    let held = () => {}
+    const holding = new Promise<void>((done) => (held = done))
+    const holder = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client.withTransaction(Effect.gen(function* () {
+        const [connection] = yield* client<{ pid: number }>`SELECT pg_advisory_xact_lock(${gate}), pg_backend_pid() AS pid`
+        pid = connection!.pid
+        yield* Effect.sync(held)
+        yield* Effect.promise(() => opened)
+      }))))
+    try {
+      await holding
+      const claims = Promise.all([claim(small), claim(small)])
+      // Both claims wait: on the gate, or on the one that holds it.
+      await expect.poll(async () => {
+        const [waiting] = await sql<{ n: number }>`
+          SELECT count(*)::int AS n FROM pg_stat_activity a
+          WHERE ${pid} = ANY(pg_blocking_pids(a.pid)) OR EXISTS (
+            SELECT 1 FROM pg_stat_activity b WHERE ${pid} = ANY(pg_blocking_pids(b.pid)) AND b.pid = ANY(pg_blocking_pids(a.pid)))`
+        return waiting?.n
+      }, { timeout: 5_000, interval: 10 }).toBe(2)
+      open()
+      await holder
+      expect((await claims).map((answer) => answer.status)).toEqual([200, 200])
+      expect(await sql`SELECT key, status FROM agent_jobs ORDER BY key`).toEqual([
+        { key: "todo:a#g1", status: "claimed" },
+        { key: "todo:b#g1", status: "queued" },
+      ])
+    } finally {
+      open()
+      await holder
+      await sql`DROP TRIGGER IF EXISTS claim_gate ON agent_jobs`
+      await sql`DROP FUNCTION IF EXISTS claim_gate()`
+    }
+  })
+
   test("a runner that restarted gets its held job back with the same claim, even after its lease ran out", async () => {
     const token = await register("nyc-01")
     const store = await jobs()
