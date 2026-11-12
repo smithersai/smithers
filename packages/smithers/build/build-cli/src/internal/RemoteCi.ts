@@ -231,6 +231,11 @@ export class MachineLost extends Schema.TaggedError<MachineLost>()("@smthrs/buil
   reason: Schema.String
 }) {}
 
+/** The remote's service needs a token and the environment names none. */
+class TokenMissing extends Schema.TaggedError<TokenMissing>()("@smthrs/build-cli/RemoteCi/TokenMissing", {
+  message: Schema.String
+}) {}
+
 /** Two attempts in all: a lost machine runs its part once more, on a fresh session. */
 const retryPolicy = RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2, jitterRatio: 0 })
 
@@ -288,7 +293,7 @@ export const providers = (
   }
   const token = environment[remote.token.env] || remote.token.fallback
   if (token === undefined) {
-    throw new Error(`the remote's token is not set: export ${remote.token.env}`)
+    throw new TokenMissing({ message: `the remote's token is not set: export ${remote.token.env}` })
   }
   // The service names each machine's working directory; every path a part uses is absolute.
   return () =>

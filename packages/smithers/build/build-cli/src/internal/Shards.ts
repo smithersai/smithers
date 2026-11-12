@@ -15,6 +15,7 @@
  * @since 1.0.0
  */
 
+import * as Data from "effect/Data"
 import type * as Executor from "../Executor.ts"
 
 /**
@@ -27,6 +28,9 @@ export interface Shard {
   readonly index: number
   readonly count: number
 }
+
+/** A `--shard` or `--timings` input the split cannot use; the message names it and says why. */
+class ShardRefused extends Data.TaggedError("smithers-build/ShardRefused")<{ readonly message: string }> {}
 
 /** The most parts one split may have. */
 const maxCount = 1024
@@ -42,9 +46,11 @@ export const parse = (text: string): Shard => {
   const index = Number(match?.[1])
   const count = Number(match?.[2])
   if (match === null || index > count || count > maxCount) {
-    throw new Error(
-      `--shard expects <index>/<count> with 1 <= index <= count <= ${maxCount}, received ${JSON.stringify(text)}`
-    )
+    throw new ShardRefused({
+      message: `--shard expects <index>/<count> with 1 <= index <= count <= ${maxCount}, received ${
+        JSON.stringify(text)
+      }`
+    })
   }
   return { index, count }
 }
@@ -68,20 +74,20 @@ export const measure = (source: string, content: string, measured: Map<string, n
   try {
     document = JSON.parse(content)
   } catch (cause) {
-    throw new Error(`${source}: timings are not JSON (${(cause as Error).message})`)
+    throw new ShardRefused({ message: `${source}: timings are not JSON (${(cause as Error).message})` })
   }
   if (!isRecord(document) || !Array.isArray(document["results"])) {
-    throw new Error(`${source}: timings need a results array, as --results-file writes`)
+    throw new ShardRefused({ message: `${source}: timings need a results array, as --results-file writes` })
   }
   for (const [position, row] of (document["results"] as ReadonlyArray<unknown>).entries()) {
-    if (!isRecord(row)) throw new Error(`${source}: results[${position}] is not an object`)
+    if (!isRecord(row)) throw new ShardRefused({ message: `${source}: results[${position}] is not an object` })
     const { durationMs, label, status } = row
     if (typeof label !== "string" || typeof status !== "string") {
-      throw new Error(`${source}: results[${position}] needs a label and a status`)
+      throw new ShardRefused({ message: `${source}: results[${position}] needs a label and a status` })
     }
     if (status !== "ran" && status !== "failed") continue
     if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) {
-      throw new Error(`${source}: results[${position}] (${label}) needs a duration in milliseconds`)
+      throw new ShardRefused({ message: `${source}: results[${position}] (${label}) needs a duration in milliseconds` })
     }
     measured.set(label, durationMs)
   }

@@ -16,7 +16,7 @@ import * as Config from "@smthrs/targets/Config"
 import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
-import { Context, Effect, Layer } from "effect"
+import { Context, Data, Effect, Layer } from "effect"
 import { identity } from "effect/Function"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { Cli, z } from "incur"
@@ -58,6 +58,9 @@ import * as TrustedReview from "./TrustedReview.ts"
 import * as Watch from "./Watch.ts"
 import { type RemoteCacheAccess, remoteCacheOf, type ResolvedRemoteCache } from "./Workspace.ts"
 
+/** A request this CLI refuses before it acts; the message says what to change. */
+class CommandRefused extends Data.TaggedError("smithers-build/CommandRefused")<{ readonly message: string }> {}
+
 /**
  * Selects the workspace install declaration without evaluating its action.
  * @category selection
@@ -70,13 +73,13 @@ export const selectInstallTarget = (
   const roots = all.filter((row) => row.packagePath === "")
   const installs = roots.length === 0 ? all : roots
   if (installs.length !== 1) {
-    throw new Error(
-      installs.length === 0
+    throw new CommandRefused({
+      message: installs.length === 0
         ? "the workspace declares no Install target"
         : `${roots.length > 0 ? "the root PACKAGE.ts" : "the workspace"} declares more than one Install target: ${
           installs.map(({ label }) => label).sort().join(", ")
         }; run one explicitly with smthrs run <label>`
-    )
+    })
   }
   return installs[0]!
 }
@@ -879,15 +882,18 @@ const runCi = async (
 ): Promise<CiPlan | Executor.Summary> => {
   // The split is refused before any declaration loads: a mistyped part must not cost a plan.
   if (flags.remote !== undefined && flags.shard !== undefined) {
-    throw new Error("--remote and --shard are exclusive: --remote splits the run across its machines itself")
+    throw new CommandRefused({
+      message: "--remote and --shard are exclusive: --remote splits the run across its machines itself"
+    })
   }
   if (flags.remote !== undefined && flags.knownRed !== undefined) {
-    throw new Error(
-      "--remote does not take --known-red yet: a machine's results file carries no failure diagnostics to fingerprint"
-    )
+    throw new CommandRefused({
+      message:
+        "--remote does not take --known-red yet: a machine's results file carries no failure diagnostics to fingerprint"
+    })
   }
   if (flags.shard === undefined && flags.remote === undefined && flags.timings !== undefined) {
-    throw new Error("--timings needs --shard or --remote")
+    throw new CommandRefused({ message: "--timings needs --shard or --remote" })
   }
   const shard = flags.shard === undefined ? undefined : Shards.parse(flags.shard)
   const measured = new Map<string, number>()
@@ -896,7 +902,7 @@ const runCi = async (
     try {
       content = await NodeFs.readFile(NodePath.resolve(flags.workspace, path), "utf8")
     } catch (cause) {
-      throw new Error(`${path}: cannot read the timings (${Diagnostic.describe(cause)})`)
+      throw new CommandRefused({ message: `${path}: cannot read the timings (${Diagnostic.describe(cause)})` })
     }
     Shards.measure(path, content, measured)
   }
@@ -1012,11 +1018,11 @@ const remoteOf = (
   const declaration = Object.hasOwn(declared, name) ? declared[name] : undefined
   if (declaration === undefined) {
     const names = Object.keys(declared)
-    throw new Error(
-      `--remote ${name} is not declared; ${
+    throw new CommandRefused({
+      message: `--remote ${name} is not declared; ${
         names.length === 0 ? "the workspace declares no remotes" : `the workspace declares ${names.join(", ")}`
       } (S.Workspace remotes)`
-    )
+    })
   }
   return { name, declaration }
 }
