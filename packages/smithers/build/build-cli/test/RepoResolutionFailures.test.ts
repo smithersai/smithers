@@ -9,9 +9,11 @@
 import * as LocalRepository from "@smthrs/targets/LocalRepository"
 import * as RepoTarget from "@smthrs/targets/RepoTarget"
 import { EventEmitter } from "node:events"
+import * as NodeFs from "node:fs"
+import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { PassThrough } from "node:stream"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 
 interface Spawned {
   readonly command: string
@@ -237,19 +239,27 @@ const resolution: Resolution = {
 }
 
 describe("child repository git state", () => {
-  it("reads HEAD and porcelain status as the execution key", async () => {
-    const pending = RepoResolution.gitState(makeResolver(), resolution)
+  // gitState asks Git only when the child has its own `.git` marker.
+  const checkout = NodeFs.realpathSync(NodeFs.mkdtempSync(NodePath.join(Os.tmpdir(), "smthrs-repo-git-")))
+  const child = NodePath.join(checkout, "child")
+  NodeFs.mkdirSync(NodePath.join(child, ".git"), { recursive: true })
+  const local: Resolution = { ...resolution, absolutePath: child }
+  afterAll(() => NodeFs.rmSync(checkout, { recursive: true, force: true }))
+
+  it("reads HEAD and porcelain status as the execution key without leaving the child", async () => {
+    const pending = RepoResolution.gitState(makeResolver(), local)
     finish(await started(1), 0, { stdout: "abc123\n" })
     finish(await started(2), 0, { stdout: " M file\n" })
     expect(await pending).toEqual({ head: "abc123", dirty: true, status: " M file\n" })
     expect(spawned.map((row) => row.args)).toEqual([
-      ["-C", NodePath.join("/parent", "repos", "child"), "rev-parse", "HEAD"],
-      ["-C", NodePath.join("/parent", "repos", "child"), "status", "--porcelain"]
+      ["-C", child, "rev-parse", "HEAD"],
+      ["-C", child, "status", "--porcelain"]
     ])
+    for (const row of spawned) expect(row.options.env).toEqual({ KEEP: "1", GIT_CEILING_DIRECTORIES: checkout })
   })
 
   it("reads a clean status as not dirty", async () => {
-    const pending = RepoResolution.gitState(makeResolver(), resolution)
+    const pending = RepoResolution.gitState(makeResolver(), local)
     finish(await started(1), 0, { stdout: "abc123\n" })
     finish(await started(2), 0, {})
     expect(await pending).toEqual({ head: "abc123", dirty: false, status: "" })
@@ -259,7 +269,7 @@ describe("child repository git state", () => {
     ["stderr", { stderr: "fatal: not a git repository" }, "fatal: not a git repository"],
     ["stdout", { stdout: "odd" }, "odd"]
   ])("rejects a failed HEAD read with its %s", async (_name, output, detail) => {
-    const pending = RepoResolution.gitState(makeResolver(), resolution)
+    const pending = RepoResolution.gitState(makeResolver(), local)
     finish(await started(1), 128, output)
     await expect(pending).rejects.toThrow(`could not read child repository HEAD: ${detail}`)
     expect(spawned).toHaveLength(1)
@@ -269,10 +279,15 @@ describe("child repository git state", () => {
     ["stderr", { stderr: "fatal: index locked" }, "fatal: index locked"],
     ["stdout", { stdout: "odd" }, "odd"]
   ])("rejects a failed status read with its %s", async (_name, output, detail) => {
-    const pending = RepoResolution.gitState(makeResolver(), resolution)
+    const pending = RepoResolution.gitState(makeResolver(), local)
     finish(await started(1), 0, { stdout: "abc\n" })
     finish(await started(2), 1, output)
     await expect(pending).rejects.toThrow(`could not read child repository status: ${detail}`)
+  })
+
+  it("reports a child without its own .git as dirty and never runs Git", async () => {
+    expect(await RepoResolution.gitState(makeResolver(), resolution)).toEqual({ head: "", dirty: true, status: "" })
+    expect(spawned).toEqual([])
   })
 })
 

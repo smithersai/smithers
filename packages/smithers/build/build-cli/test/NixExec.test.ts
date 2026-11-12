@@ -37,8 +37,8 @@ const script = (body: string): string => `#!/bin/sh\n${body}\n`
  *
  * `nix build` prints the closure's store path, `print-dev-env` exports its
  * `bin` on PATH and one carried variable, `path-info --recursive` lists two
- * paths. Every `build` appends to a counter so a test can prove the memo
- * skipped evaluation.
+ * paths. Every `build` appends to a counter so a test can prove each resolution
+ * evaluates even when the environment is memoized.
  */
 const installFakeNix = async (options: { readonly node?: string; readonly pnpm?: string } = {}): Promise<void> => {
   store = NodePath.join(root, "store")
@@ -152,19 +152,19 @@ describe.skipIf(process.platform === "win32")("NixExec.resolveEnvironment", () =
     expect(await buildCount()).toBe(1)
     const second = await NixExec.resolveEnvironment({ root, declaration: declaration(), cacheDirectory: ".flows" })
     expect(second).toEqual(first)
-    expect(await buildCount()).toBe(1)
+    expect(await buildCount()).toBe(2)
     const memos = await Fs.readdir(NodePath.join(root, ".flows", "nix"))
     expect(memos).toHaveLength(1)
-    // An edited lock re-keys the memo, so the closure is evaluated again.
+    // Even a changed lock that builds the same closure is evaluated again.
     await write("flake.lock", "{ \"nodes\": {}, \"root\": \"root\", \"version\": 8 }\n")
     await NixExec.resolveEnvironment({ root, declaration: declaration(), cacheDirectory: ".flows" })
-    expect(await buildCount()).toBe(2)
+    expect(await buildCount()).toBe(3)
     // A store path that vanished invalidates the memo rather than answering for it.
     await Fs.rm(first.storePath, { recursive: true, force: true })
     await write("flake.lock", "{ \"nodes\": {}, \"root\": \"root\", \"version\": 7 }\n")
     await expect(NixExec.resolveEnvironment({ root, declaration: declaration(), cacheDirectory: ".flows" }))
       .resolves.toMatchObject({ hash })
-    expect(await buildCount()).toBe(3)
+    expect(await buildCount()).toBe(4)
   })
 
   it("asserts declared tool versions against the closure alone", async () => {

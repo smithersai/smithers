@@ -13,10 +13,12 @@
  * runtime version is a typed {@link NixEnvironmentError}, never a fallback to
  * whatever the host has on `PATH`.
  *
- * Evaluation runs once per declaration per process and its result is memoized
- * under the workspace cache directory, keyed on the declared inputs' digests,
- * the host system, and the `nix` version. A memoized entry is reused only
- * while its store path still exists on the host.
+ * Every resolution evaluates and builds the declaration with `nix build`, so
+ * a file the flake or expression imports re-keys it like a declared input.
+ * The expensive rest, `print-dev-env` and the closure listing, is memoized
+ * under the workspace cache directory, keyed on the built store path, the
+ * host system, and the `nix` version. A memoized entry is reused only while
+ * its store path still exists on the host.
  *
  * @since 0.1.0
  */
@@ -231,7 +233,8 @@ const digestInputs = async (
   return inputs
 }
 
-const memoKey = (
+/** Names concurrent resolutions of one declaration so they share one evaluation. */
+const flightKey = (
   inputs: ReadonlyArray<EnvironmentInput>,
   declaration: Nix.Environment,
   system: string,
@@ -248,6 +251,10 @@ const memoKey = (
       })
     )
     .digest("hex")
+
+/** The evaluation's own identity, which no imported file can change unnoticed. */
+const memoKey = (storePath: string, system: string, nixVersion: string): string =>
+  createHash("sha256").update(JSON.stringify({ storePath, system, nixVersion })).digest("hex")
 
 const memoPath = (root: string, cacheDirectory: string, key: string): string =>
   NodePath.join(root, cacheDirectory, "nix", `${key}.json`)
@@ -325,17 +332,10 @@ export const resolveEnvironment = async (options: {
     throw new NixEnvironmentError("nix_evaluation_failed", `nix --version failed: ${tail(version.stderr)}`)
   }
   const nixVersion = lastLine(version.stdout)
-  const key = memoKey(inputs, options.declaration, system, nixVersion)
+  const key = flightKey(inputs, options.declaration, system, nixVersion)
   const running = inFlight.get(key)
   if (running !== undefined) return running
   const work = (async (): Promise<ResolvedEnvironment> => {
-    const memo = options.cacheDirectory === undefined
-      ? undefined
-      : memoPath(options.root, options.cacheDirectory, key)
-    if (memo !== undefined) {
-      const known = await readMemo(memo)
-      if (known !== undefined) return known
-    }
     const target = installable(options.root, options.declaration, system)
     options.log?.(`nix environment: evaluating ${target.join(" ")}`)
     const built = await execFile(
@@ -356,6 +356,13 @@ export const resolveEnvironment = async (options: {
         "nix_evaluation_failed",
         `nix build printed no store path for the declared environment: ${JSON.stringify(storePath)}`
       )
+    }
+    const memo = options.cacheDirectory === undefined
+      ? undefined
+      : memoPath(options.root, options.cacheDirectory, memoKey(storePath, system, nixVersion))
+    if (memo !== undefined) {
+      const known = await readMemo(memo)
+      if (known !== undefined) return { ...known, inputs }
     }
     const printed = await execFile(
       nix,

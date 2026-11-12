@@ -79,6 +79,10 @@ unknown key fails with `Workspace received unknown option "x"`.
 | `owners`         | `S.Owners.*`                            | Workspace-wide default owners. See [Ownership](../concepts/ownership.md).              |
 | `teams`          | `S.Teams(...)`                          | The team names owner declarations may reference.                                       |
 
+A nested repository without its own `.git` is always treated as dirty for
+`Repo.Target` caching. It never borrows an enclosing repository's commit
+or clean status.
+
 Two rules tie the toolchain options together:
 
 - `runtime`, `packageManager`, and `nodeModules` are declared together or not at

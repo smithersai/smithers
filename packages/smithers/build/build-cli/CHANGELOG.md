@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Generated `CODEOWNERS` and `OWNERS` include workspace defaults even without
+  a root `PACKAGE.ts`. A child repository without its own `.git` runs
+  uncached instead of borrowing an enclosing checkout's clean status.
+  Editing a file imported by a Nix environment now refreshes its toolchain
+  and cache identity instead of reusing the old environment (#5097).
+
 - A declared `outDir` holding a symlink that climbs with `..` but stays inside
   the tree (`bin/tool -> ../lib/tool.js`) now restores from the cache. Its
   manifest was captured, but the decoder refused every `..` target, so the

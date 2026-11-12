@@ -98,9 +98,12 @@ The planner resolves each declaration once per run:
    `LOCALE_ARCHIVE`, `TZDIR`, `NIX_LD`, `NIX_LD_LIBRARY_PATH`.
 5. `nix path-info --recursive` lists the transitive closure.
 
-The result is memoized under `<cacheDirectory>/nix/`, keyed on the input
-digests, the host system, and the `nix` version, and reused while the store
-path still exists. A second run in an unchanged tree skips evaluation.
+Every resolution runs `nix build`, including when the declaration's files
+are unchanged: an imported file can change the environment too. The remaining
+results are memoized under `<cacheDirectory>/nix/`, keyed on the evaluated
+store path, the host system, and the `nix` version, and reused while the store
+path still exists. A second resolution of the same store path skips
+`print-dev-env` and `path-info`.
 
 ## What changes for a target
 
@@ -118,8 +121,8 @@ requirement and what the closure provides, before any target runs.
 
 **Key material.** Every target that spawns a process under the environment
 gets `nix:<store hash>` in its `layers`. Editing the flake, its lock, or the
-expression changes the hash and re-keys every such target, transitively. A
-target whose capabilities exclude spawning, such as `PnpmWorkspace`,
+expression, including any file it imports, re-keys every such target
+transitively when it changes the resolved store path. A target whose capabilities exclude spawning, such as `PnpmWorkspace`,
 `Tsconfig`, or `Clean`, is not keyed on the closure; re-doing an in-process
 file write because a compiler changed would be work for nothing.
 

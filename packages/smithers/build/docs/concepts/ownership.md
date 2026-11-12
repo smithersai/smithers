@@ -200,7 +200,9 @@ smithers-build //:ownersTree --write
 last matching line, the deepest package or per-file rule, wins. Only required
 approvers appear, and an `upstream: "approve"` claim adds the claimant's
 owners to the claimed package's line. A `review` claim has no CODEOWNERS
-form.
+form. The workspace defaults supply the root `*` line and root `OWNERS`
+even when the workspace has no root `PACKAGE.ts`, covering root files and
+unpackaged directories.
 
 [Owners.Tree](../reference/targets/owners-tree.md) writes one `OWNERS` file per
 package that declares ownership, in the format the Smithers landing gate

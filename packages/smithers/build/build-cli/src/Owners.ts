@@ -635,6 +635,13 @@ const codeownersRules = (index: PackageIndex, packagePath: string) => {
 }
 
 /**
+ * The packages the renderers project, the workspace root always first: paths
+ * outside every package resolve to the workspace owners, so the root line and
+ * root `OWNERS` exist whether or not the workspace has a root `PACKAGE.ts`.
+ */
+const renderedPackages = (index: PackageIndex): ReadonlySet<string> => new Set(["", ...index.packages()])
+
+/**
  * Renders `.github/CODEOWNERS`: least specific first, so GitHub's last-match
  * rule lands on the deepest package or per-file rule. Only required approvers
  * appear; a `review` upstream claim has no CODEOWNERS form.
@@ -653,7 +660,7 @@ export const renderCodeowners = (index: PackageIndex, org: string): string => {
     upstream: new Set(upstreamPackages(index, claimant.packagePath)),
     owners: packageOwners(index, claimant.packagePath)
   }))
-  const packages = [...index.packages()].sort((left, right) =>
+  const packages = [...renderedPackages(index)].sort((left, right) =>
     left.split("/").length - right.split("/").length || byCodeUnit(left, right)
   )
   for (const packagePath of packages) {
@@ -717,7 +724,7 @@ export const renderOwnersTree = (
     upstream: new Set(upstreamPackages(index, claimant.packagePath)),
     owners: packageOwners(index, claimant.packagePath).map((entry) => entry.owner)
   }))
-  for (const packagePath of index.packages()) {
+  for (const packagePath of renderedPackages(index)) {
     const declaration = index.ownersOf(packagePath)
     const workspaceDefaults = packagePath === "" && declaration === undefined ? index.workspace.owners : undefined
     const effective = declaration ?? workspaceDefaults

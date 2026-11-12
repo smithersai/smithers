@@ -14,6 +14,7 @@ import * as RepoTarget from "@smthrs/targets/RepoTarget"
 import * as Target from "@smthrs/targets/Target"
 import * as Data from "effect/Data"
 import { spawn } from "node:child_process"
+import * as NodeFs from "node:fs"
 import * as NodePath from "node:path"
 import { StringDecoder } from "node:string_decoder"
 import type * as PackageIndex from "./PackageIndex.ts"
@@ -330,6 +331,10 @@ export const effectiveKinds = async (
 /**
  * Reads the commit and dirty status used by one child execution key.
  *
+ * Only a child's own `.git` answers. Without one, Git would walk up to an
+ * enclosing checkout and report that commit and an empty status for files it
+ * ignores, so a child without local Git is reported dirty: never cacheable.
+ *
  * @category resolution
  * @since 0.1.0
  */
@@ -338,17 +343,19 @@ export const gitState = async (
   resolution: Resolution,
   signal?: AbortSignal | undefined
 ): Promise<GitState> => {
+  if (!NodeFs.existsSync(NodePath.join(resolution.absolutePath, ".git"))) return { head: "", dirty: true, status: "" }
+  const environment = { ...resolver.environment, GIT_CEILING_DIRECTORIES: NodePath.dirname(resolution.absolutePath) }
   const head = await runProcess(
     resolution.absolutePath,
     ["git", "-C", resolution.absolutePath, "rev-parse", "HEAD"],
-    resolver.environment,
+    environment,
     signal
   )
   if (head.exitCode !== 0) throw new Error(`could not read child repository HEAD: ${tail(head.stderr || head.stdout)}`)
   const status = await runProcess(
     resolution.absolutePath,
     ["git", "-C", resolution.absolutePath, "status", "--porcelain"],
-    resolver.environment,
+    environment,
     signal
   )
   if (status.exitCode !== 0) {

@@ -168,12 +168,40 @@ describe("opaque local repositories", () => {
     await expect(RepoResolution.execute(resolver, resolution, { signal })).rejects.toBe(reason)
   })
 
-  it("reports a non-repository git lookup as a failure, never a clean cache key", async () => {
+  it("reports a non-repository git lookup as dirty, never a clean cache key", async () => {
     const root = await workspace()
     const index = await openPackageIndex({ workspace: root })
     const resolver = RepoResolution.resolver(index, process.env)
     const resolution = await RepoResolution.resolve(resolver, RepoTarget.Target("missing", "//:test"))
-    await expect(RepoResolution.gitState(resolver, resolution)).rejects.toThrow("could not read child repository HEAD")
+    expect(await RepoResolution.gitState(resolver, resolution)).toEqual({ head: "", dirty: true, status: "" })
+  })
+
+  it("never keys a child without its own .git on an enclosing checkout that ignores it", async () => {
+    const root = await workspace()
+    await Fs.rm(NodePath.join(root, "child", ".git"), { recursive: true, force: true })
+    await Fs.writeFile(NodePath.join(root, ".gitignore"), "/child/\n")
+    await git(root, ["init", "--quiet"])
+    await git(root, ["config", "user.name", "Smithers Test"])
+    await git(root, ["config", "user.email", "smithers@example.invalid"])
+    await git(root, ["add", "."])
+    await git(root, ["commit", "--quiet", "-m", "parent"])
+    const index = await openPackageIndex({ workspace: root })
+    const resolver = RepoResolution.resolver(index, process.env)
+    const resolution: RepoResolution.Resolution = {
+      repoName: "child",
+      repoPath: "child",
+      absolutePath: NodePath.join(root, "child"),
+      label: "//:test",
+      args: [],
+      kinds: ["test"],
+      refusal: undefined,
+      externalLabel: "@child//:test"
+    }
+    // The parent would answer with its own HEAD and a clean status, a cache key
+    // that never changes when the child's files do.
+    expect(await RepoResolution.gitState(resolver, resolution)).toEqual({ head: "", dirty: true, status: "" })
+    await Fs.writeFile(NodePath.join(root, "child", "src.ts"), "export const changed = true\n")
+    expect(await RepoResolution.gitState(resolver, resolution)).toEqual({ head: "", dirty: true, status: "" })
   })
 
   it("prunes declared repositories from package discovery", async () => {
