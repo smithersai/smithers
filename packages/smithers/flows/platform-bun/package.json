@@ -175,6 +175,7 @@
   "imports": {
     "#electrobun": {
       "types": "./src/Electrobun.d.ts",
+      "browser": "./src/internal/ElectrobunUnavailable.ts",
       "default": "electrobun/bun"
     }
   }

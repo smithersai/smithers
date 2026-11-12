@@ -321,7 +321,8 @@ The optional peer `electrobun` 1.18.1 is loaded only when this layer is built. N
 CEF, restricts navigation to the supplied origin and disables view RPC. The caller owns the Effect scope, which
 closes its windows. A cancelled directory chooser returns `null`; native failures return `DesktopUnavailable`,
 without copying OS messages into diagnostics. The private `#electrobun` import separates the native declaration
-port from Electrobun's source-only TypeScript distribution.
+port from Electrobun's source-only TypeScript distribution. Under the `browser` condition it resolves to a module
+that refuses with `DesktopUnavailable`, so a browser bundle of this package never reaches Electrobun.
 
 `BunServer.layer(port?)` provides the Effect HTTP server and its Bun support services on `127.0.0.1`. The default
 port, zero, asks the OS to choose one. The server closes with the layer's scope. Its Bun adapter is loaded only when

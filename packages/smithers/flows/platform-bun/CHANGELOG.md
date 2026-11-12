@@ -27,6 +27,14 @@
   program that composed it instead of `BunHost.layer` reached origins the
   capability kernel never authorized. Use `BunHost.layerHttpClient`.
 
+### Fixed
+
+- A browser bundle of the root no longer reaches Electrobun. `#electrobun`
+  resolves under the `browser` condition to a module that refuses with
+  `DesktopUnavailable`, so the Node-only root fails a browser build only on
+  `node:` and `bun:` built-ins, and `BunDesktop.layer` in a browser fails with
+  `DesktopUnavailable` as it does on Node.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added
