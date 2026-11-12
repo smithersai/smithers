@@ -236,6 +236,9 @@ export const table = (value: Schema.Json): string | undefined => {
   if (!value.every(isRecord<Schema.Json>)) return undefined
   const columns = [...new Set(value.flatMap((element) => Object.keys(element)))]
   if (columns.length < 2) return undefined
+  // Sparse rows pay for absent cells too. Keep that work proportional to the
+  // payload before allocating the table; the caller can use compact JSON.
+  if (value.length * columns.length > CanonicalJson.stringify(value).length) return undefined
   const rows = value.map((element) =>
     columns.map((column) => Object.hasOwn(element, column) ? cell(element[column]!) : "").join(" | ")
   )
@@ -254,8 +257,9 @@ export const table = (value: Schema.Json): string | undefined => {
  *
  * Tables save repeated keys but pay for every column boundary, including
  * absent members. The three-row, two-column floor saves bytes for uniform
- * records; it does not guarantee savings for sparse records. Rendering stays
- * shape-based rather than comparing both encodings.
+ * records; it does not guarantee savings for sparse records. A table whose
+ * row-by-column work exceeds its encoded input length stays canonical JSON,
+ * preventing sparse records from amplifying host allocations.
  *
  * @since 0.1.0
  * @private

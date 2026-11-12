@@ -7,7 +7,7 @@
  * return.
  */
 import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
-import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
@@ -17,6 +17,7 @@ import * as CellValidation from "../src/CellValidation.ts"
 import * as bytes from "../src/internal/bytes.ts"
 import * as CellPrompt from "../src/internal/cellPrompt.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
+import * as QuickJSVariant from "../src/QuickJSVariant.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import type * as VariablesPanel from "../src/VariablesPanel.ts"
 
@@ -61,6 +62,119 @@ const session = (
     }
     return frames
   }).pipe(Effect.scoped, Effect.runPromise)
+
+describe("bridge payload admission", () => {
+  const limit = Sandbox.printRetainedBytes
+  const intentLimit = 1024 * 1024
+
+  it.each([
+    ["text", "\"x\".repeat(" + (limit + 1) + ")"],
+    ["structured text", "{ text: \"x\".repeat(" + limit + ") }"],
+    ["toJSON", "{ toJSON() { return \"x\".repeat(" + limit + ") } }"],
+    ["escaped text", "\"\\u0000\".repeat(" + Math.ceil(limit / 6) + ")"],
+    ["wide text", "\"中\".repeat(" + (limit + 1) + ")"],
+    ["many arguments", "...Array(1000).fill(\"x\".repeat(300))"]
+  ])("omits an oversized %s print without consuming the next frame", async (_name, value) => {
+    const frames = await session(["console.log(" + value + ")", "console.log(\"after\")"])
+    expect(frames[0]!.prints).toContain("1 further print statements were not kept")
+    expect(frames[0]!.outcome).toMatchObject({ _tag: "settled", transition: { _tag: "continue" } })
+    expect(frames[1]!.prints).toBe("after")
+  })
+
+  it.each([
+    ["done", "ctx.done(\"x\".repeat(" + (intentLimit - 1) + "))"],
+    ["structured done", "ctx.done({ text: \"x\".repeat(" + intentLimit + ") })"],
+    ["park", "ctx.park(\"waiting-input\", \"x\".repeat(" + intentLimit + "))"],
+    ["justify", "ctx.justify(\"x\".repeat(" + intentLimit + "))"]
+  ])("refuses an oversized %s intent before sealing the frame", async (_name, invocation) => {
+    const frames = await session([
+      "try { " + invocation +
+      " } catch (error) { console.log(error instanceof TypeError, error.name, error.message) }\n" +
+      "await ctx.call(\"echo\", {}); ctx.done(\"recovered\")"
+    ])
+    expect(frames[0]!.prints.startsWith("true TypeError")).toBe(true)
+    expect(frames[0]!.prints).toContain("payload")
+    expect(frames[0]!.prints).toContain(String(intentLimit))
+    expect(frames[0]!.outcome).toMatchObject({
+      _tag: "settled",
+      transition: { _tag: "complete", output: "recovered", value: "recovered" }
+    })
+  })
+
+  it("prints sparse records as bounded JSON instead of expanding absent cells", async () => {
+    const frames = await session([
+      "console.log(Array.from({ length: 1000 }, (_, index) => ({ [index]: 0 })))",
+      "console.log(\"after\")"
+    ])
+    expect(frames[0]!.prints).toBe(JSON.stringify(Array.from({ length: 1000 }, (_, index) => ({ [index]: 0 }))))
+    expect(bytes.size(frames[0]!.prints)).toBeLessThanOrEqual(Sandbox.printFrameBytes)
+    expect(frames[1]!.prints).toBe("after")
+  })
+
+  it.each([intentLimit - 1, intentLimit])("accepts an intent with %i encoded code units", async (size) => {
+    const frames = await session(["ctx.done(\"x\".repeat(" + (size - 2) + "))"])
+    expect(frames[0]!.outcome).toMatchObject({
+      _tag: "settled",
+      transition: { _tag: "complete", output: "x".repeat(size - 2) }
+    })
+  })
+
+  it("never copies an oversized print or intent out of the real WASM heap", async () => {
+    const reads: Array<number> = []
+    const variant = newVariant(singlefile as unknown as QuickJSSyncVariant, {})
+    const frames = await Effect.gen(function*() {
+      const module = yield* QuickJSVariant.compiledModule
+      const newRuntime = module.newRuntime.bind(module)
+      // Instrument the real interpreter; every read still uses its actual FFI.
+      module.newRuntime = (options) => {
+        const runtime = newRuntime(options)
+        const newContext = runtime.newContext.bind(runtime)
+        runtime.newContext = (options) => {
+          const context = newContext(options)
+          const getString = context.getString.bind(context)
+          context.getString = (handle) => {
+            if (context.typeof(handle) === "string") {
+              const length = context.getProp(handle, "length")
+              try {
+                reads.push(context.getNumber(length))
+              } finally {
+                length.dispose()
+              }
+            }
+            return getString(handle)
+          }
+          return context
+        }
+        return runtime
+      }
+      const realm = yield* (yield* QuickJSSandbox.makeWithVariant).openRealm!({ flows })
+      const printed = yield* realm.evaluate({
+        cell: Cell.source(
+          "for (let i = 0; i < 16; i++) console.log(\"x\".repeat(" + (limit * 2) + "))\n" +
+            "console.log(...Array(1000).fill(\"x\".repeat(300)))"
+        ),
+        frame: 0,
+        call: succeeds
+      })
+      const intended = yield* realm.evaluate({
+        cell: Cell.source(
+          "try { ctx.done({ text: \"x\".repeat(" + (intentLimit * 2) + ") }) } catch {} ctx.done(\"ok\")"
+        ),
+        frame: 1,
+        call: succeeds
+      })
+      return [printed, intended]
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layer.merge(QuickJSSandbox.layerVariant(variant), QuickJSSandbox.layerClockLive)),
+      Effect.runPromise
+    )
+    expect(reads.length).toBeGreaterThan(0)
+    expect(Math.max(...reads)).toBeLessThanOrEqual(limit)
+    expect(frames[0]!.prints).toContain("17 further print statements were not kept")
+    expect(frames[1]!.outcome).toMatchObject({ transition: { _tag: "complete", output: "ok" } })
+  })
+})
 
 describe("sandbox boundary regressions", () => {
   it("does not dispatch when an input getter completes the run", async () => {

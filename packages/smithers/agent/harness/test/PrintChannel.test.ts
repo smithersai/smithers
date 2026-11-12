@@ -449,6 +449,13 @@ describe("printChannel.render", () => {
     expect(printChannel.render(wrapped).length).toBeLessThan(JSON.stringify(wrapped).length)
   })
 
+  it("declines sparse table expansion before allocating absent cells", () => {
+    const sparse = Array.from({ length: 1000 }, (_, index) => ({ [index]: 0 }))
+    expect(printChannel.table(sparse)).toBeUndefined()
+    expect(printChannel.render(sparse)).toBe(CanonicalJson.stringify(sparse))
+    expect(printChannel.render({ rows: sparse })).toBe(CanonicalJson.stringify({ rows: sparse }))
+  })
+
   it("refuses a table below the row or column floor, or when any element is not a record", () => {
     const wide = "w".repeat(80)
     // Too few rows, a scalar element, fewer than two union columns, and a

@@ -311,6 +311,9 @@ ${QuickJSLifecycle.prelude([])}
     var parts = []
     for (var index = 0; index < values.length; index++) {
       var value = values[index]
+      // Refuse large strings before constructing their serialized wrapper.
+      // An empty bridge call counts the omitted statement without copying it.
+      if (typeof value === "string" && value.length > ${Sandbox.printRetainedBytes}) return print()
       if (typeof value === "string") append(parts, { text: value })
       else if (value === undefined) append(parts, { text: "undefined" })
       else {
@@ -321,12 +324,18 @@ ${QuickJSLifecycle.prelude([])}
         // notation for at all — a function, a symbol — and those read best as
         // themselves. It throws only for a value it cannot walk, and that is
         // the one case where naming the reason beats printing "[object Object]".
+        if (encoded !== undefined && encoded !== null && encoded.length > ${Sandbox.printRetainedBytes}) return print()
         if (!refused) append(parts, encoded === undefined ? { text: render(value) } : { json: parse(encoded) })
       }
     }
     print(stringify(parts))
   }
   var line = function () { show(argumentsOf.call(arguments)) }
+  var submitIntent = function (kind, payload) {
+    if (intent(kind, payload) === false) {
+      throw new Fault("The intent payload exceeds ${intentPayloadUnits} UTF-16 code units; pass a smaller value")
+    }
+  }
   var host = function (name, value) {
     define(globalThis, name, { value: value, writable: false, enumerable: true, configurable: false })
   }
@@ -341,16 +350,16 @@ ${preludeCall(`      if (sealed !== null) return Deferred.resolve(sealed)\n`)}
         throw new Fault("ctx.done(output) takes the run's answer; call it with the value the task asked for")
       }
       var encoded = encode("ctx.done output", output === undefined ? null : output)
+      submitIntent("done", encoded)
       sealed = sealedEnvelope
-      intent("done", encoded)
     },
     park: function (reason, message) {
       if (sealed !== null) return
       var encoded = encode("ctx.park message", { reason: reason === undefined ? null : reason, message: message === undefined ? "" : message })
+      submitIntent("park", encoded)
       sealed = sealedEnvelope
-      intent("park", encoded)
     },
-    justify: function (text) { intent("justify", encode("ctx.justify text", text === undefined ? "" : text)) }
+    justify: function (text) { submitIntent("justify", encode("ctx.justify text", text === undefined ? "" : text)) }
   }))
   // Handed back to the host, which calls it as each frame opens. See the seal
   // above for why the clearing is per frame rather than per run.
@@ -539,6 +548,9 @@ const timeLimitExceeded = (timeMs: number): Cell.Rejected =>
  * a throw that reads like a bug in the cell's own logic.
  */
 const parkReasons = ["waiting-input", "waiting-event", "waiting-quota"] as const
+
+/** Encoded intent units, preserving half-megabyte answers while bounding host copies. */
+const intentPayloadUnits = 1024 * 1024
 
 /** What `ctx.done` or `ctx.park` recorded, before the reason is judged. */
 type Recorded =
@@ -1202,20 +1214,25 @@ const openRuntime = (
         declaredHandle !== undefined && context.getString(declaredHandle) === "declared"
       ))
     install("__checkpoint", () => queue("checkpoint", checkpointFlow, null, undefined))
+    // String.length is read inside QuickJS: getString would first copy the
+    // whole payload into host memory. Bound encoded UTF-16 units separately
+    // from the print channel's rendered UTF-8 byte budgets.
+    const payloadFits = (handle: QuickJSHandle, limit: number): boolean => {
+      const length = context.getProp(handle, "length")
+      try {
+        return context.getNumber(length) <= limit
+      } finally {
+        length.dispose()
+      }
+    }
+
     install("__print", (partsHandle) => {
-      // What the model reads is bounded at frame close; what the host holds
-      // while the cell is still running is bounded here, and it has to be a
-      // different number because the two are answers to different questions.
-      // A cell that prints in a loop hands over one payload per statement, and
-      // every one of them is copied out of the WASM heap, parsed and decoded
-      // before anything can decide it is surplus. Measured on this variant, a
-      // print loop inside the default step budget took the host's resident set
-      // from 288 MB to 746 MB, and two hundred prints of one 3 MiB string took
-      // it to 1.4 GB — while the model, both times, was shown 16 KiB. Past the
-      // retention ceiling the payload is not read at all: the handle belongs to
-      // the caller, so ignoring it costs nothing, and the count of what was
-      // ignored is stated at frame close rather than dropped in silence.
-      if (retained >= Sandbox.printRetainedBytes) {
+      // Check this payload before copying, parsing or rendering it, even
+      // while earlier statements have left the retention budget unspent.
+      if (
+        retained >= Sandbox.printRetainedBytes || partsHandle === undefined ||
+        !payloadFits(partsHandle, Sandbox.printRetainedBytes)
+      ) {
         unread = unread + 1
         return context.undefined
       }
@@ -1225,6 +1242,7 @@ const openRuntime = (
       return context.undefined
     })
     install("__intent", (kindHandle, payloadHandle) => {
+      if (!payloadFits(payloadHandle, intentPayloadUnits)) return context.false
       const kind = context.getString(kindHandle)
       const payload = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(context.getString(payloadHandle)))
       if (kind === "done") recorded = { kind: "done", output: Cell.renderText(payload), value: payload }

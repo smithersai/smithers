@@ -231,6 +231,12 @@ Three constants bound the channel:
   still runs. Past it, payloads are not read, and the count of what went
   unread is stated in the buffer.
 
+Before the host copies them, encoded prints are limited to 262,144 UTF-16 code
+units and intents to 1,048,576 UTF-16 code units. Oversized prints are omitted and counted in the
+buffer notice. `ctx.done`, `ctx.park` and `ctx.justify` throw `TypeError` for an
+oversized intent; catch it and submit a smaller value. A refused intent leaves
+the frame open.
+
 ## Pin a checkpoint
 
 A cell calls `ctx.checkpoint()` to pin the workspace as it stands at that

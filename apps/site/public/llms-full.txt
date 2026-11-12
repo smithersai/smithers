@@ -21069,6 +21069,16 @@ the binding can refuse it. The print-channel constants are
 `Sandbox.printFrameBytes` (16 KiB), `Sandbox.printStatementFloor` (512 bytes),
 and `Sandbox.printRetainedBytes` (256 KiB).
 
+Before copying a payload out of QuickJS, the binding checks its encoded string
+length: prints are limited to `Sandbox.printRetainedBytes` (262,144 UTF-16 code
+units), and intents to 1,048,576 UTF-16 code units. These ceilings bound host-side
+copying, JSON decoding and rendering independently of the UTF-8 print budgets. Oversized prints are omitted and counted in the frame's
+print notice. `ctx.done`, `ctx.park` and `ctx.justify` throw `TypeError` for an
+oversized payload; a refused intent does not seal the frame, so the cell can
+catch the error and submit a smaller value. Structured prints use canonical
+JSON when a sparse table's row-by-column expansion would exceed its encoded
+input length, keeping rendering work proportional to the admitted data.
+
 ## QuickJSVariant
 
 `import { QuickJSVariant } from "@smthrs/harness"` (on the root only, with no subpath)
