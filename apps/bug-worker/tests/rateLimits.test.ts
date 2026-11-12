@@ -65,6 +65,59 @@ describe("rate limits", () => {
     expect(stored(e)).toBe(BUG_REPORTS_PER_HOUR + 1);
   });
 
+  test("a counter charges an older hour to its stored window instead of rewinding it", async () => {
+    const bucket = memoryRateLimits().getByName("bugs:all");
+    const check = async (hour: number) => (await (await bucket.fetch(new Request("https://rate-limiter/", {
+      method: "POST", body: JSON.stringify({ hour, limit: 2 }),
+    }))).json() as { allowed: boolean }).allowed;
+    expect([await check(11), await check(11), await check(11), await check(10), await check(11)])
+      .toEqual([true, true, false, false, false]);
+    expect([await check(12), await check(11), await check(12)]).toEqual([true, true, false]);
+  });
+
+  test("reports whose bodies arrive after the hour turns spend the new hour's budgets", async () => {
+    let clock = Date.parse("2026-07-02T10:59:59.999Z");
+    const late = createBugWorker({ now: () => clock });
+    const e = env();
+    // Requests started before the boundary; their bodies arrive later.
+    const held = (ip: string) => {
+      let send!: () => void;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          send = () => {
+            controller.enqueue(new TextEncoder().encode(JSON.stringify({ summary: "late" })));
+            controller.close();
+          };
+        },
+      });
+      const response = late.fetch(new Request("https://bug.smithers.sh/api/bugs", {
+        method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": ip }, body,
+      }), e);
+      return { send, response };
+    };
+    const client = Array.from({ length: 5 }, () => held("203.0.113.5"));
+    const global = Array.from({ length: 5 }, (_, i) => held(`198.51.100.${i}`));
+    clock += 1;
+    const fresh = await statuses(Array.from({ length: RATE_LIMIT_PER_HOUR }, () => late.fetch(report({ "cf-connecting-ip": "203.0.113.5" }), e)));
+    expect(fresh.every((code) => code === 201)).toBe(true);
+    for (const request of client) request.send();
+    expect(await statuses(client.map((request) => request.response))).toEqual(client.map(() => 429));
+    const flood = await statuses(Array.from({ length: BUG_REPORTS_PER_HOUR - RATE_LIMIT_PER_HOUR }, (_, i) =>
+      late.fetch(report({ "cf-connecting-ip": `10.${i >> 8}.${i & 255}.1` }), e)));
+    expect(flood.every((code) => code === 201)).toBe(true);
+    const logged: string[] = [];
+    const original = console.error;
+    console.error = (line: string) => void logged.push(line);
+    try {
+      for (const request of global) request.send();
+      expect(await statuses(global.map((request) => request.response))).toEqual(global.map(() => 429));
+    } finally {
+      console.error = original;
+    }
+    expect(logged.map((line) => JSON.parse(line).event)).toEqual(global.map(() => "bug_report.global_limit"));
+    expect(stored(e)).toBe(BUG_REPORTS_PER_HOUR);
+  });
+
   test("the all-clients cap takes at least 100 per-client budgets to spend", () => {
     expect(BUG_REPORTS_PER_HOUR / RATE_LIMIT_PER_HOUR).toBeGreaterThanOrEqual(100);
     expect(BUG_REPORTS_PER_HOUR * 256 * 1024).toBeLessThanOrEqual(512 * 1024 * 1024);

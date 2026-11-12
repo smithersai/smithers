@@ -13,14 +13,21 @@ type Window = { hour: number; count: number };
 export class RateLimiter {
   constructor(private readonly ctx: State) {}
 
-  /** POST {hour, limit}: admit and count one request, or refuse it; answers {allowed}. */
+  /**
+   * POST {hour, limit}: admit and count one request, or refuse it; answers
+   * {allowed}. The window only moves forward: an hour older than the stored
+   * one counts against the stored window.
+   */
   async fetch(request: Request): Promise<Response> {
     const { hour, limit } = await request.json() as RateLimitRequest;
     const allowed = await this.ctx.storage.transaction(async (txn) => {
       const window = await txn.get<Window>("window");
-      const count = window?.hour === hour ? window.count : 0;
+      // A request whose body arrived late carries an older hour; it is charged
+      // to the stored window, so it can never rewind the count to zero.
+      const current = window && window.hour > hour ? window.hour : hour;
+      const count = window?.hour === current ? window.count : 0;
       if (count >= limit) return false;
-      await txn.put<Window>("window", { hour, count: count + 1 });
+      await txn.put<Window>("window", { hour: current, count: count + 1 });
       return true;
     });
     return Response.json({ allowed });
