@@ -816,6 +816,7 @@ const landCommit = Smithers.NodeTest({
  * workflows and the root manifest by repository path.
  */
 const releaseSources = [
+  Smithers.file("//packages/repo-targets/scripts/workspace-root.mjs"),
   Smithers.glob("//.smithers/flows/release/**/*"),
   runModuleSource,
   Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),

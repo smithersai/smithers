@@ -378,6 +378,13 @@ packs the publish set declared by `.smithers/flows/release/pack-release.mjs`, sm
 npm versions are immutable, so everything that can be proved before the push
 is proved before the push.
 
+The installer archive jobs run from a source checkout without installing the
+workspace. Their release entry points load Node built-ins and the local
+modules declared in `releaseSources`. The builder uses the entry-point guard
+without invoking workspace discovery or consumer-tag comparison. The installer
+integrity suite runs that dependency-free command, then extracts and executes its archive
+after removing the build checkout, candidate tarballs and staging output.
+
 "Every gate" is literal: the release workflow installs the toolchain the
 required CI `test` job installs — ripgrep, bubblewrap, Go, Foundry, the
 containerd image store — and then runs one step,

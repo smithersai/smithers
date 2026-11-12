@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import test from "node:test"
 
@@ -85,6 +85,49 @@ test("packs the tested npm CLI with an adjacent Node runtime and a relocatable l
   const link = join(root, "linked-smithers")
   await symlink(launcher, link)
   assert.deepEqual(JSON.parse(execFileSync(link, ["echo", "through-link"], { encoding: "utf8" })).args, ["echo", "through-link"])
+}))
+
+test("the installer command packs and executes after relocation without workspace dependencies", { timeout: 300_000 }, () => temp(async (root) => {
+  const { packDirectory } = await packedCli(root)
+  const checkout = join(root, "source checkout")
+  const release = join(checkout, ".smithers/flows/release")
+  await mkdir(release, { recursive: true })
+  for (const name of ["installer-release.mjs", "publish-release.mjs", "release-process.mjs", "release-registry.mjs"]) {
+    await copyFile(new URL(name, import.meta.url), join(release, name))
+  }
+  const scripts = join(checkout, "packages/repo-targets/scripts")
+  await mkdir(scripts, { recursive: true })
+  for (const name of ["workspace-packages.mjs", "workspace-root.mjs"]) {
+    await copyFile(join(repoRoot, "packages/repo-targets/scripts", name), join(scripts, name))
+  }
+  for (let directory = await realpath(checkout);; directory = dirname(directory)) {
+    await assert.rejects(lstat(join(directory, "node_modules")), { code: "ENOENT" })
+    if (directory === dirname(directory)) break
+  }
+  const outputDirectory = join(root, "installer output")
+  const env = { ...process.env, NODE_OPTIONS: "", NODE_PATH: "" }
+  execFileSync(process.execPath, [join(release, "installer-release.mjs"), "pack", packDirectory, tag, outputDirectory], {
+    cwd: checkout,
+    env,
+    timeout: 240_000,
+    stdio: "pipe"
+  })
+  const filename = archiveName(tag, process.platform, process.arch)
+  const receipt = JSON.parse(await readFile(join(outputDirectory, `${filename}.json`), "utf8"))
+  assert.equal(receipt.status, "passed")
+  assert.equal(receipt.version, version)
+  assert.deepEqual(receipt.probes, ["--version", "--help", "init release-smoke --json", "targets --json", "flow list --json"])
+  const installed = join(root, "relocated consumer")
+  await mkdir(installed)
+  execFileSync("tar", ["-xzf", join(outputDirectory, filename), "-C", installed])
+  for (const directory of [checkout, packDirectory, outputDirectory, join(root, "cli-source")]) {
+    await rm(directory, { recursive: true, force: true })
+  }
+  assert.deepEqual(await readdir(root), ["relocated consumer"])
+  assert.equal(execFileSync(join(installed, "smithers"), ["--version"], { encoding: "utf8", env }).trim(), version)
+  assert.match(execFileSync(join(installed, "smithers"), ["--help"], { encoding: "utf8", env }), /smithers help/)
+  const listed = JSON.parse(execFileSync(join(installed, "smithers"), ["targets", "--json"], { encoding: "utf8", env }))
+  assert.deepEqual(listed.command, ["targets", "--json"])
 }))
 
 test("packing refuses missing or mismatched smoke evidence and changed tarball bytes", { timeout: 120_000 }, () => temp(async (root) => {
