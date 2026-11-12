@@ -51,9 +51,10 @@ describe("SafeFs digest index", () => {
     const digests = later()
     const { io, opened } = counting()
     expect(await digest(path, io, digests)).toBe(sha256("alpha\n"))
-    expect(await digest(path, io, digests)).toBe(sha256("alpha\n"))
+    const next = later(digests.rows)
+    expect(await digest(path, io, next)).toBe(sha256("alpha\n"))
     expect(opened).toEqual([path])
-    expect([...digests.used]).toEqual([path])
+    expect([...next.used]).toEqual([path])
   })
 
   it("reads a file again after a same-size rewrite that restores its modification time", async () => {
@@ -66,7 +67,7 @@ describe("SafeFs digest index", () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     await Fs.writeFile(path, "omega\n")
     await Fs.utimes(path, atime, mtime)
-    expect(await digest(path, io, digests)).toBe(sha256("omega\n"))
+    expect(await digest(path, io, later(digests.rows))).toBe(sha256("omega\n"))
     expect(opened).toEqual([path, path])
   })
 
@@ -79,7 +80,7 @@ describe("SafeFs digest index", () => {
     const replacement = await write("b.txt", "omega\n")
     await Fs.utimes(replacement, atime, mtime)
     await Fs.rename(replacement, path)
-    expect(await digest(path, io, digests)).toBe(sha256("omega\n"))
+    expect(await digest(path, io, later(digests.rows))).toBe(sha256("omega\n"))
   })
 
   it("reuses an unsettled file's digest within the invocation and marks it unsettled", async () => {
@@ -153,5 +154,29 @@ describe("SafeFs digest index", () => {
     expect(again).toEqual(first)
     expect(one).toBe(sha256("alpha\n"))
     expect(opened.length).toBe(2)
+  })
+
+  it("resolves a path once per invocation, and asks again after a failure", async () => {
+    const path = await write("a.txt", "alpha\n")
+    await Fs.mkdir(NodePath.join(root, "dir.txt"))
+    const statted: Array<string> = []
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      lstat: (candidate) => {
+        statted.push(NodePath.relative(root, candidate))
+        return SafeFs.defaultIo.lstat(candidate)
+      }
+    }
+    const digests = SafeFs.makeDigestIndex()
+    expect(await digest(path, io, digests)).toBe(sha256("alpha\n"))
+    expect(await digest(path, io, digests)).toBe(sha256("alpha\n"))
+    expect(await digest(NodePath.join(root, "missing.txt"), io, digests)).toBeUndefined()
+    expect(await digest(NodePath.join(root, "missing.txt"), io, digests)).toBeUndefined()
+    const directory = NodePath.join(root, "dir.txt")
+    await expect(digest(directory, io, digests)).rejects.toThrow(/not a regular file/)
+    await expect(digest(directory, io, digests)).rejects.toThrow(/not a regular file/)
+    expect(statted.filter((name) => name === "a.txt")).toHaveLength(2)
+    expect(statted.filter((name) => name === "missing.txt")).toHaveLength(1)
+    expect(statted.filter((name) => name === "dir.txt")).toHaveLength(2)
   })
 })

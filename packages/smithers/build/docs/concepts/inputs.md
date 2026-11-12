@@ -195,7 +195,9 @@ when the file's `lstat` status equals the status it was read at: device, inode,
 size, modification time and status-change time, at full resolution. Every write
 and every `utimes` call moves the status-change time, which an unprivileged
 process cannot set back, so an equal status names the same bytes. Any other
-status reads the file again.
+status reads the file again. Within one invocation each file is resolved and
+checked once, however many declarations name it; a check that fails is made
+again by the next declaration that asks.
 
 A digest is saved for the next invocation only when both times are at least two
 seconds older than the start of the read. A write in the same timestamp tick as

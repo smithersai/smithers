@@ -368,6 +368,9 @@ export interface DigestRow {
  * `used` holds every path looked up or remembered since the index was made,
  * so a saved index can keep what the current tree still names first. `now`
  * is the wall clock in nanoseconds that a read's start is measured on.
+ * `confirmed` holds {@link digestFile}'s answer for each path this
+ * invocation asked about, so a file several declarations name is resolved
+ * and checked once; a failed answer is not kept.
  *
  * @category models
  * @since 1.0.0
@@ -376,6 +379,7 @@ export interface DigestIndex {
   readonly rows: Map<string, DigestRow>
   readonly used: Set<string>
   readonly now: () => bigint
+  readonly confirmed: Map<string, Promise<string | undefined>>
 }
 
 /**
@@ -400,7 +404,8 @@ export const makeDigestIndex = (
 ): DigestIndex => ({
   rows: new Map(rows),
   used: new Set(),
-  now
+  now,
+  confirmed: new Map()
 })
 
 /** A time in nanoseconds since the epoch, from bigint stats or milliseconds. */
@@ -820,6 +825,19 @@ export const digestFile = async (
       }`
     )
   }
+  const index = options.digests
+  if (index === undefined) return resolvedDigest(path, options)
+  const key = JSON.stringify([options.root ?? null, path, options.symlinks ?? "follow", maximumBytes ?? null])
+  let answer = index.confirmed.get(key)
+  if (answer === undefined) {
+    answer = resolvedDigest(path, options)
+    index.confirmed.set(key, answer)
+    answer.catch(() => index.confirmed.delete(key))
+  }
+  return answer
+}
+
+const resolvedDigest = async (path: string, options: Options): Promise<string | undefined> => {
   const entry = await resolveFile(path, options)
   if (entry === undefined) return undefined
   return digestEntry(entry, options)
