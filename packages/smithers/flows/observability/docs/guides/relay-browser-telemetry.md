@@ -118,6 +118,10 @@ OtlpRelay.serve({
 - A body past `maxBodyBytes` gets 413, even when it is chunked with no length.
 - A body that is not OTLP JSON, or nests deeper than `OtlpRelay.maxNesting`,
   gets 400 with no echo of the parse error.
+- A metric point whose value or sum is not a finite number (OTLP/JSON writes it
+  as `"NaN"`, `"Infinity"` or `"-Infinity"`; an exporter that leaves it to JSON
+  writes `null`) is relayed without that field; the rest of the request is
+  relayed as usual.
 - Another method gets 405 with `Allow: POST`; another path gets 404.
 - Records off the allowlist or past `maxRecords` are dropped; the 200 answer
   carries an OTLP `partialSuccess` with the count.

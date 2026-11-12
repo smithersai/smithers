@@ -153,6 +153,62 @@ describe("OtlpRelay", () => {
       expect(count(FlowsMetric.relayedRecords, { signal: "metrics" })).toBe(metrics.length)
     }))
 
+  it.effect("relays a metric point whose value is not a finite number without a value, and the rest of the export", () =>
+    Effect.gen(function*() {
+      const { lines, handle, count } = relay()
+      // JSON has no NaN or Infinity: the exporter writes such a value as the string "NaN" or "Infinity".
+      yield* exportThrough(
+        handle,
+        Effect.gen(function*() {
+          yield* Metric.update(Metric.gauge("ratio"), 0 / 0)
+          yield* Metric.update(Metric.gauge("rate"), 1 / 0)
+          yield* Metric.update(Metric.counter("clicks"), 1)
+        })
+      )
+      const metrics = bySignal(lines, "metrics")
+      expect(metrics.map((line) => line.message).sort()).toEqual(["clicks", "rate", "ratio"])
+      expect(metrics.find((line) => line.message === "clicks")!.annotations["otlp.value"]).toBe(1)
+      expect(metrics.find((line) => line.message === "ratio")!.annotations).not.toHaveProperty("otlp.value")
+      expect(metrics.find((line) => line.message === "rate")!.annotations).not.toHaveProperty("otlp.value")
+      expect(count(FlowsMetric.relayedRecords, { signal: "metrics" })).toBe(3)
+    }))
+
+  it("relays a data point whose value, integer or sum is not a finite number without that field", async () => {
+    const { lines, post } = relay()
+    const point = (fields: Record<string, unknown>) => ({ attributes: [], ...fields })
+    const response = await post(
+      "/v1/metrics",
+      JSON.stringify({
+        resourceMetrics: [{
+          scopeMetrics: [{
+            metrics: [
+              { name: "ratio", gauge: { dataPoints: [point({ asDouble: null }), point({ asDouble: "-Infinity" })] } },
+              { name: "count", sum: { dataPoints: [point({ asInt: null })] } },
+              {
+                name: "answer_ms",
+                histogram: { dataPoints: [point({ count: 2, sum: "NaN" }), point({ count: 3, sum: null })] }
+              },
+              { name: "spent", gauge: { dataPoints: [point({ asDouble: "Infinity", asInt: 4 })] } }
+            ]
+          }]
+        }]
+      })
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({})
+    expect(lines.map(({ message, annotations }) => [message, annotations["otlp.value"], annotations["otlp.count"]]))
+      .toEqual([
+        ["ratio", undefined, undefined],
+        ["ratio", undefined, undefined],
+        ["count", undefined, undefined],
+        ["answer_ms", undefined, 2],
+        ["answer_ms", undefined, 3],
+        ["spent", 4, undefined]
+      ])
+    for (const line of lines) expect(line.annotations).not.toHaveProperty("otlp.sum")
+    for (const line of lines.slice(0, 5)) expect(line.annotations).not.toHaveProperty("otlp.value")
+  })
+
   it("answers 200 with an empty JSON object", async () => {
     const response = await relay().post("/v1/logs?tenant=a", "{}")
     expect(response.status).toBe(200)

@@ -31383,7 +31383,10 @@ message is the body, span name or metric name; the level follows
 `service.name`, the record's attributes flattened with dotted keys, and as they
 apply `otlp.severity`, `trace_id`, `span_id`, `otlp.parent_span_id`,
 `otlp.duration_ms`, `otlp.status_message`, `otlp.metric_type`, `otlp.unit`,
-`otlp.value`, `otlp.count` and `otlp.sum`. A key `Redaction.isSensitiveKey`
+`otlp.value`, `otlp.count` and `otlp.sum`. A metric point whose value or sum is
+not a finite number (OTLP/JSON writes it as `"NaN"`, `"Infinity"` or
+`"-Infinity"`; an exporter that leaves it to JSON writes `null`) is relayed
+without that field. A key `Redaction.isSensitiveKey`
 names a credential is removed with any keys nested under it. With `allow`, a
 record whose name `records` does not list is dropped, and a field whose key
 `fields` does not list is removed; a log record's name is its body, so a
@@ -31825,6 +31828,8 @@ are never recorded through themselves.
 - A response with status 400 or above failed, and so did a request that got no
   answer (`network`): rejected, or answered with status 0 that isn't an opaque
   redirect. A request its caller aborted did not fail.
+- Recording never changes what the caller gets. When a logger or metric sink
+  fails, the response, or the request's own rejection, is returned as it was.
 - Each failure adds one to `failures`, with `retried: "true"` when the same
   request (method and full URL) failed before and hasn't succeeded since.
 - A run of failures of one request writes `http.request.failed` once when it

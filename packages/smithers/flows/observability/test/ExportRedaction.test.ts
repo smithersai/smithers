@@ -47,6 +47,25 @@ it("preserves OTLP types and keys while removing sensitive AnyValues recursively
   })
 })
 
+it("leaves JSON text that holds no credential byte for byte, large integers and formatting included", () => {
+  const verbatim = [
+    "{\"orderId\":1234567890123456789,\"note\":\"x\"}",
+    "{ \"startedAt\" : 1731300000123456789 ,\n  \"items\": [ 1.10, 2e3 ] }",
+    "[1234567890123456789]"
+  ]
+  expect(exported({
+    body: { stringValue: verbatim[0] },
+    attributes: verbatim.slice(1).map((text, index) => ({ key: `attribute${index}`, value: { stringValue: text } }))
+  })).toEqual({
+    body: { stringValue: verbatim[0] },
+    attributes: verbatim.slice(1).map((text, index) => ({ key: `attribute${index}`, value: { stringValue: text } }))
+  })
+  // The same text with a credential in it is still rewritten, with the credential replaced.
+  expect(exported({ body: { stringValue: "{\"orderId\":12,\"token\":\"secret-credential\"}" } })).toEqual({
+    body: { stringValue: "{\"orderId\":12,\"token\":\"[REDACTED]\"}" }
+  })
+})
+
 it("bounds deeply nested encoded data without losing shallower fields", () => {
   let value: unknown = { key: "password", value: { stringValue: "deep-credential" } }
   for (let index = 0; index <= Redaction.maxDepth; index++) value = { nested: value }

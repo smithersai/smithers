@@ -162,13 +162,18 @@ const Span = Schema.Struct({
     Schema.Struct({ code: Schema.optionalKey(Schema.Int), message: Schema.optionalKey(Schema.String) })
   )
 })
+// A double JSON cannot carry: OTLP/JSON writes it as the string "NaN", "Infinity" or "-Infinity", and an exporter
+// that leaves it to JSON.stringify writes null. The point is relayed without that value.
+const Double = Schema.Union([Schema.Number, Schema.Literals(["NaN", "Infinity", "-Infinity"]), Schema.Null])
 const DataPoint = Schema.Struct({
   attributes: Attributes,
-  asInt: Schema.optionalKey(Int64),
-  asDouble: Schema.optionalKey(Schema.Number),
+  asInt: Schema.optionalKey(Schema.NullOr(Int64)),
+  asDouble: Schema.optionalKey(Double),
   count: Schema.optionalKey(Int64),
-  sum: Schema.optionalKey(Schema.Number)
+  sum: Schema.optionalKey(Double)
 })
+const finite = (value: typeof Double.Type | undefined): number | undefined =>
+  typeof value === "number" ? value : undefined
 const Points = Schema.Struct({ dataPoints: list(DataPoint) }).pipe(Schema.withDecodingDefaultKey(Effect.succeed({})))
 const metricTypes = ["sum", "gauge", "histogram", "exponentialHistogram", "summary"] as const
 const MetricRecord = Schema.Struct({
@@ -322,9 +327,9 @@ const metricDrafts = (request: typeof MetricsRequest.Type): Array<Draft> =>
               "service.name": serviceName(resource),
               "otlp.metric_type": type,
               "otlp.unit": metric.unit,
-              "otlp.value": point.asDouble ?? point.asInt,
+              "otlp.value": finite(point.asDouble) ?? point.asInt ?? undefined,
               "otlp.count": point.count,
-              "otlp.sum": point.sum
+              "otlp.sum": finite(point.sum)
             })
           )
         )
@@ -437,7 +442,10 @@ const answer = (status: number): HttpServerResponse.HttpServerResponse =>
  * record's attributes flattened with dotted keys, and as they apply
  * `otlp.severity`, `trace_id`, `span_id`, `otlp.parent_span_id`,
  * `otlp.duration_ms`, `otlp.status_message`, `otlp.metric_type`, `otlp.unit`,
- * `otlp.value`, `otlp.count` and `otlp.sum`. A key `Redaction.isSensitiveKey`
+ * `otlp.value`, `otlp.count` and `otlp.sum`. A metric point whose value or sum
+ * is not a finite number (OTLP/JSON writes it as `"NaN"`, `"Infinity"` or
+ * `"-Infinity"`; an exporter that leaves it to JSON writes `null`) is relayed
+ * without that field. A key `Redaction.isSensitiveKey`
  * names a credential is removed. With {@link Options.allow}, a record whose
  * name is not listed is dropped and a field whose key is not listed is
  * removed. The finished line, its message and every field the relay added

@@ -109,7 +109,9 @@ const signalOf = (input: RequestInfo | URL, init: RequestInit | undefined): Abor
  * Replaces the `fetch` in `FetchHttpClient.Fetch` with one that records the
  * failures of the requests `route` names, through the services the layer is
  * built with: its loggers and its metrics. A request its caller aborted is
- * not a failure.
+ * not a failure. Recording never changes what the caller gets: when a logger
+ * or metric sink fails, the response, or the request's own rejection, is
+ * returned as it was.
  *
  * Provide it above the exporter's layer, so the exporter keeps the `fetch`
  * below and its own requests are never recorded through themselves.
@@ -122,7 +124,8 @@ export const layer = (options: Options): Layer.Layer<never> =>
     FetchHttpClient.Fetch,
     Effect.gen(function*() {
       const send = yield* FetchHttpClient.Fetch
-      const run = Effect.runSyncWith(yield* Effect.context<never>())
+      // Recording never alters what the caller sees: a logger or metric sink that fails is left to its Exit.
+      const run = Effect.runSyncExitWith(yield* Effect.context<never>())
       const remember = Math.max(1, Math.floor(options.remember ?? 256))
       // A request by its method and full URL, whose last answer was a failure. In memory only.
       const streaks = new Map<string, Streak>()

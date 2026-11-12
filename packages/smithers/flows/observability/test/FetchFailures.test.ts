@@ -49,7 +49,11 @@ interface Line {
 const route = (url: URL) => url.pathname.startsWith("/ignored") ? undefined : `/${url.pathname.split("/")[1]}/:id`
 
 /** Runs `effect` with `FetchFailures.layer` over the real fetch, a recording logger and a fresh registry. */
-const observing = <A, E>(effect: Effect.Effect<A, E>, options: Partial<FetchFailures.Options> = {}) => {
+const observing = <A, E>(
+  effect: Effect.Effect<A, E>,
+  options: Partial<FetchFailures.Options> = {},
+  loggers: ReadonlyArray<Logger.Logger<unknown, void>> = []
+) => {
   const lines: Array<Line> = []
   const logger = Logger.make(({ message, logLevel, fiber }) =>
     void lines.push({
@@ -60,7 +64,7 @@ const observing = <A, E>(effect: Effect.Effect<A, E>, options: Partial<FetchFail
   )
   return effect.pipe(
     Effect.provide(FetchFailures.layer({ route, ...options })),
-    Effect.provide(Logger.layer([logger])),
+    Effect.provide(Logger.layer([logger, ...loggers])),
     Effect.provideService(Metric.MetricRegistry, new Map()),
     Effect.map((value) => ({ value, lines }))
   )
@@ -154,6 +158,53 @@ describe("FetchFailures", () => {
         ["Warn", "/down/:id", 0]
       ])
     })))
+
+  it.effect("returns the response, or the original rejection, when a logger throws while recording", () =>
+    Effect.gen(function*() {
+      const closed = createServer()
+      yield* Effect.promise(() => new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve)))
+      const port = (closed.address() as AddressInfo).port
+      yield* Effect.promise(() => new Promise<void>((resolve) => closed.close(() => resolve())))
+      const exploding = Logger.make<unknown, void>(() => {
+        throw new Error("sink exploded")
+      })
+      const settled = (input: string) =>
+        Effect.gen(function*() {
+          const fetch = yield* FetchHttpClient.Fetch
+          return yield* Effect.promise(() =>
+            fetch(input).then(
+              (response) => ({ status: response.status }),
+              (error: unknown) => ({ rejected: (error as Error).message })
+            )
+          )
+        })
+      const url = `${origin}/next?key=sink&then=404,200`
+      const { value, lines } = yield* observing(
+        Effect.gen(function*() {
+          const answered = yield* settled(url)
+          const refused = yield* settled(`http://127.0.0.1:${port}/down/1`)
+          // The request's recovery is still recorded, through the same throwing logger.
+          const recovered = yield* settled(url)
+          return {
+            answered,
+            refused,
+            recovered,
+            counted: yield* count({ route: "/next/:id", method: "GET", statusClass: "4xx", retried: "false" })
+          }
+        }),
+        {},
+        [exploding]
+      )
+      expect(value.answered).toEqual({ status: 404 })
+      expect(value.recovered).toEqual({ status: 200 })
+      expect(value.refused).toEqual({ rejected: "fetch failed" })
+      expect(value.counted).toBe(1)
+      expect(lines.map(({ message, annotations }) => [message, annotations.status])).toEqual([
+        ["http.request.failed", 404],
+        ["http.request.failed", 0],
+        ["http.request.recovered", undefined]
+      ])
+    }))
 
   it.effect("leaves alone a request its route doesn't name, and a success that followed no failure", () =>
     observing(Effect.gen(function*() {

@@ -24,6 +24,19 @@
   relayed records by `signal`; `Metric.relayDroppedRecords` counts dropped ones
   by `signal` and `reason` (`not_allowed` or `over_limit`).
 
+### Fixed
+
+- `OtlpRelay.serve` relays a metric data point whose value or sum is not a
+  finite number (`"NaN"`, `"Infinity"`, `"-Infinity"` or `null` in the JSON)
+  without that field, instead of answering 400 and dropping every record in
+  the request.
+- `FetchFailures.layer` returns the response, or the request's own rejection,
+  when a logger or metric sink throws while it records the request, instead of
+  rejecting the request with the sink's error.
+- `Otlp` export redaction leaves a string holding JSON text as written unless
+  it redacted something in it, so integers past 2^53 and formatting in log
+  bodies and attributes reach the collector unchanged.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

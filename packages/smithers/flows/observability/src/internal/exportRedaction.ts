@@ -12,10 +12,13 @@ const decoder = new TextDecoder()
 const text = (value: string): unknown => {
   // The upstream exporter encodes structured log arguments as JSON strings.
   // Recover their keys before redaction; ordinary text stays ordinary text.
+  // Text that held nothing to redact is kept as written: re-encoding it would
+  // change its formatting and round integers past 2^53.
   try {
     const parsed: unknown = JSON.parse(value)
     if (parsed !== null && typeof parsed === "object") {
-      return JSON.stringify(Redaction.redact(parsed, { onTooDeep: "name" }))
+      const redacted = JSON.stringify(Redaction.redact(parsed, { onTooDeep: "name" }))
+      return redacted === JSON.stringify(parsed) ? value : redacted
     }
   } catch { /* Plain text is not JSON. */ }
   return Redaction.redact(value, { onTooDeep: "name" })
