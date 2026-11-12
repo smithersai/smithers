@@ -238,9 +238,11 @@ export interface Beat {
   /**
    * The remedy that ran and returned, absent when none did.
    *
-   * Present only after the heal succeeded, which is also when
-   * `control.monitor.healed` is journaled. A beat that decided on a remedy the
-   * monitor never got to apply reports nothing here.
+   * Present only after the heal was applied, which is also when
+   * `control.monitor.healed` is journaled: the receipt was `Accepted` or
+   * `AlreadyApplied`, or a cancel answered `Terminal` naming `cancelled`, the
+   * receipt of a cancel that settled the run in this process. A beat that
+   * decided on a remedy the monitor never got to apply reports nothing here.
    */
   readonly healed?: Remedy | undefined
   /** The receipt the remedy returned, absent when none was applied. */
@@ -579,13 +581,18 @@ export const run = (
           // is retried with the beat's own idempotency key.
           beats.push(observed)
         } else {
-          // A remedy that returned is not a remedy that was applied. `Terminal`
-          // says the run had already settled, so nothing was healed; `Conflict`
+          // A remedy that returned is not a remedy that was applied. `Conflict`
           // says the key belonged to another mutation, so this monitor's remedy
-          // never ran. Recording either as `healed` claimed something that did
-          // not happen, and resetting the stall count on either erased the
+          // never ran, and `Terminal` says the run settled on its own, with one
+          // exception: a cancel that this process could interrupt answers
+          // `Terminal` naming `cancelled` rather than `Accepted`, because the
+          // run settled in that call. That cancel is the remedy applied, and
+          // `Accepted` is what a cancel answers while a live peer still owns
+          // the run. Recording the others as `healed` claimed something that
+          // did not happen, and resetting the stall count on them erased the
           // evidence the next beat needs to notice the run is still stuck.
-          const applied = receipt._tag === "Accepted" || receipt._tag === "AlreadyApplied"
+          const applied = receipt._tag === "Accepted" || receipt._tag === "AlreadyApplied" ||
+            (remedy === "cancel" && receipt._tag === "Terminal" && receipt.status === "cancelled")
           if (applied) {
             // Journaled here and not a line earlier: `healed` is a claim about
             // something that happened, and until the receipt came back it had not.

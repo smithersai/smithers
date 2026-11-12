@@ -45,6 +45,25 @@ const entriesOf = (runId: string) =>
       )
   )
 
+/** The pair the engine journals for an attempt that started and failed. */
+const attemptFailed = (runId: string) =>
+  Effect.flatMap(Journal.Journal, (journal) =>
+    Effect.forEach(
+      [
+        { eventType: Monitor.attemptStartedEventType, payload: {} },
+        { eventType: Monitor.attemptFinishedEventType, payload: { state: "failed" } }
+      ],
+      (record) =>
+        journal.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId: JournalEvent.RunId.make(runId),
+            sourceId: JournalEvent.SourceId.make("engine-store"),
+            ...record
+          })
+        ),
+      { discard: true }
+    ).pipe(Effect.orDie))
+
 /** Plans, approves, and starts one control-owned run. */
 const start = (suffix: string) =>
   Effect.gen(function*() {
@@ -484,8 +503,62 @@ describe("Monitor.run over the durable control plane", () => {
     }
   })
 
+  it("records a failing run healed when its default cancel settles the run", async () => {
+    const observed = await run(Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const runId = yield* start("failing-cancel")
+      yield* attemptFailed(runId)
+      const report = yield* Monitor.run({ runId, intervalMs: 0, maxChecks: 4, stallBeats: 99, autoHeal: ["failing"] })
+      const entries = yield* entriesOf(runId)
+      return {
+        runId,
+        report,
+        after: yield* runtime.getRun(runId),
+        healed: entries.filter((entry) => entry.eventType === Monitor.healedEventType)
+      }
+    }))
+
+    // A cancel this process could interrupt answers `Terminal` naming
+    // `cancelled`, never `Accepted`: the run settled in the remedy, which is
+    // the remedy applied, and the loop ends on the settled run.
+    expect(observed.after.status).toBe("cancelled")
+    expect(observed.report.beats).toHaveLength(1)
+    expect(observed.report.beats[0]).toMatchObject({
+      health: "failing",
+      healed: "cancel",
+      receipt: { _tag: "Terminal", runId: observed.runId, status: "cancelled" }
+    })
+    expect(observed.healed).toHaveLength(1)
+    expect(observed.healed[0]?.payload).toMatchObject({ health: "failing", healed: "cancel", receipt: "Terminal" })
+  })
+
+  it("records nothing healed when a cancel finds the run settled some other way", async () => {
+    const observed = await run(Effect.gen(function*() {
+      const runId = yield* start("failing-settled")
+      yield* attemptFailed(runId)
+      const settled: Receipt = { _tag: "Terminal", runId, status: "completed" }
+      const report = yield* Monitor.run({
+        runId,
+        intervalMs: 0,
+        maxChecks: 4,
+        stallBeats: 99,
+        autoHeal: ["failing"],
+        heal: () => Effect.succeed(settled)
+      })
+      const entries = yield* entriesOf(runId)
+      return { report, healed: entries.filter((entry) => entry.eventType === Monitor.healedEventType) }
+    }))
+
+    // The run completed before the cancel reached it, so nothing was healed;
+    // the loop still ends, because nothing can move a settled run.
+    expect(observed.report.beats).toHaveLength(1)
+    expect(observed.report.beats[0]).toMatchObject({ health: "failing", receipt: { _tag: "Terminal" } })
+    expect(observed.report.beats[0]?.healed).toBeUndefined()
+    expect(observed.healed).toEqual([])
+  })
+
   /**
-   * What each receipt a remedy can answer with means to the loop.
+   * What each receipt a resume remedy can answer with means to the loop.
    *
    * Only `Accepted` and `AlreadyApplied` say the remedy was applied. `Parked`
    * and `Conflict` say it was not, so the stall evidence stands and the next

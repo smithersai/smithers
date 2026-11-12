@@ -1114,6 +1114,51 @@ export const layer: Layer.Layer<
         )
 
     /**
+     * The fires a restricted reader may see, in ledger order: those that
+     * started its own runs, among the rows `matches` keeps.
+     *
+     * The reader cannot apply the restriction, and it answers only the ledger
+     * prefix a page at `cursor` needs, so applying the restriction to that
+     * prefix alone answered an empty final page to a reader whose fires were
+     * older than it. The first read is the page's own window. While the rows
+     * the restriction keeps are fewer than the page and the one more that
+     * tells a next page exists, and the reader answered everything it was
+     * asked for, the window widens as `triggerRuns` widens it. Each run's
+     * visibility is read once per listing.
+     */
+    const visibleFires = (
+      request: Extract<ListInput, { readonly _tag: "fires" }>,
+      reader: Principal,
+      matches: (fire: FireSummary) => boolean,
+      bounds: { readonly start: number; readonly size: number }
+    ): Effect.Effect<ReadonlyArray<FireSummary>, ControlError> =>
+      Effect.gen(function*() {
+        const needed = bounds.start + bounds.size + 1
+        const visibility = new Map<string, boolean>()
+        const sees = (runId: string): Effect.Effect<boolean, PersistenceError> => {
+          const known = visibility.get(runId)
+          return known !== undefined
+            ? Effect.succeed(known)
+            : Effect.tap(readerSees(reader, runId), (seen) => Effect.sync(() => visibility.set(runId, seen)))
+        }
+        let start = bounds.start
+        let size = bounds.size
+        let fires = yield* dispatch.fires(request)
+        while (true) {
+          const candidates = fires.filter(matches)
+          const seen = yield* Effect.forEach(candidates, (fire) =>
+            fire.runId === undefined ? Effect.succeed(false) : sees(fire.runId))
+          const visible = candidates.filter((_, index) =>
+            seen[index]
+          )
+          if (visible.length >= needed || fires.length <= start + size) return visible
+          start = Math.max(fires.length, start * 2)
+          size = maxPageSize
+          fires = yield* dispatch.fires({ ...request, cursor: String(start), limit: size })
+        }
+      })
+
+    /**
      * Confines a mutation to a run its reader may see, with the rule `List`
      * and `Watch` use: another principal's run answers `RunNotFound` exactly
      * as a missing one, before any idempotency replay can describe it.
@@ -1211,25 +1256,16 @@ export const layer: Layer.Layer<
         }
 
         if (request._tag === "fires") {
-          let fires: ReadonlyArray<FireSummary> = yield* dispatch.fires(request)
+          const filters = request.filters
+          const matches = (fire: FireSummary): boolean =>
+            (filters?.triggerId === undefined || fire.triggerId === filters.triggerId) &&
+            (filters?.runId === undefined || fire.runId === filters.runId) &&
+            (filters?.outcome === undefined || fire.outcome === filters.outcome)
+          // A restricted reader sees the fires that started its own runs.
           const reader = request.reader
-          if (reader !== undefined) {
-            // A restricted reader sees the fires that started its own runs.
-            const seen = yield* Effect.forEach(fires, (fire) =>
-              fire.runId === undefined ? Effect.succeed(false) : readerSees(reader, fire.runId))
-            fires = fires.filter((_, index) =>
-              seen[index]
-            )
-          }
-          if (request.filters?.triggerId !== undefined) {
-            fires = fires.filter((fire) => fire.triggerId === request.filters?.triggerId)
-          }
-          if (request.filters?.runId !== undefined) {
-            fires = fires.filter((fire) => fire.runId === request.filters?.runId)
-          }
-          if (request.filters?.outcome !== undefined) {
-            fires = fires.filter((fire) => fire.outcome === request.filters?.outcome)
-          }
+          const fires = reader === undefined
+            ? (yield* dispatch.fires(request)).filter(matches)
+            : yield* visibleFires(request, reader, matches, bounds)
           const result = page(fires, bounds)
           return result.nextCursor === undefined
             ? { _tag: "fires", items: result.items }

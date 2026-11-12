@@ -1684,6 +1684,74 @@ it("restricts fire listings to runs launched by the reader and hides fires witho
   )
 })
 
+it("reads past the ledger prefix a page needs when the restriction drops its rows", async () => {
+  const requests: Array<{ readonly cursor?: string | undefined; readonly limit?: number | undefined }> = []
+  let ledger: Array<FireSummary> = []
+  const observed = await run(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const reader = { id: "memory", kind: "test", stampedAt: 0 }
+      const own = [
+        yield* start("system/test", "own-a"),
+        yield* start("system/test", "own-b"),
+        yield* start("system/test", "own-c")
+      ]
+      // The reader's three fires are older than 150 that started runs it may
+      // not see: more rows than the 101 a default page reads.
+      ledger = [
+        ...Array.from({ length: 150 }, (_, index) => ({
+          triggerId: "nightly",
+          occurrenceAtMs: 1000 - index,
+          outcome: "launched" as const,
+          runId: `other-${index}`
+        })),
+        ...own.map((entry, index) => ({
+          triggerId: "nightly",
+          occurrenceAtMs: 3 - index,
+          outcome: "launched" as const,
+          runId: entry.runId
+        }))
+      ]
+      const first = yield* control.list({ _tag: "fires", reader, limit: 2 })
+      const rest = first.nextCursor === undefined
+        ? undefined
+        : yield* control.list({ _tag: "fires", reader, limit: 2, cursor: first.nextCursor })
+      const whole = yield* control.list({ _tag: "fires", reader })
+      return { first, rest, whole, own: own.map((entry) => entry.runId) }
+    }),
+    live({
+      runtime: memoryRuntime({ flows }),
+      // Answers the prefix a page at `cursor` needs, as the trigger store's reader does.
+      dispatch: DispatchReader.make({
+        list: () => Effect.succeed([]),
+        fires: (request) =>
+          Effect.sync(() => {
+            requests.push({ cursor: request.cursor, limit: request.limit })
+            return ledger.slice(0, Number(request.cursor ?? 0) + (request.limit ?? 100) + 1)
+          })
+      })
+    })
+  )
+
+  expect(items(observed.first)).toEqual(["nightly@3", "nightly@2"])
+  expect(observed.first.nextCursor).toBe("2")
+  expect(items(observed.rest as ListResponse)).toEqual(["nightly@1"])
+  expect(observed.rest?.nextCursor).toBeUndefined()
+  expect(items(observed.whole)).toEqual(["nightly@3", "nightly@2", "nightly@1"])
+  expect(observed.whole.nextCursor).toBeUndefined()
+  expect(observed.whole._tag === "fires" ? observed.whole.items.map((fire) => fire.runId) : []).toEqual(observed.own)
+  // Each listing reads its own window first and widens only while the
+  // visible rows are fewer than its page needs and the ledger has more.
+  expect(requests).toEqual([
+    { cursor: undefined, limit: 2 },
+    { cursor: "3", limit: 500 },
+    { cursor: "2", limit: 2 },
+    { cursor: "5", limit: 500 },
+    { cursor: undefined, limit: undefined },
+    { cursor: "101", limit: 500 }
+  ])
+})
+
 it("lists a decoded empty plan input as JSON null", async () => {
   const runtime = Layer.effect(ControlRuntime)(Effect.map(ControlRuntime, (runtime) =>
     ControlRuntime.of({

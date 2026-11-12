@@ -74,6 +74,17 @@
 
 ### Fixed
 
+- A `fires` listing restricted to a reader's own runs reads further into the
+  ledger when the rows a page would read hold fewer of the reader's fires
+  than the page needs, instead of answering an empty final page to a reader
+  whose fires are older than one page of other principals' fires, or skipping
+  rows across pages.
+
+- A monitor's default cancel remedy that settles the run in this process
+  answers `Terminal` naming `cancelled`, and the monitor now records that as
+  the remedy applied: it journals `control.monitor.healed` and the beat
+  carries `healed: "cancel"`, where it recorded nothing healed before.
+
 - A mutation that claims its run key and is stopped while it fails still
   reports a failed release of that claim (#3839). Effect 4.0.4 removes a
   typed failure from an interrupted fiber's cause once the unwind passes a

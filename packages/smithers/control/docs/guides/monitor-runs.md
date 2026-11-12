@@ -98,11 +98,14 @@ applying it, so a monitor that crashes mid-heal leaves the evidence of what it
 decided.
 
 The remedy is a second record, `control.monitor.healed`, written only once the
-heal returned an `Accepted` or `AlreadyApplied` receipt. A heal that failed,
-was refused as a `Conflict`, or found the run already `Terminal` must not leave
-a durable record saying the run was healed, and only an applied remedy resets
-the stall evidence. A `Terminal` receipt ends the loop, because there is
-nothing left to remedy.
+heal returned an `Accepted` or `AlreadyApplied` receipt, or, for a cancel,
+`Terminal` naming `cancelled`: a cancel that this process could interrupt
+answers the status the run settled with rather than `Accepted` (see
+[cancel and resume](./cancel-and-resume.md#what-comes-back)), and that cancel
+is the remedy applied. A heal that failed, was refused as a `Conflict`, or
+found the run settled some other way must not leave a durable record saying
+the run was healed, and only an applied remedy resets the stall evidence. A
+`Terminal` receipt ends the loop, because there is nothing left to remedy.
 
 Both records are excluded from the progress measurement. A monitor that counted
 its own bookkeeping as progress could never observe a stall: the beat it wrote

@@ -13730,7 +13730,11 @@ Each method receives the whole listing request and answers every row it has,
 newest fire first. A reader may narrow by `filters`; `Control.list` applies the
 same filters again and pages the rows with `cursor` and `limit`, so a reader
 that returns every row is still correct and both variants page exactly as
-`flows` and `runs` do. `TriggersRequest` and `FiresRequest` are the two
+`flows` and `runs` do. A reader may also answer only the ledger prefix a page
+at `cursor` needs, as `@smthrs/triggers` does. `Control.list` restricts a
+`fires` listing to the fires that started the reader's own runs itself, and
+reads further into the ledger while the rows that restriction keeps are fewer
+than the page needs. `TriggersRequest` and `FiresRequest` are the two
 `ListRequest` members by tag.
 
 ## ControlRpcs
