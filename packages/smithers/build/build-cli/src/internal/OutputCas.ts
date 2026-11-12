@@ -8,6 +8,7 @@
  * @since 1.0.0
  */
 
+import * as Data from "effect/Data"
 import { createHash, randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -37,6 +38,9 @@ const hash = (bytes: Uint8Array): string => createHash("sha256").update(bytes).d
  * @since 1.0.0
  */
 export class OutputLimitError extends Error {}
+
+/** A CAS artifact, chunk index, or output entry that failed verification; it is never restored. */
+class CasArtifactInvalid extends Data.TaggedError("smithers-build/CasArtifactInvalid")<{ readonly message: string }> {}
 
 /**
  * Accounts unique files and direct artifact references in one remote entry.
@@ -86,11 +90,11 @@ interface ChunkIndex {
  * bytes it reads against the digest, so a retry cannot widen what is accepted.
  */
 const openBlob = async (cas: string, digest: string, maximumBytes = fileLimit) => {
-  if (!hex.test(digest)) throw new Error("invalid CAS digest")
+  if (!hex.test(digest)) throw new CasArtifactInvalid({ message: "invalid CAS digest" })
   const path = Path.join(cas, digest)
   for (let attempt = 1;; attempt += 1) {
     const before = await Fs.lstat(path)
-    if (!before.isFile()) throw new Error("CAS artifact is not a regular file")
+    if (!before.isFile()) throw new CasArtifactInvalid({ message: "CAS artifact is not a regular file" })
     const handle = await Fs.open(
       path,
       NodeFs.constants.O_RDONLY | optionalOpenFlag("O_NOFOLLOW") | optionalOpenFlag("O_NONBLOCK")
@@ -98,7 +102,7 @@ const openBlob = async (cas: string, digest: string, maximumBytes = fileLimit) =
     try {
       const after = await handle.stat()
       if (!after.isFile() || before.ino !== after.ino || before.dev !== after.dev) {
-        throw new Error("CAS artifact changed while opening")
+        throw new CasArtifactInvalid({ message: "CAS artifact changed while opening" })
       }
       if (after.size > maximumBytes) throw new OutputLimitError("CAS artifact exceeds its file bound")
       return handle
@@ -118,16 +122,16 @@ export const readBlob = async (cas: string, digest: string, limit = chunkBytes):
   const handle = await openBlob(cas, digest)
   try {
     const size = (await handle.stat()).size
-    if (size > limit) throw new Error("CAS artifact exceeds its transfer bound")
+    if (size > limit) throw new CasArtifactInvalid({ message: "CAS artifact exceeds its transfer bound" })
     const bytes = Buffer.alloc(size)
     let offset = 0
     while (offset < size) {
       const read = await handle.read(bytes, offset, size - offset, offset)
-      if (read.bytesRead === 0) throw new Error("CAS artifact was truncated")
+      if (read.bytesRead === 0) throw new CasArtifactInvalid({ message: "CAS artifact was truncated" })
       offset += read.bytesRead
     }
     if ((await handle.stat()).size !== size || hash(bytes) !== digest) {
-      throw new Error("CAS artifact failed verification")
+      throw new CasArtifactInvalid({ message: "CAS artifact failed verification" })
     }
     return bytes
   } finally {
@@ -165,7 +169,7 @@ export const writeBlob = async (
   signal?: AbortSignal
 ): Promise<void> => {
   if (!hex.test(digest) || bytes.byteLength > chunkBytes || hash(bytes) !== digest) {
-    throw new Error("CAS artifact failed verification")
+    throw new CasArtifactInvalid({ message: "CAS artifact failed verification" })
   }
   await Fs.mkdir(cas, { recursive: true })
   const temporary = Path.join(cas, digest + ".tmp-" + randomUUID())
@@ -190,14 +194,14 @@ const decodeIndex = (bytes: Uint8Array): ChunkIndex => {
     value === null || value.kind !== "smithers-build/chunks-v1" || !Number.isSafeInteger(value.size) ||
     value.size <= chunkBytes || value.size > fileLimit || !Array.isArray(value.chunks) ||
     value.chunks.length !== Math.ceil(value.size / chunkBytes)
-  ) throw new Error("invalid CAS chunk index")
+  ) throw new CasArtifactInvalid({ message: "invalid CAS chunk index" })
   for (let i = 0; i < value.chunks.length; i++) {
     const chunk = value.chunks[i]
     if (
       chunk === undefined || chunk === null || typeof chunk !== "object" || typeof chunk.digest !== "string" ||
       !hex.test(chunk.digest) ||
       chunk.size !== Math.min(chunkBytes, value.size - i * chunkBytes)
-    ) throw new Error("invalid CAS chunk")
+    ) throw new CasArtifactInvalid({ message: "invalid CAS chunk" })
   }
   return value
 }
@@ -222,7 +226,7 @@ const splitFile = async (cas: string, digest: string): Promise<string | undefine
       let read = 0
       while (read < bytes.length) {
         const part = await handle.read(bytes, read, bytes.length - read, offset + read)
-        if (part.bytesRead === 0) throw new Error("CAS file was truncated during chunking")
+        if (part.bytesRead === 0) throw new CasArtifactInvalid({ message: "CAS file was truncated during chunking" })
         read += part.bytesRead
       }
       whole.update(bytes)
@@ -231,7 +235,7 @@ const splitFile = async (cas: string, digest: string): Promise<string | undefine
       chunks.push({ digest: partDigest, size: bytes.length })
     }
     if (whole.digest("hex") !== digest || (await handle.stat()).size !== size) {
-      throw new Error("CAS file changed during chunking")
+      throw new CasArtifactInvalid({ message: "CAS file changed during chunking" })
     }
     const bytes = Buffer.from(JSON.stringify({ kind: "smithers-build/chunks-v1", size, chunks }))
     const index = hash(bytes)
@@ -250,25 +254,27 @@ const mapFiles = async (output: unknown, visit: (file: FileReference) => Promise
   if (typeof output !== "object" || output === null) return output
   const value = output as Record<string, unknown>
   const file = async (candidate: unknown) => {
-    if (typeof candidate !== "object" || candidate === null) throw new Error("invalid output file")
+    if (typeof candidate !== "object" || candidate === null) {
+      throw new CasArtifactInvalid({ message: "invalid output file" })
+    }
     const entry = candidate as Record<string, unknown>
     if (
       typeof entry["digest"] !== "string" || !hex.test(entry["digest"]) ||
       (entry["index"] !== undefined && (typeof entry["index"] !== "string" || !hex.test(entry["index"])))
     ) {
-      throw new Error("invalid output content identity")
+      throw new CasArtifactInvalid({ message: "invalid output content identity" })
     }
     return { ...entry, ...await visit(entry as unknown as FileReference) }
   }
   if (value["kind"] === "directory-archive") return file(value)
   if (value["kind"] !== "build" && value["kind"] !== "target-outputs") return output
   if (!Array.isArray(value["manifests"]) || (value["files"] !== undefined && !Array.isArray(value["files"]))) {
-    throw new Error("invalid output manifests")
+    throw new CasArtifactInvalid({ message: "invalid output manifests" })
   }
   const manifests: Array<unknown> = []
   for (const candidate of value["manifests"]) {
     if (typeof candidate !== "object" || candidate === null || !Array.isArray(candidate.entries)) {
-      throw new Error("invalid output manifest")
+      throw new CasArtifactInvalid({ message: "invalid output manifest" })
     }
     const entries: Array<unknown> = []
     for (const entry of candidate.entries) entries.push(entry.kind === "file" ? await file(entry) : entry)
@@ -492,11 +498,15 @@ export const hydrate = async (
           // readBlob verifies the chunk's SHA-256 again; a chunk replaced on
           // disk since it was fetched fails here.
           const bytes = await readBlob(cas, chunk.digest)
-          if (bytes.length !== chunk.size) throw new Error("CAS chunk size differs from index")
+          if (bytes.length !== chunk.size) {
+            throw new CasArtifactInvalid({ message: "CAS chunk size differs from index" })
+          }
           whole.update(bytes)
           await handle.writeFile(bytes)
         }
-        if (whole.digest("hex") !== digest) throw new Error("assembled CAS file failed verification")
+        if (whole.digest("hex") !== digest) {
+          throw new CasArtifactInvalid({ message: "assembled CAS file failed verification" })
+        }
         await handle.sync()
       } finally {
         await handle.close()

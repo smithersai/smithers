@@ -22,6 +22,7 @@
 
 import * as RetryPolicy from "@smthrs/flow/RetryPolicy"
 import * as Config from "@smthrs/targets/Config"
+import * as Data from "effect/Data"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { createHash, randomUUID } from "node:crypto"
@@ -914,6 +915,9 @@ const writeLocal = async (
 /** A remote exchange that outlived its deadline. */
 class RemoteTimeout extends Error {}
 
+/** A remote CAS answer this client cannot use, or the run of timeouts that disables the remote. */
+class RemoteCasFailure extends Data.TaggedError("smithers-build/RemoteCasFailure")<{ readonly message: string }> {}
+
 const withDeadline = async <A>(
   operation: "get" | "put" | "findMissing",
   milliseconds: number,
@@ -1403,7 +1407,9 @@ class RemoteStore {
           return { status: response.status, retryAfter: response.headers.get("retry-after") }
         }
         const bytes = await readBoundedBytes(response, OutputCas.chunkBytes)
-        if (bytes === undefined) throw new Error("remote CAS body exceeds its bound or is truncated")
+        if (bytes === undefined) {
+          throw new RemoteCasFailure({ message: "remote CAS body exceeds its bound or is truncated" })
+        }
         signal.throwIfAborted()
         await OutputCas.writeBlob(cas, digest, bytes, signal)
         return { status: 200 }
@@ -1438,13 +1444,13 @@ class RemoteStore {
               return { status: response.status, retryAfter: response.headers.get("retry-after") }
             }
             const text = await readBoundedBody(response, 128 * 1024)
-            if (text === undefined) throw new Error("invalid remote CAS missing-digest body")
+            if (text === undefined) throw new RemoteCasFailure({ message: "invalid remote CAS missing-digest body" })
             const value = JSON.parse(text) as { missing?: unknown }
             if (
               value === null || !Array.isArray(value.missing) || value.missing.length > batch.length ||
               !value.missing.every((digest: unknown) => typeof digest === "string" && batch.includes(digest)) ||
               new Set(value.missing).size !== value.missing.length
-            ) throw new Error("invalid remote CAS missing-digest list")
+            ) throw new RemoteCasFailure({ message: "invalid remote CAS missing-digest list" })
             missing = value.missing as Array<string>
             return { status: 200 }
           }))
@@ -1455,7 +1461,9 @@ class RemoteStore {
         this.findMissingTimeouts += 1
         if (this.findMissingTimeouts >= findMissingTimeoutLimit) {
           this.degrade("PUT", {
-            cause: new Error(`remote cache findMissing timed out ${findMissingTimeoutLimit} publications in a row`)
+            cause: new RemoteCasFailure({
+              message: `remote cache findMissing timed out ${findMissingTimeoutLimit} publications in a row`
+            })
           })
         } else {
           this.skipSlow()

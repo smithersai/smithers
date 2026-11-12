@@ -30,7 +30,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/AgentFake.ts", 1],
   ["src/AgentSession.ts", 44],
   ["src/Audience.ts", 1],
-  ["src/Cache.ts", 6],
+  ["src/Cache.ts", 5],
   ["src/CacheAdmin.ts", 4],
   ["src/Cli.ts", 13],
   ["src/Diagnostic.ts", 1],
