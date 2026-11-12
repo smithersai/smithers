@@ -1307,7 +1307,11 @@ function fieldsOf(owner: string, type: Type, locationNode: Node, extraDecls?: Ty
       if (tsType.startsWith("undefined | ")) tsType = `${tsType.slice("undefined | ".length)} | undefined`;
       else if (!tsType.includes(" | undefined")) tsType = `${tsType} | undefined`;
     }
-    fields.push(literalValues ? { name: prop.getName(), tsType, literalValues } : { name: prop.getName(), tsType });
+    // Without `exactOptionalPropertyTypes` an optional key may hold `undefined`; a `null` value is a present key too.
+    const exact = !!locationNode.getProject().getCompilerOptions().exactOptionalPropertyTypes;
+    const nullish = (propType.isUnion() ? propType.getUnionTypes() : [propType]).some(t => t.isUndefined() || t.isNull());
+    const presence = !optional ? "required" as const : exact && !nullish ? "absent-only" as const : undefined;
+    fields.push({ name: prop.getName(), tsType, ...(literalValues ? { literalValues } : {}), ...(presence ? { presence } : {}) });
   }
   return fields;
 }

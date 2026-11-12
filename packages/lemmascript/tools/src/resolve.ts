@@ -797,8 +797,16 @@ function resolveRecordMerge(base: RawExpr, override: RawExpr, ctx: Ctx): TExpr {
       if (ft.kind === "optional" && overField?.type && overField.type.kind !== "optional")
         return { name: f.name, value: wrapSome({ kind: "field", obj: ov, field: f.name, ty: overField.type }, ft) };
       const ovf: TExpr = { kind: "field", obj: ov, field: f.name, ty: ft };
-      if (ft.kind !== "optional") return { name: f.name, value: ovf };  // required: override always provides
-      // optional: override field wins iff present, else base's field
+      // A required key always overrides, even when it holds `null` or `undefined`.
+      const presence = (overField ?? (overDecl ?? decl).fields?.find(o => o.name === f.name))?.presence;
+      if (ft.kind !== "optional" || presence === "required") return { name: f.name, value: ovf };
+      // An optional key overrides iff present. The Option is the value, not the presence: it decides presence only
+      // when the key cannot hold `undefined` (`exactOptionalPropertyTypes`) or `null`.
+      if (presence !== "absent-only") {
+        throw new Error(`object spread merge { ...a, ...b }: optional field '${f.name}' of ${tyToCanonical(tover.ty)} ` +
+          `may be present with an undefined or null value, which the proof model cannot tell from absent; enable ` +
+          `exactOptionalPropertyTypes and type the field without undefined or null`);
+      }
       const bvf: TExpr = { kind: "field", obj: bv, field: f.name, ty: ft };
       const binder = freshName(`_m${mergeBinder++}`);
       // someBody is the unwrapped present value; transform re-wraps each arm in

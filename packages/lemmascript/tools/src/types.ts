@@ -22,6 +22,11 @@ export interface FieldInfo {
   /** An inline string-literal union field (`pane: "closed" | "max"`), read as `string` until `unifyLiteralUnions`
    *  names it: its members, sorted. */
   literalValues?: string[];
+  /** What an `Option` None in this field says about the own property, for `{ ...base, ...override }`: `"required"`, the
+   *  key is always present (a None is a present `null` or `undefined`); `"absent-only"`, an optional key whose value
+   *  excludes `undefined` (under `exactOptionalPropertyTypes`) and `null`, so a None is an absent key. Unset: a None may
+   *  be either, which the model cannot tell apart. */
+  presence?: "required" | "absent-only";
 }
 
 /**
