@@ -347,12 +347,15 @@ describe("MarkdownFlow", () => {
     expect(result.warnings).not.toContainEqual(expect.objectContaining({ code: "invalid_model_invocation" }))
   })
 
-  it("keeps an entry visible when disable-model-invocation is not a boolean", () => {
-    const result = fromMarkdown("---\ndescription: Review\ndisable-model-invocation: maybe\n---\nbody")
+  it.each(["True", "TRUE", "yes", "on", "False", "no", "off", "maybe", "1", "null", "", "[]", "{}"])(
+    "keeps a malformed disable-model-invocation value (%s) out of the model catalog",
+    (value) => {
+      const result = fromMarkdown(`---\ndescription: Review\ndisable-model-invocation: ${value}\n---\nbody`)
 
-    expect(Option.getOrThrow(result.descriptor).modelInvocable).toBe(true)
-    expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_model_invocation" }))
-  })
+      expect(Option.getOrThrow(result.descriptor).modelInvocable).toBe(false)
+      expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_model_invocation" }))
+    }
+  )
 
   it("reads a fully declared effect envelope", () => {
     const result = fromMarkdown([

@@ -17,6 +17,7 @@ import {
   type Source,
   SourceScan
 } from "../src/Descriptor.ts"
+import * as Disclosure from "../src/Disclosure.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Registry from "../src/Registry.ts"
 import type { DiscoveryError, RegistryError } from "../src/RegistryError.ts"
@@ -92,6 +93,40 @@ const attemptMutation = (mutation: () => void): void => {
 }
 
 describe("Registry", () => {
+  it("lists malformed invocation flags for operators while keeping them out of model disclosure", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const root = yield* fs.makeTempDirectoryScoped()
+        const values = ["True", "yes", "on", "maybe", "[]", "{}", "true", "false"]
+        for (const [index, value] of values.entries()) {
+          const directory = join(root, `entry-${index}`)
+          yield* fs.makeDirectory(directory)
+          yield* fs.writeFileString(
+            join(directory, "flow.mdx"),
+            `---\ndescription: Maintenance\ncapabilities: []\ndisable-model-invocation: ${value}\n---\nbody`
+          )
+        }
+        const registry = yield* Registry.make({ sources: [{ source: "project", root, naming: "path" }] })
+        const entries = yield* registry.list()
+        expect(entries).toHaveLength(values.length)
+        expect((yield* registry.get("entry-0")).modelInvocable).toBe(false)
+        expect((yield* registry.visible()).map((entry) => entry.name)).toEqual(["entry-7"])
+        const xml = Disclosure.toXml(entries)
+        expect(xml).toContain("<name>entry-7</name>")
+        for (let index = 0; index < 7; index++) {
+          expect(xml).not.toContain(`<name>entry-${index}</name>`)
+        }
+        expect((yield* registry.warnings()).filter((warning) => warning.code === "invalid_model_invocation"))
+          .toHaveLength(6)
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(Discovery.layer),
+        Effect.provide(platformLayer)
+      )
+    )
+  })
+
   it.each(["changelog", "review/read-pr"])("refuses an unmeasured body for %s", async (name) => {
     const measured = await Effect.runPromise(provideRegistry(Effect.gen(function*() {
       return yield* (yield* Registry.Registry).get(name)

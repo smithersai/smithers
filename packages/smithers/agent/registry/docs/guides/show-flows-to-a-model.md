@@ -96,8 +96,9 @@ Perform the requested maintenance task without advertising it to the model.
 ```
 
 The strings `"true"` and `"false"` are accepted as well as booleans. Any other
-value is ignored with an `invalid_model_invocation` warning, and the flow stays
-model-invocable, so the failure mode is visible rather than silent.
+value, including `True`, `yes` or `on`, produces an `invalid_model_invocation` warning
+and keeps the flow out of the model's catalog. Operators can still list and
+invoke it. Omit the field or use `false` to allow model invocation.
 
 ## What is never disclosed
 

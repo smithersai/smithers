@@ -4,10 +4,10 @@ import { Effect, FileSystem, Layer, Option, Path, PlatformError, Schema } from "
 import * as fc from "fast-check"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { inputDocument, type Source, SourceScan } from "../src/Descriptor.ts"
+import { executionDigest, inputDocument, type Source, SourceScan } from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 
 const projectRoot = fileURLToPath(new URL("./fixtures/project/flows", import.meta.url))
@@ -51,6 +51,53 @@ const withTemporaryRoot = async <A>(run: (root: string) => Promise<A>): Promise<
 }
 
 describe("Discovery", () => {
+  it("keeps execution identity stable across normalized and unnormalized source roots", async () => {
+    await withTemporaryRoot(async (root) => {
+      const flows = join(root, "flows")
+      writeMarkdownFlow(join(flows, "review"))
+      mkdirSync(join(flows, "inspect"))
+      writeFileSync(
+        join(flows, "inspect", "flow.ts"),
+        `import { Flow } from "@smthrs/flow"
+import { Schema } from "effect"
+import { value } from "./helper.ts"
+export default Flow.make("inspect", {
+  description: "Inspect",
+  payload: { query: Schema.String },
+  success: Schema.String,
+  body: value
+})`
+      )
+      writeFileSync(join(flows, "inspect", "helper.ts"), "export const value = \"approved\"")
+      const baseline = await scan({ source: "project", root: flows, naming: "path", lockfileRoot: root })
+      expect(baseline.entries.map((entry) => entry.name)).toEqual(["inspect", "review"])
+      const digests = baseline.entries.map(executionDigest)
+      expect(digests.every((digest) => digest !== undefined)).toBe(true)
+      const fromCwd = relative(process.cwd(), flows)
+      for (
+        const spelling of [
+          `./${fromCwd}`,
+          fromCwd,
+          `./${fromCwd}/.`,
+          `${root}/./flows`,
+          `${flows}/../flows`,
+          `${root}//flows/`
+        ]
+      ) {
+        const result = await scan({ source: "project", root: spelling, naming: "path", lockfileRoot: root })
+        expect(result.entries.map(executionDigest), spelling).toEqual(digests)
+        expect(result.entries.map((entry) => entry.provenance.root), spelling).toEqual([flows, flows])
+        expect(result.entries.map((entry) => entry.path), spelling).toEqual(
+          baseline.entries.map((entry) => entry.path)
+        )
+      }
+      writeFileSync(join(flows, "inspect", "helper.ts"), "export const value = \"edited\"")
+      const edited = await scan({ source: "project", root: `./${fromCwd}`, naming: "path", lockfileRoot: root })
+      expect(executionDigest(edited.entries[0]!)).not.toBe(digests[0])
+      expect(executionDigest(edited.entries[1]!)).toBe(digests[1])
+    })
+  })
+
   it("keeps deterministic entry precedence and skill-only discovery across filename combinations", async () => {
     const precedence = ["flow.ts", "flow.vibe", "flow.mdx", "SKILL.md"] as const
     await fc.assert(

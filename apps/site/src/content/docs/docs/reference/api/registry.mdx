@@ -138,7 +138,10 @@ hashed relative to it, and the root itself is not hashed, so the same bytes
 discovered under two roots (two checkouts, or two hosts' state directories)
 have one identity. A plan prepared on one host can therefore run its checks on
 another. Changed bytes, a file moved within the root, or any changed metadata
-give a new identity. A path outside the root is hashed as recorded.
+give a new identity. Discovery resolves the source root before walking it, so
+relative roots such as `./flows` and their absolute equivalents have the same
+identity. Windows drive and UNC paths use `/` in their root-relative identity.
+A path outside the root is hashed as recorded.
 
 The repository host also binds its own policy identity to reserved job
 descriptors. In source mode it measures every TypeScript file in
@@ -642,8 +645,10 @@ a mapping or an array containing mappings), or when `model` is an invalid list
 accepted with an `invalid_capabilities` warning. A blank `model` string or a
 `model` mapping is ignored with an `invalid_model` warning, and the flow keeps
 the default seat. Other malformed fields may
-produce a descriptor with a conservative value. Report `warnings` whether or
-not a descriptor was produced.
+produce a descriptor with a conservative value. An unreadable
+`disable-model-invocation` value sets `modelInvocable: false` with an
+`invalid_model_invocation` warning; only omission or `false` enables model invocation.
+Report `warnings` whether or not a descriptor was produced.
 
 ### MarkdownFlow.loadBody
 

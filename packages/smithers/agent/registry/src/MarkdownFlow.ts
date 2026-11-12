@@ -389,9 +389,9 @@ const deriveModelInvocable = (
   warnings.push({
     code: "invalid_model_invocation",
     path,
-    message: "Ignoring disable-model-invocation; expected a boolean"
+    message: "Disabling model invocation; disable-model-invocation must be a boolean"
   })
-  return true
+  return false
 }
 
 const effectWarning = (problem: EffectProblem, path: string): DiscoveryWarning => {

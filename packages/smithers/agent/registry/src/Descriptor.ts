@@ -777,14 +777,17 @@ export class FlowDescriptor extends Schema.Class<FlowDescriptor>("flows/registry
 const executionDigests = new WeakMap<FlowDescriptor, string>()
 
 /**
- * `value` relative to `root` when it is `root` or lies under it, otherwise
- * `value` as recorded. Discovery joins every path it records onto the source
- * root with `/`, so a prefix test on that separator is the whole relation.
+ * A recorded location under Discovery's resolved root, using portable separators
+ * for Windows drive and UNC roots. Locations outside the root stay as recorded;
+ * a backslash in a POSIX filename is not a separator.
  */
 const underRoot = (root: string, value: string): string => {
   if (root === "") return value
-  const base = root.endsWith("/") ? root.slice(0, -1) : root
-  return value === base ? "." : value.startsWith(`${base}/`) ? value.slice(base.length + 1) : value
+  const windows = /^[A-Za-z]:[\\/]|^\\\\/.test(root)
+  const normalizedRoot = windows ? root.replaceAll("\\", "/") : root
+  const candidate = windows ? value.replaceAll("\\", "/") : value
+  const base = normalizedRoot.endsWith("/") ? normalizedRoot.slice(0, -1) : normalizedRoot
+  return candidate === base ? "." : candidate.startsWith(`${base}/`) ? candidate.slice(base.length + 1) : value
 }
 
 /** A body or schema reference with its recorded locations made root-relative. */

@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Malformed `disable-model-invocation` values now hide a flow from models with
+  a warning, while keeping it available to operators. Execution digests now
+  agree for equivalent relative and absolute discovery roots and use portable
+  separators for Windows paths ([#4733](https://github.com/smithersai/smithers/issues/4733)).
+
 - Markdown lowering now preserves an omitted capability declaration separately
   from an explicit `[]`, so inheritance and denial survive descriptor conversion.
 

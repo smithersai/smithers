@@ -273,8 +273,10 @@ const holdsEntry = (
  */
 export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
   Discovery.of({
-    scan: Effect.fn("Discovery.scan")((source) =>
+    scan: Effect.fn("Discovery.scan")((input) =>
       Effect.gen(function*() {
+        // Walk and record the same normalized root, regardless of the caller's spelling.
+        const source = { ...input, root: path.resolve(input.root) }
         const skills = "skills" in source && source.skills === true
         const provenance = new Provenance({ source: source.source, root: source.root })
         // Sibling flows in one project share most of their imports, so the

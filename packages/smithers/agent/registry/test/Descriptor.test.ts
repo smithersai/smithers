@@ -1,4 +1,5 @@
 import { Option, Schema } from "effect"
+import { win32 } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Disclosure from "../src/Disclosure.ts"
@@ -390,6 +391,41 @@ describe("executionDigest", () => {
     expect(Descriptor.executionDigest(check(lane1))).toBe(Descriptor.executionDigest(check(lane2)))
     expect(Descriptor.executionDigest(check(`${lane1}/`))).toBe(Descriptor.executionDigest(check(lane1)))
   })
+
+  it.each(["C:\\flows", "C:/flows/", "\\\\server\\share\\flows"])(
+    "relates Windows body and schema paths under %s without changing portable identity",
+    (root) => {
+      const windowsPath = win32.normalize
+      const path = windowsPath(`${root}/checks/test/flow.ts`)
+      const module = (base: string, entry: string) =>
+        new Descriptor.FlowDescriptor({
+          ...check(base),
+          path: entry,
+          body: new Descriptor.BodyRefModule({ path: entry, contentDigest: "c".repeat(64) }),
+          input: new Descriptor.SchemaRefModule({ path: entry, field: "input" }),
+          output: new Descriptor.SchemaRefModule({ path: entry, field: "output" })
+        })
+      const portable = module("/flows", "/flows/checks/test/flow.ts")
+      const windows = module(root, path)
+      expect(Descriptor.executionDigest(windows)).toBe(Descriptor.executionDigest(portable))
+      expect(Descriptor.executionDigest(
+        new Descriptor.FlowDescriptor({
+          ...windows,
+          path: windowsPath(`${root}-sibling/checks/test/flow.ts`)
+        })
+      )).not.toBe(Descriptor.executionDigest(portable))
+      const markdown = new Descriptor.FlowDescriptor({
+        ...check(root),
+        path: windowsPath(`${root}/checks/test/flow.mdx`),
+        body: new Descriptor.BodyRefMarkdown({
+          path: windowsPath(`${root}/checks/test/flow.mdx`),
+          baseDirectory: windowsPath(`${root}/checks/test`),
+          contentDigest: "c".repeat(64)
+        })
+      })
+      expect(Descriptor.executionDigest(markdown)).toBe(Descriptor.executionDigest(check("/flows")))
+    }
+  )
 
   it("is another identity when the check's content or location within its root changes", () => {
     const planned = Descriptor.executionDigest(check(lane1))
