@@ -4,7 +4,7 @@ import * as GitHubCreation from "./GitHubCreation.ts"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpClient } from "effect/http"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
 import { isBranchName, MAX_TRACK_BODY_BYTES } from "../../src/features/branch/contract.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { Sessions } from "../Actor.ts"
@@ -27,7 +27,8 @@ import { branchHead, createBranch, defaultBranch, failureFields, Forge } from ".
 // one is read from its forge and namespace first (`Forge`), with the read credential the server holds, so a missing ref
 // is never recorded, and becomes the Member's who tracked it, private until they share it. The repository's default
 // branch is recorded `locked` (decision 0007 §5), and is the team's. A new branch whose name the forge already has is
-// refused 409 `exists`: it is someone else's branch, not one this request made. A new branch may name no repository:
+// refused 409 `exists`: it is someone else's branch, not one this request made; a request that already wrote it finds
+// its claim and tracks it (`claimOf`). A new branch may name no repository:
 // it is then the deployment's own (`GITHUB_REPOSITORY`), as `/new` makes from the home conversation. Every branch it
 // answers is opened by the person: its conversation joins their list, and comes back if they archived it
 // (docs/features/conversations.md).
@@ -168,6 +169,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
       // their role on the repository itself (decision 0079).
       if (!(yield* isMemberOn(actor, repo).pipe(Effect.provide(database)))) return answerRefusal(403, "forbidden")
       let resolvedDefault: string | undefined
+      // This request's claim on its new ref (`claimOf`), released in the transaction that tracks the ref.
+      let held = false
       if (decoded.value.create === true) {
         // A new branch: made on the forge at the default branch's head, then tracked as any other. A name the forge
         // already has is someone's branch, not this request's: 409 `exists`, and nothing is tracked. A branch name
@@ -199,14 +202,42 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
           fields.outcome = "unavailable"
           return answerRefusal(503, "unavailable")
         }
+        if (createRequest !== undefined) {
+          const person = actor.value.subject.id
+          let claim = yield* claimOf(createRequest).pipe(Effect.provide(database))
+          if (claim === undefined) {
+            // Claimed only while the ephemeral namespace lacks the name, so a ref found under a claim is the claim's.
+            const ephemeral = yield* branchHead({ owner, name }, ref, "ephemeral").pipe(Effect.result)
+            if (ephemeral._tag === "Success") {
+              fields.created = "exists"
+              fields.outcome = "exists"
+              return answerRefusal(409, "exists")
+            }
+            // No such repository or no refs at all holds no such ref either.
+            if (!["ref_not_found", "not_found", "empty"].includes(ephemeral.failure.code)) {
+              Object.assign(fields, failureFields("refs_read", ephemeral.failure))
+              fields.outcome = "unavailable"
+              return answerRefusal(503, "unavailable")
+            }
+            claim = yield* admitClaim(createRequest, person, repo, ref).pipe(Effect.provide(database))
+          }
+          held = claim !== undefined && claim.person === person && claim.repo === repo && claim.ref === ref
+          if (!held) {
+            fields.created = "exists"
+            fields.outcome = "exists"
+            return answerRefusal(409, "exists")
+          }
+        }
         const made = yield* createBranch({ owner, name }, ref, from.success.branch).pipe(Effect.result)
-        fields.created = made._tag === "Success" ? "created" : made.failure.code
-        if (made._tag === "Failure") {
-          Object.assign(fields, failureFields("create_ref", made.failure))
+        fields.created = made._tag === "Success" ? "created" : held && made.failure.code === "exists" ? "recovered" : made.failure.code
+        if (made._tag === "Failure") Object.assign(fields, failureFields("create_ref", made.failure))
+        if (made._tag === "Failure" && fields.created !== "recovered") {
           if (made.failure.code === "exists") {
             fields.outcome = "exists"
             return answerRefusal(409, "exists")
           }
+          // Refused outright, nothing was written: the name is free again. An unavailable write may have landed.
+          if (held && made.failure.code !== "unavailable") yield* releaseClaim(createRequest!).pipe(Effect.provide(database))
           return made.failure.code === "forbidden"
             ? answerRefusal(403, "forbidden")
             : made.failure.code === "not_found"
@@ -237,8 +268,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
         resolvedDefault = remoteDefault.success.branch
       }
       const mode = decoded.value.create !== true && resolvedDefault === ref ? "locked" : "open"
-      const tracked = yield* Conversations.track(repo, ref, mode, head.success, actor.value.subject.id, createRequest, namespace, "deployment")
-        .pipe(Effect.provide(database))
+      const tracked = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql.withTransaction(Effect.tap(
+          Conversations.track(repo, ref, mode, head.success, actor.value.subject.id, createRequest, namespace, "deployment"),
+          () => (held ? releaseClaim(createRequest!) : Effect.void),
+        ))).pipe(Effect.provide(database))
       // Devices may discover private refs only after their branch and conversation have been persisted.
       if (decoded.value.create === true && tracked.created) yield* Repos.refsChanged(repo).pipe(Effect.provide(database))
       // Two people tracking one new branch at once: the one whose insert won owns it; the other may not see it.
@@ -272,6 +306,37 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
     ).pipe(Effect.annotateLogs({ ...fields, outcome }))
     return response
   }).pipe(Effect.withSpan("branch.track", { kind: "server" }))
+
+/**
+ * Code Storage takes no request identity for a create, so a request claims its new ephemeral ref first
+ * (`ephemeral_branch_requests`, docs/proposals/durable-external-effects.md): after a write whose answer was lost, or a
+ * failure before tracking, the same request tries again, finds its claim, and tracks the ref the conflict names. The
+ * claim is the request's, its person's, and its one repository and name; another request for that name is `exists`.
+ */
+interface Claim {
+  readonly person: string
+  readonly repo: string
+  readonly ref: string
+}
+
+const claimOf = (request: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.map(
+      sql<Claim>`SELECT person_id AS person, repo_id AS repo, ref FROM ephemeral_branch_requests WHERE id = ${request}`,
+      (rows): Claim | undefined => rows[0],
+    ))
+
+/** Claims `ref` for `request` unless a claim holds it or the request already claimed another; the request's claim now. */
+const admitClaim = (request: string, person: string, repo: string, ref: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.andThen(
+      sql`INSERT INTO ephemeral_branch_requests (id, person_id, repo_id, ref) VALUES (${request}, ${person}, ${repo}, ${ref})
+        ON CONFLICT DO NOTHING`,
+      claimOf(request),
+    ))
+
+const releaseClaim = (request: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.asVoid(sql`DELETE FROM ephemeral_branch_requests WHERE id = ${request}`))
 
 /** A refusal's outcome by its status. */
 const codeFor = (status: number) =>

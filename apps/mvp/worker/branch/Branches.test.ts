@@ -632,6 +632,64 @@ describe("POST /api/branches with create: a new branch", () => {
     expect(await rows()).toEqual([])
   })
 
+  // Code Storage takes no request identity: a create that made its ref and then failed before tracking it left its own
+  // ref under the name, and every retry of the same request was refused `exists` for it.
+  test.each(["refs_read", "track"] as const)("a request whose %s failed after making its ref tracks that ref when tried again, made once", async (fault) => {
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    let failing = fault === "track"
+    const database = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (sql) => new Proxy(sql, {
+      apply(target, receiver, args) {
+        const statement = Reflect.apply(target, receiver, args)
+        if (!failing || !Array.isArray(args[0]) || !args[0].join("").includes("INSERT INTO branches")) return statement
+        failing = false
+        return Effect.die("lost before tracking")
+      },
+    }))).pipe(Layer.provide(scratch.database))
+    const h = await onCodeStorage({ database })
+    const request = "3f0c9a52-1b7e-4d2a-8c6f-5e4d3c2b1a09"
+    const ask = (id = request) => track(h, { owner: "octocat", name: "Spoon-Knife", ref: "fresh", create: true, request: id })
+    const claims = () => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT id FROM ephemeral_branch_requests`))
+    // The pre-write read answers no such ref; the one after the write fails.
+    if (fault === "refs_read") {
+      h.forge.ephemeral.fail("POST", new Response("0000", { headers: { "content-type": "application/x-git-upload-pack-result" } }),
+        new Response("busy", { status: 502 }))
+    }
+    expect(await json(await ask())).toEqual([503, { code: "unavailable" }])
+    expect(await rows()).toEqual([])
+    expect(h.forge.ephemeral.repository("octocat", "Spoon-Knife")!.branches.fresh).toBe(shaOf("main"))
+    // Another request for that name while the first has not finished: someone's branch.
+    expect(await json(await ask("9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a"))).toEqual([409, { code: "exists" }])
+    const [status, body] = await json(await ask())
+    expect([status, body]).toEqual([201, expect.objectContaining({ name: "fresh", mode: "open", access: "owner" })])
+    expect(h.line("branch.track").at(-1)!.annotations).toMatchObject({ created: "recovered", outcome: "tracked", status: 201 })
+    expect(await claims()).toEqual([])
+    expect(await json(await ask())).toEqual([200, body])
+    expect(await json(await ask("9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a"))).toEqual([409, { code: "exists" }])
+    expect(h.forge.created).toEqual([{ repo: "github/octocat/spoon-knife", from: "main", branch: "fresh" }])
+    expect((await rows()).filter((row) => row.name === "fresh")).toEqual([expect.objectContaining({ baseSha: shaOf("main") })])
+  })
+
+  test("a request refused outright frees its name; one another request claimed is exists before any write", async () => {
+    const h = await onCodeStorage()
+    const ask = (ref: string, id: string) => track(h, { owner: "octocat", name: "Spoon-Knife", ref, create: true, request: id })
+    h.forge.fail(Response.json({ code: "repository_not_found" }, { status: 404 }))
+    expect(await json(await ask("freed", "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d"))).toEqual([404, { code: "not_found" }])
+    expect((await json(await ask("freed", "2b3c4d5e-6f7a-4b2c-9d3e-4f5a6b7c8d9e")))[0]).toBe(201)
+    // An unavailable write may have landed: its claim stays, and another request is refused without writing.
+    h.forge.fail(Response.json({ code: "internal_error" }, { status: 500 }))
+    expect(await json(await ask("held", "3c4d5e6f-7a8b-4c3d-8e4f-5a6b7c8d9e0f"))).toEqual([503, { code: "unavailable" }])
+    expect(await json(await ask("held", "4d5e6f7a-8b9c-4d4e-9f5a-6b7c8d9e0f1a"))).toEqual([409, { code: "exists" }])
+    // One request claims one name.
+    expect(await json(await ask("other", "3c4d5e6f-7a8b-4c3d-8e4f-5a6b7c8d9e0f"))).toEqual([409, { code: "exists" }])
+    // A pre-write read that fails claims nothing.
+    h.forge.ephemeral.fail("POST", new Response("busy", { status: 502 }))
+    expect(await json(await ask("unread", "5e6f7a8b-9c0d-4e5f-8a6b-7c8d9e0f1a2b"))).toEqual([503, { code: "unavailable" }])
+    expect(h.line("branch.track").at(-1)!.annotations).toMatchObject({ forgeOperation: "refs_read", forgeErrorCode: "unavailable", forgeStatus: 502 })
+    expect(h.forge.created.map((made) => made.branch)).toEqual(["freed"])
+    expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT ref FROM ephemeral_branch_requests`)))
+      .toEqual([{ ref: "held" }])
+  })
+
   test("GitHub as the forge can't make a branch: 503 not_configured, and nothing is recorded", async () => {
     const h = await open()
     expect(await json(await create(h, "maya/k3f9q2"))).toEqual([503, { code: "not_configured" }])

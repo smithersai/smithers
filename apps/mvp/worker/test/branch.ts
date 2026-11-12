@@ -437,6 +437,7 @@ export const resetBranches = (runtime: Runtime) =>
     const sql = yield* SqlClient.SqlClient
     const home = yield* Conversations.home
     yield* sql`DELETE FROM github_branch_requests`
+    yield* sql`DELETE FROM ephemeral_branch_requests`
     yield* sql`DELETE FROM conversation_people`
     yield* sql`DELETE FROM terminal_sessions`
     yield* sql`DELETE FROM sandbox_calls`
