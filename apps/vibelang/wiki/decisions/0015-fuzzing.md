@@ -1648,3 +1648,9 @@ caught: a 101-character limit; the hyphen dropped.
 `worker/SandboxHttp.vibe` 23 (the signed-out gateway's stop) waited on a draw of POST, `stop`, a valid body, a true
 length and the signed-out gateway together. `sandbox/http-surface` now checks the three signed-out writes with
 well-formed bodies every execution, then the drawn request. Mutant caught: the signed-out stop answering unavailable.
+
+`src/core/conversation.vibe` 275, `apply`'s guard for a `TourSought` step outside 1 to 11: the sequencer refuses such a
+seek before writing it, so only a log from an older or foreign writer holds one. `conversation/tour-sought` builds a
+touring conversation through the sequencer, applies a seek to a drawn step (-2 to 14, and 1.5 and 10.5) and holds the
+walkthrough to the contract: unchanged for a step outside the range, `soughtWalkthrough` for one inside. Mutant
+caught: the range ending at 12.

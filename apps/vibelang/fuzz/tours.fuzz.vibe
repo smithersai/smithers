@@ -130,3 +130,23 @@ it.live("sequencer/stored-log", () => run("sequencer/stored-log", Stored, (store
   if (Schema.is(Schema.Array(EventSchema))(stored)) return loaded._tag === "Success"
   return loaded._tag === "Failure" && loaded.cause.reasons.length === 1 && loaded.cause.reasons.every((reason) => reason._tag === "Die" && reason.defect instanceof Error && reason.defect.message === "Invalid conversation events")
 }))
+
+const Sought = Schema.Struct({ step: Schema.Union([Schema.Int.check(Schema.isBetween({ minimum: -2, maximum: 14 })), Schema.Literals([1.5, 10.5])]), at: Int })
+
+/**
+ * A seek the sequencer would refuse, arriving in a log anyway (an older or foreign writer): applying it leaves the
+ * walkthrough as it was, and a seek to steps 1 to 11 moves it as `soughtWalkthrough` says (conversation.vibe's
+ * contract for `TourSought`).
+ */
+it.live("conversation/tour-sought", () => run("conversation/tour-sought", Sought, ({ step, at }) => effect {
+  const { service, events } = try sequencer()
+  try service.startTour()
+  const tour = touring(try service.snapshot())
+  try service.drive(tour, 1, "target", 0)
+  const before = (try Ref.get(events)).reduce(M.apply, M.empty)
+  if (before.walkthrough === undefined) return false
+  const after = M.apply(before, { type: "TourSought", seq: before.seq + 1, id: tour, at, step })
+  const valid = Number.isInteger(step) && step >= 1 && step <= 11
+  return after.seq === before.seq + 1 && same(after.walkthrough, valid ? M.soughtWalkthrough(before.walkthrough, step, before.seq + 1, at) : before.walkthrough)
+}))
+
