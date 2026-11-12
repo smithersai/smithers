@@ -23456,7 +23456,12 @@ failure the refs are read back: a ref off its old value is `conflict`, every ref
 at its new value is success, every ref unmoved is `unavailable` and safe to
 retry. A GitHub without the mutation fails `unsupported`. A short revision
 resolves through GraphQL `object(expression:)`. 404 maps to `not_found`, 422 to
-`invalid`, anything else to `unavailable`.
+`invalid`, anything else to `unavailable`. A rate limit (a 429, or a 403 for the
+primary or secondary limit) is `unavailable` with GitHub's wait as
+`retryAfterMillis`: its `Retry-After` in full, else the client's capped
+`x-ratelimit-reset`. That is the name `@smthrs/flow`'s retry policy reads, so a
+step that writes through the adapter waits at least that long before it tries
+again.
 
 ### GitHub.Refs
 
@@ -23799,7 +23804,7 @@ to a blob, as `git notes` writes it.
 | `requireObjectId`, `requireRevision`, `requireEntries`, `requireCommit`, `requireRefs`, `requireTransaction`, `requireAnswer`         | The checks every adapter runs before a request, each failing `invalid`.                                                                                                               |
 | `isObjectId`, `isRefName`, `EMPTY_TREE`, `MAX_REF_UPDATES`                                                                            | Predicates and constants.                                                                                                                                                             |
 | `ObjectId`, `Mode`, `TreeEntry`, `Person`, `CommitObject`, `CommitHeader`, `RefValue`, `RefUpdate`, `RefTransaction`, `MemoryOptions` | Types.                                                                                                                                                                                |
-| `RepositoryErrorCode`, `RepositoryError`, `repositoryError`, `isRepositoryError`                                                      | `unsupported`, `conflict` (with the `refs` that differed), `not_found`, `invalid`, `unavailable`. The tag `"@smthrs/jj/RepositoryError"` is durable identity.                         |
+| `RepositoryErrorCode`, `RepositoryError`, `repositoryError`, `isRepositoryError`                                                      | `unsupported`, `conflict` (with the `refs` that differed), `not_found`, `invalid`, `unavailable` (with `retryAfterMillis` when the repository asked callers to wait, which a flow step's retry policy honors). The tag `"@smthrs/jj/RepositoryError"` is durable identity.                         |
 
 Feature detection is by error code, as for `Jj`. `unavailable` from a write
 means its outcome is unknown until read back; `conflict` from `updateRefs`
@@ -35560,6 +35565,7 @@ const alarm: <E, R, RS, RE = never, RR = never, RT = never>(
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
     readonly settled?: ExecutionObject.Settled<RT> | undefined
+    readonly continueHere?: ExecutionObject.ContinueHere | undefined
   }
 ) => Effect.Effect<ExecutionObject.Outcome, never, R | RS | RR | RT>
 ```
@@ -35577,6 +35583,13 @@ once with `EngineStore.drive` within `driveBudgetMs` (default
   due now, such as one asked to cancel;
 - when the execution settled and is the last round of its lineage, each parent
   due now: `router.wake`.
+
+A start that `continueHere(intent)` claims is not routed. Once the drive
+settled, the object stores the claimed intent as its own, clears its settlement
+and arms the alarm for now, answering `Continued` with the next round's
+execution id: a singleton object, such as one named by a repository, drives a
+`.to()` lineage forever, one round after another, in its own store. At most one
+start is claimed, the first.
 
 Then it clears the count and records when the execution settled, arming the
 alarm for the end of its retention window (settled), or arms it for the
@@ -35601,6 +35614,15 @@ its intent. On success the object records when under
 `ExecutionObject.reportedKey`, and `settledRetentionMs` runs from then. An
 intent that no longer decodes hands it nothing. The handler must be
 idempotent.
+
+### `ExecutionObject.ContinueHere`
+
+```ts
+type ContinueHere = (intent: ExecutionObject.Intent) => boolean
+```
+
+Given each execution a drive left for routing to start, `true` keeps it in this
+object instead (see `alarm`). `make` takes it as `continueHere`.
 
 ### `ExecutionObject.Router`
 
@@ -35671,12 +35693,15 @@ type Outcome =
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
   | { readonly _tag: "Yielded" }
   | { readonly _tag: "Retrying"; readonly attempt: number; readonly retryAtMs: number; readonly failure: string }
+  | { readonly _tag: "Continued"; readonly executionId: string }
   | { readonly _tag: "Forgotten" }
 ```
 
 What one alarm did. `forgetAtMs` is when the settled object forgets its
 intent. `Yielded` is a drive that spent its budget; the alarm is armed for
-now. `failure` is the tag of what failed, never its message.
+now. `failure` is the tag of what failed, never its message. `Continued` is a
+settled round whose next round `continueHere` kept: the object now holds that
+round's intent, `executionId`, and its alarm is armed for now.
 
 ### `ExecutionObject.Settled`
 
