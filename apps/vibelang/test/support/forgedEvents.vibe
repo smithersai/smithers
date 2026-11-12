@@ -155,12 +155,16 @@ function triggered(lane: Lane, event: Event): ReadonlyArray<Event> {
   return inserted
 }
 
-/** The real event in the browser's numbering, then the forged events that follow it, numbered after it. */
+/**
+ * The real event in the browser's numbering, then the forged events that follow it, numbered after it. After the
+ * settled reply's insertion the reply's end arrives once more, as a repeated delivery does: the client must drop it.
+ */
 export function forge(forgery: Forgery, conversation: string, event: Event): ReadonlyArray<Event> {
   const lane = laneOf(forgery, conversation)
   const seq = event.seq + shiftBefore(lane, event.seq)
   const forged = triggered(lane, event).map((inserted, index) => ({ ...inserted, seq: seq + index + 1 }))
-  return [{ ...event, seq }, ...forged]
+  const again = event.type === "ReplyFinished" && forged.length > 0 ? [{ ...event, seq }] : []
+  return [{ ...event, seq }, ...forged, ...again]
 }
 
 /**

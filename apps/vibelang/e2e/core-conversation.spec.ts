@@ -23,7 +23,8 @@ test("rule-breaking events in a reply change nothing the page shows", async ({ p
   await prompt.press("Enter")
   const answers = page.locator(".sui-chat-message[data-role='assistant']")
   await expect(answers).toHaveAttribute("data-done", "true", { timeout: 15_000 })
-  // 8 forged while the reply streams and 25 after it finishes; the client applies each one in order.
+  // 8 forged while the reply streams and 25 after it finishes, then the reply's end again; the client applies each
+  // forged event in order and drops the repeat.
   await expect.poll(async () => (await read(page)).forged.home?.length).toBe(33)
   const last = (await read(page)).forged.home!.at(-1)!
   await expect.poll(async () => (await read(page)).client.conversation.seq).toBe(last)
@@ -58,4 +59,32 @@ test("rule-breaking walkthrough events leave the tour on its real step", async (
   // The real events after the forged ones still apply: the tour moves on when asked.
   await page.getByRole("button", { name: "Skip", exact: true }).click()
   await expect(bar).toHaveAttribute("data-step", "2", { timeout: 15_000 })
+})
+
+test("a failed post stays to retry while a later post is answered", async ({ page }) => {
+  // fault=refuse: the transport refuses only the first post (test/support/FaultyFactory.vibe).
+  await page.goto("/e2e/runtime/index.html?fault=refuse")
+  await page.getByRole("button", { name: "Ask the agent" }).click()
+  const prompt = page.getByRole("textbox", { name: "Message" })
+  await prompt.fill("install")
+  await prompt.press("Enter")
+  const pending = page.locator("[data-pending='true']")
+  await expect(pending).toContainText("Send failed")
+  await prompt.fill("What is a service?")
+  await prompt.press("Enter")
+  const answers = page.locator("[data-role='assistant'][data-done='true']")
+  await expect(answers).toHaveCount(1, { timeout: 15_000 })
+  // The answered post left `pending`; the failed one is still there, first in line to retry.
+  await expect(pending).toHaveCount(1)
+  await expect(pending).toContainText("install")
+  const waiting = (await read(page)).client.pending
+  expect(waiting).toHaveLength(1)
+  expect(waiting[0]).toMatchObject({ text: "install" })
+  expect(waiting[0]!.error).not.toBe("")
+  await pending.getByRole("button", { name: "Retry" }).click()
+  await expect(answers).toHaveCount(2, { timeout: 15_000 })
+  await expect(pending).toHaveCount(0)
+  const entries = (await read(page)).client.conversation.entries
+  expect(entries.filter((entry) => entry.author === "person").map((entry) => entry.text)).toEqual(["What is a service?", "install"])
+  expect(entries.filter((entry) => entry.author === "person").map((entry) => entry.clientId)).toContain(waiting[0]!.clientId)
 })
