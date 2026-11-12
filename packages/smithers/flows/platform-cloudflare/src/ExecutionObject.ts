@@ -1093,7 +1093,11 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never, RT = never>(s
       gate.withPermit(Effect.gen(function*() {
         yield* storage.put(cancelledKey, yield* Clock.currentTimeMillis)
         yield* storage.setAlarm(yield* Clock.currentTimeMillis)
-        if (active !== undefined) yield* active
+        // An alarm that parks while the request commits deletes the alarm above and may read the
+        // store before the commit: arming again after the request keeps the wake `arm` relies on.
+        if (active !== undefined) {
+          yield* active.pipe(Effect.ensuring(Effect.flatMap(Clock.currentTimeMillis, storage.setAlarm)))
+        }
         const ids = yield* idsOf(yield* storage.get<string>(intentKey))
         yield* Metric.update(cancellations, 1)
         yield* Effect.annotateCurrentSpan(ids)
