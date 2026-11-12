@@ -42,6 +42,12 @@ import { tokensOf } from "../Budget.ts"
  * @since 0.1.0
  */
 const RecordedCall = Schema.Struct({ receipt: Schema.String, usage: ModelEvent.Usage, settled: Schema.Boolean })
+/**
+ * One physical provider call's durable receipt, measured usage and settlement state.
+ *
+ * @private
+ * @since 0.1.0
+ */
 export interface CallReceipt {
   readonly receipt: string
   readonly usage: ModelEvent.Usage
@@ -59,6 +65,12 @@ const LegacyRecordedModelStep = Schema.Union([
   })
 ])
 
+/**
+ * The durable event log and optional failure metadata used to replay a sealed model step.
+ *
+ * @private
+ * @since 0.1.0
+ */
 export const RecordedModelStep = Schema.Union([
   Schema.Array(ModelEvent.ModelEvent),
   Schema.Struct({
