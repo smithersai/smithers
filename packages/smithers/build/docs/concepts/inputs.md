@@ -302,11 +302,11 @@ link (git mode `120000`). A test whose meaning depends on a link, such as a
 fixture whose `node_modules/agent` points at a sibling package, declares the
 link itself.
 
-| Part                          | Role                                              |
-| ----------------------------- | ------------------------------------------------- |
-| The link's target string      | Key material                                      |
-| The link, at its path         | Present under confinement, with the same target   |
-| What the link points at       | Neither keyed nor readable unless declared itself |
+| Part                     | Role                                              |
+| ------------------------ | ------------------------------------------------- |
+| The link's target string | Key material                                      |
+| The link, at its path    | Present under confinement, with the same target   |
+| What the link points at  | Neither keyed nor readable unless declared itself |
 
 The identity is the target string `readlink` returns, never the content
 behind it. Retargeting the link re-keys the target. Editing files behind the
