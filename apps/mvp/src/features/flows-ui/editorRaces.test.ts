@@ -1,11 +1,11 @@
 // Delayed Effect services wrap real collections and dispatches. A late read or persistence receipt must never
 // overwrite the next editor; the underlying storage, API and durable engine are the real app's Node services.
-import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { RunsNavigation } from "../runs/actions"
-import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, startDraft } from "./actions"
+import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, setAnswer, setForm, startDraft } from "./actions"
 import { FlowsUiStore, SHOWN } from "./store"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -218,3 +218,65 @@ test("failed collection restoration refuses editor actions without changing reta
   expect(t.store.form.tanstack.toArray).toEqual(beforeForm)
   expect(t.store.code.tanstack.toArray).toEqual(beforeCode)
 })
+
+/** The real dispatch, with the engine's admission held at `held` before the caller learns of it. */
+const admittingAt = (t: Awaited<ReturnType<typeof open>>, held: Awaited<ReturnType<typeof gate>>) =>
+  FlowDispatch.of({ dispatch: (name, payload, options) => Effect.gen(function* () {
+    const engine = yield* Deferred.make<void, DispatchFailed>()
+    yield* Effect.forkDetach(Deferred.await(engine).pipe(
+      Effect.exit,
+      Effect.tap(() => held.wait),
+      Effect.flatMap((exit) => Deferred.done(options!.admitted!, exit)),
+    ))
+    return yield* t.dispatch.dispatch(name, payload, { ...options, admitted: engine })
+  }) })
+
+test.each([
+  { edited: "request", typed: { request: "Say hello twice" }, kept: { name: "", request: "Say hello twice", seeded: false } },
+  { edited: "name", typed: { name: "greet" }, kept: { name: "greet", request: "" } },
+] as const)("Draft keeps the $edited typed while the engine admits it and clears only what it sent", async ({ typed, kept }) => {
+  const t = await open()
+  await t.run(setForm({ name: "hello", request: "Say hello" }))
+  const { draftId } = (await t.runtime.runPromise(t.store.form.get(t.store.formId))).pipe(Option.getOrThrow)
+  const held = await gate()
+  const drafting = t.run(startDraft, t.store, admittingAt(t, held))
+  try {
+    await held.entered()
+    await t.run(setForm(typed))
+  } finally { await held.release() }
+  await drafting
+  const form = (await t.runtime.runPromise(t.store.form.get(t.store.formId))).pipe(Option.getOrThrow)
+  expect(form).toMatchObject(kept)
+  expect(form.draftId).not.toBe(draftId)
+}, 60_000)
+
+test.each([
+  { corrected: { r0q1: "Howdy" }, kept: [{ questionId: "r0q1", value: "Howdy" }] },
+  { corrected: { r0q1: "Howdy", r0q2: "no" }, kept: [{ questionId: "r0q1", value: "Howdy" }, { questionId: "r0q2", value: "no" }] },
+])("Answer keeps corrections $corrected typed while the engine admits it and deletes only answers it sent", async ({ corrected, kept }) => {
+  const t = await open()
+  const draftId = crypto.randomUUID()
+  const written = await t.api.fetch(`${t.api.origin}/api/flow-drafts/${draftId}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+      scope: "person", round: 0, name: "hello", request: "Say hello", status: "needs_you",
+      summary: null, files: [], checks: [], failure: null, flowId: null, questions: [
+        { id: "r0q1", text: "Which greeting?", assumed: "Hello", blocking: true },
+        { id: "r0q2", text: "Say it twice?", assumed: "no", blocking: false },
+      ],
+    }),
+  })
+  expect(written.status).toBe(200)
+  await t.runtime.runPromise(t.store.drafts.awaitRow((row) => row.id === draftId, "30 seconds"))
+  await t.run(openDraft(draftId))
+  await t.run(setAnswer(draftId, "r0q1", "Hi"))
+  await t.run(setAnswer(draftId, "r0q2", "yes"))
+  const held = await gate()
+  const answering = t.run(answer, t.store, admittingAt(t, held))
+  try {
+    await held.entered()
+    for (const [questionId, value] of Object.entries(corrected)) await t.run(setAnswer(draftId, questionId, value))
+  } finally { await held.release() }
+  await answering
+  const answers = (await t.runtime.runPromise(t.store.answers.toArray)).map(({ questionId, value }) => ({ questionId, value }))
+  expect(answers.sort((a, b) => a.questionId.localeCompare(b.questionId))).toEqual(kept)
+}, 60_000)

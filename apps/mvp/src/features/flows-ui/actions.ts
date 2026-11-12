@@ -20,16 +20,19 @@ export const formReady = (form: Pick<Form, "name" | "request">): boolean =>
   form.request.trim().length > 0 &&
   form.request.trim().length <= MAX_REQUEST_CHARS
 
-/** Sets fields of the form. */
-export const setForm = (fields: Partial<Omit<Form, "id">>) =>
+/** Changes the form's row in one transaction, so `change` reads the row the write replaces. */
+const changeForm = (change: (draft: Form) => void) =>
   // Tracked from the keystroke, through the editor's restore, to its receipt: an update never reloads in between.
   Effect.flatMap(FlowsUiStore, ({ form, formId, editorReady }) => trackEditorPersistence(Effect.flatMap(editorReady, (ready) => ready
-    ? Effect.flatMap(form.update(formId, (draft) => void Object.assign(draft, fields)), (write) => write.persisted)
+    ? Effect.flatMap(form.update(formId, change), (write) => write.persisted)
     : Effect.void))).pipe(
     Effect.asVoid,
     // The form's row always exists, and its schema takes any text: a refusal is a bug.
     Effect.orDie,
   )
+
+/** Sets fields of the form. */
+export const setForm = (fields: Partial<Omit<Form, "id">>) => changeForm((draft) => void Object.assign(draft, fields))
 
 /** Sets fields of the shown draft's row. */
 const setShown = (fields: Partial<Omit<Shown, "id">>) =>
@@ -81,7 +84,8 @@ export const openNew = (name: string | undefined) =>
 /**
  * Draft: round 0 of a new draft, from the form; its card opens once the engine has the round. The draft's id is the
  * form's, so a second press before the first is admitted starts the same execution, which the engine runs once; the
- * form then takes a new one.
+ * form then takes a new one. It clears only the fields still holding the text it sent: what the person typed while the
+ * engine admitted the round stays in the form.
  */
 export const startDraft = Effect.gen(function* () {
   const store = yield* FlowsUiStore
@@ -98,9 +102,12 @@ export const startDraft = Effect.gen(function* () {
     })
   )
   if (!admitted) return
-  if ((Option.getOrThrow(yield* store.form.get(store.formId))).draftId === draftId) {
-    yield* setForm({ name: "", request: "", draftId: crypto.randomUUID(), seeded: false })
-  }
+  yield* changeForm((draft) => {
+    if (draft.draftId !== draftId) return
+    Object.assign(draft, { draftId: crypto.randomUUID() })
+    if (draft.name === form.name) Object.assign(draft, { name: "", seeded: false })
+    if (draft.request === form.request) Object.assign(draft, { request: "" })
+  })
   yield* go(draftPath(draftId))
 })
 
@@ -123,7 +130,7 @@ export const setAnswer = (draftId: string, questionId: string, value: string) =>
     }))
   }).pipe(Effect.asVoid, Effect.orDie)
 
-/** The shown draft and the person's unsent answers to it, by question id. */
+/** The shown draft and the person's unsent answers to it, by question id, with the rows they were read from. */
 const shownDraft = Effect.gen(function* () {
   const store = yield* FlowsUiStore
   const shown = Option.getOrThrow(yield* store.shown.get(SHOWN))
@@ -133,26 +140,31 @@ const shownDraft = Effect.gen(function* () {
   return Option.map(draft, (draft) => ({
     draft,
     answers: Object.fromEntries(answers.map((answer) => [answer.questionId, answer.value])),
-    ids: answers.map((answer) => answer.id),
+    rows: answers,
   }))
 })
 
 /**
  * Answer: the changed answers, and each blocking question nobody answered at the value its field shows (its default
- * until the person types), start the draft's next round.
+ * until the person types), start the draft's next round. Once the engine admits it, it deletes only the answer rows
+ * still holding the value it sent: a correction typed meanwhile stays in its field.
  */
 export const answer = Effect.gen(function* () {
   if (!(yield* (yield* FlowsUiStore).editorReady)) return
   const shown = yield* shownDraft
   if (Option.isNone(shown)) return
-  const { draft, answers, ids } = shown.value
+  const { draft, answers, rows } = shown.value
   const changed = answersToSend(draft.questions, answers)
   if (changed.length === 0) return
   const flows = yield* FlowDispatch
   const admitted = yield* started((admitted) =>
     flows.dispatch("flow/answer", { draftId: draft.id, round: draft.round, answers: changed }, { door: "button", admitted })
   )
-  if (admitted && ids.length > 0) yield* trackEditorPersistence(Effect.flatMap((yield* FlowsUiStore).answers.delete(ids), (write) => write.persisted)).pipe(Effect.orDie)
+  if (!admitted || rows.length === 0) return
+  const store = yield* FlowsUiStore
+  const sent = new Map(rows.map((row) => [row.id, row.value]))
+  const unchanged = (yield* store.answers.toArray).filter((row) => sent.get(row.id) === row.value).map((row) => row.id)
+  if (unchanged.length > 0) yield* trackEditorPersistence(Effect.flatMap(store.answers.delete(unchanged), (write) => write.persisted)).pipe(Effect.orDie)
 })
 
 /**
