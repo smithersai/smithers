@@ -32,7 +32,7 @@
  */
 
 import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient"
-import * as Dialect from "@smthrs/database/Dialect"
+import { Dialect } from "@smthrs/database"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Reactivity from "effect/reactivity/Reactivity"

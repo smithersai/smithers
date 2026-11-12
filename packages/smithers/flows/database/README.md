@@ -76,18 +76,18 @@ The root bundles for browsers. It carries the PostgreSQL adapter, whose
 `@effect/sql-pg` driver the caller injects. The SQLite drivers are platform
 specific and live at their own subpaths.
 
-| Import                                       | Exports                                                                                                  |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend`, `PostgresDatabase` as namespaces |
-| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                                           |
-| `@smthrs/database/Migrations`                | the migration composer                                                                                   |
-| `@smthrs/database/DatabaseMetrics`           | the write-retry counter and the writer-lock wait timer                                                   |
-| `@smthrs/database/UnsupportedBackend`        | the connection-string names this release ignores                                                         |
-| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                                                |
-| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                                                |
-| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                                                  |
-| `@smthrs/database/postgres/PostgresDatabase` | The same module as the root's `PostgresDatabase`; import it from the root                                |
-| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                                      |
+| Import                                       | Exports                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend`, `Dialect`, `PostgresDatabase` as namespaces |
+| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                                                      |
+| `@smthrs/database/Migrations`                | the migration composer                                                                                              |
+| `@smthrs/database/DatabaseMetrics`           | the write-retry counter and the writer-lock wait timer                                                              |
+| `@smthrs/database/UnsupportedBackend`        | the connection-string names this release ignores                                                                    |
+| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                                                           |
+| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                                                           |
+| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                                                             |
+| `@smthrs/database/postgres/PostgresDatabase` | The same module as the root's `PostgresDatabase`; import it from the root                                           |
+| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                                                 |
 
 `DurableWriter.make` accepts any Effect `SqlClient`, so the retry
 classification and the error vocabulary are dialect blind. SQLite and PostgreSQL adapters share the stores and migration ladder. `PostgresDatabase`

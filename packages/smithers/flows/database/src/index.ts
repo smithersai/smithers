@@ -42,6 +42,12 @@ export * as Migrations from "./Migrations.ts"
 export * as UnsupportedBackend from "./UnsupportedBackend.ts"
 
 /**
+ * @category fragments
+ * @since 1.0.0-rc.18
+ */
+export * as Dialect from "./Dialect.ts"
+
+/**
  * @category drivers
  * @since 1.0.0
  */

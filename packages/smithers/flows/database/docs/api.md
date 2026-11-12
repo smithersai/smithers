@@ -7,18 +7,18 @@ The root entry point bundles for browsers. It carries the PostgreSQL adapter,
 whose `@effect/sql-pg` driver the caller injects. The SQLite drivers are
 platform specific and live at explicit subpaths.
 
-| Import                                       | Exports                                                                                                  |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend`, `PostgresDatabase` as namespaces |
-| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                                           |
-| `@smthrs/database/Migrations`                | the migration composer                                                                                   |
-| `@smthrs/database/DatabaseMetrics`           | the write-retry counter and the writer-lock wait timer                                                   |
-| `@smthrs/database/UnsupportedBackend`        | the ignored connection-string names                                                                      |
-| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                                                |
-| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                                                |
-| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                                                  |
-| `@smthrs/database/postgres/PostgresDatabase` | The same module as the root's `PostgresDatabase`; import it from the root                                |
-| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                                      |
+| Import                                       | Exports                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend`, `Dialect`, `PostgresDatabase` as namespaces |
+| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                                                      |
+| `@smthrs/database/Migrations`                | the migration composer                                                                                              |
+| `@smthrs/database/DatabaseMetrics`           | the write-retry counter and the writer-lock wait timer                                                              |
+| `@smthrs/database/UnsupportedBackend`        | the ignored connection-string names                                                                                 |
+| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                                                           |
+| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                                                           |
+| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                                                             |
+| `@smthrs/database/postgres/PostgresDatabase` | The same module as the root's `PostgresDatabase`; import it from the root                                           |
+| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                                                 |
 
 `@smthrs/database/internal/*` is blocked by the export map.
 
@@ -771,7 +771,7 @@ See [configuration and isolation](./concepts/sqlite-only.md).
 
 ## Dialect
 
-`import * as Dialect from "@smthrs/database/Dialect"`.
+`import { Dialect } from "@smthrs/database"`.
 
 SQL fragments that let one store and one migration run on SQLite and
 PostgreSQL. Each takes the store's `SqlClient` and emits the form for its
