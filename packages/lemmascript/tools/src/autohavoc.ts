@@ -16,7 +16,8 @@
  * assumes nothing about a havoc'd value — so this can only make a proof FAIL
  * (false positive), never spuriously pass. It uses havoc, never assume.
  * (Trust boundary: a real sink hidden inside an unmodellable call is invisible;
- * sinks must be the declared/annotated externs.)
+ * sinks must be the declared/annotated externs. A declared sink inside a
+ * callback of an unmodellable call fails generation.)
  *
  * It runs after narrow, so any legitimate optional (`?.`, `??` on an
  * optional-typed value) is already a `someMatch`; a `nullish`/`optChain` that
@@ -209,13 +210,27 @@ function collectOpaqueCalls(stmts: TStmt[], locals: Set<string>): string[] {
   return [...found].sort();
 }
 
+/** Name of the first contracted call anywhere in `e`, including nested lambdas. */
+function guardedCallIn(e: TExpr): string | null {
+  const name = calleeName(e);
+  if (name && _guarded.has(name)) return name;
+  let found: string | null = null;
+  forEachChildExpr(e, c => { found ??= guardedCallIn(c); });
+  return found;
+}
+
 /** Outermost contracted calls inside `e`'s subtree (excluding `e` itself, which
- *  is the havoc'd wrapper). Does not descend into lambdas — a sink there would
- *  reference the lambda's binder and can't be hoisted to the enclosing scope. */
+ *  is the havoc'd wrapper). A sink inside a lambda references the lambda's
+ *  binder and can't be hoisted to the enclosing scope, and havocing the call
+ *  that owns the lambda would erase its precondition, so generation fails. */
 function collectSinks(e: TExpr): TExpr[] {
   const out: TExpr[] = [];
   const walk = (n: TExpr): void => {
-    if (n.kind === "lambda") return;
+    if (n.kind === "lambda") {
+      const sink = guardedCallIn(n);
+      if (sink) throw new Error(`autohavoc: contracted call ${sink} inside a callback of an unmodellable call would go unchecked; call it outside the callback`);
+      return;
+    }
     const name = calleeName(n);
     if (name && _guarded.has(name)) { out.push(n); return; }  // outermost: don't descend
     forEachChildExpr(n, walk);
