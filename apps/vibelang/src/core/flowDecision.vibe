@@ -8,6 +8,13 @@ export function endsTourEvent(kind: string, id: string, tour: string): boolean {
   return id === tour && (kind === "TourEnded" || kind === "ReplyFinished" || kind === "ReplyFailed")
 }
 
+/** How a tour stopped, from the kind of event that stopped it: `finished` when it finished itself, else `ended`. */
+//@ verify
+//@ ensures \result == (kind == "ReplyFinished" ? "finished" : "ended")
+export function tourStop(kind: string): string {
+  return kind === "ReplyFinished" ? "finished" : "ended"
+}
+
 /** Reading time at 200 words/minute, plus one second to orient, with a four-second floor. */
 //@ verify
 //@ requires wordCount >= 0 && wordCount <= 4294967295

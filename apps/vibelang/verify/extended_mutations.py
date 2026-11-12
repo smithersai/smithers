@@ -93,6 +93,8 @@ cases = [
   'kind === "ReplyFailed"',
   'kind === "ReplyDelta"',
   'only terminal events stop the speaker'),
+ ('src/core/flowDecision.vibe', 'tour-stop-finished', 'tourStop', 'kind === "ReplyFinished" ? "finished" : "ended"', '"ended"', 'a tour that finishes itself is finished'),
+ ('src/core/flowDecision.vibe', 'tour-stop-ended', 'tourStop', 'kind === "ReplyFinished" ? "finished" : "ended"', 'kind === "ReplyFailed" ? "ended" : "finished"', 'a person ending the tour is ended'),
  ('src/core/replyDecision.vibe',
   'start-replay',
   'startAnswer',

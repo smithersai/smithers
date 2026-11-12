@@ -9,7 +9,7 @@ import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import {
-  DOCS_ORIGIN, docsPage, EndTour, openDocs, readingMillis, Reply, ReplyStep, say, StartTour, Tour, toured, tourRegistration, Tours, walk, walkRegistration,
+  DOCS_ORIGIN, docsPage, EndTour, stoppedBy, openDocs, readingMillis, Reply, ReplyStep, say, StartTour, Tour, toured, tourRegistration, Tours, walk, walkRegistration,
 } from "../src/core/flows.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
@@ -266,3 +266,30 @@ effect function until2(w: World, last: (event: Event) => boolean) {
   return try Stream.runDrain(w.sequencer.follow(0) |> Stream.takeUntil(%, last))
 }
 
+describe("a tour's run outcome", () => {
+  // The walk's own `finish` ends the tour too, and the walk returns only after journaling it (the sleep), so the end
+  // is seen first: the run must still count as finished.
+  it.live("a walk that finishes the tour itself counts its run finished, not ended", () => scoped(effect {
+    const w = try world()
+    try w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} })
+    const speaker = effect {
+      try inWorld(w, say("t1", "Setup."))
+      try inWorld(w, effect { try (try Tours).finish("t1") })
+      try sleep("50 millis")
+    }
+    try inWorld(w, toured("t1", speaker))
+    const runs = (try Ref.get(w.lines)).filter((line) => line.includes("vibelang.tour.run"))
+    try Effect.try(() => {
+      expect(runs).toHaveLength(1)
+      expect(runs[0]).toContain('"outcome":"finished"')
+    })
+  }))
+  it("reads a finish as finished, and a person's end, a failure or no event as ended", () => {
+    expect([
+      stoppedBy(Option.some({ type: "ReplyFinished", seq: 2, id: "t1" } as Event)),
+      stoppedBy(Option.some({ type: "TourEnded", seq: 2, id: "t1" } as Event)),
+      stoppedBy(Option.some({ type: "ReplyFailed", seq: 2, id: "t1", reason: "" } as Event)),
+      stoppedBy(Option.none()),
+    ]).toEqual(["finished", "ended", "ended", "ended"])
+  })
+})

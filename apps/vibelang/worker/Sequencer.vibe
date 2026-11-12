@@ -18,7 +18,7 @@ import {
 } from "../src/core/conversation.vibe"
 import { decide, type Intent, type Refusal } from "../src/core/decide.vibe"
 import { recordedConversation, replayLog } from "../src/core/replayDecision.vibe"
-import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
+import { endsTour, replyIdOf, stoppedBy, touring, unanswered } from "../src/core/flows.vibe"
 import { appends, startAnswer } from "../src/core/replyDecision.vibe"
 import { EventSchema, type ReadSnapshot } from "../src/core/schemas.vibe"
 import { followCut, fresh } from "../src/core/followDecision.vibe"
@@ -282,8 +282,8 @@ export effect function make(log: Log, dispatch?: Dispatch) {
       try settle(tour, intent, (entry) => entry.done)
     },
 
-    /** Completes once `tour` no longer runs: it finished, failed, or the person ended it. */
-    ended: (tour: string) => Stream.runDrain(follow(0).pipe(Stream.takeUntil((event) => endsTour(event, tour)))),
+    /** Completes once `tour` no longer runs, with how it stopped: `finished`, or `ended` (failed or ended by the person). */
+    ended: (tour: string) => Effect.map(Stream.runLast(follow(0).pipe(Stream.takeUntil((event) => endsTour(event, tour)))), stoppedBy),
   }
 }
 

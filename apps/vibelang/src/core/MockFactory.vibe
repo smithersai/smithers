@@ -24,7 +24,7 @@ import { TourControlBody } from "./wire.vibe"
 import { actorKey, afterCursor, draftOutcome, liveEvent, replyKind, replayedTo, restoredCounter } from "./mockFactoryDecision.vibe"
 import { validTourStep } from "./clientProtocolDecision.vibe"
 import {
-  PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
+  PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, stoppedBy, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
   Tours, unanswered, walkRegistration,
 } from "./flows.vibe"
 import { pages, requestedWiki } from "./wikiIndex.vibe"
@@ -371,7 +371,7 @@ return Layer.effect(Factory, effect {
         ended: (tour: string) => scoped(effect {
           const live = try PubSub.subscribe(published)
           const later = Stream.fromSubscription(live).pipe(Stream.filter((item) => item.conversation === conversation), Stream.map((item) => item.event))
-          try Stream.runDrain(Stream.concat(Stream.fromIterable((try Ref.get(state)).log), later).pipe(Stream.takeUntil((event) => endsTour(event, tour))))
+          return stoppedBy(try Stream.runLast(Stream.concat(Stream.fromIterable((try Ref.get(state)).log), later).pipe(Stream.takeUntil((event) => endsTour(event, tour)))))
         }),
       }
       const flows = Layer.mergeAll(

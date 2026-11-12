@@ -17,7 +17,7 @@ import { Node, Planned } from "@smthrs/plan"
 import { holdRemaining, unansweredSelection, type Conversation, type Event } from "./conversation.vibe"
 import { docsPath, runningTour } from "./tourDecision.vibe"
 import { type Refusal } from "./decide.vibe"
-import { endsTourEvent, readingHold } from "./flowDecision.vibe"
+import { endsTourEvent, readingHold, tourStop } from "./flowDecision.vibe"
 import { WALKTHROUGH } from "./walkthroughSteps.vibe"
 import { Walkthrough } from "./schemas.vibe"
 import { wikiPath } from "./wikiIndex.vibe"
@@ -144,13 +144,21 @@ export service Tours {
   say(tour: string, text: string): boolean!!
   /** Settles `tour` as finished. */
   finish(tour: string): void!!
-  /** Completes once `tour` no longer runs: it finished, failed, or the person ended it. */
-  ended(tour: string): void!!
+  /**
+   * Completes once `tour` no longer runs, with how it stopped (tourStop): `finished`, or `ended` when it failed or the
+   * person ended it.
+   */
+  ended(tour: string): string!!
 }
 
 /** Whether `event` stops the tour `tour`: it finished, failed, or the person ended it. */
 export function endsTour(event: Event, tour: string): boolean {
   return endsTourEvent(event.type, event.id, tour)
+}
+
+/** How a tour stopped: from the last event of a stream that ends at the event that stopped it. */
+export function stoppedBy(last: Option.Option<Event>): string {
+  return tourStop(Option.getOrUndefined(last)?.type ?? "")
 }
 
 /** The running tour of `conversation`: its id, `""` when none runs. */
@@ -381,7 +389,7 @@ export effect function toured<E, R>(tour: string, speak: void!E!R) {
     return null
   }
   run = Continuation.startTourSpeech(run)
-  const outcome = try.race [Effect.as(speak, "finished"), Effect.as(tours.ended(tour), "ended")]
+  const outcome = try.race [Effect.as(speak, "finished"), tours.ended(tour)]
   run = Continuation.finishTourSpeech(run, outcome === "ended")
   try counted("run", run.outcome)
   return null
