@@ -202,6 +202,14 @@ rule (`Choose another parent.`); with `issue-write`, a saved write that lost its
 Retry (`issueAction`'s `blocked` arms). The form's own submit is disabled while a write waits, so only the list's
 New issue and the issue's Link reach those arms.
 
+**A focus race in `e2e/issues.spec.ts` "Split and Link open their own dialogs …" (session 25).** It failed once in a
+full browser gate and once on the host. The journey clicked All and focused `.sui-issues-link` at once; when the click
+had not rendered yet, it focused the first link of the VIPs list (#45). The All list then rendered with #48 first, focus
+stayed on #45 as it should, and the re-resolved `first()` pointed at #48. Reproduced 6 times in 12 runs at 6 workers
+(`s25/diag1.log`, the focused element logged each time). The journey now waits for All to read checked, which renders
+in the same patch as its list: 12 of 12 focused #48 (`s25/diag2.log`), and 9 of 9 passed at 3 workers at host load 182
+(`s25/diag3.log`). The product was right; the test read a list it had not waited for.
+
 **Still unreachable from a mock browser** (named, not closed):
 
 | Site | Why |

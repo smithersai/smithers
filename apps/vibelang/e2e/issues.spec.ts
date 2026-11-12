@@ -306,6 +306,8 @@ test("Split and Link open their own dialogs, other keys move nothing, and a clos
   await page.keyboard.press("Shift")
   await expect(page.getByRole("radio", { name: "VIPs", exact: true })).toBeFocused()
   await page.getByRole("radio", { name: "All", exact: true }).click()
+  // The kind and its list render in one patch: wait for it, or the VIPs' first link is focused (session 25).
+  await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked()
   const first = page.locator(".sui-issues-link").first()
   await first.focus()
   await page.keyboard.press("Shift")
