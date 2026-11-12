@@ -1,3 +1,5 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import type * as Dprint from "@smthrs/targets/Dprint"
 import type * as EsLint from "@smthrs/targets/EsLint"
 import * as Filegroup from "@smthrs/targets/Filegroup"
@@ -7,10 +9,14 @@ import * as Target from "@smthrs/targets/Target"
 import * as TsBuild from "@smthrs/targets/TsBuild"
 import type * as Typecheck from "@smthrs/targets/Typecheck"
 import type * as Vitest from "@smthrs/targets/Vitest"
+import { Effect, FileSystem, Layer, Path } from "effect"
 import { globSync } from "node:fs"
-import { resolve } from "node:path"
+import { dirname, relative, resolve } from "node:path"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import { Package as PluginPackage } from "../../smithers/agent/plugin/PACKAGE.ts"
+import { Package as RegistryPackage } from "../../smithers/agent/registry/PACKAGE.ts"
+import * as Discovery from "../../smithers/agent/registry/src/Discovery.ts"
+import { inputPackage } from "../../smithers/build/build-cli/src/internal/InputPackage.ts"
 import { Package as StepCachePackage } from "../../smithers/flows/step-cache/PACKAGE.ts"
 import { BuildAndCheckTypeScriptPackage } from "../src/BuildAndCheckTypeScriptPackage.ts"
 import { plannedArgv, plannedCalls } from "./plan.ts"
@@ -266,6 +272,77 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
     const paths = declaredInputs(PluginPackage.test)
     expect(paths).toContain("test/fixtures/artifact-esm.mjs")
     expect(paths).toContain("test/fixtures/artifact-cjs.cjs")
+  })
+
+  /** Expands the registry's real test and filegroup inputs with package-scoped glob semantics. */
+  const registryInputs = async (): Promise<ReadonlySet<string>> => {
+    const root = resolve(import.meta.dirname, "../../..")
+    const registry = "packages/smithers/agent/registry"
+    const paths = new Set<string>()
+    const visit = async (target: Target.AnyTarget): Promise<void> => {
+      const metadata = Target.metadata(target)
+      const anchor = inputPackage(metadata, registry)
+      for (const input of metadata.inputs) {
+        if (input._tag === "File") paths.add(Input.resolvePath(anchor, input.path))
+        if (input._tag === "Glob") {
+          for (const path of await Input.expandGlob(root, anchor, input)) paths.add(path)
+        }
+      }
+      for (const dependency of metadata.dependencies) {
+        if (Filegroup.isFilegroup(dependency)) await visit(dependency)
+      }
+    }
+    await visit(RegistryPackage.test)
+    return paths
+  }
+
+  it("keys the registry suite on executable, markdown, JSON, and hidden-directory fixtures", async () => {
+    const paths = await registryInputs()
+    for (
+      const fixture of [
+        "mdx-runner.mjs",
+        "artifact-cjs.cjs",
+        "mdx/prompt.mdx",
+        "mdx/settings.json",
+        "mdx/package.json",
+        "foreign/template-skill/SKILL.md",
+        "foreign/review/SKILL.md",
+        "foreign/pdf/SKILL.md",
+        "project/flows/review/flow.mdx",
+        "project/flows/hidden/flow.mdx",
+        "project/flows/broken/flow.mdx",
+        "project/flows/changelog/flow.mdx",
+        "executable/.smithers/flows/changelog/flow.mdx",
+        "executable/modules/plain.mjs",
+        "executable/modules/rev#2/plain.mjs"
+      ]
+    ) expect(paths.has(`packages/smithers/agent/registry/test/fixtures/${fixture}`), fixture).toBe(true)
+  })
+
+  it("keys the registry suite on the discovered production issue-sweep import closure", async () => {
+    const paths = await registryInputs()
+    const root = resolve(import.meta.dirname, "../../..")
+    const modules = await Effect.runPromise(Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const scan = yield* Discovery.make(fs, path).scan({
+        source: "project",
+        root: resolve(root, ".smithers/flows/issue-sweep"),
+        naming: "frontmatter"
+      })
+      const body = scan.entries.find((entry) => entry.name === "issue-sweep")?.body
+      expect(body?._tag).toBe("Module")
+      if (body?._tag !== "Module") throw new Error("Expected the production issue-sweep module")
+      return [
+        body.path,
+        ...(body.imports ?? []).map((module) => {
+          expect(module.contentDigest, module.path).toBeDefined()
+          return resolve(dirname(body.path), module.path)
+        })
+      ].map((module) => relative(root, module).replaceAll("\\", "/"))
+    }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))))
+    expect(modules).toContain(".smithers/flows/coding/clip.ts")
+    for (const module of modules) expect(paths.has(module), module).toBe(true)
   })
 
   it("declares the docs and fixtures the step-cache suite reads", () => {

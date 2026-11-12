@@ -14,6 +14,16 @@ const migratedFixture = Smithers.Filegroup({
   ]
 })
 
+// ExecutionSnapshot.test.ts measures the production flow's full relative-import closure.
+const issueSweepSources = Smithers.Filegroup({
+  cwd: ".smithers/flows",
+  srcs: [
+    Smithers.glob("issue-sweep/**"),
+    Smithers.file("land/lock.mjs"),
+    Smithers.file("coding/clip.ts")
+  ]
+})
+
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   cwd: "packages/smithers/agent/registry",
   // The VibeLang example sits in its own directory: beside examples/quickstart.ts
@@ -25,7 +35,8 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     test: Smithers.file("test/quickstart.test.vibe")
   }],
   // ModuleMetadata.test.ts projects migrate's emitted module; a change to it must rerun the test.
-  deps: [migratedFixture]
+  deps: [migratedFixture, issueSweepSources],
+  testData: ["test/fixtures/**"]
 })
 
 const securityReview = Smithers.SecurityReview({
@@ -156,5 +167,17 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { migratedFixture, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    migratedFixture,
+    issueSweepSources,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    test,
+    ...securityReview
+  }
 })

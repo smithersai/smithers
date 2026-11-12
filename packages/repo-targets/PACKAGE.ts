@@ -1,4 +1,5 @@
 import { Smithers } from "@smthrs/targets"
+import { Package as registryPackage } from "../smithers/agent/registry/PACKAGE.ts"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./src/index.ts"
 import { listFiles } from "./contracts/check-tracked-hygiene.mjs"
 import { repoRoot } from "./scripts/workspace-packages.mjs"
@@ -17,8 +18,19 @@ const testSupportFiles = [
   Smithers.glob("ci/**"),
   Smithers.file("PACKAGE.ts")
 ]
+// Named so affected selection can project the regression's cross-package readers.
+const registryTestInputs = Smithers.Filegroup({
+  cwd: "packages/smithers/agent/registry",
+  srcs: [Smithers.file("PACKAGE.ts"), Smithers.glob("{src,test/fixtures}/**")]
+})
 const testSupport = Smithers.Filegroup({
-  srcs: [Smithers.file("//packages/smithers/build/targets/test-support/plan.ts")],
+  srcs: [
+    Smithers.file("//packages/smithers/build/targets/test-support/plan.ts"),
+    Smithers.file("//packages/smithers/build/build-cli/src/internal/InputPackage.ts"),
+    // The registry cache-input regression reads its declarations, discovery sources, fixtures, and production flow.
+    registryPackage.issueSweepSources,
+    registryTestInputs
+  ],
   cwd
 })
 const check = Smithers.Typecheck({
@@ -863,4 +875,4 @@ const mvpDocs = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, registryTestInputs, testSupport, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

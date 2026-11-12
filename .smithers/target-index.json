@@ -53953,7 +53953,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/repo-targets:testSupport"
+    ],
     "source": {
       "file": "packages/repo-targets/PACKAGE.ts"
     }
@@ -54803,6 +54805,30 @@
       {
         "kind": "file",
         "path": "pnpm-workspace.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/repo-targets:registryTestInputs",
+    "package": "packages/repo-targets",
+    "name": "registryTestInputs",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/PACKAGE.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/registry/{src,test/fixtures}/**",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -57861,7 +57887,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/repo-targets:testSupport"
+    ],
     "source": {
       "file": "packages/repo-targets/PACKAGE.ts"
     }
@@ -57951,6 +57979,32 @@
     "outputs": [],
     "dependencies": [
       "//packages/repo-targets:repositoryInputs"
+    ],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/repo-targets:testSupport",
+    "package": "packages/repo-targets",
+    "name": "testSupport",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/test-support/plan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/repo-targets:registryTestInputs",
+      "//packages/smithers/agent/registry:issueSweepSources"
     ],
     "source": {
       "file": "packages/repo-targets/PACKAGE.ts"
@@ -64651,6 +64705,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/registry:issueSweepSources",
       "//packages/smithers/agent/registry:lib",
       "//packages/smithers/agent/registry:migratedFixture"
     ],
@@ -64792,6 +64847,34 @@
     }
   },
   {
+    "label": "//packages/smithers/agent/registry:issueSweepSources",
+    "package": "packages/smithers/agent/registry",
+    "name": "issueSweepSources",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": ".smithers/flows/issue-sweep/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/land/lock.mjs"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/coding/clip.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/registry/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/agent/registry:lib",
     "package": "packages/smithers/agent/registry",
     "name": "lib",
@@ -64844,6 +64927,7 @@
       "packages/smithers/agent/registry/dist/esm"
     ],
     "dependencies": [
+      "//packages/smithers/agent/registry:issueSweepSources",
       "//packages/smithers/agent/registry:migratedFixture"
     ],
     "source": {
@@ -65015,12 +65099,18 @@
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/registry/test/fixtures/**",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/agent/registry/vitest.config.ts"
       }
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/agent/registry:issueSweepSources",
       "//packages/smithers/agent/registry:lib",
       "//packages/smithers/agent/registry:migratedFixture"
     ],
