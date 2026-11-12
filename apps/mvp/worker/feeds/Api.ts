@@ -166,11 +166,15 @@ export const answersAfter = (repo: string, after: number) =>
 /**
  * Records `answer` on `repo` as `actor`'s, against the `SqlClient` in context, unless its id is taken. Answers its
  * `seq`: the one it had when `actor` sent it already, `"conflict"` when someone else did.
+ *
+ * One answer at a time per repository: its transaction takes the repository's lock before `seq` is drawn and holds it
+ * through commit, so a repository's answers commit in `seq` order and the collector's cursor never passes one that
+ * commits later.
  */
 export const record = (repo: string, answer: AnswerRequest, actor: Actor) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
     const person = actor.subject.id
+    yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${`feed-answers:${repo}`}, 0))`
     const written = yield* sql<{ readonly seq: string }>`
       INSERT INTO feed_answers (id, repo, item, choice, text, person_id, login)
       VALUES (${answer.id}, ${repo}, ${answer.item}, ${answer.choice ?? null}, ${answer.text ?? null}, ${person},
@@ -181,7 +185,7 @@ export const record = (repo: string, answer: AnswerRequest, actor: Actor) =>
     const [held] = yield* sql<{ readonly seq: string; readonly mine: boolean }>`
       SELECT seq::text AS seq, person_id = ${person} AND repo = ${repo} AS mine FROM feed_answers WHERE id = ${answer.id}`
     return held!.mine ? Number(held!.seq) : "conflict" as const
-  })
+  })))
 
 const decodeIngest = Schema.decodeUnknownEffect(Schema.fromJsonString(IngestRequest))
 const decodeAnswer = Schema.decodeUnknownEffect(Schema.fromJsonString(AnswerRequest))

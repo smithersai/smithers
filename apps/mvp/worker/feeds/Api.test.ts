@@ -17,7 +17,7 @@ import {
 } from "../../src/features/feeds/contract.ts"
 import { FeedAnswers, Ingested } from "../../src/features/feeds/schema.ts"
 import * as Actor from "../Actor.ts"
-import { recorded, testFile } from "../test/harness.ts"
+import { eventually, recorded, testFile } from "../test/harness.ts"
 import * as FeedsApi from "./Api.ts"
 import { DEV_FEED_KEY } from "./dev.ts"
 import {
@@ -379,6 +379,38 @@ describe("GET /api/repos/<owner>/<name>/feeds/answers", () => {
       SELECT gen_random_uuid(), 'smithersai/vibelang', 'i' || n, 'yes', 'p' FROM generate_series(1, ${ANSWERS_MAX + 5}) n`))
     const page = await read(await answers(await open()))
     expect([page.answers.length, page.next]).toEqual([ANSWERS_MAX, ANSWERS_MAX])
+  })
+
+  test("an answer that commits after a later one is still read after the cursor", async () => {
+    const repo = `${REPO.owner}/${REPO.name}`
+    const first = { id: crypto.randomUUID(), item: "first", choice: "yes" }
+    const second = { id: crypto.randomUUID(), item: "second", choice: "no" }
+    // The first answer draws its seq and stalls before it commits.
+    let release = () => {}
+    const released = new Promise<void>((done) => (release = done))
+    let drawn = () => {}
+    const drawing = new Promise<void>((done) => (drawn = done))
+    const stalled = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql.withTransaction(Effect.gen(function* () {
+        const seq = yield* FeedsApi.record(repo, first, maintainer)
+        yield* Effect.sync(drawn)
+        yield* Effect.promise(() => released)
+        return seq
+      }))))
+    await drawing
+    let settled = false
+    const later = runtime.runPromise(FeedsApi.record(repo, second, admin)).finally(() => (settled = true))
+    /** Whether the later answer's connection waits on a lock. */
+    const waiting = () =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ n: number }>`
+        SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event = 'advisory' AND query LIKE '%pg_advisory_xact_lock%'`))
+    await eventually(async () => settled || (await waiting())[0]!.n > 0)
+    const h = await open()
+    const before = await read(await answers(h))
+    release()
+    await Promise.all([stalled, later])
+    const after = await read(await answers(h, `?after=${before.next}`))
+    expect([...before.answers, ...after.answers].map((row) => row.item)).toEqual(["first", "second"])
   })
 
   test("a wrong key is 401, a cursor that isn't a whole number 400", async () => {
