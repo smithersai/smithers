@@ -1,0 +1,7 @@
+# The suite and the character runner run from this directory, and the engine
+# they drive contains VibeLang modules (flows/engine/src/StepTrace.vibe); they
+# load through VibeLang's Bun runtime plugin, vibelang/bun.
+preload = ["vibelang/bun"]
+
+[test]
+preload = ["vibelang/bun"]

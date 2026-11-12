@@ -19,11 +19,26 @@ import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/smithers/agent/regression"
 
+/**
+ * Bun reads `bunfig.toml` from the working directory: its `vibelang/bun`
+ * preload is what loads the engine's VibeLang modules, so every Bun target
+ * here depends on it.
+ */
+const bunfig = Smithers.file("//packages/smithers/agent/regression/bunfig.toml")
+
 /** The suite, its subject, and the committed baseline it gates on. */
-const sources = [Smithers.glob("//packages/smithers/agent/regression/*.ts"), Smithers.file("//packages/smithers/agent/regression/baseline.json")]
+const sources = [
+  Smithers.glob("//packages/smithers/agent/regression/*.ts"),
+  Smithers.file("//packages/smithers/agent/regression/baseline.json"),
+  bunfig
+]
 
 /** The character runner and its example suite (world, profile, cases). */
-const characterSources = [Smithers.glob("//packages/smithers/agent/regression/character/*.ts"), Smithers.glob("//packages/smithers/agent/regression/character/example/**")]
+const characterSources = [
+  Smithers.glob("//packages/smithers/agent/regression/character/*.ts"),
+  Smithers.glob("//packages/smithers/agent/regression/character/example/**"),
+  bunfig
+]
 
 /**
  * Runs the evaluation suite and gates it on the committed baseline.
