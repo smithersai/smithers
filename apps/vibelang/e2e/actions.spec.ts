@@ -65,7 +65,8 @@ test("a history note the scripted agent requests is signed as the agent's", asyn
   const input = page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })
   await input.fill('Run /note {"id":"m1","section":"tried","text":"From the chat."}')
   await input.press("Enter")
-  await expect(page.getByRole("button", { name: /Open Note run/ })).toBeVisible()
+  // The history is read only after the note's run settles: a read that overtakes the write finds no note.
+  await expect(page.getByRole("button", { name: /Open Note run/ })).toContainText("Passed")
   await input.fill('Run /history {"what":"commit","id":"m1"}')
   await input.press("Enter")
   const show = page.getByRole("button", { name: /Open show run/ })

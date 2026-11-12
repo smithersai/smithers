@@ -3003,6 +3003,10 @@ It is also the browser's only path to `may`'s agent operand, `peopleOnly` and `h
 `e2e/history.spec.ts` "shows a new member and a community member only what a viewer sees" covers `standing`'s `new`
 and `community` arms: both rank below a contributor, so neither plans, notes, folds or exports.
 
+The agent-note journey failed once in session 28's full gate (light project): it requested `/history` when the
+Note run's card appeared, not when the run settled, so the read could overtake the write. It now waits for the card's
+`Passed` badge; 18 of 18 runs passed across three projects and three repeats.
+
 **Bug: the scripted agent could not request a hyphenated command.** Its pattern `^run\s+(\/[a-z]+…)$` stopped at a
 hyphen, so `Run /sandbox-run …` and `Run /sandbox-stop …` got a plain reply instead of a run, though both are
 registered commands (`src/actions/catalog.vibe`). The pattern now takes `[a-z][a-z-]*`. Unit:
