@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "description": "The review flow's rounds for a host without a checkout: the package root registers them over a change set the host builds",
+  "scripts": {
+    "test": "bun test ./tests"
+  },
   "exports": {
     ".": "./rounds.ts"
   }

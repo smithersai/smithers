@@ -192,6 +192,12 @@ describe("ci conformance", () => {
     // private and unpublished;
     // the agent regression suite is the one nested member the universe
     // derivation names as a non-library.
+    //
+    // Widened again (2026-11-11, a5af12ec5327): `.smithers/flows/review` is
+    // `@smthrs/review`, the review flow whose package root exports its rounds
+    // to a host without a checkout. It is private, unpublished and outside the
+    // `packages/` universe derivation above, so it adds no ungated publishable
+    // surface; its `scripts.test` runs its suite under the root fan-out.
     const workspace = readFileSync(join(packagesDir, "..", "pnpm-workspace.yaml"), "utf8")
     const packagesBlock = workspace.match(/^packages:\n(?:  - .+\n)+/m)?.[0]
     assert.equal(
@@ -207,6 +213,7 @@ describe("ci conformance", () => {
         "  - \"packages/smithers/ui/*\"",
         "  - \".smithers/flows\"",
         "  - \".smithers/flows/coding\"",
+        "  - \".smithers/flows/review\"",
         "  - \".smithers/flows/review/seeded-bugs\"",
         "  - \"apps/*\"",
         "  - \"evals/*\"",
