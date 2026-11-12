@@ -130,7 +130,7 @@ The CLI preserves these projection fields and passes them to
 | `namePrefix` | Optional replacement for the default `mcp/<server>` flow-name prefix.     |
 
 The checked projection constructor rejects an empty `namePrefix` before
-spawning and unknown `include` names after reading the catalog. These are
+spawning and unknown `include` or `exclude` names after reading the catalog. These are
 projection errors, separate from the connection schema's file validation.
 
 ## When a bad server fails

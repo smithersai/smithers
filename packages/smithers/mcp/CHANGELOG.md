@@ -25,6 +25,16 @@
 
 ### Fixed
 
+- `McpFlows.connected` fails with `tool_not_found` when `exclude` names a tool
+  the server does not offer, as it already did for `include`. A misspelled or
+  renamed exclude name used to leave the tool it meant to block callable (#4934).
+- A tool name with an invisible character outside Unicode category Cf (a
+  default-ignorable code point such as U+3164 or a variation selector, a
+  private-use or unassigned code point, a blank character such as U+2800, or a
+  space other than U+0020), a leading combining mark, a leading, trailing, or
+  doubled space, or a non-NFC spelling fails the catalog with
+  `invalid_response`. Each could make a tool
+  read as another and slip past `exclude` (#4934).
 - A stdio session that ends without its scope closing (a malformed or oversized
   frame, a closed stdin or stdout, a blocked server-response admission) now
   stops the server process. It previously kept running, holding the

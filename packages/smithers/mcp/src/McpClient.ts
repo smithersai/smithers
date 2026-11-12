@@ -381,13 +381,25 @@ type ToolPage = {
 const nameEncoder = new TextEncoder()
 
 // Cc covers C0, DEL, and C1. Cf covers bidi overrides and isolates (U+202A-202E,
-// U+2066-2069), zero-width marks (U+200B-200F, U+2060, U+FEFF), and soft hyphen:
-// all invisible text that makes `mcp/<server>/<tool>` read as another tool.
-// Cs catches a lone surrogate, which UTF-8 encoding would silently replace.
-const forbiddenToolNameCharacter = /[/\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u
+// U+2066-2069), zero-width marks (U+200B-200F, U+2060, U+FEFF), and soft hyphen.
+// Default_Ignorable_Code_Point adds the blank letters and marks outside Cf
+// (U+034F, U+115F, U+1160, U+3164, U+FFA0, variation selectors). Co and Cn
+// (private use, unassigned) render blank or as a font's placeholder. U+2800,
+// U+13440, U+16FE4, U+1BC9D and U+1D159 are assigned but draw nothing, and Zs
+// other than U+0020 is a space that reads as one. An ASCII space is visible
+// only alone between other characters, and a leading combining mark attaches
+// to the "/" before the name. All are invisible text that makes
+// `mcp/<server>/<tool>` read as another tool. Cs catches a lone surrogate,
+// which UTF-8 encoding would silently replace.
+// The three combining blanks sit outside the class, where a mark cannot read as
+// joined to the character before it.
+const forbiddenToolNameText =
+  /[/\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\p{Zl}\p{Zp}\u2800\u{1D159}]|\u{13440}|\u{16FE4}|\u{1BC9D}|(?! )\p{Zs}|^\p{M}|^ | $| {2}/u
 
+// A name in another normalization form renders the same as its NFC spelling
+// but compares unequal.
 const isForbiddenToolName = (name: string): boolean =>
-  name === "." || name === ".." || forbiddenToolNameCharacter.test(name)
+  name === "." || name === ".." || forbiddenToolNameText.test(name) || name.normalize("NFC") !== name
 
 const asToolPage = (
   server: string,
@@ -429,7 +441,7 @@ const asToolPage = (
     if (isForbiddenToolName(record.name)) {
       return Result.fail(invalidResponse(
         server,
-        `MCP server "${server}" returned a tool name that is "." or "..", or contains "/" or an invisible or control character`
+        `MCP server "${server}" returned a tool name that is "." or "..", is not NFC, starts with a combining mark, or contains "/", a leading, trailing, or doubled space, or an invisible or control character`
       ))
     }
     if (seen.has(record.name)) {

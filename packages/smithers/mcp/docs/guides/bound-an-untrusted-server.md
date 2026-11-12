@@ -109,9 +109,21 @@ Beyond the byte length, a tool name may not contain:
   (U+200B through U+200F, U+2060, U+FEFF), bidi overrides and isolates
   (U+202A through U+202E, U+2066 through U+2069), and the soft hyphen.
 - U+2028 or U+2029, the line and paragraph separators.
+- A default-ignorable code point outside Cf, such as the Hangul fillers
+  (U+115F, U+1160, U+3164, U+FFA0), the combining grapheme joiner (U+034F), and
+  variation selectors.
+- A private-use (Co) or unassigned (Cn) code point, which renders blank or as
+  a font's placeholder.
+- An assigned character that draws nothing: the blank Braille cell (U+2800),
+  U+13440, U+16FE4, U+1BC9D, and U+1D159.
+- A space other than U+0020, such as U+00A0, U+2000 through U+200A, or U+3000.
 - A lone UTF-16 surrogate.
 
-The name also may not be exactly `.` or `..`, which read as path segments.
+The name also may not be exactly `.` or `..`, which read as path segments. It
+may not begin or end with a space or hold two spaces in a row, which collapse
+or vanish when rendered, and may not begin with a combining mark, which
+attaches to the `/` before it. It must be in Unicode Normalization Form C
+(NFC), so a decomposed `é` cannot pose as the precomposed one.
 
 A name that breaks any of these fails the connection with `invalid_response`.
 The name reaches a model inside a flow name and the journal inside a declaration

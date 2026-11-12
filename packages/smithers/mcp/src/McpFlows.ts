@@ -145,7 +145,7 @@ const toolBinding = (
  * client here.
  *
  * This constructor is total: it applies exact filters to the catalog it is
- * given. Use {@link connected} when unknown `include` names and an empty
+ * given. Use {@link connected} when unknown `include` or `exclude` names and an empty
  * `namePrefix` must fail loudly against a freshly fetched catalog.
  *
  * @category constructors
@@ -193,15 +193,17 @@ export const connected = <O extends McpClient.ConnectOptions>(
         Effect.gen(function*() {
           const client = yield* McpClient.connect(options)
           const offered = new Set(client.tools.map((tool) => tool.name))
-          const missing = options.include?.find((name) => !offered.has(name))
-          if (missing !== undefined) {
-            return yield* Effect.fail(
-              new McpError({
-                code: "tool_not_found",
-                message: `MCP server "${client.server}" offers no requested include tool`,
-                server: client.server
-              })
-            )
+          for (const option of ["include", "exclude"] as const) {
+            // An unknown exclude name fails too: a typo or renamed tool would leave the tool callable.
+            if (options[option]?.some((name) => !offered.has(name)) === true) {
+              return yield* Effect.fail(
+                new McpError({
+                  code: "tool_not_found",
+                  message: `MCP server "${client.server}" offers no requested ${option} tool`,
+                  server: client.server
+                })
+              )
+            }
           }
           return mcp(client, options)
         }).pipe(Scope.provide(scope)),

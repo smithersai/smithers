@@ -27002,12 +27002,12 @@ interface McpClient {
 
 One remote tool as the server describes it.
 
-| Field          | Type                                   | Meaning                                                                                                |
-| -------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `name`         | `string`                               | The tool's name. Never empty, `.`, or `..`; never containing `/` or an invisible or control character. |
-| `description`  | `string \| undefined`                  | The server's description, when it sent a string.                                                       |
-| `inputSchema`  | `Record<string, unknown>`              | The tool's parameter shape, a JSON Schema document with `type: "object"`.                              |
-| `outputSchema` | `Record<string, unknown> \| undefined` | The tool's structured result shape, when the server disclosed one.                                     |
+| Field          | Type                                   | Meaning                                                                                                                                                                                                                |
+| -------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`         | `string`                               | The tool's name. Never empty, `.`, or `..`; always NFC; never starting with a combining mark or space, ending with a space, or holding two spaces in a row; never containing `/` or an invisible or control character. |
+| `description`  | `string \| undefined`                  | The server's description, when it sent a string.                                                                                                                                                                       |
+| `inputSchema`  | `Record<string, unknown>`              | The tool's parameter shape, a JSON Schema document with `type: "object"`.                                                                                                                                              |
+| `outputSchema` | `Record<string, unknown> \| undefined` | The tool's structured result shape, when the server disclosed one.                                                                                                                                                     |
 
 ### McpClient.ToolResult
 
@@ -27269,7 +27269,7 @@ const connected: (
 
 Connects and projects in one step. This is the checked entry point: it validates
 the projection options against the freshly fetched catalog, failing with
-`tool_not_found` when `include` names a tool the server does not offer, and with
+`tool_not_found` when `include` or `exclude` names a tool the server does not offer, and with
 `protocol_error` when `namePrefix` is empty.
 
 ### McpFlows.mcp

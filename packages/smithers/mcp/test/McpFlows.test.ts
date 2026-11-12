@@ -229,6 +229,36 @@ describe("McpFlows.mcp", () => {
     })
   })
 
+  it("fails connected when exclude names a tool the server does not offer", async () => {
+    const error = await withFakeServer(
+      respondToEcho,
+      Effect.flip(McpFlows.connected({
+        server: "checked",
+        command: "mcp",
+        args: [],
+        exclude: ["ad"]
+      }))
+    )
+
+    expect(error).toMatchObject({
+      code: "tool_not_found",
+      server: "checked",
+      message: "MCP server \"checked\" offers no requested exclude tool"
+    })
+  })
+
+  it("drops an offered exclude tool in connected", async () => {
+    const bindings = await withFakeServer(
+      respondToEcho,
+      Effect.flatMap(
+        McpFlows.connected({ server: "checked", command: "mcp", args: [], exclude: ["add"] }),
+        (source) => source.bindings()
+      )
+    )
+
+    expect(bindings).toEqual([])
+  })
+
   it("fails connected when namePrefix is empty", async () => {
     const { counts, spawner } = trackedServer(respondToEcho)
     const error = await execute(Effect.scoped(provideSpawner(

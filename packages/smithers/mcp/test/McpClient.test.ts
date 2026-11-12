@@ -194,103 +194,247 @@ describe("McpClient.connect", () => {
       label: "slash in the name",
       tool: { name: "bad/name", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "C0 control in the name",
       tool: { name: "bad\nname", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "DEL in the name",
       tool: { name: "bad\u007fname", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "C1 control in the name",
       tool: { name: "bad\u0085name", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "the name \".\"",
       tool: { name: ".", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "the name \"..\"",
       tool: { name: "..", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a zero-width space in the name",
       tool: { name: "bad\u200bname", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a zero-width joiner in the name",
       tool: { name: "bad\u200dname", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a left-to-right mark in the name",
       tool: { name: "bad\u200ename", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a right-to-left override in the name",
       tool: { name: "bad\u202ename", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a first-strong isolate in the name",
       tool: { name: "bad\u2068name", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a word joiner in the name",
       tool: { name: "bad\u2060name", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a byte-order mark in the name",
       tool: { name: "bad\ufeffname", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a soft hyphen in the name",
       tool: { name: "bad\u00adname", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a line separator in the name",
       tool: { name: "bad\u2028name", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a paragraph separator in the name",
       tool: { name: "bad\u2029name", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     },
     {
       label: "a lone surrogate in the name",
       tool: { name: "bad\ud800name", inputSchema: { type: "object" } },
       message:
-        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", or contains \"/\" or an invisible or control character"
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a Hangul filler in the name",
+      tool: { name: "add\u3164", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a name that is only a Hangul filler",
+      tool: { name: "\u3164", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a Hangul choseong filler in the name",
+      tool: { name: "add\u115f", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a Hangul jungseong filler in the name",
+      tool: { name: "add\u1160", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a halfwidth Hangul filler in the name",
+      tool: { name: "add\uffa0", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a blank Braille cell in the name",
+      tool: { name: "add\u2800", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a combining grapheme joiner in the name",
+      tool: { name: "add\u034f", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a variation selector in the name",
+      tool: { name: "add\ufe0f", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a no-break space in the name",
+      tool: { name: "bad\u00a0name", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "an en quad in the name",
+      tool: { name: "bad\u2000name", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "an ideographic space in the name",
+      tool: { name: "add\u3000", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a trailing space in the name",
+      tool: { name: "add ", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a leading space in the name",
+      tool: { name: " add", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a name that is only a space",
+      tool: { name: " ", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a decomposed accent in the name",
+      tool: { name: "cafe\u0301", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a musical null notehead in the name",
+      tool: { name: "add\u{1D159}", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a Khitan small script filler in the name",
+      tool: { name: "add\u{16FE4}", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a Duployan thick letter selector in the name",
+      tool: { name: "add\u{1BC9D}", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "an Egyptian hieroglyph mirror control in the name",
+      tool: { name: "add\u{13440}", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a supplementary variation selector in the name",
+      tool: { name: "add\u{E0100}", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a private-use character in the name",
+      tool: { name: "add\ue000", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "an unassigned code point in the name",
+      tool: { name: "add\u0378", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a leading combining mark in the name",
+      tool: { name: "\u0301add", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
+    },
+    {
+      label: "a doubled interior space in the name",
+      tool: { name: "bad  name", inputSchema: { type: "object" } },
+      message:
+        "MCP server \"catalog\" returned a tool name that is \".\" or \"..\", is not NFC, starts with a combining mark, or contains \"/\", a leading, trailing, or doubled space, or an invisible or control character"
     }
   ])("rejects a catalog tool with $label", async ({ message, tool }) => {
     const error = await withFakeServer(
@@ -305,6 +449,23 @@ describe("McpClient.connect", () => {
     )
 
     expect(error).toMatchObject({ code: "invalid_response", server: "catalog", message })
+  })
+
+  it("accepts a visible tool name with an interior space and precomposed letters", async () => {
+    const client = await withFakeServer(
+      (request) => {
+        if (request.method === "initialize") {
+          return { protocolVersion: "2025-06-18", capabilities: { tools: {} } }
+        }
+        if (request.method === "tools/list") {
+          return { tools: [{ name: "caf\u00e9 search", inputSchema: { type: "object" } }] }
+        }
+        return undefined
+      },
+      McpClient.connect({ server: "catalog", command: "catalog-mcp", args: [] })
+    )
+
+    expect(client.tools.map((tool) => tool.name)).toEqual(["caf\u00e9 search"])
   })
 
   it("accepts each catalog bound exactly at its configured limit", async () => {

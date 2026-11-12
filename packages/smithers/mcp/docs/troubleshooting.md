@@ -97,14 +97,18 @@ catalog is refused rather than truncated on purpose: a silently smaller toolset
 is worse than a failed connection. See
 [Bound an untrusted server](./guides/bound-an-untrusted-server.md).
 
-## ... returned a tool name longer than N bytes, or that is "." or "..", or contains "/" or an invisible or control character
+## ... returned a tool name longer than N bytes, or that is "." or "..", is not NFC, starts with a combining mark, or contains "/", a leading, trailing, or doubled space, or an invisible or control character
 
 **Code.** `invalid_response`.
 
 **What happened.** A tool name exceeded `maxToolNameBytes` (128 by default), or
-was `.` or `..`, or contained `/`, a control character (C0, U+007F, C1), a
-format character such as a zero-width or bidi mark, U+2028, U+2029, or a lone
-surrogate.
+was `.` or `..`, began with a combining mark, began or ended with a space,
+contained two spaces in a row, was not NFC, or contained `/`, a control
+character (C0, U+007F, C1), a format character such as a zero-width or bidi
+mark, another default-ignorable character such as a Hangul filler or variation
+selector, a private-use or unassigned code point, a character that draws
+nothing (U+2800, U+13440, U+16FE4, U+1BC9D, U+1D159), a space other than
+U+0020, U+2028, U+2029, or a lone surrogate.
 
 **What to change.** Rename the tool on the server. The name is embedded in the
 flow name `mcp/<server>/<tool>` and in the journal's declaration digest, so `/`
@@ -223,7 +227,10 @@ check runs before any frame is written.
 offers. Remember the catalog is a snapshot taken at connect time: a tool the
 server added afterwards is not there until you reconnect. The variant
 `offers no requested include tool` is the same mistake in
-`ProjectionOptions.include`.
+`ProjectionOptions.include`. `offers no requested exclude tool` means
+`ProjectionOptions.exclude` names a tool the server does not offer; fix the
+name rather than dropping it, because a misspelled exclude would leave the tool
+it meant to block callable.
 
 ## ... failed tools/call (CODE); remote details withheld
 

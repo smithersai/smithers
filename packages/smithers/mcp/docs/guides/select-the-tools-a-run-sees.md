@@ -32,6 +32,10 @@ mostly useful server's one dangerous tool out of reach:
 const source = McpFlows.mcp(client, { exclude: ["delete_repository"] })
 ```
 
+`McpFlows.connected`, which the CLI uses, fails with `tool_not_found` when an
+`exclude` name is not in the catalog, so a misspelled or renamed tool cannot stay
+callable while the config reads as if it were blocked.
+
 Both match exact names. Neither accepts a pattern, because a pattern that
 matched a tool the server added later would widen the run's reach without
 anybody deciding to.
@@ -61,10 +65,10 @@ apart, so a custom prefix has to stay unique on its own.
 The two constructors differ in exactly one thing: whether the options are
 checked against a real catalog.
 
-| Constructor          | Shape                                            | Validates                                                                                                                                |
-| -------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `McpFlows.connected` | `(ConnectOptions & ProjectionOptions) => Effect` | Fails with `tool_not_found` when `include` names a tool the server does not offer, and with `protocol_error` when `namePrefix` is empty. |
-| `McpFlows.mcp`       | `(client, options?) => Source`                   | Nothing. It is total: it applies exact filters to the catalog it is handed.                                                              |
+| Constructor          | Shape                                            | Validates                                                                                                                                             |
+| -------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `McpFlows.connected` | `(ConnectOptions & ProjectionOptions) => Effect` | Fails with `tool_not_found` when `include` or `exclude` names a tool the server does not offer, and with `protocol_error` when `namePrefix` is empty. |
+| `McpFlows.mcp`       | `(client, options?) => Source`                   | Nothing. It is total: it applies exact filters to the catalog it is handed.                                                                           |
 
 Use `connected` for a configured server, where a typo in `include` should stop
 the run rather than quietly hand the model a smaller toolset than the operator
