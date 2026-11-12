@@ -7,8 +7,7 @@
 
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
-import { Context, Effect, FileSystem, Layer, Option, PlatformError, Semaphore, Stream } from "effect"
-import { realpath, stat } from "node:fs/promises"
+import { Context, Effect, FileSystem, Layer, Option, PlatformError, Semaphore } from "effect"
 import { availableParallelism } from "node:os"
 import {
   packageRoot,
@@ -16,6 +15,7 @@ import {
   resolveDefaultExecutable,
   stagePackaged
 } from "./internal/AtomicFileSystemExecutable.ts"
+import * as Native from "./internal/AtomicFileSystemHost.ts"
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
 import * as Transport from "./internal/AtomicFileSystemTransport.ts"
 import { AtomicHelperError } from "./internal/AtomicHelperError.ts"
@@ -334,17 +334,7 @@ const execute = (
     framed(request) as Effect.Effect<KernelFileSystem.AtomicResult<R>, PlatformError.PlatformError>
 }
 
-const nativeRealPath = (path: string) =>
-  Effect.tryPromise({
-    try: () => realpath(path),
-    catch: (cause) =>
-      Protocol.failure({ operation: "realPath", path }, cause, {
-        ok: false,
-        code: (cause as NodeJS.ErrnoException).code ?? null,
-        message: (cause as NodeJS.ErrnoException).message,
-        syscall: "realpath"
-      })
-  })
+const nativeRealPath = Native.realPath(Native.nodeHost)
 
 const privateFailure = (path: string, cause: unknown): PlatformError.PlatformError =>
   Protocol.failure({ operation: "writeFileString", path, data: "" }, cause)
@@ -406,29 +396,11 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
               )
               return Object.create(file, { sync: { value: sync } }) as FileSystem.File
             }),
-          watch: (path, options) =>
-            process.platform !== "win32"
-              ? fileSystem.watch(path, options)
-              : Stream.unwrap(
-                nativeRealPath(path).pipe(Effect.map((canonical) => fileSystem.watch(canonical, options)))
-              )
+          watch: Native.watch(Native.nodeHost, fileSystem)
         }, {
           noFollowAuthorization: true,
           execute: execute(options, settings),
-          identifyRoot: (path) =>
-            Effect.tryPromise({
-              try: async () => {
-                const info = await stat(path, { bigint: true })
-                return `${info.dev}:${info.ino}`
-              },
-              catch: (cause) =>
-                Protocol.failure({ operation: "stat", path }, cause, {
-                  ok: false,
-                  code: (cause as NodeJS.ErrnoException).code ?? null,
-                  message: (cause as NodeJS.ErrnoException).message,
-                  syscall: "stat"
-                })
-            }),
+          identifyRoot: Native.identifyRoot(Native.nodeHost),
           batchLimits: {
             size: "invalid" in settings ? defaultLimits.batchSize : settings.limits.batchSize,
             response: "invalid" in settings ? defaultLimits.response : settings.limits.response

@@ -3,56 +3,15 @@ import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Fiber, FileSystem, Layer, Result } from "effect"
-import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
-import {
-  chmod,
-  copyFile,
-  link,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  symlink,
-  writeFile
-} from "node:fs/promises"
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { promisify } from "node:util"
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import * as AtomicFileSystem from "../src/AtomicFileSystem.ts"
+import { atomicHelperProgram } from "./helpers/atomicHelperProgram.ts"
 
-// A Windows helper must be an actual executable. This small SEA runs the
-// adjacent test program in the same process, so cancellation kills the PID
-// that owns the protocol streams, with no shell or orphaned wrapper child.
-let windowsLauncher: string | undefined
-let launcherDirectory: string | undefined
-beforeAll(async () => {
-  if (process.platform !== "win32") return
-  launcherDirectory = await mkdtemp(join(tmpdir(), "smithers-batch-launcher-"))
-  const main = join(launcherDirectory, "main.cjs")
-  const config = join(launcherDirectory, "sea.json")
-  windowsLauncher = join(launcherDirectory, "helper.exe")
-  await writeFile(main, "const file=process.execPath+'.cjs';require('node:module').createRequire(file)(file)")
-  await writeFile(
-    config,
-    JSON.stringify({
-      main,
-      output: windowsLauncher,
-      disableExperimentalSEAWarning: true,
-      execArgvExtension: "none"
-    })
-  )
-  await promisify(execFile)(process.execPath, ["--build-sea", config], { timeout: 60_000 })
-}, 60_000)
-afterAll(async () => {
-  if (launcherDirectory !== undefined) {
-    await rm(launcherDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
-  }
-})
+const program = atomicHelperProgram()
 
 const roots: Array<string> = []
 const temporary = async () => {
@@ -84,19 +43,7 @@ const run = (
     }).pipe(Effect.provide(guarded(root, AtomicFileSystem.layerWith(options))))
   )
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
-const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`
-const executable = async (body: string) => {
-  if (windowsLauncher !== undefined) {
-    const path = join(await temporary(), "helper.exe")
-    await copyFile(windowsLauncher, path)
-    await writeFile(`${path}.cjs`, body)
-    return path
-  }
-  const path = join(await temporary(), "helper")
-  await writeFile(path, `#!/bin/sh\nexec ${quote(process.execPath)} -e ${quote(body)}\n`)
-  await chmod(path, 0o755)
-  return path
-}
+const executable = async (body: string) => program(await temporary(), body)
 const frame = (value: unknown) => {
   const body = JSON.stringify(value)
   return `flows-atomic/1 ${Buffer.byteLength(body)}\n${body}`

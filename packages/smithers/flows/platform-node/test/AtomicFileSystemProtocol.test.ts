@@ -1,6 +1,6 @@
 import type * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, Option } from "effect"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { defaultLimits } from "../src/AtomicFileSystem.ts"
 import * as Protocol from "../src/internal/AtomicFileSystemProtocol.ts"
 
@@ -63,26 +63,14 @@ describe("atomic helper response validation", () => {
     expect(failure.reason.cause).toBeInstanceOf(RangeError)
   })
 
-  it("uses the Node decoder even when a runtime supplies a different ambient decoder", async () => {
-    vi.stubGlobal(
-      "TextDecoder",
-      class AmbientDecoder {
-        constructor() {
-          throw new Error("ambient decoder selected")
-        }
-      }
-    )
-    try {
-      expect(
-        await Effect.runPromise(
-          Protocol.convert<string>({ operation: "readFileString", path: "/a", encoding: "windows-1252" }, {
-            base64: "gOk="
-          }, defaultLimits)
-        )
-      ).toBe("€é")
-    } finally {
-      vi.unstubAllGlobals()
-    }
+  it("decodes a legacy single-byte encoding with Node's decoder", async () => {
+    expect(
+      await Effect.runPromise(
+        Protocol.convert<string>({ operation: "readFileString", path: "/a", encoding: "windows-1252" }, {
+          base64: "gOk="
+        }, defaultLimits)
+      )
+    ).toBe("€é")
   })
 
   it.each([

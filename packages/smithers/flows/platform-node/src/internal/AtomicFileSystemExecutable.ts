@@ -89,25 +89,44 @@ const installHint =
   "or install @smthrs/platform-node with its native helper, " +
   "or set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to its absolute path"
 
-const helperName = process.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
+/**
+ * The process facts staging reads: whose platform's helper it names, who owns
+ * a staging directory, and the time a copy was last used.
+ * @private
+ * @since 1.0.0
+ */
+export interface StagingHost {
+  readonly platform: NodeJS.Platform
+  /** This user's POSIX id; Windows has none. */
+  readonly uid: number | undefined
+  readonly now: () => number
+}
+
+/**
+ * This process's platform, user and clock.
+ * @private
+ * @since 1.0.0
+ */
+export const processHost: StagingHost = { platform: process.platform, uid: process.getuid?.(), now: () => Date.now() }
+
+const helperName = (host: StagingHost): string =>
+  host.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex")
 
 /** Whether this user owns `info`; Windows has no POSIX owner and relies on the per-user profile ACL. */
-const ownedByThisUser = (info: { readonly uid: number }): boolean => {
-  const uid = process.getuid?.()
-  return uid === undefined || info.uid === uid
-}
+const ownedByThisUser = (info: { readonly uid: number }, host: StagingHost): boolean =>
+  host.uid === undefined || info.uid === host.uid
 
 /** Creates or adopts the per-user staging directory, refusing links and other owners. */
-const privateDirectory = (directory: string): void => {
+const privateDirectory = (directory: string, host: StagingHost): void => {
   try {
     mkdirSync(directory, { mode: 0o700 })
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
   }
   const info = lstatSync(directory)
-  if (!info.isDirectory() || !ownedByThisUser(info)) {
+  if (!info.isDirectory() || !ownedByThisUser(info, host)) {
     throw new AtomicHelperError({
       code: "staging_directory_not_private",
       message: `atomic helper staging directory is not a private directory: ${directory}`
@@ -121,10 +140,10 @@ const privateDirectory = (directory: string): void => {
  * the helper's bytes. A planted link, even one with the right bytes, is
  * replaced: rename swaps the directory entry, never the linked inode.
  */
-const matches = (destination: string, digest: string): boolean => {
+const matches = (destination: string, digest: string, host: StagingHost): boolean => {
   try {
     const info = lstatSync(destination)
-    if (!info.isFile() || info.nlink !== 1 || !ownedByThisUser(info)) return false
+    if (!info.isFile() || info.nlink !== 1 || !ownedByThisUser(info, host)) return false
     return sha256(readFileSync(destination)) === digest
   } catch {
     return false
@@ -136,8 +155,8 @@ const staleMs = 7 * 24 * 60 * 60 * 1000
 const refreshMs = 60 * 60 * 1000
 
 /** Marks a staging directory in use, at most hourly, so no other process prunes it while this one runs. */
-const refresh = (copy: { readonly path: string; touchedAt: number }): void => {
-  const now = Date.now()
+const refresh = (copy: { readonly path: string; touchedAt: number }, host: StagingHost): void => {
+  const now = host.now()
   if (now - copy.touchedAt < refreshMs) return
   copy.touchedAt = now
   // Best effort and off the request path: a failed touch only risks a later re-stage.
@@ -148,21 +167,21 @@ const refresh = (copy: { readonly path: string; touchedAt: number }): void => {
  * Removes this user's stale staging directories beside `keep`, and incomplete
  * temporary files left in live directories when a writer exited on a signal.
  */
-const prune = (base: string, keep: string): void => {
-  const now = Date.now()
+const prune = (base: string, keep: string, host: StagingHost): void => {
+  const now = host.now()
   let names: Array<string>
   try {
     names = readdirSync(base)
   } catch {
     return
   }
-  const temporaryPrefix = `.${helperName}.`
+  const temporaryPrefix = `.${helperName(host)}.`
   for (const name of names) {
     if (!name.startsWith(".smthrs-atomic-helper-")) continue
     const directory = join(base, name)
     try {
       const info = lstatSync(directory)
-      if (!info.isDirectory() || !ownedByThisUser(info)) continue
+      if (!info.isDirectory() || !ownedByThisUser(info, host)) continue
       if (name !== keep && now - info.mtimeMs > staleMs) {
         rmSync(directory, { recursive: true, force: true })
         continue
@@ -174,7 +193,7 @@ const prune = (base: string, keep: string): void => {
         const temporary = join(directory, entry)
         try {
           const file = lstatSync(temporary)
-          if (file.isFile() && ownedByThisUser(file) && now - file.mtimeMs > staleMs) {
+          if (file.isFile() && ownedByThisUser(file, host) && now - file.mtimeMs > staleMs) {
             rmSync(temporary, { force: true })
           }
         } catch {
@@ -206,12 +225,13 @@ export const registerEmbeddedHelper = (source: string): void => {
 export const outsideWorkspace = (
   source: string,
   boundaryRoot: string | undefined,
-  bases: ReadonlyArray<string> = [tmpdir(), homedir()]
+  bases: ReadonlyArray<string> = [tmpdir(), homedir()],
+  host: StagingHost = processHost
 ): string => {
   const cached = staged.get(source)
   if (cached !== undefined) {
     if (existsSync(cached.path)) {
-      refresh(cached)
+      refresh(cached, host)
       return usableExecutable(cached.path, boundaryRoot)
     }
     // A newer build's process pruned this copy after a week unused: stage it again.
@@ -230,25 +250,25 @@ export const outsideWorkspace = (
   }
   for (const [index, base] of bases.entries()) {
     const directory = join(base, `.smthrs-atomic-helper-${digest}`)
-    const destination = join(directory, helperName)
+    const destination = join(directory, helperName(host))
     let temporary: string | undefined
     try {
-      privateDirectory(directory)
+      privateDirectory(directory, host)
       // Fresh before it is read, so a concurrent prune passes it by.
-      const now = new Date()
+      const now = new Date(host.now())
       utimesSync(directory, now, now)
-      if (!matches(destination, digest)) {
+      if (!matches(destination, digest, host)) {
         // One copy per user and helper: concurrent processes each write a
         // private temporary file and rename it over the shared name, so a
         // reader only ever sees a complete copy.
-        temporary = join(directory, `.${helperName}.${process.pid}.${randomBytes(6).toString("hex")}`)
+        temporary = join(directory, `.${helperName(host)}.${process.pid}.${randomBytes(6).toString("hex")}`)
         writeFileSync(temporary, bytes, { flag: "wx", mode: 0o500 })
         chmodSync(temporary, 0o500)
         renameSync(temporary, destination)
         temporary = undefined
       }
       const executable = usableExecutable(destination, boundaryRoot)
-      prune(base, `.smthrs-atomic-helper-${digest}`)
+      prune(base, `.smthrs-atomic-helper-${digest}`, host)
       staged.set(source, { path: executable, touchedAt: now.getTime() })
       stagedDigests.set(source, digest)
       return executable
@@ -264,13 +284,14 @@ export const outsideWorkspace = (
 }
 
 /** The helper an installed package ships for this platform. */
-const packagedHelper = (root: string): string => join(root, "bin", `${process.platform}-${process.arch}`, helperName)
+const packagedHelper = (root: string, host: StagingHost): string =>
+  join(root, "bin", `${host.platform}-${process.arch}`, helperName(host))
 
 /** Source-checkout builds, when `root` is this package inside a checkout. */
-const checkoutHelpers = (root: string): ReadonlyArray<string> => {
+const checkoutHelpers = (root: string, host: StagingHost): ReadonlyArray<string> => {
   const checkout = resolve(root, "../../../..")
   return existsSync(join(checkout, "pnpm-workspace.yaml"))
-    ? [join(checkout, "target/release", helperName), join(checkout, "target/debug", helperName)]
+    ? [join(checkout, "target/release", helperName(host)), join(checkout, "target/debug", helperName(host))]
     : []
 }
 
@@ -285,24 +306,24 @@ const checkoutHelpers = (root: string): ReadonlyArray<string> => {
  * @private
  * @since 1.0.0
  */
-export const stagePackaged = (root: string): void => {
+export const stagePackaged = (root: string, host: StagingHost = processHost): void => {
   if (stagedRoots.has(root)) return
   stagedRoots.add(root)
-  const candidate = embeddedHelper ?? packagedHelper(root)
+  const candidate = embeddedHelper ?? packagedHelper(root, host)
   try {
     if (existsSync(candidate) && statSync(candidate).isFile()) {
-      outsideWorkspace(candidate, undefined)
+      outsideWorkspace(candidate, undefined, undefined, host)
       trusted.add(candidate)
     }
   } catch {
     // The request path resolves again and reports the refusal it meets.
   }
   if (embeddedHelper !== undefined) return
-  for (const build of checkoutHelpers(root)) {
+  for (const build of checkoutHelpers(root, host)) {
     try {
       if (existsSync(build)) {
         const executable = usableExecutable(build, undefined)
-        outsideWorkspace(executable, undefined)
+        outsideWorkspace(executable, undefined, undefined, host)
         trusted.add(executable)
       }
     } catch {
@@ -329,7 +350,12 @@ const workspaceSupplied = (candidate: string, source: string, boundaryRoot: stri
  * before any flow ran. A helper, or a link to one, that appeared inside the
  * workspace later is exactly what a flow would plant.
  */
-const pinned = (candidate: string, source: string, boundaryRoot: string | undefined): string => {
+const pinned = (
+  candidate: string,
+  source: string,
+  boundaryRoot: string | undefined,
+  host: StagingHost
+): string => {
   if (boundaryRoot !== undefined && !trusted.has(source) && workspaceSupplied(candidate, source, boundaryRoot)) {
     throw new AtomicHelperError({
       code: "helper_inside_workspace",
@@ -337,7 +363,7 @@ const pinned = (candidate: string, source: string, boundaryRoot: string | undefi
         "was not present when the host was built"
     })
   }
-  return outsideWorkspace(source, boundaryRoot)
+  return outsideWorkspace(source, boundaryRoot, undefined, host)
 }
 
 /**
@@ -348,10 +374,11 @@ const pinned = (candidate: string, source: string, boundaryRoot: string | undefi
 export const resolveDefaultExecutable = (
   root: string,
   boundaryRoot: string | undefined,
-  fallback = "/usr/local/bin/smithers-jj-export"
+  fallback = "/usr/local/bin/smithers-jj-export",
+  host: StagingHost = processHost
 ): string => {
-  if (embeddedHelper !== undefined) return outsideWorkspace(embeddedHelper, boundaryRoot)
-  const candidates = [packagedHelper(root), ...checkoutHelpers(root), fallback]
+  if (embeddedHelper !== undefined) return outsideWorkspace(embeddedHelper, boundaryRoot, undefined, host)
+  const candidates = [packagedHelper(root, host), ...checkoutHelpers(root, host), fallback]
   for (const [index, candidate] of candidates.entries()) {
     if (!existsSync(candidate)) continue
     if (index === 0) {
@@ -362,11 +389,11 @@ export const resolveDefaultExecutable = (
         })
       }
       // npm/pnpm tarballs may store package files without executable bits.
-      return pinned(candidate, candidate, boundaryRoot)
+      return pinned(candidate, candidate, boundaryRoot, host)
     }
     const executable = usableExecutable(candidate, undefined)
     return boundaryRoot !== undefined && workspaceSupplied(candidate, executable, boundaryRoot)
-      ? pinned(candidate, executable, boundaryRoot)
+      ? pinned(candidate, executable, boundaryRoot, host)
       : executable
   }
   throw new AtomicHelperError({

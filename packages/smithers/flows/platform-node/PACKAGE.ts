@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -17,6 +22,23 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
     test: Smithers.file("test/quickstart.test.vibe")
   }],
   cwd
+})
+
+/**
+ * The atomic filesystem suites run real helper processes and inject faults as
+ * parameters; module mocks and stubbed globals prove behaviour against a double.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const importRules = ImportRules({
+  cwd,
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/AtomicFileSystem*.test.ts"],
+    callees: ["vi.mock", "vi.doMock", "vi.spyOn", "vi.stubGlobal", "vi.fn", "vi.hoisted", "jest.mock"],
+    because: "TEST-2/TEST-7: no mocks; unhappy paths inject a faulty seam, happy paths run the real helper."
+  }]
 })
 
 /**
@@ -278,6 +300,7 @@ export const Package = Smithers.Package({
     docs,
     docsFiles,
     fmt,
+    importRules,
     lib,
     lint,
     reviewDocsAgainstCode,

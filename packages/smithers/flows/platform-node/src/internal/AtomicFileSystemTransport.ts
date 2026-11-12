@@ -35,6 +35,25 @@ export const started = (): number => startedHelpers
 const inertDirectory = parse(process.execPath).root
 
 /**
+ * Starts one helper child. A replacement is the seam for a launch that throws
+ * before any child exists.
+ * @private
+ * @since 1.0.0
+ */
+export type Launch = (executable: string) => ChildProcessWithoutNullStreams
+
+/**
+ * The packaged helper runs with an inert cwd and empty environment. The
+ * configured executable is validated outside the confined root first.
+ */
+const launch: Launch = (executable) =>
+  spawn(executable, ["--atomic-fs"], {
+    cwd: inertDirectory,
+    env: {},
+    stdio: ["pipe", "pipe", "pipe"]
+  })
+
+/**
  * True when `target` is at or below `root`. Both are absolute and already
  * canonical. A different Windows drive produces an absolute relative result.
  * @private
@@ -117,7 +136,8 @@ export const spawnHelper = <A>(
   request: HostRequest,
   executable: string,
   payload: Buffer,
-  settings: { readonly limits: Limits; readonly timeoutMs: number }
+  settings: { readonly limits: Limits; readonly timeoutMs: number },
+  start: Launch = launch
 ): Effect.Effect<A, PlatformError.PlatformError> =>
   Effect.callback<A, PlatformError.PlatformError>((resume) => {
     const limits = settings.limits
@@ -129,15 +149,9 @@ export const spawnHelper = <A>(
     let truncated = false
     let writeFailure: unknown
 
-    // The packaged helper runs with an inert cwd and empty environment. The
-    // configured executable is validated outside the confined root first.
     let child: ChildProcessWithoutNullStreams
     try {
-      child = spawn(executable, ["--atomic-fs"], {
-        cwd: inertDirectory,
-        env: {},
-        stdio: ["pipe", "pipe", "pipe"]
-      })
+      child = start(executable)
       startedHelpers++
     } catch (cause) {
       // libuv reports some exec failures — `ENOEXEC` for a file that is

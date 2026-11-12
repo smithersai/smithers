@@ -1,20 +1,14 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Option, Stream } from "effect"
-import { EventEmitter } from "node:events"
-import NativeMutableFs from "node:fs"
-import * as NativeFs from "node:fs/promises"
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises"
-import { syncBuiltinESMExports } from "node:module"
+import type { BigIntStats } from "node:fs"
+import { chmod, mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as AtomicFileSystem from "../src/AtomicFileSystem.ts"
+import * as Native from "../src/internal/AtomicFileSystemHost.ts"
 import { usableExecutable } from "../src/internal/AtomicFileSystemTransport.ts"
-
-vi.mock("node:fs/promises", async (original) => {
-  const actual = await original<typeof import("node:fs/promises")>()
-  return { ...actual, stat: vi.fn(actual.stat), realpath: vi.fn(actual.realpath) }
-})
 
 const roots: Array<string> = []
 const temporary = async () => {
@@ -24,7 +18,6 @@ const temporary = async () => {
 }
 afterEach(async () => {
   vi.unstubAllEnvs()
-  vi.restoreAllMocks()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 const request: KernelFileSystem.AtomicRequest = { operation: "exists", path: "/a" }
@@ -37,46 +30,40 @@ const refused = (options: AtomicFileSystem.Options, input = request) =>
   Effect.runPromise(Effect.flip(execute(options, input)))
 
 describe("atomic helper configuration admission", () => {
-  it.each(["win32", "darwin"])(
-    "watches the correct %s path and preserves relative event paths",
-    async (hostPlatform) => {
+  it.each(["win32", "linux"] as const)(
+    "watches the %s path and reports event paths relative to the directory named",
+    async (platform) => {
       const root = await temporary()
-      const short = join(root, "SHORT~1")
-      await mkdir(short)
-      const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-      const closed = vi.fn()
-      const watcher: import("node:fs").FSWatcher = Object.assign(new EventEmitter(), {
-        close: closed,
-        ref: () => watcher,
-        unref: () => watcher
-      })
-      const watched = vi.spyOn(NativeMutableFs, "watch").mockImplementation(
-        ((path: string, options: unknown, listener: (event: string, file: string) => void) => {
-          expect(path).toBe(hostPlatform === "win32" ? root : short)
-          expect(options).toEqual({ recursive: true })
-          queueMicrotask(() => listener("change", "changed.txt"))
-          return watcher
-        }) as typeof NativeMutableFs.watch
-      )
-      syncBuiltinESMExports()
-      if (hostPlatform === "win32") vi.spyOn(NativeFs, "realpath").mockResolvedValueOnce(root)
-      Object.defineProperty(process, "platform", { ...platform, value: hostPlatform })
-      try {
-        const event = await Effect.runPromise(
-          Effect.flatMap(FileSystem.FileSystem, (fs) => Stream.runHead(fs.watch(short, { recursive: true }))).pipe(
-            Effect.provide(AtomicFileSystem.layerWith({}))
+      const named = join(root, "SHORT~1")
+      await mkdir(join(root, "long"))
+      await symlink(join(root, "long"), named)
+      const host = { ...Native.nodeHost, platform }
+      let settled = false
+      const event = Effect.runPromise(
+        Effect.flatMap(FileSystem.FileSystem, (fileSystem) => Stream.runHead(Native.watch(host, fileSystem)(named)))
+          .pipe(
+            Effect.provide(NodeFileSystem.layer)
           )
-        )
-        expect(Option.getOrThrow(event)).toMatchObject({ _tag: "Update", path: "changed.txt" })
-        if (hostPlatform === "win32") expect(NativeFs.realpath).toHaveBeenCalledWith(short)
-        else expect(NativeFs.realpath).not.toHaveBeenCalledWith(short)
-        expect(watched).toHaveBeenCalledTimes(1)
-        expect(closed).toHaveBeenCalledTimes(1)
-      } finally {
-        Object.defineProperty(process, "platform", platform)
-        watched.mockRestore()
-        syncBuiltinESMExports()
+      ).finally(() => {
+        settled = true
+      })
+      // The watcher starts asynchronously; write until it reports a change.
+      while (!settled) {
+        await writeFile(join(root, "long", "changed.txt"), "changed")
+        await new Promise<void>((resolve) => setTimeout(resolve, 50))
       }
+      expect(Option.getOrThrow(await event).path).toBe("changed.txt")
+      // Only the Windows branch resolves the name before the watcher stats it, so only it names realPath.
+      const missing = join(root, "missing")
+      const failure = await Effect.runPromise(
+        Effect.flip(
+          Effect.flatMap(FileSystem.FileSystem, (fileSystem) => Stream.runHead(Native.watch(host, fileSystem)(missing)))
+            .pipe(
+              Effect.provide(NodeFileSystem.layer)
+            )
+        )
+      )
+      expect(failure.reason).toMatchObject({ _tag: "NotFound", method: platform === "win32" ? "realPath" : "stat" })
     }
   )
 
@@ -90,15 +77,18 @@ describe("atomic helper configuration admission", () => {
     expect(await Effect.runPromise(Effect.flip(resolveRoot(absent)))).toMatchObject({
       reason: { _tag: "NotFound", method: "realPath", pathOrDescriptor: absent, syscall: "realpath" }
     })
-    vi.spyOn(NativeFs, "realpath").mockRejectedValueOnce(new Error("root path unavailable"))
-    expect(await Effect.runPromise(Effect.flip(resolveRoot(root)))).toMatchObject({
+    const unavailable = Native.realPath({
+      ...Native.nodeHost,
+      realpath: () => Promise.reject(new Error("root path unavailable"))
+    })
+    expect(await Effect.runPromise(Effect.flip(unavailable(root)))).toMatchObject({
       reason: { _tag: "PermissionDenied", description: expect.stringContaining("root path unavailable") }
     })
   })
 
   it("pins exact BigInt identities and preserves a failed root observation", async () => {
     const root = await temporary()
-    const actual = await NativeFs.stat(root, { bigint: true })
+    const actual = await stat(root, { bigint: true })
     const identify = (path: string) =>
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
@@ -106,14 +96,19 @@ describe("atomic helper configuration admission", () => {
           .identifyRoot!(path)
       }).pipe(Effect.provide(AtomicFileSystem.layerWith({})))
     expect(await Effect.runPromise(identify(root))).toBe(`${actual.dev}:${actual.ino}`)
-    const spy = vi.spyOn(NativeFs, "stat").mockResolvedValueOnce({ ...actual, dev: 7n, ino: 9007199254740993n })
-    expect(await Effect.runPromise(identify(root))).toBe("7:9007199254740993")
-    expect(spy).toHaveBeenLastCalledWith(root, { bigint: true })
-    spy.mockRejectedValueOnce(new Error("root stat unavailable"))
-    expect(await Effect.runPromise(Effect.flip(identify(root)))).toMatchObject({
+    // 2^53 + 1 is the first inode a Number cannot hold.
+    const wide = Native.identifyRoot({
+      ...Native.nodeHost,
+      stat: async () => ({ ...actual, dev: 7n, ino: 9007199254740993n }) as BigIntStats
+    })
+    expect(await Effect.runPromise(wide(root))).toBe("7:9007199254740993")
+    const unavailable = Native.identifyRoot({
+      ...Native.nodeHost,
+      stat: () => Promise.reject(new Error("root stat unavailable"))
+    })
+    expect(await Effect.runPromise(Effect.flip(unavailable(root)))).toMatchObject({
       reason: { _tag: "PermissionDenied", description: expect.stringContaining("root stat unavailable") }
     })
-    spy.mockRestore()
     const absent = join(root, "absent")
     expect(await Effect.runPromise(Effect.flip(identify(absent)))).toMatchObject({
       reason: { _tag: "NotFound", method: "stat", pathOrDescriptor: absent, syscall: "stat" }

@@ -23,6 +23,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   installedPackageRoot,
   outsideWorkspace,
+  processHost,
   resolveConfiguredExecutable,
   resolveDefaultExecutable,
   resolvePackageRoot,
@@ -65,22 +66,6 @@ const refuseListing = async (base: string): Promise<() => Promise<void>> => {
   execFileSync("icacls", [base, "/deny", `*${sid}:(RD)`])
   return async () => {
     execFileSync("icacls", [base, "/remove:d", `*${sid}`])
-  }
-}
-
-/**
- * Runs `body` as a user who owns none of this test's files. Windows reports
- * no POSIX owner, so it gains a `getuid` for the duration; lstat answers 0.
- */
-const asAnotherUser = async <A>(path: string, body: () => A): Promise<A> => {
-  const foreign = (await lstat(path)).uid + 1
-  const own = Object.getOwnPropertyDescriptor(process, "getuid")
-  Object.defineProperty(process, "getuid", { configurable: true, writable: true, value: () => foreign })
-  try {
-    return body()
-  } finally {
-    if (own === undefined) Reflect.deleteProperty(process, "getuid")
-    else Object.defineProperty(process, "getuid", own)
   }
 }
 
@@ -204,17 +189,13 @@ describe("default atomic helper resolution", () => {
     const digest = createHash("sha256").update(await readFile(source)).digest("hex")
     const directory = join(base, `.smthrs-atomic-helper-${digest}`)
     await mkdir(directory)
-    const getuid = process.getuid
-    await asAnotherUser(
-      directory,
-      () =>
-        expectHelperError(
-          () => outsideWorkspace(source, undefined, [base]),
-          "staging_directory_not_private",
-          /not a private directory/
-        )
+    // Windows reports no POSIX owner and lstat answers 0, so any other id is foreign there too.
+    const anotherUser = { ...processHost, uid: (await lstat(directory)).uid + 1 }
+    expectHelperError(
+      () => outsideWorkspace(source, undefined, [base], anotherUser),
+      "staging_directory_not_private",
+      /not a private directory/
     )
-    expect(process.getuid).toBe(getuid)
     expect(await readdir(directory)).toEqual([])
     expect(await readFile(outsideWorkspace(source, undefined, [base]), "utf8")).toBe("#!/bin/sh\nexit 0\n")
   })
@@ -347,12 +328,7 @@ describe("default atomic helper resolution", () => {
     await new Promise((settle) => setTimeout(settle, 50))
     expect((await stat(directory)).mtimeMs).toBe(old.getTime())
     const later = Date.now() + 2 * 60 * 60 * 1000
-    const clock = vi.spyOn(Date, "now").mockReturnValue(later)
-    try {
-      outsideWorkspace(source, undefined, [base])
-    } finally {
-      clock.mockRestore()
-    }
+    outsideWorkspace(source, undefined, [base], { ...processHost, now: () => later })
     await vi.waitFor(async () => expect((await stat(directory)).mtimeMs).toBeGreaterThan(old.getTime()))
   })
 
@@ -426,27 +402,14 @@ describe("default atomic helper resolution", () => {
 
   it("stages the correct executable name on the other operating-system family", async () => {
     const { packageRoot, root } = await fixture()
-    const originalProcess = process
     const platform = process.platform === "win32" ? "linux" : "win32"
     const filename = platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
     await helper(join(packageRoot, "bin", `${platform}-${process.arch}`, filename))
-    vi.stubGlobal(
-      "process",
-      new Proxy(originalProcess, {
-        get: (target, key, receiver) => key === "platform" ? platform : Reflect.get(target, key, receiver)
-      })
-    )
-    vi.resetModules()
-    try {
-      const host = await import("../src/internal/AtomicFileSystemExecutable.ts")
-      host.stagePackaged(packageRoot)
-      const selected = host.resolveDefaultExecutable(packageRoot, root, join(root, "absent"))
-      expect(basename(selected)).toBe(filename)
-      expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
-    } finally {
-      vi.unstubAllGlobals()
-      vi.resetModules()
-    }
+    const host = { ...processHost, platform } as const
+    stagePackaged(packageRoot, host)
+    const selected = resolveDefaultExecutable(packageRoot, root, join(root, "absent"), host)
+    expect(basename(selected)).toBe(filename)
+    expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
   })
 
   it("executes the helper staged at layer build, not bytes written after it", async () => {
