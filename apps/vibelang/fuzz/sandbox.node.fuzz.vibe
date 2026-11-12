@@ -61,7 +61,7 @@ function expected(input: typeof HttpInput.Type, text: string | undefined): numbe
 }
 
 /** Every request shape gets the protocol's status, and a refused request never reaches the gateway. */
-it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (input) => effect {
+effect function surface(input: typeof HttpInput.Type) {
   const calls: Array<string> = []
   const snapshot = try emptySnapshot()
   effect function answer<A>(name: string, value: A) {
@@ -94,6 +94,13 @@ it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (in
   const body = text ?? ""
   if (response.status !== expected(input, input.method === "GET" ? undefined : body === "" ? undefined : body)) return false
   return response.status === 404 || response.status === 413 || response.status === 400 ? calls.length === 0 : true
+}
+it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (input) => effect {
+  // Every execution: each signed-out write with a well-formed body, refused by the signed-out gateway.
+  for (const route of ["start", "stop", "command"] as const) {
+    if (!(try surface({ method: "POST", route, body: "valid", length: "true", gateway: "signed-out" }))) return false
+  }
+  return try surface(input)
 }))
 
 /** No sequence of requests and machine faults defects, double-runs a command, or moves a generation backward. */

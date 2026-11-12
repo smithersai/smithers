@@ -1644,3 +1644,7 @@ removed; the account and machine snapshots swapped.
 `/^[A-Za-z0-9-]{1,100}$/` on drawn texts from empty to 220 characters (a 60- and a 40-character token make exactly 101),
 and `connectReturn` to its contract over every present or absent wiki page, operation, key and recovery. Mutants
 caught: a 101-character limit; the hyphen dropped.
+
+`worker/SandboxHttp.vibe` 23 (the signed-out gateway's stop) waited on a draw of POST, `stop`, a valid body, a true
+length and the signed-out gateway together. `sandbox/http-surface` now checks the three signed-out writes with
+well-formed bodies every execution, then the drawn request. Mutant caught: the signed-out stop answering unavailable.
