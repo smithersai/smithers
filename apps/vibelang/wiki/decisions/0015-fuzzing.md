@@ -1130,6 +1130,20 @@ a contract, not dead code. Coverage runs of each target alone reach every arm an
 (seeds 20261202, 20261203). Mutations, each falsified at seed 20261204: a task offering Commit, a VIP step 3 with blank
 prior art passing, and the same reviewer's review sending a fresh request.
 
+### `src/web/backend.vibe`: every forwarded member, over each backend
+
+`clients/browser-fallback` called five of `BrowserFactory`'s members, so the file stood at 12/15 arms and 15/38
+functions. `clients/browser-delegates` (`fuzz/client-faults.node.fuzz.vibe`) calls every Factory and Actions member in
+every execution over four backends: a forced mock (maintainer) with the page's journal, a second forced mock over the
+same journal, an unforced page whose health is unreachable, and a page whose health says live while every other
+request fails in transport (a faulty `HttpClient` service, as `clients/conversation-faults` injects). Oracle: the forced
+mock selects mock; a grant reaches the members list; a started run reads back as itself and follows; the journal
+restores the conversation; unreachable health selects the mock as a viewer; health live selects live, and every live
+member fails typed, none dies (live participation is recorded by the server, so the page's call succeeds). One
+execution takes about two seconds, so the target has the replay floor. Coverage of this target alone: 72/72
+statements, 15/15 arms, 38/38 functions at seeds 20261206 and 20261207. Mutations, both falsified at seed 20261208:
+a grant that forwards nothing, and a run read that forwards another id.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

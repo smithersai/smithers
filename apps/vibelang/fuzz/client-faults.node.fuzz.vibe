@@ -7,7 +7,9 @@ import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { BrowserFactory, AgentBackend } from "../src/web/backend.vibe"
 import { BrowserMythical, HistoryBackend } from "../src/web/historyBackend.vibe"
 import { chatModel, dailyTokens, DEFAULT_DAILY_TOKENS } from "../worker/AgentModel.vibe"
-import { run, Int, Text, TextOrBoundary } from "./run.vibe"
+import { run, Finding, Int, REPLAY_FLOOR, Text, TextOrBoundary } from "./run.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockJournal } from "../src/core/MockJournal.vibe"
 import { liveIssues } from "../src/core/LiveIssues.vibe"
 import { liveWiki } from "../src/core/LiveWiki.vibe"
 import { IssueRecord, IssueRequest, IssuesState, Specification, SpecificationEvent, SpecificationReview } from "../src/core/issueSchemas.vibe"
@@ -186,3 +188,93 @@ function issuesWikiReplies(input: typeof Replies.Type) {
 }
 
 it.live("clients/issues-wiki-replies", () => run("clients/issues-wiki-replies", Replies, issuesWikiReplies))
+
+/** Health answers that the live agent is up; every other request fails in transport: a faulty live backend. */
+const liveDown = HttpClient.make((request) => request.url.endsWith("/api/health")
+  ? succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(JSON.stringify({ ok: true, agent: "live" }), { status: 200, contentType: "application/json" }))))
+  : fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) })))
+
+/** Every member of the page's Factory and Actions, once each, as the app calls them. */
+effect function everyDelegate(room: string, text: string) {
+  const factory = try Factory
+  const actions = try Actions
+  const accounts = factory.accounts!
+  const page = "rulings"
+  const calls: ReadonlyArray<readonly [string, Effect.Effect<unknown, unknown, never>]> = [
+    ["current", accounts.current()], ["members", accounts.members()], ["grant", accounts.grant("4", "contributor")], ["granted", accounts.members()], ["choose", accounts.choose("new")],
+    ["participated", accounts.participated("4")], ["signInAgent", accounts.signInAgent()], ["signOut", accounts.signOut()],
+    ["accountEvents", Effect.timeoutOption(Stream.runHead(accounts.events(0)), "50 millis")],
+    ["issuesRead", factory.issues!.read()], ["issuesAct", factory.issues!.act({ op: "read", number: 1, key: `k-${room}`, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" })],
+    ["wikiRead", factory.wiki!.read(page)], ["wikiAct", factory.wiki!.act({ op: "save", page, base: "# A", text: `# B ${text.toWellFormed()}`, key: `w-${room}` })],
+    ["post", factory.post(room, `c-${room}`, "Guest", "install")], ["read", factory.read(room, 0)], ["tour", factory.tour(room)], ["endTour", factory.endTour(room)],
+    ["openWiki", factory.openWiki(room, page)], ["controlTour", factory.controlTour!(room, "pause", 1)],
+    ["sandbox", factory.sandbox(room)], ["startSandbox", factory.startSandbox(room, `op-${room}`)], ["stopSandbox", factory.stopSandbox(room, `op2-${room}`, 1)],
+    ["sandboxCommand", factory.sandboxCommand(room, `op3-${room}`, "pwd", 1)],
+    ["actionsList", actions.list()], ["actionsCommands", actions.commands()], ["actionsRuns", actions.runs("vibelang/Post")],
+  ]
+  const results: Record<string, Exit.Exit<unknown, unknown>> = {}
+  // Runs first: signing out below leaves a viewer, whom the mock refuses a run.
+  const started = try exit(actions.start("vibelang/Post", { text: "q" }, "button"))
+  results["start"] = started
+  const id = started._tag === "Success" ? started.value : "none"
+  results["readRun"] = try exit(actions.read(id))
+  results["command"] = try exit(actions.command("/post q", "slash"))
+  results["rerun"] = try exit(actions.rerun(id))
+  results["cancel"] = try exit(actions.cancel(id))
+  results["follow"] = try exit(Effect.timeoutOption(Stream.runHead(actions.follow(id)), "2 seconds"))
+  for (const [name, call] of calls) results[name] = try exit(call)
+  return { results, id, mode: factory.mode }
+}
+
+/**
+ * The page's backend forwards every Factory and Actions member to the backend it selected. Over the mock (forced, as a
+ * maintainer) each member answers as the mock does: members include the granted contributor, the issues and wiki
+ * read, a started run reads and follows back as itself, and no member dies. Over a live backend whose server is
+ * unreachable after health, the page selects live and every member fails with its typed failure, none dies. A second
+ * forced mock over the same journal restores the conversation; unforced with health unreachable, the mock is a viewer.
+ */
+it.live("clients/browser-delegates", () => run("clients/browser-delegates", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => scoped(effect {
+  const room = `d${id}`
+  const down = Layer.succeed(HttpClient.HttpClient, faulty("transport", ""))
+  // The page's journal: the forced mock restores its conversations from it.
+  const kept = new Map<string, ReadonlyArray<unknown>>()
+  const journal = {
+    read: (conversation: string) => sync(() => kept.get(conversation) ?? []),
+    write: (conversation: string, events: ReadonlyArray<unknown>) => sync(() => { kept.set(conversation, events) }),
+  } as unknown as MockJournal.Shape
+  const mock = try scoped(Effect.provide(effect {
+    const ready = try (try AgentBackend).ready
+    const got = try everyDelegate(room, text)
+    return { ...got, ready }
+  }, BrowserFactory("http://fault.invalid", true, "maintainer", journal).pipe(Layer.provide(down))))
+  if (mock.ready !== "mock" || mock.mode !== "mock") throw new Finding({ report: `forced mock selected ${mock.ready}, reads ${mock.mode}` })
+  const restored = try scoped(Effect.provide(effect { return Array.from(try Stream.runCollect((try Factory).events(room, 0).pipe(Stream.take(1)))) }, BrowserFactory("http://fault.invalid", true, "maintainer", journal).pipe(Layer.provide(down))))
+  if (restored.length !== 1) throw new Finding({ report: "the journal restored nothing" })
+  // Unforced, with health unreachable: the mock, as a viewer.
+  const fallback = try scoped(Effect.provide(effect {
+    const ready = try (try AgentBackend).ready
+    return { ready, identity: try (try Factory).accounts!.current() }
+  }, BrowserFactory("http://fault.invalid", false).pipe(Layer.provide(down))))
+  if (fallback.ready !== "mock" || fallback.identity.role !== "viewer") throw new Finding({ report: `unreachable health selected ${fallback.ready} as ${fallback.identity.role}` })
+  for (const [name, result] of Object.entries(mock.results)) if (!typed(result, true) && !typed(result)) throw new Finding({ report: `mock ${name} died` })
+  const granted = mock.results["granted"]!
+  if (granted._tag !== "Success" || (granted.value as ReadonlyArray<{ readonly id: string; readonly role: string }>).find((person) => person.id === "4")?.role !== "contributor") throw new Finding({ report: "the grant did not reach the mock" })
+  for (const name of ["issuesRead", "wikiRead", "actionsList", "actionsCommands", "start", "readRun", "post", "read"]) if (mock.results[name]!._tag !== "Success") throw new Finding({ report: `mock ${name} failed` })
+  const read = mock.results["readRun"]!
+  if (read._tag !== "Success" || (read.value as { readonly id: string }).id !== mock.id) throw new Finding({ report: "the started run reads as another" })
+  const follow = mock.results["follow"]!
+  if (follow._tag !== "Success" || Option.isNone(follow.value as Option.Option<unknown>)) throw new Finding({ report: "the started run follows nothing" })
+  const live = try scoped(Effect.provide(effect {
+    const ready = try (try AgentBackend).ready
+    return { ...(try everyDelegate(room, text)), ready }
+  }, BrowserFactory("http://fault.invalid", false).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, liveDown)))))
+  if (live.ready !== "live" || live.mode !== "live") throw new Finding({ report: `health live selected ${live.ready}` })
+  for (const [name, result] of Object.entries(live.results)) {
+    // Streams that end or time out without an answer succeed with nothing; every request fails typed.
+    // Live participation is recorded by the server itself; the page's call does nothing.
+    const quiet = result._tag === "Success" && (name === "participated" || Option.isOption(result.value) && Option.isNone(result.value))
+    if (!quiet && !typed(result)) throw new Finding({ report: `live ${name} did not fail typed` })
+  }
+  return true
+// Four backends and every member of each: about two seconds per execution, hence the floor.
+}), undefined, { minimum: REPLAY_FLOOR }))
