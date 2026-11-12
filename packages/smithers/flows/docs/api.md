@@ -100,8 +100,8 @@ out of both a committed row and a log line.
 [`@smthrs/flow`](../flow/docs/api.md) is re-exported flat, so all of its namespaces sit at
 the top level: `Action`, `Deadline`, `DurableClock`, `DurableDeferred`,
 `DurableQueue`, `ExternalJob`, `Fault`, `Flow`, `FlowRuntime`, `Graph`,
-`HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `SpanFailure`,
-`Stall`, `StepIdentity`, and `WaitFor`.
+`HumanTask`, `Interpreter`, `JournalDecode`, `Poll`, `RetryPolicy`, `RunMetrics`,
+`Sleep`, `SpanFailure`, `Stall`, `StepIdentity`, and `WaitFor`.
 
 `TimeTravel` from [`@smthrs/time-travel`](../time-travel/docs/api.md) is the second flat
 export, and it is a service key rather than a namespace:

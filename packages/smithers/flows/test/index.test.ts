@@ -136,6 +136,8 @@ describe("barrel", () => {
     // the flat authoring re-export is part of the universe too
     expect(expected).toContain("Flow")
     expect(expected).toContain("Action")
+    expect(expected).toContain("JournalDecode")
+    expect(expected).toContain("RunMetrics")
   })
 
   it("excludes the platform bundles, and there are some to exclude", () => {
@@ -191,8 +193,8 @@ describe("barrel", () => {
     expect(Object.keys(Flows).sort()).toEqual([...expected, "namespaces"].sort())
   })
 
-  it("pins the runtime namespace list to the derived universe (issue #169)", () => {
-    expect([...Flows.namespaces].sort()).toEqual(expected)
+  it("pins the sorted runtime namespace list to the derived universe (issue #169)", () => {
+    expect([...Flows.namespaces]).toEqual(expected)
   })
 
   it.each(expected.map((name) => ({ name })))("$name namespace is populated", ({ name }) => {

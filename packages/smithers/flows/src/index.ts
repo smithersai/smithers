@@ -31,8 +31,9 @@
  * The one exception is `@smthrs/flow`: the authoring model is re-exported
  * *flat*, so all of its namespaces, `Action`, `Deadline`, `DurableClock`,
  * `DurableDeferred`, `DurableQueue`, `ExternalJob`, `Fault`, `Flow`,
- * `FlowRuntime`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`,
- * `Sleep`, `SpanFailure`, `Stall`, `StepIdentity`, and `WaitFor`, sit at the
+ * `FlowRuntime`, `Graph`, `HumanTask`, `Interpreter`, `JournalDecode`, `Poll`,
+ * `RetryPolicy`, `RunMetrics`, `Sleep`, `SpanFailure`, `Stall`, `StepIdentity`,
+ * and `WaitFor`, sit at the
  * top level beside the infrastructure namespaces. Writing a flow is the point of
  * the library; `Flows.Flow.Flow.make` would be noise. `Interpreter` is part of
  * that set because a host composition needs it: the registration layer
@@ -120,6 +121,7 @@ export const namespaces = [
   "Interpreter",
   "Jj",
   "Journal",
+  "JournalDecode",
   "Kernel",
   "Keys",
   "Observability",

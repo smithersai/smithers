@@ -7,7 +7,7 @@ import test from "node:test"
 
 // An installed consumer, outside the workspace: root exports from main cannot
 // conceal a missing export in the release the quickstart tells people to use.
-test("se4-npm-2: the published rc.16 quickstart runs and replays from SQLite", { timeout: 180_000 }, t => {
+test("se4-npm-2: the documented quickstart runs and replays from SQLite", { timeout: 180_000 }, t => {
   const dir = mkdtempSync(join(tmpdir(), "smithers-quickstart-"))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   writeFileSync(join(dir, "package.json"), JSON.stringify({ private: true, type: "module" }))

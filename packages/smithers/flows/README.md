@@ -110,9 +110,10 @@ answers a completed one from the journal on disk.
 ## What the barrel exports
 
 [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/README.md) is re-exported flat, so `Action`,
-`DurableClock`, `DurableDeferred`, `DurableQueue`, `Flow`, `FlowRuntime`,
-`Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`,
-`StepIdentity`, and `WaitFor` sit at the top level. Writing a flow is the point
+`Deadline`, `DurableClock`, `DurableDeferred`, `DurableQueue`, `ExternalJob`,
+`Fault`, `Flow`, `FlowRuntime`, `Graph`, `HumanTask`, `Interpreter`,
+`JournalDecode`, `Poll`, `RetryPolicy`, `RunMetrics`, `Sleep`, `SpanFailure`,
+`Stall`, `StepIdentity`, and `WaitFor` sit at the top level. Writing a flow is the point
 of the library, and `Flows.Flow.Flow.make` would be noise.
 
 Every other engine package is a namespace, the way `effect`'s own index does

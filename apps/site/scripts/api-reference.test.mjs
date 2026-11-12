@@ -119,3 +119,33 @@ test("API roster explains UI's contributor-only reference without promising an a
   assert.doesNotMatch(row, /\/docs\/reference\/api\/ui\//)
   assert.equal(JSON.parse(read("packages/smithers/ui/package.json")).private, true)
 })
+
+test("flows authoring lists cover every flat namespace", () => {
+  const names = [...read(`${flows}flow/src/index.ts`).matchAll(/^export \* as (\w+) from/gm)].map((match) => match[1])
+  assert.ok(names.includes("JournalDecode"))
+  assert.ok(names.includes("RunMetrics"))
+  for (const path of ["src/index.ts", "README.md", "docs/api.md", "docs/concepts/aggregate-surface.md"]) {
+    const docs = read(`${flows}${path}`)
+    for (const name of names) assert.ok(docs.includes(`\`${name}\``), `${path}: missing flat namespace ${name}`)
+  }
+})
+
+test("flows setup docs use the current release and public platform imports", () => {
+  const manifest = JSON.parse(read(`${flows}package.json`))
+  const platform = JSON.parse(read(`${flows}platform-node/package.json`))
+  for (const path of ["docs/installation.md", "docs/quickstart.md"]) {
+    const docs = read(`${flows}${path}`)
+    for (const name of [manifest.name, platform.name]) {
+      const pins = [...docs.matchAll(new RegExp(`${name}@([0-9][^\\s\`]*|next)`, "g"))].map((match) => match[1])
+      assert.ok(pins.includes(manifest.version), `${path}: pins the current release of ${name}`)
+      for (const version of pins) assert.ok(version === "next" || version === manifest.version, `${path}: stale ${name}@${version}`)
+    }
+    const effectPins = [...docs.matchAll(/\beffect@([0-9][^\s`]*|next)/g)]
+    assert.ok(effectPins.length > 0, `${path}: pins the Effect peer version`)
+    for (const pin of effectPins) {
+      assert.equal(pin[1], manifest.peerDependencies.effect, `${path}: Effect peer version`)
+    }
+    assert.ok(/import \{[^}]*NodeRuntime[^}]*\} from "@smthrs\/platform-node"/.test(docs), `${path}: imports the public Node runtime`)
+    assert.ok(!/@smthrs\/flows\/(?:NodeRuntime|SandboxedFlow)/.test(docs), `${path}: avoids blocked platform subpaths`)
+  }
+})

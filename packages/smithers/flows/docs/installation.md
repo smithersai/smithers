@@ -7,8 +7,13 @@ sidebar:
 
 ## Install the package
 
+This page describes `1.0.0-rc.18`. The commands below require that candidate
+to be published on npm; an older `next` tag does not provide these runtime
+imports. If npm reports `ETARGET` for the pinned version, wait for its
+publication.
+
 ```bash
-npm install @smthrs/platform-node@next @smthrs/flows@next effect
+npm install @smthrs/platform-node@next @smthrs/flows@next effect@4.1.1
 ```
 
 `@smthrs/flows` is the engine and imports no platform code. A program that runs
@@ -22,7 +27,7 @@ The `next` tag carries the 1.0 release candidates. With pnpm 11, name the
 version instead of the tag, then approve `esbuild`'s install script:
 
 ```bash
-pnpm add @smthrs/platform-node@1.0.0-rc.18 @smthrs/flows@1.0.0-rc.18 effect
+pnpm add @smthrs/platform-node@1.0.0-rc.18 @smthrs/flows@1.0.0-rc.18 effect@4.1.1
 pnpm approve-builds esbuild
 ```
 
@@ -65,7 +70,7 @@ declares.
   are Effect schemas, an action's implementation is an `Effect`, and a host is
   a `Layer`. Install one `effect` in the consuming project, so the service
   tags and schemas this package exports are the same classes the project
-  constructs. A project already on Effect 4.1.1 or later keeps its version.
+  constructs. A project already on Effect `4.1.1` keeps its version.
 
 The package ships as ESM and CommonJS with TypeScript declarations.
 
@@ -78,18 +83,14 @@ packages are namespaces:
 import { Action, Engine, Flow, Interpreter, Journal, Kernel } from "@smthrs/flows"
 ```
 
-The runtime core, `Runtime`, consumes injected services. In the published
-`1.0.0-rc.16`, import the Node runtime and sandbox composition from
-these subpaths:
+The runtime core, `Runtime`, consumes injected services. Import the Node
+runtime and sandbox composition from the platform package's root:
 
 ```ts
-import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
-import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
+import { NodeRuntime, SandboxedFlow } from "@smthrs/platform-node"
 ```
 
-The source checkout relocates these namespaces to `@smthrs/platform-node`
-and the Bun runtime to `@smthrs/platform-bun`. Those root runtime exports are
-not part of the published rc.16 packages.
+Import the Bun runtime from `@smthrs/platform-bun`.
 
 Two subpath forms are blocked in the export map and are not public:
 `@smthrs/flows/internal/*` and `@smthrs/flows/*/index`.
@@ -104,13 +105,13 @@ own package:
 
 | Runtime           | Runtime export                         | Platform package                                                    |
 | ----------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| Node.js           | `NodeRuntime`                          | `@smthrs/flows/NodeRuntime` (rc.16)                                 |
+| Node.js           | `NodeRuntime`                          | [`@smthrs/platform-node`](../platform-node/docs/api.md)             |
 | Bun               | `BunRuntime`                           | [`@smthrs/platform-bun`](../platform-bun/docs/api.md)               |
 | Browser tab       | `BrowserRuntime`, `BrowserEngine`      | [`@smthrs/platform-browser`](../platform-browser/docs/api.md)       |
 | Cloudflare Worker | `CloudflareRuntime`, `ExecutionObject` | [`@smthrs/platform-cloudflare`](../platform-cloudflare/docs/api.md) |
 
 `@smthrs/platform-node` supplies the Node host, containment, process reaping,
-and the liveness probe. In rc.16, `NodeRuntime` is in the flows subpath above. It carries its own copy of
+and the liveness probe. It carries its own copy of
 `@effect/platform-node` and installs the SQLite driver `@effect/sql-sqlite-node`,
 so a Node program adds no `@effect/*` package of its own. The
 [Bun](#bun-durable-execution) section has the Bun line.
@@ -143,7 +144,7 @@ usually wants the narrower dependency: depend on
 one dependency saves you twenty.
 
 Install an individual package at `@next` as well, for example
-`npm install @smthrs/flow@next effect`. `latest` on several engine packages,
+`npm install @smthrs/flow@next effect@4.1.1`. `latest` on several engine packages,
 among them `@smthrs/engine` and `@smthrs/testing`, still names a 0.x release.
 
 ## Use PostgreSQL
@@ -156,8 +157,8 @@ npm install @effect/sql-pg
 ```
 
 Then set `SMITHERS_POSTGRES_URL` to a `postgres://` connection string, or pass
-one as the `filename` of `NodeRuntime.layerHost` from `@smthrs/flows/NodeRuntime` in rc.16. `SMITHERS_BACKEND=sqlite`
-keeps a filename on SQLite even when `SMITHERS_POSTGRES_URL` is set.
+one as the `filename` of `NodeRuntime.layerHost` from `@smthrs/platform-node`.
+`SMITHERS_BACKEND=sqlite` keeps a filename on SQLite even when `SMITHERS_POSTGRES_URL` is set.
 [SQLite and PostgreSQL](../database/docs/concepts/sqlite-only.md) covers the
 schema each store gets and the role permissions the adapter needs.
 
@@ -169,7 +170,7 @@ Stand a durable runtime up and run a flow on it in the
 ## Bun durable execution
 
 ```bash
-bun add @smthrs/flows@next effect @smthrs/platform-bun@next
+bun add @smthrs/flows@next effect@4.1.1 @smthrs/platform-bun@next
 ```
 
 `@smthrs/platform-bun` carries its own copy of the Effect Bun and Node platform
