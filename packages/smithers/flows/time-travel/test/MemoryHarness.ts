@@ -1,6 +1,9 @@
+import { heartbeatStaleAfter, matchesEvidence, provesDeath } from "@smthrs/journal/Consensus"
 import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
+import type { OwnerId } from "@smthrs/run-store/Ownership"
 import * as RunStore from "@smthrs/run-store/RunStore"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 
@@ -87,18 +90,64 @@ export const row = (overrides: Partial<RunStore.RunRow> = {}): RunStore.RunRow =
   ...overrides
 })
 
+/** @private */
+const sameOwner = (left: OwnerId | null, right: OwnerId | null): boolean =>
+  left === null || right === null
+    ? left === right
+    : left.hostId === right.hostId && left.pid === right.pid && left.nonce === right.nonce
+
+/** @private */
+const matchesSnapshot = (found: RunStore.RunRow, expected: RunStore.RunSnapshot): boolean =>
+  found.status === expected.status && sameOwner(found.owner, expected.owner) &&
+  found.heartbeatAtMs === expected.heartbeatAtMs
+
+/** @private */
+const staleAfterMs = Duration.toMillis(heartbeatStaleAfter)
+
 /**
- * A `RunStore` over a mutable map of rows, implementing exactly the claim,
- * activate, abandon, and fenced-transition protocol the rewind and recovery
- * paths drive. Every other method keeps `makeNoop`'s failing default, so a
- * test that reaches an unmodelled call gets a named failure.
+ * The store's loss classification: a held claim, then a running row with a
+ * fresh heartbeat, and otherwise a changed snapshot.
  *
- * `state(runId)` returns a copy of the row as the double currently holds it.
+ * @private
+ */
+const claimLoss = (found: RunStore.RunRow, nowMs: number) =>
+  found.claim !== null
+    ? { _tag: "AlreadyClaimed" as const }
+    : found.status === "running" && found.heartbeatAtMs !== null && found.heartbeatAtMs >= nowMs - staleAfterMs
+    ? { _tag: "HeartbeatFresh" as const }
+    : { _tag: "SnapshotChanged" as const }
+
+/** @private */
+const released = { owner: null, heartbeatAtMs: null, claim: null, claimedAtMs: null } as const
+
+/**
+ * A `RunStore` over a mutable map of rows, implementing the claim, steal,
+ * activate, abandon, heartbeat, and fenced-transition protocol the rewind and
+ * recovery paths drive, with the store's compare-and-swap rules: a claim or a
+ * steal must carry the row's exact `{ status, owner, heartbeatAtMs }`
+ * snapshot; a steal needs a running snapshot, evidence that
+ * `Consensus.matchesEvidence` accepts, and a stale heartbeat unless the
+ * evidence proves the owner dead; activation re-checks the snapshot and drops
+ * the claim when it moved; abandonment, heartbeats, and transitions compare
+ * the whole owner identity; and refusals are classified as the store does. Every other method keeps
+ * `makeNoop`'s failing default, so a test that reaches an unmodelled call gets
+ * a named failure.
+ *
+ * Fences across stores are not modelled: the memory time-travel store's commit
+ * fence never reads these rows. The rewind fences over one shared database are
+ * pinned by `RewindFence.test.ts`.
+ *
+ * `state(runId)` returns a copy of the row as the double currently holds it;
+ * `reown(runId, owner)` hands the row to another owner the way a peer engine's
+ * takeover would, so a fault can make the fence loss real.
  */
 export const makeRuns = (
   rows: ReadonlyArray<RunStore.RunRow>,
   overrides: Partial<RunStore.Service> = {}
-): RunStore.Service & { readonly state: (runId?: string) => RunStore.RunRow } => {
+): RunStore.Service & {
+  readonly state: (runId?: string) => RunStore.RunRow
+  readonly reown: (runId: string, owner: OwnerId) => void
+} => {
   const state = new Map(rows.map((initial) => [initial.runId, { ...initial }]))
   const service = RunStore.makeNoop({
     get: (runId) => {
@@ -114,34 +163,50 @@ export const makeRuns = (
         )
         : Effect.succeed({ ...found })
     },
-    claim: (runId, _expected, claimant, nowMs) =>
+    claim: (runId, expected, claimant, nowMs) =>
       Effect.sync(() => {
         const found = state.get(runId)
         if (found === undefined) return { _tag: "NotFound" as const }
-        if (found.claim !== null) return { _tag: "AlreadyClaimed" as const }
-        if (found.status === "running") return { _tag: "HeartbeatFresh" as const }
-        found.claim = claimant
-        found.claimedAtMs = nowMs
-        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-      }),
-    steal: (runId, _expected, claimant, nowMs) =>
-      Effect.sync(() => {
-        const found = state.get(runId)
-        if (found === undefined) return { _tag: "NotFound" as const }
-        if (found.claim !== null) return { _tag: "AlreadyClaimed" as const }
-        found.claim = claimant
-        found.claimedAtMs = nowMs
-        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-      }),
-    activate: (runId, claimant, claimedAtMs) =>
-      Effect.sync(() => {
-        const found = state.get(runId)
         if (
-          found === undefined ||
-          found.claim?.nonce !== claimant.nonce ||
-          found.claimedAtMs !== claimedAtMs
+          (found.status !== "pending" && found.status !== "suspended") || !matchesSnapshot(found, expected) ||
+          found.claim !== null
         ) {
+          return claimLoss(found, nowMs)
+        }
+        found.claim = claimant
+        found.claimedAtMs = nowMs
+        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
+      }),
+    steal: (runId, expected, claimant, nowMs, evidence) =>
+      Effect.sync(() => {
+        if (
+          expected.status !== "running" || expected.owner === null ||
+          !matchesEvidence(expected.owner, claimant, nowMs, evidence)
+        ) {
+          return { _tag: "LivenessUnconfirmed" as const }
+        }
+        const found = state.get(runId)
+        if (found === undefined) return { _tag: "NotFound" as const }
+        if (
+          !matchesSnapshot(found, expected) || found.claim !== null || found.heartbeatAtMs === null ||
+          (found.heartbeatAtMs >= nowMs - staleAfterMs && !provesDeath(evidence, claimant))
+        ) {
+          return claimLoss(found, nowMs)
+        }
+        found.claim = claimant
+        found.claimedAtMs = nowMs
+        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
+      }),
+    activate: (runId, claimant, claimedAtMs, expected) =>
+      Effect.sync(() => {
+        const found = state.get(runId)
+        if (found === undefined || !sameOwner(found.claim, claimant) || found.claimedAtMs !== claimedAtMs) {
           return { _tag: "ClaimLost" as const }
+        }
+        if (!matchesSnapshot(found, expected)) {
+          found.claim = null
+          found.claimedAtMs = null
+          return { _tag: "SnapshotChanged" as const }
         }
         found.status = "running"
         found.owner = claimant
@@ -150,32 +215,59 @@ export const makeRuns = (
         found.claimedAtMs = null
         return { _tag: "Activated" as const }
       }),
-    abandonClaim: (runId) =>
+    abandonClaim: (runId, claimant, claimedAtMs) =>
       Effect.sync(() => {
         const found = state.get(runId)
-        if (found === undefined || found.claim === null) return { _tag: "ClaimLost" as const }
+        if (found === undefined || !sameOwner(found.claim, claimant) || found.claimedAtMs !== claimedAtMs) {
+          return { _tag: "ClaimLost" as const }
+        }
         found.claim = null
         found.claimedAtMs = null
         return { _tag: "Abandoned" as const }
       }),
-    transitionOwned: (runId, currentOwner, status, stateJson) =>
+    heartbeat: (runId, owner, nowMs) =>
       Effect.sync(() => {
         const found = state.get(runId)
         if (found === undefined) return { _tag: "NotFound" as const }
-        if (found.owner?.nonce !== currentOwner.nonce) return { _tag: "FenceLost" as const }
+        if (found.status !== "running" || !sameOwner(found.owner, owner)) return { _tag: "FenceLost" as const }
+        found.heartbeatAtMs = Math.max(found.heartbeatAtMs ?? nowMs, nowMs)
+        return { _tag: "Updated" as const }
+      }),
+    transitionOwned: (runId, currentOwner, status, stateJson, guard) =>
+      Effect.gen(function*() {
+        if (status === "pending" && (guard?.restorePending !== true || stateJson === undefined)) {
+          return yield* Effect.fail(
+            new RunStore.RunStoreError({
+              code: "invalid_run",
+              method: "transitionOwned",
+              message: "transitionOwned cannot target pending",
+              cause: status
+            })
+          )
+        }
+        const found = state.get(runId)
+        if (found === undefined) return { _tag: "NotFound" as const }
+        if (found.status !== "running" || !sameOwner(found.owner, currentOwner)) {
+          return { _tag: "FenceLost" as const }
+        }
+        if (
+          (guard?.cancelRequested === "absent" && found.cancelRequestedAtMs !== null) ||
+          (guard?.cancelRequested === "present" && found.cancelRequestedAtMs === null) ||
+          (status === "pending" && found.stateJson !== stateJson)
+        ) {
+          return { _tag: "GuardFailed" as const }
+        }
         found.status = status
         found.stateJson = stateJson ?? found.stateJson
-        if (status !== "running") {
-          found.owner = null
-          found.heartbeatAtMs = null
-          found.claim = null
-          found.claimedAtMs = null
-        }
+        if (status !== "running") Object.assign(found, released)
         return { _tag: "Transitioned" as const }
       }),
     ...overrides
   })
   return Object.assign(service, {
-    state: (runId: string = rows[0]!.runId) => ({ ...state.get(runId)! })
+    state: (runId: string = rows[0]!.runId) => ({ ...state.get(runId)! }),
+    reown: (runId: string, owner: OwnerId) => {
+      Object.assign(state.get(runId)!, { status: "running", owner, claim: null, claimedAtMs: null })
+    }
   })
 }

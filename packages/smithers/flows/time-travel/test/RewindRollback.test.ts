@@ -28,7 +28,7 @@ import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import { error } from "../src/TimeTravelError.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
-import { journalOf, row } from "./MemoryHarness.ts"
+import { journalOf, makeRuns as harnessRuns, row } from "./MemoryHarness.ts"
 
 const owner: OwnerId = { hostId: "test-host", pid: 20, nonce: "rollback-owner" }
 const frame = { lineageId: "run/root", seq: 0 } as const
@@ -41,64 +41,11 @@ const runError = () =>
     cause: "get"
   })
 
-const makeRuns = (
-  initial: RunStore.RunRow,
-  overrides: Partial<RunStore.Service> = {}
-): RunStore.Service & { readonly state: () => RunStore.RunRow } => {
-  const row = { ...initial }
-  const service = RunStore.makeNoop({
-    // Only the parent has a row here. A descendant edge in this fixture stands
-    // for a child whose run row is gone, which the rewind discloses as missing
-    // evidence rather than treating as live.
-    get: (runId) =>
-      runId === initial.runId
-        ? Effect.succeed({ ...row })
-        : Effect.fail(
-          new RunStore.RunStoreError({
-            code: "not_found_row",
-            method: "get",
-            message: `run ${runId} was not found`,
-            cause: runId
-          })
-        ),
-    claim: (_runId, _expected, claimant, nowMs) =>
-      Effect.sync(() => {
-        if (row.claim !== null) return { _tag: "AlreadyClaimed" as const }
-        row.claim = claimant
-        row.claimedAtMs = nowMs
-        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-      }),
-    activate: (_runId, claimant, claimedAtMs) =>
-      Effect.sync(() => {
-        if (row.claim?.nonce !== claimant.nonce || row.claimedAtMs !== claimedAtMs) {
-          return { _tag: "ClaimLost" as const }
-        }
-        row.status = "running"
-        row.owner = claimant
-        row.heartbeatAtMs = claimedAtMs
-        row.claim = null
-        row.claimedAtMs = null
-        return { _tag: "Activated" as const }
-      }),
-    abandonClaim: () => Effect.succeed({ _tag: "Abandoned" as const }),
-    transitionOwned: (_runId, currentOwner, status, stateJson) =>
-      Effect.sync(() => {
-        if (row.owner?.nonce !== currentOwner.nonce) return { _tag: "FenceLost" as const }
-        row.status = status
-        row.stateJson = stateJson ?? row.stateJson
-        if (status !== "running") {
-          row.owner = null
-          row.heartbeatAtMs = null
-          row.claim = null
-          row.claimedAtMs = null
-        }
-        return { _tag: "Transitioned" as const }
-      }),
-    create: () => Effect.fail(runError()),
-    ...overrides
-  })
-  return Object.assign(service, { state: () => ({ ...row }) })
-}
+// Only the parent has a row here. A descendant edge in this fixture stands
+// for a child whose run row is gone, which the rewind discloses as missing
+// evidence rather than treating as live.
+const makeRuns = (initial: RunStore.RunRow, overrides: Partial<RunStore.Service> = {}) =>
+  harnessRuns([initial], { create: () => Effect.fail(runError()), ...overrides })
 
 const runRow = (): RunStore.RunRow => row({ runId: "run", createdAtMs: 1, startedAtMs: 2, stateJson: "{\"cursor\":9}" })
 
@@ -681,7 +628,7 @@ describe("Rewind protocol fault matrix", () => {
       expect(rollbacks).toBe(1)
     }))
 
-  it.effect("stops owned rewind work and rolls back when the heartbeat loses its fence", () =>
+  it.effect("stops owned rewind work, rolls back, and keeps the audit open when a peer takes the run", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({
         records: records(),
@@ -701,9 +648,13 @@ describe("Rewind protocol fault matrix", () => {
           rollback: () => Effect.sync(() => (rollbacks += 1))
         }])
       )
+      // The heartbeat finds a peer engine owning the run, so the restoration
+      // that follows meets the same lost fence a real store would report.
+      const peer = { hostId: "peer-host", pid: 99, nonce: "peer" }
       const runs = makeRuns(runRow(), {
-        heartbeat: () =>
-          Deferred.succeed(lost, undefined).pipe(
+        heartbeat: (runId) =>
+          Effect.sync(() => runs.reown(runId, peer)).pipe(
+            Effect.andThen(Deferred.succeed(lost, undefined)),
             Effect.as({ _tag: "FenceLost" as const })
           )
       })
@@ -736,11 +687,15 @@ describe("Rewind protocol fault matrix", () => {
 
       expect(failure).toMatchObject({
         code: "fence_lost",
-        message: "run run lost its ownership lease"
+        message: "run run lost its ownership lease; restore run state returned FenceLost"
       })
       expect(rollbacks).toBe(1)
-      expect(runs.state()).toEqual(runRow())
-      expect(store.state().audits[0]).toMatchObject({ status: "failed", detail: { phase: "rolled_back" } })
+      expect(runs.state()).toMatchObject({ status: "running", owner: peer, stateJson: runRow().stateJson })
+      // Nothing was archived, and the audit stays open for recovery rather
+      // than claiming a clean rollback the run's new owner never saw.
+      expect(store.state().archived).toEqual([])
+      expect(store.state().audits[0]).toMatchObject({ status: "in_progress" })
+      expect((store.state().audits[0]!.detail as { compensation?: unknown }).compensation).toBeUndefined()
     }))
 
   it.effect("leaves the audit recoverable when restoring run ownership fails or loses its fence", () =>

@@ -12,6 +12,7 @@ import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts
 import * as Rewind from "../src/internal/Rewind.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { makeRuns } from "./MemoryHarness.ts"
 
 /**
  * A rewind may only run under an exclusive, activated claim on the run and on
@@ -296,64 +297,8 @@ describe("Rewind detached child cancellation", () => {
     MemoryTimeTravelStore.make({ records: [baseline()], edges: [edge], runOwners: new Map([["run", owner]]) })
 
   const statefulParentAndChild = () => {
-    const rows = new Map<string, RunStore.RunRow>([
-      ["run", row("run")],
-      ["child", { ...row("child"), stateJson: "{\"child\":true}" }]
-    ])
-    const runs = RunStore.makeNoop({
-      get: (runId) => {
-        const current = rows.get(runId)
-        return current === undefined ? Effect.fail(runError("get")) : Effect.succeed({ ...current })
-      },
-      claim: (runId, _expected, claimant, nowMs) =>
-        Effect.sync(() => {
-          const current = rows.get(runId)!
-          if (current.status === "running" || current.claim !== null) {
-            return { _tag: "AlreadyClaimed" as const }
-          }
-          rows.set(runId, { ...current, claim: claimant, claimedAtMs: nowMs })
-          return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-        }),
-      activate: (runId, claimant, claimedAtMs) =>
-        Effect.sync(() => {
-          const current = rows.get(runId)!
-          if (current.claim?.nonce !== claimant.nonce || current.claimedAtMs !== claimedAtMs) {
-            return { _tag: "ClaimLost" as const }
-          }
-          rows.set(runId, {
-            ...current,
-            status: "running",
-            owner: claimant,
-            heartbeatAtMs: claimedAtMs,
-            claim: null,
-            claimedAtMs: null
-          })
-          return { _tag: "Activated" as const }
-        }),
-      abandonClaim: () => Effect.succeed({ _tag: "Abandoned" as const }),
-      heartbeat: (runId, heartbeatOwner) =>
-        Effect.succeed(
-          rows.get(runId)?.owner?.nonce === heartbeatOwner.nonce
-            ? { _tag: "Updated" as const }
-            : { _tag: "FenceLost" as const }
-        ),
-      transitionOwned: (runId, transitionOwner, status, stateJson) =>
-        Effect.sync(() => {
-          const current = rows.get(runId)!
-          if (current.owner?.nonce !== transitionOwner.nonce) return { _tag: "FenceLost" as const }
-          rows.set(runId, {
-            ...current,
-            status,
-            stateJson: stateJson ?? current.stateJson,
-            owner: null,
-            heartbeatAtMs: null,
-            claim: null,
-            claimedAtMs: null
-          })
-          return { _tag: "Transitioned" as const }
-        })
-    })
-    return { rows, runs }
+    const runs = makeRuns([row("run"), { ...row("child"), stateJson: "{\"child\":true}" }])
+    return { runs }
   }
 
   const attachedStore = () =>
@@ -366,7 +311,7 @@ describe("Rewind detached child cancellation", () => {
   it.effect("persists the child plan and owns the child before the archive hook", () =>
     Effect.gen(function*() {
       const store = attachedStore()
-      const { rows, runs } = statefulParentAndChild()
+      const { runs } = statefulParentAndChild()
       let pendingAtArchive: ReadonlyArray<string> | undefined
       let childAtArchive: RunStore.RunRow | undefined
 
@@ -382,7 +327,7 @@ describe("Rewind detached child cancellation", () => {
               Effect.sync(() => {
                 if (step !== "archive-and-truncate") return
                 pendingAtArchive = (store.state().audits[0]!.detail as Rewind.AuditDetail).pendingChildren
-                childAtArchive = { ...rows.get("child")! }
+                childAtArchive = { ...runs.state("child") }
               })
           }
         }),
@@ -395,14 +340,14 @@ describe("Rewind detached child cancellation", () => {
         status: "running",
         owner: { ...owner, nonce: "rewind-owner:rewind-child:child" }
       })
-      expect(rows.get("child")).toMatchObject({ status: "cancelled", owner: null })
+      expect(runs.state("child")).toMatchObject({ status: "cancelled", owner: null })
       expect(result.cancelledChildren).toEqual(["child"])
     }))
 
   it.effect("restores a claimed child when the archive fails before commit", () =>
     Effect.gen(function*() {
       const store = attachedStore()
-      const { rows, runs } = statefulParentAndChild()
+      const { runs } = statefulParentAndChild()
 
       const failure = yield* Effect.flip(
         provide(
@@ -423,7 +368,7 @@ describe("Rewind detached child cancellation", () => {
       )
 
       expect(failure).toMatchObject({ code: "unknown", message: "rewind failed at archive-and-truncate" })
-      expect(rows.get("child")).toMatchObject({
+      expect(runs.state("child")).toMatchObject({
         status: "suspended",
         owner: null,
         stateJson: "{\"child\":true}"

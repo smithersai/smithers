@@ -27,14 +27,10 @@ const entry = (seq: number, payload: string, cacheKey?: string): Entry => ({
 })
 
 describe("Replay", () => {
-  it.effect("re-derives an identical projection from sealed evidence without dispatching", () =>
+  it.effect("re-derives an identical projection from sealed evidence without mutating the journal", () =>
     Effect.gen(function*() {
       const entries = [entry(0, "first"), entry(1, "second", "sealed-key"), entry(2, "after-frame")]
       const before = structuredClone(entries)
-      let dispatcherCalls = 0
-      const dispatcher = (): void => {
-        dispatcherCalls += 1
-      }
       const journal = journalOf(entries)
       const cache = CacheStore.makeNoop({
         get: (key) =>
@@ -68,9 +64,7 @@ describe("Replay", () => {
 
       expect(first).toEqual(["first:undefined", "second:sealed-result"])
       expect(second).toEqual(first)
-      expect(dispatcherCalls).toBe(0)
       expect(entries).toEqual(before)
-      expect(dispatcher).toBeTypeOf("function")
     }))
 
   it.effect("pages through the journal and stops once the last page is consumed", () =>

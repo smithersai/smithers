@@ -120,11 +120,12 @@ describe("SQL recovery corruption", () => {
       expect(result.audits[0]?.status).toBe("failed")
     }))
 
-  it.effect("rolls back rather than trusting a malformed boundary payload", () =>
+  it.effect("rolls back on a live suffix row without decoding its payload", () =>
     Effect.gen(function*() {
       const result = yield* recover({ suffixRows: [{ seq: 1, payload: "{}" }], suffixCount: 1, suffixTailSeq: 1 })
 
       expect(result.outcomes).toEqual([{ _tag: "RolledBack", auditId: "audit" }])
+      expect(result.audits[0]?.status).toBe("failed")
       expect(JSON.parse(result.audits[0]!.detail_json)).toMatchObject({ phase: "rolled_back" })
     }))
 
@@ -133,8 +134,8 @@ describe("SQL recovery corruption", () => {
       const result = yield* recover({ suffixRows: [], suffixCount: 1, suffixTailSeq: 1 })
 
       expect(result.archive).toBe(0)
-      expect(result.outcomes[0]?._tag).not.toBe("Completed")
-      expect(result.audits[0]?.status).not.toBe("completed")
+      expect(result.outcomes).toEqual([{ _tag: "RolledBack", auditId: "audit" }])
+      expect(result.audits[0]?.status).toBe("failed")
     }))
 
   it.effect("rolls back when the audit records a suffix but no tail coordinate", () =>

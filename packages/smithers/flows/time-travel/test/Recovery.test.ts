@@ -25,46 +25,13 @@ import type { AuditDetail } from "../src/internal/Rewind.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import { error } from "../src/TimeTravelError.ts"
 import { type Audit, TimeTravelStore } from "../src/TimeTravelStore.ts"
-import { row as makeRow } from "./MemoryHarness.ts"
+import { makeRuns as harnessRuns, row as makeRow } from "./MemoryHarness.ts"
 
 const owner: OwnerId = { hostId: "recovery-host", pid: 40, nonce: "recovery-owner" }
 const frame = { lineageId: "run/root", seq: 0 } as const
 
-const makeRuns = (
-  overrides: Partial<RunStore.Service> = {}
-): RunStore.Service & { readonly state: () => RunStore.RunRow } => {
-  let row: RunStore.RunRow = makeRow({
-    status: "running",
-    owner,
-    heartbeatAtMs: 0,
-    stateJson: "{\"cursor\":7}"
-  })
-  const service = RunStore.makeNoop({
-    get: () => Effect.succeed({ ...row }),
-    transitionOwned: (_runId, currentOwner, status, stateJson) =>
-      Effect.sync(() => {
-        if (row.owner?.nonce !== currentOwner.nonce) return { _tag: "FenceLost" as const }
-        row = {
-          ...row,
-          status,
-          stateJson: stateJson ?? row.stateJson,
-          ...(status === "running"
-            ? {}
-            : {
-              owner: null,
-              heartbeatAtMs: null,
-              claim: null,
-              claimedAtMs: null,
-              parentRunId: null,
-              cancelRequestedAtMs: null
-            })
-        }
-        return { _tag: "Transitioned" as const }
-      }),
-    ...overrides
-  })
-  return Object.assign(service, { state: () => ({ ...row }) })
-}
+const makeRuns = (overrides: Partial<RunStore.Service> = {}) =>
+  harnessRuns([makeRow({ status: "running", owner, heartbeatAtMs: 0, stateJson: "{\"cursor\":7}" })], overrides)
 
 const journal = (hasSuffix: boolean): Journal.Service =>
   Journal.makeNoop({
@@ -746,9 +713,6 @@ describe("Recovery", () => {
         error: { code: "compensation_failed" }
       })
       expect(runs.state()).toMatchObject({ status: "suspended", owner: null })
-      expect(["pending", "running", "suspended", "completed", "failed", "cancelled"]).toContain(
-        runs.state().status
-      )
       expect(store.state().audits[0]).toMatchObject({
         status: "failed",
         detail: { phase: "terminal_failure" }
@@ -891,9 +855,13 @@ describe("Recovery", () => {
         ...store,
         stateAt: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
       }
+      // The heartbeat finds a peer engine owning the run, so every later
+      // owned transition meets the same lost fence a real store would report.
+      const peer = { hostId: "peer-host", pid: 99, nonce: "peer" }
       const runs = makeRuns({
-        heartbeat: () =>
-          Deferred.succeed(lost, undefined).pipe(
+        heartbeat: (runId) =>
+          Effect.sync(() => runs.reown(runId, peer)).pipe(
+            Effect.andThen(Deferred.succeed(lost, undefined)),
             Effect.as({ _tag: "FenceLost" as const })
           )
       })
@@ -917,9 +885,13 @@ describe("Recovery", () => {
 
       expect(outcomes[0]).toMatchObject({
         _tag: "Busy",
-        error: { code: "fence_lost", message: "run run lost its ownership lease" }
+        error: {
+          code: "fence_lost",
+          message:
+            "run run lost its ownership lease; could not give ownership back: ownership release returned FenceLost"
+        }
       })
-      expect(runs.state()).toMatchObject({ status: "suspended", owner: null })
+      expect(runs.state()).toMatchObject({ status: "running", owner: peer })
       expect(store.state().audits[0]).toMatchObject({
         status: "in_progress",
         detail: { phase: "archive_committed" }

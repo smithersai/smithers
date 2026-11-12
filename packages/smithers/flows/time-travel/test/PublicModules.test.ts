@@ -30,6 +30,24 @@ const forkDeps = Layer.mergeAll(
 )
 
 const frame = { lineageId: "parent/root", seq: 0 } as const
+
+/**
+ * A caller who annotates a signature needs no second import path. This is a
+ * compile-time fact, so `pnpm check` proves it by type-checking this alias;
+ * there is nothing to assert at run time.
+ */
+export type BarrelTypes = [
+  TimeTravel.Position,
+  TimeTravel.Projection<number>,
+  TimeTravel.ReplayOptions,
+  TimeTravel.ForkOptions,
+  TimeTravel.RewindOptions,
+  TimeTravel.Options,
+  TimeTravel.ForkResult,
+  TimeTravel.RewindResult,
+  TimeTravel.Service
+]
+
 const owner = { hostId: "host", pid: 1, nonce: "owner" } as const
 
 const row = (overrides: Partial<RunStore.RunRow> = {}): RunStore.RunRow => ({
@@ -85,19 +103,7 @@ describe("public time-travel modules", () => {
     ].sort())
   })
 
-  it("names the TimeTravel module's types and constants from the barrel", () => {
-    // A caller who annotates a signature should not need a second import path.
-    const position: TimeTravel.Position = { runId: "parent", frame }
-    const projection: TimeTravel.Projection<number> = { initial: 0, reduce: (state) => state + 1 }
-    const replayOptions: TimeTravel.ReplayOptions = { pageSize: 1 }
-    const forkOptions: TimeTravel.ForkOptions = { retainWorkspace: true }
-    const rewindOptions: TimeTravel.RewindOptions = { detachedChildren: "cancel" }
-    const options: TimeTravel.Options = { maxHistoryEntries: 1 }
-    const results: [TimeTravel.ForkResult, TimeTravel.RewindResult] | undefined = undefined
-    const service: TimeTravel.Service | undefined = undefined
-
-    expect([position, projection, replayOptions, forkOptions, rewindOptions, options]).toHaveLength(6)
-    expect([results, service]).toEqual([undefined, undefined])
+  it("names the TimeTravel module's constants from the barrel", () => {
     expect(TimeTravel.forkWorkspaceName("child-1")).toBe(Fork.workspaceNameFor("child-1"))
     expect(TimeTravel.defaultMaxHistoryEntries).toBe(100_000)
   })

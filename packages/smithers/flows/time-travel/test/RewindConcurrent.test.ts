@@ -16,81 +16,20 @@ import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts
 import * as Rewind from "../src/internal/Rewind.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { makeRuns as harnessRuns, row } from "./MemoryHarness.ts"
 
 const ownerA: OwnerId = { hostId: "test-host", pid: 30, nonce: "owner-a" }
 const ownerB: OwnerId = { hostId: "test-host", pid: 31, nonce: "owner-b" }
 const frame = { lineageId: "run/root", seq: 0 } as const
 
-const makeRuns = (
-  overrides: Partial<RunStore.Service> = {}
-): RunStore.Service & { readonly state: () => RunStore.RunRow } => {
-  let row: RunStore.RunRow = {
-    runId: "run",
-    status: "suspended",
-    createdAtMs: 0,
-    startedAtMs: 0,
-    finishedAtMs: null,
-    owner: null,
-    heartbeatAtMs: null,
-    claim: null,
-    claimedAtMs: null,
-    parentRunId: null,
-    cancelRequestedAtMs: null,
-    stateJson: "{}"
-  }
-  const service = RunStore.makeNoop({
-    get: () => Effect.succeed({ ...row }),
-    claim: (_runId, _expected, claimant, nowMs) =>
-      Effect.sync(() => {
-        if (row.claim !== null) return { _tag: "AlreadyClaimed" as const }
-        if (row.status === "running") return { _tag: "HeartbeatFresh" as const }
-        row = { ...row, claim: claimant, claimedAtMs: nowMs }
-        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-      }),
-    activate: (_runId, claimant, claimedAtMs) =>
-      Effect.sync(() => {
-        if (row.claim?.nonce !== claimant.nonce || row.claimedAtMs !== claimedAtMs) {
-          return { _tag: "ClaimLost" as const }
-        }
-        row = {
-          ...row,
-          status: "running",
-          owner: claimant,
-          heartbeatAtMs: claimedAtMs,
-          claim: null,
-          claimedAtMs: null,
-          parentRunId: null,
-          cancelRequestedAtMs: null
-        }
-        return { _tag: "Activated" as const }
-      }),
-    abandonClaim: () => Effect.succeed({ _tag: "Abandoned" as const }),
-    transitionOwned: (_runId, currentOwner, status) =>
-      Effect.sync(() => {
-        if (row.owner?.nonce !== currentOwner.nonce) return { _tag: "FenceLost" as const }
-        row = {
-          ...row,
-          status,
-          ...(status === "running"
-            ? {}
-            : {
-              owner: null,
-              heartbeatAtMs: null,
-              claim: null,
-              claimedAtMs: null,
-              parentRunId: null,
-              cancelRequestedAtMs: null
-            })
-        }
-        return { _tag: "Transitioned" as const }
-      }),
-    ...overrides
-  })
-  return Object.assign(service, { state: () => ({ ...row }) })
-}
+const makeRuns = (overrides: Partial<RunStore.Service> = {}) => harnessRuns([row()], overrides)
 
 describe("Rewind concurrency", () => {
-  it.effect("returns typed busy to a second rewind while the first holds the activated RunStore CAS", () =>
+  // Both cases here are sequential: the second rewind reads the row after the
+  // first has activated and is refused by that read. Two claimants holding the
+  // same snapshot are separated by the store's compare-and-swap, which
+  // RewindFence.test.ts pins over the SQL stores.
+  it.effect("returns typed busy to a second rewind that reads the row after the first activated", () =>
     Effect.gen(function*() {
       // The winner's heartbeat is what keeps the claim from looking abandoned
       // while the loser is being refused, and it only pulses on the clock the

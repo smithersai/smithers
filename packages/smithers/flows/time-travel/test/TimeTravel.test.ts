@@ -34,7 +34,7 @@ import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import { layerWith, TimeTravel } from "../src/TimeTravel.ts"
 import type { Audit } from "../src/TimeTravelStore.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
-import { journalOf, row as makeRow } from "./MemoryHarness.ts"
+import { journalOf, makeRuns as harnessRuns, row as makeRow } from "./MemoryHarness.ts"
 import { jjInstalled, parkSealedFlow, runRealEngine, withRealFixture } from "./RealTimeTravelHarness.ts"
 
 const lineageId = "run/root"
@@ -53,45 +53,7 @@ const record = (seq: number, amount: number): MemoryTimeTravelStore.JournalRecor
 
 const row = (runId: string): RunStore.RunRow => makeRow({ runId })
 
-const makeRuns = (): RunStore.Service => {
-  const state = new Map([["run", { ...row("run") }]])
-  return RunStore.makeNoop({
-    get: (runId) => {
-      const found = state.get(runId)
-      return found === undefined
-        ? Effect.fail(
-          new RunStore.RunStoreError({ code: "not_found_row", method: "get", message: "missing", cause: runId })
-        )
-        : Effect.succeed({ ...found })
-    },
-    claim: (runId, _expected, claimant, nowMs) =>
-      Effect.sync(() => {
-        const found = state.get(runId)!
-        found.claim = claimant
-        found.claimedAtMs = nowMs
-        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-      }),
-    activate: (runId, claimant, claimedAtMs) =>
-      Effect.sync(() => {
-        const found = state.get(runId)!
-        found.status = "running"
-        found.owner = claimant
-        found.heartbeatAtMs = claimedAtMs
-        found.claim = null
-        found.claimedAtMs = null
-        return { _tag: "Activated" as const }
-      }),
-    transitionOwned: (runId, currentOwner, status) =>
-      Effect.sync(() => {
-        const found = state.get(runId)!
-        if (found.owner?.nonce !== currentOwner.nonce) return { _tag: "FenceLost" as const }
-        found.status = status
-        found.owner = null
-        found.heartbeatAtMs = null
-        return { _tag: "Transitioned" as const }
-      })
-  })
-}
+const makeRuns = (): RunStore.Service => harnessRuns([row("run")])
 
 const harness = (options: {
   readonly store: ReturnType<typeof MemoryTimeTravelStore.make>

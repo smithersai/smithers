@@ -12,7 +12,7 @@ import * as Recovery from "../src/internal/Recovery.ts"
 import type { AuditDetail } from "../src/internal/Rewind.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import { type Audit, TimeTravelStore } from "../src/TimeTravelStore.ts"
-import { row } from "./MemoryHarness.ts"
+import { makeRuns, row } from "./MemoryHarness.ts"
 
 /**
  * Startup recovery must arbitrate ownership before it touches a run: an
@@ -64,64 +64,8 @@ const auditRow = (detail?: unknown): Audit => ({
  * executing it mid-rollback. A double that refuses every claim therefore no
  * longer describes any reachable state.
  */
-const claimable = (
-  initial: RunStore.RunRow,
-  overrides: Partial<RunStore.Service> = {}
-): RunStore.Service & { readonly state: () => RunStore.RunRow } => {
-  let row = { ...initial }
-  const service = RunStore.makeNoop({
-    get: () => Effect.succeed({ ...row }),
-    claim: (_runId, _expected, claimant, nowMs) =>
-      Effect.sync(() => {
-        if (row.status === "running" || row.claim !== null) return { _tag: "HeartbeatFresh" as const }
-        row = { ...row, claim: claimant, claimedAtMs: nowMs }
-        return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-      }),
-    activate: (_runId, claimant, claimedAtMs) =>
-      Effect.sync(() => {
-        if (row.claim?.nonce !== claimant.nonce || row.claimedAtMs !== claimedAtMs) {
-          return { _tag: "ClaimLost" as const }
-        }
-        row = {
-          ...row,
-          status: "running",
-          owner: claimant,
-          heartbeatAtMs: claimedAtMs,
-          claim: null,
-          claimedAtMs: null
-        }
-        return { _tag: "Activated" as const }
-      }),
-    heartbeat: () => Effect.succeed({ _tag: "Updated" as const }),
-    transitionOwned: (_runId, transitionOwner, status, stateJson, guard) =>
-      Effect.gen(function*() {
-        if (status === "pending" && (guard?.restorePending !== true || stateJson === undefined)) {
-          return yield* Effect.fail(
-            new RunStore.RunStoreError({
-              code: "invalid_run",
-              method: "transitionOwned",
-              message: "transitionOwned cannot target pending",
-              cause: status
-            })
-          )
-        }
-        if (row.owner?.nonce !== transitionOwner.nonce) return { _tag: "FenceLost" as const }
-        if (status === "pending" && row.stateJson !== stateJson) return { _tag: "GuardFailed" as const }
-        row = {
-          ...row,
-          status,
-          stateJson: stateJson ?? row.stateJson,
-          owner: null,
-          heartbeatAtMs: null,
-          claim: null,
-          claimedAtMs: null
-        }
-        return { _tag: "Transitioned" as const }
-      }),
-    ...overrides
-  })
-  return Object.assign(service, { state: () => ({ ...row }) })
-}
+const claimable = (initial: RunStore.RunRow, overrides: Partial<RunStore.Service> = {}) =>
+  makeRuns([initial], overrides)
 
 const emptyJournal = Journal.makeNoop({
   entries: () => Effect.succeed({ entries: [], hasMore: false })
@@ -298,52 +242,11 @@ describe("Recovery ownership arbitration", () => {
   it.effect("drains a compensated audit's persisted child plan when its archive committed", () =>
     Effect.gen(function*() {
       const childRunId = "pending-child"
-      const rows = new Map<string, RunStore.RunRow>([
-        ["run", baseRow({ status: "suspended", owner: null, heartbeatAtMs: null })],
-        [childRunId, { ...baseRow({ status: "suspended", owner: null, heartbeatAtMs: null }), runId: childRunId }]
-      ])
-      const runs = RunStore.makeNoop({
-        get: (runId) => Effect.succeed({ ...rows.get(runId)! }),
-        claim: (runId, _expected, claimant, nowMs) =>
-          Effect.sync(() => {
-            const current = rows.get(runId)!
-            if (current.status === "running" || current.claim !== null) {
-              return { _tag: "HeartbeatFresh" as const }
-            }
-            rows.set(runId, { ...current, claim: claimant, claimedAtMs: nowMs })
-            return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-          }),
-        activate: (runId, claimant, claimedAtMs) =>
-          Effect.sync(() => {
-            const current = rows.get(runId)!
-            if (current.claim?.nonce !== claimant.nonce || current.claimedAtMs !== claimedAtMs) {
-              return { _tag: "ClaimLost" as const }
-            }
-            rows.set(runId, {
-              ...current,
-              status: "running",
-              owner: claimant,
-              heartbeatAtMs: claimedAtMs,
-              claim: null,
-              claimedAtMs: null
-            })
-            return { _tag: "Activated" as const }
-          }),
-        transitionOwned: (runId, transitionOwner, status) =>
-          Effect.sync(() => {
-            const current = rows.get(runId)!
-            if (current.owner?.nonce !== transitionOwner.nonce) return { _tag: "FenceLost" as const }
-            rows.set(runId, {
-              ...current,
-              status,
-              owner: null,
-              heartbeatAtMs: null,
-              claim: null,
-              claimedAtMs: null
-            })
-            return { _tag: "Transitioned" as const }
-          })
-      })
+      const rows = [
+        baseRow({ status: "suspended", owner: null, heartbeatAtMs: null }),
+        { ...baseRow({ status: "suspended", owner: null, heartbeatAtMs: null }), runId: childRunId }
+      ]
+      const runs = makeRuns(rows)
       const store = MemoryTimeTravelStore.make({
         records: [
           { runId: "run", seq: 0, eventId: "event-0", payload: {} },
@@ -369,7 +272,7 @@ describe("Recovery ownership arbitration", () => {
       const first = yield* runRecovery(runs, { store })
 
       expect(first.outcomes).toEqual([{ _tag: "Completed", auditId: "audit" }])
-      expect(rows.get(childRunId)).toMatchObject({ status: "cancelled", owner: null })
+      expect(runs.state(childRunId)).toMatchObject({ status: "cancelled", owner: null })
       expect(first.audits[0]).toMatchObject({
         status: "completed",
         detail: { pendingChildren: [], cancelledChildren: [childRunId] }
@@ -377,7 +280,7 @@ describe("Recovery ownership arbitration", () => {
 
       const second = yield* runRecovery(runs, { store })
       expect(second.outcomes).toEqual([])
-      expect(rows.get(childRunId)).toMatchObject({ status: "cancelled", owner: null })
+      expect(runs.state(childRunId)).toMatchObject({ status: "cancelled", owner: null })
     }))
 
   it.effect("resolves a pending child that is already gone or already terminal", () =>
@@ -714,48 +617,7 @@ describe("Recovery ownership arbitration", () => {
     Effect.gen(function*() {
       const entered = Effect.runSync(Deferred.make<void>())
       const release = Effect.runSync(Deferred.make<void>())
-      let current = baseRow({ status: "suspended", owner: null, heartbeatAtMs: null })
-      const runs = RunStore.makeNoop({
-        get: () => Effect.succeed({ ...current }),
-        claim: (_runId, _expected, claimant, nowMs) =>
-          Effect.sync(() => {
-            if (current.status === "running" || current.claim !== null) {
-              return { _tag: "HeartbeatFresh" as const }
-            }
-            current = { ...current, claim: claimant, claimedAtMs: nowMs }
-            return { _tag: "Claimed" as const, claimedAtMs: nowMs }
-          }),
-        activate: (_runId, claimant, claimedAtMs) =>
-          Effect.sync(() => {
-            if (current.claim?.nonce !== claimant.nonce || current.claimedAtMs !== claimedAtMs) {
-              return { _tag: "ClaimLost" as const }
-            }
-            current = {
-              ...current,
-              status: "running",
-              owner: claimant,
-              heartbeatAtMs: claimedAtMs,
-              claim: null,
-              claimedAtMs: null
-            }
-            return { _tag: "Activated" as const }
-          }),
-        heartbeat: () => Effect.succeed({ _tag: "Updated" as const }),
-        transitionOwned: (_runId, transitionOwner, status, stateJson) =>
-          Effect.sync(() => {
-            if (current.owner?.nonce !== transitionOwner.nonce) return { _tag: "FenceLost" as const }
-            current = {
-              ...current,
-              status,
-              stateJson: stateJson ?? current.stateJson,
-              owner: null,
-              heartbeatAtMs: null,
-              claim: null,
-              claimedAtMs: null
-            }
-            return { _tag: "Transitioned" as const }
-          })
-      })
+      const runs = makeRuns([baseRow({ status: "suspended", owner: null, heartbeatAtMs: null })])
       const compensation = {
         handlerReceipts: [{
           id: "send:rollback",
@@ -809,6 +671,7 @@ describe("Recovery ownership arbitration", () => {
       )
 
       yield* Deferred.await(entered)
+      const current = runs.state()
       expect(current).toMatchObject({ status: "running", owner })
       const concurrent = yield* runs.claim(
         "run",
@@ -825,7 +688,7 @@ describe("Recovery ownership arbitration", () => {
       const result = yield* Fiber.join(fiber)
 
       expect(result.outcomes).toEqual([{ _tag: "RolledBack", auditId: "audit" }])
-      expect(current).toMatchObject({ status: "suspended", owner: null, claim: null })
+      expect(runs.state()).toMatchObject({ status: "suspended", owner: null, claim: null })
     }))
 
   it.effect("keeps the audit open on claim and activation persistence failures", () =>
@@ -1061,7 +924,7 @@ describe("Recovery ownership arbitration", () => {
       })
     }))
 
-  it.effect("records a terminal failure when the fence is lost mid-recovery", () =>
+  it.effect("stays Busy and in_progress when the fence is lost mid-recovery", () =>
     Effect.gen(function*() {
       const runs = RunStore.makeNoop({
         get: () => Effect.succeed(baseRow({ status: "running", owner })),
@@ -1124,14 +987,14 @@ describe("Recovery ownership arbitration", () => {
       )
     }))
 
-  it.effect("records a terminal failure when the rollback fence is lost", () =>
+  it.effect("stays Busy and in_progress when the rollback fence is lost", () =>
     Effect.gen(function*() {
       const runs = RunStore.makeNoop({
         get: () => Effect.succeed(baseRow({ status: "running", owner })),
         transitionOwned: () => Effect.succeed({ _tag: "FenceLost" as const })
       })
 
-      const { outcomes } = yield* runRecovery(runs, {
+      const { audits, outcomes } = yield* runRecovery(runs, {
         audit: auditRow(
           {
             version: 1,
@@ -1171,6 +1034,7 @@ describe("Recovery ownership arbitration", () => {
       expect(outcomes[0]?._tag === "Busy" ? outcomes[0].error.message : "").toContain(
         "run run lost its rollback fence"
       )
+      expect(audits[0]).toMatchObject({ status: "in_progress" })
     }))
 
   it.effect("rolls back without consulting the journal when the rewind archived nothing", () =>
