@@ -136,7 +136,7 @@ const validateRow = (parsed: unknown, row: number): ReadonlyArray<string> => {
   const problems: string[] = []
   const extraKeys = Object.keys(parsed).filter((key) => key !== "messages")
   if (extraKeys.length > 0) {
-    problems.push(`row ${row}: unexpected top-level key(s) ${extraKeys.map((key) => JSON.stringify(key)).join(", ")}`)
+    problems.push(`row ${row}: ${extraKeys.length} unexpected top-level key(s); only "messages" is allowed`)
   }
 
   const messages = parsed.messages
@@ -153,10 +153,10 @@ const validateRow = (parsed: unknown, row: number): ReadonlyArray<string> => {
     }
     const extraMessageKeys = Object.keys(message).filter((key) => !messageKeys.has(key))
     if (extraMessageKeys.length > 0) {
-      problems.push(`${at}: unexpected key(s) ${extraMessageKeys.map((key) => JSON.stringify(key)).join(", ")}`)
+      problems.push(`${at}: ${extraMessageKeys.length} unexpected key(s); only "role" and "content" are allowed`)
     }
     if (typeof message.role !== "string" || !roles.has(message.role)) {
-      problems.push(`${at}: role ${JSON.stringify(message.role)} is not one of ${[...roles].join(", ")}`)
+      problems.push(`${at}: role is not one of ${[...roles].join(", ")}`)
     }
     if (typeof message.content !== "string" || message.content.trim().length === 0) {
       problems.push(`${at}: content is empty or not a string`)
@@ -187,6 +187,8 @@ const validateRow = (parsed: unknown, row: number): ReadonlyArray<string> => {
 
 /**
  * Returns every problem in a JSONL dataset; an empty list means it may ship.
+ * A problem names its row, message, and rule but never quotes row text, keys,
+ * or values: the CLI prints each one, and a rejected row may hold a credential.
  */
 export const validateDataset = (text: string): ReadonlyArray<string> => {
   const lines = text.split("\n").filter((line) => line.trim().length > 0)
@@ -198,8 +200,8 @@ export const validateDataset = (text: string): ReadonlyArray<string> => {
     let parsed: unknown
     try {
       parsed = JSON.parse(line)
-    } catch (error) {
-      return [`row ${row}: not valid JSON: ${(error as Error).message}`]
+    } catch {
+      return [`row ${row}: not valid JSON`]
     }
     return validateRow(parsed, row)
   })

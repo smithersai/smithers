@@ -29,6 +29,10 @@ reach Fireworks or a trained model:
 - assistant code that imports a missing `@smthrs/*` workspace package or a
   path absent from that package's public exports, using a literal specifier.
 
+Each problem names its row, message, and rule. It never quotes row text, key
+names, or values, because a rejected row may hold a credential and the gate's
+output lands in terminal and build logs.
+
 The import gate parses assistant TypeScript and reads the root `workspaces` list
 and package manifests. It does not typecheck or execute the assistant code.
 

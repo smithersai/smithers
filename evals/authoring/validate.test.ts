@@ -102,14 +102,14 @@ describe("validateDataset", () => {
   test("rejects top-level metadata that firectl would upload", () => {
     rejects(
       row({ ...good, source_path: "port.ts", role: "backtranslation" }),
-      "unexpected top-level key(s) \"source_path\", \"role\""
+      "row 1: 2 unexpected top-level key(s); only \"messages\" is allowed"
     )
   })
 
   test("rejects extra message keys", () => {
     rejects(
       row({ messages: [good.messages[1], { role: "assistant", content: "a", name: "x" }] }),
-      "unexpected key(s) \"name\""
+      "message 2: 1 unexpected key(s); only \"role\" and \"content\" are allowed"
     )
   })
 
@@ -135,5 +135,21 @@ describe("validateDataset", () => {
   test("rejects an empty dataset and unparsable rows", () => {
     rejects("\n\n", "dataset is empty")
     rejects("{", "row 1: not valid JSON")
+  })
+
+  test("never quotes row text, keys, or values in a problem", () => {
+    const key = `fw_${"a".repeat(24)}`
+    const leaks = (text: string, fragment: string) => {
+      const problems = validateDataset(text)
+      assert.ok(problems.length > 0, `expected a problem for ${fragment}`)
+      for (const problem of problems) {
+        assert.ok(!problem.includes(key), `${fragment} leaked the credential: ${JSON.stringify(problem)}`)
+      }
+      rejects(text, fragment)
+    }
+    leaks(`{"messages": [{"role": "user", "content": ${key}}]}`, "row 1: not valid JSON")
+    leaks(row({ messages: [{ role: key, content: "hi" }, good.messages[2]] }), "message 1: role is not one of")
+    leaks(row({ ...good, [key]: "x" }), "row 1: 1 unexpected top-level key(s)")
+    leaks(row({ messages: [{ ...good.messages[1], [key]: "x" }, good.messages[2]] }), "message 1: 1 unexpected key(s)")
   })
 })
