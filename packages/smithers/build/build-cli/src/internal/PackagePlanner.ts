@@ -275,6 +275,10 @@ interface PlanContext {
   readonly tools: Map<string, ToolOutcome>
   /** One plan's byte reads only; every invocation allocates a fresh map. */
   readonly toolBytes: Map<string, Promise<string>>
+  /** One plan's executable identities, by path and search path. */
+  readonly executableIdentities: Map<string, Promise<unknown>>
+  /** One plan's PATH lookups, by name and search path. */
+  readonly pathLookups: Map<string, string | undefined>
   readonly probes: Map<string, PackageTree.Probe>
   /**
    * Host facts the native planners (Docker, Foundry, Anvil, mise) share across
@@ -535,7 +539,7 @@ const declaredJavaScriptTool = async (
     ? executable
     : executable.includes(NodePath.sep) || executable.includes("/")
     ? NodePath.resolve(context.root, executable)
-    : PackageTree.findOnPath(executable, context.environment)
+    : onPath(context, executable, context.environment)
   const identity = { tag, name: declared.name, requirement: declared.version ?? null, executable }
   if (path === undefined) {
     return {
@@ -586,14 +590,62 @@ const declaredJavaScriptTool = async (
  * @category internal
  * @since 1.0.0
  */
-export const binaryIdentity = async (
-  context: {
-    readonly root: string
-    readonly toolBytes: Map<string, Promise<string>>
-    readonly environment: Readonly<Record<string, string | undefined>>
-  },
+export const binaryIdentity = (
+  context: ExecutableContext,
   path: string,
   ancestors: ReadonlySet<string> = new Set()
+): Promise<unknown> => {
+  const identities = context.executableIdentities
+  if (identities === undefined || ancestors.size > 0) return identifyExecutable(context, path, ancestors)
+  const key = JSON.stringify([path, searchPathOf(context.environment)])
+  let identity = identities.get(key)
+  if (identity === undefined) {
+    identity = identifyExecutable(context, path, ancestors)
+    identities.set(key, identity)
+  }
+  return identity
+}
+
+/** What identifying an executable reads, and the per-plan answers it may reuse. */
+interface ExecutableContext {
+  readonly root: string
+  readonly toolBytes: Map<string, Promise<string>>
+  readonly environment: Readonly<Record<string, string | undefined>>
+  /** One plan's executable identities, by path and search path. */
+  readonly executableIdentities?: Map<string, Promise<unknown>> | undefined
+  /** One plan's PATH lookups, by name and search path. */
+  readonly pathLookups?: Map<string, string | undefined> | undefined
+}
+
+/** The variables a PATH lookup reads: `PATH` and `PATHEXT` in any case. */
+const searchPathOf = (environment: Readonly<Record<string, string | undefined>>): ReadonlyArray<[string, string]> =>
+  Object.entries(environment)
+    .filter((entry): entry is [string, string] => entry[1] !== undefined && /^path(?:ext)?$/i.test(entry[0]))
+    .sort(([a], [b]) => a.localeCompare(b))
+
+/**
+ * `PackageTree.findOnPath`, answered once per plan for one name and search
+ * path. Every target that spawns `node` asked the host again, statting each
+ * `PATH` directory, about ten thousand times in one 4,500-target plan.
+ */
+const onPath = (
+  context: { readonly pathLookups?: Map<string, string | undefined> | undefined },
+  name: string,
+  environment: Readonly<Record<string, string | undefined>>
+): string | undefined => {
+  const lookups = context.pathLookups
+  if (lookups === undefined) return PackageTree.findOnPath(name, environment)
+  const key = JSON.stringify([name, searchPathOf(environment)])
+  if (lookups.has(key)) return lookups.get(key)
+  const found = PackageTree.findOnPath(name, environment)
+  lookups.set(key, found)
+  return found
+}
+
+const identifyExecutable = async (
+  context: ExecutableContext,
+  path: string,
+  ancestors: ReadonlySet<string>
 ): Promise<unknown> => {
   const resolved = await Fs.realpath(path)
   if (ancestors.has(resolved)) throw new Error(`cyclic executable interpreter: ${path}`)
@@ -631,7 +683,7 @@ export const binaryIdentity = async (
       if (command === undefined || command.startsWith("-") || command.includes("=")) {
         throw new Error(`cannot identify env shebang interpreter: ${path}`)
       }
-      const selected = NodePath.isAbsolute(command) ? command : PackageTree.findOnPath(command, context.environment)
+      const selected = NodePath.isAbsolute(command) ? command : onPath(context, command, context.environment)
       if (selected === undefined) throw new Error(`shebang interpreter ${JSON.stringify(command)} is not on PATH`)
       interpreters.push(await binaryIdentity(context, selected, next))
     }
@@ -893,7 +945,7 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
         problem = `${variable} names ${JSON.stringify(selected)}, which is not an executable file`
       } else path = selected
     } else {
-      path = PackageTree.findOnPath(name, context.environment)
+      path = onPath(context, name, context.environment)
       if (path === undefined) {
         problem = `host binary ${JSON.stringify(name)} is declared in S.Host({ bins }) but is not present on PATH` +
           (variable === undefined ? "" : ` and ${variable} is unset`)
@@ -1014,7 +1066,7 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
         const probe = await probeOnce(context, path)
         const rustup = NodePath.isAbsolute(layer.rustup)
           ? layer.rustup
-          : PackageTree.findOnPath(layer.rustup, context.environment)
+          : onPath(context, layer.rustup, context.environment)
         const components: Array<unknown> = []
         if (rustup !== undefined) {
           components.push(await binaryIdentity(context, rustup))
@@ -1072,7 +1124,7 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
         }
       }
     } else {
-      const path = PackageTree.findOnPath("npx", context.environment)
+      const path = onPath(context, "npx", context.environment)
       if (path === undefined) {
         outcome = {
           _tag: "refused",
@@ -1159,7 +1211,7 @@ const resolveBun = async (context: PlanContext): Promise<ToolOutcome> => {
   const key = "{bun}"
   const known = context.tools.get(key)
   if (known !== undefined) return known
-  const path = PackageTree.findOnPath("bun", context.environment)
+  const path = onPath(context, "bun", context.environment)
   let outcome: ToolOutcome
   if (path === undefined) {
     outcome = {
@@ -1617,7 +1669,7 @@ const visit = async (
         }
         const path = NodePath.isAbsolute(tool.executable)
           ? tool.executable
-          : PackageTree.findOnPath(tool.executable, toolContext.environment)
+          : onPath(toolContext, tool.executable, toolContext.environment)
         if (path === undefined) throw new Error("executable is not on PATH")
         await Fs.access(path, 1)
         toolchain.push(await binaryIdentity(toolContext, path))
@@ -2261,7 +2313,7 @@ const visit = async (
     }
     const cargoPlugin = rule === "Cargo.Nextest" ? "cargo-nextest" : rule === "Cargo.Deny" ? "cargo-deny" : undefined
     if (cargoPlugin !== undefined) {
-      const pluginPath = PackageTree.findOnPath(cargoPlugin, toolContext.environment)
+      const pluginPath = onPath(toolContext, cargoPlugin, toolContext.environment)
       if (pluginPath === undefined) {
         noteRefusal(`host binary ${JSON.stringify(cargoPlugin)} is not present on PATH; ${rule} cannot run`)
       } else {
@@ -3163,7 +3215,7 @@ const visit = async (
     if (command.includes(workspaceRootToken)) continue
     const path = NodePath.isAbsolute(command)
       ? command
-      : PackageTree.findOnPath(command, spawnEnvironment)
+      : onPath(context, command, spawnEnvironment)
     if (path !== undefined && NodeFs.existsSync(path)) {
       executable.push(await binaryIdentity({ ...context, environment: spawnEnvironment }, path))
     }
@@ -3949,6 +4001,8 @@ const planWithServices = async (
     ),
     tools: new Map(),
     toolBytes: new Map(),
+    executableIdentities: new Map(),
+    pathLookups: new Map(),
     probes: new Map(),
     hostProbes: HostProbes.make(),
     nodes: new Map(),
