@@ -168,7 +168,7 @@ const table: ReadonlyArray<MappingRow> = [
     "WaitForEvent",
     "WaitFor.action over DurableDeferred",
     "@smthrs/flow/WaitFor",
-    "`event` and `correlationId` become the wait name, the payload schema becomes the deferred success schema, and `timeoutMs` becomes `DurableDeferred.raceAll` with a `Sleep`. The sender side is guided until the signal bridge lands.",
+    "A literal `event` or `correlationId` becomes the wait name. A wait named by an expression or by both, or with a payload schema, `timeoutMs` or `onTimeout`, is guided: decode the payload, and race the wait against a `Sleep` with `DurableDeferred.raceAll`. The sender side is guided until the signal bridge lands.",
     "automatic"
   ),
   row(
@@ -1082,6 +1082,9 @@ const needsSnippet = (construct: string): boolean =>
 export const classify = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse): MappingClass =>
   classifyWithReason(hit, parse).class
 
+/** The wait props `WaitFor.action` has no place for. */
+const waitExtras = ["onTimeout", "output", "outputSchema", "schema", "timeoutMs"]
+
 const identifier = (value: string | undefined, fallback: string): string => {
   const cleaned = (value ?? fallback).replace(/[^A-Za-z0-9]+/g, " ").trim()
   if (cleaned === "") return fallback
@@ -1493,9 +1496,13 @@ export const snippet = (hit: InventoryEntry, parse: typeof Ts.parse = Ts.parse):
     }
     case "WaitForEvent":
     case "Signal": {
-      const event = detail["event"] ?? detail["correlationId"]
-      if (event === undefined) return undefined
-      return `WaitFor.action.call({ name: ${JSON.stringify(event)} })`
+      // `WaitFor.action` waits on one name with no schema and no deadline, so
+      // only a wait that is exactly that, named by one literal, is mechanical.
+      if (waitExtras.some((prop) => hit.props.includes(prop))) return undefined
+      const names = ["event", "correlationId"].filter((prop) => hit.props.includes(prop))
+      const literal = names.length === 1 ? detail[`${names[0]}Literal`] : undefined
+      if (literal === undefined) return undefined
+      return `WaitFor.action.call({ name: ${JSON.stringify(literal)} })`
     }
     case "Approval":
     case "ApprovalGate": {

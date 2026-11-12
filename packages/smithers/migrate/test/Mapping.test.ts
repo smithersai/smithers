@@ -516,7 +516,7 @@ describe("Mapping.snippet", () => {
         elsePayloads: "{\"stop\":{}}"
       }),
       hit("Timer", ["duration"], { duration: "1 hour" }),
-      hit("WaitForEvent", ["event"], { event: "approved" }),
+      hit("WaitForEvent", ["event"], { event: "approved", eventLiteral: "approved" }),
       hit("Approval", ["request"], { request: "ship it" }),
       hit("runWorkflow")
     ]
@@ -763,6 +763,56 @@ describe("Mapping writes a flow module the registry can discover", () => {
 
     expect(Mapping.snippet(workflowHit(unresolved))).toBeUndefined()
     expect(Mapping.classify(workflowHit(unresolved))).toBe("guided")
+  })
+})
+
+// One wait element inside a workflow, scanned the way the tool scans a file.
+const waitHit = (element: string): Inventory.InventoryEntry => {
+  const source = [
+    "/** @jsxImportSource smthrs */",
+    "import { createSmithers } from \"smthrs\";",
+    "const { Workflow, WaitForEvent, Signal, smithers } = createSmithers({});",
+    "export default smithers((ctx) => (",
+    `  <Workflow name="waits">${element}</Workflow>`,
+    "));"
+  ].join("\n")
+  const factories = Inventory.factoryNames(new Map([["waits.tsx", source]]))
+  const hits = Inventory.scanFile("waits.tsx", source, { factories })
+  return hits.find((entry) => entry.construct === "WaitForEvent" || entry.construct === "Signal")!
+}
+
+describe("Mapping rewrites a wait only when WaitFor keeps its meaning", () => {
+  it("names the wait after a literal event or correlation id", () => {
+    for (const element of ["<WaitForEvent event=\"done\" />", "<WaitForEvent event={\"done\"} />"]) {
+      expect(Mapping.classify(waitHit(element)), element).toBe("automatic")
+      expect(Mapping.snippet(waitHit(element)), element).toBe("WaitFor.action.call({ name: \"done\" })")
+    }
+    expect(Mapping.snippet(waitHit("<Signal correlationId={`order`} />"))).toBe(
+      "WaitFor.action.call({ name: \"order\" })"
+    )
+  })
+
+  it("leaves a wait with a timeout, a fallback, a schema, an expression name or two names to the agent", () => {
+    // `WaitFor.action` waits on one name forever. A timeout dropped here is a
+    // wait that never takes its timeout branch, and `ctx.input.event` printed
+    // as a name is a wait the intended event never resolves.
+    for (
+      const element of [
+        "<WaitForEvent event=\"done\" timeoutMs={1000} onTimeout={() => \"timed out\"} />",
+        "<WaitForEvent event=\"done\" timeoutMs={1000} />",
+        "<WaitForEvent event=\"done\" onTimeout=\"skip\" />",
+        "<WaitForEvent event=\"done\" outputSchema={z.object({ ok: z.boolean() })} />",
+        "<WaitForEvent event={ctx.input.event} />",
+        "<WaitForEvent event={done} />",
+        "<WaitForEvent event={`run-${ctx.runId}`} />",
+        "<WaitForEvent event=\"done\" correlationId=\"order\" />",
+        "<Signal correlationId=\"order\" schema={z.object({ ok: z.boolean() })} />",
+        "<Signal correlationId={ctx.input.order} />"
+      ]
+    ) {
+      expect(Mapping.snippet(waitHit(element)), element).toBeUndefined()
+      expect(Mapping.classify(waitHit(element)), element).toBe("guided")
+    }
   })
 })
 

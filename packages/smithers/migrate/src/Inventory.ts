@@ -709,6 +709,15 @@ export const scanFile = (
         if (described !== undefined && described.trim() !== "") detail["description"] = described.trim()
       }
 
+      // A wait's text is `done` in `event="done"` and in `event={done}` alike,
+      // so the name a source wrote as a string literal is recorded on its own.
+      if (construct === "WaitForEvent" || construct === "Signal") {
+        for (const prop of ["correlationId", "event"]) {
+          const literal = Ts.attributeLiteral(node, prop)
+          if (literal !== undefined) detail[`${prop}Literal`] = literal
+        }
+      }
+
       const chain = outputChain(detail["output"] ?? detail["outputSchema"])
       if (chain !== undefined) detail["outputChain"] = chain
 
