@@ -8,11 +8,11 @@
 
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
-import * as Text from "./internal/text.ts"
+import { metadataJson, redactReason } from "./internal/observation.ts"
 import type { Result as ScorerResult } from "./Scorer.ts"
 import * as Scorer from "./Scorer.ts"
 import { ScorerError } from "./ScorerError.ts"
-import { maxReasonBytes, type Observation, type ObservationBase } from "./ScoreStore.ts"
+import type { Observation, ObservationBase } from "./ScoreStore.ts"
 import * as ScoreStore from "./ScoreStore.ts"
 
 /**
@@ -120,8 +120,8 @@ const failureOf = (cause: unknown): Failure => {
  *   throws used to raise synchronously inside the batch's `catchCause`
  *   handler and escape as a defect, killing the batch this function exists to
  *   keep alive.
- * - The reason is truncated to `maxReasonBytes`, because the squashed cause is
- *   an arbitrary host-formatted string that can carry a whole response body.
+ * - The reason is redacted and truncated to `ScoreStore.maxReasonBytes`,
+ *   because the squashed cause can carry credentials or a whole response body.
  *
  * @category converting
  * @since 0.1.0
@@ -133,7 +133,7 @@ export const inconclusive = (job: Job, cause: unknown): Observation => {
     scorerKey: job.observation.scorerKey,
     kind: "inconclusive",
     code: failure.code,
-    reason: Text.truncate(`Scorer execution was inconclusive: ${failure.text}`, maxReasonBytes),
+    reason: redactReason(`Scorer execution was inconclusive: ${failure.text}`),
     at: job.at
   }
 }
@@ -150,10 +150,17 @@ const execute = (job: Job): Effect.Effect<Outcome, never, ScoreStore.ScoreStore>
         score: result.score,
         ...(result.reason === undefined
           ? {}
-          : { reason: Text.truncate(result.reason, ScoreStore.maxReasonBytes) }),
+          : { reason: redactReason(result.reason) }),
         ...(result.meta === undefined ? {} : { meta: result.meta }),
         at: job.at
       })),
+      Effect.flatMap((observation) =>
+        metadataJson(observation).pipe(
+          Effect.map((encoded): ScoreStore.ScoreObservation =>
+            encoded === null ? observation : { ...observation, meta: JSON.parse(encoded) as unknown }
+          )
+        )
+      ),
       Effect.catchCause((cause) =>
         Cause.hasInterrupts(cause)
           ? Effect.interrupt
@@ -187,6 +194,8 @@ const concurrency = (value: number | undefined): number =>
  * Await this effect inside a durable flow action. It never forks background
  * work. Interruption propagates so the flow can resume; recordOnce deduplicates
  * observations by job identity if a crash occurs after the insert commits.
+ * Returned reasons and metadata are scrubbed before recording. Invalid or
+ * oversized scorer metadata becomes an inconclusive observation.
  * Store failures remain visible in each outcome; a caller can fail its action
  * when `recorded` is `failed` so the engine applies its retry policy.
  *

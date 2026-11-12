@@ -48,7 +48,10 @@ identity and whether the insert was `persisted`, `duplicate`, or `failed`.
 Results preserve input order. `concurrency` defaults to 1 and accepts a positive
 safe integer; other values use 1.
 
-Scorer errors become typed inconclusive observations. Interruption propagates.
+Scorer errors become typed inconclusive observations. Non-canonical or
+oversized scorer `meta` becomes inconclusive with code `invalid_observation`.
+Returned `reason` and `meta` are redacted before recording or returning.
+Interruption propagates.
 A failed store write is logged and reported as `failed`; the caller decides
 whether to fail the action under its flow retry policy. The library never
 retries or re-dispatches work itself.

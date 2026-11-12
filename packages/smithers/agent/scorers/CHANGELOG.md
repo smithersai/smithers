@@ -8,6 +8,12 @@ are history, not the release that carries it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Returned scoring reasons and metadata now redact credentials before reaching
+  eval reports or CI summaries. Non-canonical or oversized scorer metadata now
+  records an inconclusive observation instead of repeatedly failing persistence.
+
 ## [1.0.0-rc.18] - 2026-11-11
 
 ### Fixed

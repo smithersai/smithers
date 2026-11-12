@@ -68,9 +68,14 @@ Two fields keep an inconclusive row actionable:
   A `ScorerError` raised by the scorer contributes its own code; anything else
   is classified `inconclusive`. The eight codes are listed in the
   [API reference](../api.md#failures).
-- **`reason`** names the cause, truncated to `ScoreStore.maxReasonBytes` on a
+- **`reason`** names the cause, redacted and truncated to `ScoreStore.maxReasonBytes` on a
   code-point boundary. A fixed sentence would make a `TypeError` (a bug to fix)
   indistinguishable from an outage (something to wait out).
+
+A score whose `meta` cannot be represented as canonical JSON, or exceeds
+`ScoreStore.maxMetadataBytes` after redaction, becomes an inconclusive
+observation with code `invalid_observation`. Returned reasons and metadata
+are scrubbed before reaching reports or the store.
 
 A store failure is different again: it never fails a batch either, but it is
 logged as a warning and reported through `runBatchCorrelated` as

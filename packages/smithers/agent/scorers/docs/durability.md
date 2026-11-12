@@ -78,12 +78,13 @@ anonymous one.
 
 ## Redaction
 
-`reason` and `meta` are scrubbed with the journal's redaction rules
-([`@smthrs/journal`](/api/journal)) before the `INSERT`, and are otherwise
-stored verbatim. The store shares a database with the journal and nothing
-prunes `flows_scores`, so a credential that reached a score row would outlive
-every other copy of it: rows are read back by `observations()`, by eval
-reports, and by gate summaries printed in CI. A scorer earns those strings from
+`Scoring.runBatch` and `Scoring.runBatchCorrelated` scrub `reason` and
+`meta` with the journal's redaction rules
+([`@smthrs/journal`](/api/journal)) before recording or returning an
+observation. Eval reports and CI gate summaries consume these returned
+observations directly. `SqlScoreStore` applies the same scrub to direct
+`record` and `recordOnce` calls, so observations read back from the store
+carry the same protection. Rows remain until a host calls `prune`. A scorer earns those strings from
 places nobody controls, a judge client whose failure message quotes the request
 it sent, or a judge whose prose quotes the agent output it graded, and the byte
 bounds do not help because a bearer token or a URL with embedded credentials
@@ -101,6 +102,10 @@ scrub grows past `maxReasonBytes` is truncated again on a code-point boundary,
 because refusing it would lose exactly the diagnostic that carried the
 credential. `meta` has no truncation that leaves valid JSON, so a payload the
 scrub grows past `maxMetadataBytes` is refused with `invalid_observation`.
+For a scorer result, non-canonical or oversized `meta` becomes an
+`inconclusive` observation with code `invalid_observation`, recorded under
+the same job identity. It is a scorer defect, so it does not report a failed
+store write or force the durable action into a deterministic retry.
 
 ## Idempotency
 
