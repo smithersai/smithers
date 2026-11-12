@@ -124,6 +124,12 @@ const resolver = CellCalls.make({ registry, catalog })
 A test that recomputes what the boundary should decide passes whatever the
 boundary does, which is the one thing a boundary test must not do.
 
+## Capability envelopes in cell fixtures
+
+Opaque MCP tools declare every host action over `**`. The broad-grant cell fixture therefore grants
+`{ action: "*", resource: "**" }`; a single-segment `*` resource cannot cover that declaration. The
+integration suite retains refusals for both the single-segment grant and a read-only envelope.
+
 ## Next
 
 - [Grant authority to MCP tools](./grant-authority-to-mcp-tools.md): the

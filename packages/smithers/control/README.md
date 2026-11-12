@@ -200,3 +200,13 @@ reconciliation. Signal rejection outcomes persist with their command: replay of
 an authority refusal returns `Unauthorized`, while no-match and legacy rejected
 commands return `NoMatchingWait`. Migration 0008 adds the nullable rejection
 column without changing existing command states.
+
+## Subprocess regression tests
+
+The cross-process idempotency race starts each Node child with `--import vibelang/register`: its TypeScript
+fixture reaches the registry's VibeLang modules. Keep the loader explicit when overriding `execArgv`, so the
+race exercises three independent control stacks without depending on the parent runner's loader.
+
+The full SQL coverage gate includes PostgreSQL inventory queries. `pnpm test:matrix` runs the suite against
+SQLite and real PostgreSQL, then merges coverage under the package's 100% thresholds. Set
+`SMITHERS_TEST_PG_URL` to use an existing PostgreSQL service.

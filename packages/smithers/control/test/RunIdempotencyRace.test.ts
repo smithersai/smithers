@@ -34,7 +34,7 @@ describe("run idempotency across processes", () => {
         filename,
         JSON.stringify(card)
       ], {
-        execArgv: ["--no-warnings"],
+        execArgv: ["--no-warnings", "--import", "vibelang/register"],
         stdio: ["ignore", "ignore", "pipe", "ipc"]
       })
       let diagnostics = ""

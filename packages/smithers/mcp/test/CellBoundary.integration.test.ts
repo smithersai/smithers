@@ -55,7 +55,8 @@ const pattern = (declared: string): Capability.CapabilityPattern => {
   })
 }
 
-const unrestricted = [new Capability.CapabilityPattern({ action: "*", resource: "*" })]
+const unrestricted = [new Capability.CapabilityPattern({ action: "*", resource: "**" })]
+const singleSegment = [new Capability.CapabilityPattern({ action: "*", resource: "*" })]
 const readOnly = [pattern("fs:read:**")]
 
 /**
@@ -217,21 +218,25 @@ describe("a cell turn reaching an MCP tool", () => {
     const events = await turn(unrestricted)
     const calls = dispatched(events)
 
-    expect(calls).toHaveLength(1)
+    expect(calls, JSON.stringify(events)).toHaveLength(1)
     expect(calls[0]?.flowName).toBe("mcp/fixture/add")
     expect(calls[0]?.result.outcome).toBe("success")
     // The real server's answer, back through the cell.
     expect(completion(events)).toContain("\"text\":\"5\"")
   }, 60_000)
 
-  it("refuses the call under a read-only envelope, naming what it would have needed", async () => {
-    const events = await turn(readOnly)
+  it.each([["read-only", readOnly], ["single-segment", singleSegment]] as const)(
+    "refuses the call under a %s envelope, naming what it would have needed",
+    async (_name, envelope) => {
+      const events = await turn(envelope)
 
-    // The refusal is the boundary's, before dispatch: nothing reached the
-    // engine, so the tool never ran.
-    expect(dispatched(events)).toEqual([])
-    const output = completion(events)
-    expect(output).toContain("capability_refused")
-    expect(output).toContain("fs:write:**")
-  }, 60_000)
+      // The refusal is the boundary's, before dispatch: nothing reached the
+      // engine, so the tool never ran.
+      expect(dispatched(events)).toEqual([])
+      const output = completion(events)
+      expect(output).toContain("capability_refused")
+      expect(output).toContain("fs:write:**")
+    },
+    60_000
+  )
 })

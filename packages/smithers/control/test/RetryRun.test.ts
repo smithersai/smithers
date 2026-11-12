@@ -173,7 +173,12 @@ describe("a refused retry admits nothing", () => {
       Effect.gen(function*() {
         const { runId } = yield* source("failed")
         const sql = yield* SqlClient.SqlClient
-        yield* sql`UPDATE flows_runs SET state_json = json_remove(state_json, '$.planId') WHERE run_id = ${runId}`
+        const [stored] = yield* sql<
+          { state: string }
+        >`SELECT state_json AS state FROM flows_runs WHERE run_id = ${runId}`
+        const state = JSON.parse(stored!.state) as Record<string, unknown>
+        delete state.planId
+        yield* sql`UPDATE flows_runs SET state_json = ${JSON.stringify(state)} WHERE run_id = ${runId}`
         expect(yield* refused(runId)).toEqual(
           new InvalidInput({ issue: `retry: run ${runId} was not started from a plan` })
         )
