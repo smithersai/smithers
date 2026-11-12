@@ -173,13 +173,19 @@ export const costAttempts = (rows) => {
 }
 
 /**
- * True when an attempt's cost is not a known dollar figure. Unknown is never
- * zero: missing, null, invalid or explicitly unknown accounting all count here.
+ * An attempt's known dollars: the seat plus Jev (`totalUsd`), or `usd` for a
+ * legacy record written before run costs carried the combined field. Undefined
+ * when the cost is not a known dollar figure. Unknown is never zero: missing,
+ * null, invalid or explicitly unknown accounting all count here.
  *
- * @category predicates
+ * @category conversions
  * @since 1.0.0
  */
-export const isUnknownCost = (cost) => cost?.unknown === true || !Number.isFinite(cost?.usd) || cost.usd < 0
+export const attemptUsd = (cost) => {
+  if (cost === null || typeof cost !== "object" || cost.unknown === true) return undefined
+  const dollars = "totalUsd" in cost ? cost.totalUsd : cost.usd
+  return Number.isFinite(dollars) && dollars >= 0 ? dollars : undefined
+}
 
 /**
  * Per instance, the dollars its priced attempts cost and how many of its
@@ -192,8 +198,9 @@ export const attemptSpend = (ledger) => {
   const spend = new Map()
   for (const { id, cost } of costAttempts(ledger.rows)) {
     const entry = spend.get(id) ?? { usd: 0, unknownAttempts: 0 }
-    if (isUnknownCost(cost)) entry.unknownAttempts += 1
-    else entry.usd += cost.usd
+    const dollars = attemptUsd(cost)
+    if (dollars === undefined) entry.unknownAttempts += 1
+    else entry.usd += dollars
     spend.set(id, entry)
   }
   return spend

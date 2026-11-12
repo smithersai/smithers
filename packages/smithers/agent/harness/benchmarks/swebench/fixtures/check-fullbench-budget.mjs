@@ -126,6 +126,28 @@ try {
   writeLedger(Array.from({ length: 5 }, () => instance("ran", { cost: { usd: 0.004 } })))
   assert.equal(spend().stdout.trim(), "2", "round after summing sub-cent attempts")
 
+  // `run-cost.mjs` records the seat as `usd` and seat plus Jev as `totalUsd`:
+  // the budget counts the Jev bill too.
+  const withJev = { usd: 40, jevUsd: 25, totalUsd: 65, unknown: false }
+  writeLedger([instance("ran", { cost: withJev }), instance("graded")])
+  assert.deepEqual(spendByInstance(read(manifest)), { cents: 6500, unknownAttempts: 0 })
+  assert.equal(spend().stdout.trim(), "6500", "Jev's dollars count toward the budget")
+  assert.equal(gateDecision().stdout.trim(), "paused", "the seat's $40 alone is under the cap; with Jev it is over")
+  writeLedger([instance("ran", { cost: { usd: 0.4, jevUsd: 0.2, totalUsd: 0.6, unknown: false } })])
+  assert.equal(spend().stdout.trim(), "60")
+  for (const totalUsd of [null, -1, "65"]) {
+    writeLedger([instance("ran", { cost: { ...withJev, totalUsd } })])
+    assert.equal(spend().stdout.trim(), "unknown", "an invalid combined total is unknown, not the seat alone")
+  }
+  writeLedger([
+    { kind: "header", pinnedImages: "a__a-1" },
+    instance("ran", { cost: { ...withJev, totalUsd: 0.6 } }),
+    instance("graded", { verdict: "resolved" })
+  ])
+  const jevSummary = summarise({ manifest, now: 10, total: 1 })
+  assert.equal(jevSummary.spentUsd, 0.6, "the report's spend includes Jev")
+  assert.equal(jevSummary.pinnedRows[0].usd, 0.6, "the pinned five's dollars include Jev")
+
   const header = { kind: "header", budgetUsd: 60, seat: "openai:unpriced-fixture" }
   writeLedger([header])
   assert.equal(spend().stdout.trim(), "unknown-seat", "refuse the seat before its first attempt")

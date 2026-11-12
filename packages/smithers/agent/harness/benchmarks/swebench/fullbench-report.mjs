@@ -48,7 +48,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import { dirname, join } from "node:path"
 import { denominatorLabel, denominators, renderExclusions } from "./lib/excluded.mjs"
 import { formatMoney as money } from "./lib/format-money.mjs"
-import { attemptSpend, costAttempts, read, readRows } from "./lib/fullbench-manifest.mjs"
+import { attemptSpend, attemptUsd, costAttempts, read, readRows } from "./lib/fullbench-manifest.mjs"
 import { usd } from "./prices.ts"
 
 const rigRoot = import.meta.dirname
@@ -212,7 +212,7 @@ export const summarise = (options) => {
     id,
     repo: repoOf.get(id) ?? "unknown",
     verdict: manifest.states.get(id)?.verdict ?? "not run",
-    usd: manifest.states.get(id)?.cost?.usd ?? null
+    usd: attemptUsd(manifest.states.get(id)?.cost) ?? null
   }))
   const pinnedGraded = pinnedRows.filter((state) =>
     state.verdict === "resolved" || state.verdict === "unresolved" || state.verdict === "empty patch" ||

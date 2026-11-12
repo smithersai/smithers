@@ -5,7 +5,8 @@ before launching workers, after waiting for a free worker slot. They read
 `costAttempts` in `lib/fullbench-manifest.mjs`, the one attempt projection the
 report, `compare-runs.mjs`, `three-way.mjs` and `n-way.mjs` also read.
 `spendByInstance` returns `{ cents, unknownAttempts }` for every recorded
-attempt. A retry's `pulled` row preserves the earlier attempt's spend. A `graded` row can supply an
+attempt. An attempt's dollars are its `totalUsd`, the seat plus Jev; a legacy
+record without `totalUsd` counts its `usd`. A retry's `pulled` row preserves the earlier attempt's spend. A `graded` row can supply an
 attempt's cost without counting its `ran` cost twice. Cents are rounded after
 summing all attempts.
 
