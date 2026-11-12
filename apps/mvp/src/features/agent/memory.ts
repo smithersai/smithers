@@ -64,7 +64,7 @@ export const prepare = (turn: Turn & { readonly candidates: ReadonlyArray<Openin
       const reading = yield* Relevance.judge({ task: Opening.boundedQuery(prompt(turn)) }, items.map((item) => ({
         kind: item.kind, id: item.key, text: item.text,
       }))).pipe(
-        Effect.provide(judgeOn(seat, observed)),
+        Effect.provide(yield* judgeOn("chat/Opening/own", seat, observed)),
         Effect.mapError((error) => quota ? new OpeningFailed({ quota: true }) : new JudgeUnavailable({ reason: error.reason })),
       )
       return reading.verdicts.map((verdict, index) => ({

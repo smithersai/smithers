@@ -1,11 +1,16 @@
 // Who judges a judgment (decision 0132, src/features/jev/steps.ts `judgeOn`, `JudgeSeat.layer`): the person's own Jev when
-// ChatApi says they have one, else the seat. ChatApi is scripted at the network, as a deployed host reaches it; the seat's
-// model is scripted at `Model.make`, the seam every judge test uses.
+// ChatApi says they have one, else the seat. `judgeOn` runs in a step of a flow on the Node host's engine
+// (worker/test/flowHost.ts), on the compose Postgres (`pnpm db:up`), since their Jev's judgment is a sealed step of the
+// run. ChatApi is scripted at the network, as a deployed host reaches it; the seat's model is scripted at `Model.make`,
+// the seam every judge test uses.
+import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Evaluator, Model, type ModelEvent } from "@smthrs/model"
 import { Classifier } from "@smthrs/model"
-import { type Duration, Effect, Exit, Layer, Option, Stream } from "effect"
+import { Node } from "@smthrs/plan"
+import { Cause, type Duration, Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
+import { incarnation, runFlow } from "../../../worker/test/flowHost.ts"
 import { JudgeSeat, judgeOn } from "./steps"
 
 const QUESTIONS = { ok: Classifier.boolean({ instructions: "Is ok true?" }) }
@@ -27,10 +32,37 @@ const seatModel = (probability = 0.25) => {
   return { model, asked: () => asked }
 }
 
+/** A flow of one step that asks the judge `REQUEST` and answers what it read. */
+const Judged = Schema.Struct({ answers: Evaluator.RawAnswers })
+const AskStep = Action.make("test/own/ask", { payload: { id: Schema.String }, success: Judged, error: Evaluator.EvaluatorError })
+const Ask = Flow.make("test/own", {
+  payload: { id: Schema.String },
+  success: Judged,
+  error: Evaluator.EvaluatorError,
+  body: Node.capture({ ask: AskStep.name }, (payload) => AskStep.call(payload)),
+})
+
+/** `Ask` judging on `seat` and `model`; the step runs `after` once the judge has answered, before it settles. */
+const registered = (seat: JudgeSeat["Service"], model: Model.Model, after: Effect.Effect<void> = Effect.void) =>
+  Interpreter.layerWithImplementations(
+    Ask,
+    AskStep.toLayer(() =>
+      Effect.gen(function* () {
+        const judge = yield* judgeOn("test/own/own", seat, model)
+        const { answers } = yield* Effect.flatMap(Effect.service(Evaluator.Evaluator), (asked) => asked.evaluate(REQUEST)).pipe(
+          Effect.provide(judge),
+        )
+        yield* after
+        return { answers }
+      })
+    ),
+  ).pipe(Layer.provideMerge(Action.layerImplementations))
+
 const judged = (seat: JudgeSeat["Service"], model: Model.Model) =>
-  Effect.runPromiseExit(
-    Effect.flatMap(Effect.service(Evaluator.Evaluator), (judge) => judge.evaluate(REQUEST)).pipe(Effect.provide(judgeOn(seat, model))),
-  )
+  runFlow(Ask, { id: "one" }, registered(seat, model)).then(({ exit }) => exit)
+
+/** A failed run's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 const answer = { answers: { ok: { type: "boolean", probability: 0.9 } }, latencyMs: 4 } as unknown as Evaluator.Response
 const route = { prepare: () => Effect.die("unused") } as unknown as JudgeSeat["Service"]["route"]
@@ -39,29 +71,64 @@ describe("judgeOn", () => {
   test("with no ownJev, the seat answers", async () => {
     const { model, asked } = seatModel()
     const exit = await judged({ model, route }, model)
-    expect(Exit.isSuccess(exit) && exit.value.answers.ok).toMatchObject({ probability: 0.25 })
+    expect(Exit.isSuccess(exit) && exit.value.answers["ok"]).toMatchObject({ probability: 0.25 })
     expect(asked()).toBe(1)
   })
 
   test("a person with no Jev falls back to the seat", async () => {
     const { model, asked } = seatModel()
     const exit = await judged({ model, route, ownJev: () => Effect.succeed(Option.none()) }, model)
-    expect(Exit.isSuccess(exit) && exit.value.answers.ok).toMatchObject({ probability: 0.25 })
+    expect(Exit.isSuccess(exit) && exit.value.answers["ok"]).toMatchObject({ probability: 0.25 })
     expect(asked()).toBe(1)
   })
 
   test("a person's own Jev answers, and the seat is never asked", async () => {
     const { model, asked } = seatModel()
     const exit = await judged({ model, route, ownJev: () => Effect.succeed(Option.some(answer)) }, model)
-    expect(exit).toEqual(Exit.succeed(answer))
+    expect(exit).toEqual(Exit.succeed({ answers: answer.answers }))
     expect(asked()).toBe(0)
   })
 
   test("their Jev's failure is the judgment's failure: the seat doesn't answer on a refused key's behalf", async () => {
     const { model, asked } = seatModel()
-    const failure = new Evaluator.EvaluatorError({ code: "refused", message: "no" })
+    const failure = new Evaluator.EvaluatorError({ code: "refused", status: 403, message: "no" })
     const exit = await judged({ model, route, ownJev: () => Effect.fail(failure) }, model)
-    expect(exit).toEqual(Exit.fail(failure))
+    expect(failureOf(exit)).toEqual(failure)
+    expect(asked()).toBe(0)
+  })
+
+  test("a run resumed after their Jev answered reads the judgment back: their key pays for it once", async () => {
+    const { model, asked } = seatModel()
+    let judgments = 0
+    const ownJev = () =>
+      Effect.sync(() => {
+        judgments += 1
+        return Option.some(answer)
+      })
+    // The first engine's step has its Jev's answer and never settles: the engine is cut off there.
+    let reached = 0
+    let hold = true
+    const after = Effect.suspend(() => {
+      reached += 1
+      return hold ? Effect.never : Effect.void
+    })
+    const registration = registered({ model, route, ownJev }, model, after)
+
+    const first = await incarnation(registration)
+    const running = Effect.runFork(first.execute(Ask, "own-resume", { id: "resume" }))
+    await expect.poll(() => reached, { interval: 20, timeout: 60_000 }).toBe(1)
+    await first.crash()
+    hold = false
+    const second = await incarnation(registration, first.engine.schema)
+    const resumed = await Effect.runPromise(second.execute(Ask, "own-resume", { id: "resume" }))
+    await Effect.runPromise(Fiber.interrupt(running))
+    await second.close()
+    await first.close()
+
+    expect(resumed).toEqual(Exit.succeed({ answers: answer.answers }))
+    // The step ran again on the second engine, and read their Jev's judgment from its sealed step.
+    expect(reached).toBe(2)
+    expect(judgments).toBe(1)
     expect(asked()).toBe(0)
   })
 })
