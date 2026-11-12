@@ -2143,7 +2143,7 @@ const makeCommands = (config: RuntimeConfig) =>
       }),
       options: workspaceOption.extend({
         diff: z.string().optional().describe(
-          "Also resolve every path changed since this git base, like S.gitDiff(base)"
+          "Also resolve every path changed since this git base, both names of a rename and untracked files included"
         )
       }),
       alias: { workspace: "w", diff: "d" },

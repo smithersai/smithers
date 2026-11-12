@@ -146,8 +146,9 @@ smithers-build owners --diff HEAD --format json
 
 For each path the command prints the owning package, the agent policy, and
 every owner with its role and reasons, then the union of required approvers
-and suggested reviewers. `--diff <base>` adds every path `git diff <base>`
-reports, the same set an `S.gitDiff(base)` input declares.
+and suggested reviewers. `--diff <base>` adds every path changed since that
+git base, both names of a rename and every untracked file included, so the
+package a file leaves keeps its owners and agent policy in the answer.
 
 `--format json` prints the shape the Smithers landing gate reads:
 

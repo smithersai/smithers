@@ -564,9 +564,11 @@ pnpm exec smithers-build owners packages/api/src/server.ts
 pnpm exec smithers-build owners --diff main
 ```
 
-`--diff <base>` adds every path changed since that git base, the same set
-`S.gitDiff(base)` expands. The command needs at least one path, from the
-argument list or from `--diff`.
+`--diff <base>` adds every path changed since that git base: both names of a
+rename and every untracked file included, the same set `affected --base`
+discovers, so the package a file leaves keeps its owners and agent policy in
+the answer. The command needs at least one path, from the argument list or
+from `--diff`.
 
 ### git-hooks
 

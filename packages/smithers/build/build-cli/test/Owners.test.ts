@@ -283,25 +283,48 @@ describe("owners resolution", () => {
 
   it("resolves the paths a diff touches", async () => {
     const root = await fixture()
-    // runGit refuses a workspace without its own .git, so create the repository directly.
-    NodeChildProcess.execFileSync("git", ["init", "-q", root])
-    await PackageTree.runGit(root, ["add", "-A"])
-    await PackageTree.runGit(root, [
-      "-c",
-      "user.name=fixture",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "commit",
-      "-q",
-      "-m",
-      "base"
-    ])
+    await commitFixture(root)
     await write(root, "lib/query.sql", "select 2;\n")
     const result = await ownersJson(root, ["--diff", "HEAD"])
     expect(result.touched_paths.map((entry) => entry.path)).toEqual(["lib/query.sql"])
     expect(result.required_approvers).toContain("libby")
   })
+
+  it("resolves both names of a rename and every untracked file, so the package a file leaves keeps its say", async () => {
+    const root = await fixture()
+    await commitFixture(root)
+    // Rename detection would report only app/001.sql, and a diff against a
+    // commit never lists an untracked file: //lib's deny policy for
+    // migrations/** would then never be consulted for either migration.
+    await PackageTree.runGit(root, ["mv", "lib/migrations/001.sql", "app/001.sql"])
+    await write(root, "lib/migrations/002.sql", "create table u (id int);\n")
+    const result = await ownersJson(root, ["--diff", "HEAD"])
+    const policies = new Map(result.touched_paths.map((entry) => [entry.path, entry.agent_policy]))
+    expect([...policies]).toEqual([
+      ["app/001.sql", "human-approve"],
+      ["lib/migrations/001.sql", "deny"],
+      ["lib/migrations/002.sql", "deny"]
+    ])
+    expect(result.required_approvers).toContain("libby")
+  })
 })
+
+/** Commits every fixture file as `HEAD`, so a later edit is what `--diff HEAD` sees. */
+const commitFixture = async (root: string): Promise<void> => {
+  // runGit refuses a workspace without its own .git, so create the repository directly.
+  NodeChildProcess.execFileSync("git", ["init", "-q", root])
+  await PackageTree.runGit(root, ["add", "-A"])
+  await PackageTree.runGit(root, [
+    "-c",
+    "user.name=fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-q",
+    "-m",
+    "base"
+  ])
+}
 
 const renderingIndex = (
   packages: ReadonlyArray<{ readonly packagePath: string; readonly value: ReturnType<typeof S.Package> }>,

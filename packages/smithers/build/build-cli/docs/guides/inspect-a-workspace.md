@@ -60,8 +60,8 @@ pnpm exec smithers-build query 'owners(//packages/api:lib)'
 
 `owners` takes paths and resolves each one to its owners, the reasons those
 owners apply, and the agent policy in force. `--diff <base>` adds every path
-changed since that git base, the same set `S.gitDiff(base)` expands, which is
-how a review scopes itself to a pull request.
+changed since that git base, both names of a rename and untracked files
+included, which is how a review scopes itself to a pull request.
 
 `query 'owners(<label>)'` answers the package-shaped version of the same
 question: who owns the package holding that label, plus its upstream packages.

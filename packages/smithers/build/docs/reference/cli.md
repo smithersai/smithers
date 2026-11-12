@@ -454,9 +454,9 @@ smithers-build owners --diff HEAD --format json
 Absolute paths inside the workspace resolve to their relative spelling.
 Paths outside the workspace are rejected.
 
-| Option   | Alias | Type   | Default | Description                                                                 |
-| -------- | ----- | ------ | ------- | --------------------------------------------------------------------------- |
-| `--diff` | `-d`  | string |         | Also resolve every path changed since this git base, like `S.gitDiff(base)` |
+| Option   | Alias | Type   | Default | Description                                                                                              |
+| -------- | ----- | ------ | ------- | -------------------------------------------------------------------------------------------------------- |
+| `--diff` | `-d`  | string |         | Also resolve every path changed since this git base, both names of a rename and untracked files included |
 
 Plus the [common options](#common-options).
 
