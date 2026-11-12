@@ -23,6 +23,7 @@ import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
 import type { Sdk } from "../src/MicrosandboxSandbox/Sdk.ts"
 import type { RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import * as Sandbox from "../src/Sandbox/index.ts"
 import type { Provider } from "../src/Sandbox/Provider.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
@@ -1800,6 +1801,54 @@ describe("MicrosandboxSandbox", () => {
     return { nix, log }
   }
 
+  for (const locked of [false, true]) {
+    it.effect(`captures only authored work with a Nix environment (lock: ${locked})`, () =>
+      Effect.gen(function*() {
+        const { nix } = fakeNix()
+        const fake = fakeSdk()
+        const seed = makeWorkSeed()
+        const provider = microsandbox({
+          sdk: fake.sdk,
+          environment: { flake: "{ outputs = _: { }; }\n", ...(locked ? { lock: "{ \"version\": 7 }\n" } : {}), nix }
+        })
+
+        yield* inSession(provider, `nix-capture-${locked}`, (session) =>
+          Effect.gen(function*() {
+            // Seed the checkout without sweeping the provider's pre-existing files
+            // into its base, as a clone prepared in the workspace would.
+            yield* session.writeFile(`${session.workdir}/seed.bundle`, seed.bundle)
+            const initialized = yield* Effect.scoped(Effect.flatMap(
+              session.spawn(
+                `git init -q . && git fetch -q ./seed.bundle ${seed.base} && git reset -q --hard FETCH_HEAD && rm seed.bundle`,
+                {}
+              ),
+              output
+            ))
+            expect(initialized).toEqual(["", "", 0])
+
+            const base = yield* Sandbox.resolveBase(session)
+            expect(yield* Sandbox.capture(session, { base })).toEqual(
+              new Sandbox.Unchanged({
+                session: session.id,
+                base: seed.base
+              })
+            )
+
+            // Authored file flows in .smithers still belong to the captured work.
+            yield* session.writeFile(
+              `${session.workdir}/.smithers/flows/example/flow.ts`,
+              encoder.encode("export default {}\n")
+            )
+            const changed = yield* Sandbox.capture(session, { base })
+            expect(changed._tag).toBe("Changed")
+            if (changed._tag !== "Changed") return
+            expect(changed.patch).toContain("a/.smithers/flows/example/flow.ts b/.smithers/flows/example/flow.ts")
+            expect(changed.patch).not.toContain("flake.nix")
+            expect(changed.patch).not.toContain("flake.lock")
+          }))
+      }))
+  }
+
   it.effect("plants the Nix environment, warms it, and runs every command under nix develop", () =>
     Effect.gen(function*() {
       const { log, nix } = fakeNix()
@@ -1812,8 +1861,8 @@ describe("MicrosandboxSandbox", () => {
 
       const result = yield* inSession(provider, "nix-lane", (session) =>
         Effect.scoped(Effect.gen(function*() {
-          const flake = yield* session.readFile(`${session.workdir}/.smithers/nix/flake.nix`)
-          const lock = yield* session.readFile(`${session.workdir}/.smithers/nix/flake.lock`)
+          const flake = yield* session.readFile(`/var/lib/smthrs/nix/${sessionSlug("nix-lane")}/flake.nix`)
+          const lock = yield* session.readFile(`/var/lib/smthrs/nix/${sessionSlug("nix-lane")}/flake.lock`)
           const printed = yield* Effect.flatMap(
             session.spawn("printf %s \"$BASE:$PWD\"", { env: { DYNAMIC: "yes" } }),
             output
@@ -1832,8 +1881,16 @@ describe("MicrosandboxSandbox", () => {
       // No image named with an environment: the microVM boots the Nix image.
       expect(fake.recorded.builds[0]?.settings["image"]).toBe("nixos/nix")
       expect(fake.recorded.execs.map(({ shell, args }) => [shell, ...args])).toEqual([
-        [nix, "develop", "path:/workspace/.smithers/nix#ci", "--command", "true"],
-        [nix, "develop", "path:/workspace/.smithers/nix#ci", "--command", "/bin/sh", "-c", "printf %s \"$BASE:$PWD\""]
+        [nix, "develop", `path:/var/lib/smthrs/nix/${sessionSlug("nix-lane")}#ci`, "--command", "true"],
+        [
+          nix,
+          "develop",
+          `path:/var/lib/smthrs/nix/${sessionSlug("nix-lane")}#ci`,
+          "--command",
+          "/bin/sh",
+          "-c",
+          "printf %s \"$BASE:$PWD\""
+        ]
       ])
       expect(fake.recorded.execs[0]).toMatchObject({ cwd: "/workspace", env: { BASE: "kept" } })
       expect(readFileSync(log, "utf8").split("\n").filter((line) => line !== "")).toHaveLength(2)
@@ -1851,7 +1908,7 @@ describe("MicrosandboxSandbox", () => {
 
       expect(failure.code).toBe("unavailable")
       expect(fake.recorded.execs.map(({ shell, args }) => [shell, ...args])).toEqual([
-        ["nix", "develop", "path:/workspace/.smithers/nix", "--command", "true"]
+        ["nix", "develop", `path:/var/lib/smthrs/nix/${sessionSlug("plain-nix")}`, "--command", "true"]
       ])
       expect(fake.recorded.destroys).toHaveLength(1)
     }))

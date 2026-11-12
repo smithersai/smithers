@@ -12,6 +12,11 @@
 
 ### Fixed
 
+- A Microsandbox session with a Nix environment no longer captures the provider's
+  `flake.nix` and `flake.lock` as repository edits. The default environment
+  directory is now `/var/lib/smthrs/nix/<slug>`, outside the checkout, so a
+  session that edits nothing reports `Unchanged`.
+
 - A batched commit of several files lands every file on a BusyBox guest
   (Alpine). The commit read each file's bytes from standard input with one
   `head -c` after another, and BusyBox's `head` reads past the bytes it

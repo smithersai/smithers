@@ -73,7 +73,7 @@ export interface NixEnvironment {
   readonly lock?: string | undefined
   /** The dev shell attribute; the default dev shell when absent. */
   readonly attr?: string | undefined
-  /** The guest directory the flake is planted in. Default `<workdir>/.smithers/nix`. */
+  /** The guest directory the flake is planted in. Default `/var/lib/smthrs/nix/<slug>`, outside the checkout. */
   readonly directory?: string | undefined
   /** The `nix` executable in the guest. Default `nix`. */
   readonly nix?: string | undefined
@@ -780,7 +780,7 @@ export const make = (input: MicrosandboxSandboxOptions): Provider => {
       const nix: PlantedEnvironment | undefined = options.environment === undefined
         ? undefined
         : {
-          directory: options.environment.directory ?? `${workdir}/.smithers/nix`,
+          directory: options.environment.directory ?? `/var/lib/smthrs/nix/${sessionSlug(sessionKey)}`,
           executable: options.environment.nix ?? defaultNixExecutable,
           environment: options.environment
         }
