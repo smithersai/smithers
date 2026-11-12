@@ -2313,12 +2313,18 @@ describe("Host.run with a box", () => {
   test("a box whose rules read exits non-zero fails the turn rather than running without them", async () => {
     const cwd = scratch("tui-box-rules-exit-cwd-")
     const workdir = scratch("tui-box-rules-exit-workdir-")
-    // The session opens (probe, prepare); the rules read's transport then exits 255, as a lost ssh does.
-    let calls = 0
+    // CommandSandbox sends each shell script to the transport as one base64 line on stdin, so
+    // the argv never names the file. The transport decodes that line: the rules read exits
+    // 255, as a lost ssh does, and every other command (probe, pidfiles, beats) runs.
+    const transport = [
+      "if ! IFS= read -r frame; then exec \"$@\"; fi",
+      "case \"$(printf '%s' \"$frame\" | base64 -d)\" in *AGENTS.md*) cat >/dev/null; exit 255 ;; esac",
+      "{ printf '%s\\n' \"$frame\"; exec cat; } | exec \"$@\""
+    ].join("\n")
     const { outcome } = await placedRun(cwd, "ctx.done(\"never\")", {
       name: "rules-exit-box",
       workdir,
-      prefix: () => Promise.resolve(++calls <= 2 ? [] : ["/bin/sh", "-c", "cat >/dev/null; exit 255", "lost"])
+      prefix: () => Promise.resolve(["/bin/sh", "-c", transport, "rules-transport"])
     })
     expect(outcome).toMatchObject({ _tag: "failed" })
     expect((outcome as { message: string }).message).toContain("rules-exit-box could not read its rules: exit 255")
