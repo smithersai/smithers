@@ -615,6 +615,17 @@ in `deployment.ts`; bursts can receive `429`. The client retries each refused
 exchange briefly within a bounded budget, then skips that publication or
 restore and rebuilds locally. It never raises those budgets.
 
+A `findMissing` probe answers with one R2 `HEAD` per digest, sixteen at a time
+inside the request, so its latency grows with its digest count and with the
+other probes its isolate is serving. Nothing in the handler orders probes, but
+probes that share an isolate share its R2 throughput: one 128-digest probe took
+1.5 to 1.9 seconds alone, and the slowest of sixteen concurrent ones took 22
+seconds. That is a limit of the service, not a fault, so the CLI gives a probe
+11.2 seconds, tries it three times, and then skips only that entry's
+publication. A publisher of 4,061 files sends 32 probes one at a time per
+entry, and at most eight entries probe at once, which matches the isolate's
+eight-probe ceiling and stays well inside the 600-probe per-minute budget.
+
 Every chunk and index is declared directly in the publication's artifact
 references, so the self-hosted reference accounting retains both while the entry
 is live. Hosted R2's 90-day upload-age lifecycle remains independent of action
