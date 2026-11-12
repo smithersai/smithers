@@ -335,6 +335,11 @@ export interface RepoEvent {
   readonly kind: "main" | "release"
   readonly repoId: string
   readonly ref: string
+  /**
+   * The commit a push moved `main` from, as GitHub says. GitHub dates a push to the second, so within one second only
+   * a push from the commit already recorded is newer.
+   */
+  readonly before?: string
   readonly title: string | null
   readonly actor: string | null
   /** When it happened, as GitHub says: the push, or the release's publication. */
@@ -344,6 +349,7 @@ export interface RepoEvent {
 
 const Push = Schema.Struct({
   ref: Schema.String,
+  before: Schema.optional(Schema.String),
   after: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}([0-9a-f]{24})?$/)),
   deleted: Schema.optional(Schema.Boolean),
   repository: Schema.Struct({
@@ -401,6 +407,7 @@ export const repoEventOf = (
           kind: "main",
           repoId: repository.id,
           ref: push.after,
+          ...(push.before === undefined ? {} : { before: push.before }),
           title: titleOf(`${repository.owner}/${repository.name}`),
           actor: null,
           occurredAt: typeof push.repository.pushed_at === "number" ? new Date(push.repository.pushed_at * 1000) : now,
@@ -438,7 +445,8 @@ export interface LocalPerson {
  * the role GitHub last confirmed for them, on any of their sessions (`SessionStore.latestRole`), is a Member's or above;
  * local development's own people (`localPeople`, who have no session) by their fixed role. Someone demoted, signed out
  * everywhere or never signed in hears nothing. `main:<repo id>` is one row per person whose version goes up each time
- * `main` moves to a newer commit (a late delivery of an older push changes nothing); `release:<repo id>:<tag>` is one
+ * `main` moves to a newer commit (a late delivery of an older push changes nothing; within one second, the newer push
+ * is the one from the commit recorded); `release:<repo id>:<tag>` is one
  * row per release, refreshed and raised when the tag is published again later (a replay or an older publication
  * changes nothing). Returns how many rows it wrote.
  */
@@ -498,7 +506,8 @@ export const recordRepoEvent = (event: RepoEvent, localPeople: ReadonlyArray<Loc
           ON CONFLICT (recipient, subject) DO UPDATE SET
             actor = EXCLUDED.actor, title = EXCLUDED.title, ref = EXCLUDED.ref, href = EXCLUDED.href, quiet = EXCLUDED.quiet,
             occurred_at = EXCLUDED.occurred_at, version = n.version + 1, updated_at = now()
-          WHERE EXCLUDED.occurred_at >= n.occurred_at AND EXCLUDED.ref IS DISTINCT FROM n.ref
+          WHERE EXCLUDED.ref IS DISTINCT FROM n.ref AND (EXCLUDED.occurred_at > n.occurred_at
+            OR (EXCLUDED.occurred_at = n.occurred_at AND n.ref = ${event.before ?? null}))
           RETURNING 1`
         : yield* sql`
           INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at, quiet)

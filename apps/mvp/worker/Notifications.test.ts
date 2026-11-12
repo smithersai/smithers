@@ -606,11 +606,36 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
     await watchRepo()
     const h = await githubHarness(runtime)
     const first = await delivery("push", push(SHA("a")))
-    const second = await delivery("push", push(SHA("b")))
+    const second = await delivery("push", push(SHA("b"), { before: SHA("a") }))
     expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, first)).status).toBe(200)
     expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, second)).status).toBe(200)
     expect((await mainRows()).map(({ ref, version }) => ({ ref, version }))).toEqual([
       { ref: SHA("b"), version: 2 }, { ref: SHA("b"), version: 2 },
+    ])
+  })
+
+  test("a late or redelivered push from the same second never rolls `main` back or raises it again", async () => {
+    await watchRepo()
+    const h = await githubHarness(runtime)
+    const id = crypto.randomUUID()
+    const first = push(SHA("a"), { before: SHA("0") })
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", first, { id }))
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", push(SHA("b"), { before: SHA("a") })))
+    // GitHub redelivers the first push, under its own id and under a new one.
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", first, { id }))
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", first))
+    expect((await mainRows()).map(({ ref, version }) => ({ ref, version }))).toEqual([
+      { ref: SHA("b"), version: 2 }, { ref: SHA("b"), version: 2 },
+    ])
+  })
+
+  test("pushes in one second delivered out of order keep the newer commit", async () => {
+    await watchRepo()
+    const h = await githubHarness(runtime)
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", push(SHA("b"), { before: SHA("a") })))
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", push(SHA("a"), { before: SHA("0") })))
+    expect((await mainRows()).map(({ ref, version }) => ({ ref, version }))).toEqual([
+      { ref: SHA("b"), version: 1 }, { ref: SHA("b"), version: 1 },
     ])
   })
 
