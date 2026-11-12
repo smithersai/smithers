@@ -5874,3 +5874,11 @@ Tool gap found and fixed: `{ ...actions, ...selection }` spreads a `RunSelection
 (`step?: string`). LemmaScript matched the required field as an Option (`member Some does not exist in type
 seq<char>`); a required field of a patch over an optional one is now written present (`resolve.ts`;
 `spread-required-into-optional.ts`, red before, its wrong twin fails a postcondition).
+
+## Dependency cores in a mutation run (vl-proveall, 2026-11-11)
+
+The full `verify:broken` on `94566fc0` (box job `vl-proveall:full48`) ran no mutant: proving its dependency
+`conversation.vibe` hit the 7,200 s wall. A mutation run proves its dependencies one at a time before the mutants, but
+the runner gave an isolated proof two cores only when `CHECK_JOBS` was 1, and `verify:broken` sets it to 2. A
+dependency now gets the two cores a lone isolated proof gets (`check.py`; `harness_test.py`
+`test_a_sequential_isolated_dependency_gets_two_cores`, red before). The mutants keep one core each.

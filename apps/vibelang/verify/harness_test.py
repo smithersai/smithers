@@ -134,6 +134,30 @@ class IsolatedCoreBudget(unittest.TestCase):
             self.assertLessEqual(int(calls[0][calls[0].index('--cores') + 1]), 2)
 
 
+    def test_a_sequential_isolated_dependency_gets_two_cores(self):
+        # A mutation run proves its dependencies one at a time before the mutants. With CHECK_JOBS=2 an isolated
+        # dependency (conversation.vibe) got one core and hit the 7,200 s wall on a box (job vl-proveall:full48).
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            app = pathlib.Path(folder)
+            (app / 'src/core').mkdir(parents=True)
+            (app / 'tsconfig.json').write_text(json.dumps({'extends': str(ROOT.parent / 'tsconfig.json'), 'files': [], 'include': []}))
+            (app / 'src/core/decide.vibe').write_text('//@ verify\n//@ ensures \\result == input\nexport function same(input: number): number { return input }\n')
+            (app / 'src/core/caller.vibe').write_text('import { same } from "./decide.vibe"\n//@ verify\n//@ ensures \\result == input\nexport function call(input: number): number { return same(input) }\n')
+            mutants = app / 'mutants'; mutants.mkdir()
+            (mutants / 'tsconfig.json').write_text(json.dumps({'extends': str(ROOT.parent / 'tsconfig.json'), 'files': [], 'include': []}))
+            (mutants / 'decide.vibe.ts').write_text((app / 'src/core/decide.vibe').read_text())
+            (mutants / 'call-wrong.ts').write_text('import { same } from "./decide.vibe"\n//@ verify\n//@ ensures \\result == input\nexport function call(input: number): number { return same(input) + 1 }\n')
+            (mutants / 'manifest.json').write_text(json.dumps({'call-wrong': {'source': 'src/core/caller.vibe', 'function': 'call'}}))
+            env = {k: v for k, v in os.environ.items() if k != 'VERIFY_FRESH'}
+            env.update(VIBELANG_VERIFY_ROOT=str(app), CHECK_JOBS='2', VERIFY_MUTATION_MANIFEST=str(mutants / 'manifest.json'))
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(mutants)], capture_output=True, text=True, env=env, timeout=300)
+            summaries = list((app / 'verify/.checks').glob('run-*/summary.json'))
+            self.assertEqual(len(summaries), 1, result.stdout + result.stderr)
+            calls = {pathlib.Path(c['argv'][-1]).stem: c['argv'] for c in json.loads(summaries[0].read_text())['commands'] if pathlib.Path(c['argv'][0]).name == 'dafny'}
+            self.assertEqual(calls['decide'][calls['decide'].index('--cores') + 1], '2', result.stdout)
+            self.assertEqual(calls['call-wrong'][calls['call-wrong'].index('--cores') + 1], '1', result.stdout)
+
+
 class PositiveProofTimeLimits(unittest.TestCase):
     def test_history_headroom_does_not_change_mutant_or_other_module_limits(self):
         from mutation_targets import time_limit

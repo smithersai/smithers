@@ -160,8 +160,9 @@ def verify(item):
    if isolate: flags.append('--isolate-assertions')
    # The isolated relations' wall limit only stops a hung solver; each obligation keeps its own solver limit.
    limit=time_limit(ts.stem,is_mutation,proof_source)
-   # A single isolated file may use two cores; two file workers each use one solver core.
-   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate and jobs == 1 else '1','--verification-time-limit',str(limit),'--error-limit','1' if is_mutation else '0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,wall_limit(isolate,is_mutation,limit))
+   # A single isolated file may use two cores, as may a dependency, which a mutation run proves alone before its
+   # mutants; two file workers each use one solver core.
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate and (jobs == 1 or ts in sequential) else '1','--verification-time-limit',str(limit),'--error-limit','1' if is_mutation else '0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,wall_limit(isolate,is_mutation,limit))
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'
@@ -201,6 +202,7 @@ def report(r):
 # An imported module's contracts may be assumed while proving a caller only after its own body was freshly proved.
 # Dependency checks run sequentially so a two-core isolated relation never overlaps another Dafny process.
 dependency_items=[item for item in enumerate(files) if manifest_path and item[1] not in mutant_files]
+sequential={ts for _,ts in dependency_items}
 for item in dependency_items:
  result=verify(item);report(result)
  if result['exit']:break
