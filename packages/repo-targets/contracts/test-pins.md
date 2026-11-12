@@ -170,7 +170,6 @@ only.
 | `smithers`                    | `observing host over PostgreSQL`                                                                   | `describe.skipIf(!postgres)`                               |
 | `smithers`                    | `C-INS-06 / C-INS-03 real CLI, launchd, bundled launcher and public origin`                        | `it.skipIf(!enabled && !required)`                          |
 | `smithers/agent/harness`      | `ExternalTranscript with the installed CLIs`                                                       | `describe.skipIf(!enabled)`                                 |
-| `smithers/agent/std`          | `C-COL-01 production dispatcher ${available ? "installed batch/delete/move" : "unavailable provider"}` | `test.skipIf(available && !installed)`                      |
 | `smithers/agent`              | `runs the real OpenAI stack (requires SMITHERS_LIVE_EXAMPLES=1 and OPENAI_API_KEY)`                | `it.effect.skipIf(!liveEnabled \|\| !hasKey)`                |
 | `smithers/agent`              | `decodes each local agent answer (requires SMITHERS_LIVE_EXAMPLES=1 and Ollama qwen2.5:7b)`         | `it.skipIf(!liveEnabled)`                                   |
 | `smithers/agent`              | `isolates the deterministic suite from every ambient provider key`                                 | `it.skipIf(SMITHERS_LIVE_EXAMPLES === "1")`                 |
@@ -226,14 +225,6 @@ logins, which CI does not have, so it runs only with
 `SMITHERS_REAL_AGENT_CLI=1`. What breaks if it regresses: imported external
 sessions could lose or misread tool calls. Workaround: run it on a machine with
 both CLIs signed in.
-
-**`std`: C-COL-01 installed dispatcher.** `StaleRead.integration.test.ts`
-runs the production coding edit-atom bindings twice. The unavailable-provider
-case always runs and proves the refusal. The installed batch/delete/move case
-needs a broker-registered guest coding session with `/workspace`, so it runs
-only with `SMITHERS_COL10_INSTALLED=1` inside one. What breaks if it
-regresses: a stale read could overwrite an outside edit in a real session.
-Workaround: run the command in the file's header inside a guest session.
 
 **PostgreSQL storage.** The `smithers` history and database adapter tests
 run with declared PostgreSQL services in their Linux test targets. The

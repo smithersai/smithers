@@ -1,7 +1,9 @@
-/** Production coding/edit-atom std bindings. No supplied mutation provider.
- * Run the installed matrix inside a broker-registered guest coding session:
- * SMITHERS_COL10_INSTALLED=1 pnpm exec vitest run test/StaleRead.integration.test.ts
- * The ordinary Linux run proves unavailable-provider refusal only.
+/** Production coding/edit-atom std bindings over the real Node filesystem.
+ * With no provider every mutation is refused. With the workspace owner's
+ * `localProvider`, the provider a hosted box runs, the full stale-read matrix
+ * runs on every Linux host: successful batch, delete and move, pagination,
+ * cross-run reads, partial-batch failure, symlink confinement and a resumed
+ * host. Anchored file access needs Linux's /proc/self/fd.
  */
 import { NodeServices } from "@effect/platform-node"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
@@ -14,39 +16,34 @@ import { Context, Effect, FileSystem, Option, Path } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import assert from "node:assert/strict"
 import { existsSync } from "node:fs"
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "vitest"
 import * as CodingFileSystem from "../../../../../.smithers/flows/coding/filesystem.ts"
 
-const installed = process.env.SMITHERS_COL10_INSTALLED === "1"
 for (const available of [false, true]) {
-  test.skipIf(available && !installed)(
-    `C-COL-01 production dispatcher ${available ? "installed batch/delete/move" : "unavailable provider"}`,
+  test.skipIf(available && process.platform !== "linux")(
+    `C-COL-01 production dispatcher ${available ? "local provider batch/delete/move" : "unavailable provider"}`,
     async (t) => {
-      const root = await mkdtemp(join(available ? "/workspace/" : tmpdir(), "col10-"))
+      const root = await realpath(await mkdtemp(join(tmpdir(), "col10-")))
       t.onTestFinished(() => rm(root, { recursive: true, force: true }))
-      if (available) {
-        assert.notEqual(
-          process.getuid?.(),
-          0,
-          "Installed acceptance must run as the registered unprivileged coding session"
-        )
-      }
       await Effect.runPromise(
         Effect.gen(function*() {
           const fs = yield* FileSystem.FileSystem
           const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
           const path = yield* Path.Path
-          // Fixed guest root chooses the shipped authenticated daemon adapter.
-          // A temp host root deliberately has no provider and cannot write.
-          const coding = CodingFileSystem.make(
-            { repositoryPath: available ? "/workspace" : root },
-            fs,
-            spawner,
-            available ? "/workspace" : root
-          )
+          // A temp root has no provider of its own and cannot write; the
+          // matrix supplies the workspace owner's provider.
+          const host = () =>
+            CodingFileSystem.make(
+              { repositoryPath: root },
+              fs,
+              spawner,
+              root,
+              available ? CodingFileSystem.localProvider(root) : undefined
+            )
+          const coding = host()
           const bindings = yield* StandardFlows.filesystem(
             Context.make(FileSystem.FileSystem, coding).pipe(Context.add(Path.Path, path))
           ).bindings()
@@ -237,52 +234,55 @@ for (const available of [false, true]) {
           )
           assert.equal(yield* fs.readFileString(a), "hello\n")
           assert.equal(yield* fs.readFileString(b), "world\n")
-          // Real I/O failure after the first file. A third, untouched existing file
-          // distinguishes ledger invalidation from merely detecting changed bytes.
-          const locked = join(root, "locked"), blocked = join(locked, "new")
-          yield* Effect.promise(() => mkdir(locked))
-          t.onTestFinished(async () => {
-            await chmod(locked, 0o700).catch(() => {})
-            await rm(root, { recursive: true, force: true })
-          })
-          yield* Effect.promise(() => chmod(locked, 0o555))
-          yield* expect(
-            ApplyPatch.name,
-            patch(
-              `*** Update File: ${a}\n@@\n-hello\n+world\n*** Add File: ${blocked}\n+hello\n*** Update File: ${b}\n@@\n-world\n+hello\n`
-            ),
-            "failure",
-            /Patch stopped after 1 files; re-read all affected paths/
-          )
-          assert.equal(yield* fs.readFileString(a), "world\n")
-          assert.equal(yield* fs.exists(blocked), false)
-          assert.equal(yield* fs.readFileString(b), "world\n")
-          for (const target of [a, b]) {
-            yield* expect(Write.name, { path: target, content: "bad" }, "failure", /Re-read/)
-            assert.equal(yield* fs.readFileString(target), "world\n")
+          // Root ignores directory modes, so the real I/O failures below need an
+          // ordinary user.
+          if (process.getuid?.() !== 0) {
+            // Real I/O failure after the first file. A third, untouched existing file
+            // distinguishes ledger invalidation from merely detecting changed bytes.
+            const locked = join(root, "locked"), blocked = join(locked, "new")
+            yield* Effect.promise(() => mkdir(locked))
+            t.onTestFinished(async () => {
+              await chmod(locked, 0o700).catch(() => {})
+              await rm(root, { recursive: true, force: true })
+            })
+            yield* Effect.promise(() => chmod(locked, 0o555))
+            yield* expect(
+              ApplyPatch.name,
+              patch(
+                `*** Update File: ${a}\n@@\n-hello\n+world\n*** Add File: ${blocked}\n+hello\n*** Update File: ${b}\n@@\n-world\n+hello\n`
+              ),
+              "failure",
+              /Patch stopped after 1 files; re-read all affected paths/
+            )
+            assert.equal(yield* fs.readFileString(a), "world\n")
+            assert.equal(yield* fs.exists(blocked), false)
+            assert.equal(yield* fs.readFileString(b), "world\n")
+            for (const target of [a, b]) {
+              yield* expect(Write.name, { path: target, content: "bad" }, "failure", /Re-read/)
+              assert.equal(yield* fs.readFileString(target), "world\n")
+            }
+            yield* expect(Read.name, { path: a }, "success")
+            yield* expect(Read.name, { path: b }, "success")
+            yield* expect(Edit.name, { path: b, oldString: "world", newString: "hello" }, "success")
+            assert.equal(yield* fs.readFileString(b), "hello\n")
+            // A singleton I/O failure has no batch-prefix receipt. Even if the file
+            // still has its old bytes, restoring directory permissions must not let
+            // the old read authorize a retry after unknown settlement.
+            const singleton = join(locked, "existing")
+            yield* Effect.promise(() => chmod(locked, 0o700))
+            yield* Effect.promise(() => writeFile(singleton, "hello\n"))
+            yield* expect(Read.name, { path: singleton }, "success")
+            yield* Effect.promise(() => chmod(locked, 0o555))
+            yield* expect(Write.name, { path: singleton, content: "world\n" }, "failure")
+            assert.equal(yield* fs.readFileString(singleton), "hello\n")
+            yield* Effect.promise(() => chmod(locked, 0o700))
+            yield* expect(Write.name, { path: singleton, content: "world\n" }, "failure", /Re-read/)
+            assert.equal(yield* fs.readFileString(singleton), "hello\n")
+            yield* expect(Read.name, { path: singleton }, "success")
+            yield* expect(Write.name, { path: singleton, content: "world\n" }, "success")
+            assert.equal(yield* fs.readFileString(singleton), "world\n")
           }
-          yield* expect(Read.name, { path: a }, "success")
-          yield* expect(Read.name, { path: b }, "success")
-          yield* expect(Edit.name, { path: b, oldString: "world", newString: "hello" }, "success")
-          assert.equal(yield* fs.readFileString(b), "hello\n")
-          // A singleton I/O failure has no batch-prefix receipt. Even if the file
-          // still has its old bytes, restoring directory permissions must not let
-          // the old read authorize a retry after unknown settlement.
-          const singleton = join(locked, "existing")
-          yield* Effect.promise(() => chmod(locked, 0o700))
-          yield* Effect.promise(() => writeFile(singleton, "hello\n"))
-          yield* expect(Read.name, { path: singleton }, "success")
-          yield* Effect.promise(() => chmod(locked, 0o555))
-          yield* expect(Write.name, { path: singleton, content: "world\n" }, "failure")
-          assert.equal(yield* fs.readFileString(singleton), "hello\n")
-          yield* Effect.promise(() => chmod(locked, 0o700))
-          yield* expect(Write.name, { path: singleton, content: "world\n" }, "failure", /Re-read/)
-          assert.equal(yield* fs.readFileString(singleton), "hello\n")
-          yield* expect(Read.name, { path: singleton }, "success")
-          yield* expect(Write.name, { path: singleton, content: "world\n" }, "success")
-          assert.equal(yield* fs.readFileString(singleton), "world\n")
-          // Confinement at the same production tool door. This is supplemental;
-          // it does not claim root-input or fresh/retained-machine qualification.
+          // Confinement at the same production tool door.
           const outside = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "col10-outside-")))
           t.onTestFinished(() => rm(outside, { recursive: true, force: true }))
           const outsideFile = join(outside, "protected")
@@ -294,7 +294,8 @@ for (const available of [false, true]) {
           yield* expect(Write.name, { path: outsideFile, content: "bad" }, "failure")
           assert.equal(yield* Effect.promise(() => readFile(outsideFile, "utf8")), "outside remains\n")
           // A new host has no read authority even with the same session string.
-          const resumed = CodingFileSystem.make({ repositoryPath: "/workspace" }, fs, spawner, "/workspace")
+          const settled = yield* fs.readFileString(a)
+          const resumed = host()
           const resumedBindings = yield* StandardFlows.filesystem(
             Context.make(FileSystem.FileSystem, resumed).pipe(Context.add(Path.Path, path))
           ).bindings()
@@ -318,7 +319,7 @@ for (const available of [false, true]) {
           )
           assert.equal(result.outcome, "failure")
           assert.match(result.message!, /Re-read/)
-          assert.equal(yield* Effect.promise(() => readFile(a, "utf8")), "world\n")
+          assert.equal(yield* Effect.promise(() => readFile(a, "utf8")), settled)
           const resumedRead = resumedBindings.find((entry) => entry.descriptor.name === Read.name)!
           const resumedCall = (flowName: string, input: Cell.Call["input"]) =>
             new Cell.Call({
@@ -348,7 +349,6 @@ for (const available of [false, true]) {
 
 // Exercise the actual child-process adapter when the main-installed client is
 // absent. No injected spawner, filesystem or provider can manufacture settlement.
-// Installed hosts run the guest matrix above instead of this missing-client case.
 test.skipIf(existsSync("/opt/smithers/bin/smithers-machined"))(
   "C-COL-01 production dispatcher loses authority after missing installed client",
   async (t) => {
