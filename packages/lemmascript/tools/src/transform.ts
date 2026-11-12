@@ -434,9 +434,10 @@ function lowerBranch(e: TExpr, binds: Stmt[] | null): { body: Stmt[]; expr: Expr
  *  Optional conds never arrive here — narrow.ts rewrites them to someMatch. */
 function asCondition(e: TExpr): TExpr {
   const bool: Ty = { kind: "bool" };
-  if (e.ty.kind === "bool") return e;
+  // Logical operators first: `n && true` has the right operand's boolean type, but `n` still needs `n != 0`.
   if (e.kind === "binop" && (e.op === "&&" || e.op === "||"))
     return { ...e, left: asCondition(e.left), right: asCondition(e.right), ty: bool };
+  if (e.ty.kind === "bool") return e;
   if (e.ty.kind === "int" || e.ty.kind === "nat")
     return { kind: "binop", op: "!==", left: e, right: { kind: "num", value: 0, ty: e.ty }, ty: bool };
   if (e.ty.kind === "string")
