@@ -190,6 +190,49 @@ describe("ContainerRecording", () => {
       )
     }))
 
+  it.effect("record hands destroy its error and leaves every member it does not record to the live handle", () =>
+    Effect.gen(function*() {
+      const live = liveBox()
+      const given: Array<unknown> = []
+      // Alchemy's container handle: a Proxy over its own members (`monitor`) that sends any other name to the box.
+      const members = {
+        ...live.container,
+        destroy: (error?: unknown) => Effect.sync(() => void (given.push(error), live.state.up = false)),
+        monitor: () => Effect.succeed("exited")
+      }
+      const handle = new Proxy(members, {
+        get: (target, prop) =>
+          prop in target
+            ? target[prop as keyof typeof target]
+            : typeof prop === "string"
+            ? (...args: Array<unknown>) => Effect.succeed(`${prop} ${args.join(" ")}`)
+            : undefined
+      })
+      type Handle = typeof members & { readonly ping: (word: string) => Effect.Effect<string> }
+      const recorder = ContainerRecording.record(handle as Handle)
+      const evicted = new BoxFailure({ message: "evicted" })
+      yield* recorder.container.destroy(evicted)
+      yield* recorder.container.destroy()
+      expect(given).toEqual([evicted, undefined])
+      expect([yield* recorder.container.monitor(), yield* recorder.container.ping("box")]).toEqual([
+        "exited",
+        "ping box"
+      ])
+      // A spread of the recorded box, as a container object passes it on, keeps recording and keeps the handle's own.
+      const spread = { ...recorder.container }
+      expect([yield* spread.running, yield* spread.monitor()]).toEqual([false, "exited"])
+      expect(recorder.calls()).toEqual([
+        { operation: "destroy", input: { error: "BoxFailure" }, output: null },
+        { operation: "destroy", input: null, output: null },
+        { operation: "running", input: null, output: false }
+      ])
+      const replayed = ContainerRecording.replay<Box>({ calls: recorder.calls() })
+      yield* replayed.container.destroy(evicted)
+      yield* replayed.container.destroy()
+      yield* replayed.container.running
+      expect(replayed.remaining()).toBe(0)
+    }))
+
   it.effect("a failed call is recorded by its tag, and replays as a failure with that tag", () =>
     Effect.gen(function*() {
       const live = liveBox()

@@ -2613,7 +2613,7 @@ Whether an error is classified non-retryable: by `defaultNonRetryable`, by the p
 - **Signature:** `decide(policy: RetryPolicy, options: { readonly attempt: number; readonly error: unknown; readonly random?: number | undefined; readonly elapsedMs?: number | undefined }): RetryDecision`
 - **Since:** `0.1.0`
 
-The pure core of the engine's single retry decision point. Non-retryable errors are classified here and nowhere else. A failure with its own `retryAfterMillis`, a finite non-negative number of milliseconds such as a provider's `Retry-After` on a `ModelError`, retries after that delay instead of the policy's backoff, capped by `maxMs` and by what remains of `expirationMs`.
+The pure core of the engine's single retry decision point. Non-retryable errors are classified here and nowhere else. A failure with its own `retryAfterMillis`, a finite non-negative number of milliseconds such as a provider's `Retry-After` on a `ModelError`, waits at least that long: the hint raises the policy's backoff delay for the attempt and never lowers it, capped by `maxMs` and by what remains of `expirationMs`. A hint of zero on every attempt still backs off.
 
 ### `RetryPolicy.decideEffect`
 
@@ -43836,7 +43836,11 @@ Transport, authentication, and reconnect are handled here rather than left to
 the application. A live follow that loses its transport reconnects under
 exponential backoff capped at five seconds, resuming from the subscription's
 progress; gaps, authorization refusals, and server closes propagate to the
-consumer instead of retrying.
+consumer instead of retrying. Only the live `Sync.Subscribe` stream reconnects:
+a `transport_failed` while `Sync.Read` pages catch-up history, or from
+`snapshot`, surfaces to the consumer, who resubscribes from progress. The
+retry reads where a failure came from, so an `apply` that fails with a
+`transport_failed` of its own fails the subscription instead of reconnecting.
 
 A delivery bookmark names what was delivered. `SubscribeOptions.apply`
 additionally records `progress.applied`: the callback runs to success before
@@ -45405,8 +45409,15 @@ Worker; it imports no Node module. See
 ```ts
 const Mode: Schema.Literals<["passthrough", "record", "replay"]>
 const Operation: Schema.Literals<[
-  "running", "start", "setInactivityTimeout", "interceptOutboundHttp",
-  "interceptAllOutboundHttp", "interceptOutboundHttps", "snapshotContainer", "destroy", "exec"
+  "running",
+  "start",
+  "setInactivityTimeout",
+  "interceptOutboundHttp",
+  "interceptAllOutboundHttp",
+  "interceptOutboundHttps",
+  "snapshotContainer",
+  "destroy",
+  "exec"
 ]>
 
 interface Call {
@@ -45466,7 +45477,10 @@ class ReplayedFailure extends Error {
 container object uses: `running`, `start`, `setInactivityTimeout`, the three
 intercepts, `snapshotContainer`, `destroy` and `exec`. `record` calls `live` and
 hands each completed call to `onCall` with its index in the order calls began; a
-command's call completes when its scope closes. `replay` reaches no container:
+command's call completes when its scope closes. A `destroy` error reaches `live`
+and is recorded by its tag. Every member `record` does not record (`monitor`,
+`signal`, a method the handle dispatches to the container's own server) is
+`live`'s, unchanged. `replay` reaches no container:
 each call must match the recording's next call by operation and normalized
 input, or it dies with `UnrecordedCallError`; a recorded failure replays as a
 `ReplayedFailure` with the live failure's tag. `make` picks one by mode; a

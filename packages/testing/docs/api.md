@@ -1418,7 +1418,10 @@ class ReplayedFailure extends Error {
 container object uses: `running`, `start`, `setInactivityTimeout`, the three
 intercepts, `snapshotContainer`, `destroy` and `exec`. `record` calls `live` and
 hands each completed call to `onCall` with its index in the order calls began; a
-command's call completes when its scope closes. `replay` reaches no container:
+command's call completes when its scope closes. A `destroy` error reaches `live`
+and is recorded by its tag. Every member `record` does not record (`monitor`,
+`signal`, a method the handle dispatches to the container's own server) is
+`live`'s, unchanged. `replay` reaches no container:
 each call must match the recording's next call by operation and normalized
 input, or it dies with `UnrecordedCallError`; a recorded failure replays as a
 `ReplayedFailure` with the live failure's tag. `make` picks one by mode; a

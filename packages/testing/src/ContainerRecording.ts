@@ -175,7 +175,7 @@ export interface Container<E = unknown, R = never> {
   interceptAllOutboundHttp(binding: never): Effect.Effect<void, E, R>
   interceptOutboundHttps(addr: string, binding: never): Effect.Effect<void, E, R>
   snapshotContainer(options?: object): Effect.Effect<unknown, E, R>
-  destroy(): Effect.Effect<void, E, R>
+  destroy(error?: unknown): Effect.Effect<void, E, R>
   exec(argv: Array<string>, options: ExecOptions): Effect.Effect<Process<E, R>, E, R | Scope.Scope>
 }
 
@@ -278,6 +278,9 @@ const text = (chunks: ReadonlyArray<Uint8Array>): string => {
 /** The exec input as recorded: the argument vector and the options, never stdin's bytes. */
 const execInput = (argv: Array<string>, options: ExecOptions): unknown => ({ argv, options })
 
+/** The destroy input as recorded: the tag of the error it was given, never the error itself. */
+const destroyInput = (error: unknown): unknown => error === undefined ? null : { error: tagOf(error) }
+
 /**
  * Options for {@link record}.
  *
@@ -297,7 +300,9 @@ export interface RecordOptions {
 /**
  * The live container, with every call recorded. `calls()` answers the calls
  * so far in the order they began; a command's call is complete once its
- * scope closes.
+ * scope closes. Every member it does not record (`monitor`, `signal`, a
+ * method Alchemy's handle sends to the container's own server) is the live
+ * handle's, unchanged.
  *
  * @throws {never}
  * @category constructors
@@ -366,8 +371,7 @@ export const record = <C extends Container<any, any>>(
           )
       )
     })
-  const container = {
-    ...live,
+  const own: Record<PropertyKey, unknown> = {
     running: recorded("running", null, live.running),
     start: (startOptions?: object) => recorded("start", startOptions ?? null, live.start(startOptions)),
     setInactivityTimeout: (durationMs: number) =>
@@ -380,9 +384,14 @@ export const record = <C extends Container<any, any>>(
       recorded("interceptOutboundHttps", { addr }, live.interceptOutboundHttps(addr, binding)),
     snapshotContainer: (snapshotOptions?: object) =>
       recorded("snapshotContainer", snapshotOptions ?? null, live.snapshotContainer(snapshotOptions)),
-    destroy: () => recorded("destroy", null, live.destroy()),
+    destroy: (error?: unknown) => recorded("destroy", destroyInput(error), live.destroy(error)),
     exec
   }
+  // A Proxy, not a spread: a spread drops what the live handle answers by dispatch rather than as an own member. A
+  // spread of this Proxy (`{ ...box, start }`) reads each member through `get`, so it still records.
+  const container = new Proxy(live, {
+    get: (target, prop) => Object.hasOwn(own, prop) ? own[prop] : Reflect.get(target, prop)
+  })
   return { container, calls: () => slots.filter((call): call is Call => call !== undefined) }
 }
 
@@ -457,7 +466,7 @@ export const replay = <C extends Container<any, any>>(
     interceptOutboundHttps: (addr: string) => answered("interceptOutboundHttps", { addr }, none),
     snapshotContainer: (snapshotOptions?: object) =>
       answered("snapshotContainer", snapshotOptions ?? null, (output) => output),
-    destroy: () => answered("destroy", null, none),
+    destroy: (error?: unknown) => answered("destroy", destroyInput(error), none),
     exec
   } as unknown as C
   return { container, remaining: () => recording.calls.length - next }
