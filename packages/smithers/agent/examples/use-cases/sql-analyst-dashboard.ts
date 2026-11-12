@@ -6,9 +6,10 @@
  * SQL and a checker reviews it, told the previous check each round, until the
  * check approves read-only SQL with a LIMIT or `maxSqlAttempts` rounds
  * (default 3) are spent; the last check stands either way. A check that is not
- * approved or not low risk asks a person first, and only an approved or
- * low-risk query runs. A BI agent then writes the dashboard, saying when
- * execution was skipped.
+ * safe or not low risk asks a person first, shown the SQL, and a read-only
+ * query runs only when it is safe and low risk or a person approved it. SQL the
+ * checker marked as not read-only never runs, approved or not. A BI agent then
+ * writes the dashboard, saying when execution was skipped.
  *
  * 0.x's `<Loop until onMaxReached="return-last">` is the planned recursion `17-review-loop.ts` uses. `ReviewLoop` does not fit: it stops on `approved` alone, while 0.x also requires `readOnly` and `hasLimit`.
  * 0.x's `<Approval>` is a `HumanTask` asked for a typed decision: the run parks until a person answers it.
@@ -224,16 +225,22 @@ type Failure = AgentAction.AgentFailure | HumanTask.HumanTaskFailed
 /** What the loop ends on: approved, read-only SQL with a LIMIT. */
 const querySafe = (check: SqlCheck) => check.approved && check.readOnly && check.hasLimit
 
-/** A check a person must see before the query runs. */
-const needsApproval = (check: SqlCheck) => !check.approved || check.risk !== "low"
+/** A check a person must see before the query runs: not safe, or not low risk. */
+const needsApproval = (check: SqlCheck) => !querySafe(check) || check.risk !== "low"
 
-/** The approval question. Pure, so it is a `Node.map`. */
+/** The approval question, with the SQL the person is approving. Pure, so it is a `Node.map`. */
 const question = ({ check }: { readonly check: SqlCheck }) =>
-  `Approve SQL analyst query\n\nSQL check risk ${check.risk}; reasons: ${check.rejectedReasons.join(", ") || "none"}`
+  `Approve SQL analyst query\n\nSQL check risk ${check.risk}; reasons: ${
+    check.rejectedReasons.join(", ") || "none"
+  }\n\nSQL:\n${check.safeSql}`
 
-/** Whether the query may run. Pure, so the branch decides on it. */
+/**
+ * Whether the query may run: read-only SQL that needs no approval or that a
+ * person approved. SQL the checker marked as not read-only never runs. Pure,
+ * so the branch decides on it.
+ */
 const mayExecute = ({ approval, check }: { readonly check: SqlCheck; readonly approval: Approval | null }) =>
-  !needsApproval(check) || approval?.approved === true
+  check.readOnly && (!needsApproval(check) || approval?.approved === true)
 
 interface Context {
   readonly queryPlan: Planned.Planned<typeof QueryPlan.Type>

@@ -47,6 +47,10 @@
 
 ### Fixed
 
+- The `sql-analyst-dashboard` example now asks a person before running SQL
+  that lacks a `LIMIT` or fails another safety check, and shows the SQL in the
+  question. SQL marked as not read-only never runs, even with approval.
+
 - `Transcript.prepare` never parts a surrogate pair: a message it splits into
   chunks, or a string it cuts, ends on a whole character. A message over 16 KiB
   with emoji or other astral characters used to be split, or cut, between a

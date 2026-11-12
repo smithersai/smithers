@@ -40,7 +40,9 @@ const reviewer = (executionId: string, decision: typeof Schema.Json.Type, questi
     }).pipe(Effect.orDie)
   ))
 
-type Verdict = Pick<typeof SqlCheck.Type, "approved" | "readOnly" | "hasLimit" | "risk" | "rejectedReasons">
+type Verdict = Pick<typeof SqlCheck.Type, "approved" | "readOnly" | "hasLimit" | "risk" | "rejectedReasons"> & {
+  readonly safeSql?: string
+}
 
 const safe: Verdict = { approved: true, readOnly: true, hasLimit: true, risk: "low", rejectedReasons: [] }
 
@@ -77,7 +79,7 @@ const script = (verdicts: ReadonlyArray<Verdict>) => {
     }
     if (asked.includes("Check SQL safety.")) {
       turns.push(`check ${given.draft.sql}`)
-      return { ...verdicts[checks++], safeSql: `${given.draft.sql}\nLIMIT ${given.rowLimit}` }
+      return { safeSql: `${given.draft.sql}\nLIMIT ${given.rowLimit}`, ...verdicts[checks++] }
     }
     if (asked.includes("Execute only the approved read-only SQL.")) {
       turns.push(`execute ${given.sql}`)
@@ -157,7 +159,9 @@ it.live("asks a person about a medium-risk query and runs it once approved", () 
       )
     })
 
-    expect(questions).toEqual(["approve-query: Approve SQL analyst query\n\nSQL check risk medium; reasons: none"])
+    expect(questions).toEqual([
+      "approve-query: Approve SQL analyst query\n\nSQL check risk medium; reasons: none\n\nSQL:\nSELECT channel FROM orders -- draft 1\nLIMIT 50"
+    ])
     expect(turns).toContain("execute SELECT channel FROM orders -- draft 1\nLIMIT 50")
     expect(dashboards[0]?.question).toBe("Which channel converts best?")
     expect(dashboards[0]?.approval).toEqual({ approved: true, reviewer: "dana", note: "fine" })
@@ -197,7 +201,7 @@ it.live(
         "dashboard"
       ])
       expect(questions).toEqual([
-        "approve-query: Approve SQL analyst query\n\nSQL check risk high; reasons: draft 2 deletes rows"
+        "approve-query: Approve SQL analyst query\n\nSQL check risk high; reasons: draft 2 deletes rows\n\nSQL:\nSELECT channel FROM orders -- draft 2\nLIMIT 500"
       ])
       expect(dashboards[0]?.queryResult).toBeNull()
       expect(dashboards[0]?.approval).toEqual({ approved: false, reviewer: "dana", note: "no" })
@@ -206,3 +210,46 @@ it.live(
     }),
   { timeout: 60_000 }
 )
+
+for (const approved of [false, true]) {
+  for (
+    const { name, verdict, sql } of [
+      { name: "mutating", verdict: { ...safe, readOnly: false }, sql: "DELETE FROM orders" },
+      { name: "unlimited", verdict: { ...safe, hasLimit: false }, sql: "SELECT channel FROM orders" },
+      { name: "rejected", verdict: { ...safe, approved: false }, sql: "SELECT channel FROM orders LIMIT 20" }
+    ]
+  ) {
+    it.live(
+      `asks about a standing ${name} check and ${approved ? "applies approval" : "honors denial"}`,
+      () =>
+        Effect.gen(function*() {
+          const { answer, dashboards, turns } = script([{ ...verdict, safeSql: sql }])
+          const questions: Array<string> = []
+          const executionId = `sql-${name}-${approved}`
+          const decision = { approved, reviewer: "dana", note: approved ? "reviewed" : "no" }
+          const dashboard = yield* Kit.run(SqlAnalystDashboard, { maxSqlAttempts: 1, rowLimit: 20 }, {
+            filename: join(directory, `${executionId}.sqlite`),
+            executionId,
+            script: answer,
+            actions: Layer.mergeAll(layer, reviewer(executionId, decision, questions))
+          })
+
+          expect(questions).toEqual([
+            `approve-query: Approve SQL analyst query\n\nSQL check risk low; reasons: none\n\nSQL:\n${sql}`
+          ])
+          const mayRun = approved && verdict.readOnly
+          expect(turns.filter((turn) => turn.startsWith("execute"))).toEqual(mayRun ? [`execute ${sql}`] : [])
+          expect(turns.filter((turn) => turn.startsWith("check"))).toHaveLength(1)
+          expect(dashboards[0]?.approval).toEqual(decision)
+          if (mayRun) {
+            expect(dashboards[0]?.queryResult).toMatchObject({ rowCount: 1 })
+          } else {
+            expect(dashboards[0]?.queryResult).toBeNull()
+          }
+          expect(dashboard.answer).toBe(mayRun ? "Top channel: partner" : "Execution was skipped.")
+          expect(dashboard.sqlUsed).toBe(sql)
+        }),
+      { timeout: 60_000 }
+    )
+  }
+}
