@@ -98,15 +98,18 @@ const render = (workstreams) => {
     main.append(section)
   }
 }
+const unread = (why) => {
+  document.getElementById("error").textContent = "Couldn't read the workstreams: " + why
+}
 const read = async () => {
   try {
     const response = await fetch("workstreams.json", { cache: "no-store" })
-    if (!response.ok) throw new Error("the runner answered " + response.status)
+    if (!response.ok) return unread("the runner answered " + response.status)
     render((await response.json()).workstreams)
     document.getElementById("error").textContent = ""
     document.getElementById("read").textContent = "Read from the lanes' runs at " + new Date().toLocaleTimeString()
   } catch (error) {
-    document.getElementById("error").textContent = "Couldn't read the workstreams: " + error.message
+    unread(error.message)
   }
 }
 read()
