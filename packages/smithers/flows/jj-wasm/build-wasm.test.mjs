@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import {
@@ -47,6 +47,56 @@ const runStartup = (compiler, cargo) => {
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
+}
+
+for (const args of [[], ["--verify"]]) {
+  for (const kind of ["directory", "file"]) {
+    test((args.length === 0 ? "build" : "verify") + " command runs through a symlinked " + kind, () => {
+      const directory = mkdtempSync(join(tmpdir(), "flows jj entrypoint "))
+      try {
+        const script = fileURLToPath(new URL("./build-wasm.mjs", import.meta.url))
+        const link = join(directory, "entrypoint.mjs")
+        symlinkSync(kind === "directory" ? dirname(script) : script, link, kind === "directory" ? "dir" : "file")
+        const entrypoint = kind === "directory" ? join(link, "build-wasm.mjs") : link
+        const result = spawnSync(process.execPath, [entrypoint, ...args], {
+          cwd: directory,
+          env: { ...process.env, PATH: directory },
+          encoding: "utf8",
+          timeout: 10000
+        })
+        assert.equal(result.error, undefined)
+        assert.equal(result.status, 1)
+        assert.match(result.stderr, /rustc.*not found on PATH/)
+        assert.equal(result.stdout, "")
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    })
+  }
+}
+
+for (const mode of ["stdin", "eval"]) {
+  test("build helpers can be imported from " + mode + " without starting a build", () => {
+    const directory = mkdtempSync(join(tmpdir(), "flows-jj-import-"))
+    try {
+      const script = new URL("./build-wasm.mjs", import.meta.url).href
+      const source = "const { canonicalHost } = await import(" + JSON.stringify(script) + "); console.log(canonicalHost)"
+      const args = mode === "stdin" ? ["--input-type=module", "-"] : ["--input-type=module", "-e", source]
+      const result = spawnSync(process.execPath, args, {
+        cwd: directory,
+        env: { ...process.env, PATH: directory },
+        input: mode === "stdin" ? source : undefined,
+        encoding: "utf8",
+        timeout: 10000
+      })
+      assert.equal(result.error, undefined)
+      assert.equal(result.status, 0, result.stderr)
+      assert.equal(result.stderr, "")
+      assert.equal(result.stdout.trim(), canonicalHost)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
 }
 
 test("build command reports a missing compiler without attempting a build", () => {

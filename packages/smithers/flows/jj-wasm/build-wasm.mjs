@@ -48,7 +48,7 @@ import { spawnSync } from "node:child_process"
 import { copyFileSync, mkdirSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { fileURLToPath } from "node:url"
 
 const repoRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..", "..")
 
@@ -172,10 +172,7 @@ export const reproductionFailure = (committed, rebuilt) =>
     "  On any other host the same script prints the container command."
   ].join("\n")
 
-const isMain = process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-
-if (isMain) {
+if (import.meta.main) {
   const probeEnvironment = buildEnvironment(process.env, [])
   const artifact = join(targetDir(process.env, repoRoot), "wasm32-wasip1", "release", "flows_jj.wasm")
   const destinationDir = join(repoRoot, "packages", "smithers", "flows", "jj", "wasm")
