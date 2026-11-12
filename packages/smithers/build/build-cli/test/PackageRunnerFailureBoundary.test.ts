@@ -488,7 +488,15 @@ export const Package = S.Package({ targets: { check, command } })`)
         )
       )
       expect(result.ok).toBe(false)
-      expect(result.results[0]?.error).toBe("wrote outside its declared write-set (reverted): workflows/test.yml")
+      // A portal revert copies the bytes it removes into the quarantine first and
+      // the failure names that directory, so the generated workflow is kept.
+      const error = result.results[0]?.error ?? ""
+      const refusal = "wrote outside its declared write-set (reverted): workflows/test.yml"
+      const keptAt = "; the reverted bytes are kept at "
+      expect(error.slice(0, refusal.length + keptAt.length)).toBe(refusal + keptAt)
+      const kept = error.slice(refusal.length + keptAt.length)
+      expect(kept).toMatch(/^\.flows\/reverted\/command-\S+$/)
+      expect(await Fs.readFile(Path.join(root, kept, "workflows/test.yml"), "utf8")).toContain("pull_request")
       expect(await Fs.readFile(Path.join(external, "original.txt"), "utf8")).toBe("preserve")
       await expect(Fs.stat(Path.join(external, "test.yml"))).rejects.toMatchObject({ code: "ENOENT" })
     } finally {
