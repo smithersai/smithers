@@ -5,13 +5,14 @@ import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
 import type { AfterUpdate, EscapeRoute, EscapeStep, WikiVisit } from "./updateDecision.vibe"
 import type { TourEnd, TourStarted } from "./tourDecision.vibe"
-import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
+import type { SandboxResult, SandboxScreen, WikiEditScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
 import { escapeScreen, screenOf } from "./screenRead.vibe"
 import type { ScreenState } from "./screenDecision.vibe"
 import type { IssueScreen } from "./issueDecision.vibe"
 
 type Issues = NonNullable<Model["issues"]>
+type WikiEditing = NonNullable<Model["wikiEdit"]>
 
 /** The Model after an account step: `surface` and `docs` from the step, the account's screen fields over `base` (the
  *  current account, or the signed-out one), and every other field of the Model and of `base` unchanged. */
@@ -342,4 +343,62 @@ export function issueDetailsWrite(model: Model, issues: Issues, data: Issues["da
 //@ ensures \result == { ...model, surface: \result.surface, issues: \result.issues }
 export function issueUiWrite(model: Model, ui: Issues, bumpSerial: boolean, serial: number, toChat: boolean): Model {
   return { ...model, issues: bumpSerial ? { ...ui, serial } : ui, ...(toChat ? { surface: "chat" } : {}) }
+}
+
+/** The Model after an editor step that keeps the submission (typing, no changes): the step's screen over the editor;
+ *  nothing else. */
+//@ verify
+//@ ensures \result == { ...model, wikiEdit: { ...editing, page: state.page, base: state.base, text: state.text, busy: state.busy, error: state.error } }
+export function wikiEditWrite(model: Model, editing: WikiEditing, state: WikiEditScreen): Model {
+  return { ...model, wikiEdit: { ...editing, ...state } }
+}
+
+/** The Model after the editor loads its page: the step's screen over the editor, and the stale count when the load
+ *  reports one; nothing else. */
+//@ verify
+//@ ensures stale === undefined ==> \result == { ...model, wikiEdit: { ...editing, page: state.page, base: state.base, text: state.text, busy: state.busy, error: state.error } }
+//@ ensures stale !== undefined ==> \result == { ...model, wikiEdit: { ...editing, page: state.page, base: state.base, text: state.text, busy: state.busy, error: state.error, stale: stale } }
+export function wikiBeganWrite(model: Model, editing: WikiEditing, state: WikiEditScreen, stale: number | undefined): Model {
+  return { ...model, wikiEdit: { ...editing, ...state, ...(stale === undefined ? {} : { stale }) } }
+}
+
+/** The Model after a save is sent: the next wiki serial, the submitting screen over the editor, and the request the
+ *  editor now waits on; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, wikiSerial: serial, wikiEdit: { ...editing, page: state.page, base: state.base, text: state.text, busy: state.busy, error: state.error, submission: request } }
+export function wikiSubmittedWrite(model: Model, editing: WikiEditing, serial: number, state: WikiEditScreen, request: NonNullable<WikiEditing["submission"]>): Model {
+  return { ...model, wikiSerial: serial, wikiEdit: { ...editing, ...state, submission: request } }
+}
+
+/** The Model after a save fails: the failure's screen over the editor, and the submission cleared when the failure
+ *  says nothing was written; nothing else. */
+//@ verify
+//@ ensures !clear ==> \result == { ...model, wikiEdit: { ...editing, page: state.page, base: state.base, text: state.text, busy: state.busy, error: state.error } }
+//@ ensures clear ==> \result == { ...model, wikiEdit: { ...editing, page: state.page, base: state.base, text: state.text, busy: state.busy, error: state.error, submission: undefined } }
+export function wikiFailedWrite(model: Model, editing: WikiEditing, state: WikiEditScreen, clear: boolean): Model {
+  return { ...model, wikiEdit: { ...editing, ...state, ...(clear ? { submission: undefined } : {}) } }
+}
+
+/** The Model with the editor closed; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, wikiEdit: undefined }
+export function wikiEditClosedWrite(model: Model): Model {
+  return { ...model, wikiEdit: undefined }
+}
+
+/** The Model after a save completes: the editor closed, the saved pages, and the review link when the save opened one;
+ *  nothing else. */
+//@ verify
+//@ ensures review === undefined ==> \result == { ...model, wikiEdit: undefined, wikiPages: pages }
+//@ ensures review !== undefined ==> \result == { ...model, wikiEdit: undefined, wikiPages: pages, wikiReview: review }
+export function wikiCompletedWrite(model: Model, pages: NonNullable<Model["wikiPages"]>, review: Model["wikiReview"]): Model {
+  return { ...model, wikiEdit: undefined, wikiPages: pages, ...(review === undefined ? {} : { wikiReview: review }) }
+}
+
+/** The Model after a sandbox answers with its snapshot: the answer's pane, busy flag, operation and error, the
+ *  snapshot, the minute notice and the month warned; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error, sandbox: snapshot, minuteNotice: notice, warnedMonth: warned }
+export function sandboxLoadedWrite(model: Model, result: SandboxResult, snapshot: NonNullable<Model["sandbox"]>, notice: string, warned: number): Model {
+  return { ...sandboxResultWrite(model, result), sandbox: snapshot, minuteNotice: notice, warnedMonth: warned }
 }

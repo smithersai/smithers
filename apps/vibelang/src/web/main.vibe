@@ -458,36 +458,36 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const opens = ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null)
       const result = polled === true ? PaneDecision.polledSandbox(sandboxResult(model), opens) : PaneDecision.loadedSandbox(sandboxResult(model), opens)
       const notice = PaneDecision.sandboxNotice(zero, low, model.sandbox?.resetAt !== snapshot.resetAt)
-      return { model: { ...ModelWrite.sandboxResultWrite(model, result), sandbox: snapshot, minuteNotice: minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), warnedMonth: PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0) } }
+      return { model: ModelWrite.sandboxLoadedWrite(model, result, snapshot, minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0)) }
     },
     FailedSandbox: ({ conversation, request, reason, polled }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest) ? { model } : (() => { const result = polled === true ? PaneDecision.polledFailure(sandboxResult(model), reason) : PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: ModelWrite.sandboxFailureWrite(model, result) } })(),
     ClickedEditWiki: () => beginWikiEdit(model),
     ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
     // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
-    UpdatedWikiEdit: ({ value }) => model.wikiEdit === undefined || !PaneDecision.wikiEditTypes(model.wikiEdit.busy, model.wikiEdit.submission !== undefined) ? { model } : { model: { ...model, wikiEdit: { ...model.wikiEdit, ...PaneDecision.updatedWikiEdit(wikiEditScreen(model.wikiEdit), value.toWellFormed()) } } },
-    CanceledWikiEdit: () => WikiEditorDecision.wikiEditCloses(model.wikiEdit !== undefined, model.wikiEdit?.submission !== undefined) ? { model: { ...model, wikiEdit: undefined } } : { model },
+    UpdatedWikiEdit: ({ value }) => model.wikiEdit === undefined || !PaneDecision.wikiEditTypes(model.wikiEdit.busy, model.wikiEdit.submission !== undefined) ? { model } : { model: ModelWrite.wikiEditWrite(model, model.wikiEdit, PaneDecision.updatedWikiEdit(wikiEditScreen(model.wikiEdit), value.toWellFormed())) },
+    CanceledWikiEdit: () => WikiEditorDecision.wikiEditCloses(model.wikiEdit !== undefined, model.wikiEdit?.submission !== undefined) ? { model: ModelWrite.wikiEditClosedWrite(model) } : { model },
     SubmittedWikiEdit: () => {
       const editing = model.wikiEdit
       if (editing === undefined) return { model }
       const role = accountOf(model).identity.role
       const op = PaneDecision.wikiSubmitPlan(editing.busy, editing.text, editing.base, Machine.wikiPermission(role, "save"), Machine.wikiPermission(role, "propose"))
       if (op === "ignore" || op === "refuse") return { model }
-      if (op === "no-changes") return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.noWikiChanges(wikiEditScreen(editing)) } } }
+      if (op === "no-changes") return { model: ModelWrite.wikiEditWrite(model, editing, PaneDecision.noWikiChanges(wikiEditScreen(editing))) }
       const serial = model.wikiSerial
       const step = WikiEditorDecision.submittedWikiEdit(wikiEditScreen(editing), op, serial, editing.submission !== undefined, wikiDraft(editing.submission), `${model.session}-wiki-${serial + 1}`, `${model.session}-wiki-retry-${serial + 1}`)
       const request = wikiRequest(step.submission)
-      return { model: { ...model, wikiSerial: step.serial, wikiEdit: { ...editing, ...step.editing, submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest })] }
+      return { model: ModelWrite.wikiSubmittedWrite(model, editing, step.serial, step.editing, request), commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest })] }
     },
     BeganWikiEdit: ({ request, page, source, draft, stale }) => {
       const editing = model.wikiEdit
       if (editing === undefined || !PaneDecision.wikiBeginApplies(editing.busy, Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest))) return { model }
-      return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft), ...(stale === undefined ? {} : { stale }) } }, commands: [FocusWikiEditor({})] }
+      return { model: ModelWrite.wikiBeganWrite(model, editing, PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft), stale), commands: [FocusWikiEditor({})] }
     },
-    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: WikiEditorDecision.savedWikiPages(model.wikiPages ?? [], page, source, revision), ...(WikiEditorDecision.wikiReviewLinks(review) ? { wikiReview: { page, url: review } } : {}) } }),
+    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest) ? { model } : ({ model: ModelWrite.wikiCompletedWrite(model, WikiEditorDecision.savedWikiPages(model.wikiPages ?? [], page, source, revision), WikiEditorDecision.wikiReviewLinks(review) ? { page, url: review } : undefined) }),
     FailedWikiEdit: ({ request, reason, unwritten }) => {
       if (model.wikiEdit === undefined || !PaneDecision.wikiEditFailureApplies(request, model.wikiEditRequest)) return { model }
       const step = PaneDecision.failedWikiEdit(wikiEditScreen(model.wikiEdit), PaneDecision.wikiEditErrorText(reason), unwritten === true)
-      return { model: { ...model, wikiEdit: { ...model.wikiEdit, ...step.state, ...(step.submission === "clear" ? { submission: undefined } : {}) } } }
+      return { model: ModelWrite.wikiFailedWrite(model, model.wikiEdit, step.state, step.submission === "clear") }
     },
     ClickedWiki: ({ page }) => visitWiki(model, page),
     WikiLocationChanged: ({ page }) => UpdateDecision.wikiLocationLeaves(page) ? { model: ModelWrite.wikiLeaveWrite(model) } : visitWiki(model, page),
