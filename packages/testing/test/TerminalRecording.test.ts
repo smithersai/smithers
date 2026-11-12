@@ -1,12 +1,13 @@
 import { NodeHost } from "@smthrs/platform-node"
 import { Effect, FileSystem, Path } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, inject, it } from "vitest"
 import { execute } from "../src/RealCliDriver.ts"
 import * as Recording from "../src/TerminalRecording.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E, NodeHost.NodeHost>) =>
   Effect.runPromise(effect.pipe(Effect.provide(NodeHost.layer)))
-const options = { title: "Repository journey", env: { PATH: process.env.PATH ?? "" } }
+const tools = inject("terminalTools")
+const options = { title: "Repository journey", renderer: tools.renderer, env: tools.env }
 const directory = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
@@ -31,7 +32,7 @@ describe("reproducible terminal evidence", () => {
       expect(cast.at(-1)).toEqual([1.6, "o", ""])
       const manifest = JSON.parse(yield* fs.readFileString(first.manifest))
       expect(manifest.frames.map((frame: Recording.Frame) => frame.label)).toEqual(["Signed out", "Open repository"])
-      expect(manifest.renderer.executable).toBe("ffmpeg")
+      expect(manifest.renderer.executable).toBe(tools.renderer)
       expect(manifest.renderer.args).toContain("terminal.gif")
       expect(yield* fs.readFileString(first.gif.replace("terminal.gif", "frame-0000.txt"))).toBe(
         "logged_in: false\ntoken_set: false"
@@ -39,7 +40,7 @@ describe("reproducible terminal evidence", () => {
       // Decode with a second real process: a header alone cannot prove animation.
       const { execute } = yield* Effect.promise(() => import("../src/RealCliDriver.ts"))
       const decoded = yield* execute({
-        executable: "ffprobe",
+        executable: tools.probe,
         args: [
           "-v",
           "error",
@@ -66,12 +67,13 @@ describe("reproducible terminal evidence", () => {
     await run(Effect.scoped(Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const out = yield* directory
-      const recording = yield* Recording.make({ ...options, frameDurationMs: 250 })
+      // Exercise successful publication with the public default renderer.
+      const recording = yield* Recording.make({ title: options.title, env: options.env, frameDurationMs: 250 })
       yield* recording.capture("first", "First screen")
       yield* recording.capture("second", "Second screen")
       const evidence = yield* recording.write(out)
       const result = yield* execute({
-        executable: "ffprobe",
+        executable: tools.probe,
         env: options.env,
         cwd: out,
         args: [
@@ -117,7 +119,7 @@ describe("reproducible terminal evidence", () => {
       yield* recording.capture("Input remains visible", "┃\n" + "\n".repeat(38) + "Footer input and keys")
       yield* recording.write(out)
       const result = yield* execute({
-        executable: "ffmpeg",
+        executable: tools.renderer,
         env: options.env,
         cwd: out,
         args: [
@@ -196,7 +198,8 @@ describe("reproducible terminal evidence", () => {
   it("rejects corrupt renderer evidence using a faulty filesystem service", async () => {
     await run(Effect.scoped(Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
-      const recording = yield* Recording.make(options)
+      // Exercise the public default renderer too; PATH names the supplied tools.
+      const recording = yield* Recording.make({ title: options.title, env: options.env })
       yield* recording.capture("public frame", "hello")
       const out = yield* directory
       const faulty = { ...fs, readFile: () => Effect.succeed(new TextEncoder().encode("broken")) }

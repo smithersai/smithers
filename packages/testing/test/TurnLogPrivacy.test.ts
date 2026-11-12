@@ -38,6 +38,12 @@ describe("TurnLog private publication", () => {
               if (kind === "symlink") await symlink(original, file)
               if (kind === "hardlink") await link(original, file)
             })
+            // Prove the same native service can publish before testing refusal.
+            // A missing helper must fail this test, never count as privacy.
+            const control = yield* TurnLog.make({ file: join(directory, "control.jsonl") })
+            yield* control.record("chat", "control")
+            expect(yield* Effect.promise(() => readFile(join(directory, "control.jsonl"), "utf8")))
+              .toContain("\"step\":\"control\"")
             const log = yield* TurnLog.make({ file, messages: true })
             expect((yield* Effect.exit(log.record("chat", "secret")))._tag).toBe("Failure")
             expect(yield* log.entries()).toEqual([])

@@ -201,3 +201,33 @@ write files through `node:fs`, so they stay at `@smthrs/testing/ModelServer`,
 
 `@smthrs/testing/package.json` is also exported. `internal/*` and nested
 `*/index` subpaths are not public.
+
+## Integration test tools
+
+The full `pnpm test --run` suite uses real loopback servers, private file
+publication, and GIF rendering. It requires no TTY, credentials, or live model.
+Provide these tools explicitly on every runner, including a Cloudflare box:
+
+- `smithers-jj-export` from the same Smithers source revision
+  (`smithers-ffi` 0.1.0, Rust toolchain from `rust-toolchain.toml`). Build at
+  the repository root with
+  `cargo build --locked --release --package smithers-ffi --bin smithers-jj-export`.
+  The host resolves `target/release/smithers-jj-export`; an absolute
+  `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` overrides it.
+- FFmpeg 7+ and ffprobe on PATH, with drawtext, fontconfig, palettegen and paletteuse,
+  plus a monospace font (for example `fonts-dejavu-core` 2.37).
+  `SMITHERS_TEST_FFMPEG` and `SMITHERS_TEST_FFPROBE` select explicit
+  executables for the integration cases; the public default renderer is also
+  exercised from PATH. `FONTCONFIG_FILE` selects a font configuration and is passed
+  to the real renderer along with PATH.
+
+Global setup resolves these tools before workers start. Privacy tests first
+publish a readable control with the same native service, so a missing helper
+cannot pass a refusal case. Conversion failures still use faulty Effect
+services; successful rendering always uses FFmpeg and is decoded by ffprobe.
+
+A source-only `run-heavy` upload omits ignored native builds. Include the
+built helper with `--add target/release/smithers-jj-export`, and include or
+install the renderer and fonts as declared job inputs. The node26 image
+currently supplies neither the native helper nor FFmpeg. Merely installing
+the pnpm workspace does not install those host tools.
