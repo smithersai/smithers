@@ -398,6 +398,27 @@ describe("the steps", () => {
     })
   })
 
+  test("a retried release finishes only its own removal: a domain added again after it erased the row stays", async () => {
+    const db = await database()
+    const { claim, release } = DomainFlows.steps(db)
+    await seed(runtime, { hostname: "docs.example.com", providerId: "cf-1", state: "active" })
+    const forgotten: Array<string> = []
+    provider.use({ remove: (id) => Effect.sync(() => void forgotten.push(id)) })
+    const removal = { repoId: REPO_ID, hostname: "docs.example.com", actorId: "p" }
+    expect(await keyed(release(removal))).toEqual({ change: "released" })
+    // The step erased the row but the engine never sealed it; the domain is added again before the retry.
+    expect(await keyed(claim({ ...input, pollId: "poll-2" }), "step-2")).toEqual({ change: "add" })
+    await Effect.runPromise(
+      Effect.provide(
+        Store.record({ hostname: "docs.example.com", pollId: "poll-2", providerId: "cf-2", state: "active", problem: null }),
+        db,
+      ) as Effect.Effect<unknown>,
+    )
+    expect(await keyed(release(removal))).toEqual({ change: "missing" })
+    expect(forgotten).toEqual(["cf-1"])
+    expect(await rows(runtime)).toMatchObject([{ state: "active", providerId: "cf-2", pollId: "poll-2" }])
+  })
+
   test("a claim of another repository's hostname is taken and changes nothing", async () => {
     const { claim } = DomainFlows.steps(await database())
     await seed(runtime, { hostname: "docs.example.com", repoId: "github/acme/other" })

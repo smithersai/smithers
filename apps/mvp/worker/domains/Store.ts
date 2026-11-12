@@ -136,7 +136,8 @@ export const record = (check: Check): Effect.Effect<"written" | "removed" | "sup
 
 /**
  * Marks `hostname` of `repoId` as being removed and records `remove` once. Its provider id, `null` when it was never
- * registered; none when the repository holds no such domain.
+ * registered; none when the repository holds no such domain. A retry under the same invocation key finds only the row
+ * it marked, never one added again after it was erased.
  */
 export const withdraw = (write: {
   readonly hostname: string
@@ -147,16 +148,26 @@ export const withdraw = (write: {
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      const [receipt] = yield* sql<{ readonly id: string }>`
+        SELECT id FROM domain_events WHERE invocation_key = ${write.invocationKey}`
+      if (receipt !== undefined) {
+        // The first try marked its row and recorded `remove` together. Its row is still removing, or erased: a row
+        // claimed since (`add` after the receipt) is another registration.
+        const [marked] = yield* sql<{ readonly providerId: string | null }>`
+          SELECT provider_id AS "providerId" FROM domains
+          WHERE hostname = ${write.hostname} AND repo_id = ${write.repoId} AND state = 'removing'
+            AND NOT EXISTS (
+              SELECT 1 FROM domain_events WHERE hostname = ${write.hostname} AND action = 'add' AND id > ${receipt.id})`
+        return Option.fromUndefinedOr(marked)
+      }
       const [row] = yield* sql<{ readonly providerId: string | null }>`
         UPDATE domains SET state = 'removing', updated_by = ${write.actorId}, updated_at = now()
         WHERE hostname = ${write.hostname} AND repo_id = ${write.repoId}
         RETURNING provider_id AS "providerId"`
       if (row === undefined) return Option.none()
-      if (!(yield* repeated(write.invocationKey))) {
-        yield* sql`
-          INSERT INTO domain_events (hostname, repo_id, action, actor_id, invocation_key, state)
-          VALUES (${write.hostname}, ${write.repoId}, 'remove', ${write.actorId}, ${write.invocationKey}, 'removing')`
-      }
+      yield* sql`
+        INSERT INTO domain_events (hostname, repo_id, action, actor_id, invocation_key, state)
+        VALUES (${write.hostname}, ${write.repoId}, 'remove', ${write.actorId}, ${write.invocationKey}, 'removing')`
       return Option.some(row)
     }))
   })
