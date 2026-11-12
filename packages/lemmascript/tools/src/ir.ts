@@ -320,7 +320,8 @@ export interface ConstDecl {
   kind: "const";
   name: string;
   type: Ty;
-  value: Expr;
+  /** null: declared without a value (`RawConst`). */
+  value: Expr | null;
 }
 
 /**

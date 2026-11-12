@@ -866,7 +866,7 @@ export function narrowModule(mod: TModule): TModule {
       requires: ext.requires.map(e => walkExpr(e, specCtx)),
       ensures: ext.ensures.map(e => walkExpr(e, specCtx)),
     })),
-    constants: mod.constants.map(c => ({ ...c, value: walkExpr(c.value, ctx) })),
+    constants: mod.constants.map(c => ({ ...c, value: c.value === null ? null : walkExpr(c.value, ctx) })),
     functions: mod.functions.map(fn => narrowFunction(fn, ctx)),
     classes: mod.classes.map(cls => ({
       ...cls,

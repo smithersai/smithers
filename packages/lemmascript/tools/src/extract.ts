@@ -164,10 +164,16 @@ function crossFileConst(id: Node, currentPath: string): VariableDeclaration | un
   if (aliased) symbol = aliased;
   const decl = symbol?.getDeclarations().find(Node.isVariableDeclaration);
   if (!decl || decl.getSourceFile().getFilePath() === currentPath) return undefined;
-  if (decl.getSourceFile().getFilePath().endsWith(".d.ts")) return undefined;
   const list = decl.getParent();
   if (!Node.isVariableDeclarationList(list) || !(list.getFlags() & 2 /* const */)) return undefined;
   const init = decl.getInitializer();
+  // A project's own declaration file (VibeLang's emitted `.d.vibe.ts` of a module outside the subset, not a package's
+  // typings) declares a constant without its value: a fixed value of its type that nothing reveals.
+  if (decl.getSourceFile().getFilePath().endsWith(".d.ts")) {
+    if (init || decl.getSourceFile().isInNodeModules() || decl.getSourceFile().isFromExternalLibrary()) return undefined;
+    if (decl.getType().getCallSignatures().length > 0) return undefined;
+    return decl;
+  }
   if (!init || Node.isArrowFunction(init) || Node.isFunctionExpression(init)) return undefined;
   if (typeToString(decl.getType()).startsWith("__")) return undefined;
   return decl;
@@ -192,12 +198,13 @@ function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<strin
     }
     copied.set(name, decl);
     _validateDependency(decl.getSourceFile());
-    const init = decl.getInitializerOrThrow();
-    for (const id of init.getDescendantsOfKind(SyntaxKind.Identifier)) {
+    const init = decl.getInitializer();
+    for (const id of init?.getDescendantsOfKind(SyntaxKind.Identifier) ?? []) {
       const dep = crossFileConst(id, currentPath);
       if (dep) copy(id.getText(), dep);
     }
-    out.push({ name, tsType: typeToString(decl.getType()), value: extractExpr(init as Expression) });
+    const tsType = init ? typeToString(decl.getType()) : localTypeText(decl.getType(), name, decl);
+    out.push({ name, tsType, value: init ? extractExpr(init as Expression) : null });
   };
   for (const imp of named ? sourceFile.getImportDeclarations() : []) {
     if (imp.isTypeOnly()) continue;
@@ -1355,6 +1362,59 @@ function unifyLiteralUnions(typeDecls: TypeDeclInfo[]): void {
   }
 }
 
+/**
+ * TypeScript types are structural: a schema's value type (`typeof Model.Type`) gives `Model`'s `client` field an
+ * anonymous type with exactly the structure of a declared `Client`, and a function taking a `Client` accepts it. Dafny
+ * datatypes are nominal, so a record or tagged union LemmaScript synthesized (`_synthesizedNames`) is replaced by the
+ * declared one of the same structure (field names and types, variants, recursively; `readonly` and field order
+ * aside), in every type the module mentions. A synthesized type with no declared twin stays as it is
+ * (`fixtures/structural`).
+ */
+function unifyStructuralTypes(module: Omit<RawModule, "file">): void {
+  const decls = new Map(module.typeDecls.filter(d => !d.typeParams?.length && (d.kind === "record" || d.kind === "discriminated-union")).map(d => [d.name, d]));
+  const unions = new Map(module.typeDecls.filter(d => d.kind === "string-union").map(d => [d.name, d.sameAs ?? d.name]));
+  const byName = (a: { name: string }, b: { name: string }) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  const shapes = new Map<string, string>();
+  const shapeOf = (name: string, open: Set<string>): string => {
+    const known = shapes.get(name);
+    if (known !== undefined) return known;
+    if (open.has(name)) return `@${name}`;
+    open.add(name);
+    const d = decls.get(name)!;
+    const fields = (fs: { name: string; tsType: string }[]) => [...fs].sort(byName).map(f => `${f.name}:${f.tsType.replace(/\breadonly\s+/g, "")
+      .replace(/^(?:Readonly)?Array<(.+)>$/, "$1[]").replace(/\b[A-Za-z_]\w*\b/g, id => decls.has(id) ? shapeOf(id, open) : unions.get(id) ?? id)}`).join(";");
+    const shape = d.kind === "record" ? `{${fields(d.fields!)}}`
+      : `[${d.discriminant}|${[...d.variants!].sort(byName).map(v => `${v.name}{${fields(v.fields)}}`).join("|")}]`;
+    open.delete(name);
+    shapes.set(name, shape);
+    return shape;
+  };
+  const declared = new Map<string, string>();
+  for (const name of decls.keys()) if (!_synthesizedNames.has(name) && !declared.has(shapeOf(name, new Set()))) declared.set(shapeOf(name, new Set()), name);
+  const renames = new Map<string, string>();
+  for (const name of decls.keys()) {
+    const twin = _synthesizedNames.has(name) ? declared.get(shapeOf(name, new Set())) : undefined;
+    if (twin !== undefined) renames.set(name, twin);
+  }
+  if (renames.size === 0) return;
+  const rename = (text: string) => text.replace(/\b[A-Za-z_]\w*\b/g, id => renames.get(id) ?? id);
+  const TYPE_KEYS = new Set(["tsType", "returnTsType", "varType", "returnType", "type", "aliasOf", "sameAs"]);
+  const seen = new Set<object>();
+  const walk = (value: unknown): void => {
+    if (value === null || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) { value.forEach(walk); return; }
+    const record = value as Record<string, unknown>;
+    for (const [key, field] of Object.entries(record)) {
+      if (TYPE_KEYS.has(key) && typeof field === "string") record[key] = rename(field);
+      else walk(field);
+    }
+  };
+  module.typeDecls.splice(0, module.typeDecls.length, ...module.typeDecls.filter(d => !renames.has(d.name)));
+  walk([module.typeDecls, module.externs, module.constants, module.functions, module.classes]);
+  for (const [type, name] of _anonNames) { const to = renames.get(name); if (to !== undefined) _anonNames.set(type, to); }
+}
+
 /** A datatype name made of `parts`: each one's identifier characters, capitalized after the first. */
 function typeName(...parts: string[]): string {
   return parts.map((p, i) => {
@@ -1373,6 +1433,10 @@ function typeName(...parts: string[]): string {
 let _anonNames: Map<ts.Type, string> = new Map();
 /** The synthesized datatypes behind `_anonNames`, so a structurally equal type reuses one (`adoptAnonymous`). */
 let _anonDecls: TypeDeclInfo[] = [];
+/** Names LemmaScript made up for anonymous types (`adoptAnonymous`, an anonymous return's `<Fn>Result`), as opposed to
+ *  names a declaration gives. Only these may be replaced by a declared type of the same structure
+ *  (`unifyStructuralTypes`). Reset per module in `extractModule`. */
+let _synthesizedNames: Set<string> = new Set();
 
 /** An object type with properties and no name: an inline `{ … }`, or a mapped type such as an Effect Schema's value type. */
 function isAnonymousObject(type: Type): boolean {
@@ -1523,7 +1587,7 @@ function anonShape(d: TypeDeclInfo): string {
  *  copies of one schema (each inlined into an emitted declaration) are one type and one datatype. */
 function adoptAnonymous(decl: TypeDeclInfo, type: Type, extraDecls: TypeDeclInfo[]): string {
   const kept = _anonDecls.find(d => anonShape(d) === anonShape(decl)) ?? decl;
-  if (kept === decl) { _anonDecls.push(decl); extraDecls.push(decl); }
+  if (kept === decl) { _anonDecls.push(decl); extraDecls.push(decl); _synthesizedNames.add(decl.name); }
   _anonNames.set(type.compilerType, kept.name);
   return kept.name;
 }
@@ -2781,6 +2845,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   _collapsedUnionMap = new Map();
   _anonNames = new Map();
   _anonDecls = [];
+  _synthesizedNames = new Set();
   _reservedTypeNames = new Set(sourceFile.getStatements().flatMap(st =>
     Node.isTypeAliasDeclaration(st) || Node.isInterfaceDeclaration(st) || Node.isClassDeclaration(st) || Node.isEnumDeclaration(st) ? [st.getName() ?? ""] : []));
   for (const stmt of sourceFile.getStatements()) {
@@ -3124,6 +3189,8 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
         if (s.kind === "if") { collectNamesExpr(s.cond); collectNames(s.then); collectNames(s.else); }
         if (s.kind === "while") { collectNamesExpr(s.cond); collectNames(s.body); }
         if (s.kind === "forof") { collectNamesExpr(s.iterable); collectNames(s.body); }
+        // A constant read only in a `case` is kept (fixtures/structural, `chosen`).
+        if (s.kind === "switch") { collectNamesExpr(s.expr); for (const c of s.cases) collectNames(c.body); collectNames(s.defaultBody); }
         if (s.kind === "expr") { collectNamesExpr(s.expr); }
       }
     }
@@ -3176,7 +3243,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
       for (const c of constants) {
         if (!valueNames.has(c.name)) continue;
         const before = valueNames.size;
-        collectNamesExpr(c.value);
+        if (c.value !== null) collectNamesExpr(c.value);
         if (valueNames.size !== before) grew = true;
       }
     }
@@ -3371,7 +3438,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
       if (!knownTypes.has(synName)) {
         const extra: TypeDeclInfo[] = [];
         const info = extractRecord(synName, innerType, f.node, undefined, extra);
-        if (info) { typeDecls.push(...extra); typeDecls.push(info); knownTypes.add(synName); }
+        if (info) { typeDecls.push(...extra); typeDecls.push(info); knownTypes.add(synName); _synthesizedNames.add(synName); }
       }
       fn.returnType = wrapOptional ? `${synName} | undefined` : synName;
       // Also resolve imported types referenced in the return type's fields
@@ -3400,6 +3467,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   }
 
   unifyLiteralUnions(typeDecls);
+  unifyStructuralTypes({ typeDecls, externs: Array.from(_externs.values()), constants, functions, classes });
 
   // Clear the synth-union accumulator so typeToString reverts to plain
   // union stringification outside of an extractModule call.

@@ -234,16 +234,17 @@ function recordDeclOf(ty: Ty, typeDecls: TypeDeclInfo[]): TypeDeclInfo | undefin
   return undefined;
 }
 
-/** TypeScript's structural assignability of a record to a wider one: every field of `value`'s record is a field of
- *  the target's, and each target field it lacks is optional (`{ op, page }` as a request whose `recovery?` is
- *  absent). The target record reads each field from `value`, read once, and leaves the others absent. */
+/** TypeScript's structural assignability of one record to another: each target field is a field of `value`'s record
+ *  of the same type, or optional and absent (`{ op, page }` as a request whose `recovery?` is absent); fields the
+ *  target lacks are dropped (a `Pending` passed as a `Ref`, fixtures/structural). The target record reads each field
+ *  from `value`, read once, and leaves the others absent. */
 function widenRecord(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TExpr | null {
   const target = targetTy.kind === "optional" ? targetTy.inner : targetTy;
   if (value.ty.kind !== "user" || target.kind !== "user" || tyEqual(value.ty, target)) return null;
   const from = recordDeclOf(value.ty, typeDecls), to = recordDeclOf(target, typeDecls);
   if (!from?.fields || !to?.fields || from === to) return null;
   const same = (a: Ty | undefined, b: Ty | undefined) => a !== undefined && b !== undefined && (tyEqual(a, b) || (b.kind === "optional" && tyEqual(a, b.inner)));
-  if (!from.fields.every(g => same(g.type, to.fields!.find(f => f.name === g.name)?.type))) return null;
+  if (!from.fields.every(g => { const f = to.fields!.find(t => t.name === g.name); return f === undefined || same(g.type, f.type); })) return null;
   if (!to.fields.every(f => from.fields!.some(g => g.name === f.name) || f.type?.kind === "optional")) return null;
   const input: TExpr = value.kind === "var" ? value : { kind: "var", name: freshName("_widened"), ty: value.ty };
   const fields = to.fields.map(f => {
@@ -258,10 +259,26 @@ function widenRecord(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TEx
   return { kind: "call", fn: lambda, args: [value], ty: target, callKind: "pure" };
 }
 
+/** `widenRecord` element by element: a list of records passed where a list of another record is expected (TypeScript
+ *  arrays are covariant) is that list mapped to the target record. */
+function widenRecordList(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TExpr | null {
+  const target = targetTy.kind === "optional" ? targetTy.inner : targetTy;
+  if (value.ty.kind !== "array" || target.kind !== "array" || tyEqual(value.ty, target)) return null;
+  const item: TExpr = { kind: "var", name: freshName("_item"), ty: value.ty.elem };
+  const elem = widenRecord(item, target.elem, typeDecls);
+  if (elem === null) return null;
+  const lambda: TExpr = { kind: "lambda", params: [{ name: (item as { name: string }).name, ty: value.ty.elem }],
+    body: [{ kind: "return", value: elem }], ty: { kind: "fn", params: [value.ty.elem], result: target.elem } };
+  const builtinId = recognizeBuiltin(value.ty, "map");
+  return { kind: "call", fn: { kind: "field", obj: value, field: "map", ty: { kind: "unknown" } }, args: [lambda], ty: target,
+    callKind: "method", ...(builtinId ? { builtinId } : {}) };
+}
+
 function coerceToTargetTy(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TExpr {
   value = coerceStr(value, targetTy);
   value = widenStringUnion(value, targetTy.kind === "optional" ? targetTy.inner : targetTy, typeDecls);
   value = widenRecord(value, targetTy, typeDecls) ?? value;
+  value = widenRecordList(value, targetTy, typeDecls) ?? value;
   if (value.ty.kind === "unknown" || value.ty.kind === "void") return value;
   if (targetTy.kind === "optional" && value.ty.kind !== "optional") {
     return wrapSome(value, targetTy);
@@ -2106,7 +2123,12 @@ export function resolveModule(raw: RawModule): TModule {
     const params = ext.params.map(p => parseTsType(p.tsType));
     const returnTy = parseTsType(ext.returnType);
     externs.set(ext.qualified, { flat: ext.flat, params, returnTy, impure: ext.impure });
-    if (!ext.qualified.includes(".")) fnReturns.set(ext.qualified, returnTy);
+    // Its parameter types too, so an argument is coerced to its slot as for a local function (a `Pending[]` passed
+    // as a `Ref[]` to an imported proved function, fixtures/structural).
+    if (!ext.qualified.includes(".")) {
+      fnReturns.set(ext.qualified, returnTy);
+      if (!fnParams.has(ext.qualified)) fnParams.set(ext.qualified, params.map(p => expandAlias(p, raw.typeDecls)));
+    }
   }
   // Second pass: resolve the lifted `requires`/`ensures` strings in each
   // extern's own param scope. `\result` is in scope under `ensures`.
@@ -2143,7 +2165,7 @@ export function resolveModule(raw: RawModule): TModule {
     // record literals on map-typed constants (e.g. `Record<string, number>`)
     // get their `ty` set to `map<...>` rather than `user("...")`.
     const valueCtx: Ctx = { ...emptyCtx, returnTy: ty };
-    const value = coerceToTargetTy(resolveExpr(c.value, valueCtx), ty, raw.typeDecls);
+    const value = c.value === null ? null : coerceToTargetTy(resolveExpr(c.value, valueCtx), ty, raw.typeDecls);
     return { name: c.name, ty, value };
   });
   const moduleConstants = new Map<string, Ty>(constants.map(c => [c.name, c.ty]));

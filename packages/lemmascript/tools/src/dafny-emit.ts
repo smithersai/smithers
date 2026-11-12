@@ -1414,6 +1414,8 @@ function emitDecl(d: Decl): string {
     }
 
     case "const": {
+      // Declared without a value: Dafny's constant of a nonempty type with an arbitrary, fixed value.
+      if (d.value === null) return `const ${escapeName(d.name)}: ${tyToDafny(d.type)}`;
       return `const ${escapeName(d.name)}: ${tyToDafny(d.type)} := ${emitExpr(d.value)}`;
     }
 

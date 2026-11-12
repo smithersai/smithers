@@ -2729,7 +2729,7 @@ export function transformModule(mod: TModule, specImport?: string, moduleBaseOve
     kind: "const" as const,
     name: c.name,
     type: c.ty,
-    value: transformExpr(c.value),
+    value: c.value === null ? null : transformExpr(c.value),
   }));
 
   // Pure function mirrors

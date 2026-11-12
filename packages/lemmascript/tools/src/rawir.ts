@@ -353,7 +353,8 @@ export interface RawClass {
 export interface RawConst {
   name: string;
   tsType: string;
-  value: RawExpr;
+  /** null: declared without a value (a project's `.d.ts`), a fixed value of its type that nothing reveals. */
+  value: RawExpr | null;
 }
 
 /** Externally-declared function — auto-detected during call extraction when

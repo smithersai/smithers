@@ -840,6 +840,7 @@ function emitDecl(d: Decl): string {
       throw new Error(`Lean class support not yet implemented: ${d.name}`);
 
     case "const":
+      if (d.value === null) throw new Error(`Lean backend: constant '${d.name}' is declared without a value`);
       return `def ${escapeName(d.name)} : ${tyToLean(d.type)} := ${emitExpr(d.value)}`;
 
     case "extern": {

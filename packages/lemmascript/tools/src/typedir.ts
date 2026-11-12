@@ -256,7 +256,8 @@ export interface TClass {
 export interface TConst {
   name: string;
   ty: Ty;
-  value: TExpr;
+  /** null: declared without a value (`RawConst`). */
+  value: TExpr | null;
 }
 
 /** Resolved counterpart of RawExtern.

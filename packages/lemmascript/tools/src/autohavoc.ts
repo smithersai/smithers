@@ -381,7 +381,7 @@ export function autoHavocModule(mod: TModule): TModule {
   for (const e of mod.externs) { _known.add(e.qualified); _known.add(e.flat); }
   return {
     ...mod,
-    constants: mod.constants.filter(c => !containsBad(c.value)),
+    constants: mod.constants.filter(c => c.value === null || !containsBad(c.value)),
     functions: mod.functions.map(f => {
       if (!f.autohavoc) return f;
       // Completeness transparency: surface the opaque external calls this pass

@@ -148,6 +148,14 @@ for name in union-to-string object-spread-operands string-union-subset generic-b
     "a wrong twin verified ($name)" \
     "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name-wrong.ts"
 done
+# TypeScript's structural types (structural): a schema's anonymous record, tagged union or list element is the
+# declared type of the same structure; a record passes where a record of a subset of its fields is expected, in a list
+# too; a constant a project's declaration file declares without a value is a fixed value of its type.
+cp -R tools/fixtures/structural "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/structural/use.ts"
+expect_proof_failure \
+  "a flipped client verified as unchanged (structural)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/structural/use-wrong.ts"
 # Unicode case mapping changes non-ASCII text and its length; the model must not prove otherwise.
 cp tools/fixtures/string-case-length-wrong.ts "$fixture_dir/"
 expect_proof_failure \
