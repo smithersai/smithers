@@ -280,7 +280,7 @@ Admin ── PUT /api/repos/<owner>/<name>/overflow/cloudflare { connectionId, p
            ▼
          admin/SetOverflow ──▶ runners `cloudflare-overflow` (its SHA-256, labels + cloudflare) + repo_overflow (sealed)
 
-agent/Session probe: queued ≥ minQueuedSeconds, pinned to none, `cloudflare-overflow` unseen 45 s
+agent/Session probe: queued ≥ minQueuedSeconds, pinned to none or to `cloudflare-overflow`, which is unseen 45 s
            ▼ Sandboxes.wake(overflow-<repo>)   (sandbox admission, kind overflow, OVERFLOW_INSTANCE standard-4)
          box: runner.json + runner-token + SMITHERS_MODEL_KEY / _BASE_URL / _PROTOCOL, placeholders only
               smthrs runner serve ── claim, heartbeat, settle ──▶ egress: token → this deployment's host only

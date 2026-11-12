@@ -199,15 +199,19 @@ export interface Due {
 }
 
 /**
- * Whether job `key` needs its repository's overflow box now: it is queued, pinned to no runner, claimable for at least
- * the repository's `minQueuedSeconds`, and the overflow runner hasn't asked in `AWAKE_SECONDS` (its box sleeps).
+ * Whether job `key` needs its repository's overflow box now: it is queued, pinned to no runner or to the overflow runner
+ * (a retry of a job the box ran, which only the box may claim), claimable for at least the repository's
+ * `minQueuedSeconds`, and the overflow runner hasn't asked in `AWAKE_SECONDS` (its box sleeps).
  */
 export const due = (key: string): Effect.Effect<Option.Option<Due>, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     Effect.map(
       sql<{ readonly repoId: string }>`
         SELECT j.repo_id AS "repoId" FROM agent_jobs j JOIN repo_overflow o ON o.repo_id = j.repo_id AND o.reconfirm_at IS NULL
-        WHERE j.key = ${key} AND j.status = 'queued' AND NOT j.cancel_requested AND j.pinned_runner IS NULL
+        WHERE j.key = ${key} AND j.status = 'queued' AND NOT j.cancel_requested
+          AND (j.pinned_runner IS NULL OR EXISTS (
+            SELECT 1 FROM runners p WHERE p.id = j.pinned_runner AND p.repo_id = j.repo_id AND p.name = ${RUNNER}
+              AND p.removed_at IS NULL))
           AND greatest(j.created_at, coalesce(j.not_before, j.created_at))
             <= now() - o.min_queued_seconds * interval '1 second'
           AND NOT EXISTS (

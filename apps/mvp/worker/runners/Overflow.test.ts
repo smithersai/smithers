@@ -429,6 +429,29 @@ describe("the overflow wake", () => {
     await sql(`UPDATE agent_jobs SET pinned_runner = NULL`)
     expect(await Effect.runPromise(failing.status("todo:1#g1"))).toEqual({ _tag: "Running" })
   })
+
+  test("wakes the box for a retry pinned to the overflow runner after the box exited idle", async () => {
+    const woken: Array<string> = []
+    const jobs = Jobs.make(await database(), undefined, (due) => Effect.sync(() => void woken.push(due.repoId)))
+    const connectionId = await seedKey()
+    const asAdmin = await adminRoutes(admin)
+    await asAdmin.send("overflow/cloudflare", "PUT", { ...setting(connectionId), minQueuedSeconds: 60 })
+    await asAdmin.close()
+    // The box ran generation 1, which settled retryable an hour out; generation 2 is pinned to the box's runner.
+    await Effect.runPromise(jobs.start(task, "todo:2#g1"))
+    await sql(`UPDATE agent_jobs SET status = 'retryable', outcome = '{"_tag":"Retryable","afterSeconds":3600}'::jsonb,
+      settled_at = now() - interval '3700 seconds',
+      runner_id = (SELECT id FROM runners WHERE name = 'cloudflare-overflow') WHERE key = 'todo:2#g1'`)
+    await Effect.runPromise(jobs.start(task, "todo:2#g2"))
+    expect(await sql(`SELECT r.name FROM agent_jobs j JOIN runners r ON r.id = j.pinned_runner WHERE j.key = 'todo:2#g2'`))
+      .toEqual([{ name: "cloudflare-overflow" }])
+    // Generation 2 was queued as generation 1 settled, the runner exited idle long ago, and the retry has been
+    // claimable for 100 s: its box wakes.
+    await sql(`UPDATE agent_jobs SET created_at = now() - interval '3700 seconds' WHERE key = 'todo:2#g2'`)
+    await sql(`UPDATE runners SET seen_at = now() - interval '1 hour' WHERE name = 'cloudflare-overflow'`)
+    await Effect.runPromise(jobs.status("todo:2#g2"))
+    expect(woken).toEqual([REPO])
+  })
 })
 
 
