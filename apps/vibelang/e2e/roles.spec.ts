@@ -125,3 +125,24 @@ test("Escape takes back the tour before closing an open account menu", async ({ 
   await page.keyboard.press("Escape")
   await expect(menu).not.toBeVisible()
 })
+
+// The phone header scrolled its whole nav, which clipped the account menu hanging below it (issue 5345).
+for (const width of [390, 700]) {
+  test(`the account menu items take a tap at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto("/?agent=mock")
+    await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+    await page.getByRole("button", { name: "Account", exact: true }).click()
+    for (const name of ["People", "Sign out"]) {
+      const item = page.getByRole("menuitem", { name })
+      await expect(item).toBeVisible()
+      expect(await item.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        return hit !== null && (hit === element || element.contains(hit))
+      })).toBe(true)
+    }
+    await page.getByRole("menuitem", { name: "People" }).click()
+    await expect(page.getByRole("region", { name: "People" })).toBeVisible()
+  })
+}

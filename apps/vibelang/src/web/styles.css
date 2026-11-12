@@ -306,12 +306,8 @@ html { overflow-anchor: none; }
   .vl-nav-issue-icon { display:block; width:16px; height:16px; }
 }
 
-/* Scroll destinations independently; the account menu stays outside the clipping region. */
+/* Scroll destinations independently (the phone rule below); the account menu stays outside the clipping region. */
 .vl-nav-links { display:flex; align-items:center; gap:inherit; min-width:0; }
-@media (max-width:600px) {
-  .vl-nav > .vl-nav-links { flex:1 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
-  .vl-nav-links > * { flex-shrink:0; }
-}
 
 /* Wiki pane from wiki/designs/wiki/index.html. */
 .vl-wiki { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface); }
@@ -383,11 +379,14 @@ html { overflow-anchor: none; }
 .vl-wiki-pages { grid-auto-rows: max-content; }
 .vl-nav .vl-nav-link[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 650; }
 
-/* All landed feature links stay reachable on a phone; the header scrolls within the viewport. */
+/* All landed feature links stay reachable on a phone: the links scroll, and the nav itself never clips, so the
+   account menu below it stays clickable. */
 @media (max-width: 720px) {
   .vl-home { flex-shrink: 0; }
-  .vl-nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .vl-nav { min-width: 0; }
   .vl-nav > * { flex-shrink: 0; }
+  .vl-nav > .vl-nav-links { flex:1 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
+  .vl-nav-links > * { flex-shrink:0; }
 }
 /* Wiki adds a fifth control: keep every landed header control visible at the design's phone width. */
 @media (max-width: 720px) {
