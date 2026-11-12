@@ -406,7 +406,6 @@ export const make = (options: HttpSandboxOptions): Provider => {
       kill: (process, signal) =>
         Effect.suspend(() => {
           const d = directories.get(process)
-          /* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */
           if (d === undefined) {
             return Effect.fail(new ProviderError({ code: "unknown", message: "unrecognized process" }))
           }

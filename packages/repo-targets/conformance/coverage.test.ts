@@ -522,11 +522,8 @@ describe("coverage conformance", () => {
       // Control's three arms sit behind the mutation boundary: every caller
       // hands `principalOf` a mutation the boundary already decoded into a
       // struct, and an unpaired high or lone low surrogate is refused there
-      // before the redaction helper can meet it. TestControl's deterministic
-      // runtime derives every identifier from a counter, so the random-byte
-      // primitive `Crypto.make` requires is never asked for bytes.
+      // before the redaction helper can meet it.
       "smithers/control/src/ControlLive.ts": 3,
-      "smithers/control/src/test/TestControl.ts": 1,
       // The rest of control's arms defend invariants its own code establishes:
       // a run is attributed only once one of its three cancellation sources
       // exists, so the trailing zero in `Cancellation` is unreachable; a
@@ -568,12 +565,6 @@ describe("coverage conformance", () => {
       // values already crossed admission and serialization, and acyclic pending
       // work has a ready node.
       "smithers/flows/engine-store/src/PlanScheduler.ts": 2,
-      // One `else` arm in recursive enumeration: special entries (symlinks,
-      // sockets) are neither materializable leaves nor prunable scaffolding
-      // and are intentionally discarded.
-      // FileBoundary rejects upward and absolute removal declarations before
-      // they reach the sandbox.
-      "smithers/flows/engine-store/src/WorkspaceSandbox.ts": 1,
       // The inert-JSON reducer that admits an action's persisted value asks
       // the language for guarantees the language already makes: a non-proxy
       // array's `length` is a mandatory own data property holding a uint32,

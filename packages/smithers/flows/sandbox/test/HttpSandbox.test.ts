@@ -384,6 +384,22 @@ describe("HttpSandbox", () => {
     120_000
   )
 
+  it.live("refuses to signal a process another session started, and leaves it running", () =>
+    Effect.gen(function*() {
+      const provider = client(HttpSandbox.serve({ provider: machines(), token }))
+      const owner = yield* provider.acquire("signal-owner")
+      const stranger = yield* provider.acquire("signal-stranger")
+      yield* Effect.scoped(Effect.gen(function*() {
+        const child = yield* owner.spawn("echo up; exec sleep 3021", {})
+        yield* Stream.runHead(child.stdout)
+        const error = yield* failureOf(stranger.kill!(child, "SIGKILL"))
+        expect(error.code).toBe("unknown")
+        expect(error.message).toBe("unrecognized process")
+        expect(pgrep("sleep 302[1]")).toBe(true)
+      }))
+      expect(yield* gone("sleep 302[1]")).toBe(true)
+    }).pipe(Effect.scoped), 120_000)
+
   it.live("destroys a machine idempotently", () =>
     Effect.gen(function*() {
       const handler = HttpSandbox.serve({ provider: machines(), token })
