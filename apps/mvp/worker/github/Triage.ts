@@ -574,11 +574,16 @@ export const steps = <E, R>(services: Services<E, R>) => {
             }),
           )
           if (Option.isNone(current)) return yield* dropped("gone")
-          if (triageOf(labelsOf(current.value)) !== decided.triage) return yield* dropped("relabeled")
-          if (inputDigest(current.value.title, current.value.body) !== decided.inputDigest) return yield* dropped("edited")
+          // A retry after this step began writing labels, and lost an answer, sees its own label on GitHub: it finishes
+          // the write rather than drop it as a person's relabel.
+          if (Option.isNone(found) || !found.value.labelWritten) {
+            if (triageOf(labelsOf(current.value)) !== decided.triage) return yield* dropped("relabeled")
+            if (inputDigest(current.value.title, current.value.body) !== decided.inputDigest) return yield* dropped("edited")
+          }
           const add = labelOf(decision)
           const remove = add === ACCEPTED_LABEL ? NOT_ACCEPTED_LABEL : ACCEPTED_LABEL
           yield* GitHub.Issues.createLabel(repository.owner, repository.name, { name: add, color: TRIAGE_LABEL_COLORS[add]! })
+          yield* TriageStore.writeLabel(decided.decisionId)
           yield* GitHub.Issues.addLabels(repository.owner, repository.name, decided.number, [add])
           yield* GitHub.Issues.removeLabel(repository.owner, repository.name, decided.number, remove)
           const fetched = yield* fetchIssue(repository, decided.number)

@@ -660,6 +660,26 @@ describe("triage/Run", () => {
     expect((await decisions())[0]).toMatchObject({ commented: true, commentFailed: false })
   })
 
+  test.each([
+    ["the label's answer lost on a proposed issue", [], "POST", /\/issues\/1\/labels$/, "proposed"],
+    ["the label's answer lost on an accepted issue", [ACCEPTED_LABEL], "POST", /\/issues\/1\/labels$/, "accepted"],
+    ["the old label's removal lost on an accepted issue", [ACCEPTED_LABEL], "DELETE", /\/issues\/1\/labels\//, "accepted"],
+  ] as const)("%s: the retry finishes its own write, one label and one comment", async (_, before, verb, route, triageBefore) => {
+    const github = repository()
+    await enable()
+    github.open("Spam", "Body")
+    github.relabel(1, before)
+    github.faults.push({ match: (method, path) => method === verb && route.test(path), lost: true })
+    const { value } = await judged(github, judging("reject", "spam"))
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "commented", decisionId: expect.any(String) }))
+    expect(github.issues.get(1)!.labels).toEqual([NOT_ACCEPTED_LABEL])
+    expect(githubComments(github, 1)).toHaveLength(1)
+    expect(await decisions()).toEqual([
+      expect.objectContaining({ triageBefore, labeled: true, commented: true, dropped: null }),
+    ])
+    expect(await triageRow(1)).toEqual({ triage: "not_accepted", pinned: false })
+  })
+
   test("the comment GitHub couldn't take for a moment is tried again: the author gets one comment", async () => {
     const github = repository()
     await enable()

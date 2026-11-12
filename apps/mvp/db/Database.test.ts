@@ -2166,6 +2166,24 @@ describe("0106_machine_write_diagnostics", () => {
     }))
 })
 
+describe("0121_triage_label_writes", () => {
+  test("a decision from before the upgrade keeps its label claim and has written no label", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0120"))
+      const decision = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO triage_decisions (id, repo_id, item_id, number, via, decision, label_started_at)
+        VALUES (${decision}::uuid, 'github/acme/widgets', 'github/acme/widgets#1', 1, 'flow', 'reject', now())`))
+      expect((await on(through("0121"))).map(([n, name]) => `${n}_${name}`)).toEqual(["121_triage_label_writes"])
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT label_started_at IS NOT NULL AS started, label_written_at AS written FROM triage_decisions
+        WHERE id = ${decision}::uuid`))).toEqual([{ started: true, written: null }])
+      expect(await on(through("0121"))).toEqual([])
+    }))
+})
+
 describe("0119_flow_revision_names", () => {
   test("each revision keeps the name its source declares, else its flow's; a new revision must name itself", () =>
     emptySchema(async (url) => {

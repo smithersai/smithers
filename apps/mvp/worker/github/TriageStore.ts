@@ -103,6 +103,19 @@ export const startLabel = (id: string) =>
       WHERE id = ${id}::uuid AND labeled_at IS NULL AND dropped IS NULL`
   })
 
+/**
+ * Records that decision `id`'s label step passed its checks and is about to change the issue's labels: the first such
+ * attempt's time, kept by every later one. A retry finds it and finishes the write, whatever labels its lost answer
+ * left. Only a decision neither labeled nor dropped takes it.
+ */
+export const writeLabel = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`
+      UPDATE triage_decisions SET label_written_at = COALESCE(label_written_at, now())
+      WHERE id = ${id}::uuid AND labeled_at IS NULL AND dropped IS NULL`
+  })
+
 /** Records that decision `id`'s comment step is about to check the pin and post: the first attempt's time. */
 export const startComment = (id: string) =>
   Effect.gen(function* () {
@@ -183,6 +196,8 @@ export interface Decision {
   readonly abstained: string | null
   readonly tokens: number
   readonly labeled: boolean
+  /** The label step began changing the issue's labels (`writeLabel`). */
+  readonly labelWritten: boolean
   readonly commentGithubId: number | null
   readonly commentFailed: boolean
   readonly dropped: Dropped | null
@@ -190,7 +205,7 @@ export interface Decision {
 
 /** Records decision `decision` once: a step run again after a crash finds its row there. Returns whether it inserted. */
 export const recordDecision = (
-  decision: Omit<Decision, "labeled" | "commentGithubId" | "commentFailed" | "dropped"> & {
+  decision: Omit<Decision, "labeled" | "labelWritten" | "commentGithubId" | "commentFailed" | "dropped"> & {
     readonly labeled?: boolean
     readonly commentGithubId?: number | null
   },
@@ -216,7 +231,8 @@ export const decisionOf = (id: string) =>
       SELECT id::text, repo_id AS "repoId", number, via, decided_by AS "decidedBy", run_id AS "runId",
         write_id::text AS "writeId", guidelines_sha AS "guidelinesSha", input_digest AS "inputDigest",
         triage_before AS "triageBefore", decision, reason, abstained, tokens, labeled_at IS NOT NULL AS labeled,
-        comment_github_id::text AS "commentGithubId", comment_failed AS "commentFailed", dropped
+        label_written_at IS NOT NULL AS "labelWritten", comment_github_id::text AS "commentGithubId",
+        comment_failed AS "commentFailed", dropped
       FROM triage_decisions WHERE id = ${id}::uuid`
     return Option.map(Option.fromNullishOr(row), (found): Decision => ({
       ...found,
