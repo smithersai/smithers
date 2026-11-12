@@ -1,9 +1,10 @@
-import { spawnSync } from "node:child_process"
+import { execFile, spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import { findPackageJSON } from "node:module"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { promisify } from "node:util"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 let root: string
@@ -391,17 +392,16 @@ describe.each(["esm", "cjs"])("%s declaration runtime", (runtime) => {
   )
 })
 
-it("discovers the real workspace target catalog through the public source CLI", () => {
+it("discovers the real workspace target catalog through the public source CLI", async ({ signal }) => {
   const repo = new URL("../../../../../", import.meta.url)
   const bin = new URL("../../../bin/smithers.mjs", import.meta.url)
-  const child = spawnSync(process.execPath, [fileURLToPath(bin), "targets", "--workspace", fileURLToPath(repo)], {
-    cwd: repo,
-    env: process.env,
-    encoding: "utf8",
-    timeout: 30_000
-  })
-  expect(child.error, child.stdout + child.stderr).toBeUndefined()
-  expect(child.signal, child.stdout + child.stderr).toBeNull()
-  expect(child.status, child.stdout + child.stderr).toBe(0)
-  expect(child.stdout).toContain("//:targetIndex")
+  // The test's own timeout bounds the CLI through `signal`. The command takes
+  // 8 to 16 s alone on 4 vCPUs; a fixed 30 s cap ran out under the release
+  // gates job's load (dry run 43293593020). A failed exit rejects with its output.
+  const { stdout } = await promisify(execFile)(
+    process.execPath,
+    [fileURLToPath(bin), "targets", "--workspace", fileURLToPath(repo)],
+    { cwd: repo, env: process.env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, signal }
+  )
+  expect(stdout).toContain("//:targetIndex")
 })
