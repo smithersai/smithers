@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, before, describe, test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { coveragePercent, readAnswers, refusalFor, replay, startServer } from "../serve.mjs"
+import { VERSION_FIELDS, coveragePercent, readAnswers, refusalFor, replay, startServer } from "../serve.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, "fixtures")
@@ -42,7 +42,13 @@ function call(path, { method = "GET", headers = {}, body } = {}) {
     req.end()
   })
 }
-const post = (body, headers = {}) => call("/api/answer", { method: "POST", headers: { "content-type": "application/json", ...headers }, body })
+// An answer names the version of the item Will opened, as the queue page does: here, the version queue.json holds now.
+const seen = (itemId) => {
+  const item = JSON.parse(readFileSync(join(queueDir, "queue.json"), "utf8")).items.find((candidate) => candidate.id === itemId)
+  return Object.fromEntries(VERSION_FIELDS.map((field) => [field, item?.[field] ?? null]))
+}
+const answer = (body) => (body && typeof body === "object" && body.action !== "undo" ? { ...seen(body.itemId), ...body } : body)
+const post = (body, headers = {}) => call("/api/answer", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: answer(body) })
 const visibleIds = async () => (await call("/api/queue")).json.items.map((item) => item.id)
 const answersText = () => readFileSync(join(queueDir, "answers.jsonl"), "utf8")
 
@@ -245,6 +251,35 @@ describe("POST /api/answer", () => {
     assert.ok((await visibleIds()).includes("verify:shape-stream-limit"))
     copyFileSync(join(fixtures, "queue.json"), join(queueDir, "queue.json"))
     await post({ itemId: "verify:shape-stream-limit", action: "undo" })
+  })
+
+  test("an answer to a version the curator replaced is refused with the new version, and writes nothing", async () => {
+    const opened = seen("code:shape-stream@3f2a")
+    const replace = (change) => {
+      const queue = JSON.parse(readFileSync(join(fixtures, "queue.json"), "utf8"))
+      Object.assign(queue.items.find((item) => item.id === "code:shape-stream@3f2a"), { title: "Changed after review opened" }, change)
+      writeFileSync(join(queueDir, "queue.json.tmp"), JSON.stringify(queue))
+      renameSync(join(queueDir, "queue.json.tmp"), join(queueDir, "queue.json"))
+    }
+    try {
+      for (const change of [{ revision: "new-digest" }, { commit: "0123456789abcdef" }, { addedAt: "2026-10-21T12:00:00Z" }]) {
+        replace(change)
+        const before = answersText()
+        const response = await post({ itemId: "code:shape-stream@3f2a", action: "approve", ...opened })
+        assert.equal(response.status, 409, JSON.stringify(change))
+        assert.equal(response.json.item.title, "Changed after review opened")
+        assert.equal(response.json.item[Object.keys(change)[0]], Object.values(change)[0])
+        assert.equal(answersText(), before)
+        assert.ok((await visibleIds()).includes("code:shape-stream@3f2a"), "nobody reviewed the new version")
+      }
+      replace({ revision: "new-digest" })
+      const response = await post({ itemId: "code:shape-stream@3f2a", action: "approve", ...opened, revision: "new-digest" })
+      assert.equal(response.status, 200)
+      assert.equal(response.json.answer.revision, "new-digest")
+      await post({ itemId: "code:shape-stream@3f2a", action: "undo" })
+    } finally {
+      copyFileSync(join(fixtures, "queue.json"), join(queueDir, "queue.json"))
+    }
   })
 
   test("stats count today's answers and what remains by kind", async () => {

@@ -68,7 +68,7 @@
   const api = async (path, init) => {
     const response = await fetch(path, { cache: "no-store", ...init })
     const body = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(body.error || `${response.status}`)
+    if (!response.ok) throw Object.assign(new Error(body.error || `${response.status}`), { status: response.status, body })
     return body
   }
 
@@ -1196,7 +1196,7 @@
     const item = current
     const text = box()?.value ?? ""
     const scope = scopeAll
-    const answer = { itemId: item.id, action, ...(action === "option" ? { option } : {}), ...(scope ? { scope: "all", kind: item.kind } : {}), text: bare(text) ? text.trim() : "", revision: item.revision ?? null, title: item.title }
+    const answer = { itemId: item.id, action, ...(action === "option" ? { option } : {}), ...(scope ? { scope: "all", kind: item.kind } : {}), text: bare(text) ? text.trim() : "", revision: item.revision ?? null, commit: item.commit ?? null, addedAt: item.addedAt ?? null, title: item.title }
     inFlight.add(item.id)
     items = items.filter((entry) => entry.id !== item.id)
     sent.push({ item, text, scope })
@@ -1209,14 +1209,15 @@
       if (scope) say(`Sent for ${allOf(item.kind)}`)
       setTimeout(updateBetweenItems, MOVE_MS + 60)
     } catch (error) {
-      // Not saved: put the item back under Will's hands with his text.
+      // Not saved: put the item back under Will's hands with his text. If the curator replaced it, show the new version.
+      const shown = error.status === 409 && error.body?.item?.id === item.id ? error.body.item : item
       inFlight.delete(item.id)
       sent.pop()
       stats = { ...stats, doneToday: Math.max(0, stats.doneToday - (action === "later" ? 0 : 1)) }
-      items = [item, ...items.filter((entry) => entry.id !== item.id)]
+      items = [shown, ...items.filter((entry) => entry.id !== item.id)]
       store.set(draftKey(item.id), text)
-      show(item, "down")
-      say(`Not saved: ${error.message}`, true)
+      show(shown, "down")
+      say(shown === item ? `Not saved: ${error.message}` : "Not saved: the item changed since you opened it. This is the new version.", true)
     }
   }
 

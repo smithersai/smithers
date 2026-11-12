@@ -24,6 +24,8 @@ export const ACTIONS = ["option", "approve", "changes", "later", "undo"]
 export const SNOOZE_MS = 24 * 60 * 60 * 1000
 const DONE_ACTIONS = new Set(["option", "approve", "changes"])
 const MAX_BODY = 256 * 1024
+// The fields that name one version of a queued item. An answer names the version Will saw.
+export const VERSION_FIELDS = ["revision", "commit", "addedAt"]
 const MAX_FILE = 64 * 1024 * 1024
 
 // ---------------------------------------------------------------------------------------------------------
@@ -455,6 +457,9 @@ export function startServer(options = {}) {
     }
   }
 
+  // An item as the page receives it: a verify item carries the answer it verifies.
+  const queued = (item, answers) => (item.kind === "verify" ? { ...item, verifies: verifies(item.answerRef, answers) } : item)
+
   const answer = async (request, response) => {
     if (!/^application\/json\b/i.test(request.headers["content-type"] ?? "")) return send(response, 415, { error: "send application/json" })
     let input
@@ -476,6 +481,9 @@ export function startServer(options = {}) {
     const item = current.queue.items.find((candidate) => candidate.id === itemId)
     if (action === "undo" && !current.stacks.get(itemId)?.length) return send(response, 409, { error: "nothing to undo" })
     const undone = action === "undo" ? current.stacks.get(itemId).at(-1) : null
+    // The curator replaced the item after Will opened it: refuse, and send the version now queued.
+    if (item && action !== "undo" && VERSION_FIELDS.some((field) => (input[field] ?? null) !== (item[field] ?? null)))
+      return send(response, 409, { error: "changed since you opened it", item: queued(item, current.answers) })
     const record = {
       itemId,
       at: new Date(now()).toISOString(),
@@ -505,7 +513,7 @@ export function startServer(options = {}) {
 
     if (path === "/api/queue") {
       const { queue, visible, last, answers } = state()
-      const items = visible.map((item) => (item.kind === "verify" ? { ...item, verifies: verifies(item.answerRef, answers) } : item))
+      const items = visible.map((item) => queued(item, answers))
       return send(response, 200, { version: queue.version, generatedAt: queue.generatedAt, missing: Boolean(queue.missing), error: cached.error, items, last: last ? { itemId: last.itemId, title: last.title ?? "", action: last.action, at: last.at } : null })
     }
     if (path === "/api/stats") return send(response, 200, stats())

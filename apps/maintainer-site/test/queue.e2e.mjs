@@ -40,6 +40,8 @@ const base = await server.ready
 const url = `${base}/queue`
 
 const problems = []
+// The browser logs a refused answer's response as a console error; a check that expects one names it here.
+let expectedRefusal = null
 const check = (ok, message) => {
   if (!ok) problems.push(message)
   console.log(`${ok ? "ok  " : "FAIL"} ${message}`)
@@ -56,6 +58,7 @@ const open = async (options = {}) => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...options })
   const page = await context.newPage()
   page.on("console", (message) => {
+    if (expectedRefusal && message.type() === "error" && message.text().includes(expectedRefusal)) return
     if (message.type() === "error" || message.type() === "warning") problems.push(`console ${message.type()}: ${message.text()}`)
   })
   page.on("pageerror", (error) => problems.push(`page error: ${error.message}`))
@@ -465,6 +468,21 @@ await press("Escape")
 await press("l")
 check(await showing(page, "decision:urgent"), "after answering, the new highest priority item comes next")
 check(answers().at(-1)?.action === "later", "l snoozes at once with an empty box")
+
+// The curator replaces the open item: an answer to the old version is refused, and the new version takes its place.
+const replaced = JSON.parse(readFileSync(join(queueDir, "queue.json"), "utf8"))
+Object.assign(replaced.items.find((item) => item.id === "decision:urgent"), { title: "Urgent: a changed decision", addedAt: new Date(Date.now() + 1000).toISOString() })
+writeFileSync(join(queueDir, "queue.json.tmp"), JSON.stringify(replaced))
+renameSync(join(queueDir, "queue.json.tmp"), join(queueDir, "queue.json"))
+await page.waitForTimeout(500)
+check((await page.locator(".q-card:not(.leaving) .q-title").textContent()) === "Urgent: a new decision", "a live update leaves the version Will is reading")
+expectedRefusal = "409"
+await press("1")
+check(await showing(page, "decision:urgent"), "an answer to a replaced item brings the item back")
+await page.waitForFunction(() => document.querySelector(".q-card:not(.leaving) .q-title")?.textContent === "Urgent: a changed decision", null, { timeout: 5000 }).catch(() => {})
+check((await page.locator(".q-card:not(.leaving) .q-title").textContent()) === "Urgent: a changed decision", "the refused answer shows the new version")
+check(answers().at(-1)?.action === "later", "the refused answer writes nothing")
+expectedRefusal = null
 
 // With reduced motion the item changes at once, with no slide.
 const still = await open({ colorScheme: "light", reducedMotion: "reduce" })
