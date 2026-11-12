@@ -32,12 +32,13 @@ export { landedSha } from "./mockMainDecision.vibe"
 
 /**
  * Real commits of VibeLang's main after the seed's snapshot that carry no `Mythical:` trailer, as most of its history
- * does (0020): a Fold files each under the epic its title's scope names (`areaOf`), or `Foundations`.
+ * does (0020): a Fold files each under the epic its title's scope names (`areaOf`), or `Foundations`. Each keeps its
+ * whole message, so a Fold reads a body whose last paragraph is prose and one whose last paragraph is a trailer.
  */
 export const AFTER_SEED: ReadonlyArray<MainCommit> = [
-  { sha: "301689a33565", change: "nqvmoolynsxq", title: "fix(compiler): preserve reverse-mapped declaration cycle structure", message: "fix(compiler): preserve reverse-mapped declaration cycle structure\n" },
+  { sha: "301689a33565", change: "nqvmoolynsxq", title: "fix(compiler): preserve reverse-mapped declaration cycle structure", message: "fix(compiler): preserve reverse-mapped declaration cycle structure\n\nVIP-27 retains TypeScript 5.9/7.0 anonymous cycle serialization. Detect cycles in reconstructed reverse mappings before printing them, preserving historical property placeholders and traversal. Finite mappings, including a cyclic input whose recursive key is excluded, retain current TypeScript output. Cache entries distinguish the paths; existing expansion bounds are unchanged.\n\nThe unchanged TypeScript twin compiled with TypeScript 7.0.2 exits 0 and emits complete declarations with /*elided*/ any. Pinned TypeScript 7.1.0-beta reports TS5088 for the inferred make and entry declarations.\n\nAdd exact TS/Vibe declaration fixtures, exported/local wrapper fuzz seeds and keyed corpus, eleven finite mapping controls, and baseline receipts identifying output sizes and mismatched emit guards.\n" },
   { sha: "0c40c2c6e9a0", change: "snpryryqvkrx", title: "docs(terminal): distinguish line input from raw key events", message: "docs(terminal): distinguish line input from raw key events\n" },
-  { sha: "0c6cea2cde78", change: "omuptzumoqml", title: "📝 docs(vips): add VIP-43, theorem and spec, as open", message: "📝 docs(vips): add VIP-43, theorem and spec, as open\n" },
+  { sha: "0c6cea2cde78", change: "omuptzumoqml", title: "📝 docs(vips): add VIP-43, theorem and spec, as open", message: "📝 docs(vips): add VIP-43, theorem and spec, as open\n\nLists a proposal for a decision. It changes no compiler behavior and no existing code. Each sentence has a pending witness, because nothing is implemented.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n" },
 ]
 
 /** The mock's main: the `outside` commits, then each approved commit, oldest first, its message naming it. */
