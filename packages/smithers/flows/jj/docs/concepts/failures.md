@@ -102,6 +102,12 @@ A diagnostic must not become a payload, so each of these has a stated ceiling:
 - The `command` on a Node failure is the argv rendered back as the line a human
   would have typed, capped at 512 characters. A caller-supplied `snapshot`
   message cannot drag an arbitrary payload into a journaled error through it.
+- The `message` on a Node failure quotes at most 4096 characters of what the
+  child reported, with the ellipsis inside the budget. Classification reads the
+  whole text first, so a diagnosis buried under a long warning still gets its
+  code; only the quote is cut. Without the cut, a `diff` child killed after
+  writing its stdout and before any stderr journaled the file contents it had
+  printed.
 - One jj invocation buffers at most 64 MiB of each output stream, counted in
   bytes as they arrive rather than in decoded characters, so the bound is the
   same for a diff of Japanese source as for one of ASCII. Past the ceiling the

@@ -98,12 +98,23 @@ interface Output {
  */
 const commandLimit = 512
 
-const commandOf = (args: ReadonlyArray<string>): string => {
-  const command = `jj ${args.join(" ")}`
-  // The ellipsis is part of the budget, so a recorded command never exceeds the
-  // limit this module names.
-  return command.length > commandLimit ? `${command.slice(0, commandLimit - 1)}…` : command
-}
+/**
+ * The most of a child's diagnostic that a journaled `message` quotes. jj's own
+ * errors are a few lines; what runs past this is payload — the stdout of a
+ * `diff` whose child died before it wrote stderr, or a snapshot refusal that
+ * lists every oversized file — and a journal other tenants and UIs read must
+ * not carry it. Classification reads the whole text first; only the quote is
+ * cut.
+ */
+const reportedLimit = 4096
+
+/**
+ * `text` cut to `limit` characters. The ellipsis is part of the budget, so a
+ * recorded field never exceeds the limit this module names.
+ */
+const bounded = (text: string, limit: number): string => text.length > limit ? `${text.slice(0, limit - 1)}…` : text
+
+const commandOf = (args: ReadonlyArray<string>): string => bounded(`jj ${args.join(" ")}`, commandLimit)
 
 /**
  * jj's revision vocabulary, anchored so a diagnostic about a PATH rather than a
@@ -166,7 +177,7 @@ const classify = (method: string, args: ReadonlyArray<string>, output: Output): 
     module: MODULE,
     method,
     command: commandOf(args),
-    message: `jj ${method}: ${reported}`
+    message: `jj ${method}: ${bounded(reported, reportedLimit)}`
   })
 }
 

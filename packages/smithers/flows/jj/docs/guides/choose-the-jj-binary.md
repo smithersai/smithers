@@ -34,8 +34,11 @@ falls through to `PATH`, and the fall-through is reported rather than silent:
 an operator whose typo was disregarded otherwise gets a healthy report for a jj
 they did not choose.
 
-Relative overrides and PATH entries resolve against the host working directory
-when the layer is built. Repository working directories and later changes to PATH
+A relative override resolves against the host working directory when the layer
+is built. A relative PATH entry, `.` included, is skipped rather than resolved:
+`NodeJj.layer` treats that working directory as the repository and agents write
+files there, so a `jj` written into it is never the one the host runs.
+Repository working directories and later changes to PATH
 or `SMITHERS_JJ_PATH` cannot select another executable for that layer. A contained
 spawner must be able to execute the selected absolute path; its own PATH does
 not change the selection. The version probe also runs through that spawner,

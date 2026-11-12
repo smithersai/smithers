@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A failed jj command quotes at most 4096 characters of its stderr, or of its
+  stdout when stderr is empty, in `JjError.message`. A child killed after
+  printing a diff and before writing stderr journaled the whole diff.
+- `resolveJjBinary` skips relative `PATH` entries such as `.`, which resolved
+  against the process working directory and selected a `jj` written there. A
+  relative `SMITHERS_JJ_PATH` still resolves against the working directory.
+
 ### Added
 
 - `RepositoryMutation`, the host's repository fence as a root service, and

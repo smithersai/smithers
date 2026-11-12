@@ -35,6 +35,9 @@ case "$FLOWS_FAKE_JJ" in
   chained-conflict) printf 'Error: Failed to update the working copy\nCaused by: The merge would leave conflicts\n' 1>&2; exit 1 ;;
   revset-parse) echo "Error: Failed to parse revset: Syntax error" 1>&2; exit 1 ;;
   stdout-only) echo "Error: reported on stdout"; exit 1 ;;
+  long-stdout) i=0; while [ $i -lt 4000 ]; do echo "SECRET_FILE_CONTENT_LINE_$i"; i=$((i+1)); done; kill -9 $$ ;;
+  long-stderr) i=0; while [ $i -lt 4000 ]; do echo "Warning: line $i of a long warning" 1>&2; i=$((i+1)); done
+    echo "Error: Revision not found" 1>&2; exit 1 ;;
   silent-exit) exit 3 ;;
   utf8-split) printf 'caf\\303'; /bin/sleep 0.2; printf '\\251 au lait\\n'; exit 0 ;;
   flood) echo $$ > "$FLOWS_FAKE_JJ_MARKER.pid"
@@ -210,6 +213,32 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
 
       expect(error.code).toBe("unknown")
       expect(error.message).toBe("jj status: Error: reported on stdout")
+    }))
+
+  it.live("quotes a bounded excerpt of a long stdout instead of journaling it whole", () =>
+    Effect.gen(function*() {
+      // A `diff` child killed after writing its stdout and before any stderr
+      // used to put the whole stdout — file content — into the journaled
+      // message, bounded only by the 64 MiB stream ceiling.
+      const error = yield* status("long-stdout")
+
+      expect(error.code).toBe("unknown")
+      expect(error.message.startsWith("jj status: SECRET_FILE_CONTENT_LINE_0\n")).toBe(true)
+      expect(error.message.endsWith("…")).toBe(true)
+      expect(error.message.length).toBe("jj status: ".length + 4096)
+    }))
+
+  it.live("classifies the whole of a long stderr and quotes only its head", () =>
+    Effect.gen(function*() {
+      // The diagnosis sits under thousands of warning lines. The code comes from
+      // all of the text; the message carries the same bounded excerpt.
+      const error = yield* status("long-stderr")
+
+      expect(error.code).toBe("invalid_ref")
+      expect(error.message.startsWith("jj status: Warning: line 0 of a long warning\n")).toBe(true)
+      expect(error.message).not.toContain("Revision not found")
+      expect(error.message.endsWith("…")).toBe(true)
+      expect(error.message.length).toBe("jj status: ".length + 4096)
     }))
 
   it.live("names the signal that killed a `jj` with nothing to report", () =>

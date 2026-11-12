@@ -41,12 +41,27 @@ describe("resolveJjBinary", () => {
       )
     }))
 
-  it("returns absolute host paths for relative overrides and PATH entries", () =>
+  it("returns an absolute host path for a relative override", () =>
     staged((directory) => {
       const binary = write(join(directory, process.platform === "win32" ? "jj.exe" : "jj"), 0o755)
       expect(Resolve.resolveJjBinary({ environment: { SMITHERS_JJ_PATH: relative(process.cwd(), binary) } }).path)
         .toBe(binary)
-      expect(Resolve.resolveJjBinary({ environment: { PATH: relative(process.cwd(), directory) } }).path)
+    }))
+
+  it("skips a relative PATH entry instead of resolving it against the working directory", () =>
+    staged((directory) => {
+      // `NodeJj.layer` treats the process working directory as the repository
+      // and agents write files there. With `.` or `bin` on PATH ahead of the
+      // real jj, the resolver selected `./jj` and the host ran what an agent
+      // wrote. The entry is relative, holds an executable jj, and must lose.
+      const binary = write(join(directory, process.platform === "win32" ? "jj.exe" : "jj"), 0o755)
+      const entry = relative(process.cwd(), directory)
+      expect(Resolve.resolveJjBinary({ environment: { PATH: entry } })).toMatchObject({
+        path: "jj",
+        source: "path",
+        executable: false
+      })
+      expect(Resolve.resolveJjBinary({ environment: { PATH: `.${delimiter}${entry}${delimiter}${directory}` } }).path)
         .toBe(binary)
     }))
 

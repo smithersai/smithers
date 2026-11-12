@@ -11,7 +11,10 @@
  *    override that names an existing file stays authoritative even when it is
  *    not executable, so a bad explicit path is reported instead of silently
  *    running a different binary.
- * 2. `PATH`, searched for an absolute executable path.
+ * 2. `PATH`, searched for an absolute executable path. A relative entry, `.`
+ *    included, is skipped: it would resolve against the process working
+ *    directory, which `NodeJj.layer` treats as the repository and agents write
+ *    to, so a `jj` written there would run as the host.
  *
  * rc.0 ships no vendored `jj` platform packages, so the 0.x bundled-package
  * branch has no counterpart here.
@@ -20,7 +23,7 @@
  */
 
 import { accessSync, constants, existsSync, statSync } from "node:fs"
-import { delimiter, resolve } from "node:path"
+import { delimiter, isAbsolute, resolve } from "node:path"
 
 /**
  * Where a resolved `jj` command came from.
@@ -36,8 +39,8 @@ export type Source = "env" | "path"
 /**
  * The `jj` command a host should spawn, and what is known about it.
  *
- * `path` is absolute when a candidate was found. Relative overrides and PATH
- * entries resolve against the host working directory. When nothing is found,
+ * `path` is absolute when a candidate was found. A relative override resolves
+ * against the host working directory; a relative PATH entry is skipped. When nothing is found,
  * it is the bare name `jj`; `NodeJj` reports `not_installed` without spawning it.
  *
  * `hint` is present only when the resolution is known to be unusable — an
@@ -144,7 +147,11 @@ const isDirectory = (file: string): boolean => {
 /** The guidance printed when no `jj` was found at all. */
 const missingHint = "No jj on PATH. Install jj (https://jj-vcs.github.io) or set SMITHERS_JJ_PATH."
 
-/** The first entry of `PATH` that holds an executable named `jj`, if any. */
+/**
+ * The first absolute entry of `PATH` that holds an executable named `jj`, if
+ * any. An empty or relative entry is skipped rather than resolved against the
+ * working directory.
+ */
 const searchPath = (
   environment: Readonly<Record<string, string | undefined>>,
   platform: NodeJS.Platform,
@@ -154,7 +161,7 @@ const searchPath = (
   if (raw === undefined || raw === "") return undefined
   const name = platform === "win32" ? "jj.exe" : "jj"
   for (const entry of raw.split(delimiter)) {
-    if (entry === "") continue
+    if (!isAbsolute(entry)) continue
     const candidate = resolve(entry, name)
     if (executable(candidate)) return candidate
   }
