@@ -185,6 +185,7 @@ const alarm: <E, R, RS, RE = never, RR = never, RT = never>(
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
     readonly settled?: ExecutionObject.Settled<RT> | undefined
+    readonly continueHere?: ExecutionObject.ContinueHere | undefined
   }
 ) => Effect.Effect<ExecutionObject.Outcome, never, R | RS | RR | RT>
 ```
@@ -202,6 +203,13 @@ once with `EngineStore.drive` within `driveBudgetMs` (default
   due now, such as one asked to cancel;
 - when the execution settled and is the last round of its lineage, each parent
   due now: `router.wake`.
+
+A start that `continueHere(intent)` claims is not routed. Once the drive
+settled, the object stores the claimed intent as its own, clears its settlement
+and arms the alarm for now, answering `Continued` with the next round's
+execution id: a singleton object, such as one named by a repository, drives a
+`.to()` lineage forever, one round after another, in its own store. At most one
+start is claimed, the first.
 
 Then it clears the count and records when the execution settled, arming the
 alarm for the end of its retention window (settled), or arms it for the
@@ -226,6 +234,15 @@ its intent. On success the object records when under
 `ExecutionObject.reportedKey`, and `settledRetentionMs` runs from then. An
 intent that no longer decodes hands it nothing. The handler must be
 idempotent.
+
+### `ExecutionObject.ContinueHere`
+
+```ts
+type ContinueHere = (intent: ExecutionObject.Intent) => boolean
+```
+
+Given each execution a drive left for routing to start, `true` keeps it in this
+object instead (see `alarm`). `make` takes it as `continueHere`.
 
 ### `ExecutionObject.Router`
 
@@ -296,12 +313,15 @@ type Outcome =
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
   | { readonly _tag: "Yielded" }
   | { readonly _tag: "Retrying"; readonly attempt: number; readonly retryAtMs: number; readonly failure: string }
+  | { readonly _tag: "Continued"; readonly executionId: string }
   | { readonly _tag: "Forgotten" }
 ```
 
 What one alarm did. `forgetAtMs` is when the settled object forgets its
 intent. `Yielded` is a drive that spent its budget; the alarm is armed for
-now. `failure` is the tag of what failed, never its message.
+now. `failure` is the tag of what failed, never its message. `Continued` is a
+settled round whose next round `continueHere` kept: the object now holds that
+round's intent, `executionId`, and its alarm is armed for now.
 
 ### `ExecutionObject.Settled`
 

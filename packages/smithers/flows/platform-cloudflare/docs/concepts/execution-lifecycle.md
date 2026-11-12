@@ -79,6 +79,7 @@ that parks it again.
 | `Parked`    | The run waits. `wakeAtMs` is `EngineStore.nextWake`: its earliest pending timer, or `null` for an event wait.                                                  | cleared | armed at `wakeAtMs`, or deleted when `null` |
 | `Yielded`   | The drive spent its budget and released the run at a step boundary, with work still due.                                                                       | cleared | armed at now                                |
 | `Retrying`  | Building the runtime, driving the run or routing failed.                                                                                                       | kept    | armed one backoff away                      |
+| `Continued` | The run handed off, and `continueHere` kept its next round in this object, which now holds that round's intent.                                               | cleared | armed at now                                |
 | `Forgotten` | The run settled and its retention window has passed. The object deleted its intent, its count and its settlement, and retains only any cancellation tombstone. | deleted | deleted                                     |
 
 `alarm` never fails. A failure becomes `Retrying` with the failure's tag, so

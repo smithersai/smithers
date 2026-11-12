@@ -135,6 +135,10 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  *   and for a lost or refused connection the driver's text for it. A settled
  *   execution whose `settled` handler failed retries the handler, not the
  *   drive.
+ * - `Continued`: the execution handed off (`.to()`) to its next round, which
+ *   `continueHere` kept in this object: the object now holds the next round's
+ *   intent, under `executionId`, and its alarm is armed for now, so the next
+ *   alarm drives that round. Nothing of the settled round is retained.
  * - `Forgotten`: the execution settled and its retention window has passed;
  *   the object deleted its intent, its count, its settlement and when its
  *   `settled` handler took it, and the
@@ -156,6 +160,7 @@ export type Outcome =
     /** What the alarm's log adds to `failure`: a failed migration's cause, never a flow's content. */
     readonly detail: Readonly<Record<string, string>>
   }
+  | { readonly _tag: "Continued"; readonly executionId: string }
   | { readonly _tag: "Forgotten" }
 
 /**
@@ -647,11 +652,18 @@ const timedDrive = <RS>(
  * Hands every execution the drive left for another object to that object:
  * starts the ones no object holds yet and wakes the ones that are due.
  */
-const route = <E, R>(executionId: string, router: Router<E, R>) =>
+const route = <E, R>(executionId: string, router: Router<E, R>, continueHere?: ContinueHere) =>
   Effect.gen(function*() {
     const routes = yield* Routing.routes(executionId)
+    let here: Intent | undefined
     for (const next of routes.start) {
-      yield* router.start(yield* Schema.decodeUnknownEffect(Intent)(next))
+      const intent = yield* Schema.decodeUnknownEffect(Intent)(next)
+      if (here === undefined && continueHere !== undefined && continueHere(intent)) {
+        here = intent
+        yield* Metric.update(Metric.withAttributes(routed, { route: "here" }), 1)
+        continue
+      }
+      yield* router.start(intent)
       yield* Metric.update(Metric.withAttributes(routed, { route: "start" }), 1)
     }
     for (const id of routes.wake) {
@@ -662,7 +674,18 @@ const route = <E, R>(executionId: string, router: Router<E, R>) =>
       "smithers.execution.started": routes.start.length,
       "smithers.execution.woken": routes.wake.length
     })
+    return here
   })
+
+/**
+ * Which execution a drive left that this object runs next instead of routing it: given each one routing would start,
+ * `true` keeps it here. At most one is kept, the first claimed, and only once the drive settled: the next round of a
+ * lineage (`.to()`) that a host runs in one object, such as a singleton Durable Object that drives one lineage forever.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ContinueHere = (intent: Intent) => boolean
 
 /**
  * How long {@link admitted} waits for the child's object to take its intent
@@ -753,7 +776,9 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  *    round asked to cancel, are woken. Reading the store rather than the
  *    drive's report is what makes this durable: an alarm that died after the
  *    drive and before routing routes the same executions on its next attempt,
- *    and starting or waking an object twice changes nothing.
+ *    and starting or waking an object twice changes nothing. A start that
+ *    `continueHere` claims is not routed: once the drive settled, the object
+ *    stores it as its own intent and arms the alarm for now (`Continued`).
  * 5. On progress, records when the execution settled and arms the alarm for
  *    the end of its retention window if it settled, arms it for when the
  *    engine must next drive it if it parked, reading the store again after
@@ -812,6 +837,7 @@ export const alarm = <E, R, RS, RE = never, RR = never, RT = never>(
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
     readonly settled?: Settled<RT> | undefined
+    readonly continueHere?: ContinueHere | undefined
   }
 ): Effect.Effect<Outcome, never, R | RS | RR | RT> =>
   Effect.gen(function*() {
@@ -864,6 +890,7 @@ const settleOrDrive = <E, R, RS, RE, RR, RT>(
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
     readonly settled?: Settled<RT> | undefined
+    readonly continueHere?: ContinueHere | undefined
   },
   timing: Timing
 ): Effect.Effect<Outcome, never, R | RS | RR | RT> =>
@@ -904,8 +931,15 @@ const settleOrDrive = <E, R, RS, RE, RR, RT>(
           Effect.as(true),
           Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
         ))
-        if (exists) yield* route(value.executionId, options.router)
+        const here = exists ? yield* route(value.executionId, options.router, options.continueHere) : undefined
         timing.routeMs = (yield* Clock.currentTimeMillis) - routingAtMs
+        // The next round this object keeps: it replaces the settled round's intent and runs at the next alarm.
+        if (driven._tag === "Settled" && here !== undefined) {
+          yield* storage.put(intentKey, stored(here))
+          yield* storage.delete(settledKey)
+          yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+          return { _tag: "Continued", executionId: here.executionId } as const
+        }
         if (driven._tag === "Settled") {
           const now = yield* Clock.currentTimeMillis
           yield* storage.put(settledKey, now)
@@ -1044,6 +1078,8 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never, RT = never>(s
   readonly driveBudgetMs?: number | undefined
   readonly settled?: Settled<RT> | undefined
   readonly afterAlarm?: Effect.Effect<void, never, RA> | undefined
+  /** Keeps a lineage's next round in this object instead of routing it ({@link ContinueHere}). */
+  readonly continueHere?: ContinueHere | undefined
   /** Recheck domain admission before a delayed start reaches the engine. Failure retries the alarm. */
   readonly canStart?: ((intent: Intent) => Effect.Effect<boolean, never, R>) | undefined
 }) => {
