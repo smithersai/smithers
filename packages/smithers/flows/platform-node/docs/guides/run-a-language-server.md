@@ -47,14 +47,26 @@ layer fails with `permission_denied`, before spawning, when:
 - an argument, or the value after `=` in one, names an existing file or
   directory under `cwd` (`node <dir>` runs that directory's `index.js` or its
   package `main`);
-- `command` is a launcher whose arguments choose what runs: a shell
-  (`sh -c ...`, `bash`, `zsh`), `env`, a package runner (`npx`, `pnpm exec`,
-  `npm`, `yarn`, `bunx`, `bun x`, `deno`), or `node` or `bun` given inline code
-  or a preload (`-e`, `--eval`, `-p`, `-r`, `--require`, `--import`,
-  `--loader`). `npx` and `pnpm exec` resolve the workspace's
-  `node_modules/.bin` first, and inline code resolves bare requires from `cwd`.
-  Name the server's own host binary, or an interpreter and a host script file,
-  instead.
+- `command` is a launcher whose arguments or working directory choose what
+  runs: a shell (`sh -c ...`, `bash`, `zsh`), `env`, a package or tool runner
+  (`npx`, `pnpm exec`, `npm`, `yarn`, `bunx`, `bun`, `deno`, `tsx`,
+  `corepack`, `bundle exec`, `uv`, `uvx`, `pipx`, `poetry`, `mise`, `nix`,
+  `make`, `cargo`), or a command wrapper (`nice`, `timeout`, `nohup`,
+  `stdbuf`, `xargs`, `sudo`, `arch`). `npx` and `pnpm exec` resolve the
+  workspace's `node_modules/.bin` first, `bun` preloads what the workspace's
+  `bunfig.toml` names, and a wrapper runs whatever command follows it;
+- `command` is an interpreter (`node`, `python`, `ruby`, `perl`, versioned
+  names included) with no existing script file, or given code or a module
+  before it: `-e`, `-p`, `-r`, `--import`, `--loader` or `--run` to `node`,
+  `-m` or `-c` to `python`, `-e`, `-r` or `-S` to `ruby`, `-e` or `-M` to
+  `perl`, alone or in a cluster such as `-pe`. A flag that takes the next
+  argument as its value (`python -X <file>`, `node --title <file>`) does not
+  make that argument the script. `python -m pylsp` imports from `cwd` first,
+  so a planted `pylsp.py` would run, and inline code resolves bare requires
+  from `cwd`.
+
+Name the server's own host binary, or an interpreter and a host script file,
+instead.
 
 The layer cannot see what the server loads after it starts. By default
 typescript-language-server runs the workspace's own `node_modules/typescript`;

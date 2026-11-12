@@ -561,7 +561,12 @@ claims fails with `unsupported`. `workspaceSymbols` asks every server and
 concatenates their answers. `diagnostics` pulls `textDocument/diagnostic`; a
 server that answers `MethodNotFound` is read from its published diagnostics,
 waiting up to `settleMs` (default 5,000) for the latest synced text and
-`quietMs` (default 300) for a later publish.
+`quietMs` (default 300) for a later publish. The client answers the server's
+own requests so a server never waits on one: `workspace/configuration` gets
+`null` for each item, `workspace/applyEdit` gets `applied: false`,
+registration, progress, message and refresh requests get `null`, and any other
+request gets `MethodNotFound`. A server request never completes one of the
+client's requests, even when the ids match.
 
 The server runs on the host as the host user. `make` and `makeLazy` fail with
 `permission_denied`, before spawning, when the program it would execute lies
@@ -569,13 +574,20 @@ under `cwd`: a relative or absolute command there, a bare name found through a
 `PATH` entry there, or a workspace symlink to a host binary. An argument, or
 the value after `=` in one, that names an existing file or directory under
 `cwd` is refused the same way; `node <dir>` runs that directory's `index.js` or
-package `main`. A launcher is refused outright, because its arguments are code
-or package names the file check cannot see: a shell (`sh -c`, `bash`, `zsh`),
-`env`, a package runner (`npx`, `pnpm`, `npm`, `yarn`, `bunx`, `bun x`,
-`deno`), or `node` and `bun` given inline code or a preload (`-e`, `--eval`,
-`-p`, `-r`, `--require`, `--import`, `--loader`). Name the server's own host
-binary, or an interpreter and a host script file. What the server loads after
-it starts is not checked: by default typescript-language-server runs the
+package `main`. A launcher is refused outright, because its arguments are code,
+package names, another command or files in `cwd` that the file check cannot
+see: a shell (`sh -c`, `bash`, `zsh`), `env`, a package or tool runner (`npx`,
+`pnpm`, `npm`, `yarn`, `bunx`, `bun`, `deno`, `tsx`, `corepack`, `bundle`,
+`uv`, `uvx`, `pipx`, `poetry`, `mise`, `nix`, `make`, `cargo`), or a command
+wrapper (`nice`, `timeout`, `nohup`, `stdbuf`, `xargs`, `sudo`, `arch`). An
+interpreter (`node`, `python`, `ruby`, `perl`, versioned names included)
+starts only when it names an existing script file and no code or module flag
+comes before it (`-e`, `-p`, `-r`, `--import`, `--loader`, `--run`,
+`python -m` or `-c`, `ruby -S`, `perl -M`, alone or clustered as in `-pe`); a
+flag that takes the next argument as its value (`-X <file>`,
+`--title <file>`) does not make that argument the script. Name the server's
+own host binary, or an interpreter and a host script file. What the server
+loads after it starts is not checked: by default typescript-language-server runs the
 workspace's `node_modules/typescript`, tsserver with `--allowLocalPluginLoads`
 loads `tsconfig` plugins from the project, and rust-analyzer runs build scripts
 and proc macros. Pin those to host copies through `initializationOptions` or

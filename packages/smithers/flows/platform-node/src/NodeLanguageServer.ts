@@ -344,6 +344,35 @@ const makeFrameDecoder = (): FrameDecoder => {
   }
 }
 
+/**
+ * The client's answer to a request the server sends it. The client declares no
+ * configuration, registration, progress or edit capabilities, so it answers
+ * the requests servers send regardless of that with the empty answer the
+ * protocol allows, and any other request with MethodNotFound.
+ */
+const answerServerRequest = (id: number | string, method: string, params: unknown): unknown => {
+  switch (method) {
+    case "workspace/configuration": {
+      const items = (asMessage(params) as { readonly items?: unknown } | undefined)?.items
+      return { jsonrpc: "2.0", id, result: Array.isArray(items) ? items.map(() => null) : [] }
+    }
+    case "workspace/applyEdit":
+      return { jsonrpc: "2.0", id, result: { applied: false, failureReason: "The client does not apply edits" } }
+    case "client/registerCapability":
+    case "client/unregisterCapability":
+    case "window/workDoneProgress/create":
+    case "window/showMessageRequest":
+    case "workspace/codeLens/refresh":
+    case "workspace/semanticTokens/refresh":
+    case "workspace/inlayHint/refresh":
+    case "workspace/inlineValue/refresh":
+    case "workspace/diagnostic/refresh":
+      return { jsonrpc: "2.0", id, result: null }
+    default:
+      return { jsonrpc: "2.0", id, error: { code: METHOD_NOT_FOUND, message: `Unhandled method ${method}` } }
+  }
+}
+
 const asMessage = (value: unknown): JsonRpcMessage | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? value
@@ -419,9 +448,10 @@ const resolveCommand = (command: string, cwd: string, path: string | undefined):
  */
 /**
  * Programs whose job is to run another program named in their arguments or
- * found in the working directory: shells, `env`, and package runners. Their
- * arguments are code or package names, not files, so the workspace check below
- * cannot see what they would execute (`sh -c node_modules/.bin/x`, `npx x`).
+ * found in the working directory: shells, `env`, package runners, and command
+ * wrappers. Their arguments are code, package names or another command, not
+ * files, so the workspace check below cannot see what they would execute
+ * (`sh -c node_modules/.bin/x`, `npx x`, `nice npx x`, `bundle exec x`).
  */
 const LAUNCHERS = new Set([
   "sh",
@@ -439,23 +469,142 @@ const LAUNCHERS = new Set([
   "pnpm",
   "yarn",
   "bunx",
+  // Bun reads bunfig.toml from cwd, whose preload runs before any script.
+  "bun",
   "deno",
+  "tsx",
+  "ts-node",
+  "corepack",
+  "bundle",
+  "bundler",
+  "uv",
+  "uvx",
+  "pipx",
+  "poetry",
+  "pipenv",
+  "mise",
+  "asdf",
+  "nix",
+  "nix-shell",
+  "make",
+  "gmake",
+  "just",
+  "rake",
+  "cargo",
+  "nice",
+  "ionice",
+  "timeout",
+  "nohup",
+  "setsid",
+  "stdbuf",
+  "time",
+  "taskset",
+  "chrt",
+  "flock",
+  "unbuffer",
+  "script",
+  "systemd-run",
+  "arch",
+  "caffeinate",
+  "xargs",
+  "sudo",
+  "doas",
   "cmd",
   "powershell",
   "pwsh"
 ])
 
-/** Interpreter flags that take code or a module to load instead of a file path. */
-const CODE_FLAGS = new Set(["-e", "--eval", "-p", "--print", "-r", "--require", "--import", "--loader"])
+/**
+ * Interpreters, with the short-flag letters and long flags that take code or a
+ * module to load instead of a script file. A short-flag cluster stops at a
+ * letter that takes a value (`-Werror`); when that letter ends the cluster,
+ * the next argument is its value (`-X /etc/hosts`), not the script.
+ */
+interface Interpreter {
+  readonly codeLetters: string
+  readonly valueLetters: string
+  readonly codeFlags: ReadonlyArray<string>
+}
+
+const interpreterOf = (name: string): Interpreter | undefined =>
+  /^node(?:js)?[\d.]*$/.test(name)
+    ? {
+      codeLetters: "epr",
+      valueLetters: "C",
+      codeFlags: [
+        "--eval",
+        "--print",
+        "--require",
+        "--import",
+        "--loader",
+        "--experimental-loader",
+        // Runs a script the workspace package.json defines, or test files found under cwd.
+        "--run",
+        "--test",
+        // Reads node.config.json from cwd, whose nodeOptions may preload a module.
+        "--experimental-default-config-file"
+      ]
+    }
+    : /^(?:python|pypy)[\d.]*[tw]?$|^py$/.test(name)
+    ? { codeLetters: "cm", valueLetters: "WX", codeFlags: [] }
+    : /^ruby[\d.]*$/.test(name)
+    ? { codeLetters: "eIrSCx", valueLetters: "EFK0iWT", codeFlags: [] }
+    : /^perl[\d.]*$/.test(name)
+    ? { codeLetters: "deEIMmSx", valueLetters: "0lCDFiV", codeFlags: [] }
+    : undefined
+
+/**
+ * What an interpreter would run instead of a host script: a code or module
+ * flag before the script, or no script at all. Undefined when its script names
+ * an existing file, which the argument check then keeps out of the workspace.
+ */
+const interpreterCode = (
+  name: string,
+  interpreter: Interpreter,
+  args: ReadonlyArray<string>,
+  cwd: string
+): string | undefined => {
+  const isScript = (value: string | undefined): boolean =>
+    value !== undefined && value !== "-" && isFile(NodePath.resolve(cwd, value))
+  // A long flag without `=` may take the next argument as its value, so that
+  // argument may not be the script. From there on every argument is read as a
+  // possible interpreter flag, and some argument must still name a file.
+  let guessing = false
+  let script = false
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index]!
+    if (!guessing && argument === "--") {
+      return isScript(args[index + 1])
+        ? undefined
+        : `${name} without a host script file`
+    }
+    if (argument === "-" || !argument.startsWith("-")) {
+      if (!guessing) return isScript(argument) ? undefined : `${name} without a host script file`
+      script ||= isScript(argument)
+      continue
+    }
+    if (argument.startsWith("--")) {
+      const flag = argument.split("=")[0]!
+      if (interpreter.codeFlags.includes(flag)) return `${name} ${flag}`
+      guessing ||= !argument.includes("=")
+      continue
+    }
+    const letters = argument.slice(1)
+    for (let at = 0; at < letters.length; at++) {
+      if (interpreter.codeLetters.includes(letters[at]!)) return `${name} -${letters[at]}`
+      if (!interpreter.valueLetters.includes(letters[at]!)) continue
+      if (at === letters.length - 1) index++
+      break
+    }
+  }
+  return script ? undefined : `${name} without a host script file`
+}
 
 const launcher = (config: Config): string | undefined => {
   const name = NodePath.basename(config.command).toLowerCase().replace(/\.(?:exe|cmd|bat|ps1)$/, "")
   if (LAUNCHERS.has(name)) return name
-  if (name !== "node" && name !== "bun" && name !== "nodejs") return undefined
-  const args = config.args ?? []
-  if (name === "bun" && ["x", "run", "exec"].includes(args[0] ?? "")) return `bun ${args[0]}`
-  const flag = args.find((argument) => CODE_FLAGS.has(argument.split("=")[0]!) || argument === "--experimental-loader")
-  return flag === undefined ? undefined : `${name} ${flag.split("=")[0]}`
+  const interpreter = interpreterOf(name)
+  return interpreter === undefined ? undefined : interpreterCode(name, interpreter, config.args ?? [], config.cwd)
 }
 
 const workspaceProgram = (
@@ -466,7 +615,7 @@ const workspaceProgram = (
   if (launching !== undefined) {
     return failure(
       "permission_denied",
-      `Language server command runs ${launching}, which executes a program its arguments or the workspace choose; name the server's own host binary instead`
+      `Language server command runs ${launching}, which executes a program its arguments or the workspace choose; name the server's own host binary, or an interpreter and a host script file, instead`
     )
   }
   const lexicalRoot = NodePath.resolve(config.cwd)
@@ -638,6 +787,15 @@ const makeClient = (
     const receive = (value: unknown): Effect.Effect<void> => {
       const message = asMessage(value)
       if (message?.method === "textDocument/publishDiagnostics") return publish(message.params)
+      // A message with a method is the server's own notification or request.
+      // Its id is in the server's id space, not this client's, so it never
+      // completes a pending request; a request gets an answer so the server
+      // does not wait on it.
+      if (typeof message?.method === "string") {
+        return typeof message.id === "number" || typeof message.id === "string"
+          ? send(answerServerRequest(message.id, message.method, message.params)).pipe(Effect.ignore)
+          : Effect.void
+      }
       if (message === undefined || typeof message.id !== "number") return Effect.void
       const deferred = pending.get(message.id)
       if (deferred === undefined) return Effect.void

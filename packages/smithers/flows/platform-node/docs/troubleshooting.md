@@ -149,9 +149,11 @@ best-effort so that a win32 record is not silently retired as if reaped.
 **Cause.** `NodeLanguageServer.make` resolved `command` to a file under `cwd`
 (a `./` path, a `PATH` entry such as `node_modules/.bin`, or a symlink there),
 an argument named a file or directory under `cwd`, or `command` was a launcher
-(`sh -c`, `env`, `npx`, `pnpm exec`, `yarn`, `bunx`, or `node` or `bun` with
-`-e`, `-p`, `-r`, `--require`, `--import` or `--loader`) whose arguments choose
-what runs. The server would have run workspace-written code on the host. The
+(`sh -c`, `env`, `npx`, `pnpm exec`, `yarn`, `bunx`, `bun`, `bundle exec`,
+`uvx`, or a wrapper such as `nice` or `timeout`) whose arguments choose what
+runs, or an interpreter (`node`, `python`, `ruby`, `perl`) without a host
+script file or with a code or module flag such as `-e`, `-pe`, `--import` or
+`python -m`. The server would have run workspace-written code on the host. The
 message names the program, the argument, or the launcher.
 
 **Fix.** Install the server outside the workspace and pass its absolute path,

@@ -267,11 +267,11 @@ describe("NodeLanguageServer document sync", () => {
   it("opens a file from disk when a push-only server is asked about an unsynced one", async () => {
     const directory = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "lsp-sync-"))
     NodeFs.writeFileSync(NodePath.join(directory, "b.py"), "ERROR\n")
-    const { spawner, received } = fakeServers({ py: pushOnly() })
+    const { spawner, received } = fakeServers({ pylsp: pushOnly() })
     try {
       const result = await run(
         Effect.gen(function*() {
-          const server = yield* NodeLanguageServer.make({ command: "py", cwd: directory })
+          const server = yield* NodeLanguageServer.make({ command: "pylsp", cwd: directory })
           const report = yield* server.diagnostics(NodePath.join(directory, "b.py"))
           const missing = yield* Effect.exit(server.diagnostics(NodePath.join(directory, "missing.py")))
           return { report, missing }
@@ -410,13 +410,13 @@ describe("NodeLanguageServer close", () => {
 describe("NodeLanguageServer routing", () => {
   const configs: ReadonlyArray<NodeLanguageServer.Config> = [
     { command: "ts", cwd: "/workspace", extensions: [".ts", "TSX"] },
-    { command: "py", cwd: "/workspace", extensions: ["py"] }
+    { command: "pylsp", cwd: "/workspace", extensions: ["py"] }
   ]
 
   it("sends .ts and .py files to different servers", async () => {
     const answer: Responder = (message, reply) =>
       typeof message.id === "number" ? reply({ jsonrpc: "2.0", id: message.id, result: [message.method] }) : Effect.void
-    const { spawner, received } = fakeServers({ ts: answer, py: answer })
+    const { spawner, received } = fakeServers({ ts: answer, pylsp: answer })
     const result = await run(
       Effect.gen(function*() {
         const server = yield* NodeLanguageServer.make(configs)
@@ -456,7 +456,7 @@ describe("NodeLanguageServer routing", () => {
       "textDocument/diagnostic",
       "workspace/symbol"
     ])
-    expect(by("py")).toEqual([
+    expect(by("pylsp")).toEqual([
       "textDocument/didOpen",
       "textDocument/didClose",
       "textDocument/definition",
@@ -711,13 +711,13 @@ describe("NodeLanguageServer.makeLazy", () => {
     received.filter(({ message }) => message.method === "initialize").map(({ command }) => command)
 
   it("starts each server once, on the first request for one of its files", async () => {
-    const { spawner, received } = fakeServers({ ts: pushOnly(), py: pushOnly() })
+    const { spawner, received } = fakeServers({ ts: pushOnly(), pylsp: pushOnly() })
     const steps: Array<ReadonlyArray<string>> = []
     const results = await run(
       Effect.gen(function*() {
         const client = yield* NodeLanguageServer.makeLazy([
           { command: "ts", cwd: "/workspace", extensions: [".ts"] },
-          { command: "py", cwd: "/workspace", extensions: [".py"] }
+          { command: "pylsp", cwd: "/workspace", extensions: [".py"] }
         ])
         const unclaimed = yield* Effect.exit(client.sync("/workspace/notes.md", "x"))
         yield* client.refresh
@@ -790,12 +790,12 @@ describe("NodeLanguageServer refresh", () => {
     const directory = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "lsp-refresh-"))
     const at = (name: string) => NodePath.join(directory, name)
     for (const name of ["changed.ts", "deleted.ts", "same.ts", "other.py"]) NodeFs.writeFileSync(at(name), name)
-    const { spawner, received } = fakeServers({ ts: pushOnly(), py: pushOnly() })
+    const { spawner, received } = fakeServers({ ts: pushOnly(), pylsp: pushOnly() })
     await run(
       Effect.gen(function*() {
         const client = yield* NodeLanguageServer.make([
           { command: "ts", cwd: directory, extensions: [".ts"] },
-          { command: "py", cwd: directory, extensions: [".py"] }
+          { command: "pylsp", cwd: directory, extensions: [".py"] }
         ])
         for (const name of ["changed.ts", "deleted.ts", "same.ts", "other.py"]) yield* client.sync(at(name), name)
         NodeFs.writeFileSync(at("changed.ts"), "rewritten")
@@ -814,7 +814,7 @@ describe("NodeLanguageServer refresh", () => {
     expect(received.map(({ command, message }) => [command, message.method, message.params.textDocument.uri])).toEqual([
       ["ts", "textDocument/didChange", uri(at("changed.ts"))],
       ["ts", "textDocument/didClose", uri(at("deleted.ts"))],
-      ["py", "textDocument/didChange", uri(at("other.py"))]
+      ["pylsp", "textDocument/didChange", uri(at("other.py"))]
     ])
     expect(received[0]!.message.params).toMatchObject({
       textDocument: { version: 2 },

@@ -26,6 +26,7 @@ beforeEach(() => {
     NodePath.join(workspace, "planted.js"),
     `require("fs").writeFileSync(${JSON.stringify(marker)}, "")`
   )
+  NodeFs.writeFileSync(NodePath.join(workspace, "planted.py"), `open(${JSON.stringify(marker)}, "w")\n`)
   NodeFs.mkdirSync(NodePath.join(workspace, "tools", "lsp"), { recursive: true })
   NodeFs.writeFileSync(
     NodePath.join(workspace, "tools", "lsp", "index.js"),
@@ -108,12 +109,79 @@ describe("NodeLanguageServer refuses a program the workspace supplies", () => {
     [
       "node --import of a workspace module",
       () => ({ command: "node", args: ["--import=./planted.js", "/opt/lsp/server.js"], cwd: workspace })
-    ]
+    ],
+    [
+      "node -pe, a cluster of short code flags",
+      () => ({ command: process.execPath, args: ["-pe", "require('./planted.js')"], cwd: workspace })
+    ],
+    [
+      "python -m, which imports from cwd first",
+      () => ({ command: "python3", args: ["-m", "planted"], cwd: workspace })
+    ],
+    ["python -c", () => ({ command: "python", args: ["-Bc", "import planted"], cwd: workspace })],
+    ["ruby -S, which looks the script up", () => ({ command: "ruby", args: ["-S", "solargraph"], cwd: workspace })],
+    ["perl -M of a workspace module", () => ({ command: "perl", args: ["-Mplanted", "-e1"], cwd: workspace })],
+    ["nice npx", () => ({ command: "nice", args: ["npx", "planted-server"], cwd: workspace })],
+    ["timeout pnpm exec", () => ({ command: "timeout", args: ["600", "pnpm", "exec", "x"], cwd: workspace })],
+    ["corepack pnpm exec", () => ({ command: "corepack", args: ["pnpm", "exec", "x"], cwd: workspace })],
+    ["bundle exec", () => ({ command: "bundle", args: ["exec", "solargraph", "stdio"], cwd: workspace })],
+    ["uvx", () => ({ command: "uvx", args: ["python-lsp-server"], cwd: workspace })],
+    ["mise x", () => ({ command: "mise", args: ["x", "--", "planted-server"], cwd: workspace })],
+    ["arch", () => ({ command: "arch", args: ["-arm64", "npx", "planted-server"], cwd: workspace })],
+    ["tsx -e", () => ({ command: "tsx", args: ["-e", "require('./planted.js')"], cwd: workspace })],
+    [
+      "bun with a host script, after bunfig.toml preloads a workspace module",
+      () => ({ command: "bun", args: [process.execPath], cwd: workspace })
+    ],
+    [
+      "python -m after a flag that took a host file as its value",
+      () => ({ command: "python3", args: ["-X", process.execPath, "-m", "planted"], cwd: workspace })
+    ],
+    [
+      "node -e after a long flag that took a host file as its value",
+      () => ({ command: "node", args: ["--title", process.execPath, "-e", "require('./planted.js')"], cwd: workspace })
+    ],
+    [
+      "node -e after a short flag that took a host file as its value",
+      () => ({ command: "node", args: ["-C", process.execPath, "-e", "require('./planted.js')"], cwd: workspace })
+    ],
+    ["node --run of a workspace package script", () => ({ command: "node", args: ["--run", "lsp"], cwd: workspace })],
+    ["a versioned ruby", () => ({ command: "ruby3.3", args: ["-e", "load './planted.rb'"], cwd: workspace })],
+    ["a versioned perl", () => ({ command: "/usr/bin/perl5.34", args: ["-Mplanted"], cwd: workspace })],
+    ["pythonw -m", () => ({ command: "pythonw", args: ["-m", "planted"], cwd: workspace })],
+    ["py -m", () => ({ command: "py.exe", args: ["-m", "planted"], cwd: workspace })]
   ])("refuses the launcher %s, whose arguments choose what runs", async (_name, config) => {
     for (const construct of constructors) {
       const exit = await start(config(), construct)
       expect(failure(exit)).toBe("permission_denied")
     }
+    expect(NodeFs.existsSync(marker)).toBe(false)
+  })
+
+  it.each(
+    [
+      ["node with no script, which reads code from stdin", "node", [], "runs node without a host script file"],
+      ["node -", "node", ["-"], "runs node without a host script file"],
+      ["node -- with nothing after it", "node", ["--"], "runs node without a host script file"],
+      ["node given a module name", "node", ["typescript-language-server"], "runs node without a host script file"],
+      ["node given only flags", "node", ["--stdio"], "runs node without a host script file"],
+      ["a flag value, not a flag cluster", "node", ["-Cdevelopment"], "runs node without a host script file"],
+      ["python given a value flag", "python3.12", ["-Wdefault::DeprecationWarning"], "runs python3.12 without"],
+      ["ruby -e", "ruby", ["-we", "1"], "runs ruby -e"],
+      ["node --require", "node", ["--require=./planted.js", "server.js"], "runs node --require"],
+      ["bun x", "bun", ["x", "planted-server"], "runs bun,"],
+      ["a long flag with no file after it", "node", ["--title", "lsp", "--stdio"], "runs node without a host script"]
+    ] as const
+  )("names what it refuses: %s", async (_name, command, args, message) => {
+    // No args at all, as well as an empty list, leaves node reading code from stdin.
+    const exit = await start({ command, ...(args.length === 0 ? {} : { args: [...args] }), cwd: workspace })
+    expect(failure(exit)).toBe("permission_denied")
+    expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toContain(message)
+  })
+
+  it("refuses a workspace script named after --", async () => {
+    const exit = await start({ command: process.execPath, args: ["--", "planted.js"], cwd: workspace })
+    expect(failure(exit)).toBe("permission_denied")
     expect(NodeFs.existsSync(marker)).toBe(false)
   })
 
@@ -137,7 +205,7 @@ process.stdin.on("data", (chunk) => {
     NodeFs.writeFileSync(script, server)
     const exit = await start({
       command: process.execPath,
-      args: [script],
+      args: ["--no-warnings", "--", script],
       cwd: workspace,
       initializationOptions: { tsserver: { path: "/host/tsserver.js" } }
     })

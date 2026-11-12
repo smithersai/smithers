@@ -253,3 +253,72 @@ describe("NodeLanguageServer real protocol boundaries", () => {
     expect(error.message).toMatch(/^Language server process could not be started: /)
   })
 })
+
+/**
+ * A server that, on the client's hover, sends its own requests first (the
+ * first reusing the hover's id 2) and answers the hover only with the client's
+ * replies to them, the way vscode-languageserver awaits `getConfiguration`.
+ */
+const askingServer = `
+let bytes = Buffer.alloc(0);
+let hover;
+const replies = {};
+const asked = [
+ { id: 2, method: 'workspace/configuration', params: { items: [{ section: 'a' }, { section: 'b' }] } },
+ { id: 'no-items', method: 'workspace/configuration', params: {} },
+ { id: 'register', method: 'client/registerCapability', params: { registrations: [] } },
+ { id: 'edit', method: 'workspace/applyEdit', params: { edit: {} } },
+ { id: 'other', method: 'custom/unknown', params: null }
+];
+const send = (value) => {
+ const body = Buffer.from(JSON.stringify(value));
+ process.stdout.write(Buffer.concat([Buffer.from('Content-Length: ' + body.length + '\\r\\n\\r\\n'), body]));
+};
+process.stdin.on('data', (chunk) => {
+ bytes = Buffer.concat([bytes, chunk]);
+ while (true) {
+  const split = bytes.indexOf('\\r\\n\\r\\n');
+  if (split < 0) return;
+  const length = Number(/Content-Length:\\s*(\\d+)/i.exec(bytes.subarray(0,split).toString())[1]);
+  if (bytes.length < split + 4 + length) return;
+  const message = JSON.parse(bytes.subarray(split+4,split+4+length).toString());
+  bytes = bytes.subarray(split+4+length);
+  if (message.method === undefined) {
+   const { jsonrpc, id, ...reply } = message;
+   replies[id] = reply;
+   if (Object.keys(replies).length === asked.length) send({ jsonrpc: '2.0', id: hover, result: { replies } });
+   continue;
+  }
+  if (message.method === 'initialize') { send({jsonrpc:'2.0',id:message.id,result:{capabilities:{}}}); continue; }
+  if (message.method !== 'textDocument/hover') continue;
+  hover = message.id;
+  send({ jsonrpc: '2.0', method: 'window/logMessage', params: { type: 3, message: 'asking' } });
+  for (const request of asked) send({ jsonrpc: '2.0', ...request });
+ }
+});
+`
+
+describe("NodeLanguageServer requests from the server", () => {
+  it("answers each server request in the server's id space and never completes a client request with it", async () => {
+    const result = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const server = yield* NodeLanguageServer.make({
+          command: process.execPath,
+          args: [hostScript(askingServer)],
+          cwd: process.cwd(),
+          timeoutMs: 5_000
+        })
+        return yield* server.hover(position)
+      })).pipe(Effect.provide(NodeServices.layer))
+    )
+    expect(result).toEqual({
+      replies: {
+        2: { result: [null, null] },
+        "no-items": { result: [] },
+        register: { result: null },
+        edit: { result: { applied: false, failureReason: "The client does not apply edits" } },
+        other: { error: { code: -32601, message: "Unhandled method custom/unknown" } }
+      }
+    })
+  })
+})

@@ -105,8 +105,7 @@ describe("NodeLanguageServer transport and request ownership", () => {
   })
 
   it.each([
-    { command: "./invalid\0program", args: ["invalid\0argument", ""] },
-    { command: "bun" }
+    { command: "./invalid\0program", args: ["invalid\0argument", ""] }
   ])("allows the process adapter to handle configuration %j without crashing the path checks", async (config) => {
     const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
       const spawner = peer((request, output) =>
