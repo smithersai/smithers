@@ -99,8 +99,10 @@ component streams it verbatim rather than guessing at the missing half:
 ```
 
 `formatPartialJson` is the helper behind that decision. It reports whether the
-text it was given is complete, so a caller can choose between the parsed and the
-verbatim rendering:
+text it was given is complete. Complete JSON gets two-space indentation without
+changing number tokens, string escapes, duplicate keys, or key order. Invalid
+fragments and deeply nested values stay verbatim. This also applies to complete
+tool input in approval cards and JSON text result parts:
 
 ```ts
 import { formatPartialJson } from "@smthrs/ui"

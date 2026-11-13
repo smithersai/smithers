@@ -18,8 +18,9 @@ export type EnvironmentVariableModel = {
  * the name. `KEY` matches unless a letter follows it, so `API_KEY` and `APIKEY` mask while
  * `KEYBOARD_LAYOUT` shows. `AUTH` matches `OAUTH` and `AUTHORIZATION` but not `AUTHOR`. Words that
  * also name ordinary settings count only as a whole `_`-separated word: `PASS`, `PW`, `PWD`, `SK`,
- * `PAT`, `OTP`, `TOTP`, `PIN`, `SIGN`, `SIGNING`, `SIGNATURE`, `CERT`, `CERTIFICATE`, so `MYSQL_PWD`
- * and `TLS_CERT` mask while `PATH`, `PASSTHROUGH`, `SIGNAL_LEVEL`, and `CERTIFIED` show. `SESSION`
+ * `PAT`, `OTP`, `TOTP`, `PIN`, `JWT`, `MNEMONIC`, `SEED`, `SIGN`, `SIGNING`, `SIGNATURE`, `CERT`,
+ * `CERTIFICATE`, so `MYSQL_PWD` and `TLS_CERT` mask while `PATH`, `PASSTHROUGH`, `SIGNAL_LEVEL`, and
+ * `CERTIFIED` show. `SESSION`
  * masks only as the last word or before `ID` (`SESSION_ID`), so `SESSION_TIMEOUT` shows.
  *
  * A URL name alone is not a credential: `PUBLIC_URL` shows. A URL masks by its value,
@@ -30,18 +31,19 @@ const CREDENTIAL_NAME = new RegExp(
     "TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|PRIVATE|COOKIE|DSN|SALT|HMAC|BEARER|WEBHOOK",
     "KEYS?(?![A-Z])",
     "AUTH(?!OR(?!IZ))",
-    "(?:^|_)(?:PASS|PWD?|SK|PAT|T?OTP|PIN|SIGN|SIGNING|SIGNATURE|CERTS?|CERTIFICATE)(?:_|$)",
+    "(?:^|_)(?:PASS|PWD?|SK|PAT|T?OTP|PIN|JWT|MNEMONIC|SEED|SIGN|SIGNING|SIGNATURE|CERTS?|CERTIFICATE)(?:_|$)",
     "(?:^|_)SESSION(?:_?ID)?$",
   ].join("|"),
   "i",
 );
 /**
- * A value carrying a credential whatever its variable is called: a URL with `user:password@`, or a
- * URL query or connection string with a credential-named parameter (`?token=`, `;Password=`).
+ * A value carrying a credential whatever its variable is called: a URL with non-empty userinfo
+ * (`token@` or `user:password@`), or a URL query or connection string with a credential-named
+ * parameter (`?token=`, `;Password=`).
  */
 const CREDENTIAL_VALUE = new RegExp(
   [
-    "^[a-z][a-z0-9+.-]*://[^/@\\s]*:[^/@\\s]*@",
+    "^[a-z][a-z0-9+.-]*://[^/@\\s?#]+@",
     "(?:^|[?&;\\s])[a-z0-9_-]*(?:password|passwd|pwd|secret|token|key|sig|signature|auth|credential)=",
   ].join("|"),
   "i",

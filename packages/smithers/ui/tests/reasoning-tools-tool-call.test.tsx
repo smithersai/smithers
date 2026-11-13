@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { afterEach, describe, expect, test } from "bun:test";
+import * as fc from "fast-check";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -39,6 +40,56 @@ describe("formatPartialJson", () => {
   test("pretty-prints complete JSON", () => {
     expect(formatPartialJson('{"a":1}')).toEqual({ text: '{\n  "a": 1\n}', complete: true });
   });
+
+  test.each([
+    ['{"issue":9007199254740993,"id":12345678901234567890}', '{\n  "issue": 9007199254740993,\n  "id": 12345678901234567890\n}'],
+    ['{"id":1,"id":2,"2":-0,"1":1.2300e+400}', '{\n  "id": 1,\n  "id": 2,\n  "2": -0,\n  "1": 1.2300e+400\n}'],
+    ['{"\\u0061":"a\\\\\\"b,{}[]:","a":"\\u0062"}', '{\n  "\\u0061": "a\\\\\\"b,{}[]:",\n  "a": "\\u0062"\n}'],
+    [' \n{"a" : [true, null, {}, [], {"b":false}]} \t', '{\n  "a": [\n    true,\n    null,\n    {},\n    [],\n    {\n      "b": false\n    }\n  ]\n}'],
+    [' -0 ', '-0'],
+    ['1e+400', '1e+400'],
+    ['"a\\nb"', '"a\\nb"'],
+    ['true', 'true'],
+    ['null', 'null'],
+    ['{}', '{}'],
+    ['[]', '[]'],
+  ])("preserves JSON tokens while indenting %s", (input, expected) => {
+    expect(formatPartialJson(input)).toEqual({ text: expected, complete: true });
+  });
+
+  test("preserves generated large integers and duplicate keys in their original order", () => {
+    fc.assert(fc.property(
+      fc.bigInt({ min: 9007199254740993n, max: 10n ** 100n }),
+      fc.string(),
+      (id, label) => {
+        const string = JSON.stringify(label);
+        const input = '{"id":' + id + ',"id":-' + id + ',"label":' + string + '}';
+        expect(formatPartialJson(input)).toEqual({
+          text: '{\n  "id": ' + id + ',\n  "id": -' + id + ',\n  "label": ' + string + '\n}',
+          complete: true,
+        });
+      },
+    ), { numRuns: 200, seed: 5007 });
+  });
+
+  test("formats generated JSON values without changing their meaning", () => {
+    fc.assert(fc.property(fc.jsonValue(), (value) => {
+      const result = formatPartialJson(JSON.stringify(value));
+      expect(result.complete).toBe(true);
+      expect(JSON.parse(result.text)).toEqual(value);
+    }), { numRuns: 200, seed: 5008 });
+  });
+
+  test("keeps deeply nested complete JSON verbatim instead of expanding its indentation", () => {
+    const input = "[".repeat(20_000) + "0" + "]".repeat(20_000);
+    expect(formatPartialJson(input)).toEqual({ text: input, complete: true });
+  });
+
+  test.each(['{"a":1,}', '[1,]', '{"a":NaN}', '{"a":01}', '"unterminated', '{"a":"bad\\x20"}'])(
+    "keeps invalid JSON verbatim: %s", (text) => {
+      expect(formatPartialJson(text)).toEqual({ text, complete: false });
+    },
+  );
 
   test("returns fragments verbatim without repair", () => {
     expect(formatPartialJson('{"partial":')).toEqual({ text: '{"partial":', complete: false });
@@ -179,6 +230,23 @@ describe("ToolCallInput", () => {
     expect(html).not.toContain("ignored");
   });
 
+  test("approval input preserves the exact ids and duplicate keys the tool receives", async () => {
+    const argsText = '{"id":9007199254740993,"id":12345678901234567890}';
+    await render(
+      <ToolCall name="update_issue" state="approval-requested" defaultOpen>
+        <ToolCallHeader />
+        <ToolCallContent>
+          <ToolCallInput args={{ id: 0 }} argsText={argsText} />
+          <ToolCallApproval><button>Approve</button></ToolCallApproval>
+        </ToolCallContent>
+      </ToolCall>,
+    );
+    expect(container!.querySelector('[aria-label="Tool input: update_issue"]')!.textContent).toBe(
+      '{\n  "id": 9007199254740993,\n  "id": 12345678901234567890\n}',
+    );
+    expect(container!.querySelector('[data-slot="tool-call-approval"]')!.textContent).toBe("Approve");
+  });
+
   test("complete argsText pretty-prints when parseable", () => {
     const html = renderToStaticMarkup(
       <ToolCall name="write" state="input-available" defaultOpen>
@@ -194,6 +262,20 @@ describe("ToolCallInput", () => {
 });
 
 describe("ToolCallOutput parts", () => {
+  test("JSON text output preserves large integers and duplicate keys", async () => {
+    await render(
+      <ToolCall name="inspect" state="output-available" defaultOpen>
+        <ToolCallHeader />
+        <ToolCallContent>
+          <ToolCallOutput parts={[{ kind: "json", jsonText: '{"id":9007199254740993,"id":12345678901234567890}' }]} />
+        </ToolCallContent>
+      </ToolCall>,
+    );
+    expect(container!.querySelector('[aria-label="Tool output: inspect"]')!.textContent).toBe(
+      '{\n  "id": 9007199254740993,\n  "id": 12345678901234567890\n}',
+    );
+  });
+
   test("renders text, json, image, code, and error parts", () => {
     const html = renderToStaticMarkup(
       <ToolCall name="inspect" state="output-available" defaultOpen>

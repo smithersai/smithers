@@ -170,7 +170,7 @@ describe("EnvironmentVariables", () => {
   test("an ordinary setting whose name contains a credential word stays visible", async () => {
     const shown = [
       "PUBLIC_URL", "NEXT_PUBLIC_API_URL", "VITE_BASE_URL", "AUTHOR", "SIGNAL_LEVEL", "KEYBOARD_LAYOUT",
-      "PASSTHROUGH", "SESSION_TIMEOUT", "CERTIFIED", "DATABASE_URL",
+      "PASSTHROUGH", "SESSION_TIMEOUT", "CERTIFIED", "DATABASE_URL", "SEEDING_STRATEGY",
     ];
     await render(
       <EnvironmentVariables variables={shown.map((name, index) => ({ name, value: `https://shown-${index}.example/` }))} />,
@@ -201,6 +201,56 @@ describe("EnvironmentVariables", () => {
     for (const leak of ["leak-a", "leak-b", "leak-c", "leak-d", "leak-e", "leak-f", "leak-g", "leak-h", "leak-i", "leak-j"]) {
       expect(html).not.toContain(leak);
     }
+  });
+
+  test.each([
+    ["GIT_REMOTE_URL", "https://ghp_example@github.example/o/r.git"],
+    ["REPO_URL", " \thttps://ghs_example@github.example/o/r.git\n"],
+    ["UPSTREAM", "HTTPS://user%3Atoken@example.test/path"],
+    ["UPSTREAM", "https://user:password@example.test/path"],
+    ["UPSTREAM", "redis://:password@cache.test"],
+    ["SUPABASE_JWT", "jwt-example"],
+    ["JWT", "jwt-example"],
+    ["MNEMONIC", "mnemonic-example"],
+    ["WALLET_MNEMONIC", "mnemonic-example"],
+    ["SEED", "seed-example"],
+    ["WALLET_SEED", "seed-example"],
+  ])("masks %s until explicitly revealed", async (name, value) => {
+    await render(<EnvironmentVariable name={name} value={value} />);
+    const row = container!.querySelector('[data-slot="environment-variable"]')!;
+    expect(row.getAttribute("data-secret")).toBe("true");
+    expect(row.innerHTML).not.toContain(value.trim());
+    const toggle = row.querySelector<HTMLButtonElement>('[data-slot="secret-field-toggle"]')!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => toggle.click());
+    expect(row.querySelector(".sui-secret-value")!.textContent).toBe(value);
+    await act(async () => toggle.click());
+    expect(row.innerHTML).not.toContain(value.trim());
+  });
+
+  test.each([
+    "https://example.test/path",
+    "https://@example.test/path",
+    "https://example.test/path/user@file",
+    "https://example.test/?email=user@example.test",
+    "https://example.test/#user@example.test",
+  ])("keeps URLs without credential userinfo visible: %s", async (value) => {
+    await render(<EnvironmentVariable name="REPO_URL" value={value} />);
+    const row = container!.querySelector('[data-slot="environment-variable"]')!;
+    expect(row.getAttribute("data-secret")).toBe("false");
+    expect(row.querySelector(".sui-envvar-value")!.textContent).toBe(value);
+  });
+
+  test("explicit visibility overrides credential detection for userinfo and seed names", async () => {
+    await render(
+      <EnvironmentVariables variables={[
+        { name: "GIT_REMOTE_URL", value: "https://token@example.test/r.git", secret: false },
+        { name: "WALLET_SEED", value: "visible-seed", secret: false },
+      ]} />,
+    );
+    expect([...container!.querySelectorAll('[data-slot="environment-variable"]')].map((row) => row.getAttribute("data-secret"))).toEqual(["false", "false"]);
+    expect(container!.textContent).toContain("https://token@example.test/r.git");
+    expect(container!.textContent).toContain("visible-seed");
   });
 
   test("compound mode renders EnvironmentVariable children", async () => {

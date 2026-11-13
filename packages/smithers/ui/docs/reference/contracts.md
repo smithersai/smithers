@@ -195,11 +195,11 @@ render twice; only an actual ancestor cycle is reported as circular.
   `CREDENTIAL`, `PRIVATE`, `COOKIE`, `DSN`, `SALT`, `HMAC`, `BEARER`, or
   `WEBHOOK`; `KEY` not followed by a letter (`API_KEY`, not `KEYBOARD`); `AUTH`
   outside `AUTHOR` (`OAUTH`, `AUTHORIZATION`); a whole `_`-separated `PASS`,
-  `PW`, `PWD`, `SK`, `PAT`, `OTP`, `TOTP`, `PIN`, `SIGN`, `SIGNING`,
-  `SIGNATURE`, `CERT`, or `CERTIFICATE`; or `SESSION` as the last word or before
-  `ID`. A URL name alone does not mask: `PUBLIC_URL` shows. The trimmed value
-  masks when it is a URL carrying `user:password@`, or has a credential-named
-  query or connection-string parameter (`?api_key=`, `;Password=`). The match
+  `PW`, `PWD`, `SK`, `PAT`, `OTP`, `TOTP`, `PIN`, `JWT`, `MNEMONIC`, `SEED`,
+  `SIGN`, `SIGNING`, `SIGNATURE`, `CERT`, or `CERTIFICATE`; or `SESSION` as the
+  last word or before `ID`. A URL name alone does not mask: `PUBLIC_URL` shows. The trimmed value
+  masks when it is a URL carrying non-empty userinfo (`token@` or
+  `user:password@`), or has a credential-named query or connection-string parameter (`?api_key=`, `;Password=`). The match
   is a heuristic. Pass `secret` to override it either way.
 - `assembleLine` in `src/flow-form.ts` (and `assembleArgs`, its line alone)
   withholds a value when it contains one of the tokens the app's grammars
