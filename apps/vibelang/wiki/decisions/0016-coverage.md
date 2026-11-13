@@ -303,6 +303,16 @@ fixed in the test; neither is a product bug.
 | `test/historyStartup.test.vibe` "?agent=live forgets a stored mock choice and asks the server" | The page `pending` while its health probe was in flight. The probe failed at once and the page then fell back to `mock`, so the state it polled for ended on its own. | The run failed with `expected 'mock' not to be 'mock'`: the page had already fallen back before a poll saw `pending`. A trace on nyc-01 put the probe at 611 ms and the fallback at 4,262 ms; a loaded host can miss that window. | The test holds health with `test/support/heldHealth.vibe` and its deadline clock. The page stays `pending` until the test answers, then the answer `mock` is asserted, with exactly one probe. Removing the storage clear in `historyStartup.vibe` fails it. |
 | `test/scroll.runtime.test.vibe` "ArrowUp, intent-first" | The runtime's first animation-frame request (`host.pending() > 0`). | A requested frame stays until the test runs it, so the state cannot be missed, only reached late. The first render took longer than `vi.waitFor`'s 1 s default. | Every wait in the file is bounded by 20 s, inside the 30 s test budget. |
 
+### A browser journey that timed out under load (session 30, 2026-11-13)
+
+The full browser gate on main `c79e7386908a` (box `d22703165ac0c4bbe261fa0b`) timed out once in `light`:
+`e2e/core-sandbox-clock.spec.ts` "a clock the meter cannot read stops the running sandbox", at `locator.fill` on the
+terminal. Not a product bug.
+
+| What it waited on | Why it timed out | Fix |
+| --- | --- | --- |
+| The terminal's command box, after the sandbox read `Running`. | `fault=sandbox-clock` broke the meter's clock after the sandbox started, for the next metered call of any kind. Under load the page's sandbox status read came before the typed `pwd`, failed closed, and stopped the sandbox, so the command box never came back. | The fault breaks the clock for the first command only (`test/support/FaultyFactory.vibe` `sandboxCommand`), the call the journey types. `--repeat-each 5` in all three projects passes. |
+
 ### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
 
 **History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`

@@ -82,7 +82,7 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * fails every sandbox read; `sandbox-start` fails the first start; each `machine-*` fault fails the mock sandbox's
  * machine once (faultyMachines.vibe); `sandbox-low` and `sandbox-out` move the sandbox
  * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it;
- * `sandbox-clock` makes that clock read before 1970 for the first sandbox call after the first start; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
+ * `sandbox-clock` makes that clock read before 1970 for the first sandbox command; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
  * `issue-connect`, `issue-fork` and `issue-install` refuse the first issue write before it happens, as the live Worker does
@@ -213,10 +213,6 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       startSandbox: effect (conversation, operationId) => {
         if (first("sandbox-start")) throw new Unavailable({ reason: "sandbox unavailable" })
         const started = try metered(base.startSandbox(conversation, operationId))
-        if (clockFault && !jumped && !broken) {
-          broken = true
-          try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
-        }
         if (skewed && !jumped) {
           jumped = true
           skew += (fault === "sandbox-low" ? started.remaining - 5 : started.remaining + 1) * 60_000
@@ -226,7 +222,15 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         return started
       },
       stopSandbox: (conversation, operationId, generation) => metered(base.stopSandbox(conversation, operationId, generation)),
-      sandboxCommand: (conversation, operationId, command, generation) => metered(base.sandboxCommand(conversation, operationId, command, generation)),
+      // `sandbox-clock` breaks the clock for the first command, not the next call of any kind: a status read that
+      // came first under load stopped the sandbox before the person could type one.
+      sandboxCommand: effect (conversation, operationId, command, generation) => {
+        if (clockFault && !jumped && !broken) {
+          broken = true
+          try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
+        }
+        return try metered(base.sandboxCommand(conversation, operationId, command, generation))
+      },
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
         if (conversation.startsWith("tour-") && first("tour-events")) return Stream.fail(new Unavailable({ reason: "connection interrupted" }))

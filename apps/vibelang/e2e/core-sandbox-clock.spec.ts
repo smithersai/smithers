@@ -1,6 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
 // The sandbox writer fails closed on a clock it cannot meter by (src/core/sandboxHost.vibe `emergency`): with
-// fault=sandbox-clock the clock reads before 1970 for the first sandbox call after the sandbox starts
+// fault=sandbox-clock the clock reads before 1970 for the sandbox's first command ("pwd")
 // (test/support/FaultyFactory.vibe). That call fails, the writer stops every running sandbox, and the clock mends.
 import { expect, test } from "./coverage"
 
