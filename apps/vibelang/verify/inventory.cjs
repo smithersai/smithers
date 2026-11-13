@@ -507,7 +507,10 @@ function inventorySource(file, source) {
   // Each row's own `if` and conditional tests, split into operands at `&&`, `||` and `!`, with the plain names each
   // calls and the name a bare flag reads; and each `const` name with the names its value calls. verify/branches.cjs
   // reads them. Not enumerable, so the table and row fixtures are unchanged.
-  const calledNames = node => (node.type === 'CallExpression' && node.callee?.type === 'Identifier' ? [node.callee.name] : [])
+  // A plain call, or a call through an imported namespace (`Continuation.canSpeakTour(run)`: a capitalized object).
+  const calledNames = node => (node.type === 'CallExpression' && node.callee?.type === 'Identifier' ? [node.callee.name]
+    : node.type === 'CallExpression' && node.callee?.type === 'MemberExpression' && !node.callee.computed
+      && node.callee.object?.type === 'Identifier' && /^[A-Z]/.test(node.callee.object.name) ? [node.callee.property.name] : [])
     .concat(children(node).flatMap(calledNames));
   const operands = node => node.type === 'LogicalExpression' && node.operator !== '??' ? [...operands(node.left), ...operands(node.right)]
     : node.type === 'UnaryExpression' && node.operator === '!' ? operands(node.argument) : [node];

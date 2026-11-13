@@ -77,6 +77,9 @@ test('a new branch in a shell row is refused until it is proved or recorded with
   const wrapped = answer + 'export function big(n: number) {\n  return size(n)\n}\nexport function bigger(n: number) {\n  return size(n) === "big" && n > 9\n}\n'
     + 'export function pick(n: number) {\n  if (big(n) === "big") return 1\n  return bigger(n) ? 2 : 0\n}\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, wrapped)).map(branch => branch.test), ['kind === "big"', 'bigger(n)']);
+  // A proved function called through a namespace decides too.
+  const spaced = answer.replace('if (s === "big") return 1', 'if (Sizes.size(n) === "x" || Other.thing(n)) return 1');
+  assert.deepEqual(shellBranches(inventorySource(fixture, spaced)).map(branch => branch.test), ['Sizes.size(n) === "x" || Other.thing(n)', 'kind === "big"']);
   // Presence, variant and host type tests decide nothing of their own; beside one, a comparison is still a branch.
   const guards = '// Fixture.\nexport function g(x: { _tag: string } | undefined, n: number) {\n  if (x === undefined || x._tag === "A" || !Number.isSafeInteger(n)) return 0\n  return typeof n === "number" && n > 1 ? 1 : 0\n}\n';
   assert.deepEqual(shellBranches(inventorySource(fixture, guards)).map(branch => branch.test), ['typeof n === "number" && n > 1']);

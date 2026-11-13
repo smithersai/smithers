@@ -7296,7 +7296,7 @@ proof or a named disposition; the landing check keeps their number from growing.
 The open-candidate count by batch: 150 after batch 46 (counting operands as the first version did: 1,042 branches),
 129 after batch 47 (632 branches by operand; 2 by the budget proofs, 19 by the operand rule), 119 after batch 48,
 87 after batch 49, 0 after batch 50. Unreviewed records: 357 after landing batch 50 (three conditions main rewrote
-received reasons), 283 after batch 51, 141 after batch 52 (none in `worker/`).
+received reasons), 283 after batch 51, 141 after batch 52 (none in `worker/`), 0 after batch 53.
 
 ## Batch 46 (vl-proveall3, 2026-11-13): request body limits
 
@@ -7369,6 +7369,24 @@ dispatch on an operation, flow, kind or route a proved function admitted; RPC an
 policy admissions forwarded from proved functions on their hosts; container state; emptiness and absence. One mutation
 case. Records: 377 branches, 0 open, 141 unreviewed, all in `src/` and `scripts/` (most in `MockFactory.vibe`,
 `flows.vibe`, `catalog.vibe` and `publish.vibe`).
+
+## Batch 53 (vl-proveall3, 2026-11-13): every shell branch carries a reason
+
+The branch check also counts a call through an imported namespace (`Continuation.canSpeakTour(run)`, a capitalized
+object) to a proved function. The last 137 records in `src/` and `scripts/` got their reasons. All 371 branches now
+carry a proof or a reason; none is `Open` or `Unreviewed`:
+
+| Reason | Branches |
+| --- | ---: |
+| Variant dispatch, variant, variant test, labels, selection: an operation, flow, kind, route, method or answer union picks its arm | 162 |
+| Host boundary: HTTP and RPC answers, container state, Schema, RegExp, Set/Map membership, Effect's Cause | 64 |
+| Mock mode (VL-13): fixture backends whose live counterparts are proved | 38 |
+| Forwards a proved answer, admission or flag | 35 |
+| Absence, emptiness, formatting, metric, script tooling | 38 |
+| Reviewed rules not yet proved: refusal (10), pacing (10), guard (6), write skip (3), order (2), configuration (2), expiry (1) | 34 |
+| Total | 371 |
+
+The 34 reviewed rules are the next proof candidates; each line in `verify/shell-branches.tsv` names its rule.
 
 ## Final stamp: the whole gate on main `07185eed` (vl-proveall3, 2026-11-13)
 

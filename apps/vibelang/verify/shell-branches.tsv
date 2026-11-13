@@ -1,112 +1,108 @@
 # file	function	condition	reason (decision 0018, "Decisions in shell rows"; "Open:" = still to prove)
-scripts/agent-context.vibe	main	check	Unreviewed: recorded by the 2026-11-13 audit
-scripts/fuzz-preflight.vibe	preflight	!(try fs.exists(path.join(root, ".smithers/flows/node_modules", name, "package.json")))	Unreviewed: recorded by the 2026-11-13 audit
-scripts/mythical-seed-program.vibe	entriesOf	line.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-scripts/mythical-seed-program.vibe	log/callback	line === ""	Unreviewed: recorded by the 2026-11-13 audit
-scripts/mythical-seed-program.vibe	log/callback	Number(status) !== 0	Unreviewed: recorded by the 2026-11-13 audit
-scripts/mythical-seed-program.vibe	main	refused.length > 0	Unreviewed: recorded by the 2026-11-13 audit
-scripts/wiki.vibe	generate	file === "decisions.md"	Unreviewed: recorded by the 2026-11-13 audit
-scripts/wiki.vibe	generate/collect	name.endsWith(".md")	Unreviewed: recorded by the 2026-11-13 audit
-scripts/wiki.vibe	generate/collect	stat.type === "Directory"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === "vibelang/docs/open"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === EndTour._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === HistoryTools.Show._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === Note._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === Plan._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === Post._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === Post._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === SandboxCommand._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === SandboxStart._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === SandboxStop._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === Start._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/catalog.vibe	registration	name === Tour._tag	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/LiveActions.vibe	LiveActions/callback/request	method === "GET"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/LiveActions.vibe	LiveActions/callback/request	method === "POST"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/authorize	entry.least === "viewer"	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/command	entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined	Unreviewed: recorded by the 2026-11-13 audit
-src/actions/MockActions.vibe	MockActions/callback/commands	!entry.runnable	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	beginTour	try (try Tours).running(tour)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	openDocs	opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	openWiki/callback	opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	readingMillis	text.trim() === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	say	said	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	say	words === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	say	words === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	toured	!Continuation.canSpeakTour(run)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	!(Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	Continuation.firstTourVisit(visit) && restored !== null && restored.target !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	Continuation.tourWait(state.paused) === "control"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk	control.action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/flows.vibe	walk/callback	saved === null || saved.paused	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	makeIssueFactory/act	!Schema.is(IssueRequest)(request)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	cause.reasons.length === 1	Unreviewed: recorded by the 2026-11-13 audit
-src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	health	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	LiveFactory/callback/events/callback	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	LiveFactory/callback/read	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	LiveFactory/callback/sandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	LiveFactory/callback/sandboxCommand	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	LiveFactory/callback/startSandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	LiveFactory/callback/stopSandbox	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/core/LiveFactory.vibe	sandboxRefusal	response.status !== 403 && response.status !== 409	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/choose	role !== "new"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/choose	role === "viewer"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/current	id === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockAccounts.vibe	make/current	try Ref.get(agent)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/answer	index === posts.length	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/answer	tour !== "" && !dispatched.has(`tour/${tour}`)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	!Schema.is(TourControlBody)({ action, step }) || !validTourStep(step, 11)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "resume"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/issuesForPerson/callback/callback	person.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	retained.length < journaled.length	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "pause"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "seek"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/say	entry?.text	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/wake	tour !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/openWiki	!opened	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	mockFactoryFor/callback/wikiForPerson/callback/callback	person.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted	completed === 3	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted	page !== undefined && /\bdraft\b/i.test(prompt)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted	prompt === "Split #38 into three children, linked under it."	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted	prompt.startsWith("File an issue:")	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted/callback	!(try ownsReply())	Unreviewed: recorded by the 2026-11-13 audit
-src/core/MockFactory.vibe	scripted/callback	error.reason === "forbidden"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/mockReplies.vibe	historyReply	open.length === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/core/routes.vibe	routeOf	!pathname.startsWith(CONVERSATIONS)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/routes.vibe	routeOf	parts.length > 2	Unreviewed: recorded by the 2026-11-13 audit
+scripts/agent-context.vibe	main	check	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/fuzz-preflight.vibe	preflight	!(try fs.exists(path.join(root, ".smithers/flows/node_modules", name, "package.json")))	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/mythical-seed-program.vibe	entriesOf	line.trim() === ""	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/mythical-seed-program.vibe	log/callback	line === ""	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/mythical-seed-program.vibe	log/callback	Number(status) !== 0	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/mythical-seed-program.vibe	main	refused.length > 0	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/wiki.vibe	generate	file === "decisions.md"	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/wiki.vibe	generate/collect	name.endsWith(".md")	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+scripts/wiki.vibe	generate/collect	stat.type === "Directory"	Script tooling (build, seed program, fuzz preflight, agent context): file and exit checks, not product logic
+src/actions/catalog.vibe	registration	name === "vibelang/docs/open"	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === EndTour._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === HistoryTools.Show._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === Note._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === Plan._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === Post._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === Post._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === SandboxCommand._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === SandboxStart._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === SandboxStop._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === Start._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === Tour._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/catalog.vibe	registration	name === Tour._tag	Labels: each flow's slash command and title; catalogDecision proves its least role and input kind
+src/actions/LiveActions.vibe	LiveActions/callback/request	method === "GET"	Variant dispatch on the HTTP method
+src/actions/LiveActions.vibe	LiveActions/callback/request	method === "POST"	Variant dispatch on the HTTP method
+src/actions/MockActions.vibe	MockActions/callback/authorize	entry.least === "viewer"	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
+src/actions/MockActions.vibe	MockActions/callback/command	entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
+src/actions/MockActions.vibe	MockActions/callback/commands	!entry.runnable	Mock mode (VL-13): the fixture actions; their role gate is the proved catalogDecision
+src/core/flows.vibe	beginTour	try (try Tours).running(tour)	Host boundary: whether the tour runs (the Tours service)
+src/core/flows.vibe	openDocs	opened	Forwards the host's answer (the page or line was opened or said)
+src/core/flows.vibe	openWiki/callback	opened	Forwards the host's answer (the page or line was opened or said)
+src/core/flows.vibe	readingMillis	text.trim() === ""	Emptiness: nothing to say or read
+src/core/flows.vibe	say	said	Forwards the host's answer (the page or line was opened or said)
+src/core/flows.vibe	say	words === ""	Emptiness: nothing to say or read
+src/core/flows.vibe	say	words === ""	Emptiness: nothing to say or read
+src/core/flows.vibe	walk	!(Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))	Variant: a stop is narrated unless the walk resumes at a restored target (firstTourVisit is proved); narrateLine answers whether it was said
+src/core/flows.vibe	walk/callback	saved === null || saved.paused	Variant dispatch on the tour control (seek, pause) and the saved state
+src/core/IssuesFactory.vibe	makeIssueFactory/act	!Schema.is(IssueRequest)(request)	Host boundary: Schema validation of the request
+src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	cause.reasons.length === 1	Variant test: the engine's identity conflict answers conflict
+src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
+src/core/LiveFactory.vibe	health	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveFactory.vibe	LiveFactory/callback/events/callback	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveFactory.vibe	LiveFactory/callback/read	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveFactory.vibe	LiveFactory/callback/sandbox	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveFactory.vibe	LiveFactory/callback/sandboxCommand	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveFactory.vibe	LiveFactory/callback/startSandbox	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveFactory.vibe	LiveFactory/callback/stopSandbox	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveFactory.vibe	sandboxRefusal	response.status !== 403 && response.status !== 409	Host boundary: the API's HTTP status, refused or passed through
+src/core/MockAccounts.vibe	make/choose	role !== "new"	Mock mode (VL-13): the fixture accounts
+src/core/MockAccounts.vibe	make/choose	role === "viewer"	Mock mode (VL-13): the fixture accounts
+src/core/MockAccounts.vibe	make/current	id === ""	Mock mode (VL-13): the fixture accounts
+src/core/MockAccounts.vibe	make/current	try Ref.get(agent)	Mock mode (VL-13): the fixture accounts
+src/core/MockFactory.vibe	mockFactoryFor/callback/answer	index === posts.length	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/answer	tour !== "" && !dispatched.has(`tour/${tour}`)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	!Schema.is(TourControlBody)({ action, step }) || !validTourStep(step, 11)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "pause"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/controlTour	action === "resume"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/issuesForPerson/callback/callback	person.agent === true	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback	retained.length < journaled.length	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "pause"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/control	action === "seek"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/say	entry?.text	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openRoom/callback/wake	tour !== ""	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/openWiki	!opened	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	mockFactoryFor/callback/wikiForPerson/callback/callback	person.agent === true	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted	completed === 3	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted	page !== undefined && /\bdraft\b/i.test(prompt)	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted	prompt === "Split #38 into three children, linked under it."	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted	prompt.startsWith("File an issue:")	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted/callback	!(try ownsReply())	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/MockFactory.vibe	scripted/callback	error.reason === "forbidden"	Mock mode (VL-13): the fixture backend's scripted behavior, not a product decision; the live hosts' decisions are proved
+src/core/mockReplies.vibe	historyReply	open.length === 0	Mock mode (VL-13): the fixture replies
+src/core/routes.vibe	routeOf	!pathname.startsWith(CONVERSATIONS)	Variant: the conversations prefix and at most two path segments name a route; routeKind (proved) names the operation
+src/core/routes.vibe	routeOf	parts.length > 2	Variant: the conversations prefix and at most two path segments name a route; routeKind (proved) names the operation
 src/core/sandboxHost.vibe	makeSandboxHost/command	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
 src/core/sandboxHost.vibe	makeSandboxHost/command/callback	admitted.type === "pending"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
 src/core/sandboxHost.vibe	makeSandboxHost/emergency	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/run	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(ledger.usedMilliseconds) || ledger.usedMilliseconds < 0 || !Number.isSafeInteger(allowance) || allowance < 0	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(nextMonth(now)) || !Number.isSafeInteger(ledger.lastMeteredAt) || ledger.lastMeteredAt < 0 || !Number.isFinite(nextMonth(ledger.lastMeteredAt))	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(prior) || prior < 0	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(count * elapsed) || count * elapsed > Number.MAX_SAFE_INTEGER - used	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMeter.vibe	millisecondOf	!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > 8640000000000000	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMeter.vibe	snapshotOf	box?.running	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMock.vibe	makeMockSandboxes/callback	at === null || at > (try Clock.currentTimeMillis)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMock.vibe	makeMockSandboxes/write/callback	receipt	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMock.vibe	memoryMachines/command	outputs.has(key)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/sandboxMock.vibe	memoryMachines/start/callback	!disk.has(id)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/specification.vibe	performSpecification	revise	Unreviewed: recorded by the 2026-11-13 audit
-src/core/specification.vibe	requestedSpecificationReview	!/review.*specification|specification.*review/i.test(prompt)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/specification.vibe	revisedSpecificationState	next === spec	Unreviewed: recorded by the 2026-11-13 audit
-src/core/walkthroughSteps.vibe	walkthroughStop	Number.isNaN(step)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/wiki.vibe	wikiPage	base.startsWith("/wiki/")	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	before.pages.some((page) => page.id === request.page)	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	existing.page !== request.page || existing.base !== request.base || existing.text !== request.text	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "draft"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "read"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	cause.reasons.length === 1	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("ExecutionIdentityConflict")	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Unreviewed: recorded by the 2026-11-13 audit
-src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Unreviewed: recorded by the 2026-11-13 audit
-src/core/wire.vibe	conversationPath	conversation.length === 0 || conversation.length > MAX_CONVERSATION	Unreviewed: recorded by the 2026-11-13 audit
+src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(ledger.usedMilliseconds) || ledger.usedMilliseconds < 0 || !Number.isSafeInteger(allowance) || allowance < 0	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
+src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(nextMonth(now)) || !Number.isSafeInteger(ledger.lastMeteredAt) || ledger.lastMeteredAt < 0 || !Number.isFinite(nextMonth(ledger.lastMeteredAt))	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
+src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(prior) || prior < 0	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
+src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(count * elapsed) || count * elapsed > Number.MAX_SAFE_INTEGER - used	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
+src/core/sandboxMeter.vibe	millisecondOf	!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > 8640000000000000	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
+src/core/sandboxMeter.vibe	snapshotOf	box?.running	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
+src/core/sandboxMock.vibe	makeMockSandboxes/callback	at === null || at > (try Clock.currentTimeMillis)	Mock mode (VL-13): the fixture sandboxes
+src/core/sandboxMock.vibe	makeMockSandboxes/write/callback	receipt	Mock mode (VL-13): the fixture sandboxes
+src/core/sandboxMock.vibe	memoryMachines/command	outputs.has(key)	Mock mode (VL-13): the fixture sandboxes
+src/core/sandboxMock.vibe	memoryMachines/start/callback	!disk.has(id)	Mock mode (VL-13): the fixture sandboxes
+src/core/specification.vibe	performSpecification	revise	Variant: revise or review; an unchanged specification is not rewritten
+src/core/specification.vibe	requestedSpecificationReview	!/review.*specification|specification.*review/i.test(prompt)	Host boundary: a case-insensitive RegExp over the prompt
+src/core/specification.vibe	revisedSpecificationState	next === spec	Variant: revise or review; an unchanged specification is not rewritten
+src/core/walkthroughSteps.vibe	walkthroughStop	Number.isNaN(step)	Host boundary: NaN
+src/core/wiki.vibe	wikiPage	base.startsWith("/wiki/")	Variant: a /wiki/ path names its page
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	before.pages.some((page) => page.id === request.page)	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	existing.page !== request.page || existing.base !== request.base || existing.text !== request.text	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "draft"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/WikiFactory.vibe	fixtureWikiHost/perform/callback	request.op === "read"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/WikiFactory.vibe	makeWikiFactory/act/callback	cause.reasons.length === 1	Variant test: the engine's identity conflict answers conflict
+src/core/WikiFactory.vibe	makeWikiFactory/act/callback	error._tag.endsWith("ExecutionIdentityConflict")	Variant test: the engine's identity conflict answers conflict
+src/core/WikiFactory.vibe	makeWikiFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
+src/core/WikiFactory.vibe	personOf	identity === "maintainer"	Mock mode (VL-13): the fixture wiki host; the live wiki's decisions are proved
+src/core/wire.vibe	conversationPath	conversation.length === 0 || conversation.length > MAX_CONVERSATION	Refusal: a conversation id is 1 to MAX_CONVERSATION units (the same bound as the proved validConversationLength, which browser code may not import)
 src/history/export.vibe	check	!manifest.commits.every((entry) => noted.has(entry[1]))	Host boundary: Set membership; the notes tree holds a note for every manifest commit
 src/history/export.vibe	check	!old.has(oid)	Host boundary: Set membership; a commit the last publication holds was checked when it was published
 src/history/export.vibe	check	published.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
@@ -116,45 +112,45 @@ src/history/export.vibe	readPublished	notesTree === ""	Absence: an empty ref or 
 src/history/export.vibe	readPublished	refs.manifest === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
 src/history/export.vibe	readPublished	refs.notes === ""	Absence: an empty ref or tree names no publication yet, so there is nothing to read
 src/history/export.vibe	section	lines.length === 0	Formatting: an empty note section reads (none)
-src/history/flows.vibe	foldCommits	count === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/flows.vibe	loadBootstrap	loaded	Unreviewed: recorded by the 2026-11-13 audit
-src/history/flows.vibe	runExport/callback	history.commits.length === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/LiveMythical.vibe	LiveMythical/callback/events/callback	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200	Unreviewed: recorded by the 2026-11-13 audit
-src/history/MockMythical.vibe	MockMythical	seed === seeded	Unreviewed: recorded by the 2026-11-13 audit
-src/history/pages.vibe	matchesOf	needle === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	batch	history.commits.length === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	batch	plan.needs.length > read.length	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	batch	read.length > 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	batch	skip.has(each.oid)	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	batchStep/callback	answer.needs > 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	batchStep/callback	answer.remaining > 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	pacedExport	answered.empty	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	pacedExport	answered.needs === 0 && answered.remaining === 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	runPublish	answer.written > 0	Unreviewed: recorded by the 2026-11-13 audit
-src/history/publish.vibe	runPublish	read.available	Unreviewed: recorded by the 2026-11-13 audit
+src/history/flows.vibe	foldCommits	count === 0	Emptiness or a loaded flag: nothing to fold or export, or the bootstrap already loaded
+src/history/flows.vibe	loadBootstrap	loaded	Emptiness or a loaded flag: nothing to fold or export, or the bootstrap already loaded
+src/history/flows.vibe	runExport/callback	history.commits.length === 0	Emptiness or a loaded flag: nothing to fold or export, or the bootstrap already loaded
+src/history/LiveMythical.vibe	LiveMythical/callback/events/callback	response.status !== 200	Host boundary: the API's HTTP status
+src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200	Host boundary: the API's HTTP status
+src/history/MockMythical.vibe	MockMythical	seed === seeded	Mock mode (VL-13): the fixture history
+src/history/pages.vibe	matchesOf	needle === ""	Emptiness: an empty search matches nothing
+src/history/publish.vibe	batch	history.commits.length === 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	batch	plan.needs.length > read.length	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	batch	read.length > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	batch	skip.has(each.oid)	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	batchStep/callback	answer.needs > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	batchStep/callback	answer.remaining > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	pacedExport	answered.empty	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	pacedExport	answered.needs === 0 && answered.remaining === 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	runPublish	answer.written > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
+src/history/publish.vibe	runPublish	read.available	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
 src/history/seed.vibe	seedOf	!byTitle.has(title)	Host boundary: Map membership; the first group under a title keeps it, for a revert to find
 src/history/seed.vibe	seedOf	!list.includes(entry)	Host boundary: identity membership; an entry is listed once under each title
 src/history/seed.vibe	seedOf	!members.has(area)	Host boundary: Map membership; epics keep the order the project first touched them
 src/history/seed.vibe	seedOf	attempt.reason === ""	Formatting: an evidence line names the gate or reason only when there is one
 src/history/seed.vibe	seedOf	entry.gate === ""	Formatting: an evidence line names the gate or reason only when there is one
-src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	answered	decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/fold/callback	commit.sha === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/fold/callback	commit.sha.length > MAX_ID || commit.change.length > MAX_ID	Unreviewed: recorded by the 2026-11-13 audit
-src/history/Sequencer.vibe	make/record	!decision.ok	Unreviewed: recorded by the 2026-11-13 audit
-src/history/tools.vibe	show/callback	{	Unreviewed: recorded by the 2026-11-13 audit
-src/history/tools.vibe	show/callback	when { what: "commit"	Unreviewed: recorded by the 2026-11-13 audit
-src/history/tools.vibe	show/callback	when { what: "epic"	Unreviewed: recorded by the 2026-11-13 audit
-src/history/tools.vibe	show/callback	when { what: "outline"	Unreviewed: recorded by the 2026-11-13 audit
-src/history/tools.vibe	show/callback	when { what: "search"	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	backend	probe	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	callback	stored?.origin === "mock"	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	callback/callback	!("ledger" in identity)	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	callback/callback	identity.agent === true	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	liveBackend/callback	probe	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/backend.vibe	personClient	Option.isNone(decoded) || decoded.value.origin !== origin || !validSessionCookie(origin, decoded.value.cookie)	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/cli-entry.vibe	main	(try cli(args, Option.getOrUndefined(environment))) !== 0	Unreviewed: recorded by the 2026-11-13 audit
+src/history/Sequencer.vibe	answered	decision.ok	Forwards the proved decide's answer
+src/history/Sequencer.vibe	answered	decision.ok	Forwards the proved decide's answer
+src/history/Sequencer.vibe	make/fold/callback	commit.sha === ""	Refusal: a fold's commit ids must be nonempty and at most MAX_ID long (input validation before the proved fold)
+src/history/Sequencer.vibe	make/fold/callback	commit.sha.length > MAX_ID || commit.change.length > MAX_ID	Refusal: a fold's commit ids must be nonempty and at most MAX_ID long (input validation before the proved fold)
+src/history/Sequencer.vibe	make/record	!decision.ok	Forwards the proved decide's answer
+src/history/tools.vibe	show/callback	{	Variant dispatch on what the history tool shows (outline, epic, commit, search)
+src/history/tools.vibe	show/callback	when { what: "commit"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
+src/history/tools.vibe	show/callback	when { what: "epic"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
+src/history/tools.vibe	show/callback	when { what: "outline"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
+src/history/tools.vibe	show/callback	when { what: "search"	Variant dispatch on what the history tool shows (outline, epic, commit, search)
+src/surfaces/backend.vibe	backend	probe	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
+src/surfaces/backend.vibe	callback	stored?.origin === "mock"	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
+src/surfaces/backend.vibe	callback/callback	!("ledger" in identity)	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
+src/surfaces/backend.vibe	callback/callback	identity.agent === true	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
+src/surfaces/backend.vibe	liveBackend/callback	probe	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
+src/surfaces/backend.vibe	personClient	Option.isNone(decoded) || decoded.value.origin !== origin || !validSessionCookie(origin, decoded.value.cookie)	Variant: mock or live backend, agent or person session, the probe flag; validSessionCookie and the origin match select the stored client
+src/surfaces/cli-entry.vibe	main	(try cli(args, Option.getOrUndefined(environment))) !== 0	Forwards the CLI's exit code
 src/surfaces/commands.vibe	ask/callback	event.type === "Posted"	Variant dispatch: reads each event variant's own field for the proved collectAnswer, which decides on the event's kind
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyDelta"	Variant dispatch: reads each event variant's own field for the proved collectAnswer, which decides on the event's kind
 src/surfaces/commands.vibe	ask/callback	event.type === "ReplyFailed"	Variant dispatch: reads each event variant's own field for the proved collectAnswer, which decides on the event's kind
@@ -170,11 +166,11 @@ src/surfaces/commands.vibe	callback/callback	i.task === ""	Formatting: an issue 
 src/surfaces/commands.vibe	callback/callback	i.vip === ""	Formatting: an issue without a task or VIP omits that part
 src/surfaces/commands.vibe	define/render	json	Variant dispatch on the caller's output option: JSON or text
 src/surfaces/commands.vibe	signInError	error instanceof SignInFailed	Variant test: a SignInFailed passes on as its message
-src/surfaces/session.vibe	activeSession	!validSessionCookie(decoded.origin, decoded.cookie)	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.value(configured.value) !== ""	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/session.vibe	readPending	pending.expiresAt <= (try Clock.currentTimeMillis)	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/session.vibe	settingsDir	Option.isNone(home) || home.value === ""	Unreviewed: recorded by the 2026-11-13 audit
-src/surfaces/session.vibe	settingsDir	Option.isSome(xdg) && xdg.value !== ""	Unreviewed: recorded by the 2026-11-13 audit
+src/surfaces/session.vibe	activeSession	!validSessionCookie(decoded.origin, decoded.cookie)	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
+src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.value(configured.value) !== ""	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
+src/surfaces/session.vibe	readPending	pending.expiresAt <= (try Clock.currentTimeMillis)	Expiry: a pending device flow past its expiry is dropped
+src/surfaces/session.vibe	settingsDir	Option.isNone(home) || home.value === ""	Configuration: XDG_CONFIG_HOME wins, else HOME
+src/surfaces/session.vibe	settingsDir	Option.isSome(xdg) && xdg.value !== ""	Configuration: XDG_CONFIG_HOME wins, else HOME
 src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
 src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow
 src/surfaces/signin.vibe	safeSettings/callback	error instanceof SignInFailed	Variant test: a SignInFailed passes through; any other settings failure becomes one sentence
@@ -310,8 +306,6 @@ worker/Objects.vibe	controlTour	action === "pause"	Variant dispatch on the tour 
 worker/Objects.vibe	controlTour	action === "resume"	Variant dispatch on the tour control action, which the proved validTourStep and tour decisions admit
 worker/Objects.vibe	controlTour/callback	action === "pause"	Variant dispatch on the tour control action, which the proved validTourStep and tour decisions admit
 worker/Objects.vibe	controlTour/callback	action === "resume"	Variant dispatch on the tour control action, which the proved validTourStep and tour decisions admit
-worker/Objects.vibe	dispatcher/tour	started	Forwards whether the tour run started (the run object's answer)
-worker/Objects.vibe	dispatcher/tour	started	Forwards whether the tour run started (the run object's answer)
 worker/Objects.vibe	executionResult/callback	intent.flow === Reply._tag	Variant dispatch on the intent's flow
 worker/Objects.vibe	openWiki	opened	Forwards whether the wiki run opened (the run object's answer)
 worker/Objects.vibe	post	!Schema.is(PostBody)({ clientId, name, text })	Host boundary: Schema validation of the post body
