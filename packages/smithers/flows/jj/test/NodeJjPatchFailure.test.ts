@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { Jj, JjError } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
+import { gitBinary } from "./gitBinary.ts"
 
 const installed = (): boolean => {
   try {
@@ -17,7 +18,7 @@ const installed = (): boolean => {
   }
 }
 
-describe.skipIf(!installed())("NodeJj real-host patch normalization failure", () => {
+describe.skipIf(!installed() || gitBinary === undefined)("NodeJj real-host patch normalization failure", () => {
   it("returns a typed error and releases the lock for a later diff", async () => {
     const repository = mkdtempSync(join(tmpdir(), "flows-jj-patch-failure-"))
     const target = mkdtempSync(join(tmpdir(), "flows-jj-patch-recovery-"))
@@ -51,8 +52,8 @@ describe.skipIf(!installed())("NodeJj real-host patch normalization failure", ()
       execFileSync("jj", ["config", "unset", "--repo", key], { cwd: repository })
       const patch = await Effect.runPromise(jj.diff(empty.commitId, added.commitId))
       const options = { cwd: target, input: patch, encoding: "utf8" as const }
-      execFileSync("git", ["apply", "--check", "-"], options)
-      execFileSync("git", ["apply", "-"], options)
+      execFileSync(gitBinary!, ["apply", "--check", "-"], options)
+      execFileSync(gitBinary!, ["apply", "-"], options)
       expect(readFileSync(join(target, filename), "utf8")).toBe(contents)
     } finally {
       rmSync(target, { recursive: true, force: true })

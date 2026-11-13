@@ -17,10 +17,11 @@ import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { resolveJjBinary } from "../src/node/resolveJjBinary.ts"
 import { budgeted } from "./budgeted.ts"
+import { gitBinary } from "./gitBinary.ts"
 
 const realJj = resolveJjBinary()
 
-describe.skipIf(!realJj.executable)("NodeJj real-host patch race", () => {
+describe.skipIf(!realJj.executable || gitBinary === undefined)("NodeJj real-host patch race", () => {
   it("diffs the same @ even when an external jj operation advances it between calls", async () => {
     const root = mkdtempSync(join(tmpdir(), "flows-jj-patch-race-"))
     const repository = join(root, "repo")
@@ -85,8 +86,8 @@ exec "$JJ_RACE_REAL_BINARY" "$@"
       expect(patch).toContain("diff --git")
 
       const options = { cwd: target, input: patch, encoding: "utf8" as const }
-      execFileSync("/usr/bin/git", ["apply", "--check", "-"], options)
-      execFileSync("/usr/bin/git", ["apply", "-"], options)
+      execFileSync(gitBinary!, ["apply", "--check", "-"], options)
+      execFileSync(gitBinary!, ["apply", "-"], options)
       expect(readdirSync(target)).toEqual([earlyName])
       expect(readFileSync(join(target, earlyName), "utf8")).toBe(earlyContents)
     } finally {

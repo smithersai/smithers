@@ -1251,9 +1251,17 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
           const now = yield* workspaces([])
           const then = yield* workspaces([`--at-op=${operationId}`])
           if (now !== then) {
-            const recorded = new Set(then.split("\n"))
-            const changed = now.split("\n").filter((line) => line !== "" && !recorded.has(line))
-              .map((line) => line.slice(0, line.lastIndexOf(" ")))
+            const current = new Set(now.split("\n").filter((line) => line !== ""))
+            const recorded = new Set(then.split("\n").filter((line) => line !== ""))
+            const difference = (left: Set<string>, right: Set<string>) =>
+              [...left].filter((line) => !right.has(line))
+                .map((line) => line.slice(0, line.lastIndexOf(" ")))
+            const added = difference(current, recorded)
+            const removed = difference(recorded, current)
+            const changed = [
+              ...(added.length > 0 ? [`added or moved: ${added.join(", ")}`] : []),
+              ...(removed.length > 0 ? [`removed or moved: ${removed.join(", ")}`] : [])
+            ]
             return yield* Effect.fail(
               new JjError({
                 code: "conflict",
@@ -1261,7 +1269,7 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
                 method: "opRestore",
                 command: "jj op restore",
                 message: `jj opRestore: workspace(s) changed after operation ${operationId.slice(0, 12)}: ${
-                  changed.join(", ").slice(0, 400)
+                  changed.join("; ").slice(0, 400)
                 }`
               })
             )

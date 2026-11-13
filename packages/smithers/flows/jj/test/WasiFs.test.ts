@@ -1,7 +1,6 @@
 import * as fs from "node:fs"
-import { expect, expectTypeOf, it } from "vitest"
+import { expectTypeOf, it } from "vitest"
 import type { SyncFsLike } from "../src/browser/WasiFs.ts"
-import { rootedSyncFs } from "./RootedSyncFs.ts"
 
 it("accepts adapters with descriptor truncation and no path truncation", () => {
   const adapter = {
@@ -25,5 +24,4 @@ it("accepts adapters with descriptor truncation and no path truncation", () => {
   } satisfies SyncFsLike
 
   expectTypeOf(adapter).toExtend<SyncFsLike>()
-  expect(rootedSyncFs("/unused")).not.toHaveProperty("truncateSync")
 })

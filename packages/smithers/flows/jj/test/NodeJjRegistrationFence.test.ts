@@ -141,6 +141,38 @@ exec ${JSON.stringify(realJj)} "$@"
       expect(workspaces()).toEqual(["default", "early", "gone", "side"])
     }))
 
+  it.live("names a workspace forgotten since the recorded operation without restoring it", () =>
+    Effect.gen(function*() {
+      const root = yield* service(repository)
+      const snapshot = yield* root.snapshot()
+      yield* root.workspaceForget("gone")
+
+      const refused = yield* Effect.flip(root.opRestore!(snapshot.operationId!))
+
+      expect(refused).toMatchObject({ code: "conflict", method: "opRestore" })
+      expect(refused.message).toContain("removed or moved: gone")
+      expect(calls()).not.toMatch(/^op restore/m)
+      expect(workspaces()).toEqual(["default", "side"])
+    }))
+
+  it.live("names both sides of a workspace move since the recorded operation", () =>
+    Effect.gen(function*() {
+      const root = yield* service(repository)
+      const lane = yield* service(side)
+      const snapshot = yield* root.snapshot()
+      yield* Effect.promise(() => writeFile(join(side, "edit.txt"), "precious edit\n"))
+      yield* lane.snapshot()
+
+      const refused = yield* Effect.flip(root.opRestore!(snapshot.operationId!))
+
+      expect(refused).toMatchObject({ code: "conflict", method: "opRestore" })
+      expect(refused.message).toContain("added or moved: side")
+      expect(refused.message).toContain("removed or moved: side")
+      expect(calls()).not.toMatch(/^op restore/m)
+      expect(readFileSync(join(side, "edit.txt"), "utf8")).toBe("precious edit\n")
+      expect(workspaces()).toEqual(["default", "gone", "side"])
+    }))
+
   it.live("reports an unreadable repository store as a lock failure before running jj", () =>
     Effect.gen(function*() {
       const lane = yield* service(side)

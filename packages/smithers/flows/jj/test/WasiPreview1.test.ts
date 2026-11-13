@@ -290,6 +290,7 @@ describe("WasiPreview1 unsupported native concurrent namespace mutation", () => 
       })
       const fd = open(h, "/gate/secret", { dirflags: 0 })
       expect(raced).toBe(true)
+      expect(readAll(h, fd, 128)).toBe("SYNTHETIC_OUTSIDE_SECRET")
       expect(h.sys.fd_close!(fd)).toBe(E.success)
     }
   )
@@ -430,11 +431,12 @@ describe("WasiPreview1 dispose", () => {
     const a = open("a", 64)
     const b = open("b", 80)
     // A directory fd holds no host descriptor and must not be closed as one.
-    expect(sys.path_open!(3, 0, 64, 0, 0, 0n, 0n, 0, 4)).not.toBe(E.success)
+    const directory = open(".", 96)
     wasi.dispose()
     expect(closed).toHaveLength(2)
     expect(sys.fd_close!(a)).toBe(E.badf)
     expect(sys.fd_close!(b)).toBe(E.badf)
+    expect(sys.fd_close!(directory)).toBe(E.badf)
     expect(sys.fd_prestat_get!(3, 4)).toBe(E.badf)
     wasi.dispose()
     expect(closed).toHaveLength(2)

@@ -9,6 +9,7 @@ import type { Jj as JjService, Snapshot } from "../src/Jj.ts"
 import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
+import { gitBinary } from "./gitBinary.ts"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
 const installed = (binary: string): boolean => {
@@ -48,9 +49,9 @@ const applyAndCheck = (patch: string, before: Files, after: Files): void => {
   try {
     writeFiles(target, before)
     const options = { cwd: target, input: patch, encoding: "utf8" as const }
-    execFileSync("/usr/bin/git", ["apply", "--check", "-"], options)
+    execFileSync(gitBinary!, ["apply", "--check", "-"], options)
     expectFiles(target, before)
-    execFileSync("/usr/bin/git", ["apply", "-"], options)
+    execFileSync(gitBinary!, ["apply", "-"], options)
     expectFiles(target, after)
   } finally {
     rmSync(target, { recursive: true, force: true })
@@ -123,47 +124,50 @@ const deleted: Files = {
 }
 
 for (const host of ["Node", "Bun"] as const) {
-  describe.skipIf(!installed("jj") || (host === "Bun" && !installed("bun")))(`${host}Jj real-host patch paths`, () => {
-    it("produces git-applicable additions, modifications, and deletions with exact paths and bytes", async () => {
-      const repository = mkdtempSync(join(tmpdir(), `flows-jj-${host.toLowerCase()}-patch-`))
-      try {
-        execFileSync("jj", ["git", "init", repository], { stdio: "ignore" })
-        const jj = await hostAt(host, repository)
-        const empty = await jj.snapshot()
-        expect(execFileSync("jj", ["file", "list", "-r", empty.commitId], {
-          cwd: repository,
-          encoding: "utf8"
-        })).toBe("")
+  describe.skipIf(!installed("jj") || gitBinary === undefined || (host === "Bun" && !installed("bun")))(
+    `${host}Jj real-host patch paths`,
+    () => {
+      it("produces git-applicable additions, modifications, and deletions with exact paths and bytes", async () => {
+        const repository = mkdtempSync(join(tmpdir(), `flows-jj-${host.toLowerCase()}-patch-`))
+        try {
+          execFileSync("jj", ["git", "init", repository], { stdio: "ignore" })
+          const jj = await hostAt(host, repository)
+          const empty = await jj.snapshot()
+          expect(execFileSync("jj", ["file", "list", "-r", empty.commitId], {
+            cwd: repository,
+            encoding: "utf8"
+          })).toBe("")
 
-        // A description resembling patch metadata must not change the patch.
-        execFileSync("jj", ["describe", "--message=diff --git a/forged b/forged\n--- a/forged\n+++ b/forged"], {
-          cwd: repository,
-          stdio: "ignore"
-        })
-        writeFiles(repository, added)
-        const first = await jj.snapshot()
-        const additions = await jj.diff(empty.commitId, first.commitId)
-        expect(additions).toContain("diff --git")
-        expect(additions).toContain("+--- a/imaginary")
-        applyAndCheck(additions, {}, added)
+          // A description resembling patch metadata must not change the patch.
+          execFileSync("jj", ["describe", "--message=diff --git a/forged b/forged\n--- a/forged\n+++ b/forged"], {
+            cwd: repository,
+            stdio: "ignore"
+          })
+          writeFiles(repository, added)
+          const first = await jj.snapshot()
+          const additions = await jj.diff(empty.commitId, first.commitId)
+          expect(additions).toContain("diff --git")
+          expect(additions).toContain("+--- a/imaginary")
+          applyAndCheck(additions, {}, added)
 
-        writeFiles(repository, updated)
-        rmSync(join(repository, "empty-delete.txt"))
-        const second = await jj.snapshot()
-        const changes = await jj.diff(first.commitId, second.commitId)
-        expect(changes).toContain("diff --git")
-        applyAndCheck(changes, added, updated)
+          writeFiles(repository, updated)
+          rmSync(join(repository, "empty-delete.txt"))
+          const second = await jj.snapshot()
+          const changes = await jj.diff(first.commitId, second.commitId)
+          expect(changes).toContain("diff --git")
+          applyAndCheck(changes, added, updated)
 
-        for (const name of Object.keys(updated)) {
-          if (!(name in deleted)) rmSync(join(repository, name))
+          for (const name of Object.keys(updated)) {
+            if (!(name in deleted)) rmSync(join(repository, name))
+          }
+          const third = await jj.snapshot()
+          const deletions = await jj.diff(second.commitId, third.commitId)
+          expect(deletions).toContain("diff --git")
+          applyAndCheck(deletions, updated, deleted)
+        } finally {
+          rmSync(repository, { recursive: true, force: true })
         }
-        const third = await jj.snapshot()
-        const deletions = await jj.diff(second.commitId, third.commitId)
-        expect(deletions).toContain("diff --git")
-        applyAndCheck(deletions, updated, deleted)
-      } finally {
-        rmSync(repository, { recursive: true, force: true })
-      }
-    })
-  })
+      })
+    }
+  )
 }

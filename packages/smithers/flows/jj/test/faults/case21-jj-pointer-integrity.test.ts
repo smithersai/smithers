@@ -110,6 +110,7 @@ describe.skipIf(!jjInstalled)("case21 jj pointer integrity", () => {
     jjText(["commit", "--message=step"])
 
     // The falsifier: the change id follows the rewrite and restores the edit.
+    writeFileSync(file, "c")
     await run(Effect.flatMap(Jj, (jj) => jj.restore(before.changeId)))
     expect(readFileSync(file, "utf8")).toBe("b")
 

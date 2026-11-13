@@ -196,14 +196,32 @@ describe.skipIf(!jjInstalled)("NodeJj against a repository its occupant controls
       const redirected = yield* Effect.flip(jj.status())
       expect(isJjError(redirected) && redirected.message).toContain(join(decoy, "config.toml"))
 
-      // A pointer this process cannot read is jj's to report, not a refusal.
-      chmodSync(pointer, 0o000)
-      const unreadable = yield* Effect.flip(jj.status())
-      chmodSync(pointer, 0o644)
-      expect(isJjError(unreadable) && unreadable.message).not.toContain("unmigrated repository config")
       rmSync(join(directory, "decoy"), { recursive: true, force: true })
       rmSync(lane, { recursive: true, force: true })
     }).pipe(Effect.provideService(NodeJj.StartupTimeoutMs, 60_000)))
+
+  it.effect.skipIf(process.getuid?.() === 0 || process.platform === "win32")(
+    "refuses an unreadable repository pointer at the lock fence before spawning jj",
+    () =>
+      Effect.gen(function*() {
+        const lane = join(directory, "unreadable-pointer-lane")
+        const pointer = join(lane, ".jj", "repo")
+        yield* Effect.promise(async () => {
+          await mkdir(join(lane, ".jj"), { recursive: true })
+          await writeFile(pointer, join(repository, ".jj", "repo"))
+        })
+        const jj = yield* Effect.provide(Jj, NodeJj.layerAt(lane))
+        // The lock fence reads the pointer before repository config or the CLI.
+        chmodSync(pointer, 0o000)
+        try {
+          const unreadable = yield* Effect.flip(jj.status())
+          expect(unreadable).toMatchObject({ method: "status", cause: { code: "EACCES" } })
+          expect(unreadable.message).toContain("repository lock failed")
+        } finally {
+          chmodSync(pointer, 0o644)
+        }
+      }).pipe(Effect.provideService(NodeJj.StartupTimeoutMs, 60_000))
+  )
 
   it.effect("never runs a signing program or journals template output once jj has imported the config", () =>
     Effect.gen(function*() {

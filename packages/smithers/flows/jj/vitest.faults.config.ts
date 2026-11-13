@@ -2,7 +2,7 @@
  * The fault tier: the Jujutsu pointer cases.
  *
  * The case here runs the real `jj` binary against a throwaway repository and
- * restores by change id. `jj` takes a workspace lock, so the tier runs
+ * restores by commit id. `jj` takes a workspace lock, so the tier runs
  * serially.
  *
  * Coverage is off. The work these cases do happens in child processes this one

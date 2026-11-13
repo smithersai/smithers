@@ -185,7 +185,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       const refused = yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.opRestore!(snapshot.operationId!))))
 
       expect(isJjError(refused) && refused.code).toBe("conflict")
-      expect(refused.message).toContain("later")
+      expect(refused.message).toContain("added or moved: later")
       expect(execFileSync("jj", ["workspace", "list"], { cwd: repository, encoding: "utf8" })).toContain("later")
       yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("later")))
       yield* Effect.promise(() => rm(lane, { recursive: true, force: true }))
