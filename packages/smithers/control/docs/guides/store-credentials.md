@@ -139,6 +139,11 @@ from `node:*` and runs unmodified on a server. `Options.key` is 32 raw bytes,
 base64-encoded, held redacted so it cannot be printed or serialized by
 accident.
 
+AES operations and random nonces use Effect's `WebCrypto` reference from
+`effect/crypto/WebCrypto`. It defaults to the host's Web Crypto API; provide
+`WebCrypto.layer(crypto)` around the cipher's construction to select
+another implementation without changing process globals.
+
 A host without Web Crypto, an old runtime or a locked-down worker, fails with
 the typed `Unavailable` rather than a defect. A key that is not 32
 base64-encoded bytes fails with `InvalidInput`.

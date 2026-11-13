@@ -39,23 +39,21 @@ import { memoryRuntime } from "./TestStack.ts"
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
 const sourceRoot = join(packageRoot, "src")
 
-const sourceFiles = (directory: string): ReadonlyArray<string> =>
+const files = (directory: string, extension: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
-      ? sourceFiles(join(directory, entry.name))
-      : entry.name.endsWith(".ts")
+      ? files(join(directory, entry.name), extension)
+      : entry.isFile() && entry.name.endsWith(extension)
       ? [join(directory, entry.name)]
       : []
   )
 
-const repositoryRoot = join(packageRoot, "..", "..")
+const repositoryRoot = join(packageRoot, "..", "..", "..")
 
 /** The prose this package writes. */
 const proseFiles = (): ReadonlyArray<string> => [
   join(packageRoot, "README.md"),
-  ...readdirSync(join(packageRoot, "docs"), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => join(packageRoot, "docs", entry.name))
+  ...files(join(packageRoot, "docs"), ".md")
 ]
 
 /**
@@ -110,11 +108,18 @@ describe("attributed pause is not part of 1.0.0-rc.0", () => {
   })
 
   it("mentions pause nowhere in the published source", () => {
-    const offenders = sourceFiles(sourceRoot).filter((file) => /\bpause/i.test(readFileSync(file, "utf8")))
+    const offenders = files(sourceRoot, ".ts").filter((file) => /\bpause/i.test(readFileSync(file, "utf8")))
     expect(offenders.map((file) => file.slice(sourceRoot.length + 1))).toEqual([])
   })
 
-  it("offers pause nowhere in the package's prose or its generated API page", () => {
+  it("includes nested guides and concepts in the prose guard", () => {
+    expect(proseFiles()).toContain(join(packageRoot, "docs/api.md"))
+    expect(proseFiles()).toContain(join(packageRoot, "docs/guides/cancel-and-resume.md"))
+    expect(proseFiles()).toContain(join(packageRoot, "docs/concepts/ownership.md"))
+    expect(JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8")).name).toBe("smithers")
+  })
+
+  it("offers pause nowhere in the package's prose", () => {
     const offenders = proseFiles().filter((file) => offeredPause.test(readFileSync(file, "utf8")))
     expect(offenders.map((file) => relative(repositoryRoot, file))).toEqual([])
   })

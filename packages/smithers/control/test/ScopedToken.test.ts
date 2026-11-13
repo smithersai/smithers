@@ -1,6 +1,8 @@
 import { Effect, Layer } from "effect"
+import * as WebCrypto from "effect/crypto/WebCrypto"
 import { RpcTest } from "effect/rpc"
-import { describe, expect, it, vi } from "vitest"
+import { TestClock } from "effect/testing"
+import { describe, expect, it } from "vitest"
 import { Unauthorized } from "../src/ControlError.ts"
 import { anyAuthenticator, bearerAuthenticator, ControlRpcs, layerAuth } from "../src/ControlRpcs.ts"
 import * as ControlServer from "../src/ControlServer.ts"
@@ -39,22 +41,33 @@ describe("minting and verifying", () => {
     expect(await Effect.runPromise(ScopedToken.verify(key, token, 60_999))).toEqual(claims)
   })
 
-  it("uses the host clock when minting without a clock override", async () => {
-    const before = Date.now()
-    const { claims } = await minted({ now: undefined })
-    expect(claims.iat).toBeGreaterThanOrEqual(before)
-    expect(claims.iat).toBeLessThanOrEqual(Date.now())
+  it("uses the Effect clock when minting without a clock override", async () => {
+    const { claims } = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.adjust(1234)
+        return yield* ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 60_000 })
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+    expect(claims.iat).toBe(1234)
+    expect(claims.exp).toBe(61_234)
   })
 
-  it("dies when the host has no Web Crypto", async () => {
-    vi.stubGlobal("crypto", undefined)
-    try {
-      await expect(Effect.runPromise(ScopedToken.verify(key, "smt1.e30.AA", 0))).rejects.toThrow(
-        "Web Crypto is not available"
+  it.each([undefined, {}])("dies when the injected Web Crypto is %s", async (crypto) => {
+    const absent = WebCrypto.layer(crypto as Crypto)
+    await expect(Effect.runPromise(
+      ScopedToken.verify(key, "smt1.e30.AA", 0).pipe(Effect.provide(absent))
+    )).rejects.toThrow("Web Crypto is not available")
+    await expect(Effect.runPromise(
+      ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 60_000 }).pipe(Effect.provide(absent))
+    )).rejects.toThrow("Web Crypto is not available")
+  })
+
+  it("dies with an explicit error when the injected host has no secure randomness", async () => {
+    await expect(Effect.runPromise(
+      ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 60_000 }).pipe(
+        Effect.provide(WebCrypto.layer({ subtle: globalThis.crypto.subtle } as Crypto))
       )
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    )).rejects.toThrow("Web Crypto is not available")
   })
 
   it("gives two tokens of the same grant different identities", async () => {
@@ -299,14 +312,20 @@ describe("the authenticator", () => {
     expect(refusals[3]!.message).toBe("The scoped token has expired")
   })
 
-  it("stamps the host clock when the composition names none", async () => {
-    const { token } = await minted({ now: () => Date.now() })
-    const before = Date.now()
-    const principal = await Effect.runPromise(
-      ScopedToken.authenticator({ key, principal: scoped }).authenticate({ authorization: `Bearer ${token}` })
+  it("stamps and expires against the Effect clock when the composition names none", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const { token } = yield* ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 2_000 })
+        const authenticator = ScopedToken.authenticator({ key, principal: scoped })
+        const headers = { authorization: `Bearer ${token}` }
+        yield* TestClock.adjust(1999)
+        expect(yield* authenticator.authenticate(headers)).toEqual({ ...scoped, stampedAt: 1999 })
+        yield* TestClock.adjust(1)
+        const error = yield* Effect.flip(authenticator.authenticate(headers))
+        expect(error).toBeInstanceOf(Unauthorized)
+        expect(error.message).toBe("The scoped token has expired")
+      }).pipe(Effect.provide(TestClock.layer()))
     )
-    expect(principal.stampedAt).toBeGreaterThanOrEqual(before)
-    expect(principal.stampedAt).toBeLessThanOrEqual(Date.now())
   })
 })
 

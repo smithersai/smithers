@@ -22,7 +22,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { Control, type Service as ControlService } from "../src/Control.ts"
-import { ClaimLost, PersistenceError, PlanDigestMismatch, RunNotFound } from "../src/ControlError.ts"
+import { ClaimLost, InvalidInput, PersistenceError, PlanDigestMismatch, RunNotFound } from "../src/ControlError.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import * as ControlLive from "../src/ControlLive.ts"
 import { ControlRuntime, type RunQuery, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
@@ -1340,13 +1340,14 @@ describe("SqlControlRuntime", () => {
     const observed = await twoOwners((first, second) =>
       Effect.gen(function*() {
         yield* first.plan({ flowId: "system/test", input: { suite: "one" }, idempotencyKey: "plan:reused" })
-        return yield* Effect.exit(
+        return yield* Effect.flip(
           second.plan({ flowId: "system/test", input: { suite: "two" }, idempotencyKey: "plan:reused" })
         )
       })
     )
 
-    expect(observed._tag).toBe("Failure")
+    expect(observed).toBeInstanceOf(InvalidInput)
+    expect((observed as InvalidInput).issue).toBe("idempotency key plan:reused was used for another plan")
   })
 
   it("owns no Node imports", async () => {

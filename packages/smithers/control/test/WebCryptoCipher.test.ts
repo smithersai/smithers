@@ -5,6 +5,7 @@
  * what a browser host uses.
  */
 import { Cause, Effect, Exit, Redacted } from "effect"
+import * as WebCrypto from "effect/crypto/WebCrypto"
 import { describe, expect, it } from "vitest"
 import * as CredentialCipher from "../src/CredentialCipher.ts"
 import * as WebCryptoCipher from "../src/WebCryptoCipher.ts"
@@ -149,28 +150,21 @@ describe("WebCryptoCipher", () => {
     expect(error.message).toContain("malformed")
   })
 
-  it("reports unavailable key material on a host without Web Crypto", async () => {
-    const present = globalThis.crypto
-    try {
-      Object.defineProperty(globalThis, "crypto", { value: undefined, configurable: true })
-      expectUnavailable(await failureOf(WebCryptoCipher.make({ key })))
-    } finally {
-      Object.defineProperty(globalThis, "crypto", { value: present, configurable: true })
-    }
+  it.each([undefined, {}])("reports unavailable key material when injected Web Crypto is %s", async (crypto) => {
+    expectUnavailable(
+      await failureOf(
+        WebCryptoCipher.make({ key }).pipe(Effect.provide(WebCrypto.layer(crypto as Crypto)))
+      )
+    )
   })
 
-  it("reports unavailable key material on a host without a secure random source", async () => {
-    const present = globalThis.crypto
-    try {
-      const cipher = await Effect.runPromise(WebCryptoCipher.make({ key }).pipe(Effect.orDie))
-      Object.defineProperty(globalThis, "crypto", {
-        value: { subtle: present.subtle },
-        configurable: true
-      })
-      expectUnavailable(await failureOf(cipher.seal(Redacted.make("x"), context)))
-    } finally {
-      Object.defineProperty(globalThis, "crypto", { value: present, configurable: true })
-    }
+  it("retains the injected random source after construction leaves its provider", async () => {
+    const cipher = await Effect.runPromise(
+      WebCryptoCipher.make({ key }).pipe(
+        Effect.provide(WebCrypto.layer({ subtle: globalThis.crypto.subtle } as Crypto))
+      )
+    )
+    expectUnavailable(await failureOf(cipher.seal(Redacted.make("x"), context)))
   })
 
   it("provides the cipher as a layer", async () => {

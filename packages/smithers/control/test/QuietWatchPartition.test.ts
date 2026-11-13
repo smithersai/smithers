@@ -14,6 +14,7 @@ for (const scenario of ["existing", "empty", "new", "race", "new-race"] as const
     const pageRead = Deferred.makeUnsafe<void>()
     const releasePage = Deferred.makeUnsafe<void>()
     const notifications = Deferred.makeUnsafe<PubSub.PubSub<JournalEvent.Entry>>()
+    const subscribed = Deferred.makeUnsafe<void>()
     let holdPage = false
     const journal = Layer.effect(
       Journal.Journal,
@@ -24,7 +25,7 @@ for (const scenario of ["existing", "empty", "new", "race", "new-race"] as const
         yield* Deferred.succeed(notifications, dropped)
         return Journal.make({
           ...actual,
-          changes: PubSub.subscribe(dropped),
+          changes: PubSub.subscribe(dropped).pipe(Effect.tap(() => Deferred.succeed(subscribed, undefined))),
           entries: (options) =>
             Effect.gen(function*() {
               const page = yield* actual.entries(options)
@@ -88,17 +89,23 @@ for (const scenario of ["existing", "empty", "new", "race", "new-race"] as const
             after: JournalEvent.Seq.make(scenario === "race" ? 0 : 1),
             limit: 1
           })
-          yield* PubSub.publish(yield* Deferred.await(notifications), page.entries[0]!)
+          const dropped = yield* Deferred.await(notifications)
+          yield* Deferred.await(subscribed)
+          yield* PubSub.publish(dropped, page.entries[0]!)
           if (scenario === "race") {
             yield* TestDatabase.until(Effect.sync(() => kinds.includes("control.test.final")))
           } else {
-            // Main's downstream marker keeps the live notice behind claimed history.
+            // Let the tail take the notice while claimed history is held.
+            yield* TestDatabase.until(PubSub.isEmpty(dropped))
+            yield* Effect.yieldNow
             expect(kinds).not.toContain("control.test.live")
           }
           yield* Deferred.succeed(releasePage, undefined)
           yield* TestDatabase.until(observedClock.scheduled(3000))
         }
-        yield* TestDatabase.until(Effect.sync(() => kinds.includes("control.test.final")))
+        yield* TestDatabase.until(
+          Effect.sync(() => kinds.includes(scenario === "new-race" ? "control.test.live" : "control.test.final"))
+        )
         if (scenario === "existing") {
           yield* TestDatabase.until(observedClock.scheduled(3000))
           yield* emit("control.test.next")
@@ -109,8 +116,8 @@ for (const scenario of ["existing", "empty", "new", "race", "new-race"] as const
         yield* Fiber.interrupt(reader)
         yield* Fiber.interrupt(adjusted)
         if (scenario === "new-race") {
-          expect(kinds.slice().sort()).toEqual(
-            ["control.test.initial", "control.test.final", "control.test.prior", "control.test.live"].sort()
+          expect(kinds).toEqual(
+            ["control.test.initial", "control.test.final", "control.test.prior", "control.test.live"]
           )
         } else {expect(kinds).toEqual(
             scenario === "empty" ? ["control.test.final"] : scenario === "existing"

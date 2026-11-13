@@ -14,13 +14,15 @@
  * scope words so that what it authorizes is readable off the token itself and
  * does not change when a scope grows.
  *
- * Web Crypto does the signing, so the same module runs on Node, Bun, and in a
- * browser that holds a token.
+ * Effect's WebCrypto reference supplies signing and randomness; its Clock
+ * supplies time unless an explicit now override is passed. Both can be
+ * provided without replacing process globals.
  *
  * @since 1.0.0
  */
 
-import { Effect, Result, Schema } from "effect"
+import { Clock, Effect, Result, Schema } from "effect"
+import * as WebCrypto from "effect/crypto/WebCrypto"
 import { Base64Url, Hex } from "effect/encoding"
 import { Unauthorized } from "./ControlError.ts"
 import { type Authenticator, bearerCredential, type Call } from "./ControlRpcs.ts"
@@ -131,14 +133,23 @@ const encodeClaims = Schema.encodeUnknownSync(Claims)
 const decodeClaims = Schema.decodeUnknownResult(Claims)
 const encoder = new TextEncoder()
 
-const subtle = (): SubtleCrypto => {
-  const available = (globalThis.crypto as Crypto | undefined)?.subtle
-  if (available === undefined) throw new Error("Web Crypto is not available on this host")
-  return available
-}
+const subtle = (): Effect.Effect<SubtleCrypto> =>
+  WebCrypto.WebCrypto.use((crypto) =>
+    Effect.sync(() => {
+      if (crypto?.subtle === undefined) throw new Error("Web Crypto is not available on this host")
+      return crypto.subtle
+    })
+  )
 
-const hmacKey = (key: string, usage: "sign" | "verify") =>
-  subtle().importKey("raw", encoder.encode(key), { name: "HMAC", hash: "SHA-256" }, false, [usage])
+const randomId = WebCrypto.WebCrypto.use((crypto) =>
+  Effect.sync(() => {
+    if (crypto?.getRandomValues === undefined) throw new Error("Web Crypto is not available on this host")
+    return Hex.encode(crypto.getRandomValues(new Uint8Array(12)))
+  })
+)
+
+const hmacKey = (crypto: SubtleCrypto, key: string, usage: "sign" | "verify") =>
+  crypto.importKey("raw", encoder.encode(key), { name: "HMAC", hash: "SHA-256" }, false, [usage])
 
 /**
  * Whether a bearer credential is spelled as a scoped token.
@@ -168,14 +179,15 @@ export const procedures = (
  * @since 1.0.0
  */
 export const mint = (options: MintOptions): Effect.Effect<Minted> =>
-  Effect.suspend(() => {
-    if (options.key.length === 0) return Effect.die(new Error("A scoped token needs a non-empty signing key"))
-    if (options.scopes.length === 0) return Effect.die(new Error("A scoped token needs at least one scope"))
+  Effect.gen(function*() {
+    if (options.key.length === 0) return yield* Effect.die(new Error("A scoped token needs a non-empty signing key"))
+    if (options.scopes.length === 0) return yield* Effect.die(new Error("A scoped token needs at least one scope"))
     if (!Number.isFinite(options.ttlMillis) || options.ttlMillis <= 0) {
-      return Effect.die(new Error("A scoped token needs a positive lifetime"))
+      return yield* Effect.die(new Error("A scoped token needs a positive lifetime"))
     }
-    const now = options.now?.() ?? Date.now()
-    const id = Hex.encode(crypto.getRandomValues(new Uint8Array(12)))
+    const now = options.now === undefined ? yield* Clock.currentTimeMillis : options.now()
+    const crypto = yield* subtle()
+    const id = yield* randomId
     const claims: Claims = {
       v: 1,
       id,
@@ -186,9 +198,9 @@ export const mint = (options: MintOptions): Effect.Effect<Minted> =>
       exp: now + Math.floor(options.ttlMillis)
     }
     const body = Base64Url.encode(JSON.stringify(encodeClaims(claims)))
-    return Effect.promise(async () => {
-      const key = await hmacKey(options.key, "sign")
-      const signature = new Uint8Array(await subtle().sign("HMAC", key, encoder.encode(`${prefix}.${body}`)))
+    return yield* Effect.promise(async () => {
+      const key = await hmacKey(crypto, options.key, "sign")
+      const signature = new Uint8Array(await crypto.sign("HMAC", key, encoder.encode(`${prefix}.${body}`)))
       return { token: `${prefix}.${body}.${Base64Url.encode(signature)}`, claims }
     })
   })
@@ -212,10 +224,13 @@ export const verify = (key: string, token: string, now: number): Effect.Effect<C
     }
     const signature = Base64Url.decode(parts[2]!)
     if (Result.isFailure(signature)) return refused("A valid scoped token is required")
-    return Effect.promise(async () => {
-      const hmac = await hmacKey(key, "verify")
-      return subtle().verify("HMAC", hmac, new Uint8Array(signature.success), encoder.encode(`${prefix}.${parts[1]}`))
-    }).pipe(
+    return subtle().pipe(
+      Effect.flatMap((crypto) =>
+        Effect.promise(async () => {
+          const hmac = await hmacKey(crypto, key, "verify")
+          return crypto.verify("HMAC", hmac, new Uint8Array(signature.success), encoder.encode(`${prefix}.${parts[1]}`))
+        })
+      ),
       Effect.flatMap((valid) => {
         if (!valid) return refused("A valid scoped token is required")
         const text = Base64Url.decodeString(parts[1]!)
@@ -354,16 +369,18 @@ export const authenticator = (options: AuthenticatorOptions): Authenticator => (
   authenticate: (headers, call) => {
     const credential = bearerCredential(headers)
     if (credential === undefined || !isScopedToken(credential)) return refused("A valid scoped token is required")
-    const now = options.now?.() ?? Date.now()
-    return verify(options.key, credential, now).pipe(
-      Effect.flatMap((claims) =>
-        call === undefined ? Effect.void : admits(claims, call, options.flows).pipe(
-          Effect.flatMap((admitted) =>
-            admitted ? Effect.void : refused(`The scoped token does not authorize ${call.rpc}`)
+    return Effect.gen(function*() {
+      const now = options.now === undefined ? yield* Clock.currentTimeMillis : options.now()
+      return yield* verify(options.key, credential, now).pipe(
+        Effect.flatMap((claims) =>
+          call === undefined ? Effect.void : admits(claims, call, options.flows).pipe(
+            Effect.flatMap((admitted) =>
+              admitted ? Effect.void : refused(`The scoped token does not authorize ${call.rpc}`)
+            )
           )
-        )
-      ),
-      Effect.as({ ...options.principal, stampedAt: now })
-    )
+        ),
+        Effect.as({ ...options.principal, stampedAt: now })
+      )
+    })
   }
 })

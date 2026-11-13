@@ -18,15 +18,14 @@ import * as ObservedClock from "./ObservedClock.ts"
  * it could not append instead of reporting a health it never proved.
  */
 import { Effect, Fiber } from "effect"
-import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { InvalidInput, PersistenceError } from "../src/ControlError.ts"
+import * as ControlExecutor from "../src/ControlExecutor.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import * as Monitor from "../src/Monitor.ts"
 import { durable, type DurableStack } from "./DurableStack.ts"
-import { park } from "./Park.ts"
 
 const run = <A, E>(body: Effect.Effect<A, E, DurableStack>): Promise<A> =>
   Effect.runPromise(body.pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie))
@@ -43,13 +42,6 @@ const run = <A, E>(body: Effect.Effect<A, E, DurableStack>): Promise<A> =>
 const runOnTestClock = <A, E>(body: Effect.Effect<A, E, DurableStack>): Promise<A> =>
   Effect.runPromise(
     body.pipe(Effect.provide(durable()), Effect.scoped, Effect.provide(TestClock.layer()), Effect.orDie)
-  )
-
-/** Parks a run on a reason the way the engine parks one. */
-const parkOn = (runId: string, reason: string) =>
-  Effect.flatMap(
-    Effect.service(SqlClient.SqlClient),
-    (sql) => sql`UPDATE flows_runs SET waiting_reason = ${reason} WHERE run_id = ${runId}`.pipe(Effect.orDie)
   )
 
 /** Plans, approves, and starts one control-owned run. */
@@ -140,16 +132,56 @@ describe("Monitor.run defaults", () => {
     expect(observed.after.status).toBe("failed")
   })
 
-  it("counts a trampoline against the round bound it was given", async () => {
-    const report = await run(Effect.gen(function*() {
-      const runtime = yield* ControlRuntime
-      const runId = yield* start("round-bound")
-      yield* park(runtime, runId)
-      yield* parkOn(runId, "released")
-      return yield* Monitor.run({ runId, intervalMs: 0, maxChecks: 2, stallBeats: 99, roundBound: 1 })
-    }))
+  it.each([0, 1])("classifies trampoline round %i against a bound of one", async (roundOrdinal) => {
+    const report = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runId = yield* start("round-bound")
+        return yield* Monitor.run({ runId, intervalMs: 0, maxChecks: 2, stallBeats: 99, roundBound: 1 })
+      }).pipe(
+        Effect.provide(durable({
+          executor: ControlExecutor.makeNoop({
+            readExecution: () => Effect.succeed({ _tag: "Observed", status: "running", roundOrdinal })
+          })
+        })),
+        Effect.scoped,
+        Effect.orDie
+      )
+    )
 
-    expect(report.beats).toHaveLength(2)
+    expect(report.beats.map((beat) => beat.health)).toEqual(
+      roundOrdinal === 0 ? ["healthy", "healthy"] : ["runaway-loop", "runaway-loop"]
+    )
+  })
+
+  it("cancels a live runaway through the default remedy", async () => {
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const runId = yield* start("runaway-cancel")
+        const report = yield* Monitor.run({
+          runId,
+          intervalMs: 0,
+          maxChecks: 1,
+          roundBound: 1,
+          autoHeal: ["runaway-loop"]
+        })
+        return { report, after: yield* runtime.getRun(runId) }
+      }).pipe(
+        Effect.provide(durable({
+          executor: ControlExecutor.makeNoop({
+            readExecution: () => Effect.succeed({ _tag: "Observed", status: "running", roundOrdinal: 1 })
+          })
+        })),
+        Effect.scoped,
+        Effect.orDie
+      )
+    )
+
+    expect(observed.report.beats).toHaveLength(1)
+    expect(observed.report.beats[0]?.health).toBe("runaway-loop")
+    expect(observed.report.beats[0]?.healed).toBe("cancel")
+    expect(observed.report.beats[0]?.receipt).toMatchObject({ _tag: "Terminal", status: "cancelled" })
+    expect(observed.after.status).toBe("cancelled")
   })
 
   it.each(

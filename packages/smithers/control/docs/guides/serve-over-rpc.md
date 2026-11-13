@@ -162,6 +162,16 @@ const auth = ControlRpcs.layerAuth(ControlRpcs.anyAuthenticator([
 ]))
 ```
 
+`ScopedToken.mint`, `verify`, and `authenticator` use Effect's `WebCrypto`
+reference from `effect/crypto/WebCrypto` for signing, verification, and secure
+random token identities. It defaults to the host's Web Crypto API and accepts
+an injected implementation through `WebCrypto.layer(crypto)`. Provide the
+layer around the Effect that mints or verifies a token; for an authenticator,
+provide it around the server or handler execution that authenticates calls.
+Minting and
+authentication read Effect's `Clock` unless the `now` option supplies an
+explicit override; expiry is refused at `now >= exp`.
+
 A custom authenticator is an object with one method:
 
 ```ts

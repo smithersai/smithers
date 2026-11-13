@@ -1,9 +1,9 @@
 /**
  * AES-256-GCM credential encryption over the Web Crypto API.
  *
- * One adapter serves both hosts the project supports: `globalThis.crypto.subtle`
- * is the browser's own API and has been Node's since v19, so this module
- * imports nothing from `node:*` and still runs unmodified on the server. A host
+ * Effect's WebCrypto reference supplies AES and secure random nonces. It
+ * defaults to the host's Web Crypto API and is captured at construction for
+ * both encryption and randomness. This module imports nothing from `node:*`. A host
  * without Web Crypto, such as an old runtime or a locked-down worker, fails
  * with the typed `Unavailable`, never a defect. A key that is not 32
  * base64-encoded bytes fails with `InvalidInput`. A record that does not open
@@ -20,6 +20,7 @@
 
 import { canonicalize } from "@smthrs/canonical"
 import { Effect, Layer, Redacted } from "effect"
+import * as WebCrypto from "effect/crypto/WebCrypto"
 import { InvalidInput, PersistenceError, type Unavailable } from "./ControlError.ts"
 import * as CredentialCipher from "./CredentialCipher.ts"
 
@@ -40,17 +41,15 @@ const fromBase64 = (value: string): Uint8Array<ArrayBuffer> => {
   return bytes
 }
 
-const subtle = (): Effect.Effect<SubtleCrypto, Unavailable> =>
+const subtle = (available: Crypto | undefined): Effect.Effect<SubtleCrypto, Unavailable> =>
   Effect.suspend(() => {
-    const available = globalThis.crypto as Crypto | undefined
     return available?.subtle === undefined
       ? Effect.fail(CredentialCipher.unavailable())
       : Effect.succeed(available.subtle)
   })
 
-const randomNonce = (): Effect.Effect<Uint8Array<ArrayBuffer>, Unavailable> =>
+const randomNonce = (available: Crypto | undefined): Effect.Effect<Uint8Array<ArrayBuffer>, Unavailable> =>
   Effect.suspend(() => {
-    const available = globalThis.crypto as Crypto | undefined
     return available?.getRandomValues === undefined
       ? Effect.fail(CredentialCipher.unavailable())
       : Effect.succeed(available.getRandomValues(new Uint8Array(nonceBytes)))
@@ -105,7 +104,8 @@ export interface Options {
  */
 export const make = (options: Options): Effect.Effect<CredentialCipher.Service, Unavailable | InvalidInput> =>
   Effect.gen(function*() {
-    const crypto = yield* subtle()
+    const available = yield* WebCrypto.WebCrypto
+    const crypto = yield* subtle(available)
     const raw = yield* Effect.try({
       try: () => fromBase64(Redacted.value(options.key)),
       catch: invalidKey
@@ -119,7 +119,7 @@ export const make = (options: Options): Effect.Effect<CredentialCipher.Service, 
     return CredentialCipher.make({
       seal: Effect.fn("WebCryptoCipher.seal")(function*(plaintext, context) {
         const additionalData = yield* encodeContext(context)
-        const nonce = yield* randomNonce()
+        const nonce = yield* randomNonce(available)
         const ciphertext = yield* Effect.tryPromise({
           try: () =>
             crypto.encrypt(
