@@ -1,22 +1,26 @@
 // The shipped mock agent takes the same registered actions and issue flows as the person. No backend or model.
 import { it, expect } from "@effect/vitest"
 import { FetchHttpClient } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockJournal } from "../src/core/MockJournal.vibe"
-import type { Event } from "../src/core/conversation.vibe"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { replyIdOf } from "../src/core/tourDecision.vibe"
 import { BrowserFactory } from "../src/web/backend.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
-/** Read the exact post's terminal reply, bounded independently of the benchmark runner. */
+/** The exact post's terminal reply, bounded independently of the benchmark runner. The page has no read: the
+ * conversation is what its events build. */
 effect function answer(factory: Factory.Shape, room: string) {
-  const post = (try factory.read(room, 0)).entries.find(entry => entry.clientId === "a")!
+  let post = ""
   const events = Array.from(try Stream.runCollect(factory.events(room, 0).pipe(
-    Stream.takeUntil(event => (event.type === "ReplyFinished" || event.type === "ReplyFailed") && event.id === replyIdOf(post.id)),
+    Stream.takeUntil(event => {
+      if (post === "" && event.type === "Posted" && event.clientId === "a") post = event.id
+      return (event.type === "ReplyFinished" || event.type === "ReplyFailed") && post !== "" && event.id === replyIdOf(post)
+    }),
     Stream.timeout("15 seconds"),
   )))
-  const reply = (try factory.read(room, 0)).entries.find(entry => entry.inReplyTo === post.id)!
+  const reply = events.reduce(apply, empty).entries.find(entry => entry.inReplyTo === post)!
   try Effect.try(() => { expect(reply.done).toBe(true); expect(reply.error).toBe("") })
   return { text: reply.text, events }
 }
@@ -106,18 +110,18 @@ it("retained mock replies fail visibly and retained tours resume without losing 
       provide mockFactoryFor("contributor").pipe(Layer.provide(Layer.succeed(MockJournal, journal))) {
         const factory = try Factory
         try factory.post("demo-interrupted", "fresh", "Benchmark", "install")
-        const post = (try factory.read("demo-interrupted", 0)).entries.find(entry => entry.clientId === "fresh")!
+        const post = (try (try ConversationRead).read("demo-interrupted", 0)).entries.find(entry => entry.clientId === "fresh")!
         const events = Array.from(try Stream.runCollect(factory.events("demo-interrupted", 0).pipe(
           Stream.takeUntil(event => event.type === "ReplyFinished" && event.id === replyIdOf(post.id)), Stream.timeout("15 seconds"),
         )))
-        const snapshot = try factory.read("demo-interrupted", 0)
+        const snapshot = try (try ConversationRead).read("demo-interrupted", 0)
         const old = snapshot.entries.find(entry => entry.id === "r1")!
         const next = snapshot.entries.find(entry => entry.inReplyTo === post.id)!
         const walked = Array.from(try Stream.runCollect(factory.events("tour-retained", 0).pipe(Stream.takeUntil(event => event.type === "WalkthroughDriven"), Stream.timeout("15 seconds"))))
         try factory.endTour("tour-retained")
         const toured = Array.from(try Stream.runCollect(factory.events("tour-retained", 0).pipe(Stream.takeUntil(event => event.type === "TourEnded"), Stream.timeout("15 seconds"))))
         try Stream.runDrain(factory.events("demo-ownerless", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" && event.id === "r1"), Stream.timeout("15 seconds")))
-        const ownerless = (try factory.read("demo-ownerless", 0)).entries.find(entry => entry.inReplyTo === "m1")!
+        const ownerless = (try (try ConversationRead).read("demo-ownerless", 0)).entries.find(entry => entry.inReplyTo === "m1")!
         const saved = try Ref.get(journals)
         try Effect.try(() => {
           expect(old).toMatchObject({ text: "Half", done: true, error: "The agent failed. Try again." })
@@ -180,7 +184,7 @@ it("a restored journal with a repeated event number keeps only the events its re
       const factory = try Factory
       // Following the conversation opens and restores it, as the page does; a bare read opens nothing.
       const replayed = Array.from(try Stream.runCollect(factory.events("demo-trimmed", 0).pipe(Stream.takeUntil(event => event.seq === 3), Stream.timeout("15 seconds"))))
-      const restored = try factory.read("demo-trimmed", 0)
+      const restored = try (try ConversationRead).read("demo-trimmed", 0)
       try factory.post("demo-trimmed", "fresh", "Benchmark", "fourth")
       const written = (try Ref.get(journals)).get("demo-trimmed") ?? []
       try Effect.try(() => {

@@ -10,8 +10,8 @@ import { MockFactory } from "../src/core/MockFactory.vibe"
 import { newClient } from "../src/core/conversation.vibe"
 import { initial as initialActions, mergeRuns } from "../src/web/actionModel.vibe"
 import { accountOf, CloseIssueDialog, CloseRoleDialog, FocusAccountMenu, FocusIssueControl, FocusTourControl, FocusWikiEditor, init, MeasureTheatre, type Model, PresentTour, RevealWiki, RunAction, ShowIssueDialog, ShowRoleDialog, WikiLocation } from "../src/web/main.vibe"
-import { Factory as FactoryService, Refused, Unavailable } from "../src/core/Factory.vibe"
-import { overlaid } from "./support/overlaid.vibe"
+import { ConversationRead, Factory as FactoryService, Refused, Unavailable } from "../src/core/Factory.vibe"
+import { overlaid, overlaidLayer } from "./support/overlaid.vibe"
 import { application } from "./support/application.vibe"
 import { faultyActions } from "./support/FaultyActions.vibe"
 import { activeIs, addElement, clickLink, container, dispatchWindow, location, popTo, press, reconnect, remove } from "./support/browser.ts"
@@ -21,7 +21,7 @@ type Started = ReturnType<typeof init>
 const quiet = (over: Partial<Model> = {}, commands: () => NonNullable<Started["commands"]> = () => []) => (): Started => ({ model: { ...init(flags).model, surface: "chat", ...over }, commands: commands() })
 
 /** The app starting from `first`; `seen.model` is the latest model it rendered. */
-effect function started(make: () => Started, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory> = MockFactory) {
+effect function started(make: () => Started, actions: Layer.Layer<Actions, never, Factory | ConversationRead> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory | ConversationRead> = MockFactory) {
   const first = try Effect.try(make)
   const seen: { model: Model; messages: Array<string> } = { model: first.model, messages: [] }
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
@@ -178,7 +178,7 @@ describe("the presenter", () => {
 })
 
 describe("a backend that fails", () => {
-  const faulty = (over: Parameters<typeof overlaid>[1]) => Layer.effect(FactoryService, map(FactoryService, (base) => overlaid(base, over))).pipe(Layer.provide(MockFactory))
+  const faulty = (over: Parameters<typeof overlaid>[1]) => overlaidLayer(MockFactory, (base) => overlaid(base, over))
   const actions = MockActions({ actor: "person" })
   it.live("a broken tour stream follows again 2 seconds later and reports nothing", () => scoped(effect {
     const follows: Array<number> = []
@@ -210,7 +210,7 @@ it.live("a run cancelled by another client settles in the page after its first f
     const seen = try started(
       quiet({ actions: { ...initialActions, open: true } }, () => [RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none", epoch: 0 })]),
       faultyActions(Layer.succeed(Actions, actions), "follow"),
-      Layer.succeed(FactoryService, factory),
+      Layer.merge(Layer.succeed(FactoryService, factory), Layer.succeed(ConversationRead, try ConversationRead)),
     )
     try settled(() => expect(seen.model.actions?.runs.some(run => run.state === "running" || run.state === "queued")).toBe(true))
     const id = seen.model.actions!.runs[0]!.id
@@ -232,7 +232,7 @@ it.live("a follow that closes without a settlement reports disconnection", () =>
     const id = try actions.start("vibelang/Tour", {}, "button")
     const run = try actions.read(id)
     const short = faultyActions(Layer.succeed(Actions, actions), "follow-close")
-    const seen = try started(quiet({ actions: { ...initialActions, runs: [run] } }), short, Layer.succeed(FactoryService, factory))
+    const seen = try started(quiet({ actions: { ...initialActions, runs: [run] } }), short, Layer.merge(Layer.succeed(FactoryService, factory), Layer.succeed(ConversationRead, try ConversationRead)))
     try settled(() => expect(seen.model.actions?.disconnected).toEqual([id]))
     try Effect.try(() => expect(seen.model.actions?.runs[0]?.id).toBe(id))
   }
@@ -250,7 +250,7 @@ it.live("another run settling does not restart a lost follow", () => scoped(effe
     const second = runs[1]!.id
     const followed: Array<string> = []
     const flaky = faultyActions(Layer.succeed(Actions, actions), "follow", followed)
-    const seen = try started(quiet({ actions: { ...initialActions, runs } }), flaky, Layer.succeed(FactoryService, factory))
+    const seen = try started(quiet({ actions: { ...initialActions, runs } }), flaky, Layer.merge(Layer.succeed(FactoryService, factory), Layer.succeed(ConversationRead, try ConversationRead)))
     try settled(() => expect(seen.model.actions?.disconnected).toEqual([first]))
     try actions.cancel(second)
     try settled(() => expect(seen.model.actions?.runs.find(run => run.id === second)?.state).toBe("cancelled"))

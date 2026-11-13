@@ -3,8 +3,9 @@
 // is intercepted; the transport is the injected service.
 import { it } from "@effect/vitest"
 import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
-import { Factory, SandboxSnapshot } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, SandboxSnapshot } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { Identity } from "../src/core/roles.vibe"
 import { EventSchema } from "../src/core/schemas.vibe"
 import { Health } from "../src/core/wire.vibe"
@@ -77,7 +78,7 @@ effect function call(input: Input) {
     case "controlTour": return try controlTour(c, "seek", input.step)
     case "tour": return try factory.tour(c)
     case "endTour": return try factory.endTour(c)
-    case "read": return try factory.read(c, input.step)
+    case "read": return try (try ConversationRead).read(c, input.step)
     case "events": return try Stream.runDrain(factory.events(c, input.step))
     case "sandbox": return try factory.sandbox(c)
     case "startSandbox": return try factory.startSandbox(c, "op-1")
@@ -120,7 +121,7 @@ effect function reply(input: Input) {
     return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status: input.status, contentType: stream ? "text/event-stream" : "application/json" }))))
   })
   const transport = Layer.succeed(HttpClient.HttpClient, client)
-  const result = try exit(Effect.provide(call(input), Layer.merge(LiveFactory("http://fault.invalid").pipe(Layer.provide(transport)), transport)))
+  const result = try exit(Effect.provide(call(input), Layer.mergeAll(LiveFactory("http://fault.invalid").pipe(Layer.provide(transport)), LiveRead("http://fault.invalid").pipe(Layer.provide(transport)), transport)))
   if (result._tag === "Failure" && (Cause.hasDies(result.cause) || Cause.hasInterrupts(result.cause))) return false
   const failure = result._tag === "Failure" ? Cause.squash(result.cause) as { readonly _tag: string; readonly refusal?: string; readonly reason?: string } : undefined
   const ok = !input.transport

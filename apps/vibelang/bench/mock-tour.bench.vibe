@@ -1,6 +1,6 @@
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { it, expect } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
 import { readingMillis } from "../src/core/flows.vibe"
@@ -19,7 +19,7 @@ it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, asy
         const busy = factory.tour("tour") catch (error) => error._tag === "Refused" ? error.refusal : "unavailable"
         const events = Array.from(try Stream.runCollect(factory.events("tour", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished"))))
         const state = events.reduce(apply, empty)
-        const snapshot = try factory.read("tour", 0)
+        const snapshot = try (try ConversationRead).read("tour", 0)
         const none = factory.endTour("tour") catch (error) => error._tag === "Refused" ? error.refusal : "unavailable"
         try Effect.try(() => {
           expect(busy).toBe("busy")
@@ -40,7 +40,7 @@ it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, asy
         try Stream.runDrain(factory.events("tour", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyDelta")))
         try factory.endTour("tour")
         const events = Array.from(try Stream.runCollect(factory.events("tour", 0).pipe(Stream.takeUntil((event) => event.type === "TourEnded"))))
-        const snapshot = try factory.read("tour", 0)
+        const snapshot = try (try ConversationRead).read("tour", 0)
         try Effect.try(() => {
           expect(snapshot.seq).toBe(events.at(-1)?.seq)
           expect(snapshot.entries[0]?.done).toBe(true)

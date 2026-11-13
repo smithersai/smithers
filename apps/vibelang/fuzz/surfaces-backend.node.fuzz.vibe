@@ -5,7 +5,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { backend, notDeployed, personClient, unreachable, withStoredSession } from "../src/surfaces/backend.vibe"
@@ -71,7 +71,7 @@ it.live("surfaces/live-backend", () => run("surfaces/live-backend", Input, (inpu
       if (explicit && input.session !== "valid") return false
       if (input.probe && input.health !== "live") return false
       const context = built.success
-      try Effect.ignore(Context.get(context, Factory).read("home", 0))
+      try Effect.ignore(Context.get(context, ConversationRead).read("home", 0))
       try Effect.ignore(Context.get(context, Actions).list())
       try Effect.ignore(Context.get(context, Mythical).outline())
       if (input.health === "down") return true

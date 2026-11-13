@@ -5,7 +5,7 @@ import { Action, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { apply, empty, type Conversation } from "../core/conversation.vibe"
 import { decide, type Intent } from "../core/decide.vibe"
 import type { Identity } from "../core/roles.vibe"
-import { Factory } from "../core/Factory.vibe"
+import { ConversationRead, Factory } from "../core/Factory.vibe"
 import { BeginTour, DispatchPost, endsTour, GuideTour, Post, RecordPost, Tour } from "../core/flows.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import { Caller } from "../history/roles.vibe"
@@ -22,6 +22,7 @@ const decodeRun = Schema.decodeUnknownEffect(Run)
 export function MockActions(principal: Principal) {
   return Layer.effect(Actions, effect {
     const factory = try Factory
+    const reader = try ConversationRead
     if (principal.role !== undefined) try Effect.orDie(factory.accounts.choose(principal.role))
     effect function current(): Identity!ActionFailure {
       return try Effect.mapError(factory.accounts.current(), () => new ActionFailure({ code: "unavailable" }))
@@ -95,7 +96,7 @@ export function MockActions(principal: Principal) {
       Interpreter.layerWithImplementations(Tour, Layer.mergeAll(
         BeginTour.toLayer(effect () => {
           const conversation = try conversationOfRun()
-          const before = try orDie(factory.read(conversation, 0))
+          const before = try orDie(reader.read(conversation, 0))
           try orDie(factory.tour(conversation))
           const started = try orDie(Stream.runHead(factory.events(conversation, before.seq).pipe(Stream.filter((event) => event.type === "TourStarted"))))
           return Option.getOrThrow(started).id

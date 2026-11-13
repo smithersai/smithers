@@ -3,8 +3,9 @@ import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { it, expect } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { HttpServer, HttpServerRequest, HttpServerResponse, FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { seeded } from "../src/history/MockMythical.vibe"
@@ -123,8 +124,9 @@ it("workerd sequencer, post, reply and tour flows", { timeout: WALKTHROUGH.reduc
         historyResults.push(try tryPromise(() => replay.run(slow)))
         try artifact("history-workerd", "Vitest built-in bench; actual History Durable Object with full committed bootstrap, real SQLite durable flows and LiveMythical HTTP. First read measured once on a fresh object; warm outlines, first/second epic pages, commit detail, bounded search, five viewer refusals plus unchanged outline, and protocol errors measured three times. A keyed Plan binding runs twice with the same real cell identity and once with a new ordinal; exact cached response, one/two matching commits and cursor increments asserted across real SQLite flows. Server/bundler startup excluded; schema/assertions included.", ["Local workerd, no production network or model. First read is object bootstrap, not a forced cold isolate. Anonymous callers are viewers on this revision, so public writes remain forbidden; the separate keyed replay uses the test host’s trusted maintainer agent and actual production reader/binding/SQLite write path. No sign-in or GitHub write is claimed."], historyResults)
       }
-      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+      provide Layer.merge(LiveFactory(api.origin), LiveRead(api.origin)).pipe(Layer.provide(FetchHttpClient.layer)) {
         const factory = try Factory
+        const reader = try ConversationRead
         const results = []
         const sandboxBoundary = try Effect.try(() => workload(bench, "workerd-sandbox-viewer", "async", async () => {
           const before = await runPromise(factory.sandbox("bench-viewer"))
@@ -155,7 +157,7 @@ it("workerd sequencer, post, reply and tour flows", { timeout: WALKTHROUGH.reduc
           expect(events.map((event) => event.seq)).toEqual(events.map((_, i) => i + 1))
           expect(state.entries[0]?.text).toBe("Reply briefly.")
           expect(state.entries[1]).toMatchObject({ text: "Deterministic answer.", done: true, error: "", inReplyTo: "m1" })
-          expect(await runPromise(factory.read(conversation, 0))).toEqual({ seq: state.seq, entries: state.entries })
+          expect(await runPromise(reader.read(conversation, 0))).toEqual({ seq: state.seq, entries: state.entries })
         }
         const postBench = try Effect.try(() => workload(bench, "workerd-post-reply-read", "async", runPost))
         results.push(try tryPromise(() => postBench.run(slow)))

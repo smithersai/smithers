@@ -108,17 +108,19 @@ it("refuses malformed Unicode in every durable history write field", () => {
 
 
 import { HttpClient } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 it.effect("refuses invalid identifiers before every live Factory operation reaches HTTP", () => effect {
   let requests = 0
   const faulty = HttpClient.make(() => effect { requests++; return try Effect.die("unexpected invalid-id request") })
-  const live = LiveFactory("https://invalid.test").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, faulty)))
+  const live = Layer.merge(LiveFactory("https://invalid.test"), LiveRead("https://invalid.test")).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, faulty)))
   provide live {
     const factory = try Factory
+    const reader = try ConversationRead
     for (const id of ["", "\ud800", "\udfff", "x".repeat(129)]) {
       const operations: ReadonlyArray<unknown!unknown> = [
-        factory.post(id, "c", "Guest", "hello"), factory.read(id, 0), factory.tour(id), factory.endTour(id),
+        factory.post(id, "c", "Guest", "hello"), reader.read(id, 0), factory.tour(id), factory.endTour(id),
         Stream.runDrain(factory.events(id, 0)), factory.sandbox(id), factory.startSandbox(id, "fuzz"),
         factory.stopSandbox(id, "fuzz", 0), factory.sandboxCommand(id, "fuzz", "pwd", 0),
       ]

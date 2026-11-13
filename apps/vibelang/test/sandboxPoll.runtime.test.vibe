@@ -4,7 +4,7 @@
 import { expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 import { Runtime } from "foldkit"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { Ask } from "../src/surfaces/commands.vibe"
 import { init } from "../src/web/main.vibe"
@@ -14,12 +14,12 @@ import { activeId, commandK, container, hasAsk, remove, send } from "./support/b
 it.live("an idle chat does not read its sandbox every second; a running one does", () => scoped(effect {
   provide mockFactoryFor("contributor") {
     const factory = try Factory
+    const mockReads = Layer.succeed(ConversationRead, try ConversationRead)
     let reads = 0
     // The real Factory, observed: each read the page asks for is counted.
     const observed = Layer.succeed(Factory, {
       get mode() { return factory.mode },
       post: (conversation, clientId, name, text) => factory.post(conversation, clientId, name, text),
-      read: (conversation, after) => factory.read(conversation, after),
       openWiki: (conversation, page) => factory.openWiki(conversation, page),
       events: (conversation, after) => factory.events(conversation, after),
       tour: (conversation) => factory.tour(conversation),
@@ -32,7 +32,7 @@ it.live("an idle chat does not read its sandbox every second; a running one does
     })
     let latest = init({ session: "will", name: "Will", mode: "mock" }).model
     const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
-    const program = try Effect.try(() => application(node, observed, (model) => { latest = model }))
+    const program = try Effect.try(() => application(node, Layer.merge(observed, mockReads), (model) => { latest = model }))
     try acquireRelease(
       sync(() => Runtime.embed(program, { flags: succeed({ session: "will", name: "Will", mode: "mock" as const }) })),
       (handle) => sync(() => handle.dispose()),

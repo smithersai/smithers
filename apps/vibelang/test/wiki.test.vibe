@@ -2,7 +2,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { apply, empty, receive, newClient } from "../src/core/conversation.vibe"
 import { decide } from "../src/core/decide.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { pages, wikiPath, wikiPage, requestedWiki } from "../src/core/wiki.vibe"
 import { toHtml, compile, safeLink } from "../src/web/markdown.vibe"
@@ -42,7 +42,7 @@ describe("wiki sequenced openings", () => {
       try factory.openWiki("wiki", "roadmap")
       const events = Array.from(try Stream.runCollect(factory.events("wiki", 0) |> Stream.take(%, 2)))
       const invalid = try exit(factory.openWiki("wiki", "../../secrets"))
-      const snapshot = try factory.read("wiki", 0)
+      const snapshot = try (try ConversationRead).read("wiki", 0)
       try Effect.try(() => {
         expect(events).toEqual([{ type: "PaneOpened", seq: 1, id: "", url: "/wiki/rulings" }, { type: "PaneOpened", seq: 2, id: "", url: "/wiki/roadmap" }])
         const client = events.reduce(receive, newClient)

@@ -23,16 +23,16 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
     const selected = try forkIn(Effect.interruptible(effect {
       const answer = forceMock ? undefined : ((health(origin) |> timeout(%, "3 seconds")) catch () => undefined)
       const mode: Mode = liveHealth(answer?.agent ?? "") ? "live" : "mock"
-      // The mock carries the flow engine (0011). Live pages never load that module.
-      const layer = mode === "live"
-        ? LiveFactory(origin)
-        : (try promise(() => import("../core/MockFactory.vibe"))).mockFactoryFor(forceMock ? role : "viewer").pipe(Layer.provide(journal === undefined ? Layer.empty : Layer.succeed(MockJournal, journal)))
-      const context = try Layer.buildWithScope(layer.pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(AgentActions, { actions: proxy.actions })))), scope)
+      // The mock carries the flow engine (0011) and its actions run on it. Live pages never load either module.
+      const services = Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(AgentActions, { actions: proxy.actions }))
+      const context: Context.Context<Factory | Actions> = mode === "live"
+        ? try Layer.buildWithScope(Layer.merge(LiveFactory(origin), LiveActions(origin)).pipe(Layer.provide(services)), scope)
+        : try Layer.buildWithScope((try promise(() => import("../actions/MockActions.vibe"))).MockActions({ actor: "person" }).pipe(
+          Layer.provideMerge((try promise(() => import("../core/MockFactory.vibe"))).mockFactoryFor(forceMock ? role : "viewer").pipe(Layer.provide(journal === undefined ? Layer.empty : Layer.succeed(MockJournal, journal)))),
+          Layer.provide(services),
+        ), scope)
       const factory = Context.get(context, Factory)
-      const actionLayer = mode === "live" ? LiveActions(origin).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
-        : (try promise(() => import("../actions/MockActions.vibe"))).MockActions({ actor: "person" }).pipe(Layer.provide(Layer.succeed(Factory, factory)))
-      const actionContext = try Layer.buildWithScope(actionLayer, scope)
-      const actions = Context.get(actionContext, Actions)
+      const actions = Context.get(context, Actions)
       try proxy.resolve(actions)
       current = mode
       return { mode, factory, actions }
@@ -62,10 +62,6 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
       post: effect (conversation, clientId, name, text) => {
         const { factory } = try ready
         return try factory.post(conversation, clientId, name, text)
-      },
-      read: effect (conversation, after) => {
-        const { factory } = try ready
-        return try factory.read(conversation, after)
       },
       events: (conversation, after) => Stream.unwrap(effect {
         const { factory } = try ready

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 
 describe("the product's offline accounts", () => {
@@ -40,7 +40,7 @@ describe("the product's offline accounts", () => {
       const before = try accounts.current()
       try factory.post("roles", "accepted", "wire-name", "install")
       const after = try accounts.current()
-      const history = try factory.read("roles", 0)
+      const history = try (try ConversationRead).read("roles", 0)
       try Effect.try(() => {
         expect(blank._tag).toBe("Refused")
         expect(before.role).toBe("new")
@@ -58,7 +58,7 @@ it.effect("an injected account failure becomes a safe UI failure without changin
     const base = try Factory
     const accounts = base.accounts
     try accounts.choose("maintainer")
-    const faulty: Factory.Shape = { openWiki: base.openWiki, mode: base.mode, post: base.post, read: base.read, events: base.events, tour: base.tour, endTour: base.endTour, sandbox: base.sandbox, startSandbox: base.startSandbox, stopSandbox: base.stopSandbox, sandboxCommand: base.sandboxCommand, ...(base.issues === undefined ? {} : { issues: base.issues }), accounts: { current: accounts.current, members: accounts.members, signOut: accounts.signOut, signInAgent: accounts.signInAgent, choose: accounts.choose, participated: accounts.participated, events: accounts.events, grant: () => Effect.fail(new AccountUnavailable({ reason: "private provider words" })) }, issues: base.issues, wiki: base.wiki }
+    const faulty: Factory.Shape = { openWiki: base.openWiki, mode: base.mode, post: base.post, events: base.events, tour: base.tour, endTour: base.endTour, sandbox: base.sandbox, startSandbox: base.startSandbox, stopSandbox: base.stopSandbox, sandboxCommand: base.sandboxCommand, ...(base.issues === undefined ? {} : { issues: base.issues }), accounts: { current: accounts.current, members: accounts.members, signOut: accounts.signOut, signInAgent: accounts.signInAgent, choose: accounts.choose, participated: accounts.participated, events: accounts.events, grant: () => Effect.fail(new AccountUnavailable({ reason: "private provider words" })) }, issues: base.issues, wiki: base.wiki }
     const command = try Effect.try(() => GrantRole({ id: "4", role: "maintainer" }))
     const result = try Effect.provideService(command.effect, Factory, faulty)
     const people = try accounts.members()

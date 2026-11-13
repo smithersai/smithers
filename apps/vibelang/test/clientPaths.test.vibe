@@ -1,8 +1,9 @@
 // Invalid identifiers must fail through the public Effect API before the transport runs.
 import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientError } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { LiveActions } from "../src/actions/LiveActions.vibe"
 
@@ -17,7 +18,7 @@ effect function offline() {
 
 const conversationCalls = [
   ["post", (api: Factory.Shape, id: string) => api.post(id, "client", "Guest", "hello")],
-  ["read", (api: Factory.Shape, id: string) => api.read(id, 0)],
+  ["read", (_api: Factory.Shape, id: string) => effect { return try (try ConversationRead).read(id, 0) }],
   ["events", (api: Factory.Shape, id: string) => Stream.runCollect(api.events(id, 0))],
   ["wiki", (api: Factory.Shape, id: string) => api.openWiki(id, "index")],
   ["tour", (api: Factory.Shape, id: string) => api.tour(id)],
@@ -35,7 +36,7 @@ describe("conversation identifier admission", () => {
       it.effect(`${operation} refuses ${label} without transport`, () => effect {
         const { client, requests } = try offline()
         provide Layer.succeed(HttpClient.HttpClient, client) {
-          provide LiveFactory("http://127.0.0.1") {
+          provide LiveFactory("http://127.0.0.1"), LiveRead("http://127.0.0.1") {
             const failure = try Effect.flip(call(try Factory, id))
             const sent = try Ref.get(requests)
             try Effect.try(() => {

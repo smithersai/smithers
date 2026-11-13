@@ -7,12 +7,12 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { deviceRegistration } from "../src/actions/execution.vibe"
 import { MockActions, type Principal } from "../src/actions/MockActions.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { SandboxCommand, SandboxStart, SandboxStop } from "../src/core/flows.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { empty } from "../src/core/conversation.vibe"
 import { AccountUnavailable, Denied, type Accounts, type Identity, type SignedIn } from "../src/core/roles.vibe"
-import { overlaid, type Overrides } from "./support/overlaid.vibe"
+import { overlaid, overlaidLayer, type Overrides } from "./support/overlaid.vibe"
 import { withCurrent } from "./support/overlaidAccounts.vibe"
 
 const maintainer: Principal = { role: "maintainer", actor: "person" }
@@ -25,10 +25,7 @@ effect function finished(id: string) {
 
 /** MockActions for `principal` over the real MockFactory with `over` replacing chosen members. */
 function world(principal: Principal, over: (base: Factory.Shape) => Overrides = () => ({})) {
-  return MockActions(principal).pipe(Layer.provideMerge(Layer.effect(Factory, effect {
-    const base = try Factory
-    return overlaid(base, over(base))
-  })), Layer.provide(MockFactory))
+  return MockActions(principal).pipe(Layer.provideMerge(overlaidLayer(MockFactory, (base) => overlaid(base, over(base)))))
 }
 
 /** The real accounts with `current` replaced, and no policy: the host authorizes, as a live Factory's does. */
@@ -207,7 +204,7 @@ describe("mock-mode actions", () => {
       const settled = try Stream.runLast(actions.follow(control).pipe(Stream.takeUntil((run) => run.state === "passed" || run.state === "failed")))
       try Effect.try(() => expect(Option.map(settled, (run) => run.state)).toEqual(Option.some("passed")))
       const run = try actions.read(id)
-      const snapshot = try (try Factory).read(`action-${id}`, 0)
+      const snapshot = try (try ConversationRead).read(`action-${id}`, 0)
       try Effect.try(() => {
         expect([run.state, run.result, run.steps]).toEqual(["cancelled", "Cancelled", []])
         expect(snapshot.entries).toEqual([])

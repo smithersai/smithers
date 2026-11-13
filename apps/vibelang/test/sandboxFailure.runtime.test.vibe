@@ -3,7 +3,7 @@
 import { expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 import { Runtime } from "foldkit"
-import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, Unavailable } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { init } from "../src/web/main.vibe"
 import { application } from "./support/application.vibe"
@@ -13,6 +13,7 @@ import { overlaid } from "./support/overlaid.vibe"
 it.live("a failed start keeps its alert and Retry while the open pane reads every second", () => scoped(effect {
   provide mockFactoryFor("contributor") {
     const factory = try Factory
+    const mockReads = Layer.succeed(ConversationRead, try ConversationRead)
     // A contributor may start a sandbox.
     try Effect.orDie(factory.accounts.choose("contributor"))
     let starts = 0
@@ -24,7 +25,7 @@ it.live("a failed start keeps its alert and Retry while the open pane reads ever
     }))
     let latest = init({ session: "will", name: "Will", mode: "mock" }).model
     const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
-    const program = try Effect.try(() => application(node, failing, (model) => { latest = model }))
+    const program = try Effect.try(() => application(node, Layer.merge(failing, mockReads), (model) => { latest = model }))
     try acquireRelease(
       sync(() => Runtime.embed(program, { flags: succeed({ session: "will", name: "Will", mode: "mock" as const }) })),
       (handle) => sync(() => handle.dispose()),

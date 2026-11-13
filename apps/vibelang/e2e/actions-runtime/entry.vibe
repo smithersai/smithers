@@ -33,12 +33,13 @@ const program = await runPromise(effect {
     const agent = try deferredActions()
     const base = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role).pipe(Layer.provideMerge(Layer.succeed(AgentActions, { actions: agent.actions })))
     // A fixture agent's real Post flow, observed by a signed-out browser through the unchanged label component.
-    const factory = params.get("agent") === "yes" ? Layer.effect(Factory, effect {
-      const product = Context.get(try Layer.build(base), Factory)
+    const factory = params.get("agent") === "yes" ? Layer.effectContext(effect {
+      const built = try Layer.build(base)
+      const product = Context.get(built, Factory)
       try Effect.orDie(product.accounts.signInAgent())
       try Effect.orDie(product.post("home", "fixture-agent-post", "forged", "From the signed-in agent"))
       try Effect.orDie(product.accounts.signOut())
-      return product
+      return built
     }) : base
     const actions = Layer.effect(Actions, effect {
       const real = try Actions

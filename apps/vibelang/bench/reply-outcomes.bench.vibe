@@ -4,8 +4,9 @@
 import { it, expect } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { FetchHttpClient } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { REASONS } from "../worker/Reply.vibe"
 import { serveApiObjects } from "../test/support/workerd.vibe"
 import { modelService } from "./fixtures.vibe"
@@ -19,14 +20,15 @@ it("a reply with no answer and a reply whose cell throws fail with their reasons
         CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
         SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
       }), (served) => promise(served.dispose))
-      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+      provide Layer.merge(LiveFactory(api.origin), LiveRead(api.origin)).pipe(Layer.provide(FetchHttpClient.layer)) {
         const factory = try Factory
+        const reader = try ConversationRead
         let run = 0
         const failed = async (text: string) => {
           const room = `bench-reply-${++run}`
           await runPromise(factory.post(room, "a", "Bench", text))
           const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed")))))
-          const read = await runPromise(factory.read(room, 0))
+          const read = await runPromise(reader.read(room, 0))
           return { last: events.at(-1), agent: read.entries.filter((entry) => entry.author === "agent") }
         }
         const outcomes = workload(bench, "reply-outcomes", "async", async () => {

@@ -6,7 +6,7 @@ import { expect, it } from "@effect/vitest"
 import { WebCrypto } from "@smthrs/crypto"
 import { Digest } from "effect/crypto"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { replyIdOf } from "../src/core/flows.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
@@ -98,7 +98,7 @@ it.live("a tour accepted before the reply starts runs on the tour's own sequence
   return try Effect.provide(effect {
     const factory = try Factory
     try factory.post("race", "a", "Ada", "install")
-    const post = (try factory.read("race", 0)).entries[0]!.id
+    const post = (try (try ConversationRead).read("race", 0)).entries[0]!.id
     try Deferred.await(reply.held).pipe(Effect.timeout("5 seconds"))
     try factory.tour("race")
     try Deferred.succeed(reply.release, undefined)
@@ -124,7 +124,7 @@ it.live("a tour ended before its handed-over run starts: the run returns at once
   return try Effect.provide(effect {
     const factory = try Factory
     try factory.post("race", "a", "Ada", "install")
-    const post = (try factory.read("race", 0)).entries[0]!.id
+    const post = (try (try ConversationRead).read("race", 0)).entries[0]!.id
     try Deferred.await(reply.held).pipe(Effect.timeout("5 seconds"))
     try factory.tour("race")
     try Deferred.succeed(reply.release, undefined)

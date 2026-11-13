@@ -4,27 +4,26 @@ import * as LiveAccounts from "./LiveAccounts.vibe"
 import { liveIssues } from "./LiveIssues.vibe"
 import { liveWiki } from "./LiveWiki.vibe"
 // The live factory: `Factory` over the API Worker's HTTP protocol (wire.vibe, wiki/decisions/0010-live-agent.md),
-// through Effect's `HttpClient`, so the browser, the CLI and the MCP server share it. The sequencer is the
+// through Effect's `HttpClient`, so the browser, the CLI and the MCP server share it; Node's read is `LiveRead.vibe`. The sequencer is the
 // conversation's Durable Object; this layer only carries intents to it and its numbered events back.
 import * as Sse from "effect/encoding/Sse"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { EventSchema, Factory, ReadSnapshot, SandboxSnapshot, Refused, Unavailable, type Mode } from "./Factory.vibe"
+import { EventSchema, Factory, SandboxSnapshot, Refused, Unavailable, type Mode } from "./Factory.vibe"
 import { CONVERSATIONS, conversationPath, Health, HEALTH_PATH, Refusal, TOUR_PATH } from "./wire.vibe"
 
 const decodeHealth = Schema.decodeUnknownEffect(Health)
-const decodeSnapshot = Schema.decodeUnknownEffect(ReadSnapshot)
 const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
 const decodeSandbox = Schema.decodeUnknownEffect(SandboxSnapshot)
 const decodeTerminal = Schema.decodeUnknownEffect(Schema.Struct({ output: Schema.String }))
 const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
 
 /** `Unavailable`, naming what failed; never a response body, which could carry anything. */
-function unavailable(what: string) {
+export function unavailable(what: string) {
   return () => new Unavailable({ reason: what })
 }
 
 /** Refuses an invalid identifier before any HTTP request or event subscription. */
-effect function pathOf(conversation: string) {
+export effect function pathOf(conversation: string) {
   const path = conversationPath(conversation)
   if (path === undefined) throw new Unavailable({ reason: "invalid conversation" })
   return path
@@ -118,13 +117,6 @@ export function LiveFactory(origin: string) {
         if (response.status !== 200) throw new Unavailable({ reason: `terminal answered ${response.status}` })
         const body = try Effect.mapError(response.json, unavailable("terminal is not JSON"))
         return (try Effect.mapError(decodeTerminal(body), unavailable("terminal is not the protocol"))).output
-      },
-      read: effect (conversation: string, after: number) => {
-        const url = origin + (try pathOf(conversation)) + `?after=${after}`
-        const response = try Effect.mapError(client.get(url), unavailable("read unreachable"))
-        if (response.status !== 200) throw new Unavailable({ reason: `read answered ${response.status}` })
-        const body = try Effect.mapError(response.json, unavailable("read is not JSON"))
-        return try Effect.mapError(decodeSnapshot(body), unavailable("read is not the protocol"))
       },
       events: (conversation: string, after: number) =>
         Stream.unwrap(effect {

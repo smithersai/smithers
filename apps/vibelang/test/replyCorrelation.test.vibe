@@ -64,7 +64,6 @@ for (const earlier of ["skipped", "later"] as const) {
           if (earlier === "later") answer("old-reply", "old", "someone else's answer")
         })
       },
-      read: () => succeed({ seq: state.seq, entries: state.entries }),
       events: () => Stream.fromIterable(log),
       tour: () => die(new Error("Ask never tours")),
       openWiki: () => die(new Error("Ask opens pages only through its reply")),

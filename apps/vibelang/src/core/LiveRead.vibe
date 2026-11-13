@@ -1,0 +1,24 @@
+// The live `ConversationRead`: a conversation's entries and event cursor over the API Worker's HTTP protocol
+// (wire.vibe). Only the Node surfaces read, the CLI and the MCP server; the browser follows `events`, so this file is
+// never in its bundle (wiki/decisions/0016-coverage.md, "Browser gate scope").
+import { HttpClient } from "effect/http"
+import { ConversationRead, ReadSnapshot, Unavailable } from "./Factory.vibe"
+import { pathOf, unavailable } from "./LiveFactory.vibe"
+
+const decodeSnapshot = Schema.decodeUnknownEffect(ReadSnapshot)
+
+/** The read at `origin`, such as `https://vibelang.smithers.sh`. Each call is one request; nothing is cached. */
+export function LiveRead(origin: string) {
+  return Layer.effect(ConversationRead, effect {
+    const client = try HttpClient.HttpClient
+    return {
+      read: effect (conversation: string, after: number) => {
+        const url = origin + (try pathOf(conversation)) + `?after=${after}`
+        const response = try Effect.mapError(client.get(url), unavailable("read unreachable"))
+        if (response.status !== 200) throw new Unavailable({ reason: `read answered ${response.status}` })
+        const body = try Effect.mapError(response.json, unavailable("read is not JSON"))
+        return try Effect.mapError(decodeSnapshot(body), unavailable("read is not the protocol"))
+      },
+    }
+  })
+}

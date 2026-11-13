@@ -1,5 +1,5 @@
 // The real factory with chosen members replaced, so a test states one fault and keeps the rest of the service.
-import type { Factory } from "../../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../../src/core/Factory.vibe"
 
 /** `undefined` removes an optional capability (`policy`, `controlTour`); the required services can only be replaced. */
 type Optional = "policy" | "controlTour"
@@ -13,9 +13,14 @@ export function overlaid(base: Factory.Shape, over: Overrides): Factory.Shape {
     return value === undefined ? {} : { [key]: value } as Pick<Factory.Shape, K>
   }
   return {
-    mode: chosen("mode"), post: chosen("post"), read: chosen("read"), events: chosen("events"), tour: chosen("tour"), endTour: chosen("endTour"),
+    mode: chosen("mode"), post: chosen("post"), events: chosen("events"), tour: chosen("tour"), endTour: chosen("endTour"),
     openWiki: chosen("openWiki"), sandbox: chosen("sandbox"), startSandbox: chosen("startSandbox"), stopSandbox: chosen("stopSandbox"),
     sandboxCommand: chosen("sandboxCommand"),
     accounts: chosen("accounts"), issues: chosen("issues"), wiki: chosen("wiki"), ...optional("policy"), ...optional("controlTour"),
   }
+}
+
+/** `mock` with its Factory replaced by `change` of it; reads pass through, so the mock's actions read the same rooms. */
+export function overlaidLayer<E>(mock: Layer.Layer<Factory | ConversationRead, E>, change: (base: Factory.Shape) => Factory.Shape) {
+  return Layer.merge(Layer.effect(ConversationRead, effect { return try ConversationRead }), Layer.effect(Factory, map(Factory, change))).pipe(Layer.provide(mock))
 }

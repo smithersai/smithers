@@ -2,7 +2,7 @@
 import { it, expect } from "@effect/vitest"
 import { WebCrypto } from "@smthrs/crypto"
 import { Digest } from "effect/crypto"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { replyIdOf } from "../src/core/tourDecision.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
@@ -47,7 +47,7 @@ effect function contention(endBeforeDrive: boolean) {
   try Effect.provide(ensuring(effect {
     const factory = try Factory
     try factory.post("contended", "a", "Benchmark", "install")
-    const post = (try factory.read("contended", 0)).entries[0]!
+    const post = (try (try ConversationRead).read("contended", 0)).entries[0]!
     try Deferred.await(reply.entered).pipe(Effect.timeout("5 seconds"))
     try factory.tour("contended")
     try Deferred.succeed(reply.release, undefined)
@@ -58,7 +58,7 @@ effect function contention(endBeforeDrive: boolean) {
     const events = Array.from(try Stream.runCollect(factory.events("contended", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" && event.id === replyIdOf(post.id)), Stream.timeout("15 seconds"))))
     const runOutcome = try Deferred.await(tourRun).pipe(Effect.timeout("5 seconds"))
     const outcomes = try Ref.get(starts)
-    const snapshot = try factory.read("contended", 0)
+    const snapshot = try (try ConversationRead).read("contended", 0)
     const response = snapshot.entries.find(entry => entry.inReplyTo === post.id)!
     const types = events.map(event => event.type)
     try Effect.try(() => {

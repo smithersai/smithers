@@ -15,6 +15,7 @@ import { actionTools } from "../src/actions/tools.vibe"
 import { Cell, FlowBinding } from "@smthrs/harness"
 import { allowed, registration } from "../src/actions/catalog.vibe"
 import { backend as webBackend } from "./web-backends.vibe"
+import { overlaidLayer } from "../test/support/overlaid.vibe"
 import { run, same, Text } from "./run.vibe"
 
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
@@ -209,7 +210,7 @@ it.live("actions/mock-factories", () => run("actions/mock-factories", Role, (rol
   provide MockActions({ actor: "person" }).pipe(Layer.provide(webBackend("faulty", role))) {
     if ((try code((try Actions).start("vibelang/Tour", null, "button"))) !== "unavailable") return false
   }
-  const unpoliced = Layer.effect(Factory, map(Factory, (factory) => Object.assign(Object.create(factory) as Factory.Shape, { policy: undefined }))).pipe(Layer.provide(mockFactoryFor(role)))
+  const unpoliced = overlaidLayer(mockFactoryFor(role), (factory) => Object.assign(Object.create(factory) as Factory.Shape, { policy: undefined }))
   provide Layer.provideMerge(MockActions({ role, actor: "person" }), unpoliced) {
     const actions = try Actions
     const id = try actions.start("vibelang/Tour", null, "button")
@@ -220,9 +221,9 @@ it.live("actions/mock-factories", () => run("actions/mock-factories", Role, (rol
 
 /** A tour whose event stream closes after it starts, before it ends, fails its run; it never passes or hangs. */
 it.live("actions/mock-tour-stream", () => run("actions/mock-tour-stream", Schema.Struct({ role: Role, actor: Schema.Literals(["person", "agent"]) }), (input) => scoped(effect {
-  const closing = Layer.effect(Factory, map(Factory, (factory) => Object.assign(Object.create(factory) as Factory.Shape, {
+  const closing = overlaidLayer(mockFactoryFor(input.role), (factory) => Object.assign(Object.create(factory) as Factory.Shape, {
     events: (conversation: string, from: number) => factory.events(conversation, from).pipe(Stream.takeUntil((event) => event.type === "TourStarted")),
-  }))).pipe(Layer.provide(mockFactoryFor(input.role)))
+  }))
   provide Layer.provideMerge(MockActions({ role: input.role, actor: input.actor, conversation: "home" }), closing) {
     const actions = try Actions
     const id = try actions.start("vibelang/Tour", null, "button")
@@ -286,11 +287,11 @@ it.live("actions/mock-sign-out-mid-run", () => run("actions/mock-sign-out-mid-ru
   for (const checks of [99, 0, 1, 2, 3, 4, 5, 6]) {
     outcomes.push(try scoped(effect {
       let answered = 0
-      const signingOut = Layer.effect(Factory, map(Factory, (factory) => {
+      const signingOut = overlaidLayer(mockFactoryFor("contributor"), (factory) => {
         const accounts = factory.accounts
         const current = effect () => (answered++ < checks ? try accounts.current() : try accounts.choose("viewer"))
         return Object.assign(Object.create(factory) as Factory.Shape, { accounts: Object.assign(Object.create(accounts) as typeof accounts, { current }) })
-      })).pipe(Layer.provide(mockFactoryFor("contributor")))
+      })
       provide Layer.provideMerge(MockActions({ role: "contributor", actor: input.actor, conversation: "home" }), signingOut) {
         const actions = try Actions
         const started = try Effect.result(actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Fuzz", target: "", title: input.title.trim() || "Fuzz", task: "" }, "button"))

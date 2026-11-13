@@ -204,12 +204,20 @@ from another origin refused (403), stop.
 file is decoded, instead of a hand-written check; the reason is still "terminal is not the protocol"
 (`test/liveSandboxEdges.coverage.test.vibe`).
 
-Still open in `LiveFactory`, both reached only from Node:
+**The browser's `Factory` has no read** (session 8, approved by the lead). No browser code reads a conversation: the
+page follows `events`. `read` left `Factory` for its own service, `ConversationRead` (`src/core/Factory.vibe`).
+`MockFactory` provides both from one state, because the mock's tour flow (`MockActions` `BeginTour`) reads the cursor
+before it starts a tour. Node's live read is `src/core/LiveRead.vibe`, which only `src/surfaces/backend.vibe` imports,
+so it is outside the bundle and the browser roster. The unit gate covers it through `test/http.coverage.test.vibe`
+(transport, 503, malformed JSON, wrong schema), `test/clientPaths.test.vibe` and `test/wire.test.vibe` (invalid
+identifiers). The CLI's `read` command and its tests are unchanged. Tests that read through the browser's
+`BrowserFactory` now build the conversation from its events (`apply`), as the page does. `LiveFactory`'s 3 open arms in
+the browser gate (`read`, its status check and its decode) are gone with the code. One `LiveFactory` site remains open,
+reached only from Node:
 
 | Site | Reason |
 | --- | --- |
 | `pathOf`'s invalid conversation | The page's conversation ids are generated session UUIDs. Only the CLI and the MCP server pass an id a person typed; the unit gate covers it. |
-| `read` | No browser code calls `Factory.read`: the page follows `events`. Only the CLI reads (`src/surfaces/commands.vibe`). Taking `read` off the browser's `Factory` is the lead's call (asked on the board). |
 
 **Two sandboxes in one allowance** (`e2e/core-sandbox-two.spec.ts`, session 7). Learn more moves the page to the
 tab's tour conversation, and it stays there after the tour, so a contributor's sandbox at home and another in the tour

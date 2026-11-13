@@ -5,7 +5,7 @@ import { WikiState } from "../core/wikiSchemas.vibe"
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
-import { Factory, SandboxSnapshot } from "../core/Factory.vibe"
+import { ConversationRead, Factory, SandboxSnapshot } from "../core/Factory.vibe"
 import { Entry, Seq } from "../core/schemas.vibe"
 import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
@@ -50,12 +50,11 @@ effect function ask(input: AskInput) {
 }
 
 effect function read(input: ReadInput) {
-  const factory = try Factory
-  const snapshot = try factory.read(input.conversation, input.after)
+  const snapshot = try (try ConversationRead).read(input.conversation, input.after)
   return { conversation: input.conversation, ...snapshot }
 }
 
-function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | Mythical | Actions | FileSystem.FileSystem | Path.Path>(
+function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | ConversationRead | Mythical | Actions | FileSystem.FileSystem | Path.Path>(
   name: Name,
   description: string,
   input: I,

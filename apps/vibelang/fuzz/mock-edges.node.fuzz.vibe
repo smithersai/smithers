@@ -8,7 +8,7 @@
 // Factory answers Unavailable.
 import { it } from "@effect/vitest"
 import type { Event } from "../src/core/conversation.vibe"
-import { Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { MockJournal } from "../src/core/MockJournal.vibe"
 import { replyIdOf } from "../src/core/flows.vibe"
@@ -41,7 +41,7 @@ effect function settled(factory: Factory.Shape, room: string, post: string) {
 }
 
 effect function reply(factory: Factory.Shape, room: string, post: string) {
-  return (try factory.read(room, 0)).entries.find((entry) => entry.inReplyTo === post)
+  return (try (try ConversationRead).read(room, 0)).entries.find((entry) => entry.inReplyTo === post)
 }
 
 it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, step, action }) => scoped(effect {
@@ -70,10 +70,10 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
     if (known._tag !== "Success" || !(refusal instanceof Refused) || refusal.refusal !== "empty") throw new Refuted({ check: 30 })
     // A reply the reload cut off fails in words, and the next post is answered.
     try factory.post("cut-off", "b", "Ada", "install")
-    const next = (try factory.read("cut-off", 0)).entries.find((entry) => entry.clientId === "b")
+    const next = (try (try ConversationRead).read("cut-off", 0)).entries.find((entry) => entry.clientId === "b")
     if (next === undefined) throw new Refuted({ check: 2 })
     try settled(factory, "cut-off", next.id)
-    const cut = (try factory.read("cut-off", 0)).entries.find((entry) => entry.id === replyIdOf("m1"))
+    const cut = (try (try ConversationRead).read("cut-off", 0)).entries.find((entry) => entry.id === replyIdOf("m1"))
     if (cut?.done !== true || cut.error !== "The agent failed. Try again.") throw new Refuted({ check: 3 })
     if ((try reply(factory, "cut-off", next.id))?.error !== "") throw new Refuted({ check: 4 })
 
@@ -85,14 +85,14 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
     const trimmed = Metric.counter("vibelang_mock_trimmed_journal_events", { description: "Retained journal events a restore dropped: numbered out of order", incremental: true })
     const dropped = (try Metric.value(trimmed)).count
     try settled(factory, "renumbered", "m1")
-    const restored = try factory.read("renumbered", 0)
+    const restored = try (try ConversationRead).read("renumbered", 0)
     if ((try Metric.value(trimmed)).count - dropped !== 2 || restored.entries.some((entry) => entry.id === "m2" || entry.id === "m3")) throw new Refuted({ check: 14 })
     const numbers = Array.from(try Stream.runCollect(factory.events("renumbered", 0).pipe(Stream.take(restored.seq), Stream.timeout("20 seconds")))).map((event) => event.seq)
     if (numbers.some((seq, index) => seq !== index + 1)) throw new Refuted({ check: 15 })
 
     // A control outside the protocol is Unavailable; one with no tour is Refused; neither writes an event.
     const room = `controls-${step}`
-    const before = (try factory.read(room, 0)).seq
+    const before = (try (try ConversationRead).read(room, 0)).seq
     const malformed = try exit(controlTour(room, "jump" as "pause", step))
     const outOfRange = try exit(controlTour(room, "seek", 12 + step))
     if (malformed._tag !== "Failure" || !(Cause.squash(malformed.cause) instanceof Unavailable) || outOfRange._tag !== "Failure" || !(Cause.squash(outOfRange.cause) instanceof Unavailable)) throw new Refuted({ check: 6 })
@@ -100,7 +100,7 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
       const idle = try exit(controlTour(room, control, 1 + step % 11))
       if (idle._tag !== "Failure" || !(Cause.squash(idle.cause) instanceof Refused)) throw new Refuted({ check: 7 })
     }
-    if ((try factory.read(room, 0)).seq !== before) throw new Refuted({ check: 8 })
+    if ((try (try ConversationRead).read(room, 0)).seq !== before) throw new Refuted({ check: 8 })
 
     // Once the walkthrough drives its first step every control answers; a post behind the tour waits, then is answered.
     try factory.tour(room)
@@ -112,7 +112,7 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
     }
     if (action !== "jump") try exit(controlTour(room, action, 1 + step % 11))
     try factory.post(room, "q", "Ada", "install")
-    const asked = (try factory.read(room, 0)).entries.find((entry) => entry.clientId === "q")
+    const asked = (try (try ConversationRead).read(room, 0)).entries.find((entry) => entry.clientId === "q")
     if (asked === undefined) throw new Refuted({ check: 9 })
     // A seek to the last stop lets the walkthrough finish on its own first; ending it then is refused as no tour.
     const ended = try exit(factory.endTour(room))
@@ -126,7 +126,7 @@ it.live("mock/factory-edges", () => run("mock/factory-edges", Input, ({ text, st
     try factory.post(raced, "r", "Ada", "install")
     const toured = try exit(factory.tour(raced))
     if (toured._tag === "Failure" && !(Cause.squash(toured.cause) instanceof Refused)) throw new Refuted({ check: 12 })
-    const racer = (try factory.read(raced, 0)).entries.find((entry) => entry.clientId === "r")
+    const racer = (try (try ConversationRead).read(raced, 0)).entries.find((entry) => entry.clientId === "r")
     if (racer === undefined) throw new Refuted({ check: 13 })
     if (toured._tag === "Success") try exit(factory.endTour(raced))
     try settled(factory, raced, racer.id)

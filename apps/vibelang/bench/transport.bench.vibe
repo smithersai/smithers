@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { it, expect } from "@effect/vitest"
 import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
@@ -15,11 +16,12 @@ it("typed transport failure latency", async ({ bench }) => {
         : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status })))))
       await runPromise(effect {
         provide HttpClient.HttpClient = broken {
-          provide LiveFactory("http://fault.invalid") {
+          provide LiveFactory("http://fault.invalid"), LiveRead("http://fault.invalid") {
             const factory = try Factory
+            const reader = try ConversationRead
             const calls = [
               ["health", () => Effect.asVoid(health("http://fault.invalid"))],
-              ["read", () => Effect.asVoid(factory.read("home", 0))],
+              ["read", () => Effect.asVoid(reader.read("home", 0))],
               ["events", () => Stream.runDrain(factory.events("home", 0))],
               ["post", () => factory.post("home", "a", "Bench", "Measured")],
               ["tour", () => factory.tour("home")],

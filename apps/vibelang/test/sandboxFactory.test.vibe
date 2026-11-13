@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor, MockFactory } from "../src/core/MockFactory.vibe"
 
 describe("sandbox flows through Factory", () => {
@@ -61,7 +61,7 @@ it.live("the chat agent starts the same metered sandbox through its Factory flow
     try factory.post("agent", "ask-sandbox", "Ada", "start a sandbox")
     try Stream.runDrain(factory.events("agent", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
     const sandbox = try factory.sandbox("agent")
-    const chat = try factory.read("agent", 0)
+    const chat = try (try ConversationRead).read("agent", 0)
     try Effect.try(() => { expect(sandbox.status).toBe("running"); expect(chat.entries.at(-1)!.text).toBe(`Started ${sandbox.id}.`) })
   }
 })
@@ -87,7 +87,7 @@ it.live("a queued Viewer prompt cannot borrow a subsequently selected Contributo
     try factory.endTour("queued-viewer")
     try Stream.runDrain(factory.events("queued-viewer", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
     const sandbox = try factory.sandbox("queued-viewer")
-    const chat = try factory.read("queued-viewer", 0)
+    const chat = try (try ConversationRead).read("queued-viewer", 0)
     try Effect.try(() => {
       expect(sandbox.status).toBe("stopped")
       expect(chat.entries.at(-1)!.text).toBe("Couldn't start a sandbox")
@@ -106,7 +106,7 @@ it.live("a queued Contributor prompt starts only its originating owner's sandbox
     const other = try factory.sandbox("queued-contributor")
     try factory.accounts.choose("contributor")
     const own = try factory.sandbox("queued-contributor")
-    const chat = try factory.read("queued-contributor", 0)
+    const chat = try (try ConversationRead).read("queued-contributor", 0)
     try Effect.try(() => {
       expect(other.status).toBe("stopped")
       expect(own.status).toBe("running")

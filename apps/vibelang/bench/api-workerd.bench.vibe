@@ -5,8 +5,9 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as Sse from "effect/encoding/Sse"
 import { EventSchema } from "../src/core/schemas.vibe"
 import { HistoryEvent } from "../src/history/schemas.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { serveApiObjects } from "../test/support/workerd.vibe"
 import { modelService } from "./fixtures.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
@@ -55,19 +56,20 @@ it("the API Worker's production object bodies answer through workerd", { timeout
         AUTH_BROKER_ORIGIN: "https://broker.invalid",
         AUTH_BROKER_SITE_SECRET: "benchmark-only-public-read-site-key",
       }), (served) => promise(served.dispose))
-      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+      provide Layer.merge(LiveFactory(api.origin), LiveRead(api.origin)).pipe(Layer.provide(FetchHttpClient.layer)) {
         const factory = try Factory
+        const reader = try ConversationRead
         let run = 0
         const conversation = workload(bench, "api-objects-conversation", "async", async () => {
           const room = `bench-api-${++run}`
           await runPromise(factory.post(room, "a", "Bench", "Reply briefly."))
           const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed")))))
           expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
-          const read = await runPromise(factory.read(room, 0))
+          const read = await runPromise(reader.read(room, 0))
           expect(read.entries.map((entry) => [entry.author, entry.text])).toEqual([["person", "Reply briefly."], ["agent", "Deterministic answer."]])
         })
         const unbound = workload(bench, "api-objects-unbound", "async", async () => {
-          const result = await runPromise(Effect.result(factory.read(`unbound-${++run}`, 0)))
+          const result = await runPromise(Effect.result(reader.read(`unbound-${++run}`, 0)))
           expect(result._tag).toBe("Failure")
         })
         const unconfigured = workload(bench, "api-objects-unconfigured-accounts", "async", async () => {
@@ -134,7 +136,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           await runPromise(factory.post(room, "a", "Bench", "Bench tools."))
           const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("30 seconds")))))
           expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
-          const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
+          const reply = (await runPromise(reader.read(room, 0))).entries.at(-1)!
           expect(reply.author).toBe("agent")
           // A signed-out guest is a viewer: the history machine refuses its Start, and a draft needs a signed-in owner.
           const answered = JSON.parse(reply.text) as { readonly outline: boolean; readonly started: unknown; readonly drafted: { readonly ok: boolean; readonly error: { readonly code: string; readonly message: string } }; readonly wiki: boolean; readonly docs: boolean }
@@ -219,7 +221,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           expect(posted.status).toBe(200)
           const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("60 seconds")))))
           expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
-          const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
+          const reply = (await runPromise(reader.read(room, 0))).entries.at(-1)!
           const answered = JSON.parse(reply.text)
           // The unregistered owner is a viewer; the owner-aware account RPC must refuse its draft.
           expect(answered.started).toEqual({ id: "", refusal: "forbidden" })

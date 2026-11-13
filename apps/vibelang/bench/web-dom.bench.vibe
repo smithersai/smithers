@@ -6,7 +6,7 @@ import { it, expect } from "@effect/vitest"
 import { vi } from "vitest"
 import { Dom, Runtime, Subscription } from "foldkit"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
-import type { Factory } from "../src/core/Factory.vibe"
+import type { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { pages } from "../src/core/wiki.vibe"
@@ -27,7 +27,7 @@ const REVIEW_LINK = ".sui-chat-bubble a[href='#wiki-draft-roadmap']"
 const drafted = `${(pages.find(entry => entry.id === "roadmap")?.source ?? "").trimEnd()}\n\n${ROADMAP_DRAFT}\n`
 
 /** The real app embedded in a fresh container; `latest` is the model as update leaves it, `send` the test channel. */
-effect function app(actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), factory: Layer.Layer<Factory> = MockFactory, resources: Layer.Layer<Actions | Factory> = actions.pipe(Layer.provideMerge(factory))) {
+effect function app(actions: Layer.Layer<Actions, never, Factory | ConversationRead> = MockActions({ actor: "person" }), factory: Layer.Layer<Factory | ConversationRead> = MockFactory, resources: Layer.Layer<Actions | Factory> = actions.pipe(Layer.provideMerge(factory))) {
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
   const input = try Effect.try(() => steps<Message>())
   let latest: Model = init(flags).model

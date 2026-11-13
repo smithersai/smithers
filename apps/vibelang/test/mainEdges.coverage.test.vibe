@@ -5,7 +5,7 @@ import { vi } from "vitest"
 import { Runtime } from "foldkit"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
-import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, Unavailable } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { newClient } from "../src/core/conversation.vibe"
 import { AccountUnavailable, type Accounts } from "../src/core/roles.vibe"
@@ -15,7 +15,7 @@ import { initialIssues } from "../src/web/issues.vibe"
 import { accountOf, OpenWikiEditor, CloseIssueDialog, ClosePalette, CloseRoleDialog, EndTourCommand, FocusAccountMenu, FocusWikiEditor, init, Message, type Model, ShowIssueDialog, ShowRoleDialog, SignInAccount, SwitchMode, update } from "../src/web/main.vibe"
 import { application } from "./support/application.vibe"
 import { addElement, activeIs, chatShown, container, dispatchTouch, dispatchWindow, fire, fullLocation, hrefOf, remove, setLocation, tallPage, textOf } from "./support/browser.ts"
-import { overlaid } from "./support/overlaid.vibe"
+import { overlaid, overlaidLayer } from "./support/overlaid.vibe"
 
 const flags = { session: "e", name: "Ada", mode: "mock" as const }
 type Started = ReturnType<typeof init>
@@ -23,9 +23,9 @@ const home = init(flags).model
 const chat: Model = { ...home, surface: "chat" }
 const person = { id: "1", login: "ada", role: "new" as const }
 
-const started = (over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory> = MockFactory) => startedOn(sync(container), over, actions, resources)
+const started = (over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory | ConversationRead> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory | ConversationRead> = MockFactory) => startedOn(sync(container), over, actions, resources)
 const startedIn = (page: Document, over: Partial<Model>) => startedOn(sync(() => { const node = page.body.appendChild(page.createElement("div")); node.id = "app"; return node }), over, MockActions({ actor: "person" }), MockFactory)
-effect function startedOn(host: HTMLElement!never!never, over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory>, resources: Layer.Layer<Factory>) {
+effect function startedOn(host: HTMLElement!never!never, over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory | ConversationRead>, resources: Layer.Layer<Factory | ConversationRead>) {
   const first: Started = { model: { ...chat, ...over }, commands: [] }
   const seen: { model: Model; messages: Array<string> } = { model: first.model, messages: [] }
   const node = try acquireRelease(host, (node) => sync(() => remove(node)))
@@ -45,7 +45,7 @@ const witnessed = (seen: { readonly messages: ReadonlyArray<string> }, act: () =
   try settled(() => { act(); dispatchWindow("resize"); expect(seen.messages.slice(from)).toContain("RemeasureTheatre") })
   return seen.messages.slice(from, seen.messages.indexOf("RemeasureTheatre", from))
 }
-const faulty = (over: Parameters<typeof overlaid>[1]) => Layer.effect(Factory, map(Factory, (base) => overlaid(base, over))).pipe(Layer.provide(MockFactory))
+const faulty = (over: Parameters<typeof overlaid>[1]) => overlaidLayer(MockFactory, (base) => overlaid(base, over))
 effect function run<A, E, R>(make: () => { readonly effect: A!E!R }) {
   const command = try Effect.try(make)
   return try command.effect

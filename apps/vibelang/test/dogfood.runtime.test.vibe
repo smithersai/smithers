@@ -4,7 +4,7 @@
 import { expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 import { Runtime } from "foldkit"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
 import { Ask, Read } from "../src/surfaces/commands.vibe"
@@ -15,10 +15,11 @@ import { activeId, clickMinimize, commandK, container, hasAsk, remove, send, tra
 it.live("a person in the app and the agent through the Factory commands work in one conversation", () => scoped(effect {
   provide MockFactory {
     const factory = try Factory
+    const mockReads = Layer.succeed(ConversationRead, try ConversationRead)
     const shared = Layer.succeed(Factory, factory)
     let latest = init({ session: "will", name: "Will", mode: "mock" }).model
     const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
-    const program = try Effect.try(() => application(node, shared, (model) => { latest = model }))
+    const program = try Effect.try(() => application(node, Layer.merge(shared, mockReads), (model) => { latest = model }))
     try acquireRelease(
       sync(() => Runtime.embed(program, { flags: succeed({ session: "will", name: "Will", mode: "mock" as const }) })),
       (handle) => sync(() => handle.dispose()),

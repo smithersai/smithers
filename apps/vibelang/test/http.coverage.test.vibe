@@ -3,8 +3,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Factory, type Refused, type Unavailable } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, type Refused, type Unavailable } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { MAX_NAME, MAX_POST_BYTES } from "../src/core/wire.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "../worker/Http.vibe"
@@ -31,10 +32,11 @@ effect function accepted(work: void!(Refused | Unavailable)) {
 
 effect function served() {
   const product = try Factory
+  const reader = try ConversationRead
   const api: Conversations = {
     post: (room, body) => accepted(product.post(room, body.clientId, body.name, body.text)),
     openWiki: (room, page) => accepted(product.openWiki(room, page)),
-    read: (room, after) => Effect.mapError(product.read(room, after), () => new Unreachable({ what: "conversation" })),
+    read: (room, after) => Effect.mapError(reader.read(room, after), () => new Unreachable({ what: "conversation" })),
     tour: (room) => accepted(product.tour(room)),
     endTour: (room) => accepted(product.endTour(room)),
     events: (room) => effect {
@@ -78,12 +80,12 @@ describe("the HTTP Factory", () => {
     it.live(`preserves the valid conversation identifier ${room.length} code units over HTTP`, () => scoped(effect {
       provide NodeHttpServer.layerTest, MockFactory {
         try served()
-        provide LiveFactory("") {
+        provide LiveFactory(""), LiveRead("") {
           const factory = try Factory
           try factory.openWiki(room, "rulings")
           const first = try Stream.runCollect(factory.events(room, 0).pipe(Stream.take(1)))
-          const snapshot = try factory.read(room, 0)
-          const other = try factory.read("unrelated", 0)
+          const snapshot = try (try ConversationRead).read(room, 0)
+          const other = try (try ConversationRead).read("unrelated", 0)
           try Effect.try(() => {
             expect(first).toEqual([{ type: "PaneOpened", seq: 1, id: "", url: "/wiki/rulings" }])
             expect(snapshot.seq).toBe(1)
@@ -98,22 +100,22 @@ describe("the HTTP Factory", () => {
     provide NodeHttpServer.layerTest, MockFactory {
       const { origin } = try served()
       const status = try health(origin)
-      provide LiveFactory(origin) {
+      provide LiveFactory(origin), LiveRead(origin) {
         const factory = try Factory
         try factory.post("home", "a", "Ada", "question")
         const duplicate = factory.post("home", "a", "Ada", "question") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
         try Stream.runCollect(factory.events("home", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
-        const snapshot = try factory.read("home", 0)
+        const snapshot = try (try ConversationRead).read("home", 0)
         const replay = try Stream.runCollect(Stream.take(factory.events("home", 0), 1))
         const cancelled = fork Stream.runDrain(factory.events("home", 1))
         try Effect.yieldNow
         try Fiber.interrupt(cancelled)
         try factory.tour("tour-room")
-        const tour = try factory.read("tour-room", 0)
+        const tour = try (try ConversationRead).read("tour-room", 0)
         const busy = factory.tour("tour-room") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
         try factory.endTour("tour-room")
         const ended = factory.endTour("tour-room") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
-        const after = try factory.read("tour-room", tour.seq)
+        const after = try (try ConversationRead).read("tour-room", tour.seq)
         try Effect.try(() => {
           expect(status).toEqual({ ok: true, agent: "live" })
           expect(factory.mode).toBe("live")
@@ -159,10 +161,11 @@ describe("the HTTP Factory", () => {
     it.effect(`${operation} reports an unavailable transport with its operation`, () => effect {
       const broken = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
       provide HttpClient.HttpClient = broken {
-        provide LiveFactory("http://offline.invalid") {
+        provide LiveFactory("http://offline.invalid"), LiveRead("http://offline.invalid") {
           const factory = try Factory
+          const reader = try ConversationRead
           const result = (operation === "post" ? factory.post("home", "a", "Ada", "hi")
-            : operation === "read" ? factory.read("home", 0)
+            : operation === "read" ? reader.read("home", 0)
             : operation === "events" ? Stream.runDrain(factory.events("home", 0))
             : operation === "tour" ? factory.tour("home") : operation === "health" ? Effect.asVoid(health("http://offline.invalid")) : factory.endTour("home")) catch (error) => fault(error)
           try Effect.try(() => expect(result).toMatchObject({ _tag: "Unavailable", reason: `${operation === "endTour" ? "end tour" : operation} unreachable` }))
@@ -213,9 +216,10 @@ describe("the HTTP Factory", () => {
       it.effect(`${operation} reports ${label}`, () => effect {
         const broken = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status })))))
         provide HttpClient.HttpClient = broken {
-          provide LiveFactory("http://broken.invalid") {
+          provide LiveFactory("http://broken.invalid"), LiveRead("http://broken.invalid") {
             const factory = try Factory
-            const result = (operation === "health" ? Effect.asVoid(health("http://broken.invalid")) : Effect.asVoid(factory.read("home", 0))) catch (error) => fault(error)
+            const reader = try ConversationRead
+            const result = (operation === "health" ? Effect.asVoid(health("http://broken.invalid")) : Effect.asVoid(reader.read("home", 0))) catch (error) => fault(error)
             try Effect.try(() => expect(result).toMatchObject({ _tag: "Unavailable", reason: `${operation} ${reason}` }))
           }
         }

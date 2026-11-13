@@ -49,7 +49,6 @@ export service Factory {
   /** The product mock exposes its actual policy; live authorization stays on the host. */
   readonly policy?: Policy.Shape
   post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)
-  read(conversation: string, after: number): ReadSnapshot!Unavailable
   events(conversation: string, after: number): Stream.Stream<Event, Unavailable>
   /** Starts the agent's tour in `conversation` (Learn more); `busy` while the agent works there. */
   tour(conversation: string): void!(Unavailable | Refused)
@@ -67,3 +66,11 @@ export service Factory {
   sandboxCommand(conversation: string, operationId: string, command: string, generation: number): string!(Unavailable | Refused)
 }
 
+/**
+ * A finite read of a conversation: current copies of the entries touched after `after`, and the event cursor. The CLI's
+ * `read`, the MCP server and the mock's tour flow read; the browser follows `Factory.events` and never reads, so the
+ * browser's live factory has no read (`LiveRead` is Node's).
+ */
+export service ConversationRead {
+  read(conversation: string, after: number): ReadSnapshot!Unavailable
+}

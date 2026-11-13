@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { it, expect } from "@effect/vitest"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { serveApiObjects } from "../test/support/workerd.vibe"
 import { scriptedModel } from "../fuzz/model-server.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
@@ -20,8 +21,9 @@ it("a guest's agent starts, announces, reads and cancels the same public action"
     ].join("\n")
     const scripted = try scriptedModel([{ kind: "stream", pieces: [code], prompt: 3, completion: 4 }])
     const api = try acquireRelease(serveApiObjects({ CHAT_MODEL: JSON.stringify(scripted.record), ...scripted.values }), api => promise(api.dispose))
-    provide FetchHttpClient.layer, LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+    provide FetchHttpClient.layer, Layer.merge(LiveFactory(api.origin), LiveRead(api.origin)).pipe(Layer.provide(FetchHttpClient.layer)) {
       const factory = try Factory
+      const reader = try ConversationRead
       const http = try HttpClient.HttpClient
       let sample = 0
       const result = try tryPromise(() => workload(bench, "workerd-agent-action-lifecycle", "async", async () => {
@@ -30,7 +32,7 @@ it("a guest's agent starts, announces, reads and cancels the same public action"
         const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(
           Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("30 seconds"),
         ))))
-        const snapshot = await runPromise(factory.read(room, 0))
+        const snapshot = await runPromise(reader.read(room, 0))
         const reply = snapshot.entries.find(entry => entry.author === "agent")!
         expect(reply).toMatchObject({ done: true, error: "" })
         const answer = JSON.parse(reply.text)

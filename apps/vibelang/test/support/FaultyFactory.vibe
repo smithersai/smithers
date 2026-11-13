@@ -2,7 +2,7 @@ import { IssueFailure } from "../../src/core/issueSchemas.vibe"
 import { WikiFailure } from "../../src/core/wikiSchemas.vibe"
 // A transport fault over the product's real MockFactory: posts, replies, replay and live delivery stay real.
 import type { Event } from "../../src/core/conversation.vibe"
-import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
+import { ConversationRead, Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { makeWikiStore } from "../../src/core/WikiFactory.vibe"
@@ -108,7 +108,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  */
 export function faultyFactory(fault: Fault, observation: Trace) {
   const device = machineFault(fault)
-  return Layer.effect(Factory, effect {
+  // Reads pass through to the mock; the page never reads (Factory.vibe `ConversationRead`).
+  return Layer.merge(Layer.effect(ConversationRead, effect { return try ConversationRead }), Layer.effect(Factory, effect {
     const base = try Factory
     const released = try Deferred.make<void>()
     const completions = try Queue.unbounded<void>()
@@ -199,7 +200,6 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         }
         try base.post(conversation, clientId, name, text)
       },
-      read: base.read,
       openWiki: effect (conversation, page) => {
         if (fault === "wiki" && !observation.faulted) {
           try sync(() => { observation.faulted = true })
@@ -288,5 +288,5 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         return forged ? Stream.concat(Stream.fromIterable(resumed.first), real.pipe(Stream.flatMap((event) => Stream.fromIterable(forge(forging, conversation, event))))) : real
       }),
     }
-  }).pipe(Layer.provide(fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : device !== undefined ? mockFactoryFor(undefined, makeWikiStore(), faultyMachines(device)) : MockFactory))
+  })).pipe(Layer.provide(fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : device !== undefined ? mockFactoryFor(undefined, makeWikiStore(), faultyMachines(device)) : MockFactory))
 }

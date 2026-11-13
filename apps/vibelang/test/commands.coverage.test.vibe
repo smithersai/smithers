@@ -3,7 +3,7 @@
 // factory in a faulty service: the real event stream cut short, or one operation that fails.
 import { describe, expect, it } from "@effect/vitest"
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, Unavailable } from "../src/core/Factory.vibe"
 import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { IssueFailure } from "../src/core/issueSchemas.vibe"
 import { AccountUnavailable } from "../src/core/roles.vibe"
@@ -25,7 +25,7 @@ const noAccount = () => Effect.fail(new AccountUnavailable({ reason: "down" }))
 /** A factory that is entirely down, except the operations a case names. */
 function closed(over: Partial<Factory.Shape>): Factory.Shape {
   return {
-    mode: "mock", post: offline, read: offline, events: () => Stream.fail(new Unavailable({ reason: "offline" })), tour: offline, endTour: offline,
+    mode: "mock", post: offline, events: () => Stream.fail(new Unavailable({ reason: "offline" })), tour: offline, endTour: offline,
     openWiki: offline, sandbox: offline, startSandbox: offline, stopSandbox: offline, sandboxCommand: offline,
     accounts: { current: noAccount, members: noAccount, grant: noAccount, signOut: noAccount, signInAgent: noAccount, choose: noAccount, participated: noAccount, events: () => Stream.fail(new AccountUnavailable({ reason: "down" })) },
     issues: { read: () => Effect.fail(new IssueFailure({ reason: "unavailable" })), act: () => Effect.fail(new IssueFailure({ reason: "unavailable" })) },
@@ -87,7 +87,7 @@ describe("ask and read", () => {
   })
 
   it.live("report the factory's own unavailability reason", () => effect {
-    const message = try failure(Effect.provideService(Read.run({}), Factory, closed({})))
+    const message = try failure(Effect.provideService(Read.run({}), ConversationRead, { read: offline }))
     try Effect.try(() => expect(message).toBe("offline"))
   })
 })

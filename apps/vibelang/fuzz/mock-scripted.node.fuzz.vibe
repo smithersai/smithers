@@ -4,7 +4,7 @@
 // succeeds, a viewer's write is refused in words, and every reply ends. Found: a refused specification review died
 // inside the reply step and kept the reply working until the 5-minute deadline (test/mockSpecificationReview.test.vibe).
 import { it } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
@@ -103,7 +103,7 @@ effect function signedOutCommand(room: number) {
     const driven = try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil((event) => event.type === "WalkthroughDriven"), Stream.timeout("20 seconds")))
     if (!Array.from(driven).some((event) => event.type === "WalkthroughDriven")) throw new Refuted({ check: 30 })
     try factory.post(conversation, "s", "Guest", PROMPTS.action)
-    const post = (try factory.read(conversation, 0)).entries.find((entry) => entry.clientId === "s")
+    const post = (try (try ConversationRead).read(conversation, 0)).entries.find((entry) => entry.clientId === "s")
     if (post === undefined) throw new Refuted({ check: 31 })
     try factory.accounts.signOut()
     try factory.endTour(conversation)

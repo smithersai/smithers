@@ -1,10 +1,11 @@
 import { validSessionCookie } from "../core/accountCookies.vibe"
-import { Factory } from "../core/Factory.vibe"
+import { ConversationRead, Factory } from "../core/Factory.vibe"
 import { liveHealth } from "../core/clientProtocolDecision.vibe"
 import { prefersMock, sameOriginRequest, sessionCookie } from "../core/protocolDecision.vibe"
 
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
+import { LiveRead } from "../core/LiveRead.vibe"
 import { mockFactoryFor, MockFactory } from "../core/MockFactory.vibe"
 import { LiveActions } from "../actions/LiveActions.vibe"
 import { MockActions } from "../actions/MockActions.vibe"
@@ -78,7 +79,7 @@ return Layer.unwrap(effect {
     }
     if (!liveHealth(answer.agent)) throw new LiveBackendNotDeployed({ message: notDeployed(origin) })
   }
-  return Layer.mergeAll(LiveFactory(origin), LiveMythical(origin), LiveActions(origin)).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
+  return Layer.mergeAll(LiveFactory(origin), LiveRead(origin), LiveMythical(origin), LiveActions(origin)).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
 }).pipe(Layer.provide(FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "error" })))))
 }
 const live = liveBackend()
@@ -87,13 +88,13 @@ const live = liveBackend()
 // the surface visits as the fixture maintainer, as before. No network, no model (VL-13).
 // With no settings directory to read (neither XDG_CONFIG_HOME nor HOME), no one is signed in. The mock factory always
 // has accounts.
-const surfaceMock = Layer.effect(Factory, effect {
+const surfaceMock = Layer.effectContext(effect {
   const stored = readMockSession() catch () => undefined
   const context = try Layer.build(mockFactoryFor())
   const factory = Context.get(context, Factory)
   if (stored?.origin === "mock") try Effect.orDie(factory.accounts.signInAgent())
   else try Effect.orDie(factory.accounts.choose("maintainer"))
-  return factory
+  return Context.make(Factory, factory).pipe(Context.add(ConversationRead, Context.get(context, ConversationRead)))
 })
 const surfaceHistory = Layer.unwrap(effect {
   const factory = try Factory

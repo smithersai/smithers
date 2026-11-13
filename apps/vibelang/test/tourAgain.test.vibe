@@ -5,7 +5,7 @@ import { expect, it } from "@effect/vitest"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import * as Objects from "../worker/Objects.vibe"
 import { world, history } from "./support/actionObjects.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
@@ -46,7 +46,7 @@ it.live("in mock mode too, the tour after an ended one greets the person first",
     try factory.tour("again")
     const first = try firstLine(0)
     try factory.endTour("again")
-    const ended = (try factory.read("again", 0)).seq
+    const ended = (try (try ConversationRead).read("again", 0)).seq
     try factory.tour("again")
     const second = try firstLine(ended)
     expect(first.text.length).toBeGreaterThan(0)
@@ -72,7 +72,7 @@ it.live("an immediately ended queued tour releases the next post", () => scoped(
       expect(events.filter(event => event.type === "TourEnded")).toHaveLength(2)
       expect(events.filter(event => event.type === "ReplyFinished")).toHaveLength(1)
     })
-    const entries = (try factory.read("immediate", 0)).entries
+    const entries = (try (try ConversationRead).read("immediate", 0)).entries
     const posted = entries.find(entry => entry.clientId === "after-ends")!
     const reply = entries.find(entry => entry.inReplyTo === posted.id)
     try Effect.try(() => expect(reply).toMatchObject({ done: true, error: "" }))

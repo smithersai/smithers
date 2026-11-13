@@ -1,5 +1,5 @@
 import { it, expect } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
@@ -14,7 +14,7 @@ it("the mock agent requests each named specification reviewer with the poster's 
           const room = `spec-${id}`
           try factory.post(room, "one", "Bench", `${name}, review the specification.`)
           try Stream.runDrain(factory.events(room, 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("15 seconds")))
-          const snapshot = try factory.read(room, 0)
+          const snapshot = try (try ConversationRead).read(room, 0)
           const reply = snapshot.entries.find(entry => entry.author === "agent")!
           const reviewed = try factory.issues!.read()
           try Effect.try(() => {
@@ -44,7 +44,7 @@ it("the mock agent answers a viewer's specification review refusal without chang
       try factory.post("review-refused", "one", "Guest", "Codex Astra, review the specification.")
       try Stream.runDrain(factory.events("review-refused", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("15 seconds")))
       const after = try factory.issues!.read()
-      const reply = (try factory.read("review-refused", 0)).entries.find(entry => entry.author === "agent")
+      const reply = (try (try ConversationRead).read("review-refused", 0)).entries.find(entry => entry.author === "agent")
       try Effect.try(() => {
         expect(reply).toMatchObject({ text: "Only contributors can request a specification review.", done: true, error: "" })
         expect(after).toEqual(before)

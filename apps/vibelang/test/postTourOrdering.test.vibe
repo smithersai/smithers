@@ -1,7 +1,7 @@
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 // Competing public requests must never lose the post between dispatch and the first reply step.
 import { expect, it } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { readingMillis, replyIdOf } from "../src/core/flows.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
@@ -36,7 +36,7 @@ for (const period of [6, 7, 11, 17]) {
             Stream.takeUntil((event) => event.type === "ReplyFinished"),
             Stream.timeout("5 seconds"),
           ))
-          const snapshot = try factory.read(room, 0)
+          const snapshot = try (try ConversationRead).read(room, 0)
           const person = snapshot.entries.find((entry) => entry.author === "person")
           const reply = snapshot.entries.find((entry) => entry.inReplyTo === person?.id)
           try Effect.try(() => {
@@ -66,13 +66,13 @@ it.live("finishes a concurrently accepted tour before answering the waiting post
           if (result !== "busy") try Ref.update(tours, (count) => count + 1)
         }
         try.all [factory.post(room, "a", "Ada", "install"), start]
-        const accepted = try factory.read(room, 0)
+        const accepted = try (try ConversationRead).read(room, 0)
         const person = accepted.entries.find((entry) => entry.author === "person")!
         try Stream.runCollect(factory.events(room, 0).pipe(
           Stream.takeUntil((event) => event.type === "ReplyFinished" && event.id === replyIdOf(person.id)),
           Stream.timeout(naturalTourBudget),
         ))
-        const snapshot = try factory.read(room, 0)
+        const snapshot = try (try ConversationRead).read(room, 0)
         const reply = snapshot.entries.find((entry) => entry.inReplyTo === person.id)
         try Effect.try(() => {
           expect(reply).toMatchObject({ text: mockReply("install"), done: true })

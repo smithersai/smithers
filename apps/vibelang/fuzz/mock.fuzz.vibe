@@ -1,6 +1,6 @@
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { it } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
 import { mockReply, scriptedReplies } from "../src/core/mockReplies.vibe"
@@ -30,7 +30,7 @@ it.live("mock/agent-and-machine", () => run("mock/agent-and-machine", Schema.Str
       const reply = replies.find((entry) => entry.inReplyTo === post.id)
       if (!reply?.done || reply.text !== mockReply(post.text) || !scriptedReplies.includes(reply.text) || reply.error !== "") return false
     }
-    const snapshot = try factory.read(conversation, 0)
+    const snapshot = try (try ConversationRead).read(conversation, 0)
     if (!same(snapshot.entries, state.entries) || snapshot.seq !== state.seq) return false
     const duplicate = try exit(factory.post(conversation, "c0", "Guest", texts[0]!))
     if (duplicate._tag === "Success" || Cause.hasDies(duplicate.cause)) return false

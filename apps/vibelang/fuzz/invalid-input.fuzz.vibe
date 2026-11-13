@@ -1,12 +1,13 @@
 import { it } from "@effect/vitest"
 import { HttpClient } from "effect/http"
-import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, Unavailable } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { run, Int } from "./run.vibe"
 
 // An invalid id must be refused before this deliberately faulty service can run.
 const unreachable = HttpClient.make(() => Effect.die("invalid-id network escape"))
-const live = LiveFactory("https://api.invalid").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, unreachable)))
+const live = Layer.merge(LiveFactory("https://api.invalid"), LiveRead("https://api.invalid")).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, unreachable)))
 
 it.live("protocol/invalid-id-never-reaches-network", () => run("protocol/invalid-id-never-reaches-network", Schema.Struct({ id: Schema.Literals(["", "\ud800", "\udfff", "x".repeat(129)]), operation: Int }), ({ id, operation }) => effect {
   provide live {
@@ -14,7 +15,7 @@ it.live("protocol/invalid-id-never-reaches-network", () => run("protocol/invalid
     const outcome = try exit(effect {
       switch (operation % 9) {
         case 0: try factory.post(id, "c", "Guest", "hello"); break
-        case 1: try factory.read(id, 0); break
+        case 1: try (try ConversationRead).read(id, 0); break
         case 2: try factory.tour(id); break
         case 3: try factory.endTour(id); break
         case 4: try Stream.runDrain(factory.events(id, 0)); break

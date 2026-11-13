@@ -4,8 +4,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { HttpClient, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Factory, type Refused, type Unavailable } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory, type Refused, type Unavailable } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import type { ActionsApi } from "../worker/ActionsHttp.vibe"
 import { afterOf, eventStream, handle, handleConversations, type Conversations, type Histories } from "../worker/Http.vibe"
@@ -32,10 +33,11 @@ effect function accepted(work: void!(Refused | Unavailable)) {
 /** The Worker's Conversations contract over the mock product; `tours` false leaves tour control out, as a host may. */
 effect function conversations(tours: boolean) {
   const product = try Factory
+  const reader = try ConversationRead
   const api: Conversations = {
     post: (room, body) => accepted(product.post(room, body.clientId, body.name, body.text)),
     openWiki: (room, page) => accepted(product.openWiki(room, page)),
-    read: (room, after) => Effect.mapError(product.read(room, after), () => new Unreachable({ what: "conversation" })),
+    read: (room, after) => Effect.mapError(reader.read(room, after), () => new Unreachable({ what: "conversation" })),
     tour: (room) => accepted(product.tour(room)),
     endTour: (room) => accepted(product.endTour(room)),
     events: (room) => effect {
@@ -75,9 +77,9 @@ describe("the API's HTTP routes", () => {
       const large = try status(post(path, JSON.stringify({ page: "x".repeat(1100) })))
       const malformed = try status(post(path, "{", "1"))
       const unknown = try status(post(path, JSON.stringify({ page: "no-such-page" })))
-      provide LiveFactory("") {
+      provide LiveFactory(""), LiveRead("") {
         try (try Factory).openWiki("wiki-room", "rulings")
-        const snapshot = try (try Factory).read("wiki-room", 0)
+        const snapshot = try (try ConversationRead).read("wiki-room", 0)
         try Effect.try(() => {
           expect([missing, empty, large, malformed]).toEqual([
             { status: 413, body: { error: "body size" } }, { status: 413, body: { error: "body size" } },
@@ -158,7 +160,7 @@ describe("the API's HTTP routes", () => {
         )
         const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(chunked))
         const response = try Effect.provideService(handle(try conversations(true), unavailableHistory), HttpServerRequest.HttpServerRequest, request)
-        const snapshot = try (try Factory).read("chunked", 0)
+        const snapshot = try (try ConversationRead).read("chunked", 0)
         try Effect.try(() => {
           expect(request.headers["content-length"]).toBeUndefined()
           expect(response.status).toBe(413)
@@ -172,7 +174,7 @@ describe("the API's HTTP routes", () => {
     it.effect(`answers a body that fails mid-read as a bad body, reaching nothing: ${path}`, () => effect {
       provide MockFactory {
         const response = try Effect.provideService(handle(try conversations(true), unavailableHistory), HttpServerRequest.HttpServerRequest, try resetRequest(path, "20"))
-        const snapshot = try (try Factory).read("reset", 0)
+        const snapshot = try (try ConversationRead).read("reset", 0)
         try Effect.try(() => {
           expect(response.status).toBe(400)
           expect(snapshot.seq).toBe(0)

@@ -34,7 +34,7 @@ describe("walkthrough state", () => {
   })
 })
 
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { MockJournal } from "../src/core/MockJournal.vibe"
 import { TestClock } from "effect/testing"
@@ -70,7 +70,7 @@ it.effect("a paused private Mock tour survives rebuilding its host and resumes w
       const factory = try Factory
       const events = Array.from(try Stream.runCollect(factory.events("tour-reload", 0).pipe(Stream.takeUntil(event => event.type === "TourPaused"))))
       try TestClock.adjust("5 seconds")
-      const before = try factory.read("tour-reload", 0)
+      const before = try (try ConversationRead).read("tour-reload", 0)
       try Effect.try(() => {
         expect(before.seq).toBe(events.at(-1)!.seq)
         expect(events.reduce(apply, empty).walkthrough).toMatchObject({ step: 4, paused: true })

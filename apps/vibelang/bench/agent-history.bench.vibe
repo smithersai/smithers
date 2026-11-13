@@ -5,8 +5,9 @@
 import { it, expect } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { FetchHttpClient } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { serveApiObjects } from "../test/support/workerd.vibe"
 import { modelService } from "./fixtures.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
@@ -19,15 +20,16 @@ it("a reply pages the history through its tools; a guest's Plan and Note are ref
         CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
         SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
       }), (served) => promise(served.dispose))
-      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+      provide Layer.merge(LiveFactory(api.origin), LiveRead(api.origin)).pipe(Layer.provide(FetchHttpClient.layer)) {
         const factory = try Factory
+        const reader = try ConversationRead
         let run = 0
         const tools = workload(bench, "agent-history-tools", "async", async () => {
           const room = `bench-history-${++run}`
           await runPromise(factory.post(room, "a", "Bench", "Bench history."))
           const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("60 seconds")))))
           expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
-          const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
+          const reply = (await runPromise(reader.read(room, 0))).entries.at(-1)!
           expect(reply.author).toBe("agent")
           expect(JSON.parse(reply.text)).toEqual({ epic: true, commit: true, found: true, planned: { id: "", refusal: "forbidden" }, noted: { id: "", refusal: "forbidden" } })
         })

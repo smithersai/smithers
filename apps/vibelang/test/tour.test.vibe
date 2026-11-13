@@ -7,7 +7,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import {
   DOCS_ORIGIN, docsPage, EndTour, stoppedBy, openDocs, readingMillis, Reply, ReplyStep, say, StartTour, Tour, toured, tourRegistration, Tours, walk, walkRegistration,
 } from "../src/core/flows.vibe"
@@ -61,7 +61,7 @@ describe("the mock's tour, through Factory", () => {
       const events = try until("c2", (event) => event.type === "TourEnded")
       // Long past the next step: an ended tour's flow has stopped, so nothing follows its end.
       try sleep("2 seconds")
-      const snapshot = try factory.read("c2", 0)
+      const snapshot = try (try ConversationRead).read("c2", 0)
       const conversation = events.reduce(apply, empty)
       try Effect.try(() => {
         expect(snapshot.seq).toBe(events.at(-1)!.seq)

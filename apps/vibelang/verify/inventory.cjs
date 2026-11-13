@@ -76,6 +76,7 @@ const shellBoundaries = {
   'src/core/wire.vibe': 'Paths and schemas; the conversation path checks the id length inline with native encodeURIComponent, which throws on a lone surrogate (uri-codec.ts).',
   'src/core/routes.vibe': 'Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts).',
   'src/core/LiveFactory.vibe': 'HTTP outcome choice is proved in clientProtocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',
+  'src/core/LiveRead.vibe': 'HTTP outcome choice is proved in clientProtocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',
   "src/surfaces/commands.vibe": "Conversation/cursor admission calls proved protocolDecision; commandDecision proves reply accumulation, outcome/error mapping and every argument decision: plan kind and target, history reads, unknown epic, page total, issue detail and resume fields, write refusal text, wiki default page, run-wait settlement and action failure text. Schema decoding, stream execution, id generation, the key-sanitizing regexp and output formatting remain boundaries.",
   'src/surfaces/backend.vibe': 'Host choice calls proved prefersMock/liveHealth policies; URL normalization and layer execution remain unproved.',
   'src/web/startup.vibe': 'Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries.',

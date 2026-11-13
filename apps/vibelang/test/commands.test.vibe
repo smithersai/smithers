@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Ask, AskOutput, Read, RunSandbox, StartSandbox, StopSandbox } from "../src/surfaces/commands.vibe"
 import { backend, unreachable } from "../src/surfaces/backend.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
 
@@ -48,7 +48,7 @@ describe("Factory commands", () => {
 
   it.live("validates schemas and reports sequencer refusals", () => effect {
     provide MockFactory {
-      const programs: ReadonlyArray<unknown!import("../src/surfaces/commands.vibe").CommandError!Factory> = [
+      const programs: ReadonlyArray<unknown!import("../src/surfaces/commands.vibe").CommandError!(Factory | ConversationRead)> = [
         Ask.run({ text: "   " }), Ask.run({ text: "x".repeat(8001) }), Ask.run({ text: 7 }),
         Read.run({ after: -1 }), Read.run({ after: 0.5 }), Read.run({ conversation: "" }),
       ]

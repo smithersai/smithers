@@ -2,8 +2,9 @@
 import { it, expect } from "@effect/vitest"
 import { beforeAll, afterAll } from "vitest"
 import { FetchHttpClient } from "effect/http"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveRead } from "../src/core/LiveRead.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
 import { deadline, room, serveApi, type Served } from "./support/workerd.vibe"
@@ -11,7 +12,7 @@ let api: Served | undefined
 beforeAll(async () => { api = await runPromise(serveApi()) })
 afterAll(async () => { await api?.dispose() })
 it.live("live walks the same ten destinations, pauses durably, seeks and cancels through the public API", () => effect {
-  provide LiveFactory(api!.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+  provide Layer.merge(LiveFactory(api!.origin), LiveRead(api!.origin)).pipe(Layer.provide(FetchHttpClient.layer)) {
     const factory = try Factory
     const conversation = try room("walkthrough-controls")
     try factory.tour(conversation)
@@ -25,7 +26,7 @@ it.live("live walks the same ten destinations, pauses durably, seeks and cancels
         const paused = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil(event => event.type === "TourPaused"))))
         const at = paused.reduce(apply, empty)
         try sleep("100 millis")
-        const snapshot = try factory.read(conversation, 0)
+        const snapshot = try (try ConversationRead).read(conversation, 0)
         try Effect.try(() => { expect(at.walkthrough?.paused).toBe(true); expect(snapshot.seq).toBe(at.seq) })
         try factory.controlTour!(conversation, "resume", 0)
       }

@@ -1,9 +1,9 @@
 import { expect, it } from "@effect/vitest"
-import { Factory } from "../src/core/Factory.vibe"
+import { ConversationRead, Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 
 effect function finish(factory: Factory.Shape, room: string, clientId: string) {
-  const post = (try factory.read(room, 0)).entries.find(entry => entry.clientId === clientId)!
+  const post = (try (try ConversationRead).read(room, 0)).entries.find(entry => entry.clientId === clientId)!
   try factory.endTour(room)
   try Stream.runDrain(factory.events(room, 0).pipe(
     Stream.dropUntil(event => event.type === "ReplyStarted" && event.inReplyTo === post.id),
@@ -19,7 +19,7 @@ it.live("a queued Viewer issue request cannot borrow the subsequently selected M
     try factory.accounts.choose("maintainer")
     try finish(factory, "issue-viewer", "queued")
     const issues = try factory.issues.read()
-    const chat = try factory.read("issue-viewer", 0)
+    const chat = try (try ConversationRead).read("issue-viewer", 0)
     try Effect.try(() => {
       expect(issues.items.some(issue => issue.title === "Viewer request")).toBe(false)
       expect(chat.entries.at(-1)?.text).toBe("No issue filed.")
@@ -56,7 +56,7 @@ it.live("a queued split rechecks its original poster's role after demotion", () 
     try factory.accounts.grant(person.id, "new")
     try finish(factory, "issue-demotion", "queued")
     const after = try factory.issues.read()
-    const chat = try factory.read("issue-demotion", 0)
+    const chat = try (try ConversationRead).read("issue-demotion", 0)
     try Effect.try(() => {
       expect(after.items).toEqual(before.items)
       expect(chat.entries.at(-1)?.text).toBe("Filed 0 children.\n\n[Open #38](#issue-38)")
