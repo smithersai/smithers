@@ -103,28 +103,33 @@ TTL semantics (`tests/helpers/memoryKv.ts`); no route mocking.
 
 ## Deploy
 
-Not run by CI. Set `CLOUDFLARE_API_TOKEN`, `ALCHEMY_PASSWORD`,
+Publication requires a qualified Cloud rollout, with a passing gate and an
+immutable artifact at the exact `main` revision. Follow
+[the deployment requirements](docs/deployment.md) for resource adoption,
+lease and deployed-artifact verification. The local `deploy` script refuses
+publication, including with `--adopt`; there is no local bypass.
+
+Set `CLOUDFLARE_API_TOKEN`, `ALCHEMY_PASSWORD`,
 `BUG_ADMIN_TOKEN` through your usual secret mechanism (a gitignored `.env`,
 or the runner's secret store); never type them on the command line, where
 shell history keeps them in plaintext. A deploy without one fails rather than
 removing the live binding.
 
-The first Alchemy 2 run takes over the Worker and KV namespace Alchemy 1
-created. Read the plan, then deploy:
+### Plan (no publication)
+
+Inspect the first Alchemy 2 adoption plan for the existing resources:
 
 ```sh
 pnpm -C apps/bug-worker run plan --adopt
-pnpm -C apps/bug-worker run deploy --adopt
 ```
 
-Every later run, from any machine, drops the flag:
+For later plans, omit the adoption flag:
 
 ```sh
 pnpm -C apps/bug-worker run plan
-pnpm -C apps/bug-worker run deploy
 ```
 
-Both run stage `prod` against the account's shared `alchemy-state-store`
+Both plans run stage `prod` against the account's shared `alchemy-state-store`
 Worker. The stack pins the live physical names: Worker
 `smithers-bug-worker-smithers-bug-worker-williamcory`, KV namespace
 `smithers-bug-worker-bug-reports-williamcory`, and hostnames
