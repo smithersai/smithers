@@ -56,22 +56,11 @@ narrower slice of the same light surface or an adapter that carries a heavy
 third-party renderer. Importing an adapter is a deliberate act, because the
 adapter's dependency lands in your bundle.
 
-| Specifier                              | What it exports                                                        | Heavy dependency |
-| -------------------------------------- | ---------------------------------------------------------------------- | ---------------- |
-| `@smthrs/ui`                           | Every component, hook, token, and pure helper in the base library      | None             |
-| `@smthrs/ui/status`                    | The status vocabulary alone                                            | None             |
-| `@smthrs/ui/time`                      | `RelativeTime`, `useRelativeTime`, `formatRelativeTime`                | None             |
-| `@smthrs/ui/calendar`                  | `Calendar`, its types, its CSS, and the date helpers                   | None             |
-| `@smthrs/ui/vault`                     | Wikilinks, the graph model, the outline and backlinks panels, autosave | None             |
-| `@smthrs/ui/adapters/chart`            | `ChartContainer` and the categorical series palette                    | `recharts`       |
-| `@smthrs/ui/adapters/terminal`         | `Terminal`, an xterm.js render surface                                 | `@xterm/*`       |
-| `@smthrs/ui/adapters/knowledge-graph`  | `KnowledgeGraph`, the force-directed vault graph                       | `d3-force`       |
-
-The four subpaths without a heavy dependency exist for import ergonomics, not
-for weight: everything they export is also on the root barrel. The adapter
-subpaths are the opposite, and reaching one is the only way to load its
-dependency. For what each adapter costs and how the boundary holds, read
-[The adapters boundary](./concepts/adapters.md).
+The complete [entry-point table](./api.md#entry-points) lists every public
+specifier, including `@smthrs/ui/adapters/code-editor`. Focused light
+subpaths also expose helpers absent from the root. Heavy adapters load only
+through their own specifier; see [The adapters boundary](./concepts/adapters.md)
+for their measured cost.
 
 The repository views (`RepoView`, `CodeFileView`, `PierreDiffView`,
 `MarkdownEditor`) are in `@smthrs/repo-view`, and `TerminalFrame` is in

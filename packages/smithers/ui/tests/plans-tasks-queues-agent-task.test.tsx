@@ -89,6 +89,7 @@ describe("AgentTask", () => {
     );
     expect(container!.querySelector('[data-slot="agent-task-group"]')?.getAttribute("role")).toBe("list");
     expect(container!.querySelectorAll('[data-slot="agent-task"]').length).toBe(2);
+    expect(container!.querySelectorAll('[data-slot="agent-task-group"] > [role="listitem"]').length).toBe(2);
   });
 });
 
@@ -123,4 +124,17 @@ describe("TaskItem extensions", () => {
     expect(item.querySelector('[data-slot="task-item-files"]')?.textContent).toContain("a.ts");
     expect(item.querySelector(".sui-taskitem-elapsed")?.textContent).toBe("3s");
   });
+});
+
+test("nested standalone cards do not inherit the outer group's list-item role", async () => {
+  await render(<AgentTaskGroup>
+    <AgentTask title="Parent" defaultOpen>
+      <AgentTaskContent>
+        <AgentTask title="Standalone detail" />
+        <AgentTaskGroup><AgentTask title="Nested list item" /></AgentTaskGroup>
+      </AgentTaskContent>
+    </AgentTask>
+  </AgentTaskGroup>);
+  const tasks = [...container!.querySelectorAll('[data-slot="agent-task"]')];
+  expect(tasks.map(task => task.getAttribute("role"))).toEqual(["listitem", null, "listitem"]);
 });

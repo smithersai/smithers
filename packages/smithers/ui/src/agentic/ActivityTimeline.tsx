@@ -51,7 +51,7 @@ function useActivityCss(): void {
 
 function formatTimestamp(timestampMs: number | undefined): { dateTime: string; text: string } | undefined {
   const iso = dateFromMs(timestampMs)?.toISOString();
-  return iso === undefined ? undefined : { dateTime: iso, text: iso.slice(11, 19) };
+  return iso === undefined ? undefined : { dateTime: iso, text: `${iso.slice(11, 19)} UTC` };
 }
 
 export type ActivityItemProps = Omit<ComponentProps<"li">, "children" | "title"> & {

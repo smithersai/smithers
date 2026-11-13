@@ -94,7 +94,7 @@ describe("ActivityTimeline", () => {
     expect(item.querySelector(".sui-activity-actor")?.textContent).toBe("builder");
     const time = item.querySelector("time")!;
     expect(time.getAttribute("dateTime")).toBe("2026-01-02T03:04:05.000Z");
-    expect(time.textContent).toBe("03:04:05");
+    expect(time.textContent).toBe("03:04:05 UTC");
     expect(item.querySelector(".sui-activity-detail")?.textContent).toBe("exit code 1");
   });
 

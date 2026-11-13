@@ -126,7 +126,7 @@ vitest, coverage thresholds, eslint or dprint; `PACKAGE.ts` records the package-
 Every export condition points at a `.ts` or `.tsx` source, so `vibelang --noEmit` is
 the only thing between a type error and a consumer's build.
 
-Four suites hold the invariants the docs promise:
+These suites hold the invariants the docs promise:
 
 - `tests/barrel-weight.test.ts` bundles `src/index.ts` in a fresh Bun
   subprocess and fails when `recharts`, `@xterm`, `@milkdown`, `@pierre/diffs`,
@@ -137,14 +137,15 @@ Four suites hold the invariants the docs promise:
   The subprocess is load-bearing: Bun's bundler shares its file cache with the
   test runner's module registry, so an in-process `Bun.build` after another
   suite imported the same modules reads crossed content.
-- `tests/css-contract.test.ts` reads the shipped string and enforces the
-  namespace, the absence of a `:root` block, the token-only color rule, the
-  byte-equal light fallbacks, and the geometry scales.
 - `tests/provenance.test.ts` holds the shadcn catalog: every lane file on disk
   must be listed, and every export a lane declares must resolve in the module
   it names.
 - `tests/docs-links.test.ts` resolves every relative link in the package's
   Markdown and fails on any file that names the unscoped specifier.
+
+The stylesheet contract belongs to `@smthrs/ui-css`:
+`ui-css/tests/css-contract.test.ts` enforces its namespace, token colors
+and geometry. Run it separately with `pnpm --filter @smthrs/ui-css test`.
 
 `bunfig.toml` preloads `tests/happy-dom-preload.ts`. Radix resolves its
 SSR-safe `useLayoutEffect` shim at module load, so happy-dom has to be

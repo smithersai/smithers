@@ -1,16 +1,17 @@
 import { afterEach, expect, test } from "bun:test"
 import { act } from "react"
 import { EditorView } from "@codemirror/view"
+import { syntaxTree } from "@codemirror/language"
 import { StateEffect } from "@codemirror/state"
 import { CodeEditorView, minimalChange } from "../src/adapters/code-editor"
 const { createRoot } = await import("react-dom/client")
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const cleanups: (() => void)[] = []
 afterEach(() => { while (cleanups.length) cleanups.pop()!() })
-function mount(text = 'const emoji = "😀"\nsecond\nthird') {
+function mount(text = 'const emoji = "😀"\nsecond\nthird', language = "typescript") {
   const host = document.createElement('div'); document.body.append(host)
   const root = createRoot(host), actions: unknown[] = [], lines: unknown[] = []
-  const props = { path: 'x.ts', text, language: 'typescript', diagnostics: [], gestures: { hover: { tag: 'code.hover', label: 'Hover', args: { path: 'bound' } }, definition: { tag: 'code.definition', label: 'Go to definition' } }, onAction: (...args: unknown[]) => actions.push(args), onView: (patch: unknown) => lines.push(patch) }
+  const props = { path: 'x.ts', text, language, diagnostics: [], gestures: { hover: { tag: 'code.hover', label: 'Hover', args: { path: 'bound' } }, definition: { tag: 'code.definition', label: 'Go to definition' } }, onAction: (...args: unknown[]) => actions.push(args), onView: (patch: unknown) => lines.push(patch) }
   act(() => root.render(<CodeEditorView {...props} />))
   const view = EditorView.findFromDOM(host.querySelector('.cm-editor')!)!
   cleanups.push(() => { act(() => root.unmount()); host.remove() })
@@ -203,4 +204,16 @@ test("binding text takes precedence over text props when revealing a replacement
   act(() => root.render(<CodeEditorView {...props} text="unrelated props" binding={binding} reveal={reveal} />))
   expect(view.state.doc.toString()).toBe("first\nsecond")
   expect(view.state.selection.main.head).toBe(0)
+})
+
+
+test.each(["tsx", "TSX", "TsX", "jsx", "JSX", "JsX"])("language %s parses JSX on mount and reconfiguration", language => {
+  const { root, props, view } = mount("const view = <div title=\"ok\">Hello</div>", language)
+  expect(syntaxTree(view.state).toString()).toContain("JSXElement")
+  act(() => root.render(<CodeEditorView {...props} language={language.toUpperCase()} />))
+  const tree = syntaxTree(view.state)
+  expect(tree.toString()).toContain("JSXElement")
+  const errors: string[] = []
+  tree.iterate({ enter: node => { if (node.type.isError) errors.push(node.name) } })
+  expect(errors).toEqual([])
 })

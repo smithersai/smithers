@@ -123,7 +123,7 @@ export function NotificationPanel({
       return;
     }
     if (isTypingTarget(event.target) || action === undefined) return;
-    if (moveFocus(event.currentTarget, ENTRY_FOCUS, action, event.target as Element)) event.preventDefault();
+    if (moveFocus(event.currentTarget, ENTRY_FOCUS, action, event.target as Element, '[data-slot="notification"]')) event.preventDefault();
   };
 
   return (

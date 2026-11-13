@@ -121,7 +121,7 @@ and Paper light/dark, rather than restating them.
   [show a repository home](./guides/show-a-repository-home.md),
   [show a stack](./guides/show-a-stack.md), and
   [test a component](./guides/test-a-component.md).
-- [API reference](./api.md): every export of the base barrel and the ten
+- [API reference](./api.md): every export of the base barrel and its public
   subpaths, with signatures.
 - [Failure codes and limits](./reference/contracts.md) and
   [troubleshooting](./troubleshooting.md).

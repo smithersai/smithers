@@ -26,6 +26,10 @@ const HEAVY_MODULES = [
   "node_modules/@milkdown",
   "node_modules/@pierre/diffs",
   "node_modules/d3-force",
+  "node_modules/@codemirror",
+  "node_modules/@lezer",
+  "node_modules/yjs",
+  "node_modules/y-codemirror.next",
 ] as const;
 
 /**
@@ -111,6 +115,7 @@ describe("the base barrel carries no heavy renderer", () => {
         "./adapters/chart",
         "./adapters/knowledge-graph",
         "./adapters/terminal",
+        "./adapters/code-editor",
       ]),
     );
   });
@@ -132,3 +137,11 @@ describe("the base barrel carries no heavy renderer", () => {
     }).toMatchObject({ bundled: true, externalized: false });
   }, 120_000);
 });
+
+
+test("the code-editor control bundles its CodeMirror and Lezer parsers", () => {
+  const bundle = bundleAsConsumed("src/adapters/code-editor/index.tsx");
+  expect(bundle).toContain("node_modules/@codemirror");
+  expect(bundle).toContain("node_modules/@lezer");
+  expect(bundle).not.toContain("node_modules/yjs");
+}, 120_000);

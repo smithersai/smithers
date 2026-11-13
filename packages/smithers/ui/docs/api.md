@@ -16,20 +16,37 @@ it takes an explicit props bag instead.
 
 ## Entry points
 
-| Specifier                              | Contents                                                      | Heavy dependency |
-| -------------------------------------- | ------------------------------------------------------------- | ---------------- |
-| `@smthrs/ui`                           | Everything on this page except the adapter sections           | None             |
-| `@smthrs/ui/copy` | `copyText`, `canCopyText`, `reserveCopyText`, `CopyResult`, `CopyFailureCode` (clipboard only) | None |
-| `@smthrs/ui/status`                    | [The status vocabulary](#the-status-vocabulary)               | None             |
-| `@smthrs/ui/time`                      | [Time](#time)                                                 | None             |
-| `@smthrs/ui/calendar`                  | [Calendar](#calendar)                                         | None             |
-| `@smthrs/ui/vault`                     | [Vault](#vault)                                               | None             |
-| `@smthrs/ui/adapters/chart`            | [Chart](#chart)                                               | `recharts`       |
-| `@smthrs/ui/adapters/terminal`         | [Terminal](#terminal)                                         | `@xterm/*`       |
-| `@smthrs/ui/adapters/knowledge-graph`  | [Knowledge graph](#knowledge-graph)                           | `d3-force`       |
+| Specifier | Contents | Heavy dependency |
+| --- | --- | --- |
+| `@smthrs/ui/markdown` | `Markdown`, its props, and `markdownBlockParser` | None |
+| `@smthrs/ui/button` | `Button`, `ButtonProps`, and `buttonVariants` | None |
+| `@smthrs/ui/marker` | `Marker` and `MarkerProps` | None |
+| `@smthrs/ui` | Light components, hooks, styling, status, and shared helpers | None |
+| `@smthrs/ui/adapters/knowledge-graph` | `KnowledgeGraph` |  `d3-force` |
+| `@smthrs/ui/adapters/chart` | Chart components and series palette | `recharts` |
+| `@smthrs/ui/adapters/terminal` | `Terminal` | `@xterm/xterm`, `@xterm/addon-fit` |
+| `@smthrs/ui/status` | Status vocabulary and formatting | None |
+| `@smthrs/ui/time` | Relative time components and formatting | None |
+| `@smthrs/ui/calendar` | Calendar components and date helpers | None |
+| `@smthrs/ui/vault` | Vault components, graph models, and autosave | None |
+| `@smthrs/ui/flow-form` | Schema-driven fields, drafts, submissions, and command assembly | None |
+| `@smthrs/ui/diff-paginate` | Diff pagination and limits | None |
+| `@smthrs/ui/flow-arguments` | `parseArgs` for file-flow input | None |
+| `@smthrs/ui/app-operations` | Operation declarations and metadata | None |
+| `@smthrs/ui/app-operations/wiki` | Wiki operation declarations and person-only reasons | None |
+| `@smthrs/ui/app-operations/http` | `httpProjections` operation declarations | None |
+| `@smthrs/ui/command-line` | Command parsing and submission routing | None |
+| `@smthrs/ui/run-command` | Run references and source-card bindings | None |
+| `@smthrs/ui/clock` | External-store clocks and React hooks | None |
+| `@smthrs/ui/notification-policy` | Notification timing and retention | None |
+| `@smthrs/ui/copy` | Clipboard helpers and result types | None |
+| `@smthrs/ui/adapters/code-editor` | `CodeEditorView`, `minimalChange`, and editor contracts | `@codemirror/*` and Lezer |
+| `@smthrs/ui/app-operations/controls` | `pendingControls` operation declarations | None |
 
-The four non-adapter subpaths are slices of the root barrel, offered for import
-ergonomics. Everything they export is also on `@smthrs/ui`.
+The light subpaths provide focused imports. Operation catalogs, command
+parsers, form helpers and clocks also expose helpers that are absent from the
+root; import each from its listed specifier. Adapter exports live only on
+their adapter subpath.
 
 The repository views (`RepoView`, `CodeFileView`, `PierreDiffView`,
 `MarkdownEditor`) are `@smthrs/repo-view`'s, and `TerminalFrame` is
@@ -419,6 +436,11 @@ and `onActiveIdChange`. `CodeBlockGroupProps` replaces `<div>` children with
 | `Queue`, `QueueSection`, `QueueSectionTrigger`, `QueueSectionLabel`, `QueueSectionContent`, `QueueList`, `QueueItem`, `QueueItemIndicator`, `QueueItemContent`, `QueueItemDescription` | `QueueSectionProps`, `QueueSectionLabelProps`, `QueueItemProps`, `QueueItemIndicatorProps` |
 | `ActivityTimeline`, `ActivityItem`, `ActivityGroup`                                                               | `ActivityTimelineProps`, `ActivityItemProps`, `ActivityGroupProps`, `ActivityKind`, `ActivityItemModel` |
 
+`AgentTaskGroup` exposes a list; its direct `AgentTask` items have
+`role="listitem"`. A standalone card has no implicit list-item role.
+`ActivityItem` keeps an ISO `dateTime` and labels its visible clock time
+with `UTC`.
+
 `planStepStatus` maps a plan step onto
 `"pending" | "running" | "complete" | "failed" | "skipped"`.
 
@@ -462,6 +484,23 @@ announces lifecycle state changes, including completion as `Done`.
 
 `SourcesContent` keeps its native list semantics and is labelled by
 `SourcesTrigger`; each `Source` remains a list item.
+
+`InlineCitation` with `sources` opens a transient preview after 300 ms
+of hover or focus. Moving focus outside cancels the pending preview and closes a transient
+one. Pointer leave closes a transient preview only when focus is outside the
+citation, after a 300 ms grace period to cross the inline layout gap.
+Re-entering or moving focus into the preview keeps it open. An outside pointer press also closes a transient preview. Pressing inside the
+preview keeps it mounted even if the browser blurs its trigger to the page. Clicking the
+trigger toggles a persistent preview, which stays until the trigger is clicked
+again or Escape is pressed. Controlled `open` leaves visibility with the
+host. Escape closes a visible preview and restores trigger focus when focus
+was inside the citation.
+
+`InlineCitation`, `CitationCard` and `CitationCarousel` accept
+`onNavigate(href, event)`. Only an unhandled plain primary click calls it,
+after `preventDefault()`, with a sanitized URL. Modified and non-primary
+clicks retain browser behavior. Without a callback, a safe source URL is a
+normal anchor. Unsafe URLs render as text.
 
 ## Agents and context
 
@@ -1302,7 +1341,7 @@ an absolute `https:` or `http:` URL with no credentials; on `null` the view is
 
 What the agent is doing, and whether it needs the person (apps/mvp decision
 0015). Five states, one word and glyph each: `working` (`◌ Working`, brand,
-pulsing), `waiting` (`○ Waiting`, quiet), `needs_you` (`◆ Needs you`, gold:
+holds still after its delayed appearance), `waiting` (`○ Waiting`, quiet), `needs_you` (`◆ Needs you`, gold:
 `--warning`), `failed` (`✕ Failed`, ember: `--danger`) and `done` (`✓ Done`).
 
 | Export | Props type | Notes |
@@ -1515,7 +1554,7 @@ function ActionMenu(props: ActionMenuProps): JSX.Element
 function ConfirmButton(props: ConfirmButtonProps): JSX.Element
 
 type ActionConfirm = { title: string; description?: string; action: string }
-type ActionMenuItem = { label: string; onSelect: () => void; destructive?: boolean; confirm?: ActionConfirm }
+type ActionMenuItem = { id?: string; label: string; onSelect: () => void; destructive?: boolean; confirm?: ActionConfirm }
 
 type ActionMenuProps = Omit<ButtonProps, "children" | "onSelect"> & {
   label: string                                 // the trigger's name, such as `T4 actions`
@@ -1537,7 +1576,14 @@ Space and ArrowDown open it on its first item, and Escape closes it. A
 `onSelect` at once. One with `confirm` opens a dialog: `confirm.title`,
 `confirm.description`, `Cancel` (focused) and `confirm.action`, destructive or
 default. Only the action runs `onSelect`, once, and focus returns to the
-trigger; `Cancel`, Escape or a click outside run nothing.
+trigger; `Cancel`, Escape or a click outside run nothing. Confirmation
+resolves the selected item from the current `items`, so updated callbacks
+and confirmation text take effect. Supply a unique stable `id` to retain
+identity across refreshes, reordering and label changes. Without `id`, a
+unique label identifies an action; equal labels retain only the exact selected
+item object, and an ambiguous refresh closes confirmation. Removing the item,
+duplicating its identity or removing its confirmation closes the dialog without
+running another action.
 
 `ConfirmButton` is a `Button` (`data-slot="confirm-button"`) whose press opens
 the same dialog; only its action runs `onConfirm`.
@@ -1546,6 +1592,94 @@ the same dialog; only its action runs `onConfirm`.
 
 `NotFoundProps` supplies optional `title` (default `"Not found"`) and required
 `back: ReactNode`, the recovery link rendered by `NotFound`.
+
+
+## Code editor (`@smthrs/ui/adapters/code-editor`)
+
+`CodeEditorView` is a CodeMirror 6 surface. It is read-only without
+`binding`. It retains one editor across prop updates, applies minimal
+document replacements, and preserves the cursor and scroll position.
+
+| Export | Contract |
+| --- | --- |
+| `CodeEditorView`, `CodeEditorViewProps<Tag>` | Required `path`, `text`, `language`, `diagnostics`, `onAction` and `onView`; optional `binding`, `hover`, `reveal` and `gestures`. |
+| `EditorPosition` | A 1-based `line` and optional zero-based UTF-16 `col`, clamped to the document. Omitted columns mean zero. |
+| `EditorGesture<Tag>` | Host-supplied `tag`, `label`, optional string `args` and `disabled: { reason }`. |
+| `EditorBinding` | Initial `text`, CodeMirror `extensions` and optional stable `identity`. The host supplies and authorizes synchronization. |
+| `minimalChange(before, after)` | The smallest single UTF-16 replacement `{ from, to, insert }` after trimming common prefix and suffix. |
+
+`language` accepts `typescript`, `tsx`, `javascript`, `jsx`,
+`go`, `rust` and `python` without regard to case; unknown languages
+use plain text. Diagnostics have `severity: "error" | "warning"` and
+`message` beside their position. Hover `markdown` is displayed as text,
+never executed. Reveal accepts an optional inclusive `to_line`.
+
+Ctrl+Space or Ctrl+pointer requests the supplied `gestures.hover`; F12
+requests `gestures.definition`. Disabled or absent gestures dispatch
+nothing. `onAction(tag, args)` receives the current `path` and decimal
+`line`/`col` strings. Selection updates call `onView({ line })`.
+
+A binding keeps its synchronization attached while `identity` stays equal
+(or, if absent, the binding object stays equal). New extensions can be applied
+without replacing a live document. A changed identity detaches the old
+binding, installs the new text and extensions, and never writes stale text
+props into either document. Removing the binding returns to read-only text.
+Yjs hosts can supply `yCollab` from `y-codemirror.next` as extensions;
+Yjs and its transport are host dependencies, not exports of this adapter.
+See [Use a heavy renderer](./guides/use-a-heavy-renderer.md) for a read-only
+example and [The adapters boundary](./concepts/adapters.md) for bundle cost.
+
+## Focused shared helpers
+
+Import these helpers from the explicit subpath in the entry-points table;
+the root only re-exports a subset.
+
+| Specifier | Exports and behavior |
+| --- | --- |
+| `@smthrs/ui/markdown` | `markdownBlockParser` exposes the renderer's `scan` and `render` block operations. |
+| `@smthrs/ui/vault` | `VaultDataAttributes` and `VaultRowProps` describe row attributes; `vaultDataAttributes` retains approved `data-*` attributes. |
+| `@smthrs/ui/flow-arguments` | `parseArgs(text)` returns `{ input }` or `{ error }`; it accepts JSON and quoted `key=value` tokens, with bare tokens as `true`. |
+| `@smthrs/ui/command-line` | `REPO_TOKEN` recognizes an owner/repository token; `canonicalCommandName` trims leading slashes; `parseCommand` splits a slash name and argument; `parseSubmit` returns a `Submit` discriminated union for empty input, a command, an unknown command, or a prompt. |
+| `@smthrs/ui/run-command` | `splitRunSource` separates `sourceCard=` from opaque arguments; `takesRunSource` identifies commands using it; `runSearchRef` and `runSearchPayload` encode/decode run search references; `runSourceCommand` binds a dispatcher to its source card. |
+| `@smthrs/ui/clock` | `createClock(sample, intervalMs, enabled)` returns external-store `snapshot` and `subscribe` functions and stops its timer after the last unsubscribe; `useClock` returns wall time; `useObservedClock` extends a recorded timestamp by elapsed monotonic time while running. |
+| `@smthrs/ui/notification-policy` | `WORK_NOTICE_DELAY_MS` is 300; `NOTICE_SETTLE_MS` is 4000; `shouldShowSettlement(failed, shown)` retains failures and suppresses unseen successes. |
+| `@smthrs/ui/app-operations` | `OperationPayload` is the input schema constraint; `OperationMetadata` declares access and projection metadata; `debugApiOperation` is the person-only raw API declaration. These declarations grant no authority by themselves. |
+| `@smthrs/ui/app-operations/wiki` | `WIKI_HEADING_USER_ONLY_REASON`, `WIKI_ATTACH_USER_ONLY_REASON` and `WIKI_ASK_USER_ONLY_REASON` explain the viewport, file-dialog and question gestures reserved to the person. |
+| `@smthrs/ui/app-operations/http` | `httpProjections` declares HTTP operations from the shared catalog; authorization remains with the host. |
+| `@smthrs/ui/app-operations/controls` | `pendingControls` declares in-card operations and their access rules. |
+
+### Form assembly (`@smthrs/ui/flow-form`)
+
+`OPTION_PROVIDERS` is the closed registry of `OptionProvider` values.
+`FieldOption` describes a selectable value; `FieldHint` adds field
+presentation and provider hints. `ArrayEncoding` selects `"words"` or
+`"json"`. `flag` formats a present flag value and `humanize` creates a
+field label.
+
+`positionalRead` returns a `PositionalRead` with values and refusals;
+`partialPayload` returns its values alone. `submissionPayload` validates
+a draft into a `Submission` result, and `draftFrom` initializes draft
+controls from a given payload. `missingFields` returns missing required
+field names; `missingLabels` returns their displayed labels.
+
+`assembleLine` returns `AssembledLine`, separating the safe command
+from values its grammar cannot carry; `assembleArgs` assembles arguments,
+and `displayLine` displays that result without dropping withheld values.
+`publicFormPayload` removes write-only fields before persistence or
+command assembly. `fileSubmission` checks required fields before preparing
+a file-flow payload. `humanTaskForm` derives fields from a
+`HumanTaskWait`; `HumanTaskAnswer` describes the host-authorized
+answer dispatch.
+
+### Additional root helpers
+
+`ChatTimeline` displays conversation history using semantic levels.
+`timelineLabel` selects its summary, recorded label or state fallback;
+`timelineKey` computes a clamped keyboard destination for arrows, J/K,
+Home and End. `PageFocus` supplies the page focus surface.
+`markdownDocumentBody` extracts a Markdown document body.
+`highlightCode` produces `CodeToken` values with `CodeTokenKind`
+classifications for lightweight code rendering.
 
 ## Related
 

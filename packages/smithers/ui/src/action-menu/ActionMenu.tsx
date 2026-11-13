@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { DropdownMenu as MenuPrimitive } from "radix-ui";
 import { Button, type ButtonProps } from "../button";
 import { cn } from "@smthrs/ui-css";
@@ -25,6 +25,8 @@ export type ActionConfirm = {
 
 /** One action in an `ActionMenu`. */
 export type ActionMenuItem = {
+  /** Stable identity across refreshes and reordering, especially for equal labels. */
+  readonly id?: string;
   readonly label: string;
   readonly onSelect: () => void;
   /** Colors the item, and its confirming button, as a destructive action. */
@@ -87,7 +89,14 @@ export type ActionMenuProps = Omit<ButtonProps, "children" | "onSelect"> & {
 export function ActionMenu({ label, items, className, ...props }: ActionMenuProps) {
   useInjectUiCss();
   const trigger = useRef<HTMLButtonElement>(null);
-  const [asking, setAsking] = useState<ActionMenuItem | null>(null);
+  const [asking, setAsking] = useState<{ id?: string; label: string; item?: ActionMenuItem } | null>(null);
+  const matches = asking === null ? [] : items.filter((item) =>
+    asking.id !== undefined ? item.id === asking.id :
+      asking.item !== undefined ? item === asking.item : item.id === undefined && item.label === asking.label);
+  const current = matches.length === 1 && matches[0]?.confirm !== undefined ? matches[0] : undefined;
+  useEffect(() => {
+    if (asking !== null && current === undefined) setAsking(null);
+  }, [asking, current]);
   return (
     <>
       <MenuPrimitive.Root modal={false}>
@@ -106,12 +115,20 @@ export function ActionMenu({ label, items, className, ...props }: ActionMenuProp
         </MenuPrimitive.Trigger>
         <MenuPrimitive.Portal>
           <MenuPrimitive.Content align="end" sideOffset={4} data-slot="action-menu" className="sui-action-menu">
-            {items.map((item) => (
+            {items.map((item, index) => (
               <MenuPrimitive.Item
-                key={item.label}
+                key={item.id === undefined ? `position:${index}:${item.label}` : `id:${item.id}`}
                 className="sui-action-menu-item"
                 data-destructive={item.destructive || undefined}
-                onSelect={() => (item.confirm === undefined ? item.onSelect() : setAsking(item))}
+                onSelect={() => {
+                  if (item.confirm === undefined) item.onSelect();
+                  else setAsking({
+                    id: item.id,
+                    label: item.label,
+                    // Without a stable id, equal labels cannot identify a replacement.
+                    item: item.id === undefined && items.filter((entry) => entry.label === item.label).length > 1 ? item : undefined,
+                  });
+                }}
               >
                 {item.label}
               </MenuPrimitive.Item>
@@ -119,15 +136,15 @@ export function ActionMenu({ label, items, className, ...props }: ActionMenuProp
           </MenuPrimitive.Content>
         </MenuPrimitive.Portal>
       </MenuPrimitive.Root>
-      <Dialog open={asking !== null} onOpenChange={(open) => (open ? undefined : setAsking(null))}>
-        {asking?.confirm === undefined ? null : (
+      <Dialog open={current !== undefined} onOpenChange={(open) => (open ? undefined : setAsking(null))}>
+        {current?.confirm === undefined ? null : (
           <ConfirmBody
-            confirm={asking.confirm}
-            destructive={asking.destructive === true}
+            confirm={current.confirm}
+            destructive={current.destructive === true}
             onConfirm={() => {
               setAsking(null);
               trigger.current?.focus();
-              asking.onSelect();
+              current.onSelect();
             }}
           />
         )}

@@ -1,9 +1,9 @@
 ---
 title: "Use a heavy renderer"
-description: "Pick the adapter subpath for a terminal, a chart, or a graph, wire its props, and keep its dependency out of your application's initial chunk."
+description: "Pick the adapter subpath for a terminal, a chart, a graph, or a code editor, wire its props, and keep its dependency out of your application's initial chunk."
 ---
 
-Three renderers in this package carry a heavy third-party dependency, and each
+Four renderers in this package carry a heavy third-party dependency, and each
 one ships behind its own subpath so importing the base library never loads it.
 This guide is how to reach one on purpose.
 
@@ -110,6 +110,33 @@ import { KnowledgeGraph } from "@smthrs/ui/adapters/knowledge-graph"
 const model = computeGraphModel(notes, links)
 const nodeCount: number = model.nodes.length
 ```
+
+## Show a code editor
+
+`CodeEditorView` provides read-only CodeMirror highlighting unless the
+host supplies an approved live `EditorBinding`.
+
+```tsx
+import { CodeEditorView } from "@smthrs/ui/adapters/code-editor"
+
+<CodeEditorView
+  path="src/example.tsx"
+  text={'export const Greeting = () => <span>Hello</span>'}
+  language="tsx"
+  diagnostics={[]}
+  onAction={(tag, args) => dispatch(tag, args)}
+  onView={({ line }) => rememberLine(line)}
+/>
+```
+
+The host supplies `dispatch` and `rememberLine`. An empty
+`gestures` map is sufficient for a read-only surface with no actions.
+Coordinates use 1-based lines and zero-based UTF-16 columns. A live binding
+supplies text and CodeMirror extensions, such as Yjs's `yCollab` from
+`y-codemirror.next`. Keep its `identity` stable across visual updates;
+replace it only when switching the synchronized document. The adapter discovers
+no transport or permissions. See the [editor API](../api.md#code-editor-smthrsuiadapterscode-editor)
+for callbacks and replacement behavior.
 
 ## Confirm what landed in your bundle
 

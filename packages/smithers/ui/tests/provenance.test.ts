@@ -63,7 +63,9 @@ describe("the provenance catalog", () => {
   });
 
   test("records at least one entry across the catalog for every ported module", () => {
-    expect(entryFiles.length).toBeGreaterThanOrEqual(15);
+    for (const laneFile of entryFiles) {
+      expect(laneEntries(laneFile).length, laneFile).toBeGreaterThan(0);
+    }
     const total = entryFiles.reduce((count, laneFile) => count + laneEntries(laneFile).length, 0);
     expect(total).toBeGreaterThanOrEqual(50);
   });

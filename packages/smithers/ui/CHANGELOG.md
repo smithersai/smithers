@@ -71,6 +71,18 @@ consume it through the workspace.
 
 ### Fixed
 
+- Notice arrow keys now move from any control in the current entry, and toast
+  expansion resets between bursts. Citations dismiss transient previews without
+  losing keyboard focus and preserve modified link clicks; source previews use
+  the host's navigation callback.
+- Confirmed menu actions use their current callback and close when their identity
+  disappears or becomes ambiguous. Grouped agent cards expose list items,
+  activity times say `UTC`, and mixed-case JSX language names parse correctly.
+- The API reference now covers every public subpath and the code-editor
+  contract. Its gate checks code references and all exported declarations.
+  Maintainer commands and stylesheet-test ownership are corrected, and empty
+  provenance manifests are removed.
+
 - `statusClass("constructor")` resolved through `Object.prototype` to the
   `Object` constructor, which is truthy so `?? "muted"` never caught it, and
   React threw "Functions are not valid as a React child" on render. Every status

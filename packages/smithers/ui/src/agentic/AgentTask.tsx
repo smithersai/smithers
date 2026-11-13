@@ -13,6 +13,8 @@ type AgentTaskContextValue = {
   contentId: string;
 };
 
+const AgentTaskGroupContext = createContext(false);
+
 const AgentTaskContext = createContext<AgentTaskContextValue | null>(null);
 
 function useAgentTaskContext(): AgentTaskContextValue {
@@ -45,6 +47,7 @@ export function AgentTask({
   ...props
 }: AgentTaskProps) {
   useInjectUiCss();
+  const grouped = useContext(AgentTaskGroupContext);
   const triggerId = useId();
   const contentId = useId();
   const isControlled = controlledOpen !== undefined;
@@ -60,13 +63,14 @@ export function AgentTask({
   return (
     <AgentTaskContext.Provider value={{ open, toggle, title, status, triggerId, contentId }}>
       <div
+        role={grouped ? "listitem" : undefined}
         data-slot="agent-task"
         data-state={open ? "open" : "closed"}
         data-status={status}
         className={cn("sui-agenttask", className)}
         {...props}
       >
-        {children}
+        <AgentTaskGroupContext.Provider value={false}>{children}</AgentTaskGroupContext.Provider>
       </div>
     </AgentTaskContext.Provider>
   );
@@ -129,5 +133,9 @@ export function AgentTaskContent({ className, forceMount = false, ...props }: Ag
 /** A list grouping several AgentTask units. */
 export function AgentTaskGroup({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  return <div data-slot="agent-task-group" role="list" className={cn("sui-agenttask-group", className)} {...props} />;
+  return (
+    <AgentTaskGroupContext.Provider value={true}>
+      <div data-slot="agent-task-group" role="list" className={cn("sui-agenttask-group", className)} {...props} />
+    </AgentTaskGroupContext.Provider>
+  );
 }

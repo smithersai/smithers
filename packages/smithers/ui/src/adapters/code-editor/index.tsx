@@ -50,9 +50,10 @@ const position = (state: EditorState, point: EditorPosition) => {
   return line.from + Math.max(0, Math.min(line.length, point.col ?? 0))
 }
 const languageExtension = (language: string): Extension => {
-  switch (language.toLowerCase()) {
-    case "typescript": case "tsx": return javascript({ typescript: true, jsx: language === "tsx" })
-    case "javascript": case "jsx": return javascript({ jsx: language === "jsx" })
+  const normalized = language.toLowerCase()
+  switch (normalized) {
+    case "typescript": case "tsx": return javascript({ typescript: true, jsx: normalized === "tsx" })
+    case "javascript": case "jsx": return javascript({ jsx: normalized === "jsx" })
     case "go": return go()
     case "rust": return rust()
     case "python": return python()

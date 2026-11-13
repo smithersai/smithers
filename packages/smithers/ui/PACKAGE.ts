@@ -141,7 +141,7 @@ const docsFiles = Smithers.Filegroup({
   cwd
 })
 
-/** Every named root export needs documentation, including erased props types. */
+/** Every public entry needs API documentation, including erased props types. */
 const docs = Smithers.DocsParity({
   readme: Smithers.file("README.md"),
   cwd,
@@ -150,6 +150,8 @@ const docs = Smithers.DocsParity({
       shell: "node --test packages/smithers/ui/scripts/reference-docs.test.mjs",
       data: [
         Smithers.file("scripts/reference-docs.test.mjs"),
+        Smithers.file("scripts/reference-docs.mjs"),
+        Smithers.file("package.json"),
         ...sources,
         Smithers.glob("src/**/*.vibe"),
         Smithers.glob("docs/**/*.md")

@@ -87,9 +87,12 @@ export function ToastStack({
   const entries = onMore === undefined ? Children.toArray(more) : [];
   const extra = onMore === undefined ? entries.length : moreCount;
   useToastClearance(section, placement === "anchored" ? avoid : undefined, toasts.length + extra > 0);
-  if (toasts.length === 0 && extra === 0) return null;
   const folded = Math.max(0, toasts.length - max) + extra;
-  const open = onMore === undefined && expanded;
+  useEffect(() => {
+    if (folded === 0) setExpanded(false);
+  }, [folded]);
+  if (toasts.length === 0 && extra === 0) return null;
+  const open = onMore === undefined && expanded && folded > 0;
 
   const keys = (event: KeyboardEvent<HTMLElement>) => {
     onKeyDown?.(event);
@@ -103,7 +106,7 @@ export function ToastStack({
       else (event.target as HTMLElement).blur();
       return;
     }
-    if (action !== undefined && moveFocus(event.currentTarget, TOAST_FOCUS, action, event.target as Element)) {
+    if (action !== undefined && moveFocus(event.currentTarget, TOAST_FOCUS, action, event.target as Element, '[data-slot="toast"]')) {
       event.preventDefault();
     }
   };

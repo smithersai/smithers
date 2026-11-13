@@ -14,10 +14,6 @@
     "verification": "Each source file in an approved collection must name its upstream registry item URL in a lane manifest under provenance/. Entries record ported anatomy plus explicit omissions and divergences; this is provenance, not cryptographic verification.",
     "entryFiles": [
       "provenance/chat-foundation.json",
-      "provenance/agentic-reasoning-tool.json",
-      "provenance/agentic-response-code.json",
-      "provenance/agentic-plan-sources.json",
-      "provenance/node-output-agentic.json",
       "provenance/conversation-foundation.json",
       "provenance/prompt-attachments.json",
       "provenance/reasoning-tools.json",

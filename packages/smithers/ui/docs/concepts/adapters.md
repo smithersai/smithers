@@ -35,6 +35,14 @@ budgets.
 | `@smthrs/ui/adapters/knowledge-graph`   |     about 155 KB | `d3-force`                                    |
 | `@smthrs/ui/adapters/chart`             |     about 270 KB | `recharts`                                    |
 | `@smthrs/ui/adapters/terminal`          |     about 390 KB | `@xterm/xterm` and `@xterm/addon-fit`         |
+| `@smthrs/ui/adapters/code-editor` | about 587 KB | CodeMirror 6 language, view and lint extensions; Lezer |
+
+The code editor supports TypeScript/JavaScript with JSX, Go, Rust and Python.
+Measured with Bun 1.4.4, the minified browser output is 586,895 bytes
+(about 587 KB).
+Its measurement retains the complete adapter namespace and excludes React;
+Yjs is not imported by the adapter. A host adding `yjs` and
+`y-codemirror.next` for a live binding adds those modules separately.
 
 The pierre surfaces, now in `@smthrs/repo-view`, are the reason this boundary
 exists at all: Shiki's grammars and themes bundle at about 10 MB unsplit. A
@@ -62,7 +70,7 @@ future heavy addition to a lane barrel cannot ride in silently.
 
 The boundary is not a convention a reader has to trust. The package's own test
 suite bundles `src/index.ts` in a fresh Bun subprocess and fails when
-`recharts`, `@xterm`, `@milkdown`, `@pierre/diffs`, or `d3-force` appears in the
+`recharts`, `@xterm`, `@milkdown`, `@pierre/diffs`, `d3-force`, or `@codemirror` appears in the
 output, so a stray `export` line in a future release cannot quietly put Shiki in
 your bundle.
 

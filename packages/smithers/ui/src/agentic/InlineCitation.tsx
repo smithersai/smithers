@@ -12,6 +12,7 @@ import {
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
+import { isPlainNavigationClick } from "../internal/navigationClick";
 import { safeHref } from "../internal/safeHref";
 import { safeImageSrc } from "../internal/safeImageSrc";
 
@@ -38,6 +39,7 @@ export type InlineCitationProps = Omit<ComponentProps<"a">, "href" | "children" 
 };
 
 const HOVER_OPEN_DELAY_MS = 300;
+const HOVER_CLOSE_DELAY_MS = 300;
 
 /** Focusable superscript citation with a source-label tooltip or a rich source preview. */
 export function InlineCitation({
@@ -58,13 +60,42 @@ export function InlineCitation({
   const accessibleName = `Source ${index}: ${label}`;
 
   const contentId = useId();
+  const citationRef = useRef<HTMLElement | null>(null);
+  const pinned = useRef(defaultOpen);
+  const pressedInside = useRef(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
   const openTimer = useRef<number | undefined>(undefined);
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
 
-  useEffect(() => () => window.clearTimeout(openTimer.current), []);
+  useEffect(() => {
+    const release = () => { pressedInside.current = false; };
+    document.addEventListener("pointerup", release, true);
+    document.addEventListener("pointercancel", release, true);
+    return () => {
+      window.clearTimeout(openTimer.current);
+      window.clearTimeout(closeTimer.current);
+      document.removeEventListener("pointerup", release, true);
+      document.removeEventListener("pointercancel", release, true);
+    };
+  }, []);
+  useEffect(() => {
+    if (!open || sources === undefined) return;
+    const outside = (event: globalThis.PointerEvent) => {
+      if (event.target instanceof Node && !citationRef.current?.contains(event.target)) closePreview();
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (!event.defaultPrevented) handleEscape(event);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  });
 
   function setOpen(next: boolean) {
     if (!isControlled) setUncontrolledOpen(next);
@@ -72,6 +103,7 @@ export function InlineCitation({
   }
 
   function scheduleOpen() {
+    window.clearTimeout(closeTimer.current);
     if (!openOnHover || isControlled || open) return;
     window.clearTimeout(openTimer.current);
     openTimer.current = window.setTimeout(() => setOpen(true), HOVER_OPEN_DELAY_MS);
@@ -79,19 +111,51 @@ export function InlineCitation({
 
   function cancelScheduledOpen() {
     window.clearTimeout(openTimer.current);
+    openTimer.current = undefined;
   }
 
-  function handleEscape(event: KeyboardEvent) {
+  function closePreview() {
+    window.clearTimeout(closeTimer.current);
+    cancelScheduledOpen();
+    if (!isControlled && !pinned.current && open) setOpen(false);
+  }
+
+  function scheduleClose() {
+    if (citationRef.current?.contains(document.activeElement)) return;
+    cancelScheduledOpen();
+    if (isControlled || pinned.current || !open) return;
+    window.clearTimeout(closeTimer.current);
+    // Inline previews have a line-box gap; allow the pointer to cross it.
+    closeTimer.current = window.setTimeout(closePreview, HOVER_CLOSE_DELAY_MS);
+  }
+
+  function handleEscape(event: KeyboardEvent | globalThis.KeyboardEvent) {
     if (event.key !== "Escape" || !open) return;
     event.preventDefault();
     event.stopPropagation();
+    window.clearTimeout(closeTimer.current);
+    cancelScheduledOpen();
+    pinned.current = false;
     setOpen(false);
-    triggerRef.current?.focus();
+    if (citationRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
   }
 
   if (sources !== undefined) {
     return (
-      <sup data-slot="inline-citation" className={cn("sui-citation", className)}>
+      <sup
+        ref={citationRef}
+        data-slot="inline-citation"
+        className={cn("sui-citation", className)}
+        onMouseEnter={scheduleOpen}
+        onMouseLeave={scheduleClose}
+        onFocus={scheduleOpen}
+        onPointerDownCapture={() => { pressedInside.current = true; }}
+        onBlur={(event) => {
+          // Selecting preview text can blur its trigger to body before click.
+          if (pressedInside.current && event.relatedTarget === null) return;
+          if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) closePreview();
+        }}
+      >
         <button
           {...(props as ComponentProps<"button">)}
           ref={triggerRef}
@@ -102,11 +166,9 @@ export function InlineCitation({
           aria-controls={contentId}
           onClick={() => {
             cancelScheduledOpen();
+            pinned.current = !open;
             setOpen(!open);
           }}
-          onMouseEnter={scheduleOpen}
-          onMouseLeave={cancelScheduledOpen}
-          onFocus={scheduleOpen}
           onKeyDown={handleEscape}
         >
           [{index}]
@@ -120,7 +182,7 @@ export function InlineCitation({
             className="sui-citation-content"
             onKeyDown={handleEscape}
           >
-            {sources.length === 1 ? <CitationCard source={sources[0]!} /> : <CitationCarousel sources={sources} />}
+            {sources.length === 1 ? <CitationCard source={sources[0]!} onNavigate={onNavigate} /> : <CitationCarousel sources={sources} onNavigate={onNavigate} />}
           </span>
         ) : null}
       </sup>
@@ -140,6 +202,7 @@ export function InlineCitation({
                 onClick={
                   onNavigate
                     ? (event) => {
+                        if (!isPlainNavigationClick(event)) return;
                         event.preventDefault();
                         onNavigate(href, event);
                       }
@@ -177,11 +240,12 @@ function CitationFavicon({ source }: { source: CitationSource }) {
 
 export type CitationCardProps = Omit<ComponentProps<"div">, "children" | "title"> & {
   source: CitationSource;
+  onNavigate?: InlineCitationProps["onNavigate"];
   children?: ReactNode;
 };
 
 /** Single-source preview card: favicon, title link, domain, excerpt, optional quote. */
-export function CitationCard({ source, children, className, ...props }: CitationCardProps) {
+export function CitationCard({ source, children, className, onNavigate, ...props }: CitationCardProps) {
   useInjectUiCss();
   const href = source.url === undefined ? undefined : safeHref(source.url);
 
@@ -191,7 +255,15 @@ export function CitationCard({ source, children, className, ...props }: Citation
         <CitationFavicon source={source} />
         <span className="sui-citation-card-title">
           {href !== undefined ? (
-            <a className="sui-citation-card-link" href={href}>
+            <a
+              className="sui-citation-card-link"
+              href={href}
+              onClick={onNavigate === undefined ? undefined : (event) => {
+                if (!isPlainNavigationClick(event)) return;
+                event.preventDefault();
+                onNavigate(href, event);
+              }}
+            >
               {source.title}
             </a>
           ) : (
@@ -209,6 +281,7 @@ export function CitationCard({ source, children, className, ...props }: Citation
 
 export type CitationCarouselProps = Omit<ComponentProps<"div">, "children"> & {
   sources: readonly CitationSource[];
+  onNavigate?: InlineCitationProps["onNavigate"];
   index?: number;
   defaultIndex?: number;
   onIndexChange?: (index: number) => void;
@@ -220,6 +293,7 @@ export function CitationCarousel({
   index: controlledIndex,
   defaultIndex = 0,
   onIndexChange,
+  onNavigate,
   className,
   onKeyDown,
   ...props
@@ -279,7 +353,7 @@ export function CitationCarousel({
           ›
         </button>
       </div>
-      <CitationCard source={sources[index]!} />
+      <CitationCard source={sources[index]!} onNavigate={onNavigate} />
     </div>
   );
 }
