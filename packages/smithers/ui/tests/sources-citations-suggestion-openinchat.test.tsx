@@ -72,15 +72,6 @@ describe("SuggestionGroup", () => {
     expect(container!.querySelector('[role="tablist"]')).toBeNull();
   });
 
-  test("renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(
-      <SuggestionGroup>
-        <Suggestion suggestion="dark" />
-      </SuggestionGroup>,
-    );
-    expect(container!.querySelector('[data-slot="suggestion-group"]')).not.toBeNull();
-  });
 });
 
 describe("OpenInChat", () => {
@@ -111,9 +102,4 @@ describe("OpenInChat", () => {
     }
   });
 
-  test("renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<OpenInChat subject={{ kind: "file", label: "Sources.tsx" }} onOpen={() => {}} />);
-    expect(container!.querySelector('[data-slot="open-in-chat"]')).not.toBeNull();
-  });
 });

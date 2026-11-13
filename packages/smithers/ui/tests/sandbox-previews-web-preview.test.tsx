@@ -10,7 +10,6 @@ import {
   WebPreviewToolbar,
   type WebPreviewSandboxToken,
 } from "../src/sandbox/WebPreview";
-import { sandboxCss } from "@smthrs/ui-css";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -471,12 +470,6 @@ describe("WebPreview", () => {
     expect(live.textContent).toBe("Preview address https://other.example.com");
   });
 
-  test("renders under the dark theme with the lane stylesheet injected", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<WebPreview url="https://example.com" />);
-    expect(container!.querySelector('[data-slot="web-preview"]')).not.toBeNull();
-    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(sandboxCss.trim());
-  });
 });
 
 describe("WebPreviewToolbar caller ref", () => {

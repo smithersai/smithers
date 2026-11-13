@@ -150,7 +150,7 @@ describe("SegmentedControl", () => {
     expect(checked()).toEqual(["true", "false", "false", "false"]);
   });
 
-  test("takes the host's props, and size sm marks the small height", async () => {
+  test("takes the host's props and marks size sm", async () => {
     await control("json", { size: "sm", className: "host", id: "view" });
     expect(group().className).toBe("sui-segmented host");
     expect(group().id).toBe("view");
@@ -158,15 +158,7 @@ describe("SegmentedControl", () => {
     expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toBe(smithersUiCss);
   });
 
-  test("the sheet draws one border, dividers, a strong brand check and struck-through disabled text", () => {
+  test("ships the component's rules in the composed sheet", () => {
     expect(smithersUiCss).toContain(segmentedControlCss.trim());
-    const rule = (selector: string) => segmentedControlCss.match(new RegExp(`${selector} \\{[^}]+\\}`))![0];
-    expect(rule("\\.sui-segmented")).toContain("border:1px solid var(--border-strong,");
-    expect(rule("\\.sui-segmented\\[data-size='sm'\\]")).toContain("height:var(--ctl-h-sm, 28px)");
-    expect(rule("\\.sui-segmented-item \\+ \\.sui-segmented-item")).toContain("border-left:1px solid var(--border-strong,");
-    expect(rule("\\.sui-segmented-item\\[aria-checked='true'\\]")).toContain("background:var(--brand-soft-strong,");
-    const disabled = rule("\\.sui-segmented-item:disabled");
-    expect(disabled).toContain("text-decoration:line-through");
-    expect(disabled).toContain("color:var(--text-faint,");
   });
 });

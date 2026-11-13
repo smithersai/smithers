@@ -42,6 +42,7 @@ describe("validateRules", () => {
   it("returns valid rules unchanged", () => {
     const rules: ReadonlyArray<ImportRule> = [
       valid,
+      { ...valid, normalizeRelative: true },
       { kind: "forbidNames", files: ["src/**/*.tsx"], modules: ["react"], names: ["useState"], allowTypeOnly: true, because },
       { kind: "rootImportsOnly", packages: ["@smthrs/*"], because },
       { kind: "forbidCalls", callees: ["Model.stream", "*.route", "*.#send", "*.$"], because },
@@ -78,9 +79,47 @@ describe("validateRules", () => {
       `ImportRules rule 0: \`callees\` entry "${entry}" must be a callee or \`*.<member>\``
     ]),
     ["a non-boolean reference option", [{ kind: "forbidCalls", callees: ["*.run"], includeReferences: "yes", because }], "ImportRules rule 0: `includeReferences` must be a boolean"],
+    ["a non-boolean normalization option", [{ ...valid, normalizeRelative: "yes" }], "ImportRules rule 0: `normalizeRelative` must be a boolean"],
     ["a non-boolean type option", [{ ...valid, allowTypeOnly: "yes" }], "ImportRules rule 0: `allowTypeOnly` must be a boolean"]
   ])("refuses %s", (_case, rules, message) => {
     expect(() => validateRules(rules)).toThrow(new TypeError(message))
+  })
+})
+
+describe("normalized relative module rules", () => {
+  it("preserves the plugin package allowlist's local imports unless normalization is requested", () => {
+    const rule: ImportRule = {
+      kind: "forbid",
+      modules: ["!(@smthrs|@tanstack|react|effect|.|..)/**"],
+      because
+    }
+    const sources = { "plugins/example/src/view.ts": 'import "./local"; import "../shared"; import "@smthrs/ui"; import "effect/Schema"' }
+    expect(violations([rule], sources)).toEqual([])
+    expect(violations([{ ...rule, normalizeRelative: false }], sources)).toEqual([])
+    expect(violations([{ ...rule, normalizeRelative: true }], sources)).toHaveLength(2)
+  })
+
+
+  it.each([
+    ["src/bridge.ts", "../../../../apps/mvp/state"],
+    ["src/a/b/bridge.ts", "../../../../../../apps/mvp/state"],
+    ["src/a/b/c/d/e/bridge.ts", "../../../../../../../../../apps/mvp/state"],
+    ["src/bridge.ts", "./../../../../apps/mvp/state"],
+    ["src/bridge.ts", "../../../../packages/../apps/mvp/state"]
+  ])("rejects normalized app references from %s", (path, specifier) => {
+    const source = { [path]: `export { state as renamed } from "${specifier}"` }
+    expect(violations([{ kind: "forbid", modules: ["**/apps/**"], normalizeRelative: true, because }], source))
+      .toEqual([`${path}:1 re-exports "${specifier}" (forbid) #0`])
+    expect(violations([{ kind: "forbidNames", modules: ["**/apps/**"], names: ["state"], normalizeRelative: true, because }], source))
+      .toEqual([`${path}:1 re-exports state from "${specifier}" (forbidNames) #0`])
+  })
+
+  it("keeps literal relative patterns and permits unrelated relative references", () => {
+    const rule: ImportRule = { kind: "forbid", modules: ["../private"], because }
+    expect(violations([rule], { "src/View.ts": 'import "../private"' })).toHaveLength(1)
+    expect(violations([{ ...rule, modules: ["**/apps/**"] }], {
+      "src/View.ts": 'import "./props"; import "../shared/props"; import "apps-like"'
+    })).toEqual([])
   })
 })
 

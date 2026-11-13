@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 // WebPageView under happy-dom: real createRoot + act. The preload disables
 // iframe page loading, so no frame here touches the network.
+import { webPageCss } from "@smthrs/ui-css";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Deferred, Effect, Layer } from "effect";
 import { act, type ReactElement } from "react";
@@ -66,6 +67,12 @@ async function defaultPreventedBeforeHost(link: HTMLElement): Promise<boolean> {
 }
 
 describe("WebPageView", () => {
+  test("ships the component's rules in the injected sheet", async () => {
+    await render(<WebPageView url="https://example.com/" />);
+    expect(document.head.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)!.textContent)
+      .toContain(webPageCss.trim());
+  });
+
   test("frames the page with the exact sandbox, referrer policy and lazy loading, and no permission delegation", async () => {
     await render(<WebPageView url="https://example.com/docs?q=1" />);
     const frame = $<HTMLIFrameElement>("iframe")!;
@@ -128,9 +135,6 @@ describe("WebPageView", () => {
     expect(figure.dataset.state).toBe("loading");
     // With no preview, the cover names the domain.
     expect($("[data-slot=web-page-pending] [data-slot=web-page-title]")!.textContent).toBe("example.org");
-    const sheet = document.head.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)!.textContent!;
-    expect(sheet).toContain("animation:sui-web-page-pending 160ms ease 600ms forwards;");
-    expect(sheet).toContain(".sui-web-page-pending { --motion-hold:600ms; position:absolute; inset:0;");
   });
 
   test("a provided WebPageLoad decides when the cover leaves, and stops waiting for a frame that shows another page or leaves", async () => {
@@ -183,14 +187,10 @@ describe("WebPageView", () => {
     expect(await defaultPreventedBeforeHost($("a")!)).toBe(false);
   });
 
-  test("full fills its container; both sizes keep the bar, the link and the frame", async () => {
+  test("marks the full size and keeps the bar, link and frame", async () => {
     await render(<WebPageView url="https://example.com/" size="full" />);
     expect($("figure")!.dataset.size).toBe("full");
     expect(container!.querySelectorAll("figcaption, a[data-slot=web-page-open], iframe")).toHaveLength(3);
-    const sheet = document.head.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)!.textContent!;
-    expect(sheet).toContain(".sui-web-page-view[data-size='inline'] .sui-web-page-frame { height:28rem; }");
-    expect(sheet).toContain(".sui-web-page-view[data-size='full'] { flex:1 1 auto; height:100%; min-height:0; }");
-    expect(sheet).toContain(".sui-web-page-view[data-size='full'] .sui-web-page-frame { flex:1 1 auto; min-height:0; }");
   });
 
   test("puts the actions between the origin and Open in new tab", async () => {

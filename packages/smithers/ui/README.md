@@ -120,7 +120,7 @@ pnpm --filter @smthrs/ui run check    # vibelang checks src/ and tests/
 
 Both are declared in `PACKAGE.ts` as `//packages/smithers/ui:unitTests` and
 `//packages/smithers/ui:check`. The latter depends on `checkTests`, which checks
-all of `src/` and `tests/` using `tsconfig.test.json`. This package does not run
+all of `src/`, `tests/` and the layout and timeline browser probes using `tsconfig.test.json`. This package does not run
 vitest, coverage thresholds, eslint or dprint; `PACKAGE.ts` records the package-specific tooling boundary.
 
 Every export condition points at a `.ts` or `.tsx` source, so `vibelang --noEmit` is
@@ -186,3 +186,20 @@ plugin headers and custom primary controls in the host's selector.
 `Alt+N` toggles `NotificationPanel` and `Alt+T` focuses the first toast in `ToastStack`. Both shortcuts leave inputs, textareas, selects, and editable content alone so Option characters can be typed without losing focus.
 
 `NotificationPanel` closes on Escape even when completion removed its focused answer field. A nested control that prevents the key keeps ownership of it; closing returns focus to the opener.
+
+
+## Component test checks
+
+`pnpm test` runs the component interaction suite. `pnpm check` checks both
+sources and tests, including the layout and timeline browser probes. Assertions about element
+boxes and computed styles run in Chromium with `pnpm test:browser` (the
+`browserProbes` target); install it with `pnpm exec playwright install chromium`.
+Sheet-membership checks in the unit suite make no layout or theme claim.
+
+`pnpm screenshots:timeline` generates
+side-by-side mock and production timeline screenshots for manual review and
+checks the 50-arc clip and lens bounds at two viewport sizes. It does not
+compare pixels or assert visual parity. The `browserProbes` target runs this
+program through `browser/timeline.browser.test.ts`. The unit suite checks
+component imports with the package's app-independence rules and tests those
+rules against forbidden and allowed imports.

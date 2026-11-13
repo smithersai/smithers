@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { KnowledgeGraph } from "../src/vault/KnowledgeGraph";
 import type { VaultLink, VaultNoteMeta } from "../src/vault/types";
 
@@ -14,9 +15,9 @@ import type { VaultLink, VaultNoteMeta } from "../src/vault/types";
  *
  * Physics runs for real here: `loadPhysics` is left unset so the component
  * imports the `d3-force` this package already depends on. Reduced motion is
- * forced on, which is the component's own synchronous-settle branch, so the
- * simulation reaches a stable layout inside one act() instead of over animation
- * frames happy-dom does not schedule.
+ * forced on, which is the component's reduced-motion branch, so the
+ * simulation settles in yielding batches instead of animation frames. Poll the
+ * mounted transforms against the server-rendered seed layout.
  */
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -68,10 +69,6 @@ async function mount(onOpenNote?: (path: string) => void, reduced = true): Promi
   root = createRoot(container);
   const current = root;
   await act(async () => current.render(<KnowledgeGraph notes={NOTES} links={LINKS} onOpenNote={onOpenNote} />));
-  // The physics import resolves on a microtask; the settle is synchronous.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
   return container;
 }
 
@@ -81,19 +78,30 @@ function transform(host: HTMLElement): string {
 
 describe("KnowledgeGraph with real physics", () => {
   test("settles the simulation and keeps the graph on screen", async () => {
+    const seed = document.createElement("div");
+    seed.innerHTML = renderToStaticMarkup(<KnowledgeGraph notes={NOTES} links={LINKS} />);
+    const positions = (host: HTMLElement) => [...host.querySelectorAll("g.sui-vault-graph-node")]
+      .map((node) => node.getAttribute("transform"));
+    const seeded = positions(seed);
+    expect(seeded).toHaveLength(NOTES.length);
     const host = await mount();
+    const deadline = Date.now() + 5_000;
+    while (positions(host).every((value, index) => value === seeded[index]) && Date.now() < deadline) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    }
+    expect(positions(host)).not.toEqual(seeded);
     expect(host.querySelector('[data-slot="vault-graph"]')).not.toBeNull();
     expect(host.querySelector('[data-slot="vault-graph-fallback"]')).toBeNull();
     expect(host.querySelectorAll("circle")).toHaveLength(NOTES.length);
-    // d3 settled the nodes somewhere other than the seeded ring: every node
-    // carries a finite position and none collapsed onto the origin.
-    const positions = [...host.querySelectorAll<SVGGElement>("g.sui-vault-graph-node")].map((node) =>
-      node.getAttribute("transform")
-    );
-    expect(positions).toHaveLength(NOTES.length);
-    expect(positions.every((value) => value !== null && !value.includes("NaN"))).toBe(true);
-    expect(positions).not.toContain("translate(0 0)");
-  });
+    const settled = positions(host);
+    expect(settled).toHaveLength(NOTES.length);
+    expect(settled).not.toContain("translate(0 0)");
+    for (const position of settled) {
+      const coordinates = /^translate\(([^ ]+) ([^ ]+)\)$/.exec(position ?? "");
+      expect(coordinates).not.toBeNull();
+      expect(coordinates!.slice(1).map(Number).every(Number.isFinite)).toBe(true);
+    }
+  }, 10_000);
 
   test("animated physics publishes ticks and supports resetting the live layout", async () => {
     const host = await mount(undefined, false);

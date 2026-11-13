@@ -147,12 +147,6 @@ describe("InlineCitation with sources", () => {
     expect(content()).toBeNull();
   });
 
-  test("renders the sources preview under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<InlineCitation index={1} label="Alpha" sources={[alpha]} defaultOpen />);
-    expect(container!.querySelector('[data-slot="inline-citation"]')).not.toBeNull();
-    expect(content()).not.toBeNull();
-  });
 });
 
 describe("CitationCard", () => {

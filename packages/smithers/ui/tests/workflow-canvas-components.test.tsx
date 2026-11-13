@@ -130,12 +130,6 @@ describe("WorkflowNode", () => {
     expect(host.querySelector("[data-slot='workflow-node-content']")!.textContent).toBe("body");
   });
 
-  test("renders correctly under data-theme=dark", async () => {
-    document.documentElement.dataset.theme = "dark";
-    const host = await render(<WorkflowNode title="Dark node" status="failed" />);
-    expect(host.querySelector("[data-slot='workflow-node']")!.getAttribute("data-status")).toBe("failed");
-    expect(host.querySelector("[data-slot='workflow-node-status']")!.textContent).toContain("Failed");
-  });
 });
 
 describe("WorkflowNodeStatus", () => {

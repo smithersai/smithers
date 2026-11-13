@@ -32,14 +32,17 @@ const render = async (element: Parameters<Root["render"]>[0]) => {
 };
 
 describe("Textarea", () => {
-  test("code: the mono rule, no wrapping, and no spelling, capitalization or correction", async () => {
+  test("ships the code selector in the component sheet", () => {
+    expect(smithersUiCss).toContain(".sui-textarea[data-code]");
+  });
+
+  test("code: disables wrapping, spelling, capitalization and correction", async () => {
     const area = await render(<Textarea code aria-label="Code" defaultValue="export default 1" />);
     expect(area.hasAttribute("data-code")).toBe(true);
     expect(area.getAttribute("spellcheck")).toBe("false");
     expect(area.getAttribute("autocapitalize")).toBe("off");
     expect(area.getAttribute("autocorrect")).toBe("off");
     expect(area.getAttribute("wrap")).toBe("off");
-    expect(smithersUiCss).toContain(".sui-textarea[data-code] { font-family:");
   });
 
   test("a caller's own props win over code's defaults", async () => {

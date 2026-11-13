@@ -5,9 +5,6 @@
 //
 // The DOM comes from tests/happy-dom-preload.ts (bunfig `[test] preload`).
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { Terminal as XTerminal } from "@xterm/xterm";
@@ -258,24 +255,5 @@ describe("<Terminal> startup failure", () => {
     await waitFor(() => errors.length > 0);
     expect(errors).toEqual([{ code: "terminal-start-failed", cause }]);
     expect(container!.querySelector('[data-slot="terminal-error"]')).toBeNull();
-  });
-});
-
-describe("<Terminal> store independence", () => {
-  test("the component source imports no Multi app store", () => {
-    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/adapters/terminal.tsx"), "utf8");
-    for (const banned of [
-      "preferencesStore",
-      "sandboxStore",
-      "vcsStore",
-      "terminalClient",
-      "smithersCloud",
-      "zustand",
-    ]) {
-      expect(source).not.toContain(banned);
-    }
-    // Positive sanity: it really is the xterm port wired to the ui tokens.
-    expect(source).toContain('import { tokens as t } from "@smthrs/ui-css"');
-    expect(source).toContain('import("@xterm/xterm")');
   });
 });

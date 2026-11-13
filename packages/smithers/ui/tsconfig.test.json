@@ -2,8 +2,13 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "../../..",
-    "noEmit": true,
-    "emitDeclarationOnly": false
+    "noEmit": true
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "browser/component-layout.browser.test.ts",
+    "browser/timeline.browser.test.ts",
+    "browser/fixtures/component-layout.tsx"
+  ]
 }

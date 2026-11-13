@@ -35,7 +35,11 @@ const sources = [
 /** Test sources checked before the source check can pass. */
 const testSources = [
   Smithers.glob("//packages/smithers/ui/tests/**/*.ts"),
-  Smithers.glob("//packages/smithers/ui/tests/**/*.tsx")
+  Smithers.glob("//packages/smithers/ui/tests/**/*.tsx"),
+  Smithers.file("browser/component-layout.browser.test.ts"),
+  Smithers.file("browser/timeline.browser.test.ts"),
+  Smithers.file("browser/fixtures/component-layout.tsx"),
+  Smithers.file("scripts/app-independence-rules.ts")
 ]
 
 /** Typecheck test fixtures and component calls with the same strict options. */
@@ -96,6 +100,9 @@ const unitTests = Smithers.NodeTest({
   srcs: [
     ...sources,
     ...generatedViewInputs,
+    Smithers.file("//packages/repo-targets/scripts/import-rules.mjs"),
+    Smithers.file("//packages/repo-targets/src/ImportRulesCheck.ts"),
+    Smithers.file("//packages/repo-targets/src/ImportAnalysis.ts"),
     ...testSources
   ],
   deps: [
@@ -125,7 +132,10 @@ const browserProbes = Smithers.NodeTest({
     ...sources,
     ...generatedViewInputs,
     Smithers.glob("//packages/smithers/ui/browser/**/*.ts"),
-    Smithers.glob("//packages/smithers/ui/browser/**/*.tsx")
+    Smithers.glob("//packages/smithers/ui/browser/**/*.tsx"),
+    Smithers.file("tests/timeline-screenshots.browser.ts"),
+    Smithers.file("tests/timeline-screenshots.client.tsx"),
+    Smithers.file("//apps/mvp/docs/design/timeline/timeline.html")
   ],
   deps: [viewsSources, cssSources],
   cwd

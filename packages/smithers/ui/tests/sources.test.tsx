@@ -103,9 +103,4 @@ describe("Sources", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  test("renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<Sources defaultOpen sources={[{ id: "one", label: "Dark source", href: "/source" }]} />);
-    expect(container!.querySelector('[data-slot="sources"]')?.getAttribute("data-state")).toBe("open");
-  });
 });

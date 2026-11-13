@@ -53,9 +53,4 @@ describe("TaskItem", () => {
     expect(container!.querySelector(".sui-taskitem-elapsed")?.textContent).toBe("8s");
   });
 
-  test("renders under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(<TaskItem label="Finished" status="complete" />);
-    expect(container!.querySelector('[data-slot="task-item"]')?.className).toContain("sui-taskitem-ok");
-  });
 });

@@ -130,7 +130,9 @@
   ],
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
-    "test": "bun test tests"
+    "test": "bun test tests",
+    "screenshots:timeline": "bun tests/timeline-screenshots.browser.ts",
+    "test:browser": "bun test browser"
   },
   "dependencies": {
     "@smthrs/ui-css": "workspace:*",

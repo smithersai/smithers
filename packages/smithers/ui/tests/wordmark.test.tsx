@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Wordmark, WORDMARK } from "../src/wordmark/Wordmark";
-import { uiCss as smithersUiCss } from "@smthrs/ui-css";
+import { uiCss as smithersUiCss, wordmarkCss } from "@smthrs/ui-css";
 
 describe("Wordmark", () => {
   test("keeps every row the same width", () => {
@@ -30,7 +30,6 @@ describe("Wordmark", () => {
   });
 
   test("ships its styles in the component sheet", () => {
-    expect(smithersUiCss).toContain(".sui-wordmark {");
-    expect(smithersUiCss).toContain("@keyframes sui-wordmark-scan");
+    expect(smithersUiCss).toContain(wordmarkCss.trim());
   });
 });

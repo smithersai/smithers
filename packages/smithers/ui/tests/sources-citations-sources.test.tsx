@@ -170,19 +170,6 @@ describe("Sources compound anatomy", () => {
     expect(navigated).toEqual([{ href: "/docs/sources", prevented: true }]);
   });
 
-  test("renders the compound anatomy under the dark theme", async () => {
-    document.documentElement.dataset.theme = "dark";
-    await render(
-      <Sources defaultOpen>
-        <SourcesTrigger count={1} />
-        <SourcesContent>
-          <Source title="Dark" domain="dark.example" />
-        </SourcesContent>
-      </Sources>,
-    );
-    expect(container!.querySelector('[data-slot="sources"]')?.getAttribute("data-state")).toBe("open");
-    expect(container!.querySelector('[data-slot="source"]')).not.toBeNull();
-  });
 });
 
 describe("SourcesContent host props", () => {

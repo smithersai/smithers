@@ -17,7 +17,7 @@
 
 import { lstatSync, readdirSync, readFileSync } from "node:fs"
 import { isBuiltin } from "node:module"
-import { join, matchesGlob } from "node:path"
+import { join, matchesGlob, posix } from "node:path"
 import * as ImportAnalysis from "./ImportAnalysis.ts"
 
 /**
@@ -71,8 +71,12 @@ export interface TypeOnlyOption {
  */
 export interface ForbidRule extends RuleScope, TypeOnlyOption {
   readonly kind: "forbid"
-  /** Module specifier globs: `effect` is the root, `effect/*` one level below it, `effect/**` every subpath. */
+  /**
+   * Module specifier globs: `effect` is the root, `effect/*` one level below it, `effect/**` every subpath.
+   */
   readonly modules: ReadonlyArray<string>
+  /** Also match relative references against their normalized source-relative path, rooted at `/`. Default `false`. */
+  readonly normalizeRelative?: boolean | undefined
 }
 
 /**
@@ -90,6 +94,8 @@ export interface ForbidNamesRule extends RuleScope, TypeOnlyOption {
   readonly kind: "forbidNames"
   /** Module specifier globs the names come from. */
   readonly modules: ReadonlyArray<string>
+  /** Also match relative references against their normalized source-relative path, rooted at `/`. Default `false`. */
+  readonly normalizeRelative?: boolean | undefined
   /** Exported names, matched exactly. */
   readonly names: ReadonlyArray<string>
 }
@@ -223,9 +229,9 @@ const kinds = ["forbid", "forbidNames", "rootImportsOnly", "forbidCalls", "forbi
 
 /** The keys each rule kind accepts, beyond `kind`, `because` and `files`. */
 const kindKeys: Readonly<Record<ImportRule["kind"], ReadonlyArray<string>>> = {
-  forbid: ["modules", "allowTypeOnly"],
+  forbid: ["modules", "allowTypeOnly", "normalizeRelative"],
   forbidHostModules: ["allowTypeOnly"],
-  forbidNames: ["modules", "names", "allowTypeOnly"],
+  forbidNames: ["modules", "names", "allowTypeOnly", "normalizeRelative"],
   rootImportsOnly: ["packages", "allowTypeOnly"],
   forbidCalls: ["callees", "includeReferences"]
 }
@@ -282,7 +288,7 @@ export const validateRules = (rules: unknown): ReadonlyArray<ImportRule> => {
       }
     }
     for (const key of kindKeys[kind as ImportRule["kind"]]) {
-      if (key === "allowTypeOnly" || key === "includeReferences") {
+      if (key === "allowTypeOnly" || key === "includeReferences" || key === "normalizeRelative") {
         if (rule[key] !== undefined && typeof rule[key] !== "boolean") refuse("`" + key + "` must be a boolean")
         continue
       }
@@ -340,6 +346,11 @@ const verb = (reference: ImportAnalysis.ModuleReference): string =>
 const matchesAny = (value: string, globs: ReadonlyArray<string>): boolean =>
   globs.some((glob) => matchesGlob(value, glob))
 
+/** Match the written module and, for relative references, its canonical path without parent segments. */
+const matchesModule = (specifier: string, globs: ReadonlyArray<string>, sourcePath: string, normalizeRelative: boolean): boolean =>
+  matchesAny(specifier, globs) ||
+  (normalizeRelative && /^\.\.?\//.test(specifier) && matchesAny(posix.resolve("/", posix.dirname(sourcePath), specifier), globs))
+
 /**
  * Whether a `forbidCalls` entry names a callee: `*.<member>` names every callee
  * ending in `.<member>`, and any other entry only its own text. A callee's last
@@ -352,7 +363,8 @@ const namesCallee = (entry: string, callee: string): boolean =>
 /** The usage text and line of every way one analysis breaks one rule. */
 const breaches = (
   rule: ImportRule,
-  analysis: ImportAnalysis.Analysis
+  analysis: ImportAnalysis.Analysis,
+  sourcePath: string
 ): ReadonlyArray<{ readonly line: number; readonly usage: string }> => {
   if (rule.kind === "forbidCalls") {
     return analysis.calls
@@ -365,7 +377,7 @@ const breaches = (
   for (const reference of analysis.references) {
     const { specifier } = reference
     if (rule.kind === "forbidNames") {
-      if (!matchesAny(specifier, rule.modules)) continue
+      if (!matchesModule(specifier, rule.modules, sourcePath, rule.normalizeRelative === true)) continue
       for (const name of reference.names) {
         if (rule.names.includes(name.name) && !(allowTypeOnly && name.typeOnly)) {
           found.push({ line: name.line, usage: `${verb(reference)} ${name.name} from "${specifier}"` })
@@ -395,7 +407,7 @@ const breaches = (
       continue
     }
     if (rule.kind === "forbid") {
-      if (matchesAny(specifier, rule.modules)) found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}"` })
+      if (matchesModule(specifier, rule.modules, sourcePath, rule.normalizeRelative === true)) found.push({ line: reference.line, usage: `${verb(reference)} "${specifier}"` })
       continue
     }
     const name = packageName(specifier)
@@ -438,7 +450,7 @@ export const check = (rules: ReadonlyArray<ImportRule>, sources: ReadonlyArray<S
         analysis = ImportAnalysis.analyze(source.path, source.text, references)
         analyses.set(source.path, analysis)
       }
-      for (const { line, usage } of breaches(rule, analysis)) {
+      for (const { line, usage } of breaches(rule, analysis, source.path)) {
         violations.push({ file: source.path, line, rule: index, kind: rule.kind, usage, because: rule.because })
       }
     }

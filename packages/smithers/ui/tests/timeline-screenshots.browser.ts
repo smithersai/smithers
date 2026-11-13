@@ -1,10 +1,11 @@
-// Run on the mini: bun tests/timeline-parity.browser.ts [output directory]. No backend or model substitute:
+// Screenshot generator: pnpm screenshots:timeline [output directory]. No pixel comparison is performed.
+// The browser target also checks the 50-arc clip and lens bounds. No backend or model substitute:
 // both pages use the approved mock's conversation; the app page renders the production ChatTimeline and driver.
 import { chromium } from "playwright";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const output = resolve(process.argv[2] ?? "test-results/timeline-parity");
+const output = resolve(process.argv[2] ?? "test-results/timeline-screenshots");
 const fullApp = process.argv[4];
 await mkdir(output, { recursive: true });
 const original = await readFile(process.argv[3] ?? resolve(import.meta.dir, "../../../../apps/mvp/docs/design/timeline/timeline.html"), "utf8");
@@ -19,7 +20,7 @@ document.fonts.ready.then(async () => {
   mount(document.getElementById('rail'), {entries:E, phases:B1, arcs:B2, at:S.at != null ? +S.at : S.state === 'medium' ? 17 : S.state === 'long' ? 103 : null, open:S.open});
 });
 })();</script><style>.sui-chat-timeline{width:100%;height:100%;--text-muted:var(--muted);--text-faint:var(--faint)}.rail.sheet .sui-chat-timeline{--q-tx:var(--sui-tl-muted);--q-tx-in:var(--sui-tl-text);--q-off:1;--q-mk:48%;--q-mk-in:100%;--q-st:100%;--q-ui:62%;--q-dot:100%;--q-line:40%}</style></body></html>`;
-const bundle = await Bun.build({ entrypoints: [resolve(import.meta.dir, "timeline-parity.client.tsx")], target: "browser", minify: true });
+const bundle = await Bun.build({ entrypoints: [resolve(import.meta.dir, "timeline-screenshots.client.tsx")], target: "browser", minify: true });
 if (!bundle.success) throw new Error(String(bundle.logs));
 const client = await bundle.outputs[0]!.text();
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: request => {
@@ -57,11 +58,11 @@ try {
         context.drawImage(a, 0, 32); context.drawImage(b, a.width + 16, 32);
         return canvas.toDataURL("image/png").split(",")[1]!;
       }, shots.map(shot => `data:image/png;base64,${shot.toString("base64")}`));
-      await writeFile(resolve(output, `${name}-parity.png`), Buffer.from(data, "base64"));
+      await writeFile(resolve(output, `${name}-comparison.png`), Buffer.from(data, "base64"));
       console.log(`${name}: mock/app PNG saved`);
     }
   }
-  // Real-browser regression for Astra's overflowing 50-arc case, including a second size measurement.
+  // Real-browser regression for the overflowing 50-arc case, including a second size measurement.
   for (const [index, size] of [{ width: 1440, height: 900 }, { width: 1280, height: 640 }].entries()) {
     await page.setViewportSize(size);
     if (index === 0) {
@@ -76,7 +77,7 @@ try {
         lenses: [...nav.querySelectorAll(".sui-tl-lens")].map(lens => { const bounds = lens.closest(".sui-tl-clip")!.getBoundingClientRect(), rect = lens.getBoundingClientRect();
           return { top: rect.top - bounds.top, bottom: rect.bottom - bounds.top, height: bounds.height }; }) };
     });
-    if (geometry.levels !== 4 || geometry.clips.some(height => height > geometry.height + 1) || geometry.lenses.some(lens => lens.top < -1 || lens.bottom > lens.height + 1)) throw new Error(JSON.stringify(geometry));
+    if (geometry.levels !== 4 || geometry.clips.length !== geometry.levels || geometry.lenses.length !== geometry.levels - 1 || geometry.clips.some(height => height > geometry.height + 1) || geometry.lenses.some(lens => lens.top < -1 || lens.bottom > lens.height + 1)) throw new Error(JSON.stringify(geometry));
     await page.screenshot({ path: resolve(output, `fifty-arcs-${size.width}.png`) });
     console.log(`50 arcs at ${size.width}: four levels, every clip bounded by ${geometry.height}px`);
   }

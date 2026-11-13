@@ -91174,6 +91174,18 @@
         "kind": "glob",
         "pattern": "packages/smithers/ui/browser/**/*.tsx",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/tests/timeline-screenshots.browser.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/tests/timeline-screenshots.client.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/mvp/docs/design/timeline/timeline.html"
       }
     ],
     "outputs": [],
@@ -91244,6 +91256,22 @@
         "kind": "glob",
         "pattern": "packages/smithers/ui/tests/**/*.tsx",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/browser/component-layout.browser.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/browser/timeline.browser.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/browser/fixtures/component-layout.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/scripts/app-independence-rules.ts"
       },
       {
         "kind": "file",
@@ -91517,6 +91545,18 @@
         "path": "packages/smithers/ui/scripts/build-views.mjs"
       },
       {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportAnalysis.ts"
+      },
+      {
         "kind": "glob",
         "pattern": "packages/smithers/ui/tests/**/*.ts",
         "exclude": []
@@ -91525,6 +91565,22 @@
         "kind": "glob",
         "pattern": "packages/smithers/ui/tests/**/*.tsx",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/browser/component-layout.browser.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/browser/timeline.browser.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/browser/fixtures/component-layout.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/scripts/app-independence-rules.ts"
       }
     ],
     "outputs": [],
