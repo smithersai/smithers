@@ -112,7 +112,20 @@ export const Package = S.Package({ targets: { leaf, left, right, data, command }
 // toolchain discovery. Every successful process uses the real shell boundary;
 // only the failing host is replaced through its Effect service.
 describe("admitted formatter and generator execution", () => {
-  it.each(["Go.Lint", "Go.Generate", "Foundry.Fmt"] as const)("honors mode and host failures for %s", async (rule) => {
+  it("does not advertise a changesets verdict cache from declaration metadata", async () => {
+    const { plan } = await fixture(
+      `export const Package = S.Package({ targets: {
+        command: S.Changesets.Version({ config: S.file("config.json"), changes: ["output.txt"] })
+      } })`,
+      { "config.json": "{}", "output.txt": "original" }
+    )
+    const node = plan.nodes.get("//:command")!
+    expect(node.refusal).toBeUndefined()
+    expect(node.cacheable).toBe(false)
+  })
+
+  const rules = ["Go.Lint", "Go.Generate", "Changesets.Version", "Foundry.Fmt"] as const
+  it.each(rules)("honors mode and host failures for %s", async (rule) => {
     for (const mode of ["check", "write"] as const) {
       for (const failed of [false, true]) {
         const shell = mode === "write" ? "printf changed > output.txt" : "true"
@@ -149,6 +162,16 @@ describe("admitted formatter and generator execution", () => {
         expect(await Fs.readFile(Path.join(root, "output.txt"), "utf8")).toBe(
           mode === "write" && !failed ? "changed" : "original"
         )
+        if (rule !== "Foundry.Fmt") {
+          const cache = await Effect.runPromise(
+            executionServicesLive.cache({ workspaceRoot: root, cacheDirectory: ".flows" })
+          )
+          try {
+            expect(await cache.get(node.keyPreview)).toBeNull()
+          } finally {
+            await cache.close()
+          }
+        }
         if (failed) {
           expect(first.results[0]?.error).toContain("formatter host failed")
         } else if (rule === "Foundry.Fmt" && mode === "check") {

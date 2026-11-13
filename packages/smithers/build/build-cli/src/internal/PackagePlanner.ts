@@ -3194,7 +3194,7 @@ const visit = async (
   const movingDependency = directDependencies.some((dependency) =>
     Target.metadata(dependency).target === "Npm.Published"
   )
-  const cacheable = attrMember(attrs, "cache") !== false &&
+  const cacheable = RulePolicy.of(rule).cache !== false && attrMember(attrs, "cache") !== false &&
     refusal === undefined && pendingInstallations.length === 0 && !movingService && !movingDependency &&
     !plannedWrite &&
     (view.cacheable || RulePolicy.cacheable(rule, mode, repositoryState?.dirty))

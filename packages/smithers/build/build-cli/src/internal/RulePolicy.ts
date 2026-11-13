@@ -20,7 +20,7 @@ interface Policy {
   readonly service?: boolean
   readonly exclusive?: boolean
   readonly writes?: boolean
-  readonly cache?: "always" | "read" | "execute" | "check" | "clean-repository"
+  readonly cache?: false | "always" | "read" | "execute" | "check" | "clean-repository"
 }
 
 /** Every rule the planner selects natively; declaration bodies are named at runtime. */
@@ -48,7 +48,7 @@ const policies: Readonly<Record<NativeRule, Policy>> & Readonly<Record<string, P
   "Cargo.Nextest": { writes: true, cache: "read" },
   "Cargo.Test": { writes: true, cache: "read" },
   "Changesets.Publish": { outward: true },
-  "Changesets.Version": { check: true, exclusive: true, writes: true, cache: "check" },
+  "Changesets.Version": { check: true, exclusive: true, writes: true, cache: false },
   "Clean": { outward: true, keyOnly: true, writes: true },
   "Copy": { writes: true, cache: "always" },
   "Cron": { keyOnly: true },
@@ -81,8 +81,8 @@ const policies: Readonly<Record<NativeRule, Policy>> & Readonly<Record<string, P
   "Github.Workflow": { keyOnly: true },
   "Go.Binary": { cache: "always" },
   "Go.Fuzz": { cache: "always" },
-  "Go.Generate": { check: true, exclusive: true, cache: "check" },
-  "Go.Lint": { check: true, exclusive: true, cache: "check" },
+  "Go.Generate": { check: true, exclusive: true, cache: false },
+  "Go.Lint": { check: true, exclusive: true, cache: false },
   "Go.ModDownload": { cache: "always" },
   "Go.Packages": { reads: "declared" },
   "Go.Test": { cache: "always" },

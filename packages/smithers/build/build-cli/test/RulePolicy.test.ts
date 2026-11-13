@@ -57,6 +57,13 @@ describe("rule cache eligibility", () => {
     expect(cacheableIn("Generate")).toEqual(["check/true", "check/false", "check/undefined"])
   })
 
+  it.each(["Go.Lint", "Go.Generate", "Changesets.Version"])(
+    "keeps %s scratch checks out of the cache in every mode",
+    (rule) => {
+      expect(cacheableIn(rule)).toEqual([])
+    }
+  )
+
   it("refuses a read rule in write mode", () => {
     expect(RulePolicy.cacheable("Cargo.Clippy", "execute", undefined)).toBe(true)
     expect(RulePolicy.cacheable("Cargo.Clippy", "check", undefined)).toBe(true)

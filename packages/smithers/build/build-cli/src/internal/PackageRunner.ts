@@ -1173,43 +1173,48 @@ export const executeEffect = (
         if (
           (yield* joined(() => PackageTree.verifyFileManifest(root, cacheDirectory, manifest))) !== undefined
         ) return false
-        yield* joined(() => PackageTree.materializeFile(root, cacheDirectory, manifest))
         const absoluteArchive = NodePath.join(root, ...archive.split("/"))
         const listing = `${absoluteArchive}.list`
-        const listed = yield* spawnNode(node, root, [
-          "/bin/sh",
-          "-c",
-          "exec \"$1\" -tf \"$2\" > \"$3\"",
-          "sh",
-          tar,
-          absoluteArchive,
-          listing
-        ])
-        if (!listed.ok) return false
-        const paths = yield* joined(() => Fs.readFile(listing, "utf8").catch(() => undefined))
-        yield* joined(() => Fs.rm(listing, { force: true }))
-        if (paths === undefined) return false
-        for (const line of paths.split("\n")) {
-          const path = line.replace(/^\.\//, "")
-          if (path === "" || path === ".") continue
-          if (NodePath.isAbsolute(path) || path.split("/").includes("..") || path.includes("\0")) return false
-        }
-        const destination = NodePath.join(root, ...node.outDirs[0]!.split("/"))
-        const makeRemovable = (path: string): Effect.Effect<void, unknown> =>
-          Effect.gen(function*() {
-            const stats = yield* joined(() => Fs.lstat(path).catch(() => undefined))
-            if (stats === undefined || !stats.isDirectory()) return
-            yield* joined(() => Fs.chmod(path, stats.mode | 0o700))
-            for (const entry of (yield* joined(() => Fs.readdir(path)))) {
-              yield* makeRemovable(NodePath.join(path, entry))
-            }
-          })
-        yield* makeRemovable(destination)
-        yield* joined(() => Fs.rm(destination, { recursive: true, force: true }))
-        yield* joined(() => Fs.mkdir(destination, { recursive: true }))
-        const extracted = yield* spawnNode(node, root, [tar, "-xf", absoluteArchive, "-C", destination])
-        yield* joined(() => Fs.rm(absoluteArchive, { force: true }))
-        return extracted.ok
+        return yield* Effect.gen(function*() {
+          yield* joined(() => PackageTree.materializeFile(root, cacheDirectory, manifest))
+          const listed = yield* spawnNode(node, root, [
+            "/bin/sh",
+            "-c",
+            "exec \"$1\" -tf \"$2\" > \"$3\"",
+            "sh",
+            tar,
+            absoluteArchive,
+            listing
+          ])
+          if (!listed.ok) return false
+          const paths = yield* joined(() => Fs.readFile(listing, "utf8").catch(() => undefined))
+          if (paths === undefined) return false
+          for (const line of paths.split("\n")) {
+            const path = line.replace(/^\.\//, "")
+            if (path === "" || path === ".") continue
+            if (NodePath.isAbsolute(path) || path.split("/").includes("..") || path.includes("\0")) return false
+          }
+          const destination = NodePath.join(root, ...node.outDirs[0]!.split("/"))
+          const makeRemovable = (path: string): Effect.Effect<void, unknown> =>
+            Effect.gen(function*() {
+              const stats = yield* joined(() => Fs.lstat(path).catch(() => undefined))
+              if (stats === undefined || !stats.isDirectory()) return
+              yield* joined(() => Fs.chmod(path, stats.mode | 0o700))
+              for (const entry of (yield* joined(() => Fs.readdir(path)))) {
+                yield* makeRemovable(NodePath.join(path, entry))
+              }
+            })
+          yield* makeRemovable(destination)
+          yield* joined(() => Fs.rm(destination, { recursive: true, force: true }))
+          yield* joined(() => Fs.mkdir(destination, { recursive: true }))
+          const extracted = yield* spawnNode(node, root, [tar, "-xf", absoluteArchive, "-C", destination])
+          return extracted.ok
+        }).pipe(Effect.ensuring(
+          Effect.all([
+            joined(() => Fs.rm(absoluteArchive, { force: true })),
+            joined(() => Fs.rm(listing, { force: true }))
+          ], { concurrency: "unbounded" }).pipe(Effect.orDie)
+        ))
       })
 
     /** Resolves one Serve node to the spec the supervisor spawns and probes. */
@@ -2704,7 +2709,6 @@ export const executeEffect = (
                 ? (yield* runWriteEnforced(node))
                 : (yield* runCheckViaScratch(node))
               if (!outcome.ok) return fail(outcome.error)
-              if (node.mode === "check") yield* cachePut(node, { kind: "changesets-version" })
               return green("ran")
             }
             case "Size.Budgets": {
@@ -2900,13 +2904,7 @@ export const executeEffect = (
             case "Go.Lint":
             case "Go.Generate":
               return yield* (node.mode === "write" ? runWriteEnforced(node) : runCheckViaScratch(node)).pipe(
-                Effect.flatMap((outcome) => {
-                  if (!outcome.ok) return Effect.succeed(fail(outcome.error))
-                  const success = green("ran")
-                  return node.rule === "Shell.Diff" || node.mode !== "check"
-                    ? Effect.succeed(success)
-                    : cachePut(node, { kind: "go-check" }).pipe(Effect.as(success))
-                })
+                Effect.map((outcome) => outcome.ok ? green("ran") : fail(outcome.error))
               )
             case "Go.Packages":
               return green("ran")

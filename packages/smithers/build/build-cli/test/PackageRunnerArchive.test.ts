@@ -1,5 +1,5 @@
 import * as Exec from "@smthrs/targets/Exec"
-import { Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
@@ -27,12 +27,12 @@ afterAll(async () => {
   }
 })
 
-const fixture = async () => {
+const fixture = async (outDir = ".gomodcache") => {
   const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-go-archive-")))
   roots.push(root)
   await write(root, "go.mod", "module example.invalid/archive\n\ngo 1.26.0\n")
   await write(root, "go.sum", "")
-  await write(root, ".gomodcache/seed", "fixture module bytes\n")
+  await write(root, `${outDir}/seed`, "fixture module bytes\n")
   await write(
     root,
     "WORKSPACE.ts",
@@ -44,7 +44,9 @@ export const Workspace = S.Workspace("archive", { repository: "git+https://examp
     root,
     "PACKAGE.ts",
     `import { Smithers as S } from "@smthrs/targets"
-export const Package = S.Package({ targets: { fetch: S.Go.ModDownload({ mod: S.file("//go.mod"), sum: S.file("//go.sum"), outDirs: ["//.gomodcache"], sandbox: "none" }) } })`
+export const Package = S.Package({ targets: { fetch: S.Go.ModDownload({ mod: S.file("//go.mod"), sum: S.file("//go.sum"), outDirs: [${
+      JSON.stringify(`//${outDir}`)
+    }], sandbox: "none" }) } })`
   )
   const options = {
     index: PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root),
@@ -158,28 +160,37 @@ describe("module cache archive boundaries", () => {
       await first(f)
       let faults = 0
       let fetched = 0
+      let temporaryAtFetch: Array<string> = []
       const result = await Effect.runPromise(
         executeEffect(f.plan, f.options).pipe(Effect.provideService(ExecutionServices, {
           ...executionServicesLive,
           exec: (options, payload) =>
-            executionServicesLive.exec(options, payload).pipe(Effect.tap(() =>
-              Effect.promise(async () => {
-                if (payload.argv[0] === f.node.argv?.[0]) fetched++
-                const listing = payload.argv.at(-1)
-                if (listing?.endsWith(".list")) {
-                  faults++
-                  if (fault === "missing") await Fs.unlink(listing)
-                  else {await Fs.writeFile(
+            Effect.gen(function*() {
+              if (payload.argv[0] === f.node.argv?.[0]) {
+                fetched++
+                temporaryAtFetch = yield* Effect.promise(() => Fs.readdir(Path.join(f.root, ".flows/tmp")))
+              }
+              const result = yield* executionServicesLive.exec(options, payload)
+              const listing = payload.argv.at(-1)
+              if (listing?.endsWith(".list")) {
+                faults++
+                yield* Effect.promise(() =>
+                  fault === "missing"
+                    ? Fs.unlink(listing)
+                    : Fs.writeFile(
                       listing,
                       fault === "nul" ? "bad\0path\n" : fault === "absolute" ? "/outside\n" : "../outside\n"
-                    )}
-                }
-              })
-            ))
+                    )
+                )
+              }
+              return result
+            })
         }))
       )
       expect(faults).toBe(1)
       expect(fetched).toBe(1)
+      expect(temporaryAtFetch).not.toContain(`go-mod-${f.node.keyPreview}.tar`)
+      expect(temporaryAtFetch).not.toContain(`go-mod-${f.node.keyPreview}.tar.list`)
       expect(result.results).toMatchObject([{ status: "ran" }])
       expect(await Fs.readFile(Path.join(f.root, ".gomodcache/seed"), "utf8")).toBe("fixture module bytes\n")
     }
@@ -205,6 +216,7 @@ describe("archive index host failure", () => {
     await first(f)
     let indexed = 0
     let fetched = 0
+    let temporaryAtFetch: Array<string> = []
     const result = await Effect.runPromise(
       executeEffect(f.plan, f.options).pipe(
         Effect.provideService(ExecutionServices, {
@@ -212,8 +224,8 @@ describe("archive index host failure", () => {
           exec: (settings, payload) => {
             if (payload.argv.at(-1)?.endsWith(".list")) {
               indexed++
-              return Effect.fail(
-                Exec.ExecError.make({
+              return Effect.promise(() => Fs.writeFile(payload.argv.at(-1)!, "partial index")).pipe(
+                Effect.andThen(Effect.fail(Exec.ExecError.make({
                   _tag: "smithers-build/ExecError",
                   argv: payload.argv,
                   cwd: payload.cwd,
@@ -221,10 +233,15 @@ describe("archive index host failure", () => {
                   exitCode: 71,
                   stdout: "",
                   stderr: "archive index host failed"
-                })
+                })))
               )
             }
-            if (payload.argv[0] === f.node.argv?.[0]) fetched++
+            if (payload.argv[0] === f.node.argv?.[0]) {
+              fetched++
+              return Effect.promise(async () => {
+                temporaryAtFetch = await Fs.readdir(Path.join(f.root, ".flows/tmp"))
+              }).pipe(Effect.andThen(executionServicesLive.exec(settings, payload)))
+            }
             return executionServicesLive.exec(settings, payload)
           }
         })
@@ -232,7 +249,68 @@ describe("archive index host failure", () => {
     )
     expect(indexed).toBe(1)
     expect(fetched).toBe(1)
+    expect(temporaryAtFetch).not.toContain(`go-mod-${f.node.keyPreview}.tar`)
+    expect(temporaryAtFetch).not.toContain(`go-mod-${f.node.keyPreview}.tar.list`)
     expect(result.results[0]?.status).toBe("ran")
     expect(await Fs.readFile(Path.join(f.root, ".gomodcache/seed"), "utf8")).toBe("fixture module bytes\n")
   })
+})
+
+it("removes both temporary files when archive restoration is interrupted", async () => {
+  const f = await fixture()
+  await first(f)
+  await Effect.runPromise(Effect.gen(function*() {
+    const indexed = yield* Deferred.make<void>()
+    const fiber = yield* executeEffect(f.plan, f.options).pipe(
+      Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        exec: (settings, payload) =>
+          executionServicesLive.exec(settings, payload).pipe(
+            Effect.andThen(
+              payload.argv.at(-1)?.endsWith(".list")
+                ? Deferred.succeed(indexed, undefined).pipe(Effect.andThen(Effect.never))
+                : Effect.void
+            )
+          )
+      }),
+      Effect.forkChild
+    )
+    yield* Deferred.await(indexed)
+    yield* Effect.promise(async () => {
+      const temporary = await Fs.readdir(Path.join(f.root, ".flows/tmp"))
+      expect(temporary).toContain(`go-mod-${f.node.keyPreview}.tar`)
+      expect(temporary).toContain(`go-mod-${f.node.keyPreview}.tar.list`)
+    })
+    yield* Fiber.interrupt(fiber)
+  }))
+  const temporary = await Fs.readdir(Path.join(f.root, ".flows/tmp"))
+  expect(temporary).not.toContain(`go-mod-${f.node.keyPreview}.tar`)
+  expect(temporary).not.toContain(`go-mod-${f.node.keyPreview}.tar.list`)
+})
+
+it("removes both temporary files when preparing the archive destination fails", async () => {
+  const f = await fixture("cache-parent/modules")
+  await first(f)
+  let invalidated = 0
+  const result = await Effect.runPromise(
+    executeEffect(f.plan, f.options).pipe(Effect.provideService(ExecutionServices, {
+      ...executionServicesLive,
+      exec: (settings, payload) =>
+        executionServicesLive.exec(settings, payload).pipe(Effect.tap(() =>
+          Effect.promise(async () => {
+            if (payload.argv.at(-1)?.endsWith(".list")) {
+              invalidated++
+              await Fs.rm(Path.join(f.root, "cache-parent"), { recursive: true, force: true })
+              await Fs.writeFile(Path.join(f.root, "cache-parent"), "destination parent became a file")
+            }
+          })
+        ))
+    }))
+  )
+  expect(invalidated).toBe(1)
+  expect(result.results).toMatchObject([{ status: "failed", error: expect.stringContaining("ENOTDIR") }])
+  const temporary = await Fs.readdir(Path.join(f.root, ".flows/tmp"))
+  expect(temporary).not.toContain(`go-mod-${f.node.keyPreview}.tar`)
+  expect(temporary).not.toContain(`go-mod-${f.node.keyPreview}.tar.list`)
+  expect(await Fs.readFile(Path.join(f.root, "cache-parent"), "utf8")).toBe("destination parent became a file")
 })
