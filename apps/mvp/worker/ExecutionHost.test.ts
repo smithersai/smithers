@@ -889,19 +889,34 @@ describe("ExecutionHost over the compose Postgres", () => {
       await withSchema(({ name, sql, url }) => Effect.gen(function* () {
         const object = memory()
         const executionId = `auth-race-${sessionId}`
-        const host = ExecutionHost.make(object.storage, {
+        let storageReads = 0
+        const storage: ExecutionHost.Storage = {
+          ...object.storage,
+          get: <A>(key: string) => Effect.suspend(() => {
+            storageReads++
+            return object.storage.get<A>(key)
+          }),
+        }
+        const host = ExecutionHost.make(storage, {
           hostId: `object-${executionId}`, database: ExecutionHost.database(url, name), flows, router: recording().router,
         })
         yield* host.start(yield* ExecutionHost.intent(RecheckRole.RecheckRole, { executionId, payload: { sessionId } }))
         const alarm = yield* host.alarm().pipe(Effect.forkChild)
         yield* Deferred.await(entered)
-        // advance() and the scheduled alarm call this same host.alarm(). Keep the first network request open.
-        const advance = yield* host.alarm().pipe(Effect.forkChild)
-        yield* Effect.sleep(Duration.millis(750))
-        const whileHeld = calls
-        yield* Deferred.succeed(release, undefined)
+        // Run the competing drive through its first suspension before sampling. It must wait at the host's
+        // permit, before even reading object storage, while the first provider request remains open.
+        const readsWhileHeld = storageReads
+        const advanceEntered = Deferred.makeUnsafe<void>()
+        const advance = yield* Deferred.succeed(advanceEntered, undefined).pipe(
+          Effect.andThen(host.alarm()),
+          Effect.forkChild({ startImmediately: true }),
+        )
+        yield* Effect.gen(function* () {
+          yield* Deferred.await(advanceEntered)
+          expect(storageReads).toBe(readsWhileHeld)
+          expect(calls).toBe(1)
+        }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)))
         const outcomes = yield* Effect.all([Fiber.join(alarm), Fiber.join(advance)])
-        expect(whileHeld).toBe(1)
         expect(outcomes.map((outcome) => outcome._tag)).toEqual(["Settled", "Settled"])
         expect(yield* status(sql, name, executionId)).toBe("completed")
       }))

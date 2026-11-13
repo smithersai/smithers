@@ -2,9 +2,9 @@
 // real handler on this file's schema of the compose Postgres and Electric (`pnpm db:up`): a run's reports route to its
 // launcher and to the people on its branch, GitHub's `main` and release deliveries route to the repository's watchers,
 // acts merge with greatest(), and the shape syncs only the person's own rows.
-import { Effect, Option, Redacted, Stream } from "effect"
+import { Deferred, Effect, Fiber, Option, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
-import { beforeEach, describe, expect, test } from "vitest"
+import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { ACK_ROUTE, MAX_ATTENTION_BODY_BYTES, NOTIFICATIONS_SHAPE_ROUTE, WATCHES_ROUTE } from "../src/features/attention/contract.ts"
@@ -108,6 +108,48 @@ const watches = (principal: string) =>
     `SELECT subject, level FROM watches WHERE principal_id = $1 ORDER BY subject`,
     principal,
   )
+
+/** A concurrent operation owned by this test, interrupted even when an ordering assertion fails. */
+const fork = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => {
+  const fiber = runtime.runFork(effect)
+  onTestFinished(async () => { await runtime.runPromise(Fiber.interrupt(fiber)) })
+  return fiber
+}
+
+/** Holds a real transaction after `effect` acquired its locks, until the test releases it. */
+const holding = async <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => {
+  const acquired = Deferred.makeUnsafe<number>()
+  const release = Deferred.makeUnsafe<void>()
+  const fiber = fork(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
+    yield* effect
+    const [row] = yield* client<{ readonly pid: number }>`SELECT pg_backend_pid() AS pid`
+    yield* Deferred.succeed(acquired, row!.pid)
+    yield* Deferred.await(release)
+  }))))
+  return {
+    pid: await runtime.runPromise(Deferred.await(acquired).pipe(Effect.raceFirst(
+      Fiber.join(fiber).pipe(Effect.andThen(Effect.die("lock holder ended before acquisition"))),
+    ))),
+    release: async () => {
+      await runtime.runPromise(Deferred.succeed(release, undefined))
+      await runtime.runPromise(Fiber.join(fiber))
+    },
+  }
+}
+
+/** The competing connection must actually wait on this holder, on the expected kind of lock. */
+const waitingOn = async (blocker: number, locktype: "transactionid" | "advisory") => {
+  let waiter = 0
+  await vi.waitFor(async () => {
+    const waiting = await sql<{ readonly pid: number }>(`
+      SELECT a.pid FROM pg_stat_activity a
+      JOIN pg_locks l ON l.pid = a.pid AND NOT l.granted
+      WHERE $1 = ANY(pg_blocking_pids(a.pid)) AND l.locktype = $2`, blocker, locktype)
+    expect(waiting).toHaveLength(1)
+    waiter = waiting[0]!.pid
+  }, { timeout: 5_000 })
+  return waiter
+}
 
 describe("a run's reports route to its launcher and the people on its branch", () => {
   test("revoked recipients receive no further run updates, including the launcher", async () => {
@@ -822,21 +864,14 @@ describe("a run on a repository's branch quotes its question only to its launche
     })
   })
 
-  /** Holds `statement` in a transaction of its own for `holdMs`, then commits. */
-  const holding = (statement: string, params: ReadonlyArray<unknown>, holdMs: number) =>
-    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
-      yield* client.unsafe(statement, params)
-      yield* Effect.sleep(holdMs)
-    }))))
-  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   /** Folds `runIds` in one transaction, in that order, as a turn that abandons its silent predecessors does. */
   const foldAll = (runIds: ReadonlyArray<string>) =>
-    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
+    Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
       const held = yield* Notifications.lockRuns(runIds)
       for (const runId of runIds) yield* Notifications.foldRun(runId, undefined, held)
-    }))))
+    })))
   const deny = (person: string) =>
-    runtime.runPromise(RepoRoles.remember("github/acme/gizmos", person, null, new Date().toISOString()))
+    RepoRoles.remember("github/acme/gizmos", person, null, new Date().toISOString())
 
   test("a denial recorded while the real fold settles the launcher's existing notice: no deadlock, and the row goes", async () => {
     await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/gizmos', 'person-dex', 'member')
@@ -844,20 +879,25 @@ describe("a run on a repository's branch quotes its question only to its launche
     const { runId } = await run("person-dex", "person-wes")
     expect(await rowOf(Notifications.runSubject(runId), "person-dex")).toBeDefined()
     await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id = $1`, runId)
-    // The role row held: the denial takes its feed lock, then waits there.
-    const blocker = holding(`SELECT 1 FROM github_repo_roles WHERE repo_id = 'github/acme/gizmos' AND person_id = $1 FOR UPDATE`,
-      ["person-dex"], 400)
-    await pause(50)
-    const denial = deny("person-dex")
-    await pause(100)
-    const folding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
-      client.withTransaction(Notifications.foldRun(runId, "dex"))))
-    await Promise.all([blocker, denial, folding])
+    // The denial holds its feed lock while waiting for this role row.
+    const blocker = await holding(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client`SELECT 1 FROM github_repo_roles
+        WHERE repo_id = 'github/acme/gizmos' AND person_id = 'person-dex' FOR UPDATE`))
+    let denial: Fiber.Fiber<unknown, unknown> | undefined
+    let folding: Fiber.Fiber<unknown, unknown> | undefined
+    try {
+      denial = fork(deny("person-dex"))
+      const denialPid = await waitingOn(blocker.pid, "transactionid")
+      folding = fork(Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client.withTransaction(Notifications.foldRun(runId, "dex"))))
+      await waitingOn(denialPid, "advisory")
+    } finally { await blocker.release() }
+    await runtime.runPromise(Effect.all([Fiber.join(denial!), Fiber.join(folding!)]))
     expect(await rowOf(Notifications.runSubject(runId), "person-dex")).toBeUndefined()
     expect(await rowOf(Notifications.runSubject(runId), "person-wes")).toMatchObject({ state: "done" })
   })
 
-  test("a denial that commits while a fold writes the launcher's first row deletes it once the fold commits", async () => {
+  test("a denial waiting for a fold's first notice deletes it once the fold commits", async () => {
     await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/gizmos', 'person-fay', 'member')
       ON CONFLICT (repo_id, person_id) DO UPDATE SET role = 'member', checked_at = now()`)
     const { branchId, conversationId } = await branch("github/acme/gizmos")
@@ -865,14 +905,14 @@ describe("a run on a repository's branch quotes its question only to its launche
     await sql(`INSERT INTO runs (id, flow, status, waiting, wait, version, launched_by, conversation_id, branch_id, repo_id)
       VALUES ($1, 'agent', 'needs_you', 'input', $2::jsonb, 1, 'person-fay', $3, $4, 'github/acme/gizmos')`,
       runId, JSON.stringify({ ...wait(), prompt: "the private question" }), conversationId, branchId)
-    // The fold writes her row and holds its transaction open a while.
-    const folding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
-      yield* Notifications.foldRun(runId, "fay")
-      yield* Effect.sleep(400)
-    }))))
-    await pause(100)
-    await deny("person-fay")
-    await folding
+    // The first notice is uncommitted while the denial reaches the same feed lock.
+    const folding = await holding(Notifications.foldRun(runId, "fay"))
+    let denial: Fiber.Fiber<unknown, unknown> | undefined
+    try {
+      denial = fork(deny("person-fay"))
+      await waitingOn(folding.pid, "advisory")
+    } finally { await folding.release() }
+    await runtime.runPromise(Fiber.join(denial!))
     expect(await rowOf(Notifications.runSubject(runId), "person-fay")).toBeUndefined()
   })
 
@@ -881,16 +921,19 @@ describe("a run on a repository's branch quotes its question only to its launche
     const first = await run("person-lane", "person-wade")
     const second = await run("person-lane", "person-wade")
     await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id IN ($1, $2)`, first.runId, second.runId)
-    // The launcher's row of the second run held: the fold settles the first, then stops at the second.
-    const blocker = holding(`SELECT 1 FROM notifications WHERE run_id = $1 AND recipient = 'person-lane' FOR UPDATE`,
-      [second.runId], 500)
-    await pause(50)
-    const folding = foldAll([first.runId, second.runId])
-    await pause(100)
-    // The watcher's denial: with only the launcher's lock taken, it would delete the second run's row and wait on the
-    // first's, which the fold holds, while the fold waits on that second row.
-    const denial = deny("person-wade")
-    await Promise.all([blocker, folding, denial])
+    // The fold settles the first run, then waits on the second run's launcher row.
+    const blocker = await holding(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client`SELECT 1 FROM notifications WHERE run_id = ${second.runId} AND recipient = 'person-lane' FOR UPDATE`))
+    let folding: Fiber.Fiber<unknown, unknown> | undefined
+    let denial: Fiber.Fiber<unknown, unknown> | undefined
+    try {
+      folding = fork(foldAll([first.runId, second.runId]))
+      const foldPid = await waitingOn(blocker.pid, "transactionid")
+      // A launcher-only lock would let this denial delete rows while the fold holds other rows.
+      denial = fork(deny("person-wade"))
+      await waitingOn(foldPid, "advisory")
+    } finally { await blocker.release() }
+    await runtime.runPromise(Effect.all([Fiber.join(folding!), Fiber.join(denial!)]))
     expect(await rowOf(Notifications.runSubject(first.runId), "person-wade")).toBeUndefined()
     expect(await rowOf(Notifications.runSubject(second.runId), "person-wade")).toBeUndefined()
     expect(await rowOf(Notifications.runSubject(second.runId), "person-lane")).toMatchObject({ state: "done" })
@@ -900,22 +943,27 @@ describe("a run on a repository's branch quotes its question only to its launche
     const first = await run("person-ava", "person-wes")
     const second = await run("person-bo", "person-wes")
     await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id IN ($1, $2)`, first.runId, second.runId)
-    const blocker = holding(`SELECT 1 FROM notifications WHERE run_id = $1 FOR UPDATE`, [first.runId], 500)
-    await pause(50)
-    const forward = foldAll([first.runId, second.runId])
-    await pause(100)
-    const backward = foldAll([second.runId, first.runId])
-    await Promise.all([blocker, forward, backward])
+    const blocker = await holding(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client`SELECT 1 FROM notifications WHERE run_id = ${first.runId} FOR UPDATE`))
+    let forward: Fiber.Fiber<unknown, unknown> | undefined
+    let backward: Fiber.Fiber<unknown, unknown> | undefined
+    try {
+      forward = fork(foldAll([first.runId, second.runId]))
+      const forwardPid = await waitingOn(blocker.pid, "transactionid")
+      backward = fork(foldAll([second.runId, first.runId]))
+      await waitingOn(forwardPid, "advisory")
+    } finally { await blocker.release() }
+    await runtime.runPromise(Effect.all([Fiber.join(forward!), Fiber.join(backward!)]))
     expect((await rows(Notifications.runSubject(first.runId))).map((row) => row.state)).toEqual(["done", "done"])
     expect((await rows(Notifications.runSubject(second.runId))).map((row) => row.state)).toEqual(["done", "done"])
   })
 
   test("recorded denial prevents later branch reports recreating a watcher's private notice", async () => {
     const { runId } = await run("person-allowed", "person-denied-watcher")
-    await deny("person-denied-watcher")
+    await runtime.runPromise(deny("person-denied-watcher"))
     expect(await rowOf(Notifications.runSubject(runId), "person-denied-watcher")).toBeUndefined()
     await sql(`UPDATE runs SET status = 'done', waiting = NULL WHERE id = $1`, runId)
-    await foldAll([runId])
+    await runtime.runPromise(foldAll([runId]))
     expect(await rowOf(Notifications.runSubject(runId), "person-denied-watcher")).toBeUndefined()
     expect(await rowOf(Notifications.runSubject(runId), "person-allowed")).toMatchObject({ state: "done" })
   })
@@ -960,18 +1008,19 @@ describe("a repository event takes its watchers' feed locks before it writes any
     const event = Option.getOrThrow(Notifications.repoEventOf("push", {
       ref: "refs/heads/main", after: "c".repeat(40), repository: { full_name: "acme/widgets", default_branch: "main" },
     }, REPOSITORY, new Date()))
-    // The second watcher's lock held a while, as a role read that denies them holds it.
-    const holding = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => client.withTransaction(Effect.gen(function* () {
-      yield* FeedLocks.lock(client, [{ repoId: REPOSITORY.id, personId: people[1]! }])
-      yield* Effect.sleep(500)
-    }))))
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const recording = runtime.runPromise(Notifications.recordRepoEvent(event))
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    // Nothing yet, not even the first watcher's row, whose lock was free.
-    expect(await rows(`main:${REPOSITORY.id}`)).toEqual([])
-    await holding
-    expect(await recording).toBe(2)
+    const blocker = await holding(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      FeedLocks.lock(client, [{ repoId: REPOSITORY.id, personId: people[1]! }])))
+    let recording: Fiber.Fiber<number, unknown> | undefined
+    try {
+      recording = fork(Notifications.recordRepoEvent(event))
+      const recordingPid = await waitingOn(blocker.pid, "advisory")
+      // No write, even an uncommitted one for the first watcher, precedes all feed locks.
+      expect(await sql(`SELECT 1 FROM pg_locks
+        WHERE pid = $1 AND relation = 'notifications'::regclass AND mode = 'RowExclusiveLock' AND granted`,
+        recordingPid)).toEqual([])
+      expect(await rows(`main:${REPOSITORY.id}`)).toEqual([])
+    } finally { await blocker.release() }
+    expect(await runtime.runPromise(Fiber.join(recording!))).toBe(2)
     expect((await rows(`main:${REPOSITORY.id}`)).map((row) => row.recipient)).toEqual(people)
   })
 })
