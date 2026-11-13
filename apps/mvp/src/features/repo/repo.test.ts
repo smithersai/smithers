@@ -1,5 +1,6 @@
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
+import { Collection } from "@smthrs/effect-tanstack-db"
 import { Cause, Deferred, Effect, Exit, Layer, Option, Schedule } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, beforeEach, describe, expect, onTestFailed, onTestFinished, test, vi } from "vitest"
@@ -13,8 +14,10 @@ import { persistenceOn } from "../../test/deviceFixture"
 import { tempDirectory } from "../../test/tempDirectory"
 import { join } from "node:path"
 import { SqlClient } from "effect/sql"
-import { replaceRole, RepoStore } from "./store"
+import { firstSyncOf, replaceRole, RepoStore } from "./store"
 import { VIEW } from "./rows"
+import { ensureBlob, ensureTree, locate, rawHref, role as readRole } from "./actions"
+import { blobKey, refsKey, treeKey } from "./paths"
 import { RepoClient, RepoRefused } from "./api"
 import { BUSY, COULDNT_LOAD, GITHUB_DOWN, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
 import { TabClipboard } from "./copy"
@@ -55,7 +58,7 @@ afterEach(async () => {
 })
 
 /** A tab on `h`'s RepoApi. */
-const open = async (h: RepoHarness, shapes?: "stalled") => {
+const open = async (h: RepoHarness, shapes?: "stalled" | "down") => {
   const tab = await openTab({ origin: h.origin, fetch: h.fetch, confirmWithin: "10 seconds", ...(shapes === undefined ? {} : { shapes }) })
   tabs.push(tab)
   return tab
@@ -455,6 +458,37 @@ describe("branches, tags and commits", () => {
     await waitFor(() => expect(tab.view().view.missing).toBe(true))
   })
 
+  test.each(["cold", "cached", "stalled"] as const)("a path under the default branch that a longer tag leads reads at the tag's commit (refs: %s)", async (refs) => {
+    // Before, the default branch resolved at once, without the listing: `/blob/main/release/README.md` read
+    // `release/README.md` at main's head, Not found, where the tag `main/release` names the file.
+    const h = await repoHarness(server)
+    const upstream = branched()
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife", {
+      ...upstream,
+      tags: [...upstream.tags!, { name: "main/release", sha: shaOf("test-branch") }],
+    })
+    const tab = await open(h, refs === "stalled" ? "stalled" : undefined)
+    if (refs !== "stalled") await rowReady(tab, id)
+    if (refs === "cached") {
+      at(tab, "tree", "main")
+      await waitFor(() => expect(tab.refs().refs?.state).toBe("ready"))
+    }
+    at(tab, "blob", "main", "release/README.md")
+    await waitFor(() => expect(tab.file().file?.contents).toBe("# On test-branch\n"))
+    expect(tab.view().view).toMatchObject({ revision: "main/release", sha: shaOf("test-branch"), path: "README.md", failure: null })
+    // Hover warming, tree-to-file navigation and raw links share the same longest-ref match.
+    const params = { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "release/only.txt" }
+    await tab.repo.actions.warmRoute("blob", params, {})
+    expect(tab.repo.lookups.file(id, shaOf("test-branch"), "only.txt")?.contents).toBe("x")
+    expect(await tab.repo.actions.fileAtTree(params)).toBe(true)
+    expect(await tab.repo.actions.rawRoute(params)).toBe(rawRoute("octocat", "Spoon-Knife", shaOf("test-branch"), "only.txt"))
+    // The default branch's own file still reads at its head, and so does its root.
+    at(tab, "blob", "main", "README.md")
+    await waitFor(() => expect(tab.view().view).toMatchObject({ revision: "main", sha: headSha, path: "README.md" }))
+    at(tab, "tree", "main")
+    await waitFor(() => expect(tab.view().view).toMatchObject({ revision: "main", sha: headSha, path: "" }))
+  })
+
   test("a branch made while the default branch's head stays where it was shows the next time the view opens", async () => {
     // Before, the device kept the refs under the head commit alone, so the new branch never showed until main moved.
     const h = await repoHarness(server)
@@ -490,14 +524,21 @@ describe("branches, tags and commits", () => {
 
   test("refs Code Storage couldn't list: a branch's view says why, and the default branch still reads", async () => {
     const h = await repoHarness(server)
-    const { id } = await h.seed("octocat", "Spoon-Knife", branched())
-    h.scripted.fail("listBranches", h.scripted.error("listBranches", "internal_error", 500))
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife", branched())
+    const failure = h.scripted.error("listBranches", "internal_error", 500)
+    h.scripted.fail("listBranches", failure, failure)
     const tab = await open(h)
     await rowReady(tab, id)
+    // A file under the default branch waits for the listing, which a longer name could lead, and reads at the head
+    // when the listing couldn't load.
+    at(tab, "blob", "main", "README.md")
+    await waitFor(() => expect(tab.file().file?.state).toBe("text"))
+    expect(tab.view().view).toMatchObject({ revision: "main", sha: headSha, path: "README.md", failure: null })
+    expect(tab.refs().refs).toMatchObject({ state: "failed", message: BUSY })
     at(tab, "tree", "test-branch")
     await waitFor(() => expect(tab.view().view.failure).toBe(BUSY))
     expect(tab.refs().refs).toMatchObject({ state: "failed", message: BUSY })
-    expect(tab.histogramCount(refsLoadMs, { outcome: "failed" })).toBe(1)
+    expect(tab.histogramCount(refsLoadMs, { outcome: "failed" })).toBe(2)
     at(tab, "tree", "main")
     await waitFor(() => expect(tab.readme().readme?.state).toBe("text"))
     expect(tab.view().view.failure).toBeNull()
@@ -520,9 +561,131 @@ describe("branches, tags and commits", () => {
     expect(await raw("main", "README.md", "Hello-World")).toBeUndefined()
     expect(tab.view().view).toMatchObject({ kind: "blob", name: "Hello-World", path: "README.md" })
   })
+
+  test.each(["stalled", "down"] as const)("GitHub's raw path under a %s shape answers once RepoApi's refs name the head, with no repository row", async (shapes) => {
+    // Before, the raw path waited `confirmWithin` for Electric's row and then answered nothing, where the view had
+    // already read the file at the head the refs named.
+    const h = await repoHarness(server)
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife", branched())
+    const tab = await open(h, shapes)
+    expect(await tab.repo.actions.rawRoute({ owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "README.md" }))
+      .toBe(rawRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(tab.repo.lookups.repository(id)).toBeUndefined()
+    expect(tab.view().view).toMatchObject({ kind: "blob", revision: "main", sha: headSha, path: "README.md" })
+    await waitFor(() => expect(tab.file().file?.contents).toContain("# Fixture"))
+    const bytes = await h.fetch(new URL(rawRoute("octocat", "Spoon-Knife", headSha, "README.md"), h.origin))
+    expect(bytes.status).toBe(200)
+    expect(await bytes.text()).toContain("# Fixture")
+  })
+
+  test("GitHub's raw path keeps a cached ready head usable while its refs refresh after the shape preload fails", async () => {
+    const h = await repoHarness(server)
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife", branched())
+    const held = Effect.runSync(Deferred.make<void>())
+    let reads = 0
+    const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    const delayed = Layer.effect(RepoClient, Effect.map(RepoClient, (client) => RepoClient.of({
+      ...client,
+      refs: (...args) => Effect.gen(function* () {
+        if (++reads > 1) yield* Deferred.await(held)
+        return yield* client.refs(...args)
+      }),
+    }))).pipe(Layer.provide(real))
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, shapes: "down", retry: Schedule.recurs(0), client: delayed })
+    tabs.push(tab)
+    tab.repo.actions.open(root("octocat", "Spoon-Knife"))
+    await waitFor(() => expect(tab.view().view.sha).toBe(headSha))
+    const store = await tab.runtime.runPromise(RepoStore)
+    // A terminal preload failure uses the real first-sync handler over a faulty collection boundary.
+    const firstSync = await tab.runtime.runPromise(firstSyncOf(Effect.fail(new Collection.LoadFailed({ cause: new Error("offline") }))))
+    expect(tab.repo.lookups.repository(id)).toBeUndefined()
+    try {
+      tab.repo.actions.refresh(root("octocat", "Spoon-Knife"))
+      await waitFor(() => expect(reads).toBe(2))
+      let settled = false
+      const raw = tab.runtime.runPromise(rawHref({ ...root("octocat", "Spoon-Knife"), kind: "blob", ref: "test-branch", path: "only.txt" })
+        .pipe(Effect.provideService(RepoStore, { ...store, firstSync })))
+        .then((href) => { settled = true; return href })
+      await waitFor(() => expect(tab.view().view).toMatchObject({ kind: "blob", sha: null }))
+      await waitFor(() => expect(tab.lines("repo.repositories.load")).toHaveLength(1))
+      // A failed shape cannot reject the cached head while this file's longer-ref check is still pending.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(settled).toBe(false)
+      await Effect.runPromise(Deferred.succeed(held, undefined))
+      expect(await raw).toBe(rawRoute("octocat", "Spoon-Knife", shaOf("test-branch"), "only.txt"))
+    } finally { await Effect.runPromise(Deferred.succeed(held, undefined)) }
+  })
+
+  test.each(["real", "stalled"] as const)("GitHub's raw path stops waiting when neither source resolves its ref within the deadline (shape: %s)", async (shapes) => {
+    const h = await repoHarness(server)
+    const { id } = await h.seed("octocat", "Spoon-Knife", branched())
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, shapes, confirmWithin: "100 millis" })
+    tabs.push(tab)
+    if (shapes === "real") await rowReady(tab, id)
+    onTestFinished(h.scripted.hold("listBranches"))
+    expect(await tab.repo.actions.rawRoute({ owner: "octocat", repo: "Spoon-Knife", ref: "test-branch", _splat: "only.txt" }))
+      .toBeUndefined()
+    expect(tab.view().view.sha).toBeNull()
+  })
+
+  test.each([
+    ["owner", { owner: "someone" }],
+    ["repository", { name: "Hello-World" }],
+    ["view", { kind: "tree" }],
+    ["ref", { ref: "main" }],
+    ["path", { path: "README.md" }],
+  ] as const)("GitHub's raw path answers nothing once the tab changes %s while its ref is on its way", async (_, change) => {
+    const h = await repoHarness(server)
+    const { id } = await h.seed("octocat", "Spoon-Knife", branched())
+    const original = { ...root("octocat", "Spoon-Knife"), kind: "blob" as const, ref: "test-branch", path: "only.txt" }
+    const destination = { ...original, ...change }
+    const destinationId = destination.owner !== original.owner || destination.name !== original.name
+      ? (await h.seed(destination.owner, destination.name, branched())).id
+      : id
+    const tab = await open(h)
+    await rowReady(tab, id)
+    await rowReady(tab, destinationId)
+    // Both repositories are ready; a stale redirect must not be hidden by an unresolved destination.
+    // The requested ref still needs the held listing.
+    const release = h.scripted.hold("listBranches")
+    onTestFinished(release)
+    const raw = tab.repo.actions.rawRoute({ owner: original.owner, repo: original.name, ref: original.ref, _splat: original.path })
+    await waitFor(() => expect(h.scripted.calls.some((call) => call.startsWith("listBranches:"))).toBe(true))
+    tab.repo.actions.open(destination)
+    release()
+    expect(await raw).toBeUndefined()
+    expect(tab.view().view).toMatchObject(destination)
+  })
 })
 
 describe("reads RepoApi refuses", () => {
+  test("a refused repository starts no reads through stale metadata or a fresh raw navigation", async () => {
+    const h = await repoHarness(server)
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife", branched())
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, shapes: "stalled", confirmWithin: "100 millis" })
+    tabs.push(tab)
+    const client = await tab.runtime.runPromise(RepoClient)
+    const head = await tab.runtime.runPromise(client.refs("octocat", "Spoon-Knife"))
+    const store = await tab.runtime.runPromise(RepoStore)
+    await tab.runtime.runPromise(store.refuse(id))
+    const key = refsKey(id, headSha, head.refsChangedAt)
+    const stale = { id, owner: "octocat", name: "Spoon-Knife", defaultBranch: head.defaultBranch, headSha, refsKey: key, source: "refs" as const }
+    const before = h.scripted.calls.length
+    // A file tab can retain its previous metadata after the device has revoked this repository.
+    await tab.runtime.runPromise(locate(stale, { ...root("octocat", "Spoon-Knife"), ref: headSha, path: "README.md" }))
+    await tab.runtime.runPromise(ensureTree(stale, headSha, false))
+    await tab.runtime.runPromise(ensureBlob(stale, headSha, "README.md", false))
+    expect(await tab.repo.actions.rawRoute({ owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "README.md" })).toBeUndefined()
+    for (const row of await tab.runtime.runPromise(Effect.all([
+      store.refs.get(key), store.trees.get(treeKey(id, headSha)), store.blobs.get(blobKey(id, headSha, "README.md")),
+      store.abouts.get(id), store.heads.get(id),
+    ]))) expect(row._tag).toBe("None")
+    expect(h.scripted.calls).toHaveLength(before)
+  })
+
   test("the read budget spent reads as paused; a gateway's error, as couldn't load", async () => {
     const h = await repoHarness(server)
     await h.seed("octocat", "Spoon-Knife")
@@ -655,6 +818,47 @@ describe("the agent's repository flows on this device", () => {
 const rolesOf = (tab: Tab) => tab.repo.queries.roles.toArray.map(({ id, role, own }) => ({ id, role, own }))
 
 describe("who the person is on a repository (decision 0079)", () => {
+  test("a tab without sign-in records a 401 and can recover when the role answer omits optional visibility", async () => {
+    const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
+    let refusing = true
+    const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    const incomplete = Layer.effect(RepoClient, Effect.map(RepoClient, (client) => RepoClient.of({
+      ...client,
+      role: (owner, name) => refusing
+        ? Effect.fail(new RepoRefused({ status: 401 }))
+        : client.role(owner, name).pipe(Effect.map(({ public: _public, ...answer }) => answer)),
+    }))).pipe(Layer.provide(real))
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: incomplete })
+    tabs.push(tab)
+    const id = repoId("octocat", "Spoon-Knife")
+    await tab.runtime.runPromise(readRole("octocat", "Spoon-Knife"))
+    expect(tab.repo.queries.roles.toArray.find((row) => row.id === id)).toMatchObject({ role: null, refused: "authentication" })
+    refusing = false
+    await tab.runtime.runPromise(readRole("octocat", "Spoon-Knife"))
+    const recovered = tab.repo.queries.roles.toArray.find((row) => row.id === id)
+    expect(recovered).toMatchObject({ role: "member", own: true })
+    expect(recovered?.public).toBeUndefined()
+    expect(recovered?.refused).toBeUndefined()
+  })
+
+  test("a refusal arriving while a role grant clears older marks cannot publish that grant", async () => {
+    const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
+    const tab = await open(h)
+    const id = repoId("octocat", "Spoon-Knife")
+    const store = await tab.runtime.runPromise(RepoStore)
+    // The real store receives a new refusal at the boundary between the answer and its attempted grant.
+    const refusing = { ...store, clearRefusal: (...args: Parameters<typeof store.clearRefusal>) =>
+      Effect.andThen(store.refuse(args[0]), store.clearRefusal(...args)) }
+    await tab.runtime.runPromise(readRole("octocat", "Spoon-Knife").pipe(Effect.provideService(RepoStore, refusing)))
+    expect(store.isRefused(id)).toBe(true)
+    expect(Option.getOrUndefined(await tab.runtime.runPromise(store.roles.get(id))))
+      .toMatchObject({ role: null, own: false, refused: "forbidden" })
+    expect(tab.count(roleAnswers, { outcome: "answered", role: "member" })).toBe(0)
+  })
+
   test("a repository route asks ChatApi: the role there and whether it is the deployment's own", async () => {
     const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
     const tab = await open(h)

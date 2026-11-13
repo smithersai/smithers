@@ -191,11 +191,12 @@ describe("a page whose repositories' shape answers before RepoApi's refs", () =>
   /** RepoApi's refs answer 8 s late, after the warm's own deadline and long after a local shape. */
   const slowRefs = (h: RepoHarness) => withRefs(h, (real) => (owner, name) => Effect.delay(real.refs(owner, name), "8 seconds"))
 
-  test("a navigation's warm reads at the row's head, without waiting for the refs", async () => {
+  test("a navigation's warm reads an explicit commit at the row's head, without waiting for the refs", async () => {
     const h = await repoHarness(server)
     const { id, headSha } = await seedPublic(h)
     const tab = await open(h, { shapes: "real", client: slowRefs(h) })
-    await navigate(tab, "blob", "main", "README.md")
+    // A commit is unambiguous; a named default-branch path must await possible longer branch or tag names.
+    await navigate(tab, "blob", headSha, "README.md")
     expect(tab.repo.lookups.file(id, headSha, "README.md")?.state).toBe("text")
     expect(tab.lines("repo.head.load")).toEqual([])
     expect(tab.lines("repo.locate")[0]!.annotations).toMatchObject({ source: "row", outcome: "located" })

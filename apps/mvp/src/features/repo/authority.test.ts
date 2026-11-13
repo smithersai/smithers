@@ -1,6 +1,7 @@
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Fiber, Metric, Option, Schema, Scope } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
+import { SqlClient } from "effect/sql"
 import { nodeDevice, openTab, openTestApi, TestChatApi, TEST_REPOSITORY } from "../../test/chatApi"
 import { failRestore } from "../../test/restoreFailure"
 import { read } from "../../test/otlp"
@@ -182,4 +183,22 @@ test("repository refusal restoration starts before repository metadata and branc
     expect(selected).toContain(collection)
     expect(selected.indexOf("repo-refusals")).toBeLessThan(selected.indexOf(collection))
   }
+})
+
+
+test("public repository visibility comes from the real role route and clears when its optional flag is absent", async () => {
+  const tab = await open()
+  const owner = "acme", name = "gadgets", repoId = "github/acme/gadgets"
+  // The same metadata an About read retains when GitHub has no App installation on this public repository.
+  tab.api.github.scripted.publicElsewhere.add("acme/gadgets")
+  await Effect.runPromise(tab.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    INSERT INTO repo_about (repo_id, app_absent_until) VALUES (${repoId}, now() + interval '1 hour')`)))
+  await tab.runtime.runPromise(role(owner, name))
+  expect(Option.getOrThrow(await tab.runtime.runPromise(tab.store.roles.get(repoId))))
+    .toMatchObject({ role: null, own: false, readable: false, public: true })
+  const client = await tab.runtime.runPromise(RepoClient)
+  await tab.runtime.runPromise(role(owner, name).pipe(Effect.provideService(RepoClient, { ...client,
+    role: (owner, name) => client.role(owner, name).pipe(Effect.map(({ public: _public, ...answer }) => answer)),
+  })))
+  expect(Option.getOrThrow(await tab.runtime.runPromise(tab.store.roles.get(repoId))).public).toBeUndefined()
 })

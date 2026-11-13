@@ -623,20 +623,27 @@ type Location =
   | { readonly _tag: "Missing" }
 
 /**
- * Resolves `target`'s ref in a ready repository: loads its branches and tags, and waits for them only when the ref is
- * neither the default branch nor a SHA. A head RepoApi's refs named comes with its branches and tags already.
+ * Resolves `target`'s ref in a ready repository: loads its branches and tags, and waits for them only when they can
+ * change the answer. A SHA and the default branch's root resolve at once. A path under the named default branch may
+ * instead name a longer branch or tag, so it consults the loaded or pending listing, falling back to the default
+ * branch if that listing fails. Other names require the listing. A head RepoApi's refs named includes it already.
  */
 export const locate = (repository: Readable, target: Target) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const refs = repository.refsKey
     yield* ensureRefs(repository, refs)
-    let resolved = resolveRef(repository, target.ref, target.path)
-    if (resolved === undefined) {
-      const known = yield* until(store.refs, refs, loaded)
-      if (known.state === "failed") return { _tag: "Failed", message: known.message } satisfies Location
-      resolved = resolveRef(repository, target.ref, target.path, known)
+    const atOnce = resolveRef(repository, target.ref, target.path)
+    if (atOnce !== undefined && (target.ref === null || atOnce.path === "" || atOnce.revision !== repository.defaultBranch)) {
+      return { _tag: "Located", ...atOnce } satisfies Location
     }
+    const known = yield* until(store.refs, refs, loaded)
+    if (known.state === "failed") {
+      return atOnce === undefined
+        ? { _tag: "Failed", message: known.message } satisfies Location
+        : { _tag: "Located", ...atOnce } satisfies Location
+    }
+    const resolved = resolveRef(repository, target.ref, target.path, known)
     if (resolved === undefined) return { _tag: "Missing" } satisfies Location
     return { _tag: "Located", ...resolved } satisfies Location
   })
@@ -812,23 +819,37 @@ export const navigate = (to: string) =>
   Effect.flatMap(FlowDispatch, (dispatch) => Effect.ignore(dispatch.dispatch("app/navigate", { to }, { door: "button" })))
 
 /**
- * `/$owner/$repo/raw/$ref/$`, GitHub's raw path (`target` is its file): opens the file in the routed view, and once the repository is ready
- * on this device (Electric gets `confirmWithin` to deliver it) and the ref resolves, answers RepoApi's raw route at
- * its commit, which the route's loader loads in place of the app. `undefined` when there is nothing to load: the view
- * shows why.
+ * `/$owner/$repo/raw/$ref/$`, GitHub's raw path (`target` is its file): opens the file in the routed view, and once the
+ * repository is ready on this device, by its synced row or RepoApi's refs as the view reads it (`readable`), and the
+ * ref resolves, answers RepoApi's raw route at its commit, which the route's loader loads in place of the app.
+ * `undefined` when there is nothing to load, which the view shows: neither the synced row nor RepoApi's refs name a
+ * ready clone, the ref names nothing or its listing couldn't load, the tab opened another location meanwhile, or
+ * neither Electric nor RepoApi answered within `confirmWithin`.
  */
 export const rawHref = (target: Target) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     yield* open(target)
-    const opened = Option.getOrThrow(yield* store.view.get(VIEW))
-    if (opened.repoId === null || target.path === "") return undefined
-    // Electric gets `confirmWithin` to deliver the row; the page then shows what the device has.
-    yield* Effect.timeoutOption(store.firstSync, store.confirmWithin)
-    const row = yield* store.repositories.get(opened.repoId)
-    if (Option.isNone(row) || row.value.status !== "ready") return undefined
-    const view = yield* until(store.view, VIEW, (view) => view.missing || view.failure !== null || view.sha !== null)
-    return view.sha === null ? undefined : rawRoute(view.owner, view.name, view.sha, view.path)
+    const id = Option.getOrThrow(yield* store.view.get(VIEW)).repoId
+    if (id === null || target.path === "") return undefined
+    /** Whether the view still shows `target`: another location opened since answers nothing for this one. */
+    const shows = (view: ViewRow) =>
+      view.owner === target.owner && view.name === target.name && view.kind === target.kind && view.ref === target.ref &&
+      view.splat === target.path
+    // The view's load found the clone ready, by the row or the refs, and the ref resolved or didn't (`load`).
+    const located = until(store.view, VIEW, (view) => !shows(view) || view.missing || view.failure !== null || view.sha !== null).pipe(
+      Effect.map((view) => (shows(view) && view.sha !== null ? rawRoute(view.owner, view.name, view.sha, view.path) : undefined)),
+    )
+    // A missing or failed shape cannot rule out a ready head from RepoApi. Without a ready row, wait for that
+    // independent answer too; a ready head leaves the redirect to the view's resolution.
+    const notReady = store.firstSync.pipe(
+      Effect.andThen(store.repositories.get(id)),
+      Effect.flatMap((row) => isReady(row) ? Effect.never : until(store.heads, id, loaded).pipe(
+        Effect.flatMap((head) => head.state === "ready" ? Effect.never : Effect.succeed(undefined)),
+      )),
+    )
+    // Electric and RepoApi get `confirmWithin` to answer; the page then shows what the device has.
+    return Option.getOrUndefined(yield* Effect.timeoutOption(Effect.raceFirst(located, notReady), store.confirmWithin))
   })
 
 /** Re-read a location after its mirror refresh, discarding only the mutable refs listing. */
