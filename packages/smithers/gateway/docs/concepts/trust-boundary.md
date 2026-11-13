@@ -123,8 +123,17 @@ through a same-origin proxy.
 ## Edge authentication, and where it deliberately stops
 
 `GatewayServer.protectedPaths` is checked before a body is read or an upgrade
-is answered: `/projections`, `/sync`, `/rpc/ws`, `/projections/ws`, and
-`/sync/ws`.
+is answered:
+
+- `/projections`
+- `/branch`
+- `/sync`
+- `/rpc/ws`
+- `/projections/ws`
+- `/sync/ws`
+- `/runtime/v1/command`
+- `/runtime/v1/monitor`
+- `/runtime/v1/observe`
 
 `POST /rpc` is deliberately not on that list. The control mount authenticates
 in band through `ControlRpcs.ControlAuth`, whose declared error is

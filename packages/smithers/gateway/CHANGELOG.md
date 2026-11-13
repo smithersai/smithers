@@ -24,6 +24,10 @@
 
 ### Changed
 
+- Successfully resumed runs clear their previous failure cause and fault from
+  the diagnosis card, including across retained event windows. The gateway docs
+  list every edge-authenticated mount and every approval submission error (#4915).
+
 - `workspace-runs` rows clip `finalOutput`, `failureMessage`, and `diagnosis`
   to 1,024 encoded JSON content bytes, so long final answers no longer refuse the whole
   listing with `resource_limit`; `run-summary` keeps the complete text. A

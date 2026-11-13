@@ -44,6 +44,9 @@ needed, and nothing has to be recomputed.
 
 An unlaunched run, one with no status event at all, reads `unlaunched`.
 Status events use the vocabulary from `ControlSchema.RunStatus.literals`.
+A later non-failed status clears the previous failure cause and fault, so a
+successfully resumed run's card carries no stale `Cause` line. This also holds
+when events are folded across retained history windows.
 
 ## Fold your own
 

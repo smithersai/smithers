@@ -403,8 +403,8 @@ const rawDigest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Digest =>
       if (!runStatuses.has(status)) continue
       observe(at)
       accumulator.status = status as RunStatus
-      if (status === "failed") accumulator.cause = asString(payload.cause)
-      // A resumed run is no longer failed, so the fault of its last failure goes.
+      accumulator.cause = status === "failed" ? asString(payload.cause) : undefined
+      // A resumed run no longer carries the cause or fault of its last failure.
       accumulator.fault = status === "failed" && isFault(payload.fault) ? payload.fault : undefined
     }
   }
@@ -551,7 +551,9 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?
     const key = callEventKey(event)
     if (key === undefined) {
       baseEvents.push(event)
-      if (event.kind === "control.run.failed") writes.cause = true
+      if (event.kind.startsWith("control.run.") && runStatuses.has(event.kind.slice("control.run.".length))) {
+        writes.cause = true
+      }
       if (callScope(event) === undefined) {
         if (event.kind === "control.agent.resolved") writes.finalOutput = true
         if (event.kind === "control.approval.requested") writes.parkedQuestion = true
@@ -784,7 +786,7 @@ const combinePlain = (earlier: Digest, later: Digest, writes: DigestState["write
   return {
     status: later.status ?? earlier.status,
     cause: writes.cause ? later.cause : earlier.cause,
-    fault: writes.cause || (later.status !== undefined && later.status !== "failed") ? later.fault : earlier.fault,
+    fault: writes.cause ? later.fault : earlier.fault,
     seat: later.seat ?? earlier.seat,
     turns: earlier.turns + later.turns,
     calls: earlier.calls + later.calls,
@@ -809,7 +811,7 @@ const stateOf = (value: Digest): DigestState =>
   digestStates.get(value) ?? {
     base: value,
     writes: {
-      cause: value.cause !== undefined,
+      cause: value.status !== undefined || value.cause !== undefined || value.fault !== undefined,
       finalOutput: value.finalOutput !== undefined,
       parkedQuestion: value.parkedQuestion !== undefined
     },

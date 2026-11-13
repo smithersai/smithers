@@ -6,10 +6,13 @@
  * requires the Origin to equal the request authority, and said a
  * `Projection.Snapshot` request streams once it is sent over the socket.
  */
+import * as ControlError from "@smthrs/control/ControlError"
 import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import { GatewayRpcs } from "../src/GatewayRpcs.ts"
+import { protectedPaths } from "../src/GatewayServer.ts"
 import { maxEventBytes, maxEventsPerPage, maxEventsPerRun, maxProjectionBytes } from "../src/Projections.ts"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -72,6 +75,31 @@ describe("the package docs", () => {
       expect(prose).toMatch(/Origin[^.]*(?:host and port|hostname and port)[^.]*(?:request|`Host`)/)
     }
   )
+
+  it("lists every edge-authenticated path from protectedPaths", () => {
+    const section = read("docs/concepts/trust-boundary.md")
+      .split("## Edge authentication, and where it deliberately stops")[1]?.split("`POST /rpc`")[0]
+    expect(section).toBeDefined()
+    const paths = [...(section ?? "").matchAll(/`(\/[^`]+)`/g)].map((match) => match[1])
+    expect(paths).toEqual(protectedPaths)
+  })
+
+  it("lists exactly the Approval.Submit error schema members", () => {
+    const byAst = new Map<unknown, string>(
+      Object.entries(ControlError).flatMap(([name, value]) =>
+        typeof value === "function" && "ast" in value ? [[value.ast, name] as const] : []
+      )
+    )
+    const union = GatewayRpcs.requests.get("Approval.Submit")!.errorSchema.ast as {
+      readonly types: ReadonlyArray<object>
+    }
+    const declared = union.types.map((member) => byAst.get(member))
+    expect(declared).not.toContain(undefined)
+    const row = read("docs/api.md").split("\n").find((line) => line.startsWith("| `Approval.Submit`"))
+    expect(row).toBeDefined()
+    const documented = [...(row?.split("|")[4] ?? "").matchAll(/`(\w+)`/g)].map((match) => match[1])
+    expect(documented).toEqual(declared)
+  })
 
   it("follows a run over the socket with Projection.Subscribe", () => {
     const overview = read("docs/README.md").replaceAll(/\s+/g, " ")

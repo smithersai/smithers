@@ -6,8 +6,10 @@
  * and what the run actually did while it ran.
  */
 import { ControlSchema } from "@smthrs/control"
+import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
 import * as Diagnosis from "../src/Diagnosis.ts"
+import * as GatewayProjection from "../src/GatewayProjection.ts"
 import { lastStepResolvedText, moduleRunJournal, moduleRunOutput } from "./fixtures/module-run-journal.ts"
 
 let sequence = 0
@@ -71,6 +73,93 @@ describe("Diagnosis.digest", () => {
       startedAt: undefined,
       endedAt: undefined
     })
+  })
+
+  it.each(ControlSchema.RunStatus.literals.filter((status) => status !== "failed"))(
+    "clears the failure cause and fault on %s in full and carried histories",
+    (status) => {
+      const history = [
+        event("control.run.failed", { cause: "boom", fault: { class: "factory", tag: "coding/Error/stalled" } }),
+        event("control.run.running", {}),
+        event(`control.run.${status}`, {})
+      ]
+      const expected = Diagnosis.digest(history)
+      expect(expected).toMatchObject({ status, cause: undefined, fault: undefined })
+      expect(Diagnosis.render({ runId: "run-1" }, expected)).not.toContain("Cause")
+
+      for (let split = 0; split <= history.length; split++) {
+        const left = Diagnosis.digest(history.slice(0, split))
+        const right = Diagnosis.digest(history.slice(split))
+        expect(Diagnosis.combine(left, right)).toEqual(expected)
+        // Persisted/public digests have no private carry metadata.
+        expect(Diagnosis.combine({ ...left }, { ...right })).toEqual(expected)
+      }
+    }
+  )
+
+  it("renders a successfully resumed run summary without the old cause", () => {
+    const row = GatewayProjection.runSummary({
+      runId: "run-1",
+      flowId: "deploy",
+      status: "completed",
+      createdAt: 0,
+      updatedAt: 3
+    }, [
+      event("control.run.failed", { cause: "boom" }, 1),
+      event("control.run.running", {}, 2),
+      event("control.run.completed", {}, 3)
+    ])
+    expect(row.verdict).toBe("completed")
+    expect(row.failureMessage).toBeUndefined()
+    expect(row.diagnosis).not.toContain("Cause")
+    expect(row.diagnosis).not.toContain("boom")
+  })
+
+  it("keeps only the latest status's failure details across arbitrary window boundaries", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            status: fc.constantFrom(...ControlSchema.RunStatus.literals, "resume", "lineage"),
+            cause: fc.option(fc.string({ maxLength: 30 }), { nil: undefined }),
+            foreign: fc.boolean()
+          }),
+          { maxLength: 15 }
+        ),
+        (transitions) => {
+          const initial = event("control.run.failed", {
+            cause: "initial failure",
+            fault: { class: "factory", tag: "coding/Error/stalled" }
+          })
+          const history = [
+            initial,
+            ...transitions.map(({ status, cause, foreign }) => ({
+              ...event(`control.run.${status}`, { cause }),
+              runId: foreign ? "child" : "run-1"
+            }))
+          ]
+          const last = [...transitions].reverse().find(({ status, foreign }) =>
+            !foreign && ControlSchema.RunStatus.literals.some((known) => known === status)
+          )
+          const expected = last === undefined
+            ? { status: "failed", cause: "initial failure", fault: { class: "factory", tag: "coding/Error/stalled" } }
+            : { status: last.status, cause: last.status === "failed" ? last.cause : undefined, fault: undefined }
+          const whole = Diagnosis.digest(history, "run-1")
+          expect(whole).toMatchObject(expected)
+          for (let split = 0; split <= history.length; split++) {
+            expect(Diagnosis.combine(
+              Diagnosis.digest(history.slice(0, split), "run-1"),
+              Diagnosis.digest(history.slice(split), "run-1")
+            )).toEqual(whole)
+          }
+          expect(history.reduce(
+            (carry, member) => Diagnosis.combine(carry, Diagnosis.digest([member], "run-1")),
+            Diagnosis.digest([])
+          )).toEqual(whole)
+        }
+      ),
+      { seed: 4915, numRuns: 100 }
+    )
   })
 
   it("counts turns, calls, edits, refusals, and tokens", () => {
