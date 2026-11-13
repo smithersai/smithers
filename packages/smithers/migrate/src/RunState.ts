@@ -249,7 +249,8 @@ export const instructionText = {
   parked: "cancel or accept the loss of these parked runs; the 1.0 runtime cannot resume them",
   archive:
     "archive the database: `mkdir -p .smithers-migrate/archive && mv .smithers/smithers.db* .smithers-migrate/archive/`; 1.0 does not import history",
-  backend: "the 1.0 RC supports SQLite only; export what you need with the 0.x CLI, then remove the backend setting"
+  backend:
+    "export any needed 0.x history with the 0.x CLI and archive it separately; 1.0 does not import it. New PostgreSQL state is supported with `@effect/sql-pg` and `SMITHERS_POSTGRES_URL` (or `SMITHERS_BACKEND=postgres` with `DATABASE_URL`); PGlite is unsupported. Remove PGlite settings, review legacy backend settings and `--backend` flags, then rerun with `--acknowledge-run-state` after handling the 0.x state"
 } as const
 
 const stateDirectories = [

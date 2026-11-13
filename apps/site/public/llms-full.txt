@@ -22862,7 +22862,7 @@ produces `completion_unjudged`.
 
 Offline hosts bind `Evaluator.layerScripted` and compute answers from the actual
 evidence, dispatched by question id. One evaluator serves every classifier in
-a composition. See the [whole-host scripted judge](https://github.com/smithersai/smithers/blob/main/flows/test/fixtures/scripted-judge.ts).
+a composition. See the [whole-host scripted judge](https://github.com/smithersai/smithers/blob/main/.smithers/flows/test/fixtures/scripted-judge.ts).
 Constant approval is not a judge. `layerUnavailable()` is an explicit outage
 fixture for classifier tests. The five deterministic brakes still run unchanged.
 
@@ -29163,12 +29163,12 @@ runs, then the archive, then the backend, then a gateway that still names this
 workspace. The texts are in `RunState.instructionText`, and they are rendered
 verbatim into the report and onto stderr:
 
-| Case               | Instruction                                                                                                                                     |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Live               | finish or cancel these runs with the 0.x CLI you already have (`smithers cancel RUN_ID` or `smithers down`), then rerun the scan                |
-| Parked             | cancel or accept the loss of these parked runs; the 1.0 runtime cannot resume them                                                              |
-| History            | archive the database: `mkdir -p .smithers-migrate/archive && mv .smithers/smithers.db* .smithers-migrate/archive/`; 1.0 does not import history |
-| Postgres or PGlite | the 1.0 RC supports SQLite only; export what you need with the 0.x CLI, then remove the backend setting                                         |
+| Case               | Instruction                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Live               | finish or cancel these runs with the 0.x CLI you already have (`smithers cancel RUN_ID` or `smithers down`), then rerun the scan                                                                                                                                                                                                                                                                                        |
+| Parked             | cancel or accept the loss of these parked runs; the 1.0 runtime cannot resume them                                                                                                                                                                                                                                                                                                                                      |
+| History            | archive the database: `mkdir -p .smithers-migrate/archive && mv .smithers/smithers.db* .smithers-migrate/archive/`; 1.0 does not import history                                                                                                                                                                                                                                                                         |
+| Postgres or PGlite | export any needed 0.x history with the 0.x CLI and archive it separately; 1.0 does not import it. New PostgreSQL state is supported with `@effect/sql-pg` and `SMITHERS_POSTGRES_URL` (or `SMITHERS_BACKEND=postgres` with `DATABASE_URL`); PGlite is unsupported. Remove PGlite settings, review legacy backend settings and `--backend` flags, then rerun with `--acknowledge-run-state` after handling the 0.x state |
 
 `apply` proceeds past a `blocked` or `history-only` verdict only with
 `--acknowledge-run-state`, and even then the tool writes nothing under any
@@ -29638,7 +29638,7 @@ What each of those exports defaults to, and what it refuses:
 | `MigrateOptions`                      | `Schema`                                                                                                                                          | `mode` is required; everything else is optional. Decoding refuses any layout `layoutIssue` refuses.                                                                                                                                                                                                                                        |
 | `Mode`                                | `"scan" \| "plan" \| "apply"`                                                                                                                     | The CLI defaults to `plan`.                                                                                                                                                                                                                                                                                                                |
 | `reportDir`                           | `(options) => string`                                                                                                                             | `.smithers-migrate`                                                                                                                                                                                                                                                                                                                        |
-| `flowsDir`                            | `(options) => string`                                                                                                                             | `flows`                                                                                                                                                                                                                                                                                                                                    |
+| `flowsDir`                            | `(options) => string`                                                                                                                             | `.smithers/flows`                                                                                                                                                                                                                                                                                                                          |
 | `maxRepairRounds`                     | `(options) => number`                                                                                                                             | `3`                                                                                                                                                                                                                                                                                                                                        |
 | `layoutIssue`                         | `(options) => string \| undefined`                                                                                                                | The root is absolute and normalized; each layout path is a plain relative path (no `.`, `..`, empty segment, NUL, backslash, or trailing slash, and no `.flows`, `.git`, `.jj`, or `node_modules` segment at any depth); the two do not overlap, and flows cannot live under the fixed `.smithers-migrate` lock directory.                 |
 | `validateLayout`                      | `(options) => Effect`                                                                                                                             | What the text cannot show: the root is a directory, the deepest existing ancestor of each layout path resolves (symlinks followed) inside the resolved root, and an existing report directory holds only `reportDirEntries`.                                                                                                               |
@@ -29838,9 +29838,12 @@ The result uses the installed `smthrs` binary from `@smthrs/cli`. Both `up` and
 - Bare `-d` becomes `--detached`. The legacy `-d '<JSON object>'` input form
   becomes `--data`; ambiguous dynamic/value forms require manual review.
 - `--json`, `--quiet`, root/remote/credential/MCP configuration, and explicit
-  `--detached` are preserved. An explicit `--backend sqlite` is removed because
-  this runtime is SQLite-only; other backends are refused. Remote plus detached
-  is refused because detach starts a local executor.
+  `--detached` are preserved. The rewriter removes an explicit
+  `--backend sqlite` and reports other backend values for manual review.
+  The current CLI also accepts `--backend postgres` with `DATABASE_URL`;
+  PostgreSQL remains supported through the runtime configuration described
+  above, while PGlite is unsupported. Remote plus detached is refused because
+  detach starts a local executor.
 - Quoting, literal environment assignments, `exec`/`env`, comments, and simple
   command lists/pipelines are recognized. Text inside another command's quoted
   arguments is not rewritten as though it were a command.
@@ -30355,19 +30358,19 @@ a span, metric or log line.
 A resolved model route: an endpoint, a protocol, a framing, and the
 credentials to authorize with.
 
-| Export                                                                                | Kind        | Behavior                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Route`                                                                               | type        | `Config`: a configured, but not yet authenticated, protocol route.                                                                                                                                                                                                                             |
-| `Config`                                                                              | interface   | `{ id, protocol, endpoint, auth, framing, headers? }`.                                                                                                                                                                                                                                         |
-| `PreparedRequest`                                                                     | interface   | `{ routeId, protocolId, method: "POST", url, publicHeaders, body, bodyText }`: the credential-free sealed-step view. `body` is a fresh `Uint8Array` per preparation; do not mutate it.                                                                                                         |
-| `prepare(route, request)`                                                             | constructor | `Effect<PreparedRequest, ModelError>`. Validates the request against `ModelRequest`, lowers and validates the provider body, checks the public headers, and encodes canonical bytes, exactly once per call.                                                                                    |
-| `make(config)`                                                                        | constructor | Returns the config as a `Route`.                                                                                                                                                                                                                                                               |
-| `toModel(config)`                                                                     | constructor | `Effect<Model, never, RequestExecutor>`: builds the `Model` implementation from a composed route.                                                                                                                                                                                              |
-| `layer(config)`                                                                       | layer       | `Layer<Model, never, RequestExecutor>`: provides a configured route as the `Model` service.                                                                                                                                                                                                    |
-| `anthropic({ apiKey, baseUrl? })`                                                     | constructor | `Result<Route, ModelError>`. Sends `x-api-key` and `anthropic-version: 2023-06-01`. `baseUrl` defaults to `Endpoint.providerOrigins.anthropic`.                                                                                                                                                |
-| `openai({ apiKey, baseUrl? })`                                                        | constructor | `Result<Route, ModelError>`. Bearer auth against `api.openai.com`, or `baseUrl` when given.                                                                                                                                                                                                    |
-| `openaiResponsesCompatible({ id, baseUrl, apiKey, headers? })`                        | constructor | A route for a provider that serves the Responses API without OpenAI's native deferred-tool extensions; `supportsDeferred` is forced off. `baseUrl` is the origin and the constructor appends `/v1/responses`, so `https://openrouter.ai/api` becomes `https://openrouter.ai/api/v1/responses`. |
-| `openaiChatCompatible({ id, baseUrl, path?, apiKey, structuredOutput?, extraBody? })` | constructor | A route for a Chat Completions provider. `path` defaults to `/v1/chat/completions`. `extraBody` adds fields beneath the protocol's own (see Routes above). `apiKey` may be a non-empty placeholder for a server that does not check it; `Auth.bearer` only rejects an empty credential.        |
+| Export                                                                                              | Kind        | Behavior                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Route`                                                                                             | type        | `Config`: a configured, but not yet authenticated, protocol route.                                                                                                                                                                                                                             |
+| `Config`                                                                                            | interface   | `{ id, protocol, endpoint, auth, framing, headers? }`.                                                                                                                                                                                                                                         |
+| `PreparedRequest`                                                                                   | interface   | `{ routeId, protocolId, method: "POST", url, publicHeaders, body, bodyText }`: the credential-free sealed-step view. `body` is a fresh `Uint8Array` per preparation; do not mutate it.                                                                                                         |
+| `prepare(route, request)`                                                                           | constructor | `Effect<PreparedRequest, ModelError>`. Validates the request against `ModelRequest`, lowers and validates the provider body, checks the public headers, and encodes canonical bytes, exactly once per call.                                                                                    |
+| `make(config)`                                                                                      | constructor | Returns the config as a `Route`.                                                                                                                                                                                                                                                               |
+| `toModel(config)`                                                                                   | constructor | `Effect<Model, never, RequestExecutor>`: builds the `Model` implementation from a composed route.                                                                                                                                                                                              |
+| `layer(config)`                                                                                     | layer       | `Layer<Model, never, RequestExecutor>`: provides a configured route as the `Model` service.                                                                                                                                                                                                    |
+| `anthropic({ apiKey, baseUrl? })`                                                                   | constructor | `Result<Route, ModelError>`. Sends `x-api-key` and `anthropic-version: 2023-06-01`. `baseUrl` defaults to `Endpoint.providerOrigins.anthropic`.                                                                                                                                                |
+| `openai({ apiKey, baseUrl? })`                                                                      | constructor | `Result<Route, ModelError>`. Bearer auth against `api.openai.com`, or `baseUrl` when given.                                                                                                                                                                                                    |
+| `openaiResponsesCompatible({ id, providerName, baseUrl, apiKey, headers? })`                        | constructor | A route for a provider that serves the Responses API without OpenAI's native deferred-tool extensions; `supportsDeferred` is forced off. `baseUrl` is the origin and the constructor appends `/v1/responses`, so `https://openrouter.ai/api` becomes `https://openrouter.ai/api/v1/responses`. |
+| `openaiChatCompatible({ id, providerName, baseUrl, path?, apiKey, structuredOutput?, extraBody? })` | constructor | A route for a Chat Completions provider. `path` defaults to `/v1/chat/completions`. `extraBody` adds fields beneath the protocol's own (see Routes above). `apiKey` may be a non-empty placeholder for a server that does not check it; `Auth.bearer` only rejects an empty credential.        |
 
 Behavior the composition guarantees:
 
@@ -30571,10 +30574,10 @@ reaching callers. Error codes and numeric retry metadata retain their meaning.
 
 Anthropic Messages request lowering and streaming event parsing.
 
-| Export     | Kind     | Behavior                                                                                                                                                                                                                                                                |
-| ---------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Body`     | schema   | The deterministic `POST /v1/messages` body. `max_tokens` is required by the API; the lowering uses `params.maxTokens` when set, otherwise the model's output ceiling from `ModelCatalog.maxOutputTokensFor`, or `4096` for an unknown model. `stream` is always `true`. |
-| `protocol` | protocol | Id `anthropic-messages`. SSE framing, supports the native deferred-tool allowlist, and flushes unfinished parts on stream end.                                                                                                                                          |
+| Export     | Kind     | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Body`     | schema   | The deterministic `POST /v1/messages` body. `max_tokens` is required by the API; the lowering uses `params.maxTokens` when set, otherwise the model's output ceiling from `ModelCatalog.maxOutputTokensFor`, or `4096` for an unknown model. Without explicit `maxTokens`, a `thinkingBudget` at or above that default raises `max_tokens` to `budget + 4096`; an explicit `maxTokens` must exceed `thinkingBudget`. `stream` is always `true`. |
+| `protocol` | protocol | Id `anthropic-messages`. SSE framing, supports the native deferred-tool allowlist, and flushes unfinished parts on stream end.                                                                                                                                                                                                                                                                                                                  |
 
 ### Prompt caching
 
@@ -30837,12 +30840,22 @@ and preserves these names in the answer and probability records.
 ## `Evaluator`
 
 The transport a classifier asks: one JSON state and a map of typed questions
-go out, one raw answer per question comes back. Flow hosts use `layerFromSeat`
-with their existing subscription resolver and reject malformed verdicts.
+go out, one raw answer per question comes back. Without an evaluator override,
+native flow hosts use `AI_GATEWAY_API_KEY` to select `layerVercelGateway` as the
+primary judge, with a subscription backup through `EvaluatorBackup.withFallback`.
+The backup selects Claude Code's Haiku subscription first, then GPT-6 Luna
+through the account pool or a ChatGPT session, then the first configured router
+key (`vercel` or `openrouter`) on `anthropic/claude-sonnet-4.5`. That last
+path is a paid model call, so a gateway-key-only installation can still judge
+through a Jev outage. Without a gateway key, this same subscription-or-router
+judge is selected directly. A gateway `401` fails without calling the backup;
+the fallback boundaries are below.
 
-`layerVercelGateway` remains an explicit library adapter for consumers of Jev's
-HTTP evaluation protocol. It reads no environment configuration and is never
-selected by a flow host or used as a subscription fallback.
+`layerFromSeat` remains an explicit composition option for an existing resolved
+seat. `layerVercelGateway` is also available as an explicit library adapter for
+Jev's HTTP evaluation protocol. The adapter itself reads no environment
+configuration; the native host supplies it. Both adapters reject malformed
+verdicts.
 
 `EvaluatorBackup.withFallback(primary, backup)` asks the backup only when the
 primary is unreachable, times out, or refuses with a 5xx or 429. An

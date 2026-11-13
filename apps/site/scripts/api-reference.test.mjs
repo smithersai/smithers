@@ -532,3 +532,84 @@ test("the artifact store example typechecks as a complete module", () => {
   const diagnostics = ts.getPreEmitDiagnostics(program)
   assert.equal(diagnostics.length, 0, ts.formatDiagnostics(diagnostics, host))
 })
+
+test("CLI and migration references use the registry's flow directory", () => {
+  const source = read("packages/smithers/agent/registry/src/Descriptor.ts")
+  const directory = source.match(/export const projectFlowsDirectory = "([^"]+)"/)?.[1]
+  assert.ok(directory)
+  const cli = reference("packages/smithers")
+  for (const name of ["projectSources", "layerRegistry"]) {
+    const row = cli.split("\n").find((line) => line.startsWith("|") && line.includes("`" + name + "`"))
+    assert.ok(row?.includes("<root>/" + directory), name)
+  }
+  const migration = reference("packages/smithers/migrate")
+  const defaults = migration.split("What each of those exports defaults to, and what it refuses:")[1]?.split("\n## ")[0]
+  assert.ok(defaults, "migration accessor defaults table")
+  const row = defaults.split("\n").find((line) => /^\| `flowsDir`/.test(line))
+  assert.ok(row?.includes("`" + directory + "`"), "migration flow directory default")
+})
+
+test("migration guidance separates legacy history from supported PostgreSQL state", () => {
+  const docs = reference("packages/smithers/migrate")
+  const source = read("packages/smithers/migrate/src/RunState.ts")
+  const instructions = source.split("export const instructionText = {")[1]?.split("} as const")[0]
+  const instruction = instructions?.match(/  backend:\s*("[^\n]+")/)?.[1]
+  assert.ok(instruction)
+  assert.ok(docs.includes(JSON.parse(instruction)), "reference carries the operator's instruction verbatim")
+  assert.match(docs, /PostgreSQL state is supported/)
+  assert.match(docs, /@effect\/sql-pg/)
+  assert.match(docs, /SMITHERS_POSTGRES_URL/)
+  assert.match(docs, /PGlite is unsupported/)
+  assert.match(docs, /--backend postgres/)
+  assert.ok(JSON.parse(instruction).includes("--acknowledge-run-state"))
+  assert.doesNotMatch(docs, /--backend` CLI flag is retired/)
+  assert.doesNotMatch(docs, /supports SQLite only|runtime is SQLite-only/)
+})
+
+test("model reference describes the native gateway judge and its fallback boundary", () => {
+  const docs = reference("packages/smithers/agent/model").split("## `Evaluator`")[1]?.split("\n## ")[0]
+  assert.ok(docs)
+  assert.match(docs, /AI_GATEWAY_API_KEY/)
+  assert.match(docs, /layerVercelGateway/)
+  assert.match(docs, /primary/)
+  assert.match(docs, /subscription backup/)
+  assert.match(docs, /router/)
+  assert.match(docs, /paid model call/)
+  assert.match(docs, /401/)
+  assert.doesNotMatch(docs, /never\s+selected by a flow host/)
+})
+
+test("Anthropic body reference includes the implicit thinking allowance", () => {
+  const docs = reference("packages/smithers/agent/model").split("## `AnthropicMessages`")[1]?.split("\n## ")[0]
+  const row = docs?.split("\n").find((line) => /^\| `Body`/.test(line))
+  assert.ok(row)
+  assert.match(row, /params.maxTokens/)
+  assert.match(row, /ModelCatalog.maxOutputTokensFor/)
+  assert.match(row, /4096.*unknown model/)
+  assert.match(row, /thinkingBudget/)
+  assert.match(row, /budget \+ 4096/)
+})
+
+test("compatible route reference signatures include every required constructor input", () => {
+  const dir = "packages/smithers/agent/model"
+  const source = ts.createSourceFile("Route.ts", read(dir + "/src/Route.ts"), ts.ScriptTarget.Latest, true)
+  const docs = reference(dir)
+  for (const name of ["openaiResponsesCompatible", "openaiChatCompatible"]) {
+    const declaration = source.statements.flatMap((statement) => [...(statement.declarationList?.declarations ?? [])])
+      .find((entry) => entry.name.getText(source) === name)
+    const required = declaration?.initializer.parameters[0].type.members.filter((member) => !member.questionToken)
+    assert.ok(required?.length > 0, name + ": required input fields")
+    const signature = docs.split("\n").find((line) => line.startsWith("| `" + name + "("))?.split("`")[1]
+    assert.ok(signature, name + ": documented constructor")
+    for (const member of required) {
+      assert.ok(signature.includes(member.name.getText(source)), name + ": " + member.name.getText(source))
+    }
+  }
+})
+
+test("the whole-host scripted judge reference links an existing fixture", () => {
+  const docs = reference("packages/smithers/agent/harness")
+  const path = docs.match(/\[whole-host scripted judge\]\(https:\/\/github.com\/smithersai\/smithers\/blob\/main\/([^)]+)\)/)?.[1]
+  assert.ok(path)
+  assert.ok(existsSync(new URL("../../../" + path, import.meta.url)), path)
+})

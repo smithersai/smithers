@@ -210,6 +210,18 @@ describe("RunState.scan", () => {
       expect(result.verdict).toBe("blocked")
       expect(result.postgres?.sources.map((entry) => entry.file)).toEqual([".smithers/smithers.config.ts"])
       expect(result.instructions).toContain(RunState.instructionText.backend)
+      const instruction = result.instructions.join(" ")
+      expect(instruction).toContain("1.0 does not import")
+      expect(instruction).toContain("PostgreSQL state is supported")
+      expect(instruction).toContain("@effect/sql-pg")
+      expect(instruction).toContain("SMITHERS_POSTGRES_URL")
+      expect(instruction).toContain("SMITHERS_BACKEND=postgres")
+      expect(instruction).toContain("DATABASE_URL")
+      expect(instruction).toContain("PGlite is unsupported")
+      expect(instruction).toContain("--backend")
+      expect(instruction).toContain("--acknowledge-run-state")
+      expect(instruction).not.toContain("SQLite only")
+      expect(instruction).not.toContain("remove the backend setting")
     }))
 
   it.effect("blocks on SMITHERS_BACKEND=pglite in a dotenv file", () =>
