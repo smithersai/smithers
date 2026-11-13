@@ -8,8 +8,8 @@
  *
  * The target is pnpm-specific because the file is: npm, Bun, and Yarn read
  * workspace membership from the root manifest's `workspaces` field, which the
- * `PackageJson` declaration already generates. Declaring any other manager is
- * a construction error.
+ * `PackageJson` declaration already generates. Explicitly declaring any other
+ * manager is a construction error.
  *
  * `packages` entries are plain strings, not {@link Input.Glob} declarations.
  * The generated file depends on the pattern text, not on which directories
@@ -162,10 +162,10 @@ const definition = Target.make("PnpmWorkspace", {
 /**
  * Generates and drift-checks `pnpm-workspace.yaml`.
  *
- * Only pnpm reads this file, so the declaration refuses any other manager:
- * rendering a file the declared manager never reads would be a target that
- * reports success while producing nothing the workspace uses. The manager
- * itself comes from the workspace declaration, so a PACKAGE.ts writes none.
+ * Only pnpm reads this file. An explicitly supplied `packageManager` must be a
+ * pnpm declaration and is checked at construction. When omitted, the manager
+ * comes from the workspace declaration, but file generation does not validate
+ * or execute it.
  *
  * @example
  * ```ts
@@ -184,9 +184,8 @@ export const PnpmWorkspace = Object.assign(
   (attrs: Parameters<typeof definition>[0]) => {
     checkSettings(attrs.settings)
     const manager = (attrs as { readonly packageManager?: unknown }).packageManager
-    // An omitted manager is the workspace's, resolved when the graph is
-    // planned; the executor refuses there if the workspace declares something
-    // other than pnpm. A declaration that names one here is checked now.
+    // Only an explicitly supplied manager is checked here. File generation
+    // does not validate or execute the workspace's manager.
     if (manager !== undefined && (!PackageManager.isPackageManager(manager) || manager.name !== "pnpm")) {
       const declared = PackageManager.isPackageManager(manager) ? manager.name : "an undeclared manager"
       throw new Error(`PnpmWorkspace requires the pnpm declaration; this workspace declares ${declared}`)
