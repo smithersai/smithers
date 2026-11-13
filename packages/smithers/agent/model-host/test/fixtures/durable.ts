@@ -6,14 +6,13 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import { ModelRequest, Route, type Model } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
 import type { ContextPreflight, NativeAgent } from "@smthrs/rpc"
-import { Cause, Effect, Exit, Layer, Option, Redacted, Result, Schedule, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Redacted, Result, Schedule, Schema } from "effect"
 import * as Turn from "../../src/ModelTurnHost.ts"
 import * as Context from "../../src/ContextPreflight.ts"
 import * as Producer from "../../src/DurableChatProducer.ts"
 import * as Tools from "../../src/HostTools.ts"
 import * as Server from "../../src/HostServer.ts"
 import * as Probe from "../../src/ModelProbe.ts"
-import * as Fallback from "../../src/FastModelFallback.ts"
 
 export * from "../../src/ModelTurnHost.ts"
 export * from "../../src/ContextPreflight.ts"
@@ -105,12 +104,3 @@ export const createModelProbe = (options: Probe.ModelProbeOptions) => {
   const probe = Probe.createModelProbe(options)
   return { ...probe, test: (...args: Parameters<typeof probe.test>) => inFlow(probe.test(...args)) }
 }
-export const fastModelFallback = (
-  sources: ReadonlyArray<Omit<Fallback.ModelSource, "route"> & Partial<Pick<Fallback.ModelSource, "route">>>,
-  onFallback?: (index: number) => Effect.Effect<void>
-): Model.Model => ({
-  stream: (request) => Stream.unwrap(inFlow(Effect.map(
-    Stream.runCollect(Fallback.fastModelFallback(sources.map((source) => ({ ...source, route: source.route ?? fixtureRoute })), onFallback).stream(request)),
-    Stream.fromIterable
-  )))
-})

@@ -2180,7 +2180,7 @@ const account: DurableChatGrant = {
   request: { ...question, privateConversation: true, messages: [{ role: "user", content: "can we create a workflow" }] }
 }
 const FLOW_NEW_LINE =
-  "Asked to create, make, build or automate a flow or workflow (\"can we …\" included), run flow.new in that turn: pass what the flow should do as description when the person said it, and nothing when they did not. Then tell them in one sentence that the form is on their screen. Never explain how to write a flow by hand unless they ask for exactly that."
+  "Asked to create, make, build or automate a flow or workflow (\"can we …\" included), run flow.new in that turn: pass what the flow should do as description when the person said it, and nothing when they did not. Then tell them in one sentence that the form was requested; never claim it opened or populated without a browser completion receipt. Never explain how to write a flow by hand unless they ask for exactly that."
 const FLOW_NEW_COMMAND_LINE =
   "- /flow.new — Create a new flow (asks the person: it only shows them what to confirm, and their press acts)"
 /**
@@ -2291,7 +2291,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
     // The rule sits after the commands it names and before the can't-yets.
     expect(cloud.indexOf(FLOW_NEW_COMMAND_LINE)).toBeLessThan(cloud.indexOf(FLOW_NEW_LINE))
     expect(cloud.indexOf(FLOW_NEW_LINE)).toBeLessThan(cloud.indexOf("Everything this list lacks is an ACT"))
-    // A turn that cannot ask for the form is never told it is on the person's screen.
+    // A turn that cannot ask for the form is never told to request it.
     for (const turn of [install, grant, https]) {
       const system = await told(turn)
       expect(system).toContain(AgentInstructions.ASSISTANT_ACTS_LINE)
@@ -2690,6 +2690,16 @@ test("form results acknowledge a request until browser completion exists", async
   const journal = producer((path) => file(path, JOURNEY))
   const provider = model([execute("flow.new", JSON.stringify({ description: "label issues" }))])
   await runWithDocs(account, provider, journal, PAGES)
+  for (const request of provider.requests) {
+    const system = systemText(request)
+    expect(system).toContain(FLOW_NEW_LINE)
+    expect(system).not.toContain("form is on their screen")
+    expect(system).not.toContain("form is open")
+  }
+  expect(journal.frames.find((frame) => frame.type === "call.settled")).toMatchObject({
+    name: "flow.new",
+    ui: { command: "flow.new" }
+  })
   const output = toolOutputs(provider)[0]!
   expect(output).toContain("Requested")
   expect(output).toContain("cannot see")

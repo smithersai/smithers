@@ -835,7 +835,7 @@ const docsReadLine = (docs: ReadonlyArray<DocsPages.DocsPage>): string =>
  * a source template for the person to write (#3823).
  */
 const FLOW_NEW_LINE =
-  "Asked to create, make, build or automate a flow or workflow (\"can we …\" included), run flow.new in that turn: pass what the flow should do as description when the person said it, and nothing when they did not. Then tell them in one sentence that the form is on their screen. Never explain how to write a flow by hand unless they ask for exactly that."
+  "Asked to create, make, build or automate a flow or workflow (\"can we …\" included), run flow.new in that turn: pass what the flow should do as description when the person said it, and nothing when they did not. Then tell them in one sentence that the form was requested; never claim it opened or populated without a browser completion receipt. Never explain how to write a flow by hand unless they ask for exactly that."
 
 /** How a turn that can list finds a file it was not named: it lists, never guesses. */
 const LIST_BEFORE_READ_LINE =
