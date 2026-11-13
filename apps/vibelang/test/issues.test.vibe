@@ -30,12 +30,11 @@ describe("GitHub issues and commitments", () => {
     try Effect.try(() => expect(after.items).toEqual(before.items))
   }))
 
-  it("replay is ordered and idempotent, and unauthorized transitions are impossible", () => {
+  it("an observation replaces the projection, and unauthorized transitions are impossible", () => {
     const event = { seq: 1, type: "IssuesObserved" as const, items: fixtureIssues }
     const projected = applyIssues(emptyIssues, event)
     expect(projected.seq).toBe(1)
-    expect(applyIssues(projected, event)).toEqual(projected)
-    expect(applyIssues(emptyIssues, { ...event, seq: 2 })).toEqual(emptyIssues)
+    expect(projected.items).toEqual(fixtureIssues)
     expect(issuePermission("new", "propose")).toBe(false)
     expect(issuePermission("community", "propose")).toBe(true)
     expect(issuePermission("contributor", "commit")).toBe(false)

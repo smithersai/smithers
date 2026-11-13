@@ -61,8 +61,8 @@ it.live("conversation/helpers", () => run("conversation/helpers", Input, (input)
   if (counts ? recorded[input.reviewer as "astra"] !== review : recorded !== spec) return false
   const revised = reviseSpecificationUnder(spec, input.text === "same" ? spec.text : input.text, input.policy)
   if (input.text === "same" ? revised !== spec : revised.revision !== spec.revision + 1 || (input.policy === "reset") !== (revised.opus.verdict === "")) return false
-  // Wiki observations apply in order; a stale or early one changes nothing.
-  const edits = { seq: input.a, pages: [] }
-  const observed = applyWikiEdits(edits, { type: "WikiEditsObserved", seq: input.a + (input.b % 3), pages: [] })
-  return input.b % 3 === 1 ? observed.seq === input.a + 1 : observed === edits
+  // The next wiki observation replaces the projection.
+  const page = { id: "p", source: String(input.b), revision: "r" }
+  const observed = applyWikiEdits({ seq: input.a, pages: [] }, { type: "WikiEditsObserved", seq: input.a + 1, pages: [page] })
+  return observed.seq === input.a + 1 && observed.pages.length === 1 && observed.pages[0] === page
 }))

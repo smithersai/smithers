@@ -64,8 +64,6 @@ it("issue policy, ordered observations, trees and review recovery", async ({ ben
     const event = { type: "IssuesObserved" as const, seq: 1, items: fixtureIssues }
     const state = applyIssues(emptyIssues, event)
     expect(state).toEqual({ seq: 1, items: fixtureIssues })
-    expect(applyIssues(state, event)).toBe(state)
-    expect(applyIssues(emptyIssues, { ...event, seq: 2 })).toBe(emptyIssues)
     expect(canLinkIssues(fixtureIssues, 49, 38)).toBe(true)
     for (const [child, parent] of [[38, 49], [38, 38], [38, 0], [38, 999], [999, 38]]) expect(canLinkIssues(fixtureIssues, child!, parent!)).toBe(false)
     const malformed = fixtureIssues.map((item) => item.number === 38 ? { ...item, parent: 42 } : item)

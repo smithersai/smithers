@@ -838,14 +838,10 @@ export interface IssuesState { readonly seq: number; readonly items: ReadonlyArr
 export interface IssuesEvent { readonly type: "IssuesObserved"; readonly seq: number; readonly items: ReadonlyArray<IssueRecord> }
 export const emptyIssues: IssuesState = { seq: 0, items: [] }
 
-/** Ordered GitHub observations; a stale response cannot replace a newer projection. */
+/** The next GitHub observation replaces the projection; every caller numbers it one past the state it holds. */
 //@ verify
-//@ requires 0 <= state.seq && state.seq < 9007199254740991
-//@ ensures event.seq != state.seq + 1 ==> \result == state
-//@ ensures event.seq == state.seq + 1 ==> \result.seq == event.seq && \result.items == event.items
-//@ ensures \result.seq == state.seq || \result.seq == state.seq + 1
+//@ ensures \result.seq == event.seq && \result.items == event.items
 export function applyIssues(state: IssuesState, event: IssuesEvent): IssuesState {
-  if (event.seq !== state.seq + 1) return state
   return { ...state, seq: event.seq, items: event.items }
 }
 
@@ -1174,14 +1170,10 @@ export interface WikiEditsEvent {
 /** No page observed yet. */
 export const emptyWikiEdits: WikiEdits = { seq: 0, pages: [] }
 
-/** Ordered observations; a stale response cannot replace a newer projection. */
+/** The next wiki observation replaces the projection; every caller numbers it one past the state it holds. */
 //@ verify
-//@ requires 0 <= state.seq && state.seq < 9007199254740991
-//@ ensures event.seq != state.seq + 1 ==> \result == state
-//@ ensures event.seq == state.seq + 1 ==> \result.seq == event.seq && \result.pages == event.pages
-//@ ensures \result.seq == state.seq || \result.seq == state.seq + 1
+//@ ensures \result.seq == event.seq && \result.pages == event.pages
 export function applyWikiEdits(state: WikiEdits, event: WikiEditsEvent): WikiEdits {
-  if (event.seq !== state.seq + 1) return state
   return { seq: event.seq, pages: event.pages }
 }
 

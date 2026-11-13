@@ -51,7 +51,6 @@ it.live("issues/role-gated-command-sequences", () => run("issues/role-gated-comm
     }
     const again = try api.act(request)
     if (!Schema.is(IssuesState)(again) || (try api.read()).seq !== after.seq) return false
-    if (!same(applyIssues({ seq: after.seq, items: after.items }, { type: "IssuesObserved", seq: after.seq, items: [] }), { seq: after.seq, items: after.items })) return false
   }
   return true
 }, undefined, { revision: "2" }))

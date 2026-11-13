@@ -223,6 +223,12 @@ the next question is answered. Two other `decide` refusals of a person's request
 `SeekTour` past the last step (the mock and the Worker answer 400 first, `validTourStep`). The guards keep `decide`
 total for its proof; the unit and fuzz suites reach them.
 
+**Projection guards no caller reaches** (session 7). `conversation` `applyIssues` and `applyWikiEdits` ignored an
+observation numbered other than one past the state's. Every caller numbers it so (`IssuesFactory`, `WikiFactory`,
+`worker/Issues`, `worker/Wiki`, `test/support/recordedWiki`), so the guard fired only in the unit, fuzz and bench
+cases that called it with another number. Both now replace the projection; their contracts say so, and mutation rows
+`issues-stale` and `wiki-edits-stale` went with the guard.
+
 ### History names and the signed-in ledger carried by their schemas (session 23, 2026-11-11)
 
 The lead's two decisions: move `decide`'s non-blank guarantee into the outline's schema, and make the session type

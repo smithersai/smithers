@@ -57,11 +57,9 @@ describe("wiki policy (0019's least roles)", () => {
 
 describe("wiki page projection", () => {
   const page = { id: "roadmap", source: "# Roadmap\n", revision: "r1" }
-  it("ignores a stale observation and applies the next one exactly once", () => {
+  it("each observation replaces the projected pages", () => {
     const first = applyWikiEdits(emptyWikiEdits, { type: "WikiEditsObserved", seq: 1, pages: [page] })
     expect(first).toEqual({ seq: 1, pages: [page] })
-    expect(applyWikiEdits(first, { type: "WikiEditsObserved", seq: 1, pages: [page] })).toEqual(first)
-    expect(applyWikiEdits(first, { type: "WikiEditsObserved", seq: 3, pages: [page] })).toEqual(first)
     const edited = { id: "roadmap", source: "# Roadmap\n\nEdited.\n", revision: "r2" }
     const second = applyWikiEdits(first, { type: "WikiEditsObserved", seq: 2, pages: [edited] })
     expect(second).toEqual({ seq: 2, pages: [edited] })

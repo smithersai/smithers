@@ -23,7 +23,6 @@ from arm_mutations import cases as arm_cases
 from runtime_mutations import CASES as runtime_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
-('wiki-edits-stale','applyWikiEdits','if (event.seq !== state.seq + 1) return state','if (event.seq === state.seq + 1) return state','a stale wiki observation changes nothing'),
 ('wiki-edits-pages','applyWikiEdits','return { seq: event.seq, pages: event.pages }','return { seq: event.seq, pages: state.pages }','a fresh wiki observation replaces the projected pages'),
 ('wiki-least-role','leastRole','case "action": case "sandbox": case "triage": case "wiki": return "contributor"','case "action": case "sandbox": case "triage": case "wiki": return "viewer"','wiki editing names contributor as its least role'),
 ('wiki-editor-stale','currentWikiEditor','request === activeRequest','request !== activeRequest','a stale editor response cannot close the current edit'),
@@ -144,7 +143,6 @@ cases.extend([("src/core/issueHostDecision.vibe", *case) for case in [
 ('issues-decline-close','reviewActions','close: allowed && !accepted && state === "open"','close: false','a declined open VIP must still be closed'),
 ]])
 cases.extend([("src/core/conversation.vibe", *case) for case in [
-('issues-stale','applyIssues','if (event.seq !== state.seq + 1) return state','if (false) return state','stale observations cannot replace the projection'),
 ('issues-content','applyIssues','items: event.items','items: state.items','the next observation projects exactly GitHub records'),
 ('issues-commit-role','issuePermission','return may(role, issuePolicyAction(op))','return true','only maintainers commit work or review VIPs'),
 ('issues-new-vip','issuePolicyAction','if (op === "propose" || op === "draft") return "vip"','if (op === "propose" || op === "draft") return "issue"','a new identity cannot propose a VIP'),
