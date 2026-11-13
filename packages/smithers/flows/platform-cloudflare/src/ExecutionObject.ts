@@ -167,8 +167,8 @@ export type Outcome =
  * The services {@link alarm} reads from the runtime it builds:
  * `@smthrs/engine-store`'s `EngineStore.Driver`, which drives the execution
  * once, and the `RunStore` and `DurableEngineState` it reads the next wake
- * and the other objects' work from. A `CloudflareRuntime.layer` provides all
- * three.
+ * and the other objects' work from, plus `FlowRuntime` for cancellation. A
+ * `CloudflareRuntime.layer` provides all four.
  *
  * @category models
  * @since 1.0.0
@@ -409,7 +409,7 @@ const idsOf = (raw: string | undefined): Effect.Effect<Readonly<Record<string, s
 /**
  * Builds an intent, encoding the payload as its identity snapshot
  * (`Flow.payloadSnapshot`: sets and maps sorted, then the flow's own JSON
- * codec), so equal payloads persist equal intents (VIP-44).
+ * codec), so equal payloads persist equal identities (VIP-44).
  *
  * @category constructors
  * @since 1.0.0
@@ -1140,7 +1140,7 @@ export const make = <E, R, RS, RE = never, RR = never, RA = never, RT = never>(s
 }
 
 /**
- * Durable cancellation requests accepted by an execution object.
+ * Successful cancellation calls and domain admission refusals.
  * @category metrics
  * @since 1.0.0
  */

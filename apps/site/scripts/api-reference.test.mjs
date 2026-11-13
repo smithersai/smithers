@@ -427,3 +427,78 @@ test("model executor options document both retry and response-start bounds", () 
   assert.ok(row.includes("`defaultResponseStartMs`"))
   assert.ok(row.includes(defaultMs), "MakeOptions states the shipped response-start default")
 })
+
+const cloudflareDir = flows + "platform-cloudflare"
+const apiSection = (docs, name) => docs.split("### \x60" + name + "\x60")[1]?.split(/\n###? /)[0] ?? ""
+
+test("cloudflare retry documentation matches the execution object's bounded policy", () => {
+  const source = read(cloudflareDir + "/src/ExecutionObject.ts")
+  const policy = source.match(/export const retryPolicy[^=\n]*= (RetryPolicy\.make\(\{[^}]+\}\))/)?.[1]
+  assert.ok(policy, "execution retry policy remains explicit")
+  assert.ok(reference(cloudflareDir).includes("\x60" + policy + "\x60"), "reference states the actual retry policy")
+  assert.match(read(cloudflareDir + "/README.md"), /at most five seconds/)
+})
+
+test("cloudflare execution reference includes cancellation handlers and every reserved storage key", () => {
+  members(cloudflareDir, "ExecutionObject", "make cancelledKey cancellations")
+  const docs = reference(cloudflareDir)
+  const make = apiSection(docs, "ExecutionObject.make")
+  for (const name of ["cancel", "canStart", "afterAlarm", "start", "wake", "alarm"]) {
+    assert.match(make, new RegExp("\\b" + name + "\\b"), "make documents " + name)
+  }
+  const source = read(cloudflareDir + "/src/ExecutionObject.ts")
+  const keys = [...source.matchAll(/export const (\w+Key) = "(smithers\/[^"]+)"/g)]
+  assert.ok(keys.length > 0)
+  for (const [, key, value] of keys) {
+    assert.ok(read(cloudflareDir + "/docs/installation.md").includes("\x60ExecutionObject." + key + "\x60"), "installation reserves " + key)
+    const row = docs.split("\n").find((line) => line.startsWith("| \x60ExecutionObject." + key + "\x60"))
+    assert.ok(row?.includes('"' + value + '"'), "reference states the storage key " + key)
+  }
+  const forgotten = apiSection(docs, "ExecutionObject.alarm")
+  assert.match(forgotten, /tombstone/)
+  assert.doesNotMatch(forgotten, /storage is empty/)
+  assert.ok(forgotten.includes("\x60ExecutionObject.reportedKey\x60"))
+})
+
+test("cloudflare documented service and option types match their public declarations", () => {
+  const docs = reference(cloudflareDir)
+  const compact = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s/g, "")
+  for (const [module, declaration] of [
+    ["ExecutionObject", "Services"],
+    ["ExecutionObject", "Outcome"],
+    ["CloudflareRuntime", "Options"],
+    ["ContainerTerminal", "Socket"],
+    ["ContainerTerminal", "SocketEvent"]
+  ]) {
+    const source = ts.createSourceFile(module + ".ts", read(cloudflareDir + "/src/" + module + ".ts"), ts.ScriptTarget.Latest, true)
+    const node = source.statements.find((statement) => statement.name?.text === declaration)
+    assert.ok(node, module + "." + declaration + " exists")
+    assert.ok(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword), module + "." + declaration + " remains public")
+    const documented = apiSection(docs, module + "." + declaration).match(/```ts\n([\s\S]*?)```/)?.[1]
+    assert.ok(documented, module + "." + declaration + " has a signature")
+    const actual = node.getText(source).replace(/^export /, "")
+    assert.equal(compact(documented), compact(actual), module + "." + declaration + " matches source")
+  }
+})
+
+test("cloudflare intent and sandbox wake reference preserve telemetry fields and timeout errors", () => {
+  const docs = reference(cloudflareDir)
+  const intent = apiSection(docs, "ExecutionObject.Intent")
+  const source = ts.createSourceFile("ExecutionObject.ts", read(cloudflareDir + "/src/ExecutionObject.ts"), ts.ScriptTarget.Latest, true)
+  const intentStatement = source.statements.find((statement) => statement.declarationList?.declarations.some((declaration) => declaration.name.getText(source) === "Intent"))
+  assert.ok(intentStatement?.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword))
+  const fields = intentStatement.declarationList.declarations[0].initializer.arguments[0].properties
+  assert.ok(fields.length > 0)
+  for (const field of fields) {
+    const name = field.name.getText(source)
+    assert.match(intent, new RegExp("\\b" + name + ":"), "Intent includes " + name)
+  }
+  const sandbox = ts.createSourceFile("SandboxObject.ts", read(cloudflareDir + "/src/SandboxObject.ts"), ts.ScriptTarget.Latest, true)
+  const wake = sandbox.statements.flatMap((statement) => [...(statement.declarationList?.declarations ?? [])])
+    .find((declaration) => declaration.name.getText(sandbox) === "wake")
+  assert.ok(wake?.initializer.type, "wake has an explicit return type")
+  const documented = apiSection(docs, "SandboxObject.wake").match(/\) => (Effect\.Effect<[^\n]+>)/)?.[1]
+  assert.ok(documented, "wake has a documented return type")
+  assert.equal(documented.replaceAll("SandboxObject.", "").replace(/\s/g, ""), wake.initializer.type.getText(sandbox).replace(/\s/g, ""))
+  members(cloudflareDir, "SandboxObject", "StartTimedOut")
+})

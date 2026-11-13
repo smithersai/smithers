@@ -6,21 +6,10 @@
  */
 
 import { RetryPolicy } from "@smthrs/flow"
-import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
-
-/**
- * The stable name of what a cause failed with, for a log line or a span
- * attribute: an error's tag, never its message.
- *
- * @category telemetry
- * @since 1.0.0-rc.17
- */
-export const failureType = (cause: Cause.Cause<unknown>): string =>
-  RetryPolicy.errorTag(Cause.squash(cause)) ?? "unknown"
 
 /**
  * Runs `effect` in a span named `span`, then records its outcome: the success
@@ -49,7 +38,7 @@ export const observed = <A extends string, E, R>(
       Effect.tap((exit) =>
         Effect.gen(function*() {
           const outcome = Exit.isSuccess(exit) ? exit.value : "failed"
-          const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {}
+          const failure = Exit.isFailure(exit) ? { "error.type": RetryPolicy.failureType(exit.cause) } : {}
           const durationMs = (yield* Clock.currentTimeMillis) - startedAt
           yield* Effect.annotateCurrentSpan({ [options.attribute]: outcome, ...failure })
           yield* Metric.update(Metric.withAttributes(options.counter, { outcome }), 1)

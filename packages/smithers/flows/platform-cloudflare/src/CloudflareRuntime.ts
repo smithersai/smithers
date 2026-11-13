@@ -19,7 +19,7 @@
  */
 
 import { Retention as EngineRetention, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { JournalDecode, RunMetrics } from "@smthrs/flow"
+import { JournalDecode, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import { Ownership } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
@@ -29,7 +29,6 @@ import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import type * as SqlClient from "effect/sql/SqlClient"
 import * as CloudflareHost from "./CloudflareHost.ts"
-import { failureType } from "./internal/Observed.ts"
 
 /**
  * What one execution's runtime is configured with.
@@ -137,7 +136,7 @@ const retain = (executionId: string, retention: Retention): Effect.Effect<void, 
     }))
     const runs = Exit.isSuccess(exit) ? exit.value.runs.length : 0
     const outcome = Exit.isFailure(exit) ? "failed" : runs > 0 ? "deleted" : "none"
-    const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {}
+    const failure = Exit.isFailure(exit) ? { "error.type": RetryPolicy.failureType(exit.cause) } : {}
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt
     yield* Effect.annotateCurrentSpan({
       "smithers.retention.outcome": outcome,

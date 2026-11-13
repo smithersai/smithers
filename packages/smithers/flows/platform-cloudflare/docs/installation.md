@@ -33,8 +33,11 @@ Nothing in this package imports a `node:` built-in or a `cloudflare:` module;
 the flag is for the driver.
 
 The object uses its key-value storage and its alarm, nothing else, so either
-storage backend serves. It stores two keys, `ExecutionObject.intentKey` and
-`ExecutionObject.failuresKey`; keep your own keys apart from them, and do not
+storage backend serves. It reserves five keys: `ExecutionObject.intentKey`,
+`ExecutionObject.failuresKey`, `ExecutionObject.settledKey`,
+`ExecutionObject.reportedKey` and `ExecutionObject.cancelledKey`. The
+cancellation tombstone survives intent retention to prevent delayed admission.
+Keep your own keys apart from them, and do not
 schedule anything else on the object's one alarm.
 
 ## Prepare the database

@@ -36005,14 +36005,16 @@ drives the execution.
 interface Options {
   readonly hostId: string
   readonly executionId: string
-  readonly flow?: string
-  readonly retention?: CloudflareRuntime.Retention
+  readonly codeVersion?: string | undefined
+  readonly flow?: string | undefined
+  readonly retention?: Retention | undefined
 }
 ```
 
 - `hostId`: the Durable Object, the same for every incarnation of it. Pass
   `ctx.id.toString()`.
 - `executionId`: the one execution this runtime drives.
+- `codeVersion`: the deployed source revision, used only in safe journal-decode diagnostics.
 - `flow`: the persisted intent's flow tag; recovery skips unrelated
   registrations.
 - `retention`: delete this store's settled history as the runtime is built.
@@ -36060,6 +36062,48 @@ CloudflareRuntime.layer(
 
 The per-execution Durable Object, as functions a Durable Object delegates to.
 See [the execution lifecycle](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/execution-lifecycle.md).
+
+### `ExecutionObject.make`
+
+```ts
+const make: <E, R, RS, RE = never, RR = never, RA = never, RT = never>(
+  storage: ExecutionObject.Storage<RS>,
+  options: {
+    readonly flows: ReadonlyArray<Flow.Any>
+    readonly runtime: (intent: ExecutionObject.Intent) => Layer.Layer<ExecutionObject.Services, E, R>
+    readonly router: ExecutionObject.Router<RE, RR>
+    readonly settledRetentionMs?: number | undefined
+    readonly driveBudgetMs?: number | undefined
+    readonly settled?: ExecutionObject.Settled<RT> | undefined
+    readonly afterAlarm?: Effect.Effect<void, never, RA> | undefined
+    readonly continueHere?: ExecutionObject.ContinueHere | undefined
+    readonly canStart?: ((intent: ExecutionObject.Intent) => Effect.Effect<boolean, never, R>) | undefined
+  }
+) => {
+  start: (value: ExecutionObject.Intent) => Effect.Effect<void, ExecutionObject.IntentConflict, RS>
+  wake: () => Effect.Effect<boolean, never, RS>
+  cancel: () => Effect.Effect<void, FlowRuntime.CancelRequestFailed, RS>
+  alarm: () => Effect.Effect<ExecutionObject.Outcome, never, R | RS | RR | RA | RT>
+}
+```
+
+Composes one object's `start`, `wake`, `cancel` and `alarm` handlers. Keep one
+instance for the lifetime of the object incarnation. It serializes admission
+and cancellation, and serializes alarm drives so callers never build competing
+runtime owners.
+
+`cancel()` records the permanent `ExecutionObject.cancelledKey` tombstone
+before interrupting an active runtime. It arms the alarm so an idle object
+finishes cancellation on its next invocation, without starting an action.
+The tombstone also prevents a delayed start from admitting a cancelled execution.
+
+`canStart` rechecks domain admission before a delayed start reaches the
+engine; `false` records cancellation and skips admission. A defect in the
+check retries the alarm. `afterAlarm` runs after every alarm outcome, once
+the active cancellation handler has been cleared. The other options have the
+same meaning as on `ExecutionObject.alarm`.
+A failed interrupt still leaves the tombstone stored and the alarm armed, so
+cancellation continues on the next alarm.
 
 ### `ExecutionObject.start`
 
@@ -36141,8 +36185,10 @@ execution may start as a child or hand off to.
 An object that recorded its settlement builds no runtime again. Before
 `settledRetentionMs` (default `ExecutionObject.settledRetentionMs`, one day)
 has passed since the settlement, its alarm arms itself for that moment and
-answers `Settled`. After, it deletes the intent, the count and the settlement,
-deletes the alarm and answers `Forgotten`: the object's storage is empty.
+answers `Settled`. After, it deletes the intent, the count, the settlement
+and its `ExecutionObject.reportedKey` timestamp,
+deletes the alarm and answers `Forgotten`. Any cancellation tombstone under
+`ExecutionObject.cancelledKey` remains to prevent delayed admission.
 
 `settled`, when given, takes the settlement (`ExecutionObject.Settled`). The
 alarm that settles the execution, and every later one until it succeeds,
@@ -36188,7 +36234,7 @@ const intent: <F extends Flow.Any>(
 
 Builds an intent, encoding the payload as its identity snapshot
 (`Flow.payloadSnapshot`: every `Set` and `Map` sorted, then the flow's own JSON
-codec, the one `alarm` decodes it with), so equal payloads store equal intents
+codec, the one `alarm` decodes it with), so equal payloads have equal identities
 and the same intent again is recognized whatever a set's insertion order. Fails with `SchemaError` for a payload the schema
 refuses or an empty execution id.
 
@@ -36198,13 +36244,18 @@ refuses or an empty execution id.
 const Intent: Schema.Struct<{
   flow: Schema.NonEmptyString
   executionId: Schema.NonEmptyString
+  requestedAtMs: Schema.optionalKey<Schema.Number>
   payload: Schema.Json
+  origin: Schema.optionalKey<Schema.Struct<{ door: Schema.String; actor: Schema.String }>>
 }>
 type Intent = typeof Intent.Type
 ```
 
-What the object runs. It is stored as its canonical JSON, so equal intents are
-equal strings.
+What the object runs, stored as canonical JSON. `requestedAtMs` records when
+`intent` was built; `origin` carries `RunMetrics.CurrentOrigin`'s door and
+actor kind for usage metrics. Both are optional for older stored intents and
+excluded from identity: a repeated start matches only the flow, execution id
+and payload.
 
 ### `ExecutionObject.Storage`
 
@@ -36230,14 +36281,24 @@ type Outcome =
   | { readonly _tag: "Settled"; readonly forgetAtMs: number }
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
   | { readonly _tag: "Yielded" }
-  | { readonly _tag: "Retrying"; readonly attempt: number; readonly retryAtMs: number; readonly failure: string }
+  | {
+    readonly _tag: "Retrying"
+    readonly attempt: number
+    readonly retryAtMs: number
+    readonly failure: string
+    readonly detail: Readonly<Record<string, string>>
+  }
   | { readonly _tag: "Continued"; readonly executionId: string }
   | { readonly _tag: "Forgotten" }
 ```
 
 What one alarm did. `forgetAtMs` is when the settled object forgets its
 intent. `Yielded` is a drive that spent its budget; the alarm is armed for
-now. `failure` is the tag of what failed, never its message. `Continued` is a
+now. `failure` is the tag of what failed, never its message. `detail` is a
+record of safe diagnostic fields: a failed migration's name, failed statement,
+SQL error kind, SQLSTATE and database message; for other database failures,
+only the SQL error kind and code; and for a lost or refused connection, the
+driver's text. It never contains a flow's content. `Continued` is a
 settled round whose next round `continueHere` kept: the object now holds that
 round's intent, `executionId`, and its alarm is armed for now.
 
@@ -36255,12 +36316,17 @@ idempotent.
 ### `ExecutionObject.Services`
 
 ```ts
-type Services = EngineStore.Driver | RunStore.RunStore | DurableEngineState.DurableEngineState
+type Services =
+  | EngineStore.Driver
+  | RunStore.RunStore
+  | DurableEngineState.DurableEngineState
+  | FlowRuntime.FlowRuntime
 ```
 
 What `alarm` reads from the runtime it builds: `@smthrs/engine-store`'s
 `EngineStore.Driver`, which `EngineStore.drive` uses, and the stores it reads
-the next wake and the routes from. `CloudflareRuntime.layer` provides all three.
+the next wake and the routes from, plus `FlowRuntime` to interrupt a cancelled
+execution. `CloudflareRuntime.layer` provides all four.
 
 ### `ExecutionObject.IntentConflict`
 
@@ -36273,17 +36339,18 @@ class IntentConflict extends Schema.TaggedError<IntentConflict>()(
 
 ### Constants
 
-| Export                                   | Value                                                               | Meaning                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `ExecutionObject.intentKey`              | `"smithers/intent"`                                                 | The storage key the intent lives under.                                          |
-| `ExecutionObject.failuresKey`            | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.                |
-| `ExecutionObject.settledKey`             | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.            |
-| `ExecutionObject.reportedKey`            | `"smithers/reported"`                                               | The storage key when `settled` took the settlement, in epoch ms, lives under.    |
-| `ExecutionObject.settledRetentionMs`     | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.                 |
-| `ExecutionObject.startGraceMs`           | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies.         |
-| `ExecutionObject.retryPolicy`            | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.                     |
-| `ExecutionObject.defaultDriveBudgetMs`   | `600_000`                                                           | How long a drive keeps starting steps unless `alarm` is given another.           |
-| `ExecutionObject.admittedStartTimeoutMs` | `2_000`                                                             | How long a child's start during its parent's drive waits before routing does it. |
+| Export                                   | Value                                                             | Meaning                                                                          |
+| ---------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `ExecutionObject.intentKey`              | `"smithers/intent"`                                               | The storage key the intent lives under.                                          |
+| `ExecutionObject.failuresKey`            | `"smithers/failures"`                                             | The storage key the count of alarms without progress lives under.                |
+| `ExecutionObject.settledKey`             | `"smithers/settled"`                                              | The storage key when the execution settled, in epoch ms, lives under.            |
+| `ExecutionObject.reportedKey`            | `"smithers/reported"`                                             | The storage key when `settled` took the settlement, in epoch ms, lives under.    |
+| `ExecutionObject.cancelledKey`           | `"smithers/cancelled"`                                            | Permanent cancellation tombstone, retained after the intent is forgotten.        |
+| `ExecutionObject.settledRetentionMs`     | `86_400_000`                                                      | How long a settled object keeps its intent before it forgets it.                 |
+| `ExecutionObject.startGraceMs`           | `5_000`                                                           | How long after `start` stores an intent its alarm fires if `start` dies.         |
+| `ExecutionObject.retryPolicy`            | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 5_000 })` | The backoff between alarms without progress. Never gives up.                     |
+| `ExecutionObject.defaultDriveBudgetMs`   | `600_000`                                                         | How long a drive keeps starting steps unless `alarm` is given another.           |
+| `ExecutionObject.admittedStartTimeoutMs` | `2_000`                                                           | How long a child's start during its parent's drive waits before routing does it. |
 
 `ExecutionObject.driveBudget` is a `Config.Config<number>`: the setting
 `EXECUTION_DRIVE_BUDGET_SECONDS`, whole seconds from 1 to 899, as
@@ -36300,6 +36367,11 @@ a `ConfigError`. The Durable Object class reads it once and passes it to every
 | `ExecutionObject.driveDuration` | `smithers_cloudflare_execution_drive_duration` (ms histogram, buckets to 900 s) | `outcome`: `settled`, `parked`, `yielded`, `unfinished` or `failed`          |
 | `ExecutionObject.routed`        | `smithers_cloudflare_execution_routed`                                          | `route`: `start`, `wake` or `admitted`, counted per successful call          |
 | `ExecutionObject.wakes`         | `smithers_cloudflare_execution_wakes`                                           | `outcome`: `armed` or `idle`                                                 |
+| `ExecutionObject.cancellations` | `smithers_cloudflare_execution_cancellations`                                   | none                                                                         |
+
+`ExecutionObject.cancellations` counts successful `cancel()` calls and domain
+admission refusals. A failed active interrupt leaves the tombstone durable but
+is not counted.
 
 Each `alarm` span carries `smithers.execution.started` and
 `smithers.execution.woken`, the counts it routed, and, when it drove, its span
@@ -36430,7 +36502,7 @@ What a container Durable Object runs before it uses its container. See
 const wake: <F, E, R>(
   machine: SandboxObject.Machine<F, E, R>,
   options: SandboxObject.WakeOptions<F>
-) => Effect.Effect<SandboxObject.WakeOutcome, E, R>
+) => Effect.Effect<SandboxObject.WakeOutcome, E | SandboxObject.StartTimedOut, R>
 
 interface WakeOptions<F> {
   readonly intercepts: ReadonlyArray<{ readonly host: string; readonly fetcher: F }>
@@ -36468,6 +36540,18 @@ between its start and its registration, gets its timeout and intercepts back.
 It keeps no state and runs no timer or retry. A failure is the container
 client's own error, unchanged; the `sandbox.wake` span and the
 `cloudflare.sandbox.wake` log line carry only its tag.
+
+### `SandboxObject.StartTimedOut`
+
+```ts
+class StartTimedOut extends Schema.TaggedError<StartTimedOut>()(
+  "@smthrs/platform-cloudflare/StartTimedOut",
+  { timeoutMs: Schema.Number }
+)
+```
+
+The stopped container did not finish starting within `startTimeoutMs`.
+That start was abandoned; a later `wake` starts it again.
 
 ### `SandboxObject.rearm`
 
@@ -36663,15 +36747,24 @@ Object's container handle satisfies it with `E = ContainerError` and
 interface Socket {
   send(message: string | ArrayBuffer | Uint8Array): void
   close(code?: number, reason?: string): void
-  addEventListener(
-    type: "message" | "close" | "error",
-    listener: (event: { readonly type: string; readonly data?: unknown }) => void
-  ): void
+  addEventListener(type: "message" | "close" | "error", listener: (event: SocketEvent) => void): void
+  removeEventListener(type: "message" | "close" | "error", listener: (event: SocketEvent) => void): void
 }
 ```
 
 The slice of a server WebSocket `attach` uses: the server side of
 `new WebSocketPair()`, already accepted.
+
+### `ContainerTerminal.SocketEvent`
+
+```ts
+interface SocketEvent {
+  readonly type: string
+  readonly data?: unknown
+}
+```
+
+The message, close or error event received by the socket's listeners.
 
 ### `ContainerTerminal.isSessionName`
 

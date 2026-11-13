@@ -138,7 +138,7 @@ parent object                 child object
          drive ─ reads the child's result, settles
 ```
 
-The backoff is one second, doubling, at most five minutes, and never gives up.
+The backoff is one second, doubling, at most five seconds, and never gives up.
 An alarm that dies in the middle of a drive leaves its attempt counted and its
 successor armed, so the next incarnation of the object takes the run over one
 backoff later. It takes it at once even though the dead incarnation's lease is
@@ -149,15 +149,15 @@ each guarantee and what proves it.
 
 ## Modules
 
-| Module              | What it provides                                                                                                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as Effect's `Digest` and `SecureRandom`.                                                        |
-| `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                                                                       |
-| `ExecutionObject`   | `start`, `wake`, `alarm` and `intent`: the per-execution Durable Object, as functions over a structural slice of Durable Object storage.                                                  |
-| `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                  |
-| `SandboxObject`     | `wake`, `rearm` and `run`: start a container Durable Object's container offline with its outbound HTTP intercepts, re-arm its inactivity timeout, and run a command for its exit code.    |
-| `ContainerTerminal` | `ensureSession` and `attach`: a browser terminal over `@smthrs/sandbox`'s `TerminalProtocol`, one tmux session per terminal and one tmux client per WebSocket; readers' input is dropped. |
-| `ContainerSession`  | `make(container, { id, workdir, user?, env? })`: the container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools` and `Sandbox.layerHost` run on it.                             |
+| Module              | What it provides                                                                                                                                                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as Effect's `Digest` and `SecureRandom`.                                                                                                                         |
+| `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                                                                                                                                        |
+| `ExecutionObject`   | `make`: compose `start`, `wake`, `cancel` and `alarm` handlers over Durable Object storage; `intent` builds their intent. `cancelledKey` reserves its cancellation tombstone; `cancellations` counts successful cancellation calls and refused admissions. |
+| `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                                                                                   |
+| `SandboxObject`     | `wake`, `rearm` and `run`: start a container Durable Object's container offline with its outbound HTTP intercepts, re-arm its inactivity timeout, and run a command for its exit code.                                                                     |
+| `ContainerTerminal` | `ensureSession` and `attach`: a browser terminal over `@smthrs/sandbox`'s `TerminalProtocol`, one tmux session per terminal and one tmux client per WebSocket; readers' input is dropped.                                                                  |
+| `ContainerSession`  | `make(container, { id, workdir, user?, env? })`: the container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools` and `Sandbox.layerHost` run on it.                                                                                              |
 
 ## A terminal in a container
 

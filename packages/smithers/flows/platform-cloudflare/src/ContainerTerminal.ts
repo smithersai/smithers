@@ -29,6 +29,7 @@
  * @since 1.0.0-rc.17
  */
 
+import { RetryPolicy } from "@smthrs/flow"
 import { TerminalProtocol } from "@smthrs/sandbox"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -608,7 +609,7 @@ export const attach = <E, R>(
       ...(access === "write" ? { stdin: "pipe" as const } : {})
     }))
     if (Exit.isFailure(spawned)) {
-      yield* Effect.annotateCurrentSpan({ "error.type": Observed.failureType(spawned.cause) })
+      yield* Effect.annotateCurrentSpan({ "error.type": RetryPolicy.failureType(spawned.cause) })
       yield* close(TerminalProtocol.CloseCode.failed)
       return { outcome: "failed", closeCode: TerminalProtocol.CloseCode.failed, bytes: counted } as const
     }
