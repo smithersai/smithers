@@ -165,6 +165,10 @@ the message ID if available.`
 
 /** The flow: schedule, collect in parallel, summarize, publish. */
 export const FridayBot = Flow.make("examples/FridayBot", {
+  description: "Collect a team's GitHub, Linear and Slack activity in parallel and publish one update.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     timezone: Schema.optional(Schema.String),
     forceWeekly: Schema.optional(Schema.Boolean),

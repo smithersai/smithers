@@ -239,6 +239,10 @@ const round = (
 
 /** The flow. `maxIterations` is real at plan time, so it sets how many rounds the plan holds. */
 export const CollectorProbe = Flow.make("examples/CollectorProbe", {
+  description: "Probe an agent endpoint, aggregate its timing, cost and quality, and report while those drift.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     endpoint: Schema.String,
     payload: Schema.optional(Schema.Json),

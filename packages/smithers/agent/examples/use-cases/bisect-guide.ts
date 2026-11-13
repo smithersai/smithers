@@ -9,7 +9,7 @@
  * summary names the culprit and the step count.
  *
  * 0.x's `<Loop until maxIterations={20} onMaxReached="return-last">` is a planned recursion of at most twenty steps, as in `code-review-loop.ts`. `Loop.make` hands each round only the previous one's result, where 0.x tells both steps every verdict so far.
- * 0.x tested each commit with an agent told to report without judging; here the test is a deterministic `Action` a host implements over its checkout, because the 1.0 completion brake refuses an agent's report of commands its run never recorded. It takes the bounds, not the verdict history the agent was shown.
+ * 0.x tested each commit with an agent told to report without judging; here the test is a deterministic `Action` a host implements over its checkout, because a host that arms `claimCap` refuses an agent's report of commands its run never recorded. It takes the bounds, not the verdict history the agent was shown.
  * 0.x's summary task had no agent and rendered its placeholder prompt as the output; the port computes the summary from the same props.
  * 0.x gave the agents `bash`, `read` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
@@ -171,6 +171,10 @@ const step = (
 
 /** The bounded bisect. `commitCount` is real at plan time, so it sets the first upper bound. */
 export const BisectGuide = Flow.make("examples/BisectGuide", {
+  description: "Bisect a commit range for a regression, with an agent judging each test result.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: { repoPath: Schema.String, testCommand: Schema.String, commitCount: Schema.Number },
   success: Output,
   error: AgentAction.AgentFailure,

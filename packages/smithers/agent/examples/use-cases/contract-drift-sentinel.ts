@@ -156,6 +156,10 @@ const gate = (analysis: typeof Analysis.Type) => ({
 
 /** The flow: load, diff, analyze, gate. */
 export const ContractDriftSentinel = Flow.make("examples/ContractDriftSentinel", {
+  description: "Diff two revisions of an API contract, flag breaking changes with consumer impact, and gate the PR.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     baselinePath: Schema.String,
     currentPath: Schema.String,

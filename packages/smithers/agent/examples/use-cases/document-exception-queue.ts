@@ -239,7 +239,12 @@ const perFile = <A, Tag extends Tags>(
   const joined = Bounded.all(Object.fromEntries(keyed), { concurrency })
   // `is` is a function, so its schema's name stands in for it in the captures.
   const keys = keyed.map(([key]) => key)
-  return Node.map(joined, Node.capture({ keys, kept }, (byFile) => keys.map((key) => byFile[key]).filter(is)))
+  return Node.map(
+    joined,
+    Node.capture({ keys, kept, implementationVersion: "perFile/v1" }, function(byFile) {
+      return this.keys.map((key) => byFile[key]).filter(is)
+    })
+  )
 }
 
 /** Every extraction so far, plus the re-extraction. Pure, so it is a `Node.map`, not a step. */
@@ -328,6 +333,11 @@ const Bound = Schema.Int.check(Schema.isGreaterThan(0))
 
 /** The flow: classify, extract, reconcile, review the exceptions, export. */
 export const DocumentExceptionQueue = Flow.make("examples/DocumentExceptionQueue", {
+  description:
+    "Classify and extract a document packet in parallel, reconcile it, and ask a person only about high-severity exceptions.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     files: Schema.optional(Schema.Array(Schema.String)),
     packetContext: Schema.optional(Schema.String),

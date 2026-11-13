@@ -62,6 +62,8 @@ export const Report = Schema.Struct({
 
 /** One attempt: run the command and report what happened. */
 export const RunTest = AgentAction.make("examples/FlakeHunter/Run", {
+  // This port accepts agent-reported command evidence without host command receipts.
+  claimCap: 0,
   payload: { command: Schema.String, attempt: Schema.Number, maxRuns: Schema.Number, previousOutcome: Schema.String },
   output: RunResult,
   seat,
@@ -151,6 +153,10 @@ const rerun = (
 
 /** The flow. `runs` is real at plan time, so it sets how many attempts the plan holds. */
 export const FlakeHunter = Flow.make("examples/FlakeHunter", {
+  description: "Rerun a test a fixed number of times and report whether it is flaky.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { command: Schema.String, runs: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))) },
   success: Report,
   error: AgentAction.AgentFailure,

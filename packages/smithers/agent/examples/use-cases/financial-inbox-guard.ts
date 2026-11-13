@@ -159,6 +159,11 @@ export const Route = AgentAction.make("examples/FinancialInboxGuard/Route", {
 
 /** The flow: ingest, classify and assess risk in parallel, extract, route. */
 export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
+  description:
+    "Read one finance-mailbox email, classify it, check it for fraud signals, and decide the action and alert for it.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     rawEmail: Schema.String,
     mailbox: Schema.optional(Schema.String),

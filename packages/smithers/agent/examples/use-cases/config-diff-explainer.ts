@@ -113,6 +113,10 @@ export const Approve = AgentAction.make("examples/ConfigDiffExplainer/Approve", 
 
 /** The flow: fetch, explain, review. */
 export const ConfigDiffExplainer = Flow.make("examples/ConfigDiffExplainer", {
+  description: "Turn env, Helm, Terraform and k8s diffs into a blast-radius and risk summary, then a review verdict.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     paths: Schema.optional(Schema.Array(Schema.String)),
     gitRef: Schema.optional(Schema.String),

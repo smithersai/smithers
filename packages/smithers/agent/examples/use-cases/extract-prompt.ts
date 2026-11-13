@@ -322,6 +322,10 @@ const extract = (
 
 /** The flow. Its payload is real at plan time, so the passthroughs are decided before anything runs. */
 export const ExtractPrompt = Flow.make("examples/ExtractPrompt", {
+  description: "Resolve a prompt from a given string, a cached entry, or a Socratic question loop with a person.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     prompt: Schema.optional(Schema.String),
     cached: Schema.optional(CachedPrompt),

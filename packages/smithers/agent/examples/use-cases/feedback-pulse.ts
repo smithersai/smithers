@@ -137,6 +137,10 @@ report. Critical pain points should always create urgent Slack messages and Jira
 
 /** The flow: intake, extract, notify. */
 export const FeedbackPulse = Flow.make("examples/FeedbackPulse", {
+  description: "Normalize a feedback batch, extract its themes and pain points, and draft alerts for the notable ones.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     feedback: Schema.optional(Schema.Array(Schema.Json)),
     sources: Schema.optional(Schema.Array(Schema.Json)),

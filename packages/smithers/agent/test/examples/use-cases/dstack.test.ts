@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Dstack, endpointFromEnv, layer, liveLayer } from "../../../examples/use-cases/dstack.ts"
+import { Dstack, endpointFromEnv, layer, liveLayer, main } from "../../../examples/use-cases/dstack.ts"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "dstack-"))
@@ -143,3 +143,22 @@ it("refuses to start without the endpoint, as 0.x did", () => {
   )
   expect(() => endpointFromEnv({ KIMI_API_KEY: "dstack-token" })).toThrow("Set KIMI_BASE_URL")
 })
+
+it.effect("rejoins main's execution id without paying for completed steps again", () =>
+  Effect.gen(function*() {
+    const { answer, turns } = script()
+    const server = endpointServer(answer)
+    const env = { KIMI_BASE_URL: "https://kimi-k2.gateway.example/v1", KIMI_API_KEY: "dstack-token" }
+    const options = {
+      executor: RequestExecutor.layer.pipe(Layer.provide(server.transport)),
+      judge: ScriptedJudge.layer
+    }
+    const filename = join(directory, "main-resume.sqlite")
+    const first = yield* main({ code }, "dstack-resume", env, filename, options)
+    const replayed = yield* main({ code }, "dstack-resume", env, filename, options)
+    expect(replayed).toEqual(first)
+    expect(turns).toEqual(["review input.ts", "patch input.ts"])
+    expect(server.sent).toHaveLength(2)
+    yield* main({ code }, "dstack-separate", env, filename, options)
+    expect(server.sent).toHaveLength(4)
+  }))

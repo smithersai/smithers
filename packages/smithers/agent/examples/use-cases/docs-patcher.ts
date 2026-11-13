@@ -160,6 +160,11 @@ export const CreatePullRequest = Action.make("examples/DocsPatcher/CreatePullReq
 
 /** The flow: detect, patch, then verify and open the follow-up pull request side by side. */
 export const DocsPatcher = Flow.make("examples/DocsPatcher", {
+  description:
+    "Detect public API or CLI changes, patch the docs they make stale, and verify the patch beside a follow-up pull request.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
   payload: {
     baseBranch: Schema.optional(Schema.String),
     docGlobs: Schema.optional(Schema.Array(Schema.String)),

@@ -115,6 +115,10 @@ const round = (
 
 /** The bounded review loop. */
 export const CodeReviewLoop = Flow.make("examples/CodeReviewLoop", {
+  description: "Review a directory, describe fixes, and review again until approval or three rounds.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { directory: Schema.String, focus: Schema.String },
   success: Output,
   error: AgentAction.AgentFailure,

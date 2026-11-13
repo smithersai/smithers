@@ -534,6 +534,10 @@ type DispatchTag = `examples/Gastown/${"WriteConvoy" | "WriteBead" | "Polecat" |
  * plan.
  */
 export const Dispatch = Flow.make("examples/Gastown/Dispatch", {
+  description: "Run the assigned workers and collect their results.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
   payload: { plan: Plan, goal: Schema.String, maxAgents: Schema.Int.check(Schema.isGreaterThan(0)) },
   success: Schema.Struct({ results: Schema.Array(PolecatResult), witnessEvents: Schema.Array(WitnessEvent) }),
   error: AgentAction.AgentFailure,
@@ -626,6 +630,10 @@ const allMergesDone = (merged: ReadonlyArray<MergeRequest>, completed: number) =
  * reads the real results.
  */
 export const Refine = Flow.make("examples/Gastown/Refine", {
+  description: "Review worker results and refine the remaining work.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
   payload: { plan: Plan, goal: Schema.String, results: Schema.Array(PolecatResult), baseBranch: Schema.String },
   success: Schema.Array(MergeRequest),
   error: AgentAction.AgentFailure,
@@ -683,6 +691,11 @@ export const Refine = Flow.make("examples/Gastown/Refine", {
 
 /** The flow: plan, dispatch, refine, report. */
 export const Gastown = Flow.make("examples/Gastown", {
+  description:
+    "Steve Yegge's Gas Town on 1.0: a mayor plans beads, polecats work them in parallel, a refinery merges the results.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
   payload: {
     directory: Schema.String,
     goal: Schema.String,

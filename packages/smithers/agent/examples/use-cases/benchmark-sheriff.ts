@@ -161,6 +161,10 @@ const detector = (baseline: Baseline) =>
 
 /** The flow: detect, then settle `regressed` or `clean`. */
 export const BenchmarkSheriff = Flow.make("examples/BenchmarkSheriff", {
+  description: "Run benchmarks against a stored baseline and ask an agent to explain only material regressions.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     command: Schema.optional(Schema.String),
     cwd: Schema.optional(Schema.String),

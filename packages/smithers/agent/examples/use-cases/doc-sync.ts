@@ -117,6 +117,10 @@ export const OpenPullRequest = Action.make("examples/DocSync/OpenPullRequest", {
  * its payload is real when its body plans and it can fan out over the list.
  */
 export const FixAll = Flow.make("examples/DocSync/FixAll", {
+  description: "Repair each detected documentation drift.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
   payload: { discrepancies: Schema.Array(Discrepancy) },
   success: Schema.Array(FixResult),
   body: Node.capture({}, ({ discrepancies }) => {
@@ -146,6 +150,10 @@ const request = (fixes: ReadonlyArray<FixResult>): PullRequestRequest => {
 
 /** The flow: audit, fix, and open a pull request when anything was fixed. */
 export const DocSync = Flow.make("examples/DocSync", {
+  description: "Compare docs with the code they describe, fix each discrepancy, and open one pull request.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
   payload: {
     docsDir: Schema.optional(Schema.String),
     srcDir: Schema.optional(Schema.String),

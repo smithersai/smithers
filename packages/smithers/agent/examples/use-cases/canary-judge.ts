@@ -154,6 +154,11 @@ type Streams = { readonly stable: typeof Telemetry.Type; readonly canary: typeof
 
 /** The flow: collect both streams at once, compare, judge, name the command. */
 export const CanaryJudge = Flow.make("examples/CanaryJudge", {
+  description:
+    "Compare stable and canary telemetry and issue a promote, hold or rollback verdict with its deploy command.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     stableMetricsEndpoint: Schema.String,
     stableLogSource: Schema.String,

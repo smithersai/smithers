@@ -52,6 +52,8 @@ export const Report = Schema.Struct({
 
 /** Runs the command once. */
 export const RunCommand = AgentAction.make("examples/CommandWatchdog/Run", {
+  // This port accepts agent-reported command evidence without host command receipts.
+  claimCap: 0,
   payload: {
     command: Schema.String,
     iteration: Schema.Number,
@@ -178,6 +180,10 @@ const round = (
 
 /** The flow. `maxRuns` is real at plan time, so it sets how many rounds the plan holds. */
 export const CommandWatchdog = Flow.make("examples/CommandWatchdog", {
+  description: "Rerun a command and escalate only when its exit code, output or timing becomes notable.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     command: Schema.String,
     maxRuns: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),

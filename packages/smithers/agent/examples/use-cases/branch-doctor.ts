@@ -10,7 +10,7 @@
  * reports the diagnosis, the plan and what ran.
  *
  * 0.x trusted the planner's `safe` flag; here a command must also be on {@link runnable}, because the planner's prompt carries repository text that can talk it into marking anything safe.
- * 0.x ran the safe commands with an agent told to skip the rest; here the flow splits them and a deterministic `Action` a host implements runs them, because the 1.0 completion brake refuses an agent's report of commands its run never recorded.
+ * 0.x ran the safe commands with an agent told to skip the rest; here the flow splits them and a deterministic `Action` a host implements runs them, because a host that arms `claimCap` refuses an agent's report of commands its run never recorded.
  * `Intervene` does not fit: it has one propose step where 0.x diagnoses and then plans, and 0.x gates execution on an input flag, not an approval.
  * 0.x's `.mdx` prompts were placeholders that printed their props; the prompts here state the same props.
  * 0.x gave the agents `bash`, `read` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
@@ -83,6 +83,7 @@ export const Output = Schema.Struct({
     description: "The full ordered list of recovery commands"
   }),
   executed: Schema.Boolean.annotate({ description: "Whether safe recovery steps were run" }),
+  succeeded: Schema.Boolean.annotate({ description: "Whether any commands ran and all of them succeeded" }),
   summary: Schema.String.annotate({ description: "Human-readable summary of diagnosis and recovery" })
 })
 
@@ -188,7 +189,8 @@ const summarize = (
 ): typeof Output.Type => ({
   rootCause: diagnosis.rootCause,
   recoveryCommands: plan.commands.map((c) => c.command),
-  executed: execution?.success ?? false,
+  executed: (execution?.executedCommands.length ?? 0) > 0,
+  succeeded: (execution?.executedCommands.length ?? 0) > 0 && (execution?.success ?? false),
   summary: [
     `BranchDoctor diagnosed "${diagnosis.rootCause}" (severity: ${diagnosis.severity}).`,
     `Recovery plan: ${plan.commands.length} commands (risk: ${plan.estimatedRisk}).`,
@@ -208,6 +210,10 @@ const summarize = (
  * execution step rather than one a branch skips.
  */
 export const BranchDoctor = Flow.make("examples/BranchDoctor", {
+  description: "Diagnose a broken branch and propose the minimal recovery command sequence.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: {
     repoPath: Schema.String,
     baseBranch: Schema.optional(Schema.String),
@@ -232,7 +238,11 @@ export const BranchDoctor = Flow.make("examples/BranchDoctor", {
                     Node.map(Node.succeed(plan), Node.capture({}, partition)),
                     Node.capture(run, (split: Planned.Planned<ReturnType<typeof partition>>) =>
                       Node.bindPlanned(
-                        Execute.call({ commands: split.safe, repoPath }),
+                        Node.branch(Node.succeed(split), {
+                          if: Node.capture({}, (commands) => commands.safe.length > 0),
+                          then: Node.capture(run, (commands) => Execute.call({ commands: commands.safe, repoPath })),
+                          else: Node.capture({}, () => Node.succeed([] as ReadonlyArray<typeof Executed.Type>))
+                        }),
                         Node.capture(run, (ran: Planned.Planned<ReadonlyArray<typeof Executed.Type>>) =>
                           Node.map(
                             Node.succeed({ diagnosis, plan, ran, unsafe: split.unsafe }),

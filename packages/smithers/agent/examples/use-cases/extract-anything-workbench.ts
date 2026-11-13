@@ -109,6 +109,11 @@ const inOrder = <A>(names: ReadonlyArray<string>, byName: Readonly<Record<string
  * and validator calls the plan holds.
  */
 export const ExtractAnythingWorkbench = Flow.make("examples/ExtractAnythingWorkbench", {
+  description:
+    "Run candidate extractors over one input in parallel, validate each candidate, and pick the one to adopt.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     input: Schema.Json,
     targetSchema: Schema.Json,

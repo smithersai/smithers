@@ -14,7 +14,8 @@ import {
   approvalTask,
   IncidentRunbookMemory,
   layer,
-  namespace
+  namespace,
+  Ratify
 } from "../../../examples/use-cases/incident-runbook-memory.ts"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
@@ -130,7 +131,7 @@ it.live("banks a lesson per incident and ratifies a rule once three have piled u
       "triage on-call ada, 0 rules, 3 lessons",
       "bank",
       "distill 3",
-      "approve Ratify the distilled runbook rule\n\nrule/irm-4"
+      "approve Ratify the distilled runbook rule\n\nWarm the cache tier before deploys (3 incidents)\n\nRationale: it keeps recurring\n\nNote: rule/irm-4"
     ])
     expect([...fourth.recall.lessonIds].sort()).toEqual(["lesson/irm-1/0", "lesson/irm-2/0", "lesson/irm-3/0"])
     expect(fourth.proposal).toEqual({ ruleNoteId: "rule/irm-4", rationale: "it keeps recurring" })
@@ -183,3 +184,43 @@ it.live("leaves the lessons live when a person rejects the rule", () =>
     expect(knowledge.rules).toEqual([])
     expect(knowledge.lessons).toHaveLength(4)
   }), { timeout: 60_000 })
+
+it.effect("counts the proposal's superseded lessons when acceptance already succeeded", () =>
+  Effect.gen(function*() {
+    const filename = join(directory, "ratify-retry.sqlite")
+    const supersedes = ["lesson/retry/1", "lesson/retry/2", "lesson/retry/3"]
+    yield* Effect.scoped(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        for (const id of supersedes) {
+          yield* store.putNote({
+            namespace,
+            id,
+            text: id,
+            tags: [],
+            provenance: {}
+          })
+        }
+        yield* store.putNote({
+          namespace,
+          id: "rule/retry",
+          text: "Keep caches warm",
+          tags: [],
+          provenance: {},
+          status: "pending",
+          supersedes
+        })
+        yield* store.setNoteStatus({ id: "rule/retry", status: "accepted" })
+        yield* store.putNote({ namespace, id: "lesson/unrelated", text: "Other rule", tags: [], provenance: {} })
+      }).pipe(Effect.provide(
+        Layer.orDie(MemoryStore.layer).pipe(Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "seed")))
+      ))
+    )
+    const result = yield* Kit.run(Ratify, { ruleNoteId: "rule/retry", supersedes }, {
+      filename,
+      executionId: "ratify-after-write",
+      actions: layer,
+      script: () => undefined
+    })
+    expect(result).toEqual({ ratifiedNoteId: "rule/retry", supersededCount: 3 })
+  }))

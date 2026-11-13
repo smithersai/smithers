@@ -48,7 +48,7 @@ type Phase = typeof Phase.Type
 
 /** One Zig file to port. */
 export const ZigFile = Schema.Struct({
-  zig: Schema.String,
+  zig: Schema.String.check(Schema.isPattern(/\.zig$/)),
   loc: Schema.optional(Count),
   crate: Schema.optional(Schema.String)
 })
@@ -631,6 +631,8 @@ Findings: ${json(issues)}`
 
 /** One `cargo check` round for one crate. */
 export const CrateCheckStep = AgentAction.make("examples/BunPortSmithers/CrateCheck", {
+  // This port accepts agent-reported command evidence without host command receipts.
+  claimCap: 0,
   payload: {
     repo: Schema.String,
     crate: Schema.Struct({ name: Schema.String, tier: Count }),
@@ -727,6 +729,8 @@ Reviews: ${json(reviews)}`
 
 /** Builds Bun's Rust binary. */
 export const Build = AgentAction.make("examples/BunPortSmithers/Build", {
+  // This port accepts agent-reported command evidence without host command receipts.
+  claimCap: 0,
   payload: { repo: Schema.String },
   output: BuildResult,
   seat,
@@ -744,6 +748,8 @@ Use the repository's established command first. Prefer \`cargo build -p bun_bin\
 
 /** Runs one probe against the built binary. */
 export const ProbeStep = AgentAction.make("examples/BunPortSmithers/Probe", {
+  // This port accepts agent-reported command evidence without host command receipts.
+  claimCap: 0,
   payload: { repo: Schema.String, probe: Probe },
   output: ProbeResult,
   seat,
@@ -783,6 +789,8 @@ Failure: ${json(failure)}`
 
 /** One round of one focused test area. */
 export const TestAreaStep = AgentAction.make("examples/BunPortSmithers/TestArea", {
+  // This port accepts agent-reported command evidence without host command receipts.
+  claimCap: 0,
   payload: { repo: Schema.String, area: TestArea, branch: Schema.String, previous: Schema.NullOr(TestAreaResult) },
   output: TestAreaResult,
   seat,
@@ -884,7 +892,12 @@ const parallel = <A, E, R>(
   if (members.length === 0) return Node.succeed([])
   const keys = members.map(([key]) => key)
   const joined = Bounded.all(Object.fromEntries(members), { concurrency: Math.max(1, concurrency) })
-  return Node.map(joined, Node.capture({}, (settled) => keys.map((key) => settled[key]!)))
+  return Node.map(
+    joined,
+    Node.capture({ keys }, function(settled) {
+      return this.keys.map((key) => settled[key]!)
+    })
+  )
 }
 
 /** 0.x's `retries={1}`: a failed call runs once more. */
@@ -897,6 +910,10 @@ const retriedOnce = <A, R>(call: () => Node.Node<A, Failed, R>) =>
 
 /** Three adversarial votes per selected field. A child, because the selection is known only at run time. */
 export const LifetimeVotes = Flow.make("examples/BunPortSmithers/LifetimeVotes", {
+  description: "Collect three verification votes for each sampled lifetime field.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.String, selected: Schema.Array(SelectedField) },
   success: Schema.Array(LifetimeVote),
   error: AgentAction.AgentFailure,
@@ -952,11 +969,14 @@ const synthesize = (
 
 /** Phase 1: classify every file, vote on a sample, synthesize. */
 export const Lifetimes = Flow.make("examples/BunPortSmithers/Lifetimes", {
+  description: "Classify ownership and verify a sample of the classified fields.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     repo: Schema.String,
     files: Schema.Array(ZigFile),
-    sampleRate: Schema.optional(Fraction),
-    unknownApprovalThreshold: Schema.optional(Fraction)
+    sampleRate: Schema.optional(Fraction)
   },
   success: LifetimesDone,
   error: AgentAction.AgentFailure,
@@ -970,11 +990,20 @@ export const Lifetimes = Flow.make("examples/BunPortSmithers/Lifetimes", {
       ),
       Node.capture({}, (classifications) =>
         after(
-          Node.map(Node.succeed(classifications), Node.capture({}, (real) => select(real, sampleRate))),
+          Node.map(
+            Node.succeed(classifications),
+            Node.capture({ sampleRate, implementationVersion: "select/v1" }, function(real) {
+              return select(real, this.sampleRate)
+            })
+          ),
           Node.capture({}, (selected) =>
             after(
               LifetimeVotes.child({ repo, selected }),
-              Node.capture({}, (votes) => Node.map(Node.succeed({ classifications, votes }), synthesize))
+              Node.capture({}, (votes) =>
+                Node.map(
+                  Node.succeed({ classifications, votes }),
+                  Node.capture({ implementationVersion: "synthesize/v1" }, synthesize)
+                ))
             ))
         ))
     ))
@@ -1029,6 +1058,10 @@ const phaseAReport = (rows: ReadonlyArray<PhaseARow>): PhaseDone => {
  * report, which settles here as `null`.
  */
 export const PhaseA = Flow.make("examples/BunPortSmithers/PhaseA", {
+  description: "Implement, review and fix each Zig file as Rust.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.String, files: Schema.Array(ZigFile), maxConcurrency: Schema.optional(Positive) },
   success: Schema.NullOr(PhaseDone),
   error: AgentAction.AgentFailure,
@@ -1041,7 +1074,11 @@ export const PhaseA = Flow.make("examples/BunPortSmithers/PhaseA", {
       ),
       {
         if: Node.capture({}, (rows) => rows.every((row) => row.review.approved || row.review.ok || row.fix !== null)),
-        then: Node.capture({}, (rows) => Node.map(Node.succeed(rows), phaseAReport)),
+        then: Node.capture(
+          {},
+          (rows) =>
+            Node.map(Node.succeed(rows), Node.capture({ implementationVersion: "phaseAReport/v1" }, phaseAReport))
+        ),
         else: Node.capture({}, () => Node.succeed(null))
       }
     )
@@ -1109,12 +1146,20 @@ const compileReport = (checks: ReadonlyArray<CrateCheck>): CompileDone => {
 
 /** Phase 3: check every crate, tier by tier. */
 export const Compile = Flow.make("examples/BunPortSmithers/Compile", {
+  description: "Bring crates to a compiling state in dependency order.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.String, crates: Schema.Array(Crate), maxRounds: Schema.optional(Positive) },
   success: CompileDone,
   error: AgentAction.AgentFailure,
   body: Node.capture(
     {},
-    ({ crates, maxRounds = 25, repo }) => Node.map(tiers(repo, groupCratesByTier(crates), maxRounds, []), compileReport)
+    ({ crates, maxRounds = 25, repo }) =>
+      Node.map(
+        tiers(repo, groupCratesByTier(crates), maxRounds, []),
+        Node.capture({ implementationVersion: "compileReport/v1" }, compileReport)
+      )
   )
 })
 
@@ -1172,6 +1217,10 @@ const ungateReport = (rows: ReadonlyArray<UngateRow>): PhaseDone => {
 
 /** Phase 4: port real behavior into every target until two reviewers and the decider accept it. */
 export const Ungate = Flow.make("examples/BunPortSmithers/Ungate", {
+  description: "Replace gated behavior and review each resulting patch.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.String, targets: Schema.Array(Target), maxRounds: Schema.optional(Positive) },
   success: PhaseDone,
   error: AgentAction.AgentFailure,
@@ -1184,7 +1233,7 @@ export const Ungate = Flow.make("examples/BunPortSmithers/Ungate", {
         ),
         surveyed.length
       ),
-      ungateReport
+      Node.capture({ implementationVersion: "ungateReport/v1" }, ungateReport)
     )
   })
 })
@@ -1197,6 +1246,10 @@ type ProbeReport = { readonly passed: number; readonly summary: string }
 
 /** One fix per unique failure. A child, because the failures are known only at run time. */
 export const ProbeFixes = Flow.make("examples/BunPortSmithers/ProbeFixes", {
+  description: "Fix each distinct failure reported by the behavior probes.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.String, failures: Schema.Array(Failure) },
   success: Schema.Array(FailureFix),
   error: AgentAction.AgentFailure,
@@ -1226,16 +1279,19 @@ const probeRound = (
         ),
         Node.capture({}, (results) =>
           after(
-            Node.map(Node.succeed(results), dedupeFailures),
+            Node.map(
+              Node.succeed(results),
+              Node.capture({ implementationVersion: "dedupeFailures/v1" }, dedupeFailures)
+            ),
             Node.capture({}, (failures) =>
               after(
                 ProbeFixes.child({ repo, failures }),
                 Node.capture({}, () =>
                   Node.map(
                     Node.succeed(results),
-                    Node.capture({}, (real): ProbeReport => {
+                    Node.capture({ probeCount: probes.length }, function(real): ProbeReport {
                       const passed = real.filter((r) => r.passed).length
-                      return { passed, summary: `Probe swarm: ${passed}/${probes.length} probe(s) passed.` }
+                      return { passed, summary: `Probe swarm: ${passed}/${this.probeCount} probe(s) passed.` }
                     })
                   ))
               ))
@@ -1260,16 +1316,19 @@ const probeRounds = (
         Node.capture({ round }, (current) => {
           const done = Node.map(
             Node.succeed(current),
-            Node.capture({}, (real): PhaseDone | null =>
-              real === null ? null : {
+            Node.capture({ probeCount: probes.length }, function(real): PhaseDone | null {
+              return real === null ? null : {
                 phase: "probes",
-                status: real.passed === probes.length ? "completed" : "partial",
+                status: real.passed === this.probeCount ? "completed" : "partial",
                 summary: real.summary
-              })
+              }
+            })
           )
           if (round >= maxRounds) return done
           return Node.branch(Node.succeed(report), {
-            if: Node.capture({}, (real) => real !== null && real.passed === probes.length),
+            if: Node.capture({ probeCount: probes.length }, function(real) {
+              return real !== null && real.passed === this.probeCount
+            }),
             then: Node.capture({}, () => done),
             else: Node.capture({ round }, () => probeRounds(repo, probes, maxRounds, round + 1, current))
           })
@@ -1282,6 +1341,10 @@ const probeRounds = (
  * wrote no report in 0.x, and settles here as `null`.
  */
 export const Probes = Flow.make("examples/BunPortSmithers/Probes", {
+  description: "Build, probe and fix until the probes pass or rounds run out.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.String, probes: Schema.Array(Probe), maxRounds: Schema.optional(Positive) },
   success: Schema.NullOr(PhaseDone),
   error: AgentAction.AgentFailure,
@@ -1333,7 +1396,9 @@ const mergeAreas = (
   const result = results[index]!
   return after(
     Node.branch(Node.succeed(result), {
-      if: Node.capture({}, (real) => !requireGreen || real.allPass),
+      if: Node.capture({ requireGreen }, function(real) {
+        return !this.requireGreen || real.allPass
+      }),
       then: Node.capture({}, (real) => Merge.call({ repo, area, branch: areaBranch(area), result: real })),
       else: Node.capture({}, () => Node.succeed(null))
     }),
@@ -1367,6 +1432,10 @@ export const ciSignalName = "test-swarm:external-ci"
  * and, as in 0.x, leaves no report: the phase settles as `null`.
  */
 export const Tests = Flow.make("examples/BunPortSmithers/Tests", {
+  description: "Run each test area and merge eligible fixes in order.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     repo: Schema.String,
     areas: Schema.Array(TestArea),
@@ -1398,14 +1467,27 @@ export const Tests = Flow.make("examples/BunPortSmithers/Tests", {
       Node.capture({}, (results) => {
         const merge = after(
           mergeAreas(repo, areas, results, requireGreenBeforeMerge, 0, []),
-          Node.capture({}, (merges) => Node.map(Node.succeed({ results, merges }), testsReport))
+          Node.capture(
+            {},
+            (merges) =>
+              Node.map(
+                Node.succeed({ results, merges }),
+                Node.capture({ implementationVersion: "testsReport/v1" }, testsReport)
+              )
+          )
         )
         if (!awaitExternalCiSignal) return merge
-        return Node.branch(Node.map(WaitFor.action.call({ name: ciSignalName }), Schema.decodeUnknownSync(CiSignal)), {
-          if: Node.capture({}, (signal) => signal.status === "passed"),
-          then: Node.capture({}, () => merge),
-          else: Node.capture({}, () => Node.succeed(null))
-        })
+        return Node.branch(
+          Node.map(
+            WaitFor.action.call({ name: ciSignalName }),
+            Node.capture({ schemaVersion: "CiSignal/v1" }, Schema.decodeUnknownSync(CiSignal))
+          ),
+          {
+            if: Node.capture({}, (signal) => signal.status === "passed"),
+            then: Node.capture({}, () => merge),
+            else: Node.capture({}, () => Node.succeed(null))
+          }
+        )
       })
     )
   })
@@ -1435,6 +1517,10 @@ const sweepLoop = (
 
 /** Phase 7: run every sweep. */
 export const Sweeps = Flow.make("examples/BunPortSmithers/Sweeps", {
+  description: "Repeat focused audits until no findings remain or rounds run out.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.String, sweeps: Schema.Array(Sweep) },
   success: PhaseDone,
   error: AgentAction.AgentFailure,
@@ -1484,7 +1570,6 @@ export const questions = {
 interface Input {
   readonly repo: string
   readonly phases: ReadonlyArray<Phase>
-  readonly baseBranch: string
   readonly files: ReadonlyArray<ZigFile>
   readonly crates: ReadonlyArray<typeof Crate.Type>
   readonly targets: ReadonlyArray<Target>
@@ -1492,7 +1577,6 @@ interface Input {
   readonly areas: ReadonlyArray<TestArea>
   readonly sweeps: ReadonlyArray<Sweep>
   readonly maxConcurrency: number
-  readonly useWorktrees: boolean
   readonly awaitExternalCiSignal: boolean
   readonly unknownApprovalThreshold: number
   readonly broadGateApprovalThreshold: number
@@ -1561,16 +1645,19 @@ const runPhases = (input: Input, plan: Planned.Planned<OperatorPlan | null> | nu
     "lifetimes",
     Node.capture({ input }, () =>
       after(
-        Lifetimes.child({ repo, files: input.files, unknownApprovalThreshold: input.unknownApprovalThreshold }),
+        Lifetimes.child({ repo, files: input.files }),
         Node.capture({ input }, (result) =>
-          gate(
-            questions.lifetimes,
-            result,
-            Node.capture({ input }, (real: LifetimesDone) => real.unknownRate > input.unknownApprovalThreshold),
-            Node.capture({}, (real) =>
-              `Approve lifetime classification quality?\n\n${real.summary}\n\nMetadata: ${
-                json({ unknownRate: real.unknownRate, totalFields: real.totalFields, refutedKeys: real.refutedKeys })
-              }`)
+          Node.andThen(
+            gate(
+              questions.lifetimes,
+              result,
+              Node.capture({ input }, (real: LifetimesDone) => real.unknownRate > input.unknownApprovalThreshold),
+              Node.capture({}, (real) =>
+                `Approve lifetime classification quality?\n\n${real.summary}\n\nMetadata: ${
+                  json({ unknownRate: real.unknownRate, totalFields: real.totalFields, refutedKeys: real.refutedKeys })
+                }`)
+            ),
+            Node.succeed(result)
           ))
       ))
   )
@@ -1588,14 +1675,17 @@ const runPhases = (input: Input, plan: Planned.Planned<OperatorPlan | null> | nu
       after(
         Compile.child({ repo, crates: input.crates }),
         Node.capture({ input }, (result) =>
-          gate(
-            questions.compile,
-            result,
-            Node.capture({ input }, (real: CompileDone) => real.gatedModules > input.broadGateApprovalThreshold),
-            Node.capture({}, (real) =>
-              `Approve compile gate/stub debt?\n\n${real.summary}\n\nMetadata: ${
-                json({ gatedModules: real.gatedModules, failingCrates: real.failingCrates })
-              }`)
+          Node.andThen(
+            gate(
+              questions.compile,
+              result,
+              Node.capture({ input }, (real: CompileDone) => real.gatedModules > input.broadGateApprovalThreshold),
+              Node.capture({}, (real) =>
+                `Approve compile gate/stub debt?\n\n${real.summary}\n\nMetadata: ${
+                  json({ gatedModules: real.gatedModules, failingCrates: real.failingCrates })
+                }`)
+            ),
+            Node.succeed(result)
           ))
       ))
   )
@@ -1629,30 +1719,62 @@ const runPhases = (input: Input, plan: Planned.Planned<OperatorPlan | null> | nu
     "sweeps",
     Node.capture({ input }, () => Sweeps.child({ repo, sweeps: input.sweeps }))
   )
-  const final = Node.map(
-    Node.succeed({ plan }),
-    Node.capture({ input }, (real): Final => {
-      const ran = requested(input, real.plan ?? null)
-      return {
-        status: "completed",
-        phasesRun: ran,
-        summary: `Bun port Smithers workflow completed ${ran.length} phase(s).`,
-        nextActions: [
-          "Inspect child run reports and Smithers scores.",
-          "Use timeline/fork/replay for any failed or low-confidence node."
-        ]
-      }
-    })
-  )
-  return Node.andThen(
+  return after(
     lifetimes,
-    Node.andThen(
-      phaseA,
-      Node.andThen(
-        compile,
-        Node.andThen(ungate, Node.andThen(probes, Node.andThen(tests, Node.andThen(sweeps, final))))
-      )
-    )
+    Node.capture({ input }, (lifetimesResult) =>
+      after(
+        phaseA,
+        Node.capture({ input }, (phaseAResult) =>
+          after(
+            compile,
+            Node.capture({ input }, (compileResult) =>
+              after(
+                ungate,
+                Node.capture({ input }, (ungateResult) =>
+                  after(
+                    probes,
+                    Node.capture({ input }, (probesResult) =>
+                      after(
+                        tests,
+                        Node.capture({ input }, (testsResult) =>
+                          after(
+                            sweeps,
+                            Node.capture({ input }, (sweepsResult) =>
+                              Node.map(
+                                Node.succeed({
+                                  plan,
+                                  reports: {
+                                    lifetimes: lifetimesResult,
+                                    phaseA: phaseAResult,
+                                    compile: compileResult,
+                                    ungate: ungateResult,
+                                    probes: probesResult,
+                                    tests: testsResult,
+                                    sweeps: sweepsResult
+                                  }
+                                }),
+                                Node.capture({ input }, (real): Final => {
+                                  const ran = requested(input, real.plan ?? null)
+                                  const status = ran.some((phase) => real.reports[phase]?.status !== "completed")
+                                    ? "partial"
+                                    : "completed"
+                                  return {
+                                    status,
+                                    phasesRun: ran,
+                                    summary: `Bun port Smithers workflow ${status} ${ran.length} phase(s).`,
+                                    nextActions: [
+                                      "Inspect child run reports and Smithers scores.",
+                                      "Use timeline/fork/replay for any failed or low-confidence node."
+                                    ]
+                                  }
+                                })
+                              ))
+                          ))
+                      ))
+                  ))
+              ))
+          ))
+      ))
   )
 }
 
@@ -1672,11 +1794,15 @@ const askOperator = (input: Input) =>
 
 /** The pack's entrypoint. */
 export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {
+  description:
+    "Run Bun's Zig-to-Rust port pipeline: classify ownership, port files, compile by crate tier, ungate, probe, swarm tests, sweep.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     repo: Schema.optional(Schema.String),
     phases: Schema.optional(Schema.Array(Phase)),
     requireOperatorPlan: Schema.optional(Schema.Boolean),
-    baseBranch: Schema.optional(Schema.String),
     files: Schema.optional(Schema.Array(ZigFile)),
     crates: Schema.optional(Schema.Array(Crate)),
     targets: Schema.optional(Schema.Array(Target)),
@@ -1684,7 +1810,6 @@ export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {
     areas: Schema.optional(Schema.Array(TestArea)),
     sweeps: Schema.optional(Schema.Array(Sweep)),
     maxConcurrency: Schema.optional(Positive),
-    useWorktrees: Schema.optional(Schema.Boolean),
     awaitExternalCiSignal: Schema.optional(Schema.Boolean),
     unknownApprovalThreshold: Schema.optional(Fraction),
     broadGateApprovalThreshold: Schema.optional(Count)
@@ -1700,7 +1825,6 @@ export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {
     const input: Input = {
       repo: payload.repo ?? ".",
       phases: payload.phases ?? phases,
-      baseBranch: payload.baseBranch ?? "main",
       files: payload.files ?? [],
       crates: payload.crates ?? [],
       targets: payload.targets ?? [],
@@ -1708,7 +1832,6 @@ export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {
       areas: payload.areas ?? [],
       sweeps: payload.sweeps ?? [],
       maxConcurrency: payload.maxConcurrency ?? 8,
-      useWorktrees: payload.useWorktrees ?? true,
       awaitExternalCiSignal: payload.awaitExternalCiSignal ?? false,
       unknownApprovalThreshold: payload.unknownApprovalThreshold ?? 0.05,
       broadGateApprovalThreshold: payload.broadGateApprovalThreshold ?? 20

@@ -157,6 +157,11 @@ export const Output = AgentAction.make("examples/DynamicSchemaEnricher/Output", 
 
 /** The flow: context, resolve, extract, output. */
 export const DynamicSchemaEnricher = Flow.make("examples/DynamicSchemaEnricher", {
+  description:
+    "Identify a document's family, resolve the output schema for it at run time, and extract into that shape.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     document: Schema.optional(Schema.String),
     source: Schema.optional(Schema.String),

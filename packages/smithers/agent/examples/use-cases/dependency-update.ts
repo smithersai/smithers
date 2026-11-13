@@ -10,7 +10,7 @@
  * updates back for manual review.
  *
  * 0.x re-rendered its tree once the scan landed; here the updates run in a `.child()` flow whose body plans over the real scan.
- * 0.x verified with an agent told to run the suite; here verification is a deterministic `Action` a host implements, because the 1.0 completion brake refuses an agent's report of commands its run never recorded.
+ * 0.x verified with an agent told to run the suite; here verification is a deterministic `Action` a host implements, because a host that arms `claimCap` refuses an agent's report of commands its run never recorded.
  * `ScanFixVerify` does not fit: it rescans until clean and fixes every issue the scan returns, where 0.x scanned once and held major and breaking updates back.
  * 0.x gave the agents `bash`, `read` and `edit` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
@@ -127,6 +127,10 @@ const autoUpdatable = (dependency: Dependency) => !dependency.breaking && depend
  * directly instead of branching on a planned value.
  */
 export const UpdateCandidates = Flow.make("examples/DependencyUpdate/UpdateCandidates", {
+  description: "Update each eligible dependency and check the result.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: { directory: Schema.String, outdated: Schema.Array(Dependency) },
   success: Schema.Array(UpdateResult),
   body: Node.capture({}, ({ directory, outdated }) => {
@@ -165,6 +169,10 @@ const report = ({ scan, updates, verify }: {
 
 /** The flow: scan, update the safe candidates, verify when anything reported back, report. */
 export const DependencyUpdate = Flow.make("examples/DependencyUpdate", {
+  description: "Find outdated dependencies, update the safe ones in parallel, verify, and report.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: {
     directory: Schema.String,
     checkCmd: Schema.optional(Schema.String),

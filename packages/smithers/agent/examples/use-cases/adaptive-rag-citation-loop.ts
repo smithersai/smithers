@@ -344,6 +344,11 @@ const round = (
 
 /** The flow. `maxIterations` is real at plan time, so it sets how many rounds the plan holds. */
 export const AdaptiveRagCitationLoop = Flow.make("examples/AdaptiveRagCitationLoop", {
+  description:
+    "Route a question, gather evidence in parallel, and redraft a cited answer until a citation judge accepts it.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     question: Schema.String,
     riskPolicy: Schema.optional(Schema.String),

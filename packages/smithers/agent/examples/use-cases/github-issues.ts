@@ -84,6 +84,10 @@ const board = (
 
 /** The flow: triage every open issue, then build the board. */
 export const GitHubIssues = Flow.make("examples/GitHubIssues", {
+  description: "Triage every open issue in a GitHub repository into a board grouped by type.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { repo: Schema.optional(Schema.String) },
   success: Board,
   error: AgentAction.AgentFailure,

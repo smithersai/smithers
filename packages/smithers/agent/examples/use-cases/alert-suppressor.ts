@@ -202,6 +202,11 @@ const summarize = (
 
 /** The flow: dedupe and look up context, classify, dispatch, count. */
 export const AlertSuppressor = Flow.make("examples/AlertSuppressor", {
+  description:
+    "Classify incoming alerts against prior incidents and known-noise rules so only novel or high-risk alerts page a person.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     alerts: Schema.optional(Schema.Array(Alert)),
     noiseRules: Schema.optional(Schema.Array(Schema.Json)),

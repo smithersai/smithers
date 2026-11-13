@@ -3,9 +3,11 @@
  *
  * Port of the 0.x `etl.jsx`. An extractor agent reads the source into
  * records, a transformer agent applies the transformation rules, and a loader
- * agent writes the result to the destination. The transform and load prompts
- * show the first five records and count the rest, and the flow settles with
- * the loader's report.
+ * agent writes the result to the destination. This is a sample-only pipeline:
+ * each later stage receives at most the first five records. Every omitted
+ * record is neither transformed nor loaded; the trailing count is context,
+ * not access to those records. Totals are agent-reported, not verified loads.
+ * The flow settles with the loader's report.
  *
  * 0.x gave the extractor `read`, `bash` and `grep` and the loader `write` and `bash`; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
@@ -125,6 +127,10 @@ const preview = <A>({ records, total }: { readonly records: ReadonlyArray<A>; re
 
 /** The flow: extract, transform, load. */
 export const Etl = Flow.make("examples/Etl", {
+  description: "Extract records from a source, transform them, and load them to a destination.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     source: Schema.String,
     destination: Schema.String,

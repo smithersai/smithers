@@ -4,13 +4,15 @@ import { DurableDeferred, HumanTask } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schedule from "effect/Schedule"
+import * as Schema from "effect/Schema"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BunPortSmithers, layer, phases, questions } from "../../../examples/use-cases/bun-port-smithers.ts"
+import { BunPortSmithers, layer, phases, questions, ZigFile } from "../../../examples/use-cases/bun-port-smithers.ts"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "bun-port-smithers-"))
@@ -424,4 +426,69 @@ it.live("fails the run when the operator denies broad compile gate debt", () =>
     expect(person.shown[0]).toContain("\"gatedModules\":21")
     expect(failure).toEqual({ _tag: "examples/BunPortSmithers/ApprovalDenied", gate: questions.compile })
     expect(log).toEqual(["crate-check http round 1"])
+  }), { timeout: 120_000 })
+
+it("rejects a non-Zig path at the input schema", () => {
+  for (const zig of ["src/a.ts", "", "src/a.zig/", "src/a.zig.bak"]) {
+    expect(Exit.isFailure(Schema.decodeUnknownExit(ZigFile)({ zig }))).toBe(true)
+  }
+  expect(Schema.decodeUnknownSync(ZigFile)({ zig: "src/http/http.zig" })).toEqual({ zig: "src/http/http.zig" })
+})
+
+it.live("rejects invalid file input before spending a model call", () =>
+  Effect.gen(function*() {
+    const { answer, log } = script()
+    const exit = yield* Kit.run(BunPortSmithers, {
+      requireOperatorPlan: false,
+      phases: ["lifetimes"],
+      files: [{ zig: "src/a.ts" }]
+    }, {
+      filename: join(directory, "invalid-file.sqlite"),
+      executionId: "bun-invalid-file",
+      script: answer,
+      actions: layer
+    }).pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(log).toEqual([])
+  }))
+
+it.live("keeps an incomplete phase partial in the final report", () =>
+  Effect.gen(function*() {
+    const { answer } = script()
+    const final = yield* Kit.run(BunPortSmithers, {
+      requireOperatorPlan: false,
+      phases: ["lifetimes"],
+      files
+    }, {
+      filename: join(directory, "partial-phase.sqlite"),
+      executionId: "bun-partial-phase",
+      actions: layer,
+      script: (asked) => {
+        const result = answer(asked)
+        return tag(asked, "OUTPUT_KIND") === "lifetime-verify" ? { ...result as object, refuted: true } : result
+      }
+    })
+    expect(final.status).toBe("partial")
+    expect(final.phasesRun).toEqual(["lifetimes"])
+    expect(final.summary).toContain("partial")
+  }), { timeout: 120_000 })
+
+it.live("reports a requested phase with no result as partial", () =>
+  Effect.gen(function*() {
+    const { answer } = script()
+    const final = yield* Kit.run(BunPortSmithers, {
+      requireOperatorPlan: false,
+      phases: ["phaseA"],
+      files
+    }, {
+      filename: join(directory, "null-phase.sqlite"),
+      executionId: "bun-null-phase",
+      actions: layer,
+      script: (asked) => {
+        const result = answer(asked)
+        return tag(asked, "OUTPUT_KIND") === "phase-a-verify" ? { ...result as object, issues: [] } : result
+      }
+    })
+    expect(final.status).toBe("partial")
+    expect(final.phasesRun).toEqual(["phaseA"])
   }), { timeout: 120_000 })

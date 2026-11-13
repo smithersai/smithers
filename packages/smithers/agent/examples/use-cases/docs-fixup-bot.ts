@@ -162,6 +162,10 @@ export const OpenPullRequest = Action.make("examples/DocsFixupBot/OpenPullReques
 
 /** The flow: scan, repair, then verify and open the pull request side by side. */
 export const DocsFixupBot = Flow.make("examples/DocsFixupBot", {
+  description: "Scan docs for broken examples and drift, repair them, and verify the repair beside a pull request.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
   payload: {
     docGlobs: Schema.optional(Schema.Array(Schema.String)),
     srcGlobs: Schema.optional(Schema.Array(Schema.String)),

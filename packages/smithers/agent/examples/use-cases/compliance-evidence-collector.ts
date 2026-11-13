@@ -164,6 +164,10 @@ const attributed = (pair: Pair) =>
  * execution, so its payload is the real plan when its body plans the fan-out.
  */
 export const FetchEvidence = Flow.make("examples/ComplianceEvidenceCollector/FetchEvidence", {
+  description: "Collect evidence for the requested compliance controls.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { controls: Schema.Array(PlannedControl), concurrency: Positive, timeoutMs: Positive },
   success: Schema.Array(EvidenceItem),
   body: Node.capture({}, ({ concurrency, controls, timeoutMs }) => {
@@ -195,6 +199,10 @@ export const FetchEvidence = Flow.make("examples/ComplianceEvidenceCollector/Fet
 
 /** Normalizes every collected evidence item, once all of them are in. */
 export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector/NormalizeEvidence", {
+  description: "Normalize the collected evidence into a consistent report.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { evidence: Schema.Array(EvidenceItem), concurrency: Positive },
   success: Schema.Array(Normalized),
   error: AgentAction.AgentFailure,
@@ -225,6 +233,11 @@ export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector
 
 /** The flow: plan, fetch, normalize, assemble. */
 export const ComplianceEvidenceCollector = Flow.make("examples/ComplianceEvidenceCollector", {
+  description:
+    "Plan the evidence a compliance framework needs, fetch and normalize it in parallel, and assemble a review packet.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     framework: Schema.optional(Schema.String),
     scope: Schema.optional(Schema.Json),

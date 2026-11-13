@@ -237,6 +237,11 @@ const clarify = (
 
 /** The flow: extract, clarify while required fields are missing, validate, submit. */
 export const FormFillerAssistant = Flow.make("examples/FormFillerAssistant", {
+  description:
+    "Extract known form fields, collect the missing required ones over bounded rounds, validate, and submit.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     documents: Schema.optional(Schema.Array(Schema.Json)),
     userInput: Schema.optional(Schema.String),

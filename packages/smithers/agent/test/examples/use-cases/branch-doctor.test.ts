@@ -91,6 +91,7 @@ it.effect("proposes the recovery without running anything by default", () =>
       rootCause: "partial-cherry-pick",
       recoveryCommands: ["git cherry-pick --abort", "git reset --hard ORIG_HEAD"],
       executed: false,
+      succeeded: false,
       summary: "BranchDoctor diagnosed \"partial-cherry-pick\" (severity: medium). "
         + "Recovery plan: 2 commands (risk: low). Dry-run only — no commands were executed. "
         + "Manual steps still needed: re-apply abc123 by hand"
@@ -115,6 +116,7 @@ it.effect("runs only the safe commands when asked to execute", () =>
       "execute in /repo: git cherry-pick --abort"
     ])
     expect(output.executed).toBe(true)
+    expect(output.succeeded).toBe(true)
     expect(output.summary).toBe(
       "BranchDoctor diagnosed \"partial-cherry-pick\" (severity: medium). "
         + "Recovery plan: 2 commands (risk: low). Executed 1 safe commands, skipped 1 unsafe. "
@@ -122,7 +124,7 @@ it.effect("runs only the safe commands when asked to execute", () =>
     )
   }))
 
-it.effect("reports an execution with a failing command as not executed", () =>
+it.effect("reports a failed command as executed without claiming success", () =>
   Effect.gen(function*() {
     const { actions, answer } = script(128)
     const output = yield* Kit.run(BranchDoctor, { repoPath: "/repo", autoExecute: true }, {
@@ -132,7 +134,8 @@ it.effect("reports an execution with a failing command as not executed", () =>
       actions
     })
 
-    expect(output.executed).toBe(false)
+    expect(output.executed).toBe(true)
+    expect(output.succeeded).toBe(false)
     expect(output.summary).toContain("Executed 1 safe commands, skipped 1 unsafe.")
   }))
 
@@ -152,4 +155,25 @@ it.effect("skips a command the planner marks safe that is not runnable", () =>
 
     expect(turns.at(-1)).toBe("execute in /repo: git cherry-pick --abort, git rebase --abort")
     expect(output.summary).toContain("Executed 2 safe commands, skipped 2 unsafe.")
+  }))
+
+it.effect("does not dispatch an executor when every recovery command is unsafe", () =>
+  Effect.gen(function*() {
+    const { answer } = script()
+    const output = yield* Kit.run(BranchDoctor, { repoPath: "/repo", autoExecute: true }, {
+      filename: join(directory, "unsafe-only.sqlite"),
+      executionId: "branch-doctor-unsafe-only",
+      script: (asked) =>
+        asked.includes("You are a git recovery planner")
+          ? {
+            commands: [{ command: "git reset --hard", purpose: "discard changes", safe: false }],
+            estimatedRisk: "high",
+            manualStepsRequired: []
+          }
+          : answer(asked),
+      actions: Layer.mergeAll(layer, Execute.toLayer(() => Effect.die("Empty plan dispatched an executor")))
+    })
+    expect(output.executed).toBe(false)
+    expect(output.succeeded).toBe(false)
+    expect(output.summary).toContain("Executed 0 safe commands, skipped 1 unsafe.")
   }))

@@ -7,7 +7,7 @@
  * expected behavior, and a run step runs it. The report marks the issue ready
  * for a fix only when the test failed; nothing in the flow attempts one.
  *
- * 0.x ran the test with an agent told to report the result; here the run is a deterministic `Action` a host implements with the repository's test runner, because the 1.0 completion brake refuses an agent's report of commands its run never recorded.
+ * 0.x ran the test with an agent told to report the result; here the run is a deterministic `Action` a host implements with the repository's test runner, because a host that arms `claimCap` refuses an agent's report of commands its run never recorded.
  * 0.x's `.mdx` prompts were placeholders that printed their props; the prompts here state the same props.
  * 0.x gave the agents `read`, `write` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
@@ -125,6 +125,10 @@ const report = (
 
 /** The flow: analyze, author, run, report. */
 export const FailingTestAuthor = Flow.make("examples/FailingTestAuthor", {
+  description: "Turn an issue or traceback into the smallest failing test before any fix is attempted.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: {
     issue: Schema.optional(IssueReport),
     testDir: Schema.optional(Schema.String),

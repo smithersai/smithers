@@ -238,22 +238,22 @@ const approveThenWrite = (
   request: Planned.Planned<typeof ScheduleRequest.Type>,
   reply: Planned.Planned<typeof Reply.Type>,
   threadId: string,
-  idempotencyKey: string
+  idempotencyKey: Planned.Planned<string>
 ): Node.Node<typeof Outcome.Type, Failure, Requirements> =>
   Node.bindPlanned(
     Node.map(Node.succeed({ reply, idempotencyKey }), Node.capture({}, question)),
-    Node.capture({ threadId, idempotencyKey: idempotencyKey ?? null }, (prompt: Planned.Planned<string>) =>
+    Node.capture({ threadId }, (prompt: Planned.Planned<string>) =>
       Node.branch(
         HumanTask.decode(Approval)(
           HumanTask.action.call({ name: approvalName, kind: "json", prompt, schema: approvalSchema })
         ),
         {
           if: Node.capture({}, (approval) => approval.approved),
-          then: Node.capture({ threadId, idempotencyKey: idempotencyKey ?? null }, (approval) =>
+          then: Node.capture({ threadId }, (approval) =>
             Node.bindPlanned(
               CreateEvent.call({ request, reply, idempotencyKey }),
               Node.capture(
-                { threadId, idempotencyKey: idempotencyKey ?? null },
+                { threadId },
                 (calendarMutation: Planned.Planned<typeof CalendarMutation.Type>) =>
                   Node.andThen(
                     Node.succeed(calendarMutation),
@@ -276,6 +276,10 @@ const approveThenWrite = (
 
 /** The flow: parse, check three sources, rank, draft, approve, write. */
 export const CalendarNegotiator = Flow.make("examples/CalendarNegotiator", {
+  description: "Propose meeting slots and draft a reply, writing the event and the email only after approval.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     message: Schema.optional(Schema.String),
     defaults: Schema.optional(Defaults),
@@ -298,7 +302,7 @@ export const CalendarNegotiator = Flow.make("examples/CalendarNegotiator", {
     preferences = [],
     roomCalendars = [],
     sender = "me",
-    threadId = "manual"
+    threadId
   }) =>
     Node.bindPlanned(
       ParseRequest.call({ message, defaults }),
@@ -309,7 +313,7 @@ export const CalendarNegotiator = Flow.make("examples/CalendarNegotiator", {
         preferences,
         roomCalendars,
         sender,
-        threadId
+        threadId: threadId ?? null
       }, (request: Planned.Planned<typeof ScheduleRequest.Type>) =>
         Node.bindPlanned(
           Node.all({
@@ -317,22 +321,44 @@ export const CalendarNegotiator = Flow.make("examples/CalendarNegotiator", {
             room: CheckAvailability.call({ source: "room", request, calendars: roomCalendars }),
             workHours: CheckPolicy.call({ request, policy })
           }),
-          Node.capture({ idempotencyKey: idempotencyKey ?? null, preferences, sender, threadId }, (checks) =>
-            Node.bindPlanned(
-              RankSlots.call({ request, availability: [checks.organizer, checks.room, checks.workHours], preferences }),
-              Node.capture(
-                { idempotencyKey: idempotencyKey ?? null, sender, threadId },
-                (rankedSlots: Planned.Planned<typeof RankedSlots.Type>) =>
-                  Node.bindPlanned(
-                    DraftReply.call({ request, rankedSlots, sender }),
-                    Node.capture(
-                      { idempotencyKey: idempotencyKey ?? null, threadId },
-                      (reply: Planned.Planned<typeof Reply.Type>) =>
-                        approveThenWrite(request, reply, threadId, idempotencyKey ?? `calendar-${threadId}`)
+          Node.capture(
+            { idempotencyKey: idempotencyKey ?? null, preferences, sender, threadId: threadId ?? null },
+            (checks) =>
+              Node.bindPlanned(
+                RankSlots.call({
+                  request,
+                  availability: [checks.organizer, checks.room, checks.workHours],
+                  preferences
+                }),
+                Node.capture(
+                  { idempotencyKey: idempotencyKey ?? null, sender, threadId: threadId ?? null },
+                  (rankedSlots: Planned.Planned<typeof RankedSlots.Type>) =>
+                    Node.bindPlanned(
+                      DraftReply.call({ request, rankedSlots, sender }),
+                      Node.capture(
+                        { idempotencyKey: idempotencyKey ?? null, threadId: threadId ?? null },
+                        (reply: Planned.Planned<typeof Reply.Type>) =>
+                          Node.bindPlanned(
+                            Node.map(
+                              Node.succeed(request),
+                              Node.capture(
+                                { idempotencyKey: idempotencyKey ?? null, threadId: threadId ?? null },
+                                function(request) {
+                                  return this.idempotencyKey ?? (this.threadId === null
+                                    ? `calendar-${JSON.stringify(request)}`
+                                    : `calendar-${this.threadId}`)
+                                }
+                              )
+                            ),
+                            Node.capture({ threadId: threadId ?? null }, function(key: Planned.Planned<string>) {
+                              return approveThenWrite(request, reply, this.threadId ?? "manual", key)
+                            })
+                          )
+                      )
                     )
-                  )
+                )
               )
-            ))
+          )
         ))
     ))
 })

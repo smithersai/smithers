@@ -158,6 +158,11 @@ const flagged = ({ results }: typeof Validation.Type) => ({
 
 /** The flow: extract, validate, route the flagged invoices. */
 export const InvoiceApprovalWatch = Flow.make("examples/InvoiceApprovalWatch", {
+  description:
+    "Extract incoming invoices, check them against approval rules, and queue the flagged ones for approvers.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     source: Schema.optional(Schema.String),
     files: Schema.optional(Schema.NullOr(Schema.Array(Schema.Json))),

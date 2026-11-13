@@ -180,6 +180,10 @@ const cluster = ({ errors }: Ingested): Clusters => {
 
 /** The flow: ingest, cluster, explain, update the knowledge base. */
 export const ErrorClusterer = Flow.make("examples/ErrorClusterer", {
+  description: "Group recurring errors into clusters and keep a remediation knowledge base current.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     sources: Schema.optional(Schema.Array(Source)),
     logPaths: Schema.optional(Schema.Array(Schema.String)),

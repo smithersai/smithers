@@ -382,6 +382,10 @@ const Fanout = Schema.Int.check(Schema.isGreaterThan(0))
 
 /** Fans the finders out over the recon's subsystems. */
 export const FindAll = Flow.make("examples/DefendingCode/FindAll", {
+  description: "Find candidate defects across the requested areas.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: { subsystems: Schema.Array(Subsystem), work: Schema.String, binary: Schema.String, fanout: Fanout },
   success: Schema.Array(Find),
   body: Node.capture({}, ({ binary, fanout, subsystems, work }) => {
@@ -400,6 +404,10 @@ export const FindAll = Flow.make("examples/DefendingCode/FindAll", {
 
 /** Re-verifies each crash the finders reported. */
 export const VerifyAll = Flow.make("examples/DefendingCode/VerifyAll", {
+  description: "Verify each candidate defect against its reproduction.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: { finds: Schema.Array(Find), work: Schema.String, binary: Schema.String, fanout: Fanout },
   success: Schema.Array(Verify),
   body: Node.capture({}, ({ binary, fanout, finds, work }) => {
@@ -418,6 +426,10 @@ export const VerifyAll = Flow.make("examples/DefendingCode/VerifyAll", {
 
 /** Writes one report per unique bug. */
 export const ReportAll = Flow.make("examples/DefendingCode/ReportAll", {
+  description: "Write the verified defect reports.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: { bugs: Schema.Array(UniqueBug), work: Schema.String, fanout: Fanout },
   success: Schema.Array(Report),
   body: Node.capture({}, ({ bugs, fanout, work }) =>
@@ -490,6 +502,10 @@ const triage = (
 
 /** The seven-stage pipeline. */
 export const DefendingCode = Flow.make("examples/DefendingCode", {
+  description: "Find memory-safety bugs in a C target by crashing it under AddressSanitizer, then patch them.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: { runId: RunId, fanout: Schema.optional(Fanout) },
   success: Summary,
   error: Schema.Union([AgentAction.AgentFailure, BuildFailed]),

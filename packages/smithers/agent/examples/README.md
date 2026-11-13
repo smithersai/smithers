@@ -37,6 +37,47 @@ one test:
 pnpm exec vitest run test/examples/use-cases/triage.test.ts
 ```
 
+The shared kit uses stable callback admission. Declare every semantic capture
+with `Node.capture` and read the frozen snapshot through `this` in a function
+expression. Include an implementation version when a callback delegates to a
+helper; bump it when that helper changes. Raw callbacks are refused before
+dispatch.
+
+The first use-case collection declares literal catalog descriptions, capability
+ceilings and effect envelopes. The scripted agents have no tools, so their
+resource lists are empty. Examples with host-specific command, repository or
+publishing actions declare `modelInvocable: false`. A live host supplies those
+implementations and the tools and resource declarations its work requires.
+
+`branch-doctor` reports `executed` when at least one command ran and `succeeded`
+when those commands all succeeded. An empty safe-command list dispatches no
+executor. The command watchdog, flake hunter and Bun port accept agent-reported
+command evidence and explicitly set `claimCap: 0` for those steps. A positive
+host `claimCap` arms completion verification for steps that do not override it;
+omitting it leaves that brake off.
+
+`dstack.main(input, executionId, env, database)` requires an execution id. Reuse
+that id and database to resume the recorded run; choose a new id for new work.
+The standalone command takes the input JSON followed by the execution id.
+
+The calendar example uses an explicit `idempotencyKey` first, then `threadId`.
+When neither is supplied, it derives the write key from the complete parsed
+scheduling request. The event and reply share that key; repeating the same
+request retains it.
+
+The ETL port is sample-only: it passes at most five records to transform and at
+most five transformed records to load. Omitted records are never processed by
+later stages. Counts are agent reports, not verified loads.
+
+The Bun port validates `.zig` paths before any phase starts and reports
+`partial` if a requested phase returns `partial`, `failed` or no report.
+`unknownApprovalThreshold` belongs to the parent approval gate, not the
+lifetime child. Branch selection and worktree placement belong to the host.
+
+Runbook ratification shows the proposed rule and rationale. Its count comes from
+the same supersession list saved with the proposal, so retries and unrelated
+memory writes do not change it.
+
 ## Sandbox filesystem tools
 
 `25-agent-tools-in-sandbox.ts` exposes only `read` and `write`, with

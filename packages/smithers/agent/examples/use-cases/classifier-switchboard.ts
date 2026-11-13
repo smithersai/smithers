@@ -170,6 +170,10 @@ const route = (
  * branching on a planned value.
  */
 export const Switchboard = Flow.make("examples/ClassifierSwitchboard/Switchboard", {
+  description: "Route each classified item to its selected handler.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { items: Schema.Array(IntakeItem), classifications: Schema.Array(Classified) },
   success: Schema.Array(HandlerResult),
   body: Node.capture({}, ({ classifications, items }) => {
@@ -204,6 +208,10 @@ export const Summarize = AgentAction.make("examples/ClassifierSwitchboard/Summar
 
 /** The flow: intake, classify, dispatch, summarize. */
 export const ClassifierSwitchboard = Flow.make("examples/ClassifierSwitchboard", {
+  description: "Normalize incoming items, classify each into one domain, and dispatch it to that domain's handler.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     source: Schema.optional(Schema.String),
     items: Schema.optional(Schema.Array(Schema.Json)),

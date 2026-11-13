@@ -202,8 +202,35 @@ it.live("sends no reply when the calendar write fails", () =>
 
     // The event writer was asked (and re-asked for a correction), the run
     // failed, and the reply, which waits for the event, was never sent.
-    expect(turns).toContain("create event calendar-manual")
+    expect(turns.some((turn) => turn.startsWith("create event calendar-"))).toBe(true)
     expect(turns.some((turn) => turn.startsWith("send reply"))).toBe(false)
     expect(Exit.isFailure(exit)).toBe(true)
     expect(Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "").toContain("StructuredOutputFailure")
   }), { timeout: 60_000 })
+
+it.live(
+  "derives a repeatable write key per parsed request when no thread or key is supplied",
+  () =>
+    Effect.gen(function*() {
+      const keys: Array<string> = []
+      for (const [index, durationMinutes] of [30, 60, 30].entries()) {
+        const { answer } = script()
+        const executionId = "calendar-request-" + index
+        const output = yield* Kit.run(CalendarNegotiator, {
+          defaults: { timezone: "America/New_York", durationMinutes }
+        }, {
+          filename: join(directory, "request-" + index + ".sqlite"),
+          executionId,
+          script: answer,
+          actions: Layer.mergeAll(layer, reviewer(executionId, { approved: true, reviewer: "ops", note: "" }, []))
+        })
+        const key = output.calendarMutation!.idempotencyKey
+        expect(output.emailResult!.idempotencyKey).toBe(key)
+        keys.push(key)
+      }
+      expect(keys[0]).not.toBe(keys[1])
+      expect(keys[0]).toBe(keys[2])
+      expect(keys).not.toContain("calendar-manual")
+    }),
+  { timeout: 120_000 }
+)

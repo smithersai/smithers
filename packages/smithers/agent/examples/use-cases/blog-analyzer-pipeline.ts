@@ -128,6 +128,10 @@ const sample = ({ ingest }: { readonly ingest: typeof Ingest.Type }) => ({
 
 /** The pipeline: ingest, analyze a sample, report. */
 export const BlogAnalyzerPipeline = Flow.make("examples/BlogAnalyzerPipeline", {
+  description: "Ingest blog posts, analyze their topics and sentiment, and report editorial insights.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: {
     source: Schema.String,
     format: Schema.optional(Schema.String),

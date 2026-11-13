@@ -47,6 +47,19 @@
 
 ### Fixed
 
+- The first collection of agent use cases now declares catalog metadata and
+  complete captures for sampling, probe counts and merge policy. Host-specific
+  flows stay out of model catalogs, and agent-reported command evidence is
+  explicitly exempt from a host's completion brake (#4950).
+- `branch-doctor` distinguishes commands running from commands succeeding and
+  skips empty execution plans. Dstack accepts a reusable execution id, calendar
+  requests without a conversation id get distinct write keys, and the Bun port
+  rejects invalid paths before work and preserves incomplete phase results
+  (#4950).
+- Runbook approval shows the proposed rule and rationale and retains the right
+  superseded-lesson count after a retried acceptance. The ETL example now
+  documents that its five-record sample omits later records (#4950).
+
 - The `sql-analyst-dashboard` example now asks a person before running SQL
   that lacks a `LIMIT` or fails another safety check, and shows the SQL in the
   question. SQL marked as not read-only never runs, even with approval.

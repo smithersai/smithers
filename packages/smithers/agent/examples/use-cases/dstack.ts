@@ -95,6 +95,10 @@ issues. Keep the diff minimal — do not rewrite unrelated code.`
 
 /** The flow: review, then patch what the review found. */
 export const Dstack = Flow.make("examples/Dstack", {
+  description: "Review a code snippet and propose a patch with Kimi K2 served by dstack on your own GPUs.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  modelInvocable: true,
   payload: { filename: Schema.optional(Schema.String), code: Schema.String },
   success: Output,
   error: AgentAction.AgentFailure,
@@ -180,7 +184,7 @@ export interface LiveOptions {
 /**
  * The live composition: the flow's steps over seats on the endpoint, journaled
  * durably in `database` so a run interrupted while the service scales resumes
- * from its last finished step.
+ * from its last finished step when restarted with the same execution id.
  */
 export const liveLayer = (endpoint: Endpoint, database: string, options: LiveOptions = {}) => {
   const seats = endpointSeats(endpoint).pipe(Layer.provide(options.executor ?? executorLayer))
@@ -214,22 +218,28 @@ export const liveLayer = (endpoint: Endpoint, database: string, options: LiveOpt
   )
 }
 
-/** Reviews and patches one snippet against the endpoint `env` names. */
+/** Reviews and patches one snippet; reuse `executionId` to resume its recorded steps. */
 export const main = (
   input: typeof Dstack.payloadSchema.Type,
+  executionId: string,
   env: Readonly<Record<string, string | undefined>> = process.env,
-  database = "dstack.sqlite"
+  database = "dstack.sqlite",
+  options: LiveOptions = {}
 ) =>
   Effect.suspend(() =>
     Effect.scoped(
-      Dstack.execute(input, { executionId: `dstack-${Date.now()}` }).pipe(
-        Effect.provide(liveLayer(endpointFromEnv(env), database))
+      Dstack.execute(input, { executionId }).pipe(
+        Effect.provide(liveLayer(endpointFromEnv(env), database, options))
       )
     )
   )
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  Effect.runPromise(main(JSON.parse(process.argv[2] ?? "{}"))).then(
+  const executionId = process.argv[3]
+  if (executionId === undefined || executionId.length === 0) {
+    throw new Error("Usage: dstack <input-json> <execution-id>; reuse the id to resume.")
+  }
+  Effect.runPromise(main(JSON.parse(process.argv[2] ?? "{}"), executionId)).then(
     (result) => console.log(JSON.stringify(result, null, 2)),
     (error) => {
       console.error("FAILED:", error)

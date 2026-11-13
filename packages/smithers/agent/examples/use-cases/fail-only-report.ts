@@ -10,7 +10,7 @@
  *
  * 0.x ran each command through a runner agent; here {@link RunCommand} is a deterministic `Action.make` step, so a green run spends one model call, the analyzer's.
  * 0.x's runner timeout failed the task; here a timed-out command is a result with exit code 124 and a timeout note, which is how 0.x's run prompt asked the runner to report it.
- * The analyzer and the report agent answer about results they are handed, so they set `claimCap: 0`; the completion brake would otherwise refuse them for naming commands their own sessions never ran.
+ * The analyzer and the report agent answer about results they are handed, so they set `claimCap: 0`; a host that arms `claimCap` would otherwise refuse them for naming commands their own sessions never ran.
  * `DriftDetector` does not fit: 0.x compares against no baseline, and its analyzer reads only the commands' own output.
  * 0.x gave the agents `bash` and `read` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
@@ -249,6 +249,10 @@ const Positive = Schema.Int.check(Schema.isGreaterThan(0))
 
 /** The flow: run, analyze, and report only what is notable. */
 export const FailOnlyReport = Flow.make("examples/FailOnlyReport", {
+  description: "Run commands, and ask for a root-cause report only when a result is notable.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "compensable" },
+  modelInvocable: false,
   payload: {
     commands: Schema.optional(Schema.Array(Command)),
     directory: Schema.optional(Schema.String),

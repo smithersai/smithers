@@ -187,7 +187,7 @@ export const ProposeRule = Action.make("examples/IncidentRunbookMemory/ProposeRu
  * idempotency key.
  */
 export const RatifyRule = Action.make("examples/IncidentRunbookMemory/Ratify", {
-  payload: { ruleNoteId: Schema.String },
+  payload: { ruleNoteId: Schema.String, supersedes: Schema.Array(Schema.String) },
   success: Ratification,
   error: MemoryError,
   nondeterministic: true,
@@ -197,18 +197,27 @@ export const RatifyRule = Action.make("examples/IncidentRunbookMemory/Ratify", {
 
 /** The ratification a person must approve. */
 export const Ratify = Flow.make("examples/IncidentRunbookMemory/RatifyRule", {
-  payload: { ruleNoteId: Schema.String },
+  description: "Accept the approved runbook rule and report the lessons it supersedes.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: false,
+  payload: { ruleNoteId: Schema.String, supersedes: Schema.Array(Schema.String) },
   success: Ratification,
   error: MemoryError,
-  body: Node.capture({}, ({ ruleNoteId }) => RatifyRule.call({ ruleNoteId }))
+  body: Node.capture({}, ({ ruleNoteId, supersedes }) => RatifyRule.call({ ruleNoteId, supersedes }))
 })
 
 /** Asks a person, then ratifies only after approval. */
-const gatedRatify = (ruleNoteId: Planned.Planned<string>) =>
+const gatedRatify = (
+  ruleNoteId: Planned.Planned<string>,
+  distilled: Planned.Planned<typeof Distilled.Type>,
+  supersedes: Planned.Planned<ReadonlyArray<string>>
+) =>
   Node.bindPlanned(
     Node.map(
-      Node.succeed({ ruleNoteId }),
-      Node.capture({}, ({ ruleNoteId }) => `Ratify the distilled runbook rule\n\n${ruleNoteId}`)
+      Node.succeed({ ruleNoteId, distilled }),
+      Node.capture({}, ({ ruleNoteId, distilled }) =>
+        `Ratify the distilled runbook rule\n\n${distilled.rule}\n\nRationale: ${distilled.rationale}\n\nNote: ${ruleNoteId}`)
     ),
     Node.capture({}, (prompt: Planned.Planned<string>) =>
       Node.branch(
@@ -216,8 +225,10 @@ const gatedRatify = (ruleNoteId: Planned.Planned<string>) =>
           HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema })
         ),
         {
-          if: Node.capture({}, (answer) => answer.approved),
-          then: Node.capture({}, () => Ratify.call({ ruleNoteId })),
+          if: Node.capture({}, (answer) =>
+            answer.approved),
+          then: Node.capture({}, () =>
+            Ratify.call({ ruleNoteId, supersedes })),
           else: Node.capture({}, (answer) =>
             Node.bindPlanned(
               Node.map(Node.succeed({ note: answer.note }), Node.capture({}, ({ note }) => new RuleDenied({ note }))),
@@ -243,7 +254,7 @@ const distill = (topic: string, recall: Planned.Planned<typeof Recall.Type>) =>
         ProposeRule.call({ topic, distilled, lessonIds: recall.lessonIds }),
         Node.capture({}, (proposal: Planned.Planned<typeof Proposal.Type>) =>
           Node.bindPlanned(
-            gatedRatify(proposal.ruleNoteId),
+            gatedRatify(proposal.ruleNoteId, distilled, recall.lessonIds),
             Node.capture(
               {},
               (ratification: Planned.Planned<typeof Ratification.Type | null>) =>
@@ -260,6 +271,11 @@ const distill = (topic: string, recall: Planned.Planned<typeof Recall.Type>) =>
  * before it with `Node.andThen`, as 0.x's sequence did.
  */
 export const IncidentRunbookMemory = Flow.make("examples/IncidentRunbookMemory", {
+  description:
+    "Triage each incident with everything learned so far, bank new lessons, and compress recurring ones into ratified runbook rules.",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  modelInvocable: true,
   payload: { incident: Schema.optional(Schema.String), topic: Schema.optional(Schema.String) },
   success: Output,
   error: Schema.Union([AgentAction.AgentFailure, MemoryError, HumanTask.HumanTaskFailed, RuleDenied]),
@@ -369,13 +385,13 @@ const memorySteps = Layer.mergeAll(
       return { ruleNoteId: note.id, rationale: distilled.rationale }
     })
   ),
-  RatifyRule.toLayer(({ ruleNoteId }) =>
+  RatifyRule.toLayer(({ ruleNoteId, supersedes }) =>
     Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
-      const before = (yield* store.listNotes({ namespace })).length
       yield* store.setNoteStatus({ id: ruleNoteId, status: "accepted" })
-      const after = (yield* store.listNotes({ namespace })).length
-      return { ratifiedNoteId: ruleNoteId, supersededCount: before - after + 1 }
+      // ProposeRule persisted these edges with the pending note. Unlike live
+      // namespace counts, that list is unchanged by acceptance or other writes.
+      return { ratifiedNoteId: ruleNoteId, supersededCount: new Set(supersedes).size }
     })
   )
 ).pipe(Layer.provide(Layer.orDie(MemoryStore.layer)))
