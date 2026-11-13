@@ -6864,3 +6864,218 @@ Checked in a `node26` box: a bare run before `wiki:build` stops on that message,
 A run by module ran both. `mutations.py` now stops on a duplicate name, so `MutationRegistry` (the `--check` run) fails
 first; the worker case is `api-route-wiki`. Both mutants rejected.
 
+## The whole gate on one main revision (vl-proveall3, 2026-11-13)
+
+**Result.** On main `f3ca4a2fe1a6`, every production proof source proves and every mutant is rejected:
+
+| Gate | Result |
+| --- | --- |
+| `pnpm verify` (`check.sh` over all 84 `//@ verify` sources) | 84/84 files, 20,064 obligations, 0 errors |
+| `verify:broken` (84 modules) | 2,880/2,880 mutants rejected: 0 survived, 0 invalid, 0 missing |
+| `runtime_broken.py` (adapter mutations) | 3/3 rejected |
+| Inventory (`node verify/inventory.cjs`) | 4,039 rows, 0 "Not yet proved" |
+
+**How it ran.** One shard per file group on `run-heavy --where cfbox --image node26` boxes (4 vCPU, 12 GB, lsc
+0.6.6-smthrs.1, Dafny 4.11.0), at most 4 at once, from the workspace tree packed at each job's start (the driver
+refuses to start a job if the workspace moved). Each box installs the app, rebuilds lsc and the wiki, then runs
+`check.sh` or `broken.sh --module` with `CHECK_JOBS` 1 (heavy proofs) or 2. Wall time 07:28 to 09:22 UTC; no shard
+was interrupted. A mutant counts only by `validate_rejection`: a Dafny failure of the mutated function's own
+contract, not a timeout or a tool error.
+
+| Shard | Files | Box job | Command s | Exit |
+| --- | ---: | --- | ---: | ---: |
+| proof-heavy | 7 | `b24f6a563126ce03382fdb71` | 2,148 | 0 |
+| proof-1 | 26 | `36830987a4afc5660250bd49` | 356 | 0 |
+| proof-2 | 26 | `8d39b037ab8e251e63f216dd` | 349 | 0 |
+| proof-3 (+ runtime) | 25 | `a13d8d974aa9ac3a273ce7c3` | 659 | 0 |
+| broken-conversation | 1 | `0480f47e832f9e8f796612c7` | 3,353 | 0 |
+| broken-heavy | 6 | `ad0d5ca040fcf1f9e5c5edcf` | 2,760 | 0 |
+| broken-1 | 12 | `c78c49735218ab725cd562f6` | 1,558 | 0 |
+| broken-2 | 13 | `2d0bd248e54dcc1439a89dc0` | 1,858 | 0 |
+| broken-3 | 13 | `a30062a9ea838b131da62546` | 945 | 0 |
+| broken-4 | 13 | `2b9437101fde3df6ae392bfc` | 952 | 0 |
+| broken-5 | 13 | `da2cc43cdc8176dedb565d91` | 946 | 0 |
+| broken-6 | 13 | `6b6c9d8782ef6a2874059084` | 953 | 0 |
+
+**Per file.** Seconds are Dafny's for the file; obligations are Dafny's verified count.
+
+| File | Obligations | Seconds | Shard | Box job |
+| --- | ---: | ---: | --- | --- |
+| `scripts/scriptDecision.vibe` | 3 | 2.2 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/actions/actionHostDecision.vibe` | 19 | 2.9 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/actions/catalogDecision.vibe` | 4 | 2.1 | proof-heavy | `b24f6a563126ce03382fdb71` |
+| `src/core/accountCookieDecision.vibe` | 8 | 2.7 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/actionRunDecision.vibe` | 8 | 2.5 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/clientProtocolDecision.vibe` | 4 | 2.0 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/conversation.vibe` | 15288 | 1490.8 | proof-heavy | `b24f6a563126ce03382fdb71` |
+| `src/core/decide.vibe` | 748 | 89.7 | proof-heavy | `b24f6a563126ce03382fdb71` |
+| `src/core/flowDecision.vibe` | 19 | 3.0 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/flowPolicyDecision.vibe` | 16 | 2.6 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/followDecision.vibe` | 2 | 1.9 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/identityDecision.vibe` | 1 | 2.1 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/issueFixtureDecision.vibe` | 15 | 2.9 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/issueGraphDecision.vibe` | 57 | 18.5 | proof-heavy | `b24f6a563126ce03382fdb71` |
+| `src/core/issueHostDecision.vibe` | 26 | 3.2 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/liveAnswerDecision.vibe` | 4 | 2.1 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/machineDecision.vibe` | 18 | 2.7 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/mockDecision.vibe` | 129 | 5.5 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/mockFactoryDecision.vibe` | 13 | 2.7 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/protocolDecision.vibe` | 14 | 2.7 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/replayDecision.vibe` | 2051 | 283.8 | proof-heavy | `b24f6a563126ce03382fdb71` |
+| `src/core/replyDecision.vibe` | 12 | 2.7 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/sandboxDecision.vibe` | 35 | 5.5 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/sandboxHostDecision.vibe` | 37 | 3.4 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/sandboxMockDecision.vibe` | 6 | 2.3 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/sequenceDecision.vibe` | 17 | 3.2 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/sequencerDecision.vibe` | 14 | 3.1 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/specificationDecision.vibe` | 5 | 2.3 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/toolRefusalDecision.vibe` | 6 | 2.7 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/tourDecision.vibe` | 10 | 2.4 | proof-heavy | `b24f6a563126ce03382fdb71` |
+| `src/core/wikiBuildDecision.vibe` | 85 | 7.1 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/core/wikiDecision.vibe` | 1 | 2.0 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/core/wikiLinkDecision.vibe` | 16 | 3.1 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/core/wikiPageDecision.vibe` | 20 | 3.2 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/history/areaDecision.vibe` | 42 | 5.2 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/history/bucketDecision.vibe` | 20 | 6.6 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/history/exportDecision.vibe` | 12 | 2.7 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/history/flowMachine.vibe` | 27 | 3.8 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/history/mockMainDecision.vibe` | 16 | 3.3 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/history/mythical.vibe` | 43 | 44.9 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/history/pageDecision.vibe` | 23 | 3.0 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/history/replayDecision.vibe` | 32 | 34.1 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/history/seedDecision.vibe` | 27 | 4.8 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/history/seedInputDecision.vibe` | 25 | 3.6 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/history/seedSanitizeDecision.vibe` | 36 | 4.1 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/history/seedTextDecision.vibe` | 37 | 7.2 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/history/stackDecision.vibe` | 13 | 2.6 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/history/toolDecision.vibe` | 2 | 2.2 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/history/trailerDecision.vibe` | 54 | 7.3 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/history/wireDecision.vibe` | 10 | 2.7 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/surfaces/commandDecision.vibe` | 22 | 3.4 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/surfaces/processDecision.vibe` | 4 | 2.1 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/web/accountViewDecision.vibe` | 19 | 3.2 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/web/actionFollowDecision.vibe` | 15 | 3.3 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/web/actionViewDecision.vibe` | 34 | 4.5 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/web/armDecision.vibe` | 7 | 2.4 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/web/historyDecision.vibe` | 40 | 4.1 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/web/historyViewDecision.vibe` | 16 | 2.8 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/web/issueDecision.vibe` | 25 | 23.1 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/web/issuesViewDecision.vibe` | 47 | 4.5 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/web/markdownDecision.vibe` | 149 | 12.4 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/web/modelDecision.vibe` | 74 | 5.7 | proof-heavy | `b24f6a563126ce03382fdb71` |
+| `src/web/modelWrite.vibe` | 60 | 15.9 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/web/paneDecision.vibe` | 19 | 3.2 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/web/screenDecision.vibe` | 45 | 4.0 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/web/screenRead.vibe` | 13 | 6.3 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/web/startupDecision.vibe` | 13 | 2.6 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/web/theatreDecision.vibe` | 12 | 2.9 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/web/tourDecision.vibe` | 22 | 3.1 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/web/updateDecision.vibe` | 17 | 5.6 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `src/web/viewDecision.vibe` | 40 | 4.3 | proof-1 | `36830987a4afc5660250bd49` |
+| `src/web/wikiEditorDecision.vibe` | 10 | 2.6 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `src/web/wikiViewDecision.vibe` | 17 | 3.0 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `worker/accountsDecision.vibe` | 44 | 7.5 | proof-1 | `36830987a4afc5660250bd49` |
+| `worker/actionsDecision.vibe` | 25 | 6.2 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `worker/apiObjectDecision.vibe` | 18 | 3.1 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `worker/budgetDecision.vibe` | 6 | 2.3 | proof-1 | `36830987a4afc5660250bd49` |
+| `worker/draftDecision.vibe` | 4 | 2.1 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `worker/liveDispatchDecision.vibe` | 5 | 2.6 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `worker/mainLogDecision.vibe` | 20 | 4.8 | proof-1 | `36830987a4afc5660250bd49` |
+| `worker/replyProgressDecision.vibe` | 13 | 3.2 | proof-2 | `8d39b037ab8e251e63f216dd` |
+| `worker/replyReasons.vibe` | 4 | 2.5 | proof-3 | `a13d8d974aa9ac3a273ce7c3` |
+| `worker/sandboxWorkerDecision.vibe` | 38 | 5.3 | proof-1 | `36830987a4afc5660250bd49` |
+| `worker/workerDecision.vibe` | 37 | 5.4 | proof-2 | `8d39b037ab8e251e63f216dd` |
+
+**Mutants per module.**
+
+| Module | Rejected | Shard |
+| --- | ---: | --- |
+| `scripts/scriptDecision.vibe` | 3/3 | broken-1 |
+| `src/actions/actionHostDecision.vibe` | 31/31 | broken-4 |
+| `src/actions/catalogDecision.vibe` | 8/8 | broken-heavy |
+| `src/core/accountCookieDecision.vibe` | 14/14 | broken-1 |
+| `src/core/actionRunDecision.vibe` | 13/13 | broken-5 |
+| `src/core/clientProtocolDecision.vibe` | 7/7 | broken-2 |
+| `src/core/conversation.vibe` | 216/216 | broken-conversation |
+| `src/core/decide.vibe` | 39/39 | broken-heavy |
+| `src/core/flowDecision.vibe` | 49/49 | broken-4 |
+| `src/core/flowPolicyDecision.vibe` | 16/16 | broken-5 |
+| `src/core/followDecision.vibe` | 2/2 | broken-3 |
+| `src/core/identityDecision.vibe` | 3/3 | broken-5 |
+| `src/core/issueFixtureDecision.vibe` | 47/47 | broken-3 |
+| `src/core/issueGraphDecision.vibe` | 28/28 | broken-heavy |
+| `src/core/issueHostDecision.vibe` | 46/46 | broken-5 |
+| `src/core/liveAnswerDecision.vibe` | 7/7 | broken-1 |
+| `src/core/machineDecision.vibe` | 40/40 | broken-4 |
+| `src/core/mockDecision.vibe` | 8/8 | broken-5 |
+| `src/core/mockFactoryDecision.vibe` | 19/19 | broken-3 |
+| `src/core/protocolDecision.vibe` | 20/20 | broken-5 |
+| `src/core/replayDecision.vibe` | 8/8 | broken-heavy |
+| `src/core/replyDecision.vibe` | 64/64 | broken-4 |
+| `src/core/sandboxDecision.vibe` | 45/45 | broken-6 |
+| `src/core/sandboxHostDecision.vibe` | 43/43 | broken-1 |
+| `src/core/sandboxMockDecision.vibe` | 6/6 | broken-3 |
+| `src/core/sequenceDecision.vibe` | 20/20 | broken-3 |
+| `src/core/sequencerDecision.vibe` | 16/16 | broken-4 |
+| `src/core/specificationDecision.vibe` | 16/16 | broken-6 |
+| `src/core/toolRefusalDecision.vibe` | 8/8 | broken-1 |
+| `src/core/tourDecision.vibe` | 12/12 | broken-heavy |
+| `src/core/wikiBuildDecision.vibe` | 35/35 | broken-5 |
+| `src/core/wikiDecision.vibe` | 3/3 | broken-4 |
+| `src/core/wikiLinkDecision.vibe` | 9/9 | broken-4 |
+| `src/core/wikiPageDecision.vibe` | 20/20 | broken-4 |
+| `src/history/areaDecision.vibe` | 15/15 | broken-1 |
+| `src/history/bucketDecision.vibe` | 18/18 | broken-2 |
+| `src/history/exportDecision.vibe` | 14/14 | broken-2 |
+| `src/history/flowMachine.vibe` | 65/65 | broken-5 |
+| `src/history/mockMainDecision.vibe` | 15/15 | broken-2 |
+| `src/history/mythical.vibe` | 127/127 | broken-2 |
+| `src/history/pageDecision.vibe` | 19/19 | broken-2 |
+| `src/history/replayDecision.vibe` | 7/7 | broken-5 |
+| `src/history/seedDecision.vibe` | 20/20 | broken-1 |
+| `src/history/seedInputDecision.vibe` | 24/24 | broken-1 |
+| `src/history/seedSanitizeDecision.vibe` | 25/25 | broken-4 |
+| `src/history/seedTextDecision.vibe` | 12/12 | broken-6 |
+| `src/history/stackDecision.vibe` | 20/20 | broken-6 |
+| `src/history/toolDecision.vibe` | 2/2 | broken-6 |
+| `src/history/trailerDecision.vibe` | 22/22 | broken-2 |
+| `src/history/wireDecision.vibe` | 22/22 | broken-3 |
+| `src/surfaces/commandDecision.vibe` | 46/46 | broken-2 |
+| `src/surfaces/processDecision.vibe` | 6/6 | broken-2 |
+| `src/web/accountViewDecision.vibe` | 12/12 | broken-3 |
+| `src/web/actionFollowDecision.vibe` | 17/17 | broken-4 |
+| `src/web/actionViewDecision.vibe` | 31/31 | broken-1 |
+| `src/web/armDecision.vibe` | 7/7 | broken-6 |
+| `src/web/historyDecision.vibe` | 54/54 | broken-5 |
+| `src/web/historyViewDecision.vibe` | 17/17 | broken-3 |
+| `src/web/issueDecision.vibe` | 107/107 | broken-4 |
+| `src/web/issuesViewDecision.vibe` | 38/38 | broken-3 |
+| `src/web/markdownDecision.vibe` | 11/11 | broken-3 |
+| `src/web/modelDecision.vibe` | 161/161 | broken-heavy |
+| `src/web/modelWrite.vibe` | 167/167 | broken-1 |
+| `src/web/paneDecision.vibe` | 52/52 | broken-6 |
+| `src/web/screenDecision.vibe` | 116/116 | broken-3 |
+| `src/web/screenRead.vibe` | 35/35 | broken-6 |
+| `src/web/startupDecision.vibe` | 25/25 | broken-6 |
+| `src/web/theatreDecision.vibe` | 58/58 | broken-2 |
+| `src/web/tourDecision.vibe` | 89/89 | broken-5 |
+| `src/web/updateDecision.vibe` | 83/83 | broken-6 |
+| `src/web/viewDecision.vibe` | 74/74 | broken-6 |
+| `src/web/wikiEditorDecision.vibe` | 27/27 | broken-5 |
+| `src/web/wikiViewDecision.vibe` | 11/11 | broken-6 |
+| `worker/accountsDecision.vibe` | 51/51 | broken-1 |
+| `worker/actionsDecision.vibe` | 19/19 | broken-6 |
+| `worker/apiObjectDecision.vibe` | 29/29 | broken-3 |
+| `worker/budgetDecision.vibe` | 18/18 | broken-5 |
+| `worker/draftDecision.vibe` | 7/7 | broken-4 |
+| `worker/liveDispatchDecision.vibe` | 13/13 | broken-4 |
+| `worker/mainLogDecision.vibe` | 18/18 | broken-1 |
+| `worker/replyProgressDecision.vibe` | 62/62 | broken-3 |
+| `worker/replyReasons.vibe` | 7/7 | broken-2 |
+| `worker/sandboxWorkerDecision.vibe` | 37/37 | broken-2 |
+| `worker/workerDecision.vibe` | 27/27 | broken-2 |
+
+**What this revision does not cover.** `src/web/main.vibe`'s `update` arms are vl-proveall's; the inventory gives
+each its reason. Commits after `f3ca4a2f` are not part of this run: batch 39 (`2ec9acc0`) renamed one mutant and
+added a duplicate-name guard, and other lanes' commits add their own proofs and mutants.
+
