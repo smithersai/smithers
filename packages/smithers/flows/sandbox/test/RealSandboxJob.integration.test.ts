@@ -2,22 +2,22 @@ import { NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import * as Microsandbox from "microsandbox"
-import { spawn, spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import { accessSync, constants, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
+import { discover } from "./helpers/discover.ts"
 import { hostCollector } from "./helpers/hostCollector.ts"
 import { makeWorkSeed } from "./helpers/workSeed.ts"
 
 const guard = process.env.SMITHERS_REAL_SANDBOX_JOB === "1"
-const cached = spawnSync("microsandbox", ["image", "list"], { encoding: "utf8", timeout: 10000 })
+const cached = discover("microsandbox", ["image", "list"])
 const missingHypervisor = (() => {
   if (process.platform === "darwin") {
-    const probe = (name: string) =>
-      spawnSync("sysctl", ["-n", name], { encoding: "utf8", timeout: 10000 }).stdout?.trim()
+    const probe = (name: string) => discover("sysctl", ["-n", name]).stdout.trim()
     return probe("kern.hv_support") !== "1" || probe("kern.hv_vmm_present") === "1"
   }
   if (process.platform !== "linux") return true
@@ -103,7 +103,9 @@ describe.skipIf(!available)("retained Sandbox.job real microVM", () => {
     }
   }, 180000)
 })
-describe.skipIf(available)("retained Sandbox.job capability guard", () => {
-  it(`skips because ${!guard ? "SMITHERS_REAL_SANDBOX_JOB=1 was not supplied" : missingHypervisor ? "this host lacks a usable hypervisor" : "cached node:26-trixie or runnable Microsandbox is absent"}`, () =>
-    expect(available).toBe(false))
-})
+if (!available) {
+  describe("retained Sandbox.job capability guard", () => {
+    it(`skips because ${!guard ? "SMITHERS_REAL_SANDBOX_JOB=1 was not supplied" : missingHypervisor ? "this host lacks a usable hypervisor" : "cached node:26-trixie or runnable Microsandbox is absent"}`, () =>
+      expect(available).toBe(false))
+  })
+}

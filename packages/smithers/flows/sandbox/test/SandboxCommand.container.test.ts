@@ -16,8 +16,9 @@ import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts
 import type * as Sandbox from "../src/Sandbox/index.ts"
 import * as SandboxCommand from "../src/SandboxCommand/index.ts"
 import * as SandboxTools from "../src/SandboxTools/index.ts"
+import { discover } from "./helpers/discover.ts"
 
-const cli = ["docker", "podman"].find((name) => spawnSync(name, ["info"], { stdio: "ignore" }).status === 0)
+const cli = ["docker", "podman"].find((name) => discover(name, ["info"]).status === 0)
 const image = "docker.io/library/debian:trixie-slim"
 const name = `smthrs-command-${process.pid}`
 const calls = "/home/u/calls"
@@ -93,6 +94,12 @@ const settled = (key: string) =>
     }
     return yield* Effect.die("the command never stopped")
   })
+
+describe.skipIf(cli !== undefined)("SandboxTools' container capability guard", () => {
+  it("is skipped because neither Docker nor Podman answers its info command", () => {
+    expect(cli).toBeUndefined()
+  })
+})
 
 describe.skipIf(cli === undefined)("SandboxTools' command scripts in a real container", () => {
   beforeAll(() => {

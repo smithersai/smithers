@@ -168,17 +168,23 @@ const readsOptInEnv = (text, supplied) =>
   envReads(text).some((name) => name !== "CI" && !supplied.has(name))
 
 /**
- * Resolves every identifier in a condition against a `const` in the same file,
- * so the readable idiom — naming the flag once, using it on several suites —
- * is not a way around the guard. The identifier does not have to be the whole
- * condition: `skipIf(token === undefined)` gates on `token` just as
- * `skipIf(!slowTests)` gates on `slowTests`.
+ * Resolves identifiers transitively against same-file const initializers.
+ * Naming an opt-in flag through several capability conditions must not hide
+ * it. Visit each binding once so cycles and shared branches terminate.
  */
 const isOptIn = (condition, source, supplied) => {
-  if (readsOptInEnv(condition, supplied)) return true
-  for (const identifier of condition.matchAll(/[A-Za-z_$][\w$]*/g)) {
-    const binding = source.match(new RegExp(`\\bconst\\s+${identifier[0]}\\s*=([^\\n]*)`))
-    if (binding !== null && readsOptInEnv(binding[1], supplied)) return true
+  const pending = [condition]
+  const seen = new Set()
+  while (pending.length > 0) {
+    const text = pending.pop()
+    if (readsOptInEnv(text, supplied)) return true
+    for (const [identifier] of text.matchAll(/[A-Za-z_$][\w$]*/g)) {
+      if (seen.has(identifier)) continue
+      seen.add(identifier)
+      const escaped = identifier.replaceAll("$", "\\$")
+      const binding = source.match(new RegExp("\\bconst\\s+" + escaped + "\\s*=\\s*([^\\n]*)"))
+      if (binding !== null) pending.push(binding[1])
+    }
   }
   return false
 }

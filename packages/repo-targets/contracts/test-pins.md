@@ -145,7 +145,10 @@ there. `process.env.CI` is a capability gate for the same reason.
 
 Every pin in every package group (`smthrs.group` in each manifest) must appear
 in the table below. `packages/repo-targets/contracts/check-test-pins.mjs` enforces that and CI runs it,
-so a new pin fails the build until it is either fixed or written down here. The
+so a new pin fails the build until it is either fixed or written down here.
+Same-file aliases are followed transitively, with cycles visited once; a
+capability condition that also reads an environment override is conservatively
+registered even when its installed-tool fallback can run by default. The
 1.0 release train packs the `engine` and `agent` groups together, so the
 register covers `agent` as well; before 1.0 it covered `engine` and `tooling`
 only.
@@ -186,6 +189,14 @@ only.
 | `smithers` | `a fresh clone of this repository (needs tracked-source inventory from jj/Git or SMITHERS_TEST_TRACKED_SOURCE_FILE)` | `it.skipIf` without checkout metadata or supplied inventory |
 | `smithers/agent/model-host` | `known broken: a completed selection replays after the answer fails` | `test.fails` |
 | `smithers/flows/platform-cloudflare` | `the command latency benchmark` | `describe.runIf` with `COMMAND_LATENCY_BENCH` and direct Postgres |
+| `smithers` | `killed during ${point} reopens the served TODO route without publishing a backup` | Set `SMITHERS_HOST_BACKUP_FAULT_CONFIG` to a disposable installed-host configuration on supported hardware; the default gate cannot qualify host backup kill points. |
+| `smithers/agent/integrations` | `authenticates and returns the viewer` | Requires a user `GITHUB_TOKEN` or `SMITHERS_GITHUB_TOKEN`; installation tokens cannot call the viewer endpoint. |
+| `smithers/flows/platform-bun` | `a signalled BunRuntime.layerHost program` | Runs when Bun is installed or `SMITHERS_PLATFORM_BUN_LANE=1` is supplied; the environment override does not replace the automatic capability probe. |
+| `smithers/flows/platform-node` | `NodeLanguageServer with a real typescript-language-server` | Runs with installed language-server binaries; `SMITHERS_LSP_TLS` and `SMITHERS_LSP_TSSERVER` can name them explicitly. |
+| `smithers/migrate` | `golden inventory over the real Plue pack` | Set `SMITHERS_MIGRATE_PLUE_PACK` to an available external pack; the opposite guard reports its absence. |
+| `testing` | `accounts for every targeted OpenCode session source` | Set `FLOWS_OPENCODE_CORPUS` to an external corpus; the default gate tests the vendored inventory. |
+| `testing` | `inventories every static behavior in each targeted OpenCode source` | Set `FLOWS_OPENCODE_CORPUS` to an external corpus; a named but missing corpus fails. |
+| `smithers/flows/sandbox` | `retained Sandbox.job real microVM` | `describe.skipIf(!available)`: set `SMITHERS_REAL_SANDBOX_JOB=1` on a host with a usable hypervisor, runnable Microsandbox and cached `node:26-trixie` image. Proves host-death retention, reacquisition, one-time capture and destruction; the default gate does not run this proof. |
 | `smithers/flows/sandbox` | `a job runs a ${LONG_SECONDS}-second command past SandboxTools' 600 s to its result (SANDBOX_LONG_COMMAND_SECONDS)` | `it.runIf(LONG_SECONDS > 0)` |
 | `smithers/flows/canonical` | `orders elements whose data lives only behind accessors` | `it.fails` |
 | `smithers/flows/flow` | `runs a child whose payload holds a set, under one id whatever the insertion order` | `it.effect.fails` |

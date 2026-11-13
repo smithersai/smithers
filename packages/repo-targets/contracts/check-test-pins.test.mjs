@@ -154,6 +154,41 @@ test("an environment-variable gate is a pin, inline or through a const", () => {
   assert.deepEqual(findPins(bracketedAlias).map((pin) => pin.title), ["live aliased"])
 })
 
+test("follows opt-in aliases transitively, including cycles and shared capability branches", () => {
+  const source = [
+    `const guard = process.env.SMITHERS_REAL_SANDBOX_JOB === "1"`,
+    `const supported = process.platform === "linux"`,
+    `const available = supported && guard`,
+    `const ready = available && cached.status === 0`,
+    `describe.skipIf(!ready)("retained job", () => {})`,
+    `it.runIf(ready)("retained result", () => {})`,
+    `it("retained context", (ctx) => { if (!ready) ctx.skip("opt in") })`
+  ].join("\n")
+  assert.deepEqual(findPins(source).map((pin) => pin.title), ["retained job", "retained result", "retained context"])
+  assert.deepEqual(findPins(source, new Set(["SMITHERS_REAL_SANDBOX_JOB"])), [])
+
+  const cyclic = [
+    `const first = second`,
+    `const second = first || enabled`,
+    `const enabled = process.env.LIVE === "1"`,
+    `const capability = other`,
+    `const other = capability || process.platform === "linux"`,
+    `describe.skipIf(!first)("cyclic opt in", () => {})`,
+    `describe.skipIf(!capability)("cyclic capability", () => {})`
+  ].join("\n")
+  assert.deepEqual(findPins(cyclic).map((pin) => pin.title), ["cyclic opt in"])
+  assert.deepEqual(findPins(cyclic, new Set(["LIVE"])), [])
+
+  const dollarAlias = [
+    'const $guard =',
+    '  process.env["LIVE"] === "1"',
+    'const $ready = $guard && process.platform === "linux"',
+    'it.runIf($ready)("dollar alias", () => {})'
+  ].join("\n")
+  assert.deepEqual(findPins(dollarAlias).map((pin) => pin.title), ["dollar alias"])
+  assert.deepEqual(findPins(dollarAlias, new Set(["LIVE"])), [])
+})
+
 test("a variable the package's own test program sets is not a pin", () => {
   const gated = `describe.skipIf(!process.env.SMITHERS_TEST_PG_URL)("real database", () => {})`
   assert.deepEqual(findPins(gated, new Set(["SMITHERS_TEST_PG_URL"])), [])

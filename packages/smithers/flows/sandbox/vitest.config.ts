@@ -16,8 +16,8 @@ export default defineConfig({
     environment: "node",
     // Suites here spawn processes and wait on the 5 s platform teardown
     // timer, so Vitest's 5 s default fails them on a loaded host. Assertions
-    // are causal or count-based, never wall-clock; keep the budget finite so
-    // a real hang still fails.
+    // include causal, count-based and elapsed-time checks. Allow scheduling
+    // headroom while keeping every budget finite so a real hang still fails.
     testTimeout: 30_000,
     hookTimeout: 30_000,
     coverage: {

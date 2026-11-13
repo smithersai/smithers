@@ -326,37 +326,29 @@ describe("ProviderConformance", () => {
     120_000
   )
 
-  // `checkTimeout` says how long a single check may take before it is
-  // convicted, and it used to say it about the check's BODY only. Losing the
-  // race interrupts the check, interruption closes the process scope, and that
-  // scope's finalizer sends the signal this provider never answers under its
-  // own five-second bound, so a hundred-millisecond deadline cost more than
-  // five seconds per hung check and the suite convicted checks that were only
-  // ever queued behind that wait. The containment assertion above cannot see
-  // that: it accepts a suite that convicts too much and takes as long as it
-  // likes. This case measures both.
+  // The deadline must report a hung check while its cleanup is still held.
+  // Waiting on cleanup would deadlock this test; no scheduling ceiling is needed.
   it.live(
-    "returns within the deadline it was given rather than the abandoned signal's bound",
+    "reports the deadline without awaiting the abandoned signal",
     () =>
       Effect.gen(function*() {
+        const signalling = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
         const provider: RemoteChildProcessSpawner.Provider = {
           ...RemoteChildProcessSpawner.TestRemote.make({ scripts, kill: true, ping: Effect.void, stdin: true }),
-          kill: () => Effect.never
+          kill: () =>
+            Effect.uninterruptible(Effect.andThen(Deferred.succeed(signalling, undefined), Deferred.await(release)))
         }
 
-        const started = Date.now()
-        const violations = yield* ProviderConformance.check(provider, commands, { checkTimeout: "200 millis" })
-        const took = Date.now() - started
-
-        // Only the check whose own boundary hangs is named. Everything else
-        // answered, so a suite that also convicted them would be reporting the
-        // deadline's own cost as the adapter's defect.
-        expect(checks(violations)).toEqual(["signals-a-running-command"])
-        expect(violations[0]?.actual).toContain("did not finish within 200 milliseconds")
-        // Comfortably under `signalWithin`, the five seconds the closing scope
-        // gives the same unanswerable signal. Before the check was abandoned
-        // rather than raced, this alone took longer than that.
-        expect(took).toBeLessThan(3_000)
+        yield* Effect.gen(function*() {
+          const violations = yield* ProviderConformance.check(provider, commands, { checkTimeout: "200 millis" })
+          yield* Deferred.await(signalling)
+          // Only the check whose own boundary hangs is named; reporting does
+          // not wait for the signal the test has not yet allowed to finish.
+          expect(checks(violations)).toEqual(["signals-a-running-command"])
+          expect(violations[0]?.actual).toContain("did not finish within 200 milliseconds")
+          expect(yield* Deferred.isDone(release)).toBe(false)
+        }).pipe(Effect.ensuring(Deferred.succeed(release, undefined)))
       }),
     30_000
   )

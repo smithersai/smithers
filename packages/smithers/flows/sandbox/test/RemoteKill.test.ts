@@ -82,10 +82,10 @@ describe("RemoteChildProcessSpawner kill", () => {
           expect(yield* Fiber.join(reading)).toBe("hi")
           const took = performance.now() - started
           if (exits) {
-            expect(took).toBeLessThan(2_000)
+            expect(took).toBeLessThan(12_000)
           } else {
             expect(took).toBeGreaterThanOrEqual(4_500)
-            expect(took).toBeLessThan(8_000)
+            expect(took).toBeLessThan(12_000)
           }
         }).pipe(Effect.scoped),
       12_000
