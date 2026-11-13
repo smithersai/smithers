@@ -253,7 +253,7 @@ export const layer = (root: string) =>
           // This also preserves a person's earlier approval or denial.
           if (decisions[0]?.resolved === 1) return
           const rows = yield* sql<{ grantId: string; principal: string }>`
-          SELECT g.grant_id AS grantId, g.principal_json AS principal
+          SELECT g.grant_id AS "grantId", g.principal_json AS principal
           FROM control_trigger_plan_bindings b
           LEFT JOIN control_trigger_approval_uses u ON u.plan_id = b.plan_id
           JOIN control_trigger_approvals g
@@ -267,7 +267,7 @@ export const layer = (root: string) =>
           if (grant === undefined) return
           const current = yield* sql<
             { digest: string; triggerId: string }
-          >`SELECT declaration_digest AS digest, trigger_id AS triggerId
+          >`SELECT declaration_digest AS digest, trigger_id AS "triggerId"
           FROM control_trigger_plan_bindings WHERE plan_id = ${entry.plan.planId}`
           const declaration = yield* triggerDeclaration(current[0]!.triggerId).pipe(
             Effect.provideService(SqlClient.SqlClient, sql)
@@ -281,7 +281,7 @@ export const layer = (root: string) =>
             .currentTimeMillis}) ON CONFLICT (plan_id) DO NOTHING`)
           const use = yield* sql<
             { grantId: string }
-          >`SELECT grant_id AS grantId FROM control_trigger_approval_uses WHERE plan_id = ${entry.plan.planId}`
+          >`SELECT grant_id AS "grantId" FROM control_trigger_approval_uses WHERE plan_id = ${entry.plan.planId}`
           // A revoked use cannot be rebound to a later grant after a crash.
           if (use[0]?.grantId !== grant.grantId) return
           yield* control.approve({

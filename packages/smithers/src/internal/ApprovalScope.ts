@@ -8,6 +8,7 @@ import { canonicalize } from "@smthrs/canonical"
 import { PersistenceError, PlanDenied } from "@smthrs/control/ControlError"
 import type { PlanCard } from "@smthrs/control/ControlSchema"
 import { Sha256 } from "@smthrs/crypto"
+import { Dialect } from "@smthrs/database"
 import * as Trigger from "@smthrs/triggers/Trigger"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -26,8 +27,8 @@ export const defaultApprovalScope = "run" as const
 export const triggerDeclaration = (id: string) =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    const exists = yield* sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'flows_triggers'`
-    if (exists.length === 0) return undefined
+    const tables = yield* Dialect.tables(sql)
+    if (!tables.some((table) => table.name === "flows_triggers")) return undefined
     const rows = yield* sql<{
       trigger_id: string
       flow_id: string
@@ -98,8 +99,8 @@ export const authorizeTriggerLaunch = (card: PlanCard, sql: SqlClient.SqlClient)
       declarationDigest: string
       planDigest: string
       revokedAt: number | null
-    }>`SELECT g.grant_id AS grantId, g.trigger_id AS triggerId, g.declaration_digest AS declarationDigest,
-            g.plan_digest AS planDigest, g.revoked_at_ms AS revokedAt
+    }>`SELECT g.grant_id AS "grantId", g.trigger_id AS "triggerId", g.declaration_digest AS "declarationDigest",
+            g.plan_digest AS "planDigest", g.revoked_at_ms AS "revokedAt"
      FROM control_trigger_approval_uses u JOIN control_trigger_approvals g ON g.grant_id = u.grant_id
      WHERE u.plan_id = ${card.planId}`
     const grant = uses[0]

@@ -9,6 +9,7 @@
  */
 
 import * as ControlMigrations from "@smthrs/control/Migrations"
+import { Dialect } from "@smthrs/database"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as MemoryMigrations from "@smthrs/memory/Migrations"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
@@ -46,6 +47,15 @@ export const layer = DatabaseMigrations.layer([
           plan_id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE, grant_id TEXT NOT NULL,
           used_at_ms INTEGER NOT NULL, FOREIGN KEY (grant_id) REFERENCES control_trigger_approvals(grant_id)
         )`
+      }),
+      "0002_postgres_timestamps": Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        if (!Dialect.isPostgres(sql)) return
+        yield* sql`ALTER TABLE control_trigger_approvals
+          ALTER COLUMN granted_at_ms TYPE ${Dialect.integer(sql)},
+          ALTER COLUMN revoked_at_ms TYPE ${Dialect.integer(sql)}`
+        yield* sql`ALTER TABLE control_trigger_approval_uses
+          ALTER COLUMN used_at_ms TYPE ${Dialect.integer(sql)}`
       })
     }
   }
