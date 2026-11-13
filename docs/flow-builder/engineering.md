@@ -2,6 +2,10 @@
 
 > Superseded on 2026-10-20 by `apps/mvp/docs/rulings.md` (FLOW-4; decision 0014). Kept as prior art.
 
+This public survey retains the historical architecture and test design. Account
+status, hosted rollout receipts and operator procedures are retained in private
+operations records.
+
 Stage: **vision ruled (decisions.md D-029); codebase survey done.** Most of this
 is re-lighting, not building. Two genuinely new pieces: the plan-graph
 projection (D-020) and the duration predictor (D-030).
@@ -470,7 +474,7 @@ Other tests:
 
 Gates:
 - `cd packages/smithers/gateway && pnpm run check && pnpm exec vitest run test/GatewayProjection.test.ts test/GatewaySchema.test.ts test/ProjectionsUnit.test.ts test/Projections.test.ts test/WireFormat.test.ts && pnpm run coverage`
-- `cd ~/smithers-lane-fb-gateway && pnpm docs:llms`, then check-docs and check-llms.
+- `pnpm docs:llms`, then check-docs and check-llms.
 
 **Done when.** - Snapshotting `{_tag:"flow-durations", flowId}` on a gateway with two finished real runs returns one row per executed action tag with `samples: 2`.
 - Coverage stays at 100%.
@@ -591,7 +595,7 @@ Depends on: L1-skeleton
 
 Files: `apps/server/src/workflowTriggers.ts`, `apps/server/src/workflowTriggers.test.ts`, `packages/rpc/src/Cards.ts (trigger-list optional fields)`, `apps/app/src/mainview/state/seams/TriggersSeam.ts`, `apps/app/src/mainview/state/seams/TriggersSeam.test.ts`, `apps/app/src/mainview/cards/FlowGraphTrigger.tsx (new)`, `apps/app/src/mainview/cards/FlowGraphTrigger.test.tsx (new)`, `apps/app/src/mainview/cards/TriggersCard.tsx (Pause button only)`, `apps/app/src/mainview/cards/FlowGraph.ts (trigger node and UI-only `fires` edge)`
 
-1. **Worker.** `workflowTriggers.ts` passes the whole TriggerSummary through: the full `nextOccurrencesMs` array, overlap, catchUp, maxCatchUp, input, revision, pendingAtMs and schedulerLastTickMs. This ships to production on landing, so land it as its own commit.
+1. **Worker.** `workflowTriggers.ts` passes the whole TriggerSummary through: the full `nextOccurrencesMs` array, overlap, catchUp, maxCatchUp, input, revision, pendingAtMs and schedulerLastTickMs.
 2. **Card schema.** Add optional trigger-list row fields `overlap`, `catchUp`, `maxCatchUp`, `nextFiresAt: number[]`, `pendingAt` and `schedulerLastTickAt`. Add an optional `fires: [{occurrenceAt, outcome, runId?, error?, waiting?}]` for the selected trigger.
 3. **Seam.**
    - `triggerRow` (:254) reads the new fields.
@@ -611,7 +615,7 @@ Files: `apps/server/src/workflowTriggers.ts`, `apps/server/src/workflowTriggers.
    - Omit any value that is absent.
 6. **Doors.**
    - Reuse the `triggers.run` door for rows with a slug.
-   - Add a Pause button that carries JSON args to the existing `triggers.pause` door. The button avoids the slash-path stray alert reported in CHAT.md B1.
+   - Add a Pause button that carries JSON args to the existing `triggers.pause` door.
 7. **Registry ruling.** The panel represents the box TriggerStore for schedule, policies and ledger. Plue rows show only what Plue serves (slug, cron UTC, next fire, run, pause). Do not merge fields across registries.
 
 **Tests first.** Write these first, failing:
@@ -813,79 +817,23 @@ Each of these needs engine or infra work that this milestone does not take on.
 
 ## Risks
 
-- Turning on the plan hook changes every plan digest (planning.ts:138 folds `persistedPlan`). Pending approvals and stored idempotent plans taken before the change stop validating. Land when no approval is parked, and announce the landing in CHAT.
-- Workspace boxes run a released @smthrs package, and the publish campaign is blocked (NPM_TOKEN 401, CI red since 09-08). Until a release reaches the boxes, production graphs have `nodes: []` and no node events. The feature is provable only on the local real stack, so it stays dark.
+- Turning on the plan hook changes every plan digest (`planning.ts:138` folds `persistedPlan`). Pending approvals and stored idempotent plans taken before the change stop validating. Treat activation as a compatibility boundary.
+- A host without plan-node support returns `nodes: []` and no node events. Test that compatibility case explicitly before enabling the graph.
 - Interpreter emits run inside a durable replayed walk. A sourceId that is not replay-stable duplicates node records on every resume and corrupts the attempt and duration folds.
 - A plan-recorded envelope with nodes can exceed the control journal event bound and become an `invalid_event` omission gap. Chunking at 200 nodes or fewer is unmeasured.
-- The shared checkout carries 88 uncommitted peer changes, including RunTraceCard.tsx (+303), RunTrace.ts, Cards.ts, CardRenderers.tsx, Flows.ts, registry.ts, cards.css and AppController.ts. One-line hunks in those files will conflict textually when the peer lands.
-- main fails apps/app `pnpm run check` with five errors (CL095). Lanes can only prove a failing set identical to unmodified main until L105 lands.
-- L105's c5310bf0e5d1 removes the `experimental` surface the peer's panes depend on, so nothing here builds on it.
-- Every `jj bookmark set main` is a production deploy request. The Stop-hook autodeploy does not gate on typecheck. The `workflowTriggers.ts` Worker change ships live on landing.
-- Moving @xyflow/react and dagre into @smthrs/ui touches pnpm-lock.yaml, which has known drift on main. Land only the moved entries and restore the alchemy drift.
 - The concierge instructions have about 23 bytes of headroom under the 16 KiB cap. `flow.plan` is a new agent-visible flow id and must be paid for by trimming. Whether hidden flows count against the cap is unverified.
 - Every `Plan` call is a durable write: a `control_plans` row, a pending token and a journal entry. `Plan` is also replayable at the relay. A re-key preview used often will accumulate pending plans. Previews are user-triggered only and are never polled.
 - Action tag alone conflates call sites, so ranges will appear often. Agent nodes are heavy-tailed, and a p50 from one sample is weak. `n` always shows beside the number.
 - `flow-durations` costs up to 20 journals times 100,000 scanned events per snapshot, and that cost is unmeasured. Request it once per graph open, never per poll.
-- Both Codex accounts are usage-limited until 09-20 and 09-22. Opus lanes share a session limit with the release owner's lanes and die silently, so cap concurrency at four and check agent-*.jsonl mtimes.
 - React Flow measures the DOM, and happy-dom returns zeros. Pixel layout is provable only in Chromium (L8, L9).
-- docs/flow-builder/** exists only as uncommitted files in the main checkout. Lanes must read it by absolute path, and the L7 D-030 amendment edits a peer-owned file.
 
-## Landing procedure
+## Verification principles
 
-1. **Announce first.**
-   - Append `## FB001 (Claude flow-builder, <UTC>): ...` to `/Users/williamcory/smithers/CHAT.md` with a single `>>` write.
-   - List the exact owned paths per lane, the lane workspace names (`lane-fb-skeleton`, `-engine`, `-gateway`, `-rungraph`, `-drawer`, `-triggers`, `-durations`, `-e2e`, `-harden`), and the first landing window.
-   - Re-read the tail afterwards.
-   - Never run `jj new`, `commit`, `squash`, `edit` or `rebase` inside `~/smithers`. That working copy belongs to a peer.
-2. **Create lanes one at a time under flock.**
-   - Reuse `/private/tmp/claude-501/-Users-williamcory-smithers/3b6439be-18fc-4315-bbbf-21b5e207714a/scratchpad/lanes/launch.py` (lock :23-29, double fork :14-16, `GIT_CEILING_DIRECTORIES=$HOME`).
-   - Run `jj workspace add ~/smithers-lane-fb-<name> -r main --name lane-fb-<name>`. The path must contain `smithers` so the agent guard applies.
-   - Launch detached.
-   - Repair a wedged main checkout with `jj --ignore-working-copy op integrate <op>` then `jj workspace update-stale`.
-   - Keep at most four lanes running at once. The start set is L1, L2, L6 and L8's fixture stack. Use Opus pools, because Codex is limited.
-3. **Install dependencies.**
-   - Run `pnpm install --frozen-lockfile --ignore-scripts` in the lane, then `node apps/app/scripts/ensure-devkit.mjs`.
-   - Then run `jj restore --from @- -- pnpm-lock.yaml`, except for L4's three moved entries.
-   - Never use a single naive `node_modules` symlink. If the install crawls, use relink.py.
-   - Lanes read the spec at `/Users/williamcory/smithers/docs/flow-builder` by absolute path.
-4. **Verify in the lane.**
-   - Run the lane's gate commands.
-   - Compare failing sets against an unmodified main workspace. The five CL095 errors are main's own.
-   - Never run `bun test` over `apps/app/src/bun`.
-   - Commit with explicit path filesets only, using `JJ_EDITOR=true` and `jj squash --use-destination-message`.
-   - Review evidence stays under `.artifacts/` and is never committed.
-5. **Landing order.** Shared files are edited only in this order; each later lane rebases onto the prior landing before it touches them.
-   - L1 lands first: the flag and everything behind it, as one batch.
-   - L2 and L6's Worker commit land next; each is independent, and each is its own reviewed commit.
-   - Then L3, L4, L5, L6's app half, L7, L8 and L9, in that order.
-   - Shared files per lane:
-     - Cards.ts: L1, L4, L5, L6, L7
-     - FlowName.ts, registry.ts and Flows.ts: L1, L4, L5
-     - gateway.ts: L1, L7
-     - workflows.ts: L1, L4, L7
-     - FlowGraph.ts: L1, L6
-     - FlowGraphSurface.tsx: L1, L4, L5, L7, L9
-     - CardRenderers.tsx: L1 only
-     - RunTraceCard.tsx: L4 only, last, after the peer's edits reach main
-6. **Land with the handoff.md:981-986 recipe, in a fresh workspace.**
-   - Run `jj git fetch` and capture the main id.
-   - Run `jj duplicate <oldest>::<newest> --onto <captured main>`, then `jj new <head>`.
-   - Check conflicts with `jj log --no-graph -r 'conflicts() & (main@origin..@)' -T 'commit_id.short(12) ++ "\n"'` and `jj resolve --list`.
-   - Typecheck the combined tree.
-   - Assert `jj diff --name-only -r <each commit>` equals the literal file list.
-   - Fetch again. If main moved, re-duplicate.
-   - Post `FB00N` with the base main id and the file list.
-   - Run `jj bookmark set main -r <head>`, then `jj git push --bookmark main`, never forced.
-   - Fetch and assert `main@origin` equals the head.
-   - Setting the bookmark is already a deploy request, so set it only on a fully verified head.
-7. **After each landing.**
-   - Run `grep -E 'deployed|FAILED' ~/.config/smithers-autodeploy/autodeploy.log | tail -3`.
-   - Run `curl -s -H 'cache-control: no-cache' https://smithers.sh/__build.json` and the same against `canary.smithers.sh`.
-   - On a wrangler `fetch failed`, run `autodeploy.py --force --repo smithers` detached.
-   - Never run `--status`.
-   - Write a receipt under `.artifacts/`, uncommitted, and announce the sha and receipt path in CHAT.
-   - Run `jj workspace forget lane-fb-<name>` and remove only that directory.
-8. **Flag default.** The flag stays default off through L9. Flipping the default is a separate one-line landing after Will says so.
+- Verify the combined source tree and its exact file list before publication.
+- Compare a failing check against the same check on an unmodified base.
+- Keep source checks, release artifacts and served-response measurements distinct.
+- Record the source revision and test command with each result.
+- Feature activation requires its own reviewed evidence.
 
 ## Area maps (facts with evidence)
 
@@ -932,8 +880,8 @@ Blockers:
 
 Commands:
 - `Commands are unverified in this session; confirm each against PACKAGE.ts before use.`
-- `cd /Users/williamcory/smithers/apps/app && bun test src/mainview/cards/TriggersCard.test.tsx src/mainview/state/seams/TriggersSeam.test.ts src/mainview/state/seams/TriggersVerbatim.test.tsx`
-- `cd /Users/williamcory/smithers/packages/smithers/agent/triggers && bun test src/test`
+- `cd apps/app && bun test src/mainview/cards/TriggersCard.test.tsx src/mainview/state/seams/TriggersSeam.test.ts src/mainview/state/seams/TriggersVerbatim.test.tsx`
+- `cd packages/smithers/agent/triggers && bun test src/test`
 
 ### Product Worker relay (apps/server) and the app gateway seam (apps/app gateway.ts), plus the native host relay path
 
@@ -972,143 +920,42 @@ Blockers:
 - I did not run any test or typecheck command; the commands listed are read from convention and the AGENTS.md text, not executed.
 
 Commands:
-- `cd /Users/williamcory/smithers/apps/server && bun test src/gatewayRpc.test.ts`
-- `cd /Users/williamcory/smithers/apps/server && bun test src/index.test.ts -t "rpc relay"`
-- `cd /Users/williamcory/smithers/apps/server && pnpm run check   # typecheck + effect policy, per apps/server/AGENTS.md`
-- `cd /Users/williamcory/smithers/apps/app && bun test src/mainview/state/controller/gateway.test.ts src/mainview/cards/EngineTrace.test.ts`
+- `cd apps/server && bun test src/gatewayRpc.test.ts`
+- `cd apps/server && bun test src/index.test.ts -t "rpc relay"`
+- `cd apps/server && pnpm run check   # typecheck + effect policy, per apps/server/AGENTS.md`
+- `cd apps/app && bun test src/mainview/state/controller/gateway.test.ts src/mainview/cards/EngineTrace.test.ts`
 - `jj file show -r 42b8abbc1cf6 apps/app/src/mainview/cards/GraphCard.tsx`
-
-### Landing the flow builder + run monitor safely on a hot shared main (jj, lanes, autodeploy, CHAT.md)
-
-Land the flow builder dark behind an AppFeatures flag, from locked jj lane workspaces, by duplicating reviewed commits onto a captured main id. Every push to main deploys to production within minutes.
-
-Snapshot at 2026-09-19 about 03:20Z:
-- main equals main@origin at 44545559b4bd.
-- The main checkout @ (3e7ad5da) sits on b6d6ece7, 15 commits behind main.
-- The main checkout holds 88 uncommitted peer changes. They include all of docs/flow-builder/** and apps/app/src/mainview/experimental/**, none of which is on main.
-- 42 jj workspaces exist.
-- CL095 reports that main@origin fails apps/app `pnpm run check` with five errors.
-  - I did not run the check. I confirmed the `socketUrl` sites and the "experimental" card kind are still in main's source.
-  - I assume the five errors still stand.
-  - The L105 fixes are unlanded in a lane workspace.
-
-Procedure:
-1. Announce in CHAT.md before anything else (format in item 6). Do not run `jj new`, `jj commit`, `jj squash`, `jj edit` or `jj rebase` in ~/smithers. The main checkout working copy belongs to a peer.
-2. Create lanes one at a time under `fcntl.flock`, with "smithers" in the path so the guard sees it:
-   - `jj workspace add ~/smithers-lane-fb-<name> -r main --name lane-fb-<name>`
-   - Launch detached with `GIT_CEILING_DIRECTORIES=$HOME`.
-   - Reuse the launch.py pattern (lock at lines 23-29, double fork at 14-16).
-   - If the main checkout wedges, run `jj --ignore-working-copy op integrate <op>` then `jj workspace update-stale`.
-3. Give each lane node_modules.
-   - Preferred: a real `pnpm install --frozen-lockfile --ignore-scripts` in the lane, then `node apps/app/scripts/ensure-devkit.mjs`.
-   - If the install dirties pnpm-lock.yaml, restore it with `jj restore --from @- -- pnpm-lock.yaml`. Never land it.
-   - Fast alternative: relink.py. It builds real directories, symlinks third-party entries, and recreates @smthrs links so they resolve inside the lane.
-   - Never use a single naive symlink of node_modules.
-   - Lanes cannot see docs/flow-builder. Point their prompts at /Users/williamcory/smithers/docs/flow-builder by absolute path.
-4. Verify in the lane:
-   - `pnpm --filter smithers-app run check` (ensure-devkit + `tsc --noEmit`).
-   - `cd apps/app && bun test <touched dirs>`.
-   - Packages you touch outside apps/app (apps/server, packages/rpc): run their PACKAGE.ts commands.
-   - Compare failing sets against an unmodified main workspace. If the five CL095 errors still stand, they fail identically and are not yours.
-   - Do not run the whole `bun test` over apps/app/src/bun. It leaks daemons.
-5. Land using the handoff.md:981-986 recipe, in a fresh workspace:
-   - `jj git fetch`, then capture the main id.
-   - `jj duplicate <oldest>::<newest> --onto <captured main>`, then `jj new`.
-   - Check conflicts with a newline template and `jj resolve --list`.
-   - Typecheck the combined tree, then fetch again.
-   - `jj bookmark set main -r <head>` and `jj git push --bookmark main`, never forced.
-   - Fetch again and assert main@origin equals the head you wanted.
-   - Assert `jj diff --name-only -r <each commit>` equals your literal file list.
-   - Write a receipt under `.artifacts/` and never commit it.
-   - `jj workspace forget` the lane and remove only that directory.
-6. Landing is the deploy request.
-   - Any Claude Stop on this machine builds local main, deploys the Worker and probes both hosts.
-   - A red typecheck does not block a deploy. b6d6ece7 deployed at 03:05Z even though CL095 reports it failing `pnpm run check`.
-   - The flag this step added is gone: D-080 (Will, 2026-09-20) removed it, and the feature is the app.
-   - After each landing, grep autodeploy.log for deployed or FAILED, and check /__build.json on both hosts.
-   - Announce using the next id after CL095: `## FB001 (Claude flow-builder, <UTC>): ...`. List exact paths owned, lane workspace names, the flag name and the intended landing window. Post again before each landing with the base main id and the file list.
-
-- main equals main@origin at 44545559b4bd. The main checkout @ is 3e7ad5da, sits on b6d6ece7 and is 15 commits behind main. — jj log: '@ 3e7ad5da2600' / '◆ 44545559b4bd main* ... fix(opencode): the dot tells the truth' / '◆ b6d6ece7a378 refactor(app): strip the residue'; 'jj log -r @-..main | wc -l' = 15; 'main@origin..main' and 'main..main@origin' both empty
-- The main checkout carries 88 uncommitted changes, 53 of them under apps/app/src/mainview. Others touch packages/rpc/src/Cards.ts, packages/smithers/agent and docs/flow-builder/**. — jj st | grep -c '^[AMD] ' = 88; per-directory counts: '53 apps/app/src/mainview', '16 docs/flow-builder/mockups/source', '1 packages/rpc/src/Cards.ts'
-- docs/flow-builder and apps/app/src/mainview/experimental are not on main. Lanes created at main will not contain the spec or the mock. — jj file list -r main docs/flow-builder -> 'Warning: No matching entries for paths: docs/flow-builder'; same warning for apps/app/src/mainview/experimental
-- 42 jj workspaces exist, most of them stale and empty. — 'jj workspace list | wc -l' = 42; examples: l102c, l103b-base, mvp-main-red, r104b-verify, autodeploy, default
-- CL095 (the last CHAT.md message) says main fails the apps/app typecheck with five errors that belong to main itself. — /Users/williamcory/smithers/CHAT.md:4356-4358 '**`main@origin` FAILS `pnpm run check` in `apps/app`, exit 2, five errors, and it is main's own**' ... 'socketUrl no longer exists on AppServices (cards/FileCards.test.tsx:423, ChromeDock.test.tsx:78,98) and presentation.ts:508,513'
-- main at 44545559 still contains the socketUrl and 'experimental' sites CL095 names. I did not run the typecheck, so I assume the five errors still stand. — jj file show -r main apps/app/src/mainview/cards/FileCards.test.tsx:423 '{ bootstrap, socketUrl: () => undefined }'; ChromeDock.test.tsx:78,98 'socketUrl: () => undefined'; apps/app/src/mainview/state/controller/presentation.ts:508 'kind: "experimental",'
-- The L105 fixes sit unlanded in a lane workspace. One of them removes the 'experimental' surface from main, which collides with the peer's experimental panes. — jj log main@origin..(mvp-main-red@|l102c@): 'c519b8e7d8d8 fix(app): two harnesses stop binding a socket URL the app no longer takes', 'c5310bf0e5d1 fix(app): the app stops naming a hidden-mock surface it does not carry'
-- The peer's uncommitted work in the main checkout already removes socketUrl from the two test files. — jj diff --stat in ~/smithers: 'ChromeDock.test.tsx | 6 ++----', 'FileCards.test.tsx | 2 +-'; diff lines '-    socketUrl: () => undefined'
-- Autodeploy runs on every Claude Stop. It deploys local main to both production hosts, and a failing typecheck does not block it. — ~/.config/smithers-autodeploy/README.md:3-4 'The runner checks local `main` in `~/smithers` and `~/plue`, deploying exact SHAs... Smithers installs, deploys, probes both hosts, and rolls back'; autodeploy.log '20260919T030508Z smithers: deployed b6d6ece7a378...', '20260919T031017Z smithers: deployed 81bca45092e9...' (CL095 lists b6d6ece7 among the commits that introduced the typecheck break)
-- The memory rule says to treat landing as the deploy request, to batch landings, and never to run autodeploy.py --status. — memory/gotcha_autodeploy_stop_hook_is_the_concurrent_deployer.md:13,18 'Never run `autodeploy.py --status` into context' ... 'treat landing on main as the deploy request; review source before landing; ... expect a new build within about two minutes of any landing; batch landings. Do not disable Will's hook without his word.'
-- An existing lane launcher serializes workspace creation with a file lock, double-forks, and sets GIT_CEILING_DIRECTORIES. — /private/tmp/claude-501/-Users-williamcory-smithers/3b6439be-18fc-4315-bbbf-21b5e207714a/scratchpad/lanes/launch.py:14-16 'os.fork()/os.setsid()', :21 'env["GIT_CEILING_DIRECTORIES"]', :23-25 'fcntl.flock(lockf, fcntl.LOCK_EX) ... ["jj","workspace","add",WS,"-r","main","--name",f"lane-{LANE}"]', :32 'pnpm install --frozen-lockfile --ignore-scripts'
-- Older mk-lane.sh and land-lane.sh scripts and a COMMON.md of lane rules exist. mk-lane.sh takes no lock, and land-lane.sh rebases instead of duplicating. — /private/tmp/claude-501/-Users-williamcory-smithers/b6c414e5-c369-46d1-9426-087b5f16d451/scratchpad/lanes/mk-lane.sh:11 'jj workspace add --name "lane-$name" -r 'main@origin' "$dir"', :13-14 'pnpm install --offline --frozen-lockfile --ignore-scripts' + 'ensure-devkit.mjs'; land-lane.sh:12-20 'jj rebase -s "$roots" -d main@origin' ... 'jj bookmark set main' ... 'LANDED $landed on origin/main'
-- relink.py builds a node_modules tree per workspace whose @smthrs links resolve inside the lane. It reads a path list from /tmp/nm-list.txt. — /private/tmp/claude-501/-Users-williamcory-smithers/0e1351fc-245a-4227-96f5-321836e5ce30/scratchpad/relink.py:3 'paths = [... open("/tmp/nm-list.txt")...]', :5-16 workspace_link returns the relative readlink target, :35 'os.symlink(wl, dp)'
-- A naive single symlink of node_modules makes @smthrs/* resolve into ~/smithers and invents typecheck errors. The working recipe is documented. — memory/gotcha_symlinked_node_modules_resolves_to_main_checkout.md:12-13 '`@smthrs/rpc` resolves through the symlink into **~/smithers' working copy**', :30-33 'create a real directory at the same relative path, symlink each entry ... EXCEPT `@smthrs`, and recreate `@smthrs/<name>` with the SAME relative target'
-- Concurrent `jj workspace add` calls wedge the main checkout. The fix is a file lock, and the repair is `op integrate` with `--ignore-working-copy`. — memory/gotcha_jj_workspace_add_races_need_a_lock.md:11,15 'Four of them failed with `The repo was loaded at operation X, which seems to be a sibling`' ... 'wrap `jj workspace add` in an exclusive file lock ... Repair: `jj --ignore-working-copy op integrate <Y>` then `jj workspace update-stale`'
-- The release owner's landing recipe duplicates reviewed commits onto a captured main id in an isolated workspace, fetches again, sets the bookmark and pushes without force. — /Users/williamcory/smithers/handoff.md:981-986 'jj workspace add --name <unique-name> -r main /tmp/<unique-name>' ... 'jj duplicate <oldest-reviewed> <next-reviewed> --onto <captured-main-id>' ... 'jj bookmark set main -r <integrated-head>` and `jj git push --bookmark main` ... Use no force push' ... 'jj workspace forget <unique-name>'
-- The guard blocks agent-typed git everywhere in smithers and blocks `jj duplicate` and second stacks in the main checkout. Secondary workspaces are unrestricted. The guard activates only when the path contains the repo basename. — ~/.config/smithers-agent-guard/README.md:3-5 'block agent-typed git ... Secondary jj workspaces remain unrestricted', :16-18 'shims start Python only when the current directory or an argument contains the repo's basename. Workspaces should retain that basename'; handoff.md:981 'The main-checkout wrapper blocks `jj duplicate`'; live: 'error: git is disabled for AI agents in the smithers repo. Use jj.'
-- Never commit with a catch-all fileset and never park @ on a commit in the shared tree. Use `jj squash --use-destination-message` with `JJ_EDITOR=true`. — memory/gotcha_catchall_fileset_swallows_peer_work.md:16-19 'Enumerate explicit paths for every `jj commit`' ... 'Never leave `@` on a real commit' ... 'Always `jj squash --use-destination-message`, and set `JJ_EDITOR=true`'
-- The post-rebase guard asserts the lane's own commit file list against a literal list, because main@origin is shared and drifts. — memory/gotcha_origin_main_ref_shared_across_worktrees.md:33-36 'put the guard *inside* the fetch→rebase→push retry loop and compare against a literal expected file list ... Guard on `git diff --name-only HEAD~1 HEAD`'
-- `pnpm install` dirties pnpm-lock.yaml in every workspace through the apps/server alchemy and effect drift. Restore it and do not land it. — memory/gotcha_main_lockfile_drift_apps_server_alchemy.md:14,19 'every `pnpm install` in any worktree regenerates those ~6 lines' ... 'back the diff up, restore pnpm-lock.yaml, rebase'
-- main has an AppFeatures flag mechanism. The `experimental` member and its VITE env fallback exist only in the uncommitted working copy. — main AppController.ts:672-680 '* Feature flags. `suggestionPills` ... readonly features?: AppFeatures'; working copy AppController.ts:683-690 'pluginLibrary?, wiki?, mythicalHistory?, suggestionPills?, experimental?'; :705 'experimental: services.features?.experimental ?? import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"'
-- The apps/app gates are `check` and `typecheck` (ensure-devkit then tsc) and `bun test`. — apps/app/package.json:14-16 '"typecheck": "node scripts/ensure-devkit.mjs && tsc --noEmit"', '"check": ...same', '"test": "bun test src e2e/contracts e2e/real/coverage scripts"'
-- Known apps/app and gateway reds on main: ControllerTestScope, parity x3 (IntroSlides), gateway coverage thresholds, and the three 2026-09-13 reds. — memory/index_reds.md:71 'apps/app `bun test src/mainview/state/ControllerTestScope.test.ts`: red on main since before 346206753c8c'; :14 'flows/parity 3 fails on main'; :53 'packages/smithers/gateway vitest exits non-zero on main itself; 376/376 tests pass but 100% global coverage thresholds fail'; :66
-- The release owner states landings with a receipt path and the main sha in each CL message. The CHAT id series is per agent, and CHAT.md is append-only and untracked. — CHAT.md:4350 '**Landed as main `7a854f57481d`** (receipt `.artifacts/mvp-release-20260916/app-landing-20260919T0110Z.json`)'; memory/project_mvp_alpha_orchestration_20260916.md:11 'append-only mailbox `~/smithers/CHAT.md` (untracked...; read the tail, never the whole file). IDs: C### Codex root ... CL### Claude', :34 'announce ownership with exact paths before any edit; all source review happens before landing on main because landing deploys'
-- main moved three times during one release-owner verification. Expect to re-duplicate. — CHAT.md:4360 'main moved twice during verification (`7a854f57481d` → `9f74c2feff1c` → `b6d6ece7a378`); the first duplicate stack was abandoned and the chain re-duplicated, zero conflicts both times'
-- Review evidence and lane reports are never committed. — memory/feedback_review_evidence_never_committed.md:15 'never group `review-evidence/**` or root `*-review*.md` ledgers into a package commit'
-- Workflow agents die silently on a session limit. Eleven concurrent Opus lanes exhausted the quota once, and both Codex accounts are limited until 09-20 and 09-22. — memory/project_mvp_alpha_orchestration_20260916.md:19 'eleven concurrent Opus `Agent` lanes exhausted the Claude session limit'; :17 'codex-1 ... until Sep 22 09:22, codex-2 ... until Sep 20 09:23'; CHAT.md:4192 'Opus-only from here'
-
-Blockers:
-- CL095 (CHAT.md:4356-4358) reports that main@origin fails apps/app `pnpm run check` with five errors. I did not run the check; main's source still has the sites CL095 names. The L105 fixes (c519b8e7d8d8, c5310bf0e5d1) are unlanded. Until they land, a lane cannot show a green check. It can only show a failing set identical to unmodified main's.
-- The spec and the mock (docs/flow-builder/**) exist only as uncommitted files in the main checkout working copy, which sits 15 commits behind main. A lane created at main does not contain them. Lanes must read /Users/williamcory/smithers/docs/flow-builder by absolute path, or someone must land the docs with an explicit fileset first. Do not commit them from the shared checkout with a catch-all fileset.
-- Collision: L105 commit c5310bf0e5d1 removes the 'experimental' surface from main while the peer's 53-file experimental work sits uncommitted in the main checkout. Reusing the experimental card kind or the VITE_SMITHERS_EXPERIMENTAL flag for the flow builder builds on a moving target. Add a separate flowBuilder flag. (Reversed by D-080: the flag was removed and the feature ships to everyone.)
-- Every Claude Stop on this machine, including the new orchestrator's and its `claude -p` children, runs autodeploy against local main. `jj bookmark set main` in any workspace moves local main, so setting the bookmark is already a deploy request even before the push. Set it only on a fully verified head.
-- Quota: both Codex accounts are usage-limited until 09-20 and 09-22. The release owner is Opus-only, and its lanes share the same Claude session limit. A large fan-out can kill the release owner's lanes silently, because workflows stay 'running'. Cap concurrency, and check agent-*.jsonl mtime.
-- The smithers MCP server failed to connect in this session (CONNECTION_CLOSED). It was not needed for this read-only map.
-
-Commands:
-- `cd ~/smithers && jj git fetch && jj log --no-graph -r 'main | main@origin' -T 'commit_id.short(12) ++ " " ++ bookmarks ++ "\n"'`
-- `python3 <scratchpad>/lanes/launch.py fb-<name>   # flock + jj workspace add ~/smithers-lane-fb-<name> -r main --name lane-fb-<name> + pnpm install --frozen-lockfile --ignore-scripts`
-- `cd ~/smithers-lane-fb-<name> && node apps/app/scripts/ensure-devkit.mjs && jj restore --from @- -- pnpm-lock.yaml`
-- `cd ~/smithers-lane-fb-<name> && pnpm --filter smithers-app run check   # = node scripts/ensure-devkit.mjs && tsc --noEmit (apps/app/package.json:15)`
-- `cd ~/smithers-lane-fb-<name>/apps/app && bun test src/mainview/<touched-dir>   # never the whole src/bun tree`
-- `env -i HOME=$HOME PATH=$PATH TMPDIR=$TMPDIR TERM=dumb CI=1 <test cmd>   # only for build-cli suites (secret redactor false reds)`
-- `jj log --no-graph -r 'conflicts() & (main@origin..@)' -T 'commit_id.short(12) ++ "\n"' ; jj resolve --list`
-- `jj duplicate <oldest>::<newest> --onto <captured-main-id> && jj new <head>   # in a lane workspace, never in ~/smithers`
-- `jj git fetch && jj bookmark set main -r <head> && jj git push --bookmark main && jj git fetch && jj log --no-graph -r main@origin -T commit_id`
-- `grep -E 'deployed|FAILED' ~/.config/smithers-autodeploy/autodeploy.log | tail -3 ; curl -s -H 'cache-control: no-cache' https://smithers.sh/__build.json ; curl -s https://canary.smithers.sh/__build.json`
-- `/usr/bin/python3 ~/.config/smithers-autodeploy/autodeploy.py --force --repo smithers   # only after a wrangler 'fetch failed'; launch it detached`
-- `jj workspace forget lane-fb-<name> && rm -rf ~/smithers-lane-fb-<name>`
-- `Repair a wedge: jj --ignore-working-copy op integrate <op-id> && jj workspace update-stale`
 
 ### duration predictions (D-030)
 
 No duration estimator exists anywhere in the engine or app, and D-030's stated source is wrong as written: flows_attempts has no action-tag column (only run_id, step_key_digest, attempt, timestamps, meta_json with tier/boundary fields), so "group flows_attempts by action tag" needs a join that does not exist. The action tag does exist on every PlanNode as material.body.action (ActionCall) or material.body.flow (FlowCall), and the journal already carries per-node timing keyed by plan node id: flows.engine.node-scheduled and node-settled (outcome built|clean|failed|skipped|deferred) with ControlEvent.occurredAt, served verbatim by the run-events projection the app already pages. Smallest honest predictor: (1) engine adds `action` to the node-scheduled/node-settled payload (one field, from node.material.body); (2) gateway serves an eighth projection `flow-durations {flowId}` folding the last 20 terminal runs of that flow into rows { flowId, actionTag, samples, p50Ms, p90Ms }, counting only outcome "built" (clean = cache hit = not a sample), duration = settled.occurredAt minus the last node-scheduled.occurredAt for that node; (3) the app computes critical-path ETA and the re-key estimate as pure functions over PlanCard.nodes.dependsOn + those rows. App-side-only folding over retained card events is rejected: history would exist only for runs whose cards this client opened, so a fresh device shows nothing and two devices disagree. Cold start: no row for a tag means no chip; any executing node without a row means no ETA and no re-key estimate (never a partial sum). Note the mock sums node durations serially (FIRST_RUN_MS/REKEY_RUN_MS are reduce sums), which overstates a fanned-out plan; the shipped number must be the longest path over dependsOn. Agent budget "forecast" is money, not time, and is unrelated.
 
-- D-030 rules p50 with sample size, range when p90/p50 > 3, nothing when no history, and names flows_attempts grouped by action tag as the source; it states no predictor exists. — /Users/williamcory/smithers/docs/flow-builder/decisions.md:278-285 "Source: `flows_attempts.started_at_ms / finished_at_ms` grouped by action tag ... No predictor exists in the engine today; this is new engineering work and needs a projection."
-- flows_attempts has no action tag or node id column; identity is (run_id, step_key_digest, attempt). — /Users/williamcory/smithers/packages/smithers/flows/run-store/src/migrations/0001_initial.ts:74-88 "CREATE TABLE flows_attempts ( run_id ..., step_key_digest ..., attempt ..., state ..., started_at_ms INTEGER NOT NULL ..., finished_at_ms INTEGER ..., meta_json TEXT NOT NULL ..., PRIMARY KEY (run_id, step_key_digest, attempt)"
-- Attempt meta_json carries tier, nondeterministic, boundary, readSetVerified, boundaryQuarantined, hardViolation, snapshotId, admittedBy, effectCrossing; no action name. — /Users/williamcory/smithers/packages/smithers/flows/engine-store/src/internal/ActionPersistence.ts:319-378 "const AttemptMeta = Schema.Struct({ tier: Schema.Literals([\"sealed\", \"compensable\", \"irreversible\"]), ... effectCrossing: ..."
-- AttemptStore exposes put/get/heartbeat/finish/patch only; there is no cross-run or per-flow listing API to aggregate durations. — /Users/williamcory/smithers/packages/smithers/flows/run-store/src/AttemptStore.ts:317-344 "readonly put ... readonly get: (id: AttemptId) ... readonly finish ... readonly patch"
-- Attempt rows record startedAtMs and optional finishedAtMs. — /Users/williamcory/smithers/packages/smithers/flows/run-store/src/AttemptStore.ts:161-162 "startedAtMs: NonNegativeSafeInt, finishedAtMs: Schema.optionalKey(NonNegativeSafeInt)"
-- Journal attempt-started / attempt-finished payloads carry runId, stepKeyDigest, attempt, tier|state; no action tag, no node id, no timestamp in payload. — /Users/williamcory/smithers/packages/smithers/flows/journal/src/EngineEvent.ts:373-392 "eventType: Schema.Literal(\"flows.engine.attempt-started\"), payload: Schema.Struct({ ... runId, stepKeyDigest: Event.DispatchId, attempt, tier ..."
-- The v2 attempt-lifecycle event carries startedAtMs and finishedAtMs but is still keyed by stepKeyDigest, and warns clocks can run backwards. — /Users/williamcory/smithers/packages/smithers/flows/journal/src/EngineEvent.ts:82-131 "const timing = { startedAtMs: Event.TimestampMs }" ... "Wall clocks can move backwards; completion need not be after start." ... "stepKeyDigest: Event.DispatchId"
-- node-scheduled carries planId, nodeId, kind, planKey, dispatchKey, attempt, priority, waited; no action tag. — /Users/williamcory/smithers/packages/smithers/flows/engine-store/src/PlanScheduler.ts:1048-1057 "JournalRecords.nodeScheduled(source(`node/${node.id}/${attempts}`), { planId: plan.planId, nodeId: node.id, kind: node.kind, planKey: node.key, dispatchKey, attempt: attempts, priority: node.priority, waited: start.waited })"
-- node-settled carries planId, nodeId, planKey, dispatchKey, outcome, attempts, rebases. — /Users/williamcory/smithers/packages/smithers/flows/engine-store/src/PlanScheduler.ts:966-974 "JournalRecords.nodeSettled(... { planId: plan.planId, nodeId: node.id, planKey: node.key, dispatchKey: state.dispatchKey, outcome: state.outcome, attempts: state.attempts, rebases: state.rebases })"
-- Outcome distinguishes executed work from a cache hit: built vs clean, decided by whether the executor ran. — /Users/williamcory/smithers/packages/smithers/flows/engine-store/src/PlanScheduler.ts:125 "export type Outcome = \"built\" | \"clean\" | \"failed\" | \"skipped\" | \"deferred\"" and :1113 "outcome: (yield* Ref.get(ran)) ? \"built\" : \"clean\""
-- The stable 'kind of step' identifier is KeyMaterial.body.action for an action node (a string) and body.flow for a flow call; the body also holds schema identities and implementationVersion, so the whole body is NOT stable across re-keys, only the tag is. — /Users/williamcory/smithers/packages/smithers/flows/flow/src/Graph.ts:1193-1204 "body: { _tag: \"ActionCall\", action: ast.action, tier: ..., declaration: ... { payload: schemaIdentity(...), success: ..., error: ..., implementationVersion } }"; :1015-1018 "body: { _tag: \"FlowCall\", flow: call.flow, mode: call.mode"; /Users/williamcory/smithers/packages/smithers/flows/plan/src/internal/node.ts:217-221 "export interface ActionCall ... readonly action: string"
-- PlanNode exposes material (KeyMaterial with body: Unknown) and dependsOn, so the app can read the action tag and the edge set from the Plan RPC result with no engine change. — /Users/williamcory/smithers/packages/smithers/flows/plan/src/Plan.ts:143-155 "export const PlanNode = Schema.Struct({ id, kind: NodeKind, key, material: KeyMaterial.KeyMaterial, effects, dependsOn: Schema.Array(Schema.NonEmptyString), ..."; /Users/williamcory/smithers/packages/smithers/flows/plan/src/KeyMaterial.ts:66-76 "body: Schema.Unknown"
-- Node kinds are step, agent, merge. — /Users/williamcory/smithers/packages/smithers/flows/plan/src/Plan.ts:99 "const NodeKind = Schema.Literals([\"step\", \"agent\", \"merge\"])"
-- run-events rows are the journal itself with a timestamp: ControlEvent { sequence, kind, runId, occurredAt, payload }, paged at 1000. — /Users/williamcory/smithers/packages/smithers/control/src/ControlSchema.ts:812-820 "sequence: Schema.Number, kind: Schema.String, runId: ..., occurredAt: Schema.Number, payload: Schema.Json"; /Users/williamcory/smithers/packages/smithers/gateway/src/Projections.ts:110 "export const maxEventsPerPage = 1_000"
-- RunSummaryRow has createdAt/updatedAt and counters (turns, calls, callsFailed, edits, inputTokens, outputTokens) but no duration, startedAt, finishedAt or per-node timing. — /Users/williamcory/smithers/packages/smithers/gateway/src/GatewayProjection.ts:32-70 "createdAt: Schema.Number, updatedAt: Schema.Number, ... turns: Schema.Number, calls: Schema.Number, callsFailed ..., inputTokens, outputTokens"
-- RunTreeRow has startedAt/endedAt but its nodeId is an ordinal, so it cannot be joined to plan nodes. — /Users/williamcory/smithers/packages/smithers/gateway/src/GatewayProjection.ts:85-100 "`nodeId` is the ordinal the call opened on, because the emitter names no node." ... "startedAt: Schema.Number, endedAt: Schema.optional(Schema.Number)"
-- Adding a projection is one entry in the served table plus one case in the fold switch. — /Users/williamcory/smithers/packages/smithers/gateway/src/GatewaySchema.ts:164-179 "serving one more projection is one more entry here rather than five mirrored lists"; /Users/williamcory/smithers/packages/smithers/gateway/src/Projections.ts:522-536 "switch (selector._tag) { case \"workspace-runs\": ... case \"node-output\": ..."
-- The only 'forecast' in the engine is the agent Budget's cost reservation, not a duration. — /Users/williamcory/smithers/packages/smithers/agent/src/Budget.ts:44-46 "Admission reserves a soft forecast. Before dispatch, `reserve` counts actual spend plus all in-flight estimates, using the largest observed call."
-- The only latency field in agent events is ClaimDemanded.latencyMs (completion-brake evaluation time), not step duration. — /Users/williamcory/smithers/packages/smithers/agent/harness/src/AgentEvent.ts:582-583 "/** Wall-clock milliseconds the evaluation took. */ latencyMs: Schema.Int"
-- Step-cache entries record createdAtMs (used for age bounds) and no production duration. — /Users/williamcory/smithers/packages/smithers/flows/step-cache/src/CacheStore.ts:73 "both carry the `createdAtMs` the age is measured from"; grep for durationMs in flows/step-cache/src returned nothing
-- grep for estimate|eta|forecast|expectedDuration|p50|percentile in apps/app/src (non-test) finds only a hardcoded desktop boot hint; no run or node estimator. — /Users/williamcory/smithers/apps/app/src/mainview/state/seams/WorkspaceSeam.ts:113-114 "const desktopBootEstimateSeconds = 20 / const desktopReadyEstimateSeconds = 60"
-- The app already folds engine attempt events into spans with start/end, keyed by stepKeyDigest, and does not read node-scheduled/node-settled outside experimental fixtures. — /Users/williamcory/smithers/apps/app/src/mainview/cards/EngineTrace.ts:193-201 "if (envelope.eventType === \"flows.engine.attempt-started\" || ... \"attempt-finished\") ... current.endedAt = envelope.emittedAtMs"; grep hits for node-scheduled only in mainview/experimental/panes/Journal.tsx:47
-- The app retains each run's journal on its run-trace card payload and reads suffix pages per pump cycle, so app-side history exists only for runs with a card on this client. — /Users/williamcory/smithers/apps/app/src/mainview/state/controller/workflow-pump.ts:252 "let retainedJournal: Extract<Card, { kind: \"run-trace\" }>[\"payload\"][\"events\"]" and :123 "cursor = { selector: { _tag: \"run-events\", runId }, ..."
-- The app calls Plan through the relay today. — /Users/williamcory/smithers/apps/app/src/mainview/state/controller/gateway.ts:244 "const planned = await call(repo, \"Plan\", { flowId, input }, binding)"
-- The relay allowlist is by procedure name mapped to a path; Projection.Snapshot maps to /projections, so a new selector needs no relay change (selector-level validation in the relay not found by grep). — /Users/williamcory/smithers/apps/server/src/gatewayRpc.ts:52 "\"Projection.Snapshot\": \"/projections\","
-- The mock's run and re-key figures are serial sums of node ms, not a critical path. — /Users/williamcory/smithers/docs/flow-builder/mockups/source/src/flow.ts:370-377 "export const FIRST_RUN_MS = NODES.filter(...).reduce((total, node) => total + node.ms, 0)" / "export const REKEY_RUN_MS = REKEYED.reduce(...)"
+- D-030 rules p50 with sample size, range when p90/p50 > 3, nothing when no history, and names flows_attempts grouped by action tag as the source; it states no predictor exists. — docs/flow-builder/decisions.md:278-285 "Source: `flows_attempts.started_at_ms / finished_at_ms` grouped by action tag ... No predictor exists in the engine today; this is new engineering work and needs a projection."
+- flows_attempts has no action tag or node id column; identity is (run_id, step_key_digest, attempt). — packages/smithers/flows/run-store/src/migrations/0001_initial.ts:74-88 "CREATE TABLE flows_attempts ( run_id ..., step_key_digest ..., attempt ..., state ..., started_at_ms INTEGER NOT NULL ..., finished_at_ms INTEGER ..., meta_json TEXT NOT NULL ..., PRIMARY KEY (run_id, step_key_digest, attempt)"
+- Attempt meta_json carries tier, nondeterministic, boundary, readSetVerified, boundaryQuarantined, hardViolation, snapshotId, admittedBy, effectCrossing; no action name. — packages/smithers/flows/engine-store/src/internal/ActionPersistence.ts:319-378 "const AttemptMeta = Schema.Struct({ tier: Schema.Literals([\"sealed\", \"compensable\", \"irreversible\"]), ... effectCrossing: ..."
+- AttemptStore exposes put/get/heartbeat/finish/patch only; there is no cross-run or per-flow listing API to aggregate durations. — packages/smithers/flows/run-store/src/AttemptStore.ts:317-344 "readonly put ... readonly get: (id: AttemptId) ... readonly finish ... readonly patch"
+- Attempt rows record startedAtMs and optional finishedAtMs. — packages/smithers/flows/run-store/src/AttemptStore.ts:161-162 "startedAtMs: NonNegativeSafeInt, finishedAtMs: Schema.optionalKey(NonNegativeSafeInt)"
+- Journal attempt-started / attempt-finished payloads carry runId, stepKeyDigest, attempt, tier|state; no action tag, no node id, no timestamp in payload. — packages/smithers/flows/journal/src/EngineEvent.ts:373-392 "eventType: Schema.Literal(\"flows.engine.attempt-started\"), payload: Schema.Struct({ ... runId, stepKeyDigest: Event.DispatchId, attempt, tier ..."
+- The v2 attempt-lifecycle event carries startedAtMs and finishedAtMs but is still keyed by stepKeyDigest, and warns clocks can run backwards. — packages/smithers/flows/journal/src/EngineEvent.ts:82-131 "const timing = { startedAtMs: Event.TimestampMs }" ... "Wall clocks can move backwards; completion need not be after start." ... "stepKeyDigest: Event.DispatchId"
+- node-scheduled carries planId, nodeId, kind, planKey, dispatchKey, attempt, priority, waited; no action tag. — packages/smithers/flows/engine-store/src/PlanScheduler.ts:1048-1057 "JournalRecords.nodeScheduled(source(`node/${node.id}/${attempts}`), { planId: plan.planId, nodeId: node.id, kind: node.kind, planKey: node.key, dispatchKey, attempt: attempts, priority: node.priority, waited: start.waited })"
+- node-settled carries planId, nodeId, planKey, dispatchKey, outcome, attempts, rebases. — packages/smithers/flows/engine-store/src/PlanScheduler.ts:966-974 "JournalRecords.nodeSettled(... { planId: plan.planId, nodeId: node.id, planKey: node.key, dispatchKey: state.dispatchKey, outcome: state.outcome, attempts: state.attempts, rebases: state.rebases })"
+- Outcome distinguishes executed work from a cache hit: built vs clean, decided by whether the executor ran. — packages/smithers/flows/engine-store/src/PlanScheduler.ts:125 "export type Outcome = \"built\" | \"clean\" | \"failed\" | \"skipped\" | \"deferred\"" and :1113 "outcome: (yield* Ref.get(ran)) ? \"built\" : \"clean\""
+- The stable 'kind of step' identifier is KeyMaterial.body.action for an action node (a string) and body.flow for a flow call; the body also holds schema identities and implementationVersion, so the whole body is NOT stable across re-keys, only the tag is. — packages/smithers/flows/flow/src/Graph.ts:1193-1204 "body: { _tag: \"ActionCall\", action: ast.action, tier: ..., declaration: ... { payload: schemaIdentity(...), success: ..., error: ..., implementationVersion } }"; :1015-1018 "body: { _tag: \"FlowCall\", flow: call.flow, mode: call.mode"; packages/smithers/flows/plan/src/internal/node.ts:217-221 "export interface ActionCall ... readonly action: string"
+- PlanNode exposes material (KeyMaterial with body: Unknown) and dependsOn, so the app can read the action tag and the edge set from the Plan RPC result with no engine change. — packages/smithers/flows/plan/src/Plan.ts:143-155 "export const PlanNode = Schema.Struct({ id, kind: NodeKind, key, material: KeyMaterial.KeyMaterial, effects, dependsOn: Schema.Array(Schema.NonEmptyString), ..."; packages/smithers/flows/plan/src/KeyMaterial.ts:66-76 "body: Schema.Unknown"
+- Node kinds are step, agent, merge. — packages/smithers/flows/plan/src/Plan.ts:99 "const NodeKind = Schema.Literals([\"step\", \"agent\", \"merge\"])"
+- run-events rows are the journal itself with a timestamp: ControlEvent { sequence, kind, runId, occurredAt, payload }, paged at 1000. — packages/smithers/control/src/ControlSchema.ts:812-820 "sequence: Schema.Number, kind: Schema.String, runId: ..., occurredAt: Schema.Number, payload: Schema.Json"; packages/smithers/gateway/src/Projections.ts:110 "export const maxEventsPerPage = 1_000"
+- RunSummaryRow has createdAt/updatedAt and counters (turns, calls, callsFailed, edits, inputTokens, outputTokens) but no duration, startedAt, finishedAt or per-node timing. — packages/smithers/gateway/src/GatewayProjection.ts:32-70 "createdAt: Schema.Number, updatedAt: Schema.Number, ... turns: Schema.Number, calls: Schema.Number, callsFailed ..., inputTokens, outputTokens"
+- RunTreeRow has startedAt/endedAt but its nodeId is an ordinal, so it cannot be joined to plan nodes. — packages/smithers/gateway/src/GatewayProjection.ts:85-100 "`nodeId` is the ordinal the call opened on, because the emitter names no node." ... "startedAt: Schema.Number, endedAt: Schema.optional(Schema.Number)"
+- Adding a projection is one entry in the served table plus one case in the fold switch. — packages/smithers/gateway/src/GatewaySchema.ts:164-179 "serving one more projection is one more entry here rather than five mirrored lists"; packages/smithers/gateway/src/Projections.ts:522-536 "switch (selector._tag) { case \"workspace-runs\": ... case \"node-output\": ..."
+- The only 'forecast' in the engine is the agent Budget's cost reservation, not a duration. — packages/smithers/agent/src/Budget.ts:44-46 "Admission reserves a soft forecast. Before dispatch, `reserve` counts actual spend plus all in-flight estimates, using the largest observed call."
+- The only latency field in agent events is ClaimDemanded.latencyMs (completion-brake evaluation time), not step duration. — packages/smithers/agent/harness/src/AgentEvent.ts:582-583 "/** Wall-clock milliseconds the evaluation took. */ latencyMs: Schema.Int"
+- Step-cache entries record createdAtMs (used for age bounds) and no production duration. — packages/smithers/flows/step-cache/src/CacheStore.ts:73 "both carry the `createdAtMs` the age is measured from"; grep for durationMs in flows/step-cache/src returned nothing
+- grep for estimate|eta|forecast|expectedDuration|p50|percentile in apps/app/src (non-test) finds only a hardcoded desktop boot hint; no run or node estimator. — apps/app/src/mainview/state/seams/WorkspaceSeam.ts:113-114 "const desktopBootEstimateSeconds = 20 / const desktopReadyEstimateSeconds = 60"
+- The app already folds engine attempt events into spans with start/end, keyed by stepKeyDigest, and does not read node-scheduled/node-settled outside experimental fixtures. — apps/app/src/mainview/cards/EngineTrace.ts:193-201 "if (envelope.eventType === \"flows.engine.attempt-started\" || ... \"attempt-finished\") ... current.endedAt = envelope.emittedAtMs"; grep hits for node-scheduled only in mainview/experimental/panes/Journal.tsx:47
+- The app retains each run's journal on its run-trace card payload and reads suffix pages per pump cycle, so app-side history exists only for runs with a card on this client. — apps/app/src/mainview/state/controller/workflow-pump.ts:252 "let retainedJournal: Extract<Card, { kind: \"run-trace\" }>[\"payload\"][\"events\"]" and :123 "cursor = { selector: { _tag: \"run-events\", runId }, ..."
+- The app calls Plan through the relay today. — apps/app/src/mainview/state/controller/gateway.ts:244 "const planned = await call(repo, \"Plan\", { flowId, input }, binding)"
+- The relay allowlist is by procedure name mapped to a path; Projection.Snapshot maps to /projections, so a new selector needs no relay change (selector-level validation in the relay not found by grep). — apps/server/src/gatewayRpc.ts:52 "\"Projection.Snapshot\": \"/projections\","
+- The mock's run and re-key figures are serial sums of node ms, not a critical path. — docs/flow-builder/mockups/source/src/flow.ts:370-377 "export const FIRST_RUN_MS = NODES.filter(...).reduce((total, node) => total + node.ms, 0)" / "export const REKEY_RUN_MS = REKEYED.reduce(...)"
 
 Blockers:
 - D-030's premise is false as written: flows_attempts cannot be grouped by action tag (no tag, no node id; only step_key_digest, which changes on every re-key). Someone must accept the journal node-event source or approve a run-store migration adding an action column; the journal route needs no migration.
@@ -1120,12 +967,12 @@ Blockers:
 - smithers MCP server failed to connect in this session (CONNECTION_CLOSED); nothing here depended on it. Nothing was run: test commands below are read from package.json, not executed (read-only task).
 
 Commands:
-- `cd /Users/williamcory/smithers/packages/smithers/gateway && pnpm vitest run test/GatewayProjection.test.ts test/Projections.test.ts test/GatewaySchema.test.ts test/WireFormat.test.ts`
-- `cd /Users/williamcory/smithers/packages/smithers/flows && pnpm vitest run engine-store/test/PlanScheduler.test.ts`
-- `cd /Users/williamcory/smithers/apps/app && bun test src/mainview/cards/flowGraph/Durations.test.ts`
-- `cd /Users/williamcory/smithers/apps/app && pnpm typecheck`
-- `cd /Users/williamcory/smithers/apps/app && pnpm lint:conformance`
-- `cd /Users/williamcory/smithers && pnpm docs:llms  # then check-docs and check-llms, required after the gateway projection count changes`
+- `cd packages/smithers/gateway && pnpm vitest run test/GatewayProjection.test.ts test/Projections.test.ts test/GatewaySchema.test.ts test/WireFormat.test.ts`
+- `cd packages/smithers/flows && pnpm vitest run engine-store/test/PlanScheduler.test.ts`
+- `cd apps/app && bun test src/mainview/cards/flowGraph/Durations.test.ts`
+- `cd apps/app && pnpm typecheck`
+- `cd apps/app && pnpm lint:conformance`
+- `pnpm docs:llms  # then check-docs and check-llms, required after the gateway projection count changes`
 - `env -i HOME=$HOME PATH=$PATH TMPDIR=$TMPDIR TERM=dumb CI=1 <test command>  # if exported *_API_KEY values cause false reds`
 
 ### End-to-end testing for the flow builder + run monitor with no mocked backend (apps/app e2e tiers, card/pump unit harness, gateway real-engine suites, CI wiring)
@@ -1135,7 +982,6 @@ No tier today runs a deterministic flow against a real local gateway in Chromium
 **What exists today**
 - T1 (`playwright.config.ts`, port 47311) replaces the gateway with `page.route("**/api/workflow/rpc")` and fixture journals.
 - `e2e/real` (`playwright.real.config.ts`, port 47321) is backend-real but depends on production. It needs a saved GitHub profile, a fresh GitHub repo import, a Cloud workspace VM, and LLM-driven `/flow.create`. Timeouts are 30 min per test, and no GitHub workflow runs it.
-- Neither tier uses wrangler or port 8788. The 8788 gotcha applies only to Will's site dev proxy.
 
 **The three parts to assemble**
 - `packages/smithers/gateway/test/RealEngineRun.ts` is a real control plane plus a real `NodeRuntime` engine over two SQLite files, running a real `Flow`/`Action`. I ran it: 3 pass, 13 s.
@@ -1153,7 +999,7 @@ No tier today runs a deterministic flow against a real local gateway in Chromium
 - The `RealEngineRun.ts` test stack does not wire the supervisor, so its test asserts that the client sees none of those records.
 
 **Unit harness and CI**
-- Card bodies are tested with bun test + `@happy-dom/global-registrator` + `react-dom/client` `createRoot` + `act`, against a real `createAppStore`. There is no vitest in apps/app. I ran 109 tests across 4 files in 7.8 s at load average 32.
+- Card bodies are tested with bun test + `@happy-dom/global-registrator` + `react-dom/client` `createRoot` + `act`, against a real `createAppStore`. There is no vitest in apps/app. I ran 109 tests across 4 files in 7.8 s.
 - CI: `//apps/app:check`, `unitTests`, `conformance` and `browserE2e` run in the `apps-e2e` job. `ci.yml` is generated by `Smithers.GithubCiGen` in root `PACKAGE.ts`, and the drift lint is `//:ci`.
 
 **Blocker**
@@ -1163,17 +1009,15 @@ No tier today runs a deterministic flow against a real local gateway in Chromium
 - The T1 host is offline with identityUpstream null, so /api/workflow/* cannot reach any relay; specs double it in the browser — apps/app/scripts/browser-test-host.ts:22-24 `cloudMode: realChat ? "hybrid" : "offline", cloudApi: null, identityUpstream: null`; apps/app/e2e/playwright/runs.spec.ts:67 `await page.route("**/api/workflow/rpc", async (route) => {`
 - T1 runs.spec.ts drives run cards from fixture journals and a fixture plan, which is not engine-true — apps/app/e2e/playwright/runs.spec.ts:6-7 `import { earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"` / `import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"`
 - Real tier: testDir e2e/real, port 47321, serves via `bun scripts/run-real-e2e.ts serve`, refuses the chat stub, 90 s default test timeout, webServer timeout 300 s — apps/app/playwright.real.config.ts:5,17,28,39-46 `command: "bun scripts/run-real-e2e.ts serve"` ... `SMITHERS_CHAT_STUB: "0"`
-- The real host is startLocalServer in hybrid mode with default upstreams (canary Worker), isolated temp home — apps/app/scripts/run-real-e2e.ts:34-40 `startLocalServer({ port, distDir, home, stateDir, cloudMode: "hybrid" })`; apps/app/src/bun/server.ts:67 `DEFAULT_IDENTITY_UPSTREAM = "https://canary.smithers.sh"`
 - flow-execution.spec.ts stands up its backend by creating a real GitHub repo, importing it to Smithers Cloud, waiting for a running workspace VM, then POST /api/workflow/provision. No wrangler, no local smthrs serve, no seeded local workspace — apps/app/e2e/real/flow-execution/fixture.ts:119-121 `createOwnedGitHubRepository(context, name)`; :36 `"/api/cloud/api/github/import"`; :60 `realApi(page, request, "POST", "/api/workflow/provision", { repo, workspaceId })`
 - The real flow specs are LLM-driven and nondeterministic (/flow.create with prose), with a 30-minute per-test budget — apps/app/e2e/real/flow-execution.spec.ts:17 `workflowTest.setTimeout(30 * 60_000)`; :236 `command(page, `/flow.create create a workflow with the exact id ${marker}; declare one required string input...`
-- The read-only real canaries need a preconfigured repo + workspace env and the saved test account — apps/app/e2e/real/flow-execution/fixture.ts:259-262 `SMITHERS_REAL_CONFIGURED_REPO and SMITHERS_REAL_CONFIGURED_WORKSPACE must name the canary's prepared coding workspace` / `repo.startsWith("codeplanesmithers/")`
 - The local origin forwards /api/workflow/* to identityUpstream. This is the seam a local relay plugs into — apps/app/src/bun/server.ts:371-373 `PRODUCT_PROXY_PREFIXES ... "/api/workflow/"`; :1012-1015 `proxyIdentity(request, url, identityUpstream, upstreamTimeoutMs, log)`; option at :136 `readonly identityUpstream?: string | null`
 - The Worker can only reach a Cloud-provisioned gateway; the static upstream env was removed, so wrangler dev cannot point at a local gateway — apps/server/src/index.ts:117 `The static gateway proxy was removed. Use the session-validated /api/workflow/provision and /api/workflow/rpc routes`; apps/server/src/gateway.ts:29 `POST /api/repos/{owner}/{repo}/gateway`
 - gateway-run-proof.ts already composes a real loopback gateway + a Node relay using the Worker's frame adapter + the app's unmodified seam, but its executor is Noop and run activity is hand-journaled — apps/app/scripts/gateway-run-proof.ts:96 `ControlExecutor.layer(ControlExecutor.makeNoop())`; :66-70 import `GATEWAY_PROCEDURE_MOUNTS` from "smithers-server/gatewayRpc"; :19-20 `The run's own ACTIVITY is scripted`
 - proof:gateway must run under tsx (Node). `bun` fails at once, despite the file's own docstring saying to use bun — apps/app/package.json scripts `"proof:gateway": "tsx scripts/gateway-run-proof.ts"`; bun output: `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0`; docstring gateway-run-proof.ts:34 `Run it with: bun apps/app/scripts/gateway-run-proof.ts`
 - proof:gateway is RED on the current working copy (2026-09-18): steps 1 ok, step 2 fails, 6.9 s — ran `pnpm exec tsx scripts/gateway-run-proof.ts` in apps/app: `ok  the listing names a real flow` then `Error: FAILED: the seam launched a run`
 - A real-engine gateway stack exists as a test composition: real control plane, real NodeRuntime engine, two SQLite DBs, a real Flow over a real Action, no credential needed — packages/smithers/gateway/test/RealEngineRun.ts:60-73 `export const flowId = "gateway/RealRun"` ... `Flow.make(flowId, { ... body: (payload) => Write.call(payload) })`; :11-14 `two databases ... control.db ... engine.db`
-- RealEngineRun suite passes: 3 tests, 13.08 s wall (load average 32). Running vitest without `--coverage.enabled=false` reports a 100% coverage threshold error for a single file — ran `pnpm exec vitest run test/RealEngineRun.test.ts --coverage.enabled=false` in packages/smithers/gateway: `Tests  3 passed (3)  Duration  13.08s`; without flag: `ERROR: Coverage for lines (36.7%) does not meet global threshold (100%)`
+- RealEngineRun suite passes: 3 tests, 13.08 s wall. Running vitest without `--coverage.enabled=false` reports a 100% coverage threshold error for a single file — ran `pnpm exec vitest run test/RealEngineRun.test.ts --coverage.enabled=false` in packages/smithers/gateway: `Tests  3 passed (3)  Duration  13.08s`; without flag: `ERROR: Coverage for lines (36.7%) does not meet global threshold (100%)`
 - In the RealEngineRun stack, engine flows.engine.* records stay in the engine journal and no projection sees them — packages/smithers/gateway/test/RealEngineRun.test.ts:126-141 `expect(engineKinds).toContain("flows.engine.attempt-started")` ... `a client watching that run sees none of them`
 - The production CLI host DOES bridge the engine journal into the control journal via EngineJournalSupervisor, as control.engine.event envelopes — packages/smithers/src/internal/NativeControl.ts:745-753 `const supervisor = yield* EngineJournalSupervisor.make({ engineJournal, controlJournal, engineState, runs, control })` ... `return supervisor.wrap(executor)`; packages/smithers/ENGINE-JOURNAL-PROJECTION.md `control.engine.event` envelope with `eventType`, `payload`
 - The gateway projections and the app already decode control.engine.event — packages/smithers/gateway/src/Projections.ts:752 `decoded.kind === "control.engine.event" ? decoded : retainedEvent(decoded)`; apps/app/src/mainview/cards/EngineTrace.ts:9-22 `const Envelope = Schema.Struct({ version: Schema.Literal(1), executionId, ... eventType, payload, meta })`
@@ -1182,15 +1026,13 @@ No tier today runs a deterministic flow against a real local gateway in Chromium
 - A HumanTask parked on a durable wait across the two databases already has a real-engine test to copy from — packages/smithers/test/NestedHumanWaitAcrossDatabases.test.ts:39 `import { Action, Flow, HumanTask, Interpreter } from "@smthrs/flow"`; :69 `HumanTask.action.call({ name: "coding-clarification", kind: "ask", prompt, maxAttempts: 3 })`
 - Card bodies are tested with bun:test + happy-dom GlobalRegistrator + react-dom createRoot + act, against a real createAppStore with memoryStorage; no vitest and no bunfig preload in apps/app — apps/app/src/mainview/cards/RunTraceCard.test.tsx:2-8 `import { GlobalRegistrator } from "@happy-dom/global-registrator"` / `from "bun:test"` / `createRoot` / `createAppStore` / `memoryStorage`; :28 `GlobalRegistrator.register()`; no apps/app/bunfig.toml
 - Pump/controller tests drive createWorkflowPumpController over a real createGatewaySeam with an injected fetch — apps/app/src/mainview/state/controller/workflow-pump.test.ts:7-8,49-51 `createGatewaySeam({ baseUrl: "https://test", ..., fetch: async (_, init) => {`
-- Measured: RunTrace + RunTraceCard + workflow-pump + gateway unit files = 109 tests, 7.8 s at load average 32 — ran `bun test src/mainview/cards/RunTrace.test.ts src/mainview/cards/RunTraceCard.test.tsx src/mainview/state/controller/workflow-pump.test.ts src/mainview/state/controller/gateway.test.ts`: `109 pass 0 fail ... [7.76s]`
+- Measured: RunTrace + RunTraceCard + workflow-pump + gateway unit files = 109 tests, 7.8 s — ran `bun test src/mainview/cards/RunTrace.test.ts src/mainview/cards/RunTraceCard.test.tsx src/mainview/state/controller/workflow-pump.test.ts src/mainview/state/controller/gateway.test.ts`: `109 pass 0 fail ... [7.76s]`
 - apps/app unit target = bun test over src, e2e/contracts, e2e/real/coverage, scripts; conformance is a separate lint suite that pins the data-*/card-kind/flow-name literals e2e asserts against — apps/app/PACKAGE.ts:113 `runner: Smithers.testSuite(["src", "e2e/contracts", "e2e/real/coverage", "scripts"])`; :137-143 `refuses any literal the e2e suites and the scripts/ runners assert against that no longer resolves`
 - browserE2e target runs playwright install, test:e2e:auth, test:e2e:probes, then T1 playwright, with the chat stub — apps/app/scripts/run-pr-e2e.mjs:4-9 `["exec","playwright","install","--with-deps","chromium"], ["run","test:e2e:auth"], ["run","test:e2e:probes"], ["exec","playwright","test"]`; PACKAGE.ts:172-179
 - CI runs the four app targets in job apps-e2e; the real tier appears in no workflow — .github/workflows/ci.yml:367,373,379,385 `pnpm exec smthrs build '//apps/app:check'` / `test '//apps/app:unitTests'` / `'//apps/app:conformance'` / `'//apps/app:browserE2e'`; `grep -n "real-e2e|run-real-e2e|playwright.real" .github/workflows/*.yml` returned nothing
 - ci.yml is generated by Smithers.GithubCiGen in root PACKAGE.ts; the drift lint is the //:ci Lint step; apps-e2e is a required job — PACKAGE.ts:205-206 `const ci = Smithers.GithubCiGen({ summary: "Regenerate and drift-check .github/workflows/ci.yml..."`; :373 `{ name: "Generated workflow drift", verb: Smithers.Verb.Lint, pattern: "//:ci" }`; :219 `requiredJobs: ["test", "apps-e2e", ...]`
 - The relay allowlist is a plain exported map, with a colocated unit test file — apps/server/src/gatewayRpc.ts:44-54 `GATEWAY_PROCEDURE_MOUNTS ... Plan: "/rpc" ... "Projection.Snapshot": "/projections", "Approval.Submit": "/projections"`; apps/server/src/gatewayRpc.test.ts exists; apps/server/package.json `"test": "bun test src scripts"`
 - The canary checklist records flow.run.stop/retry from the card as an e2e GAP — apps/E2E-CANARY-CHECKLIST.md:176 `| E7.12 | **`flow.run.stop` and `flow.run.retry` from the card** | **GAP** | — |`
-- Native main tests leak MainProcess daemons, so do not run `bun test` over apps/app/src/bun for this feature; scope to cards/state paths — memory index: `bun test over apps/app/src/bun orphans ~10 e2e/native/MainProcess.ts daemons per run (662 procs / 19.8 GB on 2026-09-17)`; apps/app/e2e/README.md: `native/ holds the main-process subprocess probe driven by src/bun/Main.test.ts`
-- The last 150 lines of CHAT.md never mention the flow builder; the release owner is on repin 3, the Jev relay, and triggers forms — /Users/williamcory/smithers/CHAT.md tail: `**Repin 3 is still stopped**, awaiting Will's design decision`; `grep -i "flow-builder|graph"` over the tail returned no flow-builder hit
 
 Blockers:
 - `pnpm --filter smithers-app proof:gateway` is RED on the working copy: `FAILED: the seam launched a run` (step 2). This is the only existing app-seam -> relay -> real-gateway composition and the planned base for the e2e host. Cause not diagnosed: seam.launch does Plan, Approval.Submit, then Run (gateway.ts:244-266), and the script prints no message.
@@ -1199,24 +1041,21 @@ Blockers:
 - Open question: does the ControlExecutor path of the intended fixture host return non-empty PlanCard.nodes? I found no `nodes:` producer in control/src/SqlControlRuntime.ts, ControlLive.ts or NativeControl.ts by grep. The builder must be located by whoever owns the Plan area before the e2e can assert node ids.
 - The engine-to-control journal bridge exists only in the CLI host (NativeControl.ts:745). The gateway test stack asserts its absence (RealEngineRun.test.ts:126-141). The fixture host must wire EngineJournalSupervisor itself, or node status in the e2e will never move.
 - Runtime split: NodeDatabase refuses Bun (`unsupported_runtime`), and the local origin is a Bun server. The e2e host needs two processes, or the BunDatabase layer variant (@smthrs/database/bun/BunDatabase).
-- Machine load average was 32 during measurement. Wall-clock assertions and Playwright timeouts will flake under fleet load; rerun in isolation before calling a red real.
-- Do not run `bun test` over apps/app/src/bun while iterating: it orphans MainProcess daemons (memory gotcha, 662 procs on 2026-09-17). Port 8788/wrangler is NOT part of any recipe here; ports are 47311 (T1) and 47321 (real).
-- I ran `pnpm exec vitest run` once with default coverage in packages/smithers/gateway. It may have written a coverage/ directory there; that path is ignored-but-tracked per the memory gotcha, so check that `jj st` does not show phantom changes.
 
 Commands:
-- `cd /Users/williamcory/smithers/apps/app && bun test src/mainview/cards/RunTrace.test.ts src/mainview/cards/RunTraceCard.test.tsx src/mainview/state/controller/workflow-pump.test.ts src/mainview/state/controller/gateway.test.ts   # ran: 109 pass, 7.8 s`
-- `cd /Users/williamcory/smithers/apps/app && bun test src/mainview/cards src/mainview/state   # feature-scoped unit run; avoids src/bun daemon leak; not run here`
-- `cd /Users/williamcory/smithers/apps/app && pnpm run test   # = bun test src e2e/contracts e2e/real/coverage scripts (package.json); includes src/bun and leaks MainProcess daemons`
-- `cd /Users/williamcory/smithers/apps/app && pnpm run lint:conformance   # bun test lint/conformance`
-- `cd /Users/williamcory/smithers/apps/app && pnpm run typecheck   # node scripts/ensure-devkit.mjs && tsc --noEmit`
-- `cd /Users/williamcory/smithers/apps/app && pnpm exec tsx scripts/gateway-run-proof.ts   # ran: RED at step 2 in 6.9 s; `bun` refuses with unsupported_runtime`
-- `cd /Users/williamcory/smithers/packages/smithers/gateway && pnpm exec vitest run test/RealEngineRun.test.ts --coverage.enabled=false   # ran: 3 passed, 13.08 s`
-- `cd /Users/williamcory/smithers/packages/smithers && pnpm exec vitest run test/NestedHumanWaitAcrossDatabases.test.ts test/EngineJournalSupervisor.test.ts test/EngineJournalProjection.test.ts --coverage.enabled=false   # HumanTask + bridge references; not run here`
-- `cd /Users/williamcory/smithers/apps/server && bun test src/gatewayRpc.test.ts   # relay allowlist; not run here`
-- `cd /Users/williamcory/smithers/apps/app && pnpm run test:e2e -- e2e/playwright/runs.spec.ts   # T1, doubled gateway; cold vite build, webServer timeout 240 s; SMITHERS_SKIP_SPA_BUILD=1 to reuse dist; not run here`
-- `cd /Users/williamcory/smithers/apps/app && bun scripts/run-real-e2e.ts --grep 'flows\.'   # production-backed real tier; needs the ~/.multi-e2e-profile GitHub session; SMITHERS_REAL_CONFIGURED_REPO and SMITHERS_REAL_CONFIGURED_WORKSPACE are required only by the read-only catalog canaries; up to 30 min per test; not run here`
-- `cd /Users/williamcory/smithers && pnpm exec smthrs test '//apps/app:unitTests' --verbose && pnpm exec smthrs test '//apps/app:conformance' --verbose && pnpm exec smthrs test '//apps/app:browserE2e' --verbose   # exactly what CI job apps-e2e runs (ci.yml:373-385)`
-- `cd /Users/williamcory/smithers && pnpm exec smthrs lint '//:ci'   # ci.yml drift lint; regenerate with pnpm exec smthrs run '//:ci' (PACKAGE.ts:205,373)`
+- `cd apps/app && bun test src/mainview/cards/RunTrace.test.ts src/mainview/cards/RunTraceCard.test.tsx src/mainview/state/controller/workflow-pump.test.ts src/mainview/state/controller/gateway.test.ts   # ran: 109 pass, 7.8 s`
+- `cd apps/app && bun test src/mainview/cards src/mainview/state   # feature-scoped unit run; avoids src/bun daemon leak; not run here`
+- `cd apps/app && pnpm run test   # = bun test src e2e/contracts e2e/real/coverage scripts (package.json); includes src/bun and leaks MainProcess daemons`
+- `cd apps/app && pnpm run lint:conformance   # bun test lint/conformance`
+- `cd apps/app && pnpm run typecheck   # node scripts/ensure-devkit.mjs && tsc --noEmit`
+- `cd apps/app && pnpm exec tsx scripts/gateway-run-proof.ts   # ran: RED at step 2 in 6.9 s; `bun` refuses with unsupported_runtime`
+- `cd packages/smithers/gateway && pnpm exec vitest run test/RealEngineRun.test.ts --coverage.enabled=false   # ran: 3 passed, 13.08 s`
+- `cd packages/smithers && pnpm exec vitest run test/NestedHumanWaitAcrossDatabases.test.ts test/EngineJournalSupervisor.test.ts test/EngineJournalProjection.test.ts --coverage.enabled=false   # HumanTask + bridge references; not run here`
+- `cd apps/server && bun test src/gatewayRpc.test.ts   # relay allowlist; not run here`
+- `cd apps/app && pnpm run test:e2e -- e2e/playwright/runs.spec.ts   # T1, doubled gateway; cold vite build, webServer timeout 240 s; SMITHERS_SKIP_SPA_BUILD=1 to reuse dist; not run here`
+- `cd apps/app && bun scripts/run-real-e2e.ts --grep 'flows\.'   # production-backed real tier; requires an authenticated test fixture; SMITHERS_REAL_CONFIGURED_REPO and SMITHERS_REAL_CONFIGURED_WORKSPACE are required only by the read-only catalog canaries; up to 30 min per test; not run here`
+- `pnpm exec smthrs test '//apps/app:unitTests' --verbose && pnpm exec smthrs test '//apps/app:conformance' --verbose && pnpm exec smthrs test '//apps/app:browserE2e' --verbose   # exactly what CI job apps-e2e runs (ci.yml:373-385)`
+- `pnpm exec smthrs lint '//:ci'   # ci.yml drift lint; regenerate with pnpm exec smthrs run '//:ci' (PACKAGE.ts:205,373)`
 
 ### engine/gateway side of a live plan graph
 
@@ -1265,24 +1104,23 @@ Blockers:
 - No command was run in this read-only session. The test commands come from each package.json and were not run; the read-only mandate also forbade installs and writes.
 
 Commands:
-- `cd /Users/williamcory/smithers/packages/smithers/gateway && pnpm run check   # tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit (gateway/package.json:208)`
-- `cd /Users/williamcory/smithers/packages/smithers/gateway && pnpm exec vitest run test/GatewayProjection.test.ts test/GatewaySchema.test.ts test/ProjectionsUnit.test.ts test/Projections.test.ts test/WireFormat.test.ts test/CallFacts.test.ts test/RealEngineRun.test.ts`
-- `cd /Users/williamcory/smithers/packages/smithers/gateway && pnpm run coverage   # 100% thresholds, vitest.config.ts:20-25`
-- `cd /Users/williamcory/smithers/packages/smithers/control && pnpm run check && pnpm exec vitest run test/PlanHandoff.test.ts`
-- `cd /Users/williamcory/smithers/packages/smithers/flows/flow && pnpm run check && pnpm exec vitest run`
-- `cd /Users/williamcory/smithers/packages/smithers/flows/engine-store && pnpm exec vitest run test/PlanScheduler.test.ts`
-- `cd /Users/williamcory/smithers && pnpm docs:llms   # then check-docs and check-llms, because the projection count is documented in gateway/docs/concepts/projections.md:28`
+- `cd packages/smithers/gateway && pnpm run check   # tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit (gateway/package.json:208)`
+- `cd packages/smithers/gateway && pnpm exec vitest run test/GatewayProjection.test.ts test/GatewaySchema.test.ts test/ProjectionsUnit.test.ts test/Projections.test.ts test/WireFormat.test.ts test/CallFacts.test.ts test/RealEngineRun.test.ts`
+- `cd packages/smithers/gateway && pnpm run coverage   # 100% thresholds, vitest.config.ts:20-25`
+- `cd packages/smithers/control && pnpm run check && pnpm exec vitest run test/PlanHandoff.test.ts`
+- `cd packages/smithers/flows/flow && pnpm run check && pnpm exec vitest run`
+- `cd packages/smithers/flows/engine-store && pnpm exec vitest run test/PlanScheduler.test.ts`
+- `pnpm docs:llms   # then check-docs and check-llms, because the projection count is documented in gateway/docs/concepts/projections.md:28`
 - `env -i HOME=$HOME PATH=$PATH TMPDIR=$TMPDIR TERM=dumb CI=1 <the vitest command>   # if exported *_API_KEY values redden digests (memory: exported secrets poison tests)`
 
 ### where the graph lives in apps/app
 
-Position: the live-run graph is `traceView: "graph"` on the existing `run-trace` card, rendered by a NEW lazy file (not inside RunTraceCard.tsx, which another agent is editing right now); plan-before-run is ONE new card kind `flow-plan` opened by a new `flow.plan` flow whose button door is a `Plan` button on each workflow-list row; the retired `graph` kind is NOT revived. Both cards render one shared graph component. React Flow + dagre go behind a new `@smthrs/ui/adapters/flow-graph` adapter, because the mock's camera needs `useEffect` + `useReactFlow` and apps/app's Architecture test bans the import, while the house pattern for imperative libs (xterm, d3-force, shiki) is an adapter in @smthrs/ui where effects are allowed.
+Position: the live-run graph is `traceView: "graph"` on the existing `run-trace` card, rendered by a NEW lazy file (separate from RunTraceCard.tsx); plan-before-run is ONE new card kind `flow-plan` opened by a new `flow.plan` flow whose button door is a `Plan` button on each workflow-list row; the retired `graph` kind is NOT revived. Both cards render one shared graph component. React Flow + dagre go behind a new `@smthrs/ui/adapters/flow-graph` adapter, because the mock's camera needs `useEffect` + `useReactFlow` and apps/app's Architecture test bans the import, while the house pattern for imperative libs (xterm, d3-force, shiki) is an adapter in @smthrs/ui where effects are allowed.
 
 Why not revive `graph`: its payload is the local backend's TargetGraph shape (repoId, repoName, TargetGraphResponse with labels/rules/private), it is in LOCAL_BACKEND_KINDS rendering null so saved conversations keep parsing, and repurposing it breaks those rows. Why the 30-member union argument in D-015 is void: the Card union already has 63 kinds and useCardRows names its type arguments, so one more kind costs a schema entry, a family slice and one spread line. Why not the experimental pane (D-014): Pane.ts forbids a pane from reading a collection or calling a seam, which contradicts "real gateway data only".
 
 Three gaps found that the feature must close inside apps/app: (1) `gateway.launch` calls Plan and throws away `nodes` (it reads only planId, digest, envelope) and there is no standalone `plan` seam method; (2) `gateway.nodeOutput` exists with zero callers; (3) `runs.trace.select` validates its id against trace spans and forces `facet: "steps"`, so plan-node selection needs its own flow and payload field. One in-hand join exists today: journal attempt events carry `stepKeyDigest`, and Plan nodes carry `key`, so a run-trace card that snapshots the plan at launch can paint attempt status per node without the new projection (node-settled outcomes clean/skipped still need the projection from D-020).
 
-Collision: RunTraceCard.tsx (+303), RunTrace.ts (+666), their tests, CardRenderers.tsx, Cards.ts, Flows.ts, registry.ts, parity.test.ts, cards.css (+172) and index.css are all uncommitted in the shared default working copy, last touched 20:03 to 20:14 local today; the working-copy parent b6d6ece7a3 is 15 commits behind main; CHAT.md CL095 says main fails `pnpm run check` in apps/app partly because presentation.ts names kind "experimental" while the Cards.ts entry is still uncommitted. Build this in a separate jj workspace rebased on main, in new files, and touch the shared files last with one-line edits.
 
 - run-trace payload already carries view state: facet, selection, cursorSeq, filter, liveTail, traceView(turns|timeline) — packages/rpc/src/Cards.ts:1026 `facet: z.enum(["steps", "transcript", "events"]).optional()`; :1049 `selection: z.string().optional()`; :1051 cursorSeq; :1053 filter; :1055 liveTail; :1057 `traceView: z.enum(["turns", "timeline"]).optional()`
 - run-trace requires a runId, so it cannot hold a plan that has not run — packages/rpc/src/Cards.ts:966 `runId: z.string(),` and :955 'The id scheme `flow-run-<runId>` stays so links resolve.'
@@ -1319,9 +1157,6 @@ Collision: RunTraceCard.tsx (+303), RunTrace.ts (+666), their tests, CardRendere
 - Card payloads are written to disk, so a signed Plan envelope should not be parked in one — apps/app/src/mainview/cards/WorkspaceCard.tsx:189-194 'never from the card payload, because everything a payload holds is written to disk by the persistence backend'; ControlSchema.ts:236-237 PlanCard is 'The reviewable, signed payload returned by planning and resubmitted to approval'
 - The run monitor polls at 2500 ms and pages run-events by cursor — apps/app/src/mainview/state/controller/context.ts:175 `workflowPollMs: services.workflowPollMs ?? 2500`; workflow-pump.ts:74 `const RUN_POLL_MS = workflowPollMs`, :106 `gateway.runEvents(repo, runId, binding, cursor)`
 - DESIGN.md lists the WorkflowCanvas surface as out of scope, so NO INVENTION needs the flow-builder brief (D-029, ruled by Will) cited as the authorizing brief — apps/DESIGN.md:119 '...slash menu full command registry; WorkflowCanvas surface; terminal card; admin surface...'; docs/flow-builder/decisions.md 'D-029 — The vision: agent-led build, live run, incremental re-run, on one canvas. RULED (Will)'
-- RunTraceCard.tsx, RunTrace.ts and their tests are being edited right now in the shared default working copy — `jj st`: `M apps/app/src/mainview/cards/RunTrace.ts` (+666), `M .../RunTraceCard.tsx` (+303), RunTrace.test.ts (+442), RunTraceCard.test.tsx (+317); mtimes 09-18 20:03, 20:07, 20:08, 20:14 against `date` 20:28
-- Shared registration files are also dirty in the working copy — `jj st`: `M cards/CardRenderers.tsx` (+3), `M packages/rpc/src/Cards.ts` (+15, the `experimental` kind at :2474), `M flows/Flows.ts` (+3), `M flows/registry.ts` (+4), `M flows/parity.test.ts` (+10), `M styles/cards.css` (+172), `M index.css` (+1), `A flows/entries/experimental.ts`, `A styles/experimental.css`
-- The default working copy sits 15 commits behind main, and main's apps/app typecheck is red partly from a half-landed experimental kind — `jj log -r '@|@-|main'`: @ vvkyrwvp on qxpxtymo b6d6ece7a3, main = 44545559b4; `jj log -r 'b6d6ece7a3..main' | wc -l` = 15; CHAT.md CL095: '`main@origin` FAILS `pnpm run check` in `apps/app` ... `presentation.ts:508,513` (`"experimental"` not in the surface union'; presentation.ts:508 `kind: "experimental",` is committed while the Cards.ts entry is not
 
 Blockers:
 - Status truth per plan node: the run-events journal on the card folds attempt events keyed by stepKeyDigest (EngineEvent.ts:128-134) but not node-settled outcomes, so `clean`, `skipped` and `deferred` cannot be shown as engine-true until the plan-graph projection (D-020) or node-settled events reach the relay. Without it the run graph can show running/built/failed only. Unverified here: that PlanNode.key's digest equals AttemptPayload.stepKeyDigest byte for byte; prove with one real run before building on it.
@@ -1330,14 +1165,13 @@ Blockers:
 - Duration predictions (D-030): no predictor and no projection exists; the card must render nothing for it until one does (MINIMAL TEXT forbids a 'not measured' row).
 - Re-key preview wall-clock ('4.9s instead of 1h 1m') needs the prior run's per-node durations keyed by action tag; the count half ('re-runs 3 of 11; 8 cache hits') is available today from Plan node status alone.
 - Liveness: 2500 ms poll (context.ts:175); streaming is excluded by the apps/server allowlist. The graph ships on the poll unless D-013 is ruled otherwise.
-- Shared working copy is mid-edit by another agent on RunTraceCard.tsx, RunTrace.ts, CardRenderers.tsx, Cards.ts, Flows.ts, registry.ts, parity.test.ts, cards.css; and main's apps/app typecheck is red per CHAT.md CL095 (lane L105 open). Work in a separate jj workspace off main (flock the `jj workspace add`, per memory) and verify against main's failing SET, not a green baseline.
 - Controlled-viewport alternative (ReactFlow `viewport` + `onViewportChange`, component-props.d.ts:414,429) was not prototyped; the adapter route is chosen because it is the proven house pattern. If moving xyflow into @smthrs/ui is refused, a one-command prototype of controlled viewport with CSS-transitioned transform is the fallback to validate first.
 
 Commands:
-- `cd /Users/williamcory/smithers/apps/app && pnpm run check   # node scripts/ensure-devkit.mjs && tsc --noEmit (package.json:15); red on main per CHAT.md CL095, compare failing sets`
-- `cd /Users/williamcory/smithers/apps/app && bun test src/mainview/cards/RunTraceCard.test.tsx src/mainview/cards/CardRenderers.test.ts src/mainview/Architecture.test.ts src/mainview/styles/DeadCss.test.ts`
-- `cd /Users/williamcory/smithers/apps/app && bun test src/mainview/flows/FlowName.test.ts src/mainview/flows/agent-parity.test.ts src/mainview/flows/parity.test.ts src/mainview/flows/Commands.forms.test.ts`
-- `cd /Users/williamcory/smithers/apps/app && bun test src   # full app suite (package.json:16 runs `bun test src e2e/contracts e2e/real/coverage scripts`); leaks native daemons per memory, kill by pid after`
-- `cd /Users/williamcory/smithers/packages/rpc && pnpm run check && pnpm run test   # tsc -b + vitest run (package.json:18,20)`
-- `cd /Users/williamcory/smithers && jj file show -r 42b8abbc1cf6 apps/app/src/mainview/cards/GraphCard.tsx   # also GraphCardLazy.tsx, GraphCard.test.tsx, GraphDrawerFacts.test.tsx, RunTimelineCard.tsx, styles/cards.css at that revision`
-- `cd /Users/williamcory/smithers && jj st && jj diff --stat   # collision check before touching shared files`
+- `cd apps/app && pnpm run check   # node scripts/ensure-devkit.mjs && tsc --noEmit (package.json:15); compare failures against an unmodified base`
+- `cd apps/app && bun test src/mainview/cards/RunTraceCard.test.tsx src/mainview/cards/CardRenderers.test.ts src/mainview/Architecture.test.ts src/mainview/styles/DeadCss.test.ts`
+- `cd apps/app && bun test src/mainview/flows/FlowName.test.ts src/mainview/flows/agent-parity.test.ts src/mainview/flows/parity.test.ts src/mainview/flows/Commands.forms.test.ts`
+- `cd apps/app && bun test src   # full app suite (package.json:16 runs `bun test src e2e/contracts e2e/real/coverage scripts`); leaks native daemons`
+- `cd packages/rpc && pnpm run check && pnpm run test   # tsc -b + vitest run (package.json:18,20)`
+- `jj file show -r 42b8abbc1cf6 apps/app/src/mainview/cards/GraphCard.tsx   # also GraphCardLazy.tsx, GraphCard.test.tsx, GraphDrawerFacts.test.tsx, RunTimelineCard.tsx, styles/cards.css at that revision`
+- `jj st && jj diff --stat   # collision check before touching shared files`

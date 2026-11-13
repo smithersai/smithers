@@ -375,3 +375,26 @@ test("retained card and approval sources no longer cite cut registration docs", 
     "packages/rpc/src/Cards.ts"
   ]) assert.ok(!readFileSync(join(root, source), "utf8").includes("docs/mvp/REGISTRATION.md"), source)
 })
+
+
+// Historical status does not exempt a public document from the operations boundary.
+const historicalDocuments = [
+  "docs/flow-builder/engineering.md",
+  "docs/mvp/implementation/release-20260916.md",
+  "docs/research/coding-loop-derisk-2026-09-15.md"
+]
+const privateOperations = [
+  ["provider account status", /\b(?:Codex|Opus|Claude)\s+(?:accounts?|lanes?|pools?)\b|\bcodex-\d\b|\busage-limited\b|credit_balance_exhausted|free-tier exhausted|quota 0|no credits remaining/i],
+  ["hosted deployment operations", /smithers-autodeploy|\bkubectl\b|\bHelm\s+(?:release|revision|\d)|\b(?:fleet size|account.admission)\b/i],
+  ["operator filesystem paths", /(?:^|[\s`"'(])(?:\/(?:Users|home|private\/tmp)\/|~\/)/m],
+  ["hosted rollout or checkout receipts", /\b(?:landing deploys|deploys on landing|ships to production on landing)\b|\bCHAT\.md\b/i],
+  ["hosted fixture identity", /\bcodeplanesmithers\b|canary\.smithers\.sh/i]
+]
+for (const document of historicalDocuments) {
+  for (const [kind, pattern] of privateOperations) {
+    test(`${document}: historical docs exclude ${kind}`, () => {
+      assert.equal(pattern.test(readFileSync(join(root, document), "utf8")), false,
+        `${document} contains ${kind}; preserve the receipt in private operations records`)
+    })
+  }
+}
