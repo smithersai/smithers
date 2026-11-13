@@ -1111,7 +1111,7 @@ describe("an action cache policy on the durable engine", () => {
       }).pipe(Effect.scoped, Effect.provide(engineLayers), Effect.provide(TestClock.layer()))
     ))
 
-  it.effect("keeps dispatching an undeclared policy at every age", () =>
+  it.effect("replays a policy with no TTL at every age", () =>
     withCrypto(
       Effect.gen(function*() {
         let executions = 0

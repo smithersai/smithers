@@ -436,6 +436,66 @@ describe("a terminal run applies its children's exit policy", () => {
       expect(result.parent.status).not.toBe("completed")
       expect(result.child.cancelRequestedAtMs).toBeNull()
     }))
+
+  it.effect("rolls back child cancellations when recording the parent's exit policy fails", () =>
+    Effect.gen(function*() {
+      const result = yield* run(Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        yield* linkChild("atomic-after-parent", "atomic-after-first", "cancel")
+        yield* linkChild("atomic-after-parent", "atomic-after-second", "cancel")
+        const journal = yield* Journal.Journal
+        let writtenAtMs: ReadonlyArray<number | null> = []
+
+        const crashOnPolicy: Notifying.Hook = (op, order, args) => {
+          const record = args[0] as { readonly payload?: { readonly decision?: string } } | undefined
+          if (
+            op !== "emitDurableUnfenced" || order !== "before" ||
+            record?.payload?.decision !== "child-policy-applied"
+          ) return Effect.void
+          return Effect.gen(function*() {
+            // Each child's cancellation transaction has returned. Only the
+            // enclosing parent transaction can still roll these writes back.
+            writtenAtMs = [
+              (yield* store.get("atomic-after-first").pipe(Effect.orDie)).cancelRequestedAtMs,
+              (yield* store.get("atomic-after-second").pipe(Effect.orDie)).cancelRequestedAtMs
+            ]
+            return yield* Effect.die(new Error("host lost power before recording child exit policy"))
+          })
+        }
+
+        const exit = yield* Effect.exit(
+          Effect.gen(function*() {
+            const driver = yield* makeDriver()
+            yield* driver.register(ExitFlow, () => Effect.succeed("parent done"))
+            yield* driver.execute(ExitFlow, {
+              executionId: "atomic-after-parent",
+              payload: {},
+              discard: false
+            })
+          }).pipe(
+            Effect.provideService(Journal.Journal, Notifying.wrap(journal, crashOnPolicy)),
+            Effect.scoped
+          )
+        )
+
+        return {
+          exit,
+          writtenAtMs,
+          parent: yield* store.get("atomic-after-parent"),
+          first: yield* store.get("atomic-after-first"),
+          second: yield* store.get("atomic-after-second"),
+          decisions: yield* decisionsOf("atomic-after-parent")
+        }
+      }))
+
+      expect(Exit.isFailure(result.exit)).toBe(true)
+      // Prove both writes happened before the crash, then prove both rolled back.
+      expect(result.writtenAtMs).toEqual([expect.any(Number), expect.any(Number)])
+      expect(["completed", "failed", "cancelled"]).not.toContain(result.parent.status)
+      expect(result.first.cancelRequestedAtMs).toBeNull()
+      expect(result.second.cancelRequestedAtMs).toBeNull()
+      expect(result.decisions.map((decision) => decision.decision)).not.toContain("child-policy-applied")
+    }))
 })
 
 describe("a child linked after its parent already exited", () => {

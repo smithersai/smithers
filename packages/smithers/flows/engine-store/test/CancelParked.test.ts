@@ -19,9 +19,10 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import type * as Layer from "effect/Layer"
+import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
@@ -47,6 +48,7 @@ type Services =
   | TestClock.TestClock
   | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
+  | SqlClient.SqlClient
 
 const withEngine = <A, E>(
   body: (
@@ -73,7 +75,7 @@ const withEngine = <A, E>(
       )
     ).pipe(
       Effect.provide(StepBoundary.layerTest()),
-      Effect.provide(TestStores.layer()),
+      Effect.provide(Layer.provideMerge(TestStores.layer(), TestStores.database)),
       Effect.provide(TestClock.layer())
     )
   )
@@ -177,7 +179,7 @@ describe("cancel requests reach parked runs (issue #27)", () => {
 })
 
 describe("durable cancellation follow-up", () => {
-  for (const admission of ["success", "tagged failure", "defect", "interrupt"] as const) {
+  for (const admission of ["success", "payload schema failure", "defect", "interrupt"] as const) {
     it.effect(`retains truthful cancellation when follow-up admission ends with ${admission}`, () => {
       const Cleanup = Flow.make(`OnCancel/Cleanup/${admission}`, {
         payload: { name: Schema.String },
@@ -201,6 +203,14 @@ describe("durable cancellation follow-up", () => {
             payload: { name: "item" },
             discard: true
           })
+          if (admission === "payload schema failure") {
+            const sql = yield* SqlClient.SqlClient
+            const parked = yield* store.get("original")
+            // The stored state still decodes, but the registered flow's payload
+            // schema rejects it in follow-up admission's typed error channel.
+            const state = { ...JSON.parse(parked.stateJson), payload: { name: 42 } }
+            yield* sql`UPDATE flows_runs SET state_json = ${JSON.stringify(state)} WHERE run_id = ${"original"}`
+          }
           yield* store.requestCancel("original", yield* Clock.currentTimeMillis)
           const resumed = yield* Effect.exit(engine.resume(Original, "original"))
           const row = yield* store.get("original")
@@ -218,6 +228,9 @@ describe("durable cancellation follow-up", () => {
             expect(yield* engine.execute(Cleanup, { executionId: "cleanup:item", payload: { name: "item" } })).toBe(
               "cleaned:item"
             )
+          } else if (admission === "payload schema failure") {
+            expect(injected).toBe(false)
+            expect(Exit.isFailure(yield* store.get("cleanup:item").pipe(Effect.exit))).toBe(true)
           } else expect(injected).toBe(true)
         }), (store) => ({
           ...store,
@@ -226,9 +239,7 @@ describe("durable cancellation follow-up", () => {
             injected = true
             return admission === "interrupt"
               ? Effect.interrupt
-              : Effect.die(
-                admission === "defect" ? new Error("admission unavailable") : { _tag: "AdmissionUnavailable" }
-              )
+              : Effect.die(new Error("admission unavailable"))
           }
         }))
     })
