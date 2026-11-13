@@ -38,14 +38,27 @@ test("a run that fails to start says so; Run starts it", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Open Post run/ })).toBeVisible()
 })
 
-for (const [label, fault] of [["followed", undefined], ["whose follow is lost", "actions-follow"]] as const) test(`a run ${label} settles`, async ({ page }) => {
+async function post(page: Page, fault?: string) {
   const actions = await pane(page, fault)
   await actions.getByRole("button", { name: "Post", exact: true }).click()
   await actions.getByRole("textbox", { name: "Action input" }).fill("Followed")
   await actions.getByRole("button", { name: "Run", exact: true }).click()
   const card = page.getByRole("button", { name: /Open Post run/ })
   await expect(card).toBeVisible()
+  return { actions, card }
+}
+
+test("a run followed settles", async ({ page }) => {
+  const { card } = await post(page)
   await expect(card.getByText("Passed", { exact: true })).toBeVisible({ timeout: 15_000 })
+})
+
+test("a run whose follow is lost reads Disconnected until Reconnect, then settles", async ({ page }) => {
+  const { actions, card } = await post(page, "actions-follow")
+  await expect(card.getByText("Disconnected", { exact: true })).toBeVisible()
+  await actions.getByRole("button", { name: "Reconnect", exact: true }).click()
+  await expect(card.getByText("Passed", { exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole("button", { name: "Reconnect", exact: true })).toHaveCount(0)
 })
 
 test("a cancel that fails says so; the next cancel stops the run", async ({ page }) => {
