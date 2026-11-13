@@ -1343,7 +1343,8 @@ a field it needs fails the recording run rather than a later replay.
 `scan` returns the ids of the journal's token-shaped rules that match `text`
 (private key blocks, Smithers tokens, URL credentials, bearer tokens, JWTs and
 `sk-`, GitHub, AWS, Slack, Google, GitLab and npm keys). `encode` also refuses a
-named secret that survived, as rule `live-secret`.
+nonempty named secret that survived, as rule `live-secret`. Named secrets are
+scrubbed and checked regardless of length; empty strings are ignored.
 
 ## ContainerRecording
 

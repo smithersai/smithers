@@ -61,7 +61,8 @@ written:
 3. URL user information is removed, and query parameters named like a
    credential (`access_token`, `code`, `sig`, `signature` and others)
    are replaced.
-4. Each value the suite passes in `secrets` is replaced wherever it appears.
+4. Each nonempty value the suite passes in `secrets` is replaced wherever it
+   appears, regardless of length. Empty strings are ignored.
 5. Bodies go through `@smthrs/journal/Redaction`'s `redact`: a field named like
    a credential (`token`, `access_token`, `client_secret`, `password`) is
    replaced, and every string is run through the token-shaped rules.

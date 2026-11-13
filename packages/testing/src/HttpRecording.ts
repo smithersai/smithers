@@ -117,10 +117,11 @@ export interface Options {
   /** The real client. Required for `passthrough` and `record`; `replay` never touches it. */
   readonly live?: HttpClient.HttpClient | undefined
   /**
-   * The live credentials of this run. Each is replaced wherever it appears
-   * before anything is written, and a recording that still holds one is
-   * refused. Shapes the journal's rules know (GitHub, AWS, Slack, Google and
-   * `sk-` keys, JWTs, private key blocks) are caught without being named here.
+   * The live credentials of this run. Every nonempty value, regardless of
+   * length, is replaced wherever it appears before anything is written, and
+   * a recording that still holds one is refused. Empty values are ignored.
+   * Shapes the journal's rules know (GitHub, AWS, Slack, Google and `sk-` keys,
+   * JWTs, private key blocks) are caught without being named here.
    */
   readonly secrets?: ReadonlyArray<string | Redacted.Redacted<string>> | undefined
   /**
@@ -193,7 +194,7 @@ const sensitiveQuery =
 
 const secretValues = (secrets: Options["secrets"]): ReadonlyArray<string> =>
   (secrets ?? []).map((secret) => typeof secret === "string" ? secret : Redacted.value(secret))
-    .filter((secret) => secret.length >= 8)
+    .filter((secret) => secret.length > 0)
 
 const replaceSecrets = (value: unknown, secrets: ReadonlyArray<string>): unknown => {
   if (secrets.length === 0) return value

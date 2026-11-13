@@ -29,6 +29,11 @@ const serve = (): Promise<Service> =>
       request.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf8")
         if (request.url?.startsWith("/counter") && request.method === "POST") counter += Number(JSON.parse(body).by)
+        if (request.url === "/short-secret") {
+          response.writeHead(200, { "content-type": "application/json" })
+          response.end(JSON.stringify({ note: "hunter2" }))
+          return
+        }
         if (request.url === "/empty") {
           response.writeHead(204)
           response.end()
@@ -145,6 +150,22 @@ describe("HttpRecording", () => {
         expect(replayed.written).toBe(200)
         expect(replayed.missing.status).toBe(404)
         expect(replayed.empty).toEqual({ status: 204, body: null })
+      })
+    ))
+
+  it.live("short named secrets are removed before a recording is written", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const path = join(directory(), "short-secret.json")
+        const client = yield* live
+        const seen = yield* Effect.scoped(Effect.gen(function*() {
+          const recorder = yield* HttpRecording.record(path, { live: client, secrets: [Redacted.make("hunter2")] })
+          return yield* recorder.get(`${service.url}/short-secret`).pipe(Effect.flatMap((response) => response.json))
+        }))
+        expect(seen).toEqual({ note: "hunter2" })
+        expect(service.hits()).toBe(1)
+        expect(readFileSync(path, "utf8")).not.toContain("hunter2")
+        expect((yield* HttpRecording.load(path)).exchanges[0]?.response.body).toEqual({ note: "[REDACTED]" })
       })
     ))
 
@@ -293,6 +314,61 @@ describe("HttpRecording", () => {
       expect(refused.rules).toEqual(["live-secret"])
       const scrubbed = HttpRecording.scrubExchange(exchange, { secrets: [secret] })
       expect(yield* HttpRecording.encode("x.json", { exchanges: [scrubbed] }, [secret])).not.toContain(secret)
+    }))
+
+  for (const value of ["!", "1234", "hunter2", "12345678"]) {
+    for (const wrapped of [false, true]) {
+      it.effect(`scrubs and guards a ${value.length}-character ${wrapped ? "Redacted" : "string"} secret`, () =>
+        Effect.gen(function*() {
+          const secrets = [wrapped ? Redacted.make(value) : value]
+          const exchange: HttpRecording.Exchange = {
+            request: {
+              method: "POST",
+              url: `https://api.example.test/submit?note=${value}`,
+              body: { note: `before ${value} after ${value}` }
+            },
+            response: {
+              status: 200,
+              headers: { "retry-after": value },
+              body: { note: value, nested: [value, { note: `before ${value} after` }], count: 1, empty: null }
+            }
+          }
+          const refused = yield* Effect.flip(HttpRecording.encode("x.json", { exchanges: [exchange] }, secrets))
+          expect(refused.rules).toEqual(["live-secret"])
+          expect(refused.message).not.toContain(value)
+
+          const scrubbed = HttpRecording.scrubExchange(exchange, { secrets })
+          expect(scrubbed.request).toEqual({
+            method: "POST",
+            url: "https://api.example.test/submit?note=[REDACTED]",
+            body: { note: "before [REDACTED] after [REDACTED]" }
+          })
+          expect(scrubbed.response).toEqual({
+            status: 200,
+            headers: { "retry-after": "[REDACTED]" },
+            body: {
+              note: "[REDACTED]",
+              nested: ["[REDACTED]", { note: "before [REDACTED] after" }],
+              count: 1,
+              empty: null
+            }
+          })
+          expect(yield* HttpRecording.encode("x.json", { exchanges: [scrubbed] }, secrets)).not.toContain(value)
+        }))
+    }
+  }
+
+  it.effect("empty named secrets leave recordings unchanged", () =>
+    Effect.gen(function*() {
+      const exchange: HttpRecording.Exchange = {
+        request: { method: "GET", url: "https://api.example.test/" },
+        response: { status: 200, headers: {}, body: { note: "ordinary text" } }
+      }
+      const secrets = ["", Redacted.make("")]
+      expect(HttpRecording.scrubExchange(exchange, { secrets })).toEqual(exchange)
+      expect(yield* HttpRecording.encode("x.json", { exchanges: [exchange] }, secrets)).toBe(
+        yield* HttpRecording.encode("x.json", { exchanges: [exchange] }, undefined)
+      )
     }))
 
   it.effect("scan names each credential shape and passes placeholders", () =>
