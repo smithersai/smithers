@@ -413,7 +413,7 @@ moment the code under test reaches a third.
 
 | Export          | Shape                                                                                                                                                                                                          |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Snapshot`      | `{ runId, frame, changeId, planDigest? }`. The anchor at a frame. An absent digest means no plan was in force.                                                                                                 |
+| `Snapshot`      | `{ runId, frame, changeId, operationId?, planDigest? }`. The anchor at a frame. An absent digest means no plan was in force.                                                                                   |
 | `AttemptRef`    | `{ stepKeyDigest, attempt }`. An attempt row as `flows_attempts` addresses it.                                                                                                                                 |
 | `StepOverride`  | `{ stepKeyDigest, result }`. The step result a fork replays on its child in place of the parent's.                                                                                                             |
 | `CarriedChild`  | `{ from, to, payload? }`. A spawned child a fork carries under the id its forked parent opens it with.                                                                                                         |
@@ -583,9 +583,10 @@ as `blocking`.
 
 The schema as fixed rungs on the shared migration ladder. Store construction
 uses this same ladder and skips recorded rungs. Published IDs remain stable:
-`5001_initial`, `5002_archive_generation`, `5003_lineage_probes`, and
-`5004_plan_digest`. The last rung also accepts databases where an older
-store build already added `plan_digest` outside the ledger.
+`5001_initial`, `5002_archive_generation`, `5003_lineage_probes`,
+`5004_plan_digest`, `5005_operation_id`, `5006_fork_intent_forgotten`, and
+`5007_lineage_provenance`. The `5004_plan_digest` rung also accepts databases
+where an older store build already added `plan_digest` outside the ledger.
 
 | Export  | Signature                                                                                            |
 | ------- | ---------------------------------------------------------------------------------------------------- |

@@ -193,9 +193,8 @@ const attemptRef = Schema.decodeUnknownEffect(TimeTravelStore.AttemptRef)
 /**
  * Builds the SQL-backed store, running {@link migrate} over a database the
  * journal and run-store ladders have already migrated. Missing prerequisite
- * tables and migration failures fail with `TimeTravelError`. The `SqlClient`
- * requirement is a SQLite dialect requirement, not a portable one — see the
- * module header.
+ * tables and migration failures fail with `TimeTravelError`.
+ * The `SqlClient` must use SQLite or PostgreSQL; other dialects are unsupported.
  *
  * Writes go through `DurableWriter` rather than straight to `SqlClient`, so a
  * rewind's audit row, receipts, and truncation land under the same durability

@@ -52,7 +52,8 @@ The child also records its own origin on its journal, under
 sequence the fork was taken at. A forensic walk can start from the child and go
 back without consulting the edge table.
 
-The parent is never mutated and keeps running.
+The parent is never mutated. A fork refuses `live_parent` if the parent or
+any ancestor is running, claimed, or owned.
 
 ## The workspace is derived, not supplied
 

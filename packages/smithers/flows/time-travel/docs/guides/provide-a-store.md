@@ -88,7 +88,9 @@ before exposing the database.
 
 Migration ids are spaced by 1,000. This set ships above the engine's existing
 sets and preserves its published rungs: `5001_initial`,
-`5002_archive_generation`, `5003_lineage_probes`, and `5004_plan_digest`.
+`5002_archive_generation`, `5003_lineage_probes`, `5004_plan_digest`,
+`5005_operation_id`, `5006_fork_intent_forgotten`, and
+`5007_lineage_provenance`.
 The plan-digest rung accepts columns installed by older store builds outside
 the ledger. Future schema changes require new rungs.
 

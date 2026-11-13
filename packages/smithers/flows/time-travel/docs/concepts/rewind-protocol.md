@@ -175,8 +175,9 @@ Every build returns reclaiming intents again until that last write succeeds,
 including rows reclaimed by older releases. A failed forget or completion write
 is logged and retried on the next build. A reclaiming or forgotten reservation
 refuses a fork still provisioning elsewhere with `fence_lost`. The refusal
-transaction first resets it to reclaiming (clearing `forgotten_at_ms`, keeping
-`reclaimed_at_ms`), then the error is raised after commit. Its refused-commit
+transaction first resets it to reclaiming (clearing `forgotten_at_ms`, strictly
+advancing `reclaimed_at_ms` with `max(now, previous + 1)`), then the error is
+raised after commit. Its refused-commit
 path attempts to forget the lane; startup retries if cleanup fails, and a
 successful cleanup makes that later forget a no-op. A committed fork consumes
 its reservation in the same transaction, so a later sweep cannot claim it.

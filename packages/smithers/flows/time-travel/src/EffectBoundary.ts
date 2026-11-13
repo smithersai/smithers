@@ -282,7 +282,10 @@ const settleUnrecordedSuccess = <A>(
  * Callers sharing a sourceId must reserve two consecutive source sequences
  * per effect: sourceSeq for intended and sourceSeq + 1 for its terminal.
  * The next effect must start at sourceSeq + 2 or later; adjacent allocations
- * collide with the previous terminal and are refused as already_crossed.
+ * collide with the previous terminal: the journal refuses different bytes
+ * with `idempotency_conflict`, mapped to `unknown` by this boundary.
+ * Only an identical `intended` record yields `Duplicate` and
+ * `already_crossed`.
  *
  * Interruption, defects, and typed failures all settle the boundary as
  * `unknown` before their original cause is re-raised. The settlement section

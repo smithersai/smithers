@@ -87,3 +87,35 @@ it("documents the rewind rate limiter as a knob the composition supplies", () =>
     expect(read(path), `${path} omits Options.rateLimit beside rate_limited`).toContain("`Options.rateLimit`")
   }
 })
+
+it.each(["../docs/api.md", "../docs/guides/provide-a-store.md"])(
+  "%s lists every published migration rung",
+  (path) => {
+    const migrations = Array.from(
+      readRaw("../src/Migrations.ts").matchAll(/^ {4}"(\d{4})_([^"]+)":/gm),
+      ([, id, name]) => `\`${5000 + Number(id)}_${name}\``
+    )
+    expect(migrations.length).toBeGreaterThan(0)
+    for (const migration of migrations) expect(read(path)).toContain(migration)
+  }
+)
+
+it("documents the optional operation identity on snapshot anchors", () => {
+  const snapshot = readRaw("../docs/api.md").split("\n").find((line) => /^\| `Snapshot`\s*\|/.test(line))
+  expect(snapshot).toContain("operationId?")
+})
+
+it("documents the fresh claim stamp when a refused fork reopens its intent", () => {
+  const guide = read("../docs/concepts/rewind-protocol.md")
+  expect(guide).toContain("clearing `forgotten_at_ms`")
+  expect(guide).toContain("strictly advancing `reclaimed_at_ms`")
+  expect(guide).not.toContain("keeping `reclaimed_at_ms`")
+})
+
+it("documents that a fork requires a settled parent and ancestors", () => {
+  const text = read("../docs/guides/fork-a-run.md")
+  expect(text).toContain("`live_parent`")
+  expect(text).toContain("running, claimed, or owned")
+  expect(text).toContain("ancestor")
+  expect(text).not.toContain("keeps running")
+})

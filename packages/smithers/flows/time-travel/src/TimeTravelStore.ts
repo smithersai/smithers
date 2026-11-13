@@ -544,7 +544,8 @@ export interface Service {
   /**
    * Branches a new run off `parentRunId` at a frame, copying the journal
    * prefix and the attempts that existed there, and recording the `fork`
-   * lineage edge. The parent is untouched and keeps running.
+   * lineage edge. The parent is untouched. A fork refuses `live_parent` if the
+   * parent or any ancestor is running, claimed, or owned.
    *
    * `childRunId` is the id {@link Service.nextForkId} minted for this fork.
    * Omitting it mints one inside the same transaction, which is what a caller
