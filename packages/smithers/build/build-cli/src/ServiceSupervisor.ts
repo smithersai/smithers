@@ -1107,31 +1107,34 @@ const healthLoop = (
   context: ProbeContext
 ): Effect.Effect<void> => {
   const attemptMs = Math.min(intervalMs, probeAttemptCapMs)
-  const step = (misses: number): Effect.Effect<void> =>
-    Effect.gen(function*() {
+  return Effect.gen(function*() {
+    let misses = 0
+    while (true) {
       yield* Effect.sleep(intervalMs)
       if (state.stopping || Deferred.isDoneUnsafe(unhealthy)) return
       const result = yield* probeOnce(readiness, attemptMs, context)
       if (state.stopping || Deferred.isDoneUnsafe(unhealthy)) return
-      if (result.ok) return yield* step(0)
-      const next = misses + 1
-      if (next >= parsed.healthFailures) {
+      if (result.ok) {
+        misses = 0
+        continue
+      }
+      misses += 1
+      if (misses >= parsed.healthFailures) {
         Deferred.doneUnsafe(
           unhealthy,
           Effect.fail(
             new ServiceError({
               key: parsed.spec.key,
               reason: "unhealthy",
-              message: `service ${parsed.spec.key} failed ${next} consecutive health probes: ${result.reason}`,
+              message: `service ${parsed.spec.key} failed ${misses} consecutive health probes: ${result.reason}`,
               outputTail: tail()
             })
           )
         )
         return
       }
-      return yield* step(next)
-    })
-  return step(0)
+    }
+  })
 }
 
 /** Runs service init commands sequentially after readiness. */

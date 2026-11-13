@@ -748,6 +748,39 @@ describe("readiness", () => {
 })
 
 describe("health", () => {
+  it.each(["healthy", "misses"])("bounds retained memory across many %s health probes", async (mode) => {
+    const port = await freePort()
+    const output = await new Promise<string>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [
+          "--expose-gc",
+          "--import",
+          "tsx",
+          "--import",
+          "vibelang/register",
+          NodePath.join(fixtureDir, "health-memory-driver.ts"),
+          mode,
+          String(port),
+          serverPath
+        ],
+        { cwd: packageDir, timeout: 90_000 },
+        (error, stdout, stderr) => {
+          if (error !== null) reject(new Error(`health memory driver failed: ${stderr}`, { cause: error }))
+          else resolve(stdout)
+        }
+      )
+    })
+    const sample = JSON.parse(output) as { probes: number; before: number; after: number; status: number }
+    expect(sample.status).toBe(mode === "healthy" ? 200 : 500)
+    expect(sample.probes).toBe(22_500)
+    expect(sample.before).toBeGreaterThan(0)
+    expect(sample.after).toBeGreaterThan(0)
+    // Twenty thousand more completed probes must not retain one generator
+    // per tick. The recursive loop retained over 16 MiB over this window.
+    expect(sample.after - sample.before).toBeLessThan(4 * 1024 * 1024)
+  }, 100_000)
+
   it("fails the consumer when the server dies mid-consumer", async () => {
     const port = await freePort()
     let pid = -1
