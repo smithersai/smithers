@@ -123,6 +123,31 @@ describe("NodeTest", () => {
     }
   })
 
+  it("caches on request, keyed on runner files and srcs, and refuses a cached suite with no inputs", () => {
+    const test = Input.file("//scripts/pack-release.test.mjs")
+    const src = Input.glob("//scripts/lib/**")
+    const runners = [NodeTest.testRunner([test]), NodeTest.entrypoint(test), NodeTest.testSuite(["scripts"])]
+    for (const runner of runners) {
+      const target = NodeTest.NodeTest({ runtime, runner, srcs: [src], deps: [], cache: true })
+      expect(Target.metadata(target).cacheable).toBe(true)
+      expect(Target.metadata(target).inputs).toEqual(runner.name === "suite" ? [src] : [test, src])
+    }
+    for (const runner of runners.slice(0, 2)) {
+      const target = NodeTest.NodeTest({ runtime, runner, srcs: [], deps: [], cache: true })
+      expect(Target.metadata(target).inputs).toEqual([test])
+    }
+    const dependency = NodeTest.NodeTest({ runtime, runner: NodeTest.testRunner([test]), srcs: [], deps: [] })
+    expect(
+      Target.metadata(NodeTest.NodeTest({ runtime, runner: runners[2]!, srcs: [], deps: [dependency], cache: true }))
+        .cacheable
+    ).toBe(true)
+    expect(Target.metadata(NodeTest.NodeTest({ runtime, runner: runners[2]!, srcs: [], deps: [] })).cacheable)
+      .toBe(false)
+    expect(() => NodeTest.NodeTest({ runtime, runner: runners[2]!, srcs: [], deps: [], cache: true })).toThrow(
+      /cache: true needs srcs or deps/
+    )
+  })
+
   it("refuses invalid or unbounded entrypoint deadlines", () => {
     for (const timeout of ["unbounded", "0ms", "-1s", "1.5m", "never", "25h", `${"9".repeat(400)}s`]) {
       expect(() =>

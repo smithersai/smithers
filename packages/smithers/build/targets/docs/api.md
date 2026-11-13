@@ -331,8 +331,9 @@ One call asks every rule that covers a file. A yes at or above `threshold`
 (0.5 to 0.99, default 0.8) is a whole-file finding whose message starts with
 the rule id; `failOn` (default `error`) fails the target. Jev reads about
 32,000 tokens at once, so a file over 96 KiB is never sent: it gets one
-`warning` finding whose message starts `not-judged:` and names its size and
-rules, and the rest of the review runs. A rule whose globs match no file fails
+finding at the strongest severity of the rules covering it, whose message starts
+`not-judged:` and names its size and rules, and the rest of the review runs. An
+unjudged `error` rule therefore fails the target under the default `failOn`. A rule whose globs match no file fails
 the review, and so does an unreadable file, a missing answer, or a judge
 failure, which reports Jev's public message and never the provider's text. Paths and contents are masked for credentials before Jev sees
 them. Globs expand across nested `PACKAGE.ts` boundaries under the workspace's

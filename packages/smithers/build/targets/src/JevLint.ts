@@ -42,8 +42,9 @@ import * as Target from "./Target.ts"
  * Largest file, in bytes, Jev judges. Jev reads about 32,000 tokens per
  * question set: on 2026-10-19 it took a 108,057-byte file (30,492 tokens) and
  * refused a 116,382-byte one with a 400. A larger file is never judged on part
- * of its text; it gets a `not-judged` warning finding instead, so it is
- * visible and the rest of the review still runs.
+ * of its text; it gets a `not-judged` finding instead, at the strongest severity
+ * of the rules covering it, so an unjudged `error` rule fails the review and
+ * the rest of the review still runs.
  *
  * @category constants
  * @since 1.0.0
@@ -369,12 +370,16 @@ const judgeFile = (
     }
     const bytes = Buffer.byteLength(contents, "utf8")
     if (bytes > maximumJudgedFileBytes) {
-      // Judging part of a file would read as a clean whole; say it was not judged instead.
+      // Judging part of a file would read as a clean whole; say it was not judged, as
+      // strongly as the strictest rule that went unasked.
       return {
         findings: [{
           file,
           line: 1,
-          severity: "warning",
+          severity: entry.rules.reduce<Severity>(
+            (strongest, rule) => meets(rule.severity, strongest) ? rule.severity : strongest,
+            "info"
+          ),
           message: `not-judged: ${bytes} bytes is over the ${maximumJudgedFileBytes}-byte file Jev reads; split the ` +
             `file or narrow ${entry.rules.map((rule) => rule.id).join(", ")}`
         }],
@@ -427,8 +432,9 @@ const judgeFile = (
  * and judged in one call that asks every rule covering it, keyed by rule id. A
  * "yes" whose probability meets the threshold is a whole-file finding at line
  * 1, its message the rule id, the rule's `violation` and Jev's probability. A
- * file over {@link maximumJudgedFileBytes} is not sent: it gets one `warning`
- * finding whose message starts `not-judged:` and names its size and rules. The
+ * file over {@link maximumJudgedFileBytes} is not sent: it gets one finding at
+ * the strongest severity of the rules covering it, whose message starts
+ * `not-judged:` and names its size and rules. The
  * report lists the files, the findings sorted by file and rule, and the calls
  * and input tokens spent.
  * When a finding meets `failOn` the review fails with `FindingsError`, carrying

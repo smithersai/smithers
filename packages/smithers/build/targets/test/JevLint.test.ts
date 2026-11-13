@@ -215,14 +215,15 @@ describe("JevLint.review", () => {
     expect(error.message).toContain(`more than ${LlmLint.maximumReviewFiles} files`)
   })
 
-  it("never sends a file over Jev's window: it gets a not-judged warning and the rest is still judged", async () => {
+  it("never sends a file over Jev's window: it gets a not-judged finding and the rest is still judged", async () => {
     await write("big.ts", "x".repeat(JevLint.maximumJudgedFileBytes + 1))
     await write("edge.ts", "y".repeat(JevLint.maximumJudgedFileBytes))
     await write("small.ts", "z\n")
     const { judge, requests } = recording(answering({ size: 0.9 }))
-    const report = await review(payload([rule("size", "*.ts", { severity: "info" }), rule("other", "big.ts")]), {
-      judge
-    })
+    const report = await review(
+      payload([rule("size", "*.ts", { severity: "info" }), rule("other", "big.ts", { severity: "warning" })]),
+      { judge }
+    )
     expect(requests.map((request) => (request.state as { readonly path: string }).path).sort()).toEqual([
       "edge.ts",
       "small.ts"
@@ -251,10 +252,50 @@ describe("JevLint.review", () => {
     expect(error.message).toContain("not valid UTF-8")
   })
 
+  it("fails on a not-judged file whose error rule went unasked, under the default failOn", async () => {
+    await write("big.ts", "x".repeat(JevLint.maximumJudgedFileBytes + 1))
+    const { judge, requests } = recording(answering({}))
+    const error = await failure(
+      payload([
+        rule("advisory", "*.ts", { severity: "warning" }),
+        rule("gate", "big.ts"),
+        rule("note", "*.ts", { severity: "info" })
+      ]),
+      { judge }
+    )
+    expect(requests).toHaveLength(0)
+    expect(error).toMatchObject({ _tag: "smithers-build/FindingsError", failOn: "error" })
+    expect((error as LlmLint.FindingsError).findings).toEqual([{
+      file: "big.ts",
+      line: 1,
+      severity: "error",
+      message: `not-judged: ${JevLint.maximumJudgedFileBytes + 1} bytes is over the ` +
+        `${JevLint.maximumJudgedFileBytes}-byte file Jev reads; split the file or narrow advisory, gate, note`
+    }])
+  })
+
+  it("keeps an unjudged info-only file advisory unless failOn includes info", async () => {
+    await write("big.ts", "x".repeat(JevLint.maximumJudgedFileBytes + 1))
+    const { judge, requests } = recording(answering({}))
+    const rules = [rule("note", "*.ts", { severity: "info" })]
+    const report = await review(payload(rules), { judge })
+    expect(report.findings).toMatchObject([{ file: "big.ts", severity: "info" }])
+    expect(report.findings[0]!.message).toMatch(/^not-judged:/)
+    const error = await failure(payload(rules, { failOn: "info" }), { judge })
+    expect(error).toMatchObject({
+      _tag: "smithers-build/FindingsError",
+      failOn: "info",
+      findings: [{ file: "big.ts", severity: "info" }]
+    })
+    expect(requests).toHaveLength(0)
+  })
+
   it("fails on a not-judged file when failOn is warning", async () => {
     await write("big.ts", "x".repeat(JevLint.maximumJudgedFileBytes + 1))
     const { judge, requests } = recording(answering({}))
-    const error = await failure(payload([rule("size", "*.ts")], { failOn: "warning" }), { judge })
+    const error = await failure(payload([rule("size", "*.ts", { severity: "warning" })], { failOn: "warning" }), {
+      judge
+    })
     expect(requests).toHaveLength(0)
     expect(error).toMatchObject({ _tag: "smithers-build/FindingsError", failOn: "warning" })
     expect((error as LlmLint.FindingsError).findings.map((finding) => finding.message.split(":")[0])).toEqual([

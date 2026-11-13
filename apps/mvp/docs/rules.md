@@ -19,7 +19,7 @@ Every `ImportRules` entry must cover at least one source. A stale or empty scope
 
 `apps/mvp/PACKAGE.test.ts` checks each rule's `files` against the files on disk: a rule that reads a top-level Worker source must read every Worker source in a subdirectory (`worker/github`, `worker/branch`, `worker/flows`), and a rule that reads no tests must read no test support (`worker/test/**`, `worker/<folder>/test/**`). In a glob, `*` and `!(...)` match one path segment and only `**` crosses `/`.
 
-Jev sees one file per request, so a rule that compares files (docs against code, a feature against its e2e test) is not a Jev rule. Those use `ReviewDocsAgainstCode` or are listed as process. Jev reads about 32,000 tokens at once, so a file over 96 KiB is not judged: it gets a `not-judged` warning instead.
+Jev sees one file per request, so a rule that compares files (docs against code, a feature against its e2e test) is not a Jev rule. Those use `ReviewDocsAgainstCode` or are listed as process. Jev reads about 32,000 tokens at once, so a file over 96 KiB is not judged: it gets a `not-judged` finding at the strongest severity of the rules covering it, so an unjudged `error` rule fails the target.
 
 Jev findings are `error` unless the rule says advisory. An advisory rule's findings are `warning`: they are reported and never fail the target, because on 2026-10-19 most of their findings were false. Each needs a sharper question before it can gate.
 

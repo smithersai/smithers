@@ -79,6 +79,10 @@ unchanged, for a target whose `cwd` is the package.
 
 Collected from the attrs: the runner's declared files and every entry in `srcs`.
 
+A `testSuite` runner's directory paths are filters rather than file inputs.
+A suite with both `srcs` and `deps` empty refuses `cache: true`; declare the
+files or dependencies it reads before opting into caching.
+
 ## Outputs
 
 None. A gate's product is its exit code.

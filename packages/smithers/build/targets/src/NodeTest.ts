@@ -209,10 +209,17 @@ export const Attrs = Schema.Struct({
    * Replays a green verdict from the result cache. Set it only when `srcs` and
    * `deps` cover everything the program reads: an undeclared input cannot
    * re-key the target. The runtime executable, lockfile, and build
-   * implementation are key material either way.
+   * implementation are key material either way. A `suite` run with no `srcs`
+   * and no `deps` declares no file at all, so it refuses `cache: true`.
    */
   cache: Schema.optional(Schema.Boolean)
-})
+}).check(
+  Schema.makeFilter((attrs) =>
+    attrs.cache === true && attrs.runner.name === "suite" && attrs.srcs.length === 0 && attrs.deps.length === 0
+      ? "a suite run keys on no file of its own, so cache: true needs srcs or deps that cover what it reads"
+      : undefined
+  )
+)
 
 /**
  * Attributes for {@link NodeTest}.

@@ -159,7 +159,9 @@ cached. External compiler, test, and lint targets remain non-cacheable by
 default: the executable the target spawns is key material, but a program can
 still read files its declaration does not name, and an unconfined run cannot
 prove it did not. `cache: true` on a `NodeTest` is the declaration's assertion
-that `srcs` and `deps` cover everything it reads.
+that `srcs` and `deps` cover everything it reads. A `testSuite` runner names
+only directories, so `cache: true` requires at least one declared `srcs` input
+or dependency; runner directories alone cannot re-key a cached verdict.
 
 A declared [Nix environment](../concepts/environments.md) enters keys through
 the tool environment, but does not by itself make these targets cacheable.
