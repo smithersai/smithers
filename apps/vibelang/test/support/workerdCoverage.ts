@@ -1,6 +1,7 @@
 // Stays .ts: Istanbul's untyped CJS packages load through createRequire behind local interfaces, and workerd
 // evidence collection is plain CDP over a WebSocket; the VibeLang pipeline imports this from workerd.vibe.
 import { createRequire } from "node:module"
+import { fileURLToPath } from "node:url"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { normalizeEndColumns, type FileCoverageJSON } from "./coverageUnion.ts"
 
@@ -29,6 +30,17 @@ interface LoadResult { readonly contents?: string | Uint8Array; readonly errors?
 interface PluginBuild { onLoad(options: unknown, callback: (args: LoadArgs) => unknown): void }
 interface EsbuildPlugin { readonly name: string; setup(build: never): unknown }
 
+/**
+ * The compiler's map with each `file:` source as a path. A map's sources are URLs, and the VibeLang 0.0.13 compiler
+ * writes absolute `file://` ones; Istanbul resolves every source as a path beside the module, so a URL would credit
+ * `<dir>/file:/<path>` and the merge gate, which filters on the app's directories, would drop the module.
+ */
+function withPathSources(map: Record<string, unknown>): Record<string, unknown> {
+  const sources = map.sources
+  if (!Array.isArray(sources)) return map
+  return { ...map, sources: sources.map((source: unknown) => typeof source === "string" && source.startsWith("file:") ? fileURLToPath(source) : source) }
+}
+
 const inlineMap = /\n\/\/# sourceMappingURL=data:application\/json;charset=utf-8;base64,([A-Za-z0-9+/=]+)\s*$/
 
 /**
@@ -56,7 +68,7 @@ export function instrumentModules<P extends EsbuildPlugin>(plugin: P, instrument
         if (map === null) throw new Error(`workerd coverage: ${args.path} compiled without a source map`)
         const code = result.contents.slice(0, map.index)
         const sourceMap = JSON.parse(Buffer.from(map[1]!, "base64").toString("utf8")) as Record<string, unknown>
-        return { ...result, contents: instrumenter.instrumentSync(code, args.path, sourceMap) }
+        return { ...result, contents: instrumenter.instrumentSync(code, args.path, withPathSources(sourceMap)) }
       }),
     } as never),
   }
@@ -82,7 +94,7 @@ export function instrumentRolldown<P extends RolldownPlugin>(plugin: P, instrume
     // Without the compiler's map the counters would sit at output lines and credit the wrong source.
     if (result.map === undefined || result.map === null) throw new Error(`workerd coverage: ${id} compiled without a source map`)
     const sourceMap = typeof result.map === "string" ? JSON.parse(result.map) as Record<string, unknown> : result.map
-    return { code: instrumenter.instrumentSync(result.code, id, sourceMap), moduleType: result.moduleType ?? "js" }
+    return { code: instrumenter.instrumentSync(result.code, id, withPathSources(sourceMap)), moduleType: result.moduleType ?? "js" }
   }
   return { ...plugin, load: typeof original === "function" ? load : { ...original, handler: load } }
 }
