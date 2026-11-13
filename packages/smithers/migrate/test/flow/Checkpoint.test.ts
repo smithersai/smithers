@@ -714,6 +714,21 @@ describe("Checkpoint.take with no version control", () => {
       yield* Checkpoint.restore(root, ref, ["workflow.jsx"])
       expect(readFileSync(join(root, "workflow.jsx"), "utf8")).toBe("old workflow\n")
     }).pipe(Effect.provide(platform)))
+
+  it.effect("recovers with the advertised copy command from a project path a shell would split or run", () =>
+    Effect.gen(function*() {
+      for (const name of ["project with spaces", "it's mine", "a;touch PWNED;$(touch PWNED2)`touch PWNED3`"]) {
+        const root = join(scratch("novcs-quoted"), name)
+        write(root, "workflow.jsx", "old workflow\n")
+
+        const ref = yield* Checkpoint.take(payload(root, ["workflow.jsx"], true))
+        write(root, "workflow.jsx", "migrated\n")
+        execFileSync("sh", ["-c", ref.restore], { cwd: root, stdio: "ignore" })
+
+        expect(readFileSync(join(root, "workflow.jsx"), "utf8")).toBe("old workflow\n")
+        expect(readdirSync(root).filter((entry) => entry.startsWith("PWNED"))).toEqual([])
+      }
+    }).pipe(Effect.provide(platform)))
 })
 
 describe("Checkpoint.take on jj", () => {

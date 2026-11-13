@@ -33,6 +33,7 @@ import * as Path from "effect/Path"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import { createHash } from "node:crypto"
+import * as CommandLine from "../internal/CommandLine.ts"
 import * as Fs from "../internal/Fs.ts"
 import { io, make, MigrateError } from "../MigrateError.ts"
 import type * as Report from "../Report.ts"
@@ -740,7 +741,7 @@ export const take = (payload: {
     return yield* pending(payload, {
       vcs,
       ref: directory,
-      restore: `cp -R ${directory}/. .`,
+      restore: `cp -R ${CommandLine.quote(`${directory}/.`)} .`,
       ...recorded
     })
   })
