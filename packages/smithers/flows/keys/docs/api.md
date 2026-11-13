@@ -165,13 +165,21 @@ class KeyDerivationError extends Schema.TaggedError<KeyDerivationError>()(
   { code: KeyDerivationErrorCode, message: Schema.String }
 ) {
   constructor(
-    props: { readonly code: KeyDerivationErrorCode; readonly message: string; readonly cause?: unknown },
+    props: { readonly code: KeyDerivationErrorCode; readonly message: string },
     options?: Schema.MakeOptions
   )
+  static new(
+    props: { readonly code: KeyDerivationErrorCode; readonly message: string; readonly cause?: unknown },
+    options?: Schema.MakeOptions
+  ): KeyDerivationError
 }
 ```
 
 The only failure `deriveKey` reports.
+
+Use `KeyDerivationError.new({ code, message, cause })` to retain a diagnostic
+cause. The inherited `new KeyDerivationError({ code, message })` constructor
+accepts only the public fields and does not retain a cause.
 
 - `code`: stable, for control flow.
 - `message`: one of two fixed sentences,

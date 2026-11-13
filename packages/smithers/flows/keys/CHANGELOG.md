@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Installation and testing examples now use the current `Digest` API. The error
+  reference distinguishes the cause-preserving factory from the constructor,
+  and troubleshooting shows the messages returned by each derivation API.
+
 ### Security
 
 - `KeyDerivationError.cause` is no longer a schema field. It stays available

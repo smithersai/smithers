@@ -15,7 +15,13 @@ import * as Keys from "@smthrs/keys"
 
 ## `canonicalization_failed`
 
-**Symptom.** `deriveKey` fails with:
+**Symptom.** `deriveKey` fails with this `message`:
+
+```text
+Key input could not be canonicalized
+```
+
+`DerivedKey` includes the code in its schema issue:
 
 ```text
 [canonicalization_failed] Key input could not be canonicalized
@@ -60,7 +66,13 @@ the input, so it is safe to log.
 
 ## `digest_failed`
 
-**Symptom.** `deriveKey` fails with:
+**Symptom.** `deriveKey` fails with this `message`:
+
+```text
+Canonical key material could not be hashed
+```
+
+`DerivedKey` includes the code in its schema issue:
 
 ```text
 [digest_failed] Canonical key material could not be hashed

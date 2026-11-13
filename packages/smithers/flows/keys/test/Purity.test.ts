@@ -20,10 +20,10 @@ const sourceFiles = async (directory: string): Promise<Array<string>> => {
  *
  * A key is a digest of a canonical document, and that is all this package
  * does: `effect` supplies the schema runtime, and the two workspace packages
- * supply the canonical form and the digest. They are exactly the three entries
- * in `package.json`'s `dependencies`. Anything else is a regression — a
+ * supply the canonical form and the digest. The workspace packages are the two
+ * `dependencies`; `effect` is a peer dependency. Anything else is a regression — a
  * `node:` builtin above all, because this package has to bundle for a browser,
- * where hashing arrives through the injected Effect `Crypto` service rather
+ * where hashing arrives through the injected Effect `Digest` service rather
  * than through an import.
  */
 const allowedPackages = ["@smthrs/canonical", "@smthrs/crypto", "effect"]

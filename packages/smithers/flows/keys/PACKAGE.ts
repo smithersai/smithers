@@ -40,7 +40,7 @@ const securityReview = Smithers.SecurityReview({
         "A KeyDerivationError message or SchemaIssue message in src/deriveKey.ts or src/DerivedKey.ts that interpolates the input or serialized value.",
         "A decode call on Canonical or the DerivedKey codec that omits `reportInput: false`, so the issue tree retains the input.",
         "The DerivedKey encode path (SchemaGetter.forbidden) or the declareConstructor parser returning an issue that embeds the key or its input.",
-        "KeyDerivationError `cause` (Schema.Unknown) holding a schema issue or crypto failure that carries the input, since encoding the error for a journal or API ships `cause` too."
+        "KeyDerivationError `cause` becoming a schema field or an enumerable property again, so schema encoding or JSON.stringify ships diagnostic input."
       ],
       paths: ["src/deriveKey.ts", "src/DerivedKey.ts", "src/KeyDerivationError.ts"]
     },
