@@ -4732,7 +4732,7 @@ cases.extend([('src/web/modelDecision.vibe', 'actions-click-close', 'clickedActi
  ('src/web/modelDecision.vibe', 'actions-click-focus', 'clickedActions', 'commands: [{ type: "FocusComposer" }]', 'commands: []', 'closing returns focus'),
  ('src/web/modelDecision.vibe', 'actions-click-branch', 'clickedActions', 'if (state.open) return', 'if (!state.open) return', 'the button toggles'),
  ('src/web/modelDecision.vibe', 'actions-click-loading', 'clickedActions', 'loading: !loaded', 'loading: loaded', 'only an empty list shows loading'),
- ('src/web/modelDecision.vibe', 'actions-click-epoch', 'clickedActions', 'flow: state.selected, epoch }', 'flow: state.selected, epoch: null }', 'the load carries its epoch'),
+ ('src/web/modelDecision.vibe', 'actions-click-epoch', 'clickedActions', 'flow: state.selected, epoch }', 'flow: state.selected, epoch: epoch + 1 }', 'the load carries its epoch'),
  ('src/web/modelDecision.vibe', 'actions-click-flow', 'clickedActions', 'flow: state.selected,', 'flow: "",', 'opening loads the selected flow'),
  ('src/web/modelDecision.vibe', 'actions-maximized', 'maximizedActions', 'maximized: !state.maximized', 'maximized: state.maximized', 'the size control flips the size'),
  ('src/web/modelDecision.vibe', 'actions-selected-run', 'selectedAction', 'run: "", ', 'run: state.run, ', 'choosing a flow leaves the run'),
