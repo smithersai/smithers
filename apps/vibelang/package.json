@@ -69,6 +69,7 @@
     "@effect/vitest": "4.1.1",
     "@playwright/test": "1.62.1",
     "@smthrs/fuzz": "workspace:*",
+    "@smthrs/journal": "workspace:*",
     "@smthrs/lemmascript": "workspace:*",
     "@smthrs/mvp": "workspace:*",
     "@smthrs/platform-node": "workspace:*",

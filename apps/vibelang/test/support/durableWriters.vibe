@@ -3,6 +3,7 @@
 import { Digest, SecureRandom } from "effect/crypto"
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
+import { Journal } from "@smthrs/journal"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Spend } from "../../worker/Reply.vibe"
@@ -74,3 +75,24 @@ effect function execution<S>(layer: Layer.Layer<S>, program: Effect<string, neve
 
 // The engine's generic requirements stay unresolved over S; every service is provided above, and Scope remains.
 export const within = <S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) => execution(layer, program) as unknown as Effect<string, unknown, Scope.Scope>
+
+/**
+ * A journal whose every read fails. Its flush succeeds, so the page read itself is the failure a budget's recovery
+ * meets; its writes are closed. A writer whose meter is asked for usage under it cannot learn what the run spent.
+ */
+export const unreadableJournal = Layer.succeed(Journal.Journal, Journal.makeNoop({ flush: Effect.void }))
+
+/** A logger and the lines it has captured: each line is a log's message and annotations, as JSON. */
+export effect function capturedLogs() {
+  const { References } = try promise(() => import("effect"))
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const layer = Logger.layer([Logger.make(options => {
+    runSync(Ref.update(lines, all => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+  return { layer, lines: Ref.get(lines) }
+}
+
+/** Whether `lines` hold the warning a writer logs when its meter cannot read the run's usage. */
+export function usageUnavailable(lines: ReadonlyArray<string>): boolean {
+  return lines.some(line => line.includes("vibelang.budget.usage") && line.includes('"outcome":"unavailable"'))
+}

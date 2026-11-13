@@ -160,6 +160,12 @@ combined cold startup exceeded the implicit five seconds after engine observatio
 
 **Sandbox lane tool review (0024).** `@smthrs/fuzz` is the monorepo's existing feedback-fuzz tool, added as a test dependency, approved by Will under VL-34 (2026-11-10). Sandbox fuzz uses fixed seeds and a millisecond-by-millisecond clock oracle; the benchmark checks 100 actual mock lifecycle cycles. Neither is a whole-app coverage or live-container performance claim.
 
+**Unreadable usage journal (0015).** `@smthrs/journal`, the workspace package `@smthrs/agent`'s budget already reads,
+is a test dependency (`workspace:*`), approved under VL-34 (2026-11-10; VL-5 allows `@smthrs/*`). The fuzz suite injects
+its closed `Journal` service with a working flush, so every page read fails: the VIP and wiki writers still return their
+draft, the specification reviewer calls no model and answers `review`, each is charged once, and each logs
+`vibelang.budget.usage` with `outcome: unavailable` (`test/support/durableWriters.vibe`).
+
 
 
 **History boundary regressions (0018).** Six behavioral tests cover invalid ranks, rejected bootstrap, faulty stored

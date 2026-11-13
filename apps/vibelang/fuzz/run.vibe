@@ -45,7 +45,7 @@ export effect function run<S extends Schema.Constraint>(
       const target = try Effect.try(() => Fuzz.target(schema, (input) => scoped(Effect.suspend(() => {
         const output = property(input)
         return Effect.isEffect(output) ? output : succeed(output)
-      })).pipe(Effect.provideService(References.MinimumLogLevel, "Warning")), { id: name, revision: options?.revision ?? "1", ...(options?.codec === undefined ? {} : { codec: options.codec }) }))
+      })).pipe(Effect.provideService(References.MinimumLogLevel, "Warn")), { id: name, revision: options?.revision ?? "1", ...(options?.codec === undefined ? {} : { codec: options.codec }) }))
       const searched = { seed, maxShrinks: name.startsWith("browser/") ? 16 : 64, ...(execution === undefined ? {} : { execution }) }
       const first = try Fuzz.runTarget(target, { duration: budget, ...searched, ...(Option.isSome(limit) ? { executions: limit.value } : {}) }).pipe(Effect.provideService(Fuzz.Corpus, store))
       // The deadline covers the replay of saved failures, so a slow box can spend the whole budget replaying them and

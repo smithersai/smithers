@@ -1059,6 +1059,9 @@ importers:
       '@smthrs/fuzz':
         specifier: workspace:*
         version: link:../../packages/fuzz
+      '@smthrs/journal':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/journal
       '@smthrs/lemmascript':
         specifier: workspace:*
         version: link:../../packages/lemmascript

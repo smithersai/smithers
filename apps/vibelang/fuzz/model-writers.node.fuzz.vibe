@@ -1,5 +1,6 @@
 // The wiki draft writer, the specification reviewers and the reply's tools on the real durable engine. Faults replace
-// the agent or the budget; a model bound to a refused local port walks the live path as far as the provider call.
+// the agent, the budget or the journal; a model bound to a refused local port walks the live path as far as the
+// provider call.
 import { it } from "@effect/vitest"
 import { HostModel } from "@smthrs/model-host"
 import { WikiWriter } from "../src/core/WikiWriter.vibe"
@@ -14,7 +15,7 @@ import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.
 import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
 import { run, Text, virtually } from "./run.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
-import { ledger, within } from "../test/support/durableWriters.vibe"
+import { capturedLogs, ledger, unreadableJournal, usageUnavailable, within } from "../test/support/durableWriters.vibe"
 import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
@@ -95,13 +96,25 @@ effect function wikiSettlementDown(ask: string) {
   return Option.isSome(outcome) && outcome.value === "budget" && log.charges > 1 && (try spendFailures("wiki")) - before === 1
 }
 
+/** A wiki draft whose usage the meter cannot read (the journal fails every read): the draft, charged once, warned. */
+effect function wikiUnreadableUsage(ask: string) {
+  const { log, spend } = ledger("admit")
+  const agent = Layer.succeed(WikiDraftAgent, { available: true, run: (request) => succeed({ page: request.page, text: `${request.source}${ask}` }) })
+  const logs = try capturedLogs()
+  const outcome = try within(Layer.mergeAll(wikiWriter.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend))), unreadableJournal), effect {
+    const result = try Effect.result((try WikiWriter).draft({ page: "roadmap", source: "# Page", ask }))
+    return result._tag === "Success" ? "ok:" + result.success.text : result.failure.reason as string
+  }).pipe(Effect.provide(logs.layer))
+  return outcome === `ok:# Page${ask}` && log.spent === 1 && usageUnavailable(try logs.lines)
+}
+
 /** No admission means no agent and no charge; a charge follows exactly one admitted attempt. */
 it.live("wiki/writer", () => run("wiki/writer", WikiInput, (input) => scoped(effect {
   // The agent itself refuses with no model, even when asked past the writer's own check.
   const bare = try Effect.provide(WikiDraftAgent, wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "unset" }))))
   const refusal = try Effect.flip(bare.run({ page: input.page, source: "# Page", ask: input.ask }, undefined as never) as never as Effect<never, WikiFailure>)
   if (bare.available || refusal.reason !== "no-model") return false
-  if (!(try wikiSettlementDown(input.ask))) return false
+  if (!(try wikiSettlementDown(input.ask)) || !(try wikiUnreadableUsage(input.ask))) return false
   if ((try wikiPhysical("refuse")) !== "budget" || (try wikiPhysical("fault")) !== "budget") return false
   const { log, spend } = ledger(input.admission)
   let agents = 0
@@ -140,6 +153,24 @@ effect function reviewSettlementDown(reviewer: "astra" | "sol" | "fable" | "opus
   return Option.isSome(outcome) && outcome.value === "budget" && log.charges > 1 && (try spendFailures("specification")) - before === 1
 }
 
+/**
+ * A review whose usage the meter cannot read (the journal fails every read): the budget cannot recover the run, so no
+ * model is called; the review fails as `review`, is charged once, and the warning is logged.
+ */
+effect function reviewUnreadableUsage(reviewer: "astra" | "sol" | "fable" | "opus") {
+  const { log, spend } = ledger("admit")
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ verdict: "LGTM", grade: "A", review: "Fine." }))], prompt: 2, completion: 2 }])
+  const values = { ...scripted.values, [`SPEC_REVIEW_${reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  const spec = { revision: 1, text: "spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  const logs = try capturedLogs()
+  const outcome = try within(Layer.mergeAll(layer, unreadableJournal), effect {
+    const result = try Effect.result((try SpecificationReviewers).review(reviewer, spec))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  }).pipe(Effect.provide(logs.layer))
+  return outcome === "review" && log.spent === 1 && log.calls === 0 && (try scripted.calls) === 0 && usageUnavailable(try logs.lines)
+}
+
 /** A reviewer whose record names a key the deployment lacks has no model: `no-model`, nothing admitted. */
 effect function keylessReviewer(reviewer: "astra" | "sol" | "fable" | "opus") {
   const { log, spend } = ledger("admit")
@@ -156,6 +187,7 @@ effect function keylessReviewer(reviewer: "astra" | "sol" | "fable" | "opus") {
 /** A reviewer with no configured model and a refused budget never asks a model; reasons stay within the known set. */
 it.live("specification/reviewers", () => run("specification/reviewers", ReviewerInput, (input) => scoped(effect {
   if (!(try reviewSettlementDown(input.reviewer, input.revision)) || !(try keylessReviewer(input.reviewer))) return false
+  if (!(try reviewUnreadableUsage(input.reviewer))) return false
   if ((try reviewPhysical(input.reviewer, "refuse")) !== "budget" || (try reviewPhysical(input.reviewer, "fault")) !== "budget") return false
   const { log, spend } = ledger(input.admission)
   const name = `SPEC_REVIEW_${input.reviewer.toUpperCase()}`

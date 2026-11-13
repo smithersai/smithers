@@ -1,15 +1,16 @@
 // The VIP draft writer (worker/VipDraft.vibe) on the real durable engine, against 0022 and the budget's rules: no
 // model means `no-model` with nothing admitted; a refused or unreachable admission means `budget` and no agent; an
 // admitted run is charged once; a model call the day refuses, or a ledger that fails mid-run, is `budget`; a usage
-// the meter can't read is charged unreported; only an answer the VipDraft schema accepts becomes the draft; a final
-// charge the ledger never takes ends the draft `budget` once the engine's retries expire, and is counted.
+// the meter can't read (a journal that fails every read) is charged unreported, the draft still stands and the warning
+// is logged; only an answer the VipDraft schema accepts becomes the draft; a final charge the ledger never takes ends
+// the draft `budget` once the engine's retries expire, and is counted.
 import { it } from "@effect/vitest"
 import { VipWriter } from "../src/core/VipWriter.vibe"
 import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { agentLayer, DraftAgent, writer } from "../worker/VipDraft.vibe"
-import { ledger, within } from "../test/support/durableWriters.vibe"
+import { capturedLogs, ledger, unreadableJournal, usageUnavailable, within } from "../test/support/durableWriters.vibe"
 import { cell, scriptedModel } from "./model-server.vibe"
 import { run, Text, virtually } from "./run.vibe"
 
@@ -84,8 +85,23 @@ effect function settlementDown(input: typeof Input.Type) {
   return Option.isSome(outcome) && outcome.value === "budget" && charges > 1 && (try spendFailures()) - before === 1
 }
 
+/** A draft whose usage the meter cannot read: the agent's draft, charged once, with the usage warning logged. */
+effect function unreadableUsage(input: typeof Input.Type) {
+  const { log, spend } = ledger("admit")
+  const draft = { title: input.title, summary: input.text, example: "e", prior: "p" }
+  const agent = Layer.succeed(DraftAgent, { available: true, run: () => succeed(draft) })
+  const logs = try capturedLogs()
+  const layer = Layer.mergeAll(writer.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend))), unreadableJournal)
+  const request: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title: input.title, text: input.text, example: "e", prior: "p", assignee: "" }
+  const outcome = try within(layer, effect {
+    const result = try Effect.result((try VipWriter).draft(request))
+    return result._tag === "Success" ? JSON.stringify(result.success) : result.failure.reason as string
+  }).pipe(Effect.provide(logs.layer))
+  return outcome === JSON.stringify(draft) && log.spent === 1 && usageUnavailable(try logs.lines)
+}
+
 it.live("vip/writer", () => run("vip/writer", Input, (input) => scoped(effect {
-  if (!(try settlementDown(input))) return false
+  if (!(try settlementDown(input)) || !(try unreadableUsage(input))) return false
   // The agent itself refuses with no model, even when asked past the writer's own check.
   const bare = try Effect.provide(DraftAgent, agentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "unset" }))))
   const refusal = try Effect.flip(bare.run({ op: "draft", key: "d1", number: 0, parent: 0, title: input.title, text: input.text, example: "", prior: "", assignee: "" }, undefined as never) as never as Effect<never, IssueFailure>)

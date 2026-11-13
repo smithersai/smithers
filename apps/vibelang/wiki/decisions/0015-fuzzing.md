@@ -1744,6 +1744,21 @@ drawn ids from empty to 121 units and past; `decisions/wiki-links` holds `sectio
 another, and exactly as many `..` and named segments as the parts leave. Mutants caught: a 121-unit limit; an empty
 section accepted; a `..` climbing out of another `..`.
 
+### Session 16: an unreadable usage journal and the suite's log level (vl-fuzz2, 2026-11-13)
+
+`worker/VipDraft.vibe` 64-65, `WikiDraft.vibe` 66-67 and `SpecificationReviewers.vibe` 56-57: a writer whose meter
+cannot read the run's usage. `vip/writer`, `wiki/writer` and `specification/reviewers` each run one more draft with
+`unreadableJournal` (`test/support/durableWriters.vibe`), `@smthrs/journal`'s closed `Journal` with a working flush, so
+the budget's recovery fails on its page read. The VIP and wiki drafts still return the agent's draft; the reviewer's
+budget cannot recover the run, so it calls no model and answers `review`. Each is charged once and logs
+`vibelang.budget.usage` with `outcome: unavailable`. Mutants caught, for each writer: the warning removed; the catch
+turned into a defect.
+
+Finding in the suite itself: `fuzz/run.vibe` set `References.MinimumLogLevel` to `"Warning"`, which is not an Effect
+level (`"Warn"`), so no log at any level reached a logger under fuzzing, and no target could observe one. TypeScript
+accepts it because `Effect.provideService` infers the service type from both arguments; a direct `LogLevel` annotation
+rejects it. Fixed to `"Warn"`.
+
 ## Complete browser sources and settled history receipts
 
 The browser fuzz reporter uses the e2e reporter's source measurement: every requested file is seeded from the
