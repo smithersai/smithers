@@ -1,6 +1,8 @@
 // C-REL-02 diagnostic recorder. Never treat this recording as a passing check
 // receipt.
-import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { finished } from 'node:stream/promises'
+import { superviseProcess } from '../release-process.mjs'
 import { createWriteStream } from 'node:fs'
 import { mkdir, readFile, writeFile, realpath } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
@@ -31,25 +33,80 @@ export function pouredBottle(output, version) {
   return installed
 }
 
-export async function command(program, args, evidence, name, timeout = 45 * 60_000) {
-  const began = new Date().toISOString(), tick = performance.now()
-  const log = createWriteStream(join(evidence, `${name}.jsonl`), { flags: 'wx', mode: 0o600 })
-  const record = event => log.write(JSON.stringify({ at: new Date().toISOString(), ...event }) + '\n')
-  record({ event: 'start', uid: process.getuid(), program, args })
-  let stdout = '', stderr = '', status = null, failure
+// Attach the error observer before opening, and retain it through close. A
+// failed evidence stream aborts its process even when no more output arrives.
+async function openLog(path, controller) {
+  const log = createWriteStream(path, { flags: 'wx', mode: 0o600 })
+  const closed = finished(log).catch(error => { controller.abort(error); return error })
+  try { await once(log, 'open') }
+  catch (error) { await closed; throw error }
+  return {
+    record: event => {
+      controller.signal.throwIfAborted()
+      log.write(JSON.stringify({ at: new Date().toISOString(), ...event }) + '\n')
+    },
+    close: async () => {
+      if (!log.destroyed) log.end()
+      const error = await closed
+      if (error) throw error
+    }
+  }
+}
+
+export async function command(program, args, evidence, name, timeout = 45 * 60_000, signal) {
+  const began = new Date().toISOString(), tick = performance.now(), controller = new AbortController()
+  let log, stdout = '', stderr = '', status = null, failure
   try {
-    const child = spawn(program, args, { stdio: ['ignore', 'pipe', 'pipe'], signal: AbortSignal.timeout(timeout) })
-    child.stdout.on('data', bytes => { stdout += bytes; record({ stream: 'stdout', text: bytes.toString() }); process.stdout.write(bytes) })
-    child.stderr.on('data', bytes => { stderr += bytes; record({ stream: 'stderr', text: bytes.toString() }); process.stderr.write(bytes) })
-    status = await new Promise((yes, no) => { child.once('error', no); child.once('close', yes) })
-    if (status !== 0) failure = `command exited ${status}`
+    log = await openLog(join(evidence, name + '.jsonl'), controller)
+    log.record({ event: 'start', uid: process.getuid(), program, args })
+    const result = await superviseProcess(program, args, {
+      timeoutMs: timeout,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+      onOutput: (bytes, stream) => {
+        if (stream === 'stdout') stdout += bytes
+        else stderr += bytes
+        log.record({ stream, text: bytes.toString() })
+        process[stream].write(bytes)
+      }
+    })
+    status = result.code
+    failure = result.failure?.message
+    if (!failure && status !== 0) failure = 'command exited ' + status
     if (/\bsudo\b|password\s*:/i.test(stdout + stderr)) failure = 'Privilege prompt in command output'
   } catch (error) { failure = error.message }
   const result = { began, ended: new Date().toISOString(), durationMs: performance.now() - tick, uid: process.getuid(), program, args, status, failure, stdout, stderr }
-  record({ event: 'end', ...result })
-  await new Promise((yes, no) => { log.once('error', no); log.end(yes) })
-  if (failure) throw Object.assign(new Error(failure), { receipt: result })
+  try {
+    if (log && !controller.signal.aborted) log.record({ event: 'end', ...result })
+  } finally {
+    try { await log?.close() } catch (error) { result.failure ??= error.message }
+  }
+  if (result.failure) throw Object.assign(new Error(result.failure), { receipt: result })
   return result
+}
+
+// The executable is an argument so portable tests exercise the same capture
+// lifecycle with real processes; the journey always uses the system nettop.
+export async function networkCapture(evidence, { program = '/usr/bin/nettop', args = ['-m', 'route', '-L', '0', '-s', '1'] } = {}) {
+  const controller = new AbortController()
+  const log = await openLog(join(evidence, 'nettop.jsonl'), controller)
+  let samples = 0, stopping = false, started
+  const ready = new Promise(resolve => { started = resolve })
+  const done = superviseProcess(program, args, {
+    signal: controller.signal,
+    onSpawn: started,
+    onOutput: (bytes, stream) => {
+      if (stream === 'stdout') samples++
+      log.record({ stream, text: bytes.toString() })
+    }
+  }).then(async result => {
+    if (stopping && result.failure === controller.signal.reason) result.failure = undefined
+    if (!stopping && !result.failure) result.failure = new Error('nettop exited early or failed: ' + result.code)
+    try { await log.close() } catch (error) { result.failure ??= error }
+    return { ...result, samples }
+  })
+  // A startup failure must also close the evidence file before it propagates.
+  await Promise.race([ready, done.then(result => { throw result.failure })])
+  return { done, stop: () => { stopping = true; controller.abort(); return done } }
 }
 
 export async function readiness(url, evidence, timeout = 60_000) {
@@ -98,23 +155,15 @@ export async function journey(path) {
   await mkdir(c.evidence, { mode: 0o700 })
   const began = new Date().toISOString(), tick = performance.now()
   const session = { check: 'C-REL-02', authority: 'diagnostic-only', began, commit: c.commit, version: c.version, uid: process.getuid(), commands: [] }
-  const netlog = createWriteStream(join(c.evidence, 'nettop.jsonl'), { flags: 'wx', mode: 0o600 })
-  const nettop = spawn('/usr/bin/nettop', ['-m', 'route', '-L', '0', '-s', '1'], { stdio: ['ignore', 'pipe', 'pipe'] })
-  let networkFailure, samples = 0, stopping = false
-  const closed = new Promise(resolve => {
-    nettop.once('error', error => { networkFailure = error.message; resolve() })
-    nettop.once('close', status => { if (!stopping || (status !== 0 && status !== null)) networkFailure = `nettop exited early or failed: ${status}`; resolve() })
-  })
-  for (const [stream, output] of [['stdout', nettop.stdout], ['stderr', nettop.stderr]]) output.on('data', bytes => {
-    if (stream === 'stdout') samples++
-    netlog.write(JSON.stringify({ at: new Date().toISOString(), stream, text: bytes.toString() }) + '\n')
-  })
+  const controller = new AbortController()
+  let network
   const run = async (program, args, name) => {
-    try { const result = await command(program, args, c.evidence, name); session.commands.push(result); return result }
+    try { const result = await command(program, args, c.evidence, name, undefined, controller.signal); session.commands.push(result); return result }
     catch (error) { if (error.receipt) session.commands.push(error.receipt); throw error }
   }
   try {
-    await new Promise((yes, no) => { nettop.once('spawn', yes); nettop.once('error', no) })
+    network = await networkCapture(c.evidence)
+    network.done.then(result => { if (result.failure) controller.abort(result.failure) })
     await run('/opt/homebrew/bin/brew', ['install', 'smithersai/tap/smithers'], 'install')
     const info = await run('/opt/homebrew/bin/brew', ['info', '--json=v2', 'smithersai/tap/smithers'], 'brew-info')
     session.pour = pouredBottle(info.stdout, c.version)
@@ -130,23 +179,21 @@ export async function journey(path) {
     // Keep connection capture alive during the manual setup/question steps.
     const input = createInterface({ input: process.stdin, output: process.stdout })
     try {
-      const answer = await input.question('Complete setup and the question in the recorded browser session; export the resolver log, then type done: ')
+      const answer = await input.question('Complete setup and the question in the recorded browser session; export the resolver log, then type done: ', { signal: controller.signal })
       if (answer !== 'done') throw new Error('Manual session incomplete')
     } finally { input.close() }
     session.manualEnded = new Date().toISOString()
     await connections(c.dnsLog, c.hostnames ?? {}, c.evidence, began, session.manualEnded)
-    if (networkFailure || !samples) throw new Error(networkFailure ?? 'No nettop samples')
+    controller.signal.throwIfAborted()
     session.recorded = true
-  } catch (error) { session.failure = error.message; throw error }
+  } catch (error) { session.failure = controller.signal.reason?.message ?? error.message }
   finally {
     // Only stop the child this recorder started. The installed host stays up.
-    stopping = true
-    nettop.kill('SIGTERM')
-    await closed
-    await new Promise((yes, no) => { netlog.once('error', no); netlog.end(yes) })
+    const capture = await network?.stop()
     session.ended = new Date().toISOString()
     session.durationMs = performance.now() - tick
-    if (networkFailure) { session.failure ??= networkFailure; session.recorded = false }
+    if (capture?.failure || (capture && !capture.samples)) session.failure ??= capture.failure?.message ?? 'No nettop samples'
+    if (session.failure) session.recorded = false
     await writeFile(join(c.evidence, 'session.json'), JSON.stringify(session, null, 2), { flag: 'wx', mode: 0o600 })
   }
   if (session.failure) throw new Error(session.failure)

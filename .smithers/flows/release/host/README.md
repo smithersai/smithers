@@ -40,7 +40,10 @@ Mac, an unprivileged installing owner, and the bundled PostgreSQL 18 programs.
 They refuse on Linux. They do not install a candidate bundle or authorize guest
 root execution. Keep the configuration and artifacts private (they include
 install profiles and command transcripts). Diagnostic JSON is not an authenticated
-C-PRC-03 completion receipt.
+C-PRC-03 completion receipt. Command deadlines kill the owned process group,
+including children that ignore `SIGTERM` and descendants holding output pipes.
+The recorder closes those pipes and waits for child exit before returning a
+failed command receipt. Database failures retain the existing diagnostic redaction.
 
 An owner configuration names `commit`, an absolute `evidence` directory outside
 STATE, `psql` (the absolute bundled executable), `database` (the owner's libpq

@@ -1,7 +1,7 @@
 // Release-host recorder. It calls installed programs; it never loads a flow or
 // executable from the repository being backed up. Receipts are diagnostic until
 // the engineering receipt gate authenticates them at the released commit.
-import { spawn } from 'node:child_process'
+import { superviseProcess } from '../release-process.mjs'
 import { diagnostic, libpqEnvironment } from '../../../../apps/mvp/ops/database/Policy.ts'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -14,19 +14,15 @@ export async function run(program, args, { env = {}, expected = 0, timeout = 30_
   const database = env.PGDATABASE
   if (database !== undefined) env = libpqEnvironment(database, env)
   const began = new Date().toISOString()
-  let child
-  try {
-    child = spawn(program, args, { env: { HOME: homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin', ...env }, stdio: ['ignore', 'pipe', 'pipe'], signal: AbortSignal.timeout(timeout) })
-  } catch (error) {
-    throw database === undefined ? error : new Error(diagnostic(error, database))
-  }
   let stdout = '', stderr = ''
-  child.stdout.on('data', bytes => { stdout += bytes })
-  child.stderr.on('data', bytes => { stderr += bytes })
-  const status = await new Promise((yes, no) => { child.once('error', no); child.once('close', yes) })
-    .catch(error => { throw database === undefined ? error : new Error(diagnostic(error, database)) })
+  const { code: status, failure } = await superviseProcess(program, args, {
+    env: { HOME: homedir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin', ...env },
+    timeoutMs: timeout,
+    onOutput: (bytes, source) => { if (source === 'stdout') stdout += bytes; else stderr += bytes }
+  })
   if (database !== undefined && status !== 0) { stdout = ''; stderr = diagnostic(undefined, database) }
   const receipt = { began, ended: new Date().toISOString(), program, args, status, stdout, stderr }
+  if (failure) throw Object.assign(database === undefined ? failure : new Error(diagnostic(failure, database)), { receipt })
   if (expected !== null && status !== expected) throw Object.assign(new Error(`command exited ${status}: ${program}`), { receipt })
   return receipt
 }

@@ -51,6 +51,12 @@ the question. Export the resolver's full session to `dnsLog` as JSONL rows
 `{"at":"<ISO UTC timestamp>","hostname":"<queried hostname>"}` before typing
 `done`. It retains the raw export and classifies every in-session row. Failed
 commands, readiness, network capture and classification retain failure evidence.
+Each command and network log opens exclusively before its process starts. A log
+write failure stops and awaits the owned process group before returning failure;
+existing evidence is never overwritten. Deadlines kill resistant children and
+descendants, close their pipes, and await child exit. The session records capture
+failures when its evidence directory remains writable; command failures also
+carry an in-memory receipt if their log cannot be written.
 
 These files are diagnostic, never publication receipts. The check owner reviews
 the screen recording, full resolver coverage (including other Mac processes),

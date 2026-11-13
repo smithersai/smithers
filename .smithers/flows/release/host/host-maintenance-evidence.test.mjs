@@ -1,10 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { lstat, mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, writeFile, symlink, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { alive, exited } from '../fixtures/installed-consumer/process-state.mjs'
 import { createHash } from 'node:crypto'
-import { inventory, compare, config } from './host-maintenance-evidence.mjs'
+import { inventory, compare, config, run } from './host-maintenance-evidence.mjs'
 
 test('independent inventory includes bytes, modes and links without following a retained-home link', async () => {
   const root = await mkdtemp(join(tmpdir(), 'host-release-'))
@@ -60,4 +61,53 @@ test('backup recorder checks observed bytes, forbidden trees and secret modes', 
     await writeFile(manifest, JSON.stringify({ ...m, files: [...files, { path: '../outside', size: 0, sha256: 'literal' }] }))
     await assert.rejects(verifyBackup(root), /unsafe or duplicate/)
   } finally { await rm(root, { recursive: true }) }
+})
+
+
+for (const descendant of [false, true]) test('maintenance deadlines reap a SIGTERM-resistant ' + (descendant ? 'process tree with inherited pipes' : 'child') + ' before rejection', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'maintenance-deadline-')), pidFile = join(root, 'pids')
+  t.after(async () => {
+    const pids = JSON.parse(await readFile(pidFile, 'utf8'))
+    for (const pid of pids) if (alive(pid)) process.kill(pid, 'SIGKILL')
+    await rm(root, { recursive: true, force: true })
+  })
+  const source = [
+    'const { spawn } = require("node:child_process")',
+    'process.on("SIGTERM", () => {})',
+    'const pids = [process.pid]',
+    'if (' + descendant + ') pids.push(spawn(process.execPath, ["-e", \'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)\'], { stdio: ["ignore", "inherit", "inherit"] }).pid)',
+    'require("node:fs").writeFileSync(process.argv[1], JSON.stringify(pids))',
+    'setInterval(() => {}, 1000)'
+  ].join('\n')
+  const began = Date.now()
+  await assert.rejects(run(process.execPath, ['-e', source, pidFile], { timeout: 1500 }), /abort|timed out/i)
+  const pids = JSON.parse(await readFile(pidFile, 'utf8'))
+  assert.equal(alive(pids[0]), false, 'the owned child is reaped before rejection')
+  for (const pid of pids.slice(1)) assert.equal(await exited(pid), true, 'the descendant is terminated')
+  assert.ok(Date.now() - began < 8000)
+})
+
+
+test('maintenance command receipts retain exit status and separate output streams', async () => {
+  const receipt = await run(process.execPath, ['-e', 'console.log("observed"); console.error("diagnostic"); process.exitCode = 7'], { expected: null })
+  assert.equal(receipt.status, 7)
+  assert.equal(receipt.stdout, 'observed\n')
+  assert.equal(receipt.stderr, 'diagnostic\n')
+  await assert.rejects(run('/does-not-exist-smithers', []), error => {
+    assert.match(error.message, /ENOENT/)
+    assert.equal(error.receipt.status, null)
+    return true
+  })
+})
+
+test('maintenance deadline receipts preserve database diagnostic redaction', async () => {
+  const database = 'postgresql://owner:synthetic-password@127.0.0.1/example'
+  await assert.rejects(run(process.execPath, ['-e', 'console.log("private query output"); setInterval(() => {}, 1000)'], { env: { PGDATABASE: database }, timeout: 500 }), error => {
+    assert.equal(error.message, 'database operation failed for 127.0.0.1')
+    assert.equal(error.receipt.stdout, '')
+    assert.equal(error.receipt.stderr, 'database operation failed for 127.0.0.1')
+    assert.equal(error.receipt.status, null)
+    assert.ok(!JSON.stringify(error.receipt).includes('synthetic-password'))
+    return true
+  })
 })

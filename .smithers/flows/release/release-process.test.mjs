@@ -236,3 +236,44 @@ test("a probe's captured output never carries a credential the caller holds", as
     }
   }
 })
+
+
+for (const mode of ['abort', 'callback']) test('supervisor ' + mode + ' failure awaits child closure before resolving', async () => {
+  const controller = new AbortController(), failure = new Error('capture failed')
+  let pid
+  const result = await superviseProcess(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); console.log(process.pid); setInterval(() => {}, 1000)'], {
+    timeoutMs: 5000,
+    signal: controller.signal,
+    onOutput: chunk => {
+      pid = Number(chunk.toString().trim())
+      if (mode === 'abort') controller.abort(failure)
+      else throw failure
+    }
+  })
+  assert.equal(result.failure, failure)
+  assert.ok(pid > 1)
+  assert.equal(alive(pid), false, 'the child has been reaped at settlement')
+})
+
+test('a pre-aborted supervisor never starts its process', async () => {
+  const failure = new Error('capture unavailable')
+  const result = await superviseProcess('/does-not-exist-smithers', [], { signal: AbortSignal.abort(failure) })
+  assert.deepEqual(result, { failure, code: null, signal: null })
+})
+
+
+test('a synchronous spawn refusal becomes a failed supervisor result', async () => {
+  const result = await superviseProcess(process.execPath, [], { cwd: 42 })
+  assert.equal(result.failure.code, 'ERR_INVALID_ARG_TYPE')
+  assert.equal(result.code, null)
+})
+
+test('a startup observer failure also terminates and awaits its child', async () => {
+  const failure = new Error('cannot record startup')
+  const result = await superviseProcess(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    onSpawn: () => { throw failure },
+    timeoutMs: 5000
+  })
+  assert.equal(result.failure, failure)
+  assert.equal(result.code, null)
+})

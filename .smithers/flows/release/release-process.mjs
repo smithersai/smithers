@@ -52,18 +52,23 @@ export const redactCredentials = (text, env = process.env) => {
 /**
  * Runs one owned process group until stdout and stderr close, a deadline
  * expires, or the caller stops it. Every settlement kills the whole group and
- * destroys every pipe, so a descendant that inherited them can neither keep
- * the caller waiting nor outlive the probe.
+ * destroys every pipe and awaits child closure, so descendants that inherited
+ * them can neither keep the caller waiting nor outlive the probe.
  *
  * `input`, when given, is written to the process's stdin, which then stays
  * open until settlement: a stdio server exits at end of input, and a probe
  * that sent a request is waiting for the answer. Without it stdin is closed.
  * `onOutput(chunk, source, stop)` receives each stdout/stderr chunk until settlement.
+ * The optional abort signal stops the group; onSpawn confirms successful startup.
  * Resolves `{ failure, code, signal }`; `failure` is set when the deadline
  * expired, the caller stopped the run with an error, or the process could not start.
  */
-export const superviseProcess = (command, args, { cwd, env = process.env, input, timeoutMs, timeoutMessage = `Command timed out after ${timeoutMs} ms before its output closed`, onOutput = () => {} }) =>
+export const superviseProcess = (command, args, { cwd, env = process.env, input, timeoutMs, timeoutMessage = `Command timed out after ${timeoutMs} ms before its output closed`, signal: abortSignal, onSpawn = () => {}, onOutput = () => {} }) =>
   new Promise((resolve) => {
+    if (abortSignal?.aborted) {
+      resolve({ failure: abortSignal.reason, code: null, signal: null })
+      return
+    }
     let child
     try {
       child = spawn(command, args, { cwd, env, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: posix })
@@ -71,12 +76,15 @@ export const superviseProcess = (command, args, { cwd, env = process.env, input,
       resolve({ failure: error, code: null, signal: null })
       return
     }
-    let failure
-    let settled = false
+    let failure, outcome
+    let settled = false, closed = false
+    const finish = () => { if (closed) resolve({ failure, ...outcome }) }
     const settle = (code, signal) => {
       if (settled) return
       settled = true
+      outcome = { code, signal }
       clearTimeout(deadline)
+      abortSignal?.removeEventListener("abort", abort)
       if (child.pid !== undefined) {
         try {
           if (posix) process.kill(-child.pid, "SIGKILL")
@@ -88,17 +96,29 @@ export const superviseProcess = (command, args, { cwd, env = process.env, input,
       child.stdin?.destroy()
       child.stdout.destroy()
       child.stderr.destroy()
-      resolve({ failure, code, signal })
+      finish()
     }
     const stop = (error) => {
       failure ??= error
       settle(null, null)
     }
-    const deadline = setTimeout(() => stop(new Error(timeoutMessage)), timeoutMs)
-    for (const source of ["stdout", "stderr"]) child[source].on("data", (chunk) => { if (!settled) onOutput(chunk, source, stop) })
+    const abort = () => stop(abortSignal.reason)
+    const deadline = timeoutMs === undefined ? undefined : setTimeout(() => stop(new Error(timeoutMessage)), timeoutMs)
+    for (const source of ["stdout", "stderr"]) child[source].on("data", (chunk) => {
+      if (!settled) {
+        try { onOutput(chunk, source, stop) } catch (error) { stop(error) }
+      }
+    })
+    child.once("spawn", () => { if (!settled) { try { onSpawn() } catch (error) { stop(error) } } })
     child.once("error", stop)
-    child.once("close", settle)
-    if (input !== undefined) {
+    child.once("close", (code, signal) => {
+      closed = true
+      if (!settled) settle(code, signal)
+      else finish()
+    })
+    abortSignal?.addEventListener("abort", abort, { once: true })
+    if (abortSignal?.aborted) abort()
+    if (input !== undefined && !settled) {
       // A process that ends before reading its input breaks the pipe; its exit
       // is the settlement that reports it.
       child.stdin.on("error", () => {})
