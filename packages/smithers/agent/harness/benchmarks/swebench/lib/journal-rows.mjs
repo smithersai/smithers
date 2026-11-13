@@ -50,9 +50,11 @@ export const journalRows = (databasePath, where) => {
   let control
   try {
     control = select(controlPath, `(${where}) and event_type like 'control.%'`)
-  } catch {
-    // A control database with no events table is one the run never wrote to.
-    return engine
+  } catch (error) {
+    // Only an unwritten events table permits legacy accounting. Corruption,
+    // unreadable files and incompatible schemas leave the run's cost unknown.
+    if (error.code === "ERR_SQLITE_ERROR" && error.message === "no such table: flows_journal_events") return engine
+    throw error
   }
   if (control.length === 0) return engine
   const rest = engine.filter((row) => !row.event_type.startsWith("control."))

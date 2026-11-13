@@ -73,7 +73,7 @@ try {
   mkdirSync(bin, { recursive: true })
   mkdirSync(join(preflightRoot, "lib"))
   copyFileSync(join(root, "preflight-network.sh"), join(preflightRoot, "preflight-network.sh"))
-  for (const name of ["excluded.mjs", "fullbench-row.mjs", "testbed-network.sh"]) {
+  for (const name of ["excluded.mjs", "fullbench-row.mjs", "testbed-network.sh", "run-with-timeout.py"]) {
     copyFileSync(join(root, "lib", name), join(preflightRoot, "lib", name))
   }
   const executable = (path, text) => writeFileSync(path, text, { mode: 0o755 })
@@ -84,7 +84,7 @@ case "$1" in
   image|rm|ps) exit 0 ;;
   run)
     case "$PREFLIGHT_CASE:$*" in
-      boot-failed:*swb-preflight-probe--probe-1-*) exit 1 ;;
+      boot-failed:*probe--probe-1-*) exit 1 ;;
     esac
     exit 0 ;;
   inspect)
@@ -98,8 +98,8 @@ case "$1" in
     case "$PREFLIGHT_CASE:$*" in
       broken:*) echo 'FAILED test_bug'; exit 1 ;;
       slow:*) exit 124 ;;
-      needs:*swb-preflight-probe--probe-1-none*) echo 'socket.gaierror'; exit 1 ;;
-      noisy:*swb-preflight-probe--probe-1-bridge*) exit 1 ;;
+      needs:*probe--probe-1-none*) echo 'socket.gaierror'; exit 1 ;;
+      noisy:*probe--probe-1-bridge*) exit 1 ;;
     esac
     exit 0 ;;
   *) echo "unexpected docker call: $*" >&2; exit 99 ;;

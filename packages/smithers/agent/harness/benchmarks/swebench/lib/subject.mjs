@@ -26,7 +26,8 @@
  *
  * So the fingerprint is: for every package in the CLI's `@smthrs/*` dependency
  * closure, where its entry point resolves to (src or dist), and a content hash
- * of the directory that answer selects — plus content hashes of the CLI's dist
+ * of the directory that answer selects and its package manifest (including
+ * exports, imports and module type) — plus content hashes of the CLI's dist
  * and of the source that dist was built from. `--check` refuses a subject that
  * cannot be reported honestly.
  *
@@ -208,7 +209,9 @@ export const stampOf = (record) =>
       packages: Object.fromEntries(
         Object.entries(record.packages).map(([name, value]) => [name, {
           hash: value.hash,
-          loadsFrom: value.loadsFrom
+          loadsFrom: value.loadsFrom,
+          resolvedEntry: value.resolvedEntry,
+          manifestHash: value.manifestHash
         }])
       )
     })).digest("hex")
@@ -274,6 +277,7 @@ export const fingerprint = ({ compareToHead = true } = {}) => {
       hashedDirectory: directory,
       files: files.length,
       hash: hashFiles(files),
+      manifestHash: hashFile(`${record.directory}/package.json`),
       dirty
     }
   }

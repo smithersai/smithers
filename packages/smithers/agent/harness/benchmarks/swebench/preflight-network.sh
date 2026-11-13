@@ -100,6 +100,18 @@ case "$SHELL_NAME" in
   *) echo "preflight-network.sh: SWB_PREFLIGHT_SHELL must be bash or sh, got '$SHELL_NAME'"; exit 2 ;;
 esac
 
+for REQUIRED_TOOL in docker node python3; do
+  command -v "$REQUIRED_TOOL" >/dev/null 2>&1 || {
+    echo "preflight-network.sh: required tool not found: $REQUIRED_TOOL" >&2
+    exit 2
+  }
+done
+case "${SWB_NETWORK_OWNER:-}" in
+  *[!a-zA-Z0-9-]*) echo "preflight-network.sh: invalid network owner" >&2; exit 2 ;;
+esac
+INVOCATION="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')" || exit 2
+CONTAINER_PREFIX="swb-preflight-${SWB_NETWORK_OWNER:+${SWB_NETWORK_OWNER}-}${INVOCATION}-"
+LOGS="$LOGS/$INVOCATION"
 mkdir -p "$LOGS"
 
 # The evidence that a failure is a *network* failure. These are the strings a
@@ -111,11 +123,10 @@ EGRESS_SIGNATURES='Temporary failure in name resolution|Name or service not know
 
 log() { printf '[preflight-network] %s\n' "$1"; }
 
-# Every probe container this script can have left behind, by name prefix rather
-# than by a list a subshell built: `probe_once` runs inside `$( )`, so a variable
-# it appended to would never reach the trap. The prefix is this script's alone.
+# Each invocation owns a unique prefix, including probes started in a subshell.
+# A dry run supplies its own outer owner so it can also clean up its children.
 cleanup() {
-  LEFT="$(docker ps -aq --filter "name=^swb-preflight-" 2>/dev/null || printf '')"
+  LEFT="$(docker ps -aq --filter "name=^${CONTAINER_PREFIX}" 2>/dev/null || printf '')"
   if [ -n "$LEFT" ]; then docker rm -f $LEFT >/dev/null 2>&1 || true; fi
 }
 trap cleanup EXIT INT TERM
@@ -150,8 +161,7 @@ test_command_for() {
 probe_once() {
   PROBE_ID="$1"; PROBE_IMAGE="$2"; PROBE_CMD="$3"; PROBE_NET="$4"; PROBE_LOG="$5"
   SLUG="$(printf '%s' "$PROBE_ID" | tr '_.' '--')"
-  NAME="swb-preflight-${SLUG}-${PROBE_NET}"
-  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  NAME="${CONTAINER_PREFIX}${SLUG}-${PROBE_NET}"
   if ! docker run -d --platform linux/amd64 --name "$NAME" --network "$PROBE_NET" \
     -w /testbed "$PROBE_IMAGE" sleep infinity >/dev/null 2>&1; then
     printf 'container start failed\n' > "$PROBE_LOG"
@@ -164,7 +174,7 @@ probe_once() {
     printf '254 unknown\n'
     return 0
   }
-  timeout "$TIMEOUT" docker exec -w /testbed "$NAME" "$SHELL_NAME" -lc "$PROBE_CMD" > "$PROBE_LOG" 2>&1
+  python3 "$S/lib/run-with-timeout.py" "$TIMEOUT" docker exec -w /testbed "$NAME" "$SHELL_NAME" -lc "$PROBE_CMD" > "$PROBE_LOG" 2>&1
   STATUS=$?
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   printf '%s %s\n' "$STATUS" "$OBSERVED"
@@ -256,7 +266,11 @@ for ID in $INSTANCES; do
   # Setup sentinels are not suite results. Both conditions must be established
   # before either their exit statuses or their network-error logs can be read
   # as a comparison. Equal genuine suite failures still clear below.
-  if [ "$NONE_STATUS" = "255" ] || [ "$NET_STATUS" = "255" ] \
+  if [ "$NONE_STATUS" = "126" ] || [ "$NET_STATUS" = "126" ] \
+    || [ "$NONE_STATUS" = "127" ] || [ "$NET_STATUS" = "127" ]; then
+    VERDICT=inconclusive
+    WHY="suite command could not be launched (exit $NONE_STATUS and $NET_STATUS)"
+  elif [ "$NONE_STATUS" = "255" ] || [ "$NET_STATUS" = "255" ] \
     || [ "$NONE_STATUS" = "254" ] || [ "$NET_STATUS" = "254" ]; then
     VERDICT=inconclusive
     WHY="container start or network assertion failed (exit $NONE_STATUS and $NET_STATUS)"

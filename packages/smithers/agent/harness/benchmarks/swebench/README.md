@@ -101,7 +101,10 @@ It builds exactly one package (`@smthrs/cli`, no closure, no `--no-bail`, a
 non-zero exit is fatal), derives a content fingerprint with `lib/subject.mjs`,
 and writes `.subject.json`. The fingerprint records, for every package in the
 CLI's `@smthrs/*` dependency closure, where its entry point resolves and a
-content hash of the directory that answer selects — plus the hash of
+content hash of the directory that answer selects and of its `package.json`.
+The stamp includes the resolved entry path and manifest bytes, so changing
+`exports`, `imports` or `type` stops a pinned wave even when the source tree
+is unchanged. It also records the hash of
 `packages/smithers/agent/harness/src/CellTurn.ts` as the marker a report cites, the hashes of
 `packages/smithers/dist/esm` and `packages/smithers/src`, the git HEAD, and the node
 version.
@@ -358,6 +361,13 @@ was never the hole, and moving it would change what a verdict means.
 ./preflight-network.sh                    # three probes, no tokens, needs docker
 ./preflight-network.sh --report out.json  # the same, with the machine-readable row set
 ```
+
+Each invocation uses unique container names and log directories under the
+configured log root, and cleans up only its own probes.
+A network dry run also owns a unique prefix for its child preflights. The probe
+uses the portable Python deadline runner, so GNU `timeout` is unnecessary.
+Missing required tools fail before probing; suite commands that cannot start
+(exit `126` or `127`) are inconclusive and excluded from coverage.
 
 It boots three pinned, representative instances — one django, one sympy, one
 astropy — twice each: once under `--network none` and once under `bridge`. Each
@@ -2598,8 +2608,10 @@ twice reads as a plateau without the first. The first `--wave` is the baseline
 every other is folded against, so each column is `compare-runs.mjs`'s own fold
 of that wave's ledger: one rule applied as many times as there are waves, rather
 than one report quoting another. `recovered`, `still lost` and `gained` are all
-statements about the **last** wave in the list, and every total is printed twice,
-scored and raw.
+statements about the **last** wave in the list. Every column uses the same set
+of instances completed in every wave, and every total is printed twice, scored
+and raw. Missing or unfinished middle-wave observations remain pending; only an
+observed nonresolved result can establish a loss followed by a recovery.
 
 ### What the agent actually did
 
@@ -2619,7 +2631,10 @@ the cache rate. Every number is a count of `control.agent.*` events — no clock
 no network, no detector of its own — so a run's journal is the whole evidence and
 a reading of it cannot drift from what happened. A database a live run is
 mid-write in is reported unreadable rather than guessed at, so it is safe to run
-against a wave still in flight.
+against a wave still in flight. An unreadable `control.db` also makes
+accounting unknown; legacy engine rows are used only when the control journal
+has no events table. Corruption, permission errors and incompatible schemas
+cannot produce a zero or partial bill.
 
 `lib/surgery-evidence.mjs` answers the four next-steps the r91 report ended in,
 and each is a count of the same events: `test` calls and which asked for the

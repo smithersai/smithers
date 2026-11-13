@@ -276,3 +276,4 @@ node "$S/fixtures/check-repl-evidence.mjs"
 
 echo "== every wave in one table"
 node "$S/fixtures/check-n-way.mjs"
+node --test "$S/fixtures/check-measurement-integrity.mjs"

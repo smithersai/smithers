@@ -47,11 +47,14 @@ node "$S/fixtures/check-testbed-network.mjs"
 if [ "${1:-}" = "--offline" ]; then exit 0; fi
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/flows-network-dryrun-XXXXXX")"
 PASSED=0
+SWB_NETWORK_OWNER="${TMP##*/}"
+export SWB_NETWORK_OWNER
+CONTAINER_PREFIX="swb-netdry-${SWB_NETWORK_OWNER}-"
 
 cleanup() {
-  LEFT="$(docker ps -aq --filter "name=^swb-netdry-" 2>/dev/null || printf '')"
+  LEFT="$(docker ps -aq --filter "name=^${CONTAINER_PREFIX}" 2>/dev/null || printf '')"
   if [ -n "$LEFT" ]; then docker rm -f $LEFT >/dev/null 2>&1 || true; fi
-  LEFT="$(docker ps -aq --filter "name=^swb-preflight-" 2>/dev/null || printf '')"
+  LEFT="$(docker ps -aq --filter "name=^swb-preflight-${SWB_NETWORK_OWNER}-" 2>/dev/null || printf '')"
   if [ -n "$LEFT" ]; then docker rm -f $LEFT >/dev/null 2>&1 || true; fi
   if [ "${SWB_DRYRUN_KEEP:-0}" = "1" ]; then
     echo "dryrun: artifacts kept in $TMP"
@@ -72,9 +75,8 @@ fi
 # A  The physical fact.
 # ---------------------------------------------------------------------------
 echo "== A: what a --network none container can and cannot do"
-docker rm -f swb-netdry-none swb-netdry-bridge >/dev/null 2>&1 || true
-docker run -d --name swb-netdry-none --network none alpine:3 sleep 300 >/dev/null
-docker run -d --name swb-netdry-bridge --network bridge alpine:3 sleep 300 >/dev/null
+docker run -d --name "${CONTAINER_PREFIX}none" --network none alpine:3 sleep 300 >/dev/null
+docker run -d --name "${CONTAINER_PREFIX}bridge" --network bridge alpine:3 sleep 300 >/dev/null
 
 # The one that has to work. `docker exec` attaches a process to an existing
 # container's namespaces through the daemon's unix socket, so it needs no
@@ -82,19 +84,19 @@ docker run -d --name swb-netdry-bridge --network bridge alpine:3 sleep 300 >/dev
 # it, so a condition that broke it would measure a harness with no way to check
 # its work. That is what `SWB_CODEX_NETWORK=off` does, and why it is not the
 # sealed lane.
-if docker exec swb-netdry-none sh -c 'exit 0'; then
+if docker exec "${CONTAINER_PREFIX}none" sh -c 'exit 0'; then
   ok "docker exec works against a --network none container"
 else
   bad "docker exec was refused by a --network none container"
 fi
-if [ "$(docker exec swb-netdry-none sh -c 'echo alive')" = "alive" ]; then
+if [ "$(docker exec "${CONTAINER_PREFIX}none" sh -c 'echo alive')" = "alive" ]; then
   ok "docker exec carries stdout back out of it"
 else
   bad "docker exec produced no output"
 fi
 
 # The interfaces the container has. `lo` and nothing else is the whole claim.
-IFACES="$(docker exec swb-netdry-none sh -c "ip -o link | awk -F': ' '{print \$2}'" | tr '\n' ' ')"
+IFACES="$(docker exec "${CONTAINER_PREFIX}none" sh -c "ip -o link | awk -F': ' '{print \$2}'" | tr '\n' ' ')"
 case "$IFACES" in
   'lo '|'lo') ok "the container has only lo (read: $IFACES)" ;;
   *) bad "the container has interfaces beyond lo: $IFACES" ;;
@@ -102,12 +104,12 @@ esac
 
 # Egress, both ways an agent would try it. A name, and a raw IP for an agent
 # that guessed DNS was the obstacle.
-if docker exec swb-netdry-none sh -c 'wget -T 3 -q -O- http://example.com/ >/dev/null 2>&1'; then
+if docker exec "${CONTAINER_PREFIX}none" sh -c 'wget -T 3 -q -O- http://example.com/ >/dev/null 2>&1'; then
   bad "a --network none container resolved and fetched a name"
 else
   ok "no DNS out of a --network none container"
 fi
-if docker exec swb-netdry-none sh -c 'wget -T 3 -q -O- http://93.184.216.34/ >/dev/null 2>&1'; then
+if docker exec "${CONTAINER_PREFIX}none" sh -c 'wget -T 3 -q -O- http://93.184.216.34/ >/dev/null 2>&1'; then
   bad "a --network none container reached a raw IP"
 else
   ok "no route to a raw IP either — knowing the address does not help"
@@ -115,7 +117,7 @@ fi
 
 # The breach itself, run the way the two `r90s` runs ran it. This is the
 # command that fetched `pull/8721.patch` and `pull/19495.diff`.
-if docker exec swb-netdry-none sh -c \
+if docker exec "${CONTAINER_PREFIX}none" sh -c \
   'wget -T 3 -q -O- https://github.com/sphinx-doc/sphinx/pull/8721.patch >/dev/null 2>&1'; then
   bad "the recorded breach command still works inside a sealed testbed"
 else
@@ -136,24 +138,24 @@ if SWB_TESTBED_NETWORK=host "$S/lib/testbed-network.sh" resolve >/dev/null 2>&1;
 else
   ok "resolve refuses anything but none and bridge"
 fi
-[ "$("$S/lib/testbed-network.sh" observe swb-netdry-none)" = "none" ] \
+[ "$("$S/lib/testbed-network.sh" observe "${CONTAINER_PREFIX}none")" = "none" ] \
   && ok "observe reads none off the live container" || bad "observe misread the sealed container"
-[ "$("$S/lib/testbed-network.sh" observe swb-netdry-bridge)" = "bridge" ] \
+[ "$("$S/lib/testbed-network.sh" observe "${CONTAINER_PREFIX}bridge")" = "bridge" ] \
   && ok "observe reads bridge off the live container" || bad "observe misread the networked container"
-"$S/lib/testbed-network.sh" assert swb-netdry-none none >/dev/null \
+"$S/lib/testbed-network.sh" assert "${CONTAINER_PREFIX}none" none >/dev/null \
   && ok "assert passes a container on the condition its lane asked for" \
   || bad "assert failed a correctly sealed container"
-if "$S/lib/testbed-network.sh" assert swb-netdry-bridge none >/dev/null 2>&1; then
+if "$S/lib/testbed-network.sh" assert "${CONTAINER_PREFIX}bridge" none >/dev/null 2>&1; then
   bad "assert passed a networked container as sealed"
 else
   ok "assert fails a container on the wrong network — the run stops before a token is spent"
 fi
-if "$S/lib/testbed-network.sh" observe swb-netdry-absent >/dev/null 2>&1; then
+if "$S/lib/testbed-network.sh" observe "${CONTAINER_PREFIX}absent" >/dev/null 2>&1; then
   bad "observe invented an answer for a container that does not exist"
 else
   ok "observe refuses a container that does not exist"
 fi
-docker rm -f swb-netdry-none swb-netdry-bridge >/dev/null 2>&1 || true
+docker rm -f "${CONTAINER_PREFIX}none" "${CONTAINER_PREFIX}bridge" >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
 # C  The preflight, end to end.
@@ -307,6 +309,8 @@ grep -q "not sealed" "$TMP/lanes.err" && ok "and says which container and what i
   || { cat "$TMP/lanes.err"; bad "the failure was not explained"; }
 
 echo
+node "$S/fixtures/check-network-isolation.mjs"
+
 echo "network-dryrun: $PASSED assertions passed."
 echo "  docker exec works against a --network none container, the recorded breach command does not,"
 echo "  the rule is read back off the live container, the preflight tells an egress-dependent suite"

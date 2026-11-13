@@ -13,10 +13,9 @@
  *
  * So this is `three-way.mjs` with the arity taken out. The first `--wave` is
  * the baseline every other wave is compared against, and every column is
- * `compare-runs.mjs`'s own fold of that wave's ledger: one rule applied as many
- * times as there are waves, rather than one report quoting another. Nothing is
- * recomputed here — not the every-attempt cost rule, not the two labelled wall
- * clocks, not the exclusion.
+ * `compare-runs.mjs`'s own fold of that wave's ledger, restricted to instances
+ * completed in every wave. Pending cells never count as losses, and every
+ * column uses the same population, cost rule, wall clocks and exclusion.
  *
  * The exclusion rule comes with that fold. Every total is stated twice, scored
  * and raw, because `lib/excluded.mjs` §3 says a rate over a population an
@@ -27,8 +26,8 @@
  *
  * Three movement sets, each about the last wave in the list:
  *
- * - **recovered** — the baseline resolved it, at least one wave since did not,
- *   and the last one does.
+ * - **recovered** — the baseline resolved it, at least one completed middle
+ *   observation did not, and the last one does.
  * - **still lost** — the baseline resolved it and the last wave does not. This
  *   is the set the next report has to answer for.
  * - **gained** — the baseline did not resolve it and the last wave does.
@@ -55,9 +54,8 @@ const cell = (facts) => (facts === undefined ? "—" : facts.resolved ? "resolve
 export const nWay = (waves) => {
   const [baseline, ...rest] = waves
   // Every later wave is compared against the same baseline, so each column's
-  // `rerun` side is that wave's own fold and the repeated `baseline` side is
-  // the same numbers every time — which is the check that the columns are one
-  // rule rather than several.
+  // `rerun` side supplies that wave's completed facts. Totals below restrict
+  // all columns to the intersection of their completed observations.
   const comparisons = rest.map((wave) => ({
     wave,
     summary: compare({ baselinePath: baseline.path, rerunPath: wave.path })
@@ -70,39 +68,52 @@ export const nWay = (waves) => {
     facts.set(one.wave.name, new Map(one.summary.instances.map((row) => [row.id, row.after])))
   }
 
-  const totals = { [baseline.name]: last.summary.totals.scored.baseline }
-  const rawTotals = { [baseline.name]: last.summary.totals.compared.baseline }
-  for (const one of comparisons) {
-    totals[one.wave.name] = one.summary.totals.scored.rerun
-    rawTotals[one.wave.name] = one.summary.totals.compared.rerun
-  }
-
   const names = [baseline.name, ...rest.map((one) => one.name)]
   const rows = last.summary.instances.map((row) => ({
     id: row.id,
-    pending: row.pending,
+    pending: names.some((name) => facts.get(name)?.get(row.id) === undefined),
     excluded: isExcluded(row.id),
     columns: Object.fromEntries(names.map((name) => [name, facts.get(name)?.get(row.id)])),
     delta: row.delta
   }))
+  // Compare every column over the same completed instances. A missing middle
+  // observation is pending, never a measured failure or a cheaper wave.
+  const compared = rows.filter((row) => !row.pending)
+  const scored = compared.filter((row) => !row.excluded)
+  const total = (rows, name) => {
+    const values = rows.map((row) => row.columns[name])
+    const unknownCost = values.filter((value) => value.usd === null).length
+    const sum = (key) => values.reduce((sum, value) => sum + value[key], 0)
+    return {
+      instances: values.length,
+      resolved: values.filter((value) => value.resolved).length,
+      usd: unknownCost > 0 ? null : sum("usd"),
+      unknownCost,
+      frames: sum("frames"),
+      wallSeconds: sum("wallSeconds"),
+      agentSeconds: sum("agentSeconds")
+    }
+  }
+  const totals = Object.fromEntries(names.map((name) => [name, total(scored, name)]))
+  const rawTotals = Object.fromEntries(names.map((name) => [name, total(compared, name)]))
 
   const isResolved = (name, id) => facts.get(name)?.get(id)?.resolved === true
   const middle = names.slice(1, -1)
   const finalName = names[names.length - 1]
-  const done = rows.filter((row) => !row.pending && !row.excluded)
+  const done = scored
   return {
     waves: waves.map((one) => ({ name: one.name, path: one.path })),
     population: last.summary.population,
-    comparedCount: last.summary.comparedCount,
-    scoredCount: last.summary.scoredCount,
-    pending: last.summary.pending,
+    comparedCount: compared.length,
+    scoredCount: scored.length,
+    pending: rows.length - compared.length,
     excluded: last.summary.excluded,
     totals,
     rawTotals,
     recovered: done
       .filter((row) =>
         isResolved(baseline.name, row.id) && isResolved(finalName, row.id)
-        && middle.some((name) => !isResolved(name, row.id))
+        && middle.some((name) => facts.get(name)?.get(row.id)?.resolved === false)
       )
       .map((row) => row.id),
     stillLost: done
@@ -130,7 +141,7 @@ export const render = (summary) => {
   lines.push("")
   lines.push(
     `${summary.comparedCount} of ${summary.population} instances compared`
-      + (summary.pending > 0 ? `; ${summary.pending} not re-run yet` : "")
+      + (summary.pending > 0 ? `; ${summary.pending} not re-run yet in at least one wave` : "")
   )
   if (summary.excluded.length > 0) {
     lines.push(
