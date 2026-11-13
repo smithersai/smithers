@@ -18,7 +18,7 @@ interface Service {
   readonly close: () => Promise<void>
 }
 
-const serve = (): Promise<Service> =>
+const serve = (reply?: string): Promise<Service> =>
   new Promise((done) => {
     let hits = 0
     let counter = 0
@@ -59,15 +59,17 @@ const serve = (): Promise<Service> =>
           link: "<http://127.0.0.1/next?page=2>; rel=\"next\"",
           location: `http://127.0.0.1/callback?page=1&code=${LIVE_TOKEN}`
         })
-        response.end(JSON.stringify({
-          path: request.url,
-          counter,
-          echoed: request.headers.authorization === `Bearer ${LIVE_TOKEN}`,
-          token: LIVE_TOKEN,
-          note: `install with ${LIVE_TOKEN} please`,
-          nested: { access_token: "opaque-but-named", count: 3 },
-          list: [LIVE_TOKEN, 1]
-        }))
+        response.end(
+          reply ?? JSON.stringify({
+            path: request.url,
+            counter,
+            echoed: request.headers.authorization === `Bearer ${LIVE_TOKEN}`,
+            token: LIVE_TOKEN,
+            note: `install with ${LIVE_TOKEN} please`,
+            nested: { access_token: "opaque-but-named", count: 3 },
+            list: [LIVE_TOKEN, 1]
+          })
+        )
       })
     })
     server.listen(0, "127.0.0.1", () => {
@@ -80,8 +82,8 @@ const serve = (): Promise<Service> =>
     })
   })
 
-const withService = <A, E>(use: (service: Service) => Effect.Effect<A, E, Scope.Scope>) =>
-  Effect.acquireRelease(Effect.promise(serve), (service) => Effect.promise(service.close)).pipe(
+const withService = <A, E>(use: (service: Service) => Effect.Effect<A, E, Scope.Scope>, reply?: string) =>
+  Effect.acquireRelease(Effect.promise(() => serve(reply)), (service) => Effect.promise(service.close)).pipe(
     Effect.flatMap(use),
     Effect.scoped
   )
@@ -309,6 +311,159 @@ describe("HttpRecording", () => {
         expect(service.hits()).toBe(bodies.length)
       })
     ))
+
+  it.live("a top-level JSON string decodes while recording and after loading a replay", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const path = join(directory(), "string.json")
+        const client = yield* live
+        const recorded = yield* Effect.scoped(Effect.gen(function*() {
+          const recorder = yield* HttpRecording.record(path, { live: client })
+          return yield* recorder.get(service.url).pipe(Effect.flatMap((response) => response.json))
+        }))
+        expect(recorded).toBe("ok")
+        const replayed = yield* Effect.scoped(Effect.gen(function*() {
+          const replayer = yield* HttpRecording.make({ mode: "replay", path })
+          return yield* replayer.get(service.url).pipe(Effect.flatMap((response) => response.json))
+        }))
+        expect(replayed).toBe("ok")
+        expect(service.hits()).toBe(1)
+      }), "\"ok\""))
+
+  for (
+    const body of [
+      "\"ok\"",
+      "\"\"",
+      "\"line\\nquote\\\"slash\\\\end\"",
+      " \r\n \"ok\" \t",
+      "1.0",
+      "1e3",
+      "-0",
+      "9007199254740993",
+      "1e400",
+      " true ",
+      " false ",
+      " null ",
+      "",
+      "not json {"
+    ]
+  ) {
+    for (const identityPrune of [false, true]) {
+      it.live(`record and replay preserve scalar response text ${JSON.stringify(body)}${identityPrune ? " with identity prune" : ""}`, () =>
+        withService((service) =>
+          Effect.gen(function*() {
+            const path = join(directory(), "scalar.json")
+            const client = yield* live
+            const recorded = yield* Effect.scoped(Effect.gen(function*() {
+              const recorder = yield* HttpRecording.record(path, {
+                live: client,
+                ...(identityPrune ? { prune: (value: unknown) => value } : {})
+              })
+              return yield* recorder.get(service.url).pipe(Effect.flatMap((response) => response.text))
+            }))
+            expect(recorded).toBe(body)
+            expect((yield* HttpRecording.load(path)).exchanges[0]?.response.body).toBe(body)
+            const replayed = yield* Effect.scoped(Effect.gen(function*() {
+              const replayer = yield* HttpRecording.make({ mode: "replay", path })
+              return yield* replayer.get(service.url).pipe(Effect.flatMap((response) => response.text))
+            }))
+            expect(replayed).toBe(body)
+            expect(service.hits()).toBe(1)
+          }), body))
+    }
+  }
+
+  for (
+    const [label, body] of [
+      ["raw token", LIVE_TOKEN],
+      ["escaped JSON token", JSON.stringify(LIVE_TOKEN).replace("g", "\\u0067")],
+      ["raw named secret", "opaque\"session\\value"],
+      ["JSON named secret", JSON.stringify("opaque\"session\\value")]
+    ] as const
+  ) {
+    it.live(
+      "scalar response text scrubs credentials before replay: " + label,
+      () =>
+        withService((service) =>
+          Effect.gen(function*() {
+            const path = join(directory(), "scrubbed-scalar.json")
+            const client = yield* live
+            const recorded = yield* Effect.scoped(Effect.gen(function*() {
+              const recorder = yield* HttpRecording.record(path, {
+                live: client,
+                secrets: ["opaque\"session\\value"]
+              })
+              return yield* recorder.get(service.url).pipe(Effect.flatMap((response) => response.text))
+            }))
+            expect(recorded).toBe(body)
+            expect(HttpRecording.scan(readFileSync(path, "utf8"))).toEqual([])
+            const replayed = yield* Effect.scoped(Effect.gen(function*() {
+              const replayer = yield* HttpRecording.make({ mode: "replay", path })
+              const response = yield* replayer.get(service.url)
+              return yield* (body.startsWith("\"") ? response.json : response.text)
+            }))
+            expect(replayed).toBe("[REDACTED]")
+            expect(service.hits()).toBe(1)
+          }), body)
+    )
+  }
+
+  it.live("an identity prune keeps a top-level JSON string readable on replay", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const path = join(directory(), "identity-prune.json")
+        const client = yield* live
+        const recorded = yield* Effect.scoped(Effect.gen(function*() {
+          const recorder = yield* HttpRecording.record(path, { live: client, prune: (body) => body })
+          return yield* recorder.get(service.url).pipe(Effect.flatMap((response) => response.json))
+        }))
+        expect(recorded).toBe("ok")
+        const replayed = yield* Effect.scoped(Effect.gen(function*() {
+          const replayer = yield* HttpRecording.make({ mode: "replay", path })
+          return yield* replayer.get(service.url).pipe(Effect.flatMap((response) => response.json))
+        }))
+        expect(replayed).toBe("ok")
+        expect(service.hits()).toBe(1)
+      }), "\"ok\""))
+
+  for (
+    const [label, wire, prune, recordedValue, replayedValue, json] of [
+      ["JSON string", JSON.stringify(LIVE_TOKEN).replace("g", "\\u0067"), () => "safe", "safe", "safe", true],
+      [
+        "JSON object to string",
+        "{\"name\":\"safe\"}",
+        (body: unknown) => (body as { name: string }).name,
+        "safe",
+        "safe",
+        true
+      ],
+      ["plain text", "discarded text", () => "safe", "safe", "safe", false],
+      ["JSON string to number", "\"old\"", () => 3, 3, 3, true],
+      ["signed zero replacement", "-0", () => 0, 0, 0, true],
+      ["plain text to JSON", "discarded text", () => ({ safe: true }), { safe: true }, { safe: true }, true],
+      ["scrubbed JSON string", "{\"name\":\"unused\"}", () => LIVE_TOKEN, LIVE_TOKEN, "[REDACTED]", true]
+    ] as const
+  ) {
+    it.live(
+      "a prune replacement has the same encoding while recording and replaying: " + label,
+      () =>
+        withService((service) =>
+          Effect.gen(function*() {
+            const path = join(directory(), "replaced-scalar.json")
+            const client = yield* live
+            const recorded = yield* Effect.scoped(Effect.gen(function*() {
+              const recorder = yield* HttpRecording.record(path, { live: client, prune })
+              const response = yield* recorder.get(service.url)
+              return yield* (json ? response.json : response.text)
+            }))
+            expect(recorded).toEqual(recordedValue)
+            expect(HttpRecording.scan(readFileSync(path, "utf8"))).toEqual([])
+            const response = yield* HttpRecording.replay(yield* HttpRecording.load(path)).get(service.url)
+            expect(yield* (json ? response.json : response.text)).toEqual(replayedValue)
+            expect(service.hits()).toBe(1)
+          }), wire)
+    )
+  }
 
   it.live("replay refuses a request the recording does not hold, or holds fewer times", () =>
     Effect.gen(function*() {

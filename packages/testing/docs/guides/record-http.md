@@ -72,6 +72,11 @@ written:
    named secret. A match refuses the write with `CredentialInRecordingError`,
    which names the rule and never the value.
 
+Scalar responses retain their wire text, including JSON string quotes and
+number spelling such as `1.0`. String bodies in a recording are replayed
+verbatim; object and array bodies are structured JSON. Scrubbing still
+operates on decoded JSON values before anything is written.
+
 A run that fails or is interrupted writes nothing and keeps the previous
 recording, because a recording of a failed run would replay that failure.
 
@@ -94,7 +99,8 @@ A REST answer carries more than any client reads: GitHub's issue objects are
 two thirds hypermedia links. Pass `prune` to remove those fields before they
 are recorded. While recording, the code under test receives the pruned body
 too, so if it needs a field you removed, the recording run fails, not a later
-replay.
+replay. An identity prune preserves scalar wire text. When a prune returns
+a string from a JSON response, that string remains JSON on both runs.
 
 ## Replay is strict
 

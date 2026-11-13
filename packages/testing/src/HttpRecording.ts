@@ -71,6 +71,7 @@ export interface Exchange {
   readonly response: {
     readonly status: number
     readonly headers: Readonly<Record<string, string>>
+    /** Structured JSON, or response wire text. String bodies replay verbatim. */
     readonly body: unknown
   }
 }
@@ -471,9 +472,32 @@ export const record = (
         const headers: Record<string, string> = {}
         for (const [name, value] of Object.entries(response.headers)) headers[name] = value
         // A pruned body is what the code under test sees too, so recording and replay run on the same answer.
-        const body = options.prune === undefined ? parsed(liveText) : options.prune(parsed(liveText), keyed)
-        const text = options.prune === undefined || typeof body === "string" ? liveText : JSON.stringify(body)
-        exchanges.push(scrubExchange({ request: keyed, response: { status: response.status, headers, body } }, options))
+        const originalBody = parsed(liveText)
+        const body = options.prune === undefined ? originalBody : options.prune(originalBody, keyed)
+        const wasJson = originalBody !== liveText
+        const untouchedScalar = Object.is(body, originalBody) && (typeof body !== "object" || body === null)
+        const text = options.prune === undefined || untouchedScalar
+          ? liveText
+          : wasJson || typeof body !== "string"
+          ? JSON.stringify(body)
+          : body
+        const scrubbed = scrubExchange(
+          { request: keyed, response: { status: response.status, headers, body } },
+          options
+        )
+        // Preserve scalar wire text, including JSON string quotes and number spelling.
+        // Scrub parsed values first, then re-encode a changed JSON scalar.
+        const scrubbedBody = scrubbed.response.body
+        const recordedBody = untouchedScalar
+          ? body === scrubbedBody
+            ? text
+            : wasJson
+            ? JSON.stringify(scrubbedBody)
+            : scrubbedBody
+          : wasJson && typeof body === "string"
+          ? JSON.stringify(scrubbedBody)
+          : scrubbedBody
+        exchanges.push({ ...scrubbed, response: { ...scrubbed.response, body: recordedBody } })
         const empty = response.status === 204 || response.status === 205 || response.status === 304
         return HttpClientResponse.fromWeb(
           request,
