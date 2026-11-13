@@ -11,6 +11,7 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import * as Accounts from "../worker/Accounts.vibe"
+import { may, type Role } from "../src/core/conversation.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, stepped, Int, STEERED_FLOOR } from "./run.vibe"
@@ -22,7 +23,7 @@ const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 const STATE = "__Host-vibelang-sign-in"
 
 const Op = Schema.Struct({
-  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost", "reads", "queued"]),
+  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall", "lost", "reads", "queued", "propose"]),
   person: Schema.Literals(["1", "2", "7", "0"]),
   tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired", "corrupt", "huge"]),
   query: Schema.Literals(["", "?wiki-page=index", "?wiki-page=../x", "?resume-op=new&resume-key=k1", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=r1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"]),
@@ -188,7 +189,7 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
     { ...base, kind: "sign-in", tamper: "code" }, { ...base, kind: "sign-in", tamper: "replay" }, { ...base, kind: "sign-in", tamper: "expired" },
     { ...base, kind: "device" }, { ...base, kind: "connect" }, { ...base, kind: "device", body: "malformed" }, { ...base, kind: "device", person: "0" },
     { ...base, kind: "grant" }, { ...base, kind: "members" }, { ...base, kind: "events" }, { ...base, kind: "install" }, { ...base, kind: "handoff" },
-    { ...base, kind: "sign-out" }, { ...base, kind: "disconnect" }, { ...base, kind: "connect" }, { ...base, kind: "sign-in", person: "1", tamper: "null-same" },
+    { ...base, kind: "sign-out" }, { ...base, kind: "disconnect" }, { ...base, kind: "connect" }, { ...base, kind: "propose" }, { ...base, kind: "sign-in", person: "1", tamper: "null-same" }, { ...base, kind: "propose" },
     { ...base, kind: "grant", role: "maintainer", n: 2 }, { ...base, kind: "members" }, { ...base, kind: "foreign" },
     { ...base, kind: "draft-wiki" }, { ...base, kind: "draft-wiki", person: "1" }, { ...base, kind: "participation" }, { ...base, kind: "roles-large" },
     { ...base, kind: "sign-out" }, { ...base, kind: "issues" }, { ...base, kind: "wiki" }, { ...base, kind: "roles-large" }, { ...base, kind: "participation" },
@@ -444,6 +445,20 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         const write = try seen(try stepped(w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body: issue("new", `r${op.n}`) }), 20))
         const merge = try seen(try stepped(w.ask(SITE + "/api/issues", { method: "POST", origin: SITE, body: issue("spec-revise", `m${op.n}`) }), 20))
         if (signedIn === undefined || issues.status !== 503 || wiki.status !== 503 || write.status !== 401 || !write.text.includes(`"connect"`) || merge.status !== 403) return try refute(op.kind, 240)
+        break
+      }
+      case "propose": {
+        const held = signedIn !== undefined && kvOf(w).has("delegation/" + signedIn.id)
+        const proposal = try seen(try stepped(w.ask(SITE + "/api/wiki", { method: "POST", origin: SITE, body: JSON.stringify({ op: "propose", page: "index", base: "", text: "Fuzzed", key: `w${op.n}` }) }), 20))
+        // A wiki proposal: a visitor is asked to sign in, a person whose role may not propose is refused, and anyone else
+        // without a connection is asked to connect, never answered with a page. Only a held delegation reaches GitHub,
+        // here unreachable; one the broker no longer honors is forgotten, so the person holds none after that answer.
+        const role = ((try parsed((try w.ask(SITE + "/api/auth/session")).text)) as { readonly role: Role }).role
+        const reason = proposal.status === 200 ? "" : ((try parsed(proposal.text)) as { readonly reason?: string }).reason
+        const expected = signedIn === undefined ? [401, "sign-in"] : may(role, "wiki") && !signedIn.agent ? [401, "connect"] : [403, "forbidden"]
+        const connected = expected[1] === "connect" && held && proposal.status === 503
+        if (!connected && (proposal.status !== expected[0] || reason !== expected[1])) return try refute(op.kind, 260)
+        if (signedIn !== undefined && reason === "connect" && kvOf(w).has("delegation/" + signedIn.id)) return try refute(op.kind, 261)
         break
       }
       case "queued": {
