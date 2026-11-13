@@ -27,6 +27,7 @@ import {
   InvalidSelection,
   Job,
   MatrixRow,
+  missingGates,
   render,
   renderStep,
   satisfiesGate,
@@ -690,6 +691,55 @@ describe("render", () => {
         gates: [{ name: "browser contract", verb: Verb.Test, pattern: "//scripts:browserContract", job: "rust" }]
       }))
     ).toThrow(/does not run browser contract/)
+  })
+
+  describe("gates require a job that can fail the pipeline", () => {
+    const step = { verb: Verb.Docs, pattern: "//packages/..." }
+    const toolchain = CiToolchain.Needs({ runtimes: [node] })
+    const advisoryRunners = [
+      { runsOn: "ubuntu-latest", continueOnError: true },
+      { matrix: [{ os: "ubuntu-latest", advisory: true }, { os: "macos-latest", advisory: true }] }
+    ]
+    const blockingRunners = [
+      { runsOn: "ubuntu-latest" },
+      { runsOn: "ubuntu-latest", continueOnError: false },
+      { matrix: [{ os: "ubuntu-latest", advisory: false }, { os: "macos-latest", advisory: true }] }
+    ]
+
+    it.each(advisoryRunners)("refuses a gate carried only by an advisory job: %j", (runner) => {
+      for (const job of [undefined, "docs"]) {
+        const gate = { name: "documentation parity", ...step, ...(job === undefined ? {} : { job }) }
+        const attrs = attrsOf({
+          ...goldenAttrs,
+          requiredJobs: [],
+          gates: [gate],
+          jobs: [{ id: "docs", ...runner, toolchain, steps: [step] }]
+        })
+        expect(missingGates(attrs)).toEqual([gate])
+        expect(() => render(attrs)).toThrow(/does not run documentation parity/)
+      }
+    })
+
+    it.each(blockingRunners)("accepts a gate carried by a blocking job: %j", (runner) => {
+      const gate = { name: "documentation parity", ...step }
+      const jobs = [
+        { id: "advisory", ...advisoryRunners[0], toolchain, steps: [step] },
+        { id: "docs", ...runner, toolchain, steps: [step] }
+      ]
+      const config = { ...goldenAttrs, requiredJobs: [], gates: [gate], jobs }
+      const attrs = attrsOf(config)
+      expect(missingGates(attrs)).toEqual([])
+      expect(render(attrs)).toContain("smthrs docs '//packages/...'")
+
+      const pinned = attrsOf({ ...config, gates: [{ ...gate, job: "docs" }] })
+      expect(missingGates(pinned)).toEqual([])
+      expect(render(pinned)).toContain("smthrs docs '//packages/...'")
+
+      const advisoryGate = { ...gate, job: "advisory" }
+      const advisory = attrsOf({ ...config, gates: [advisoryGate] })
+      expect(missingGates(advisory)).toEqual([advisoryGate])
+      expect(() => render(advisory)).toThrow(/does not run documentation parity/)
+    })
   })
 
   it("counts the aggregate verb as every verb it plans", () => {

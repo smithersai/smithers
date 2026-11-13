@@ -1577,7 +1577,9 @@ export const satisfiesGate = (step: TargetStep, gate: Gate): boolean =>
  * A job that declares {@link Job.publishesToCache} satisfies nothing here: it
  * renders behind a push-only `if:` guard, so GitHub skips it on every pull
  * request and a gate it alone carried would go unchecked exactly where gates
- * matter.
+ * matter. A wholly advisory job also satisfies nothing: its failures cannot
+ * fail the pipeline. A matrix must have at least one non-advisory row to carry
+ * a gate.
  *
  * @category validation
  * @since 0.1.0
@@ -1586,6 +1588,7 @@ export const missingGates = (attrs: Attrs): ReadonlyArray<Gate> =>
   attrs.gates.filter((gate) =>
     !attrs.jobs.some((job) =>
       job.publishesToCache !== true &&
+      !isWhollyAdvisory(job) &&
       (gate.job === undefined || job.id === gate.job) &&
       job.steps.some((step) => satisfiesGate(step, gate))
     )
