@@ -413,27 +413,39 @@ test("one session over a stack writes a receipt for each of its commits", async 
   assert.deepEqual(landLog().map((row) => row.sessionId), [result.sessionId, result.sessionId])
 })
 
-test("the hash ignores what landing rewrites: migration numbers and generated projections", (t) => {
+for (const extension of ["ts", "vibe"]) test(`the hash ignores migration renumbering and generated projections in ${extension}`, (t) => {
   const { lane, change } = fixture(t)
-  change("apps/mvp/db/migrations/0093_runner_x.ts", "// migration 0093, see decision 0148\nexport const a = 1\n")
+  change(`apps/mvp/db/migrations/0093_runner_x.${extension}`, "// migration 0093, see decision 0148\nexport const a = 1\n")
   change("apps/mvp/docs/decisions/0148-x.md", "# 0148 x\n")
-  change("apps/mvp/db/runner.test.ts", 'through("0092")\n')
+  change(`apps/mvp/db/runner.test.${extension}`, 'through("0092")\n')
   change(".smithers/target-index.json", "{}\n")
   jj(lane, ["commit", "-m", "as reviewed"])
   const reviewed = diffHash(lane, "@-")
   jj(lane, ["new", "@--"])
-  change("apps/mvp/db/migrations/0096_runner_x.ts", "// migration 0096, see decision 0151\nexport const a = 1\n")
+  change(`apps/mvp/db/migrations/0096_runner_x.${extension}`, "// migration 0096, see decision 0151\nexport const a = 1\n")
   change("apps/mvp/docs/decisions/0151-x.md", "# 0151 x\n")
-  change("apps/mvp/db/runner.test.ts", 'through("0095")\n')
+  change(`apps/mvp/db/runner.test.${extension}`, 'through("0095")\n')
   change(".smithers/target-index.json", '{"other":1}\n')
   jj(lane, ["commit", "-m", "as renumbered"])
   assert.equal(diffHash(lane, "@-"), reviewed)
   jj(lane, ["new", "@--"])
-  change("apps/mvp/db/migrations/0096_runner_x.ts", "// migration 0096, see decision 0151\nexport const a = 2\n")
+  change(`apps/mvp/db/migrations/0096_runner_x.${extension}`, "// migration 0096, see decision 0151\nexport const a = 2\n")
   change("apps/mvp/docs/decisions/0151-x.md", "# 0151 x\n")
-  change("apps/mvp/db/runner.test.ts", 'through("0095")\n')
+  change(`apps/mvp/db/runner.test.${extension}`, 'through("0095")\n')
   jj(lane, ["commit", "-m", "a real change"])
   assert.notEqual(diffHash(lane, "@-"), reviewed)
+})
+
+test("VibeLang migration test boundaries normalize only inside the database tests", (t) => {
+  const { lane, change } = fixture(t)
+  const parent = at(lane, "commit_id")
+  const hash = (path, number, body = "assert.ok(allowed)") =>
+    hashOf(lane, change, parent, path, "setup()\n", `through("${number}")\n${body}\n`)
+  assert.equal(hash("apps/mvp/db/runner.test.vibe", "0092"), hash("apps/mvp/db/runner.test.vibe", "0095"))
+  assert.notEqual(hash("apps/mvp/db/runner.test.vibe", "0095"), hash("apps/mvp/db/runner.test.vibe", "0095", "assert.ok(denied)"))
+  for (const path of ["apps/mvp/db/runner.vibe", "apps/mvp/runner.test.vibe"]) {
+    assert.notEqual(hash(path, "0092"), hash(path, "0095"))
+  }
 })
 
 test("the hash of a fixed pair of trees is pinned: any change to its input or format breaks this", (t) => {

@@ -4,6 +4,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, resolve, sep } from "node:path"
 import { StringDecoder } from "node:string_decoder"
+import { redactingTail } from "./redaction.ts"
 import { ReleaseError } from "./schema.ts"
 
 export interface CommandOptions {
@@ -41,6 +42,7 @@ const groupStopper = (child: ChildProcess) => {
 /** Argument arrays only; subprocess interruption belongs to the action's scope. */
 export const commandRunner = (root: string): RunCommand => async (command, args, options = {}) =>
   new Promise((accept, reject) => {
+    const secrets = secretValues(options.env)
     const child = spawn(command, [...args], {
       cwd: root,
       env: { ...process.env, ...options.env },
@@ -51,7 +53,7 @@ export const commandRunner = (root: string): RunCommand => async (command, args,
     const { stop, cancel } = groupStopper(child)
     options.signal?.addEventListener("abort", stop, { once: true })
     let stdout = ""
-    let stderr = ""
+    const stderr = redactingTail(secrets, 32_000)
     // Pipe chunks can split a multi-byte UTF-8 character; decode incrementally.
     const stdoutDecoder = new StringDecoder("utf8")
     const stderrDecoder = new StringDecoder("utf8")
@@ -60,23 +62,21 @@ export const commandRunner = (root: string): RunCommand => async (command, args,
       if (stdout.length > 16_000_000) stop()
     })
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr = (stderr + stderrDecoder.write(chunk)).slice(-32_000)
+      stderr.write(stderrDecoder.write(chunk))
     })
     child.once("error", reject)
     child.once("close", (code) => {
       stdout += stdoutDecoder.end()
-      stderr = (stderr + stderrDecoder.end()).slice(-32_000)
+      const stderrTail = stderr.end(stderrDecoder.end())
       options.signal?.removeEventListener("abort", stop)
       if (!options.signal?.aborted) cancel()
       if (code === 0 && stdout.length <= 16_000_000) accept(stdout)
       else {
         // pnpm can report registry failures on stdout. Preserve both streams
         // so a confirmed 404 remains distinguishable from an auth/network error.
-        // Redact whole streams before the tail cut so a secret split at the
-        // cut edge cannot survive in part.
-        const secrets = secretValues(options.env)
+        // Stderr is redacted before its rolling cut; stdout before this cut.
         const out = redact(stdout, secrets).slice(-6000)
-        const err = redact(stderr, secrets).slice(-6000)
+        const err = stderrTail.slice(-6000)
         reject(new ReleaseError({ step: command, message: `${command} exited ${code}: ${out}\n${err}` }))
       }
     })

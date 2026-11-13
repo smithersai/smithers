@@ -34,7 +34,7 @@ export const reviewsDirectory = () => process.env.SMITHERS_REVIEWS_DIR ?? join(h
 export const smthrsCommand = () => process.env.SMITHERS_SMTHRS ?? "smthrs"
 export const reviewCodexHome = () => process.env.SMITHERS_REVIEW_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), ".smithers/accounts/codex-2")
 
-const ownIdentity = /^(?:apps\/mvp\/db\/migrations|apps\/mvp\/docs\/decisions)\/(\d{4,})[_-](.+?)(?:\.md|\.ts)$/
+const ownIdentity = /^(?:apps\/mvp\/db\/migrations|apps\/mvp\/docs\/decisions)\/(\d{4,})[_-](.+?)(?:\.md|\.ts|\.vibe)$/
 
 // Landing renumbers the migrations and decisions a commit adds, in ascending order, so each number's
 // rank among them is what stays. Only a reference that names the identity is rewritten: its full stem,
@@ -48,7 +48,7 @@ const withoutNumbers = (line, path, own) => {
     .replace(/\b([Dd]ecision|[Mm]igration)(\s+`?)(\d{4,})\b/g, (whole, word, gap, digits) => own.has(digits) ? `${word}${gap}${rank(digits)}` : whole)
     .replace(/^([-+ ]#\s*)(\d{4,})/, (whole, mark, digits) => markdown && own.has(digits) ? `${mark}${rank(digits)}` : whole)
     .replace(/\[(\d{4,})(?=[\s:\]`.,)])/g, (whole, digits) => markdown && own.has(digits) ? `[${rank(digits)}` : whole)
-  return path.startsWith("apps/mvp/db/") && /\.test\.[cm]?ts$/.test(path) ? text.replace(/(["'])\d{4}\1/g, "$1NNNN$1") : text
+  return path.startsWith("apps/mvp/db/") && /\.test\.(?:[cm]?ts|vibe)$/.test(path) ? text.replace(/(["'])\d{4}\1/g, "$1NNNN$1") : text
 }
 
 // The hash reads only stored contents, never jj's diff text, whose format changes between jj versions:
