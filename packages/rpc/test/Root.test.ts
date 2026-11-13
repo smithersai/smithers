@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { expect, test } from "vitest"
 import * as Rpc from "../src/index.ts"
 import * as UiInstruction from "../src/UiInstruction.ts"
@@ -55,4 +55,13 @@ test.each([
 
 test("target cards retain their node schema without retired graph operations", () => {
   expect(Object.keys(Rpc.TargetGraph)).toEqual(["GraphNodeSchema"])
+})
+
+test("the contract package does not install the retired live-document runtime", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+  expect(pkg.dependencies).not.toHaveProperty("yjs")
+})
+
+test("the retired live-document fixture corpus is absent", () => {
+  expect(existsSync(new URL("../testdata/live-doc/", import.meta.url))).toBe(false)
 })

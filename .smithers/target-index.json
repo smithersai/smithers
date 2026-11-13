@@ -59091,9 +59091,8 @@
         "exclude": []
       },
       {
-        "kind": "glob",
-        "pattern": "packages/rpc/testdata/**",
-        "exclude": []
+        "kind": "file",
+        "path": "packages/rpc/package.json"
       },
       {
         "kind": "glob",

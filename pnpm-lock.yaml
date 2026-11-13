@@ -1640,9 +1640,6 @@ importers:
       string-width:
         specifier: 7.2.0
         version: 7.2.0
-      yjs:
-        specifier: 13.6.32
-        version: 13.6.32
       zod:
         specifier: 4.6.7
         version: 4.6.7

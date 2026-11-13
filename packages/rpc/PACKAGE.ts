@@ -51,7 +51,7 @@ const unitTests = Smithers.Vitest({
   sources: [
     sources,
     Smithers.glob("test/**/*.{ts,json,snap}"),
-    Smithers.glob("testdata/**"),
+    Smithers.file("package.json"),
     ...failureCodes,
     // The coverage gate's global setup, which vitest.config.ts names.
     Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),

@@ -1,7 +1,7 @@
 /*
- * Refusals as the app receives them: each one is the host's real envelope,
- * turned into a Response and read back through `refusalOf`, so a test guards
- * the wire and not a second copy of it.
+ * Refusal decoding samples, read through a Response and `refusalOf`.
+ * Worker samples use the production envelope builder; native samples are
+ * hand-built legacy envelopes that exercise compatibility decoding.
  */
 import { NATIVE_FAILURES, nativeWireCode } from "../src/NativeFailureCodes.ts"
 import type { NativeRouteCode } from "../src/NativeFailureCodes.ts"
@@ -17,7 +17,7 @@ const received = async (response: Response, message: string): Promise<Refusal> =
     retryAfterSeconds: retryAfterHeader(response.headers)
   })
 
-/** A Worker-vocabulary refusal, from the envelope the Worker (or, with origin local, the desktop host) writes. */
+/** A Worker-vocabulary refusal built with the production envelope helper. */
 export const workerRefusal = (
   code: WorkerFailureCode,
   message: string,
@@ -30,7 +30,7 @@ export const workerRefusal = (
   )
 }
 
-/** A refusal on one of the desktop host's private routes, in the envelope its `jsonError` writes. */
+/** A representative legacy native-host envelope; checks the decoder, not a current host writer. */
 export const nativeRefusal = (code: NativeRouteCode, message: string): Promise<Refusal> =>
   received(
     new Response(

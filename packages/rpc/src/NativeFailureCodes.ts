@@ -20,9 +20,8 @@
  * `internal` — and one by the Worker (`method_not_allowed`), and they do not
  * all mean the same thing: plue's `not_implemented` is a `bug` ("the route
  * exists but its implementation does not"), while this host's is a build that
- * does not carry a seam. Renaming the route names instead would break the
- * envelope this host's clients already read (`LspClient` matching
- * `language_server_missing`).
+ * does not carry a seam. Renaming the route names instead would change the
+ * legacy envelope.
  * So a route keeps its bare name inside `error.code`, and the CLASSIFIED code
  * beside it is that name in this namespace: `repo_not_found` is the route's,
  * `native_repo_not_found` is the refusal's.
@@ -150,9 +149,8 @@ export interface NativeFailureEntry {
   /** Whose problem this is. Never `infra`: a program on the reader's box has no fleet to run out of. */
   readonly fault: PlueFault
   /**
-   * The status this host answers for the code. `jsonError` reads it from here
-   * so a route and its code cannot drift apart, and a refusal recovered from
-   * the code alone carries the same one.
+   * The legacy host's status for the code. A refusal recovered from the
+   * code alone carries the same status.
    */
   readonly status: number
   /** Seconds before this is worth asking again; 0 when waiting changes nothing, exactly as plue's rows spell it. */

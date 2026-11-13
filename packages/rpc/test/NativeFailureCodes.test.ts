@@ -123,7 +123,7 @@ describe("the native host's own failure registry", () => {
   })
 })
 
-describe("a native-host refusal as it reaches the app", () => {
+describe("legacy native-host refusal decoding", () => {
   test("carries the host's code, its documented fault, and origin=local", async () => {
     for (const code of NATIVE_ROUTE_CODES) {
       const entry = NATIVE_FAILURES[code]
@@ -148,7 +148,7 @@ describe("a native-host refusal as it reaches the app", () => {
     expect(refusalFromStored({ status: 404, message: "x", code: "native_repo_not_found" }).origin).toBe("local")
   })
 
-  test("the host's envelope reads back with the table's status and fault", async () => {
+  test("representative legacy envelopes read back with the table's status and fault", async () => {
     for (const code of NATIVE_ROUTE_CODES) {
       const entry = NATIVE_FAILURES[code]
       const built = await nativeRefusal(code, "nope")
