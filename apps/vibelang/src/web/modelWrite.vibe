@@ -428,3 +428,70 @@ export function eventWrite(model: Model, screen: ScreenState, client: Model["cli
     ...(plan.peoplePane ? { account: { ...account, people: "pane" as const } } : {}),
   }
 }
+
+/** The Model after a run changes: the merged runs (`mergeRuns`), and the disconnected and stopped follows settled for
+ *  it (`settled`); nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, runs: runs, disconnected: disconnected, stoppedFollows: stopped } }
+export function actionChangedWrite(model: Model, actions: ActionView, runs: ActionView["runs"], disconnected: ReadonlyArray<string>, stopped: ReadonlyArray<string>): Model {
+  return { ...model, actions: { ...actions, runs, disconnected, stoppedFollows: stopped } }
+}
+
+/** The Model after a followed run's answer for the current follow: the merged runs and the run no longer
+ *  disconnected (`received`); nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, runs: runs, disconnected: disconnected } }
+export function actionFollowedWrite(model: Model, actions: ActionView, runs: ActionView["runs"], disconnected: ReadonlyArray<string>): Model {
+  return { ...model, actions: { ...actions, runs, disconnected } }
+}
+
+/** The Model after a follow fails for the current follow: the disconnected and stopped follows as `failed` decided;
+ *  nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, disconnected: disconnected, stoppedFollows: stopped } }
+export function actionFollowFailedWrite(model: Model, actions: ActionView, disconnected: ReadonlyArray<string>, stopped: ReadonlyArray<string>): Model {
+  return { ...model, actions: { ...actions, disconnected, stoppedFollows: stopped } }
+}
+
+/** The Model after the actions stream reconnects: the next follow generation (`reconnected`) and no stopped follows;
+ *  nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, followGeneration: generation, stoppedFollows: [] } }
+export function actionsReconnectedWrite(model: Model, actions: ActionView, generation: number): Model {
+  return { ...model, actions: { ...actions, followGeneration: generation, stoppedFollows: [] } }
+}
+
+/** The Model with a run's step selected; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, step: step } }
+export function actionStepWrite(model: Model, actions: ActionView, step: string): Model {
+  return { ...model, actions: { ...actions, step } }
+}
+
+/** The Model with a run selected as `selectedRun` decided; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, step: selection.step, run: selection.run, selected: selection.selected, open: selection.open, maximized: selection.maximized } }
+export function actionSelectedWrite(model: Model, actions: ActionView, selection: RunSelection): Model {
+  return { ...model, actions: { ...actions, ...selection } }
+}
+
+/** The Model with the actions clock at `now` (`actionsClock`); nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, now: now } }
+export function actionClockWrite(model: Model, actions: ActionView, now: number): Model {
+  return { ...model, actions: { ...actions, now } }
+}
+
+/** The Model when a cancel is asked: the panel's error cleared; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, error: "" } }
+export function actionCancelWrite(model: Model, actions: ActionView): Model {
+  return { ...model, actions: { ...actions, error: "" } }
+}
+
+/** The Model with the client a post step decided (`retryPost`, `failPost`); nothing else. */
+//@ verify
+//@ ensures \result == { ...model, client: client }
+export function clientWrite(model: Model, client: Model["client"]): Model {
+  return { ...model, client }
+}

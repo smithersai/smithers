@@ -924,7 +924,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-4020 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+4029 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -3548,6 +3548,15 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/modelWrite.vibe:394` | `wikiCompletedWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
 | `src/web/modelWrite.vibe:402` | `sandboxLoadedWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
 | `src/web/modelWrite.vibe:421` | `eventWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:436` | `actionChangedWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:444` | `actionFollowedWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:452` | `actionFollowFailedWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:460` | `actionsReconnectedWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:467` | `actionStepWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:474` | `actionSelectedWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:481` | `actionClockWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:488` | `actionCancelWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
+| `src/web/modelWrite.vibe:495` | `clientWrite` | proved | Proved the Model after an account, actions, Escape, tour start, tour end, sandbox action, sandbox answer and sandbox failure step: exactly the step's state written over the Schema Model, every other field unchanged; Escape writes the issues screen only when the Model has one; every issue, wiki-editor, sandbox-answer and applied-event arm writes through one of them (0018, Schema Model translation and batches 41 to 52). |
 | `src/web/modeSwitch.vibe:8` | `modeSwitch` | wiring | Calls the proved opposite-mode, mode name and label choices; HtmlBuilder rendering and native navigation remain host boundaries. |
 | `src/web/paneDecision.vibe:26` | `startSandboxAction` | proved | Proved: The sandbox and wiki-editor arms of `update` as proved functions over plain data: the start action, the loaded sandbox, its notice and month warning, the wiki edit types, submit plan, begin and failure steps and error text; 52 executable mutations. main.vibe interprets the commands; Foldkit dispatch remains a host boundary. |
 | `src/web/paneDecision.vibe:34` | `loadedSandbox` | proved | Proved: The sandbox and wiki-editor arms of `update` as proved functions over plain data: the start action, the loaded sandbox, its notice and month warning, the wiki edit types, submit plan, begin and failure steps and error text; 52 executable mutations. main.vibe interprets the commands; Foldkit dispatch remains a host boundary. |
@@ -6723,3 +6732,28 @@ before, its wrong twin fails a postcondition).
 Tool gap recorded: `NonNullable<Model["sandboxPane"]>` over an optional string-literal union emits an abstract
 `NonNullable<Option<string>>` (`~/vl/vibelang-bugs/lemmascript-nonnullable-string-union/`); the write names the
 declared `SandboxPane` instead, the same type.
+
+## Batch 53 (vl-proveall, 2026-11-12): the actions panel's and a post's last inline writes
+
+Ten arms still wrote the Model inline over a proved decision. Each now writes through a proved function in
+`modelWrite.vibe` whose contract is the exact next Model, so a write that drops a decided field or touches any other
+field fails Dafny:
+
+| Arm | Write | Decided by |
+| --- | --- | --- |
+| `ChangedAction` | `actionChangedWrite`: runs, disconnected, stopped follows | `mergeRuns`, `settled` |
+| `FollowedAction` | `actionFollowedWrite`: runs, disconnected | `mergeRuns`, `received` |
+| `FailedActionFollow` | `actionFollowFailedWrite`: disconnected, stopped follows | `failed` |
+| `ReconnectedActions` | `actionsReconnectedWrite`: follow generation, no stopped follows | `reconnected` |
+| `SelectedActionStep` | `actionStepWrite`: step | the message |
+| `SelectedRun` | `actionSelectedWrite`: step, run, selected, open, maximized | `selectedRun` |
+| `TickedActions` | `actionClockWrite`: now | `actionsClock` |
+| `ClickedCancelAction` | `actionCancelWrite`: error cleared | none |
+| `ClickedRetry`, `FailedPost` | `clientWrite`: client | `retryPost`, `failPost` |
+
+15 mutations (`write-action-*`, `write-client`), each rejected.
+
+Not proved yet: fourteen arms still write the Model inline, most one field from a proved decision. They are
+`FailedMedia`, `ResolvedMode`, the replay in `ReceivedRole`, `MeasuredTheatre`, `ToggledTourSound`, `FailedTourEvents`, `FailedTour`'s kept tour, `ClickedSandboxes`, `MaximizedSandboxes`,
+`UpdatedTerminal`, `FilteredWiki`, the replay plan in `ReceivedEvent`, `FailedEvents` and `ClickedReconnect`.
+`Message.match` itself is the dispatch from a tag to its arm, which Foldkit's generated table performs.

@@ -511,19 +511,19 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch ?? null)),
     MaximizedActions: () => runActions(model, ModelDecision.maximizedActions(actionScreen(model))),
     SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? null)),
-    SelectedActionStep: ({ key }) => ({ model: { ...model, actions: { ...actionsOf(model), step: key } } }),
-    SelectedRun: ({ id, flow }) => ({ model: { ...model, actions: { ...actionsOf(model), ...ModelDecision.selectedRun(runSelection(model), id, flow) } } }),
+    SelectedActionStep: ({ key }) => ({ model: ModelWrite.actionStepWrite(model, actionsOf(model), key) }),
+    SelectedRun: ({ id, flow }) => ({ model: ModelWrite.actionSelectedWrite(model, actionsOf(model), ModelDecision.selectedRun(runSelection(model), id, flow)) }),
     LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionsLoadedWrite(model, { ...actionsOf(model), disconnected: ActionFollow.settled(actionsOf(model).disconnected ?? [], runs), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], runs) }, entries, commands, mergeRuns(actionsOf(model).runs, runs)) }),
     FailedActions: ({ code, epoch, op }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code, op ?? "load")),
     UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),
     ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
     StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionStartedWrite(model, actionsOf(model), ModelDecision.followedRun(runSelection(model), run.id, run.flow), mergeRuns(actionsOf(model).runs, [run])), commands: [ClosePalette({ dock: true })] }),
-    ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]), disconnected: ActionFollow.settled(actionsOf(model).disconnected ?? [], [run]), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], [run]) } } }),
-    FollowedAction: ({ run, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]), disconnected: ActionFollow.received(actionsOf(model).disconnected ?? [], run.id) } } }),
-    FailedActionFollow: ({ id, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), disconnected: ActionFollow.failed(actionsOf(model).disconnected ?? [], id, actionsOf(model).runs), stoppedFollows: ActionFollow.failed(actionsOf(model).stoppedFollows ?? [], id, actionsOf(model).runs) } } }),
-    ReconnectedActions: () => ({ model: { ...model, actions: { ...actionsOf(model), followGeneration: ActionFollow.reconnected(actionsOf(model).followGeneration ?? 0), stoppedFollows: [] } } }),
-    TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: ModelDecision.actionsClock(actionsOf(model).now ?? 0, at) } } }),
-    ClickedCancelAction: () => ({ model: { ...model, actions: { ...actionsOf(model), error: "" } }, commands: [CancelAction({ id: actionsOf(model).run })] }),
+    ChangedAction: ({ run }) => ({ model: ModelWrite.actionChangedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.settled(actionsOf(model).disconnected ?? [], [run]), ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], [run])) }),
+    FollowedAction: ({ run, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowedWrite(model, actionsOf(model), mergeRuns(actionsOf(model).runs, [run]), ActionFollow.received(actionsOf(model).disconnected ?? [], run.id)) }),
+    FailedActionFollow: ({ id, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: ModelWrite.actionFollowFailedWrite(model, actionsOf(model), ActionFollow.failed(actionsOf(model).disconnected ?? [], id, actionsOf(model).runs), ActionFollow.failed(actionsOf(model).stoppedFollows ?? [], id, actionsOf(model).runs)) }),
+    ReconnectedActions: () => ({ model: ModelWrite.actionsReconnectedWrite(model, actionsOf(model), ActionFollow.reconnected(actionsOf(model).followGeneration ?? 0)) }),
+    TickedActions: ({ at }) => ({ model: ModelWrite.actionClockWrite(model, actionsOf(model), ModelDecision.actionsClock(actionsOf(model).now ?? 0, at)) }),
+    ClickedCancelAction: () => ({ model: ModelWrite.actionCancelWrite(model, actionsOf(model)), commands: [CancelAction({ id: actionsOf(model).run })] }),
     RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? null)),
     MovedSlash: ({ delta }) => {
       const menu = completions(model)
@@ -537,11 +537,11 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const waiting = model.client.pending[index]
       if (index < 0 || !waiting) return { model }
       return {
-        model: { ...model, client: Machine.retryPost(model.client, clientId) },
+        model: ModelWrite.clientWrite(model, Machine.retryPost(model.client, clientId)),
         commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text: waiting.text }), FocusComposer({})],
       }
     },
-    FailedPost: ({ clientId, reason }) => ({ model: { ...model, client: Machine.failPost(model.client, clientId, reason) } }),
+    FailedPost: ({ clientId, reason }) => ({ model: ModelWrite.clientWrite(model, Machine.failPost(model.client, clientId, reason)) }),
     ReceivedEvent: ({ event }) => {
       const client = Machine.receive(model.client, event)
       const completed = completedEvent(model.client.conversation.seq, client.conversation.seq, event.type)
