@@ -324,3 +324,26 @@ export function meterDelay(remaining: number, running: number, interval: number)
   const due = ceiling < 1 ? 1 : ceiling
   return due > interval ? interval : due
 }
+
+// 0018 third-lane batch 54: the meter's domain guards (Number.isSafeInteger and isFinite stay host checks).
+
+/** A meter count (milliseconds used, an allowance, a clock reading) is never negative. */
+//@ verify
+//@ ensures \result == (value >= 0)
+export function meterCount(value: number): boolean {
+  return value >= 0
+}
+
+/** Adding `added` milliseconds to `used` stays a safe integer. */
+//@ verify
+//@ ensures \result == (added <= 9007199254740991 - used)
+export function addsSafely(used: number, added: number): boolean {
+  return added <= 9007199254740991 - used
+}
+
+/** A clock reading is a JavaScript date: 0 to 8,640,000,000,000,000 milliseconds. */
+//@ verify
+//@ ensures \result == (milliseconds >= 0 && milliseconds <= 8640000000000000)
+export function dateMilliseconds(milliseconds: number): boolean {
+  return milliseconds >= 0 && milliseconds <= 8640000000000000
+}

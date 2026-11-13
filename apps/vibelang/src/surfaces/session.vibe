@@ -1,4 +1,5 @@
 import { validSessionCookie } from "../core/accountCookies.vibe"
+import { pendingExpired } from "./signinDecision.vibe"
 // Where the CLI and MCP server keep their settings: the app session `login` stores and a pending device flow
 // (decision 0028). The directory is `$XDG_CONFIG_HOME/vibelang-factory` (or `~/.config/vibelang-factory`), mode 0700,
 // and files in it are mode 0600. Nothing here or in its callers logs a cookie or a device code.
@@ -86,7 +87,7 @@ export effect function removeSession() {
 export effect function readPending() {
   const pending = try readJson(DEVICE_FILE, PendingDevice)
   if (pending === undefined) return undefined
-  if (pending.expiresAt <= (try Clock.currentTimeMillis)) {
+  if (pendingExpired(pending.expiresAt, try Clock.currentTimeMillis)) {
     try removePending()
     return undefined
   }

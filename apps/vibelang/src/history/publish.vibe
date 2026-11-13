@@ -6,7 +6,7 @@ import { Action as Step, DurableClock, Flow, Interpreter, RetryPolicy, Sleep } f
 import { Repository } from "@smthrs/jj"
 import { Node } from "@smthrs/plan"
 import { NONE, type Pace, type Pending, planned, readPublished, readRefs } from "./export.vibe"
-import { type Refs, same } from "./exportDecision.vibe"
+import { pacedOut, type Refs, same, waitsForTrees } from "./exportDecision.vibe"
 import { counted, exported, ExportTarget, exportStep, finish, foldCommits, MainCommitSchema, paceOf, readMain, refusing, RefsSchema, Stack } from "./flows.vibe"
 import type { History } from "./mythical.vibe"
 
@@ -97,11 +97,11 @@ export effect function batch(history: History, refs: Refs, trees: ReadonlyArray<
     read.push([source, tree])
     known.set(source, tree)
   }
-  if (plan.needs.length > read.length) {
+  if (pacedOut(plan.needs.length, read.length)) {
     const reading: Batch = { ...nothing, trees: read, needs: plan.needs.length - read.length, empty: false }
     return reading
   }
-  if (read.length > 0) plan = try planned(repository, history, published, known)
+  if (waitsForTrees(read.length)) plan = try planned(repository, history, published, known)
   const skip = new Set(done)
   const todo: Array<Pending> = []
   for (const each of plan.pending) {

@@ -1,12 +1,12 @@
 // UTC/IEEE-754 boundary around the proved integer kernel. Whole milliseconds accrue exactly; display rounds the aggregate.
-import { elapsedMilliseconds, meterDelay, meterStep, remainingMilliseconds, type SandboxLedger, runningCount } from "./sandboxDecision.vibe"
+import { addsSafely, dateMilliseconds, elapsedMilliseconds, meterCount, meterDelay, meterStep, remainingMilliseconds, type SandboxLedger, runningCount } from "./sandboxDecision.vibe"
 import { Unavailable } from "./Factory.vibe"
 
 export interface Metered { readonly ledger: SandboxLedger; readonly months: Readonly<Record<string, number>> }
 
 /** Reject invalid Date and arithmetic domains instead of silently capping elapsed usage. */
 export effect function millisecondOf(milliseconds: number) {
-  if (!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > 8640000000000000) throw new Unavailable({ reason: "invalid-clock" })
+  if (!Number.isFinite(milliseconds) || !dateMilliseconds(milliseconds)) throw new Unavailable({ reason: "invalid-clock" })
   const instant = Math.floor(milliseconds)
   if (!Number.isFinite(nextMonth(instant))) throw new Unavailable({ reason: "invalid-clock" })
   return instant
@@ -22,8 +22,8 @@ export function nextMonth(instant: number): number {
 
 /** Split every elapsed interval at UTC month boundaries. Keep all old buckets and a monotone high-water cursor. */
 export effect function meter(ledger: SandboxLedger, months: Readonly<Record<string, number>>, now: number, allowance: number): Metered!Unavailable {
-  if (!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(nextMonth(now)) || !Number.isSafeInteger(ledger.lastMeteredAt) || ledger.lastMeteredAt < 0 || !Number.isFinite(nextMonth(ledger.lastMeteredAt))) throw new Unavailable({ reason: "invalid-clock" })
-  if (!Number.isSafeInteger(ledger.usedMilliseconds) || ledger.usedMilliseconds < 0 || !Number.isSafeInteger(allowance) || allowance < 0) throw new Unavailable({ reason: "meter-domain" })
+  if (!Number.isSafeInteger(now) || !meterCount(now) || !Number.isFinite(nextMonth(now)) || !Number.isSafeInteger(ledger.lastMeteredAt) || !meterCount(ledger.lastMeteredAt) || !Number.isFinite(nextMonth(ledger.lastMeteredAt))) throw new Unavailable({ reason: "invalid-clock" })
+  if (!Number.isSafeInteger(ledger.usedMilliseconds) || !meterCount(ledger.usedMilliseconds) || !Number.isSafeInteger(allowance) || !meterCount(allowance)) throw new Unavailable({ reason: "meter-domain" })
   const count = runningCount(ledger.sandboxes)
   const high = Math.max(ledger.lastMeteredAt, now)
   let cursor = ledger.lastMeteredAt
@@ -34,10 +34,10 @@ export effect function meter(ledger: SandboxLedger, months: Readonly<Record<stri
   while (cursor < high) {
     const end = Math.min(high, nextMonth(cursor))
     const elapsed = elapsedMilliseconds(cursor, end)
-    if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(count * elapsed) || count * elapsed > Number.MAX_SAFE_INTEGER - used) throw new Unavailable({ reason: "meter-overflow" })
+    if (!Number.isSafeInteger(used) || !meterCount(used) || !Number.isSafeInteger(count * elapsed) || !addsSafely(used, count * elapsed)) throw new Unavailable({ reason: "meter-overflow" })
     const boundary = nextMonth(month)
     const prior = buckets[String(boundary)] ?? 0
-    if (!Number.isSafeInteger(prior) || prior < 0) throw new Unavailable({ reason: "meter-domain" })
+    if (!Number.isSafeInteger(prior) || !meterCount(prior)) throw new Unavailable({ reason: "meter-domain" })
     const step = meterStep(used, count, cursor, end, month, boundary, prior)
     buckets[String(month)] = step.charged
     cursor = end

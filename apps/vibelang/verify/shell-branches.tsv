@@ -40,12 +40,12 @@ src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	cause.reasons.length =
 src/core/IssuesFactory.vibe	makeIssueFactory/act/callback	reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict	Variant test: the engine's identity conflict answers conflict
 src/core/LiveFactory.vibe	health	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	LiveFactory/callback/events/callback	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
-src/core/LiveRead.vibe	LiveRead/callback/read	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	LiveFactory/callback/sandbox	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	LiveFactory/callback/sandboxCommand	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	LiveFactory/callback/startSandbox	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	LiveFactory/callback/stopSandbox	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/LiveFactory.vibe	sandboxRefusal	response.status !== 403 && response.status !== 409	Host boundary: the API's HTTP status, refused or passed through
+src/core/LiveRead.vibe	LiveRead/callback/read	response.status !== 200	Host boundary: the API's HTTP status, refused or passed through
 src/core/MockAccounts.vibe	make/choose	role !== "new"	Mock mode (VL-13): the fixture accounts
 src/core/MockAccounts.vibe	make/choose	role === "viewer"	Mock mode (VL-13): the fixture accounts
 src/core/MockAccounts.vibe	make/current	id === ""	Mock mode (VL-13): the fixture accounts
@@ -78,11 +78,6 @@ src/core/sandboxHost.vibe	makeSandboxHost/emergency	!box.running	Host boundary: 
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/metered	!box.running	Host boundary: whether the container runs
 src/core/sandboxHost.vibe	makeSandboxHost/run	admitted.type === "receipt"	Variant dispatch on admit's answer (a stored receipt or a pending operation), which the proved replayAnswer and freshAdmission decide
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(ledger.usedMilliseconds) || ledger.usedMilliseconds < 0 || !Number.isSafeInteger(allowance) || allowance < 0	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(nextMonth(now)) || !Number.isSafeInteger(ledger.lastMeteredAt) || ledger.lastMeteredAt < 0 || !Number.isFinite(nextMonth(ledger.lastMeteredAt))	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(prior) || prior < 0	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
-src/core/sandboxMeter.vibe	meter	!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(count * elapsed) || count * elapsed > Number.MAX_SAFE_INTEGER - used	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
-src/core/sandboxMeter.vibe	millisecondOf	!Number.isFinite(milliseconds) || milliseconds < 0 || milliseconds > 8640000000000000	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
 src/core/sandboxMeter.vibe	snapshotOf	box?.running	Guard: stored and clock numbers must be nonnegative safe integers before the proved sandboxDecision meter runs (host Number checks)
 src/core/sandboxMock.vibe	makeMockSandboxes/callback	at === null || at > (try Clock.currentTimeMillis)	Mock mode (VL-13): the fixture sandboxes
 src/core/sandboxMock.vibe	makeMockSandboxes/write/callback	receipt	Mock mode (VL-13): the fixture sandboxes
@@ -120,8 +115,6 @@ src/history/LiveMythical.vibe	LiveMythical/callback/page	response.status !== 200
 src/history/MockMythical.vibe	MockMythical	seed === seeded	Mock mode (VL-13): the fixture history
 src/history/pages.vibe	matchesOf	needle === ""	Emptiness: an empty search matches nothing
 src/history/publish.vibe	batch	history.commits.length === 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	batch	plan.needs.length > read.length	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
-src/history/publish.vibe	batch	read.length > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
 src/history/publish.vibe	batch	skip.has(each.oid)	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
 src/history/publish.vibe	batchStep/callback	answer.needs > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
 src/history/publish.vibe	batchStep/callback	answer.remaining > 0	Pacing: the publisher continues while the proved planner reports trees to read or objects to write; a skip set and counts only
@@ -168,7 +161,6 @@ src/surfaces/commands.vibe	define/render	json	Variant dispatch on the caller's o
 src/surfaces/commands.vibe	signInError	error instanceof SignInFailed	Variant test: a SignInFailed passes on as its message
 src/surfaces/session.vibe	activeSession	!validSessionCookie(decoded.origin, decoded.cookie)	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
 src/surfaces/session.vibe	activeSession	Option.isSome(configured) && Redacted.value(configured.value) !== ""	Variant: a configured session cookie wins over the stored one; validSessionCookie checks the stored one
-src/surfaces/session.vibe	readPending	pending.expiresAt <= (try Clock.currentTimeMillis)	Expiry: a pending device flow past its expiry is dropped
 src/surfaces/session.vibe	settingsDir	Option.isNone(home) || home.value === ""	Configuration: XDG_CONFIG_HOME wins, else HOME
 src/surfaces/session.vibe	settingsDir	Option.isSome(xdg) && xdg.value !== ""	Configuration: XDG_CONFIG_HOME wins, else HOME
 src/surfaces/signin.vibe	output	mock	Forwards: mock mode reads the fixture session file and has no pending flow

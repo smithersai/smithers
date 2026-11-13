@@ -1,3 +1,4 @@
+import { addsSafely, dateMilliseconds, meterCount } from "../src/core/sandboxDecision.vibe"
 import { describe, expect, it } from "@effect/vitest"
 import { leaseMilliseconds, applySandbox, accumulateUsageMilliseconds, decideSandbox, elapsedMilliseconds, intervalUsageMilliseconds, mayStart, remainingMilliseconds, runningCount, type SandboxLedger } from "../src/core/sandboxDecision.vibe"
 
@@ -54,4 +55,12 @@ it("rejects empty or aliased sandbox identities in a replay event", () => {
 
 it("bounds safety leases at Cloudflare's six-hour limit without capping usage", () => {
   expect([0, 1, 999, 1000, 1001, 21600000, Number.MAX_SAFE_INTEGER].map(leaseMilliseconds)).toEqual([1000, 1000, 1000, 1000, 1001, 21600000, 21600000])
+})
+
+describe("the meter's domain guards (batch 54)", () => {
+  it("counts from zero, adds only within the safe range, and reads only JavaScript dates", () => {
+    expect([meterCount(0), meterCount(5), meterCount(-1)]).toEqual([true, true, false])
+    expect([addsSafely(Number.MAX_SAFE_INTEGER - 5, 5), addsSafely(Number.MAX_SAFE_INTEGER - 5, 6), addsSafely(0, 0)]).toEqual([true, false, true])
+    expect([dateMilliseconds(0), dateMilliseconds(8640000000000000), dateMilliseconds(8640000000000001), dateMilliseconds(-1)]).toEqual([true, true, false, false])
+  })
 })

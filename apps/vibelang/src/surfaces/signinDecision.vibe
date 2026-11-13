@@ -97,3 +97,10 @@ export function signInAnswered(step: "route" | "session" | "sign-out", status: n
 export function revokesRemote(live: boolean, cookie: string): boolean {
   return live && cookie !== ""
 }
+
+/** A pending device flow at or past its expiry is dropped (0018 third-lane batch 54). */
+//@ verify
+//@ ensures \result == (expiresAt <= now)
+export function pendingExpired(expiresAt: number, now: number): boolean {
+  return expiresAt <= now
+}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { pendingExpired } from "../src/surfaces/signinDecision.vibe"
 import { agentSessionConfirmed, answerRefused, factoryOriginAccepted, offersCode, pendingResumes, pollDue, pollInterval, refusalMessage, refusalOf, revokesRemote, signInAnswered, storedSessionUsable } from "../src/surfaces/signinDecision.vibe"
 
 const parts = (origin: string) => { const url = new URL(origin); return [url.origin, url.protocol, url.hostname] as const }
@@ -27,5 +28,11 @@ describe("sign-in decisions", () => {
   it("accepts each call's status, and revokes only a live stored session", () => {
     expect([signInAnswered("route", 200), signInAnswered("session", 201), signInAnswered("sign-out", 204), signInAnswered("sign-out", 200)]).toEqual([true, false, true, false])
     expect([revokesRemote(true, "c"), revokesRemote(true, ""), revokesRemote(false, "c")]).toEqual([true, false, false])
+  })
+})
+
+describe("a pending device flow's expiry", () => {
+  it("drops a flow at or past its expiry", () => {
+    expect([pendingExpired(1000, 999), pendingExpired(1000, 1000), pendingExpired(1000, 1001)]).toEqual([false, true, true])
   })
 })
