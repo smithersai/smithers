@@ -535,6 +535,38 @@ describe("StandardFlows.memory scope identity", () => {
     }
   })
 
+  // A rebuild that minifies or re-transpiles a handler changes what
+  // `Function.prototype.toString` answers for it, and nothing else. The
+  // identity is a call-key term, so it must not follow that text: a restore
+  // after the rebuild would otherwise write a settled `remember` again.
+  it("keeps a scope's declaration identity when a rebuild changes its handlers' source text", async () => {
+    const judge = Effect.runSync(
+      Effect.provide(Effect.context<Evaluator.Evaluator>(), Evaluator.layerUnavailable())
+    )
+    const scope = { policy: policyFor("builder"), provenance: { runId: "run-1", nodeId: "role-task", iteration: 0 } }
+    const rebuilt = (compose: () => FlowBinding.Source): FlowBinding.Source => {
+      const original = Function.prototype.toString
+      Function.prototype.toString = function(this: (...args: never) => unknown) {
+        return `/* rebuilt */ ${original.call(this)}`
+      }
+      try {
+        return compose()
+      } finally {
+        Function.prototype.toString = original
+      }
+    }
+    for (
+      const compose of [
+        () => StandardFlows.memory(services, scope),
+        () => StandardFlows.memory(services, judge, scope)
+      ]
+    ) {
+      const before = await digests(compose())
+      expect(before.map(([name]) => name)).toEqual(["remember", "recall"])
+      expect(await digests(rebuilt(compose))).toEqual(before)
+    }
+  })
+
   it("binds nothing and fails composition when the policy does not decode", async () => {
     for (
       const policy of [

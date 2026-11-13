@@ -47,6 +47,17 @@
 
 ### Fixed
 
+- A scoped `StandardFlows.memory` binding no longer hashes its handler's
+  source text into the key of its `remember` and `recall` calls. The scope's
+  body digest took `Function.prototype.toString` of the handler beside the
+  policy and the run coordinates, so a rebuild that minified or re-transpiled
+  the handler moved the key of every scoped memory call a run had settled, and
+  a restore wrote a settled `remember` again. The digest now names the
+  implementation (`remember`, `recall` or `recall/judged`) with the same
+  policy and coordinates, so it still separates scopes and runs. Scoped
+  memory calls recorded before this upgrade are keyed once more under the new
+  digest; host-wide bindings are unchanged (#5108).
+
 - The first collection of agent use cases now declares catalog metadata and
   complete captures for sampling, probe counts and merge policy. Host-specific
   flows stay out of model catalogs, and agent-reported command evidence is

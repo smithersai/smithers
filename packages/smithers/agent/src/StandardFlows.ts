@@ -666,8 +666,12 @@ const scopedRefusal = (bank: string) => (error: MemoryError): string =>
     : `${error.code}: ${error.message}`
 
 /**
- * The executable identity of a scoped handler: its code, the policy it
- * enforces, and the run coordinates the scope records. `recall` is sealed, and
+ * The executable identity of a scoped handler: the name of its implementation,
+ * the policy it enforces, and the run coordinates the scope records. The name
+ * is assigned here, never read from the handler's source text: a rebuild that
+ * minifies or re-transpiles a handler would otherwise move the key of every
+ * call a run settled, and a restore would write a settled `remember` again.
+ * Rename an implementation when what it does changes. `recall` is sealed, and
  * a sealed call is content-addressed on its declaration across runs, so two
  * scopes must never share one: a recall recorded in one namespace would
  * otherwise answer the same call in another, and a recall recorded by one run
@@ -676,12 +680,12 @@ const scopedRefusal = (bank: string) => (error: MemoryError): string =>
  * iteration cannot change or break the identity.
  */
 const scopedBodyDigest = (
-  handler: (...args: never) => unknown,
+  implementation: "remember" | "recall" | "recall/judged",
   policy: WithMemory.Policy,
   provenance: MemoryStore.Provenance
 ): string =>
   Digest.digest(Digest.canonical({
-    handler: Function.prototype.toString.call(handler),
+    implementation,
     policy,
     provenance: JSON.stringify([provenance.runId ?? null, provenance.nodeId ?? null, provenance.iteration ?? null])
   }))
@@ -714,7 +718,7 @@ const scopedMemory = (
       flow: remember,
       handler: rememberHandler,
       publicError,
-      bodyDigest: scopedBodyDigest(rememberHandler, policy, provenance)
+      bodyDigest: scopedBodyDigest("remember", policy, provenance)
     }),
     services
   )
@@ -730,7 +734,7 @@ const scopedMemory = (
           flow: recall,
           handler: recallHandler,
           publicError,
-          bodyDigest: scopedBodyDigest(recallHandler, policy, provenance)
+          bodyDigest: scopedBodyDigest("recall", policy, provenance)
         }),
         services
       )
@@ -751,7 +755,7 @@ const scopedMemory = (
         flow: recall,
         handler: recallHandler,
         publicError,
-        bodyDigest: scopedBodyDigest(recallHandler, policy, provenance)
+        bodyDigest: scopedBodyDigest("recall/judged", policy, provenance)
       }),
       services
     )
