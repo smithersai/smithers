@@ -142,3 +142,20 @@ that callback. The malformed-response regression checks `NdjsonDecodeError` at i
 that later chunks decode with the same parser after rejection. HTTP still aborts a malformed response. The
 Schema.Json and stdio fixes remain intact; no dependency, compiler or application behavior changes. See
 `patches/README.md` for patch regeneration and removal conditions.
+
+## Recovering a disconnected run
+
+A failed or closed action follow emits `FailedActionFollow`. The page keeps the last real run, labels unsettled
+cards and rows `Disconnected`, freezes their duration at the last observed receipt, and offers `Reconnect`.
+Observation failure never marks the server's run as failed and never starts or reruns an action.
+
+`Reconnect` increments the subscription generation even when its run IDs are unchanged. Each follow opens against
+the same `Actions` service and receives its current run first, including a terminal receipt recorded while offline.
+Uncertainty clears separately for each observed run; changing the selected action or loading a list cannot hide it.
+Identity epochs, reconnect generations and captured active IDs fence late messages from replaced subscriptions.
+Ended follows stay paused when another run starts or settles; only explicit reconnect reopens them. A safe warning records
+the run ID, epoch and generation when observation ends, without payloads or transport error text.
+
+The implementation uses the existing Effect streams, Foldkit subscriptions and `@smthrs/ui-css` catalog entry.
+Regression coverage includes the real runtime losing a follow before another client cancels, explicit reconnect,
+missing runs, terminal receipts, stale messages, independent runs, property checks, the fuzz oracle and Chromium.

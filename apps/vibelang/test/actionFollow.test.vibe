@@ -1,0 +1,95 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Arbitrary } from "effect"
+import * as Follow from "../src/web/actionFollowDecision.vibe"
+import { initial } from "../src/web/actionModel.vibe"
+import { init, Message, type Model, update } from "../src/web/main.vibe"
+import { runSeconds, runStatus } from "../src/web/actionViewDecision.vibe"
+
+const run = { id: "a1", flow: "vibelang/Tour", door: "button" as const, actor: "person" as const, state: "running" as const, started: 1000, at: 3000, result: "", steps: [] }
+const home = init({ session: "observation", mode: "mock", name: "Ada" }).model
+const model: Model = { ...home, actions: { ...initial, runs: [run], epoch: 2, followGeneration: 4 } }
+const lost = Message.FailedActionFollow({ ids: [run.id], id: run.id, epoch: 2, generation: 4 })
+
+describe("action observation", () => {
+  it("preserves the run, isolates the failure, and replaces the subscription on reconnect", () => {
+    const before = { ...model, actions: { ...model.actions!, error: "Couldn't cancel action", loading: true, starting: true } }
+    const failed = update(before, lost).model
+    expect(failed.actions).toMatchObject({ runs: [run], disconnected: [run.id], error: "Couldn't cancel action", loading: true, starting: true })
+    expect(update(failed, lost).model.actions?.disconnected).toEqual([run.id])
+    const again = update(failed, Message.ReconnectedActions())
+    expect(again.commands ?? []).toEqual([])
+    expect(again.model.actions).toMatchObject({ followGeneration: 5, disconnected: [run.id], runs: [run] })
+    expect(update(again.model, lost).model).toBe(again.model)
+    expect(update(again.model, Message.FollowedAction({ ids: [run.id], run, epoch: 2, generation: 4 })).model).toBe(again.model)
+    expect(update(again.model, Message.FollowedAction({ ids: [run.id], run, epoch: 1, generation: 5 })).model).toBe(again.model)
+    expect(update(again.model, Message.FailedActionFollow({ ids: [run.id], id: run.id, epoch: 1, generation: 5 })).model).toBe(again.model)
+  })
+  it("a missing observation state starts at generation zero", () => {
+    expect(update(home, Message.ReconnectedActions()).model.actions?.followGeneration).toBe(1)
+    const pending = { ...home, actions: { ...initial, runs: [run] } }
+    expect(update(pending, Message.FailedActionFollow({ ids: [run.id], id: run.id, epoch: 0, generation: 0 })).model.actions?.disconnected).toEqual([run.id])
+    expect(update(pending, Message.FollowedAction({ ids: [run.id], run, epoch: 0, generation: 0 })).model.actions?.runs).toEqual([run])
+  })
+  for (const state of ["passed", "failed", "cancelled"] as const) {
+    it("reconnect receives a " + state + " receipt and rejects a later disconnect", () => {
+      const failed = update(model, lost).model
+      const again = update(failed, Message.ReconnectedActions()).model
+      const terminal = { ...run, state, at: 5000, result: "Receipt" }
+      const settled = update(again, Message.FollowedAction({ ids: [run.id], run: terminal, epoch: 2, generation: 5 })).model
+      expect(settled.actions).toMatchObject({ runs: [terminal], disconnected: [] })
+      expect(update(settled, Message.FailedActionFollow({ ids: [run.id], id: run.id, epoch: 2, generation: 5 })).model.actions?.disconnected).toEqual([])
+      expect(update(settled, Message.FollowedAction({ ids: [run.id], run, epoch: 2, generation: 5 })).model.actions?.runs).toEqual([terminal])
+    })
+  }
+  it("a real read or cancellation receipt clears only its run's uncertainty", () => {
+    const failed = { ...model, actions: { ...model.actions!, disconnected: ["a1", "a2"] } }
+    expect(update(failed, Message.ChangedAction({ run })).model.actions?.disconnected).toEqual(["a1", "a2"])
+    expect(update(failed, Message.ChangedAction({ run: { ...run, state: "cancelled" } })).model.actions?.disconnected).toEqual(["a2"])
+    expect(update(failed, Message.LoadedActions({ entries: [], commands: [], runs: [run], epoch: 2 })).model.actions?.disconnected).toEqual(["a1", "a2"])
+    expect(update(failed, Message.LoadedActions({ entries: [], commands: [], runs: [{ ...run, state: "passed" }], epoch: 2 })).model.actions?.disconnected).toEqual(["a2"])
+    expect(Follow.failed(["a2"], "missing", [run])).toEqual(["a2"])
+    expect(Follow.failed(["a1"], "a1", [run])).toEqual(["a1"])
+    expect(Follow.failed([], "a1", [{ ...run, state: "queued" }])).toEqual(["a1"])
+    expect(Follow.observedState("running", true)).toBe("disconnected")
+    expect(Follow.observedState("queued", true)).toBe("disconnected")
+    expect(Follow.observedState("running", false)).toBe("running")
+    expect(Follow.observedState("passed", true)).toBe("passed")
+    expect(Follow.watching([run, { ...run, id: "a2" }, { ...run, id: "a3", state: "passed" }], ["a1"])).toEqual(["a2"])
+    expect(Follow.same(["a1"], ["a1"])).toBe(true)
+    expect(Follow.same(["a1"], ["a2"])).toBe(false)
+    expect(Follow.same(["a1"], [])).toBe(false)
+    expect(Follow.same(["a1", "a2"], ["a1", "a2"])).toBe(true)
+    expect(Follow.same(["a1", "a2"], ["a1", "a3"])).toBe(false)
+    expect(runStatus("disconnected")).toBe("Disconnected")
+    expect(runSeconds("disconnected", 1000, 3000, 9000)).toBe(2)
+  })
+  it("ignores observations queued by a replaced set of active runs", () => {
+    const two = { ...model, actions: { ...model.actions!, runs: [run, { ...run, id: "a2" }] } }
+    expect(update(two, lost).model).toBe(two)
+    expect(update(two, Message.FollowedAction({ ids: [run.id], run, epoch: 2, generation: 4 })).model).toBe(two)
+  })
+  it.effect("arbitrary losses and receipts preserve other runs and fence replaced subscriptions", () => effect {
+    const input = Schema.Struct({ ids: Schema.Array(Schema.String), id: Schema.String, epoch: Schema.Int, generation: Schema.Int, state: Schema.Literals(["queued", "running", "passed", "failed", "cancelled"]) })
+    const result = try Arbitrary.checkEffect(Arbitrary.schema(input), ({ ids, id, epoch, generation, state }) => {
+      const pending = Follow.failed(ids, id, [{ id, state }])
+      const live = state === "queued" || state === "running"
+      if (pending.includes(id) !== (live || ids.includes(id))) return false
+      if (!ids.every(value => pending.includes(value))) return false
+      if (Follow.failed(pending, id, [{ id, state }]).length !== pending.length) return false
+      const terminal = Follow.settled(pending, [{ id, state }])
+      if (terminal.includes(id) !== (live && pending.includes(id))) return false
+      if (!ids.filter(value => value !== id).every(value => terminal.includes(value))) return false
+      const received = Follow.received(pending, id)
+      if (received.includes(id) || !ids.filter(value => value !== id).every(value => received.includes(value))) return false
+      const watched = Follow.watching([{ id, state }], ids)
+      if (watched.includes(id) !== (live && !ids.includes(id))) return false
+      if (!Follow.same(ids, [...ids]) || Follow.same(ids, [...ids, id])) return false
+      return Follow.current(epoch, generation, epoch, generation)
+        && !Follow.current(epoch, generation, epoch, generation + 1)
+        && !Follow.current(epoch, generation, epoch + 1, generation)
+        && Follow.reconnected(generation) === generation + 1
+        && Follow.observedState(state, true) === (live ? "disconnected" : state)
+    }, { runs: 400 })
+    try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+})

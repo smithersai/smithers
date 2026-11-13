@@ -122,7 +122,7 @@ const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literal
  * signing out without accounts answers the viewer; signing in live goes to the sign-in route; an unreachable tour
  * names its reason and a refused one its refusal; a refused sandbox read names its refusal; another page's draft
  * never fills the editor; a role stream without an accounts service sends nothing, and a failing or ended one sends
- * FailedRoles once; a lost action follow follows again after two seconds and delivers the run. A tour control that is
+ * FailedRoles once; a lost action follow reports disconnection; explicit reconnect delivers the run. A tour control that is
  * done or refused keeps the tour's connection, and one unreachable or without controls loses it; reading a started run
  * answers it; a failing actions load names its epoch; an issue write answered without a role takes the mode's default.
  * Over the page: a left click on a chat draft link of a built page reviews that draft, and one of another page does
@@ -230,18 +230,26 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       return scenario === "roles-bare" ? got.length === 0 : got.length === 1 && got[0]!._tag === "FailedRoles"
     }
     case "follow-lost": {
-      // The first follow of a running action is lost; two seconds later it follows again and the run's state arrives.
+      // A lost follow reports its run; reconnect replaces the generation and reads the real run.
       // A maintainer starts the run; the mock refuses to start one for a role below it.
       provide backend("mock", "maintainer") {
         const actions = try Actions
-        const id = try actions.start("vibelang/Post", { text: "q" }, "button")
+        const id = try actions.start("vibelang/Tour", {}, "button")
         let follows = 0
         const flaky = Object.assign(Object.create(actions) as Actions.Shape, { follow: (run: string) => follows++ === 0 ? Stream.fail(new ActionFailure({ code: "fault" })) : actions.follow(run) })
         const services = Layer.merge(Layer.succeed(Actions, flaky), Layer.succeed(Factory, try Factory))
-        const stream = try subscription("actionRuns", { ids: [id] })
-        // Virtual time: the retry's two seconds pass in 250 ms steps.
-        const got = try stepped(Effect.provide(Stream.runHead(stream), services), 5)
-        return follows === 2 && Option.isSome(got) && got.value._tag === "ChangedAction" && got.value.run.id === id
+        const run = try actions.read(id)
+        const home = init(FLAGS).model
+        const model: Model = { ...home, actions: { ...actionsOf(home), runs: [run] } }
+        const stream = try subscriptionOf("actionRuns", model)
+        const got = try Effect.provide(Stream.runHead(stream), services)
+        if (Option.isNone(got) || got.value._tag !== "FailedActionFollow") return false
+        const lost = update(model, got.value).model
+        if (!actionsOf(lost).disconnected?.includes(id)) return false
+        const again = try Effect.try(() => update(lost, Message.ReconnectedActions()).model)
+        const recovered = try Effect.provide(Stream.runHead(try subscriptionOf("actionRuns", again)), services)
+        if (Option.isNone(recovered) || recovered.value._tag !== "FollowedAction" || recovered.value.run.id !== id) return false
+        return follows === 2 && actionsOf(update(again, recovered.value).model).disconnected?.length === 0
       }
     }
     case "control-tour": {

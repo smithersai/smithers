@@ -1,11 +1,11 @@
 // An Actions fault over the product's real MockActions: the first call at the named point fails with ActionFailure
-// ("unavailable"); later calls are real. `list` fails a load, `start` a run's start, `read` a run read, `follow` ends a
-// run's first follow subscription, `cancel` a cancel.
+// ("unavailable"); later calls are real. `list` fails a load, `start` a run's start, `read` a run read, `follow` fails a
+// run's first follow subscription, `follow-close` closes it without a receipt, `cancel` a cancel.
 import { ActionFailure, Actions } from "../../src/actions/Actions.vibe"
 
-export type ActionFault = "list" | "start" | "read" | "follow" | "cancel"
+export type ActionFault = "list" | "start" | "read" | "follow" | "follow-close" | "cancel"
 
-export function faultyActions<E, R>(base: Layer.Layer<Actions, E, R>, point: ActionFault = "list") {
+export function faultyActions<E, R>(base: Layer.Layer<Actions, E, R>, point: ActionFault = "list", followed?: Array<string>) {
   return Layer.effect(Actions, effect {
     const actions = try Actions
     let failed = false
@@ -20,7 +20,10 @@ export function faultyActions<E, R>(base: Layer.Layer<Actions, E, R>, point: Act
       commands: () => actions.commands(),
       runs: (flow) => actions.runs(flow),
       read: (id) => first("read") ? Effect.fail(unavailable()) : actions.read(id),
-      follow: (id) => first("follow") ? Stream.fail(unavailable()) : actions.follow(id),
+      follow: (id) => {
+        followed?.push(id)
+        return first("follow") ? Stream.fail(unavailable()) : first("follow-close") ? Stream.empty : actions.follow(id)
+      },
       start: (flow, input, door) => first("start") ? Effect.fail(unavailable()) : actions.start(flow, input, door),
       command: (text, door) => actions.command(text, door),
       rerun: (id) => actions.rerun(id),

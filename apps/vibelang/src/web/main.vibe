@@ -1,4 +1,5 @@
 import * as ModelDecision from "./modelDecision.vibe"
+import * as ActionFollow from "./actionFollowDecision.vibe"
 import * as ModelWrite from "./modelWrite.vibe"
 import * as ScreenRead from "./screenRead.vibe"
 import * as IssueDecision from "./issueDecision.vibe"
@@ -255,6 +256,9 @@ export const Message = defineMessageUnion({
   ClickedRunAction: {},
   StartedAction: { run: Run, epoch: Schema.optionalKey(Schema.Number) },
   ChangedAction: { run: Run },
+  FollowedAction: { run: Run, epoch: Schema.Number, generation: Schema.Number, ids: Schema.Array(Schema.String) },
+  FailedActionFollow: { id: Schema.String, epoch: Schema.Number, generation: Schema.Number, ids: Schema.Array(Schema.String) },
+  ReconnectedActions: {},
   ClickedCancelAction: {},
   TickedActions: { at: Schema.Number },
   RetriedActions: {},
@@ -509,12 +513,15 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? null)),
     SelectedActionStep: ({ key }) => ({ model: { ...model, actions: { ...actionsOf(model), step: key } } }),
     SelectedRun: ({ id, flow }) => ({ model: { ...model, actions: { ...actionsOf(model), ...ModelDecision.selectedRun(runSelection(model), id, flow) } } }),
-    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionsLoadedWrite(model, actionsOf(model), entries, commands, mergeRuns(actionsOf(model).runs, runs)) }),
+    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionsLoadedWrite(model, { ...actionsOf(model), disconnected: ActionFollow.settled(actionsOf(model).disconnected ?? [], runs), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], runs) }, entries, commands, mergeRuns(actionsOf(model).runs, runs)) }),
     FailedActions: ({ code, epoch, op }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code, op ?? "load")),
     UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),
     ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
     StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: ModelWrite.actionStartedWrite(model, actionsOf(model), ModelDecision.followedRun(runSelection(model), run.id, run.flow), mergeRuns(actionsOf(model).runs, [run])), commands: [ClosePalette({ dock: true })] }),
-    ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]) } } }),
+    ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]), disconnected: ActionFollow.settled(actionsOf(model).disconnected ?? [], [run]), stoppedFollows: ActionFollow.settled(actionsOf(model).stoppedFollows ?? [], [run]) } } }),
+    FollowedAction: ({ run, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]), disconnected: ActionFollow.received(actionsOf(model).disconnected ?? [], run.id) } } }),
+    FailedActionFollow: ({ id, epoch, generation, ids }) => !actionFollowCurrent(model, epoch, generation, ids) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), disconnected: ActionFollow.failed(actionsOf(model).disconnected ?? [], id, actionsOf(model).runs), stoppedFollows: ActionFollow.failed(actionsOf(model).stoppedFollows ?? [], id, actionsOf(model).runs) } } }),
+    ReconnectedActions: () => ({ model: { ...model, actions: { ...actionsOf(model), followGeneration: ActionFollow.reconnected(actionsOf(model).followGeneration ?? 0), stoppedFollows: [] } } }),
     TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: ModelDecision.actionsClock(actionsOf(model).now ?? 0, at) } } }),
     ClickedCancelAction: () => ({ model: { ...model, actions: { ...actionsOf(model), error: "" } }, commands: [CancelAction({ id: actionsOf(model).run })] }),
     RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? null)),
@@ -643,6 +650,12 @@ function runAccount(model: Model, step: ModelDecision.AccountStep): Update.Retur
 function actionScreen(model: Model): ModelDecision.ActionScreen { return ScreenRead.actionScreen(actionsOf(model)) }
 
 function runSelection(model: Model): ModelDecision.RunSelection { return ScreenRead.runSelection(actionsOf(model)) }
+function actionFollowCurrent(model: Model, epoch: number, generation: number, ids: ReadonlyArray<string>): boolean {
+  const actions = actionsOf(model)
+  return ActionFollow.current(epoch, generation, actions.epoch ?? 0, actions.followGeneration ?? 0)
+    && ActionFollow.same(ids, ActionFollow.watching(actions.runs, actions.stoppedFollows ?? []))
+}
+
 
 function actionCommand(command: ModelDecision.ActionCommand) {
   switch (command.type) {
@@ -1078,19 +1091,20 @@ export function subscriptions(keys: EventTarget, page?: Document) {
     value ? Option.some(Message.ScrolledTranscript(value)) : Option.none()
   return Subscription.make<Model, Message, Factory | Actions>()((entry) => ({
     actionTime: entry({ active: Schema.Boolean }, {
-      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => run.state === "queued" || run.state === "running") }),
+      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => (run.state === "queued" || run.state === "running") && !(actionsOf(model).disconnected ?? []).includes(run.id)) }),
       dependenciesToStream: ({ active }) => active ? Stream.tick("1 second").pipe(Stream.mapEffect(effect () => { const at = try Clock.currentTimeMillis; return try message(() => Message.TickedActions({ at })) })) : Stream.empty,
     }),
-    actionRuns: entry({ ids: Schema.Array(Schema.String) }, {
-      modelToDependencies: (model: Model) => ({ ids: actionsOf(model).runs.filter((run) => run.state === "queued" || run.state === "running").map((run) => run.id) }),
-      dependenciesToStream: ({ ids }) => ids.length === 0 ? Stream.empty : Stream.unwrap(effect {
+    actionRuns: entry({ ids: Schema.Array(Schema.String), epoch: Schema.Number, generation: Schema.Number }, {
+      modelToDependencies: (model: Model) => ({ ids: ActionFollow.watching(actionsOf(model).runs, actionsOf(model).stoppedFollows ?? []), epoch: actionsOf(model).epoch ?? 0, generation: actionsOf(model).followGeneration ?? 0 }),
+      dependenciesToStream: ({ ids, epoch, generation }) => ids.length === 0 ? Stream.empty : Stream.unwrap(effect {
         const actions = try Actions
-        // A lost follow follows again 2 seconds later; the run's current state comes first, so nothing is missed.
-        const follow = (id: string): Stream.Stream<Run> => actions.follow(id).pipe(Stream.catch(() => Stream.concat(
-          Stream.fromEffect(Effect.andThen(Effect.logWarning("action run follow lost; following again"), Effect.sleep("2 seconds"))).pipe(Stream.drain),
-          Stream.suspend(() => follow(id)),
-        )))
-        return Stream.mergeAll(ids.map((id) => follow(id).pipe(Stream.map((run) => Message.ChangedAction({ run })))), { concurrency: "unbounded" })
+        return Stream.mergeAll(ids.map((id) => actions.follow(id).pipe(
+          Stream.map((run) => Message.FollowedAction({ run, epoch, generation, ids })),
+          // A clean close before settlement is just as uncertain as a transport failure.
+          Stream.concat(Stream.make(Message.FailedActionFollow({ id, epoch, generation, ids }))),
+          Stream.catch(() => Stream.make(Message.FailedActionFollow({ id, epoch, generation, ids }))),
+          Stream.tap((answer) => answer._tag === "FailedActionFollow" ? Effect.logWarning("Action follow ended", { runId: id, epoch, generation }) : Effect.void),
+        )), { concurrency: "unbounded" })
       }),
     }),
     wikiLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({

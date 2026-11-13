@@ -5,6 +5,9 @@ import { historyRefusal } from "../history/flowMachine.vibe"
 import { HistoryAnswer } from "../history/flows.vibe"
 export schema ActionView {
   readonly epoch?: number
+  readonly followGeneration?: number
+  readonly disconnected?: ReadonlyArray<string>
+  readonly stoppedFollows?: ReadonlyArray<string>
   readonly step?: string
   readonly now?: number
   readonly open: boolean

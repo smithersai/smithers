@@ -30,9 +30,10 @@ export function liveRun(state: string): boolean {
 //@ ensures state == "passed" ==> \result == "Passed"
 //@ ensures state == "failed" ==> \result == "Failed"
 //@ ensures state == "cancelled" ==> \result == "Cancelled"
-//@ ensures state != "passed" && state != "failed" && state != "cancelled" ==> \result == "Running"
+//@ ensures state == "disconnected" ==> \result == "Disconnected"
+//@ ensures state != "passed" && state != "failed" && state != "cancelled" && state != "disconnected" ==> \result == "Running"
 export function runStatus(state: string): string {
-  return state === "passed" ? "Passed" : state === "failed" ? "Failed" : state === "cancelled" ? "Cancelled" : "Running"
+  return state === "passed" ? "Passed" : state === "failed" ? "Failed" : state === "cancelled" ? "Cancelled" : state === "disconnected" ? "Disconnected" : "Running"
 }
 
 //@ verify

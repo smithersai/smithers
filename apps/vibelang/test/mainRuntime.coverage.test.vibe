@@ -8,13 +8,13 @@ import { MockActions } from "../src/actions/MockActions.vibe"
 import type { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { newClient } from "../src/core/conversation.vibe"
-import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { initial as initialActions, mergeRuns } from "../src/web/actionModel.vibe"
 import { accountOf, CloseIssueDialog, CloseRoleDialog, FocusAccountMenu, FocusIssueControl, FocusTourControl, FocusWikiEditor, init, MeasureTheatre, type Model, PresentTour, RevealWiki, RunAction, ShowIssueDialog, ShowRoleDialog, WikiLocation } from "../src/web/main.vibe"
 import { Factory as FactoryService, Refused, Unavailable } from "../src/core/Factory.vibe"
 import { overlaid } from "./support/overlaid.vibe"
 import { application } from "./support/application.vibe"
 import { faultyActions } from "./support/FaultyActions.vibe"
-import { activeIs, addElement, clickLink, container, dispatchWindow, location, popTo, press, remove } from "./support/browser.ts"
+import { activeIs, addElement, clickLink, container, dispatchWindow, location, popTo, press, reconnect, remove } from "./support/browser.ts"
 
 const flags = { session: "r", name: "Ada", mode: "mock" as const }
 type Started = ReturnType<typeof init>
@@ -155,7 +155,7 @@ describe("page listeners", () => {
     // This action lazily imports its real durable history runtime; compilation shares the host with other suites.
     try settled(() => expect(seen.model.actions?.runs[0]?.state).toBe("passed"), 15_000)
   }))
-  it.live("a run the service no longer knows ends its follow quietly", () => scoped(effect {
+  it.live("a run the service no longer knows stays visible as disconnected", () => scoped(effect {
     const run = { id: "gone", flow: "vibelang/Tour", door: "button" as const, actor: "person" as const, state: "running" as const, started: 0, at: 1, result: "", steps: [] }
     // The follow's end is the latch; the witness then proves no message it sent is still queued.
     const ended: Array<string> = []
@@ -164,7 +164,7 @@ describe("page listeners", () => {
       follow: (id: string) => base.follow(id).pipe(Stream.ensuring(sync(() => { ended.push(id) }))),
     }))).pipe(Layer.provide(MockActions({ actor: "person" })))
     const seen = try started(quiet({ actions: { ...initialActions, runs: [run] } }), watched)
-    try settled(() => expect(ended).toContain("gone"))
+    try settled(() => { expect(ended).toContain("gone"); expect(seen.model.actions?.disconnected).toEqual(["gone"]) })
     const answered = try witnessed(seen)
     try Effect.try(() => { expect(answered).not.toContain("ChangedAction"); expect(seen.model.actions?.runs[0]?.state).toBe("running") })
   }))
@@ -222,7 +222,49 @@ it.live("a run cancelled by another client settles in the page after its first f
     const id = seen.model.actions!.runs[0]!.id
     // Another client cancels through the same public Actions service. The page receives no CancelAction reply;
     // only its reconnected follow can learn that the run ended.
+    try settled(() => expect(seen.model.actions?.disconnected).toEqual([id]))
     try actions.cancel(id)
-    try settled(() => expect(seen.model.actions?.runs.find(run => run.id === id)?.state).toBe("cancelled"), 8000)
+    try Effect.try(() => expect(seen.model.actions?.runs.find(run => run.id === id)?.state).not.toBe("cancelled"))
+    try sync(reconnect)
+    try settled(() => { expect(seen.model.actions?.runs.find(run => run.id === id)?.state).toBe("cancelled"); expect(seen.model.actions?.disconnected).toEqual([]) }, 8000)
+  }
+}))
+
+it.live("a follow that closes without a settlement reports disconnection", () => scoped(effect {
+  const services = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provideMerge(MockFactory))
+  provide services {
+    const factory = try FactoryService
+    const actions = try Actions
+    const id = try actions.start("vibelang/Tour", {}, "button")
+    const run = try actions.read(id)
+    const short = faultyActions(Layer.succeed(Actions, actions), "follow-close")
+    const seen = try started(quiet({ actions: { ...initialActions, runs: [run] } }), short, Layer.succeed(FactoryService, factory))
+    try settled(() => expect(seen.model.actions?.disconnected).toEqual([id]))
+    try Effect.try(() => expect(seen.model.actions?.runs[0]?.id).toBe(id))
+  }
+}))
+
+it.live("another run settling does not restart a lost follow", () => scoped(effect {
+  const services = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provideMerge(MockFactory))
+  provide services {
+    const factory = try FactoryService
+    const actions = try Actions
+    const one = try actions.start("vibelang/Tour", {}, "button")
+    const two = try actions.start("vibelang/Tour", {}, "button")
+    const runs = mergeRuns([], [try actions.read(one), try actions.read(two)])
+    const first = runs[0]!.id
+    const second = runs[1]!.id
+    const followed: Array<string> = []
+    const flaky = faultyActions(Layer.succeed(Actions, actions), "follow", followed)
+    const seen = try started(quiet({ actions: { ...initialActions, runs } }), flaky, Layer.succeed(FactoryService, factory))
+    try settled(() => expect(seen.model.actions?.disconnected).toEqual([first]))
+    try actions.cancel(second)
+    try settled(() => expect(seen.model.actions?.runs.find(run => run.id === second)?.state).toBe("cancelled"))
+    try witnessed(seen)
+    try Effect.try(() => { expect(followed.filter(id => id === first)).toHaveLength(1); expect(seen.model.actions?.disconnected).toEqual([first]) })
+    try actions.cancel(first)
+    try sync(reconnect)
+    try settled(() => { expect(seen.model.actions?.runs.every(run => run.state === "cancelled")).toBe(true); expect(seen.model.actions?.disconnected).toEqual([]) })
+    try Effect.try(() => expect(followed.filter(id => id === first)).toHaveLength(2))
   }
 }))

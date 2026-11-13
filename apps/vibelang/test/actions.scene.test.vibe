@@ -82,3 +82,21 @@ describe("the run's result", () => {
     scene({ update, view }, settled(state, result), expect(text(result)).toExist())
   })
 })
+
+it("a disconnected card freezes its duration and reconnects without starting another action", () => {
+  const run = { id: "a1", flow: "vibelang/Tour", door: "button" as const, actor: "person" as const, state: "running" as const, started: 1000, at: 3000, result: "", steps: [] }
+  const model = { ...home, surface: "chat" as const, actions: { ...initialActions, runs: [run], now: 9000 } }
+  scene({ update, view }, given(model),
+    Subscription.emit(Message.FailedActionFollow({ ids: [run.id], id: run.id, epoch: 0, generation: 0 })),
+    expect(text("Disconnected")).toExist(),
+    expect(text("person · 2s")).toExist(),
+    Subscription.emit(Message.TickedActions({ at: 12000 })),
+    expect(text("person · 2s")).toExist(),
+    click(role("button", { name: "Reconnect" })),
+    expect(text("Disconnected")).toExist(),
+    Subscription.emit(Message.FollowedAction({ ids: [run.id], run: { ...run, state: "failed", at: 5000, result: "Action failed" }, epoch: 0, generation: 1 })),
+    expect(text("Failed")).toExist(),
+    expect(role("button", { name: "Reconnect" })).toBeAbsent(),
+    expect(text("person · 4s")).toExist(),
+  )
+})
