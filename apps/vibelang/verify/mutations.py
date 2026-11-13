@@ -219,6 +219,8 @@ cases += [
 ('worker/budgetDecision.vibe','budget-settle-used','settleAdmissible','held <= reserved && used >= 0 && ceiling > 0','held <= reserved && ceiling > 0','a charge is nonnegative'),
 ('worker/accountsDecision.vibe','account-open-read','openOperation','return op === "read"','return op === "read" || op === "draft"','a draft is not open to everyone'),
 ('worker/accountsDecision.vibe','account-open-only','openOperation','return op === "read"','return op !== "comment"','only reading is open'),
+('worker/workerDecision.vibe','cursor-leading-zero','cursorAccepted','return /^(?:0|[1-9][0-9]*)$/.test(raw)','return /^[0-9]+$/.test(raw)','a cursor has no leading zero'),
+('worker/workerDecision.vibe','cursor-safe','cursorAccepted','value <= 9007199254740991','value <= 9007199254740992','a cursor is a safe integer'),
 ('worker/mainLogDecision.vibe','lc-ancestry-starts','ancestryShas','ancestry.add(starts[i]!)','ancestry.add(starts[0]!)','every start is in the ancestry'),
 ]
 cases += web_cases

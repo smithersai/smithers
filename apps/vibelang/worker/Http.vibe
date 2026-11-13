@@ -1,4 +1,5 @@
 import { sandboxRequest, signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
+import { cursorAccepted } from "./workerDecision.vibe"
 import { validTourStep } from "../src/core/clientProtocolDecision.vibe"
 import { validBodyLength, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
 
@@ -72,7 +73,7 @@ export function afterOf(url: URL): number | undefined {
   const raw = url.searchParams.get("after")
   if (raw === null) return 0
   const after = Number(raw)
-  return Number.isSafeInteger(after) && after >= 0 && String(after) === raw ? after : undefined
+  return cursorAccepted(raw, after) ? after : undefined
 }
 
 function json(body: unknown, status = 200) {

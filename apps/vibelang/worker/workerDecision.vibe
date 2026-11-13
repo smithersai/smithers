@@ -145,3 +145,13 @@ export function cleanupStep(tag: string): CleanupStep {
 export function driveRewakes(tag: string): boolean {
   return tag === "Settled"
 }
+
+/**
+ * A stream cursor is a canonical decimal, with no sign, leading zero, fraction or exponent, of a safe integer. `value`
+ * is the caller's `Number(raw)`. Equivalent to the old `Number.isSafeInteger(n) && n >= 0 && String(n) === raw`.
+ */
+//@ verify
+//@ ensures \result == (\matches("^(?:0|[1-9][0-9]*)$", raw) && value <= 9007199254740991)
+export function cursorAccepted(raw: string, value: number): boolean {
+  return /^(?:0|[1-9][0-9]*)$/.test(raw) && value <= 9007199254740991
+}

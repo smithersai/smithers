@@ -36,7 +36,8 @@ describe("the API's routes", () => {
     const after = (query: string) => afterOf(new URL(`https://x.test/p${query}`))
     expect(after("")).toBe(0)
     expect(after("?after=12")).toBe(12)
-    for (const bad of ["-1", "1.5", "01", "1e3", "x", "", "9007199254740992"]) expect(after(`?after=${bad}`), bad).toBeUndefined()
+    for (const bad of ["-1", "-0", "+1", " 1", "1.5", "1.0", "01", "00", "1e3", "0x10", "x", "", "9007199254740992", "9007199254740993", "99999999999999999999"]) expect(after(`?after=${bad}`), bad).toBeUndefined()
+    expect([after("?after=0"), after("?after=9007199254740991")]).toEqual([0, 9007199254740991])
   })
 })
 

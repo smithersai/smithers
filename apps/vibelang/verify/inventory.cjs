@@ -257,6 +257,7 @@ const functionBoundaries = {
   "src/history/MockMythical.vibe:digestOf": 'Provides the WebCrypto digest service; no decision.',
   "src/history/MockMythical.vibe:MockMythical": 'Calls the proved executionKey (an operation\u2019s id by its digest, else the next count; 0018 third-lane batch 23). Pages forward to the proved page decisions; the engine, flows, digest and Ref are host boundaries.',
   // Lane vl-proveall3, batch 22: main as a fold reads it.
+  "worker/Http.vibe:afterOf": "Calls the proved cursorAccepted (workerDecision, 0018 third-lane batch 44): a cursor is a canonical decimal of a safe integer; an absent cursor is zero. Host boundaries: URLSearchParams and Number.",
   "worker/MainLog.vibe:newCommits": 'Calls the proved newCommitOrder (mainLogDecision, 0018 third-lane batch 22) over each commit\u2019s id and parent ids, then formats the chosen commits.',
   "worker/MainLog.vibe:toCommit": 'Formats a commit: the 12-character id prefix and the title through seed titleOf (its proved first-line scan and native trim are recorded at titleOf). No decision.',
   "worker/MainLog.vibe:githubMain": 'Calls the proved pageAccepted (status 200) and readsAnotherPage (only after a full page, below MAX_PAGES), and newCommits (0018 third-lane batch 22). HTTP, headers, JSON and Schema decoding remain host boundaries.',

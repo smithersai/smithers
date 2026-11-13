@@ -924,7 +924,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-4074 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+4075 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -4351,31 +4351,31 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/HistoryTools.vibe:40` | `historyTools/handler` | effectful shell | The agent's history tools forward to the history flows with an operation id from the call (SandboxTools.operation); the History object decides who may act through the proved flowMachine. Nothing to decide here. |
 | `worker/HistoryTools.vibe:43` | `historyTools/handler` | effectful shell | The agent's history tools forward to the history flows with an operation id from the call (SandboxTools.operation); the History object decides who may act through the proved flowMachine. Nothing to decide here. |
 | `worker/HistoryTools.vibe:47` | `historyTools/handler` | effectful shell | The agent's history tools forward to the history flows with an operation id from the call (SandboxTools.operation); the History object decides who may act through the proved flowMachine. Nothing to decide here. |
-| `worker/Http.vibe:59` | `eventStream` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:60` | `eventStream/callback@60` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:63` | `eventStream/callback@63` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:60` | `eventStream` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:61` | `eventStream/callback@61` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
 | `worker/Http.vibe:64` | `eventStream/callback@64` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:71` | `afterOf` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:78` | `json` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:82` | `answer` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:87` | `answer/callback@87` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:65` | `eventStream/callback@65` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:72` | `afterOf` | pure logic | Calls the proved cursorAccepted (workerDecision, 0018 third-lane batch 44): a cursor is a canonical decimal of a safe integer; an absent cursor is zero. Host boundaries: URLSearchParams and Number. |
+| `worker/Http.vibe:79` | `json` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:83` | `answer` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
 | `worker/Http.vibe:88` | `answer/callback@88` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:96` | `answer/callback@96` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:89` | `answer/callback@89` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
 | `worker/Http.vibe:97` | `answer/callback@97` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:103` | `answer/callback@103` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:105` | `answer/callback@105` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:121` | `decodeWrite` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:133` | `answerHistory` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:143` | `answerHistory/callback@143` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:146` | `answerHistory/callback@146` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:153` | `handle` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:159` | `handle/callback@159` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:159` | `handle/callback@159/callback@159` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:167` | `handle/callback@167` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:168` | `handle/callback@167/callback@168` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:178` | `handleConversations` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:184` | `handleConversations/callback@184` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
-| `worker/Http.vibe:185` | `handleConversations/callback@184/callback@185` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:98` | `answer/callback@98` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:104` | `answer/callback@104` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:106` | `answer/callback@106` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:122` | `decodeWrite` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:134` | `answerHistory` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:144` | `answerHistory/callback@144` | pure logic | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:147` | `answerHistory/callback@147` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:154` | `handle` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:160` | `handle/callback@160` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:160` | `handle/callback@160/callback@160` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:168` | `handle/callback@168` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:169` | `handle/callback@168/callback@169` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:179` | `handleConversations` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:185` | `handleConversations/callback@185` | effectful shell | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
+| `worker/Http.vibe:186` | `handleConversations/callback@185/callback@186` | wiring | Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries. |
 | `worker/index.vibe:16` | `notFound` | wiring | Calls the proved siteRoute, assetPath and assetFallback (workerDecision) and wikiPath; the asset binding, the service binding and the Content-Type read are host boundaries. |
 | `worker/index.vibe:21` | `fetch` | effectful shell | Calls the proved siteRoute, assetPath and assetFallback (workerDecision) and wikiPath; the asset binding, the service binding and the Content-Type read are host boundaries. |
 | `worker/Issues.vibe:35` | `issueWriteKey` | effectful shell | A SHA-256 digest of the request's identity as JSON: stable across recovery executions; JSON and the digest are host boundaries, nothing to decide. |
@@ -4969,6 +4969,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/workerDecision.vibe:122` | `settledReported` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `worker/workerDecision.vibe:136` | `cleanupStep` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `worker/workerDecision.vibe:145` | `driveRewakes` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `worker/workerDecision.vibe:155` | `cursorAccepted` | proved | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `scripts/agent-context.vibe:12` | `callback@12` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `scripts/agent-context.vibe:18` | `generated` | effectful shell | Formats the generated module from the installed skill and version; the frontmatter regexp (regexp.ts), files and JSON encoding are host boundaries. No decision. |
 | `scripts/agent-context.vibe:34` | `generated/callback@34` | pure logic | Formats the generated module from the installed skill and version; the frontmatter regexp (regexp.ts), files and JSON encoding are host boundaries. No decision. |
@@ -7185,7 +7186,7 @@ The remaining branches, by kind:
 | Issues and wiki authority: read is open, any other operation needs a signed-in person | `Accounts.vibe:428, 446` | Proved, batch 43 (`openOperation`) |
 | Request body limits and methods | `Accounts.vibe:456, 467` (2,048 bytes), `Issues.vibe:289–291` (GET or POST, 32 KiB), `Http.vibe:104` (1,024 units) | Open |
 | Agent and anonymous refusals | `Accounts.vibe:185, 273` (an agent has no connection and may not connect), `Accounts.vibe:466, 486` (no actor id) | Open |
-| Cursor and text admission | `Http.vibe:75` (`afterOf`: a safe nonnegative decimal), `Http.vibe:146` (an empty history write) | Open |
+| Cursor and text admission | `Http.vibe:75` (`afterOf`: a safe nonnegative decimal), `Http.vibe:146` (an empty history write) | Cursor proved, batch 44 (`cursorAccepted`); the empty write is the body default (`{}`), decoded by the write's schema: no decision |
 | Budget accounting in the object | `Budget.vibe:64–96`, `CallBudget.vibe:58, 64` | Guards proved, batch 42 (`reserveAdmissible`, `settleAdmissible`: exactly the kernel's preconditions). Open: the write-once reservation and the outcome label in `admit`, and `CallBudget`'s usable count |
 | Run and machine lifecycle | `ActionRuns.vibe:138, 140`, `ActionDirectory.vibe:61, 79, 91, 100`, `machineObject.vibe:64–66` | Open |
 | Assignee membership and approval | `Issues.vibe:239, 245` (case-insensitive login match), `Issues.vibe:251–253` | Host boundary for `toLowerCase` (Unicode casing); the "accept needs Accepted" check reads the proved `approveVip` |
