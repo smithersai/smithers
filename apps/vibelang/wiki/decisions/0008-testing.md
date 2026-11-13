@@ -75,10 +75,12 @@ The fault host is an additional HTML entry **only in Vite's e2e build mode**; it
 Playwright always starts that local host, including when `E2E_BASE_URL` sends product tests to a deployment. Fault
 cases explicitly target the local host so test-only fault controls never enter deployed code.
 
-`node --import=vibelang/register test/check-recovery-mutations.vibe --browser` removes the gap branch, then separately removes the reconnect
-epoch/cursor update. Each suite must fail exactly the cases the mutation breaks (drop for the gap branch; disconnect and
-end for reconnect) while its other cases pass. It restores the
-source however the run ends; run it with no other build/test process using the workspace. Set `VIBELANG_MUTATION_LOG_DIR` to
+`node --import=vibelang/register test/check-recovery-mutations.vibe --browser` disables the gap branch in
+`src/web/updateDecision.vibe`'s `eventReceived`, then separately removes the epoch/cursor update in
+`src/web/tourDecision.vibe`'s `reconnected`. Each suite must fail exactly the cases the mutation breaks (`drop` for
+the gap branch; `disconnect` and `end` for reconnect) while its other cases pass. It restores each decision file
+before moving to the next mutation, including when a suite fails or is interrupted. Run it with no other build/test
+process using the workspace. Set `VIBELANG_MUTATION_LOG_DIR` to
 retain the four failure logs. The browser fix here leaves the shared core and its convergence property to the core
 lane.
 

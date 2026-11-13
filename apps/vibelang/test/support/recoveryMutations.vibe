@@ -1,0 +1,22 @@
+// The recovery checker's faults and strict failure oracle. Each fault targets the production decision that owns it.
+export const MUTATIONS = [
+  {
+    name: "gap", file: "updateDecision.vibe", breaks: [/\bdrop\b/],
+    mutate: (source: string) => source.replace("  if (facts.gap) return", "  if (false) return"),
+  },
+  {
+    name: "reconnect", file: "tourDecision.vibe", breaks: [/\bdisconnect\b/, /\bend\b/],
+    mutate: (source: string) => source.replace(
+      '  return { ...state, stream: "open", connection: "Reconnecting", epoch: state.epoch + 1, from: seq }',
+      '  return { ...state, stream: "open", connection: "Reconnecting", epoch: state.epoch, from: state.from }',
+    ),
+  },
+] as const
+
+/** Accept only failures of all affected cases, with other cases passing and no unrelated failures. */
+export function killed(output: string, breaks: ReadonlyArray<RegExp>) {
+  const plain = output.replace(/\x1b\[[0-9;]*m/g, "")
+  const failed = plain.split("\n").filter((line) => /^\s*[×✘]/.test(line))
+  return failed.length === breaks.length && breaks.every((name) => failed.some((line) => name.test(line))) &&
+    /[1-9]\d* passed/.test(plain)
+}

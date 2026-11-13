@@ -1,7 +1,8 @@
 import { it } from "@effect/vitest"
 import { Command, click, scene, given, expect, role, Subscription, text } from "foldkit/scene"
-import { init, update, Message, SandboxAction } from "../src/web/main.vibe"
+import { init, update, Message, SandboxAction, SignInAccount, signedOut } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
+import { sandboxPane } from "../src/web/sandboxView.vibe"
 const home = init({ session: "scene", name: "Ada", mode: "mock" }).model
 const snapshot = { id: "", generation: 0, sequence: 0, status: "stopped" as const, role: "contributor" as const, allowance: 600, remaining: 600, used: 0, resetAt: 100, output: "" }
 const chat = { ...home, surface: "chat" as const, sandbox: snapshot }
@@ -59,4 +60,26 @@ it("an uncertain command reports failure without offering an unsafe automatic re
   scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandboxRequest: 1, sandboxBusy: true, sandboxOperation: "command", sandbox: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "running" } }),
     Subscription.emit(Message.FailedSandbox({ conversation: "home", request: 1, reason: "unavailable" })),
     expect(role("alert")).toHaveText("Command failed"), expect(role("button", { name: "Retry" })).toBeAbsent())
+})
+
+for (const mode of ["mock", "live"] as const) {
+  it("the sandbox sign-in uses the shared account command in " + mode + " mode", () => {
+    scene({ update, view: sandboxPane }, given({ ...chat, mode, sandboxPane: "pane", sandbox: { ...snapshot, role: "viewer" } }),
+      click(role("button", { name: "Sign in" })),
+      Command.expectExact(SignInAccount({ mock: mode === "mock" })),
+      expect(role("button", { name: "Signing in…" })).toBeDisabled(),
+      expect(role("link", { name: "Sign in" })).toBeAbsent(),
+      Command.resolve(SignInAccount, Message.AccountFailed()),
+      expect(role("button", { name: "Sign in" })).toBeEnabled())
+  })
+}
+it("the sandbox keeps sign-in disabled while an account request is pending", () => {
+  scene({ update, view: sandboxPane }, given({ ...chat, sandboxPane: "pane", sandbox: { ...snapshot, role: "viewer" }, account: { ...signedOut, pending: true } }),
+    expect(role("button", { name: "Signing in…" })).toBeDisabled())
+})
+it("an unavailable live sandbox sign-in stays on the shared refusal path", () => {
+  scene({ update, view: sandboxPane }, given({ ...chat, mode: "live", sandboxPane: "pane", sandbox: { ...snapshot, role: "viewer" }, account: { ...signedOut, identity: { ...signedOut.identity, available: false } } }),
+    click(role("button", { name: "Sign in" })),
+    Command.expectExact(),
+    expect(role("button", { name: "Sign in" })).toBeEnabled())
 })

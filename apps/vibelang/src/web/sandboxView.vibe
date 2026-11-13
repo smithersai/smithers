@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ALLOWANCES, mayStart } from "../core/sandboxDecision.vibe"
 import { roleName } from "./accountViewDecision.vibe"
 import { minutesTone, sandboxPaneView } from "./viewDecision.vibe"
-import { Message, type Message as AppMessage, type Model } from "./main.vibe"
+import { accountOf, Message, type Message as AppMessage, type Model } from "./main.vibe"
 type H = HtmlBuilder<AppMessage>
 
 function icon(h: H, max = false): Html {
@@ -15,6 +15,7 @@ function minutes(model: Model, h: H, suffix = ""): Html {
 }
 export function sandboxPane(model: Model, h: H): Html {
   const snapshot = model.sandbox
+  const account = accountOf(model)
   const running = snapshot?.status === "running"
   const pane = sandboxPaneView(model.sandboxPane ?? "", running, !!model.sandboxBusy, mayStart(snapshot?.role ?? "viewer"), snapshot?.role ?? "", model.sandboxOperation ?? "", snapshot?.remaining === 0)
   if (!pane.open) return h.button([h.Class("vl-pane"), h.Type("button"), h.AriaLabel("Sandboxes"), h.OnClick(Message.ClickedSandboxes())], [icon(h), h.span([h.Class("vl-pane-text")], ["Sandboxes"]), ...(snapshot ? [minutes(model, h)] : []), icon(h, true)])
@@ -31,7 +32,7 @@ export function sandboxPane(model: Model, h: H): Html {
         h.button([h.Type("button"), h.Class("vl-docs-toggle"), h.AriaLabel(max ? "Minimize Sandboxes" : "Maximize Sandboxes"), h.OnClick(Message.MaximizedSandboxes())], [icon(h, true)]),
       ]),
     ]),
-    ...(pane.gate !== "ok" ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [pane.gate === "sign-in" ? "Sign in to start a sandbox" : "Contributor required"]), ...(pane.gate === "sign-in" ? [h.a([h.Class("sui-button sui-empty-action"), h.Href("/api/auth/sign-in")], ["Sign in"])] : [])])] : [
+    ...(pane.gate !== "ok" ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [pane.gate === "sign-in" ? "Sign in to start a sandbox" : "Contributor required"]), ...(pane.gate === "sign-in" ? [h.button([h.Class("sui-button sui-empty-action"), h.Type("button"), h.Disabled(account.pending), h.OnClick(Message.ClickedSignIn())], [account.pending ? "Signing in…" : "Sign in"])] : [])])] : [
       ...(!running ? [h.div([h.Class("vl-sb-body")], [
         h.div([h.Class("vl-sb-head")], [
           h.div([h.Class("sui-kpi vl-sb-kpi")], [h.span([h.Class("sui-kpi-value")], [String(remaining)]), h.span([h.Class("sui-kpi-label")], [`min left of ${allowance}`]),

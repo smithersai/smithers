@@ -1,0 +1,37 @@
+// The mutation checker must still reach the production decisions after refactors, and reject misleading suite output.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { MUTATIONS, killed } from "./support/recoveryMutations.vibe"
+
+for (const mutation of MUTATIONS) {
+  it.effect(mutation.name + " mutates its current production decision once", () => effect {
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const file = try path.fromFileUrl(new URL("../src/web/" + mutation.file, import.meta.url))
+      const original = try fs.readFileString(file)
+      const broken = mutation.mutate(original)
+      try Effect.try(() => {
+        expect(broken).not.toBe(original)
+        expect(mutation.mutate(broken)).toBe(broken)
+      })
+    }
+  })
+}
+
+it("accepts exactly the affected runtime and browser failures", () => {
+  expect(killed("\x1b[31m  × real runtime recovers from drop\x1b[0m\n2 passed", MUTATIONS[0].breaks)).toBe(true)
+  expect(killed("  ✘ 1 disconnect recovers\n  ✘ 2 end recovers\n7 passed", MUTATIONS[1].breaks)).toBe(true)
+})
+
+it("refuses missing failures, unrelated failures, duplicate failures and suites with nothing passing", () => {
+  for (const output of [
+    "3 passed",
+    "× unrelated failure\n2 passed",
+    "× drop recovers\n× unrelated failure\n1 passed",
+    "× drop recovers\n0 passed",
+    "× drop recovers",
+  ]) expect(killed(output, MUTATIONS[0].breaks)).toBe(false)
+  expect(killed("× disconnect recovers\n2 passed", MUTATIONS[1].breaks)).toBe(false)
+  expect(killed("× disconnect recovers\n× disconnect recovers\n1 passed", MUTATIONS[1].breaks)).toBe(false)
+})

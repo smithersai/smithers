@@ -218,3 +218,9 @@ VIBELANG_SANDBOX_MODE=record VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.
 # Container calls too: deploy with VIBELANG_SANDBOX_CONTAINER_MODE=record, then the record run above also writes test/recordings/containers/*.json
 pnpm destroy:sandboxes-test --yes                                      # removes the stage
 ```
+
+## Sign-in from the pane
+
+The Viewer's `Sign in` button dispatches the same `ClickedSignIn` message as the header. It stays disabled during an
+account request. Mock mode chooses the offline New identity; Live mode uses the existing sign-in availability check
+before navigating. The sandbox scene and browser tests cover the pane's sign-in path (VL-13, VL-30).

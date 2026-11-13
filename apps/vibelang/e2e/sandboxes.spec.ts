@@ -26,7 +26,7 @@ test("sandbox: write, stop, restart and read bytes", async ({ page }) => {
   await expect(page.getByRole("table", { name: "Minutes by role" })).toBeHidden()
 })
 
-test("signed out has no start control", async ({ page }) => {
+test("signed out can sign in from Sandboxes without leaving Mock mode", async ({ page }) => {
   await page.goto("/?agent=mock")
   await page.getByRole("button", { name: "Ask the agent" }).click()
   await page.getByRole("dialog").getByRole("textbox").fill("hello")
@@ -34,6 +34,13 @@ test("signed out has no start control", async ({ page }) => {
   await page.getByRole("button", { name: "Sandboxes", exact: true }).click()
   await expect(page.getByText("Sign in to start a sandbox", { exact: true })).toBeVisible()
   await expect(page.getByRole("button", { name: "New sandbox" })).toHaveCount(0)
+  const location = page.url()
+  await page.getByRole("region", { name: "Sandboxes" }).getByRole("button", { name: "Sign in", exact: true }).click()
+  await expect(page.getByRole("combobox", { name: "Visit as" })).toHaveValue("new")
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Sandboxes", exact: true }).click()
+  await expect(page.getByText("Contributor required", { exact: true })).toBeVisible()
+  expect(page.url()).toBe(location)
 })
 
 test("the role picker changes sandbox authority and keeps each person's files separate", async ({ page }) => {
