@@ -117,7 +117,14 @@ it("interrupts an admission wait without another store read", async () => {
   )
 })
 
-for (const event of ["control.run.cancelled", "control.run.failed", "control.run.pending"] as const) {
+for (
+  const event of [
+    "control.run.cancelled",
+    "control.run.failed",
+    "control.run.pending",
+    "control.run.completed"
+  ] as const
+) {
   it(`does not admit after ${event}`, async () => {
     await Effect.runPromise(
       Effect.gen(function*() {

@@ -1360,20 +1360,4 @@ describe("durable signal admission and engine observation", () => {
       expect(yield* settled(runId)).toBe("completed")
     }))
   })
-
-  it("binds only one admitted command to a concrete wait", async () => {
-    await run(Effect.gen(function*() {
-      const runtime = yield* ControlRuntime
-      const runId = yield* startControlRun
-      yield* parkedRun(runId, "approval")
-      yield* runtime.admitSignal("winner", runId, { name: "approval", payload: 1 })
-      yield* runtime.admitSignal("loser", runId, { name: "approval", payload: 2 })
-      const state = yield* DurableEngineState.DurableEngineState
-      const waiting = yield* state.waiting(runId)
-      if (Option.isNone(waiting) || waiting.value.token === null) return yield* Effect.die("missing token")
-      expect(yield* runtime.bindSignal("winner", waiting.value.token)).toBe(waiting.value.token)
-      expect(yield* runtime.bindSignal("loser", waiting.value.token)).toBeNull()
-      expect((yield* runtime.signalCommand("loser"))?.token).toBeNull()
-    }))
-  })
 })

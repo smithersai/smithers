@@ -149,7 +149,7 @@ const launchInput: ControlExecutor.Launch = {
 const accepted = { _tag: "Accepted" as const, seq: JournalEvent.Seq.make(1), sourceSeq: JournalEvent.SourceSeq.make(1) }
 
 /**
- * The ten `ControlRuntime` members the executor actually reaches, and no
+ * The `ControlRuntime` members the executor actually reaches, and no
  * others. Writing the stub against this shape rather than the whole service
  * states the executor's real dependency surface: a run driver reads the run
  * and its plan, registers its own fiber for cancellation, registers and reads
