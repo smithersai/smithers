@@ -41,6 +41,148 @@ const dispatch = (execute: ActionPersistence.Dependencies["execute"]) =>
   })
 
 describe("artifact and entry publication frontiers", () => {
+  it("reopens a published attempt without repeating publication or its write transaction", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cache-publication-replay-"))
+    const db = join(root, "engine.sqlite")
+    const local = ArtifactStore.makeMemory()
+    const remote = ArtifactStore.makeMemory()
+    const counts = { artifacts: 0, entries: 0, puts: 0, transactions: 0, bodies: 0 }
+    const sync = ArtifactSync.make({ local, remote })
+    const entries = CacheSync.makeLocal()
+    let original: Option.Option<CacheStore.CacheEntry> = Option.none()
+    try {
+      for (let drive = 0; drive < 3; drive++) {
+        await Effect.runPromise(withCrypto(
+          Effect.gen(function*() {
+            const cache = yield* CacheStore.CacheStore
+            const journal = yield* Journal.Journal
+            if (drive === 0) {
+              yield* activate("publication")
+              yield* local.put(bytes)
+            } else {
+              yield* journal.recall!("publication" as never)
+            }
+            const before = { ...counts }
+            let reads = 0
+            const result = yield* dispatch(() =>
+              Effect.sync(() => {
+                counts.bodies++
+                return "settled"
+              })
+            ).pipe(
+              Effect.provideService(ArtifactSync.ArtifactSync, {
+                ...sync,
+                publish: (digests) =>
+                  Effect.suspend(() => {
+                    counts.artifacts++
+                    return sync.publish(digests)
+                  })
+              }),
+              Effect.provideService(CacheSync.CacheSync, {
+                publishEntry: (entry) =>
+                  Effect.suspend(() => {
+                    counts.entries++
+                    return entries.publishEntry(entry)
+                  })
+              }),
+              Effect.provideService(CacheStore.CacheStore, {
+                ...cache,
+                get: (key, options) =>
+                  Effect.suspend(() => {
+                    reads++
+                    return cache.get(key, options)
+                  }),
+                put: (entry) =>
+                  Effect.suspend(() => {
+                    counts.puts++
+                    return cache.put(entry)
+                  })
+              }),
+              Effect.provideService(Journal.Journal, {
+                ...journal,
+                transact: (effect) =>
+                  Effect.suspend(() => {
+                    counts.transactions++
+                    return journal.transact(effect)
+                  })
+              })
+            )
+            expect(result).toBe("settled")
+            expect(reads).toBe(1)
+            const head = yield* cache.get(sha256("publication"))
+            if (drive === 0) {
+              original = head
+              expect(Option.isSome(head)).toBe(true)
+              expect(counts).toMatchObject({ artifacts: 1, entries: 1, puts: 1, bodies: 1 })
+              expect(counts.transactions).toBeGreaterThan(0)
+            } else {
+              expect(counts).toEqual(before)
+              expect(head).toEqual(original)
+            }
+            expect(yield* remote.findMissing([digest])).toEqual([])
+          }).pipe(Effect.provide(Layer.mergeAll(TestStores.layerAt(db), jj, boundary)), Effect.scoped)
+        ))
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  for (const head of ["missing", "foreign", "different-result", "different-meta"] as const) {
+    it.effect(`still converges or reports divergence for a ${head} cache head`, () =>
+      withCrypto(
+        Effect.gen(function*() {
+          yield* activate("publication")
+          const cache = yield* CacheStore.CacheStore
+          yield* dispatch(() => Effect.succeed("settled"))
+          const original = Option.getOrThrow(yield* cache.get(sha256("publication")))
+          yield* cache.evict(original.keyDigest)
+          if (head !== "missing") {
+            yield* cache.put({
+              ...original,
+              recordedRunId: head === "foreign" ? "another-run" : original.recordedRunId,
+              recordedEventSeq: original.recordedEventSeq + 1,
+              result: head === "different-result" ? "divergent" : original.result,
+              meta: head === "different-meta" ? { ...original.meta as object, diff: "divergent" } : original.meta
+            })
+          }
+          const before = yield* cache.get(original.keyDigest)
+          let puts = 0
+          const result = yield* dispatch(() => Effect.die("body repeated")).pipe(
+            Effect.provideService(CacheStore.CacheStore, {
+              ...cache,
+              put: (entry) =>
+                Effect.suspend(() => {
+                  puts++
+                  return cache.put(entry)
+                })
+            }),
+            Effect.exit
+          )
+          expect(puts).toBe(1)
+          if (head === "different-result") {
+            expect(result).toMatchObject({
+              _tag: "Failure",
+              cause: {
+                reasons: [{
+                  _tag: "Fail",
+                  error: {
+                    _tag: "@smthrs/engine-store/CacheConflictDetected",
+                    code: "cache_conflict_detected",
+                    keyDigest: original.keyDigest,
+                    recordedRunId: "publication"
+                  }
+                }]
+              }
+            })
+          } else {
+            expect(result).toEqual(Exit.succeed("settled"))
+          }
+          expect(yield* cache.get(original.keyDigest)).toEqual(head === "missing" ? Option.some(original) : before)
+        }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jj, boundary)), Effect.scoped)
+      ))
+  }
+
   for (
     const fault of [
       "terminal-before-artifacts",

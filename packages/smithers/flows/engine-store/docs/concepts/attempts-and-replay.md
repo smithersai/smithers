@@ -140,6 +140,11 @@ already recorded disagrees with what this run produced, that divergence is not
 resolved silently: it goes to the `Inconsistency` receiver, which is strict by
 default and fails the dispatch.
 
+When the current cache head already holds the same run's result and metadata,
+replay skips artifact publication, the cache write transaction and entry
+publication. A missing head still converges from the durable attempt, even if
+the journal already holds its provenance record.
+
 ## Corrupt evidence on a succeeded row is quarantined, not evicted
 
 A shared cache row whose bytes no longer hash to their recorded digest is

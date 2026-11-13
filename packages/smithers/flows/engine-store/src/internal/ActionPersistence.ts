@@ -6,6 +6,7 @@
  * @since 0.1.0
  */
 
+import { Canonical } from "@smthrs/canonical"
 import { Sha256 } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime, RunMetrics, SpanFailure } from "@smthrs/flow"
@@ -862,6 +863,8 @@ interface Dispatch extends Executor {
   readonly replay: ReplayReport
   readonly attempts: AttemptStore.Service
   readonly cache: CacheStore.Service
+  /** The admissible head already read for this dispatch's completion convergence. */
+  observedCache: Option.Option<CacheStore.CacheEntry>
   readonly journal: Journal.Service
   readonly runs: RunStore.Service
   /** The cache policy the dispatched declaration annotated, if any. */
@@ -1870,6 +1873,7 @@ const openDispatch = (executor: Executor, input: ActionInput, replay: ReplayRepo
       replay,
       attempts,
       cache,
+      observedCache: Option.none(),
       journal,
       runs,
       policy,
@@ -2079,6 +2083,7 @@ const serveFromCache = (
       return Option.none<unknown>()
     }
     if (Option.isSome(existing) && orphaned === undefined) {
+      dispatch.observedCache = cached
       return Option.none<unknown>()
     }
     return yield* verifyHit(dispatch, metadata, cached.value, candidate.evidence, orphaned)
@@ -2613,8 +2618,9 @@ const patchQuarantined = (dispatch: Dispatch, meta: AttemptMeta) => {
  * Converge the cache with the durable completion: a crash between
  * `attempts.finish` and `cache.put` otherwise leaves the sealed
  * result permanently missing from the shared cache (issue #24).
- * Reaching this branch with an eligible declaration means `cache.get`
- * above missed or was unfit for replay.
+ * A settled attempt takes precedence even when the cache has a valid head.
+ * Skip publication when that head already holds this run's completion; a
+ * missing or different head still takes the normal convergence path.
  * Only a row whose recorded read set was verified at prepare
  * time may converge into the shared cache (issue #106): an
  * unverified result was computed against content the key does
@@ -2636,6 +2642,18 @@ const convergeCache = (
     const admission = CacheAdmission.completion(dispatch.cacheDeclaration, meta, withheld)
     if (admission._tag !== "PublishCompletion") {
       return
+    }
+    const observed = dispatch.observedCache
+    if (Option.isSome(observed) && observed.value.recordedRunId === dispatch.deps.runId) {
+      const expected = yield* Schema.decodeUnknownEffect(Canonical)({
+        meta: admission.meta,
+        result: row.outcome
+      }).pipe(Effect.orDie)
+      const held = yield* Schema.decodeUnknownEffect(Canonical)({
+        meta: observed.value.meta,
+        result: observed.value.result
+      }).pipe(Effect.orDie)
+      if (held === expected) return
     }
     yield* recordCache(dispatch, {
       result: row.outcome,
