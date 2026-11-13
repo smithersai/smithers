@@ -5,9 +5,8 @@ import { SecureRandom } from "effect/crypto"
 import * as Boundary from "@effect/platform-node/NodeRuntime"
 import { Action, Interpreter } from "@smthrs/flow"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
+import { HostLiveness, NodeHost, NodeRuntime } from "@smthrs/platform-node"
 import { ProcessLedger } from "@smthrs/kernel"
-import { Ownership } from "@smthrs/run-store"
 import flow, { layer } from "./flow.ts"
 
 export effect function main() {
@@ -29,7 +28,7 @@ export effect function main() {
   )
   const host = Layer.merge(NodeHost.layerContainedAt(root, { graceMs: 1000 }).pipe(Layer.provide(ledger)), NodeHost.NodeCrypto.layer)
   const runtime = NodeRuntime.layer(
-    { filename, workspaceRoot: root, owner: { hostId }, isAlive: Ownership.sameHostPidProbe },
+    { filename, workspaceRoot: root, owner: { hostId }, isAlive: HostLiveness.sameHostPidProbe },
     StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registered,
   ).pipe(Layer.provide(host))
   try Console.log(`Fuzz run: ${executionId}`)
