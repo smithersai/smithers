@@ -47,6 +47,9 @@
 
 ### Fixed
 
+- Corrected the catalog interruption fields, memory binding identity, and
+  named-root steering boundaries in the chain reference.
+
 - Interrupting a run while a `settleOnInterrupt` call is settling still
   reports a receipt the journal refused. Effect 4.0.4 removes a typed failure
   from an interrupted fiber's cause once the unwind passes a recovery handler,

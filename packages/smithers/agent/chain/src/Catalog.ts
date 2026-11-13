@@ -67,8 +67,8 @@ export interface Entry {
   readonly settleOnInterrupt?: boolean | undefined
   readonly handler: (payload: unknown, slot?: CallSlot) => Effect.Effect<unknown, CallError>
   /**
-   * An optional declaration digest overriding the default name+description
-   * digest — richer catalogs (the registry) pin their full declaration.
+   * An optional declaration digest overriding the default digest of name,
+   * description, and capabilities. Richer catalogs pin their full declaration.
    */
   readonly digest?: string | undefined
   /**

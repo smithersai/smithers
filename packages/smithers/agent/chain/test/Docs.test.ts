@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Author from "../src/Author.ts"
 import * as Authorize from "../src/Authorize.ts"
+import type * as Catalog from "../src/Catalog.ts"
 import * as Chain from "../src/Chain.ts"
 import * as chain from "../src/index.ts"
 import * as Journal from "../src/Journal.ts"
@@ -159,6 +160,58 @@ describe("package documentation", () => {
         .map((member) => `${namespace}.${member}`)
     })
     expect(undocumented).toEqual([])
+  })
+
+  // These interfaces have no runtime keys. Exhaustive maps make added
+  // fields a typecheck failure until their reference entries are covered.
+  it.each(
+    [
+      [
+        "CallSlot",
+        {
+          chain: "chain: string",
+          link: "link: number",
+          ordinal: "ordinal: number",
+          key: "key?: CallKey.CallKey",
+          signal: "signal?: AbortSignal"
+        } satisfies Record<keyof Catalog.CallSlot, string>
+      ],
+      [
+        "Entry",
+        {
+          name: "name: string",
+          description: "description: string",
+          handler: "handler: (payload: unknown, slot?: CallSlot) => Effect<unknown, CallError>",
+          digest: "digest?: string",
+          capabilities: "capabilities?: ReadonlyArray<string>",
+          settleOnInterrupt: "settleOnInterrupt?: boolean"
+        } satisfies Record<keyof Catalog.Entry, string>
+      ]
+    ] as const
+  )("documents every Catalog.%s field", (name, fields) => {
+    const catalog = api.split("## `Catalog`")[1]?.split("\n## ")[0] ?? ""
+    const model = catalog.split(`- \`${name}\`:`)[1]?.split(/\n(?:- `|### )/)[0] ?? ""
+    const flat = model.replace(/\s+/g, " ")
+    for (const signature of Object.values(fields)) {
+      expect(flat, `Catalog.${name}`).toContain(`\`${signature}\``)
+    }
+  })
+
+  it("documents memory bindings as contract and policy identities", () => {
+    const guide = read("docs", "guides", "registry-and-memory.md").replace(/\s+/g, " ")
+    expect(guide).toContain("`MemoryEntries.bindingDigest(contract, policy)`")
+    expect(guide).toContain("contract or policy")
+  })
+
+  it("documents named and unnamed root steering boundaries", () => {
+    const steering = api.split("## `Steering`")[1] ?? ""
+    const drain = steering.split("- `drain(boundary: string):")[1]?.split("\n- `Steering")[0] ?? ""
+    const root = steering.split("Only the root chain drains,")[1] ?? ""
+    for (const boundary of [drain, root]) {
+      const flat = boundary.replace(/\s+/g, " ")
+      expect(flat).toContain("`chain/link/ordinal`")
+      expect(flat).toContain("`link/ordinal` for an unnamed root")
+    }
   })
 
   // Read out of the schemas, not transcribed: a code added to or removed

@@ -87,9 +87,9 @@ failure, a result outside the output contract fails with `invalid_output`,
 and a store failure carries the memory package's stable error code as the
 call's `cause`.
 
-Each entry's digest is `MemoryEntries.contractDigest` over the shipped
-contract, so a memory-package upgrade that changes the contract re-keys every
-call that names it instead of replaying stale results.
+Each entry's digest is `MemoryEntries.bindingDigest(contract, policy)` over
+the shipped contract and the bound policy. Changing the contract or policy
+re-keys every call that names the entry instead of replaying stale results.
 
 One composition rule: hosts that also mount the memory flows through the
 registry must bind them there OR here, not both. A catalog holding two

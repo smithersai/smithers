@@ -12420,12 +12420,23 @@ The catalog of entries a script may call. Gate 3 is membership in it.
 
 ### Models
 
-- `CallSlot`: `{ chain: string, link: number, ordinal: number }`. Where a
-  call sits in its chain, handed to every handler so entries that spawn
-  scoped work (sub-chains) can derive deterministic child identities.
+- `CallSlot`: where a call sits in its chain, handed to every handler so
+  entries that spawn scoped work (sub-chains) can derive deterministic child
+  identities.
+  - `chain: string`: the chain scope.
+  - `link: number`: the link index.
+  - `ordinal: number`: the call position within the link.
+  - `key?: CallKey.CallKey`: the durable replay identity of the invocation.
+  - `signal?: AbortSignal`: aborted on Stop for entries that settle before
+    interruption returns.
 - `Entry`: one entry a script may call.
   - `name: string`: the name it is reached by.
   - `description: string`: the description the model reads.
+  - `settleOnInterrupt?: boolean`: signal `slot.signal` on interruption,
+    then await the handler and its journal receipt before returning
+    cancellation. The handler must forward the signal and await cleanup; if
+    its work cannot abort, it must return its completed result. Other entries
+    retain ordinary Effect interruption.
   - `handler: (payload: unknown, slot?: CallSlot) => Effect<unknown,
     CallError>`: the handler that settles it.
   - `digest?: string`: an optional declaration digest overriding the default
@@ -12669,8 +12680,9 @@ The steering port: outside messages drained at link boundaries.
     from outside.
   - `drain(boundary: string): Effect<ReadonlyArray<string>, SteeringError>`:
     takes every queued message. The boundary names the journal position the
-    drain feeds (`link/ordinal`), so a durable binding can make the take
-    exactly-once by deduping on it.
+    drain feeds (`chain/link/ordinal` for a named root, or
+    `link/ordinal` for an unnamed root), so a durable binding can make the
+    take exactly-once by deduping on it.
 - `Steering extends Context.Service`: the steering service tag, key
   `/chain/Steering`.
 
@@ -12686,8 +12698,8 @@ The steering port: outside messages drained at link boundaries.
   in-memory steering queue. `admit` appends, `drain` takes everything and
   ignores the boundary, accepting the volatile loss window that implies.
 
-Only the root chain drains, and only at the `link/ordinal` boundary of a
-live author call. Non-empty drains journal a `SteeringDrained` event;
+Only the root chain drains, and only at the `chain/link/ordinal` boundary
+of a live author call (`link/ordinal` for an unnamed root). Non-empty drains journal a `SteeringDrained` event;
 drained lines reach every subsequent author attempt of the link as
 `[steering] <line>` context. For the design behind every entry on this page,
 see [The chain contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/contract.md).

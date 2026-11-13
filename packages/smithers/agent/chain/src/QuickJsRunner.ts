@@ -330,11 +330,10 @@ interface BridgeCall {
  *
  * That boundary exists for the WebAssembly module's aborts. A defect from
  * the handler is the host's, not the realm's, and the two must not be
- * confused: `SubChains` deliberately turns a failing child run into a
- * defect so the parent dies un-settled and can resume at the child's
- * settled prefix. Absorbing it into a journaled script failure would break
- * that contract and make the two runner bindings disagree about what kills
- * a run.
+ * confused. Absorbing a handler defect into a journaled script failure
+ * would let the chain re-author around broken host code. Child run failures
+ * instead cross the catalog boundary as typed `ChildRunError` values;
+ * `Chain` re-raises their original typed errors without settling the call.
  */
 class HandlerDefect {
   readonly defect: unknown

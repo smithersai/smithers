@@ -901,12 +901,11 @@ describe("QuickJs sealed realm", () => {
     expect(error.code).toBe("runtime")
   })
 
-  // The realm's defect boundary must not reach the caller's handler. A
-  // sub-chain deliberately turns a failing child RUN into a defect so the
-  // parent dies un-settled and resumes at the child's settled prefix
-  // (SubChains.ts); absorbing that into a journaled script failure would
-  // break the contract and make the two bindings disagree about what kills
-  // a run.
+  // The realm's defect boundary must not reach the caller's handler:
+  // absorbing a handler defect into a journaled script failure would let
+  // the chain re-author around broken host code. Child run failures use
+  // typed ChildRunError values instead; Chain re-raises the original typed
+  // error without settling the call.
   it("re-raises a defect the caller's handler raised instead of absorbing it", async () => {
     const exit = await Effect.runPromise(
       Effect.exit(
