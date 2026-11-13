@@ -188,8 +188,13 @@ after it opens gives up at `lock_timeout`, while the one it opens with waits.
 the parent-edge record and the run-row creation it guards in one, so a crash
 between them cannot leave a durable orphan edge for a run that was never
 created. Serialized write transactions are a documented requirement of the
-`DurableWriter.write` contract, not a SQLite artifact: a Postgres-backed
-implementation must use `SERIALIZABLE`.
+`DurableWriter.write` contract, not a SQLite artifact. The shipped PostgreSQL
+adapter uses `READ COMMITTED` transactions with a transaction-scoped advisory
+lock acquired before domain reads, over the schema or a named execution
+partition; nested writes use savepoints. A bare PostgreSQL `READ COMMITTED`
+client without equivalent serialization is insufficient. See
+[Run writer locks](../../../database/docs/decisions/0001-run-writer-locks.md)
+and the [API reference](../api.md#durableenginestate).
 
 `runParents(childId)` and `runChildren(parentId)` list the edges oldest first.
 The child direction is the only instance-independent way to find the runs a

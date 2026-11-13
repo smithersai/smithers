@@ -22,9 +22,9 @@ remain observations rather than verified event state.
 
 ## Commit boundary
 
-Creation, parent admission, activation, resume clearing, suspension, release,
-handoff and terminal settlement capture their fact in the transaction that
-changes the row. Parking and the guarded status CAS are one transaction. A lost
+During ordinary native-driver execution, creation, parent admission,
+activation, resume clearing, suspension, release, handoff and terminal
+settlement capture their fact in the transaction that changes the row. Parking and the guarded status CAS are one transaction. A lost
 CAS rolls the park back, preserving an earlier committed waiting row. Resume
 clears the waiting row before capturing the running fact and before executing
 work. Engine-state is the outer transaction and the journal write transaction
@@ -33,6 +33,16 @@ state adapter holds its own gate: taking the journal writer first can deadlock a
 state-first fiber waiting for that writer. The memory state gate is released
 at SQL commit before post-commit journal work; publication failures after
 commit cannot undo either committed boundary.
+
+Restore fencing is outside this producer contract.
+`DisasterRecovery.fence` clears claims and consensus leases, suspends running
+rows with `waiting_reason = 'released'`, and rotates the change-feed source in
+one transaction. It does not append a run decision, ownership event, or
+execution fact. The restored journal therefore has no release cause and can
+still describe the pre-backup owner running. A mismatch with the restored row
+keeps the lifecycle view an `unverified-observation` until a later native fact
+matches; rebuilding the change-feed projection does not invent the missing
+fact. See [Back up and restore the store](../guides/back-up-and-restore.md).
 
 Cancellation records the actual `cancel_requested_at_ms` only when a guarded
 request changes a live row. Repeat requests, missing rows and terminal rows

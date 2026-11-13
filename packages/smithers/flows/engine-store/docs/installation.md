@@ -93,8 +93,9 @@ injectable `OwnerIdentity` service, and every package it composes is
 browser-bundleable. A release that broke the bundle would fail the build before
 it shipped.
 
-Bundling is not running. The only durable backing shipped here is local SQLite
-through Node.js `node:sqlite` and `@effect/sql-sqlite-node`. A browser runs
+Bundling is not running. The durable backing is SQLite or PostgreSQL, composed
+by a host package. Node.js supplies SQLite through `node:sqlite` and
+`@effect/sql-sqlite-node`. A browser runs
 durable flows through `@smthrs/platform-browser`'s `BrowserRuntime`, in a
 dedicated worker over wa-sqlite in OPFS, and a Cloudflare Durable Object runs
 them through `@smthrs/platform-cloudflare`'s `CloudflareRuntime` over

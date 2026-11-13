@@ -107,14 +107,25 @@ that child's state when needed. Membership and ownership rules are unchanged.
 parents, ordered by parent ID and sequence within each parent. SQL and memory
 implement it; adapters may retain per-parent `runChildren` reads.
 
-Every durable write is one transaction. A lifecycle event is written inside the
-same transaction that carries the state transition it describes: the attempt
+Every durable write is one transaction. During ordinary engine execution, a
+lifecycle event is written inside the same transaction that carries the state
+transition it describes: the attempt
 row with its start and finish records, the run-row compare-and-set with its
 decision, the deferred or clock row with its record, the cache entry with its
 provenance. Either both halves are durable or neither is, so audit, sync, and
 time travel never read a hole. No local transaction makes a remote effect
 atomic, so external effects still need idempotency keys, fencing, or
 compensation.
+
+Restore fencing is an exception to lifecycle journaling.
+`DisasterRecovery.fence` clears claims and consensus leases, suspends running
+rows with `waiting_reason = 'released'`, and rotates the change-feed source in
+one transaction. It does not append a run decision, ownership event, or
+execution fact, so the restored journal has no release cause and may still show
+the pre-backup owner running. A mismatching lifecycle view remains an
+`unverified-observation` until a later native fact matches the row. Read the
+restored rows and rebuild change-feed projections against the new source; see
+[Back up and restore the store](docs/guides/back-up-and-restore.md).
 
 Closing an engine's Effect scope releases its run ownership across the full
 claim, execution, and settlement lifetime. An interrupted partial claim is

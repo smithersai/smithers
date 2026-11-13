@@ -141,6 +141,16 @@ every change between the backup and the cursor. With a new source,
 ("change cursor requires an explicit source rebuild"). Rebuild each projection
 from revision zero against the new source.
 
+This recovery operation is an exception to ordinary lifecycle journaling.
+`DisasterRecovery.fence` also deletes the restored consensus leases, but it
+does not append a run decision, ownership event, or execution fact. The journal
+has no release cause and may still describe the pre-backup owner running even
+though the restored row is suspended with `waiting_reason = 'released'`.
+Inspect the restored rows for their current status. A mismatching lifecycle
+view remains an `unverified-observation` until a later native fact matches the
+row; rebuilding the change-feed projection does not create a missing release
+record.
+
 `FenceSummary` reports `clearedClaims` and `suspendedRuns`.
 
 Fencing requires every migration recorded in the manifest to remain applied

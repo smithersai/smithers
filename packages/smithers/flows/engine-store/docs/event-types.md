@@ -8,8 +8,8 @@ description: "The shared persisted event types and child-spawn kind used by engi
 Import `{ EventTypes }` from `@smthrs/engine-store/EventTypes` or the package
 entry point. The object supplies the persisted record names shared by engine
 writers and time-travel readers: `runDecision`, `attemptStarted`,
-`snapshotIdentified`, `planRecorded`, `subgraphAppended`, `deferredCompleted`,
-and `clockScheduled`. `childSpawnKind` identifies the effect inside a child-spawn
+`attemptFinished`, `snapshotIdentified`, `planRecorded`, `subgraphAppended`,
+`deferredCompleted`, `deferredConsumed`, `clockScheduled`, and `clockCompleted`. `childSpawnKind` identifies the effect inside a child-spawn
 boundary. It is an effect kind, not a journal event type. Changing these values
 requires migrating stored history.
 

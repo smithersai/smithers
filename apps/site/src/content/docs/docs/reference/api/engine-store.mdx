@@ -391,13 +391,13 @@ permit deadlocks against a fiber doing the opposite.
 | Member                    | Signature                                                                                                                                                                                               |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deferred`                | `(address: DeferredAddress) => Effect<Option<DeferredRow>>`                                                                                                                                             |
-| `consumeDeferred`         | `(address: DeferredAddress, consumedAtMs: number) => Effect<void>`                                                                                                                                      |
+| `consumeDeferred`         | `(address: DeferredAddress, consumedAtMs: number) => Effect<boolean>`                                                                                                                                   |
 | `completeDeferred`        | `(row: DeferredRow) => Effect<CompleteDeferredOutcome>`                                                                                                                                                 |
 | `clock`                   | `(address: ClockAddress) => Effect<Option<ClockRow>>`                                                                                                                                                   |
 | `scheduleClock`           | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                                                                                                                                       |
 | `completeClock`           | `(address: ClockAddress, completedAtMs: number) => Effect<CompleteClockOutcome>`                                                                                                                        |
 | `dueClocks`               | `(nowMs: number) => Effect<ReadonlyArray<ClockRow>>`                                                                                                                                                    |
-| `completeRunClocks`       | `(executionId: string, completedAtMs: number) => Effect<void>`                                                                                                                                          |
+| `completeRunClocks`       | `(executionId: string, completedAtMs: number) => Effect<ReadonlyArray<ClockRow>>`                                                                                                                       |
 | `pendingClocks`           | `(scope: { executionId?: string; flowName?: string }) => Effect<ReadonlyArray<ClockRow>>`                                                                                                               |
 | `completedDeferreds`      | `(flowName: string \| undefined, executionId?: string) => Effect<ReadonlyArray<DeferredAddress>>`; `undefined` lists every flow's                                                                       |
 | `park`                    | `(runId: string, waiting: Waiting, owner: OwnerId) => Effect<ParkOutcome>`                                                                                                                              |
@@ -428,7 +428,11 @@ the effect self-interrupts.
 Migration 0007 indexes `seq` so allocation does not scan retained parent history.
 
 `completeRunClocks` closes every uncompleted clock row of one run in a single
-statement, which a terminal transition does in its own transaction.
+statement, which a terminal transition does in its own transaction. It returns
+the rows completed by that call so the caller can journal each completion.
+`consumeDeferred` returns `true` only when it newly marks a completion as
+observed; a missing or already consumed result returns `false`, so the caller
+does not journal another consumption.
 `pendingClocks` and `completedDeferreds` never list a row whose run has settled,
 so a registration sweep re-arms timers and replays completions for runs that can
 still make progress and for no others. `completedDeferreds` also excludes
@@ -828,16 +832,16 @@ non-negative one; invalid bounds are rejected at construction.
 
 ### Models
 
-| Export            | Shape                                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------- |
-| `Outcome`         | `built`, `clean`, `failed`, `skipped`, or `deferred`                                                          |
-| `ResolvedInput`   | `{ from, path, value }`, the settled output of `from` projected along `path`                                  |
-| `NodeInput`       | `{ node, attempt, boundary, inputs }`                                                                         |
-| `Executor`        | `{ execute: (input: NodeInput) => Effect<unknown, unknown> }`                                                 |
-| `Settlement`      | `{ nodeId, planKey, dispatchKey, outcome, attempts, rebases }`                                                |
-| `Report`          | `{ planId, digest, settlements, results, verdicts, appended }`                                                |
-| `RecertifyResult` | `{ runId, report, remaining }`                                                                                |
-| `SchedulerError`  | `code` of `invalid_plan`, `boundary_unavailable`, `key_uncomputable`, `elaboration_failed`, or `store_failed` |
+| Export            | Shape                                                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Outcome`         | `built`, `clean`, `failed`, `skipped`, or `deferred`                                                                          |
+| `ResolvedInput`   | `{ from, path, value }`, the settled output of `from` projected along `path`                                                  |
+| `NodeInput`       | `{ node, attempt, boundary, inputs }`                                                                                         |
+| `Executor`        | `{ execute: (input: NodeInput) => Effect<unknown, unknown> }`                                                                 |
+| `Settlement`      | `{ nodeId, planKey, dispatchKey, outcome, attempts, rebases }`                                                                |
+| `Report`          | `{ planId, digest, settlements, results, verdicts, appended }`                                                                |
+| `RecertifyResult` | `{ runId, report, remaining }`                                                                                                |
+| `SchedulerError`  | `code` of `invalid_plan`, `plan_changed`, `boundary_unavailable`, `key_uncomputable`, `elaboration_failed`, or `store_failed` |
 
 Ready nodes dispatch through the same persistence path every action uses, so
 the shared step cache,

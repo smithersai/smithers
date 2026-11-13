@@ -26,6 +26,53 @@ describe("documentation contracts", () => {
     expect(guide).not.toContain("Journal/SQL is the outer transaction")
   })
 
+  it.each([
+    "../README.md",
+    "concepts/execution-facts.md",
+    "guides/back-up-and-restore.md"
+  ])("documents restore fencing's journal exception in %s", (path) => {
+    const doc = readDoc(path).replace(/\s+/g, " ")
+    expect(doc).toContain("`DisasterRecovery.fence`")
+    expect(doc).toContain("does not append")
+    expect(doc).toContain("run decision")
+    expect(doc).toContain("ownership event")
+    expect(doc).toContain("execution fact")
+    expect(doc).toContain("unverified-observation")
+  })
+
+  it.each([
+    ["consumeDeferred", "(address: DeferredAddress, consumedAtMs: number) => Effect<boolean>"],
+    ["completeRunClocks", "(executionId: string, completedAtMs: number) => Effect<ReadonlyArray<ClockRow>>"]
+  ])("documents the %s result callers use for journaling", (member, signature) => {
+    const row = readDoc("api.md").split("\n").find((line) => line.includes(`\`${member}\``))
+    expect(row?.replace(/\s+/g, " ")).toContain(`\`${signature}\``)
+  })
+
+  it("lists every SchedulerError code in the reference and driving guide", () => {
+    const source = readFileSync(new URL("../src/PlanScheduler.ts", import.meta.url), "utf8")
+    const literals = source.match(/code: Schema\.Literals\(\[([\s\S]*?)\]\)/)![1]!
+    const codes = [...literals.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
+    expect(codes.length).toBeGreaterThan(0)
+    for (const path of ["api.md", "guides/drive-a-plan.md"]) {
+      const doc = readDoc(path)
+      const start = doc.indexOf(path === "api.md" ? "| `SchedulerError`" : "`SchedulerError` is a refusal")
+      expect(start).toBeGreaterThanOrEqual(0)
+      const paragraph = doc.slice(start).split("\n\n")[0]!.split(".")[0]!
+      expect([...paragraph.matchAll(/`([a-z_]+)`/g)].map((match) => match[1]!).filter((code) => code !== "code"))
+        .toEqual(codes)
+    }
+  })
+
+  it("lists every persisted EventTypes member", () => {
+    const source = readFileSync(new URL("../src/EventTypes.ts", import.meta.url), "utf8")
+    const members = [...source.matchAll(/(\w+): "flows\.engine\./g)].map((match) => match[1]!)
+    expect(members.length).toBeGreaterThan(0)
+    const doc = readDoc("event-types.md")
+    for (const member of members) expect(doc).toContain(`\`${member}\``)
+    expect(doc).toContain("`childSpawnKind`")
+    expect(doc).toContain("not a journal event type")
+  })
+
   it("cites only documentation pages that exist", () => {
     // A cited page is where a reader goes next. The retired docs/pages tree
     // left twenty citations pointing at nothing, including the operator
@@ -139,10 +186,15 @@ describe("source documentation pointers", () => {
     const api = readDoc("api.md")
     expect(adapter).toContain("BEGIN ISOLATION LEVEL READ COMMITTED")
     expect(adapter).toContain("pg_advisory_xact_lock")
-    expect(api).toContain("READ COMMITTED")
-    expect(api).toContain("transaction-scoped advisory lock")
-    expect(api).toContain("PostgreSQL")
-    expect(api).not.toContain("must use `SERIALIZABLE`")
+    for (const doc of [api, readDoc("concepts/durable-waits.md")].map((doc) => doc.replace(/\s+/g, " "))) {
+      expect(doc).toContain("READ COMMITTED")
+      expect(doc).toContain("transaction-scoped advisory lock")
+      expect(doc).toContain("PostgreSQL")
+      expect(doc).not.toContain("must use `SERIALIZABLE`")
+    }
+    const installation = readDoc("installation.md").replace(/\s+/g, " ")
+    expect(installation).toContain("SQLite or PostgreSQL")
+    expect(installation).not.toContain("only durable backing shipped here is local SQLite")
     expect(api).not.toContain("only `DurableWriter` backing shipped here is `node:sqlite`")
   })
 

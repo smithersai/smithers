@@ -277,8 +277,8 @@ package carries no model dependency.
 ## What a SchedulerError is, and is not
 
 `SchedulerError` is a refusal the scheduler itself raises, with a `code` of
-`invalid_plan`, `boundary_unavailable`, `key_uncomputable`, `elaboration_failed`, or
-`store_failed`. A node's own failure is not one of these: the run continues and
+`invalid_plan`, `plan_changed`, `boundary_unavailable`, `key_uncomputable`,
+`elaboration_failed`, or `store_failed`. A node's own failure is not one of these: the run continues and
 the report says `failed`.
 
 ## Related
