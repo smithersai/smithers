@@ -1,7 +1,7 @@
 /**
  * Machine-readable coverage accounting for the 0.x-to-rc.0 test migration:
  * which old smithers test file, and which behavior of the external reference
- * corpus, each conformance pin or repository test answers for.
+ * corpus, each repository test answers for.
  *
  * This is migration bookkeeping, not a testing-library API, and it has no
  * consumer outside this package's own suite. It lives under `test/`, which the

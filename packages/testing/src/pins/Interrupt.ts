@@ -1,8 +1,6 @@
 /**
  * Fiber interruption conformance pins.
  *
- * Manifest: `packages/testing/test/support/ParityManifest.ts`.
- *
  * @since 0.0.0
  */
 

@@ -84,7 +84,7 @@ Three details keep the suite honest about the things a layer type cannot express
   including a dangling symlink, on every platform. A collision reports
   `FileSystem/scratchPath` without removal. With no path declared it builds a
   randomized absolute path under `/tmp` from the bundle's own
-  `Path` and `Random`, because a relative name would resolve against the
+  `Path` and `Random`, with a process-local invocation ordinal so repeated seeds remain distinct, because a relative name would resolve against the
   caller's working directory and a fixed one would make two suites in a single
   directory race on one scratch path. Removal is registered only after
   directory creation succeeds and runs even when the file write fails.

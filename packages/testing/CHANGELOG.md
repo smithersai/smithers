@@ -34,6 +34,13 @@
 
 ### Fixed
 
+- Cyclic fixture snapshots keep their own record and array references without
+  freezing the caller's values.
+- Structural assertions compare equal deeply nested values correctly and
+  distinguish enumerable symbol-keyed record fields.
+- Host conformance probes in one runtime reserve distinct scratch directories
+  when concurrent suites share a filesystem and use the same random seed.
+
 - Replay misses after a heartbeat now end with an `unrecorded` stream error
   instead of hanging. Other handler defects also finish the HTTP response.
 - Killed restartable engines can no longer write execution state. Late step

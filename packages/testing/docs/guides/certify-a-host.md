@@ -94,7 +94,7 @@ registered only after successful directory creation and runs even if the file
 write or read-back assertion fails.
 
 With no `fileSystemScratchPath` declared, the suite builds a randomized absolute
-path under `/tmp` from the bundle's own `Path` and `Random`. Declare one when
+path under `/tmp` from the bundle's own `Path` and `Random`, with a process-local invocation ordinal so repeated seeds remain distinct. Declare one when
 the bundle's platform has no `/tmp`:
 
 ```ts

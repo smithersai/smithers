@@ -247,6 +247,16 @@ const completeCacheHints: Complete<Pick<ModelRequestLike, ProviderCacheHint>> = 
   cacheBoundary: 3
 }
 
+const completeRequestOptions: Complete<
+  Omit<
+    ModelRequestLike,
+    "modelId" | "system" | "messages" | "tools" | "params" | ProviderCacheHint
+  >
+> = {
+  toolChoice: "none",
+  serverTools: [{ type: "web_search", allowedDomains: ["smithers.sh"] }]
+}
+
 const completeProductionRequest = ModelRequest.ModelRequest.make({
   modelId: "openai:gpt-5-mini",
   system: [ModelRequest.SystemPart.make({ text: "You are a concise reviewer." })],
@@ -261,7 +271,7 @@ const completeProductionRequest = ModelRequest.ModelRequest.make({
   ],
   tools: [ModelRequest.ToolDefinition.make(completeTool)],
   params: ModelRequest.GenerationParams.make(completeParams),
-  toolChoice: "none",
+  ...completeRequestOptions,
   ...completeCacheHints
 })
 

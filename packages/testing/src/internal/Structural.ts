@@ -23,7 +23,7 @@
  */
 
 /**
- * Maximum plain-data depth followed by either traversal.
+ * Maximum plain-data depth copied by snapshots or rendered in diagnostics.
  *
  * This is deliberately the same 128-level boundary as
  * `Fixture.canonicalize`: a snapshot must stop before the host stack does, then
@@ -65,39 +65,6 @@ const functionIdentity = (value: object): number => {
   return identity
 }
 
-/**
- * Renders one property without invoking an accessor.
- *
- * Reading `value[key]` made equality execute user code and allowed a throwing
- * getter to escape a typed assertion channel. The descriptor is stable data;
- * accessor function identity keeps two different accessors distinct while the
- * same descriptor remains comparable across calls.
- */
-const member = (
-  descriptor: PropertyDescriptor,
-  ancestors: Set<object>,
-  depth: number
-): string =>
-  "value" in descriptor
-    ? render(descriptor.value, ancestors, depth)
-    : `!{"_tag":"Accessor","get":${render(descriptor.get, ancestors, depth)},"set":${
-      render(descriptor.set, ancestors, depth)
-    }}`
-
-/** Renders one own-enumerable record in sorted key order. */
-const record = (
-  value: Readonly<Record<string, unknown>>,
-  keys: ReadonlyArray<string>,
-  ancestors: Set<object>,
-  depth: number
-): string => {
-  const descriptors = Object.getOwnPropertyDescriptors(value)
-  return `{${
-    [...keys].sort().map((key) => `${JSON.stringify(key)}:${member(descriptors[key]!, ancestors, depth + 1)}`)
-      .join(",")
-  }}`
-}
-
 /** Distinguishes the numbers `JSON.stringify` collapses. */
 const number = (value: number): string => {
   if (Number.isNaN(value)) return `!{"_tag":"NaN"}`
@@ -120,92 +87,162 @@ const objectIdentity = (value: object): number => {
   return identity
 }
 
-const render = (value: unknown, ancestors: Set<object>, depth: number): string => {
-  try {
-    return renderValue(value, ancestors, depth)
-  } catch {
-    // Proxies and exotic objects can throw even during descriptor/prototype
-    // inspection. Keep them comparable by reference without inspecting again.
-    return `!{"_tag":"Opaque","identity":${objectIdentity(value as object)}}`
+interface Part {
+  readonly value?: unknown
+  readonly text?: string
+}
+
+interface Rendering {
+  readonly parts: ReadonlyArray<Part>
+  readonly format: (parts: ReadonlyArray<string>) => string
+}
+
+/** Descriptors keep accessors comparable without executing user code. */
+const member = (descriptor: PropertyDescriptor): Part =>
+  "value" in descriptor
+    ? { value: descriptor.value }
+    : { text: `!{"_tag":"Accessor","get":${canonical(descriptor.get)},"set":${canonical(descriptor.set)}}` }
+
+/** String keys and symbol identities have separate canonical namespaces. */
+const record = (value: object): Rendering => {
+  const descriptors = Object.getOwnPropertyDescriptors(value)
+  const keys = Object.keys(value).sort()
+  const symbols = Object.getOwnPropertySymbols(value)
+    .filter((key) => Object.prototype.propertyIsEnumerable.call(value, key))
+    .sort((left, right) => symbolIdentity(left) - symbolIdentity(right))
+  const parts = [...keys, ...symbols].map((key) => member(Reflect.get(descriptors, key) as PropertyDescriptor))
+  return {
+    parts,
+    format: (rendered) => {
+      const fields = `{${keys.map((key, index) => `${JSON.stringify(key)}:${rendered[index]}`).join(",")}}`
+      return symbols.length === 0
+        ? fields
+        : `!{"_tag":"Record","fields":${fields},"symbols":[${
+          symbols.map((key, index) => `[${canonical(key)},${rendered[keys.length + index]}]`).join(",")
+        }]}`
+    }
   }
 }
 
-const renderValue = (value: unknown, ancestors: Set<object>, depth: number): string => {
-  if (value === undefined) return `!{"_tag":"Undefined"}`
-  if (value === null) return "null"
-  switch (typeof value) {
-    case "number":
-      return number(value)
-    case "string":
-    case "boolean":
-      return JSON.stringify(value)
-    case "bigint":
-      return `!{"_tag":"BigInt","value":${JSON.stringify(String(value))}}`
-    case "symbol":
-      return `!{"_tag":"Symbol","description":${JSON.stringify(value.description ?? null)},"identity":${
-        symbolIdentity(value)
-      }}`
-    case "function":
-      return `!{"_tag":"Function","name":${JSON.stringify(value.name)},"identity":${functionIdentity(value)}}`
+const inspect = (value: object): Rendering => {
+  if (Array.isArray(value)) {
+    const descriptors: Record<string, PropertyDescriptor> = Object.getOwnPropertyDescriptors(value)
+    const parts: Array<Part> = []
+    for (let index = 0; index < descriptors.length!.value; index++) {
+      const descriptor = descriptors[index]
+      parts.push(descriptor === undefined ? { text: `!{"_tag":"Hole"}` } : member(descriptor))
+    }
+    return { parts, format: (items) => `[${items.join(",")}]` }
   }
-  if (depth >= maximumDepth) return `!{"_tag":"TooDeep","identity":${objectIdentity(value)}}`
-  const object: object = value
-  // A cycle is reported rather than followed. The unbounded recursion this
-  // replaces threw `RangeError: Maximum call stack size exceeded` out of an
-  // `Effect` declared to fail only with its own typed error.
-  if (ancestors.has(object)) return `!{"_tag":"Circular"}`
-  ancestors.add(object)
-  try {
-    if (Array.isArray(value)) {
-      const descriptors: Record<string, PropertyDescriptor> = Object.getOwnPropertyDescriptors(value)
-      const items: Array<string> = []
-      for (let index = 0; index < descriptors.length!.value; index++) {
-        const descriptor = descriptors[index]
-        items.push(descriptor === undefined ? `!{"_tag":"Hole"}` : member(descriptor, ancestors, depth + 1))
+  if (value instanceof Date) {
+    const time = value.getTime()
+    return {
+      parts: [],
+      format: () => `!{"_tag":"Date","value":${Number.isNaN(time) ? `"Invalid Date"` : String(time)}}`
+    }
+  }
+  if (value instanceof RegExp) {
+    const text = String(value)
+    return { parts: [], format: () => `!{"_tag":"RegExp","value":${JSON.stringify(text)}}` }
+  }
+  if (value instanceof Map) {
+    return {
+      parts: [...value].flatMap(([key, item]) => [{ value: key }, { value: item }]),
+      format: (parts) => {
+        const entries: Array<string> = []
+        for (let index = 0; index < parts.length; index += 2) entries.push(`[${parts[index]},${parts[index + 1]}]`)
+        return `!{"_tag":"Map","entries":[${entries.sort().join(",")}]}`
       }
-      return `[${items.join(",")}]`
     }
-    if (value instanceof Date) {
-      const time = value.getTime()
-      return `!{"_tag":"Date","value":${Number.isNaN(time) ? `"Invalid Date"` : String(time)}}`
-    }
-    if (value instanceof RegExp) return `!{"_tag":"RegExp","value":${JSON.stringify(String(value))}}`
-    if (value instanceof Map) {
-      const entries = [...value].map(([key, item]) =>
-        `[${render(key, ancestors, depth + 1)},${render(item, ancestors, depth + 1)}]`
-      )
-      return `!{"_tag":"Map","entries":[${[...entries].sort().join(",")}]}`
-    }
-    if (value instanceof Set) {
-      const items = [...value].map((item) => render(item, ancestors, depth + 1))
-      return `!{"_tag":"Set","values":[${[...items].sort().join(",")}]}`
-    }
-    if (value instanceof Error) {
-      // `name` and `message` are the identity-bearing parts and are not own
-      // enumerable properties. `stack` is deliberately excluded: it differs on
-      // every construction, so including it would report a divergence between
-      // two runs that failed identically.
-      const { stack: _stack, ...own } = value as Error & Record<string, unknown>
-      return `!{"_tag":"Error","name":${JSON.stringify(value.name)},"message":${
-        JSON.stringify(value.message)
-      },"fields":${record(own, Object.keys(own), ancestors, depth)}}`
-    }
-    const prototype: unknown = Object.getPrototypeOf(value)
-    const fields = value as Readonly<Record<string, unknown>>
-    if (prototype === Object.prototype || prototype === null) {
-      return record(fields, Object.keys(fields), ancestors, depth)
-    }
-    // Anything else keeps its constructor name, so a class instance never
-    // renders as the `{}` that made two different instances compare equal.
-    const name = typeof (prototype as { constructor?: { name?: unknown } })?.constructor?.name === "string"
-      ? (prototype as { constructor: { name: string } }).constructor.name
-      : "Object"
-    return `!{"_tag":"Foreign","constructor":${JSON.stringify(name)},"fields":${
-      record(fields, Object.keys(fields), ancestors, depth)
-    }}`
-  } finally {
-    ancestors.delete(object)
   }
+  if (value instanceof Set) {
+    return {
+      parts: [...value].map((item) => ({ value: item })),
+      format: (parts) => `!{"_tag":"Set","values":[${[...parts].sort().join(",")}]}`
+    }
+  }
+  if (value instanceof Error) {
+    // Stack traces vary between otherwise identical failures.
+    const { stack: _stack, ...own } = value as Error & Record<string, unknown>
+    const fields = record(own)
+    const name = JSON.stringify(value.name)
+    const message = JSON.stringify(value.message)
+    return {
+      parts: fields.parts,
+      format: (parts) => `!{"_tag":"Error","name":${name},"message":${message},"fields":${fields.format(parts)}}`
+    }
+  }
+  const prototype: unknown = Object.getPrototypeOf(value)
+  const fields = record(value)
+  if (prototype === Object.prototype || prototype === null) return fields
+  const name = typeof (prototype as { constructor?: { name?: unknown } })?.constructor?.name === "string"
+    ? (prototype as { constructor: { name: string } }).constructor.name
+    : "Object"
+  return {
+    parts: fields.parts,
+    format: (parts) => `!{"_tag":"Foreign","constructor":${JSON.stringify(name)},"fields":${fields.format(parts)}}`
+  }
+}
+
+/** An explicit work stack keeps deeply nested equality independent of host stack limits. */
+const render = (value: unknown, depthLimit: number): string => {
+  const ancestors = new Set<object>()
+  const work: Array<() => void> = []
+  let result = ""
+  const visit = (value: unknown, depth: number, accept: (text: string) => void): void => {
+    try {
+      visitValue(value, depth, accept)
+    } catch {
+      // Proxies can refuse even a function's name. Compare them only by reference.
+      accept("!{\"_tag\":\"Opaque\",\"identity\":" + String(objectIdentity(value as object)) + "}")
+    }
+  }
+  const visitValue = (value: unknown, depth: number, accept: (text: string) => void): void => {
+    if (value === undefined) return accept(`!{"_tag":"Undefined"}`)
+    if (value === null) return accept("null")
+    switch (typeof value) {
+      case "number":
+        return accept(number(value))
+      case "string":
+      case "boolean":
+        return accept(JSON.stringify(value))
+      case "bigint":
+        return accept(`!{"_tag":"BigInt","value":${JSON.stringify(String(value))}}`)
+      case "symbol":
+        return accept(
+          `!{"_tag":"Symbol","description":${JSON.stringify(value.description ?? null)},"identity":${
+            symbolIdentity(value)
+          }}`
+        )
+      case "function":
+        return accept(`!{"_tag":"Function","name":${JSON.stringify(value.name)},"identity":${functionIdentity(value)}}`)
+    }
+    if (depth >= depthLimit) return accept(`!{"_tag":"TooDeep","identity":${objectIdentity(value)}}`)
+    if (ancestors.has(value)) return accept(`!{"_tag":"Circular"}`)
+    const rendering = inspect(value)
+    ancestors.add(value)
+    const rendered: Array<string> = []
+    work.push(() => {
+      ancestors.delete(value)
+      accept(rendering.format(rendered))
+    })
+    for (let index = rendering.parts.length - 1; index >= 0; index--) {
+      const part = rendering.parts[index]!
+      work.push(() => {
+        if (part.text !== undefined) rendered[index] = part.text
+        else {
+          visit(part.value, depth + 1, (text) => {
+            rendered[index] = text
+          })
+        }
+      })
+    }
+  }
+  visit(value, 0, (text) => {
+    result = text
+  })
+  while (work.length > 0) work.pop()!()
+  return result
 }
 
 /**
@@ -216,22 +253,22 @@ const renderValue = (value: unknown, ancestors: Set<object>, depth: number): str
  * @since 0.0.0
  * @category encoding
  */
-export const canonical = (value: unknown): string => render(value, new Set<object>(), 0)
+export const canonical = (value: unknown): string => render(value, maximumDepth)
 
 /**
- * Structural equality over the {@link canonical} rendering, so two values are
- * equal exactly when their canonical strings are.
+ * Structural equality using the same rendering as {@link canonical}, without
+ * its diagnostic depth limit. An explicit stack compares deeply nested values
+ * by their contents rather than the identity of their truncated tails.
  *
  * @since 0.0.0
  * @category encoding
  */
 export const same = (left: unknown, right: unknown): boolean =>
-  Object.is(left, right) || canonical(left) === canonical(right)
+  Object.is(left, right) || render(left, Infinity) === render(right, Infinity)
 
-const copy = (value: unknown, ancestors: Set<object>, depth: number): unknown => {
+const copy = (value: unknown, copies: Map<object, object>, depth: number): unknown => {
   if (depth >= maximumDepth || typeof value !== "object" || value === null) return value
-  if (ancestors.has(value)) return value
-  ancestors.add(value)
+  if (copies.has(value)) return copies.get(value)
   try {
     const array = Array.isArray(value)
     const prototype: unknown = Object.getPrototypeOf(value)
@@ -239,6 +276,7 @@ const copy = (value: unknown, ancestors: Set<object>, depth: number): unknown =>
     if (array && prototype !== Array.prototype) return value
     if (!array && prototype !== Object.prototype && prototype !== null) return value
     const result = array ? [] : {}
+    copies.set(value, result)
     const descriptors = Object.getOwnPropertyDescriptors(value)
     // Symbols and accessors must survive so the fixture encoder can reject
     // them. Defining data properties also keeps __proto__ an ordinary own key.
@@ -248,7 +286,7 @@ const copy = (value: unknown, ancestors: Set<object>, depth: number): unknown =>
         result,
         key,
         "value" in descriptor
-          ? { ...descriptor, value: copy(descriptor.value, ancestors, depth + 1) }
+          ? { ...descriptor, value: copy(descriptor.value, copies, depth + 1) }
           : descriptor
       )
     }
@@ -258,7 +296,9 @@ const copy = (value: unknown, ancestors: Set<object>, depth: number): unknown =>
     // encoder's guarded inspection, as with other unsupported values.
     return value
   } finally {
-    ancestors.delete(value)
+    // Memoize the active path only: shared branches can reach the depth cap at
+    // different distances, so a reused copy could expose an unowned tail.
+    copies.delete(value)
   }
 }
 
@@ -266,14 +306,14 @@ const copy = (value: unknown, ancestors: Set<object>, depth: number): unknown =>
  * A deep copy of the plain-record and array spine of `value`, so a later
  * mutation of the caller's object cannot change what was recorded.
  *
- * Unlike `structuredClone` it never throws: a function, a class instance, or a
- * cycle is passed through by reference rather than rejected, leaving the
+ * Unlike `structuredClone` it never throws. Plain cycles point back into the
+ * copy; functions and class instances pass through by reference, leaving the
  * fixture encoder to report it with a typed error naming its path.
  *
  * @since 0.0.0
  * @category encoding
  */
-export const snapshot = <A>(value: A): A => copy(value, new Set<object>(), 0) as A
+export const snapshot = <A>(value: A): A => copy(value, new Map<object, object>(), 0) as A
 
 /**
  * Code-unit ordering, the comparator every stable rendering in this package

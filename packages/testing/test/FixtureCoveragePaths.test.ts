@@ -56,7 +56,7 @@ describe("Fixture remaining canonical paths", () => {
       expect.objectContaining<Partial<FixtureEncodingError>>({
         code: "fixture_not_encodable",
         reason: "cycle",
-        path: "$.tools[0].parameters.nested[0][0]"
+        path: "$.tools[0].parameters.nested[0]"
       })
     )
   })

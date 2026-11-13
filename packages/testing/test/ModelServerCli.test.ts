@@ -371,21 +371,32 @@ describe("ModelServerCli.run", () => {
         yield* post(server.url, `${ModelServer.paths.release}t2`, {})
         expect((yield* Fiber.join(held)).body).toContain("recorded answer")
         expect((yield* post(server.url, ModelServer.paths.chat, chatBody("plain"))).body).toContain("recorded answer")
-        // A key in a tool's arguments or result holds the turn too.
-        yield* post(server.url, `${ModelServer.paths.release}t3`, {})
-        const tooled = yield* post(server.url, ModelServer.paths.chat, {
-          ...chatBody("go"),
-          messages: [
-            { role: "user", content: "go" },
-            {
-              role: "assistant",
-              content: null,
-              tool_calls: [{ id: "c1", type: "function", function: { name: "read", arguments: "{}" } }]
-            },
-            { role: "tool", tool_call_id: "c1", content: "[HOLD t3]" }
-          ]
-        })
-        expect(tooled.body).toContain("recorded answer")
+        // Each tool text location must actually hold before release.
+        for (const location of ["result", "arguments"] as const) {
+          const holdKey = location === "result" ? "t3" : "t4"
+          const tooled = yield* Effect.forkChild(post(server.url, ModelServer.paths.chat, {
+            ...chatBody("go"),
+            messages: [
+              { role: "user", content: "go" },
+              {
+                role: "assistant",
+                content: null,
+                tool_calls: [{
+                  id: "c1",
+                  type: "function",
+                  function: { name: "read", arguments: location === "arguments" ? `[HOLD ${holdKey}]` : "{}" }
+                }]
+              },
+              { role: "tool", tool_call_id: "c1", content: location === "result" ? `[HOLD ${holdKey}]` : "done" }
+            ]
+          }))
+          yield* Effect.promise(() => fetch(`${server.url}${ModelServer.paths.held}`).then((r) => r.text())).pipe(
+            Effect.repeat({ until: (body) => body === JSON.stringify([holdKey]) }),
+            Effect.timeout("5 seconds")
+          )
+          yield* post(server.url, `${ModelServer.paths.release}${holdKey}`, {})
+          expect((yield* Fiber.join(tooled)).body).toContain("recorded answer")
+        }
         yield* server.stop
       })
     ))

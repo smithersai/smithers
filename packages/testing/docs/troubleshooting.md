@@ -182,7 +182,7 @@ The suite reports `FileSystem/scratchPath` and leaves the existing path
 untouched. Removal is registered only after successful directory creation.
 
 **Fix.** Point the profile at a path that does not exist, or omit
-`fileSystemScratchPath` entirely and let the suite build a randomized absolute path
+`fileSystemScratchPath` entirely and let the suite build a randomized absolute path with an invocation ordinal
 under `/tmp` from the bundle's own `Path` and `Random`.
 
 ## The host suite fails on process cleanup

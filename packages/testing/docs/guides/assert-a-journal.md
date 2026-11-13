@@ -103,8 +103,11 @@ different `Date`s, a `Map` from a `Set`, `-0` from `0`, `NaN` from `Infinity`,
 and ordinary records from internal special-value markers. Record and array
 accessors are compared by getter/setter identity without invoking them. Cycles
 use markers; sparse array holes remain distinct from `undefined`.
-Objects at the 128-level depth limit or whose inspection throws, such as
-revoked proxies, compare by process-local reference identity.
+Deeply nested values use an explicit traversal stack, so equal values remain
+equal beyond 128 levels. Diagnostic text still truncates at 128 levels.
+Enumerable symbol-keyed record fields compare by symbol identity and value.
+Objects whose inspection throws, such as revoked proxies, compare by
+process-local reference identity.
 
 Rendering journal values does not throw. A differing value fails with
 `FixtureDivergenceError`. This comparison accepts values that fixture JSON

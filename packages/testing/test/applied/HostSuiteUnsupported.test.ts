@@ -9,7 +9,7 @@
  */
 import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as TestHost from "@smthrs/testing/TestHost"
-import { Cause, Effect, Exit, FileSystem, Layer } from "effect"
+import { Cause, Context, Effect, Exit, FileSystem, Latch, Layer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientError from "effect/http/HttpClientError"
@@ -225,11 +225,34 @@ describe("the file-system probe owns its scratch directory", () => {
   it("defaults to an absolute path outside the caller's working directory", async () => {
     const suiteCase = HostSuite.hostSuite(TestHost.TestHost, supported)[0]!
     expect(await outcome(suiteCase)).toBe("passed")
-    // Two suites over one bundle must not collide on a fixed name.
-    const [first, second] = await Promise.all([
-      outcome(HostSuite.hostSuite(TestHost.TestHost, supported)[0]!),
-      outcome(HostSuite.hostSuite(TestHost.TestHost, supported)[0]!)
-    ])
-    expect([first, second]).toEqual(["passed", "passed"])
+  })
+  it("reserves different scratch paths on a shared filesystem with the same random seed", async () => {
+    const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const context = yield* Layer.build(TestHost.TestHost)
+      const fs = Context.get(context, FileSystem.FileSystem)
+      const attempted: Array<string> = []
+      const bothAttempted = Latch.makeUnsafe()
+      let attempts = 0
+      const sharedFs = Layer.succeed(FileSystem.FileSystem)({
+        ...fs,
+        makeDirectory: (path, options) =>
+          Effect.gen(function*() {
+            attempted.push(path)
+            return yield* fs.makeDirectory(path, options)
+          }).pipe(Effect.ensuring(Effect.gen(function*() {
+            attempts++
+            if (attempts === 2) yield* bothAttempted.open
+            yield* bothAttempted.await
+          })))
+      })
+      const bundle = Layer.merge(TestHost.TestHost, sharedFs)
+      const run = () => HostSuite.hostSuite(bundle, supported)[0]!.run.pipe(Effect.exit)
+      const exits = yield* Effect.all([run(), run()], { concurrency: "unbounded" })
+      return { exits, attempted, remaining: yield* fs.readDirectory("/tmp") }
+    })))
+    expect(result.exits.map((exit) => exit._tag)).toEqual(["Success", "Success"])
+    expect(new Set(result.attempted).size).toBe(2)
+    expect(result.attempted.every((path) => path.startsWith("/tmp/flows-host-suite-"))).toBe(true)
+    expect(result.remaining).toEqual([])
   })
 })

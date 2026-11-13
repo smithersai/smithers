@@ -84,11 +84,14 @@ describe("Vitest", () => {
     expect(finalized).toBe(true)
   })
 
-  it.effect("surfaces failed Effects as test failures", () =>
-    Effect.gen(function*() {
-      const exit = yield* Effect.exit(Effect.fail("expected failure"))
-      expect(exit._tag).toBe("Failure")
-    }))
+  it("surfaces failed Effects as test failures", async () => {
+    await expect(runEffectTest(
+      Layer.empty,
+      Layer.empty,
+      Effect.fail("expected failure"),
+      new AbortController().signal
+    )).rejects.toThrow("expected failure")
+  })
 
   test.effect("adjusts virtual time", () =>
     Effect.gen(function*() {
@@ -98,11 +101,28 @@ describe("Vitest", () => {
       expect(after - before).toBe(1_000)
     }))
 
-  test.scoped("runs scoped finalizers", () =>
+  it("runs scoped finalizers before a successful body resolves", async () => {
+    let finalized = false
+    const result = await runEffectTest(
+      Layer.empty,
+      Layer.empty,
+      Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          finalized = true
+        })
+      ).pipe(Effect.as("completed")),
+      new AbortController().signal
+    )
+    expect(result).toBe("completed")
+    expect(finalized).toBe(true)
+  })
+
+  test.scoped("runs a scoped body in the layered environment", () =>
     Effect.gen(function*() {
       const ref = yield* Counter
       yield* Effect.addFinalizer(() => Ref.set(ref.ref, 1))
       yield* Ref.update(ref.ref, (value) => value + 10)
+      expect(yield* Ref.get(ref.ref)).toBe(10)
     }))
 
   test.effect("builds a fresh environment per test (no shared layer state)", () =>

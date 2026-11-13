@@ -33,6 +33,21 @@ describe("FixtureStore cyclic snapshots", () => {
       const store = yield* FixtureStore.makeMemory()
       yield* store.append(call)
       const stored = Option.getOrThrow(yield* store.load())
+      expect(Object.isFrozen(record)).toBe(false)
+      expect(Object.isFrozen(array)).toBe(false)
+      const parameters = stored.calls[0]!.request.tools[0]!.parameters
+      const storedRecord = parameters.record as Record<string, unknown>
+      const storedArray = parameters.array as Array<unknown>
+      expect(storedRecord).not.toBe(record)
+      expect(storedRecord.self).toBe(storedRecord)
+      expect(storedArray).not.toBe(array)
+      expect(storedArray[0]).toBe(storedArray)
+      expect(Object.isFrozen(storedRecord)).toBe(true)
+      expect(Object.isFrozen(storedArray)).toBe(true)
+      record.extra = "caller"
+      array.push("caller")
+      expect(storedRecord.extra).toBeUndefined()
+      expect(storedArray).toHaveLength(1)
       expect(stored.calls).toHaveLength(1)
       expect(Object.isFrozen(stored.calls[0]!.request.tools[0]!.parameters)).toBe(true)
     }))

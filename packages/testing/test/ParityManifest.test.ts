@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Conformance from "../src/Conformance.ts"
 import {
   openCodeBehaviorInventory,
   requiredOpenCodeBehaviors,
@@ -43,14 +42,6 @@ const requireCorpus = (root: URL): URL => {
 const testFile = /\.test\.ts$/
 
 describe("ParityManifest", () => {
-  it("maps every conformance pin entry to an executable suite case", () => {
-    const names = new Set(Conformance.coreSuite().map((conformanceCase) => conformanceCase.name))
-    for (const row of rows) {
-      if (testFile.test(row.flowsEquivalent) || row.flowsEquivalent === "—") continue
-      expect(names.has(row.flowsEquivalent), `${row.source}: ${row.flowsEquivalent}`).toBe(true)
-    }
-  })
-
   it("maps every test-file entry to a file in the repository", () => {
     for (const row of rows) {
       if (!testFile.test(row.flowsEquivalent)) continue

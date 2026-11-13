@@ -189,13 +189,15 @@ const capabilityCode = (
   expectation: Extract<CapabilityExpectation, { readonly supported: false }>
 ): string => expectation.code
 
+let nextScratchId = 0
+
 /**
  * The scratch directory the round-trip probe owns for one invocation.
  *
- * The declared path wins. Otherwise the path is absolute, under `/tmp`, and
- * carries a random suffix drawn from the bundle's own `Random`, so two suites
- * are less likely to collide. Nonrecursive creation rejects any collision, and
- * nothing is written into the caller's working directory.
+ * The declared path wins. Otherwise the absolute path under `/tmp` combines
+ * the bundle's random draw with a process-local invocation ordinal, so
+ * repeated seeds still reserve different paths. Nonrecursive creation
+ * rejects any collision without changing an existing path.
  */
 const scratchTarget = (
   profile: HostProfile
@@ -204,7 +206,7 @@ const scratchTarget = (
     if (profile.fileSystemScratchPath !== undefined) return profile.fileSystemScratchPath
     const path = yield* Path.Path
     const suffix = (yield* Random.nextIntBetween(0, 0xff_ffff)).toString(16)
-    return path.join(path.sep, "tmp", `flows-host-suite-${suffix}`)
+    return path.join(path.sep, "tmp", `flows-host-suite-${suffix}-${nextScratchId++}`)
   })
 
 const provide = <E, R>(effect: Effect.Effect<void, E, R>, bundle: HostBundle): Effect.Effect<void, E> =>

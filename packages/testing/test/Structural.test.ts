@@ -77,6 +77,59 @@ describe("same", () => {
     expect(same({ a: Symbol("x") }, { a: Symbol("x") })).toBe(false)
   })
 
+  it.each([127, 128, 130, 50_000])("compares distinct equal values at depth %i", (depth) => {
+    expect(same(deeplyNested(depth), deeplyNested(depth))).toBe(true)
+    const different = deeplyNested(depth)
+    let tail = different
+    for (let level = 0; level < depth; level++) tail = tail.nested as Record<string, unknown>
+    tail.leaf = 2
+    expect(same(deeplyNested(depth), different)).toBe(false)
+  })
+
+  it("compares symbol-keyed fields by identity and value without invoking getters", () => {
+    const key = Symbol("field")
+    const other = Symbol("field")
+    expect(same({ [key]: 1 }, { [key]: 2 })).toBe(false)
+    expect(same({ [key]: 1 }, {})).toBe(false)
+    expect(same({ [key]: 1 }, { [other]: 1 })).toBe(false)
+    expect(same({ a: 1, [key]: 2 }, { [key]: 2, a: 1 })).toBe(true)
+    expect(same({ [key]: 1, [other]: 2 }, { [other]: 2, [key]: 1 })).toBe(true)
+    expect(same({ [key]: 1 }, { [String(key)]: 1 })).toBe(false)
+    class Ticket {
+      [key] = 1
+    }
+    expect(same(new Ticket(), new Ticket())).toBe(true)
+    expect(same(Object.assign(new Error("x"), { [key]: 1 }), Object.assign(new Error("x"), { [key]: 2 }))).toBe(false)
+    const getter = () => {
+      throw new Error("must not run")
+    }
+    const accessor = () => Object.defineProperty({}, key, { enumerable: true, get: getter })
+    expect(same(accessor(), accessor())).toBe(true)
+    expect(same(accessor(), { [key]: 1 })).toBe(false)
+  })
+
+  it("compares deeply nested unordered collections and cycles without losing their contents", () => {
+    const left = new Map([["a", new Set([deeplyNested(130), deeplyNested(131)])], ["b", new Set([deeplyNested(132)])]])
+    const right = new Map([["b", new Set([deeplyNested(132)])], ["a", new Set([deeplyNested(131), deeplyNested(130)])]])
+    expect(same(left, right)).toBe(true)
+    const cycle = deeplyNested(130)
+    cycle.self = cycle
+    const other = deeplyNested(130)
+    other.self = other
+    expect(same(cycle, other)).toBe(true)
+  })
+
+  it("keeps callable proxies total when their name cannot be read", () => {
+    const opaque = new Proxy(() => 1, {
+      get: () => {
+        throw new Error("opaque")
+      }
+    })
+    expect(canonical(opaque)).toContain("Opaque")
+    expect(same([opaque], [opaque])).toBe(true)
+    expect(same(opaque, () => 1)).toBe(false)
+  })
+
   it("uses function reference identity instead of collapsing equal names", () => {
     const shared = () => 1
     expect(same(shared, shared)).toBe(true)
@@ -180,8 +233,8 @@ describe("canonical", () => {
     expect(reads).toBe(0)
   })
 
-  it("tags a value deeper than the fixture encoder's matching cap", () => {
-    expect(canonical(deeplyNested(50_000))).toContain(`"_tag":"TooDeep"`)
+  it("bounds deeply nested diagnostic rendering without limiting equality", () => {
+    expect(canonical(deeplyNested(50_000))).toContain("TooDeep")
   })
 })
 

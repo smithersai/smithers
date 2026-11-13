@@ -934,7 +934,7 @@ directory creation atomically refuses an existing path, including dangling
 symlinks and concurrent creations, with `FileSystem/scratchPath`. Removal is
 registered only after successful directory creation. When omitted, the suite
 builds a randomized absolute path under
-`/tmp` from the bundle's own `Path` and `Random`. A bundle whose platform has
+`/tmp` from the bundle's own `Path` and `Random`, with a process-local invocation ordinal so repeated seeds remain distinct. A bundle whose platform has
 no `/tmp` must declare a path of its own.
 
 A supported `shell` supplies `interruptCommand`, which must stay running until
