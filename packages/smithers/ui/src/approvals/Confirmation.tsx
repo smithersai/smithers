@@ -104,7 +104,7 @@ function updateRef<T>(ref: Ref<T> | undefined, value: T | null): void {
 /**
  * Human-in-the-loop approval gate anatomy (AI Elements Confirmation). The
  * root carries the state; parts self-show/hide from it:
- * - ConfirmationRequest: synchronizing | requested | approving | denying
+ * - ConfirmationRequest: synchronizing | requested | approving | denying | failed-submission
  * - ConfirmationActions: requested | failed-submission
  * - ConfirmationAccepted: approved; ConfirmationRejected: denied
  * - expired | unavailable render a muted state note; failed-submission renders
@@ -173,11 +173,14 @@ export function ConfirmationTitle({ className, ...props }: ComponentProps<"div">
   return <div data-slot="confirmation-title" className={cn("sui-confirm-title", className)} {...props} />;
 }
 
-/** Request body; visible while synchronizing, requested, approving, or denying. */
+/** Request body; visible while synchronizing, requested, approving, denying, or retrying a failed submission. */
 export function ConfirmationRequest({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
   const state = useConfirmationState();
-  if (state !== "synchronizing" && state !== "requested" && state !== "approving" && state !== "denying") {
+  if (
+    state !== "synchronizing" && state !== "requested" && state !== "approving" &&
+    state !== "denying" && state !== "failed-submission"
+  ) {
     return null;
   }
   return <div data-slot="confirmation-request" className={cn("sui-confirm-request", className)} {...props} />;

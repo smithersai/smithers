@@ -154,10 +154,14 @@ describe("Confirmation", () => {
     expect(container!.querySelector("[data-slot='confirmation-rejected']")!.textContent).toContain("Denied");
   });
 
-  test("failed-submission re-enables the actions for retry", async () => {
+  test("failed-submission keeps the request visible and re-enables the actions for retry", async () => {
     await render(fullConfirmation("failed-submission"));
+    expect(container!.querySelector("[data-slot='confirmation-request']")?.textContent).toBe("Request body");
     expect(container!.querySelector("[data-slot='confirmation-actions']")).not.toBeNull();
+    expect(container!.querySelector("[data-slot='confirmation-accepted']")).toBeNull();
+    expect(container!.querySelector("[data-slot='confirmation-rejected']")).toBeNull();
     const buttons = container!.querySelectorAll<HTMLButtonElement>("[data-slot='confirmation-action']");
+    expect(buttons).toHaveLength(2);
     buttons.forEach((button) => expect(button.disabled).toBe(false));
   });
 

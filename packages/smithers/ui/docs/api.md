@@ -437,6 +437,11 @@ const CHECKPOINT_ACTION_KINDS: readonly CheckpointActionKind[]
 `approvalStateToStatus` returns a string from the shared status vocabulary, so
 an approval and a run agree on tone.
 
+`ConfirmationRequest` stays visible in `failed-submission` so a retry keeps
+the request in view. `ApprovalCard` preserves the summary, proposed actions,
+resources and reviewer note; an authorized reviewer can edit the note before
+retrying `Approve` or `Deny`.
+
 ## Sources and citations
 
 | Export                                                              | Types                                                                                             |

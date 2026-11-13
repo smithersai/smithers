@@ -206,16 +206,55 @@ test("no choices and missing wait identities fail closed", async () => {
   await submit(); expect(answers).toEqual([]);
 });
 
-test("approval retry, note reset on a new wait, and settlement use host state", async () => {
+test.each(["approve", "deny"] as const)("approval %s failure preserves the request and an editable note for retry", async decision => {
   const answers: Array<HumanTaskAnswer & { note?: string }> = [];
   const approval = (token: string, state: "requested" | "failed-submission" | "approved" = "requested") =>
-    <ApprovalCard title="Ship" state={state} wait={{ token, revision: 0, canAnswer: true }} defaultNote="Review" onAnswer={answer => answers.push(answer)} />;
+    <ApprovalCard
+      title="Ship"
+      state={state}
+      wait={{ token, revision: 0, canAnswer: true }}
+      summary="Deploy the reviewed changes."
+      proposedActions={["Publish the release", "Restart the service"]}
+      resources={[{ id: "service", label: "Release service", kind: "service", href: "/services/release" }]}
+      defaultNote="Review"
+      onAnswer={answer => answers.push(answer)}
+    />;
+  const editNote = async (value: string) => {
+    const textarea = container!.querySelector<HTMLTextAreaElement>("textarea")!;
+    expect(textarea.readOnly).toBe(false);
+    await act(async () => {
+      textarea.dispatchEvent(new Event("focusin", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, value);
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      textarea.dispatchEvent(new Event("keyup", { bubbles: true }));
+    });
+  };
+
   await render(approval("first"));
-  await act(async () => container!.querySelector<HTMLButtonElement>("[data-decision=approve]")!.click());
-  expect(answers).toEqual([{ token: "first", value: true, note: "Review" }]);
+  await editNote("Check rollback.");
+  await act(async () => container!.querySelector<HTMLButtonElement>(`[data-decision=${decision}]`)!.click());
+  expect(answers).toEqual([{ token: "first", value: decision === "approve", note: "Check rollback." }]);
+  expect(container!.querySelector<HTMLTextAreaElement>("textarea")!.readOnly).toBe(true);
   await render(approval("first", "failed-submission"));
-  await act(async () => container!.querySelector<HTMLButtonElement>("[data-decision=deny]")!.click());
-  expect(answers[1]).toEqual({ token: "first", value: false, note: "Review" });
+  expect(container!.querySelector(".sui-approval-summary")?.textContent).toBe("Deploy the reviewed changes.");
+  expect(Array.from(container!.querySelectorAll("[data-slot=approval-card-proposed-actions] li"), item => item.textContent))
+    .toEqual(["Publish the release", "Restart the service"]);
+  const resource = container!.querySelector<HTMLAnchorElement>("[data-slot=approval-resource] a");
+  expect(resource?.textContent).toBe("Release service");
+  expect(resource?.getAttribute("href")).toBe("/services/release");
+  expect(container!.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Check rollback.");
+  const buttons = container!.querySelectorAll<HTMLButtonElement>("[data-decision]");
+  expect(buttons).toHaveLength(2);
+  buttons.forEach(button => expect(button.disabled).toBe(false));
+  await editNote("Rollback reviewed.");
+  const retry = decision === "approve" ? "deny" : "approve";
+  await act(async () => container!.querySelector<HTMLButtonElement>(`[data-decision=${retry}]`)!.click());
+  expect(answers).toEqual([
+    { token: "first", value: decision === "approve", note: "Check rollback." },
+    { token: "first", value: retry === "approve", note: "Rollback reviewed." }
+  ]);
+  expect(container!.querySelector<HTMLTextAreaElement>("textarea")!.readOnly).toBe(true);
+  expect(container!.querySelector("button")).toBeNull();
   await render(approval("second"));
   expect(container!.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Review");
   await render(approval("second", "approved"));
