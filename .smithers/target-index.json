@@ -46914,6 +46914,11 @@
         "path": "apps/site/tsconfig.json"
       },
       {
+        "kind": "glob",
+        "pattern": "apps/site/docs/app/images/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "CHANGELOG.md"
       }
@@ -46923,6 +46928,24 @@
     ],
     "dependencies": [
       "//packages/smithers:docsSources"
+    ],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/site:buildInputsTest",
+    "package": "apps/site",
+    "name": "buildInputsTest",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [],
+    "outputs": [],
+    "dependencies": [
+      "//packages/repo-targets:repositoryInputs"
     ],
     "source": {
       "file": "apps/site/PACKAGE.ts"
@@ -48298,6 +48321,18 @@
       {
         "kind": "file",
         "path": "apps/site/scripts/docs-text.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/inline-comment.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/sync-api-docs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/generate-llms.mjs"
       },
       {
         "kind": "file",

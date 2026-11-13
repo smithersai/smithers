@@ -138,7 +138,7 @@ const build = Smithers.ToolBuild({
   tool: "astro",
   command: "pnpm",
   args: ["run", "build"],
-  inputs: [...sources, Smithers.file("//CHANGELOG.md")],
+  inputs: [...sources, appDocsImages, Smithers.file("//CHANGELOG.md")],
   outputs: ["dist"],
   deps: [cliPackage.docsSources, docsKit],
   env: {},
@@ -341,13 +341,16 @@ const llms = Smithers.Generate({
  */
 const docsTextTest = Smithers.Shell.Test({
   shell:
-    "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs",
+    "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/inline-comment.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs",
   data: [
     Smithers.file("scripts/flows-location.test.mjs"),
     Smithers.file("src/data/migration-paths.json"),
     Smithers.file("src/components/HeroStage.astro"),
     Smithers.file("scripts/docs-text.mjs"),
     Smithers.file("scripts/docs-text.test.mjs"),
+    Smithers.file("scripts/inline-comment.test.mjs"),
+    Smithers.file("scripts/sync-api-docs.mjs"),
+    Smithers.file("scripts/generate-llms.mjs"),
     Smithers.file("src/content/docs/docs/reference/http-api.mdx"),
     Smithers.file("//packages/smithers/gateway/docs/guides/serve-beyond-loopback.md"),
     Smithers.file("//packages/smithers/flows/sync/src/SyncProtocol.ts"),
@@ -367,6 +370,12 @@ const docsTextTest = Smithers.Shell.Test({
     cliPackage.docsSources,
     Smithers.file("//packages/smithers/build/build-cli/src/effect-resolution.js")
   ]
+})
+
+/** The build keys the screenshot bytes it publishes, as well as the projected site sources. */
+const buildInputsTest = Smithers.Shell.Test({
+  shell: "node --test apps/site/scripts/build-inputs.test.mjs",
+  data: [repoTargetsPackage.repositoryInputs]
 })
 
 /**
@@ -770,6 +779,7 @@ export const Package = Smithers.Package({
     apiDocs,
     docsLint,
     docsTextTest,
+    buildInputsTest,
     checkExitTest,
     projectCopyTest,
     installPageTest,

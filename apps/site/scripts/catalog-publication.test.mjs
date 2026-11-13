@@ -63,6 +63,76 @@ test("an install command for an unpublished package fails even when the entry is
   ])
 })
 
+for (const command of ["npm install", "npm i", "npm add", "pnpm add", "pnpm install", "bun add", "bun install", "yarn add"]) {
+  test(`${command} validates every package argument, including versions and quoted names`, () => {
+    const page = [
+      "```sh",
+      `${command} --save-dev @smthrs/public-thing@next '@smthrs/private-thing@1.0.0' "@smthrs/left-the-train@next" @smthrs/missing`,
+      "```"
+    ].join("\n")
+    assert.deepEqual(catalogPublicationErrors(page, fixture), [
+      "teaches installing @smthrs/private-thing, which the release roster does not publish",
+      "teaches installing @smthrs/left-the-train, which the release roster does not publish",
+      "teaches installing @smthrs/missing, which the release roster does not publish"
+    ])
+  })
+}
+
+test("published install arguments pass and separate commands preserve error order without duplicates", () => {
+  assert.deepEqual(catalogPublicationErrors("`pnpm add effect @smthrs/public-thing@next @smthrs/public-thing@1.0.0`", fixture), [])
+  const page = [
+    "`pnpm add @smthrs/public-thing @smthrs/private-thing`",
+    "`npm install @smthrs/left-the-train @smthrs/private-thing`"
+  ].join("\n")
+  assert.deepEqual(catalogPublicationErrors(page, fixture), [
+    "teaches installing @smthrs/private-thing, which the release roster does not publish",
+    "teaches installing @smthrs/left-the-train, which the release roster does not publish"
+  ])
+})
+
+test("an install command ends at its newline or inline code delimiter", () => {
+  for (const separator of ["\n", "` then `"]) {
+    assert.deepEqual(catalogPublicationErrors(`pnpm add @smthrs/public-thing${separator}@smthrs/private-thing`, fixture), [])
+  }
+})
+
+test("install validation ignores shell comments and later non-install commands", () => {
+  for (const suffix of [
+    "# @smthrs/private-thing stays workspace-private",
+    "# npm install @smthrs/private-thing",
+    "&& pnpm --filter @smthrs/private-thing test",
+    "; echo @smthrs/private-thing",
+    "| cat @smthrs/private-thing"
+  ]) {
+    assert.deepEqual(catalogPublicationErrors(`pnpm add @smthrs/public-thing ${suffix}`, fixture), [])
+  }
+})
+
+test("later install commands and continued arguments are still validated", () => {
+  for (const separator of [" && npm install ", "; bun add ", " \\\n", " \\\r\n"]) {
+    assert.deepEqual(catalogPublicationErrors(`pnpm add @smthrs/public-thing${separator}@smthrs/private-thing`, fixture), [
+      "teaches installing @smthrs/private-thing, which the release roster does not publish"
+    ])
+  }
+})
+
+test("shell delimiters inside quoted arguments do not end an install command", () => {
+  const page = 'pnpm add --registry="https://example.test/#;&|" @smthrs/public-thing @smthrs/private-thing'
+  assert.deepEqual(catalogPublicationErrors(page, fixture), [
+    "teaches installing @smthrs/private-thing, which the release roster does not publish"
+  ])
+})
+
+test("Git dependency fragments keep later package arguments and commands visible", () => {
+  for (const dependency of ["github:owner/repo#main", "github:owner/repo\\#main", "file:./some\\ #directory"]) {
+    for (const rest of [" @smthrs/private-thing", " && npm install @smthrs/private-thing"]) {
+      assert.deepEqual(catalogPublicationErrors(`pnpm add ${dependency}${rest}`, fixture), [
+        "teaches installing @smthrs/private-thing, which the release roster does not publish"
+      ])
+    }
+  }
+})
+
 test("a heading naming a package this repo does not have is a typo, not a label problem", () => {
   assert.deepEqual(catalogPublicationErrors(heading("@smthrs/gone"), fixture), [
     "heads a section with @smthrs/gone, which is not a package in this repo"

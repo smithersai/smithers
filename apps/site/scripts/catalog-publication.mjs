@@ -15,7 +15,13 @@
 const packageHeading = /^(?:#{2,6} |\| )\[`?(@smthrs\/[a-z0-9-]+)`?\]/gm
 
 /** An install command a reader can paste, in any of the package managers the docs use. */
-const installCommand = /(?:npm (?:install|i|add)|pnpm (?:add|install)|bun (?:add|install)|yarn add)[^\n`]*?(@smthrs\/[a-z0-9-]+)/g
+const installCommand = /(?:npm (?:install|i|add)|pnpm (?:add|install)|bun (?:add|install)|yarn add)\b[^\n`]*/g
+
+/**
+ * Keep quoted words and continuations together; split shell commands and Markdown code spans.
+ * A hash starts a comment only at the beginning of a shell word, preserving Git dependency fragments.
+ */
+const shellSegment = /(?:(?!#)(?:\\(?:\r?\n|[^\n])|"(?:\\[^\n]|[^"\\\n])*"|'[^'\n]*'|[^\s`;&|"'\\])+|[ \t])+|#[^\n`]*/g
 
 /**
  * @param {string} page raw page source, fences included
@@ -41,8 +47,13 @@ export function catalogPublicationErrors(page, { manifests, roster }) {
       errors.push(`${name} is not in the release roster; the page heads a section with it without labelling it workspace-private`)
     }
   }
-  for (const [, name] of page.matchAll(installCommand)) {
-    if (!published(name)) errors.push(`teaches installing ${name}, which the release roster does not publish`)
+  for (const [segment] of page.matchAll(shellSegment)) {
+    if (segment.startsWith("#")) continue
+    for (const [command] of segment.replace(/\\\r?\n/g, " ").matchAll(installCommand)) {
+      for (const [name] of command.matchAll(/@smthrs\/[a-z0-9-]+/g)) {
+        if (!published(name)) errors.push(`teaches installing ${name}, which the release roster does not publish`)
+      }
+    }
   }
   return [...new Set(errors)]
 }

@@ -30,6 +30,8 @@ test("API and LLM generators preserve inline HTML-comment code", () => {
     put("packages/integrations/docs/api.md", '# API\n\n| Export | Value |\n| --- | --- |\n| `stickyMarker` | `<!-- smithers:key=KEY -->` |\n\n<!-- prose-only comment -->\n\n[Guide](./guide.md#usage)\n')
     put("apps/site/src/data/project.json", JSON.stringify({ description: "Smithers" }))
     put("apps/site/src/data/versions.json", "{}")
+    put("apps/site/src/data/docs-sidebar.json", "[]")
+    put("packages/smithers/docs/guides/change-code.md", "# Change code\n\nMake a change and review it.\n")
     put("apps/site/public/llms.txt", "")
     put("apps/site/public/llms-full.txt", "")
 
