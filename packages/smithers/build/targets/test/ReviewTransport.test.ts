@@ -91,6 +91,38 @@ const seats = (
   })
 
 describe("LlmLint.review seat transport", () => {
+  it("keeps distinct same-line security findings and the strongest impact of a repeat", async () => {
+    const candidate = {
+      file: "docs/shared.md",
+      line: 1,
+      severity: "warning",
+      message: "A shared boundary needs validation.",
+      security: {
+        checkId: "general",
+        impact: "low",
+        verification: "suspected",
+        releaseRecommendation: "review",
+        attackerPreconditions: "An attacker controls the input.",
+        evidence: "Input reaches the shared boundary.",
+        nextConfirmationStep: "Trace input validation."
+      }
+    }
+    const stronger = { ...candidate, security: { ...candidate.security, impact: "medium" } }
+    const distinct = { ...candidate, message: "A separate boundary needs validation." }
+    const seen: Array<Seen> = []
+    const report = await Effect.runPromise(LlmLint.review({
+      workspaceRoot: root,
+      snapshot: [
+        { path: "src/a.ts", contents: "export const a = 1\n", changed: true },
+        { path: "src/b.ts", contents: "export const b = 1\n", changed: true },
+        { path: "docs/shared.md", contents: "shared\n", changed: false }
+      ],
+      transport: seats(completion([candidate, stronger, distinct]), seen)
+    }, payload({ context: [Input.glob("//docs/shared.md")], securityChecks: ["general"] })))
+    expect(report.findings).toEqual([stronger, distinct])
+    expect(new Set(report.attempts?.map((attempt) => attempt.batch)).size).toBe(2)
+  })
+
   it.each([
     [130, 1],
     [86, 16 * 1024]

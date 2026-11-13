@@ -154,7 +154,7 @@ describe("LlmLint.review related-code batching", () => {
     expect(prompts[0]).toContain("{\"deleted\":true,")
   })
 
-  it("reports a flaw in a file several requests saw once, keeping the strongest severity", async () => {
+  it("keeps distinct same-line findings while merging repeats across requests", async () => {
     await write("src/a.ts", "export const a = 1\n")
     await write("src/b.ts", "export const b = 1\n")
     await write("docs/shared.md", "shared\n")
@@ -166,7 +166,7 @@ describe("LlmLint.review related-code batching", () => {
       executable,
       "#!/usr/bin/env node\nlet prompt = \"\"\nfor await (const chunk of process.stdin) prompt += chunk\n" +
         "const severity = prompt.includes('CHANGED FILE: \"src/b.ts\"') ? 'warning' : 'info'\n" +
-        "const findings = [{ file: 'docs/shared.md', line: 1, severity, message: severity }, " +
+        "const findings = [{ file: 'docs/shared.md', line: 1, severity, message: 'first' }, " +
         "{ file: 'docs/shared.md', line: 1, severity: 'info', message: 'second' }]\n" +
         "process.stdout.write(JSON.stringify({ result: JSON.stringify(findings) }))\n",
       { mode: 0o755 }
@@ -175,7 +175,24 @@ describe("LlmLint.review related-code batching", () => {
       { workspaceRoot: root, executable },
       payload({ batchSize: 1, context: [Input.glob("//docs/shared.md")] })
     ))
-    expect(report.findings).toEqual([{ file: "docs/shared.md", line: 1, severity: "warning", message: "warning" }])
+    expect(report.findings).toEqual([
+      { file: "docs/shared.md", line: 1, severity: "warning", message: "first" },
+      { file: "docs/shared.md", line: 1, severity: "info", message: "second" }
+    ])
+  })
+  it("leaves findings from context supplied to only one request untouched", async () => {
+    await write("src/a.ts", "export const a = 1\n")
+    await write("docs/shared.md", "shared\n")
+    commit()
+    await write("src/a.ts", "export const a = 2\n")
+    const finding = { file: "docs/shared.md", line: 1, severity: "info", message: "same" }
+    const cli = await recorder(JSON.stringify([finding, finding]))
+    const report = await Effect.runPromise(LlmLint.review(
+      { workspaceRoot: root, executable: cli.executable },
+      payload({ context: [Input.glob("//docs/shared.md")] })
+    ))
+    expect(await cli.prompts()).toHaveLength(1)
+    expect(report.findings).toEqual([finding, finding])
   })
 })
 
@@ -315,7 +332,8 @@ describe("LlmLint.review token budget", () => {
     await write("src/large.ts", source)
     const totalLines = source.split("\n").length
     const cli = await recorder(JSON.stringify([
-      { file: "src/large.ts", line: totalLines - 3, severity: "warning", message: "late flaw" }
+      { file: "src/large.ts", line: totalLines - 3, severity: "warning", message: "late flaw" },
+      { file: "src/large.ts", line: totalLines - 3, severity: "info", message: "another flaw" }
     ]))
     const report = await Effect.runPromise(LlmLint.review(
       { workspaceRoot: root, executable: cli.executable },
@@ -338,7 +356,8 @@ describe("LlmLint.review token budget", () => {
     expect(slices.join("")).toBe(source)
     expect(report.files).toEqual(["src/large.ts"])
     expect(report.findings).toEqual([
-      { file: "src/large.ts", line: totalLines - 3, severity: "warning", message: "late flaw" }
+      { file: "src/large.ts", line: totalLines - 3, severity: "warning", message: "late flaw" },
+      { file: "src/large.ts", line: totalLines - 3, severity: "info", message: "another flaw" }
     ])
   })
 

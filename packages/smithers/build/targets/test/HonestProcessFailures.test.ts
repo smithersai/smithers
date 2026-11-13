@@ -163,13 +163,18 @@ it("formats a platform failure whose cause is not an Error", async () => {
   expect(error.message).toContain("transport unavailable")
 })
 
-it("fails closed when the actual host cannot enforce an explicit sandbox request", async () => {
+it("fails closed for an unsupported build sandbox mechanism on every host", async () => {
   const error = await Effect.runPromise(Effect.flip(Exec.run({
     workspaceRoot: root,
-    sandbox: { policy: { network: "loopback" }, reads: [], writes: [] }
+    sandbox: {
+      policy: { network: "loopback" },
+      reads: [],
+      writes: [],
+      mechanism: { _tag: "SandboxMicrosandbox" }
+    }
   }, payload)))
   expect(error.code).toBe("sandbox_unenforceable")
-  expect(error.stderr).not.toBe("")
+  expect(error.stderr).toContain("S.Sandbox.Microsandbox")
 })
 it("searches the complete PATH without treating empty entries or duplicate directories as executables", async () => {
   const executable = join(root, "tool")

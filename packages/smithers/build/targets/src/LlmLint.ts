@@ -2601,8 +2601,8 @@ const strength = (finding: Finding): number =>
   severityRank[finding.severity] * 4 + (finding.security === undefined ? 0 : impactRank[finding.security.impact])
 
 /**
- * Keeps one finding per file, line and check for files several requests saw,
- * preferring the most severe; other findings pass through untouched.
+ * Merges matching messages at the same file, line and check for files several
+ * requests saw, preferring severity then security impact; other findings pass through untouched.
  */
 const mergeRepeated = (
   findings: ReadonlyArray<Finding>,
@@ -2615,12 +2615,12 @@ const mergeRepeated = (
       output.push(finding)
       continue
     }
-    const key = `${finding.file}\0${finding.line}\0${finding.security?.checkId ?? ""}`
+    const key = `${finding.file}\0${finding.line}\0${finding.security?.checkId ?? ""}\0${finding.message}`
     const position = positions.get(key)
     if (position === undefined) {
       positions.set(key, output.length)
       output.push(finding)
-    } else if (severityRank[finding.severity] > severityRank[output[position]!.severity]) {
+    } else if (strength(finding) > strength(output[position]!)) {
       output[position] = finding
     }
   }
@@ -2990,7 +2990,6 @@ export const review = (
       wholeFile(name(file.path), mask.sanitize(file.contents), file.deleted === true)
     const context = rawContext.map(masked)
     const changed = rawChanged.map(masked)
-    const contextNames = new Set(context.map((file) => file.path))
     const relations = {
       edges: new Map([...raw.edges].map(([from, to]) => [name(from), new Set([...to].map(name))] as const)),
       related: new Map([...raw.related].map(([from, to]) => [name(from), to.map(name)] as const)),
@@ -3294,14 +3293,14 @@ export const review = (
       // A file supplied to several requests (shared context, a related file, or a split file) reports each flaw once.
       const appearances = new Map<string, number>()
       for (const batch of loadedBatches) {
-        for (const path of new Set([...batch.changed, ...batch.related].map((file) => file.path))) {
+        for (const path of new Set([...batch.changed, ...batch.related, ...context].map((file) => file.path))) {
           appearances.set(path, (appearances.get(path) ?? 0) + 1)
         }
       }
       findings.splice(
         0,
         findings.length,
-        ...mergeRepeated(findings, (path) => contextNames.has(path) || (appearances.get(path) ?? 0) > 1)
+        ...mergeRepeated(findings, (path) => (appearances.get(path) ?? 0) > 1)
       )
       for (const location of mask.locations) {
         findings.push({

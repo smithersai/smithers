@@ -165,8 +165,10 @@ are named in the prompt as omitted. Context files are in every call.
 Every call fits `contextTokens`, estimated at three bytes per token, after
 reserving 16,384 output tokens. A changed file too large for one call is split
 at top-level declarations, then at lines; each slice reports whole-file line
-numbers. A finding on a file several calls saw is reported once per line and
-check, keeping the most severe.
+numbers. Repeated findings on a file several calls saw are merged only when
+their line, check and message match, keeping the highest severity, then security
+impact. Distinct messages on the same line remain separate. Findings from a
+file supplied to only one call pass through unchanged.
 
 One invocation makes at most 64 calls. With a finding store, a larger review
 persists the calls it made, fails as incomplete, and the next invocation over
