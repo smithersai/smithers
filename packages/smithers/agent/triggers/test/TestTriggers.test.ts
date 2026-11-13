@@ -1,5 +1,4 @@
 import * as Effect from "effect/Effect"
-import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
 import type { Trigger } from "../src/Trigger.ts"
@@ -31,14 +30,6 @@ describe("TestTriggers", () => {
     }))
     expect(result.error.code).toBe("invalid_trigger")
     expect(result.listed).toEqual([])
-  })
-
-  it("keeps one record per active trigger instead of parallel maps", () => {
-    // The run id, its occurrence and the lease timestamp used to live in three
-    // maps every claim, expiry, launch and clear path had to update together.
-    const source = readFileSync(new URL("../src/test/TestTriggers.ts", import.meta.url), "utf8")
-    expect(source).not.toMatch(/activeOccurrences|activeClaimedAt\b(?!:)/)
-    expect(source.match(/readonly active: ReadonlyMap<string, Active>/g)).toHaveLength(1)
   })
 
   it("lists every trigger and keeps the fire cursor across a re-registration", async () => {

@@ -335,21 +335,28 @@ export const storeConformance = <LayerError>(
       expect(result.stored).toMatchObject({ _tag: "Some", value: { input: declaration.input } })
     })
 
-    it("refuses input that has no JSON representation before it reaches the column", async () => {
-      const stringify = JSON.stringify
-      JSON.stringify = (() => undefined) as unknown as typeof JSON.stringify
-      let error
-      try {
-        error = await Effect.runPromise(
-          Effect.gen(function*() {
-            const store = yield* TriggerStore.TriggerStore
-            return yield* Effect.flip(store.register(declaration))
-          }).pipe(Effect.provide(layer))
-        )
-      } finally {
-        JSON.stringify = stringify
+    it.each([undefined, () => undefined, Symbol("input")])(
+      "refuses non-JSON input %s before storing it",
+      async (input) => {
+        const result = await run(Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          const error = yield* Effect.flip(store.register({ ...declaration, input: input as never }))
+          return { error, stored: yield* store.list() }
+        }))
+        expect(result.error).toMatchObject({ code: "invalid_trigger", path: "input" })
+        expect(result.stored).toEqual([])
       }
-      expect(error).toMatchObject({ code: "invalid_trigger", path: "input" })
+    )
+
+    it("refuses an input whose non-enumerable toJSON method returns undefined", async () => {
+      const input = Object.defineProperty({}, "toJSON", { value: () => undefined })
+      const result = await run(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const error = yield* Effect.flip(store.register({ ...declaration, input }))
+        return { error, stored: yield* store.list() }
+      }))
+      expect(result.error).toMatchObject({ code: "invalid_trigger", path: "input" })
+      expect(result.stored).toEqual([])
     })
 
     it("reports input it cannot serialize as a store failure rather than a defect", async () => {

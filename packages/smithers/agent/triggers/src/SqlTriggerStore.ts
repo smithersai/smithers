@@ -307,9 +307,8 @@ export const make: Effect.Effect<
       } catch (cause) {
         return Effect.fail(storeError("trigger input is not JSON-serializable", cause))
       }
-      // `JSON.stringify` answers `undefined` rather than throwing for an input
-      // it cannot represent. Keep this guard even though Schema.Json currently
-      // refuses every such input before serialization.
+      // Schema.Json checks enumerable properties, so a non-enumerable
+      // `toJSON` method can still serialize an object as `undefined`.
       if (input === undefined) {
         return Effect.fail(
           new TriggerError({

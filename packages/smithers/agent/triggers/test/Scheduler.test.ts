@@ -1,6 +1,7 @@
 import * as Control from "@smthrs/control/Control"
 import { Unavailable } from "@smthrs/control/ControlError"
 import type { Receipt, RunStatus } from "@smthrs/control/ControlSchema"
+import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -616,45 +617,95 @@ describe("Scheduler", () => {
     expect(lastFiredAt).toBe(2 * hour)
   })
 
-  it("does not dispatch after an interrupted claim", async () => {
-    const results: Array<TriggerStore.Result> = []
-    const runner = runnerFixture()
-    await Effect.runPromise(
-      provideTest(
-        Effect.scoped(
-          Effect.gen(function*() {
-            const store = yield* TriggerStore.TriggerStore
-            yield* seed(store, trigger("skip", "one"), runner, "skipped")
-            results.length = 0
-            const entered = yield* Deferred.make<void>()
-            const release = yield* Deferred.make<void>()
-            const blocked = TriggerStore.TriggerStore.of({
-              ...store,
-              claimFire: (fire) =>
-                Deferred.succeed(entered, undefined).pipe(
-                  Effect.andThen(Deferred.await(release)),
-                  Effect.andThen(store.claimFire(fire))
-                )
-            })
-            yield* TestClock.setTime(hour)
-            const scheduler = yield* Scheduler.make().pipe(
-              Effect.provideService(TriggerStore.TriggerStore, blocked),
-              Effect.provideService(Scheduler.Runner, runner.service)
-            )
-            const fiber = yield* Effect.forkScoped(scheduler.runOnce)
-            yield* Deferred.await(entered)
-            yield* Fiber.interrupt(fiber)
-            yield* Deferred.succeed(release, undefined)
-            yield* Effect.yieldNow
+  it.each(["fiber", "store"] as const)(
+    "recovers a committed claim after %s interruption without claiming later work",
+    async (interruption) => {
+      const results: Array<TriggerStore.Result> = []
+      const claims: Array<number> = []
+      const runner = runnerFixture()
+      await Effect.runPromise(provideTest(
+        Effect.scoped(Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          yield* seed(store, trigger("skip", "all"), runner, "skipped")
+          results.length = 0
+          const committed = yield* Deferred.make<void>()
+          const release = yield* Deferred.make<void>()
+          const interrupted = TriggerStore.TriggerStore.of({
+            ...store,
+            claimFire: (fire) =>
+              Effect.gen(function*() {
+                claims.push(fire.occurrence)
+                const claim = yield* store.claimFire(fire)
+                if (fire.occurrence === hour) {
+                  yield* Deferred.succeed(committed, undefined)
+                  yield* Deferred.await(release)
+                  // A service can return an interruption cause without an
+                  // external cancellation request. The scheduler must re-raise
+                  // that cause too, before it claims the next due occurrence.
+                  if (interruption === "store") return yield* Effect.interrupt
+                }
+                return claim
+              })
           })
-        ),
-        results
-      )
-    )
+          yield* TestClock.setTime(2 * hour)
+          const scheduler = yield* Scheduler.make().pipe(
+            Effect.provideService(TriggerStore.TriggerStore, interrupted),
+            Effect.provideService(Scheduler.Runner, runner.service)
+          )
+          const fiber = yield* Effect.forkScoped(scheduler.runOnce)
+          yield* Deferred.await(committed)
+          const reservation = yield* store.inspect("hourly")
+          expect(reservation.activeRunId).toBeDefined()
+          expect(TriggerStore.isReservation(reservation.activeRunId!)).toBe(true)
+          expect(yield* store.activeOccurrence("hourly", reservation.activeRunId!)).toEqual(Option.some(hour))
 
-    expect(runner.starts).toHaveLength(0)
-    expect(results).toHaveLength(0)
-  })
+          if (interruption === "fiber") yield* Fiber.interrupt(fiber)
+          else yield* Deferred.succeed(release, undefined)
+          const exit = yield* Fiber.await(fiber)
+
+          expect(claims).toEqual([hour])
+          expect(exit._tag).toBe("Failure")
+          if (exit._tag === "Failure") expect(Cause.hasInterrupts(exit.cause)).toBe(true)
+          expect(yield* store.inspect("hourly")).toEqual(reservation)
+          expect((yield* store.history()).items).toMatchObject([
+            { occurrence: hour, outcome: null },
+            { occurrence: 0, outcome: "skipped" }
+          ])
+          expect(runner.starts).toEqual([])
+          expect(results).toEqual([])
+
+          const restarted = yield* Scheduler.make().pipe(
+            Effect.provideService(Scheduler.Runner, runner.service)
+          )
+          yield* TestClock.adjust(TriggerStore.reservationLeaseMs - 1)
+          yield* restarted.runOnce
+          yield* Effect.yieldNow
+          expect(yield* store.inspect("hourly")).toEqual(reservation)
+          expect(yield* store.activeRun("hourly")).toEqual(Option.some(reservation.activeRunId!))
+          expect(runner.starts).toEqual([])
+          yield* TestClock.adjust(1)
+          yield* restarted.runOnce
+          yield* Effect.yieldNow
+          yield* restarted.runOnce
+          yield* Effect.yieldNow
+
+          expect(runner.starts.map((input) => input.idempotencyKey)).toEqual([
+            `hourly:${new Date(hour).toISOString()}`
+          ])
+          expect(results.filter((result) => result.outcome === "launched")).toMatchObject([
+            { occurrence: hour, runId: "run-1" }
+          ])
+          expect(yield* store.activeRun("hourly")).toEqual(Option.some("run-1"))
+          expect((yield* store.history()).items).toMatchObject([
+            { occurrence: 2 * hour, outcome: "skipped" },
+            { occurrence: hour, outcome: "launched", runId: "run-1" },
+            { occurrence: 0, outcome: "skipped" }
+          ])
+        })),
+        results
+      ))
+    }
+  )
 
   // The scheduler never approves its own plan. It re-offers the same
   // idempotent run request and takes the run id once somebody else approves.
@@ -796,6 +847,7 @@ describe("Scheduler", () => {
         results
       )
     )
+    expect(results.map((result) => result.outcome)).toEqual(["launched"])
     expect(runner.starts).toHaveLength(1)
     expect(runner.starts[0]?.idempotencyKey).toBe(
       `hourly:${new Date(2 * hour).toISOString()}`
