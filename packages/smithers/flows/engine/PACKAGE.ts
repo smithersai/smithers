@@ -23,7 +23,8 @@ const flow = flowPackage.lib
 
 const standard = BuildAndCheckTypeScriptPackage({
   deps: [flow, capabilityPackage.lib],
-  // Examples are type-checked, linted and run by test/examples.test.ts.
+  // Examples are type-checked and linted. test/examples.test.ts, test/examples/*.test.ts
+  // and test/quickstart.test.vibe run them.
   sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   examples: [{
     page: Input.file("docs/quickstart.md"),

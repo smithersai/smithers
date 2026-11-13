@@ -119,13 +119,16 @@ Full signatures: <https://github.com/smithersai/smithers/blob/main/packages/smit
 
 ## Examples
 
-Each example is a runnable program that `test/examples.test.ts` runs and
-checks on every test run.
+Examples are run and checked by `test/examples.test.ts`,
+`test/examples/*.test.ts` and `test/quickstart.test.vibe`, including a browser-bundle check for `09-browser-use.ts`.
 
-| File                                               | What it shows                                                                                         |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [`examples/quickstart.ts`](examples/quickstart.ts) | A repeated execution id joins the recorded run; the same id with another payload is refused.          |
-| [`examples/serveRpc.ts`](examples/serveRpc.ts)     | Serve a flow over RPC with `FlowProxy` and `FlowProxyServer`, then call it from an in-process client. |
+| File                                                             | What it shows                                                                                         |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [`examples/01-define-and-run.ts`](examples/01-define-and-run.ts) | Define a typed flow and run it on the in-memory engine.                                               |
+| [`examples/09-browser-use.ts`](examples/09-browser-use.ts)       | Run a flow and derive a step key; bundle the example for the browser with no `node:` imports.         |
+| [`examples/quickstart.ts`](examples/quickstart.ts)               | A repeated execution id joins the recorded run; the same id with another payload is refused.          |
+| [`examples/serveRpc.ts`](examples/serveRpc.ts)                   | Serve a flow over RPC with `FlowProxy` and `FlowProxyServer`, then call it from an in-process client. |
+| [`examples/vibe/quickstart.vibe`](examples/vibe/quickstart.vibe) | Run the quickstart in VibeLang, including replay and payload-conflict checks.                         |
 
 ## In-memory lifetime
 

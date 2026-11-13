@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL("..", import.meta.url))
 
 const files = (directory: string): Array<string> =>
   readdirSync(join(root, directory), { recursive: true, encoding: "utf8" })
-    .filter((file) => file.endsWith(".ts"))
+    .filter((file) => /\.(ts|vibe)$/.test(file))
     .map((file) => join(directory, file))
 
 // Review bookkeeping is not documentation: it ships in the published .d.ts
@@ -15,6 +15,13 @@ const files = (directory: string): Array<string> =>
 const markers = [/@slop\b/, /Deep reviewed and polished/, /pending review/, /TODO\(/]
 
 describe("review markers", () => {
+  it.each([
+    ["src", "StepTrace.vibe"],
+    ["test", "StepTrace.test.vibe"]
+  ])("includes %s/%s in the scan", (directory, file) => {
+    expect(files(directory)).toContain(join(directory, file))
+  })
+
   it("are absent from the package sources and tests", () => {
     const found = [...files("src"), ...files("test")].flatMap((file) => {
       const text = readFileSync(join(root, file), "utf8")
