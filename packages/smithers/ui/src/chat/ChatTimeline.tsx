@@ -43,17 +43,11 @@ export interface ChatTimelineProps {
   /** Explicit activation of a single entry; keyboard traversal and grouped entries only jump. */
   readonly onActivate?: (id: string) => void;
 }
-/** Default state words when a message has neither a summary nor a host label. */
-const stateWords = (entry: ChatTimelineEntry): string | undefined => {
-  if (entry.state === "done" || (entry.kind !== "ask" && entry.kind !== "answer")) return undefined;
-  if (entry.kind === "ask") return { working: undefined, waiting: undefined, failed: "Not sent", queued: "Queued" }[entry.state];
-  return { working: "Working", waiting: "Needs you", failed: "Couldn't answer", queued: "Waiting" }[entry.state];
-};
 export const timelineLabel = (entry: ChatTimelineEntry): string => entry.summary || entry.label || ({
   done: { ask: "Question sent", answer: "Reply completed", tool: "Tool completed", flow: "Run completed" }[entry.kind],
   working: "Working", waiting: "Needs you",
-  failed: { ask: "Not sent", answer: "Reply failed", tool: "Tool failed", flow: "Run failed" }[entry.kind],
-  queued: { ask: "Waiting to send", answer: "Waiting for reply", tool: "Waiting", flow: "Waiting" }[entry.kind],
+  failed: { ask: "Not sent", answer: "Couldn't answer", tool: "Tool failed", flow: "Run failed" }[entry.kind],
+  queued: { ask: "Queued", answer: "Waiting", tool: "Waiting", flow: "Waiting" }[entry.kind],
 }[entry.state]);
 export const timelineKey = (key: string, index: number, length: number): number | undefined => {
   if (length === 0) return undefined;
@@ -223,7 +217,7 @@ export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [
           <div className="sui-tl-inner">
             <ol data-level={0} aria-label="Messages">
               {entries.map((entry, row) => {
-                const label = entry.summary || entry.label || stateWords(entry) || timelineLabel(entry);
+                const label = timelineLabel(entry);
                 const name = entry.label && entry.label !== label ? `${label} · ${entry.label}` : undefined;
                 const pending = !entry.summary && entry.state === "done";
                 const why = pending ? unavailable : undefined;

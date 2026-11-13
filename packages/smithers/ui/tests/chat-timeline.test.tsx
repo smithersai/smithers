@@ -17,8 +17,8 @@ test("pending rows use recorded state, never a copied first line", () => {
   const entry = { id: "a", kind: "answer" as const, state: "done" as const };
   expect(timelineLabel(entry)).toBe("Reply completed");
   expect(timelineLabel({ ...entry, kind: "ask" })).toBe("Question sent");
-  expect(timelineLabel({ ...entry, kind: "ask", state: "queued" })).toBe("Waiting to send");
-  for (const [state, label] of [["working", "Working"], ["waiting", "Needs you"], ["failed", "Reply failed"], ["queued", "Waiting for reply"]] as const) expect(timelineLabel({ ...entry, state })).toBe(label);
+  expect(timelineLabel({ ...entry, kind: "ask", state: "queued" })).toBe("Queued");
+  for (const [state, label] of [["working", "Working"], ["waiting", "Needs you"], ["failed", "Couldn't answer"], ["queued", "Waiting"]] as const) expect(timelineLabel({ ...entry, state })).toBe(label);
   expect(timelineLabel({ ...entry, summary: "Inspect both retry attempts" })).toBe("Inspect both retry attempts");
   const html = renderToStaticMarkup(<ChatTimeline entries={[entry, { ...entry, id: "b", summary: "Inspect both retry attempts" }]} />);
   expect(html).toContain('aria-label="Conversation timeline"');
@@ -54,15 +54,20 @@ test("keyboard movement focuses and jumps; Escape returns to the entry", async (
 });
 
 
-test("fallback labels distinguish unsent asks, tools and flow runs", () => {
+test("fallback labels match the rendered rail for every kind and state", () => {
+  const states = ["done", "working", "waiting", "failed", "queued"] as const;
   const expected = {
-    ask: ["Question sent", "Not sent", "Waiting to send"],
-    answer: ["Reply completed", "Reply failed", "Waiting for reply"],
-    tool: ["Tool completed", "Tool failed", "Waiting"],
-    flow: ["Run completed", "Run failed", "Waiting"],
+    ask: ["Question sent", "Working", "Needs you", "Not sent", "Queued"],
+    answer: ["Reply completed", "Working", "Needs you", "Couldn't answer", "Waiting"],
+    tool: ["Tool completed", "Working", "Needs you", "Tool failed", "Waiting"],
+    flow: ["Run completed", "Working", "Needs you", "Run failed", "Waiting"],
   } as const;
   for (const kind of ["ask", "answer", "tool", "flow"] as const) {
-    expect(["done", "failed", "queued"].map(state => timelineLabel({ id: "a", kind, state: state as "done" | "failed" | "queued" }))).toEqual([...expected[kind]]);
+    const entries = states.map(state => ({ id: `${kind}-${state}`, kind, state }));
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(<ChatTimeline entries={entries} />);
+    expect([...host.querySelectorAll('ol[data-level="0"] .sui-tl-tx')].map(element => element.textContent)).toEqual([...expected[kind]]);
+    expect(entries.map(timelineLabel)).toEqual([...expected[kind]]);
   }
 });
 
