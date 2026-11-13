@@ -1334,8 +1334,14 @@ describe("AgentSession", () => {
     expect(outcome.child.runId).not.toBe(outcome.parent.runId)
   })
   it("claims a running run it re-drives for a host that died, before executing it", async () => {
-    const model = Model.make({ stream: () => Stream.fromIterable(cellEvents("ctx.done(\"taken over\")", "takeover")) })
-    const resumed: Array<string> = []
+    const order: Array<string> = []
+    const model = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          order.push("model")
+          return Stream.fromIterable(cellEvents("ctx.done(\"taken over\")", "takeover"))
+        })
+    })
     const fences: Array<string> = []
     const outcome = await Effect.runPromise(
       Effect.gen(function*() {
@@ -1373,16 +1379,16 @@ describe("AgentSession", () => {
                   ? Effect.fail(new ControlError.ClaimLost({ runId }))
                   : runtime.claimFence(runId)
               }),
-            resume: (runId, options) => {
-              resumed.push(runId)
-              return runtime.resume(runId, options)
-            }
+            resume: (runId, options) =>
+              runtime.resume(runId, options).pipe(
+                Effect.tap(() => Effect.sync(() => order.push(`resume:${runId}`)))
+              )
           })
         })))
       }).pipe(Effect.scoped)
     )
     expect(outcome.status).toBe("completed")
-    expect(resumed).toEqual([outcome.runId])
+    expect(order).toEqual([`resume:${outcome.runId}`, "model"])
   })
 
   it("waits for a parked execution publication before resuming it", async () => {
@@ -1896,6 +1902,14 @@ describe("AgentSession", () => {
     // answered `denied` and the run still completed.
     expect(outcome.approvals).toBe(0)
     expect(notes).toEqual(["frame zero note"])
+    const asks = outcome.agentTrail.filter((entry) =>
+      entry.eventType === "control.agent.cell-call-settled" &&
+      (entry.payload as { readonly flowName?: unknown }).flowName === "ask"
+    )
+    expect(asks).toHaveLength(1)
+    expect(asks[0]!.payload).toMatchObject({ value: { approved: false } })
+    const resolved = outcome.agentTrail.filter((entry) => entry.eventType === "control.agent.resolved")
+    expect(resolved.map((entry) => entry.payload)).toMatchObject([{ text: "approved=false" }])
   })
 
   /**
@@ -3973,7 +3987,7 @@ const unprovidedServiceProbe = (gate: Deferred.Deferred<void>) => {
 
 describe("regression: provide-then-cast test sites erase layer requirements (#2704)", () => {
   it("rejects a body that needs a service the session stack does not provide", () => {
-    // The assertion is the `@ts-expect-error` directive on unprovidedServiceProbe.
+    // The type assertion in `unprovidedServiceProbe` is checked by the `check` target.
     expect(unprovidedServiceProbe).toBeTypeOf("function")
   })
 })

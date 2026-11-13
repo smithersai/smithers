@@ -531,8 +531,6 @@ describe("the contract profile", () => {
 })
 
 describe("the capability envelope decides per flow", () => {
-  // An envelope refusal is decided before the durable boundary opens, so the
-  // cell sees it as a thrown exception rather than a settled call result.
   // A refused call resolves with the failure envelope rather than throwing, so
   // both calls are observable in one frame — which is what the mixing case
   // needs.

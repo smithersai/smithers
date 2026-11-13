@@ -147,7 +147,12 @@ const runSteered = (
         )
       )
     )
-    return { result, requests, pending: yield* queue.pending(executionId) }
+    return {
+      result,
+      requests,
+      pending: yield* queue.pending(executionId),
+      otherPending: yield* queue.pending("todo:other")
+    }
   })
 
 const queueLayer = () => NotificationQueue.layer.pipe(Layer.provideMerge(TestJournal.layer()))
@@ -177,17 +182,19 @@ describe("steering a running AgentAction", () => {
   })
 
   it("never hands one execution's message to another", async () => {
+    const other = steer("todo:other", "steer-2", "Rename the module")
     const out = await Effect.runPromise(
       runSteered(
         "todo:quiet",
         Effect.flatMap(
           NotificationQueue.NotificationQueue,
-          (queue) => queue.admit("todo:other", steer("todo:other", "steer-2", "Rename the module"))
+          (queue) => queue.admit("todo:other", other)
         )
       ).pipe(Effect.provide(queueLayer()))
     )
     expect(out.result).toEqual({ summary: "ok" })
     expect(out.requests.map(textOf).join("\n")).not.toContain("Rename the module")
     expect(out.pending).toEqual([])
+    expect(out.otherPending).toEqual([other])
   })
 })

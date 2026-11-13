@@ -1235,6 +1235,20 @@ describe("AgentAction frame budgets and system teaching", () => {
     body: ({ diff }) => Overriding.call({ diff })
   })
 
+  const Widening = AgentAction.make("agent/test/Widening", {
+    payload: { diff: Schema.String },
+    output: Review,
+    seat: "anthropic:test-model",
+    prompt: () => "Review it.",
+    maxFrames: 3
+  })
+  const WideningFlow = Flow.make("agent/test/WideningFlow", {
+    payload: { diff: Schema.String },
+    success: Review,
+    error: AgentAction.AgentFailure,
+    body: ({ diff }) => Widening.call({ diff })
+  })
+
   const hostFrames = (maxFrames: number): AgentAction.Host => ({ ...host, maxFrames })
 
   it("inherits the host's frame budget when the action declares none", async () => {
@@ -1278,7 +1292,7 @@ describe("AgentAction frame budgets and system teaching", () => {
     expect(requests).toHaveLength(1)
   })
 
-  it("overrides the host's frame budget with its own, in the widening direction", async () => {
+  it("inherits a smaller host budget", async () => {
     const requests: Array<string> = []
     const exit = await Effect.runPromise(
       Effect.exit(
@@ -1298,6 +1312,27 @@ describe("AgentAction frame budgets and system teaching", () => {
     // The host's own budget applies, so the same declaration that got three
     // frames above gets one here: the two numbers are not merged.
     expect(requests).toHaveLength(1)
+  })
+
+  it("overrides the host's frame budget with its own, in the widening direction", async () => {
+    const requests: Array<string> = []
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        WideningFlow.execute({ diff: "-  old\n+  new" }, { executionId: "frames-widen" }).pipe(
+          Effect.provide(
+            stack(
+              Layer.mergeAll(Widening.layer, Interpreter.layer(WideningFlow)),
+              hostFrames(1),
+              scripted([stalling], requests)
+            )
+          )
+        )
+      )
+    )
+
+    expect(exit._tag).toBe("Failure")
+    expect(JSON.stringify(exit)).toContain("ended without a completed answer")
+    expect(requests).toHaveLength(3)
   })
 
   it("teaches every ask the contract profile the action declares", async () => {
