@@ -135,6 +135,9 @@ export const target: {
  *   the feature map. `executions: 0` only replays saved failures, which is the regression mode used by test runners.
  *   `plateau` stops after that many executions without new feedback or a new finding. If every exploratory execution
  *   is discarded, the report is `Exhausted`.
+ * - `minExecutions` keeps the run going past `duration` and `plateau` until that many exploratory executions have run,
+ *   default 0; `executions` and `maxFindings` still stop it. With a fixed `seed` those first executions are the same on
+ *   every machine, however slow, so a time-budgeted run still covers a known prefix.
  * - `seed` fixes the fuzzer's choices for an empty or identical ordered corpus, with the same generator, property,
  *   feedback and execution driver. Different saved inputs consume executions and can change the search.
  *   `duration` only decides how many executions happen.
@@ -153,6 +156,7 @@ export interface Options {
   readonly seed?: string | number | undefined
   readonly duration?: Duration.Input | undefined
   readonly executions?: number | undefined
+  readonly minExecutions?: number | undefined
   readonly plateau?: number | undefined
   readonly size?: number | undefined
   readonly maxShrinks?: number | undefined

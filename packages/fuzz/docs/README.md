@@ -50,6 +50,9 @@ signature `Died:EmptyCause`. Interruption propagates.
 
 A run stops at the first of `duration` (default 10 seconds when no budget is given), `executions`, `plateau`
 (executions without new feedback) and `maxFindings` confirmed distinct signatures (default 1).
+`minExecutions` (default 0) is a floor under `duration` and `plateau`: the run goes on until that many exploratory
+executions have run. With a fixed `seed`, those are the same executions on every machine, so a time-budgeted gate
+always covers them however loaded the host is.
 If every execution is discarded, it returns `Exhausted`; `formatReport` explains that no exploratory evaluation completed.
 A zero-execution regression-only run can still return `Passed`.
 

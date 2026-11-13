@@ -132,6 +132,7 @@ interface Resolved {
   readonly seed: string | number | undefined
   readonly deadline: number
   readonly executions: number
+  readonly minExecutions: number
   readonly plateau: number
   readonly size: number
   readonly maxShrinks: number
@@ -143,6 +144,7 @@ interface Resolved {
 const resolve = (options: Fuzz.Options | undefined): Resolved => {
   const checks: ReadonlyArray<readonly [string, number | undefined, number]> = [
     ["executions", options?.executions, 0],
+    ["minExecutions", options?.minExecutions, 0],
     ["plateau", options?.plateau, 1],
     ["size", options?.size, 0],
     ["maxShrinks", options?.maxShrinks, 0],
@@ -162,6 +164,7 @@ const resolve = (options: Fuzz.Options | undefined): Resolved => {
     seed: options?.seed,
     deadline: Date.now() + duration,
     executions: options?.executions ?? Infinity,
+    minExecutions: options?.minExecutions ?? 0,
     plateau: options?.plateau ?? Infinity,
     size: options?.size ?? 100,
     maxShrinks: options?.maxShrinks ?? 1000,
@@ -830,11 +833,13 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
       stoppedBy = "Executions"
       break
     }
-    if (sinceProgress >= resolved.plateau) {
+    // Only `executions` and findings stop a run short of its floor: the seeded first executions run on any machine.
+    const floored = executions < resolved.minExecutions
+    if (sinceProgress >= resolved.plateau && !floored) {
       stoppedBy = "Plateau"
       break
     }
-    if (Date.now() >= resolved.deadline) {
+    if (Date.now() >= resolved.deadline && !floored) {
       stoppedBy = "Duration"
       break
     }

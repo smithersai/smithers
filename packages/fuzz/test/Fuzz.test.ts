@@ -218,6 +218,21 @@ describe("Fuzz", () => {
         assert.strictEqual(byDuration.stats.stoppedBy, "Duration")
       }))
 
+    it.effect("minExecutions keeps a run going past its duration and plateau; executions still caps it", () =>
+      Effect.gen(function*() {
+        const pastDuration = yield* fuzz(ints, () => true, { executions: undefined, duration: "0 millis", minExecutions: 40 })
+        assert.deepStrictEqual([pastDuration._tag, pastDuration.stats.stoppedBy, pastDuration.stats.executions], [
+          "Passed",
+          "Duration",
+          40
+        ])
+        const pastPlateau = yield* fuzz(ints, () => true, { executions: undefined, plateau: 1, minExecutions: 40 })
+        assert.strictEqual(pastPlateau.stats.stoppedBy, "Plateau")
+        assert.isAtLeast(pastPlateau.stats.executions, 40)
+        const capped = yield* fuzz(ints, () => true, { executions: 10, minExecutions: 40 })
+        assert.deepStrictEqual([capped.stats.stoppedBy, capped.stats.executions], ["Executions", 10])
+      }))
+
     it.effect("discards are counted and never kept", () =>
       Effect.gen(function*() {
         const never = Arbitrary.filter(ints, () => false)
@@ -239,6 +254,7 @@ describe("Fuzz", () => {
             { size: 1.5 },
             { maxShrinks: NaN },
             { maxFindings: 0 },
+            { minExecutions: -1 },
             {
               duration: "soon" as any
             }
